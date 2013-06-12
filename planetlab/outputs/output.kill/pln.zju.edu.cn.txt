@@ -1,0 +1,20 @@
+/bin/su: user princeton_syndicate does not exist
+Connection to 210.32.133.7 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 210.32.133.7 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 210.32.133.7 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 210.32.133.7 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 210.32.133.7 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 210.32.133.7 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 210.32.133.7 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 210.32.133.7 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 210.32.133.7 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 210.32.133.7 closed.

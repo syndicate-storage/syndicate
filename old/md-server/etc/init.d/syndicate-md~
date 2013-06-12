@@ -1,0 +1,125 @@
+#!/bin/bash
+
+MDCRAWLERD=/usr/bin/mdcrawlerd
+CONFIG=/etc/syndicate/syndicate-metadata-server.conf
+
+# pull in configuration as shell variables
+source $CONFIG 2> /dev/null
+
+clean() {
+   rm $MDCRAWLER_CNTL
+}
+
+stop() {
+   echo -n "Stopping Syndicate metadata server mdcrawlerd..."
+
+   force=$1
+
+   # find mdcrawler processes
+   mdcrawler_procs=$(ps aux | grep $MDCRAWLERD | grep -v grep | awk '{print $2}')
+
+   # send SIGINT to the running mdcrawler processes
+   for i in $mdcrawler_procs; do
+      kill -s INT $i
+   done
+
+   # wait for mdcrawlerd to die
+   sleep 2
+   for i in $(seq 1 10); do
+
+      echo -n "."
+
+      procs=$(ps aux | grep $MDCRAWLERD | grep -v grep | wc -l)
+      if [[ $procs == "0" ]]; then
+         break
+      fi
+
+      sleep 2 
+
+   done
+
+   # if mdcrawlerd is still running, then abort (require force-stop)
+   mdcrawler_procs=$(ps aux | grep $MDCRAWLERD | grep -v grep | awk '{print $2}')
+   if [[ $mdcrawler_procs ]]; then
+      if [[ $force ]]; then
+         # force-stop
+         echo ""
+         for i in $mdcrawler_procs; do
+            echo "Forcing $i to stop"
+            kill -9 $i
+         done
+
+         clean
+      
+      else
+         echo "ERROR"
+         echo "Try again with force-stop"
+         return 1
+      fi
+   fi
+
+   echo "done"
+   return 0
+}
+
+
+start() {
+   echo -n "Starting Syndicate metadata server mdcrawelrd..."
+   
+   /bin/sh -c "$MDCRAWLERD"
+   RC=$?
+   echo "RC = $RC"
+   if ! [[ $RC ]]; then
+      echo "ERROR"
+      echo "Failed to start $MDCRAWLERD, rc = $RC"
+      return 1
+   fi
+
+   sleep 1
+
+   # make sure its running
+   mdcrawler_procs=$(ps aux | grep $MDCRAWLERD | grep -v grep)
+   if ! [[ $mdcrawler_procs ]]; then
+      echo "ERROR"
+      echo "Failed to start $MDCRAWLERD"
+      return 1
+   fi
+
+   echo "done"
+   return 0
+}
+
+
+restart() {
+   stop force
+   start
+}
+
+rc=""
+case "$1" in
+   start)
+      start
+      rc=$?
+      ;;
+
+   stop)
+      stop
+      rc=$?
+      ;;
+
+   force-stop)
+      stop force
+      rc=$?
+      ;;
+
+   clean)
+      clean
+      rc=$?
+      ;;
+
+   *)
+      echo "Usage: $0 {start|stop|force-stop}"
+      exit 1
+esac
+
+exit $rc

@@ -1,0 +1,1 @@
+scp: /home/princeton_syndicate/write_file.sh: Disk quota exceeded

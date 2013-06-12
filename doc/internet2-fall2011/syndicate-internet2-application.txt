@@ -1,0 +1,37 @@
+Name of application (a descriptive title)
+Syndicate: a scalable distributed filesystem driven by a content distribution network.
+
+URLs that relate to your application (project webpages, documentation, etc.):
+trac.princeton.edu/Syndicate
+
+Name(s) of primary contact person:
+Jude Nelson
+
+Primary contact person email address:
+jcnelson@cs.princeton.edu
+
+Primary contact person phone number:
+520-331-8323
+
+If you are presenting this demo in conjunction with a Fall 2011 Internet2 Member Meeting track session, what is the title of that session? 
+N/A
+
+Organization or Institution that developed this application: 
+Princeton University
+
+Demonstrators on site:
+NOTE: I don't know what to put here...
+
+Remote partner(s) with whom application is being developed (if applicable):
+Verivue, Inc.
+
+Funding organization (if applicable):
+National Science Foundation
+
+A brief description of your application and its significance (this description will be used for marketing purposes):
+Syndicate is a distributed filesystem that achieves scalable data delivery via a content distribution network.  When a user reads a file from Syndicate, the Syndicate client downloads the file data from the file's host by pulling it into CoBlitz--a high-performance content distribution network.  Subsequent requests for the file's data are served from the CoBlitz cache rather than the original host, allowing delivery of the file data to scale with the capacity of CoBlitz.  Any data written to a file in Syndicate is stored locally in the client, but the client periodically publishes the public URLs of its locally-modified files to a Syndicate metadata server.  The Syndicate metadata server translates the file URLs it receives into unique paths, which it then shares with other Syndicate clients to provide users with an up-to-date filesystem hierarchy of available pieces of content.
+Syndicate is geared towards users who need a filesystem interface for quickly and easily distributing large amounts of data between many computers.  Once content hosts with data to share are trusted and indexed by the Syndicate metadata server, clients subscribed to the metadata server can stream in the data quickly without overwhelming the content hosts.  Users wishing to share files need only copy/move/link them into their mounted Syndicate client, and the Syndicate client takes care of ensuring that other clients see the new files by publishing their URLs with the metadata server.
+
+What is the role of Internet2 in your application? How will using Internet2 improve the deployment of your application? What measures did you have to take before Internet2 in order to accomplish the same tasks (if applicable)?
+The Syndicate metadata servers and sample content servers run in PlanetLab slivers on nodes deployed on Internet2 PoPs.
+NOTE: Besides speed of data transfer, I don't know what Internet2 gets us that we didn't already have.  Certainly not security--it's always been possible to require content servers to authenticate with metadata servers via HTTPS.

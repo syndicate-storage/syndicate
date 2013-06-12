@@ -1,0 +1,35 @@
+---------- BEGIN write_file.sh ----------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0105   947  105   947    0     0   1957      0 --:--:-- --:--:-- --:--:--  1989
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0 3266k    0  2471    0     0   5171      0  0:10:46 --:--:--  0:10:46  5180  1 3266k    1 38025    0     0  26851      0  0:02:04  0:00:01  0:02:03 26872  6 3266k    6  209k    0     0  91130      0  0:00:36  0:00:02  0:00:34 91149 20 3266k   20  671k    0     0   203k      0  0:00:16  0:00:03  0:00:13  203k 57 3266k   57 1868k    0     0   440k      0  0:00:07  0:00:04  0:00:03  441k100 3266k  100 3266k    0     0   626k      0  0:00:05  0:00:05 --:--:--  689k
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+DATA X-Volume-Time 0.026620
+DATA X-UG-Time 0.064440
+DATA X-Total-Time 1.570380
+-------------------------------- raw write
+DATA disk write, direct 0.012305
+-------------------------------- raw read
+DATA disk read, direct 0.006119
+-------------------------------- ping
+DATA rtt 0.004210
+-------------------------------- mkdir
+DATA MS recv 4.964817
+DATA X-Resolve-Time 0.029330
+DATA X-Resolve-Time 0.029330
+DATA X-Volume-Time 0.003780
+DATA X-UG-Time 0.003090
+DATA X-Total-Time 0.036710
+DATA MS revalidate 4.964905
+DATA MS send 6.526559
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+[       mkdir.cpp:0126] fs_entry_mkdir: ms_client_create(/eek083.ust.hk) rc = -500

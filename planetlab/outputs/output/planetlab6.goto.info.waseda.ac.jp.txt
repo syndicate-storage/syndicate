@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.062050
+TIME X-UG-Time 0.138860
+TIME X-Total-Time 1.959930
+--------------------------------
+TIME begin_diskwrite 1367047394.895081187
+TIME end_diskwrite 1367047394.911286350
+--------------------------------
+TIME begin_diskread 1367047394.911298782
+TIME end_diskread 1367047394.914585939
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047395.623637446
+TIME begin_revalidate_path 21814822.851806435
+TIME begin_ms_recv 1367047395.623715879
+TIME end_ms_recv 1367047401.766954264
+TIME X-Resolve-Time 0.204820
+TIME X-Volume-Time 0.009780
+TIME X-UG-Time 0.009270
+TIME X-Total-Time 0.224530
+TIME end_revalidate_path 21814828.995151052
+TIME begin_ms_send 1367047401.783453885
+TIME end_ms_send 1367047403.774641778
+TIME 0 X-Create-Times 0.167820
+TIME X-Volume-Time 0.003190
+TIME X-UG-Time 0.005090
+TIME X-Total-Time 0.178390
+TIME end_mkdir 1367047403.774674954
+--------------------------------
+TIME begin_create 1367047403.774679563
+TIME begin_revalidate_path 21814831.2806158
+TIME begin_ms_recv 1367047403.774709386
+TIME end_ms_recv 1367047408.128864538
+TIME X-Resolve-Time 0.705530
+TIME X-Volume-Time 0.013960
+TIME X-UG-Time 0.082290
+TIME X-Total-Time 0.805300
+TIME end_revalidate_path 21814835.357056436
+TIME begin_ms_send 1367047408.129067223
+TIME end_ms_send 1367047411.375777582
+TIME 0 X-Create-Times 0.695880
+TIME X-Volume-Time 0.011210
+TIME X-UG-Time 0.097830
+TIME X-Total-Time 0.816570
+TIME end_create 1367047411.375812224
+--------------------------------
+TIME begin_local_write 1367047411.375817532
+TIME begin_write 21814838.603942031
+TIME begin_revalidate_path 21814838.603950692
+TIME begin_ms_recv 1367047411.375849939
+TIME end_ms_recv 1367047411.961563744
+TIME X-Resolve-Time 0.087690
+TIME X-Volume-Time 0.003160
+TIME X-UG-Time 0.003220
+TIME X-Total-Time 0.095130
+TIME end_revalidate_path 21814839.189770938
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab6.goto.info.waseda.ac.jp/planetlab6.goto.info.waseda.ac.jp.1367047408128[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047412.11447580
+TIME end_ms_send 1367047415.817419650
+TIME 0 X-Update-Times 1.067560
+TIME X-Volume-Time 0.032990
+TIME X-UG-Time 0.257510
+TIME X-Total-Time 1.359970
+TIME end_write 21814843.45568245
+TIME end_local_write 1367047415.817467004
+--------------------------------
+TIME begin_local_read 1367047415.817471962
+TIME begin_read 21814843.45591643
+TIME begin_revalidate_path 21814843.45600583
+TIME begin_ms_recv 1367047415.817499690
+TIME end_ms_recv 1367047416.221427819
+TIME X-Resolve-Time 0.141390
+TIME X-Volume-Time 0.008390
+TIME X-UG-Time 0.003110
+TIME X-Total-Time 0.155440
+TIME end_revalidate_path 21814843.449629564
+TIME begin_ms_send 1367047416.222045859
+TIME end_read 21814843.544803459
+TIME end_local_read 1367047416.316697886
+--------------------------------
+TIME begin_close 1367047416.316702985
+TIME end_close 1367047416.316712484
+--------------------------------
+TIME begin_unlink 1367047416.316716604
+TIME end_ms_send 1367047418.749013088
+TIME 0 X-Update-Times 0.278640
+TIME X-Volume-Time 0.002900
+TIME X-UG-Time 0.003240
+TIME X-Total-Time 0.286780
+TIME begin_ms_send 1367047418.749083978
+TIME end_ms_send 1367047421.451513726
+TIME 0 X-Update-Times 0.434110
+TIME X-Volume-Time 0.016700
+TIME X-UG-Time 0.003160
+TIME X-Total-Time 0.458150
+TIME begin_ms_send 1367047423.932237961
+TIME end_ms_send 1367047426.263728486
+TIME 0 X-Delete-Times 0.081900
+TIME X-Volume-Time 0.002010
+TIME X-UG-Time 0.002870
+TIME X-Total-Time 0.088010
+TIME end_unlink 1367047426.267692840
+--------------------------------
+TIME begin_rmdir 1367047426.267700244
+TIME begin_ms_send 1367047426.267735305
+TIME end_ms_send 1367047428.806413237
+TIME 0 X-Delete-Times 0.269040
+TIME X-Volume-Time 0.005540
+TIME X-UG-Time 0.006150
+TIME X-Total-Time 0.282640
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/planetlab6.goto.info.waseda.ac.jp) errno = -2
+TIME end_rmdir 1367047428.806517931
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 133.9.81.166 closed.

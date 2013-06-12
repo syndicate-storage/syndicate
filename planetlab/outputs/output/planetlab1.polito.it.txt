@@ -1,0 +1,22 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+--------------------------------
+TIME begin_diskwrite 1367047399.791686855
+TIME end_diskwrite 1367047399.820351162
+--------------------------------
+TIME begin_diskread 1367047399.820366552
+TIME end_diskread 1367047399.824311717
+--------------------------------
+TIME begin_mkdir 1367047399.824326443
+TIME begin_revalidate_path 1367047399.824389047
+TIME begin_ms_recv 1367047399.824419181
+TIME end_ms_recv 1367047400.802615
+TIME end_revalidate_path 1367047400.878197
+TIME begin_ms_send 1367047400.20222642
+TIME end_ms_send 1367047401.509755741
+[       mkdir.cpp:0126] fs_entry_mkdir: ms_client_create(/planetlab1.polito.it) rc = -500

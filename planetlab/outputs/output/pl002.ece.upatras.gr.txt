@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.002360
+TIME X-UG-Time 0.025160
+TIME X-Total-Time 1.098650
+--------------------------------
+TIME begin_diskwrite 1367047390.465293314
+TIME end_diskwrite 1367047390.483763468
+--------------------------------
+TIME begin_diskread 1367047390.483774978
+TIME end_diskread 1367047390.486619916
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047390.612416068
+TIME begin_revalidate_path 15342137.302046640
+TIME begin_ms_recv 1367047390.612603658
+TIME end_ms_recv 1367047395.688581092
+TIME X-Resolve-Time 0.024530
+TIME X-Volume-Time 0.002280
+TIME X-UG-Time 0.001880
+TIME X-Total-Time 0.029070
+TIME end_revalidate_path 15342142.378226684
+TIME begin_ms_send 1367047395.688846388
+TIME end_ms_send 1367047403.354864713
+TIME 0 X-Create-Times 0.258620
+TIME X-Volume-Time 0.005590
+TIME X-UG-Time 0.003720
+TIME X-Total-Time 0.270130
+TIME end_mkdir 1367047403.354904557
+--------------------------------
+TIME begin_create 1367047403.354911152
+TIME begin_revalidate_path 15342150.44481866
+TIME begin_ms_recv 1367047403.354945239
+TIME end_ms_recv 1367047404.120063250
+TIME X-Resolve-Time 0.207350
+TIME X-Volume-Time 0.107160
+TIME X-UG-Time 0.006150
+TIME X-Total-Time 0.420280
+TIME end_revalidate_path 15342150.809711546
+TIME begin_ms_send 1367047404.120274047
+TIME end_ms_send 1367047408.357747457
+TIME 0 X-Create-Times 0.146970
+TIME X-Volume-Time 0.005510
+TIME X-UG-Time 0.004740
+TIME X-Total-Time 0.159370
+TIME end_create 1367047408.357787846
+--------------------------------
+TIME begin_local_write 1367047408.357794981
+TIME begin_write 15342155.47361815
+TIME begin_revalidate_path 15342155.47372619
+TIME begin_ms_recv 1367047408.357833257
+TIME end_ms_recv 1367047408.731585060
+TIME X-Resolve-Time 0.182130
+TIME X-Volume-Time 0.010040
+TIME X-UG-Time 0.010920
+TIME X-Total-Time 0.203840
+TIME end_revalidate_path 15342155.421241231
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl002.ece.upatras.gr/pl002.ece.upatras.gr.1367047404120[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047408.790973513
+TIME end_ms_send 1367047411.982849428
+TIME 0 X-Update-Times 0.283350
+TIME X-Volume-Time 0.009090
+TIME X-UG-Time 0.008600
+TIME X-Total-Time 0.396750
+TIME end_write 15342158.672444379
+TIME end_local_write 1367047411.982906782
+--------------------------------
+TIME begin_local_read 1367047411.982913357
+TIME begin_read 15342158.672475810
+TIME begin_revalidate_path 15342158.672486633
+TIME begin_ms_recv 1367047411.982946648
+TIME end_ms_recv 1367047412.916238442
+TIME X-Resolve-Time 0.298200
+TIME X-Volume-Time 0.008390
+TIME X-UG-Time 0.005850
+TIME X-Total-Time 0.315950
+TIME end_revalidate_path 15342159.605944510
+TIME begin_ms_send 1367047412.933378705
+TIME end_read 15342159.682225113
+TIME end_local_read 1367047412.992678744
+--------------------------------
+TIME begin_close 1367047412.992685644
+TIME end_close 1367047412.992694521
+--------------------------------
+TIME begin_unlink 1367047412.992700098
+TIME end_ms_send 1367047414.874836031
+TIME 0 X-Update-Times 0.601510
+TIME X-Volume-Time 0.067520
+TIME X-UG-Time 0.007360
+TIME X-Total-Time 0.681000
+TIME begin_ms_send 1367047414.874916376
+TIME end_ms_send 1367047416.228843021
+TIME 0 X-Update-Times 0.138770
+TIME X-Volume-Time 0.006860
+TIME X-UG-Time 0.005250
+TIME X-Total-Time 0.152770
+TIME begin_ms_send 1367047416.795768204
+TIME end_ms_send 1367047419.551766877
+TIME 0 X-Delete-Times 0.375510
+TIME X-Volume-Time 0.013170
+TIME X-UG-Time 0.012510
+TIME X-Total-Time 0.405520
+TIME end_unlink 1367047419.556982328
+--------------------------------
+TIME begin_rmdir 1367047419.556994142
+TIME begin_ms_send 1367047419.557039489
+TIME end_ms_send 1367047421.929627310
+TIME 0 X-Delete-Times 0.162800
+TIME X-Volume-Time 0.042520
+TIME X-UG-Time 0.003360
+TIME X-Total-Time 0.210930
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/pl002.ece.upatras.gr) errno = -2
+TIME end_rmdir 1367047421.929752722
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 150.140.184.252 closed.

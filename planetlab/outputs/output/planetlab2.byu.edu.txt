@@ -1,0 +1,35 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.009220
+TIME X-UG-Time 1.400210
+TIME X-Total-Time 14.108630
+--------------------------------
+TIME begin_diskwrite 1367047379.959594549
+TIME end_diskwrite 1367047379.974229981
+--------------------------------
+TIME begin_diskread 1367047379.974245835
+TIME end_diskread 1367047379.978377389
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047380.97805170
+TIME begin_revalidate_path 156955.864671197
+TIME begin_ms_recv 1367047380.97904692
+TIME end_ms_recv 1367047390.325647356
+TIME X-Resolve-Time 0.000000
+TIME X-Volume-Time 0.000000
+TIME X-UG-Time 0.000000
+TIME X-Total-Time 0.000000
+[ consistency.cpp:0414] fs_entry_revalidate_path: ms_client_resolve_path(/planetlab2.byu.edu) rc = -500
+TIME end_revalidate_path_failed 156966.92497459
+[       mkdir.cpp:0060] fs_entry_mkdir: fs_entry_revalidate_path(/planetlab2.byu.edu) rc = -500
+[  write_file.cpp:0207] main: fs_entry_mkdir(/planetlab2.byu.edu) rc = -121
+---------- END write_file.sh ----------
+Connection to 128.187.223.212 closed.

@@ -1,0 +1,34 @@
+---------- BEGIN cmd-1368677999.5 ----------
+write_file: no process killed
+write_file: no process killed
+---------- END cmd-1368677999.5 ----------
+Connection to 203.159.127.2 closed.
+---------- BEGIN cmd-1368680893.89 ----------
+write_file: no process killed
+write_file: no process killed
+---------- END cmd-1368680893.89 ----------
+Connection to 203.159.127.2 closed.
+---------- BEGIN cmd-1368744630.13 ----------
+write_file: no process killed
+write_file: no process killed
+---------- END cmd-1368744630.13 ----------
+Connection to 203.159.127.2 closed.
+---------- BEGIN cmd-1368745856.69 ----------
+write_file: no process killed
+write_file: no process killed
+---------- END cmd-1368745856.69 ----------
+Connection to 203.159.127.2 closed.
+---------- BEGIN cmd-1368747351.73 ----------
+write_file: no process killed
+write_file: no process killed
+---------- END cmd-1368747351.73 ----------
+Connection to 203.159.127.2 closed.
+---------- BEGIN cmd-1368892951.14 ----------
+write_file: no process killed
+write_file: no process killed
+---------- END cmd-1368892951.14 ----------
+Connection to 203.159.127.2 closed.
+Permission denied (publickey,keyboard-interactive).
+Permission denied (publickey,keyboard-interactive).
+Permission denied (publickey,keyboard-interactive).
+Permission denied (publickey,keyboard-interactive).

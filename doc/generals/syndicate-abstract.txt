@@ -1,0 +1,35 @@
+Syndicate Abstract
+
+On the Internet today, an increasingly common strategy for efficiently disseminating a
+large dataset to a scalable number of readers (but not writers) is to
+employ a content distribution network (CDN).  Readers query the CDN for the
+data, and the CDN reads the data from its origin servers and replicates the data
+in its network caches, thereby allowing the caches to service future read
+requests.  However, there are two limitations in this approach that hinder
+origin servers and clients from achieving read/write semantics on the dataset.
+First, a CDN's caches are neither coherent nor consistent--if the data on
+an origin server changes, there will be a window of time where the CDN may
+still cache and serve stale or even corrupt data.  Second, each CDN implements
+its own content naming scheme and caching policy, requiring origin servers and possibly
+clients to be designed for a specific CDN instance.
+
+We address these limitations with Syndicate, a wide-area read-write
+distributed filesystem that transparently leverages arbitrary CDNs
+to drive data distribution between its clients.  A mounted Syndicate
+filesystem exposes a client's files to the CDN and translates other clients'
+remote read operations into CDN-specific data queries.  Regardless of the
+CDN's caching policies, Syndicate ensures that readers only read the latest known
+versions of each file, and ensures that each file has close-to-open consistency
+in the face of multiple writers.  Syndicate provides clients the means to coordinate 
+file discovery and I/O through a fault-tolerant metadata service, as well as the means
+to back up their files to arbitrary remote storage through a global replication service.
+By leveraging CDNs to handle a scalable number of readers and allowing clients to fully
+control file and metadata propagation, Syndicate fully decouples
+the problem of file persistence from read performance--Syndicate clients need
+only concern themselves with enhancing the persistence of their data, beyond
+presenting it to applications.
+
+In this work, we will present Syndicate's architecture, protocols, and design.
+We will then present a series of micro and macro benchmarks of our Syndicate prototype, 
+which is currently deployed on PlanetLab and VICCI and leverages a private deployment of
+the CoBlitz CDN.

@@ -1,0 +1,53 @@
+\section{Usage Scenarios}
+\label{sec:motivation}
+
+There are several scenarios today where users must leverage network caches, local storage, and cloud storage in a domain-specific manner that requires inter-service coordination.  Rather than building a storage solution from scratch for each scenario, we propose a solution that lets users pick the appropriate infrastructure, while offering reliable set of consistency and durability semantics. The examples motivate such a design, the requirements of which are summarized at the end of the section.
+
+%The examples are presented from the perspective of users with read/write access to a shared data set, and for readability, they anticipate an idealized version of Syndicate that coordinates access to caches, local storage and cloud storage.
+
+\subsection{Scientific Collaboration}
+
+Thousands of researchers at hundreds of universities often collaborate in the context of large (multi-terabyte) data sets, the GenBank sequencing data being an illustrative example~\cite{GenBank}. These researchers run experiments locally (using local workstations and clusters) on some subset of the larger data set, and then share their preliminary results across the wide-area with collaborators at other universities.  Curators periodically write vetted results back into the core data set, and the cycle continues.
+
+This is difficult to achieve without coordination.  While researchers need to share their latest experimental data sets with many readers in the wide-area, they must also ensure that the readers receive fresh data.  Simply copying the data sets to off-site cloud storage for them to access is a costly and time-consuming process.  Simply serving the data directly from the workstation does not scale.  Employing network caches introduces the possibility of serving stale data.
+
+Under ideal circumstances, researchers would keep data on the local workstations for fast local access (i.e. under interactive settings), and only make back-ups to cloud storage when it is cost-effective to do so.  The workstations could serve recent data to a scalable number of readers if the network caches were guaranteed to only serve data consistent with recent modifications.  However, making this happen requires coordination between the cloud storage provider, the network caches, the workstations, and the wide-area readers.
+
+%Running Syndicate as a local filesystem on each researcher's computer(s) ensure fast local reads of the shared data set and fast local writes of new results, where Syndicate would leverage network caches to efficiently distribute the read-mostly core to thousands of researchers. If a sufficient number of collaborators are interested in a particular researcher's preliminary results, caching will also aid remote reads. If not, readers are still be able to access the latest results directly from the writer's local store.
+
+%GenBank specifically is archived apart from Syndicate (which means Syndicate must import its data to make it available to researchers as a mountable file system), but in general, it would be appropriate to ensure the durability of at least the curated data by having Syndicate replicate it in cloud storage (either public or private).
+
+\subsection{Distributed Authoring and Versioning}
+
+One way to share data in a read/write setting is with distributed authoring and versioning (DAV) servers, such as Apache mod\_dav~\cite{mod_dav}. However, it is difficult to scale the number of readers to a DAV server, while also giving writers the durability they desire.  This is because each writer determines its own remote storage provider for hosting back-ups of its documents, specific to its cost and performance objectives.  All the while, readers must be able to consume data consistent with modifications, even if the DAV server's local storage fails.
+
+Under ideal circumstances, each writer would couple its storage mechanism of choice to the DAV server, such that the DAV server could transparently write modifications to the writer's desired storage.  To ensure a scalable number of readers could receive consistent data, the DAV server would need to replicate the data sufficiently to make it available.  While network caches can do this in read-only settings, the challenge to using them with DAV is to ensure that they serve only consistent data in the face of writes.  This requires coordination between the DAV server, the readers, the writers, and the storage systems.
+
+
+%With Syndicate, users at the edge can instead deploy their own DAV servers, where each server exposes its locally-hosted documents through a shared Syndicate instance. The DAV servers leverage Syndicate to read data from one another through existing CDNs and network caches, and Syndicate ensures they receive data consistent with recent changes and hit unchanged data in the cache.
+
+%Syndicate lets each user determine the appropriate trade-off between write performance and write durability. If write performance is preferred, only the DAV server stores its users' data, but nevertheless makes it available to all other DAV servers through Syndicate. If write durability is preferred, the DAV server leverages Syndicate to synchronously commit local user data to cloud storage providers that meet the user's cost, performance, and durability requirements.
+
+\subsection{Virtual Desktop Infrastructure}
+
+An alternative approach to supplying employees with corporate computers and smartphones is to let them bring their own hardware, and run a corporate OS in a VM while they are at work. The challenge to doing this at scale is to store and deliver VM images and OS updates to a scalable number of employees across sites, while preserving user sessions in a secure manner.
+
+VM images do not change much between sessions~\cite{collective}, which means unmodified bytes can be cached locally or in intermediate network caches at site peering points. Only modified bytes must be preserved, and each VM image is modified at most one user at a time. Some VDI implementations~\cite{citrix,mokafive} offer implementation-specific caching protocols that leverage these facts.
+
+Ideally, the corporation would choose the cache and storage providers that best meet their business needs.  This may not be the implementation-specific VDI caching mechanism, especially if there already exists proven in-house cache and storage infrastructure.
+
+
+\subsection{Observations}
+
+These examples show that a user can benefit from storing objects on local storage, or in a remote cloud storage provider. While storing objects locally improves local access performance, it requires the user to take responsibility for object durability, availability, and remote access performance. Storing data objects in the cloud incurs access performance and cost penalties relative to local storage, but gives the objects potentially stronger availability and durability guarantees offered by the cloud storage provider.
+
+In read-heavy settings, network caches become responsible for an object's data read availability instead of the object's origin server. This is because the cost of reading data from an origin server is amortized over many cache hits from many readers, effectively decoupling read performance from write performance and durability. With network caches handling reads, a user can place objects wherever makes sense for the problem domain, even in a last-mile network with limited upload bandwidth.
+
+Regardless of caches, a user trades data write performance for write durability. This is because write durability increases with the number of replicas created, but write performance is only as fast as the slowest storage provider to receive the data. To address this tradeoff, a user chooses which remote storage providers receive written data replicas before a write is said to have completed.
+
+To address read and write performance, a user can host object data locally, but ensure that interested remote readers can discover the data and fetch it via network caches. This is acceptable when there are many readers, because then there is a good chance the requested data will be found in a nearby cache.  The challenge, however, is to ensure that readers discover only fresh data.  This includes ensuring that replicas of local data are consistent, in case the local host fails.
+
+Orthogonal to reads and writes, multiple writers can create multiple objects at once. However, there comes a point in each scenario where there cannot be independent versions of the same object. We address this by ensuring that at all times, a valid object name identifies at most one object.
+
+Although in the abstract all three usage scenarios store and access ``data objcts,'' they each benefit from a different interface: a file system interface in the first example, a web-based service interface in the second example, and a block-level interface in the third example. It's an engineering detail, but ideally the access interface should be decoupled from its core storage capability.
+

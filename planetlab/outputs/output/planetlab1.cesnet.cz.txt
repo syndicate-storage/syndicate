@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.069240
+TIME X-UG-Time 0.899690
+TIME X-Total-Time 17.259630
+--------------------------------
+TIME begin_diskwrite 1367047396.636487074
+TIME end_diskwrite 1367047396.674045201
+--------------------------------
+TIME begin_diskread 1367047396.674070269
+TIME end_diskread 1367047396.680844894
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047396.757170999
+TIME begin_revalidate_path 1375695.421348392
+TIME begin_ms_recv 1367047396.757341655
+TIME end_ms_recv 1367047401.752974894
+TIME X-Resolve-Time 0.038560
+TIME X-Volume-Time 0.007350
+TIME X-UG-Time 0.003490
+TIME X-Total-Time 0.050030
+TIME end_revalidate_path 1375700.417207830
+TIME begin_ms_send 1367047401.753470353
+TIME end_ms_send 1367047406.923025893
+TIME 0 X-Create-Times 0.104680
+TIME X-Volume-Time 0.006790
+TIME X-UG-Time 0.008080
+TIME X-Total-Time 0.121640
+TIME end_mkdir 1367047406.923123904
+--------------------------------
+TIME begin_create 1367047406.923135658
+TIME begin_revalidate_path 1375705.587214669
+TIME begin_ms_recv 1367047406.923188813
+TIME end_ms_recv 1367047408.451261188
+TIME X-Resolve-Time 0.158520
+TIME X-Volume-Time 0.003920
+TIME X-UG-Time 0.003090
+TIME X-Total-Time 0.167680
+TIME end_revalidate_path 1375707.115460796
+TIME begin_ms_send 1367047408.451632351
+TIME end_ms_send 1367047409.756296635
+TIME 0 X-Create-Times 0.169810
+TIME X-Volume-Time 0.002470
+TIME X-UG-Time 0.003050
+TIME X-Total-Time 0.176790
+TIME end_create 1367047409.756371827
+--------------------------------
+TIME begin_local_write 1367047409.756383903
+TIME begin_write 1375708.420458737
+TIME begin_revalidate_path 1375708.420476370
+TIME begin_ms_recv 1367047409.756442258
+TIME end_ms_recv 1367047410.673096790
+TIME X-Resolve-Time 0.402320
+TIME X-Volume-Time 0.017930
+TIME X-UG-Time 0.032410
+TIME X-Total-Time 0.464660
+TIME end_revalidate_path 1375709.337331964
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.cesnet.cz/planetlab1.cesnet.cz.1367047408451[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047410.766313463
+TIME end_ms_send 1367047412.310691531
+TIME 0 X-Update-Times 0.300130
+TIME X-Volume-Time 0.011610
+TIME X-UG-Time 0.078720
+TIME X-Total-Time 0.404170
+TIME end_write 1375710.974821581
+TIME end_local_write 1367047412.310793254
+--------------------------------
+TIME begin_local_read 1367047412.310804775
+TIME begin_read 1375710.974871974
+TIME begin_revalidate_path 1375710.974887332
+TIME begin_ms_recv 1367047412.310854123
+TIME end_ms_recv 1367047412.552346746
+TIME X-Resolve-Time 0.041010
+TIME X-Volume-Time 0.009750
+TIME X-UG-Time 0.008330
+TIME X-Total-Time 0.097830
+TIME end_revalidate_path 1375711.216580121
+TIME begin_ms_send 1367047412.554248968
+TIME end_read 1375711.334272366
+TIME end_local_read 1367047412.670235255
+--------------------------------
+TIME begin_close 1367047412.670247016
+TIME end_close 1367047412.670262388
+--------------------------------
+TIME begin_unlink 1367047412.670272919
+TIME end_ms_send 1367047413.882166028
+TIME 0 X-Update-Times 0.131310
+TIME X-Volume-Time 0.004190
+TIME X-UG-Time 0.004250
+TIME X-Total-Time 0.141640
+TIME begin_ms_send 1367047413.882296266
+TIME end_ms_send 1367047416.258959804
+TIME 0 X-Update-Times 0.202340
+TIME X-Volume-Time 0.031510
+TIME X-UG-Time 0.006440
+TIME X-Total-Time 0.246260
+TIME begin_ms_send 1367047416.474478848
+TIME end_ms_send 1367047418.150939644
+TIME 0 X-Delete-Times 0.506460
+TIME X-Volume-Time 0.028460
+TIME X-UG-Time 0.007000
+TIME X-Total-Time 0.549170
+TIME end_unlink 1367047418.161731646
+--------------------------------
+TIME begin_rmdir 1367047418.161757793
+TIME begin_ms_send 1367047418.161836139
+TIME end_ms_send 1367047419.413203020
+TIME 0 X-Delete-Times 0.123400
+TIME X-Volume-Time 0.004510
+TIME X-UG-Time 0.003400
+TIME X-Total-Time 0.132840
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/planetlab1.cesnet.cz) errno = -2
+TIME end_rmdir 1367047419.413487073
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 195.113.161.82 closed.

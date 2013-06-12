@@ -1,0 +1,20 @@
+Reading list
+
+TEXTBOOK
+Peterson, Larry L., and Davie, Bruce S.  "Computer Networks, a Systems Approach. 4th Ed."
+
+CLASSICAL PAPERS
+Cerf, V., and Kahn, R.  "A Protocol for Packet Network Intercommunication."
+Lamport, L.  "Time, clocks, and the ordering of events in a distributed system."
+Schneider, F.  "Implementing Fault-Tolerant Services Using the State Machine Approach: A Tutorial"
+
+MODERN PAPERS
+Park, K. and Pai, V.  "Scale and Performance in the CoBlitz Large-File Distribution Service."
+L. Wang, V. Pai, and Peterson, L.  "The Effectiveness of Request Redirection on CDN Robustness."
+Annapureddy, S., Freedman, M., and Mazieres, D.  "Shark : Scaling File Servers via Cooperative Caching."
+Burrows, M.  "The Chubby lock service for loosely-coupled distributed systems."
+Peterson, L., Bavier, A., Fiuczynski, M., Muir, S.  "Experineces Building PlanetLab."
+Belaramani, N., Dahlin, M., Gao, L., et. al.  "PRACTI Replication."
+Stribling, J., Sovran, Y., Zhang, I., et. al.  "Flexible , Wide-Area Storage for Distributed Systems with WheelFS."
+Freedman, M., Freudenthal, E., Mazieres, D.  "Democratizing content publication with Coral."
+Vahdat, A., Eastham, P., Yoshikawa, C., et. al.  "WebOS: Operating System Services for Wide Area Applications."

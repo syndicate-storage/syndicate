@@ -1,0 +1,208 @@
+---------- BEGIN write_file.sh ----------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0103   824  103   824    0     0    422      0  0:00:01  0:00:01 --:--:--   426103   824  103   824    0     0    422      0  0:00:01  0:00:01 --:--:--   426
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:--  0:00:03 --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:04 --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:05 --:--:--     0 18 3319k   18  618k    0     0   112k      0  0:00:29  0:00:05  0:00:24  249k100 3319k  100 3319k    0     0   566k      0  0:00:05  0:00:05 --:--:-- 1171k
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+-------------------------------- raw write
+DATA disk write, direct 0.015521
+-------------------------------- raw read
+DATA disk read, direct 0.005000
+-------------------------------- ping
+DATA rtt 0.013500
+-------------------------------- mkdir
+DATA MS recv 0.150355
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.150461
+DATA MS send 1.387926
+DATA X-Create-Times 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA mkdir 1.538654
+-------------------------------- open
+DATA MS recv 0.182914
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.183024
+DATA MS send 2.533071
+DATA X-Create-Times 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA open 2.716297
+-------------------------------- local write
+DATA MS recv 0.445836
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.445963
+DATA metadata latency 0.445977
+DATA write data 0.063073
+DATA replicate data 0.000002
+DATA send remote write 0.000001
+DATA MS send 2.230957
+DATA X-Update-Times 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS update 2.231029
+DATA write 2.740116
+DATA local write + MS refresh 2.740138
+-------------------------------- local read 0
+DATA MS recv 0.047801
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.047914
+DATA metadata latency 0.047928
+DATA read data 0.020376
+DATA read 0.068326
+DATA local read 0 + MS refresh 0.068332
+-------------------------------- local read 1
+DATA MS recv 0.075911
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.076028
+DATA metadata latency 0.076043
+DATA read data 0.011882
+DATA read 0.087951
+DATA local read 1 + MS refresh 0.087958
+-------------------------------- local read 2
+DATA MS recv 0.085863
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.085988
+DATA metadata latency 0.086004
+DATA read data 0.010183
+DATA read 0.096212
+DATA local read 2 + MS refresh 0.096220
+-------------------------------- local read 3
+DATA MS recv 0.043523
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.043648
+DATA metadata latency 0.043664
+DATA read data 0.005815
+DATA read 0.049503
+DATA local read 3 + MS refresh 0.049510
+-------------------------------- local read 4
+DATA MS recv 0.055503
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.055619
+DATA metadata latency 0.055636
+DATA read data 0.005844
+DATA read 0.061505
+DATA local read 4 + MS refresh 0.061512
+-------------------------------- local read 5
+DATA MS recv 0.069378
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.069498
+DATA metadata latency 0.069514
+DATA read data 0.005413
+DATA read 0.074952
+DATA local read 5 + MS refresh 0.074958
+-------------------------------- local read 6
+DATA MS recv 0.113640
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.113761
+DATA metadata latency 0.113777
+DATA read data 0.006327
+DATA read 0.120129
+DATA local read 6 + MS refresh 0.120136
+-------------------------------- local read 7
+DATA MS recv 0.055971
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.056096
+DATA metadata latency 0.056113
+DATA read data 0.005535
+DATA read 0.061671
+DATA local read 7 + MS refresh 0.061678
+-------------------------------- local read 8
+DATA MS recv 0.049540
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.049654
+DATA metadata latency 0.049670
+DATA read data 0.012930
+DATA read 0.062624
+DATA local read 8 + MS refresh 0.062631
+-------------------------------- local read 9
+DATA MS recv 0.058903
+DATA X-Resolve-Time 0.000000
+DATA X-Resolve-Time 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA MS revalidate 0.059019
+DATA metadata latency 0.059035
+DATA read data 0.009564
+DATA read 0.068625
+DATA local read 9 + MS refresh 0.068631
+-------------------------------- close
+-------------------------------- unlink
+DATA MS send 1.324208
+DATA X-Delete-Times 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+DATA unlink 1.329287
+-------------------------------- rmdir
+DATA MS send 2.978068
+DATA X-Delete-Times 0.000000
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+[  libsyndicate.c:1913] md_withdraw_entry: opendir(/tmp/syndicate-test/data/planetlab1.cnds.jhu.edu) errno = -2
+DATA rmdir 2.978266
+-------------------------------- 
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 128.220.231.2 closed.

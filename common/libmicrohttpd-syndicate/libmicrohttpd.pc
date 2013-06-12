@@ -1,0 +1,13 @@
+prefix=/home/jude/Desktop/research/syndicate/common/libmicrohttpd-syndicate/out
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: libmicrohttpd
+Description: A library for creating an embedded HTTP server
+Version: 0.9.22
+Requires:
+Conflicts:
+Libs: -L${libdir} -lmicrohttpd
+Libs.private: -L/lib/x86_64-linux-gnu -lgcrypt
+Cflags: -I${includedir}

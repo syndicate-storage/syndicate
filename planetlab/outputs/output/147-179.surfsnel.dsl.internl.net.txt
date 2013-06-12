@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.069910
+TIME X-UG-Time 1.098900
+TIME X-Total-Time 9.770020
+--------------------------------
+TIME begin_diskwrite 1367047380.913598120
+TIME end_diskwrite 1367047380.990327779
+--------------------------------
+TIME begin_diskread 1367047380.990352091
+TIME end_diskread 1367047380.996550661
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047381.94555182
+TIME begin_revalidate_path 17935150.999682413
+TIME begin_ms_recv 1367047381.94706591
+TIME end_ms_recv 1367047390.766446555
+TIME X-Resolve-Time 0.085460
+TIME X-Volume-Time 0.007420
+TIME X-UG-Time 0.005130
+TIME X-Total-Time 0.098630
+TIME end_revalidate_path 17935160.671611626
+TIME begin_ms_send 1367047390.766926882
+TIME end_ms_send 1367047399.436204179
+TIME 0 X-Create-Times 1.486320
+TIME X-Volume-Time 0.041550
+TIME X-UG-Time 0.003290
+TIME X-Total-Time 1.533070
+TIME end_mkdir 1367047399.436271341
+--------------------------------
+TIME begin_create 1367047399.436284735
+TIME begin_revalidate_path 17935169.341330170
+TIME begin_ms_recv 1367047399.436340894
+TIME end_ms_recv 1367047406.65063202
+TIME X-Resolve-Time 0.903070
+TIME X-Volume-Time 0.062800
+TIME X-UG-Time 0.198980
+TIME X-Total-Time 1.173380
+TIME end_revalidate_path 17935175.970236224
+TIME begin_ms_send 1367047406.139417656
+TIME end_ms_send 1367047408.796667917
+TIME 0 X-Create-Times 0.483790
+TIME X-Volume-Time 0.003890
+TIME X-UG-Time 0.003330
+TIME X-Total-Time 0.493780
+TIME end_create 1367047408.796740305
+--------------------------------
+TIME begin_local_write 1367047408.796754399
+TIME begin_write 17935178.701794423
+TIME begin_revalidate_path 17935178.701812920
+TIME begin_ms_recv 1367047408.796818184
+TIME end_ms_recv 1367047409.527775010
+TIME X-Resolve-Time 0.417130
+TIME X-Volume-Time 0.008080
+TIME X-UG-Time 0.084460
+TIME X-Total-Time 0.512130
+TIME end_revalidate_path 17935179.432974582
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/147-179.surfsnel.dsl.internl.net/147-179.surfsnel.dsl.internl.net.1367047406065[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047409.660782912
+TIME end_ms_send 1367047412.377843015
+TIME 0 X-Update-Times 0.388410
+TIME X-Volume-Time 0.018040
+TIME X-UG-Time 0.085480
+TIME X-Total-Time 0.493890
+TIME end_write 17935182.282938063
+TIME end_local_write 1367047412.377950807
+--------------------------------
+TIME begin_local_read 1367047412.377964456
+TIME begin_read 17935182.282997462
+TIME begin_revalidate_path 17935182.283033642
+TIME begin_ms_recv 1367047412.378039085
+TIME end_ms_recv 1367047412.917208325
+TIME X-Resolve-Time 0.280040
+TIME X-Volume-Time 0.096520
+TIME X-UG-Time 0.024340
+TIME X-Total-Time 0.406540
+TIME end_revalidate_path 17935182.822469157
+TIME begin_ms_send 1367047412.918886593
+TIME end_read 17935182.963544652
+TIME end_local_read 1367047413.58539992
+--------------------------------
+TIME begin_close 1367047413.58554123
+TIME end_close 1367047413.58570343
+--------------------------------
+TIME begin_unlink 1367047413.58583111
+TIME end_ms_send 1367047414.648288726
+TIME 0 X-Update-Times 0.464180
+TIME X-Volume-Time 0.089540
+TIME X-UG-Time 0.006720
+TIME X-Total-Time 0.565650
+TIME begin_ms_send 1367047414.648506449
+TIME end_ms_send 1367047417.296595271
+TIME 0 X-Update-Times 0.220220
+TIME X-Volume-Time 0.009940
+TIME X-UG-Time 0.011890
+TIME X-Total-Time 0.244260
+TIME begin_ms_send 1367047420.674645809
+TIME end_ms_send 1367047423.979464056
+TIME 0 X-Delete-Times 0.819240
+TIME X-Volume-Time 0.011030
+TIME X-UG-Time 0.201480
+TIME X-Total-Time 1.109070
+TIME end_unlink 1367047423.997078013
+--------------------------------
+TIME begin_rmdir 1367047423.997103596
+TIME begin_ms_send 1367047423.997180685
+TIME end_ms_send 1367047426.252549650
+TIME 0 X-Delete-Times 0.124960
+TIME X-Volume-Time 0.004490
+TIME X-UG-Time 0.002380
+TIME X-Total-Time 0.133500
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/147-179.surfsnel.dsl.internl.net) errno = -2
+TIME end_rmdir 1367047426.252803959
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 145.99.179.147 closed.

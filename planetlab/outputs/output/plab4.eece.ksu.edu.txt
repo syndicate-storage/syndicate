@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.091140
+TIME X-UG-Time 0.882140
+TIME X-Total-Time 13.589800
+--------------------------------
+TIME begin_diskwrite 1367047379.797332219
+TIME end_diskwrite 1367047379.843423670
+--------------------------------
+TIME begin_diskread 1367047379.843438756
+TIME end_diskread 1367047379.850770084
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047380.31205144
+TIME begin_revalidate_path 29435049.328120580
+TIME begin_ms_recv 1367047380.31305227
+TIME end_ms_recv 1367047389.893101636
+TIME X-Resolve-Time 0.328200
+TIME X-Volume-Time 0.045480
+TIME X-UG-Time 0.105040
+TIME X-Total-Time 0.547400
+TIME end_revalidate_path 29435059.190035230
+TIME begin_ms_send 1367047389.903614451
+TIME end_ms_send 1367047399.187444222
+TIME 0 X-Create-Times 0.256780
+TIME X-Volume-Time 0.042880
+TIME X-UG-Time 0.003980
+TIME X-Total-Time 0.305330
+TIME end_mkdir 1367047399.187484102
+--------------------------------
+TIME begin_create 1367047399.187490248
+TIME begin_revalidate_path 29435068.484349601
+TIME begin_ms_recv 1367047399.187522794
+TIME end_ms_recv 1367047404.776520134
+TIME X-Resolve-Time 0.706050
+TIME X-Volume-Time 0.012750
+TIME X-UG-Time 0.017970
+TIME X-Total-Time 0.797070
+TIME end_revalidate_path 29435074.73455545
+TIME begin_ms_send 1367047404.803211095
+TIME end_ms_send 1367047411.666481927
+TIME 0 X-Create-Times 1.389070
+TIME X-Volume-Time 0.085540
+TIME X-UG-Time 0.018500
+TIME X-Total-Time 1.495360
+TIME end_create 1367047411.666521737
+--------------------------------
+TIME begin_local_write 1367047411.666528162
+TIME begin_write 29435080.963387794
+TIME begin_revalidate_path 29435080.963397991
+TIME begin_ms_recv 1367047411.666566994
+TIME end_ms_recv 1367047413.360796548
+TIME X-Resolve-Time 0.610840
+TIME X-Volume-Time 0.096310
+TIME X-UG-Time 0.052300
+TIME X-Total-Time 0.760790
+TIME end_revalidate_path 29435082.657752701
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab4.eece.ksu.edu/plab4.eece.ksu.edu.1367047404776[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047413.517942976
+TIME end_ms_send 1367047416.250604473
+TIME 0 X-Update-Times 0.479150
+TIME X-Volume-Time 0.010990
+TIME X-UG-Time 0.015390
+TIME X-Total-Time 0.513380
+TIME end_write 29435085.547501261
+TIME end_local_write 1367047416.250672708
+--------------------------------
+TIME begin_local_read 1367047416.250679343
+TIME begin_read 29435085.547531572
+TIME begin_revalidate_path 29435085.547543026
+TIME begin_ms_recv 1367047416.250715660
+TIME end_ms_recv 1367047416.842495824
+TIME X-Resolve-Time 0.400410
+TIME X-Volume-Time 0.078990
+TIME X-UG-Time 0.012110
+TIME X-Total-Time 0.492980
+TIME end_revalidate_path 29435086.139448625
+TIME begin_ms_send 1367047416.843343769
+TIME end_read 29435086.231863054
+TIME end_local_read 1367047416.935028006
+--------------------------------
+TIME begin_close 1367047416.935034571
+TIME end_close 1367047416.935044418
+--------------------------------
+TIME begin_unlink 1367047416.935049866
+TIME end_ms_send 1367047419.548166321
+TIME 0 X-Update-Times 0.424220
+TIME X-Volume-Time 0.007030
+TIME X-UG-Time 0.008150
+TIME X-Total-Time 0.444400
+TIME begin_ms_send 1367047419.548248385
+TIME end_ms_send 1367047421.435703907
+TIME 0 X-Update-Times 0.689340
+TIME X-Volume-Time 0.010150
+TIME X-UG-Time 0.082160
+TIME X-Total-Time 0.785360
+TIME begin_ms_send 1367047424.552111677
+TIME end_ms_send 1367047427.42962348
+TIME 0 X-Delete-Times 1.065260
+TIME X-Volume-Time 0.072390
+TIME X-UG-Time 0.017360
+TIME X-Total-Time 1.157090
+TIME end_unlink 1367047427.48915773
+--------------------------------
+TIME begin_rmdir 1367047427.48930510
+TIME begin_ms_send 1367047427.48975208
+TIME end_ms_send 1367047431.52947521
+TIME 0 X-Delete-Times 1.761770
+TIME X-Volume-Time 0.006750
+TIME X-UG-Time 0.008510
+TIME X-Total-Time 1.784290
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/plab4.eece.ksu.edu) errno = -2
+TIME end_rmdir 1367047431.53084549
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 129.130.252.141 closed.

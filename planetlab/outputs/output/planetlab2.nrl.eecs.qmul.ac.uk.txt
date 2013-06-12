@@ -1,0 +1,36 @@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the RSA key sent by the remote host is
+71:57:44:7a:71:5b:76:d6:7d:9f:aa:17:85:54:30:d7.
+Please contact your system administrator.
+Add correct host key in /home/jude/.ssh/known_hosts to get rid of this message.
+Offending RSA key in /home/jude/.ssh/known_hosts:754
+Password authentication is disabled to avoid man-in-the-middle attacks.
+Keyboard-interactive authentication is disabled to avoid man-in-the-middle attacks.
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the RSA key sent by the remote host is
+71:57:44:7a:71:5b:76:d6:7d:9f:aa:17:85:54:30:d7.
+Please contact your system administrator.
+Add correct host key in /home/jude/.ssh/known_hosts to get rid of this message.
+Offending RSA key in /home/jude/.ssh/known_hosts:754
+Password authentication is disabled to avoid man-in-the-middle attacks.
+Keyboard-interactive authentication is disabled to avoid man-in-the-middle attacks.
+---------- BEGIN write_file.sh ----------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0105   947  105   947    0     0   5018      0 --:--:-- --:--:-- --:--:-- 10761
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0 3266k    0 32553    0     0  63472      0  0:00:52 --:--:--  0:00:52 81179 15 3266k   15  512k    0     0   337k      0  0:00:09  0:00:01  0:00:08  363k 32 3266k   32 1067k    0     0   422k      0  0:00:07  0:00:02  0:00:05  442k 49 3266k   49 1624k    0     0   460k      0  0:00:07  0:00:03  0:00:04  475k 67 3266k   67 2204k    0     0   486k      0  0:00:06  0:00:04  0:00:02  499k 84 3266k   84 2765k    0     0   500k      0  0:00:06  0:00:05  0:00:01  544k100 3266k  100 3266k    0     0   512k      0  0:00:06  0:00:06 --:--:--  567k
+/tmp/write_file: error while loading shared libraries: libmicrohttpd.so.10: cannot open shared object file: No such file or directory
+---------- END write_file.sh ----------
+Connection to 194.36.10.161 closed.

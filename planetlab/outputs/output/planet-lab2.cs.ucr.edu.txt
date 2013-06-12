@@ -1,0 +1,5 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+---------- END write_file.sh ----------
+Connection to 169.235.24.232 closed.

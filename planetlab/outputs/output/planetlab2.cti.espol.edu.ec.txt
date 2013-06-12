@@ -1,0 +1,2 @@
+ssh: connect to host 200.10.150.253 port 22: Network is unreachable
+lost connection

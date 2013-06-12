@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.007000
+TIME X-UG-Time 0.688730
+TIME X-Total-Time 17.007380
+--------------------------------
+TIME begin_diskwrite 1367047396.669509124
+TIME end_diskwrite 1367047396.684143054
+--------------------------------
+TIME begin_diskread 1367047396.684159409
+TIME end_diskread 1367047396.688362515
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047396.751852090
+TIME begin_revalidate_path 5979870.3920208
+TIME begin_ms_recv 1367047396.751937929
+TIME end_ms_recv 1367047407.230829995
+TIME X-Resolve-Time 0.061980
+TIME X-Volume-Time 0.007070
+TIME X-UG-Time 0.038310
+TIME X-Total-Time 0.108260
+TIME end_revalidate_path 5979880.482946500
+TIME begin_ms_send 1367047407.267274225
+TIME end_ms_send 1367047412.415075092
+TIME 0 X-Create-Times 2.737190
+TIME X-Volume-Time 0.007700
+TIME X-UG-Time 0.009060
+TIME X-Total-Time 2.756320
+TIME end_mkdir 1367047412.415122992
+--------------------------------
+TIME begin_create 1367047412.415128339
+TIME begin_revalidate_path 5979885.667155953
+TIME begin_ms_recv 1367047412.415164263
+TIME end_ms_recv 1367047412.857866580
+TIME X-Resolve-Time 0.177440
+TIME X-Volume-Time 0.010700
+TIME X-UG-Time 0.015670
+TIME X-Total-Time 0.205870
+TIME end_revalidate_path 5979886.109973138
+TIME begin_ms_send 1367047412.858400932
+TIME end_ms_send 1367047415.359232465
+TIME 0 X-Create-Times 0.284420
+TIME X-Volume-Time 0.008230
+TIME X-UG-Time 0.057350
+TIME X-Total-Time 0.352630
+TIME end_create 1367047415.359292817
+--------------------------------
+TIME begin_local_write 1367047415.359298871
+TIME begin_write 5979888.611323243
+TIME begin_revalidate_path 5979888.611334323
+TIME begin_ms_recv 1367047415.359336936
+TIME end_ms_recv 1367047415.877009984
+TIME X-Resolve-Time 0.108500
+TIME X-Volume-Time 0.014460
+TIME X-UG-Time 0.014200
+TIME X-Total-Time 0.139400
+TIME end_revalidate_path 5979889.129497117
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.create-net.org/plab1.create-net.org.1367047412857[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047415.914327998
+TIME end_ms_send 1367047418.203725051
+TIME 0 X-Update-Times 0.137340
+TIME X-Volume-Time 0.011760
+TIME X-UG-Time 0.004770
+TIME X-Total-Time 0.156230
+TIME end_write 5979891.455786766
+TIME end_local_write 1367047418.203788555
+--------------------------------
+TIME begin_local_read 1367047418.203793596
+TIME begin_read 5979891.455811284
+TIME begin_revalidate_path 5979891.455822539
+TIME begin_ms_recv 1367047418.203826310
+TIME end_ms_recv 1367047418.371375185
+TIME X-Resolve-Time 0.030440
+TIME X-Volume-Time 0.003860
+TIME X-UG-Time 0.003060
+TIME X-Total-Time 0.038640
+TIME end_revalidate_path 5979891.623484156
+TIME begin_ms_send 1367047418.373063364
+TIME end_read 5979891.681991983
+TIME end_local_read 1367047418.429993385
+--------------------------------
+TIME begin_close 1367047418.429998937
+TIME end_close 1367047418.430009542
+--------------------------------
+TIME begin_unlink 1367047418.430013759
+TIME end_ms_send 1367047419.753147448
+TIME 0 X-Update-Times 0.235900
+TIME X-Volume-Time 0.004150
+TIME X-UG-Time 0.003380
+TIME X-Total-Time 0.245060
+TIME begin_ms_send 1367047419.753230243
+TIME end_ms_send 1367047422.505451553
+TIME 0 X-Update-Times 1.008140
+TIME X-Volume-Time 0.111820
+TIME X-UG-Time 0.384590
+TIME X-Total-Time 1.514590
+TIME begin_ms_send 1367047426.47465217
+TIME end_ms_send 1367047428.456129822
+TIME 0 X-Delete-Times 0.198310
+TIME X-Volume-Time 0.060160
+TIME X-UG-Time 0.009200
+TIME X-Total-Time 0.269740
+TIME end_unlink 1367047428.461150604
+--------------------------------
+TIME begin_rmdir 1367047428.461158611
+TIME begin_ms_send 1367047428.461205915
+TIME end_ms_send 1367047431.174988792
+TIME 0 X-Delete-Times 0.114090
+TIME X-Volume-Time 0.009330
+TIME X-UG-Time 0.006670
+TIME X-Total-Time 0.132240
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/plab1.create-net.org) errno = -2
+TIME end_rmdir 1367047431.175257841
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 193.206.22.133 closed.

@@ -1,0 +1,33 @@
+/*
+   Copyright 2012 Jude Nelson
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
+#ifndef _REFRESH_H_
+#define _REFRESH_H_
+
+// flush/resync data
+int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh );
+int fs_entry_fdatasync( struct fs_core* core, struct fs_file_handle* fh );
+
+// synchronize metadata and manifests
+int fs_entry_reload( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg& mmsg );
+int fs_entry_request_metadata( struct fs_core* core, char const* fs_path, int64_t* version, mode_t* mode, off_t* size, struct timespec* file_mtime );
+int fs_entry_refresh_manifest( struct fs_core* core, char const* fs_path, struct timespec* mtime );
+int fs_entry_refresh_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct timespec* mtime );
+int fs_entry_update_manifest( struct fs_core* core, char const* fs_path, Serialization::WriteMsg* prepare_msg, int64_t** new_versions );
+int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core, char* url, Serialization::WriteMsg* sendMsg );
+int fs_entry_refresh_directory( struct fs_core* core, char const* fs_path, md_entry_list* ents, list<char*>* new_dirs );
+
+#endif

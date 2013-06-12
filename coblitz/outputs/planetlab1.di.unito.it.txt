@@ -1,0 +1,42 @@
+fedora/metalink                                          | 2.2 kB     00:00     
+updates/metalink                                         | 2.1 kB     00:00     
+Setting up Install Process
+Resolving Dependencies
+--> Running transaction check
+---> Package python-dateutil.noarch 0:1.4.1-4.fc12 set to be installed
+--> Finished Dependency Resolution
+
+Dependencies Resolved
+
+================================================================================
+ Package                Arch          Version               Repository     Size
+================================================================================
+Installing:
+ python-dateutil        noarch        1.4.1-4.fc12          fedora        227 k
+
+Transaction Summary
+================================================================================
+Install       1 Package(s)
+
+Total download size: 227 k
+Installed size: 504 k
+Downloading Packages:
+python-dateutil-1.4.1-4.f  2% [               ]  0.0 B/s | 5.4 kB     --:-- ETA python-dateutil-1.4.1-4.f  2% [               ]  0.0 B/s | 5.4 kB     --:-- ETA python-dateutil-1.4.1-4.f  6% [=              ] 2.0 kB/s |  15 kB     01:47 ETA python-dateutil-1.4.1-4.f  7% [=              ] 2.1 kB/s |  18 kB     01:39 ETA python-dateutil-1.4.1-4.f 10% [=-             ] 3.1 kB/s |  24 kB     01:05 ETA python-dateutil-1.4.1-4.f 10% [=-             ] 2.5 kB/s |  24 kB     01:22 ETA python-dateutil-1.4.1-4.f 10% [=-             ] 2.0 kB/s |  24 kB     01:42 ETA python-dateutil-1.4.1-4.f 15% [==             ] 4.1 kB/s |  35 kB     00:46 ETA python-dateutil-1.4.1-4.f 15% [==             ] 3.3 kB/s |  35 kB     00:58 ETA python-dateutil-1.4.1-4.f 17% [==-            ] 3.7 kB/s |  41 kB     00:50 ETA python-dateutil-1.4.1-4.f 20% [===            ] 4.0 kB/s |  46 kB     00:45 ETA python-dateutil-1.4.1-4.f 24% [===-           ] 4.8 kB/s |  55 kB     00:35 ETA python-dateutil-1.4.1-4.f 24% [===-           ] 3.8 kB/s |  55 kB     00:44 ETA python-dateutil-1.4.1-4.f 31% [====-          ] 6.7 kB/s |  71 kB     00:23 ETA python-dateutil-1.4.1-4.f 32% [====-          ] 6.3 kB/s |  75 kB     00:24 ETA python-dateutil-1.4.1-4.f 36% [=====          ] 6.6 kB/s |  83 kB     00:21 ETA python-dateutil-1.4.1-4.f 40% [======         ] 6.9 kB/s |  92 kB     00:19 ETA python-dateutil-1.4.1-4.f 41% [======         ] 6.0 kB/s |  94 kB     00:22 ETA python-dateutil-1.4.1-4.f 48% [=======        ] 8.7 kB/s | 110 kB     00:13 ETA python-dateutil-1.4.1-4.f 51% [=======-       ] 8.2 kB/s | 117 kB     00:13 ETA python-dateutil-1.4.1-4.f 54% [========       ] 8.8 kB/s | 123 kB     00:11 ETA python-dateutil-1.4.1-4.f 55% [========       ] 8.3 kB/s | 127 kB     00:12 ETA python-dateutil-1.4.1-4.f 59% [========-      ] 9.4 kB/s | 136 kB     00:09 ETA python-dateutil-1.4.1-4.f 60% [=========      ] 8.6 kB/s | 138 kB     00:10 ETA python-dateutil-1.4.1-4.f 64% [=========-     ] 9.7 kB/s | 147 kB     00:08 ETA python-dateutil-1.4.1-4.f 68% [==========     ] 9.0 kB/s | 155 kB     00:07 ETA python-dateutil-1.4.1-4.f 70% [==========-    ] 8.0 kB/s | 161 kB     00:08 ETA python-dateutil-1.4.1-4.f 70% [==========-    ] 6.4 kB/s | 161 kB     00:10 ETA python-dateutil-1.4.1-4.f 75% [===========    ] 7.9 kB/s | 171 kB     00:07 ETA python-dateutil-1.4.1-4.f 78% [===========-   ] 7.7 kB/s | 179 kB     00:06 ETA python-dateutil-1.4.1-4.f 78% [===========-   ] 6.1 kB/s | 179 kB     00:07 ETA python-dateutil-1.4.1-4.f 85% [============-  ] 8.4 kB/s | 195 kB     00:03 ETA python-dateutil-1.4.1-4.f 91% [=============- ] 9.2 kB/s | 209 kB     00:01 ETA python-dateutil-1.4.1-4.f 96% [============== ]  10 kB/s | 219 kB     00:00 ETA python-dateutil-1.4.1-4.f 96% [============== ] 8.0 kB/s | 219 kB     00:01 ETA python-dateutil-1.4.1-4.fc12.noarch.rpm                  | 227 kB     00:30     
+Running rpm_check_debug
+Running Transaction Test
+Transaction Test Succeeded
+Running Transaction
+  Installing     : python-dateutil-1.4.1-4.fc [                           ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#                          ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##                         ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [####                       ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#####                      ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [######                     ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [########                   ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##########                 ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##############             ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#################          ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [###################        ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [####################       ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#######################    ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#########################  ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [########################## ] 1/1  Installing     : python-dateutil-1.4.1-4.fc12.noarch                      1/1 
+
+Installed:
+  python-dateutil.noarch 0:1.4.1-4.fc12                                         
+
+Complete!
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0 29  8320   29  2463    0     0    796      0  0:00:10  0:00:03  0:00:07  1143 46  8320   46  3831    0     0   1156      0  0:00:07  0:00:03  0:00:04  1615 79  8320   79  6567    0     0   1457      0  0:00:05  0:00:04  0:00:01  1841100  8320  100  8320    0     0   1716      0  0:00:04  0:00:04 --:--:--  2130
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:02 --:--:--     0107  1288  107  1288    0     0    383      0  0:00:03  0:00:03 --:--:--   805
+Restarting experimentd...Done
+Connection to planetlab1.di.unito.it closed.

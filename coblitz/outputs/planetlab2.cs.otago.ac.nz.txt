@@ -1,0 +1,2 @@
+/bin/su: user princeton_syndicate does not exist
+Connection to planetlab2.cs.otago.ac.nz closed.

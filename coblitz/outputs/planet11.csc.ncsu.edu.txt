@@ -1,0 +1,52 @@
+epel    
+epel/pri
+updates-
+fedora  
+updates 
+Setting up Install Process
+Parsing package install arguments
+Resolving Dependencies
+--> Running transaction check
+---> Package python-dateutil.noarch 0:1.2-1.fc8 set to be updated
+--> Finished Dependency Resolution
+
+Dependencies Resolved
+
+================================================================================
+ Package                 Arch           Version            Repository      Size
+================================================================================
+Installing:
+ python-dateutil         noarch         1.2-1.fc8          fedora         164 k
+
+Transaction Summary
+================================================================================
+Install      1 Package(s)         
+Update       0 Package(s)         
+Remove       0 Package(s)         
+
+Total download size: 164 k
+Downloading Packages:
+python-d
+============================== Entering rpm code ===============================
+Running rpm_check_debug
+Running Transaction Test
+Finished Transaction Test
+Transaction Test Succeeded
+Running Transaction
+  Installing     : python-dateutil [                                      ] 1/1  Installing     : python-dateutil [###                                   ] 1/1  Installing     : python-dateutil [####                                  ] 1/1  Installing     : python-dateutil [######                                ] 1/1  Installing     : python-dateutil [########                              ] 1/1  Installing     : python-dateutil [#########                             ] 1/1  Installing     : python-dateutil [###########                           ] 1/1  Installing     : python-dateutil [##############                        ] 1/1  Installing     : python-dateutil [#################                     ] 1/1  Installing     : python-dateutil [##################                    ] 1/1  Installing     : python-dateutil [#######################               ] 1/1  Installing     : python-dateutil [#########################             ] 1/1  Installing     : python-dateutil [##########################            ] 1/1  Installing     : python-dateutil [###############################       ] 1/1  Installing     : python-dateutil [################################      ] 1/1  Installing     : python-dateutil [##################################    ] 1/1  Installing     : python-dateutil [##################################### ] 1/1  Installing     : python-dateutil                                          1/1 
+=============================== Leaving rpm code ===============================
+
+Installed:
+  python-dateutil.noarch 0:1.2-1.fc8                                            
+
+Complete!
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+ 28  8320   28  2463    0     0  34822      0 --:--:-- --:--:-- --:--:-- 34822100  8320  100  8320    0     0  78511      0 --:--:-- --:--:-- --:--:--  163k
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  1288  100  1288    0     0  18847      0 --:--:-- --:--:-- --:--:-- 18847100  1288  100  1288    0     0  18790      0 --:--:-- --:--:-- --:--:--     0
+Restarting experimentd...rm: cannot remove `nohup.out': No such file or directory
+nohup: appending output to `nohup.out'
+Done
+Connection to planet11.csc.ncsu.edu closed.

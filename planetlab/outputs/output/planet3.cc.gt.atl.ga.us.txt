@@ -1,0 +1,35 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.015380
+TIME X-UG-Time 0.402970
+TIME X-Total-Time 7.712440
+--------------------------------
+TIME begin_diskwrite 1367047386.338490913
+TIME end_diskwrite 1367047386.390754443
+--------------------------------
+TIME begin_diskread 1367047386.390772814
+TIME end_diskread 1367047386.395458678
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047386.466783376
+TIME begin_revalidate_path 6969240.934678019
+TIME begin_ms_recv 1367047386.466905894
+TIME end_ms_recv 1367047397.274303140
+TIME X-Resolve-Time 0.000000
+TIME X-Volume-Time 0.000000
+TIME X-UG-Time 0.000000
+TIME X-Total-Time 0.000000
+[ consistency.cpp:0414] fs_entry_revalidate_path: ms_client_resolve_path(/planet3.cc.gt.atl.ga.us) rc = -500
+TIME end_revalidate_path_failed 6969251.742182205
+[       mkdir.cpp:0060] fs_entry_mkdir: fs_entry_revalidate_path(/planet3.cc.gt.atl.ga.us) rc = -500
+[  write_file.cpp:0207] main: fs_entry_mkdir(/planet3.cc.gt.atl.ga.us) rc = -121
+---------- END write_file.sh ----------
+Connection to 143.215.131.198 closed.

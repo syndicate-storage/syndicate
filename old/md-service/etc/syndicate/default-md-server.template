@@ -1,0 +1,30 @@
+# Python script that will be evaluated by the SMI to generate a configuration file.
+# Use OUT() to emit configuration code.
+# Use ERR() to emit error messages.
+
+# singular config variables
+config_vars = [
+   'MDROOT',
+   'PORTNUM',
+   'SECRETS_FILE',
+   'PIDFILE',
+   'AUTH_OPERATIONS',
+   'BLOCKING_FACTOR',
+   'QUERY_PORTNUM',
+   'SSL_PKEY',
+   'SSL_CERT',
+   'METADATA_READ_URL',
+   'METADATA_WRITE_URL',
+   'VOLUME_ID'
+]
+
+for var in config_vars:
+   if locals().has_key(var) and locals()[var] != None:
+      OUT( '%s="%s"' % (var, locals()[var]) )
+
+# replica URLs are a list
+if locals().has_key( 'REPLICA_URL' ):
+   replica_urls = locals()[ 'REPLICA_URL' ]
+   for rurl in replica_urls:
+      OUT( 'REPLICA_URL="%s"' % (rurl) )
+

@@ -1,0 +1,18 @@
+#!/bin/bash
+
+cat /vsys/umount.out &
+
+if [[ $# != 1 ]]; then
+  echo "Usage: $0 [MOUNTPOINT]"
+  exit 1
+fi
+
+PATH=""
+IS_ABS=$(echo $1 | /bin/grep ^/)
+if [[ $IS_ABS ]]; then
+   PATH=$1
+else
+   PATH="$(pwd)/$1"
+fi
+
+echo $PATH > /vsys/umount.in

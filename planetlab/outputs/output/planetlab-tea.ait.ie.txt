@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.880110
+TIME X-UG-Time 0.727460
+TIME X-Total-Time 17.495950
+--------------------------------
+TIME begin_diskwrite 1367047390.364744430
+TIME end_diskwrite 1367047390.373236573
+--------------------------------
+TIME begin_diskread 1367047390.373244019
+TIME end_diskread 1367047390.375192866
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047390.451649239
+TIME begin_revalidate_path 14934656.216739951
+TIME begin_ms_recv 1367047390.451760900
+TIME end_ms_recv 1367047397.848113590
+TIME X-Resolve-Time 0.037630
+TIME X-Volume-Time 0.010870
+TIME X-UG-Time 0.006540
+TIME X-Total-Time 0.055710
+TIME end_revalidate_path 14934663.613205038
+TIME begin_ms_send 1367047397.848325829
+TIME end_ms_send 1367047400.106609916
+TIME 0 X-Create-Times 0.121050
+TIME X-Volume-Time 0.001910
+TIME X-UG-Time 0.002290
+TIME X-Total-Time 0.126450
+TIME end_mkdir 1367047400.106633036
+--------------------------------
+TIME begin_create 1367047400.106636668
+TIME begin_revalidate_path 14934665.871679400
+TIME begin_ms_recv 1367047400.106659543
+TIME end_ms_recv 1367047400.303991558
+TIME X-Resolve-Time 0.046970
+TIME X-Volume-Time 0.004570
+TIME X-UG-Time 0.003640
+TIME X-Total-Time 0.063060
+TIME end_revalidate_path 14934666.69153861
+TIME begin_ms_send 1367047400.304217988
+TIME end_ms_send 1367047407.82925219
+TIME 0 X-Create-Times 0.804100
+TIME X-Volume-Time 0.085420
+TIME X-UG-Time 0.013430
+TIME X-Total-Time 0.915950
+TIME end_create 1367047407.82948478
+--------------------------------
+TIME begin_local_write 1367047407.82952337
+TIME begin_write 14934672.847992324
+TIME begin_revalidate_path 14934672.847999571
+TIME begin_ms_recv 1367047407.82983006
+TIME end_ms_recv 1367047409.72423311
+TIME X-Resolve-Time 0.572570
+TIME X-Volume-Time 0.015530
+TIME X-UG-Time 0.006810
+TIME X-Total-Time 0.611130
+TIME end_revalidate_path 14934674.837526522
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-tea.ait.ie/planetlab-tea.ait.ie.1367047400304[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047409.93806060
+TIME end_ms_send 1367047411.791074675
+TIME 0 X-Update-Times 0.115940
+TIME X-Volume-Time 0.013810
+TIME X-UG-Time 0.006220
+TIME X-Total-Time 0.138120
+TIME end_write 14934677.556132112
+TIME end_local_write 1367047411.791109651
+--------------------------------
+TIME begin_local_read 1367047411.791113333
+TIME begin_read 14934677.556150274
+TIME begin_revalidate_path 14934677.556157683
+TIME begin_ms_recv 1367047411.791135121
+TIME end_ms_recv 1367047411.936397278
+TIME X-Resolve-Time 0.018690
+TIME X-Volume-Time 0.002570
+TIME X-UG-Time 0.001990
+TIME X-Total-Time 0.023880
+TIME end_revalidate_path 14934677.701489988
+TIME begin_ms_send 1367047411.936858443
+TIME end_read 14934677.724603101
+TIME end_local_read 1367047411.959576120
+--------------------------------
+TIME begin_close 1367047411.959579723
+TIME end_close 1367047411.959586119
+--------------------------------
+TIME begin_unlink 1367047411.959588869
+TIME end_ms_send 1367047413.693122285
+TIME 0 X-Update-Times 0.527060
+TIME X-Volume-Time 0.012840
+TIME X-UG-Time 0.069850
+TIME X-Total-Time 0.621570
+TIME begin_ms_send 1367047413.693174959
+TIME end_ms_send 1367047415.161338906
+TIME 0 X-Update-Times 0.156780
+TIME X-Volume-Time 0.006950
+TIME X-UG-Time 0.018500
+TIME X-Total-Time 0.261850
+TIME begin_ms_send 1367047415.762606218
+TIME end_ms_send 1367047419.198663683
+TIME 0 X-Delete-Times 1.041210
+TIME X-Volume-Time 0.122490
+TIME X-UG-Time 0.030120
+TIME X-Total-Time 1.205500
+TIME end_unlink 1367047419.201314410
+--------------------------------
+TIME begin_rmdir 1367047419.201320138
+TIME begin_ms_send 1367047419.201351134
+TIME end_ms_send 1367047420.800332578
+TIME 0 X-Delete-Times 0.449100
+TIME X-Volume-Time 0.004170
+TIME X-UG-Time 0.019130
+TIME X-Total-Time 0.474270
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/planetlab-tea.ait.ie) errno = -2
+TIME end_rmdir 1367047420.800405174
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 193.1.13.14 closed.

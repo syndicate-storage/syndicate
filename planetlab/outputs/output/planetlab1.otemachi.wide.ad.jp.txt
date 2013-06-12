@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.082150
+TIME X-UG-Time 0.197730
+TIME X-Total-Time 3.067610
+--------------------------------
+TIME begin_diskwrite 1367047397.613842576
+TIME end_diskwrite 1367047397.665797578
+--------------------------------
+TIME begin_diskread 1367047397.665815818
+TIME end_diskread 1367047397.675864272
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047397.765064069
+TIME begin_revalidate_path 18391325.299074824
+TIME begin_ms_recv 1367047397.765208712
+TIME end_ms_recv 1367047398.202179307
+TIME X-Resolve-Time 0.052620
+TIME X-Volume-Time 0.003060
+TIME X-UG-Time 0.004550
+TIME X-Total-Time 0.064240
+TIME end_revalidate_path 18391325.736207124
+TIME begin_ms_send 1367047398.212192620
+TIME end_ms_send 1367047400.620564189
+TIME 0 X-Create-Times 0.089210
+TIME X-Volume-Time 0.002020
+TIME X-UG-Time 0.002260
+TIME X-Total-Time 0.094640
+TIME end_mkdir 1367047400.620621631
+--------------------------------
+TIME begin_create 1367047400.620631962
+TIME begin_revalidate_path 18391328.154556588
+TIME begin_ms_recv 1367047400.620676632
+TIME end_ms_recv 1367047401.829039871
+TIME X-Resolve-Time 0.501870
+TIME X-Volume-Time 0.056380
+TIME X-UG-Time 0.017980
+TIME X-Total-Time 0.577140
+TIME end_revalidate_path 18391329.363077167
+TIME begin_ms_send 1367047401.829364555
+TIME end_ms_send 1367047407.378703336
+TIME 0 X-Create-Times 0.125090
+TIME X-Volume-Time 0.002940
+TIME X-UG-Time 0.003010
+TIME X-Total-Time 0.132340
+TIME end_create 1367047407.378761766
+--------------------------------
+TIME begin_local_write 1367047407.378772231
+TIME begin_write 18391334.912693534
+TIME begin_revalidate_path 18391334.912708913
+TIME begin_ms_recv 1367047407.378822230
+TIME end_ms_recv 1367047408.262409728
+TIME X-Resolve-Time 0.243520
+TIME X-Volume-Time 0.019090
+TIME X-UG-Time 0.013060
+TIME X-Total-Time 0.279700
+TIME end_revalidate_path 18391335.796470992
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.otemachi.wide.ad.jp/planetlab1.otemachi.wide.ad.jp.1367047401829[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047408.411487952
+TIME end_ms_send 1367047411.764690900
+TIME 0 X-Update-Times 0.330740
+TIME X-Volume-Time 0.015350
+TIME X-UG-Time 0.065400
+TIME X-Total-Time 0.413430
+TIME end_write 18391339.298655671
+TIME end_local_write 1367047411.764772808
+--------------------------------
+TIME begin_local_read 1367047411.764782026
+TIME begin_read 18391339.298696472
+TIME begin_revalidate_path 18391339.298710361
+TIME begin_ms_recv 1367047411.764825944
+TIME end_ms_recv 1367047412.30173988
+TIME X-Resolve-Time 0.017990
+TIME X-Volume-Time 0.002690
+TIME X-UG-Time 0.002200
+TIME X-Total-Time 0.023590
+TIME end_revalidate_path 18391339.564232285
+TIME begin_ms_send 1367047412.168119890
+TIME end_read 18391340.862037145
+TIME end_local_read 1367047413.328144117
+--------------------------------
+TIME begin_close 1367047413.328154032
+TIME end_close 1367047413.328166598
+--------------------------------
+TIME begin_unlink 1367047413.328175465
+TIME end_ms_send 1367047415.121216905
+TIME 0 X-Update-Times 0.294910
+TIME X-Volume-Time 0.073550
+TIME X-UG-Time 0.023030
+TIME X-Total-Time 0.396340
+TIME begin_ms_send 1367047415.121334637
+TIME end_ms_send 1367047417.619234661
+TIME 0 X-Update-Times 0.153360
+TIME X-Volume-Time 0.034240
+TIME X-UG-Time 0.006120
+TIME X-Total-Time 0.195520
+TIME begin_ms_send 1367047420.944213214
+TIME end_ms_send 1367047423.777105787
+TIME 0 X-Delete-Times 0.542000
+TIME X-Volume-Time 0.009140
+TIME X-UG-Time 0.008860
+TIME X-Total-Time 0.562570
+TIME end_unlink 1367047426.51733133
+--------------------------------
+TIME begin_rmdir 1367047426.51754621
+TIME begin_ms_send 1367047426.51817843
+TIME end_ms_send 1367047428.413236865
+TIME 0 X-Delete-Times 0.105810
+TIME X-Volume-Time 0.003480
+TIME X-UG-Time 0.004360
+TIME X-Total-Time 0.115640
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/planetlab1.otemachi.wide.ad.jp) errno = -2
+TIME end_rmdir 1367047428.413436228
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 203.178.133.3 closed.

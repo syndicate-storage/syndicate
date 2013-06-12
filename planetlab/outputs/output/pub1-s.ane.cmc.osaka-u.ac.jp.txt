@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.004120
+TIME X-UG-Time 0.246580
+TIME X-Total-Time 7.230140
+--------------------------------
+TIME begin_diskwrite 1367047401.476121221
+TIME end_diskwrite 1367047401.501885733
+--------------------------------
+TIME begin_diskread 1367047401.501907372
+TIME end_diskread 1367047401.507519933
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047401.620230275
+TIME begin_revalidate_path 5365005.483157171
+TIME begin_ms_recv 1367047401.620400071
+TIME end_ms_recv 1367047406.216597612
+TIME X-Resolve-Time 0.184070
+TIME X-Volume-Time 0.050430
+TIME X-UG-Time 0.013250
+TIME X-Total-Time 0.248460
+TIME end_revalidate_path 5365010.79524713
+TIME begin_ms_send 1367047406.217007412
+TIME end_ms_send 1367047409.319286401
+TIME 0 X-Create-Times 0.759730
+TIME X-Volume-Time 0.008830
+TIME X-UG-Time 0.008900
+TIME X-Total-Time 0.779630
+TIME end_mkdir 1367047409.319348072
+--------------------------------
+TIME begin_create 1367047409.319357919
+TIME begin_revalidate_path 5365013.182179752
+TIME begin_ms_recv 1367047409.319405183
+TIME end_ms_recv 1367047409.822442064
+TIME X-Resolve-Time 0.184070
+TIME X-Volume-Time 0.010510
+TIME X-UG-Time 0.004870
+TIME X-Total-Time 0.200600
+TIME end_revalidate_path 5365013.685370400
+TIME begin_ms_send 1367047409.822773402
+TIME end_ms_send 1367047412.431522098
+TIME 0 X-Create-Times 0.264810
+TIME X-Volume-Time 0.068540
+TIME X-UG-Time 0.013960
+TIME X-Total-Time 0.352330
+TIME end_create 1367047412.431582692
+--------------------------------
+TIME begin_local_write 1367047412.431593144
+TIME begin_write 5365016.294413542
+TIME begin_revalidate_path 5365016.294428968
+TIME begin_ms_recv 1367047412.431648320
+TIME end_ms_recv 1367047412.880564772
+TIME X-Resolve-Time 0.179140
+TIME X-Volume-Time 0.003150
+TIME X-UG-Time 0.005550
+TIME X-Total-Time 0.188630
+TIME end_revalidate_path 5365016.743563938
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pub1-s.ane.cmc.osaka-u.ac.jp/pub1-s.ane.cmc.osaka-u.ac.jp.1367047409822[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047412.951069252
+TIME end_ms_send 1367047414.699348459
+TIME 0 X-Update-Times 0.381860
+TIME X-Volume-Time 0.003920
+TIME X-UG-Time 0.002960
+TIME X-Total-Time 0.390370
+TIME end_write 5365018.562210699
+TIME end_local_write 1367047414.699432449
+--------------------------------
+TIME begin_local_read 1367047414.699442798
+TIME begin_read 5365018.562253464
+TIME begin_revalidate_path 5365018.562267151
+TIME begin_ms_recv 1367047414.699487103
+TIME end_ms_recv 1367047415.159680826
+TIME X-Resolve-Time 0.106580
+TIME X-Volume-Time 0.017690
+TIME X-UG-Time 0.007370
+TIME X-Total-Time 0.136400
+TIME end_revalidate_path 5365019.22666115
+TIME begin_ms_send 1367047415.161173151
+TIME end_read 5365019.128367971
+TIME end_local_read 1367047415.265582696
+--------------------------------
+TIME begin_close 1367047415.265593440
+TIME end_close 1367047415.265608842
+--------------------------------
+TIME begin_unlink 1367047415.265618434
+TIME end_ms_send 1367047417.31583274
+TIME 0 X-Update-Times 0.497820
+TIME X-Volume-Time 0.081370
+TIME X-UG-Time 0.010520
+TIME X-Total-Time 0.608040
+TIME begin_ms_send 1367047417.31699749
+TIME end_ms_send 1367047418.726908597
+TIME 0 X-Update-Times 0.402210
+TIME X-Volume-Time 0.004690
+TIME X-UG-Time 0.025170
+TIME X-Total-Time 0.434860
+TIME begin_ms_send 1367047419.70019017
+TIME end_ms_send 1367047421.825314709
+TIME 0 X-Delete-Times 0.387470
+TIME X-Volume-Time 0.007550
+TIME X-UG-Time 0.006490
+TIME X-Total-Time 0.403930
+TIME end_unlink 1367047421.836460883
+--------------------------------
+TIME begin_rmdir 1367047421.836484779
+TIME begin_ms_send 1367047421.836550795
+TIME end_ms_send 1367047426.244450783
+TIME 0 X-Delete-Times 3.133970
+TIME X-Volume-Time 0.005240
+TIME X-UG-Time 0.007750
+TIME X-Total-Time 3.149270
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/pub1-s.ane.cmc.osaka-u.ac.jp) errno = -2
+TIME end_rmdir 1367047426.244659609
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 133.1.74.162 closed.

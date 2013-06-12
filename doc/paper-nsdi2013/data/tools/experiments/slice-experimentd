@@ -1,0 +1,7 @@
+#!/bin/sh
+
+yum -y install curl 
+curl http://vcoblitz-cmi.cs.princeton.edu/tools/experiments/experimentd > /etc/init.d/experimentd
+chmod +x /etc/init.d/experimentd
+
+/etc/init.d/experimentd start

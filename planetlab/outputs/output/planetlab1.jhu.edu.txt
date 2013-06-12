@@ -1,0 +1,104 @@
+---------- BEGIN write_file.sh ----------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:--  0:00:05 --:--:--     0105   947  105   947    0     0    187      0  0:00:05  0:00:05 --:--:-- 55705
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:--  0:00:05 --:--:--     0 13 3266k   13  431k    0     0  84826      0  0:00:39  0:00:05  0:00:34 2422k100 3266k  100 3266k    0     0   605k      0  0:00:05  0:00:05 --:--:-- 8827k
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+DATA X-Volume-Time 0.100490
+DATA X-UG-Time 0.602900
+DATA X-Total-Time 3.926320
+-------------------------------- raw write
+DATA disk write, direct 0.023867
+-------------------------------- raw read
+DATA disk read, direct 0.008469
+-------------------------------- ping
+DATA rtt 0.012900
+-------------------------------- mkdir
+DATA MS recv 0.948118
+DATA X-Resolve-Time 0.712480
+DATA X-Resolve-Time 0.712480
+DATA X-Volume-Time 0.090560
+DATA X-UG-Time 0.094060
+DATA X-Total-Time 0.897780
+DATA MS revalidate 0.948229
+DATA MS send 7.037098
+DATA X-Create-Times 0.787940
+DATA X-Volume-Time 0.007460
+DATA X-UG-Time 0.013270
+DATA X-Total-Time 0.881590
+DATA mkdir 7.998274
+-------------------------------- open
+DATA MS recv 1.628243
+DATA X-Resolve-Time 1.192330
+DATA X-Resolve-Time 1.192330
+DATA X-Volume-Time 0.017930
+DATA X-UG-Time 0.287150
+DATA X-Total-Time 1.498890
+DATA MS revalidate 1.628354
+DATA MS send 4.416537
+DATA X-Create-Times 1.811780
+DATA X-Volume-Time 0.094440
+DATA X-UG-Time 0.302310
+DATA X-Total-Time 2.299500
+DATA open 6.045082
+-------------------------------- local write
+DATA MS recv 1.063417
+DATA X-Resolve-Time 0.596850
+DATA X-Resolve-Time 0.596850
+DATA X-Volume-Time 0.192680
+DATA X-UG-Time 0.112590
+DATA X-Total-Time 0.903660
+DATA MS revalidate 1.063536
+DATA metadata latency 1.063550
+DATA write data 0.079455
+DATA replicate data 0.000002
+DATA send remote write 0.000001
+DATA MS send 2.971895
+DATA X-Update-Times 0.904350
+DATA X-Volume-Time 0.007090
+DATA X-UG-Time 0.006990
+DATA X-Total-Time 0.919700
+DATA MS update 2.971969
+DATA write 4.115012
+DATA local write + MS refresh 4.115037
+-------------------------------- local read
+DATA MS recv 0.573148
+DATA X-Resolve-Time 0.399430
+DATA X-Resolve-Time 0.399430
+DATA X-Volume-Time 0.013770
+DATA X-UG-Time 0.092230
+DATA X-Total-Time 0.511970
+DATA MS revalidate 0.573267
+DATA metadata latency 0.573282
+DATA read data 0.017243
+DATA read 0.590547
+DATA local read + MS refresh 0.590552
+-------------------------------- close
+-------------------------------- unlink
+DATA MS send 2.406318
+DATA X-Delete-Times 0.324500
+DATA X-Volume-Time 0.008480
+DATA X-UG-Time 0.007700
+DATA X-Total-Time 0.342640
+DATA unlink 2.411789
+-------------------------------- rmdir
+DATA MS send 2.287972
+DATA X-Delete-Times 0.165810
+DATA X-Volume-Time 0.007060
+DATA X-UG-Time 0.006570
+DATA X-Total-Time 0.180960
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/planetlab1.jhu.edu) errno = -2
+DATA rmdir 2.288153
+-------------------------------- 
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 128.220.251.50 closed.

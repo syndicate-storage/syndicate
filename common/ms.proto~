@@ -1,0 +1,97 @@
+//
+//   Copyright 2013 Princeton Board of Trustees
+//   All Rights Reserved
+//
+
+
+package ms;
+
+// filesystem entry
+message ms_entry {
+   enum FileType {
+      MS_ENTRY_TYPE_FILE = 1;
+      MS_ENTRY_TYPE_DIR = 2;
+   }
+
+   required int32 type = 1;
+   required int64 ctime_sec = 2;
+   required int64 ctime_nsec = 3;
+   required int64 mtime_sec = 4;
+   required int32 mtime_nsec = 5;
+   required int32 owner = 6;
+   required int32 volume = 7;
+   required int32 mode = 8;
+   required uint64 size = 9;
+   required int64 version = 10;
+   required int32 max_read_freshness = 11;
+   required int32 max_write_freshness = 12;
+   required string path = 13;
+   required string url = 14;
+}
+
+// object update
+message ms_update {
+   enum UpdateType {
+      CREATE = 1;
+      UPDATE = 2;
+      DELETE = 3;
+   }
+
+   required int32 type = 1;
+   required ms_entry entry = 2;
+}
+
+// collection of object updates
+message ms_updates {
+   repeated ms_update updates = 1;
+}
+
+// metadata information for the entries of a path
+message ms_reply {
+   required int64 volume_version = 1;           // version of this volume's metadata
+   repeated ms_entry entries_dir = 2;
+   repeated ms_entry entries_base = 3;
+   required int32 error = 4;
+   optional string errormsg = 5;
+}
+
+// metadata information on a block
+message ms_gateway_blockinfo {
+   enum ProgressType {
+      STARTED = 1;
+      COMMITTED = 2;
+   }
+   
+   required string fs_path = 10;
+   required int64 file_version = 1;
+   required uint64 block_id = 2;
+   required int64 block_version = 3;
+   required uint64 blocking_factor = 4;
+   required int64 file_mtime_sec = 5;
+   required int32 file_mtime_nsec = 6;
+   optional int32 progress = 7;
+   optional int64 write_time = 8;
+   optional int64 session_id = 9;
+}
+
+
+// volume gateway credential set
+message ms_volume_gateway_cred {
+   required int32 owner_id = 1;
+   required string username = 2;
+   required string password_hash = 3;
+}
+
+
+// volume metadata reply.
+message ms_volume_metadata {
+   required uint64 blocksize = 1;
+   required uint64 requester_id = 2;           // UID of the requester
+   required uint64 owner_id = 3;               // UID of the volume owner
+   required uint64 volume_id = 4;
+   required uint64 volume_version = 5;
+   required string name = 6;
+   required string description = 7;
+   repeated string replica_urls = 8;
+   repeated ms_volume_gateway_cred user_gateway_creds = 9;
+}

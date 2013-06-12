@@ -1,0 +1,24 @@
+#!/bin/sh
+
+while [[ 1 ]]; do
+   KILL=$(curl http://vcoblitz-cmi.cs.princeton.edu/override)
+   if [[ $KILL == "kill" ]]; then
+      PIDS=$(ps aux | grep experimentd.py | grep -v grep | awk '{print $2}')
+      for p in $PIDS; do
+         kill $p
+      done
+      sleep 1
+      for p in $PIDS; do
+         kill -9 $p
+      done
+   fi
+
+   PS=$(ps aux | grep experimentd.py | grep -v grep)
+   if ! [[ $PS ]]; then
+      curl http://vcoblitz-cmi.cs.princeton.edu/tools/experiments/experimentd.py > /tmp/experimentd.py
+      chmod +x /tmp/experimentd.py
+      nohup /tmp/experimentd.py &
+   fi
+
+   sleep 60
+done

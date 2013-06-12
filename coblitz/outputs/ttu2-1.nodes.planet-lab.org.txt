@@ -1,0 +1,2 @@
+/bin/su: user princeton_syndicate does not exist
+Connection to ttu2-1.nodes.planet-lab.org closed.

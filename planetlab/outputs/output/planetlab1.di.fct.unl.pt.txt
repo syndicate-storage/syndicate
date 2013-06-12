@@ -1,0 +1,13 @@
+---------- BEGIN write_file.sh ----------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0105   947  105   947    0     0   2928      0 --:--:-- --:--:-- --:--:--  5918
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  4 3266k    4  146k    0     0   123k      0  0:00:26  0:00:01  0:00:25  141k 17 3266k   17  566k    0     0   253k      0  0:00:12  0:00:02  0:00:10  271k 28 3266k   28  934k    0     0   298k      0  0:00:10  0:00:03  0:00:07  312k 41 3266k   41 1365k    0     0   326k      0  0:00:10  0:00:04  0:00:06  338k 54 3266k   54 1795k    0     0   342k      0  0:00:09  0:00:05  0:00:04  353k 66 3266k   66 2163k    0     0   352k      0  0:00:09  0:00:06  0:00:03  407k
+Message from syslogd@planetlab1 at Apr 27 07:23:02 ...
+ kernel:unregister_netdevice: waiting for tap1556-1 to become free. Usage count = 1
+ 78 3266k   78 2563k    0     0   357k      0  0:00:09  0:00:07  0:00:02  404k 89 3266k   89 2932k    0     0   361k      0  0:00:09  0:00:08  0:00:01  400k100 3266k  100 3266k    0     0   365k      0  0:00:08  0:00:08 --:--:--  399k
+/tmp/write_file: error while loading shared libraries: libmicrohttpd.so.10: cannot open shared object file: No such file or directory
+---------- END write_file.sh ----------
+Connection to 193.136.124.226 closed.

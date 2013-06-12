@@ -1,0 +1,6 @@
+{{extend 'layout.html'}}
+
+<h1>Syndicate Metadata Service</h1>
+<h2>Tools</h2>
+{{=user_tools}}<br>
+{{=admin_tools}}

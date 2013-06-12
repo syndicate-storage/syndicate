@@ -1,0 +1,58 @@
+How this project is organized:
+
+/common:
+
+This directory contains source files needed by multiple gateways.
+
+/UG
+
+This directory contains source files specific to the User Gateway implementations.
+
+/RG
+
+This directory contains source files specific to the Replica Gateway implementations.
+
+/AG
+
+This directory contains source files specific to the Acquisition Gateway implementations.
+
+/doc
+
+This directory contains experimental data, paper source files, posters, and figures.
+
+/coblitz
+
+This directory contains scripts and files needed for configuring the CoBlitz CDN in VICCI.
+
+/planetlab
+
+This directory contains scripts and files needed for deploying Syndicate on PlanetLab, running experiments, and analyzing experimental data.
+
+/ms
+
+This directory contains the Google AppEngine implementation of the Metadata Service.
+
+/old
+
+This directory contains obsolete code.  No need to look through here.
+
+/testscripts
+
+This directory will contain blackbox test scripts (but not yet).
+
+/libmicrohttpd-syndicate
+
+This is a snapshot of the GNU libmicrohttpd project (which Syndicate depends on).  It's newer than what's offerred in PlanetLab/VICCI.
+
+/web
+
+This is where the Syndicate webpage code will go
+
+
+To build a gateway, simply cd into its directory and type "make".
+To build the entire system on PlanetLab, simply type "make".
+
+
+wiki:            https://trac.princeton.edu/Syndicate
+mailing list:    syndicate@listserv.princeton.edu
+primary author:  Jude Nelson (jcnelson@cs.princeton.edu)

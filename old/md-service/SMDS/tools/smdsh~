@@ -1,0 +1,157 @@
+#!/usr/bin/python
+#
+# Interactive shell for testing SMDS
+# Modifications by Jude Nelson
+#
+# Mark Huang <mlhuang@cs.princeton.edu>
+# Copyright (C) 2005 The Trustees of Princeton University
+#
+# $Id$
+#
+
+import os
+import sys
+from socket import gethostname
+from optparse import OptionParser, SUPPRESS_HELP
+from getpass import getpass
+from traceback import print_exc
+import traceback
+
+sys.path.append('/usr/share/syndicate_md')
+
+from SMDS.shell import Shell
+
+parser = OptionParser(add_help_option = False)
+parser.add_option("-f", "--config", help = "SMDS configuration file")
+parser.add_option("-h", "--url", help = "API URL")
+parser.add_option("-c", "--cacert", help = "API SSL certificate")
+parser.add_option("-k", "--insecure", help = "Do not check SSL certificate")
+parser.add_option("-m", "--method", help = "API authentication method")
+parser.add_option("-s", "--session", help = "API session key")
+parser.add_option("-u", "--user", help = "API user name")
+parser.add_option("-p", "--password", help = "API password")
+parser.add_option("-r", "--role", help = "API role")
+parser.add_option("-x", "--xmlrpc", action = "store_true", default = False, help = "Use XML-RPC interface")
+parser.add_option("--help", action = "help", help = "show this help message and exit")
+(options, args) = parser.parse_args()
+
+# If user is specified but password is not
+if options.user is not None and options.password is None:
+    try:
+        options.password = getpass()
+    except (EOFError, KeyboardInterrupt):
+        print
+        sys.exit(0)
+
+# Initialize a single global instance (scripts may re-initialize
+# this instance and/or create additional instances).
+try:
+    shell = Shell(globals = globals(),
+                  config = options.config,
+                  url = options.url, xmlrpc = options.xmlrpc, cacert = options.cacert,
+                  method = options.method, role = options.role,
+                  user = options.user, password = options.password,
+                  session = options.session)
+    # Register a few more globals for backward compatibility
+    auth = shell.auth
+    api = shell.api
+    config = shell.config
+except:
+    print "Error:", traceback.format_exc()
+    print
+    parser.print_help()
+    sys.exit(1)
+
+# If called by a script 
+if len(args) > 0 and os.path.exists(args[0]):
+    # Pop us off the argument stack
+    script = args[0]
+    
+    # Add of script to sys.path 
+    path = os.path.dirname(os.path.abspath(script))
+    sys.path.append(path)
+    execfile(args[0])
+
+# Otherwise, run an interactive shell environment
+else:
+    if shell.server is None:
+        prompt = ""
+    elif shell.auth['AuthMethod'] == "anonymous":
+        prompt = "[anonymous]"
+        print "Connected anonymously"
+    elif shell.auth['AuthMethod'] == "session":
+        # XXX No way to tell node and user sessions apart from the
+        # client point of view.
+        prompt = "[%s]" % gethostname()
+        print "%s connected using session authentication" % gethostname()
+    else:
+        prompt = "[%s]" % shell.auth['Username']
+        print "%s connected using %s authentication" % \
+              (shell.auth['Username'], shell.auth['AuthMethod'])
+
+    # Readline and tab completion support
+    import atexit
+    import readline
+    import rlcompleter
+
+    print 'Type "system.listMethods()" or "help(method)" for more information.'
+    # Load command history
+    history_path = os.path.join(os.environ["HOME"], ".smds_history")
+    try:
+        file(history_path, 'a').close()
+        readline.read_history_file(history_path)
+        atexit.register(readline.write_history_file, history_path)
+    except IOError:
+        pass
+
+    # Enable tab completion
+    readline.parse_and_bind("tab: complete")
+
+    try:
+        while True:
+            command = ""
+            while True:
+                # Get line
+                try:
+                    if command == "":
+                        sep = ">>> "
+                    else:
+                        sep = "... "
+                    line = raw_input(prompt + sep)
+                # Ctrl-C
+                except KeyboardInterrupt:
+                    command = ""
+                    print
+                    break
+
+                # Build up multi-line command
+                command += line
+
+                # Blank line or first line does not end in :
+                if line == "" or (command == line and line[-1] != ':'):
+                    break
+
+                command += os.linesep
+
+            # Blank line
+            if command == "":
+                continue
+            # Quit
+            elif command in ["q", "quit", "exit"]:
+                break
+
+            try:
+                try:
+                    # Try evaluating as an expression and printing the result
+                    result = eval(command)
+                    if result is not None:
+                        print result
+                except SyntaxError:
+                    # Fall back to executing as a statement
+                    exec command
+            except Exception, err:
+                print_exc()
+
+    except EOFError:
+        print
+        pass

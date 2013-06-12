@@ -1,0 +1,10 @@
+ssh: Could not resolve hostname evghu10.colbud.hu: Name or service not known
+ssh: Could not resolve hostname evghu10.colbud.hu: Name or service not known
+ssh: Could not resolve hostname evghu10.colbud.hu: Name or service not known
+ssh: Could not resolve hostname evghu10.colbud.hu: Name or service not known
+ssh: Could not resolve hostname evghu10.colbud.hu: Name or service not known
+ssh: Could not resolve hostname evghu10.colbud.hu: Name or service not known
+ssh: Could not resolve hostname evghu10.colbud.hu: Name or service not known
+ssh: Could not resolve hostname evghu10.colbud.hu: Name or service not known
+ssh: Could not resolve hostname evghu10.colbud.hu: Name or service not known
+ssh: Could not resolve hostname evghu10.colbud.hu: Name or service not known

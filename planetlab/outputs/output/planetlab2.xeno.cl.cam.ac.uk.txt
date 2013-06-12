@@ -1,0 +1,250 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.009710
+TIME X-UG-Time 0.117300
+TIME X-Total-Time 1.704900
+--------------------------------
+TIME begin_diskwrite 1367047380.809582683
+TIME end_diskwrite 1367047380.825838743
+--------------------------------
+TIME begin_diskread 1367047380.825853971
+TIME end_diskread 1367047380.829009488
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047380.917549631
+TIME begin_revalidate_path 3878315.949826725
+TIME begin_ms_recv 1367047380.917624792
+TIME end_ms_recv 1367047390.902144348
+TIME X-Resolve-Time 0.053090
+TIME X-Volume-Time 0.004470
+TIME X-UG-Time 0.004140
+TIME X-Total-Time 0.062400
+TIME end_revalidate_path 3878325.934446864
+TIME begin_ms_send 1367047391.684871283
+TIME end_ms_send 1367047401.257092649
+TIME 0 X-Create-Times 1.053690
+TIME X-Volume-Time 0.009100
+TIME X-UG-Time 0.049440
+TIME X-Total-Time 1.113820
+TIME end_mkdir 1367047401.257126365
+--------------------------------
+TIME begin_create 1367047401.257131506
+TIME begin_revalidate_path 3878336.289371303
+TIME begin_ms_recv 1367047401.257163225
+TIME end_ms_recv 1367047401.518250643
+TIME X-Resolve-Time 0.110460
+TIME X-Volume-Time 0.007660
+TIME X-UG-Time 0.005720
+TIME X-Total-Time 0.124340
+TIME end_revalidate_path 3878336.550547599
+TIME begin_ms_send 1367047401.518434123
+TIME end_ms_send 1367047407.57418887
+TIME 0 X-Create-Times 0.100950
+TIME X-Volume-Time 0.003220
+TIME X-UG-Time 0.003730
+TIME X-Total-Time 0.109590
+TIME end_create 1367047407.57452770
+--------------------------------
+TIME begin_local_write 1367047407.57458242
+TIME begin_write 3878342.89693137
+TIME begin_revalidate_path 3878342.89703317
+TIME begin_ms_recv 1367047407.57491436
+TIME end_ms_recv 1367047408.470848434
+TIME X-Resolve-Time 0.089330
+TIME X-Volume-Time 0.004620
+TIME X-UG-Time 0.009730
+TIME X-Total-Time 0.104860
+TIME end_revalidate_path 3878343.503263907
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.xeno.cl.cam.ac.uk/planetlab2.xeno.cl.cam.ac.uk.1367047401518[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047408.509640474
+TIME end_ms_send 1367047410.226928604
+TIME 0 X-Update-Times 0.546310
+TIME X-Volume-Time 0.007730
+TIME X-UG-Time 0.007740
+TIME X-Total-Time 0.566540
+TIME end_write 3878345.259187545
+TIME end_local_write 1367047410.226977007
+--------------------------------
+TIME begin_local_read 1367047410.226982461
+TIME begin_read 3878345.259212892
+TIME begin_revalidate_path 3878345.259223018
+TIME begin_ms_recv 1367047410.227011778
+TIME end_ms_recv 1367047411.268534456
+TIME X-Resolve-Time 0.285280
+TIME X-Volume-Time 0.006700
+TIME X-UG-Time 0.007110
+TIME X-Total-Time 0.300250
+TIME end_revalidate_path 3878346.300881980
+TIME begin_ms_send 1367047411.430302585
+TIME end_ms_send 1367047412.590614854
+TIME 0 X-Update-Times 0.041170
+TIME X-Volume-Time 0.002110
+TIME X-UG-Time 0.002680
+TIME X-Total-Time 0.047130
+TIME begin_ms_send 1367047412.590680476
+TIME end_ms_send 1367047413.902641348
+TIME 0 X-Update-Times 0.146570
+TIME X-Volume-Time 0.046930
+TIME X-UG-Time 0.003460
+TIME X-Total-Time 0.198740
+TIME begin_ms_send 1367047413.902710861
+TIME end_ms_send 1367047415.995008451
+TIME 0 X-Update-Times 0.543290
+TIME X-Volume-Time 0.092950
+TIME X-UG-Time 0.101180
+TIME X-Total-Time 0.841270
+TIME begin_ms_send 1367047415.995072588
+TIME end_ms_send 1367047418.54809568
+TIME 0 X-Update-Times 0.680030
+TIME X-Volume-Time 0.097510
+TIME X-UG-Time 0.098930
+TIME X-Total-Time 0.888840
+TIME begin_ms_send 1367047418.199210630
+TIME end_read 3878353.236166469
+TIME end_local_read 1367047418.203947847
+--------------------------------
+TIME begin_close 1367047418.203955370
+TIME end_close 1367047418.203965289
+--------------------------------
+TIME begin_unlink 1367047418.203971548
+TIME end_ms_send 1367047419.477327663
+TIME 0 X-Update-Times 0.110230
+TIME X-Volume-Time 0.004980
+TIME X-UG-Time 0.005570
+TIME X-Total-Time 0.123060
+TIME begin_ms_send 1367047419.477402969
+TIME end_ms_send 1367047422.666035405
+TIME 0 X-Update-Times 0.802980
+TIME X-Volume-Time 0.101280
+TIME X-UG-Time 0.107460
+TIME X-Total-Time 1.014370
+TIME begin_ms_send 1367047427.14280951
+TIME end_ms_send 1367047429.605191375
+TIME 0 X-Delete-Times 0.254440
+TIME X-Volume-Time 0.007620
+TIME X-UG-Time 0.011640
+TIME X-Total-Time 0.320650
+TIME end_unlink 1367047432.484960956
+--------------------------------
+TIME begin_rmdir 1367047432.484975951
+TIME begin_ms_send 1367047432.485025188
+TIME end_ms_send 1367047435.156392992
+TIME 0 X-Delete-Times 0.202780
+TIME X-Volume-Time 0.007930
+TIME X-UG-Time 0.009750
+TIME X-Total-Time 0.222370
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/planetlab2.xeno.cl.cam.ac.uk) errno = -2
+TIME end_rmdir 1367047436.274857570
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 128.232.103.202 closed.

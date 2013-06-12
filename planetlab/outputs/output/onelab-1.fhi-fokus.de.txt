@@ -1,0 +1,35 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.005850
+TIME X-UG-Time 0.029130
+TIME X-Total-Time 1.008000
+--------------------------------
+TIME begin_diskwrite 1367047375.42708270
+TIME end_diskwrite 1367047375.87063343
+--------------------------------
+TIME begin_diskread 1367047375.87087704
+TIME end_diskread 1367047375.92262230
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047375.257828383
+TIME begin_revalidate_path 3502783.817619803
+TIME begin_ms_recv 1367047375.257963990
+TIME end_ms_recv 1367047385.453409124
+TIME X-Resolve-Time 0.000000
+TIME X-Volume-Time 0.000000
+TIME X-UG-Time 0.000000
+TIME X-Total-Time 0.000000
+[ consistency.cpp:0414] fs_entry_revalidate_path: ms_client_resolve_path(/onelab-1.fhi-fokus.de) rc = -500
+TIME end_revalidate_path_failed 3502794.13179029
+[       mkdir.cpp:0060] fs_entry_mkdir: fs_entry_revalidate_path(/onelab-1.fhi-fokus.de) rc = -500
+[  write_file.cpp:0207] main: fs_entry_mkdir(/onelab-1.fhi-fokus.de) rc = -121
+---------- END write_file.sh ----------
+Connection to 193.175.135.60 closed.

@@ -1,0 +1,39 @@
+\section{Related Work}
+
+Although there are many wide-area distributed read-write filesystems such as AFS~\cite{AFS}, Ceph~\cite{Ceph}, 
+WheelFS~\cite{WheelFS}, and GlusterFS~\cite{GlusterFS} similar in function to Syndicate, Syndicate differs from 
+most existing work in purpose.  Syndicate is designed to provide good read performance to a scalable number of
+clients in the wide area, but without needing to replicate the data it exposes.  Since Syndicate achieves data availability through the use of a CDN in the network, it does not need to create additional replicas on its 
+own (unless the user wishes to do so independently).  By contrast, the existing work must employ data replication
+to achieve good aggregate read performance.
+
+Another key difference with some prior work such as SFS~\cite{SFS} and AFS~\cite{AFS} is the degree of information
+security in data transmission.  Although a user can encrypt their data before sharing it on Syndicate, an attacker
+can identify specific files and their sizes by looking for repeated requests for the same cyphertext.  Securely
+distributing data via a CDN is a topic of future work.  Syndicate does, however, encrypt its metadata transmissions.
+
+There are several existing distributed filesystems that achieve scalable data distribution by 
+caching file replicas in the network.  One system is Shark~\cite{shark}, which scales metadata distribution by caching metadata in Coral~\cite{coral} and directing client read requests to remote replicas on other clients.  In Shark, 
+however, a client achieves high read performance and file consistency by leasing files from remote
+servers, keeping locally-cached replicas, and downloading only a remote file's modifications on change.
+Syndicate instead relies on an underlying CDN to achieve high read performance, and delegates to it the responsibility
+of keeping replicas accessible for reading.  Syndicate ensures that files are consistent to remote readers
+by ensuring that the CDN does not cache stale data.
+
+Another such distributed filesystem is CERN VM-FS~\cite{cern-vm-fs}, a distributed read-only filesystem whose
+read performance is designed to scale with the introduction of independent Squid proxies to its clients'
+networks.  Because CERN VM-FS is read-only, it does not need to concern itself with write consistency
+between its clients.  It also depends on a remote data catalog server to serve its clients data, instead of
+serving data between clients.  While both Syndicate and CERN VM-FS achieve good read throughput by leveraging
+network-accessible caches, Syndicate provides a better abstraction of filesystem to its users.
+
+Syndicate also bears some similarity to WebFS~\cite{webfs} in how it implements a filesystem namespace to applications.
+WebFS creates a filesystem hierarchy out of known remote HTTP servers, and provides both read/write 
+support and close-to-open semantics like Syndicate.  Also, WebFS can expose data on
+remote hosts without requiring the remote host to participate in the filesystem.  However, Syndicate
+provides a means of exporting a filesystem hierarchy to its clients, whereas a WebFS instance must
+discover paths to remote hosts as they are accessed locally.  Additionally, the Syndicate metadata server
+employs rules to translate a URL into a path name (if required), as well as rely on users
+to provide an arbitrary mapping between paths and URLs.  WebFS, by contrast, requires file paths to be translatable to URLs.
+
+

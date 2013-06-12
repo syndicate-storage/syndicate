@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.010230
+TIME X-UG-Time 0.104080
+TIME X-Total-Time 1.695100
+--------------------------------
+TIME begin_diskwrite 1367047388.282713899
+TIME end_diskwrite 1367047388.319169787
+--------------------------------
+TIME begin_diskread 1367047388.319169787
+TIME end_diskread 1367047388.323737179
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047388.395714761
+TIME begin_revalidate_path 13025965.937262233
+TIME begin_ms_recv 1367047388.395714761
+TIME end_ms_recv 1367047400.978937854
+TIME X-Resolve-Time 2.209360
+TIME X-Volume-Time 0.096020
+TIME X-UG-Time 0.351360
+TIME X-Total-Time 2.758090
+TIME end_revalidate_path 13025978.520485326
+TIME begin_ms_send 1367047400.978937854
+TIME end_ms_send 1367047403.812808168
+TIME 0 X-Create-Times 1.497420
+TIME X-Volume-Time 0.006610
+TIME X-UG-Time 0.010050
+TIME X-Total-Time 1.515720
+TIME end_mkdir 1367047403.812838132
+--------------------------------
+TIME begin_create 1367047403.812842183
+TIME begin_revalidate_path 13025981.354398484
+TIME begin_ms_recv 1367047403.812868116
+TIME end_ms_recv 1367047408.179738578
+TIME X-Resolve-Time 0.896570
+TIME X-Volume-Time 0.014330
+TIME X-UG-Time 0.069820
+TIME X-Total-Time 0.984710
+TIME end_revalidate_path 13025985.721286050
+TIME begin_ms_send 1367047408.224467630
+TIME end_ms_send 1367047410.285726261
+TIME 0 X-Create-Times 0.701610
+TIME X-Volume-Time 0.093310
+TIME X-UG-Time 0.075580
+TIME X-Total-Time 0.874440
+TIME end_create 1367047410.285726261
+--------------------------------
+TIME begin_local_write 1367047410.285726261
+TIME begin_write 13025987.827273733
+TIME begin_revalidate_path 13025987.827273733
+TIME begin_ms_recv 1367047410.285726261
+TIME end_ms_recv 1367047411.585797317
+TIME X-Resolve-Time 0.368970
+TIME X-Volume-Time 0.193630
+TIME X-UG-Time 0.025720
+TIME X-Total-Time 0.589460
+TIME end_revalidate_path 13025989.127421383
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/aguila1.lsi.upc.edu/aguila1.lsi.upc.edu.1367047408179[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047411.610715344
+TIME end_ms_send 1367047412.990714870
+TIME 0 X-Update-Times 0.160000
+TIME X-Volume-Time 0.012950
+TIME X-UG-Time 0.006910
+TIME X-Total-Time 0.224060
+TIME end_write 13025990.532262342
+TIME end_local_write 1367047412.990714870
+--------------------------------
+TIME begin_local_read 1367047412.990714870
+TIME begin_read 13025990.532262342
+TIME begin_revalidate_path 13025990.532262342
+TIME begin_ms_recv 1367047412.990714870
+TIME end_ms_recv 1367047413.673715540
+TIME X-Resolve-Time 0.250290
+TIME X-Volume-Time 0.011990
+TIME X-UG-Time 0.005640
+TIME X-Total-Time 0.269090
+TIME end_revalidate_path 13025991.215263012
+TIME begin_ms_send 1367047414.806554334
+TIME end_read 13025993.907308444
+TIME end_local_read 1367047416.365760972
+--------------------------------
+TIME begin_close 1367047416.365760972
+TIME end_close 1367047416.365760972
+--------------------------------
+TIME begin_unlink 1367047416.365760972
+TIME end_ms_send 1367047416.384797482
+TIME 0 X-Update-Times 0.388060
+TIME X-Volume-Time 0.004350
+TIME X-UG-Time 0.015240
+TIME X-Total-Time 0.409850
+TIME begin_ms_send 1367047416.384839118
+TIME end_ms_send 1367047418.2817398
+TIME 0 X-Update-Times 0.105200
+TIME X-Volume-Time 0.012190
+TIME X-UG-Time 0.038500
+TIME X-Total-Time 0.159030
+TIME begin_ms_send 1367047418.225726041
+TIME end_ms_send 1367047419.760725210
+TIME 0 X-Delete-Times 0.364700
+TIME X-Volume-Time 0.007400
+TIME X-UG-Time 0.010770
+TIME X-Total-Time 0.385370
+TIME end_unlink 1367047428.455732728
+--------------------------------
+TIME begin_rmdir 1367047428.455732728
+TIME begin_ms_send 1367047428.455885302
+TIME end_ms_send 1367047429.855714532
+TIME 0 X-Delete-Times 0.247790
+TIME X-Volume-Time 0.002850
+TIME X-UG-Time 0.002830
+TIME X-Total-Time 0.255150
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/aguila1.lsi.upc.edu) errno = -2
+TIME end_rmdir 1367047429.855714532
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 147.83.29.232 closed.

@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.086300
+TIME X-UG-Time 0.416900
+TIME X-Total-Time 16.584980
+--------------------------------
+TIME begin_diskwrite 1367047395.867091824
+TIME end_diskwrite 1367047395.875710670
+--------------------------------
+TIME begin_diskread 1367047395.875719709
+TIME end_diskread 1367047395.877768624
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047395.979014688
+TIME begin_revalidate_path 7449989.25784487
+TIME begin_ms_recv 1367047395.979084935
+TIME end_ms_recv 1367047401.591419979
+TIME X-Resolve-Time 0.036430
+TIME X-Volume-Time 0.004870
+TIME X-UG-Time 0.003880
+TIME X-Total-Time 0.045950
+TIME end_revalidate_path 7449994.638205970
+TIME begin_ms_send 1367047401.591589072
+TIME end_ms_send 1367047408.24565301
+TIME 0 X-Create-Times 1.273770
+TIME X-Volume-Time 0.225080
+TIME X-UG-Time 0.075510
+TIME X-Total-Time 1.576410
+TIME end_mkdir 1367047408.24593872
+--------------------------------
+TIME begin_create 1367047408.24597466
+TIME begin_revalidate_path 7450001.71327794
+TIME begin_ms_recv 1367047408.24620430
+TIME end_ms_recv 1367047408.706144052
+TIME X-Resolve-Time 0.355330
+TIME X-Volume-Time 0.098930
+TIME X-UG-Time 0.006560
+TIME X-Total-Time 0.461820
+TIME end_revalidate_path 7450001.752917353
+TIME begin_ms_send 1367047408.725495262
+TIME end_ms_send 1367047412.408438406
+TIME 0 X-Create-Times 0.531320
+TIME X-Volume-Time 0.079450
+TIME X-UG-Time 0.013670
+TIME X-Total-Time 0.683120
+TIME end_create 1367047412.408465629
+--------------------------------
+TIME begin_local_write 1367047412.408469755
+TIME begin_write 7450005.467871714
+TIME begin_revalidate_path 7450005.467891901
+TIME begin_ms_recv 1367047412.421195722
+TIME end_ms_recv 1367047413.4252521
+TIME X-Resolve-Time 0.293600
+TIME X-Volume-Time 0.004470
+TIME X-UG-Time 0.092020
+TIME X-Total-Time 0.391510
+TIME end_revalidate_path 7450006.51047370
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/srv-40-121.mpi-sws.org/srv-40-121.mpi-sws.org.1367047408725[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047413.62021751
+TIME end_ms_send 1367047414.713766473
+TIME 0 X-Update-Times 0.439410
+TIME X-Volume-Time 0.005780
+TIME X-UG-Time 0.008950
+TIME X-Total-Time 0.462350
+TIME end_write 7450007.760516253
+TIME end_local_write 1367047414.713806657
+--------------------------------
+TIME begin_local_read 1367047414.713810311
+TIME begin_read 7450007.760534244
+TIME begin_revalidate_path 7450007.760541676
+TIME begin_ms_recv 1367047414.713832294
+TIME end_ms_recv 1367047414.978176953
+TIME X-Resolve-Time 0.120000
+TIME X-Volume-Time 0.005330
+TIME X-UG-Time 0.007170
+TIME X-Total-Time 0.136710
+TIME end_revalidate_path 7450008.25030983
+TIME begin_ms_send 1367047414.978788617
+TIME end_read 7450008.49018188
+TIME end_local_read 1367047415.2305700
+--------------------------------
+TIME begin_close 1367047415.2309321
+TIME end_close 1367047415.2315927
+--------------------------------
+TIME begin_unlink 1367047415.2318744
+TIME end_ms_send 1367047416.382073050
+TIME 0 X-Update-Times 0.210240
+TIME X-Volume-Time 0.010210
+TIME X-UG-Time 0.007570
+TIME X-Total-Time 0.230120
+TIME begin_ms_send 1367047416.382154650
+TIME end_ms_send 1367047418.452911480
+TIME 0 X-Update-Times 0.396930
+TIME X-Volume-Time 0.192270
+TIME X-UG-Time 0.222810
+TIME X-Total-Time 0.815280
+TIME begin_ms_send 1367047418.805644614
+TIME end_ms_send 1367047420.901709018
+TIME 0 X-Delete-Times 0.627430
+TIME X-Volume-Time 0.009840
+TIME X-UG-Time 0.010630
+TIME X-Total-Time 0.659600
+TIME end_unlink 1367047420.904541932
+--------------------------------
+TIME begin_rmdir 1367047420.904548067
+TIME begin_ms_send 1367047420.904579452
+TIME end_ms_send 1367047424.36867802
+TIME 0 X-Delete-Times 1.645280
+TIME X-Volume-Time 0.319480
+TIME X-UG-Time 0.006300
+TIME X-Total-Time 1.973200
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/srv-40-121.mpi-sws.org) errno = -2
+TIME end_rmdir 1367047424.36951984
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 139.19.158.235 closed.

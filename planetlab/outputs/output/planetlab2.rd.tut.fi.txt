@@ -1,0 +1,36 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.020650
+TIME X-UG-Time 0.079170
+TIME X-Total-Time 1.306190
+--------------------------------
+TIME begin_diskwrite 1367047386.839259060
+TIME end_diskwrite 1367047386.853465195
+--------------------------------
+TIME begin_diskread 1367047386.853490602
+TIME end_diskread 1367047386.858536311
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047386.932935256
+TIME begin_revalidate_path 17928985.33794909
+TIME begin_ms_recv 1367047386.933047645
+TIME end_ms_recv 1367047396.632969920
+TIME X-Resolve-Time 0.029420
+TIME X-Volume-Time 0.003740
+TIME X-UG-Time 0.003220
+TIME X-Total-Time 0.037000
+TIME end_revalidate_path 17928994.733863812
+TIME begin_ms_send 1367047396.633282777
+TIME end_ms_send 1367047403.722040841
+TIME X-Volume-Time 0.000000
+TIME X-UG-Time 0.000000
+TIME X-Total-Time 0.000000
+[       mkdir.cpp:0126] fs_entry_mkdir: ms_client_create(/planetlab2.rd.tut.fi) rc = -500

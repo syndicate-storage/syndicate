@@ -1,0 +1,10 @@
+---------- BEGIN write_file.sh ----------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0103   824  103   824    0     0    517      0  0:00:01  0:00:01 --:--:--   549
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:02 --:--:--     0  8 3319k    8  278k    0     0  92458      0  0:00:36  0:00:03  0:00:33 95689 23 3319k   23  795k    0     0   195k      0  0:00:16  0:00:04  0:00:12  200k 39 3319k   39 1318k    0     0   259k      0  0:00:12  0:00:05  0:00:07  264k 52 3319k   52 1729k    0     0   287k      0  0:00:11  0:00:06  0:00:05  351k 63 3319k   63 2122k    0     0   299k      0  0:00:11  0:00:07  0:00:04  426k 79 3319k   79 2642k    0     0   328k      0  0:00:10  0:00:08  0:00:02  477k 95 3319k   95 3168k    0     0   350k      0  0:00:09  0:00:09 --:--:--  476k100 3319k  100 3319k    0     0   355k      0  0:00:09  0:00:09 --:--:--  470k
+/tmp/write_file: error while loading shared libraries: libmicrohttpd.so.10: cannot open shared object file: No such file or directory
+---------- END write_file.sh ----------
+Connection to 129.69.210.96 closed.

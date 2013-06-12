@@ -1,0 +1,43 @@
+#!/bin/sh
+
+source /etc/syndicate/syndicate-metadata-service.conf
+
+start() {
+   nohup python $MD_SERVICE_PATH/SMDS/mdctl.py >> $MD_LOGFILE &
+}
+
+stop() {
+   for i in $(ps aux | grep python | grep mdctl | awk '{print $2}'); do
+      kill -9 $i
+   done
+}
+
+restart() {
+   stop
+   start
+}
+
+usage() {
+   echo "Usage: $0 [start|stop|restart]"
+}
+
+case $1 in
+   stop)
+      stop
+      ;;
+   start)
+      start
+      ;;
+   restart)
+      restart
+      ;;
+   ?)
+      usage
+      exit 1
+      ;;
+   *)
+      usage
+      exit 1
+esac
+
+exit 0

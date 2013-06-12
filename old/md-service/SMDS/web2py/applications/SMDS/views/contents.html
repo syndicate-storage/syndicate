@@ -1,0 +1,12 @@
+{{extend 'layout.html'}}
+<h1>My Syndicate</h1>
+{{=form}}
+
+<h2>request.vars</h2>
+{{=BEAUTIFY(request.vars)}}
+<h2>response.vars</h2>
+{{=BEAUTIFY(response.vars)}}
+<h2>form.vars</h2>
+{{=BEAUTIFY(form.vars)}}
+<h2>response._vars</h2>
+{{=BEAUTIFY(response._vars)}}

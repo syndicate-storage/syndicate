@@ -1,0 +1,232 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.023100
+TIME X-UG-Time 0.130130
+TIME X-Total-Time 2.342720
+--------------------------------
+TIME begin_diskwrite 1367047714.759189651
+TIME end_diskwrite 1367047715.163124266
+--------------------------------
+TIME begin_diskread 1367047715.163157253
+TIME end_diskread 1367047715.177412378
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047715.438521320
+TIME begin_revalidate_path 8878246.917973201
+TIME begin_ms_recv 1367047715.438729315
+TIME end_ms_recv 1367047719.408553473
+TIME X-Resolve-Time 0.113710
+TIME X-Volume-Time 0.066770
+TIME X-UG-Time 0.003590
+TIME X-Total-Time 0.185100
+TIME end_revalidate_path 8878250.888034729
+TIME begin_ms_send 1367047719.409380534
+TIME end_ms_send 1367047722.200440559
+TIME 0 X-Create-Times 0.652370
+TIME X-Volume-Time 0.004110
+TIME X-UG-Time 0.004260
+TIME X-Total-Time 0.663780
+TIME end_mkdir 1367047722.200535816
+--------------------------------
+TIME begin_create 1367047722.200554745
+TIME begin_revalidate_path 8878253.679885901
+TIME begin_ms_recv 1367047722.200626097
+TIME end_ms_recv 1367047722.672417975
+TIME X-Resolve-Time 0.237130
+TIME X-Volume-Time 0.097790
+TIME X-UG-Time 0.083310
+TIME X-Total-Time 0.419220
+TIME end_revalidate_path 8878254.151900541
+TIME begin_ms_send 1367047722.673270573
+TIME end_ms_send 1367047726.9192167
+TIME 0 X-Create-Times 0.449930
+TIME X-Volume-Time 0.234120
+TIME X-UG-Time 0.208000
+TIME X-Total-Time 0.900460
+TIME end_create 1367047726.9288439
+--------------------------------
+TIME begin_local_write 1367047726.9309018
+TIME begin_write 8878257.488637656
+TIME begin_revalidate_path 8878257.488659503
+TIME begin_ms_recv 1367047726.9386788
+TIME end_ms_recv 1367047726.639887632
+TIME X-Resolve-Time 0.501930
+TIME X-Volume-Time 0.039450
+TIME X-UG-Time 0.018490
+TIME X-Total-Time 0.561730
+TIME end_revalidate_path 8878258.119407573
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plab1.nec-labs.com/plab1.nec-labs.com.1367047722672[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047727.274454116
+TIME end_ms_send 1367047729.952398035
+TIME 0 X-Update-Times 0.450600
+TIME X-Volume-Time 0.085680
+TIME X-UG-Time 0.005580
+TIME X-Total-Time 0.554890
+TIME end_write 8878261.431792260
+TIME end_local_write 1367047729.952529959
+--------------------------------
+TIME begin_local_read 1367047729.952546771
+TIME begin_read 8878261.431864404
+TIME begin_revalidate_path 8878261.431884809
+TIME begin_ms_recv 1367047729.952614893
+TIME end_ms_recv 1367047730.114795932
+TIME X-Resolve-Time 0.102590
+TIME X-Volume-Time 0.004660
+TIME X-UG-Time 0.005330
+TIME X-Total-Time 0.113760
+TIME end_revalidate_path 8878261.594337570
+TIME begin_ms_send 1367047734.633555608
+TIME end_ms_send 1367047736.90234343
+TIME 0 X-Update-Times 0.289190
+TIME X-Volume-Time 0.012250
+TIME X-UG-Time 0.077720
+TIME X-Total-Time 0.385350
+TIME begin_ms_send 1367047736.90397941
+TIME end_read 8878267.907642940
+TIME end_local_read 1367047736.428359540
+--------------------------------
+TIME begin_close 1367047736.428730586
+TIME end_close 1367047736.428750495
+--------------------------------
+TIME begin_unlink 1367047736.428765790
+TIME end_ms_send 1367047738.405282325
+TIME 0 X-Update-Times 0.260320
+TIME X-Volume-Time 0.004380
+TIME X-UG-Time 0.003550
+TIME X-Total-Time 0.270060
+TIME begin_ms_send 1367047738.405457165
+TIME end_ms_send 1367047740.521844434
+TIME 0 X-Update-Times 0.064680
+TIME X-Volume-Time 0.003850
+TIME X-UG-Time 0.004110
+TIME X-Total-Time 0.074070
+TIME begin_ms_send 1367047741.31798983
+TIME end_ms_send 1367047744.184363760
+TIME 0 X-Delete-Times 1.628200
+TIME X-Volume-Time 0.049560
+TIME X-UG-Time 0.018790
+TIME X-Total-Time 1.698900
+TIME end_unlink 1367047744.209536706
+--------------------------------
+TIME begin_rmdir 1367047744.209569781
+TIME begin_ms_send 1367047744.209660465
+TIME end_ms_send 1367047749.793760491
+TIME 0 X-Delete-Times 4.359080
+TIME X-Volume-Time 0.085270
+TIME X-UG-Time 0.022890
+TIME X-Total-Time 4.473100
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/plab1.nec-labs.com) errno = -2
+TIME end_rmdir 1367047749.794072515
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 138.15.10.55 closed.

@@ -1,0 +1,71 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+--------------------------------
+TIME begin_diskwrite 1367047381.474411182
+TIME end_diskwrite 1367047381.505137171
+--------------------------------
+TIME begin_diskread 1367047381.505146134
+TIME end_diskread 1367047381.506613683
+--------------------------------
+TIME begin_mkdir 1367047381.506621079
+TIME begin_revalidate_path 1367047381.506699977
+TIME begin_ms_recv 1367047381.506721205
+TIME end_ms_recv 1367047392.647063683
+TIME end_revalidate_path 1367047392.647115469
+TIME begin_ms_send 1367047392.662311924
+TIME end_ms_send 1367047402.765515762
+TIME end_mkdir 1367047402.765531576
+--------------------------------
+TIME begin_create 1367047402.765535665
+TIME begin_revalidate_path 1367047402.765547519
+TIME begin_ms_recv 1367047402.765562540
+TIME end_ms_recv 1367047407.259787026
+TIME end_revalidate_path 1367047407.259836722
+TIME begin_ms_send 1367047407.259947540
+TIME end_ms_send 1367047409.766026540
+TIME end_create 1367047409.766042238
+--------------------------------
+TIME begin_local_write 1367047409.766046814
+TIME begin_write 1367047409.766051901
+TIME begin_revalidate_path 1367047409.766059492
+TIME begin_ms_recv 1367047409.766072512
+TIME end_ms_recv 1367047411.756086118
+TIME end_revalidate_path 1367047411.756142875
+TIME begin_ms_send 1367047411.789112916
+TIME end_ms_send 1367047414.106785684
+TIME end_write 1367047414.106800081
+TIME end_local_write 1367047414.106812337
+--------------------------------
+TIME begin_local_read 1367047414.106816286
+TIME begin_read 1367047414.106818375
+TIME begin_revalidate_path 1367047414.106826081
+TIME begin_ms_recv 1367047414.106839142
+TIME end_ms_recv 1367047414.986733704
+TIME end_revalidate_path 1367047414.986791358
+TIME end_read 1367047414.989322194
+TIME end_local_read 1367047414.989330988
+--------------------------------
+TIME begin_close 1367047414.989334679
+TIME end_close 1367047414.989340978
+--------------------------------
+TIME begin_unlink 1367047414.989343880
+TIME begin_ms_send 1367047414.989387906
+TIME end_ms_send 1367047418.99620350
+TIME end_unlink 1367047418.102572273
+--------------------------------
+TIME begin_rmdir 1367047418.102578797
+TIME begin_ms_send 1367047418.102610864
+TIME end_ms_send 1367047419.792230564
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/planetlab2.tmit.bme.hu) errno = -2
+TIME end_rmdir 1367047419.792312754
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 152.66.245.162 closed.

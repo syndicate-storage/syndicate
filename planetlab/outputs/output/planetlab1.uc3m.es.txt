@@ -1,0 +1,221 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.009360
+TIME X-UG-Time 0.055020
+TIME X-Total-Time 1.746300
+--------------------------------
+TIME begin_diskwrite 1367047389.800864515
+TIME end_diskwrite 1367047389.816206597
+--------------------------------
+TIME begin_diskread 1367047389.816221962
+TIME end_diskread 1367047389.819911097
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047389.941198827
+TIME begin_revalidate_path 3885070.233215597
+TIME begin_ms_recv 1367047389.941291575
+TIME end_ms_recv 1367047396.974747924
+TIME X-Resolve-Time 0.095420
+TIME X-Volume-Time 0.004370
+TIME X-UG-Time 0.003980
+TIME X-Total-Time 0.104490
+TIME end_revalidate_path 3885077.266784180
+TIME begin_ms_send 1367047396.974997535
+TIME end_ms_send 1367047398.313168008
+TIME 0 X-Create-Times 0.127250
+TIME X-Volume-Time 0.001860
+TIME X-UG-Time 0.002360
+TIME X-Total-Time 0.132690
+TIME end_mkdir 1367047398.313208586
+--------------------------------
+TIME begin_create 1367047398.313214383
+TIME begin_revalidate_path 3885078.605178703
+TIME begin_ms_recv 1367047398.313246859
+TIME end_ms_recv 1367047403.662872935
+TIME X-Resolve-Time 0.185450
+TIME X-Volume-Time 0.006010
+TIME X-UG-Time 0.013750
+TIME X-Total-Time 0.206260
+TIME end_revalidate_path 3885083.954909540
+TIME begin_ms_send 1367047403.663086788
+TIME end_ms_send 1367047408.366911697
+TIME 0 X-Create-Times 0.297230
+TIME X-Volume-Time 0.005490
+TIME X-UG-Time 0.067810
+TIME X-Total-Time 0.377040
+TIME end_create 1367047408.366951646
+--------------------------------
+TIME begin_local_write 1367047408.366957723
+TIME begin_write 3885088.658923300
+TIME begin_revalidate_path 3885088.658932379
+TIME begin_ms_recv 1367047408.366995646
+TIME end_ms_recv 1367047409.479812927
+TIME X-Resolve-Time 0.495360
+TIME X-Volume-Time 0.016210
+TIME X-UG-Time 0.304770
+TIME X-Total-Time 0.817640
+TIME end_revalidate_path 3885089.771865875
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab1.uc3m.es/planetlab1.uc3m.es.1367047403662[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047409.531044619
+TIME end_ms_send 1367047412.492163830
+TIME 0 X-Update-Times 0.714130
+TIME X-Volume-Time 0.181320
+TIME X-UG-Time 0.208190
+TIME X-Total-Time 1.113830
+TIME end_write 3885092.784155109
+TIME end_local_write 1367047412.492217258
+--------------------------------
+TIME begin_local_read 1367047412.492223334
+TIME begin_read 3885092.784181439
+TIME begin_revalidate_path 3885092.784191915
+TIME begin_ms_recv 1367047412.492256858
+TIME end_ms_recv 1367047412.871863924
+TIME X-Resolve-Time 0.185150
+TIME X-Volume-Time 0.030970
+TIME X-UG-Time 0.024810
+TIME X-Total-Time 0.242720
+TIME end_revalidate_path 3885093.163918269
+TIME begin_ms_send 1367047412.872715285
+TIME end_read 3885093.219299555
+TIME end_local_read 1367047412.927360657
+--------------------------------
+TIME begin_close 1367047412.927366663
+TIME end_close 1367047412.927376581
+--------------------------------
+TIME begin_unlink 1367047412.927381190
+TIME end_ms_send 1367047415.739597458
+TIME 0 X-Update-Times 0.650140
+TIME X-Volume-Time 0.009940
+TIME X-UG-Time 0.053140
+TIME X-Total-Time 0.716580
+TIME begin_ms_send 1367047415.739672537
+TIME end_ms_send 1367047418.264601645
+TIME 0 X-Update-Times 0.212390
+TIME X-Volume-Time 0.016490
+TIME X-UG-Time 0.009910
+TIME X-Total-Time 0.266570
+TIME begin_ms_send 1367047420.542382183
+TIME end_ms_send 1367047422.804779436
+TIME 0 X-Delete-Times 0.117020
+TIME X-Volume-Time 0.003290
+TIME X-UG-Time 0.004260
+TIME X-Total-Time 0.126480
+TIME end_unlink 1367047422.809554454
+--------------------------------
+TIME begin_rmdir 1367047422.809569121
+TIME begin_ms_send 1367047422.809613609
+TIME end_ms_send 1367047429.704852107
+TIME X-Volume-Time 0.000000
+TIME X-UG-Time 0.000000
+TIME X-Total-Time 0.000000
+[       rmdir.cpp:0055] fs_entry_rmdir: ms_client_delete(/planetlab1.uc3m.es) rc = -500
+[  write_file.cpp:0316] main: fs_entry_rmdir(/planetlab1.uc3m.es) rc = -121
+---------- END write_file.sh ----------
+Connection to 163.117.253.22 closed.

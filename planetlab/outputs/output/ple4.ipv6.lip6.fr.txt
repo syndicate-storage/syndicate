@@ -1,0 +1,35 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.008890
+TIME X-UG-Time 0.156970
+TIME X-Total-Time 1.407020
+--------------------------------
+TIME begin_diskwrite 1367047383.603584736
+TIME end_diskwrite 1367047383.613524912
+--------------------------------
+TIME begin_diskread 1367047383.613532641
+TIME end_diskread 1367047383.615414632
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047383.659205263
+TIME begin_revalidate_path 919651.269335592
+TIME begin_ms_recv 1367047383.659271244
+TIME end_ms_recv 1367047394.54565109
+TIME X-Resolve-Time 0.000000
+TIME X-Volume-Time 0.000000
+TIME X-UG-Time 0.000000
+TIME X-Total-Time 0.000000
+[ consistency.cpp:0414] fs_entry_revalidate_path: ms_client_resolve_path(/ple4.ipv6.lip6.fr) rc = -500
+TIME end_revalidate_path_failed 919661.664695869
+[       mkdir.cpp:0060] fs_entry_mkdir: fs_entry_revalidate_path(/ple4.ipv6.lip6.fr) rc = -500
+[  write_file.cpp:0207] main: fs_entry_mkdir(/ple4.ipv6.lip6.fr) rc = -121
+---------- END write_file.sh ----------
+Connection to 132.227.62.122 closed.

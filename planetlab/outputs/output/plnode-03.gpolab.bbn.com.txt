@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.020920
+TIME X-UG-Time 0.543290
+TIME X-Total-Time 7.389690
+--------------------------------
+TIME begin_diskwrite 1367047397.246574781
+TIME end_diskwrite 1367047397.262592438
+--------------------------------
+TIME begin_diskread 1367047397.262611785
+TIME end_diskread 1367047397.273788694
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047397.349973454
+TIME begin_revalidate_path 15443225.106231601
+TIME begin_ms_recv 1367047397.350161751
+TIME end_ms_recv 1367047402.430522589
+TIME X-Resolve-Time 0.167770
+TIME X-Volume-Time 0.009600
+TIME X-UG-Time 0.009150
+TIME X-Total-Time 0.187500
+TIME end_revalidate_path 15443230.186915812
+TIME begin_ms_send 1367047402.441694607
+TIME end_ms_send 1367047408.968654297
+TIME 0 X-Create-Times 1.589440
+TIME X-Volume-Time 0.007530
+TIME X-UG-Time 0.021530
+TIME X-Total-Time 1.621740
+TIME end_mkdir 1367047408.968777012
+--------------------------------
+TIME begin_create 1367047408.968784205
+TIME begin_revalidate_path 15443236.724962033
+TIME begin_ms_recv 1367047408.968911948
+TIME end_ms_recv 1367047409.80066059
+TIME X-Resolve-Time 0.043500
+TIME X-Volume-Time 0.007350
+TIME X-UG-Time 0.007160
+TIME X-Total-Time 0.058940
+TIME end_revalidate_path 15443236.836410881
+TIME begin_ms_send 1367047409.80608529
+TIME end_ms_send 1367047411.325380899
+TIME 0 X-Create-Times 0.070440
+TIME X-Volume-Time 0.001820
+TIME X-UG-Time 0.002360
+TIME X-Total-Time 0.075930
+TIME end_create 1367047411.325504311
+--------------------------------
+TIME begin_local_write 1367047411.325513461
+TIME begin_write 15443239.81656855
+TIME begin_revalidate_path 15443239.81681161
+TIME begin_ms_recv 1367047411.325596085
+TIME end_ms_recv 1367047411.948768637
+TIME X-Resolve-Time 0.208660
+TIME X-Volume-Time 0.007840
+TIME X-UG-Time 0.065440
+TIME X-Total-Time 0.283150
+TIME end_revalidate_path 15443239.705165912
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/plnode-03.gpolab.bbn.com/plnode-03.gpolab.bbn.com.1367047409080[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047412.41827818
+TIME end_ms_send 1367047413.459652957
+TIME 0 X-Update-Times 0.338090
+TIME X-Volume-Time 0.002780
+TIME X-UG-Time 0.002760
+TIME X-Total-Time 0.345370
+TIME end_write 15443241.215985417
+TIME end_local_write 1367047413.459890074
+--------------------------------
+TIME begin_local_read 1367047413.459898595
+TIME begin_read 15443241.216028300
+TIME begin_revalidate_path 15443241.216051698
+TIME begin_ms_recv 1367047413.459966552
+TIME end_ms_recv 1367047413.648265136
+TIME X-Resolve-Time 0.120420
+TIME X-Volume-Time 0.007910
+TIME X-UG-Time 0.004700
+TIME X-Total-Time 0.134750
+TIME end_revalidate_path 15443241.404537042
+TIME begin_ms_send 1367047413.649439686
+TIME end_read 15443241.459821419
+TIME end_local_read 1367047413.703741163
+--------------------------------
+TIME begin_close 1367047413.703749055
+TIME end_close 1367047413.703774338
+--------------------------------
+TIME begin_unlink 1367047413.703779437
+TIME end_ms_send 1367047416.320844826
+TIME 0 X-Update-Times 0.504390
+TIME X-Volume-Time 0.016670
+TIME X-UG-Time 0.010060
+TIME X-Total-Time 0.586130
+TIME begin_ms_send 1367047416.321078381
+TIME end_ms_send 1367047417.982754120
+TIME 0 X-Update-Times 0.460690
+TIME X-Volume-Time 0.082790
+TIME X-UG-Time 0.008240
+TIME X-Total-Time 0.558370
+TIME begin_ms_send 1367047421.324500780
+TIME end_ms_send 1367047424.130015264
+TIME 0 X-Delete-Times 1.386020
+TIME X-Volume-Time 0.113160
+TIME X-UG-Time 0.148670
+TIME X-Total-Time 1.654490
+TIME end_unlink 1367047424.135490818
+--------------------------------
+TIME begin_rmdir 1367047424.135514285
+TIME begin_ms_send 1367047424.135612205
+TIME end_ms_send 1367047432.819507031
+TIME 0 X-Delete-Times 6.995890
+TIME X-Volume-Time 0.295560
+TIME X-UG-Time 0.112110
+TIME X-Total-Time 7.493020
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/plnode-03.gpolab.bbn.com) errno = -2
+TIME end_rmdir 1367047432.819913028
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 192.1.249.137 closed.

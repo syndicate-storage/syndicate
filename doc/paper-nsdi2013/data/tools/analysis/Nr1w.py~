@@ -1,0 +1,134 @@
+#!/usr/bin/python
+
+import analysis
+import os
+import sys
+import numpy as np
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+
+def eval_dict( s ):
+   ret = None
+   try:
+      exec("ret = " + s)
+   except:
+      return None
+
+   return ret
+
+def cdf_compare( dists ):
+   mm = min(dists[0])
+   ma = max(dists[0])
+   for i in xrange(1,len(dists)):
+      mm = min( mm, min(dists[i]) )
+      ma = max( ma, max(dists[i]) )
+
+   x = np.linspace( mm, ma )
+
+   for dist in dists:
+      ecdf = sm.distributions.ECDF( dist )
+      plt.step( x, ecdf(x) )
+
+      dist.sort()
+      print dist
+      
+   plt.show()
+
+   
+if __name__ == "__main__":
+   syndicate_data_1k = {}
+   syndicate_data_1M = {}
+   syndicate_data_50M = {}
+   
+   s3_data_20k = {}
+   s3_data_50M = {}
+
+   intersection = []
+
+   for expfile in os.listdir( sys.argv[1] ):
+      expfd = open( os.path.join( sys.argv[1], expfile ), "r" )
+      expdata = analysis.parse_experiments( expfd )
+      expfd.close()
+
+      if len(expdata['fcdistro']) > 0 and "12" not in expdata['fcdistro']:
+         print >> sys.stderr, "%s: wrong distro '%s'" % (expfile, expdata['fcdistro'])
+         continue
+
+      syndicate_exp_1k = analysis.read_experiment_data( expdata, "Nr1w-x5-small-syndicate.py" )
+      syndicate_exp_1M = analysis.read_experiment_data( expdata, "Nr1w-x5-1M-syndicate.py" )
+      syndicate_exp_50M = analysis.read_experiment_data( expdata, "Nr1w-x5-50M-syndicate-4.py" )
+      
+      s3_exp_20k = analysis.read_experiment_data( expdata, "Nr1w-x5.py" )
+      s3_exp_50M = analysis.read_experiment_data( expdata, "Nr1w-x5-50M.py" )
+
+      intersect = True
+      
+      if syndicate_exp_1k != None and len(syndicate_exp_1k) > 0 and syndicate_exp_1k[0] != None:
+         syndicate_data_1k[expfile] = eval_dict( syndicate_exp_1k[0][0] )
+      else:
+         intersect = False
+
+      if syndicate_exp_1M != None and len(syndicate_exp_1M) > 0 and syndicate_exp_1M[0] != None:
+         syndicate_data_1M[expfile] = eval_dict( syndicate_exp_1M[0][0] )
+      else:
+         intersect = False
+
+      if syndicate_exp_50M != None and len(syndicate_exp_50M) > 0 and syndicate_exp_50M[0] != None:
+         syndicate_data_50M[expfile] = eval_dict( syndicate_exp_50M[0][0] )
+      else:
+         intersect = False
+
+      if s3_exp_20k != None and len(s3_exp_20k) > 0 and s3_exp_20k[0] != None:
+         s3_data_20k[expfile] = eval_dict( s3_exp_20k[0][0] )
+      else:
+         intersect = False
+
+      if s3_exp_50M != None and len(s3_exp_50M) > 0 and s3_exp_50M[0] != None:
+         s3_data_50M[expfile] = eval_dict( s3_exp_50M[0][0] )
+      else:
+         intersect = False
+
+      if intersect:
+         intersection.append( expfile )
+
+   for expfile in os.listdir( sys.argv[1] ):
+      if expfile not in intersection:
+         print >> sys.stderr, "Node %s did not pass all tests" % expfile
+
+   print >> sys.stderr, "%s nodes have data" % len(intersection)
+
+   syndicate = { 'first_1k': [], 'last_1k': [], 'first_1m': [], 'last_1m': [], 'first_50m': [], 'last_50m': [] }
+   s3 = { 'first_20k': [], 'last_20k': [], 'first_50m': [], 'last_50m': [] }
+
+   for node in intersection:
+      valid = True
+      for (data_name, data) in [("syndicate 1k", syndicate_data_1k), ("syndicate 1M", syndicate_data_1M), ("syndicate 50M", syndicate_data_50M), ("S3 20k", s3_data_20k), ("S3 50M", s3_data_50M)]:
+         if data.get(node) == None:
+            print >> sys.stderr, "%s: no data for %s" % (node, data_name)
+            valid = False
+         elif data[node] == None:
+            print >> sys.stderr, "%s: unparseable data" % (node, data_name)
+            valid = False
+         elif len(data[node]['exception']) > 0:
+            print >> sys.stderr, "%s: exceptions on %s" % (node, data_name)
+            valid = False
+
+      if not valid:
+         continue;
+         
+
+      syndicate['first_1k'].append( syndicate_data_1k[node]['end_recv'][0] - syndicate_data_1k[node]['start_recv'][0] )
+      syndicate['last_1k'].append( syndicate_data_1k[node]['end_recv'][-1] - syndicate_data_1k[node]['start_recv'][-1] )
+      syndicate['first_1m'].append( syndicate_data_1M[node]['end_recv'][0] - syndicate_data_1M[node]['start_recv'][0] )
+      syndicate['last_1m'].append( syndicate_data_1M[node]['end_recv'][-1] - syndicate_data_1M[node]['start_recv'][-1] )
+      syndicate['first_50m'].append( syndicate_data_50M[node]['end_recv'][0] - syndicate_data_50M[node]['start_recv'][0] )
+      syndicate['last_50m'].append( syndicate_data_50M[node]['end_recv'][-1] - syndicate_data_50M[node]['start_recv'][-1] )
+      s3['first_20k'].append( s3_data_20k[node]['end_recv'][0] - s3_data_20k[node]['start_recv'][0] )
+      s3['last_20k'].append( s3_data_20k[node]['end_recv'][-1] - s3_data_20k[node]['start_recv'][-1] )
+      s3['first_50m'].append( s3_data_50M[node]['end_recv'][0] - s3_data_50M[node]['start_recv'][0] )
+      s3['last_50m'].append( s3_data_50M[node]['end_recv'][-1] - s3_data_50M[node]['start_recv'][-1] )
+
+   # first 1K vs last 1K
+   #cdf_compare( [syndicate['first_1k'], syndicate['last_1k']] )
+
+   cdf_compare( [syndicate['last_1m'], s3['last_20k']] )

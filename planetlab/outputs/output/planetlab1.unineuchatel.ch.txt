@@ -1,0 +1,15 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[write_file_remote.cpp:0018] main: starting up debugging
+[write_file_remote.cpp:0019] main: starting up errors
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME begin_open 1367049044.191527944
+TIME begin_revalidate_path 1367049044.191583396
+TIME begin_ms_recv 1367049044.191606763
+TIME end_ms_recv 1367049051.375124412
+TIME end_revalidate_path 1367049051.375189477
+[write_file_remote.cpp:0154] main: fs_entry_open(/testfile) rc = -2
+---------- END write_file.sh ----------
+Connection to 192.42.43.22 closed.

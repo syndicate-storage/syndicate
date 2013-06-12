@@ -1,0 +1,83 @@
+\section{Implementation}
+
+\subsection{Client}
+
+The Syndicate client is implemented as a FUSE~\cite{FUSE} daemon.
+This makes the code reasonably portable and easy to debug while
+achieving acceptable local I/O performance.  It serves files to other
+clients through the CDN via GNU libmicrohttpd~\cite{libmicrohttpd}, an
+embedded HTTP server library.  It uses the cURL~\cite{cURL} library to
+retrieve files via HTTP and metadata via either HTTP or HTTPS.
+Without dependencies, the daemon consists of 6000 lines of C and C++
+code.  The client and metadata server are each linked to a Syndicate
+library of common routines, which consists of an additional 4000
+lines of C and C++.
+
+\subsection{Metadata Server}
+
+The metadata server is a daemon that uses GNU libmicrohttpd to serve
+metadata to clients and receive metadata updates over HTTP or HTTPS.
+It keeps a local file of authorized users in .htaccess~\cite{Apache}
+format.  It comes with a command-line tool to explicitly add and remove metadata in the
+master copy.  Without its dependencies, the server consists of 2400
+lines of C and C++ code.
+
+If it is available and inexpensive to do so, the metadata server may
+be programmed to instruct the CDN to purge all stale data from a
+particular URL when it detects that the URL is stale.  We do not trust
+the clients to do this sensibly for security reasons (e.g., a
+malicious program masquerading as a Syndicate client can abuse the
+purge operation to deny other users good read performance), but our
+CDN implementation can trust a whitelist of hosts such as our metadata
+servers to carry out the operation.
+
+%So there can be multiple instances... Be sure to reconcile with
+%whatever you add to design section. -llp
+% Done. -jcn
+
+
+% Notes below
+
+\comment{ 
+TAKEAWAY 1: The reader should see what software systems and algorithms we used to implement our design, and why they 
+were good choices.
+Overview of Syndicate architecture
+\\
+\subsection{Client}
+Overview of the client architecture.
+\\
+The client is a FUSE daemon (easy to debug, portable, and maintainable).
+\\
+The client runs an embedded HTTP server for serving files to other clients (since the CDN speaks HTTP).
+\\
+The client HTTP POST's metadata to the metadata server.
+\\
+Give a diagram/overview of the client's i-node structure.  The take-away is that we preserve some metadata, but let the underlying FS do the ``heavy lifting" for local files and we let cURL do the ``heavy lifting" for remote files.
+\\
+One optimization we employ is asynchronously downloading small files when the are opened for reading and caching them on disk as long as there is at least one open file handle to them.
+For large files, synchronously request the byte range given in the read() syscall.
+\\
+You can mount syndicatefs within syndicatefs, so you can build up an arbitrarily huge filesystem.
+\\
+Clients download metadata directories at a time, and use Merkel trees to determine which directories have not changed since the last refresh and which have.
+\\
+\subsection{Metadata Server}
+The metadata hierarchy is implemented as a directory tree on disk, where each file is a stub containing only the file metadata.
+\\
+The metadata server serves metadata for a directory and its entries (but it does NOT recursively walk the directory).
+\\
+We use an embedded HTTP server to do the work of communicating with clients.
+\\
+We periodically validate the metadata by verifying that the data is still available.
+\\
+The metadata server supports HTTPS and user/password authentication.  We have a metadata service that lets you manage a cloud of metadata servers and their users.
+\\
+The metadata server interfaces with CoBlitz to add/remove users, add/remove CDN prefixes, add/remove content servers (other clients), and purge stale content.
+
+\subsection{CoBlitz}
+CoBlitz consists of the proxy (with an nginx front-end), a redirection service (CoRedirect), and a DNS demultiplexer (DnsDemux).  Cite all relevant papers here.
+\\
+CoBlitz requires the URL to a piece of content to be rewritten with a CDN prefix.  The client performs the re-write, since the CDN prefix is known to them in advance.
+\\
+CoBlitz cannot cache SSL-encrypted data--the user must encrypt the data in advance if desired (this is because there are many possible cyphertexts of a piece of content, and CoBlitz uses the content hash to identify a cache hit, IIRC).
+}

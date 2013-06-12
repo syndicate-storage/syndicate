@@ -1,0 +1,114 @@
+#!/bin/bash
+
+MDSERVERD=/usr/bin/mdserverd
+CONFIG=/etc/syndicate/syndicate-metadata-server.conf
+
+# pull in configuration as shell variables
+source $CONFIG 2> /dev/null
+
+stop() {
+   echo -n "Stopping Syndicate metadata server mdserverd..."
+
+   force=$1
+
+   # find mdserver processes
+   mdserver_procs=$(ps aux | grep $MDSERVERD | grep -v grep | awk '{print $2}')
+
+   # send SIGINT to the running mdserver processes
+   for i in $mdserver_procs; do
+      kill -s INT $i
+   done
+
+   # wait for mdserverd to die
+   sleep 2
+   for i in $(seq 1 10); do
+
+      echo -n "."
+
+      procs=$(ps aux | grep $MDSERVERD | grep -v grep | wc -l)
+      if [[ $procs == "0" ]]; then
+         break
+      fi
+
+      sleep 2 
+
+   done
+
+   # if mdserverd is still running, then abort (require force-stop)
+   mdserver_procs=$(ps aux | grep $MDSERVERD | grep -v grep | awk '{print $2}')
+   if [[ $mdserver_procs ]]; then
+      if [[ $force ]]; then
+         # force-stop
+         echo ""
+         for i in $mdserver_procs; do
+            echo "Forcing $i to stop"
+            kill -9 $i
+         done
+
+      else
+         echo "ERROR"
+         echo "Try again with force-stop"
+         return 1
+      fi
+   fi
+
+   echo "done"
+   return 0
+}
+
+
+start() {
+   echo -n "Starting Syndicate metadata server mdcrawelrd..."
+   
+   /bin/sh -c "$MDSERVERD"
+   RC=$?
+
+   if [[ $RC != 0 ]]; then
+      echo "ERROR"
+      echo "Failed to start $MDSERVERD, rc = $RC"
+      return 1
+   fi
+
+   sleep 1
+
+   # make sure its running
+   mdserver_procs=$(ps aux | grep $MDSERVERD | grep -v grep)
+   if ! [[ $mdserver_procs ]]; then
+      echo "ERROR"
+      echo "Failed to start $MDSERVERD"
+      return 1
+   fi
+
+   echo "done"
+   return 0
+}
+
+
+restart() {
+   stop force
+   start
+}
+
+rc=""
+case "$1" in
+   start)
+      start
+      rc=$?
+      ;;
+
+   stop)
+      stop
+      rc=$?
+      ;;
+
+   force-stop)
+      stop force
+      rc=$?
+      ;;
+
+   *)
+      echo "Usage: $0 {start|stop|force-stop}"
+      exit 1
+esac
+
+exit $rc

@@ -1,0 +1,17 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.000000
+TIME X-UG-Time 0.000000
+TIME X-Total-Time 0.000000
+libprotobuf ERROR google/protobuf/message_lite.cc:106] Can't parse message of type "ms.ms_volume_metadata" because it is missing required fields: blocksize, requester_id, owner_id, volume_id, volume_version, name, description
+[   ms-client.cpp:0441] ms_client_get_volume_metadata: invalid volume metadata from https://syndicate-metadata.appspot.com/VOLUME/testvolume
+[   syndicate.cpp:0556] syndicate_init: ms_client_get_volume_metadata rc = -22
+---------- END write_file.sh ----------
+Connection to 141.213.4.201 closed.

@@ -1,0 +1,83 @@
+\section{Implementation}
+
+\subsection{The Client}
+We implemented the Syndicate client as a FUSE~\cite{FUSE} daemon in order to make the code portable and easy to debug while achieving acceptable local I/O performance.  It serves files to other clients through the CDN via GNU libmicrohttpd~\cite{libmicrohttpd}, an embedded HTTP server library.  It uses the cURL~\cite{cURL} library to retrieve files via HTTP and metadata via either HTTP or HTTPS.  Without it dependencies, the daemon consists of 6000 lines of C and C++ code.  The client and metadata server are each linked to a Syndicate library of common routines., which consists of an additional 4000 lines of C and C++.
+
+% mount point, data directory, publish directory
+The client maintains three local directories on its host:  the mountpoint, the data directory, and the publish directory.  The Syndicate filesystem hierarchy appears at the mountpoint, and filesystem operations on files in this tree are directed to the file's data, wherever it may be.  
+
+The data directory holds the data for locally-hosted files.  Locally-hosted files in the mountpoint are named after their data in the data directory in that they share the same basename up to the mountpoint.
+
+The publish directory holds soft links to locally-hosted files, and get used to generate web URLs for the files to which they are linked.  They have basenames that match their counterparts up to the mountpoint, but they also have a version number appended to them.  A locally-hosted file that has a versioned soft link in the publish directory is said to be \textit{published} on Syndicate.
+
+For example, a Syndicate client might be mounted on \texttt{/mnt/syndicate/}, with data directory \texttt{/u/syndicate/}, and publish directory \texttt{/var/www/syndicate/}.  Suppose it exposes a locally-hosted file at \texttt{/mnt/syndicate/foo/bar/baz}.  Then, its data is stored in \texttt{/u/syndicate/foo/bar/baz}, and it is published at \texttt{/var/www/syndicate/foo/bar/baz.XYZ}, where \texttt{XYZ} is the version number.  If the fully-qualified domain name of the client is \texttt{www.foo.com}, then the file's URL is \texttt{http://www.foo.com/foo/bar/baz.XYZ}.
+
+As an optimization for remote reads, small and medium-sized files are downloaded in the background as soon as they are opened and stored locally until all handles to them are closed.  Small files are kept in RAM, and medium files in the data directory.  The size requirements for ``small" and ``medium" are user-defined.
+
+\subsection{The Metadata Server}
+
+The metadata server is a daemon that uses GNU libmicrohttpd to serve metadata to clients and receive metadata updates over HTTP or HTTPS.  It keeps a local file of authorized users in .htaccess~\cite{Apache} format, and can be configured to expose arbitrary data from the Internet as a file by applying a series of user-defined URL rewrite rules convert non-client URLs into paths in the filesystem.  It comes with a command-line tool to explicitly add and remove metadata in the master copy.  Without its dependencies, the server consists of 2400 lines of C and C++ code.
+
+The metadata server maintains the master copy within a predetermined directory on its local host so it can quickly recover if it goes down and is restarted.  It can be configured to track metadata for URLs that are not only from clients, but also from locally-hosted content and sitemaps.
+
+If it is available and inexpensive to do so, the metadata server may be programmed to instruct the CDN to purge all stale data from a particular URL when it detects that the URL is stale.  We do not trust the clients to do this sensibly for security reasons (e.g. a malicious program masquerading as a Syndicate client can abuse the purge operation).  Also, the CDN implementations we considered require whitelists of users from which to receive control-plane messages.
+
+We have additionally created a cloud application called the Syndicate Metadata Service.  It allows users to create, manage, and shut down metadata server instances across a set of hosts under its control.  Additionally, we use it to register and unregister users and their clients' hosts with metadata servers and the CDN implementation.
+
+
+% TODO: talk about CoBlitz architecture in the appropriate amount of detail
+\subsection{The CDN}
+
+We chose to use the CoBlitz CDN as the underlying CDN for our Syndicate prototype to use in our evaluation.  A CoBlitz instance automatically redirects a user's HTTP GET request for content to the best CDN node that can service it.  This satisfies our first assumption that cached data are uniquely identified by a single URL.  Also, if the HTTP GET request has a no-cache header~cite{HTTP RFC}, CoBlitz does not return cached data, satisfying our third assumption.
+
+A web URL can be transformed into a CoBlitz-specific URL by appending the URL to a CDN prefix--a fully-qualified hostname that resolves to CoBlitz's request redirection nodes.  For example, if the CDN prefix is \texttt{http://coblitz.foo.com}, and a client must read a file whose URL is \texttt{http://www.bar.org/baz.dat}, the client must request the data from \texttt{http://coblitz.foo.com/www.bar.org/baz.dat}.  This satisfies our second assumption about the CDN implementation.
+
+The CoBlitz architecture is highly fault-tolerant, easily configurable, and demonstrates excellent aggregate read throughput~\cite{CoDeeN}.  CoBlitz breaks a request for a file into requests for fixed-length chunks of the file, which it then spreads across nodes using a consistent hashing scheme.  A node fetches and reassembles the chunks into a whole file to serve to a client.  Node failures are handled transparently and are invisible to the client.  The nodes are centrally managed by a content management interface (CMI) host, which exposes a ``purge content" feature usable to our metadata server implementation.
+
+As alluded earlier, one unintended consequence of requesting any content from CoBlitz which has recently changed is that chunks from the stale version of the content might be merged with fresh chunks when the content is reassembled.  Since CoBlitz addresses content by its URL, and since each version of a file in Syndicate has a unique URL, files in Syndicate do not accidentally become corrupted by CoBlitz in this manner.
+
+% Notes below
+
+\comment{ 
+TAKEAWAY 1: The reader should see what software systems and algorithms we used to implement our design, and why they 
+were good choices.
+Overview of Syndicate architecture
+\\
+\subsection{Client}
+Overview of the client architecture.
+\\
+The client is a FUSE daemon (easy to debug, portable, and maintainable).
+\\
+The client runs an embedded HTTP server for serving files to other clients (since the CDN speaks HTTP).
+\\
+The client HTTP POST's metadata to the metadata server.
+\\
+Give a diagram/overview of the client's i-node structure.  The take-away is that we preserve some metadata, but let the underlying FS do the ``heavy lifting" for local files and we let cURL do the ``heavy lifting" for remote files.
+\\
+One optimization we employ is asynchronously downloading small files when the are opened for reading and caching them on disk as long as there is at least one open file handle to them.
+For large files, synchronously request the byte range given in the read() syscall.
+\\
+You can mount syndicatefs within syndicatefs, so you can build up an arbitrarily huge filesystem.
+\\
+Clients download metadata directories at a time, and use Merkel trees to determine which directories have not changed since the last refresh and which have.
+\\
+\subsection{Metadata Server}
+The metadata hierarchy is implemented as a directory tree on disk, where each file is a stub containing only the file metadata.
+\\
+The metadata server serves metadata for a directory and its entries (but it does NOT recursively walk the directory).
+\\
+We use an embedded HTTP server to do the work of communicating with clients.
+\\
+We periodically validate the metadata by verifying that the data is still available.
+\\
+The metadata server supports HTTPS and user/password authentication.  We have a metadata service that lets you manage a cloud of metadata servers and their users.
+\\
+The metadata server interfaces with CoBlitz to add/remove users, add/remove CDN prefixes, add/remove content servers (other clients), and purge stale content.
+
+\subsection{CoBlitz}
+CoBlitz consists of the proxy (with an nginx front-end), a redirection service (CoRedirect), and a DNS demultiplexer (DnsDemux).  Cite all relevant papers here.
+\\
+CoBlitz requires the URL to a piece of content to be rewritten with a CDN prefix.  The client performs the re-write, since the CDN prefix is known to them in advance.
+\\
+CoBlitz cannot cache SSL-encrypted data--the user must encrypt the data in advance if desired (this is because there are many possible cyphertexts of a piece of content, and CoBlitz uses the content hash to identify a cache hit, IIRC).
+}

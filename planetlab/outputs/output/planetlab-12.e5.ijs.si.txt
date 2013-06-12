@@ -1,0 +1,221 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.006720
+TIME X-UG-Time 0.067760
+TIME X-Total-Time 1.284750
+--------------------------------
+TIME begin_diskwrite 1367047371.196864919
+TIME end_diskwrite 1367047371.219679111
+--------------------------------
+TIME begin_diskread 1367047371.219688079
+TIME end_diskread 1367047371.221759298
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047371.326602195
+TIME begin_revalidate_path 17906730.69766831
+TIME begin_ms_recv 1367047371.326668806
+TIME end_ms_recv 1367047390.857710761
+TIME X-Resolve-Time 0.053040
+TIME X-Volume-Time 0.007200
+TIME X-UG-Time 0.007070
+TIME X-Total-Time 0.067900
+TIME end_revalidate_path 17906749.600904924
+TIME begin_ms_send 1367047390.858279492
+TIME end_ms_send 1367047400.377597590
+TIME 0 X-Create-Times 0.763650
+TIME X-Volume-Time 0.009540
+TIME X-UG-Time 0.012060
+TIME X-Total-Time 0.787270
+TIME end_mkdir 1367047400.377632316
+--------------------------------
+TIME begin_create 1367047400.377638194
+TIME begin_revalidate_path 17906759.120772395
+TIME begin_ms_recv 1367047400.377668462
+TIME end_ms_recv 1367047400.561260574
+TIME X-Resolve-Time 0.033420
+TIME X-Volume-Time 0.002880
+TIME X-UG-Time 0.002170
+TIME X-Total-Time 0.038960
+TIME end_revalidate_path 17906759.304455405
+TIME begin_ms_send 1367047401.907127008
+TIME end_ms_send 1367047408.617677296
+TIME 0 X-Create-Times 1.197800
+TIME X-Volume-Time 0.060440
+TIME X-UG-Time 0.055660
+TIME X-Total-Time 1.333500
+TIME end_create 1367047408.617706169
+--------------------------------
+TIME begin_local_write 1367047408.617710807
+TIME begin_write 17906767.360839892
+TIME begin_revalidate_path 17906767.360848029
+TIME begin_ms_recv 1367047408.617737559
+TIME end_ms_recv 1367047409.820233178
+TIME X-Resolve-Time 0.524870
+TIME X-Volume-Time 0.107620
+TIME X-UG-Time 0.096080
+TIME X-Total-Time 0.731690
+TIME end_revalidate_path 17906768.563433716
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-12.e5.ijs.si/planetlab-12.e5.ijs.si.1367047400561[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047409.861466956
+TIME end_ms_send 1367047412.681168332
+TIME 0 X-Update-Times 0.192560
+TIME X-Volume-Time 0.015340
+TIME X-UG-Time 0.019740
+TIME X-Total-Time 0.229990
+TIME end_write 17906771.424319919
+TIME end_local_write 1367047412.681210634
+--------------------------------
+TIME begin_local_read 1367047412.681215153
+TIME begin_read 17906771.424340845
+TIME begin_revalidate_path 17906771.424349426
+TIME begin_ms_recv 1367047412.681246085
+TIME end_ms_recv 1367047412.983164158
+TIME X-Resolve-Time 0.134400
+TIME X-Volume-Time 0.009120
+TIME X-UG-Time 0.006410
+TIME X-Total-Time 0.151010
+TIME end_revalidate_path 17906771.726401944
+TIME begin_ms_send 1367047412.983856108
+TIME end_read 17906771.766330192
+TIME end_local_read 1367047413.23217352
+--------------------------------
+TIME begin_close 1367047413.23223318
+TIME end_close 1367047413.23231292
+--------------------------------
+TIME begin_unlink 1367047413.23235843
+TIME end_ms_send 1367047415.397996339
+TIME 0 X-Update-Times 0.202740
+TIME X-Volume-Time 0.012270
+TIME X-UG-Time 0.007990
+TIME X-Total-Time 0.225380
+TIME begin_ms_send 1367047415.398056771
+TIME end_ms_send 1367047417.174808579
+TIME 0 X-Update-Times 0.312800
+TIME X-Volume-Time 0.006480
+TIME X-UG-Time 0.010540
+TIME X-Total-Time 0.335760
+TIME begin_ms_send 1367047420.638098394
+TIME end_ms_send 1367047422.588594124
+TIME 0 X-Delete-Times 0.764110
+TIME X-Volume-Time 0.006360
+TIME X-UG-Time 0.007950
+TIME X-Total-Time 0.780120
+TIME end_unlink 1367047422.592027892
+--------------------------------
+TIME begin_rmdir 1367047422.592035502
+TIME begin_ms_send 1367047422.592070431
+TIME end_ms_send 1367047429.586619962
+TIME X-Volume-Time 0.000000
+TIME X-UG-Time 0.000000
+TIME X-Total-Time 0.000000
+[       rmdir.cpp:0055] fs_entry_rmdir: ms_client_delete(/planetlab-12.e5.ijs.si) rc = -500
+[  write_file.cpp:0316] main: fs_entry_rmdir(/planetlab-12.e5.ijs.si) rc = -121
+---------- END write_file.sh ----------
+Connection to 193.138.2.12 closed.

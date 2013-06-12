@@ -1,0 +1,19 @@
+/bin/su: user princeton_syndicate does not exist
+Connection to 139.80.206.133 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 139.80.206.133 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 139.80.206.133 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 139.80.206.133 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 139.80.206.133 closed.
+ssh: connect to host 139.80.206.133 port 22: Connection timed out
+/bin/su: user princeton_syndicate does not exist
+Connection to 139.80.206.133 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 139.80.206.133 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 139.80.206.133 closed.
+/bin/su: user princeton_syndicate does not exist
+Connection to 139.80.206.133 closed.

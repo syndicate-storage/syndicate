@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.022200
+TIME X-UG-Time 0.290060
+TIME X-Total-Time 8.116010
+--------------------------------
+TIME begin_diskwrite 1367047382.921634756
+TIME end_diskwrite 1367047382.930726113
+--------------------------------
+TIME begin_diskread 1367047382.930735318
+TIME end_diskread 1367047382.933123626
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047383.53739676
+TIME begin_revalidate_path 5270847.96698755
+TIME begin_ms_recv 1367047383.53800009
+TIME end_ms_recv 1367047393.456050988
+TIME X-Resolve-Time 0.099300
+TIME X-Volume-Time 0.009190
+TIME X-UG-Time 0.007090
+TIME X-Total-Time 0.116010
+TIME end_revalidate_path 5270857.499031032
+TIME begin_ms_send 1367047393.462852274
+TIME end_ms_send 1367047396.840592819
+TIME 0 X-Create-Times 0.086880
+TIME X-Volume-Time 0.002980
+TIME X-UG-Time 0.003140
+TIME X-Total-Time 0.094860
+TIME end_mkdir 1367047396.840618816
+--------------------------------
+TIME begin_create 1367047396.840621775
+TIME begin_revalidate_path 5270860.883548866
+TIME begin_ms_recv 1367047396.840645017
+TIME end_ms_recv 1367047402.271524655
+TIME X-Resolve-Time 0.476670
+TIME X-Volume-Time 0.033420
+TIME X-UG-Time 0.017690
+TIME X-Total-Time 0.528760
+TIME end_revalidate_path 5270866.314502676
+TIME begin_ms_send 1367047402.271669160
+TIME end_ms_send 1367047403.778706393
+TIME 0 X-Create-Times 0.218990
+TIME X-Volume-Time 0.006510
+TIME X-UG-Time 0.004520
+TIME X-Total-Time 0.231610
+TIME end_create 1367047403.778732053
+--------------------------------
+TIME begin_local_write 1367047403.778735368
+TIME begin_write 5270867.821660879
+TIME begin_revalidate_path 5270867.821667788
+TIME begin_ms_recv 1367047403.778760137
+TIME end_ms_recv 1367047407.300189166
+TIME X-Resolve-Time 0.098510
+TIME X-Volume-Time 0.009370
+TIME X-UG-Time 0.007410
+TIME X-Total-Time 0.116310
+TIME end_revalidate_path 5270871.343181090
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pandora.we.po.opole.pl/pandora.we.po.opole.pl.1367047402271[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047407.324085421
+TIME end_ms_send 1367047408.690607651
+TIME 0 X-Update-Times 0.206320
+TIME X-Volume-Time 0.002330
+TIME X-UG-Time 0.004380
+TIME X-Total-Time 0.214820
+TIME end_write 5270872.733551230
+TIME end_local_write 1367047408.690643658
+--------------------------------
+TIME begin_local_read 1367047408.690646738
+TIME begin_read 5270872.733567901
+TIME begin_revalidate_path 5270872.733575258
+TIME begin_ms_recv 1367047408.690667909
+TIME end_ms_recv 1367047409.276549145
+TIME X-Resolve-Time 0.226910
+TIME X-Volume-Time 0.007010
+TIME X-UG-Time 0.012210
+TIME X-Total-Time 0.247720
+TIME end_revalidate_path 5270873.319538858
+TIME begin_ms_send 1367047409.298307885
+TIME end_read 5270873.407097868
+TIME end_local_read 1367047409.364189315
+--------------------------------
+TIME begin_close 1367047409.364192909
+TIME end_close 1367047409.364199966
+--------------------------------
+TIME begin_unlink 1367047409.364202660
+TIME end_ms_send 1367047411.503768908
+TIME 0 X-Update-Times 0.227010
+TIME X-Volume-Time 0.282110
+TIME X-UG-Time 0.086350
+TIME X-Total-Time 0.597850
+TIME begin_ms_send 1367047411.503826695
+TIME end_ms_send 1367047412.917313129
+TIME 0 X-Update-Times 0.193100
+TIME X-Volume-Time 0.008580
+TIME X-UG-Time 0.060520
+TIME X-Total-Time 0.264200
+TIME begin_ms_send 1367047413.167307740
+TIME end_ms_send 1367047415.266813848
+TIME 0 X-Delete-Times 0.490780
+TIME X-Volume-Time 0.088800
+TIME X-UG-Time 0.018620
+TIME X-Total-Time 0.607110
+TIME end_unlink 1367047415.269718371
+--------------------------------
+TIME begin_rmdir 1367047415.269726917
+TIME begin_ms_send 1367047415.269760180
+TIME end_ms_send 1367047416.899099910
+TIME 0 X-Delete-Times 0.431530
+TIME X-Volume-Time 0.005740
+TIME X-UG-Time 0.043970
+TIME X-Total-Time 0.484210
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/pandora.we.po.opole.pl) errno = -2
+TIME end_rmdir 1367047416.899192003
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 217.173.198.153 closed.

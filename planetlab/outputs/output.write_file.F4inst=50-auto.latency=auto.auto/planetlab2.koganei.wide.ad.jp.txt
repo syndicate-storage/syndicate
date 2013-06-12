@@ -1,0 +1,2 @@
+ssh: Could not resolve hostname planetlab2.koganei.wide.ad.jp: Name or service not known
+lost connection

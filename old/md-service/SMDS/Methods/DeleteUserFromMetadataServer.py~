@@ -1,0 +1,89 @@
+#!/usr/bin/python
+
+from SMDS.method import Method
+from SMDS.user import *
+from SMDS.mdserver import *
+from SMDS.parameter import *
+from SMDS.auth import Auth
+from SMDS.faults import *
+
+class DeleteUserFromMetadataServer( Method ):
+   """
+   Remove a user from a metadata server.  The caller is only allowed to call this method on his/her own metadata server;
+   but an admin can call this method on any metadata server.
+   
+   The caller is not allowed to remove a user from the metadata server owned by that user.
+   """
+   
+   accepts = [
+         Auth(),
+         Parameter(Mixed(Parameter(int, "User ID of the user to be removed from this server"),
+                         Parameter(str, "Username of the user to be removed from this server"))),
+         
+         Parameter(int, "Metadata server ID")
+   ]
+   roles = ['admin','user']
+   returns = Parameter(int, "1 if successful; otherwise a negative error code from failure to update the metadata server")
+   
+   # do the actual removal, given a user and mdserver object
+   @staticmethod
+   def do_removal( user, mdserver ):
+      # do the removal
+      try:
+         mdserver['users'].remove( user['user_id'] )
+      except:
+         pass
+     
+      try:
+         user['reg_mdserver_ids'].remove( mdserver['server_id'] )
+      except:
+         pass
+      
+      mdserver.sync()
+      user.sync()
+   
+   
+   def call(self, auth, username_or_id, metadata_server_id):
+      assert self.caller is not None
+      
+      roles = self.caller['roles']
+         
+      owners = Users({'username': auth['Username']})
+      owner = owners[0]
+      
+      # look up this metadata server
+      mdservers = None
+      mdserver = None
+      try:
+         mdservers = MDServers( {'server_id': metadata_server_id} )
+         mdserver = mdservers[0]
+      except Exception, e:
+         raise MDObjectNotFound( 'MDServer(%s)' % (metadata_server_id), str(e))
+      
+      # make sure this server is owned by the caller, or that the caller is an admin
+      if ('admin' not in roles) and mdserver['owner'] != owner['user_id']:
+         raise MDUnauthorized( "User(%s) is not the owner of MDServer(%s)" % (owner['username'], mdserver['server_id']) )
+      
+      # look up this user to be removed
+      users = None
+      user = None
+      try:
+         if isinstance(username_or_id, str):
+            users = Users({'username':username_or_id})
+         else:
+            users = Users({'user_id':username_or_id})
+         
+         user = users[0]
+      except Exception, e:
+         raise MDObjectNotFound( 'User(%s)' % (username_or_id), str(e) )
+         
+      user = users[0]
+      
+      # sanity check--the user to remove can't be the metadata server's owner
+      if user['user_id'] == mdserver['owner']:
+         raise MDInvalidArgument( "User(%s) owns MDServer(%s), so it can't be removed" % (auth['username'], metadata_server_id ) )
+      
+      self.do_removal( user, mdserver )
+      
+      return mdserver.reload_server()
+      

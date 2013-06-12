@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.004210
+TIME X-UG-Time 0.029830
+TIME X-Total-Time 1.413780
+--------------------------------
+TIME begin_diskwrite 1367047384.14658062
+TIME end_diskwrite 1367047384.26689878
+--------------------------------
+TIME begin_diskread 1367047384.26703195
+TIME end_diskread 1367047384.30188832
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047384.318202063
+TIME begin_revalidate_path 8473064.594268851
+TIME begin_ms_recv 1367047384.318283367
+TIME end_ms_recv 1367047394.253263867
+TIME X-Resolve-Time 0.037520
+TIME X-Volume-Time 0.049410
+TIME X-UG-Time 0.004340
+TIME X-Total-Time 0.091760
+TIME end_revalidate_path 8473074.529358206
+TIME begin_ms_send 1367047394.491060282
+TIME end_ms_send 1367047402.325229419
+TIME 0 X-Create-Times 0.505710
+TIME X-Volume-Time 0.009740
+TIME X-UG-Time 0.053070
+TIME X-Total-Time 0.570370
+TIME end_mkdir 1367047402.325304044
+--------------------------------
+TIME begin_create 1367047402.325308958
+TIME begin_revalidate_path 8473082.601331175
+TIME begin_ms_recv 1367047402.325337129
+TIME end_ms_recv 1367047407.490944753
+TIME X-Resolve-Time 0.721720
+TIME X-Volume-Time 0.172410
+TIME X-UG-Time 0.092440
+TIME X-Total-Time 1.042040
+TIME end_revalidate_path 8473087.767033372
+TIME begin_ms_send 1367047407.491225293
+TIME end_ms_send 1367047409.588078219
+TIME 0 X-Create-Times 0.405390
+TIME X-Volume-Time 0.014690
+TIME X-UG-Time 0.016210
+TIME X-Total-Time 0.450250
+TIME end_create 1367047409.588120113
+--------------------------------
+TIME begin_local_write 1367047409.588126113
+TIME begin_write 8473089.864147752
+TIME begin_revalidate_path 8473089.864156375
+TIME begin_ms_recv 1367047409.588158299
+TIME end_ms_recv 1367047410.608155045
+TIME X-Resolve-Time 0.248940
+TIME X-Volume-Time 0.017380
+TIME X-UG-Time 0.011380
+TIME X-Total-Time 0.288810
+TIME end_revalidate_path 8473090.884260816
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/pl2.eng.monash.edu.au/pl2.eng.monash.edu.au.1367047407491[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047410.652427257
+TIME end_ms_send 1367047412.437677936
+TIME 0 X-Update-Times 0.308600
+TIME X-Volume-Time 0.079650
+TIME X-UG-Time 0.007920
+TIME X-Total-Time 0.407500
+TIME end_write 8473092.713727265
+TIME end_local_write 1367047412.437729761
+--------------------------------
+TIME begin_local_read 1367047412.437734645
+TIME begin_read 8473092.713750489
+TIME begin_revalidate_path 8473092.713759572
+TIME begin_ms_recv 1367047412.437761917
+TIME end_ms_recv 1367047413.1402707
+TIME X-Resolve-Time 0.116620
+TIME X-Volume-Time 0.008140
+TIME X-UG-Time 0.006070
+TIME X-Total-Time 0.131700
+TIME end_revalidate_path 8473093.277509554
+TIME begin_ms_send 1367047413.2049746
+TIME end_read 8473093.322449356
+TIME end_local_read 1367047413.46449277
+--------------------------------
+TIME begin_close 1367047413.46454684
+TIME end_close 1367047413.46464892
+--------------------------------
+TIME begin_unlink 1367047413.46469063
+TIME end_ms_send 1367047415.294872493
+TIME 0 X-Update-Times 0.545670
+TIME X-Volume-Time 0.267150
+TIME X-UG-Time 0.082620
+TIME X-Total-Time 0.908420
+TIME begin_ms_send 1367047415.294944119
+TIME end_ms_send 1367047417.179392039
+TIME 0 X-Update-Times 0.238540
+TIME X-Volume-Time 0.004860
+TIME X-UG-Time 0.064890
+TIME X-Total-Time 0.310270
+TIME begin_ms_send 1367047420.661339173
+TIME end_ms_send 1367047422.218101303
+TIME 0 X-Delete-Times 0.191400
+TIME X-Volume-Time 0.002340
+TIME X-UG-Time 0.002970
+TIME X-Total-Time 0.198010
+TIME end_unlink 1367047422.222475541
+--------------------------------
+TIME begin_rmdir 1367047422.222486587
+TIME begin_ms_send 1367047422.222525230
+TIME end_ms_send 1367047425.481049845
+TIME 0 X-Delete-Times 1.605340
+TIME X-Volume-Time 0.090290
+TIME X-UG-Time 0.019790
+TIME X-Total-Time 1.724390
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/pl2.eng.monash.edu.au) errno = -2
+TIME end_rmdir 1367047425.481184068
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 130.194.252.9 closed.

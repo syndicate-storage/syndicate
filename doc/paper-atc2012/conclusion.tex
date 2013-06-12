@@ -1,0 +1,22 @@
+\section{Conclusion}
+
+We have presented Syndicate, a distributed read-write filesystem
+that uses a CDN to achieve high read performance despite any performance
+shortcomings of the data's underlying storage mechanisms.  Syndicate can
+leverage any CDN to drive file data delivery between its clients, as long 
+as it meets a few simple design requirements.  Syndicate's read performance
+is dependent on the underlying CDN implementation, which is the limiting
+factor in the number of bytes distributed to clients.  However, by depending
+on a CDN to drive data performance, Syndicate assumes its data availability,
+read throughput, and network capacity properties.
+
+Syndicate overcomes the immutability assumptions a CDN makes about 
+the content it caches through the use of a central metadata server
+that observes all metadata operations.  Syndicate achieves close-to-open 
+file consistency by versioning file URLs and reading from the most
+recently written version of the file.  Syndicate delivers low-latency
+write performance by storing written data locally and asynchronously
+informing the metadata server of metadata changes.  Finally, Syndicate
+ efficiently exposes large hierarchies of data, which many clients
+read efficiently by leverage the CDN to its fullest potential.
+

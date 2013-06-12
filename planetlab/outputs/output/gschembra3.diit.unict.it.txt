@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.072530
+TIME X-UG-Time 0.385090
+TIME X-Total-Time 7.593630
+--------------------------------
+TIME begin_diskwrite 1367047385.894210776
+TIME end_diskwrite 1367047385.919045322
+--------------------------------
+TIME begin_diskread 1367047385.919075696
+TIME end_diskread 1367047385.923752971
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047386.32000183
+TIME begin_revalidate_path 4027737.105025438
+TIME begin_ms_recv 1367047386.32109965
+TIME end_ms_recv 1367047396.455076314
+TIME X-Resolve-Time 0.059650
+TIME X-Volume-Time 0.009500
+TIME X-UG-Time 0.064250
+TIME X-Total-Time 0.133970
+TIME end_revalidate_path 4027747.528139689
+TIME begin_ms_send 1367047396.471023311
+TIME end_ms_send 1367047402.518773833
+TIME 0 X-Create-Times 0.107690
+TIME X-Volume-Time 0.003350
+TIME X-UG-Time 0.003410
+TIME X-Total-Time 0.116230
+TIME end_mkdir 1367047402.518829595
+--------------------------------
+TIME begin_create 1367047402.518836468
+TIME begin_revalidate_path 4027753.591801829
+TIME begin_ms_recv 1367047402.518879355
+TIME end_ms_recv 1367047403.530538380
+TIME X-Resolve-Time 0.419590
+TIME X-Volume-Time 0.053700
+TIME X-UG-Time 0.089170
+TIME X-Total-Time 0.564760
+TIME end_revalidate_path 4027754.603606414
+TIME begin_ms_send 1367047403.530833167
+TIME end_ms_send 1367047407.439435845
+TIME 0 X-Create-Times 0.096160
+TIME X-Volume-Time 0.002670
+TIME X-UG-Time 0.003400
+TIME X-Total-Time 0.103650
+TIME end_create 1367047407.439492990
+--------------------------------
+TIME begin_local_write 1367047407.439500571
+TIME begin_write 4027758.512461430
+TIME begin_revalidate_path 4027758.512474839
+TIME begin_ms_recv 1367047407.439545126
+TIME end_ms_recv 1367047408.126361130
+TIME X-Resolve-Time 0.230860
+TIME X-Volume-Time 0.018370
+TIME X-UG-Time 0.011080
+TIME X-Total-Time 0.261720
+TIME end_revalidate_path 4027759.199453862
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/gschembra3.diit.unict.it/gschembra3.diit.unict.it.1367047403530[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047408.168623910
+TIME end_ms_send 1367047409.497673573
+TIME 0 X-Update-Times 0.163350
+TIME X-Volume-Time 0.003300
+TIME X-UG-Time 0.005830
+TIME X-Total-Time 0.174510
+TIME end_write 4027760.570674249
+TIME end_local_write 1367047409.497744602
+--------------------------------
+TIME begin_local_read 1367047409.497751616
+TIME begin_read 4027760.570705859
+TIME begin_revalidate_path 4027760.570718306
+TIME begin_ms_recv 1367047409.497789009
+TIME end_ms_recv 1367047410.222735074
+TIME X-Resolve-Time 0.530310
+TIME X-Volume-Time 0.008890
+TIME X-UG-Time 0.006160
+TIME X-Total-Time 0.546730
+TIME end_revalidate_path 4027761.295816658
+TIME begin_ms_send 1367047410.233471540
+TIME end_read 4027761.366631350
+TIME end_local_read 1367047410.293699152
+--------------------------------
+TIME begin_close 1367047410.293706382
+TIME end_close 1367047410.293718925
+--------------------------------
+TIME begin_unlink 1367047410.293724726
+TIME end_ms_send 1367047413.518755170
+TIME 0 X-Update-Times 0.739560
+TIME X-Volume-Time 0.080760
+TIME X-UG-Time 0.103310
+TIME X-Total-Time 0.945820
+TIME begin_ms_send 1367047413.518866968
+TIME end_ms_send 1367047416.71312414
+TIME 0 X-Update-Times 0.285590
+TIME X-Volume-Time 0.010180
+TIME X-UG-Time 0.012250
+TIME X-Total-Time 0.311100
+TIME begin_ms_send 1367047417.908439895
+TIME end_ms_send 1367047420.979429858
+TIME 0 X-Delete-Times 0.613170
+TIME X-Volume-Time 0.081140
+TIME X-UG-Time 0.028130
+TIME X-Total-Time 0.733100
+TIME end_unlink 1367047420.985104525
+--------------------------------
+TIME begin_rmdir 1367047420.985118663
+TIME begin_ms_send 1367047420.985178770
+TIME end_ms_send 1367047423.222581766
+TIME 0 X-Delete-Times 0.082480
+TIME X-Volume-Time 0.002620
+TIME X-UG-Time 0.002480
+TIME X-Total-Time 0.088740
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/gschembra3.diit.unict.it) errno = -2
+TIME end_rmdir 1367047423.222750208
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 151.97.9.224 closed.

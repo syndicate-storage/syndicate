@@ -1,0 +1,108 @@
+//
+//   Copyright 2013 Princeton Board of Trustees
+//   All Rights Reserved
+//
+
+package Serialization;
+
+message FileMetadata {
+   required string fs_path = 6;
+   required int64 file_version = 1;
+   required uint64 size = 2;
+   required int64 mtime_sec = 3;
+   required int32 mtime_nsec = 4;
+   required string content_url = 5;
+}
+
+message BlockList {
+   required uint64 start_id = 1;
+   required uint64 end_id = 2;
+   repeated int64 version = 3;
+}
+
+// a block of data to write
+message BlockData {
+   required string fs_path = 1;
+   required int64 file_version = 2;
+   required uint64 block_id = 3;
+   required int64 block_version = 4;
+   required string data = 5;
+}
+
+// truncate a file
+message TruncateRequest {
+   required string fs_path = 1;
+   required int64 file_version = 2;
+   required uint64 size = 3;
+}
+
+// detach a file or directory
+message DetachRequest {
+   required string fs_path = 1;
+   required int64 file_version = 2;
+}
+
+// block url set (for manifests)
+message BlockURLSetMsg {
+   required uint64 start_id = 1;
+   required uint64 end_id = 2;
+   repeated int64 block_versions = 3;
+   required string file_url = 4;
+}
+
+// manifest
+message ManifestMsg {
+   required uint64 size = 1;
+   required int64 file_version = 2;
+   required int64 mtime_sec = 3;
+   required int32 mtime_nsec = 4;
+   required int64 manifest_mtime_sec = 5;
+   required int32 manifest_mtime_nsec = 6;
+   repeated BlockURLSetMsg block_url_set = 7;
+}
+
+// accepted message
+message AcceptMsg {
+   required string fs_path = 4;
+   required int64 file_version = 1;
+   repeated uint64 block_id = 2;
+   repeated int64 block_version = 3;
+}
+
+// PREPARE message uses FileMetadata and BlockList
+// PROMISE message uses nothing--it's an acknowledgement to a PREPARE message
+// ACCEPTED message uses AcceptMsg
+// TRUNCATE message uses TruncateRequest and BlockList
+// DETACH message uses DetachRequest
+
+message WriteMsg {
+   
+   enum MsgType {
+      PREPARE = 1;
+      PROMISE = 2;
+      ACCEPT = 3;
+      ACCEPTED = 4;
+      BLOCKDATA = 5;
+      TRUNCATE = 6;
+      DETACH = 7;
+
+      ERROR = 8;
+   }
+
+   required uint64 write_id = 1;
+   required uint64 session_id = 2;
+   required MsgType type = 3;
+   required uint32 user_id = 4;
+   required uint32 volume_id = 5;
+
+   optional FileMetadata metadata = 6;
+   optional BlockList blocks = 7;
+   optional BlockData blockdata = 8;
+   optional TruncateRequest truncate = 9;
+   optional DetachRequest detach = 10;
+   optional AcceptMsg accepted = 11;
+
+   optional int32 errorcode = 12;
+   optional string errortxt = 13;
+}
+

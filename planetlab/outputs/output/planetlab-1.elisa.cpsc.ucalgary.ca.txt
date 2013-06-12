@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.053930
+TIME X-UG-Time 0.215070
+TIME X-Total-Time 7.983840
+--------------------------------
+TIME begin_diskwrite 1367047390.242834899
+TIME end_diskwrite 1367047390.261647864
+--------------------------------
+TIME begin_diskread 1367047390.261663253
+TIME end_diskread 1367047390.265665226
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047390.389243307
+TIME begin_revalidate_path 640379.498982648
+TIME begin_ms_recv 1367047390.389379531
+TIME end_ms_recv 1367047397.756907708
+TIME X-Resolve-Time 0.033050
+TIME X-Volume-Time 0.003460
+TIME X-UG-Time 0.004620
+TIME X-Total-Time 0.041910
+TIME end_revalidate_path 640386.866681413
+TIME begin_ms_send 1367047397.758112236
+TIME end_ms_send 1367047400.400727780
+TIME 0 X-Create-Times 0.404140
+TIME X-Volume-Time 0.061230
+TIME X-UG-Time 0.002400
+TIME X-Total-Time 0.469340
+TIME end_mkdir 1367047400.400777098
+--------------------------------
+TIME begin_create 1367047400.400785583
+TIME begin_revalidate_path 640389.510464396
+TIME begin_ms_recv 1367047400.400829137
+TIME end_ms_recv 1367047400.556580667
+TIME X-Resolve-Time 0.029980
+TIME X-Volume-Time 0.002460
+TIME X-UG-Time 0.002410
+TIME X-Total-Time 0.035570
+TIME end_revalidate_path 640389.666348627
+TIME begin_ms_send 1367047400.556851155
+TIME end_ms_send 1367047405.916487983
+TIME 0 X-Create-Times 0.134190
+TIME X-Volume-Time 0.008730
+TIME X-UG-Time 0.009060
+TIME X-Total-Time 0.154010
+TIME end_create 1367047405.916539292
+--------------------------------
+TIME begin_local_write 1367047405.916548108
+TIME begin_write 640395.26221045
+TIME begin_revalidate_path 640395.26235789
+TIME begin_ms_recv 1367047405.916593943
+TIME end_ms_recv 1367047408.479682688
+TIME X-Resolve-Time 0.281700
+TIME X-Volume-Time 0.017830
+TIME X-UG-Time 0.010510
+TIME X-Total-Time 0.315560
+TIME end_revalidate_path 640397.589510816
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab-1.elisa.cpsc.ucalgary.ca/planetlab-1.elisa.cpsc.ucalgary.ca.1367047400556[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047408.537709079
+TIME end_ms_send 1367047410.218539719
+TIME 0 X-Update-Times 0.533350
+TIME X-Volume-Time 0.004340
+TIME X-UG-Time 0.007170
+TIME X-Total-Time 0.548170
+TIME end_write 640399.328248339
+TIME end_local_write 1367047410.218612148
+--------------------------------
+TIME begin_local_read 1367047410.218620629
+TIME begin_read 640399.328288093
+TIME begin_revalidate_path 640399.328302352
+TIME begin_ms_recv 1367047410.218662758
+TIME end_ms_recv 1367047411.310368949
+TIME X-Resolve-Time 0.526860
+TIME X-Volume-Time 0.018710
+TIME X-UG-Time 0.069360
+TIME X-Total-Time 0.616160
+TIME end_revalidate_path 640400.420164468
+TIME begin_ms_send 1367047411.311792894
+TIME end_read 640400.476782235
+TIME end_local_read 1367047411.367134424
+--------------------------------
+TIME begin_close 1367047411.367143045
+TIME end_close 1367047411.367153853
+--------------------------------
+TIME begin_unlink 1367047411.367160947
+TIME end_ms_send 1367047412.531388274
+TIME 0 X-Update-Times 0.064780
+TIME X-Volume-Time 0.008080
+TIME X-UG-Time 0.006890
+TIME X-Total-Time 0.081950
+TIME begin_ms_send 1367047412.531491885
+TIME end_ms_send 1367047414.956118473
+TIME 0 X-Update-Times 0.202120
+TIME X-Volume-Time 0.005970
+TIME X-UG-Time 0.007420
+TIME X-Total-Time 0.253760
+TIME begin_ms_send 1367047415.171264191
+TIME end_ms_send 1367047416.975743961
+TIME 0 X-Delete-Times 0.514370
+TIME X-Volume-Time 0.081870
+TIME X-UG-Time 0.015500
+TIME X-Total-Time 0.616030
+TIME end_unlink 1367047416.982220371
+--------------------------------
+TIME begin_rmdir 1367047416.982233972
+TIME begin_ms_send 1367047416.982288138
+TIME end_ms_send 1367047418.660928412
+TIME 0 X-Delete-Times 0.540440
+TIME X-Volume-Time 0.002550
+TIME X-UG-Time 0.004330
+TIME X-Total-Time 0.548680
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/planetlab-1.elisa.cpsc.ucalgary.ca) errno = -2
+TIME end_rmdir 1367047418.661100852
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 136.159.220.40 closed.

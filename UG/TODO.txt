@@ -1,0 +1,127 @@
+READING:
+// http://www1.icsi.berkeley.edu/~barath/papers/icn-hotnets11.pdf
+--- Web caching is Zipfian, and Kazaa is worse-than
+--- Web requests are heavy-tailed, and this is even true today with Facebook for example
+--- the benefits of cooperative caching are limited at scale--effectiveness grows with log(cache size)
+--- means that it's probably good to have a few large caches handle the most popular content, and don't bother with less popular content (pervasive caching might not be worthwhile)
+---- """ Thus, there is an interesting tradeoff between naming
+----     (hierarchical or not), routing behavior (just route to server,
+----     or route to nearest copy), caching behavior (is the working
+----     set size small?), the size of objects (which cannot be single
+----     packets unless the requests can be handled at packet speeds),
+----     and the narrow waist (the waist must be able to operate at line
+----     speeds). Here we have suggested (subject to further research,
+----     of course) that there is little reason (based on performance)
+----     to adopt an ICN design that only caches along path, which
+----     implies nonaggregated names, which implies large routing
+----     tables, which implies slower name-based routing, which
+----     implies large ICN objects, which implies an IP waist. We
+----     present this line of reasoning not as a hardened conclusion,
+---- """ but as a conjecture that should be investigated.
+
+// pages.cs.wisc.edu/~akella/CS838/F09/838-Papers/ccn.pdf
+--- NDN (networking named data)
+--- Routers forward packets based on longest content name prefix matching
+--- Routers cache packets of data for subsequent requests
+--- Router components:
+------ Forwarding Information Base (FIB): content prefix --> next hop 
+------ Content Store (CS):  cache of packets
+------ Pending Interest Table (PIT):  recently requested content items that have not been served
+--- Interest packet, Data packet
+--- Interest packet is "request"--leaves breadcrumbs in routers en route to content, which get used by routers to send data back to the instigater of the Instance packet
+
+// conferences.sigcomm.org/sigcomm/2011/papers/icn/p44.pdf
+--- Feasibility study of CCN (great for CDNs, not so great for Internet)
+--- examines power draw and space requirements of today's technology
+--- billions of IP addresses, but trillions of content names
+
+
+BUGS:
+// what is the interaction between writing and truncate, when we nano a file remotely?  Why does it misbehave so badly?
+// --reversioning doesn't seem to happen...? get an invalid (old) version on writing after
+
+// reversion a file's staging blocks on reload, if needed (in fs/consistency.cpp)
+
+CDN:
+// CoRedirect needs to talk to CoBlitz to do zoned redirection...unless we can do it ourselves
+// get dnsdemux and coredirect running on vcoblitz-cmi.cs.princeton.edu; coblitz on VICCI and some high-powered PLC nodes
+--- talk to Scott and/or Tony, since they have experience
+--- considerations:
+   * on the nodes:
+      * mysterious codns timeouts, leading to gateway errors
+      * illegal instruction errors, maybe fixed by building it on VICCI from source
+      * vsys script for increasing shmmax
+      * LXC work to get shared memory to work correctly (mysterious failures in prox)
+      * slice init script doesn't work for some reason (need to bootstrap prox)
+   * on vcoblitz-cmi:
+      * make sure slice IDs are correct in the db
+      * make sure objects are correct in the db (including attributes)
+      * unresolved cert problems with puppet
+      * dnsredir: update prefix (vcoblitz.vicci.org) to refer to vcoblitz-cmi.cs.princeton.edu
+      * dnsredir: generate maps.d and redirection map from deployment
+   * in general:
+      * make publicly available beyond Planetlab?
+      * no slice tags; we instead put them in /etc/config/ in vcoblitz-cmi.cs.princeton.edu (we updated config.py to look there instead)
+      * update default values in /etc/onevantages XSLT files, since we can't bind on low-numbered or conflicting ports
+
+FEATURES:
+// Index into Volume lists of UGs and RGs in fs_entry structure
+// implement acting ownership and ownership change
+--- reversion file on ownership change
+--- NOTE: need to reversion staging blocks when version changes (modify fs/consistency.cpp)
+--- NOTE: need to ensure that we redirect to the correct blocks if a remote UG doesn't have the latest version
+
+// implement reconfiguration
+// append-only
+--- Easy: acting owner UG assigns offset
+// Use base 64 version numbers (get the length in the URL down)
+// Syndicate MS website for:
+--- adding/removing Volumes
+--- adding/removing users
+--- binding/unbinding AGs and RGs to a Volume
+--- download for a UG
+--- adding/removing users to a Volume
+
+
+PERFORMANCE:
+// util.cpp: false sharing between allocated curl handles, queues, semaphores, etc.  Make sure there's adequate padding between each (curl_h, sem, queue_ptr, ...etc...) to prevent false sharing
+// to let the write uploader meet deadlines, calculate the estimated RTT delay and start posting at deadline - estimated_RTT millis.  Also, batch writes.
+// Find out why the MS is so slow
+
+
+EXPERIMENTS:
+// Instrument the MS and measure the times taken to carry out each operation.  Measure ping RTT to the MS, the time taken by the MS to carry out the operation, and deduce the time taken by Google to process it.
+// Measure the latency of getting the manifest on a cache hit
+// Find a way to determine which PlanetLab nodes are slow, and account for it.
+// Have all UGs remotely write to a single UG and measure the time taken to revalidate, refresh, write, replicate, and send write message.
+// Once implemented, measure the effect of an ownership change.  How?
+// Don't curl 100 times; download 100 times for a better comparison
+
+
+DEPLOYMENT:
+* build a Syndicate Management Service
+* UG front-end--deploy UGs for each Syndicate instance and each Volume that the User is associated with, on start-up
+* Make Syndicate container to house Syndicate processes and controllers
+-- the controllers set up Syndicate UGs in other slivers (they talk to the SMI to get their config and state.)
+-- watchdogs, mountpoints, etc.
+-- need to install /etc/fstab into each other container, and mount processes in other containers
+* delete old block versions on replication
+* have replica server respond to a request to block version 0 with an HTTP 302 to the latest block version
+* make replica servers PULL data from UGs
+* gateway server--publish existing data to the MS and service reads from other UGs on the existing data.  The existing data's host is completely unaware.
+
+=====================================================================================================================================================================================================================================================
+
+In the future:
+
+* syndicate-httpd service for each cloud storage (syndicate-s3, syndicate-box.net, syndicate-dropbox)
+---emulate the APIs for each of these services, and transparently read/write data to this service
+---these are called "ingestion gateways"
+
+* Management as a service
+--Syndicate is a guinea pig for edge service deployment and management
+--think about the parts of Syndicate we'll need to abstract out to make management easier
+--Ideally, you link against management code, and export objects and rules for a management service to use to control your system
+--Maybe WISH can do this?
+
+=====================================================================================================================================================================================================================================================

@@ -1,0 +1,221 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.005540
+TIME X-UG-Time 0.026820
+TIME X-Total-Time 0.898330
+--------------------------------
+TIME begin_diskwrite 1367047378.346731466
+TIME end_diskwrite 1367047378.361732693
+--------------------------------
+TIME begin_diskread 1367047378.361747651
+TIME end_diskread 1367047378.365758706
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047378.521214651
+TIME begin_revalidate_path 882734.170974916
+TIME begin_ms_recv 1367047378.521309987
+TIME end_ms_recv 1367047388.788986201
+TIME X-Resolve-Time 0.042180
+TIME X-Volume-Time 0.004190
+TIME X-UG-Time 0.002820
+TIME X-Total-Time 0.049700
+TIME end_revalidate_path 882744.438774081
+TIME begin_ms_send 1367047388.813898339
+TIME end_ms_send 1367047397.200536106
+TIME 0 X-Create-Times 0.133200
+TIME X-Volume-Time 0.002950
+TIME X-UG-Time 0.003990
+TIME X-Total-Time 0.142680
+TIME end_mkdir 1367047397.200575290
+--------------------------------
+TIME begin_create 1367047397.200581282
+TIME begin_revalidate_path 882752.850292384
+TIME begin_ms_recv 1367047397.200612449
+TIME end_ms_recv 1367047402.457408947
+TIME X-Resolve-Time 0.154030
+TIME X-Volume-Time 0.004770
+TIME X-UG-Time 0.003560
+TIME X-Total-Time 0.163210
+TIME end_revalidate_path 882758.107202096
+TIME begin_ms_send 1367047402.457641980
+TIME end_ms_send 1367047407.345692124
+TIME 0 X-Create-Times 0.176470
+TIME X-Volume-Time 0.014650
+TIME X-UG-Time 0.008870
+TIME X-Total-Time 0.202060
+TIME end_create 1367047407.345733554
+--------------------------------
+TIME begin_local_write 1367047407.345740034
+TIME begin_write 882762.995449531
+TIME begin_revalidate_path 882762.995459086
+TIME begin_ms_recv 1367047407.345775220
+TIME end_ms_recv 1367047409.105264336
+TIME X-Resolve-Time 0.447470
+TIME X-Volume-Time 0.068020
+TIME X-UG-Time 0.019730
+TIME X-Total-Time 0.539510
+TIME end_revalidate_path 882764.755184493
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/csplanetlab4.kaist.ac.kr/csplanetlab4.kaist.ac.kr.1367047402457[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047409.143646889
+TIME end_ms_send 1367047410.942531568
+TIME 0 X-Update-Times 0.205090
+TIME X-Volume-Time 0.012760
+TIME X-UG-Time 0.011880
+TIME X-Total-Time 0.231330
+TIME end_write 882766.592269505
+TIME end_local_write 1367047410.942588036
+--------------------------------
+TIME begin_local_read 1367047410.942594291
+TIME begin_read 882766.592298227
+TIME begin_revalidate_path 882766.592307789
+TIME begin_ms_recv 1367047410.942625641
+TIME end_ms_recv 1367047411.861223836
+TIME X-Resolve-Time 0.191640
+TIME X-Volume-Time 0.007940
+TIME X-UG-Time 0.019040
+TIME X-Total-Time 0.219800
+TIME end_revalidate_path 882767.511027503
+TIME begin_ms_send 1367047411.862077057
+TIME end_read 882767.578063793
+TIME end_local_read 1367047411.928378210
+--------------------------------
+TIME begin_close 1367047411.928384600
+TIME end_close 1367047411.928395543
+--------------------------------
+TIME begin_unlink 1367047411.928400766
+TIME end_ms_send 1367047413.860305800
+TIME 0 X-Update-Times 0.607840
+TIME X-Volume-Time 0.073610
+TIME X-UG-Time 0.009460
+TIME X-Total-Time 0.693520
+TIME begin_ms_send 1367047413.860384280
+TIME end_ms_send 1367047416.550397321
+TIME 0 X-Update-Times 0.295480
+TIME X-Volume-Time 0.008280
+TIME X-UG-Time 0.075620
+TIME X-Total-Time 0.382940
+TIME begin_ms_send 1367047419.543774540
+TIME end_ms_send 1367047420.986063806
+TIME 0 X-Delete-Times 0.148340
+TIME X-Volume-Time 0.004720
+TIME X-UG-Time 0.004530
+TIME X-Total-Time 0.159630
+TIME end_unlink 1367047420.991135466
+--------------------------------
+TIME begin_rmdir 1367047420.991147451
+TIME begin_ms_send 1367047420.991190648
+TIME end_ms_send 1367047431.117026610
+TIME X-Volume-Time 0.000000
+TIME X-UG-Time 0.000000
+TIME X-Total-Time 0.000000
+[       rmdir.cpp:0055] fs_entry_rmdir: ms_client_delete(/csplanetlab4.kaist.ac.kr) rc = -500
+[  write_file.cpp:0316] main: fs_entry_rmdir(/csplanetlab4.kaist.ac.kr) rc = -121
+---------- END write_file.sh ----------
+Connection to 143.248.55.129 closed.

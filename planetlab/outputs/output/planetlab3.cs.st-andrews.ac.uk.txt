@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.096770
+TIME X-UG-Time 0.301190
+TIME X-Total-Time 9.110740
+--------------------------------
+TIME begin_diskwrite 1367047401.32492065
+TIME end_diskwrite 1367047401.66121129
+--------------------------------
+TIME begin_diskread 1367047401.66136999
+TIME end_diskread 1367047401.70239938
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047401.118424313
+TIME begin_revalidate_path 3695831.797522198
+TIME begin_ms_recv 1367047401.118520476
+TIME end_ms_recv 1367047401.405488501
+TIME X-Resolve-Time 0.085090
+TIME X-Volume-Time 0.004760
+TIME X-UG-Time 0.003540
+TIME X-Total-Time 0.094300
+TIME end_revalidate_path 3695832.84622000
+TIME begin_ms_send 1367047401.406260171
+TIME end_ms_send 1367047403.528922034
+TIME 0 X-Create-Times 0.769270
+TIME X-Volume-Time 0.004040
+TIME X-UG-Time 0.007830
+TIME X-Total-Time 0.785560
+TIME end_mkdir 1367047403.528969152
+--------------------------------
+TIME begin_create 1367047403.528975306
+TIME begin_revalidate_path 3695834.208022526
+TIME begin_ms_recv 1367047403.529013199
+TIME end_ms_recv 1367047407.379882061
+TIME X-Resolve-Time 0.287690
+TIME X-Volume-Time 0.016660
+TIME X-UG-Time 0.011800
+TIME X-Total-Time 0.319520
+TIME end_revalidate_path 3695838.59003331
+TIME begin_ms_send 1367047407.380143824
+TIME end_ms_send 1367047410.200457579
+TIME 0 X-Create-Times 0.526700
+TIME X-Volume-Time 0.049660
+TIME X-UG-Time 0.002800
+TIME X-Total-Time 0.584350
+TIME end_create 1367047410.200503535
+--------------------------------
+TIME begin_local_write 1367047410.200509734
+TIME begin_write 3695840.879553275
+TIME begin_revalidate_path 3695840.879562957
+TIME begin_ms_recv 1367047410.200546217
+TIME end_ms_recv 1367047411.245742227
+TIME X-Resolve-Time 0.386080
+TIME X-Volume-Time 0.083110
+TIME X-UG-Time 0.011900
+TIME X-Total-Time 0.482670
+TIME end_revalidate_path 3695841.924881467
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab3.cs.st-andrews.ac.uk/planetlab3.cs.st-andrews.ac.uk.1367047407379[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047411.282357333
+TIME end_ms_send 1367047412.616015792
+TIME 0 X-Update-Times 0.143240
+TIME X-Volume-Time 0.008130
+TIME X-UG-Time 0.009380
+TIME X-Total-Time 0.164000
+TIME end_write 3695843.295160905
+TIME end_local_write 1367047412.616146332
+--------------------------------
+TIME begin_local_read 1367047412.616163818
+TIME begin_read 3695843.295201277
+TIME begin_revalidate_path 3695843.295212091
+TIME begin_ms_recv 1367047412.616198636
+TIME end_ms_recv 1367047412.875102844
+TIME X-Resolve-Time 0.076050
+TIME X-Volume-Time 0.005290
+TIME X-UG-Time 0.003420
+TIME X-Total-Time 0.085680
+TIME end_revalidate_path 3695843.554234475
+TIME begin_ms_send 1367047412.888146269
+TIME end_read 3695843.615513221
+TIME end_local_read 1367047412.936496279
+--------------------------------
+TIME begin_close 1367047412.936502421
+TIME end_close 1367047412.936512366
+--------------------------------
+TIME begin_unlink 1367047412.936517263
+TIME end_ms_send 1367047415.742429322
+TIME 0 X-Update-Times 0.557860
+TIME X-Volume-Time 0.090910
+TIME X-UG-Time 0.014140
+TIME X-Total-Time 0.667300
+TIME begin_ms_send 1367047415.742505765
+TIME end_ms_send 1367047417.360094608
+TIME 0 X-Update-Times 0.376740
+TIME X-Volume-Time 0.006120
+TIME X-UG-Time 0.014320
+TIME X-Total-Time 0.400470
+TIME begin_ms_send 1367047420.554525861
+TIME end_ms_send 1367047423.111431463
+TIME 0 X-Delete-Times 0.259500
+TIME X-Volume-Time 0.007880
+TIME X-UG-Time 0.004490
+TIME X-Total-Time 0.341290
+TIME end_unlink 1367047423.117018247
+--------------------------------
+TIME begin_rmdir 1367047423.117033164
+TIME begin_ms_send 1367047423.117084752
+TIME end_ms_send 1367047428.134176986
+TIME 0 X-Delete-Times 3.564730
+TIME X-Volume-Time 0.081560
+TIME X-UG-Time 0.022100
+TIME X-Total-Time 3.676420
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/planetlab3.cs.st-andrews.ac.uk) errno = -2
+TIME end_rmdir 1367047428.134345797
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 138.251.214.77 closed.

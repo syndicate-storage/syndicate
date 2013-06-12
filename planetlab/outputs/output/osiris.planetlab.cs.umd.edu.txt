@@ -1,0 +1,221 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.009470
+TIME X-UG-Time 0.229360
+TIME X-Total-Time 1.824440
+--------------------------------
+TIME begin_diskwrite 1367047386.601599765
+TIME end_diskwrite 1367047386.634027777
+--------------------------------
+TIME begin_diskread 1367047386.634041738
+TIME end_diskread 1367047386.646826910
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047386.723066696
+TIME begin_revalidate_path 6946860.266465953
+TIME begin_ms_recv 1367047386.723167453
+TIME end_ms_recv 1367047397.608510683
+TIME X-Resolve-Time 0.234230
+TIME X-Volume-Time 0.018400
+TIME X-UG-Time 0.006520
+TIME X-Total-Time 0.263010
+TIME end_revalidate_path 6946871.151933296
+TIME begin_ms_send 1367047397.631248426
+TIME end_ms_send 1367047399.922424262
+TIME 0 X-Create-Times 0.084780
+TIME X-Volume-Time 0.002130
+TIME X-UG-Time 0.002450
+TIME X-Total-Time 0.090510
+TIME end_mkdir 1367047399.922463911
+--------------------------------
+TIME begin_create 1367047399.922470150
+TIME begin_revalidate_path 6946873.465813956
+TIME begin_ms_recv 1367047399.922505944
+TIME end_ms_recv 1367047400.5329971
+TIME X-Resolve-Time 0.033740
+TIME X-Volume-Time 0.003440
+TIME X-UG-Time 0.005080
+TIME X-Total-Time 0.043060
+TIME end_revalidate_path 6946873.548753422
+TIME begin_ms_send 1367047400.5554088
+TIME end_ms_send 1367047401.358837341
+TIME 0 X-Create-Times 0.289690
+TIME X-Volume-Time 0.004240
+TIME X-UG-Time 0.007110
+TIME X-Total-Time 0.306270
+TIME end_create 1367047401.358880553
+--------------------------------
+TIME begin_local_write 1367047401.358887434
+TIME begin_write 6946874.902228604
+TIME begin_revalidate_path 6946874.902239091
+TIME begin_ms_recv 1367047401.358924623
+TIME end_ms_recv 1367047405.729265458
+TIME X-Resolve-Time 0.082280
+TIME X-Volume-Time 0.007420
+TIME X-UG-Time 0.009340
+TIME X-Total-Time 0.100160
+TIME end_revalidate_path 6946879.272708299
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/osiris.planetlab.cs.umd.edu/osiris.planetlab.cs.umd.edu.1367047400005[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047405.811256258
+TIME end_ms_send 1367047409.21328079
+TIME 0 X-Update-Times 0.413500
+TIME X-Volume-Time 0.085610
+TIME X-UG-Time 0.009810
+TIME X-Total-Time 0.511110
+TIME end_write 6946882.564699615
+TIME end_local_write 1367047409.21387690
+--------------------------------
+TIME begin_local_read 1367047409.21394017
+TIME begin_read 6946882.564729841
+TIME begin_revalidate_path 6946882.564739875
+TIME begin_ms_recv 1367047409.21425932
+TIME end_ms_recv 1367047409.469391688
+TIME X-Resolve-Time 0.291330
+TIME X-Volume-Time 0.009690
+TIME X-UG-Time 0.002660
+TIME X-Total-Time 0.401830
+TIME end_revalidate_path 6946883.12835876
+TIME begin_ms_send 1367047409.470210710
+TIME end_read 6946883.145267319
+TIME end_local_read 1367047409.601947736
+--------------------------------
+TIME begin_close 1367047409.601954387
+TIME end_close 1367047409.601964925
+--------------------------------
+TIME begin_unlink 1367047409.601970391
+TIME end_ms_send 1367047411.824275190
+TIME 0 X-Update-Times 0.056580
+TIME X-Volume-Time 0.002850
+TIME X-UG-Time 0.006350
+TIME X-Total-Time 0.067490
+TIME begin_ms_send 1367047411.824354225
+TIME end_ms_send 1367047414.112535017
+TIME 0 X-Update-Times 0.203790
+TIME X-Volume-Time 0.039260
+TIME X-UG-Time 0.002220
+TIME X-Total-Time 0.247520
+TIME begin_ms_send 1367047417.220652432
+TIME end_ms_send 1367047418.380570639
+TIME 0 X-Delete-Times 0.095520
+TIME X-Volume-Time 0.003270
+TIME X-UG-Time 0.003740
+TIME X-Total-Time 0.104420
+TIME end_unlink 1367047418.386286111
+--------------------------------
+TIME begin_rmdir 1367047418.388742992
+TIME begin_ms_send 1367047418.388794129
+TIME end_ms_send 1367047427.6682055
+TIME X-Volume-Time 0.000000
+TIME X-UG-Time 0.000000
+TIME X-Total-Time 0.000000
+[       rmdir.cpp:0055] fs_entry_rmdir: ms_client_delete(/osiris.planetlab.cs.umd.edu) rc = -500
+[  write_file.cpp:0316] main: fs_entry_rmdir(/osiris.planetlab.cs.umd.edu) rc = -121
+---------- END write_file.sh ----------
+Connection to 128.8.126.78 closed.

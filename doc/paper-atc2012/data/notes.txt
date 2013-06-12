@@ -1,0 +1,402 @@
+
+\comment{
+
+local filebench on vcoblitz-cmi (5 runs)
+
+23613: 26.880: Run took 12 seconds...
+23613: 26.880: Per-Operation Breakdown
+closefile1           50000ops     4162ops/s   0.0mb/s      0.0ms/op       22us/op-cpu [0ms - 0ms]
+writefile1           50000ops     4162ops/s  64.8mb/s      0.0ms/op       43us/op-cpu [0ms - 1ms]
+createfile1          50000ops     4162ops/s   0.0mb/s      0.1ms/op      103us/op-cpu [0ms - 11ms]
+23613: 26.881: IO Summary: 150000 ops, 12487.454 ops/s, (0/4162 r/w),  64.8mb/s,    315us cpu/op,   0.1ms latency
+
+23675: 30.661: Run took 12 seconds...
+23675: 30.662: Per-Operation Breakdown
+closefile1           50000ops     4161ops/s   0.0mb/s      0.0ms/op       23us/op-cpu [0ms - 0ms]
+writefile1           50000ops     4161ops/s  64.8mb/s      0.0ms/op       52us/op-cpu [0ms - 8ms]
+createfile1          50000ops     4161ops/s   0.0mb/s      0.1ms/op       95us/op-cpu [0ms - 0ms]
+23675: 30.662: IO Summary: 150000 ops, 12484.353 ops/s, (0/4161 r/w),  64.8mb/s,    242us cpu/op,   0.1ms latency
+
+23733: 27.577: Run took 13 seconds...
+23733: 27.577: Per-Operation Breakdown
+closefile1           50000ops     3842ops/s   0.0mb/s      0.0ms/op       24us/op-cpu [0ms - 0ms]
+writefile1           50000ops     3842ops/s  59.8mb/s      0.0ms/op       54us/op-cpu [0ms - 24ms]
+createfile1          50000ops     3842ops/s   0.0mb/s      0.1ms/op       96us/op-cpu [0ms - 0ms]
+23733: 27.577: IO Summary: 150000 ops, 11526.935 ops/s, (0/3842 r/w),  59.8mb/s,    264us cpu/op,   0.1ms latency
+
+23778: 34.314: Run took 12 seconds...
+23778: 34.314: Per-Operation Breakdown
+closefile1           50000ops     4162ops/s   0.0mb/s      0.0ms/op       19us/op-cpu [0ms - 0ms]
+writefile1           50000ops     4162ops/s  64.8mb/s      0.0ms/op       56us/op-cpu [0ms - 30ms]
+createfile1          50000ops     4162ops/s   0.0mb/s      0.1ms/op       95us/op-cpu [0ms - 0ms]
+23778: 34.314: IO Summary: 150000 ops, 12487.473 ops/s, (0/4162 r/w),  64.8mb/s,    235us cpu/op,   0.1ms latency
+
+23871: 24.952: Run took 12 seconds...
+23871: 24.952: Per-Operation Breakdown
+closefile1           50000ops     4162ops/s   0.0mb/s      0.0ms/op       22us/op-cpu [0ms - 0ms]
+writefile1           50000ops     4162ops/s  64.8mb/s      0.0ms/op       50us/op-cpu [0ms - 28ms]
+createfile1          50000ops     4162ops/s   0.0mb/s      0.1ms/op       97us/op-cpu [0ms - 11ms]
+23871: 24.952: IO Summary: 150000 ops, 12487.450 ops/s, (0/4162 r/w),  64.8mb/s,    237us cpu/op,   0.1ms latency
+
+
+averages:
+ops/s:       12294.733
+write mb/s:  63.8
+latency:     0.1
+
+stddev:
+ops/s:       383.900
+write mb/s:  2.0
+latency:     0
+
+
+
+BBFS filebench on vcoblitz-cmi (5 runs)
+
+ 4524: 73.348: Run took 60 seconds...
+ 4524: 73.348: Per-Operation Breakdown
+closefile1           50000ops      832ops/s   0.0mb/s      0.1ms/op       37us/op-cpu [0ms - 8ms]
+writefile1           50000ops      832ops/s  13.0mb/s      0.4ms/op       64us/op-cpu [0ms - 83ms]
+createfile1          50000ops      832ops/s   0.0mb/s      0.6ms/op      110us/op-cpu [0ms - 318ms]
+ 4524: 73.348: IO Summary: 150000 ops, 2497.318 ops/s, (0/832 r/w),  13.0mb/s,   1336us cpu/op,   1.0ms latency
+
+ 4707: 74.788: Run took 60 seconds...
+ 4707: 74.789: Per-Operation Breakdown
+closefile1           50000ops      832ops/s   0.0mb/s      0.1ms/op       50us/op-cpu [0ms - 8ms]
+writefile1           50000ops      832ops/s  13.0mb/s      0.4ms/op       65us/op-cpu [0ms - 8ms]
+createfile1          50000ops      832ops/s   0.0mb/s      0.5ms/op      111us/op-cpu [0ms - 259ms]
+ 4707: 74.789: IO Summary: 150000 ops, 2497.361 ops/s, (0/832 r/w),  13.0mb/s,   1180us cpu/op,   1.0ms latency
+
+ 4812: 73.993: Run took 55 seconds...
+ 4812: 73.993: Per-Operation Breakdown
+closefile1           50000ops      908ops/s   0.0mb/s      0.1ms/op       38us/op-cpu [0ms - 9ms]
+writefile1           50000ops      908ops/s  14.1mb/s      0.3ms/op       58us/op-cpu [0ms - 344ms]
+createfile1          50000ops      908ops/s   0.0mb/s      0.5ms/op      108us/op-cpu [0ms - 19ms]
+ 4812: 73.993: IO Summary: 150000 ops, 2724.466 ops/s, (0/908 r/w),  14.1mb/s,   1092us cpu/op,   0.9ms latency
+
+ 4921: 67.622: Run took 58 seconds...
+ 4921: 67.622: Per-Operation Breakdown
+closefile1           50000ops      861ops/s   0.0mb/s      0.1ms/op       47us/op-cpu [0ms - 7ms]
+writefile1           50000ops      861ops/s  13.4mb/s      0.4ms/op       61us/op-cpu [0ms - 10ms]
+createfile1          50000ops      861ops/s   0.0mb/s      0.5ms/op      108us/op-cpu [0ms - 202ms]
+ 4921: 67.622: IO Summary: 150000 ops, 2583.420 ops/s, (0/861 r/w),  13.4mb/s,   1247us cpu/op,   0.9ms latency
+
+ 4983: 65.885: Run took 56 seconds...
+ 4983: 65.886: Per-Operation Breakdown
+closefile1           50000ops      892ops/s   0.0mb/s      0.1ms/op       35us/op-cpu [0ms - 9ms]
+writefile1           50000ops      892ops/s  13.9mb/s      0.3ms/op       56us/op-cpu [0ms - 10ms]
+createfile1          50000ops      892ops/s   0.0mb/s      0.5ms/op      105us/op-cpu [0ms - 9ms]
+ 4983: 65.886: IO Summary: 150000 ops, 2675.675 ops/s, (0/892 r/w),  13.9mb/s,   1126us cpu/op,   0.9ms latency
+
+
+averages:
+ops/s:      2595.648
+write mb/s: 13.48
+latency:    0.94
+
+stddev:
+ops/s:      92.171
+write mb/s: 0.4534
+latency:    0.04899
+
+
+
+Syndicate filebench on vcoblitz-cmi (5 runs)
+
+ 2695: 87.643: Run took 55 seconds...
+ 2695: 87.643: Per-Operation Breakdown
+closefile1           50000ops      908ops/s   0.0mb/s      0.0ms/op       44us/op-cpu [0ms - 285ms]
+writefile1           50000ops      908ops/s  14.1mb/s      0.3ms/op       60us/op-cpu [0ms - 114ms]
+createfile1          50000ops      908ops/s   0.0mb/s      0.5ms/op      105us/op-cpu [0ms - 279ms]
+ 2695: 87.643: IO Summary: 150000 ops, 2724.516 ops/s, (0/908 r/w),  14.1mb/s,   1899us cpu/op,   0.9ms latency
+
+ 2890: 66.131: Run took 54 seconds...
+ 2890: 66.131: Per-Operation Breakdown
+closefile1           50000ops      925ops/s   0.0mb/s      0.0ms/op       36us/op-cpu [0ms - 9ms]
+writefile1           50000ops      925ops/s  14.4mb/s      0.3ms/op       60us/op-cpu [0ms - 64ms]
+createfile1          50000ops      925ops/s   0.0mb/s      0.5ms/op      111us/op-cpu [0ms - 100ms]
+ 2890: 66.131: IO Summary: 150000 ops, 2774.916 ops/s, (0/925 r/w),  14.4mb/s,   1849us cpu/op,   0.9ms latency
+
+ 2968: 68.119: Run took 56 seconds...
+ 2968: 68.120: Per-Operation Breakdown
+closefile1           50000ops      892ops/s   0.0mb/s      0.0ms/op       38us/op-cpu [0ms - 15ms]
+writefile1           50000ops      892ops/s  13.9mb/s      0.3ms/op       66us/op-cpu [0ms - 9ms]
+createfile1          50000ops      892ops/s   0.0mb/s      0.5ms/op      113us/op-cpu [0ms - 280ms]
+ 2968: 68.120: IO Summary: 150000 ops, 2675.852 ops/s, (0/892 r/w),  13.9mb/s,   2008us cpu/op,   0.9ms latency
+
+ 3121: 65.319: Run took 53 seconds...
+ 3121: 65.319: Per-Operation Breakdown
+closefile1           50000ops      942ops/s   0.0mb/s      0.0ms/op       36us/op-cpu [0ms - 9ms]
+writefile1           50000ops      942ops/s  14.7mb/s      0.3ms/op       60us/op-cpu [0ms - 267ms]
+createfile1          50000ops      942ops/s   0.0mb/s      0.5ms/op      114us/op-cpu [0ms - 245ms]
+ 3121: 65.319: IO Summary: 150000 ops, 2827.160 ops/s, (0/942 r/w),  14.7mb/s,   1875us cpu/op,   0.8ms latency
+
+ 3176: 69.874: Run took 57 seconds...
+ 3176: 69.874: Per-Operation Breakdown
+closefile1           50000ops      876ops/s   0.0mb/s      0.1ms/op       41us/op-cpu [0ms - 8ms]
+writefile1           50000ops      876ops/s  13.6mb/s      0.3ms/op       57us/op-cpu [0ms - 37ms]
+createfile1          50000ops      876ops/s   0.0mb/s      0.5ms/op      103us/op-cpu [0ms - 254ms]
+ 3176: 69.874: IO Summary: 150000 ops, 2628.690 ops/s, (0/876 r/w),  13.6mb/s,   2202us cpu/op,   0.9ms latency
+
+
+averages:
+ops/s:      2726.2268
+write mb/s: 14.14
+latency:    0.88
+
+stddev:
+ops/s:      70.160
+write mb/s: 0.3826
+latency:    0.04
+}
+
+
+\comment{
+
+data:
+1M file, 
+no CDN   CoBlitz   VCoBlitz  CoralCDN
+2.636    5.051     2.295     
+3.007    5.747     3.191     
+2.938    4.991     2.843     
+2.769    5.281     3.510     
+3.089    5.881     3.538    
+------------------------
+2.888    5.392     3.075
+0.164    0.364     0.465
+
+
+5M file, 
+no CDN   CoBlitz   VCoBlitz  CoralCDN
+5.999    10.503    6.220     
+5.231    13.002    6.434     
+5.938    11.109    7.228     
+4.950    10.274    5.708     
+4.828    9.945     6.988    
+------------------------
+5.389    10.966    6.516
+0.491    1.086     0.543
+
+
+10M file, 
+no CDN   CoBlitz   VCoBlitz  CoralCDN
+6.950    17.698    11.328    
+8.363    26.563    11.313    
+7.436    10.703    11.515    
+8.485    19.484    10.991    
+8.116    20.504    11.091   
+-------------------------
+7.87     18.990    11.247
+0.586    5.104     0.186
+
+
+50M file, 
+no CDN   CoBlitz   VCoBlitz  CoralCDN
+28.782   98.263    35.349    
+26.976   112.289   41.941    
+29.335   105.083   44.679    
+29.222   49.861    34.964    
+29.061   76.326    39.258    
+-------------------------
+28.675   88.364    39.2382
+0.870    22.704    3.750
+
+
+100M file, 
+no CDN   CoBlitz   VCoBlitz  CoralCDN
+52.542   4m55.988  1m16.003  
+56.890   2m37.552  1m13.011  
+52.670   4m55.587  1m18.954  
+59.428   5m5.402   1m17.782  
+54.382   3m8.591   1m21.941  
+---------------------------
+55.182   248.624   77.538
+2.641    62.563    2.977
+}
+
+
+\comment{
+
+50,000 files
+writes
+start 1326823656
+end   1326823662
+start 1326824073
+end   1326824079
+start 1326824397
+end   1326824403
+start 1326824650
+end   1326824656
+start 1326824848
+end   1326824853
+
+4
+6
+5
+6
+5
+----------------
+5.2
+0.748
+
+reads
+start 1326825307
+end   1326825311
+start 1326825364
+end   1326825368
+start 1326825399
+end   1326825404
+start 1326825440
+end   1326825443
+start 1326825440
+end   1326825443
+
+3
+4
+5
+3
+3
+-----------------
+3.6
+0.8
+
+
+10,000 files
+writes
+start 1326825773
+end   1326825774
+start 1326826167.070437
+end   1326826167.976588
+start 1326826318.687259
+end   1326826319.870444
+start 1326826424.192126
+end   1326826425.119288
+start 1326826578.729376
+end   1326826579.663945
+
+1.000
+0.906151
+1.183185
+0.927162
+0.934569
+-----------------------
+0.990213
+0.101461
+
+
+reads
+start 1326826876.497214
+end   1326826877.363446
+start 1326826917.973302
+end   1326826918.677320
+start 1326826969.282477
+end   1326826970.044292
+start 1326826979.088680
+end   1326826979.822793
+start 1326826986.637106
+end   1326826987.518142
+
+0.866232
+0.704018
+0.761815
+0.734113
+0.881036
+------------------------
+0.789443
+0.071285
+
+
+5,000 files
+writes
+start 1326827201.794116 
+end   1326827202.305777
+start 1326827271.788457
+end   1326827272.312950
+start 1326827340.547967
+end   1326827341.200800
+start 1326827607.776801
+end   1326827608.321619
+start 1326827688.679279
+end   1326827689.145245
+
+0.511661
+0.524493
+0.652833
+0.544818
+0.465966
+-----------------------
+0.539954
+0.062095
+
+reads
+start 1326827870.123355
+end   1326827870.456686
+start 1326827876.313578
+end   1326827876.636489
+start 1326827881.871399
+end   1326827882.267413
+start 1326827889.693991
+end   1326827890.055501
+start 1326827895.588476
+end   1326827895.915678
+
+0.333331
+0.322911
+0.396014
+0.361510
+0.327202
+-----------------------
+0.348194
+0.027440
+
+
+
+
+1,000 files
+writes
+start 1326828119.925932
+end   1326828120.047161
+start 1326828207.788147
+end   1326828207.915713
+start 1326828279.330689
+end   1326828279.440675
+start 1326828347.760602
+end   1326828347.871577
+start 1326828416.457104
+end   1326828416.557324
+
+0.121229
+0.127660
+0.109976
+0.110975
+0.100220
+-----------------------
+0.114012
+0.009530
+
+reads
+start 1326828438.067998
+end   1326828438.147453
+start 1326828443.698975
+end   1326828443.787674
+start 1326828453.334512
+end   1326828453.414638
+start 1326828458.657258
+end   1326828458.764738
+start 1326828465.143616
+end   1326828465.223476
+
+0.079455
+0.088699
+0.080126
+0.108480
+0.079860
+------------------------
+0.087324
+0.011126
+
+
+
+
+}
+

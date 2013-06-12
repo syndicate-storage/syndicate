@@ -1,0 +1,64 @@
+#!/bin/sh
+
+stop() {
+   PIDS=$(ps aux | grep /tmp/experimentd.py | grep -v grep | awk '{print $2}')
+   kill $PIDS 2>/dev/null 
+   sleep 5
+   kill -9 $PIDS 2>/dev/null
+
+   return 0
+}
+
+start() {
+   curl http://vcoblitz-cmi.cs.princeton.edu/tools/experiments/experimentd.py > /tmp/experimentd.py 2>/dev/null
+   rc=$?
+   if [ $rc -ne 0 ]; then
+      return $rc
+   fi
+
+   chmod +x /tmp/experimentd.py
+   nohup python /tmp/experimentd.py
+   rc=$?
+
+   rm nohup.out
+
+   if [ $rc -ne 0 ]; then
+      return $rc
+   fi   
+   return 0
+}
+
+rc=0
+
+case "$1" in
+   start)
+      echo -n "Starting experimentd..."
+      start
+      rc=$?
+      [ $rc -eq 0 ] && echo "Done"
+      [ $rc -ne 0 ] && echo "FAIL"
+      ;;
+    
+   stop)
+      echo -n "Stopping experimentd..."
+      stop
+      rc=$?
+      [ $rc -eq 0 ] && echo "Done"
+      [ $rc -ne 0 ] && echo "FAIL"
+      ;;
+
+   restart)
+      echo -n "Restarting experimentd..."
+      stop
+      start
+      rc=$?
+      [ $rc -eq 0 ] && echo "Done"
+      [ $rc -ne 0 ] && echo "FAIL"
+      ;;
+
+   *)
+      echo "Usage: $0 {start|stop|restart}"
+      exit 1
+esac
+
+exit $rc

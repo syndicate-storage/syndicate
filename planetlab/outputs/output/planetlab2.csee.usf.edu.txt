@@ -1,0 +1,232 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.034990
+TIME X-UG-Time 0.125150
+TIME X-Total-Time 1.751990
+--------------------------------
+TIME begin_diskwrite 1367047401.295959176
+TIME end_diskwrite 1367047401.363484163
+--------------------------------
+TIME begin_diskread 1367047401.363508594
+TIME end_diskread 1367047401.376739399
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047401.650972859
+TIME begin_revalidate_path 7311645.197500419
+TIME begin_ms_recv 1367047401.707646881
+TIME end_ms_recv 1367047407.163258868
+TIME X-Resolve-Time 0.791010
+TIME X-Volume-Time 0.104390
+TIME X-UG-Time 0.202970
+TIME X-Total-Time 1.101760
+TIME end_revalidate_path 7311650.824564580
+TIME begin_ms_send 1367047407.417037245
+TIME end_ms_send 1367047409.879779866
+TIME 0 X-Create-Times 0.783950
+TIME X-Volume-Time 0.005470
+TIME X-UG-Time 0.008080
+TIME X-Total-Time 0.799120
+TIME end_mkdir 1367047409.883779580
+--------------------------------
+TIME begin_create 1367047409.883800899
+TIME begin_revalidate_path 7311653.386207631
+TIME begin_ms_recv 1367047409.896241703
+TIME end_ms_recv 1367047410.548917472
+TIME X-Resolve-Time 0.308000
+TIME X-Volume-Time 0.039060
+TIME X-UG-Time 0.019480
+TIME X-Total-Time 0.367410
+TIME end_revalidate_path 7311654.39408732
+TIME begin_ms_send 1367047410.549627278
+TIME end_ms_send 1367047412.313224361
+TIME 0 X-Create-Times 0.509960
+TIME X-Volume-Time 0.118460
+TIME X-UG-Time 0.018090
+TIME X-Total-Time 0.648600
+TIME end_create 1367047412.313309717
+--------------------------------
+TIME begin_local_write 1367047412.313325321
+TIME begin_write 7311655.975346404
+TIME begin_revalidate_path 7311655.975384130
+TIME begin_ms_recv 1367047412.485382999
+TIME end_ms_recv 1367047413.432119772
+TIME X-Resolve-Time 0.410860
+TIME X-Volume-Time 0.018730
+TIME X-UG-Time 0.078670
+TIME X-Total-Time 0.512160
+TIME end_revalidate_path 7311656.935555865
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/planetlab2.csee.usf.edu/planetlab2.csee.usf.edu.1367047410549[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047414.15632348
+TIME end_ms_send 1367047416.836926315
+TIME 0 X-Update-Times 0.485220
+TIME X-Volume-Time 0.092790
+TIME X-UG-Time 0.009820
+TIME X-Total-Time 0.681670
+TIME end_write 7311660.327053970
+TIME end_local_write 1367047416.841331445
+--------------------------------
+TIME begin_local_read 1367047416.841347257
+TIME begin_read 7311660.331399195
+TIME begin_revalidate_path 7311660.351393351
+TIME begin_ms_recv 1367047416.861400145
+TIME end_ms_recv 1367047417.46973092
+TIME X-Resolve-Time 0.118490
+TIME X-Volume-Time 0.008740
+TIME X-UG-Time 0.007610
+TIME X-Total-Time 0.135630
+TIME end_revalidate_path 7311660.537238116
+TIME begin_ms_send 1367047426.776880134
+TIME end_ms_send 1367047428.525128003
+TIME 0 X-Update-Times 0.291780
+TIME X-Volume-Time 0.103410
+TIME X-UG-Time 0.012340
+TIME X-Total-Time 0.424960
+TIME begin_ms_send 1367047429.513073122
+TIME end_read 7311673.761957546
+TIME end_local_read 1367047430.271936668
+--------------------------------
+TIME begin_close 1367047430.271953817
+TIME end_close 1367047430.271988033
+--------------------------------
+TIME begin_unlink 1367047430.272003770
+TIME end_ms_send 1367047431.729794717
+TIME 0 X-Update-Times 0.133100
+TIME X-Volume-Time 0.007280
+TIME X-UG-Time 0.007170
+TIME X-Total-Time 0.149330
+TIME begin_ms_send 1367047431.729946360
+TIME end_ms_send 1367047434.932142856
+TIME 0 X-Update-Times 1.550670
+TIME X-Volume-Time 0.260770
+TIME X-UG-Time 0.235930
+TIME X-Total-Time 2.055920
+TIME begin_ms_send 1367047439.385201470
+TIME end_ms_send 1367047441.940583272
+TIME 0 X-Delete-Times 0.320280
+TIME X-Volume-Time 0.006400
+TIME X-UG-Time 0.006270
+TIME X-Total-Time 0.334350
+TIME end_unlink 1367047442.245844504
+--------------------------------
+TIME begin_rmdir 1367047442.245873748
+TIME begin_ms_send 1367047442.245989827
+TIME end_ms_send 1367047443.723287062
+TIME 0 X-Delete-Times 0.282510
+TIME X-Volume-Time 0.007060
+TIME X-UG-Time 0.103840
+TIME X-Total-Time 0.395960
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/planetlab2.csee.usf.edu) errno = -2
+TIME end_rmdir 1367047443.932215769
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 131.247.2.242 closed.

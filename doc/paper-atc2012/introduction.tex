@@ -1,0 +1,93 @@
+% Introduction
+
+\section{Introduction}
+ 
+This paper describes Syndicate, a wide-area distributed file system
+optimized for scalable read performance. Syndicate is unique in that
+it purposely decouples file persistence from read performance.  Regardless
+of how the the underlying file data is stored, Syndicate delivers good
+read performance to a scalable number of clients.
+
+Syndicate achieves this property by leveraging a content
+distribution network (CDN) as its underlying data delivery mechanism.
+A CDN implements a set of caches distributed across the network, and
+these caches can be used to both (1) move file data closer to clients
+(thereby reducing client-perceived latency), and (2) aggregate
+delivery capacity across multiple caches (thereby scaling bandwidth
+without putting any additional burden on the source).  
+
+Syndicate is useful for allowing a large number of readers to consume data
+from expensive or slow media.  For example, data might be stored in a cloud or digital vault that offers
+limited and expensive read access (e.g., Amazon S3~\cite{S3}), and then delivered to
+hundreds or thousands of clients through Syndicate. As another
+example, data might be stored on a laptop with a 10-Mbps wireless
+interface, backed up on an external hard drive, and delivered to
+clients around the world via Syndicate.
+
+Existing distributed filesystems systems such as Shark~\cite{shark}, GlusterFS~\cite{GlusterFS},
+and WheelFS~\cite{WheelFS} achieve good read performance by replicating
+data across participating hosts so a remote reader can retrieve data from
+multiple sources, often concurrently.  This require hosts to be
+responsible for maintaining replicas of that data on behalf of other hosts, which
+may be undesirable if underlying storage is expensive.  Syndicate instead
+delegates this responsibility to the underlying CDN.
+
+Syndicate is primarily targeted at users that need to read and write large datasets
+exposed to a large set of clients in the wide-area.  Syndicate is designed with 
+the following properties:
+ 
+\begin{description}
+ 
+\item[Low Latency:] Local file operations should be processed as quickly as possible.
+\item[Write Support:] Despite any immutability assumptions the underlying CDN makes, clients
+should be able to write data into the filesystem and have that data exposed to other clients
+for reading and writing.
+\item[Scalable Throughput:] Aggregate read throughput should scale
+with the number of clients.
+\item[Close-to-Open Semantics:] A file's data and metadata should maintain
+close-to-open consistency despite multiple readers and writers.
+\item[High Availability:] A file made accessible through the
+filesystem should be able to tolerate multiple network failures.
+\item[Scalable Capacity:] There should be no \textit{a priori} limit to the number
+of hosts, files, or bytes of data in the file system.
+ 
+\end{description}
+  
+This paper describes both how Syndicate leverages a CDN to provide
+scalable read performance, yet provides the semantics of a traditional
+distributed file system. Sections 2 and 3 described Syndicate's design
+and implementation. The paper concludes by evaluating Syndicate's
+performance and comparing Syndicate to related work.
+
+\comment{ 
+% TAKEAWAY 1: Syndicate is a distributed read/write filesystem that works best for distributing large datasets. 
+% 
+% TAKEAWAY 2: We want to convince the reader here that the best way to build a distributed filesystem with our given requirements is to use a CDN to help distribute and cache chunks of data. 
+
+% What do we want from a distributed filesystem?  The semantics and behavior of a local filesystem.
+Perhaps the most widely used programming interface for indexing, retrieving, and storing information on computer systems is the filesystem interface~\cite{citation needed}.  One prominent~\cite{NFS}~\cite{AFS}~\cite{Ceph}~\cite{Shark}~\cite{Lustre}~\cite{HDFS}~\cite{LFS}~\cite{WheelFS} class of filesystems are distributed filesystems, which present data stored across networked computers as a single locally-mounted filesystem.
+\\
+Most of these systems attempt to preserve as much of the semantics and behaviors of singular (non-distributed) filesystems as possible.  To do so, a distributed filesystem must mitigate the impact of faults in the network and remote hosts on the availability of data.  As a result, we identify five traits distributed filesystems must strive to maintain to achieve this end:
+
+% What properties do we desire?
+\begin{itemize}
+\item \textit{Low latency}.  File operations should start as quickly as possible. \\
+\item \textit{High bandwidth}.  Read and write operations should occur as quickly as possible. \\
+\item \textit{High consistency}.  A file's data and metadata should be as consistent as possible with the operations that have occurred on it. \\
+\item \textit{High availability}.  A file exposed in the filesystem namespace should be accessible as often as possible. \\
+\item \textit{High scalability}.  The filesystem should allow for as many hosts, files, and bytes of data represented as possible.
+\end{itemize}
+
+% Using a CDN can help us achieve some of these traits
+One way to achieve some of these traits is to leverage a content distribution network to drive data delivery to readers.  A content distribution network (CDN) is a network of servers (CDN nodes) that cache replicas of content from one or more origin servers in order to increase the access bandwidth and redundancy while reducing the access latency~\cite{citation needed} of the content.  In practice, CDNs are a piece of an Internet content provider's infrastructure that gets used mitigate the effect of flash crowds accessing popular content~\cite{citation needed}.
+\\
+% What are the consequences of using a CDN in a filesystem?
+One immediate consequence of using a CDN is that the read latency for a frequently-read but remotely-hosted file would decrease considerably, since most reads would be directed to a nearby replica.  Read bandwidth on remote files would increase noticeably as well, since multiple replicas may be queried simultaneously and most queries would not be directed to the origin server.  However, the file would be expected to change infrequently on the origin, since a change would need to propagate to the CDN nodes and then to the clients.  Additionally, if the CDN is designed to replicate fragments of content, changing the file on the origin server may introduce file corruption if either the CDN or the client attempts to reassemble the file from both stale and fresh fragments.
+\\
+% What is Syndicate?  Why is it novel?
+To address these problems, we created Syndicate, a scalable, distributed read/write filesystem that explicitly leverages and, if possible, controls a CDN to drive file data delivery between its clients.  Syndicate is designed to allow users to publish and distribute large quantities of data across the Internet using a filesystem interface.  To the extent of our knowledge, it is the first filesystem to leverage a CDN in this manner while addressing the difficulties of using one.
+\\
+% Paper outline
+The remainder of this paper is organized as follows:
+}
+

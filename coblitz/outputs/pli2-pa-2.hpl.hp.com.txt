@@ -1,0 +1,2 @@
+/bin/su: user princeton_syndicate does not exist
+Connection to pli2-pa-2.hpl.hp.com closed.

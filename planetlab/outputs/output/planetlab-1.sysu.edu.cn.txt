@@ -1,0 +1,20 @@
+---------- BEGIN write_file.sh ----------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0105   947  105   947    0     0   1287      0 --:--:-- --:--:-- --:--:--  2566
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0 3266k    0 17505    0     0  15082      0  0:03:41  0:00:01  0:03:40 22018  3 3266k    3  102k    0     0  47295      0  0:01:10  0:00:02  0:01:08 56603 11 3266k   11  373k    0     0   113k      0  0:00:28  0:00:03  0:00:25  128k 24 3266k   24  793k    0     0   182k      0  0:00:17  0:00:04  0:00:13  199k 33 3266k   33 1105k    0     0   215k      0  0:00:15  0:00:05  0:00:10  231k 59 3266k   59 1940k    0     0   313k      0  0:00:10  0:00:06  0:00:04  381k100 3266k  100 3266k    0     0   466k      0  0:00:06  0:00:06 --:--:--  662k
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+DATA X-Volume-Time 0.000000
+DATA X-UG-Time 0.000000
+DATA X-Total-Time 0.000000
+[   ms-client.cpp:0431] ms_client_get_volume_metadata: md_download_file5(https://syndicate-metadata.appspot.com/VOLUME/testvolume) rc = -7
+[   syndicate.cpp:0556] syndicate_init: ms_client_get_volume_metadata rc = -7
+---------- END write_file.sh ----------
+Connection to 202.116.81.194 closed.

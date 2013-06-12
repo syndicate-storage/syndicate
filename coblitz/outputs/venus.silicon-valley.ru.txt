@@ -1,0 +1,2 @@
+/bin/su: user princeton_syndicate does not exist
+Connection to venus.silicon-valley.ru closed.

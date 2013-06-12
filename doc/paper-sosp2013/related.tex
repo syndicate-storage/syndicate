@@ -1,0 +1,30 @@
+\section{Related Work}
+\label{sec:related}
+
+Network caches are well-studied, common pieces of Internet intrastructure~\cite{wang99-survey,podlipnig03-survey,raunak99,Androutsellis-Theotokis04,shim99}, and many novel techniques for developing scalable cooperative caching systems have been proposed~\cite{sloppy-dht,karger99,cdn-redirect,Akamai,breslau99}.  \Syndicate\ makes it possible to use unmodified network caches while preserving stronger consistency than they offer, instead of implementing its own caching mechanism.
+
+While client polling, object leases, and server invalidation cache consistency protocols have been proposed~\cite{wcdp,Gwertzman96,Liu97,gray89} and implemented~\cite{memcache,xFS,afs,shark} to offer stronger wide-area cache consistency, they either require an application-specific cache implementation, or are limited to use-cases where all origin servers run under the same administrative domain (e.g. a cloud or an edge computing platform~\cite{Akamai,PlanetLab}).  \Syndicate\ overcomes both limitations by treating each version of each block of each object as a separate cacheable entity, allowing cache operators to apply whatever usage and eviction policies meet their cost and performance objectives without breaking applications.
+
+Some cloud computing platforms~\cite{riverbed-gateway,amazon-gateway,twinstrata-gateway} are beginning to deploy cloud storage gateways---edge-hosted processes that transparently host, cache, and replicate data back to a cloud storage provider while keeping it close to edge users.  The key difference between \Syndicate\ and cloud storage gateways today is that \Syndicate\ offers a composable architecture that provides mechanism-agnostic consistency and durability protocols.  Unlike \Syndicate, cloud storage gateway designs today are coupled to one or more underlying mechanisms, including caching, replication, deduplication, an encryption, that might instead exist as indepenent subservices for users to transparently compose.
+
+Systems that compose CDNs~\cite{metacdn,cdn.net} have been proposed, as well as systems that compose cloud storage~\cite{metastorage}, with the purpose of improving data access performance, data durability, and hosting costs.  However, they do not address data consistency, which requires cooperation between clients (UGs) and cloud storage (RGs) to implement it in a fault-tolerant manner.
+
+There are many wide-area distributed read-write filesystems---e.g.,
+AFS~\cite{afs}, Ceph~\cite{Ceph}, WheelFS~\cite{WheelFS}, and
+GlusterFS~\cite{GlusterFS}---but the difference is that \Syndicate\ decouples durability from scalable performance, and uses commodity
+cloud storage to achieve the former and commodity network caches to
+achieve the latter. In contrast, these other systems explicitly create
+and manage replicas to achieve both good aggregate read performance
+and availability.
+
+Shark~\cite{shark} scales by caching metadata (but not file data) in
+the Coral CDN~\cite{coral}, with clients using this metadata to direct
+their read requests to remote replicas on other clients. In \Syndicate,
+the cloud-hosted Metadata Service provides this functionality,
+directing readers to both cloud-hosted and client-hosted replicas.
+Where Shark uses file leases to ensure data consistency, \Syndicate\ uses a URL generation scheme that uses file timestamps and block
+version numbers to ensure that URLs uniquely identify data at a given
+point in time.  This has the benefit of allowing \Syndicate\ to leverage
+unmodified commodity caches to scale data delivery.
+
+

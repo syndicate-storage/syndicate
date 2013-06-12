@@ -1,0 +1,148 @@
+Performance comparison to Shark:
+* both use caching (shark uses peers for caching, DSHT for finding peers)
+* why are they not comparable?
+-- we think CDN caches have better bandwidth than peer caches
+-- we think request routing is better than DSHT
+-- can't really compare, since performance is very circumstantial (i.e. did you pick a good peer or cache?  are you close to good peers or caches?)
+-- moreover, shark uses shark caches; we use any cache (including shark, if desired)
+
+TODO:
+* client should ask metadata server for maximum metadata post size and time BEFORE it begins sending data; metadata server should respond (i.e. have an "about this server" URL nonce)
+* client should honor maximum post size
+
+Get required dependencies on planetlab:
+
+#!/bin/sh
+
+SITE=http://vcoblitz-cmi.cs.princeton.edu/
+curl -ks $SITE/yum/Syndicate.repo  > /tmp/Syndicate.repo
+cp /tmp/Syndicate.repo /etc/yum.repos.d/Syndicate.repo
+rpm -Uvh http://dl.fedoraproject.org/pub/epel/5/x86_64/epel-release-5-4.noarch.rpm
+
+sudo yum -y upgrade
+sudo yum -y install subversion gcc gcc-c++ gnutls-devel openssl-devel boost-devel libxml2-devel libattr-devel curl-devel automake make libtool fcgi-devel texinfo fuse fuse-devel libgcrypt-devel python-uuid uriparser-devel wget openssh-clients protobuf protobuf-devel protobuf-compiler autoconf m4
+svn checkout https://svn.princeton.edu/cdnfs syndicate
+cd syndicate/libmicrohttpd-syndicate
+./bootstrap
+./configure --prefix=/usr
+make
+sudo make install
+cd ../common
+make
+sudo make install
+cd ../client
+make
+
+
+libmicrohttpd:
+* pass --prefix=/usr to install to /usr/lib (/usr/local/lib doesn't work on VICCI)
+
+To add a prefix:
+
+1.  put this block in /usr/local/CoBlitz/nginx/prefixes/test.conf:
+
+   location /www.cs.princeton.edu {
+       more_clear_headers 'MD5Sum' 'X-CoDemux-Client' 'X-Chunksize' 'X-Numpar' 'X-Startwin' 'X-CZIP' 'X-Bypass-Module';
+
+       limit_except GET {
+           deny all;
+       }
+
+       set $copass_real_first_line "GET $request_uri HTTP/1.1";
+       set $copass_real_host $host;
+       set $copass_cookie $http_cookie;
+       copass;
+   }
+
+
+Sample test.conf:
+#
+# Prefix for /www.cs.princeton.edu
+#
+
+server {
+    listen 8008;
+    server_name node1.gt.vicci.org;
+    resolver 127.0.0.1:10153;
+    client_header_buffer_size 4k;
+    keepalive_requests 100000;
+    recursive_error_pages on;
+
+    # Internal locations for cache operation
+    location ~ ^/_/ {
+        rewrite /_/(.*)$ $1 break;
+
+        include common/proxy_default.conf;
+        proxy_set_header X-Real-FirstLine $copass_real_first_line;
+        proxy_set_header X-Real-Host $copass_real_host;
+        proxy_set_header X-Origin-IP $host;
+        proxy_set_header X-Client-IP $remote_addr;
+        proxy_set_header Cookie $copass_cookie;
+        proxy_pass http://proxy_backend;
+
+        error_page 504 @failback;
+        error_page 502 @failback;
+        error_page 302 @failback;
+        error_page 307 @failback;
+    }
+    location @failback {
+        include common/proxy_default.conf;
+        # The $copass_header_real_* are set by nginx.
+        proxy_set_header X-Real-FirstLine $copass_header_real_first_line;
+        proxy_set_header X-Real-Host $copass_header_real_host;
+        proxy_set_header X-Origin-IP $host;
+        proxy_set_header X-Client-IP $remote_addr;
+        proxy_set_header Cookie $copass_cookie;
+        proxy_pass http://proxy_backend;
+
+        error_page 504 @failback;
+        error_page 502 @failback;
+        error_page 302 @failback;
+        error_page 307 @failback;
+    }
+
+
+
+    location /www.cs.princeton.edu {
+       more_clear_headers 'MD5Sum' 'X-CoDemux-Client' 'X-Chunksize' 'X-Numpar' 'X-Startwin' 'X-CZIP' 'X-Bypass-Module';
+
+       limit_except GET {
+           deny all;
+       }
+
+       set $copass_real_first_line "GET $request_uri HTTP/1.1";
+       set $copass_real_host $host;
+       set $copass_cookie $http_cookie;
+       copass;
+   }
+}
+   
+
+
+2.  add an entry in /usr/local/CoBlitz/coblitz_monitor/user/test/prefix:
+
+node1.gt.vicci.org
+www.cs.princeton.edu
+
+
+3.  add an entry in /usr/local/CoBlitz/coblitz_monitor/user/test/site:
+
+www.cs.princeton.edu www.cs.princeton.edu 0 0 1 1
+
+
+4.  add an entry in /usr/local/CoBlitz/coblitz_monitor/user/list
+
+# Well-known customers
+# WirtualnaPolska enabled
+test enabled
+
+5.  restart nginx
+
+
+
+NOTES on new LXC-based VICCI nodes:
+--make slice user (princeton_vcoblitz)
+--libssl.so.6 is in openssl-0.9.8e.  Need to ln -s /usr/lib64/libssl.so /usr/lib64/libssl.so.6 for coblitz's gencookie program to work.
+-----safe to force coblitz_proxy to install, evne though the openssl dependency isn't satisfied
+--need bind_public.so preload to translate a bind on 0.0.0.0 to a bind on the host's IP address (used in conjunction with Sapan's kernel module)
+--replace prox, nginx, dnsredir, dnsdemux binaries with scripts that use bind_public.so (and use absolute paths)

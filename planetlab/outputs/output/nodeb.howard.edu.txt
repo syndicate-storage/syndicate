@@ -1,0 +1,226 @@
+---------- BEGIN write_file.sh ----------
+/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
+/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
+[  write_file.cpp:0009] main: starting up debugging
+[  write_file.cpp:0010] main: starting up errors
+[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
+
+[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
+
+TIME X-Volume-Time 0.014530
+TIME X-UG-Time 0.988610
+TIME X-Total-Time 10.398140
+--------------------------------
+TIME begin_diskwrite 1367047385.571112142
+TIME end_diskwrite 1367047385.583470617
+--------------------------------
+TIME begin_diskread 1367047385.583490592
+TIME end_diskread 1367047385.592782114
+--------------------------------
+ping: unknown host syndicate-metadata.google.com
+--------------------------------
+TIME begin_mkdir 1367047385.741026486
+TIME begin_revalidate_path 19400159.184853582
+TIME begin_ms_recv 1367047385.741112042
+TIME end_ms_recv 1367047395.900338140
+TIME X-Resolve-Time 0.027800
+TIME X-Volume-Time 0.004220
+TIME X-UG-Time 0.003250
+TIME X-Total-Time 0.035740
+TIME end_revalidate_path 19400169.344185350
+TIME begin_ms_send 1367047395.900828848
+TIME end_ms_send 1367047402.254136896
+TIME 0 X-Create-Times 0.495740
+TIME X-Volume-Time 0.009000
+TIME X-UG-Time 0.008950
+TIME X-Total-Time 0.515610
+TIME end_mkdir 1367047402.254173284
+--------------------------------
+TIME begin_create 1367047402.254178522
+TIME begin_revalidate_path 19400175.697958615
+TIME begin_ms_recv 1367047402.254208135
+TIME end_ms_recv 1367047407.235801672
+TIME X-Resolve-Time 0.879280
+TIME X-Volume-Time 0.180500
+TIME X-UG-Time 0.031460
+TIME X-Total-Time 1.092290
+TIME end_revalidate_path 19400180.679648254
+TIME begin_ms_send 1367047407.236000791
+TIME end_ms_send 1367047409.719190549
+TIME 0 X-Create-Times 0.332880
+TIME X-Volume-Time 0.010030
+TIME X-UG-Time 0.008320
+TIME X-Total-Time 0.358940
+TIME end_create 1367047409.719229032
+--------------------------------
+TIME begin_local_write 1367047409.719234829
+TIME begin_write 19400183.163016039
+TIME begin_revalidate_path 19400183.163026236
+TIME begin_ms_recv 1367047409.719272543
+TIME end_ms_recv 1367047410.541165401
+TIME X-Resolve-Time 0.306640
+TIME X-Volume-Time 0.018160
+TIME X-UG-Time 0.049900
+TIME X-Total-Time 0.376390
+TIME end_revalidate_path 19400183.985043063
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[0 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[1 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[2 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[3 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[4 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[5 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[6 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[7 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[8 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[9 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[10 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[11 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[12 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[13 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[14 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[15 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[16 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[17 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[18 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[19 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[20 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[21 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[22 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[23 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[24 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[25 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[26 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[27 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[28 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[29 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[30 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[31 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[32 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[33 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[34 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[35 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[36 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[37 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[38 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[39 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[40 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[41 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[42 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[43 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[44 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[45 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[46 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[47 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[48 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[49 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[50 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[51 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[52 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[53 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[54 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[55 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[56 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[57 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[58 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[59 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[60 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[61 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[62 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[63 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[64 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[65 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[66 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[67 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[68 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[69 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[70 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[71 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[72 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[73 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[74 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[75 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[76 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[77 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[78 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[79 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[80 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[81 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[82 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[83 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[84 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[85 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[86 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[87 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[88 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[89 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[90 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[91 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[92 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[93 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[94 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[95 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[96 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[97 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[98 .2147483647]) rc = -2
+[     storage.cpp:0377] fs_entry_remove_old_block_versions: WARN: unlink(/nodeb.howard.edu/nodeb.howard.edu.1367047407235[99 .2147483647]) rc = -2
+TIME begin_ms_send 1367047410.582309593
+TIME end_ms_send 1367047412.907612782
+TIME 0 X-Update-Times 0.120250
+TIME X-Volume-Time 0.109650
+TIME X-UG-Time 0.011580
+TIME X-Total-Time 0.243430
+TIME end_write 19400186.351420043
+TIME end_local_write 1367047412.907666281
+--------------------------------
+TIME begin_local_read 1367047412.907671659
+TIME begin_read 19400186.351445186
+TIME begin_revalidate_path 19400186.351455104
+TIME begin_ms_recv 1367047412.907702668
+TIME end_ms_recv 1367047413.430081660
+TIME X-Resolve-Time 0.152070
+TIME X-Volume-Time 0.007200
+TIME X-UG-Time 0.005290
+TIME X-Total-Time 0.165770
+TIME end_revalidate_path 19400186.873944515
+TIME begin_ms_send 1367047413.430716521
+TIME end_read 19400186.940533899
+TIME end_local_read 1367047413.496776924
+--------------------------------
+TIME begin_close 1367047413.496782790
+TIME end_close 1367047413.496792079
+--------------------------------
+TIME begin_unlink 1367047413.496796619
+TIME end_ms_send 1367047416.232994869
+TIME 0 X-Update-Times 0.498760
+TIME X-Volume-Time 0.016150
+TIME X-UG-Time 0.014790
+TIME X-Total-Time 0.531630
+TIME begin_ms_send 1367047416.233066596
+TIME end_ms_send 1367047418.653767793
+TIME 0 X-Update-Times 0.246510
+TIME X-Volume-Time 0.009500
+TIME X-UG-Time 0.009350
+TIME X-Total-Time 0.338510
+TIME begin_ms_send 1367047421.111919746
+TIME end_ms_send 1367047423.940884440
+TIME 0 X-Delete-Times 0.445750
+TIME X-Volume-Time 0.174210
+TIME X-UG-Time 0.081110
+TIME X-Total-Time 0.707920
+TIME end_unlink 1367047423.945079198
+--------------------------------
+TIME begin_rmdir 1367047423.945089046
+TIME begin_ms_send 1367047423.945126551
+TIME end_ms_send 1367047425.471357773
+TIME 0 X-Delete-Times 0.432990
+TIME X-Volume-Time 0.015090
+TIME X-UG-Time 0.008860
+TIME X-Total-Time 0.476060
+[  libsyndicate.c:3527] md_withdraw_entry: opendir(/tmp/syndicate-data/nodeb.howard.edu) errno = -2
+TIME end_rmdir 1367047425.471486630
+--------------------------------
+Statistics: 
+Statistic gathering is disabled in the configuration
+
+---------- END write_file.sh ----------
+Connection to 138.238.250.157 closed.
