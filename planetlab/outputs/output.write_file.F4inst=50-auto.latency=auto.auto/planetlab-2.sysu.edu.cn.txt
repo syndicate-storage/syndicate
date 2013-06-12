@@ -1,17 +1,0 @@
----------- BEGIN write_file.sh ----------
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:02 --:--:--     0103   824  103   824    0     0    335      0  0:00:02  0:00:02 --:--:--   388
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:--  0:00:03 --:--:--     0  0 3319k    0  6561    0     0   1703      0  0:33:15  0:00:03  0:33:12 12666  2 3319k    2 96849    0     0  19824      0  0:02:51  0:00:04  0:02:47 62442  7 3319k    7  244k    0     0  44189      0  0:01:16  0:00:05  0:01:11  105k 23 3319k   23  779k    0     0   116k      0  0:00:28  0:00:06  0:00:22  232k 35 3319k   35 1191k    0     0   153k      0  0:00:21  0:00:07  0:00:14  270k 57 3319k   57 1906k    0     0   217k      0  0:00:15  0:00:08  0:00:07  386k 97 3319k   97 3227k    0     0   329k      0  0:00:10  0:00:09  0:00:01  637k100 3319k  100 3319k    0     0   338k      0  0:00:09  0:00:09 --:--:--  742k
-[  write_file.cpp:0009] main: starting up debugging
-[  write_file.cpp:0010] main: starting up errors
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-[   ms-client.cpp:0434] ms_client_get_volume_metadata: md_download_file5(https://syndicate-metadata.appspot.com/VOLUME/testvolume) rc = -7
-[  libsyndicate.c:3586] md_init: ms_client_get_volume_metadata rc = -7
-[   syndicate.cpp:0496] syndicate_init: md_init rc = -7
----------- END write_file.sh ----------
-Connection to 202.116.81.195 closed.

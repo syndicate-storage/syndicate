@@ -1,299 +1,0 @@
-
-Message from syslogd@pl2 at Apr 27 07:22:43 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
----------- BEGIN write_file.sh ----------
-/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
-/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
-[  write_file.cpp:0009] main: starting up debugging
-[  write_file.cpp:0010] main: starting up errors
-[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
-
-[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
-
-
-Message from syslogd@pl2 at Apr 27 07:22:53 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:23:03 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:23:14 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-TIME X-Volume-Time 0.178640
-TIME X-UG-Time 0.605900
-TIME X-Total-Time 6.895790
---------------------------------
-TIME begin_diskwrite 1367047401.68758655
-TIME end_diskwrite 1367047401.86124286
---------------------------------
-TIME begin_diskread 1367047401.86142025
-TIME end_diskread 1367047401.90720303
---------------------------------
-PING syndicate-metadata.google.com.homeip.net (67.215.65.132) 56(84) bytes of data.
-
-Message from syslogd@pl2 at Apr 27 07:23:24 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:23:34 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
---- syndicate-metadata.google.com.homeip.net ping statistics ---
-10 packets transmitted, 0 received, 100% packet loss, time 18999ms
-
---------------------------------
-TIME begin_mkdir 1367047420.518424742
-TIME begin_revalidate_path 17913179.194638922
-TIME begin_ms_recv 1367047420.518531879
-TIME end_ms_recv 1367047421.374995246
-TIME X-Resolve-Time 0.418700
-TIME X-Volume-Time 0.080040
-TIME X-UG-Time 0.199210
-TIME X-Total-Time 0.701130
-TIME end_revalidate_path 17913180.51238549
-TIME begin_ms_send 1367047421.414938463
-TIME end_ms_send 1367047424.78906870
-TIME X-Volume-Time 0.000000
-TIME X-UG-Time 0.000000
-TIME X-Total-Time 0.000000
-[       mkdir.cpp:0126] fs_entry_mkdir: ms_client_create(/pl2.bell-labs.fr) rc = -500
-
-Message from syslogd@pl2 at Apr 27 07:23:44 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:23:54 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:24:04 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:24:14 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:24:24 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:24:34 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:24:44 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:24:54 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:25:04 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:25:14 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:25:24 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:25:34 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:25:44 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:25:54 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:26:04 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:26:14 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:26:24 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:26:34 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:26:44 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:26:54 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:27:04 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:27:14 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:27:25 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:27:35 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:27:45 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:27:55 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:28:05 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:28:15 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:28:25 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:28:35 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:28:45 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:28:55 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:29:05 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:29:15 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:29:25 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:29:35 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:29:45 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:29:55 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:30:05 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:30:15 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:30:25 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:30:35 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:30:45 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:30:55 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:31:05 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:31:15 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:31:25 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:31:36 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:31:46 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:31:56 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:32:06 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:32:16 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:32:26 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:32:36 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:32:46 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:32:56 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:33:06 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:33:16 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:33:26 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:33:36 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:33:46 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:33:56 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:34:06 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:34:16 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:34:26 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:34:36 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:34:46 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:34:56 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:35:06 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:35:16 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:35:26 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:35:36 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:35:47 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:35:57 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:36:07 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:36:17 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:36:27 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:36:37 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:36:47 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-
-Message from syslogd@pl2 at Apr 27 07:36:57 ...
- kernel:unregister_netdevice: waiting for tap1281-0 to become free. Usage count = 1
-

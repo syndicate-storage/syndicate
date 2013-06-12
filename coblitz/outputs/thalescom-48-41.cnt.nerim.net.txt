@@ -1,1 +1,0 @@
-ssh: Could not resolve hostname thalescom-48-41.cnt.nerim.net: Name or service not known

@@ -1,2 +1,0 @@
-ssh: connect to host 203.30.39.240 port 22: Connection timed out
-lost connection

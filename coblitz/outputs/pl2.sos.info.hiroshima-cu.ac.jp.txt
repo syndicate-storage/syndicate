@@ -1,55 +1,0 @@
-@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
-@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
-Someone could be eavesdropping on you right now (man-in-the-middle attack)!
-It is also possible that a host key has just been changed.
-The fingerprint for the RSA key sent by the remote host is
-0d:31:85:02:74:d2:b4:59:b0:ca:29:35:2d:9f:3b:09.
-Please contact your system administrator.
-Add correct host key in /home/jude/.ssh/known_hosts to get rid of this message.
-Offending RSA key in /home/jude/.ssh/known_hosts:979
-Password authentication is disabled to avoid man-in-the-middle attacks.
-Keyboard-interactive authentication is disabled to avoid man-in-the-middle attacks.
-updates/metalink                                         | 2.8 kB     00:00     
-Setting up Install Process
-Resolving Dependencies
---> Running transaction check
----> Package python-dateutil.noarch 0:1.4.1-4.fc12 set to be installed
---> Finished Dependency Resolution
-
-Dependencies Resolved
-
-================================================================================
- Package                Arch          Version               Repository     Size
-================================================================================
-Installing:
- python-dateutil        noarch        1.4.1-4.fc12          fedora        227 k
-
-Transaction Summary
-================================================================================
-Install       1 Package(s)
-
-Total download size: 227 k
-Installed size: 504 k
-Downloading Packages:
-python-dateutil-1.4.1-4.fc12.noarch.rpm                  | 227 kB     00:00     
-Running rpm_check_debug
-Running Transaction Test
-Transaction Test Succeeded
-Running Transaction
-  Installing     : python-dateutil-1.4.1-4.fc [                           ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#                          ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##                         ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [####                       ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#####                      ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [######                     ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [########                   ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##########                 ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##############             ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#################          ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [###################        ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [####################       ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#######################    ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#########################  ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [########################## ] 1/1  Installing     : python-dateutil-1.4.1-4.fc12.noarch                      1/1 
-
-Installed:
-  python-dateutil.noarch 0:1.4.1-4.fc12                                         
-
-Complete!
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100  8320  100  8320    0     0   9819      0 --:--:-- --:--:-- --:--:-- 21554
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0107  1288  107  1288    0     0   3307      0 --:--:-- --:--:-- --:--:--  6605107  1288  107  1288    0     0   3306      0 --:--:-- --:--:-- --:--:--  6605
-Restarting experimentd...rm: cannot remove `nohup.out': No such file or directory
-Done
-Connection to pl2.sos.info.hiroshima-cu.ac.jp closed.

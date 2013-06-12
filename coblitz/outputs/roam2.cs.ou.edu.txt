@@ -1,2 +1,0 @@
-/bin/su: user princeton_syndicate does not exist
-Connection to roam2.cs.ou.edu closed.

@@ -1,46 +1,0 @@
-updates/metalink                                         | 2.1 kB     00:00     
-Setting up Install Process
-Resolving Dependencies
---> Running transaction check
----> Package python-dateutil.noarch 0:1.4.1-4.fc12 set to be installed
---> Finished Dependency Resolution
-
-Dependencies Resolved
-
-================================================================================
- Package                Arch          Version               Repository     Size
-================================================================================
-Installing:
- python-dateutil        noarch        1.4.1-4.fc12          fedora        227 k
-
-Transaction Summary
-================================================================================
-Install       1 Package(s)
-
-Total download size: 227 k
-Installed size: 504 k
-Downloading Packages:
-python-dateutil-1.4.1-4.f  2% [               ]  0.0 B/s | 5.4 kB     --:-- ETA python-dateutil-1.4.1-4.f  3% [               ]  885 B/s | 6.8 kB     04:15 ETA python-dateutil-1.4.1-4.f  5% [-              ] 1.8 kB/s |  12 kB     02:00 ETA python-dateutil-1.4.1-4.f  6% [-              ] 1.8 kB/s |  14 kB     02:00 ETA python-dateutil-1.4.1-4.f  8% [=              ] 2.4 kB/s |  20 kB     01:24 ETA python-dateutil-1.4.1-4.f  8% [=              ] 2.0 kB/s |  20 kB     01:46 ETA python-dateutil-1.4.1-4.f  8% [=              ] 1.6 kB/s |  20 kB     02:12 ETA python-dateutil-1.4.1-4.f  8% [=              ] 1.3 kB/s |  20 kB     02:46 ETA python-dateutil-1.4.1-4.f  8% [=              ] 1.0 kB/s |  20 kB     03:27 ETA python-dateutil-1.4.1-4.f  8% [=              ]  819 B/s |  20 kB     04:19 ETA python-dateutil-1.4.1-4.f  9% [=              ]  903 B/s |  21 kB     03:54 ETA python-dateutil-1.4.1-4.f  9% [=              ]  722 B/s |  21 kB     04:52 ETA python-dateutil-1.4.1-4.f 10% [=-             ] 1.1 kB/s |  24 kB     03:05 ETA python-dateutil-1.4.1-4.f 10% [=-             ]  898 B/s |  24 kB     03:51 ETA python-dateutil-1.4.1-4.f 10% [=-             ]  719 B/s |  24 kB     04:50 ETA python-dateutil-1.4.1-4.f 10% [=-             ]  575 B/s |  24 kB     06:02 ETA python-dateutil-1.4.1-4.f 10% [=-             ]  460 B/s |  24 kB     07:33 ETA python-dateutil-1.4.1-4.f 10% [=-             ]  368 B/s |  24 kB     09:26 ETA python-dateutil-1.4.1-4.f 15% [==             ] 2.6 kB/s |  35 kB     01:14 ETA python-dateutil-1.4.1-4.f 15% [==             ] 2.1 kB/s |  35 kB     01:33 ETA python-dateutil-1.4.1-4.f 19% [==-            ] 3.7 kB/s |  45 kB     00:48 ETA python-dateutil-1.4.1-4.f 20% [===            ] 3.2 kB/s |  46 kB     00:55 ETA python-dateutil-1.4.1-4.f 21% [===            ] 3.2 kB/s |  48 kB     00:56 ETA python-dateutil-1.4.1-4.f 22% [===            ] 3.0 kB/s |  51 kB     00:58 ETA python-dateutil-1.4.1-4.f 22% [===            ] 3.1 kB/s |  52 kB     00:56 ETA python-dateutil-1.4.1-4.f 22% [===            ] 2.5 kB/s |  52 kB     01:10 ETA python-dateutil-1.4.1-4.f 22% [===            ] 2.0 kB/s |  52 kB     01:28 ETA python-dateutil-1.4.1-4.f 27% [====           ] 3.7 kB/s |  62 kB     00:44 ETA python-dateutil-1.4.1-4.f 28% [====           ] 3.4 kB/s |  65 kB     00:47 ETA python-dateutil-1.4.1-4.f 30% [====-          ] 3.4 kB/s |  69 kB     00:46 ETA python-dateutil-1.4.1-4.f 31% [====-          ] 3.7 kB/s |  72 kB     00:41 ETA python-dateutil-1.4.1-4.f 34% [=====          ] 4.1 kB/s |  78 kB     00:36 ETA python-dateutil-1.4.1-4.f 35% [=====          ] 4.0 kB/s |  82 kB     00:36 ETA python-dateutil-1.4.1-4.f 35% [=====          ] 3.2 kB/s |  82 kB     00:45 ETA python-dateutil-1.4.1-4.f 35% [=====          ] 2.6 kB/s |  82 kB     00:56 ETA python-dateutil-1.4.1-4.f 42% [======         ] 5.5 kB/s |  97 kB     00:23 ETA python-dateutil-1.4.1-4.f 47% [=======        ] 7.1 kB/s | 109 kB     00:16 ETA python-dateutil-1.4.1-4.f 50% [=======-       ] 8.0 kB/s | 116 kB     00:13 ETA python-dateutil-1.4.1-4.f 51% [=======-       ] 7.8 kB/s | 117 kB     00:14 ETA python-dateutil-1.4.1-4.f 54% [========       ] 8.7 kB/s | 124 kB     00:11 ETA python-dateutil-1.4.1-4.f 55% [========       ] 8.4 kB/s | 127 kB     00:11 ETA python-dateutil-1.4.1-4.f 58% [========-      ] 9.1 kB/s | 134 kB     00:10 ETA python-dateutil-1.4.1-4.f 60% [=========      ] 9.1 kB/s | 138 kB     00:09 ETA python-dateutil-1.4.1-4.f 63% [=========-     ] 9.7 kB/s | 144 kB     00:08 ETA python-dateutil-1.4.1-4.f 67% [==========     ]  11 kB/s | 152 kB     00:06 ETA python-dateutil-1.4.1-4.f 68% [==========     ]  11 kB/s | 157 kB     00:06 ETA python-dateutil-1.4.1-4.f 72% [==========-    ]  11 kB/s | 164 kB     00:05 ETA python-dateutil-1.4.1-4.f 74% [===========    ] 9.6 kB/s | 169 kB     00:06 ETA python-dateutil-1.4.1-4.f 81% [============   ]  11 kB/s | 185 kB     00:03 ETA python-dateutil-1.4.1-4.f 88% [=============  ]  13 kB/s | 201 kB     00:02 ETA python-dateutil-1.4.1-4.f 95% [============== ]  15 kB/s | 218 kB     00:00 ETA python-dateutil-1.4.1-4.f 98% [==============-]  13 kB/s | 223 kB     00:00 ETA python-dateutil-1.4.1-4.fc12.noarch.rpm                  | 227 kB     00:42     
-Running rpm_check_debug
-Running Transaction Test
-Transaction Test Succeeded
-Running Transaction
-  Installing     : python-dateutil-1.4.1-4.fc [                           ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#                          ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##                         ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [####                       ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#####                      ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [######                     ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [########                   ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##########                 ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##############             ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#################          ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [###################        ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [####################       ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#######################    ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#########################  ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [########################## ] 1/1  Installing     : python-dateutil-1.4.1-4.fc12.noarch                      1/1 
-
-Installed:
-  python-dateutil.noarch 0:1.4.1-4.fc12                                         
-
-Complete!
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:02 --:--:--     0 13  8320   13  1095    0     0    310      0  0:00:26  0:00:03  0:00:23   576 46  8320   46  3831    0     0    830      0  0:00:10  0:00:04  0:00:06  1280 62  8320   62  5199    0     0    942      0  0:00:08  0:00:05  0:00:03  1334100  8320  100  8320    0     0   1471      0  0:00:05  0:00:05 --:--:--  2064
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:02 --:--:--     0107  1288  107  1288    0     0    364      0  0:00:03  0:00:03 --:--:--   825107  1288  107  1288    0     0    364      0  0:00:03  0:00:03 --:--:--   825
-ln: creating symbolic link `/etc/rc2.d/S99experimentd': File exists
-ln: creating symbolic link `/etc/rc3.d/S99experimentd': File exists
-ln: creating symbolic link `/etc/rc4.d/S99experimentd': File exists
-ln: creating symbolic link `/etc/rc5.d/S99experimentd': File exists
-Restarting experimentd...nohup: appending output to `nohup.out'
-Done
-Connection to planetlab3.di.unito.it closed.

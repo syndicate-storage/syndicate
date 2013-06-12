@@ -1,1 +1,0 @@
-ssh: connect to host planetlab-1.di.fc.ul.pt port 22: No route to host

@@ -1,1 +1,0 @@
-ssh: Could not resolve hostname planetlab1.pop-rs.rnp.br: Name or service not known

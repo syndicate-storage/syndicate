@@ -1,51 +1,0 @@
-
-We trust you have received the usual lecture from the local System
-Administrator. It usually boils down to these three things:
-
-    #1) Respect the privacy of others.
-    #2) Think before you type.
-    #3) With great power comes great responsibility.
-
-fedora/metalink                                          | 2.2 kB     00:00     
-fedora                                                   | 4.2 kB     00:00     
-fedora/primary_db         13% [==             ]  0.0 B/s | 1.3 MB     --:-- ETA fedora/primary_db         30% [====-          ] 2.6 MB/s | 2.9 MB     00:02 ETA fedora/primary_db         46% [======-        ] 2.8 MB/s | 4.5 MB     00:01 ETA fedora/primary_db         63% [=========      ] 3.0 MB/s | 6.1 MB     00:01 ETA fedora/primary_db         79% [===========-   ] 3.1 MB/s | 7.6 MB     00:00 ETA fedora/primary_db         95% [============== ] 3.2 MB/s | 9.2 MB     00:00 ETA fedora/primary_db                                        | 9.7 MB     00:01     
-updates/metalink                                         | 2.1 kB     00:00     
-updates                                                  | 4.7 kB     00:00     
-updates/primary_db        28% [====           ]  0.0 B/s | 1.5 MB     --:-- ETA updates/primary_db        59% [========-      ] 2.6 MB/s | 3.0 MB     00:00 ETA updates/primary_db        89% [=============  ] 2.8 MB/s | 4.6 MB     00:00 ETA updates/primary_db                                       | 5.1 MB     00:01     
-Setting up Install Process
-Resolving Dependencies
---> Running transaction check
----> Package python-dateutil.noarch 0:1.4.1-4.fc12 set to be installed
---> Finished Dependency Resolution
-
-Dependencies Resolved
-
-================================================================================
- Package                Arch          Version               Repository     Size
-================================================================================
-Installing:
- python-dateutil        noarch        1.4.1-4.fc12          fedora        227 k
-
-Transaction Summary
-================================================================================
-Install       1 Package(s)
-
-Total download size: 227 k
-Installed size: 504 k
-Downloading Packages:
-python-dateutil-1.4.1-4.fc12.noarch.rpm                  | 227 kB     00:00     
-Running rpm_check_debug
-Running Transaction Test
-Transaction Test Succeeded
-Running Transaction
-  Installing     : python-dateutil-1.4.1-4.fc [                           ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#                          ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##                         ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [####                       ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#####                      ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [######                     ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [########                   ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##########                 ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##############             ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#################          ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [###################        ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [####################       ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#######################    ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#########################  ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [########################## ] 1/1  Installing     : python-dateutil-1.4.1-4.fc12.noarch                      1/1 
-
-Installed:
-  python-dateutil.noarch 0:1.4.1-4.fc12                                         
-
-Complete!
-
-curl: (6) Couldn't resolve host 'vcoblitz-cmi.cs.princeton.edu'
-
-curl: (6) Couldn't resolve host 'vcoblitz-cmi.cs.princeton.edu'
-Connection to aladdin.planetlab.extranet.uni-passau.de closed.

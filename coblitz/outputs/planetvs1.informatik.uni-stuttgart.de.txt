@@ -1,42 +1,0 @@
-updates/metalink                                         | 2.1 kB     00:00     
-Setting up Install Process
-Resolving Dependencies
---> Running transaction check
----> Package python-dateutil.noarch 0:1.4.1-4.fc12 set to be installed
---> Finished Dependency Resolution
-
-Dependencies Resolved
-
-================================================================================
- Package                Arch          Version               Repository     Size
-================================================================================
-Installing:
- python-dateutil        noarch        1.4.1-4.fc12          fedora        227 k
-
-Transaction Summary
-================================================================================
-Install       1 Package(s)
-
-Total download size: 227 k
-Installed size: 504 k
-Downloading Packages:
-python-dateutil-1.4.1-4.fc12.noarch.rpm                  | 227 kB     00:00     
-Running rpm_check_debug
-Running Transaction Test
-Transaction Test Succeeded
-Running Transaction
-  Installing     : python-dateutil-1.4.1-4.fc [                           ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#                          ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##                         ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [####                       ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#####                      ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [######                     ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [########                   ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##########                 ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##############             ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#################          ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [###################        ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [####################       ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#######################    ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#########################  ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [########################## ] 1/1  Installing     : python-dateutil-1.4.1-4.fc12.noarch                      1/1 
-
-Installed:
-  python-dateutil.noarch 0:1.4.1-4.fc12                                         
-
-Complete!
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100  8320  100  8320    0     0  26425      0 --:--:-- --:--:-- --:--:-- 39808
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0107  1288  107  1288    0     0   6906      0 --:--:-- --:--:-- --:--:-- 13849
-Restarting experimentd...nohup: appending output to `nohup.out'
-Done
-Connection to planetvs1.informatik.uni-stuttgart.de closed.

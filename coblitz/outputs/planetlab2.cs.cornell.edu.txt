@@ -1,57 +1,0 @@
-updates-
-fedora  
-updates 
-Setting up Install Process
-Parsing package install arguments
-Resolving Dependencies
---> Running transaction check
----> Package python-dateutil.noarch 0:1.2-1.fc8 set to be updated
---> Finished Dependency Resolution
-
-Dependencies Resolved
-
-================================================================================
- Package                 Arch           Version            Repository      Size
-================================================================================
-Installing:
- python-dateutil         noarch         1.2-1.fc8          fedora         164 k
-
-Transaction Summary
-================================================================================
-Install      1 Package(s)         
-Update       0 Package(s)         
-Remove       0 Package(s)         
-
-Total download size: 164 k
-Downloading Packages:
-python-d
-warning: rpmts_HdrFromFdno: Header V3 DSA signature: NOKEY, key ID 4f2a6fd2
-fedora/g
-Traceback (most recent call last):
-  File "/usr/bin/yum", line 29, in <module>
-    yummain.user_main(sys.argv[1:], exit_code=True)
-  File "/usr/share/yum-cli/yummain.py", line 229, in user_main
-    errcode = main(args)
-  File "/usr/share/yum-cli/yummain.py", line 181, in main
-    return_code = base.doTransaction()
-  File "/usr/share/yum-cli/cli.py", line 398, in doTransaction
-    if self.gpgsigcheck(downloadpkgs) != 0:
-  File "/usr/share/yum-cli/cli.py", line 502, in gpgsigcheck
-    self.getKeyForPackage(po, lambda x, y, z: self.userconfirm())
-  File "/vservers/.vref/planetlab-f8-i386/usr/lib/python2.5/site-packages/yum/__init__.py", line 3109, in getKeyForPackage
-  File "/vservers/.vref/planetlab-f8-i386/usr/lib/python2.5/site-packages/yum/__init__.py", line 3074, in _retrievePublicKey
-  File "/vservers/.vref/planetlab-f8-i386/usr/lib/python2.5/site-packages/yum/misc.py", line 357, in getgpgkeyinfo
-ValueError: No key found in given key data
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
- 28  8320   28  2463    0     0  94353      0 --:--:-- --:--:-- --:--:-- 94353100  8320  100  8320    0     0   213k      0 --:--:-- --:--:-- --:--:--  519k
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100  1288  100  1288    0     0  51017      0 --:--:-- --:--:-- --:--:-- 51017100  1288  100  1288    0     0  38026      0 --:--:-- --:--:-- --:--:--     0
-ln: creating symbolic link `/etc/rc2.d/S99experimentd': File exists
-ln: creating symbolic link `/etc/rc3.d/S99experimentd': File exists
-ln: creating symbolic link `/etc/rc4.d/S99experimentd': File exists
-ln: creating symbolic link `/etc/rc5.d/S99experimentd': File exists
-Restarting experimentd...nohup: appending output to `nohup.out'
-Done
-Connection to planetlab2.cs.cornell.edu closed.

@@ -1,2 +1,0 @@
-/bin/su: user princeton_syndicate does not exist
-Connection to pln.zju.edu.cn closed.

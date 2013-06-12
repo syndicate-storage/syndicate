@@ -1,3 +1,0 @@
-import google_appengine
-
-default_backend = google_appengine

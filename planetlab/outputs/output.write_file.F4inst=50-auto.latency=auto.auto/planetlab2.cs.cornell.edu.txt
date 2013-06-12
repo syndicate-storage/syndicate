@@ -1,10 +1,0 @@
----------- BEGIN write_file.sh ----------
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:--  0:00:10 --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:11 --:--:--     0100   824  100   824    0     0     73      0  0:00:11  0:00:11 --:--:--   721
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0100 3319k  100 3319k    0     0  2047k      0  0:00:01  0:00:01 --:--:-- 5522k
-/tmp/write_file: error while loading shared libraries: libcrypto.so.10: cannot open shared object file: No such file or directory
----------- END write_file.sh ----------
-Connection to 128.84.154.41 closed.

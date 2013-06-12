@@ -1,3 +1,0 @@
-Warning: Permanently added '193.191.148.249' (RSA) to the list of known hosts.
-Permission denied (publickey).
-lost connection

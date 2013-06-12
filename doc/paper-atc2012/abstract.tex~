@@ -1,6 +1,0 @@
-\subsection*{Abstract}
-
-This paper presents Syndicate, a wide-area distributed filesystem which delivers high read performance to a scalable number of readers by leveraging an underlying content distribution network (CDN).  Syndicate's main contribution is that it allows a client to quickly distribute large quantites of data to arbitrarily many clients, despite the bandwidth and latency shortcomings of the data's underlying storage media, and despite any immutability assumptions the CDN implementation makes about the content it delivers.
-
-Syndicate provides conventional read/write and access control semantics while guaranteeing close-to-open file consistency to its clients.  We evaluate our Syndicate prototype with a series of microbenchmarks using the CoBlitz CDN, in which we test Syndicate's file I/O latency and bandwidth in the face of many concurrent readers and writers acting on many large datasets.
-

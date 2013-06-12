@@ -1,10 +1,0 @@
-Error: Cannot retrieve repository metadata (repomd.xml) for repository: fedora. Please verify its path and try again
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0 29  8320   29  2463    0     0  13489      0 --:--:-- --:--:-- --:--:-- 26483100  8320  100  8320    0     0  30709      0 --:--:-- --:--:-- --:--:-- 45714
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0107  1288  107  1288    0     0   7256      0 --:--:-- --:--:-- --:--:-- 14636
-Restarting experimentd...rm: cannot remove `nohup.out': No such file or directory
-Done
-Connection to planetlab1.eecs.wsu.edu closed.

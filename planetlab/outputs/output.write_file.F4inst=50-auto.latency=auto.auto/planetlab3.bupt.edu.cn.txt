@@ -1,17 +1,0 @@
----------- BEGIN write_file.sh ----------
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0103   824  103   824    0     0    412      0  0:00:02  0:00:01  0:00:01   465
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0  0 3319k    0  5193    0     0   2160      0  0:26:13  0:00:02  0:26:11  2386  1 3319k    1 62649    0     0  18893      0  0:02:59  0:00:03  0:02:56 20281  3 3319k    3  126k    0     0  30746      0  0:01:50  0:00:04  0:01:46 32493  6 3319k    6  232k    0     0  44470      0  0:01:16  0:00:05  0:01:11 46445 11 3319k   11  375k    0     0  61535      0  0:00:55  0:00:06  0:00:49 76611 17 3319k   17  564k    0     0  78428      0  0:00:43  0:00:07  0:00:36  112k 21 3319k   21  705k    0     0  87313      0  0:00:38  0:00:08  0:00:30  129k 25 3319k   25  860k    0     0  93768      0  0:00:36  0:00:09  0:00:27  141k 32 3319k   32 1068k    0     0   103k      0  0:00:31  0:00:10  0:00:21  169k 39 3319k   39 1316k    0     0   115k      0  0:00:28  0:00:11  0:00:17  182k 45 3319k   45 1498k    0     0   121k      0  0:00:27  0:00:12  0:00:15  189k 52 3319k   52 1727k    0     0   130k      0  0:00:25  0:00:13  0:00:12  206k 57 3319k   57 1892k    0     0   132k      0  0:00:25  0:00:14  0:00:11  209k 63 3319k   63 2114k    0     0   138k      0  0:00:23  0:00:15  0:00:08  211k 71 3319k   71 2368k    0     0   144k      0  0:00:22  0:00:16  0:00:06  213k 77 3319k   77 2560k    0     0   148k      0  0:00:22  0:00:17  0:00:05  215k 86 3319k   86 2861k    0     0   155k      0  0:00:21  0:00:18  0:00:03  218k 91 3319k   91 3048k    0     0   157k      0  0:00:21  0:00:19  0:00:02  232k 96 3319k   96 3216k    0     0   159k      0  0:00:20  0:00:20 --:--:--  221k100 3319k  100 3319k    0     0   162k      0  0:00:20  0:00:20 --:--:--  233k
-[  write_file.cpp:0009] main: starting up debugging
-[  write_file.cpp:0010] main: starting up errors
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-[   ms-client.cpp:0434] ms_client_get_volume_metadata: md_download_file5(https://syndicate-metadata.appspot.com/VOLUME/testvolume) rc = -7
-[  libsyndicate.c:3586] md_init: ms_client_get_volume_metadata rc = -7
-[   syndicate.cpp:0496] syndicate_init: md_init rc = -7
----------- END write_file.sh ----------
-Connection to 211.68.70.40 closed.

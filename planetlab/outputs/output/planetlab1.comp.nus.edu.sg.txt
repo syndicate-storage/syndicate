@@ -1,6 +1,0 @@
----------- BEGIN write_file.sh ----------
-/home/princeton_syndicate/write_file.sh: line 3: /tmp/write_file.conf: Permission denied
-/home/princeton_syndicate/write_file.sh: line 4: /tmp/write_file: Permission denied
-/tmp/write_file: error while loading shared libraries: libmicrohttpd.so.10: cannot open shared object file: No such file or directory
----------- END write_file.sh ----------
-Connection to 137.132.80.106 closed.

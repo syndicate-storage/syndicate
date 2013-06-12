@@ -1,2 +1,0 @@
-ssh: connect to host 88.2.234.60 port 22: No route to host
-lost connection

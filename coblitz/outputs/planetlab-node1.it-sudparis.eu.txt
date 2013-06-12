@@ -1,55 +1,0 @@
-
-We trust you have received the usual lecture from the local System
-Administrator. It usually boils down to these three things:
-
-    #1) Respect the privacy of others.
-    #2) Think before you type.
-    #3) With great power comes great responsibility.
-
-fedora/metalink                                          | 2.2 kB     00:00     
-fedora                                                   | 4.2 kB     00:00     
-fedora/primary_db          1% [               ]  0.0 B/s | 159 kB     --:-- ETA fedora/primary_db          3% [-              ] 306 kB/s | 352 kB     00:31 ETA fedora/primary_db          5% [-              ] 325 kB/s | 538 kB     00:28 ETA fedora/primary_db          7% [=              ] 342 kB/s | 719 kB     00:26 ETA fedora/primary_db          9% [=              ] 356 kB/s | 895 kB     00:25 ETA fedora/primary_db         10% [=-             ] 364 kB/s | 1.0 MB     00:24 ETA fedora/primary_db         11% [=-             ] 364 kB/s | 1.1 MB     00:23 ETA fedora/primary_db         13% [=-             ] 366 kB/s | 1.3 MB     00:23 ETA fedora/primary_db         14% [==             ] 370 kB/s | 1.4 MB     00:22 ETA fedora/primary_db         15% [==             ] 371 kB/s | 1.5 MB     00:22 ETA fedora/primary_db         17% [==-            ] 378 kB/s | 1.7 MB     00:21 ETA fedora/primary_db         18% [==-            ] 383 kB/s | 1.8 MB     00:21 ETA fedora/primary_db         20% [===            ] 393 kB/s | 2.0 MB     00:20 ETA fedora/primary_db         21% [===            ] 399 kB/s | 2.1 MB     00:19 ETA fedora/primary_db         23% [===-           ] 414 kB/s | 2.3 MB     00:18 ETA fedora/primary_db         25% [===-           ] 426 kB/s | 2.5 MB     00:17 ETA fedora/primary_db         27% [====           ] 436 kB/s | 2.7 MB     00:16 ETA fedora/primary_db         29% [====           ] 446 kB/s | 2.9 MB     00:15 ETA fedora/primary_db         31% [====-          ] 457 kB/s | 3.0 MB     00:14 ETA fedora/primary_db         33% [====-          ] 465 kB/s | 3.2 MB     00:14 ETA fedora/primary_db         34% [=====          ] 470 kB/s | 3.4 MB     00:13 ETA fedora/primary_db         36% [=====-         ] 476 kB/s | 3.5 MB     00:13 ETA fedora/primary_db         38% [=====-         ] 482 kB/s | 3.7 MB     00:12 ETA fedora/primary_db         40% [======         ] 495 kB/s | 3.9 MB     00:11 ETA fedora/primary_db         42% [======         ] 505 kB/s | 4.1 MB     00:11 ETA fedora/primary_db         44% [======-        ] 512 kB/s | 4.3 MB     00:10 ETA fedora/primary_db         46% [======-        ] 516 kB/s | 4.5 MB     00:10 ETA fedora/primary_db         48% [=======        ] 520 kB/s | 4.6 MB     00:09 ETA fedora/primary_db         49% [=======        ] 521 kB/s | 4.8 MB     00:09 ETA fedora/primary_db         52% [=======-       ] 542 kB/s | 5.1 MB     00:08 ETA fedora/primary_db         55% [========       ] 563 kB/s | 5.3 MB     00:07 ETA fedora/primary_db         57% [========-      ] 580 kB/s | 5.6 MB     00:07 ETA fedora/primary_db         60% [=========      ] 593 kB/s | 5.8 MB     00:06 ETA fedora/primary_db         62% [=========      ] 604 kB/s | 6.0 MB     00:06 ETA fedora/primary_db         64% [=========-     ] 602 kB/s | 6.2 MB     00:05 ETA fedora/primary_db         65% [=========-     ] 594 kB/s | 6.4 MB     00:05 ETA fedora/primary_db         67% [==========     ] 587 kB/s | 6.5 MB     00:05 ETA fedora/primary_db         69% [==========     ] 584 kB/s | 6.7 MB     00:05 ETA fedora/primary_db         70% [==========-    ] 574 kB/s | 6.8 MB     00:05 ETA fedora/primary_db         73% [==========-    ] 588 kB/s | 7.1 MB     00:04 ETA fedora/primary_db         75% [===========    ] 584 kB/s | 7.3 MB     00:04 ETA fedora/primary_db         77% [===========-   ] 587 kB/s | 7.5 MB     00:03 ETA fedora/primary_db         78% [===========-   ] 583 kB/s | 7.6 MB     00:03 ETA fedora/primary_db         80% [============   ] 578 kB/s | 7.8 MB     00:03 ETA fedora/primary_db         82% [============   ] 582 kB/s | 7.9 MB     00:03 ETA fedora/primary_db         83% [============-  ] 577 kB/s | 8.1 MB     00:02 ETA fedora/primary_db         85% [============-  ] 573 kB/s | 8.3 MB     00:02 ETA fedora/primary_db         88% [=============  ] 597 kB/s | 8.5 MB     00:01 ETA fedora/primary_db         91% [=============- ] 629 kB/s | 8.9 MB     00:01 ETA fedora/primary_db         95% [============== ] 660 kB/s | 9.2 MB     00:00 ETA fedora/primary_db         98% [==============-] 678 kB/s | 9.5 MB     00:00 ETA fedora/primary_db                                        | 9.7 MB     00:16     
-updates/metalink                                         | 2.1 kB     00:00     
-updates                                                  | 4.7 kB     00:00     
-updates/primary_db         4% [-              ]  0.0 B/s | 261 kB     --:-- ETA updates/primary_db        11% [=-             ] 555 kB/s | 595 kB     00:08 ETA updates/primary_db        17% [==-            ] 591 kB/s | 940 kB     00:07 ETA updates/primary_db        24% [===-           ] 624 kB/s | 1.3 MB     00:06 ETA updates/primary_db        31% [====-          ] 656 kB/s | 1.6 MB     00:05 ETA updates/primary_db        36% [=====-         ] 678 kB/s | 1.9 MB     00:04 ETA updates/primary_db        42% [======         ] 698 kB/s | 2.2 MB     00:04 ETA updates/primary_db        49% [=======        ] 725 kB/s | 2.5 MB     00:03 ETA updates/primary_db        55% [========       ] 751 kB/s | 2.9 MB     00:03 ETA updates/primary_db        62% [=========      ] 775 kB/s | 3.2 MB     00:02 ETA updates/primary_db        68% [==========     ] 797 kB/s | 3.5 MB     00:02 ETA updates/primary_db        75% [===========    ] 817 kB/s | 3.9 MB     00:01 ETA updates/primary_db        81% [============   ] 837 kB/s | 4.2 MB     00:01 ETA updates/primary_db        88% [=============  ] 855 kB/s | 4.5 MB     00:00 ETA updates/primary_db        94% [============== ] 871 kB/s | 4.9 MB     00:00 ETA updates/primary_db                                       | 5.1 MB     00:04     
-Setting up Install Process
-Resolving Dependencies
---> Running transaction check
----> Package python-dateutil.noarch 0:1.4.1-4.fc12 set to be installed
---> Finished Dependency Resolution
-
-Dependencies Resolved
-
-================================================================================
- Package                Arch          Version               Repository     Size
-================================================================================
-Installing:
- python-dateutil        noarch        1.4.1-4.fc12          fedora        227 k
-
-Transaction Summary
-================================================================================
-Install       1 Package(s)
-
-Total download size: 227 k
-Installed size: 504 k
-Downloading Packages:
-python-dateutil-1.4.1-4.fc12.noarch.rpm                  | 227 kB     00:00     
-Running rpm_check_debug
-Running Transaction Test
-Transaction Test Succeeded
-Running Transaction
-  Installing     : python-dateutil-1.4.1-4.fc [                           ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#                          ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##                         ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [####                       ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#####                      ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [######                     ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [########                   ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##########                 ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [##############             ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#################          ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [###################        ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [####################       ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#######################    ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [#########################  ] 1/1  Installing     : python-dateutil-1.4.1-4.fc [########################## ] 1/1  Installing     : python-dateutil-1.4.1-4.fc12.noarch                      1/1 
-
-Installed:
-  python-dateutil.noarch 0:1.4.1-4.fc12                                         
-
-Complete!
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100  8320  100  8320    0     0  26851      0 --:--:-- --:--:-- --:--:-- 41188
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0107  1288  107  1288    0     0   6429      0 --:--:-- --:--:-- --:--:-- 13278
-Restarting experimentd...rm: cannot remove `nohup.out': No such file or directory
-Done
-Connection to planetlab-node1.it-sudparis.eu closed.

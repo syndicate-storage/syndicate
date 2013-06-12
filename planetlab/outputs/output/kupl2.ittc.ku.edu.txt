@@ -1,35 +1,0 @@
----------- BEGIN write_file.sh ----------
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0105   947  105   947    0     0   6090      0 --:--:-- --:--:-- --:--:-- 17218
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  6 3266k    6  213k    0     0   405k      0  0:00:08 --:--:--  0:00:08  479k 19 3266k   19  653k    0     0   430k      0  0:00:07  0:00:01  0:00:06  454k 32 3266k   32 1072k    0     0   425k      0  0:00:07  0:00:02  0:00:05  440k 45 3266k   45 1487k    0     0   420k      0  0:00:07  0:00:03  0:00:04  430k 58 3266k   58 1896k    0     0   420k      0  0:00:07  0:00:04  0:00:03  428k 70 3266k   70 2306k    0     0   417k      0  0:00:07  0:00:05  0:00:02  418k 84 3266k   84 2769k    0     0   424k      0  0:00:07  0:00:06  0:00:01  422k100 3266k  100 3266k    0     0   436k      0  0:00:07  0:00:07 --:--:--  441k
-[  write_file.cpp:0009] main: starting up debugging
-[  write_file.cpp:0010] main: starting up errors
-[  libsyndicate.c:0395] md_read_conf:  WARN: ignoring bad config line 41: DEFAULT_READ_FRESHNESS="0"
-
-[  libsyndicate.c:0407] md_read_conf:  WARN: ignoring bad config line 44: DEFAULT_WRITE_FRESHNESS="0"
-
-DATA X-Volume-Time 0.009750
-DATA X-UG-Time 0.161090
-DATA X-Total-Time 1.978080
--------------------------------- raw write
-DATA disk write, direct 0.847814
--------------------------------- raw read
-DATA disk read, direct 0.223385
--------------------------------- ping
-DATA rtt 0.018000
--------------------------------- mkdir
-DATA MS recv 0.432375
-DATA X-Resolve-Time 0.209350
-DATA X-Resolve-Time 0.209350
-DATA X-Volume-Time 0.013020
-DATA X-UG-Time 0.007130
-DATA X-Total-Time 0.230100
-DATA MS revalidate 0.432627
-DATA MS send 5.637019
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-[       mkdir.cpp:0126] fs_entry_mkdir: ms_client_create(/kupl2.ittc.ku.edu) rc = -500

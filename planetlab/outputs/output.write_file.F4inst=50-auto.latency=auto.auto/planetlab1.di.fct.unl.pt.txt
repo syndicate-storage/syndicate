@@ -1,238 +1,0 @@
----------- BEGIN write_file.sh ----------
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:--  0:00:03 --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:04 --:--:--     0
-Message from syslogd@planetlab1 at May 21 00:09:42 ...
- kernel:unregister_netdevice: waiting for tap1556-1 to become free. Usage count = 1
-103   824  103   824    0     0    161      0  0:00:05  0:00:05 --:--:--   427103   824  103   824    0     0    161      0  0:00:05  0:00:05 --:--:--   427
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0  0 3319k    0  7929    0     0   4095      0  0:13:50  0:00:01  0:13:49  4462  7 3319k    7  258k    0     0  88692      0  0:00:38  0:00:02  0:00:36 93679 17 3319k   17  575k    0     0   148k      0  0:00:22  0:00:03  0:00:19  155k 26 3319k   26  873k    0     0   176k      0  0:00:18  0:00:04  0:00:14  182k 32 3319k   32 1069k    0     0   182k      0  0:00:18  0:00:05  0:00:13  227k 39 3319k   39 1311k    0     0   189k      0  0:00:17  0:00:06  0:00:11  261k 45 3319k   45 1526k    0     0   191k      0  0:00:17  0:00:07  0:00:10  255k 51 3319k   51 1711k    0     0   193k      0  0:00:17  0:00:08  0:00:09  227k
-Message from syslogd@planetlab1 at May 21 00:09:52 ...
- kernel:unregister_netdevice: waiting for tap1556-1 to become free. Usage count = 1
- 58 3319k   58 1932k    0     0   195k      0  0:00:16  0:00:09  0:00:07  213k 64 3319k   64 2157k    0     0   197k      0  0:00:16  0:00:10  0:00:06  214k 71 3319k   71 2381k    0     0   198k      0  0:00:16  0:00:11  0:00:05  211k 77 3319k   77 2574k    0     0   200k      0  0:00:16  0:00:12  0:00:04  213k 84 3319k   84 2819k    0     0   202k      0  0:00:16  0:00:13  0:00:03  219k 91 3319k   91 3048k    0     0   203k      0  0:00:16  0:00:14  0:00:02  220k 98 3319k   98 3264k    0     0   204k      0  0:00:16  0:00:15  0:00:01  219k100 3319k  100 3319k    0     0   205k      0  0:00:16  0:00:16 --:--:--  225k
-[  write_file.cpp:0009] main: starting up debugging
-[  write_file.cpp:0010] main: starting up errors
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-
-Message from syslogd@planetlab1 at May 21 00:10:02 ...
- kernel:unregister_netdevice: waiting for tap1556-1 to become free. Usage count = 1
-
-Message from syslogd@planetlab1 at May 21 00:10:12 ...
- kernel:unregister_netdevice: waiting for tap1556-1 to become free. Usage count = 1
-
-Message from syslogd@planetlab1 at May 21 00:10:22 ...
- kernel:unregister_netdevice: waiting for tap1556-1 to become free. Usage count = 1
-
-Message from syslogd@planetlab1 at May 21 00:10:32 ...
- kernel:unregister_netdevice: waiting for tap1556-1 to become free. Usage count = 1
-
-Message from syslogd@planetlab1 at May 21 00:10:42 ...
- kernel:unregister_netdevice: waiting for tap1556-1 to become free. Usage count = 1
-
-Message from syslogd@planetlab1 at May 21 00:10:52 ...
- kernel:unregister_netdevice: waiting for tap1556-1 to become free. Usage count = 1
--------------------------------- raw write
-DATA disk write, direct 0.036712
--------------------------------- raw read
-DATA disk read, direct 0.013757
--------------------------------- ping
-DATA rtt 0.042900
--------------------------------- mkdir
-DATA MS recv 0.603183
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.603281
-DATA MS send 1.646057
-DATA X-Create-Times 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA mkdir 2.249584
--------------------------------- open
-DATA MS recv 0.275560
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.275664
-
-Message from syslogd@planetlab1 at May 21 00:11:02 ...
- kernel:unregister_netdevice: waiting for tap1556-1 to become free. Usage count = 1
-DATA MS send 1.376124
-DATA X-Create-Times 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA open 1.651983
--------------------------------- local write
-DATA MS recv 0.627769
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.627877
-DATA metadata latency 0.627890
-DATA write data 0.109695
-DATA replicate data 0.000001
-DATA send remote write 0.000001
-DATA MS send 2.226804
-DATA X-Update-Times 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS update 2.226870
-DATA write 2.964487
-DATA local write + MS refresh 2.964507
--------------------------------- local read 0
-DATA MS recv 0.296182
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.296286
-DATA metadata latency 0.296298
-DATA read data 0.014182
-DATA read 0.310501
-DATA local read 0 + MS refresh 0.310506
--------------------------------- local read 1
-DATA MS recv 0.237825
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.238019
-DATA metadata latency 0.238033
-DATA read data 0.005412
-DATA read 0.243473
-DATA local read 1 + MS refresh 0.243479
--------------------------------- local read 2
-DATA MS recv 0.581751
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.581866
-DATA metadata latency 0.581882
-DATA read data 0.004805
-DATA read 0.586707
-DATA local read 2 + MS refresh 0.586713
--------------------------------- local read 3
-DATA MS recv 0.176877
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.176986
-DATA metadata latency 0.177000
-DATA read data 0.005165
-DATA read 0.182187
-DATA local read 3 + MS refresh 0.182192
--------------------------------- local read 4
-DATA MS recv 0.178653
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.178759
-DATA metadata latency 0.178773
-DATA read data 0.009279
-DATA read 0.188076
-DATA local read 4 + MS refresh 0.188081
--------------------------------- local read 5
-DATA MS recv 0.302711
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.302820
-DATA metadata latency 0.302834
-DATA read data 0.009709
-DATA read 0.312563
-DATA local read 5 + MS refresh 0.312568
--------------------------------- local read 6
-DATA MS recv 0.153039
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.153149
-DATA metadata latency 0.153162
-DATA read data 0.004528
-DATA read 0.157713
-DATA local read 6 + MS refresh 0.157718
--------------------------------- local read 7
-DATA MS recv 0.283846
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.283967
-DATA metadata latency 0.283981
-DATA read data 0.012126
-DATA read 0.296130
-DATA local read 7 + MS refresh 0.296135
--------------------------------- local read 8
-DATA MS recv 0.155659
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.155773
-DATA metadata latency 0.155786
-DATA read data 0.010676
-DATA read 0.166485
-DATA local read 8 + MS refresh 0.166490
--------------------------------- local read 9
-DATA MS recv 0.416444
-DATA X-Resolve-Time 0.000000
-DATA X-Resolve-Time 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA MS revalidate 0.416563
-DATA metadata latency 0.416577
-DATA read data 0.007351
-DATA read 0.423952
-DATA local read 9 + MS refresh 0.423958
--------------------------------- close
--------------------------------- unlink
-DATA MS send 2.392047
-DATA X-Delete-Times 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-DATA unlink 2.396969
--------------------------------- rmdir
-
-Message from syslogd@planetlab1 at May 21 00:11:12 ...
- kernel:unregister_netdevice: waiting for tap1556-1 to become free. Usage count = 1
-DATA MS send 1.432087
-DATA X-Delete-Times 0.000000
-DATA X-Volume-Time 0.000000
-DATA X-UG-Time 0.000000
-DATA X-Total-Time 0.000000
-[  libsyndicate.c:1913] md_withdraw_entry: opendir(/tmp/syndicate-test/data/planetlab1.di.fct.unl.pt) errno = -2
-DATA rmdir 1.432266
--------------------------------- 
-Statistics: 
-Statistic gathering is disabled in the configuration
-
----------- END write_file.sh ----------
-Connection to 193.136.124.226 closed.

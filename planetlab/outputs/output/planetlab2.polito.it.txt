@@ -1,7 +1,0 @@
----------- BEGIN write_file.sh ----------
-
-curl: (7) couldn't connect to host
-
-curl: (7) couldn't connect to host
----------- END write_file.sh ----------
-Connection to 130.192.9.231 closed.

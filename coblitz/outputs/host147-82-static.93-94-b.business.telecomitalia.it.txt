@@ -1,1 +1,0 @@
-ssh: connect to host host147-82-static.93-94-b.business.telecomitalia.it port 22: Connection timed out

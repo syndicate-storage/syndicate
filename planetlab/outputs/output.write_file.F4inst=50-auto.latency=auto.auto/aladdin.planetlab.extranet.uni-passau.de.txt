@@ -1,7 +1,0 @@
----------- BEGIN write_file.sh ----------
-
-curl: (6) Couldn't resolve host 'vcoblitz-cmi.cs.princeton.edu'
-
-curl: (6) Couldn't resolve host 'vcoblitz-cmi.cs.princeton.edu'
----------- END write_file.sh ----------
-Connection to 195.37.16.121 closed.
