@@ -60,6 +60,10 @@ libsyndicate_out = "build/out/libsyndicate"
 libsyndicate, libsyndicate_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
 env.Depends( libsyndicate_source_paths, protobufs )  # libsyndicate requires protobufs to be built first
 
+# UG for shared library build
+ugshared_out = "build/out/UG-shared"
+ugshareds = SConscript( "UG-shared/SConscript", variant_dir=ugshared_out )
+
 # UG build
 ug_out = "build/out/UG"
 ugs = SConscript( "UG/SConscript", variant_dir=ug_out )
