@@ -25,6 +25,7 @@ LIBS = """
    pthread
    crypto
    uriparser
+   microhttpd
    rt
 """
 
