@@ -51,6 +51,8 @@ class MSEntryShard(storagetypes.Object):
    # version of the MSEntry we're associated with
    msentry_version = storagetypes.Integer(default=0, indexed=False )
 
+   # volume ID of the MSEntry we're associated with
+   msentry_volume_id = storagetypes.Integer( indexed=False )
 
    @classmethod
    def modtime_max( cls, m1, m2 ):
@@ -225,7 +227,8 @@ class MSEntry( storagetypes.Object ):
       "mtime_sec",
       "mtime_nsec",
       "size",
-      "msentry_version"
+      "msentry_version",
+      "msentry_volume_id"
    ]
 
    # functions that read a sharded value from shards for an instance of this ent
@@ -237,7 +240,8 @@ class MSEntry( storagetypes.Object ):
 
    # functions that write a sharded value, given this ent
    shard_writers = {
-      "msentry_version": (lambda ent: ent.version)
+      "msentry_version": (lambda ent: ent.version),
+      "msentry_volume_id": (lambda ent: ent.volume_id)
    }
 
    
@@ -397,7 +401,7 @@ class MSEntry( storagetypes.Object ):
       #shards = yield ndb.get_multi_async( shard_keys, **ctx_opts )
       shards = storagetypes.concurrent_yield( storagetypes.get_multi_async( shard_keys, **ctx_opts ) )
       #raise ndb.Return( shards )
-      storagetypes.concurrent_return( ent )
+      storagetypes.concurrent_return( shards )
 
    @classmethod
    @storagetypes.concurrent

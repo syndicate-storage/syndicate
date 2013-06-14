@@ -811,7 +811,7 @@ def test( ignore1, args ):
       all_msentry_keys_fut = all_msentry.fetch_async( None, keys_only=True, batch_size=1000 )
 
       # delete all msentryshards
-      all_shard = MSEntryShard.query()
+      all_shard = MSEntryShard.query( MSEntryShard.msentry_volume_id == volume.volume_id )
       all_shard_keys_fut = all_shard.fetch_async( None, keys_only=True, batch_size=1000 )
 
       all_msentry_keys = all_msentry_keys_fut.get_result()
