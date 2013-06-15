@@ -6,7 +6,7 @@ SERVERS=AG-disk
 # For home
 LIB= -lcurl -lcrypto -lpthread -lrt -lprotobuf -luriparser -lmicrohttpd
 
-INC=-I/usr/include -I/usr/include/syndicate -I$(COMMON) -I../
+INC=-I/usr/include -I/usr/include/syndicate -I$(COMMON) -I../ -I../common
 DEFS=-D_REENTRANT -D_THREAD_SAFE
 OBJS_COMMON=$(patsubst %.cpp,%.o,$(wildcard $(COMMON)/*.cpp)) $(patsubst %.cc,%.o,$(wildcard $(COMMON)/*.cc)) $(patsubst %.c,%.o,$(wildcard $(COMMON)/*.c))
 

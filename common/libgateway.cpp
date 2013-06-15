@@ -21,6 +21,7 @@ static int (*delete_callback)( struct gateway_context*, void* usercls ) = NULL;
 static void* (*connect_callback)( struct gateway_context* ) = NULL;
 static void (*cleanup_callback)( void* usercls ) = NULL;
 static int (*metadata_callback)( struct gateway_context*, ms::ms_gateway_blockinfo*, void* ) = NULL;
+static int (*publish_callback)( struct gateway_context*, ms_client*, char* ) = NULL;
 
 // set the PUT callback
 void gateway_put_func( ssize_t (*put_func)(struct gateway_context*, char const* data, size_t len, void* usercls) ) {
@@ -50,6 +51,12 @@ void gateway_cleanup_func( void (*cleanup_func)(void* usercls) ) {
 // set the metadata get callback
 void gateway_metadata_func( int (*metadata_func)(struct gateway_context* ctx, ms::ms_gateway_blockinfo*, void*) ) {
    metadata_callback = metadata_func;
+}
+
+
+// set the publish callback
+void gateway_publish_func( int (*publish_func)(struct gateway_context*, ms_client*, char*) ){
+   publish_callback = publish_func;
 }
 
 // separate a CGI argument into its key and value
@@ -810,6 +817,8 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    char* password = NULL;
    char* volume_name = NULL;
    char* volume_secret = NULL;
+   char* dataset = NULL;
+   bool pub_mode = false;
    
    static struct option gateway_options[] = {
       {"config-file\0Gateway configuration file path",      required_argument,   0, 'c'},
@@ -823,13 +832,14 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
       {"overwrite\0Overwrite previous upload on conflict",  no_argument,         0, 'w'},
       {"logfile\0Path to the log file",                     required_argument,   0, 'l'},
       {"pidfile\0Path to the PID file",                     required_argument,   0, 'i'},
+      {"dataset\0Path to dataset",                     	    required_argument,   0, 'd'},
       {"help\0Print this message",                          no_argument,         0, 'h'},
       {0, 0, 0, 0}
    };
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:S:u:p:P:m:fwl:i:h", gateway_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:S:u:p:P:m:fwl:i:d:h", gateway_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -875,6 +885,11 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
             pidfile = optarg;
             break;
          }
+         case 'd': {
+            dataset = optarg;
+	    pub_mode = true;
+            break;
+         }
          case 'h': {
             gateway_usage( argv[0], gateway_options, 0 );
             break;
@@ -905,11 +920,31 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
       exit(1);
    }
 
+   if (!pub_mode) {
+       if( (rc = start_gateway_service( &conf, &client, users, logfile, pidfile, make_daemon )) ) {
+	   errorf( "start_gateway_service rc = %d\n", rc);	
+       }
+   }
+   else {
+       if ( publish_callback ) {
+	   if ( ( rc = publish_callback( NULL, &client, dataset ) ) !=0 )
+	       errorf("publish_callback rc = %d\n", rc);
+       }
+       else
+	   errorf("%s\n", "AG Publisher mode is not implemented...");
+       exit(1);
+   }
+   return 0;
+}
+
+int start_gateway_service( struct md_syndicate_conf *conf, ms_client *client, md_user_entry** users,
+			   char* logfile, char* pidfile, bool make_daemon ) {
+   int rc = 0;
    // clean up stale records
-   cleanup_stale_transactions( &conf );
+   cleanup_stale_transactions( conf );
 
    // overwrite mandated by config?
-   if( conf.replica_overwrite )
+   if( conf->replica_overwrite )
       allow_overwrite = true;
    
    // need to daemonize?
@@ -925,7 +960,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    // start gateway server
    struct md_HTTP http;
 
-   rc = gateway_init( &http, &conf, users );
+   rc = gateway_init( &http, conf, users );
    if( rc != 0 ) {
       return rc;
    }

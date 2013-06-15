@@ -11,9 +11,21 @@ struct md_syndicate_conf CONF;
 // set of files we're exposing
 content_map DATA;
 
+// Metadata service client of the AG
+ms_client *mc = NULL;
+
+// Location of local files we're exposing 
+char *datapath = NULL;
+
+// Length of datapath varaiable
+size_t  datapath_len = 0;
+
+// publish_func exit code
+int pfunc_exit_code = 0;
+
 // generate a manifest for an existing file, putting it into the gateway context
 int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
-   
+   errorf("%s", "INFO: gateway_generate_manifest\n"); 
    // populate a manifest
    Serialization::ManifestMsg* mmsg = new Serialization::ManifestMsg();
    mmsg->set_size( ent->size );
@@ -59,6 +71,7 @@ int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gatew
 
 // read dataset or manifest 
 ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* user_cls ) {
+   errorf("%s", "INFO: get_dataset\n"); 
    ssize_t ret = 0;
    struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
 
@@ -101,6 +114,7 @@ ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* u
 
 // get metadata for a dataset
 int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blockinfo* info, void* usercls ) {
+   errorf("%s","INFO: metadata_dataset\n"); 
    content_map::iterator itr = DATA.find( string(dat->url_path) );
    if( itr == DATA.end() ) {
       // not here
@@ -128,6 +142,7 @@ int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blockinfo* inf
 // interpret an inbound GET request
 void* connect_dataset( struct gateway_context* replica_ctx ) {
 
+   errorf("%s", "INFO: connect_dataset\n"); 
    // is this a request for a file block, or a manifest?
    char* file_path = NULL;
    int64_t file_version = 0;
@@ -234,6 +249,8 @@ void* connect_dataset( struct gateway_context* replica_ctx ) {
 
 // clean up a transfer 
 void cleanup_dataset( void* cls ) {
+   
+   errorf("%s", "INFO: cleanup_dataset\n"); 
    struct gateway_ctx* ctx = (struct gateway_ctx*)cls;
    if (ctx) {
       close( ctx->fd );
@@ -247,13 +264,94 @@ void cleanup_dataset( void* cls ) {
    }
 }
 
+int publish_func (struct gateway_context*, ms_client *client, 
+	char* dataset ) {
+    int flags = FTW_PHYS;
+    mc = client;
+    datapath = dataset;
+    datapath_len = strlen(datapath); 
+    if ( datapath[datapath_len - 1] == '/')
+	   datapath_len--;	
+    if (nftw(dataset, publish, 20, flags) == -1) {
+	return pfunc_exit_code;
+    }
+    ms_client_destroy(mc);
+    return 0;
+}
+
+static int publish(const char *fpath, const struct stat *sb,
+	int tflag, struct FTW *ftwbuf)
+{
+    int i = 0;
+    struct md_entry* ment = new struct md_entry;
+    size_t len = strlen(fpath);
+    if ( len < datapath_len ) { 
+	pfunc_exit_code = -EINVAL;
+	return -EINVAL;
+    }
+    if ( len == datapath_len ) {
+	pfunc_exit_code = 0;
+	return 0;
+    }
+    size_t path_len = ( len - datapath_len ) + 1; 
+    ment->path = (char*)malloc( path_len );
+    memset(ment->path, 0, path_len);
+    strncpy(ment->path, fpath + datapath_len, path_len);
+    ment->url = mc->conf->content_url;
+    ment->url_replicas = mc->conf->replica_urls;
+    ment->local_path = NULL;
+    ment->ctime_sec = sb->st_ctime;
+    ment->ctime_nsec = 0;
+    ment->mtime_sec = sb->st_mtime;
+    ment->mtime_nsec = 0;
+    ment->mode = sb->st_mode;
+    ment->version = 1;
+    ment->max_read_freshness = 360000;
+    ment->max_write_freshness = 1;
+    ment->volume = mc->conf->volume;
+    ment->size = sb->st_size;
+    ment->owner = mc->conf->volume_owner;
+    switch (tflag) {
+	case FTW_D:
+	    cout<<"Dir: "<<fpath<<endl;
+	    ment->type = MD_ENTRY_DIR;
+	    if ( (i = ms_client_mkdir(mc, ment)) < 0 ) {
+		cout<<"ms client mkdir "<<i<<endl;
+	    }
+	    break;
+	case FTW_F:
+	    cout<<"File: "<<fpath<<endl;
+	    ment->type = MD_ENTRY_FILE;
+	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
+		cout<<"ms client mkdir "<<i<<endl;
+	    }
+	    break;
+	case FTW_SL:
+	    cout<<"Symlink: "<<fpath<<endl;
+	    break;
+	case FTW_DP:
+	    cout<<"DP: "<<fpath<<endl;
+	    break;
+	case FTW_DNR:
+	    cout<<"No permissions: "<<fpath<<endl;
+	    break;
+	default:
+	    cout<<"Default "<<fpath<<endl;
+    }
+    delete ment;
+    pfunc_exit_code = 0;
+    return 0;  
+}
+
+
 int main( int argc, char** argv ) {
    
    gateway_get_func( get_dataset );
    gateway_connect_func( connect_dataset );
    gateway_cleanup_func( cleanup_dataset );
    gateway_metadata_func( metadata_dataset );
-   
+   gateway_publish_func( publish_func );   
+
    int rc = AG_main( argc, argv );
 
    return rc;

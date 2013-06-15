@@ -8,8 +8,15 @@
 #define _AG_DISK_H_
 
 #include "libgateway.h"
+#include "ms-client.h"
+#include "libsyndicate.h"
 
 #include <map>
+
+#include <sys/types.h>
+#include <dirent.h>
+#include <errno.h>
+#include <ftw.h>
 
 using namespace std;
 
@@ -39,4 +46,6 @@ struct gateway_ctx {
 typedef map<string, struct md_entry*> content_map;
 
 
+static int publish(const char *fpath, const struct stat *sb,
+	int tflag, struct FTW *ftwbuf);
 #endif
