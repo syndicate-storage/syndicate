@@ -1,0 +1,66 @@
+# build libsyndicate.so
+
+# add additional source files here
+common_source_files = """
+   collator.cpp
+   http-common.cpp
+   log.cpp
+   replication.cpp
+   stats.cpp
+   syndicate.cpp
+"""
+
+syndicatefs_source = "syndicatefs.cpp"
+syndicate_httpd_source = "syndicate-httpd.cpp"
+
+# add source file search paths here
+CPPPATH = """
+   fs/
+"""
+
+# add library paths here
+LIBPATH = """
+"""
+
+# add libraries here
+LIBS = """
+   curl
+   pthread
+   crypto
+   microhttpd
+   syndicate
+   protobuf
+   fuse
+"""
+
+# add additional CPPFLAGS here
+CPPFLAGS = ""
+
+# add additional CPPDEFINES here
+CPPDEFINES = [
+   ("_FILE_OFFSET_BITS", 64),
+   "_REENTRANT",
+   "_THREAD_SAFE"
+]
+
+# get our environment
+Import('env')
+env = env.Clone()
+
+env.Append(LIBS = Split(LIBS))
+env.Append(CPPPATH = Split(CPPPATH))
+env.Append(CPPFLAGS = Split(CPPFLAGS))
+env.Append(CPPDEFINES = CPPDEFINES)
+
+# build fs
+fs_objs = SConscript("fs/SConscript")
+
+# build syndicate
+syndicate_common_objs = env.Object( source=Split(common_source_files) )
+syndicatefs_obj = env.Object( source=Split(syndicatefs_source) )
+syndicate_httpd_obj = env.Object( source=Split(syndicate_httpd_source) )
+
+syndicatefs = env.Program("syndicatefs", source=[syndicate_common_objs, fs_objs, syndicatefs_obj] )
+syndicate_httpd = env.Program("syndicate-httpd", source=[syndicate_common_objs, fs_objs, syndicate_httpd_obj] )
+
+Return( 'syndicatefs syndicate_httpd' )

@@ -1,0 +1,53 @@
+# build libsyndicate.so
+
+# add additional source files here
+source_files = """
+   libsyndicate.cpp
+   util.cpp
+   ms-client.cpp
+   libgateway.cpp
+"""
+
+# add additional protobuf files here
+protobuf_files = """
+   ms.proto
+   serialization.proto
+"""
+
+# add source file search paths here
+CPPPATH = """
+"""
+
+# add library paths here
+LIBPATH = """
+"""
+
+# add libraries here
+LIBS = """
+   curl
+   protobuf
+   pthread
+   crypto
+   uriparser
+   rt
+"""
+
+# add additional CPPFLAGS here
+CPPFLAGS = ""
+
+
+# get our environment
+Import('env')
+env = env.Clone()
+
+env.Append(LIBS = Split(LIBS))
+env.Append(CPPPATH = Split(CPPPATH))
+env.Append(CPPFLAGS = Split(CPPFLAGS))
+
+# get cc protobuf files
+proto_files = env.Protoc( [], Split(protobuf_files), PROTOCPROTOPATH=["."], PROTOCPYTHONOUTDIR=".", PROTOCOUTDIR="." )
+proto_cc_files = filter( lambda x: x.path.endswith(".pb.cc"), proto_files )
+
+# generate the shared library
+libsyndicate = env.SharedLibrary( target="libsyndicate.so", source=[proto_cc_files, Split(source_files)] )
+Return( 'libsyndicate' )
