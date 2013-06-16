@@ -275,7 +275,7 @@ int publish_func (struct gateway_context*, ms_client *client,
     if (nftw(dataset, publish, 20, flags) == -1) {
 	return pfunc_exit_code;
     }
-    ms_client_desroy(mc);
+    ms_client_destroy(mc);
     return 0;
 }
 

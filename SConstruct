@@ -2,12 +2,14 @@
 
 import os 
 import sys
+import types
+
 import SCons
 
 # default library install directory
 lib_install_dir = "/usr/local/lib"
 
-# default gateway install directory
+# default UG install directory
 bin_install_dir = "/usr/local/bin"
 
 # default header install directory
@@ -54,6 +56,18 @@ SConsEnvironment.InstallProgram = lambda env, dest, files: InstallPerm(env, dest
 SConsEnvironment.InstallHeader = lambda env, dest, files: InstallPerm(env, dest, files, 0644)
 SConsEnvironment.InstallLibrary = lambda env, dest, files: InstallPerm(env, dest, files, 0644)
 
+# install a list of targets and set up aliases
+def install_targets( alias, dir, targets ):
+   flatten = lambda lst: reduce(lambda l, i: l + flatten(i) if isinstance(i, (list, tuple, SCons.Node.NodeList)) else l + [i], lst, [])
+   targets = flatten( targets )
+
+   for target in targets:
+      bn = os.path.basename( target.path )
+      bn_install_path = os.path.join( dir, bn )
+      
+      env.InstallProgram( dir, target )
+      env.Alias( alias, bn_install_path )
+
 
 Export("env")
 
@@ -64,11 +78,16 @@ env.InstallHeader( inc_install_dir, ["build/out/libsyndicate/%s" % x for x in ['
 
 # UG target
 ugs = SConscript( "UG/SConscript", variant_dir="build/out/UG" )
-env.InstallProgram( bin_install_dir, ugs )
 
-# alias installation targets
+# AG target
+ags = SConscript( "AG/SConscript", variant_dir="build/out/AG" )
+
+# installation and aliases
+install_targets( 'UG-install', bin_install_dir, ugs )
+install_targets( 'AG-install', bin_install_dir, ags )
+
+# alias installation targets for libsyndicate
 env.Alias( 'libsyndicate-install', [lib_install_dir, inc_install_dir] )
-env.Alias( 'UG-install', bin_install_dir )
 
 # usage function
 def usage():
