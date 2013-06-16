@@ -54,7 +54,7 @@ void gateway_get_func( ssize_t (*get_func)(struct gateway_context*, char* buf, s
 void gateway_delete_func( int (*delete_func)(struct gateway_context*, void* usercls) );
 void gateway_cleanup_func( void (*cleanup_func)(void* usercls) );
 void gateway_metadata_func( int (*metadata_func)(struct gateway_context*, ms::ms_gateway_blockinfo* info, void* usercls) );
-void gateway_publish_func( int (*publish_func)(struct gateway_context*, ms_client*, char* dataset ) );
+void gateway_publish_func( int (*publish_func)(struct gateway_context*, struct ms_client*, char* dataset ) );
 
 int gateway_key_value( char* arg, char* key, char* value );
 

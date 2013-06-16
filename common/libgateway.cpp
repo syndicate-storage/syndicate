@@ -934,6 +934,8 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
 	   errorf("%s\n", "AG Publisher mode is not implemented...");
        exit(1);
    }
+
+   ms_client_destroy(&client);
    return 0;
 }
 
