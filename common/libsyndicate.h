@@ -123,6 +123,7 @@ struct md_entry {
    int32_t max_read_freshness;      // how long is this entry fresh until it needs revalidation?
    int32_t max_write_freshness;     // how long can we delay publishing this entry?
    uid_t owner;         // uid of the owner
+   uid_t acting_owner;  // uid of the acting owner
    gid_t volume;        // id of the volume
    mode_t mode;         // file permission bits
    off_t size;          // size of the file
@@ -378,7 +379,7 @@ struct md_syndicate_conf {
    char* metadata_password;                           // metadata authentication password
    char** replica_urls;                               // where to send file replicas
    uint64_t blocking_factor;                          // how many bytes blocks will be
-   uid_t owner;                                       // what is our UID in Syndicate?  Files created in SyndicateFS will assume this UID as their owner
+   uid_t owner;                                       // what is our UID in Syndicate?  Files created in this UG will assume this UID as their owner
    mode_t usermask;                                   // umask of the user running this program
    gid_t volume;                                      // volume ID of the metadata server we're subscribed to
    uid_t volume_owner;                                // user ID of the metadata server we're subscribed to

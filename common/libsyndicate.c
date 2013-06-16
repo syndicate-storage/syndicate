@@ -2345,6 +2345,7 @@ int md_entry_to_ms_entry( struct md_syndicate_conf* conf, ms::ms_entry* msent, s
    msent->set_type( ent->type == MD_ENTRY_FILE ? ms::ms_entry::MS_ENTRY_TYPE_FILE : ms::ms_entry::MS_ENTRY_TYPE_DIR );
    msent->set_path( string(path_sane) );
    msent->set_owner( ent->owner );
+   msent->set_acting_owner( ent->acting_owner );
    msent->set_volume( ent->volume );
    msent->set_mode( ent->mode );
    msent->set_ctime_sec( ent->ctime_sec );
@@ -2373,6 +2374,7 @@ int ms_entry_to_md_entry( struct md_syndicate_conf* conf, const ms::ms_entry& ms
    md_sanitize_path( ent->path );
    
    ent->owner = msent.owner();
+   ent->acting_owner = msent.acting_owner();
    ent->volume = msent.volume();
    ent->mode = msent.mode();
    ent->mtime_sec = msent.mtime_sec();

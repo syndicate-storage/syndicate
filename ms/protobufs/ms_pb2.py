@@ -11,7 +11,7 @@ from googlepb.protobuf import descriptor_pb2
 DESCRIPTOR = descriptor.FileDescriptor(
   name='ms.proto',
   package='ms',
-  serialized_pb='\n\x08ms.proto\x12\x02ms\"\xc1\x02\n\x08ms_entry\x12\x0c\n\x04type\x18\x01 \x02(\x05\x12\x11\n\tctime_sec\x18\x02 \x02(\x03\x12\x12\n\nctime_nsec\x18\x03 \x02(\x03\x12\x11\n\tmtime_sec\x18\x04 \x02(\x03\x12\x12\n\nmtime_nsec\x18\x05 \x02(\x05\x12\r\n\x05owner\x18\x06 \x02(\x05\x12\x0e\n\x06volume\x18\x07 \x02(\x05\x12\x0c\n\x04mode\x18\x08 \x02(\x05\x12\x0c\n\x04size\x18\t \x02(\x04\x12\x0f\n\x07version\x18\n \x02(\x03\x12\x1a\n\x12max_read_freshness\x18\x0b \x02(\x05\x12\x1b\n\x13max_write_freshness\x18\x0c \x02(\x05\x12\x0c\n\x04path\x18\r \x02(\t\x12\x0b\n\x03url\x18\x0e \x02(\t\"9\n\x08\x46ileType\x12\x16\n\x12MS_ENTRY_TYPE_FILE\x10\x01\x12\x15\n\x11MS_ENTRY_TYPE_DIR\x10\x02\"h\n\tms_update\x12\x0c\n\x04type\x18\x01 \x02(\x05\x12\x1b\n\x05\x65ntry\x18\x02 \x02(\x0b\x32\x0c.ms.ms_entry\"0\n\nUpdateType\x12\n\n\x06\x43REATE\x10\x01\x12\n\n\x06UPDATE\x10\x02\x12\n\n\x06\x44\x45LETE\x10\x03\",\n\nms_updates\x12\x1e\n\x07updates\x18\x01 \x03(\x0b\x32\r.ms.ms_update\"\x8a\x01\n\x08ms_reply\x12\x16\n\x0evolume_version\x18\x01 \x02(\x03\x12!\n\x0b\x65ntries_dir\x18\x02 \x03(\x0b\x32\x0c.ms.ms_entry\x12\"\n\x0c\x65ntries_base\x18\x03 \x03(\x0b\x32\x0c.ms.ms_entry\x12\r\n\x05\x65rror\x18\x04 \x02(\x05\x12\x10\n\x08\x65rrormsg\x18\x05 \x01(\t\"\x96\x02\n\x14ms_gateway_blockinfo\x12\x0f\n\x07\x66s_path\x18\n \x02(\t\x12\x14\n\x0c\x66ile_version\x18\x01 \x02(\x03\x12\x10\n\x08\x62lock_id\x18\x02 \x02(\x04\x12\x15\n\rblock_version\x18\x03 \x02(\x03\x12\x17\n\x0f\x62locking_factor\x18\x04 \x02(\x04\x12\x16\n\x0e\x66ile_mtime_sec\x18\x05 \x02(\x03\x12\x17\n\x0f\x66ile_mtime_nsec\x18\x06 \x02(\x05\x12\x10\n\x08progress\x18\x07 \x01(\x05\x12\x12\n\nwrite_time\x18\x08 \x01(\x03\x12\x12\n\nsession_id\x18\t \x01(\x03\"*\n\x0cProgressType\x12\x0b\n\x07STARTED\x10\x01\x12\r\n\tCOMMITTED\x10\x02\"S\n\x16ms_volume_gateway_cred\x12\x10\n\x08owner_id\x18\x01 \x02(\x05\x12\x10\n\x08username\x18\x02 \x02(\t\x12\x15\n\rpassword_hash\x18\x03 \x02(\t\"\xeb\x01\n\x12ms_volume_metadata\x12\x11\n\tblocksize\x18\x01 \x02(\x04\x12\x14\n\x0crequester_id\x18\x02 \x02(\x04\x12\x10\n\x08owner_id\x18\x03 \x02(\x04\x12\x11\n\tvolume_id\x18\x04 \x02(\x04\x12\x16\n\x0evolume_version\x18\x05 \x02(\x04\x12\x0c\n\x04name\x18\x06 \x02(\t\x12\x13\n\x0b\x64\x65scription\x18\x07 \x02(\t\x12\x14\n\x0creplica_urls\x18\x08 \x03(\t\x12\x36\n\x12user_gateway_creds\x18\t \x03(\x0b\x32\x1a.ms.ms_volume_gateway_cred')
+  serialized_pb='\n\x08ms.proto\x12\x02ms\"\xd7\x02\n\x08ms_entry\x12\x0c\n\x04type\x18\x01 \x02(\x05\x12\x11\n\tctime_sec\x18\x02 \x02(\x03\x12\x12\n\nctime_nsec\x18\x03 \x02(\x03\x12\x11\n\tmtime_sec\x18\x04 \x02(\x03\x12\x12\n\nmtime_nsec\x18\x05 \x02(\x05\x12\r\n\x05owner\x18\x06 \x02(\x05\x12\x14\n\x0c\x61\x63ting_owner\x18\x07 \x02(\x05\x12\x0e\n\x06volume\x18\x08 \x02(\x05\x12\x0c\n\x04mode\x18\t \x02(\x05\x12\x0c\n\x04size\x18\n \x02(\x04\x12\x0f\n\x07version\x18\x0b \x02(\x03\x12\x1a\n\x12max_read_freshness\x18\x0c \x02(\x05\x12\x1b\n\x13max_write_freshness\x18\r \x02(\x05\x12\x0c\n\x04path\x18\x0e \x02(\t\x12\x0b\n\x03url\x18\x0f \x02(\t\"9\n\x08\x46ileType\x12\x16\n\x12MS_ENTRY_TYPE_FILE\x10\x01\x12\x15\n\x11MS_ENTRY_TYPE_DIR\x10\x02\"h\n\tms_update\x12\x0c\n\x04type\x18\x01 \x02(\x05\x12\x1b\n\x05\x65ntry\x18\x02 \x02(\x0b\x32\x0c.ms.ms_entry\"0\n\nUpdateType\x12\n\n\x06\x43REATE\x10\x01\x12\n\n\x06UPDATE\x10\x02\x12\n\n\x06\x44\x45LETE\x10\x03\",\n\nms_updates\x12\x1e\n\x07updates\x18\x01 \x03(\x0b\x32\r.ms.ms_update\"\x8a\x01\n\x08ms_reply\x12\x16\n\x0evolume_version\x18\x01 \x02(\x03\x12!\n\x0b\x65ntries_dir\x18\x02 \x03(\x0b\x32\x0c.ms.ms_entry\x12\"\n\x0c\x65ntries_base\x18\x03 \x03(\x0b\x32\x0c.ms.ms_entry\x12\r\n\x05\x65rror\x18\x04 \x02(\x05\x12\x10\n\x08\x65rrormsg\x18\x05 \x01(\t\"\x96\x02\n\x14ms_gateway_blockinfo\x12\x0f\n\x07\x66s_path\x18\n \x02(\t\x12\x14\n\x0c\x66ile_version\x18\x01 \x02(\x03\x12\x10\n\x08\x62lock_id\x18\x02 \x02(\x04\x12\x15\n\rblock_version\x18\x03 \x02(\x03\x12\x17\n\x0f\x62locking_factor\x18\x04 \x02(\x04\x12\x16\n\x0e\x66ile_mtime_sec\x18\x05 \x02(\x03\x12\x17\n\x0f\x66ile_mtime_nsec\x18\x06 \x02(\x05\x12\x10\n\x08progress\x18\x07 \x01(\x05\x12\x12\n\nwrite_time\x18\x08 \x01(\x03\x12\x12\n\nsession_id\x18\t \x01(\x03\"*\n\x0cProgressType\x12\x0b\n\x07STARTED\x10\x01\x12\r\n\tCOMMITTED\x10\x02\"S\n\x16ms_volume_gateway_cred\x12\x10\n\x08owner_id\x18\x01 \x02(\x05\x12\x10\n\x08username\x18\x02 \x02(\t\x12\x15\n\rpassword_hash\x18\x03 \x02(\t\"\xeb\x01\n\x12ms_volume_metadata\x12\x11\n\tblocksize\x18\x01 \x02(\x04\x12\x14\n\x0crequester_id\x18\x02 \x02(\x04\x12\x10\n\x08owner_id\x18\x03 \x02(\x04\x12\x11\n\tvolume_id\x18\x04 \x02(\x04\x12\x16\n\x0evolume_version\x18\x05 \x02(\x04\x12\x0c\n\x04name\x18\x06 \x02(\t\x12\x13\n\x0b\x64\x65scription\x18\x07 \x02(\t\x12\x14\n\x0creplica_urls\x18\x08 \x03(\t\x12\x36\n\x12user_gateway_creds\x18\t \x03(\x0b\x32\x1a.ms.ms_volume_gateway_cred')
 
 
 
@@ -32,8 +32,8 @@ _MS_ENTRY_FILETYPE = descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=281,
-  serialized_end=338,
+  serialized_start=303,
+  serialized_end=360,
 )
 
 _MS_UPDATE_UPDATETYPE = descriptor.EnumDescriptor(
@@ -57,8 +57,8 @@ _MS_UPDATE_UPDATETYPE = descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=396,
-  serialized_end=444,
+  serialized_start=418,
+  serialized_end=466,
 )
 
 _MS_GATEWAY_BLOCKINFO_PROGRESSTYPE = descriptor.EnumDescriptor(
@@ -78,8 +78,8 @@ _MS_GATEWAY_BLOCKINFO_PROGRESSTYPE = descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=870,
-  serialized_end=912,
+  serialized_start=892,
+  serialized_end=934,
 )
 
 
@@ -133,57 +133,64 @@ _MS_ENTRY = descriptor.Descriptor(
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='volume', full_name='ms.ms_entry.volume', index=6,
+      name='acting_owner', full_name='ms.ms_entry.acting_owner', index=6,
       number=7, type=5, cpp_type=1, label=2,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='mode', full_name='ms.ms_entry.mode', index=7,
+      name='volume', full_name='ms.ms_entry.volume', index=7,
       number=8, type=5, cpp_type=1, label=2,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='size', full_name='ms.ms_entry.size', index=8,
-      number=9, type=4, cpp_type=4, label=2,
+      name='mode', full_name='ms.ms_entry.mode', index=8,
+      number=9, type=5, cpp_type=1, label=2,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='version', full_name='ms.ms_entry.version', index=9,
-      number=10, type=3, cpp_type=2, label=2,
+      name='size', full_name='ms.ms_entry.size', index=9,
+      number=10, type=4, cpp_type=4, label=2,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='max_read_freshness', full_name='ms.ms_entry.max_read_freshness', index=10,
-      number=11, type=5, cpp_type=1, label=2,
+      name='version', full_name='ms.ms_entry.version', index=10,
+      number=11, type=3, cpp_type=2, label=2,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='max_write_freshness', full_name='ms.ms_entry.max_write_freshness', index=11,
+      name='max_read_freshness', full_name='ms.ms_entry.max_read_freshness', index=11,
       number=12, type=5, cpp_type=1, label=2,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='path', full_name='ms.ms_entry.path', index=12,
-      number=13, type=9, cpp_type=9, label=2,
+      name='max_write_freshness', full_name='ms.ms_entry.max_write_freshness', index=12,
+      number=13, type=5, cpp_type=1, label=2,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='path', full_name='ms.ms_entry.path', index=13,
+      number=14, type=9, cpp_type=9, label=2,
       has_default_value=False, default_value=unicode("", "utf-8"),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='url', full_name='ms.ms_entry.url', index=13,
-      number=14, type=9, cpp_type=9, label=2,
+      name='url', full_name='ms.ms_entry.url', index=14,
+      number=15, type=9, cpp_type=9, label=2,
       has_default_value=False, default_value=unicode("", "utf-8"),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -199,7 +206,7 @@ _MS_ENTRY = descriptor.Descriptor(
   is_extendable=False,
   extension_ranges=[],
   serialized_start=17,
-  serialized_end=338,
+  serialized_end=360,
 )
 
 
@@ -234,8 +241,8 @@ _MS_UPDATE = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=340,
-  serialized_end=444,
+  serialized_start=362,
+  serialized_end=466,
 )
 
 
@@ -262,8 +269,8 @@ _MS_UPDATES = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=446,
-  serialized_end=490,
+  serialized_start=468,
+  serialized_end=512,
 )
 
 
@@ -318,8 +325,8 @@ _MS_REPLY = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=493,
-  serialized_end=631,
+  serialized_start=515,
+  serialized_end=653,
 )
 
 
@@ -410,8 +417,8 @@ _MS_GATEWAY_BLOCKINFO = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=634,
-  serialized_end=912,
+  serialized_start=656,
+  serialized_end=934,
 )
 
 
@@ -452,8 +459,8 @@ _MS_VOLUME_GATEWAY_CRED = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=914,
-  serialized_end=997,
+  serialized_start=936,
+  serialized_end=1019,
 )
 
 
@@ -536,8 +543,8 @@ _MS_VOLUME_METADATA = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=1000,
-  serialized_end=1235,
+  serialized_start=1022,
+  serialized_end=1257,
 )
 
 _MS_ENTRY_FILETYPE.containing_type = _MS_ENTRY;

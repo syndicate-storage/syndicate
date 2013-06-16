@@ -19,14 +19,15 @@ message ms_entry {
    required int64 mtime_sec = 4;
    required int32 mtime_nsec = 5;
    required int32 owner = 6;
-   required int32 volume = 7;
-   required int32 mode = 8;
-   required uint64 size = 9;
-   required int64 version = 10;
-   required int32 max_read_freshness = 11;
-   required int32 max_write_freshness = 12;
-   required string path = 13;
-   required string url = 14;
+   required int32 acting_owner = 7;
+   required int32 volume = 8;
+   required int32 mode = 9;
+   required uint64 size = 10;
+   required int64 version = 11;
+   required int32 max_read_freshness = 12;
+   required int32 max_write_freshness = 13;
+   required string path = 14;
+   required string url = 15;
 }
 
 // object update

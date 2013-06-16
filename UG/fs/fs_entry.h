@@ -54,7 +54,8 @@ typedef vector<fs_dirent> fs_entry_set;
 
 typedef map<uint64_t, int64_t> modification_map;
 
-
+// pre-declare these
+class Collator;
 class file_manifest;
 
 // Syndicate filesystem entry
@@ -65,7 +66,8 @@ struct fs_entry {
    int64_t version;           // version of this file
    file_manifest* manifest;   // current file manifest
 
-   uid_t owner;               // Syndicate UID of the file's owner (should NOT match any system entries)
+   uid_t owner;               // Syndicate UID of the file's owner (should NOT match any local system entries)
+   uid_t acting_owner;        // acting owner of this file (should match owner if this UG created the file)
    gid_t volume;              // volume ID on which this file resides (analogous to the group ID)
    mode_t mode;               // access permissions
    off_t size;                // how big is this file's content?
@@ -118,8 +120,6 @@ struct fs_dir_entry {
 };
 
 // Syndicate core information
-class Collator;
-
 struct fs_core {
    struct fs_entry* root;              // root FS entry
    struct md_syndicate_conf* conf;     // Syndicate configuration structure
@@ -155,8 +155,8 @@ int fs_core_wlock( struct fs_core* core );
 int fs_core_unlock( struct fs_core* core );
 
 // fs_entry initialization
-int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
-int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
+int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
+int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
 int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_entry* ent );
 
 int64_t fs_entry_next_file_version(void);
