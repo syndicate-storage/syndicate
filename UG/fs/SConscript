@@ -30,6 +30,7 @@ source_files = """
 # add source file search paths here
 CPPPATH = """
    ../
+   /usr/local/include/syndicate
 """
 
 # add library paths here

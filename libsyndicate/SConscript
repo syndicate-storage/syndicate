@@ -1,17 +1,13 @@
 # build libsyndicate.so
 
+import os
+
 # add additional source files here
 source_files = """
    libsyndicate.cpp
    util.cpp
    ms-client.cpp
    libgateway.cpp
-"""
-
-# add additional protobuf files here
-protobuf_files = """
-   ms.proto
-   serialization.proto
 """
 
 # add source file search paths here
@@ -32,6 +28,14 @@ LIBS = """
    rt
 """
 
+# add headers here (will be returned by SCons)
+HEADERS = """
+   libsyndicate.h
+   util.h
+   ms-client.h
+   libgateway.h
+"""
+
 # add additional CPPFLAGS here
 CPPFLAGS = ""
 
@@ -40,14 +44,18 @@ CPPFLAGS = ""
 Import('env')
 env = env.Clone()
 
+Import('protobuf_cc_files')
+Import('protobuf_out')
+
 env.Append(LIBS = Split(LIBS))
 env.Append(CPPPATH = Split(CPPPATH))
-env.Append(CPPFLAGS = Split(CPPFLAGS))
+env.Append(CPPPATH = "#" + protobuf_out)
+env.Append(CPPFLAGS = CPPFLAGS)
 
-# get cc protobuf files
-proto_files = env.Protoc( [], Split(protobuf_files), PROTOCPROTOPATH=["."], PROTOCPYTHONOUTDIR=".", PROTOCOUTDIR="." )
-proto_cc_files = filter( lambda x: x.path.endswith(".pb.cc"), proto_files )
+# generate the shared library, from generated protobuf cc files and from libsyndicate source
+libsyndicate = env.SharedLibrary( target="libsyndicate.so", source=[protobuf_cc_files, Split(source_files)] )
 
-# generate the shared library
-libsyndicate = env.SharedLibrary( target="libsyndicate.so", source=[proto_cc_files, Split(source_files)] )
-Return( 'libsyndicate' )
+# generate header and source paths
+header_paths = [os.path.join( Dir(".").path, x ) for x in Split(HEADERS)]
+source_paths = [os.path.join( Dir(".").path, x ) for x in Split(source_files)] 
+Return( 'libsyndicate header_paths source_paths' )

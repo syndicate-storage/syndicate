@@ -1,4 +1,4 @@
-# build libsyndicate.so
+# build UGs
 
 # add additional source files here
 common_source_files = """
@@ -16,6 +16,7 @@ syndicate_httpd_source = "syndicate-httpd.cpp"
 # add source file search paths here
 CPPPATH = """
    fs/
+   /usr/local/include/syndicate/
 """
 
 # add library paths here
