@@ -313,30 +313,25 @@ static int publish(const char *fpath, const struct stat *sb,
     ment->owner = mc->conf->volume_owner;
     switch (tflag) {
 	case FTW_D:
-	    cout<<"Dir: "<<fpath<<endl;
 	    ment->type = MD_ENTRY_DIR;
 	    if ( (i = ms_client_mkdir(mc, ment)) < 0 ) {
 		cout<<"ms client mkdir "<<i<<endl;
 	    }
 	    break;
 	case FTW_F:
-	    cout<<"File: "<<fpath<<endl;
 	    ment->type = MD_ENTRY_FILE;
 	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
 		cout<<"ms client mkdir "<<i<<endl;
 	    }
 	    break;
 	case FTW_SL:
-	    cout<<"Symlink: "<<fpath<<endl;
 	    break;
 	case FTW_DP:
-	    cout<<"DP: "<<fpath<<endl;
 	    break;
 	case FTW_DNR:
-	    cout<<"No permissions: "<<fpath<<endl;
 	    break;
 	default:
-	    cout<<"Default "<<fpath<<endl;
+	    break;
     }
     delete ment;
     pfunc_exit_code = 0;
