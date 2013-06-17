@@ -1,0 +1,66 @@
+# build libsyndicate.so
+
+# add additional source files here
+source_files = """
+   close.cpp
+   closedir.cpp
+   consistency.cpp
+   fs_entry.cpp
+   link.cpp
+   manifest.cpp
+   mkdir.cpp
+   mkfs.cpp
+   network.cpp
+   open.cpp
+   opendir.cpp
+   read.cpp
+   readdir.cpp
+   recover.cpp
+   rename.cpp
+   rmdir.cpp
+   stat.cpp
+   storage.cpp
+   trunc.cpp
+   unlink.cpp
+   url.cpp
+   write.cpp
+   xattr.cpp
+"""
+
+# add source file search paths here
+CPPPATH = """
+   ../
+   /usr/local/include/syndicate
+"""
+
+# add library paths here
+LIBPATH = """
+"""
+
+# add libraries here
+LIBS = """
+"""
+
+# add additional CPPFLAGS here
+CPPFLAGS = ""
+
+# add additional CPPDEFINES here
+CPPDEFINES = [
+   ("_FILE_OFFSET_BITS", 64),
+   "_REENTRANT",
+   "_THREAD_SAFE"
+]
+
+# get our environment
+Import('env')
+env = env.Clone()
+
+env.Append(LIBS = Split(LIBS))
+env.Append(CPPPATH = Split(CPPPATH))
+env.Append(CPPFLAGS = Split(CPPFLAGS))
+env.Append(CPPDEFINES = CPPDEFINES)
+
+fs_objs = env.Object( source=Split(source_files) )
+Return( 'fs_objs' )
+
+

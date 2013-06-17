@@ -1,0 +1,61 @@
+# build libsyndicate.so
+
+import os
+
+# add additional source files here
+source_files = """
+   libsyndicate.cpp
+   util.cpp
+   ms-client.cpp
+   libgateway.cpp
+"""
+
+# add source file search paths here
+CPPPATH = """
+"""
+
+# add library paths here
+LIBPATH = """
+"""
+
+# add libraries here
+LIBS = """
+   curl
+   protobuf
+   pthread
+   crypto
+   uriparser
+   rt
+"""
+
+# add headers here (will be returned by SCons)
+HEADERS = """
+   libsyndicate.h
+   util.h
+   ms-client.h
+   libgateway.h
+"""
+
+# add additional CPPFLAGS here
+CPPFLAGS = ""
+
+
+# get our environment
+Import('env')
+env = env.Clone()
+
+Import('protobuf_cc_files')
+Import('protobuf_out')
+
+env.Append(LIBS = Split(LIBS))
+env.Append(CPPPATH = Split(CPPPATH))
+env.Append(CPPPATH = "#" + protobuf_out)
+env.Append(CPPFLAGS = CPPFLAGS)
+
+# generate the shared library, from generated protobuf cc files and from libsyndicate source
+libsyndicate = env.SharedLibrary( target="libsyndicate.so", source=[protobuf_cc_files, Split(source_files)] )
+
+# generate header and source paths
+header_paths = [os.path.join( Dir(".").path, x ) for x in Split(HEADERS)]
+source_paths = [os.path.join( Dir(".").path, x ) for x in Split(source_files)] 
+Return( 'libsyndicate header_paths source_paths' )

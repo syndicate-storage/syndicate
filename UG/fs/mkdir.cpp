@@ -25,7 +25,7 @@ int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_e
          // generate a URL
          char* url = fs_entry_public_dir_url( core, path );
          
-         fs_entry_init_dir( core, child, path_basename, url, fs_entry_next_file_version(), user, vol, mode, 4096, mtime_sec, mtime_nsec );
+         fs_entry_init_dir( core, child, path_basename, url, fs_entry_next_file_version(), user, user, vol, mode, 4096, mtime_sec, mtime_nsec );
          free( url );
 
          fs_core_fs_rlock( core );

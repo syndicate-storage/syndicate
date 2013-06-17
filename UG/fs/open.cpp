@@ -89,7 +89,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    char* url = fs_entry_local_file_url( core, path );
    struct timespec ts;
    clock_gettime( CLOCK_REALTIME, &ts );
-   err = fs_entry_init_file( core, child, path_basename, url, fs_entry_next_file_version(), user, vol, mode & 0777, 0, ts.tv_sec, ts.tv_nsec );
+   err = fs_entry_init_file( core, child, path_basename, url, fs_entry_next_file_version(), user, user, vol, mode & 0777, 0, ts.tv_sec, ts.tv_nsec );
    free( url );
 
    if( err == 0 ) {
@@ -243,7 +243,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
             file_url = fs_entry_local_file_url( core, path );
          }
 
-         int rc = fs_entry_init_file( core, child, path_basename, file_url, fs_entry_next_file_version(), user, vol, mode, 0, ts.tv_sec, ts.tv_nsec );
+         int rc = fs_entry_init_file( core, child, path_basename, file_url, fs_entry_next_file_version(), user, user, vol, mode, 0, ts.tv_sec, ts.tv_nsec );
 
          if( file_url != url ) {
             free( file_url );
