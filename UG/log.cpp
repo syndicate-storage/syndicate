@@ -4,7 +4,6 @@
 */
 
 #include "log.h"
-#include "syndicatefs.h"
 
 /*
  * Open the log file.  Return a handle to the file, or NULL on error.
