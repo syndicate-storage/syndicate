@@ -10,7 +10,7 @@ PKG_ARCHIVE=libmicrohttpd.tar.gz
 PKG_BUILD_ROOT=$PKG_ROOT/$(basename $PKG_URL | sed 's/\.tar\.gz//g')
 PKG_VERSION=$(basename $PKG_BUILD_ROOT | sed 's/libmicrohttpd-//g')
 PKG_INSTALL=$PKG_ROOT/out/
-PKG_DEPS="gnutls libgcrypt libgpg-error libtasn1 libz"
+PKG_DEPS="gnutls libgcrypt libgpg-error libtasn1 libz openssl"
 
 DEPARGS=""
 for pkg in $PKGDEPS; do
@@ -34,4 +34,4 @@ make install || exit 1
 popd
 
 
-fpm -s dir -t rpm -v $PKG_VERSION -n libmicrohttpd $DEPARGS -C $PKG_INSTALL -p $PKG_PKGOUT --license LGPL --vendor PlanetLab --description "libmicrohttpd build compatible with Syndicate" $(ls $PKG_INSTALL)
+fpm --force -s dir -t rpm -v $PKG_VERSION -n libmicrohttpd $DEPARGS -C $PKG_INSTALL -p $PKG_PKGOUT --license LGPL --vendor PlanetLab --description "libmicrohttpd build compatible with Syndicate" $(ls $PKG_INSTALL)
