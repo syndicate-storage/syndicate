@@ -1,6 +1,6 @@
 How this project is organized:
 
-/common:
+/libsyndicate:
 
 This directory contains source files needed by multiple gateways.
 
@@ -40,19 +40,7 @@ This directory contains obsolete code.  No need to look through here.
 
 This directory will contain blackbox test scripts (but not yet).
 
-/libmicrohttpd-syndicate
 
-This is a snapshot of the GNU libmicrohttpd project (which Syndicate depends on).  It's newer than what's offerred in PlanetLab/VICCI.
-
-/web
-
-This is where the Syndicate webpage code will go
-
-
-To build a gateway, simply cd into its directory and type "make".
-To build the entire system on PlanetLab, simply type "make".
-
-
-wiki:            https://trac.princeton.edu/Syndicate
+github:          https://github.com/jcnelson/syndicate.git
 mailing list:    syndicate@listserv.princeton.edu
 primary author:  Jude Nelson (jcnelson@cs.princeton.edu)

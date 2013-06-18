@@ -3,7 +3,7 @@
 PKGDIR=/tmp/syndicate-rpm
 PKGNAME="syndicate-UG"
 PKGVERSION="0.01"
-PKGDEPS="fuse curl libxml2 gnutls openssl boost libattr libgcrypt uriparser protobuf"
+PKGDEPS="fuse curl libxml2 gnutls openssl boost libattr libgcrypt uriparser protobuf libsyndicate"
 PKGEXTRA=./planetlab/
 PKGARCH=all
 

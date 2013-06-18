@@ -10,33 +10,37 @@ import SCons
 sys.path.append( os.path.join( os.getcwd(), "build/tools/" ) )
 import common
 
-# default library install directory
-lib_install_dir = "/usr/local/lib"
-
-# default UG install directory
-bin_install_dir = "/usr/local/bin"
-
-# default header install directory
-inc_install_dir = "/usr/local/include/syndicate"
+# installation prefix
+install_prefix = "/usr/local"
 
 # default CPPPATH 
-CPPPATH = """
-   #
-   /usr/include/
-   /usr/local/include/
-   .
-"""
+CPPPATH = [
+   "#",
+   "/usr/include/",
+   "/usr/local/include/",
+   "."
+]
 
 # default CPPFLAGS
 CPPFLAGS = "-g -Wall"
 
+# parse options
+for key, value in ARGLIST:
+   if key == "DESTDIR":
+      install_prefix = value
+   if key == "CPPFLAGS":
+      CPPFLAGS = value
 
+# install directories
+bin_install_dir = os.path.join( install_prefix, "bin" )
+lib_install_dir = os.path.join( install_prefix, "lib" )
+inc_install_dir = os.path.join( install_prefix, "include/syndicate" )
 
 # begin build
 env = Environment( 
    ENV = {'PATH': os.environ['PATH']},
    CPPFLAGS = Split(CPPFLAGS),
-   CPPPATH = Split(CPPPATH),
+   CPPPATH = CPPPATH,
    toolpath = ['build/tools'],
    tools = ['default', 'protoc']
 )
@@ -59,6 +63,11 @@ Export("protobuf_py_files")      # needed by ms
 libsyndicate_out = "build/out/libsyndicate"
 libsyndicate, libsyndicate_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
 env.Depends( libsyndicate_source_paths, protobufs )  # libsyndicate requires protobufs to be built first
+
+# UG for shared library build
+if 'UG-shared' in COMMAND_LINE_TARGETS:
+   ugshared_out = "build/out/UG-shared"
+   ugshareds = SConscript( "UG-shared/SConscript", variant_dir=ugshared_out )
 
 # UG build
 ug_out = "build/out/UG"

@@ -1,0 +1,41 @@
+To install Syndicate on PlanetLab, you need to install the following (Fedora 12) packages:
+   gnutls-devel
+   openssl-devel
+   boost-devel
+   libxml2-devel
+   libattr-devel
+   curl-devel
+   fuse
+   fuse-devel
+   libgcrypt-devel
+   uriparser-devel
+   protobuf
+   protobuf-devel
+   protobuf-compiler
+
+You will also need a recent version of libmicrohttpd.  The one in Fedora 12's repositories is too old.  Version 0.9.27 should work.
+
+To build Syndicate on PlanetLab, you need all of the above, as well as:
+   git
+   scons
+
+To build, you must first build and install libsyndicate.  This is achieved with the following commands:
+   $ scons libsyndicate
+   $ sudo scons libsyndicate-install
+
+To build the User Gateways:
+   $ scons UG
+
+To build the Acquisition Gateways:
+   $ scons AG
+
+To install the User Gateways:
+   $ scons UG-install
+
+To install the Acquisition Gateways:
+   $ scons AG-install
+
+We have a Syndicate package repository at http://vcoblitz-cmi.cs.princeton.edu/syndicate-repo/RPMS.  To use, do the following:
+   $ sudo curl http://vcoblitz-cmi.cs.princeton.edu/yum/Syndicate.repo > /etc/yum.repos.d/Syndicate.repo
+
+
