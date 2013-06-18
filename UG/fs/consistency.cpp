@@ -30,12 +30,9 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
    END_TIMING_DATA( ts, ts2, "replication" );
    
    int rc = ms_client_sync_update( core->ms, fh->path );
-   if( rc != 0 && rc != -ENOENT ) {
+   if( rc != 0 ) {
       // ENOENT allowed because the update thread could have preempted us
       errorf("ms_client_sync_update(%s) rc = %d\n", fh->path, rc );
-   }
-   else if( rc == -ENOENT ) {
-      rc = 0;
    }
    
    fs_file_handle_unlock( fh );
