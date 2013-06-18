@@ -1,0 +1,34 @@
+# build UGs for shared
+
+# add additional source files here
+common_source_files = """
+"""
+
+# add source file search paths here
+CPPPATH = """
+"""
+
+# add library paths here
+LIBPATH = """
+"""
+
+# add libraries here
+LIBS = """
+"""
+
+# add additional CPPFLAGS here
+CPPFLAGS = ""
+
+
+# get our environment
+Import('env')
+env = env.Clone()
+
+env.Append(LIBS = Split(LIBS))
+env.Append(CPPPATH = Split(CPPPATH))
+env.Append(CPPFLAGS = Split(CPPFLAGS))
+
+# build jni
+jni = SConscript("jni/SConscript")
+
+Return( 'jni' )
