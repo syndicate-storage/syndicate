@@ -26,7 +26,6 @@ make_key = ndb.Key
 wait_futures = ndb.Future.wait_all
 deferred = google_deferred
 concurrent = ndb.tasklet
-concurrent_yield = (lambda x: (yield x))
 concurrent_return = (lambda x: (raise_(ndb.Return( x ))))
 
 get_multi_async = ndb.get_multi_async

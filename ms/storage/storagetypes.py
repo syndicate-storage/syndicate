@@ -31,7 +31,6 @@ make_key = backend.make_key
 wait_futures = backend.wait_futures
 deferred = backend.deferred
 concurrent = backend.concurrent
-concurrent_yield = backend.concurrent_yield
 concurrent_return = backend.concurrent_return
 
 get_multi_async = backend.get_multi_async
