@@ -19,24 +19,32 @@ bin_install_dir = "/usr/local/bin"
 # default header install directory
 inc_install_dir = "/usr/local/include/syndicate"
 
+# installation prefix
+install_prefix = "/"
+
 # default CPPPATH 
-CPPPATH = """
-   #
-   /usr/include/
-   /usr/local/include/
-   .
-"""
+CPPPATH = [
+   "#",
+   "/usr/include/",
+   "/usr/local/include/",
+   "."
+]
 
 # default CPPFLAGS
 CPPFLAGS = "-g -Wall"
 
-
+# parse options
+for key, value in ARGLIST:
+   if key == "DESTDIR":
+      install_prefix = value
+   if key == "CPPFLAGS":
+      CPPFLAGS = value
 
 # begin build
 env = Environment( 
    ENV = {'PATH': os.environ['PATH']},
    CPPFLAGS = Split(CPPFLAGS),
-   CPPPATH = Split(CPPPATH),
+   CPPPATH = CPPPATH,
    toolpath = ['build/tools'],
    tools = ['default', 'protoc']
 )
@@ -74,14 +82,14 @@ ms = SConscript( "ms/SConscript", variant_dir=ms_out )
 env.Depends( ms, protobuf_py_files )  # ms requires Python protobufs to be built first
 
 # UG installation 
-common.install_targets( env, 'UG-install', bin_install_dir, ugs )
+common.install_targets( env, 'UG-install', os.path.join( install_prefix, bin_install_dir ), ugs )
 
 # AG installation
-common.install_targets( env, 'AG-install', bin_install_dir, ags )
+common.install_targets( env, 'AG-install', os.path.join( install_prefix, bin_install_dir ), ags )
 
 # alias installation targets for libsyndicate
-libsyndicate_install_headers = env.InstallHeader( inc_install_dir, libsyndicate_header_paths + protobuf_header_paths )
-libsyndicate_install_library = env.InstallLibrary( lib_install_dir, libsyndicate )
+libsyndicate_install_headers = env.InstallHeader( os.path.join( install_prefix, inc_install_dir ), libsyndicate_header_paths + protobuf_header_paths )
+libsyndicate_install_library = env.InstallLibrary( os.path.join( install_prefix, lib_install_dir ), libsyndicate )
 env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers] )
 
 # initialization
