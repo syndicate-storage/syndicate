@@ -1,6 +1,6 @@
 # copied from https://github.com/dound/gae-sessions/blob/master/demo/appengine_config.py
 
-from gaesession import SessionMiddleware, SESSION_COOKIE_KEY
+from openid.gaesession import SessionMiddleware, SESSION_COOKIE_KEY
 
 # suggestion: generate your own random key using os.urandom(64)
 # WARNING: Make sure you run os.urandom(64) OFFLINE and copy/paste the output to

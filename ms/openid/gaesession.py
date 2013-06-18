@@ -30,6 +30,7 @@ COOKIE_FMT_SECURE = COOKIE_FMT + '; Secure'
 COOKIE_DATE_FMT = '%a, %d-%b-%Y %H:%M:%S GMT'
 COOKIE_OVERHEAD = len(COOKIE_FMT % (0, '', '')) + len('expires=Xxx, xx XXX XXXX XX:XX:XX GMT; ') + 150  # 150=safety margin (e.g., in case browser uses 4000 instead of 4096)
 MAX_DATA_PER_COOKIE = MAX_COOKIE_LEN - COOKIE_OVERHEAD
+SESSION_COOKIE_KEY = "syndicatemsopenidsessioncookiekey"
 
 _tls = threading.local()
 
