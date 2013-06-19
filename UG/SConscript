@@ -17,6 +17,8 @@ syndicate_httpd_source = "syndicate-httpd.cpp"
 CPPPATH = """
    fs/
    #libsyndicate/
+   #build/out/protobufs/
+   /usr/include/syndicate
 """
 
 # add library paths here
