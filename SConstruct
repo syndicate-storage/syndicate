@@ -68,6 +68,7 @@ env.Depends( libsyndicate_source_paths, protobufs )  # libsyndicate requires pro
 if 'UG-shared' in COMMAND_LINE_TARGETS:
    ugshared_out = "build/out/UG-shared"
    ugshareds = SConscript( "UG-shared/SConscript", variant_dir=ugshared_out )
+   env.Depends( ugshareds, libsyndicate )
 
 # UG build
 ug_out = "build/out/UG"

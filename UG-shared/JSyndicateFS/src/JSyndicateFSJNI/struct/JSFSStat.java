@@ -1,5 +1,6 @@
 /*
  * Stat class for JSyndicateFS
+ * - This class is used between JNI layers
  */
 package JSyndicateFSJNI.struct;
 

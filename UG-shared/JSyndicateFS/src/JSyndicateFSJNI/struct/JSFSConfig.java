@@ -1,5 +1,6 @@
 /*
  * Configuration class for JSyndicateFS
+ * - This class is used between JNI layers
  */
 package JSyndicateFSJNI.struct;
 
@@ -137,4 +138,34 @@ public class JSFSConfig {
         this.portnum = portnum;
     }
     
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof JSFSConfig))
+            return false;
+        
+        JSFSConfig other = (JSFSConfig) o;
+        if(!this.config_file.equals(other.config_file))
+            return false;
+        if(!this.username.equals(other.username))
+            return false;
+        if(!this.password.equals(other.password))
+            return false;
+        if(!this.volume_name.equals(other.volume_name))
+            return false;
+        if(!this.volume_secret.equals(other.volume_secret))
+            return false;
+        if(!this.ms_url.equals(other.ms_url))
+            return false;
+        if(portnum != other.portnum)
+            return false;
+        
+        return true;
+    }
+    
+    @Override
+    public int hashCode() {
+        return this.config_file.hashCode() ^ this.username.hashCode() ^ this.password.hashCode()
+                ^ this.volume_name.hashCode() ^ this.volume_secret.hashCode() ^ this.ms_url.hashCode() 
+                ^ this.portnum;
+    }
 }
