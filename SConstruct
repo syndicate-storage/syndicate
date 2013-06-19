@@ -35,7 +35,7 @@ for key, value in ARGLIST:
 bin_install_dir = os.path.join( install_prefix, "bin" )
 lib_install_dir = os.path.join( install_prefix, "lib" )
 inc_install_dir = os.path.join( install_prefix, "include/syndicate" )
-conf_install_dir = "/etc/syndicate"
+conf_install_dir = os.path.join( install_prefix, "etc/syndicate" )
 
 # begin build
 env = Environment( 
