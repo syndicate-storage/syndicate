@@ -11,7 +11,7 @@ sys.path.append( os.path.join( os.getcwd(), "build/tools/" ) )
 import common
 
 # installation prefix
-install_prefix = "/usr/local"
+install_prefix = "/usr/"
 
 # default CPPPATH 
 CPPPATH = [
@@ -72,10 +72,12 @@ if 'UG-shared' in COMMAND_LINE_TARGETS:
 # UG build
 ug_out = "build/out/UG"
 ugs = SConscript( "UG/SConscript", variant_dir=ug_out )
+env.Depends( ugs, libsyndicate )
 
 # AG build
 ag_out = "build/out/AG"
 ags = SConscript( "AG/SConscript", variant_dir=ag_out )
+env.Depends( ags, libsyndicate )
 
 # ms build
 ms_out = "build/out/ms"
