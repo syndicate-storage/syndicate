@@ -35,6 +35,7 @@ for key, value in ARGLIST:
 bin_install_dir = os.path.join( install_prefix, "bin" )
 lib_install_dir = os.path.join( install_prefix, "lib" )
 inc_install_dir = os.path.join( install_prefix, "include/syndicate" )
+conf_install_dir = "/etc/syndicate"
 
 # begin build
 env = Environment( 
@@ -65,7 +66,7 @@ libsyndicate, libsyndicate_header_paths, libsyndicate_source_paths = SConscript(
 env.Depends( libsyndicate_source_paths, protobufs )  # libsyndicate requires protobufs to be built first
 
 # UG for shared library build
-if 'UG-shared' in COMMAND_LINE_TARGETS:
+if "UG-shared" in COMMAND_LINE_TARGETS:
    ugshared_out = "build/out/UG-shared"
    ugshareds = SConscript( "UG-shared/SConscript", variant_dir=ugshared_out )
    env.Depends( ugshareds, libsyndicate )
@@ -87,6 +88,8 @@ env.Depends( ms, protobuf_py_files )  # ms requires Python protobufs to be built
 
 # UG installation 
 common.install_targets( env, 'UG-install', bin_install_dir, ugs )
+env.Install( conf_install_dir, "conf/syndicate-UG.conf" )
+env.Alias("UG-install", conf_install_dir )
 
 # AG installation
 common.install_targets( env, 'AG-install', bin_install_dir, ags )
