@@ -13,6 +13,7 @@ import time
 
 from google.appengine.api import memcache
 from google.appengine.ext import db
+from django_syndicate_web.wsgi import application as django_app
 
 # Configurable cookie options
 COOKIE_NAME_PREFIX = "DgU"  # identifies a cookie as being one used by gae-sessions (so you can set cookies too)
@@ -469,7 +470,7 @@ class SessionMiddleware(object):
             for ch in _tls.current_session.make_cookie_headers():
                 headers.append(('Set-Cookie', ch))
             return start_response(status, headers, exc_info)
-
+        os.environ['DJANGO_SETTINGS_MODULE'] = 'django_syndicate_web.settings'
         # let the app do its thing
         return self.app(environ, my_start_response)
 
@@ -481,8 +482,9 @@ class DjangoSessionMiddleware(object):
     initialization method with parameters.
     """
     def __init__(self):
+
         fake_app = lambda environ, start_response: start_response
-        self.wrapped_wsgi_middleware = SessionMiddleware(fake_app, cookie_key='you MUST change this')
+        self.wrapped_wsgi_middleware = SessionMiddleware(fake_app, cookie_key=SESSION_COOKIE_KEY)
         self.response_handler = None
 
     def process_request(self, request):

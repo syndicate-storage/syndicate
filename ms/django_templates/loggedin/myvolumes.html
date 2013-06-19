@@ -1,8 +1,36 @@
-<html>
-  <head>
-    <h1> Volumes I own will be here! </h1>
-  </head>
-  <body>
+{% extends "base.html" %}
+{% block head %}
+    <h1> My Volumes </h1>
+{% endblock %}
+{% block mainbody %}
+    <table border>
+      <thead>
+	<th> Volume Name </th>
+	<th> Description </th>
+	<th> Users </th>
+	<th> Version </th>
+      </thead>
+      <tbody>
+
+	{% for v in vols %} 
+
+	<tr>
+          <td>{{v.name}}</td>
+	  <td>{{v.description}}</td>
+	  <td>List of users</td>
+	  <td>{{v.version}}</td>
+	</tr>
+
+	{% empty %}
+
+	<tr>
+	  <td colspan="4"> No volumes exist </td>
+	</tr>
+
+	{% endfor %}
+
+      </tbody>
+    </table>
+    <a href='{% url "django_home.views.createvolume" %}'>Create new volume</a>
     <a href='{% url "django_home.views.home" %}'>Back to home</a>
-  </body>
-</html>
+{% endblock %}

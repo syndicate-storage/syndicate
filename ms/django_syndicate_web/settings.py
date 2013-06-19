@@ -105,7 +105,7 @@ TEMPLATE_LOADERS = (
 
 MIDDLEWARE_CLASSES = (
     'google.appengine.ext.ndb.django_middleware.NdbDjangoMiddleware',
-    'gaesessions.DjangoSessionMiddleware',
+    'openid.gaesession.DjangoSessionMiddleware',
     'django.middleware.common.CommonMiddleware',
 #    'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

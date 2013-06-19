@@ -1,8 +1,13 @@
-<html>
-  <head>
+{% extends "base.html" %}
+{% block head %}
     <h1>This is the home page once logged in. </h1>
-  </head>
-  <body>
+{% endblock %}
+{% block mainbody %}
+    {% for s in session %}
+    <p>{{s}}</p>
+    {% empty %}
+    <p> aw man</p>
+    {% endfor %}
     <ul>
       <li><a href='{% url "django_home.views.myvolumes" %}'>Owned volumes.</a></li>
       <li><a href='{% url "django_home.views.allvolumes" %}'>Volumes participant in.</a></li>
@@ -11,5 +16,4 @@
       <br/>
       <li><a href='/accounts/logout'>This will be the logout page.</a></li>
     </ul>
-  </body>
-</html>
+{% endblock %}
