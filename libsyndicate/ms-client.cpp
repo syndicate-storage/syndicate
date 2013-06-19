@@ -873,7 +873,8 @@ int ms_client_sync_update( struct ms_client* client, char const* path ) {
       rc = ms_client_remove_update( client, path_hash, &update, &old_deadline );
    }
    else {
-      rc = -ENOENT;
+      ms_client_unlock( client );
+      return 0;
    }
 
    if( rc != 0 ) {
@@ -886,7 +887,7 @@ int ms_client_sync_update( struct ms_client* client, char const* path ) {
    memcpy( &(updates[ path_hash ]), &update, sizeof(struct md_update) );
    
    rc = ms_client_send_updates( client, &updates );
-   
+
    // if we failed, then put the updates back and try again later
    if( rc != 0 ) {
       ms_client_put_update( client->updates, client->deadlines, path_hash, &update, old_deadline );

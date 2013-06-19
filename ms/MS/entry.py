@@ -393,9 +393,9 @@ class MSEntry( storagetypes.Object ):
    @classmethod
    @storagetypes.concurrent
    def __read_msentry_base( cls, volume_id, fs_path, **ctx_opts ):
-      ent_key = make_key( MSEntry, MSEntry.make_key_name( volume_id=volume_id, fs_path=fs_path ) )
-      #ent = yield ent_key.get_async( **ctx_opts )
-      ent = storagetypes.concurrent_yield( ent_key.get_async( **ctx_opts ) )
+      ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id=volume_id, fs_path=fs_path ) )
+      ent = yield ent_key.get_async( **ctx_opts )
+      #ent = storagetypes.concurrent_yield( ent_key.get_async( **ctx_opts ) )
       #raise ndb.Return( ent )
       storagetypes.concurrent_return( ent )
 
@@ -404,8 +404,9 @@ class MSEntry( storagetypes.Object ):
    @storagetypes.concurrent
    def __read_msentry_shards( cls, volume_id, fs_path, num_shards, **ctx_opts ):
       shard_keys = MSEntry.get_shard_keys( num_shards, volume_id=volume_id, fs_path=fs_path )
+      shards = yield storagetypes.get_multi_async( shard_keys, **ctx_opts )
       #shards = yield ndb.get_multi_async( shard_keys, **ctx_opts )
-      shards = storagetypes.concurrent_yield( storagetypes.get_multi_async( shard_keys, **ctx_opts ) )
+      #shards = storagetypes.concurrent_yield( storagetypes.get_multi_async( shard_keys, **ctx_opts ) )
       #raise ndb.Return( shards )
       storagetypes.concurrent_return( shards )
 
@@ -413,7 +414,7 @@ class MSEntry( storagetypes.Object ):
    @storagetypes.concurrent
    def __read_msentry( cls, volume_id, fs_path, num_shards, **ctx_opts ):
       #ent, shards = yield __read_msentry_base( volume_id, fs_path, **ctx_opts ), __read_msentry_shards( volume_id, fs_path, num_shards, **ctx_opts )
-      ent, shards = storagetypes.concurrent_yield( __read_msentry_base( volume_id, fs_path, **ctx_opts ) ), storagetypes.concurrent_yield( __read_msentry_shards( volume_id, fs_path, num_shards, **ctx_opts ) )
+      ent, shards = yield __read_msentry_base( volume_id, fs_path, **ctx_opts ), __read_msentry_shards( volume_id, fs_path, num_shards, **ctx_opts )
       if ent != None:
          ent.populate_from_shards( shards )
 
@@ -467,6 +468,7 @@ class MSEntry( storagetypes.Object ):
 
    @classmethod
    def Create( cls, user_owner_id, volume, **ent_attrs ):
+
       # coerce volume_id
       ent_attrs['volume_id'] = volume.volume_id
       
@@ -481,6 +483,8 @@ class MSEntry( storagetypes.Object ):
       
       fs_path = ent_attrs['fs_path']
       volume_id = volume.volume_id
+
+      logging.info("create '%s'" % ent_attrs['fs_path'])
 
       # valid input
       invalid = MSEntry.validate_fields( ent_attrs )
@@ -582,7 +586,7 @@ class MSEntry( storagetypes.Object ):
    @classmethod
    def Update( cls, user_owner_id, volume, **ent_attrs ):
 
-      logging.info("update %s" % ent_attrs['fs_path'] )
+      logging.info("update '%s'" % ent_attrs['fs_path'] )
 
       # Update an MSEntry.
       # A file will be updated by at most one UG, so we don't need a transaction.
@@ -803,7 +807,7 @@ class MSEntry( storagetypes.Object ):
       @storagetypes.concurrent
       def __read_msentry_children_mapper( msentry ):
          #shards = yield __read_msentry_shards( msentry.volume_id, msentry.fs_path, volume.num_shards )
-         shards = storagetypes.concurrent_yield( MSEntry.__read_msentry_shards( msentry.volume_id, msentry.fs_path, volume.num_shards ) )
+         shards = yield MSEntry.__read_msentry_shards( msentry.volume_id, msentry.fs_path, volume.num_shards )
          
          #logging.info("shards of %s: %s" % (msentry.fs_path, shards))
          msentry.populate_from_shards( shards )

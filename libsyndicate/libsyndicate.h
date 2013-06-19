@@ -464,7 +464,7 @@ struct md_syndicate_conf {
 #define METADATA_UID_KEY            "METADATA_UID"
 
 #define SYNDICATEFS_XATTR_URL          "user.syndicate_url"
-#define CLIENT_DEFAULT_CONFIG          "/etc/syndicate/syndicate-client.conf"
+#define CLIENT_DEFAULT_CONFIG          "/usr/etc/syndicate/syndicate-UG.conf"
 
 // URL protocol prefix for local files
 #define SYNDICATEFS_LOCAL_PROTO     "file://"

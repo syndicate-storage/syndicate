@@ -16,11 +16,14 @@ syndicate_httpd_source = "syndicate-httpd.cpp"
 # add source file search paths here
 CPPPATH = """
    fs/
-   /usr/local/include/syndicate/
+   #libsyndicate/
+   #build/out/protobufs/
+   /usr/include/syndicate
 """
 
 # add library paths here
 LIBPATH = """
+   #build/out/libsyndicate/
 """
 
 # add libraries here
@@ -49,6 +52,7 @@ Import('env')
 env = env.Clone()
 
 env.Append(LIBS = Split(LIBS))
+env.Append(LIBPATH = Split(LIBPATH))
 env.Append(CPPPATH = Split(CPPPATH))
 env.Append(CPPFLAGS = Split(CPPFLAGS))
 env.Append(CPPDEFINES = CPPDEFINES)

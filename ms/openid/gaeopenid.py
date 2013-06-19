@@ -12,6 +12,8 @@ import cgi
 import urlparse
 import sys
 
+import traceback 
+
 def quoteattr(s):
     qs = cgi.escape(s, 1)
     return '"%s"' % (qs,)
@@ -93,6 +95,7 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
                self.notFound()
 
         except Exception, e:
+            logging.info("exception: %s" % traceback.format_exc() )
             self.response.status = 500
             self.response.headers['Content-type'] = 'text/plain'
             self.setSessionCookie()
