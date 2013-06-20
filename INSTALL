@@ -12,8 +12,23 @@ To install Syndicate on PlanetLab, you need to install the following (Fedora 12)
    protobuf
    protobuf-devel
    protobuf-compiler
+   
+Following packages are for Ubuntu(Debian):
+   libgnutls-dev
+   libssl-dev
+   libboost-dev
+   libxml2-dev
+   attr-dev
+   libcurl4-gnutls-dev
+   fuse
+   libfuse-dev
+   libgcrypt-dev
+   liburiparser-dev
+   libprotobuf-c0
+   libprotobuf-dev
+   protobuf-compiler
 
-You will also need a recent version of libmicrohttpd.  The one in Fedora 12's repositories is too old.  Version 0.9.27 should work.
+You will also need a recent version of libmicrohttpd.  The one in Fedora 12 and Ubuntu 12's repositories is too old.  Version 0.9.27 should work.
 
 To build Syndicate on PlanetLab, you need all of the above, as well as:
    git

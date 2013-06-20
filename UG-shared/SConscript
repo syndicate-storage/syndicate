@@ -31,4 +31,7 @@ env.Append(CPPFLAGS = Split(CPPFLAGS))
 # build jni
 jni = SConscript("jni/SConscript")
 
-Return( 'jni' )
+# build JSyndicateFS java package
+jsyndicatefs = SConscript("JSyndicateFS/SConscript")
+
+Return( 'jni jsyndicatefs' )
