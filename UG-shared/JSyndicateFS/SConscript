@@ -1,0 +1,19 @@
+# build JSyndicateFS package
+
+# add dnlibs
+import dnlibs
+
+# get our environment
+Import('env')
+env = env.Clone()
+
+# get current path
+CurPath = Dir('.').srcnode().abspath + "/"
+
+DependencyFile = CurPath + "dependencies.xml"
+LibraryPath = CurPath + "libs/"
+
+dnlibs.downloadDependencies(DependencyFile, LibraryPath)
+
+Return(  )
+
