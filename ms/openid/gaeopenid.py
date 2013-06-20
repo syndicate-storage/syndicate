@@ -61,6 +61,10 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
         session_cookie = '%s=%s;' % (gaesession.SESSION_COOKIE_KEY, sid)
         self.response.headers['Set-Cookie'] = session_cookie
 
+
+    def setRedirect(self, url):
+        self.response.status = 302
+        self.response.headers['Location'] = url
         
     def get(self):
         """Dispatching logic. There are two paths defined:
@@ -153,8 +157,7 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
                 return_to = self.buildURL( "process" )
                 if request.shouldSendRedirect():
                    redirect_url = request.redirectURL( trust_root, return_to, immediate=immediate )
-                   self.response.status = 302
-                   self.response.headers['Location'] = redirect_url
+                   self.setRedirect(redirect_url)
 
                 else:
                    #self.response.write("go back to %s" % (self.request.host_url + "/process") )
@@ -222,7 +225,10 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
                 # i-name registration expires and is bought by someone else.
                 message += ("  This is an i-name, and its persistent ID is %s"
                             % (cgi.escape(info.endpoint.canonicalID),))
-            
+            self.setRedirect('/syn/home')
+            return
+
+
         elif info.status == consumer.CANCEL:
             # cancelled
             message = 'Verification cancelled'

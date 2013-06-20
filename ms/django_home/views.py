@@ -1,7 +1,7 @@
 from django.http import HttpResponse, HttpResponseRedirect
 from django.template import Context, loader
 
-from openid.gaesession import *
+
 import forms
 
 from storage.storage import create_volume, create_user, create_user_gateway, create_msentry
