@@ -10,27 +10,27 @@ ADMINS = (
 
 MANAGERS = ADMINS
 
-
-if (os.getenv('SERVER_SOFTWARE', '').startswith('Google App Engine') or
-    os.getenv('SETTINGS_MODE') == 'prod'):
+DATABASES = {}
+#if (os.getenv('SERVER_SOFTWARE', '').startswith('Google App Engine') or
+#    os.getenv('SETTINGS_MODE') == 'prod'):
     # Running on production App Engine, so use a Google Cloud SQL database.
-    DATABASES = {
-        'default': {
-            'ENGINE': 'google.appengine.ext.django.backends.rdbms',
-            'INSTANCE': 'syndicate-web:syndicate',
-            'NAME': 'syndicate1',
-        }
-    }
-else:
+#    DATABASES = {
+#        'default': {
+#            'ENGINE': 'google.appengine.ext.django.backends.rdbms',
+#            'INSTANCE': 'syndicate-web:syndicate',
+#            'NAME': 'syndicate1',
+#        }
+#    }
+#else:
     # Running in development, so use a local MySQL database
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.mysql',
-            'USER': 'root',
-            'PASSWORD': 'toor',
-            'NAME': 'syndicate1',
-        }
-    }
+#    DATABASES = {
+#        'default': {
+#            'ENGINE': 'django.db.backends.mysql',
+#            'USER': 'root',
+#            'PASSWORD': 'toor',
+#            'NAME': 'syndicate1',
+#        }
+#    }
 
 # Hosts/domain names that are valid for this site; required if DEBUG is False
 # See https://docs.djangoproject.com/en/1.4/ref/settings/#allowed-hosts
@@ -61,7 +61,7 @@ USE_TZ = True
 
 # Absolute filesystem path to the directory that will hold user-uploaded files.
 # Example: "/home/media/media.lawrence.com/media/"
-MEDIA_ROOT = os.path.join(os.path.dirname(__file__), 'media').replace('\\','/')
+MEDIA_ROOT = os.path.join(os.path.dirname(__file__), '../django_media').replace('\\','/')
 
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a
 # trailing slash.
@@ -76,7 +76,7 @@ STATIC_ROOT = ''
 
 # URL prefix for static files.
 # Example: "http://media.lawrence.com/static/"
-STATIC_URL = '/static/'
+STATIC_URL = '/django_static/'
 
 # Additional locations of static files
 STATICFILES_DIRS = (
@@ -104,22 +104,24 @@ TEMPLATE_LOADERS = (
 )
 
 MIDDLEWARE_CLASSES = (
+    'google.appengine.ext.ndb.django_middleware.NdbDjangoMiddleware',
+    'openid.gaesession.DjangoSessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
+#    'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
+#    'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     # Uncomment the next line for simple clickjacking protection:
     # 'django.middleware.clickjacking.XFrameOptionsMiddleware',
 )
 
-ROOT_URLCONF = 'syndicatetestweb.urls'
+ROOT_URLCONF = 'django_syndicate_web.urls'
 
 # Python dotted path to the WSGI application used by Django's runserver.
-WSGI_APPLICATION = 'syndicatetestweb.wsgi.application'
+WSGI_APPLICATION = 'django_syndicate_web.wsgi.application'
 
 TEMPLATE_DIRS = (
-    os.path.join(os.path.dirname(__file__), 'templates').replace('\\','/'),
+    os.path.join(os.path.dirname(__file__), '../django_templates').replace('\\','/'),
 )
 
 INSTALLED_APPS = (
@@ -129,8 +131,8 @@ INSTALLED_APPS = (
     'django.contrib.sites',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'home',
-    'accounts',
+    'django_home',
+    'django_accounts',
     # Uncomment the next line to enable the admin:
     # 'django.contrib.admin',
     # Uncomment the next line to enable admin documentation:

@@ -1,9 +1,11 @@
 from django.conf.urls import patterns, include, url
 
-urlpatterns = patterns('',
-                       url(r'^$', 'home.views.home'),
-                       url(r'^allvolumes/+$', 'home.views.allvolumes'),
-                       url(r'^myvolumes/+$', 'home.views.myvolumes'),
-                       url(r'^settings/+$', 'home.views.settings'),
-                       url(r'^downloads/+$','home.views.downloads'),
+
+urlpatterns = patterns('django_home.views',
+                       url(r'^/?$', 'home'),
+                       url(r'^allvolumes/?$', 'allvolumes'),
+                       url(r'^myvolumes/?$', 'myvolumes'),
+                       url(r'^settings/?$', 'settings'),
+                       url(r'^downloads/?$','downloads'),
+                       url(r'^createvolume/?$', 'createvolume'),
 )

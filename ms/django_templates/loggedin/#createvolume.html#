@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block head %}
+<h1> Create new volume </h1>
+{% endblock %}
+
+{% block mainbody %}
+  <form action="/makevolume" method="post">{% csrf_token %}
+    {{ form.as_p }}
+    <input type="submit" value="Submit" />
+  </form>
+  <
+{% endblock %}

@@ -16,6 +16,16 @@ ms_files = Glob("*.yaml")
 # base files
 ms_files.extend( Glob("*.py") )
 
+# django application files
+ms_files.extend( Glob("django_home/*.py") )
+ms_files.extend( Glob("django_accounts/*.py") )
+ms_files.extend( Glob("django_syndicate_web/*.py") )
+
+# django templates
+ms_files.extend( Glob("django_templates/*") )
+ms_files.extend( Glob("django_templates/loggedin/*.html") )
+ms_files.extend( Glob("django_templates/accounts/*.html") )
+
 # googlepb files
 ms_files.extend( Glob("googlepb/*.py") )
 ms_files.extend( Glob("googlepb/protobuf/*.py") )
@@ -46,6 +56,7 @@ ms_files.extend( Glob("storage/backends/*.py") )
 # MS
 ms_files.extend( Glob("MS/*.py") )
 ms_files.extend( Glob("MS/methods/*.py") )
+
 
 cmds = []
 for pypb in protobuf_py_files:
