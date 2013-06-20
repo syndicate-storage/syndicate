@@ -4,10 +4,11 @@
 */
 
 #include "AG-disk.h"
+#include "libgateway.h"
 
 // server config 
 struct md_syndicate_conf CONF;
-
+ 
 // set of files we're exposing
 content_map DATA;
 
@@ -35,8 +36,8 @@ int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gatew
    mmsg->set_manifest_mtime_sec( ent->mtime_sec );
    mmsg->set_manifest_mtime_nsec( 0 );
 
-   uint64_t num_blocks = ent->size / CONF.blocking_factor;
-   if( ent->size % CONF.blocking_factor != 0 )
+   uint64_t num_blocks = ent->size / global_conf->blocking_factor;
+   if( ent->size % global_conf->blocking_factor != 0 )
       num_blocks++;
 
    Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
@@ -125,7 +126,7 @@ int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blockinfo* inf
    struct md_entry* ent = itr->second;
    
    info->set_progress( ms::ms_gateway_blockinfo::COMMITTED );     // ignored, but needs to be filled in
-   info->set_blocking_factor( CONF.blocking_factor );
+   info->set_blocking_factor( global_conf->blocking_factor );
    
    info->set_file_version( 1 );
    info->set_block_id( ctx->block_id );
@@ -142,7 +143,7 @@ int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blockinfo* inf
 // interpret an inbound GET request
 void* connect_dataset( struct gateway_context* replica_ctx ) {
 
-   errorf("%s", "INFO: connect_dataset\n"); 
+   errorf("%s", "INFO: connect_dataset\n");  
    // is this a request for a file block, or a manifest?
    char* file_path = NULL;
    int64_t file_version = 0;
@@ -208,9 +209,13 @@ void* connect_dataset( struct gateway_context* replica_ctx ) {
       replica_ctx->size = ctx->data_len;
    }
    else {
-      
+      cout<<">>>>>>>>>>>>>>>>>>>>> "<<ent->url<<endl;
+      if ( !global_conf->data_root || !ent->url) {
+         errorf( "Conf's data_root = %s and URL = %s\n", global_conf->data_root, ent->url );
+         return NULL;
+      }
       // request for local file
-      char* fp = md_fullpath( CONF.data_root, GET_PATH( ent->url ), NULL );
+      char* fp = md_fullpath( global_conf->data_root, GET_PATH( ent->url ), NULL );
       ctx->fd = open( fp, O_RDONLY );
       if( ctx->fd < 0 ) {
          rc = -errno;
@@ -224,7 +229,7 @@ void* connect_dataset( struct gateway_context* replica_ctx ) {
          free( fp );
 
          // set up for reading
-         off_t offset = CONF.blocking_factor * block_id;
+         off_t offset = global_conf->blocking_factor * block_id;
          rc = lseek( ctx->fd, offset, SEEK_SET );
          if( rc != 0 ) {
             rc = -errno;
@@ -239,7 +244,7 @@ void* connect_dataset( struct gateway_context* replica_ctx ) {
       ctx->num_read = 0;
       ctx->block_id = block_id;
       ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
-      replica_ctx->size = CONF.blocking_factor;
+      replica_ctx->size = global_conf->blocking_factor;
    }
 
    ctx->file_path = file_path;
@@ -285,6 +290,8 @@ static int publish(const char *fpath, const struct stat *sb,
     int i = 0;
     struct md_entry* ment = new struct md_entry;
     size_t len = strlen(fpath);
+    size_t local_proto_len = strlen( SYNDICATEFS_LOCAL_PROTO ); 
+    size_t url_len = local_proto_len + len;
     if ( len < datapath_len ) { 
 	pfunc_exit_code = -EINVAL;
 	return -EINVAL;
@@ -293,11 +300,18 @@ static int publish(const char *fpath, const struct stat *sb,
 	pfunc_exit_code = 0;
 	return 0;
     }
+    //Set volume path
     size_t path_len = ( len - datapath_len ) + 1; 
     ment->path = (char*)malloc( path_len );
-    memset(ment->path, 0, path_len);
-    strncpy(ment->path, fpath + datapath_len, path_len);
-    ment->url = mc->conf->content_url;
+    memset( ment->path, 0, path_len );
+    strncpy( ment->path, fpath + datapath_len, path_len );
+
+    //Set primary replica 
+    ment->url = ( char* )malloc( url_len + 1);
+    memset( ment->url, 0, url_len + 1 );
+    strncat( ment->url, SYNDICATEFS_LOCAL_PROTO, local_proto_len );
+    strncat( ment->url + local_proto_len, fpath, len );
+
     ment->url_replicas = mc->conf->replica_urls;
     ment->local_path = NULL;
     ment->ctime_sec = sb->st_ctime;
@@ -333,7 +347,8 @@ static int publish(const char *fpath, const struct stat *sb,
 	default:
 	    break;
     }
-    delete ment;
+    DATA[ment->path] = ment;
+    //delete ment;
     pfunc_exit_code = 0;
     return 0;  
 }
