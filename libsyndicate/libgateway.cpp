@@ -806,6 +806,10 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    int rc = 0;
    char* config_file = strdup( GATEWAY_DEFAULT_CONFIG );
 
+   //Initialize global config struct
+   global_conf = ( struct md_syndicate_conf* )
+		malloc( sizeof ( struct md_syndicate_conf ) );
+
    // process command-line options
    bool make_daemon = true;
    char* logfile = NULL;
@@ -911,29 +915,31 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    }
 
    // set up Syndicate
-   struct md_syndicate_conf conf;
    struct ms_client client;
    struct md_user_entry** users = NULL;
+   struct md_syndicate_conf conf;
    
-   rc = md_init( gateway_type, config_file, &conf, &client, &users, -1, metadata_url, volume_name, volume_secret, username, password );
+   rc = md_init( gateway_type, config_file, &conf, &client, &users, portnum, metadata_url, volume_name, volume_secret, username, password );
    if( rc != 0 ) {
       exit(1);
    }
 
-   if (!pub_mode) {
-       if( (rc = start_gateway_service( &conf, &client, users, logfile, pidfile, make_daemon )) ) {
-	   errorf( "start_gateway_service rc = %d\n", rc);	
-       }
-   }
-   else {
+   // copy conf to global_conf
+   memcpy( global_conf, &conf, sizeof( struct md_syndicate_conf ) );
+
+   if (pub_mode) {
        if ( publish_callback ) {
 	   if ( ( rc = publish_callback( NULL, &client, dataset ) ) !=0 )
 	       errorf("publish_callback rc = %d\n", rc);
        }
-       else
+       else {
 	   errorf("%s\n", "AG Publisher mode is not implemented...");
-       exit(1);
+           exit(1);
+       }
    }
+   if ( (rc = start_gateway_service( &conf, &client, users, logfile, pidfile, make_daemon )) ) {
+       errorf( "start_gateway_service rc = %d\n", rc);	
+   } 
 
    return 0;
 }

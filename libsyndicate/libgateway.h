@@ -11,6 +11,8 @@
 #include <getopt.h>
 #include <ftw.h>
 
+struct md_syndicate_conf *global_conf = NULL;
+
 struct gateway_context {
    char const* url_path;
    char const* hostname;
@@ -63,3 +65,4 @@ END_EXTERN_C
 #define GATEWAY_DEFAULT_CONFIG "/etc/syndicate/syndicate-gateway-server.conf"
 
 #endif
+
