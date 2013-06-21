@@ -21,12 +21,23 @@ public class Configuration {
     private URI msURL;
     private JSFSConfig nativeConfig;
     
+    // unlimited size
+    public static final int MAX_METADATA_CACHE_SIZE = 0;
+    // no timeout
+    public static final int CACHE_TIMEOUT_SECOND = 0;
+    
+    private int maxMetadataCacheSize;
+    private int cacheTimeoutSecond;
+    
     public Configuration() {
         this.nativeConfig = new JSFSConfig();
         
         // set default
         this.configFile = new File(JSFSConfig.DEFAULT_CONFIG_FILE_PATH);
         this.nativeConfig.setConfig_file(this.configFile.getAbsolutePath());
+        
+        this.maxMetadataCacheSize = MAX_METADATA_CACHE_SIZE;
+        this.cacheTimeoutSecond = CACHE_TIMEOUT_SECOND;
     }
     
     public File getConfigFile() {
@@ -106,6 +117,28 @@ public class Configuration {
             throw new IllegalAccessException("Can not modify the locked object");
         
         this.nativeConfig.setPortnum(port);
+    }
+    
+    public int getMaxMetadataCacheSize() {
+        return this.maxMetadataCacheSize;
+    }
+    
+    public void setMaxMetadataCacheSize(int max) throws IllegalAccessException {
+        if(this.lock)
+            throw new IllegalAccessException("Can not modify the locked object");
+        
+        this.maxMetadataCacheSize = max;
+    }
+    
+    public int getCacheTimeoutSecond() {
+        return this.cacheTimeoutSecond;
+    }
+    
+    public void setCacheTimeoutSecond(int timeoutSecond) throws IllegalAccessException {
+        if(this.lock)
+            throw new IllegalAccessException("Can not modify the locked object");
+        
+        this.cacheTimeoutSecond = timeoutSecond;
     }
     
     public void lock() {

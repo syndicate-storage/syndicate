@@ -14,18 +14,18 @@ import java.util.Map;
  */
 public class TimeoutCache<tk, tv> implements ICache<tk, tv> {
     
-    private int maxCacheNumber;
+    private int maxCacheSize;
     private int timeoutSeconds;
     
     private Map<tk, CacheObject<tk, tv>> cache = new Hashtable<tk, CacheObject<tk, tv>>();
     
-    public TimeoutCache(int maxCacheNumber, int timeoutSeconds) {
-        if(maxCacheNumber < 0)
-            maxCacheNumber = 0;
+    public TimeoutCache(int maxCacheSize, int timeoutSeconds) {
+        if(maxCacheSize < 0)
+            maxCacheSize = 0;
         if(timeoutSeconds < 0)
             timeoutSeconds = 0;
         
-        this.maxCacheNumber = maxCacheNumber;
+        this.maxCacheSize = maxCacheSize;
         this.timeoutSeconds = timeoutSeconds;
     }
     
@@ -98,9 +98,14 @@ public class TimeoutCache<tk, tv> implements ICache<tk, tv> {
     public synchronized void insert(tk key, tv value) {
         CacheObject<tk, tv> pair = new CacheObject<tk, tv>(key, value);
         
-        if(this.maxCacheNumber > 0 &&
-                this.cache.size() >= this.maxCacheNumber) {
-            makeEmptySlot();
+        CacheObject co = this.cache.get(key);
+        if(co == null) {
+            if(this.maxCacheSize > 0 &&
+                    this.cache.size() >= this.maxCacheSize) {
+                makeEmptySlot();
+            }
+        } else {
+            this.cache.remove(key);
         }
         
         this.cache.put(key, pair);
