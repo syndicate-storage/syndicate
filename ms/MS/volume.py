@@ -20,6 +20,7 @@ import errno
 import time
 import datetime
 import random
+import string
 
 VOLUME_SECRET_LENGTH = 256
 VOLUME_SECRET_SALT_LENGTH = 256
@@ -64,13 +65,12 @@ class Volume( storagetypes.Object ):
       return h.hexdigest()
       
    @classmethod
-   def generate_volume_secret( cls ):
+   def generate_volume_secret( cls, secret ):
       
-      secret = os.urandom( VOLUME_SECRET_LENGTH )
-      salt = os.urandom( VOLUME_SECRET_SALT_LENGTH )
+      salt = digits = "".join( [random.choice(string.printable) for i in xrange(VOLUME_SECRET_SALT_LENGTH)] )
       secret_salted_hash = Volume.generate_password_hash( secret, salt )
 
-      return (secret, secret_salted_hash, salt)
+      return (salt, secret_salted_hash)
       
    
    required_attrs = [
@@ -86,10 +86,11 @@ class Volume( storagetypes.Object ):
    ]
 
    validators = {
-      "name": (lambda cls, value: len( value.translate(None, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.@") ) == 0 )
+      "name": (lambda cls, value: len( value.translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.@")) ) == 0 )
    }
 
    default_values = {
+      "blocksize": (lambda cls, attrs: 61440), # 60 KB
       "version": (lambda cls, attrs: 1)
    }
    
@@ -151,26 +152,27 @@ class Volume( storagetypes.Object ):
          blocksize: int
          description: str
          volume_secret: str
-         volume_secret_salt: strs
       """
 
       kwargs['owner_id'] = user.owner_id
-
       Volume.fill_defaults( kwargs )
 
-      # get or generate credentials
-      volume_secret = kwargs.get("volume_secret")
-      volume_secret_salted_hash = None
-      volume_secret_salt = kwargs.get("volume_secret_salt")
 
-      if volume_secret == None or volume_secret_salt == None:
-         volume_secret, volume_secret_salted_hash, volume_salt = Volume.generate_volume_secret()
+
+      # Get or finalize credentials
+      volume_secret = kwargs.get("volume_secret")
+
+      if volume_secret == None:
+         raise Exception( "No password given")
+
       else:
-         volume_secret_salted_hash = Volume.generate_password_hash( volume_secret, volume_secret_salt )
+         volume_secret_salt, volume_secret_salted_hash = Volume.generate_volume_secret(volume_secret)
 
       kwargs['volume_secret_salt'] = volume_secret_salt
       kwargs['volume_secret_salted_hash'] = volume_secret_salted_hash
 
+
+      # Validate
       missing = Volume.find_missing_attrs( kwargs )
       if len(missing) != 0:
          raise Exception( "Missing attributes: %s" % (", ".join( missing )))
@@ -178,6 +180,8 @@ class Volume( storagetypes.Object ):
       invalid = Volume.validate_fields( kwargs )
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
+
+
 
       name = kwargs.get( "name" )
       blocksize = kwargs.get( "blocksize" )

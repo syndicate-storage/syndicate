@@ -1,0 +1,22 @@
+from django.http import HttpResponseRedirect
+import storage.storage as db
+
+def authenticate(f):
+
+    def wrapper(*args, **kwargs):
+        session = args[0].session
+        if 'authenticated' in session:
+            if 'user_key' in session:
+                return f(*args, **kw)
+            user = db.read_user(session['login_email'])
+            if user is None:
+                kwargs = {}
+                kwargs['email'] = session['login_email']
+                kwargs['openid_url'] = session['openid_url']
+                user = db.create_user(**kwargs)
+            session['user_key'] = user
+            return f(*args, **kw)
+        else:
+            return HttpResponseRedirect('/')
+
+    return wrapper

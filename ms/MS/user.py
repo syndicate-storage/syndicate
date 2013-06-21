@@ -71,7 +71,8 @@ class SyndicateUser( storagetypes.Object ):
    
    required_attrs = [
       "email",
-      "openid_url"
+      "openid_url",
+      "volumes"
    ]
 
    key_attrs = [
@@ -93,8 +94,8 @@ class SyndicateUser( storagetypes.Object ):
       Given user data, store it.
 
       kwargs:
-         owenr_id: int
          email: str
+         Open_ID_url: str
       """
 
       SyndicateUser.fill_defaults( kwargs )
@@ -127,7 +128,8 @@ class SyndicateUser( storagetypes.Object ):
          user = SyndicateUser(key=user_key,
                               owner_id=uid_counter.value,
                               email=email,
-                              openid_url=openid_url )
+                              openid_url=openid_url,
+                              volumes=[0])
 
 
          user_future = user.put_async()

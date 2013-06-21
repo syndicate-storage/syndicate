@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block head %}
+<h1> Create new volume </h1>
+{% endblock %}
+
+{% block mainbody %}
+  <p class="error">{{ message }}</p><br>
+  <form action='{% url "django_home.views.createvolume" %}' method="post">{% csrf_token %}
+    <table class="createvolume" border>
+      {{ form.as_table }}
+    </table>
+    <input class="submit" type="submit" value="Submit" />
+  </form>
+  {% endblock %}
+  {% block footer %}
+  <a href='{% url "django_home.views.home" %}'>Back to home</a>
+{% endblock %}
