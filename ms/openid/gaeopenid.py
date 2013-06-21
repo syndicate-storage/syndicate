@@ -117,7 +117,8 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
             self.render('Enter your OpenID Identifier',
                         css_class='error', form_contents=openid_url)
             return
-
+        session = self.getSession()
+        session['login_email'] = self.query.get('openid_username')
         immediate = 'immediate' in self.query
         use_sreg = 'use_sreg' in self.query
         use_pape = 'use_pape' in self.query
@@ -215,6 +216,10 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
             fmt = "Successfully verified %s as identity."
             message = fmt % (cgi.escape(display_identifier),)
 
+            session = self.getSession()
+            session['openid_url']=cgi.escape(display_identifier)
+            session['authenticated'] = True
+
             css_class = 'alert'
             sreg_resp = sreg.SRegResponse.fromSuccessResponse(info)
             pape_resp = pape.Response.fromSuccessResponse(info)
@@ -225,7 +230,15 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
                 # i-name registration expires and is bought by someone else.
                 message += ("  This is an i-name, and its persistent ID is %s"
                             % (cgi.escape(info.endpoint.canonicalID),))
+            sreg_list = sreg_resp.items()
+            for k, v in sreg_list:
+                field_name = str(sreg.data_fields.get(k, k))
+                value = cgi.escape(v.encode('UTF-8'))
+                session[field_name] = value
+
+
             self.setRedirect('/syn/home')
+            session.regenerate_id()
             return
 
 
@@ -412,7 +425,7 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
         <input type="text" name="openid_username" value=%s />
         <input type="submit" value="Verify" /><br />
         <input type="checkbox" name="immediate" id="immediate" /><label for="immediate">Use immediate mode</label>
-        <input type="checkbox" name="use_sreg" id="use_sreg" /><label for="use_sreg">Request registration data</label>
+        <input type="checkbox" name="use_sreg" id="use_sreg" checked /><label for="use_sreg">Request registration data</label>
         <input type="checkbox" name="use_pape" id="use_pape" /><label for="use_pape">Request phishing-resistent auth policy (PAPE)</label>
         <input type="checkbox" name="use_stateless" id="use_stateless" /><label for="use_stateless">Use stateless mode</label>
       </form>

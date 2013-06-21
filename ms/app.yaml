@@ -13,9 +13,12 @@ builtins:
 - deferred: on
 
 handlers:
-#- url: /syn.*
-#  script: django_syndicate_web.wsgi.application
-#  secure: always
+- url: /django_static
+  static_dir: django_static
+
+- url: /syn.*
+  script: django_syndicate_web.wsgi.application
+  secure: always
 
 - url: .*
   script: ms.app

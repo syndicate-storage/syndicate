@@ -3,11 +3,35 @@
 <head>
   <meta charset="utf-8" />
   <title>{% block title %} Syndicate {% endblock %}</title>
-  {% block head %}
+  {% block header %}
+    {% load staticfiles %}
+    <link rel="stylesheet" type="text/css" href='{% static "main.css" %}'>
   {% endblock %}
 </head>
+
 <body>
-  {% block mainbody %}
+  {% block navbar %}
+    <div class="navbar" style="margin:0px;padding:10px;background-color:#000066;color:ivory;">
+      <div>
+      <p style="font-size:115%;text-align:left">Syndicate<span style="color:white;font-size:80%;"> {{username}}</span></p>
+      </div>
+    </div>
   {% endblock %}
+
+  <div class="head">
+    {% block head %}
+    {% endblock %}
+  </div>
+
+  <div class="mainbody">
+    {% block mainbody %}
+    {% endblock %}
+  </div>
+
+  <div class="footer">
+    {% block footer %}
+    {% endblock %}
+  </div>
+
 </body>
 </html>

@@ -1,34 +1,19 @@
-This is the collection of files for the Syndicate front-end, using Django non-rel
-and Google App Engine.
+This is the collection of files for the Syndicate front-end, using Django and webpp2 inside Google App Engine.
 
 Author: John Whelchel
-Date: 5/28/13
-
-Notes:
-
-The root directory for the django project is synweb/. It contains the installed
-app synweb, along with other django specfic auto-created code. It also contains
-the django non-rel specific code per: www.allbuttonspressed.com/projects/djangoappengine
-
-Django SuperUser=syndicate/planetlab
-
-5/29 Goals:
-Plan database set-up, reset models (dump DB)
-set up simple login first (i.e. we just store username and hashed/salted passwords)
-Lay-out views/urls for basic site-map structure
-if possible, get deployed and not just on dev-server
-
-
-For more info on OpenID and just using planetlab:
-http://bazaar.launchpad.net/~django-openid-auth/django-openid-auth/trunk/view/head:/README.txt
-
-
+Date: 5/28/13 - 6/20/13
 
 To-do:
+-SEt a max value for blocksize in django_home/forms.py
+-Fix the permissions in the viewvolume in django_home...
+-Make website front-facing...
+-Internal validation in MS/ for create_user and create_volume (i.e. length and what charactesr are allowed). 
+-Secret key for gae_sessions django. 
+-Figure out how to gracefully handle errors on form entry pages for creating things. 
+-And for wonky usernames in emails possibly.
+-Implement list-all methods
 
-Update the app.yaml file to match our app (also possibly other .yamls)
-see f.souza.cc/2010/08/flying...
+Notes:
+	The ms/ subdirectory contains essentially a webapp2 and django app combined under the auspice of GAE. GAE routes via app.yaml anything with the URI prefix '/syn' to the Django WSGI and everything else to MS. '/' handles login etc, and then routes to '/syn/home'. All django files are contained in the various directories prefixed django. 'django_syndicate_web' is the main project app. 'django_home' contains most of the views. Templates and media are self-explanatory.
 
-Questions:
-
-Should the *.yaml files be in synweb/ or synweb/synweb?
+Django SuperUser=syndicate/planetlab
