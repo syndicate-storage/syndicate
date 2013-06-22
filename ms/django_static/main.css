@@ -1,0 +1,130 @@
+* {
+    margin:0px;
+    padding:0px;
+}
+html {
+    font-family:"Lucida Sans Unicode", "Lucida Grande", sans-serif;
+    background-color:ivory;
+    font-color:"#000033"
+    }
+
+h1 {
+    text-align:center
+}
+
+div.box {
+    margin: 1px;
+    padding: 8px;
+    border: 2px;
+    border-style: solid;
+    border-color: "#000033";
+    background-color:white;
+}
+
+div.head {
+    margin: 10px;
+}
+
+div.mainbody {
+    width:100%;
+    margin: 10px;
+}
+
+div.leftbox {
+    width:13%;
+    position:relative;
+    float:left;
+    margin-left:12px;
+}
+
+div.rightbox {
+    width:79%;
+    position:relative;
+    float:right;
+    margin-right:12px;
+}
+
+div.wrapper {
+    width:85%;
+    float:left;
+    position:relative;
+    clear:both;
+}
+
+div.footer {
+    text-align:center;
+}
+
+ul {
+    list-style-type:none;
+}
+
+p {
+    text-indent: 5em;
+}
+
+p.error {
+    text-align:center;
+}
+
+span.helptext {
+    font-size:70%;
+    text-align:center;
+    padding:3px;
+}
+
+input {
+    margin: 5px auto;
+}
+
+input.submit {
+
+}
+
+table {
+    background-color:white;
+}
+
+table.volume {
+    margin-left:auto;
+    margin-right:auto;
+}
+
+table.volume th {
+    vertical-align:top;
+    padding:10px;
+}
+
+table.volume td {
+    padding:5px;
+}
+
+table.createvolume {
+    margin-left:auto;
+    margin-right:auto;
+}
+
+table.createvolume th {
+    vertical-align:top;
+    padding:10px;
+}
+
+.navbar {
+    background-color: "#000066";
+    font-color: ivory;
+}
+
+.leftnavbar {
+    float: left;
+}
+
+.rightnavbar {
+    font-size: 50%;
+    float: right;
+}
+
+.error {
+    color: red;
+    font-style:italic;
+    font-size:80%;
+}

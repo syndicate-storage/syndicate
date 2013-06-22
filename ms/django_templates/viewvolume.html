@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block head %}
+    <h1> Volume: {{volume.name}} <span style="font-style:italic;font-size:80%;">(Version {{volume.version}})</span></h1>
+{% endblock %}
+{% block mainbody %}
+    <div class="box">
+      <p> Volume is {% if volume.active = True %}active. {% else %}inactive.{% endif %}</p>
+      <p> Block size: {{volume.blocksize}}</p>
+      <br/>
+      <h3>{{volume.description}}</h3>
+    </div>
+    <hr/>
+    <div id="volume_actions">
+      <h5>Volume Settings</h5>
+      <ul>
+	<li>Permissions</li>
+	<li>Activate/Disable</li>
+	<li>Delete</li>
+      </ul>
+      {% endblock %}
+      {% block footer %}
+    <a href='{% url "django_home.views.myvolumes" %}'>My Volumes</a>
+    <a href='{% url "django_home.views.home" %}'>Home</a>
+    {% endblock %}
+
