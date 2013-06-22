@@ -116,7 +116,23 @@ ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* u
 // get metadata for a dataset
 int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blockinfo* info, void* usercls ) {
    errorf("%s","INFO: metadata_dataset\n"); 
-   content_map::iterator itr = DATA.find( string(dat->url_path) );
+   char* file_path = NULL;
+   int64_t file_version = 0;
+   uint64_t block_id = 0;
+   int64_t block_version = 0;
+   struct timespec manifest_timestamp;
+   manifest_timestamp.tv_sec = 0;
+   manifest_timestamp.tv_nsec = 0;
+   bool staging = false;
+
+   int rc = md_HTTP_parse_url_path( (char*)dat->url_path, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
+   if( rc != 0 ) {
+      errorf( "failed to parse '%s', rc = %d\n", dat->url_path, rc );
+      free( file_path );
+      return -EINVAL;
+   }
+
+   content_map::iterator itr = DATA.find( string(file_path) );
    if( itr == DATA.end() ) {
       // not here
       return -ENOENT;
@@ -209,7 +225,6 @@ void* connect_dataset( struct gateway_context* replica_ctx ) {
       replica_ctx->size = ctx->data_len;
    }
    else {
-      cout<<">>>>>>>>>>>>>>>>>>>>> "<<ent->url<<endl;
       if ( !global_conf->data_root || !ent->url) {
          errorf( "Conf's data_root = %s and URL = %s\n", global_conf->data_root, ent->url );
          return NULL;
@@ -244,7 +259,7 @@ void* connect_dataset( struct gateway_context* replica_ctx ) {
       ctx->num_read = 0;
       ctx->block_id = block_id;
       ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
-      replica_ctx->size = global_conf->blocking_factor;
+      replica_ctx->size = ent->size;
    }
 
    ctx->file_path = file_path;
