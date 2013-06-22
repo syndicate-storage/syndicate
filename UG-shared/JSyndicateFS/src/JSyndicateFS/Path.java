@@ -176,7 +176,7 @@ public class Path implements Comparable {
     }
     
     /*
-     * Return the stringfied path 
+     * Return the stringfied path that contains scheme, authority and path
      */
     @Override
     public String toString() {
@@ -190,6 +190,20 @@ public class Path implements Comparable {
             sb.append("//");
             sb.append(uri.getAuthority());
         }
+        if (uri.getPath() != null) {
+            String path = uri.getPath();
+            sb.append(path);
+        }
+        
+        return sb.toString();
+    }
+    
+    /*
+     * Return the stringfied path that does not contains scheme and authority
+     */
+    public String getPath() {
+        StringBuilder sb = new StringBuilder();
+        
         if (uri.getPath() != null) {
             String path = uri.getPath();
             sb.append(path);
