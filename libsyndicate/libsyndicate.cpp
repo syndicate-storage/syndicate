@@ -615,6 +615,10 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          _transfer_timeout = conf->transfer_timeout;
       }
 
+      else if( strcmp( key, AG_GATEWAY_DRIVER_KEY ) == 0 ) {
+         conf->ag_driver = strdup(values[0]);
+      }
+
       else {
          errorf( "WARN: unrecognized key '%s'\n", key );
       }
@@ -3566,6 +3570,7 @@ int md_init( int gateway_type,
              char const* volume_secret,
              char const* md_username,
              char const* md_password ) {
+
 
    util_init();
    md_default_conf( conf );

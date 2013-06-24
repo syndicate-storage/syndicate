@@ -386,6 +386,7 @@ struct md_syndicate_conf {
    char* mountpoint;                                  // absolute path to the place where the metadata server is mounted
    char* hostname;                                    // what's our hostname?
    uint64_t volume_version;                           // version of the volume state
+   char* ag_driver;				      // AG gatway driver that encompasses gateway callbacks
 };
 
 
@@ -465,6 +466,7 @@ struct md_syndicate_conf {
 
 #define SYNDICATEFS_XATTR_URL          "user.syndicate_url"
 #define CLIENT_DEFAULT_CONFIG          "/usr/etc/syndicate/syndicate-UG.conf"
+#define AG_GATEWAY_DRIVER_KEY	    "AG_GATEWAY_DRIVER"
 
 // URL protocol prefix for local files
 #define SYNDICATEFS_LOCAL_PROTO     "file://"
