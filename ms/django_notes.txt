@@ -4,6 +4,15 @@ Author: John Whelchel
 Date: 5/28/13 - 6/20/13
 
 To-do:
+- Convert all volume URL variables to volume_name
+- Create volume app to organize code better
+- Check to see if cache is messing up active/inactive check (google ndb cache) then move to other volume settings and possibly user settings
+- Should activate/deactivate require password?
+- Should volumes be public/private?
+- Transaction-ify createvolume due to usermodficiations
+- Get rid of django stupid error messages, or just modify css to fix them and get rid of mine.
+- Create a thanks page post-creation/deletion/activation to give datastore time, have links to home and myvolumes etc.
+- Authenticate doesn't seem to be working perfectly when stopping/starting server and going straight to random pages (try myvolumes)
 -SEt a max value for blocksize in django_home/forms.py
 -Fix the permissions in the viewvolume in django_home...
 -Make website front-facing...

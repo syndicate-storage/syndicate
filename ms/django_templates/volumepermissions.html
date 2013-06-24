@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block head %}
+    <h1>{{volume.name}} Permissions </h1>
+{% endblock %}
+{% block mainbody %}
+
+        <form id='formset' action='{% url django_home.views.volumepermissions volume.name %}' method="post">{% csrf_token %}
+	  <table class="permissions" border>
+	    {% for form in formset %}
+            {% if forloop.first %}
+            <thead>
+	      <tr>
+		{% for field in form.visible_fields %}
+		<th>{{ field.label|capfirst }}</th>
+		{% endfor %}
+	      </tr>
+	    </thead>
+	    {% endif %}
+	    <tr class="{{ forloop.counter }}">
+	      {% for field in form.visible_fields %}
+	      {% if forloop.first %}
+	      <td class="firstfield">{{ field }}</td>
+	      {% else %}
+	      <td>{{ field }}</td>
+	      {% endif %}
+	      {% endfor %}
+	    </tr>
+	    {% endfor %}
+	  </table>
+	  <br/>
+	  <h4> Add new volume user </h4>
+	  <table class="addpermissions" border>
+	    {{ addform.as_table }}
+	  </table>
+	  {{ passwordform.as_ul }}
+	  <input class="submit" type="submit" value="Submit" />
+	</form>
+    {% endblock %}
+    {% block footer %}
+    <a  href='{% url django_home.views.createvolume %}'>Create new volume</a>
+    <a  href='{% url django_home.views.home %}'>Back to home</a>
+    {% endblock %}

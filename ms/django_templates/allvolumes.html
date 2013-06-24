@@ -15,7 +15,7 @@
       <tbody>
 	{% for v, owner in vols %} 
 	<tr>
-          <td><a href='{% url "django_home.views.viewvolume" v.volume_id %}'>{{v.name}}</a></td>
+          <td><a href='{% url django_home.views.viewvolume v.name %}'>{{v.name}}</a></td>
 	  <td>{{v.description}}</td>
 	  <td>{{owner.email}}</td>
 	  <td>{% if v.active == True %}Yes{% else %}No{% endif %}</td>
@@ -32,6 +32,6 @@
     </table>
     {% endblock %}
     {% block footer %}
-  <a href='{% url "django_home.views.createvolume" %}'>Create new volume</a>
-  <a href='{% url "django_home.views.home" %}'>Home</
+  <a href='{% url django_home.views.createvolume %}'>Create new volume</a>
+  <a href='{% url django_home.views.home %}'>Home</
   {% endblock %}

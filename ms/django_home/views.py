@@ -1,5 +1,6 @@
 from django.http import HttpResponse, HttpResponseRedirect
 from django.template import Context, loader, RequestContext
+from django.forms.formsets import formset_factory
 
 from django_lib.auth import authenticate
 import django_home.forms as forms
@@ -31,6 +32,7 @@ def logout(request):
 def allvolumes(request):
     session = request.session
     username = session['login_email']
+    # all queries to be replaced with db.list_all()
     volumes = Volume.query()
     owners = []
     for v in volumes:
@@ -48,42 +50,91 @@ def myvolumes(request):
     session = request.session
     username = session['login_email']
     user = db.read_user(username)
-    vols = Volume.query()
-    vols = vols.filter(Volume.owner_id == user.owner_id)
+    myvols = []
+    for v_id in user.volumes_o:
+        q = Volume.query(Volume.volume_id == v_id)
+        for v in q: # should be one
+            myvols.append(v)
     t = loader.get_template('myvolumes.html')
-    c = Context({'username':username, 'vols':vols})
+    c = Context({'username':username, 'vols':myvols})
     return HttpResponse(t.render(c))
 
-# This view currently doesn't check to see if you
-# are an owner because update_user isn't ready in createvolume views.
 @authenticate
-def viewvolume(request, volume_id):
+def volumepermissions(request, volume_name):
+    session = request.session
+    username = session['login_email']
+#    user = db.read_user(username)
+    vol = db.read_volume(volume_name)
+
+    if request.method == "POST":
+        pass
+
+    users = User.query()
+    rw = User.query(User.volumes_rw==vol.volume_id)
+    r = User.query(User.volumes_r==vol.volume_id)
+#    for u in users:
+#        if vol.volume_id in u.volumes_rw:
+#            rw.append(u)
+#        elif vol.volume_id in u.volumes_r:
+#            r.append(u)
+
+    initial_data = []
+    for u in rw:
+        initial_data.append( {'user':u.email,
+                             'read':True,
+                             'write':True} )
+    for u in r:
+        initial_data.append( {'user':u.email,
+                              'read':True,
+                              'write':False} )
+
+    PermissionFormSet = formset_factory(forms.Permissions, extra=0)
+    addform = forms.AddPermissions
+    passwordform = forms.Password
+    formset = PermissionFormSet(initial=initial_data)
+
+    
+    t = loader.get_template('volumepermissions.html')
+    c = RequestContext(request,
+                       {'username':username,
+                        'volume':vol,
+#                        'users':users,
+#                        'rw':rw,
+#                        'r':r,
+                        'addform':addform,
+                        'passwordform':passwordform,
+                        'formset':formset} )
+    return HttpResponse(t.render(c))
+
+@authenticate
+def viewvolume(request, volume):
     session = request.session
     username = session['login_email']
     user = db.read_user(username)
-#    owner = User.query(User.volumes == volume_id)
-#    for o in owner:
- #       if o.owner_id = user.owner_id:
-            
-#    for user_volume_id in user.volumes:
-#        if user_volume_id == volume_id:
-    q = Volume.query(Volume.volume_id == int(volume_id))
-    for volume in q: # Just one volume should be returned. Ugly code sorry.
-        v = volume  
+
+    # Ensure ownership
+    
+    if user.owner_id != db.read_volume(volume).owner_id:
+        t = loader.get_template('viewvolume_failure.html')
+        c = Context({'username':username})
+        return HttpResponse(t.render(c))
+   
+    # The reason why query() is used here instead of db.read_volume() is
+    # because it is guaranteed to skip the cache, which is what we want in
+    # this case. (active issues with stale cache).
+    vol = Volume.query(Volume.name == volume)
+    for v in vol:
+        realvol = v
+        if v.active:
+            active = True
+        else:
+            active = None
     t = loader.get_template('viewvolume.html')
-    c = Context({'username':username, 'volume':v})
-    return HttpResponse(t.render(c))
-        
-#    user_id = user.owner_id
-#    vols = Volume.query(Volume.owner_id == user_id)
-#    for v in vols:
-#        if v.volume_id == volume_id:
-#            t = loader.get_template('viewvolume.html')
-#            c = Context({'username':username, 'volume':v})
-#            return HttpResponse(t.render(c))
-#
-    t = loader.get_template('viewvolume_failure.html')
-    c = Context({'username':username})
+    c = RequestContext(request, {'username':username,
+                                 'volume':realvol,
+                                 'active':active,
+                                 } 
+                       )
     return HttpResponse(t.render(c))
 
 @authenticate
@@ -102,6 +153,55 @@ def downloads(request):
     t = loader.get_template('downloads.html')
     c = Context({'username':username})
     return HttpResponse(t.render(c))
+
+@authenticate
+def activatevolume(request, volume_name):
+    session = request.session
+    username = session['login_email']
+
+    if request.method == "POST":
+        fields = {'active':True}
+        db.update_volume(volume_name, **fields)
+    return HttpResponseRedirect("/syn/volume/" + volume_name)
+
+@authenticate
+def deactivatevolume(request, volume_name):
+    session = request.session
+    username = session['login_email']
+
+    if request.method == "POST":
+        fields = {'active':False}
+        db.update_volume(volume_name, **fields)
+    return HttpResponseRedirect("/syn/volume/" + volume_name)
+
+@authenticate
+def deletevolume(request, volume):
+
+    session = request.session
+    username = session['login_email']
+
+    message = ""
+    vol = db.read_volume(volume)
+    if request.method == "POST":
+        form = forms.DeleteVolume(request.POST)
+        if form.is_valid():
+            # Check password hash
+            hash_check = Volume.generate_password_hash(form.cleaned_data['password'], vol.volume_secret_salt)
+            if hash_check == vol.volume_secret_salted_hash:
+                # Ok to delete
+                db.delete_volume(volume)
+                return HttpResponseRedirect("/syn/myvolumes")
+            else:
+                message = "Invalid password"
+                form = forms.DeleteVolume()
+                t = loader.get_template('deletevolume.html')
+                c = RequestContext(request, {'username':username, 'form':form, 'message':message, 'volume':vol} )
+                return HttpResponse(t.render(c))
+    else:
+        form = forms.DeleteVolume()
+        t = loader.get_template('deletevolume.html')
+        c = RequestContext(request, {'username':username, 'form':form, 'message':message,'volume':vol} )
+        return HttpResponse(t.render(c))
 
 @authenticate
 def createvolume(request):
@@ -133,14 +233,23 @@ def createvolume(request):
             user = db.read_user(username)
             volume_key = db.create_volume(user, **kwargs)
         
-            user_volumes = user.volumes
-            if user_volumes is None:
-                user.volumes = [volume_key.get().volume_id]
-            else:
-                user.volumes.append(volume_key.get().volume_id)
+#            user_volumes = user.volumes
+#            if user_volumes is None:
+#                user.volumes = [volume_key.get().volume_id]
+#            else:
+#                user.volumes.append(volume_key.get().volume_id)
 
-            # This isn't iplemented yet but is key
-            # db.update_user(username, FIELDS)
+            # Update user volume fields (o and rw)
+            new_volumes_o = user.volumes_o
+            new_volumes_rw = user.volumes_rw
+
+            v_id = volume_key.get().volume_id
+
+            new_volumes_o.append(v_id)
+            new_volumes_rw.append(v_id)
+
+            fields = {'volumes_o':new_volumes_o, 'volumes_rw':new_volumes_rw}
+            db.update_user(username, **fields)
 
             return HttpResponseRedirect('/syn/myvolumes/')
 
@@ -151,15 +260,15 @@ def createvolume(request):
             if 'name' in form.errors:
                 oldname = ""
             else:
-                oldname = form.cleaned_data['name']
+                oldname = request.POST['name']
             if 'blocksize' in form.errors:
                 oldblocksize = ""
             else:
-                oldblocksize = form.cleaned_data['blocksize']
+                oldblocksize = request.POST['blocksize']
             if 'description' in form.errors:
                 olddescription = ""
             else:
-                olddescription = form.cleaned_data['description']
+                olddescription = request.POST['description']
 
             # Prep error message
             message = "Invalid form entry: "

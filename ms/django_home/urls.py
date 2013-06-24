@@ -8,6 +8,10 @@ urlpatterns = patterns('django_home.views',
                        url(r'^settings/?$', 'settings'),
                        url(r'^downloads/?$','downloads'),
                        url(r'^createvolume/?$', 'createvolume'),
+                       url(r'^volume/(?P<volume_name>\w*)/activate', 'activatevolume'),
+                       url(r'^volume/(?P<volume_name>\w*)/deactivate', 'deactivatevolume'),
+                       url(r'^volume/(?P<volume>\w*)/delete', 'deletevolume'),
+                       url(r'^volume/(?P<volume_name>\w*)/permissions', 'volumepermissions'),
                        url(r'^logout/?$', 'logout'),
-                       url(r'^volume/(?P<volume_id>\d*)', 'viewvolume')
+                       url(r'^volume/(?P<volume>\w*)', 'viewvolume'),
 )

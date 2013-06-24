@@ -67,12 +67,14 @@ class SyndicateUser( storagetypes.Object ):
    email = storagetypes.String()         # used as the username
    owner_id = storagetypes.Integer()     # UID field in Syndicate
    openid_url = storagetypes.Text()      # OpenID identifying URL
-   volumes = storagetypes.Integer( repeated=True )
+   volumes_o = storagetypes.Integer( repeated=True ) # Owned volumes
+   volumes_r = storagetypes.Integer( repeated=True ) # Readable volumes
+   volumes_rw = storagetypes.Integer( repeated=True ) # R/Writable volumes
+   
    
    required_attrs = [
       "email",
       "openid_url",
-      "volumes"
    ]
 
    key_attrs = [
@@ -80,7 +82,9 @@ class SyndicateUser( storagetypes.Object ):
    ]
 
    default_values = {
-      "volumes" : (lambda cls, attrs: [])
+      "volumes_o" : (lambda cls, attrs: []),
+      "volumes_r" : (lambda cls, attrs: []),
+      "volumes_rw" : (lambda cls, attrs: []),
    }
 
    validators = {
@@ -128,8 +132,7 @@ class SyndicateUser( storagetypes.Object ):
          user = SyndicateUser(key=user_key,
                               owner_id=uid_counter.value,
                               email=email,
-                              openid_url=openid_url,
-                              volumes=[0])
+                              openid_url=openid_url)
 
 
          user_future = user.put_async()
@@ -156,11 +159,19 @@ class SyndicateUser( storagetypes.Object ):
 
    @classmethod
    def Update( cls, email, **fields ):
-      raise NotImplementedError
+      user = SyndicateUser.Read(email)
+      for key, value in fields.iteritems():
+         setattr(user, key, value)
+
+      user_future = user.put_async()
+      storagetypes.wait_futures( [user_future] )
+      return user.key
+      
 
    @classmethod
    def Delete( cls, email ):
-      raise NotImplementedError
+      user = SyndicateUser.Read(email)
+      return user.key.delete()
 
    @classmethod
    def ListAll( cls, **filter_attrs ):

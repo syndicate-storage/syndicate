@@ -145,7 +145,7 @@ class Volume( storagetypes.Object ):
    @classmethod
    def Create( cls, user, **kwargs ):
       """
-      Given volume data, store it.  Return the volume_id.
+      Given volume data, store it.  Return the volume key.
 
       kwargs:
          name: str
@@ -264,14 +264,21 @@ class Volume( storagetypes.Object ):
       
       return num_shards
 
+# Changed volume_id to name in parameters - John
+   @classmethod
+   def Update( cls, name, **fields ):
+      volume = Volume.Read(name)
+      for key, value in fields.iteritems():
+         setattr(volume, key, value)
+      vol_future = volume.put_async()
+      storagetypes.wait_futures([vol_future])
+      return volume.key
+         
 
    @classmethod
-   def Update( cls, volume_id, **fields ):
-      raise NotImplementedError
-
-   @classmethod
-   def Delete( cls, volume_id ):
-      raise NotImplementedError
+   def Delete( cls, name ):
+      volume = Volume.Read(name) 
+      return volume.key.delete()
 
    @classmethod
    def ListAll( cls, **attrs ):
