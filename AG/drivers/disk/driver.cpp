@@ -3,7 +3,6 @@
    All Rights Reserved
 */
 
-#include "AG.h"
 #include "driver.h"
 #include "libgateway.h"
 

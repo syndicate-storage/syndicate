@@ -2,11 +2,16 @@
 #define _DISK_DRIVER_H_
 
 #include <map>
-
+#include <string>
 #include <sys/types.h>
+
 #include <dirent.h>
 #include <errno.h>
 #include <ftw.h>
+
+#include "libgateway.h"
+#include "ms-client.h"
+#include "libsyndicate.h"
 
 using namespace std;
 
