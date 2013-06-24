@@ -8,8 +8,6 @@
 
 
 int main( int argc, char** argv ) {
-   //Load the driver.
-   //Call init.
    int rc = AG_main( argc, argv );
    return rc;
 }
