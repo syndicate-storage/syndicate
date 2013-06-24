@@ -2,7 +2,7 @@
 
 # add additional source files here
 source_files = """
-   AG-disk.cpp
+   AG.cpp
 """
 
 # add source file search paths here
@@ -46,6 +46,6 @@ env.Append(CPPPATH = Split(CPPPATH))
 env.Append(CPPFLAGS = Split(CPPFLAGS))
 env.Append(CPPDEFINES = CPPDEFINES)
 
-AG_disk = env.Program("AG-disk", source=Split(source_files) )
+AG = env.Program("AG", source=Split(source_files) )
 
-Return( 'AG_disk' )
+Return( 'AG' )
