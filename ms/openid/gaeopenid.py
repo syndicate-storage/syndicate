@@ -29,7 +29,7 @@ from openid.extensions import pape, sreg
 import gaesession
 
 TRUST_ROOT_HOST = "localhost:8080"
-HOST_URL = "http://localhost:8080"
+HOST_URL = "http://" + TRUST_ROOT_HOST
 OPENID_PROVIDER_NAME = "VICCI"
 
 OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
