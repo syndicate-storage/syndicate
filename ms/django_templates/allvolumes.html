@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+  
+  {% block head %}
+    <h1> All public volumes </h1>
+  {% endblock %}
+  {% block mainbody %}
+    <table class="volume" border>
+      <thead>
+	<th> Volume Name </th>
+	<th> Description </th>
+	<th> Owner </th>
+	<th> Active </th>
+	<th> Available </th>
+      </thead>
+      <tbody>
+	{% for v, owner in vols %} 
+	<tr>
+          <td><a href='{% url "django_home.views.viewvolume" v.volume_id %}'>{{v.name}}</a></td>
+	  <td>{{v.description}}</td>
+	  <td>{{owner.email}}</td>
+	  <td>{% if v.active == True %}Yes{% else %}No{% endif %}</td>
+	  <td><a href='#'>Request to Join</a></td>
+	</tr>
+	
+	{% empty %}
+	<tr>
+	  <td colspan="5"> No volumes exist </td>
+	</tr>
+
+	{% endfor %}
+      </tbody>
+    </table>
+    {% endblock %}
+    {% block footer %}
+  <a href='{% url "django_home.views.createvolume" %}'>Create new volume</a>
+  <a href='{% url "django_home.views.home" %}'>Home</
+  {% endblock %}

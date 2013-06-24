@@ -1,0 +1,42 @@
+# build libsyndicate.so
+
+import os
+
+# add additional source files here
+source_files = """
+   driver.cpp
+"""
+
+# add source file search paths here
+CPPPATH = """
+   ../../
+   /usr/include/syndicate
+   /usr/local/include/syndicate
+"""
+
+# add library paths here
+LIBPATH = """
+"""
+
+# add libraries here
+LIBS = """
+   syndicate
+   dl
+"""
+
+# add additional CPPFLAGS here
+CPPFLAGS = ""
+
+
+# get our environment
+Import('env')
+env = env.Clone()
+
+env.Append(LIBS = Split(LIBS))
+env.Append(CPPPATH = Split(CPPPATH))
+env.Append(CPPFLAGS = CPPFLAGS)
+
+# generate the shared library
+libAGdiskdriver = env.SharedLibrary( target="libAGdiskdriver.so", source=[Split(source_files)] )
+
+Return( 'libAGdiskdriver' )

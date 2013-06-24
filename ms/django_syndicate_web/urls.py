@@ -5,9 +5,9 @@ from django.conf.urls import patterns, include, url
 # admin.autodiscover()
 
 urlpatterns = patterns('',
-                       url(r'^syn/?$', 'django_home.views.start'),
-                       url(r'^syn/home/', include('django_home.urls')),
-                       url(r'^syn/accounts/', include('django_accounts.urls')),
+                       url(r'^syn/', include('django_home.urls')),
+                       url(r'^syn', 'django_home.views.home'),
+
     # Examples:
     # url(r'^$', 'synweb.views.home', name='home'),
     # url(r'^synweb/', include('synweb.foo.urls')),

@@ -81,6 +81,12 @@ ag_out = "build/out/AG"
 ags = SConscript( "AG/SConscript", variant_dir=ag_out )
 env.Depends( ags, libsyndicate )
 
+# AG driver build
+# disk driver
+ag_driver_disk_out = "build/out/AG/drivers/disk"
+ag_driver_disks = SConscript( "AG/drivers/disk/SConscript", variant_dir=ag_driver_disk_out )
+env.Depends( ag_driver_disks, libsyndicate )
+
 # ms build
 ms_out = "build/out/ms"
 ms = SConscript( "ms/SConscript", variant_dir=ms_out )
@@ -99,6 +105,9 @@ libsyndicate_install_headers = env.InstallHeader( inc_install_dir, libsyndicate_
 libsyndicate_install_library = env.InstallLibrary( lib_install_dir, libsyndicate )
 env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers] )
 
+# alias installation targets for AG disk driver
+ag_driver_disk_install = env.InstallLibrary( lib_install_dir, ag_driver_disks )
+env.Alias( 'ag-disk-driver-install', [ag_driver_disk_install] )
 # initialization
 
 # set umask correctly
