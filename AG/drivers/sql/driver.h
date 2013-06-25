@@ -1,4 +1,6 @@
-#define _DISK_DRIVER_H_
+#ifndef _SQL_DRIVER_H_
+#define _SQL_DRIVER_H_
+
 #include <map>
 #include <string>
 #include <set>
@@ -31,7 +33,7 @@ struct gateway_ctx {
     uint64_t block_id;
     // input descriptor
     int fd;
-}
+};
 
 struct path_comp {
     bool operator()(char *path1, char *path2) 
@@ -51,15 +53,16 @@ struct path_comp {
 	    if (path2[i] == '/')
 		p2_nr_comps++;
 	}
-	if (p1_nr_comps == p2_nr_comps) {
+	if (p1_nr_comps == p2_nr_comps) 
 	    return true;
-	    else 
-		return p1_nr_comps < p2_nr_comps;
-	}
+	else 
+	    return p1_nr_comps < p2_nr_comps;
+	
     }
-}    
-typedef map<string, struct md_entry*> content_map;
-static int publish(const char *fpath, const char* sql_query);
+};   
 
-#endif //_DISK_DRIVER_H_
+typedef map<string, struct md_entry*> content_map;
+static int publish(const char *fpath, int type, const char* sql_query);
+
+#endif //_SQL_DRIVER_H_
 

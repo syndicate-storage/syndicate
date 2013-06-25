@@ -83,10 +83,14 @@ env.Depends( ags, libsyndicate )
 
 # AG driver build
 # disk driver
-if "AG/drivers/disk" in COMMAND_LINE_TARGETS:
-    libAGdiskdriver_out = "build/out/AG/drivers/disk"
-    libAGdiskdriver = SConscript( "AG/drivers/disk/SConscript", variant_dir=libAGdiskdriver_out )
-    env.Depends( libAGdiskdriver, libsyndicate )
+libAGdiskdriver_out = "build/out/AG/drivers/disk"
+libAGdiskdriver = SConscript( "AG/drivers/disk/SConscript", variant_dir=libAGdiskdriver_out )
+env.Depends( libAGdiskdriver, libsyndicate )
+
+# disk driver
+libAGSQLdriver_out = "build/out/AG/drivers/sql"
+libAGSQLdriver = SConscript( "AG/drivers/sql/SConscript", variant_dir=libAGSQLdriver_out )
+env.Depends( libAGSQLdriver, libsyndicate )
 
 # ms build
 ms_out = "build/out/ms"
@@ -110,6 +114,11 @@ env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_i
 if "AG-disk-driver-install" in COMMAND_LINE_TARGETS:
     ag_driver_disk_install = env.InstallLibrary( lib_install_dir, libAGdiskdriver )
     env.Alias( 'AG-disk-driver-install', [ag_driver_disk_install] )
+
+# alias installation targets for AG disk driver
+if "AG-SQL-driver-install" in COMMAND_LINE_TARGETS:
+    ag_driver_sql_install = env.InstallLibrary( lib_install_dir, libAGSQLdriver )
+    env.Alias( 'AG-SQL-driver-install', [ag_driver_sql_install] )
 
 # initialization
 

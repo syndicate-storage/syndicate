@@ -1,10 +1,11 @@
-# build libAGdiskdriver.so
+# build libAGSQLdriver.so
 
 import os
 
 # add additional source files here
 source_files = """
    driver.cpp
+   map-parser.cpp
 """
 
 # add source file search paths here
@@ -37,6 +38,7 @@ env.Append(CPPFLAGS = CPPFLAGS)
 env.Append(LIBPATH = Split(LIBPATH))
 
 # generate the shared library
-libAGdiskdriver = env.SharedLibrary( target="libAGdiskdriver.so", source=[Split(source_files)] )
+libAGSQLdriver = env.SharedLibrary( target="libAGSQLdriver.so", source=[Split(source_files)] )
 
-Return( 'libAGdiskdriver' )
+Return( 'libAGSQLdriver' )
+

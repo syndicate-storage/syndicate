@@ -93,13 +93,14 @@ void MapParserHandler::characters (
     if (open_key) {
 	if (!element_buff) { 
 	    element_buff = (char*)malloc(length+1);
-	    strncat(element_buff, element, length);
-	    cout<<">>>>>>>>>>>>>>>> "<<element<<endl;
+	    element_buff[length] = 0;
+	    strncpy(element_buff, element, length);
 	}
 	else { 
 	    int current_len = strlen(element_buff); 
 	    element_buff = (char*)realloc
 		(element_buff, current_len + length + 1);
+	    element_buff[current_len + length] = 0;
 	    strncat(element_buff + current_len, element, length);
 	}
 	XMLString::release(&element);
