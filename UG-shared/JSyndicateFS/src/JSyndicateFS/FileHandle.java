@@ -62,6 +62,13 @@ public class FileHandle implements Closeable {
     public long getHandleID() {
         return this.id;
     }
+
+    /*
+     * Return FileSystem of the file
+     */
+    public FileSystem getFileSystem() {
+        return this.filesystem;
+    }
     
     /*
      * Return Path of the file
@@ -106,9 +113,6 @@ public class FileHandle implements Closeable {
     @Override
     public void close() throws IOException {
         this.filesystem.closeFileHandle(this);
-        
-        this.fileinfo = null;
-        this.closed = true;
     }
     
     /*

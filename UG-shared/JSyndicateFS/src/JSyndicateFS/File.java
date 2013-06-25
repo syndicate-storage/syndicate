@@ -5,8 +5,6 @@ package JSyndicateFS;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -68,6 +66,16 @@ public class File {
         }
     }
     
+    /*
+     * Return FileSystem of the file
+     */
+    public FileSystem getFileSystem() {
+        return this.filesystem;
+    }
+    
+    /*
+     * Return Path of the file
+     */
     public Path getPath() {
         return this.path;
     }

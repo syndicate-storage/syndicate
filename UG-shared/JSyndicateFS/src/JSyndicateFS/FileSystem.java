@@ -84,6 +84,10 @@ public class FileSystem implements Closeable {
         this.closed = false;
     }
     
+    public Configuration getConfiguration() {
+        return this.conf;
+    }
+    
     /*
      * Return the root path of the filesystem
      */

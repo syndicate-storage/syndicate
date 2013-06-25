@@ -3,8 +3,11 @@
  */
 package JSyndicateFS;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  *
@@ -12,6 +15,8 @@ import java.io.InputStream;
  */
 public class FSInputStream extends InputStream {
 
+    public static final Log LOG = LogFactory.getLog(FSInputStream.class);
+    
     public static final int DEFAULT_BUFFER_SIZE = 4096;
     
     private FileHandle filehandle;
@@ -27,8 +32,51 @@ public class FSInputStream extends InputStream {
     private long markedOffset;
     private byte[] markedData;
     
+    FSInputStream(File file) {
+        if(file == null)
+            throw new IllegalArgumentException("Can not create input stream from null file");
+        
+        int bufferSize = DEFAULT_BUFFER_SIZE;
+        
+        FileSystem filesystem = file.getFileSystem();
+        
+        if(filesystem != null) {
+            Configuration conf = filesystem.getConfiguration();
+            if(conf != null) {
+                bufferSize = conf.getReadBufferSize();
+            }
+            
+            Path path = file.getPath();
+            try {
+                FileHandle filehandle = filesystem.openFileHandle(path);
+                initialize(filehandle, bufferSize);
+            } catch (FileNotFoundException ex) {
+                LOG.error(ex);
+                throw new IllegalArgumentException(ex.toString());
+            } catch (IOException ex) {
+                LOG.error(ex);
+                throw new IllegalArgumentException(ex.toString());
+            }
+        } else {
+            throw new IllegalArgumentException("Can not create input stream from null filesystem");
+        }
+    }
+    
     FSInputStream(FileHandle filehandle) {
-        initialize(filehandle, DEFAULT_BUFFER_SIZE);
+        if(filehandle == null)
+            throw new IllegalArgumentException("Can not create input stream from null filehandle");
+
+        int bufferSize = DEFAULT_BUFFER_SIZE;
+        
+        FileSystem filesystem = filehandle.getFileSystem();
+        if(filesystem != null) {
+            Configuration conf = filesystem.getConfiguration();
+            if(conf != null) {
+                bufferSize = conf.getReadBufferSize();
+            }
+        }
+            
+        initialize(filehandle, bufferSize);
     }
     
     FSInputStream(FileHandle filehandle, int bufferSize) {
@@ -200,9 +248,5 @@ public class FSInputStream extends InputStream {
         this.curOffsetOfBuffer = 0;
         this.curOffset = 0;
         this.nextReadOffset = 0;
-    }
-
-    private FSInputStream(Path path) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 }
