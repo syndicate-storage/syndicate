@@ -10,6 +10,7 @@
 #include "libsyndicate.h"
 #include <getopt.h>
 #include <ftw.h>
+#include <dlfcn.h>
 
 struct md_syndicate_conf *global_conf = NULL;
 
@@ -59,6 +60,9 @@ void gateway_metadata_func( int (*metadata_func)(struct gateway_context*, ms::ms
 void gateway_publish_func( int (*publish_func)(struct gateway_context*, struct ms_client*, char* dataset ) );
 
 int gateway_key_value( char* arg, char* key, char* value );
+
+int load_AG_driver( char *lib );
+int unload_AG_driver( );
 
 END_EXTERN_C
 

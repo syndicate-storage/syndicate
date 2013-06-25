@@ -1,8 +1,11 @@
-# build AG
+# build libAGSQLdriver.so
+
+import os
 
 # add additional source files here
 source_files = """
-   AG.cpp
+   driver.cpp
+   map-parser.cpp
 """
 
 # add source file search paths here
@@ -18,34 +21,24 @@ LIBPATH = """
 
 # add libraries here
 LIBS = """
-   curl
-   pthread
-   crypto
-   microhttpd
    syndicate
-   protobuf
 """
 
 # add additional CPPFLAGS here
 CPPFLAGS = ""
 
-# add additional CPPDEFINES here
-CPPDEFINES = [
-   ("_FILE_OFFSET_BITS", 64),
-   "_REENTRANT",
-   "_THREAD_SAFE"
-]
 
 # get our environment
 Import('env')
 env = env.Clone()
 
 env.Append(LIBS = Split(LIBS))
-env.Append(LIBPATH = Split(LIBPATH))
 env.Append(CPPPATH = Split(CPPPATH))
-env.Append(CPPFLAGS = Split(CPPFLAGS))
-env.Append(CPPDEFINES = CPPDEFINES)
+env.Append(CPPFLAGS = CPPFLAGS)
+env.Append(LIBPATH = Split(LIBPATH))
 
-AG = env.Program("AG", source=Split(source_files) )
+# generate the shared library
+libAGSQLdriver = env.SharedLibrary( target="libAGSQLdriver.so", source=[Split(source_files)] )
 
-Return( 'AG' )
+Return( 'libAGSQLdriver' )
+

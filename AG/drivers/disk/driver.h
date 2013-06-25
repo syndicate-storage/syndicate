@@ -1,22 +1,17 @@
-/*
-   Copyright 2013 The Trustees of Princeton University
-   All Rights Reserved
-*/
+#ifndef _DISK_DRIVER_H_
+#define _DISK_DRIVER_H_
 
+#include <map>
+#include <string>
+#include <sys/types.h>
 
-#ifndef _AG_DISK_H
-#define _AG_DISK_H_
+#include <dirent.h>
+#include <errno.h>
+#include <ftw.h>
 
 #include "libgateway.h"
 #include "ms-client.h"
 #include "libsyndicate.h"
-
-#include <map>
-
-#include <sys/types.h>
-#include <dirent.h>
-#include <errno.h>
-#include <ftw.h>
 
 using namespace std;
 
@@ -44,8 +39,8 @@ struct gateway_ctx {
 };
 
 typedef map<string, struct md_entry*> content_map;
-
-
 static int publish(const char *fpath, const struct stat *sb,
 	int tflag, struct FTW *ftwbuf);
-#endif
+
+#endif //_DISK_DRIVER_H_
+

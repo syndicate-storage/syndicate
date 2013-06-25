@@ -14,6 +14,9 @@ static md_path_locks gateway_md_locks;
 // session ID for written data
 static int64_t SESSION_ID = 0;
 
+// gateway driver
+static void* driver = NULL;
+
 // callbacks to be filled in by an RG implementation
 static ssize_t (*put_callback)( struct gateway_context*, char const* data, size_t len, void* usercls ) = NULL;
 static ssize_t (*get_callback)( struct gateway_context*, char* data, size_t len, void* usercls ) = NULL;
@@ -822,6 +825,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    char* volume_name = NULL;
    char* volume_secret = NULL;
    char* dataset = NULL;
+   char* gw_driver = NULL;
    bool pub_mode = false;
    
    static struct option gateway_options[] = {
@@ -837,13 +841,14 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
       {"logfile\0Path to the log file",                     required_argument,   0, 'l'},
       {"pidfile\0Path to the PID file",                     required_argument,   0, 'i'},
       {"dataset\0Path to dataset",                     	    required_argument,   0, 'd'},
+      {"gw-driver\0Gateway driver",                         required_argument,   0, 'g'},
       {"help\0Print this message",                          no_argument,         0, 'h'},
       {0, 0, 0, 0}
    };
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:S:u:p:P:m:fwl:i:d:h", gateway_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:S:u:p:P:m:fwl:i:d:g:h", gateway_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -894,6 +899,10 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
 	    pub_mode = true;
             break;
          }
+         case 'g': {
+            gw_driver = optarg;
+            break;
+         }
          case 'h': {
             gateway_usage( argv[0], gateway_options, 0 );
             break;
@@ -923,10 +932,19 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    if( rc != 0 ) {
       exit(1);
    }
-
+   // override ag_driver provided in conf file if driver is 
+   // specified as a command line argument.
+   if ( gw_driver ) {
+       if (gateway_type == SYNDICATE_AG)
+	   conf.ag_driver = gw_driver;
+   }
    // copy conf to global_conf
    memcpy( global_conf, &conf, sizeof( struct md_syndicate_conf ) );
-
+   // load AG driver
+   if ( conf.ag_driver && gateway_type == SYNDICATE_AG) {
+      if ( load_AG_driver( conf.ag_driver ) < 0)
+	 exit(1);
+   }
    if (pub_mode) {
        if ( publish_callback ) {
 	   if ( ( rc = publish_callback( NULL, &client, dataset ) ) !=0 )
@@ -986,3 +1004,60 @@ int start_gateway_service( struct md_syndicate_conf *conf, ms_client *client, md
 
    return 0;
 }
+
+
+/**
+ * open the diver library and setup following callbacks
+ * get_callback,
+ * connect_callback,
+ * cleanup_callback,
+ * metadata_callback,
+ * publish_callback
+ **/
+int load_AG_driver( char *lib ) 
+{
+   // open library
+   driver = dlopen( lib, RTLD_LAZY );
+   if ( driver == NULL ) {
+      errorf( "load_AG_gateway_driver = %s\n", dlerror() );
+      return -EINVAL;
+   }
+
+   // setup callbacks
+   *(void **) (&get_callback) = dlsym( driver, "get_dataset" );
+   if ( get_callback == NULL ) {
+      errorf( "load_AG_gateway_driver = %s\n", dlerror() );
+      return -ENXIO;
+   }
+   *(void **) (&connect_callback) = dlsym( driver, "connect_dataset" );
+   if ( connect_callback == NULL ) {
+      errorf( "load_AG_gateway_driver = %s\n", dlerror() );
+      return -ENXIO;
+   }
+   *(void **) (&cleanup_callback) = dlsym( driver, "cleanup_dataset" );
+   if ( cleanup_callback == NULL ) {
+      errorf( "load_AG_gateway_driver = %s\n", dlerror() );
+      return -ENXIO;
+   }
+   *(void **) (&metadata_callback) = dlsym( driver, "metadata_dataset" );
+   if ( metadata_callback == NULL ) {
+      errorf( "load_AG_gateway_driver = %s\n", dlerror() );
+      return -ENXIO;
+   }
+   *(void **) (&publish_callback) = dlsym( driver, "publish_dataset" );
+   if ( publish_callback == NULL ) {
+      errorf( "load_AG_gateway_driver = %s\n", dlerror() );
+      return -ENXIO;
+   }
+   return 0;
+}
+
+int unload_AG_driver( )
+{
+   if (driver == NULL) {
+      return -1;
+   }
+   dlclose( driver );
+   return 0;
+}
+
