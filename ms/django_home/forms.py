@@ -1,5 +1,6 @@
 from django_lib import override_forms
 from django import forms
+from django_lib.override_forms import ReadOnlyWidget
 
 class CreateVolume(override_forms.MyForm):
  
@@ -37,7 +38,9 @@ class DeleteVolume(override_forms.MyForm):
 
 class Permissions(override_forms.MyForm):
     
-    user = forms.EmailField(label="User email")
+    user = forms.EmailField(label="User email",
+                            widget=ReadOnlyWidget(),
+                            required=False)
 
     read = forms.BooleanField(label="Read",
                               required=False)

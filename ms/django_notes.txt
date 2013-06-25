@@ -4,12 +4,16 @@ Author: John Whelchel
 Date: 5/28/13 - 6/20/13
 
 To-do:
+- Use formset.has_changed() to simplify changepermissions view. (is there an equilavent for pure forms we can iterate through?)
+- what is this line in server output:
+  INFO     2013-06-25 19:23:59,762 gaesession.py:518] gae-sessions: deleted 0 expired sessions from the datastore
+
 - Convert all volume URL variables to volume_name
 - Create volume app to organize code better
 - Check to see if cache is messing up active/inactive check (google ndb cache) then move to other volume settings and possibly user settings
 - Should activate/deactivate require password?
 - Should volumes be public/private?
-- Transaction-ify createvolume due to usermodficiations
+- Transaction-ify createvolume due to usermodficiations and permissions !!! importnat
 - Get rid of django stupid error messages, or just modify css to fix them and get rid of mine.
 - Create a thanks page post-creation/deletion/activation to give datastore time, have links to home and myvolumes etc.
 - Authenticate doesn't seem to be working perfectly when stopping/starting server and going straight to random pages (try myvolumes)

@@ -1,4 +1,28 @@
 from django import forms
+from django.forms import widgets
+#from django.forms.fields import BooleanField, EmailField
+
+
+'''
+class DisabledBooleanField(BooleanField):
+    def widget_attrs(self, widget):
+        attrs = super(BooleanField, self).widget_attrs(widget)
+        attrs['disabled'] = ""
+        return attrs
+
+class DisabledEmailField(EmailField):
+    def widget_attrs(self, widget):
+        attrs = super(EmailField, self).widget_attrs(widget)
+        attrs['disabled'] = ""
+        return attrs
+'''
+
+# http://stackoverflow.com/questions/324477/in-a-django-form-how-to-make-a-field-readonly-or-disabled-so-that-it-cannot-b
+class ReadOnlyWidget(widgets.Widget):
+    '''Some of these values are read only - just a bit of text...'''
+    def render(self, _, value, attrs=None):
+        return value
+
 
 class MyForm(forms.Form):
 
