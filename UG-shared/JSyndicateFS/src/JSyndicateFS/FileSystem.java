@@ -12,6 +12,8 @@ import JSyndicateFSJNI.struct.JSFSStat;
 import java.io.Closeable;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Collection;
 import java.util.Hashtable;
 import java.util.Map;
@@ -159,6 +161,9 @@ public class FileSystem implements Closeable {
         }
     }
     
+    /*
+     * Return absolute path
+     */
     public Path getAbsolutePath(Path path) {
         if(path == null)
             throw new IllegalArgumentException("Can not get absolute file path from null path");
@@ -245,6 +250,9 @@ public class FileSystem implements Closeable {
         }
     }
     
+    /*
+     * Return the file handle from file status
+     */
     public FileHandle openFileHandle(FileStatus status) throws IOException {
         if(status == null)
             throw new IllegalArgumentException("Can not open file handle from null status");
@@ -264,6 +272,9 @@ public class FileSystem implements Closeable {
         return filehandle;
     }
     
+    /*
+     * Return the file handle from path
+     */
     public FileHandle openFileHandle(Path path) throws FileNotFoundException, IOException {
         FileStatus status = getFileStatus(path);
         
@@ -273,6 +284,9 @@ public class FileSystem implements Closeable {
         return openFileHandle(status);
     }
     
+    /*
+     * Close file handle
+     */
     public void closeFileHandle(FileHandle filehandle) throws IOException {
         if(filehandle == null)
             throw new IllegalArgumentException("Can not close null filehandle");
@@ -286,13 +300,77 @@ public class FileSystem implements Closeable {
         
         if(this.openFileHandles.containsKey(filehandle.getHandleID()))
             this.openFileHandles.remove(filehandle.getHandleID());
+        
+        // notify object is closed
+        filehandle.notifyClose();
     }
 
-    public DataInputStream getFileInputStream(FileStatus status) throws IOException {
+    /*
+     * Return input stream from file status
+     */
+    public InputStream getFileInputStream(FileStatus status) throws IOException {
         if(status == null)
             throw new IllegalArgumentException("Can not open file handle from null status");
         
         FileHandle filehandle = openFileHandle(status);
-        return new DataInputStream(filehandle);
+        return new FSInputStream(filehandle, this.conf.getReadBufferSize());
+    }
+    
+    /*
+     * Return output stream frmo file status
+     */
+    public OutputStream getFileOutputStream(FileStatus status) throws IOException {
+        if(status == null)
+            throw new IllegalArgumentException("Can not open file handle from null status");
+        
+        FileHandle filehandle = openFileHandle(status);
+        return new FSOutputStream(filehandle);
+    }
+    
+    public int readFileData(FileHandle filehandle, byte[] buffer, int size, long offset) throws IOException {
+        if(filehandle == null)
+            throw new IllegalArgumentException("Can not read from null filehandle");
+        if(!filehandle.isOpen())
+            throw new IllegalArgumentException("Can not read from closed filehandle");
+        if(buffer == null)
+            throw new IllegalArgumentException("Can not read to null buffer");
+        if(buffer.length < size)
+            throw new IllegalArgumentException("Can not read to too small buffer");
+        if(size <= 0)
+            throw new IllegalArgumentException("Can not read negative size data");
+        if(offset <= 0)
+            throw new IllegalArgumentException("Can not read negative offset");
+        
+        int ret = JSyndicateFS.jsyndicatefs_read(filehandle.getStatus().getPath().getPath(), buffer, size, offset, filehandle.getFileInfo());
+        if(ret < 0) {
+            throw new IOException("jsyndicatefs_read failed : " + ret);
+        }
+        
+        return ret;
+    }
+
+    public void writeFileData(FileHandle filehandle, byte[] buffer, int size, long offset) throws IOException {
+        if(filehandle == null)
+            throw new IllegalArgumentException("Can not write to null filehandle");
+        if(!filehandle.isOpen())
+            throw new IllegalArgumentException("Can not write to closed filehandle");
+        if(buffer == null)
+            throw new IllegalArgumentException("Can not write null buffer");
+        if(buffer.length < size)
+            throw new IllegalArgumentException("Can not write too small buffer");
+        if(size <= 0)
+            throw new IllegalArgumentException("Can not write negative size data");
+        if(offset <= 0)
+            throw new IllegalArgumentException("Can not write negative offset");
+        
+        int ret = JSyndicateFS.jsyndicatefs_write(filehandle.getStatus().getPath().getPath(), buffer, size, offset, filehandle.getFileInfo());
+        if(ret < 0) {
+            throw new IOException("jsyndicatefs_write failed : " + ret);
+        }
+        
+        if(ret < size) {
+            // pending?
+            throw new IOException("unexpected return : " + ret);
+        }
     }
 }

@@ -5,6 +5,8 @@ package JSyndicateFS;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -140,17 +142,5 @@ public class File {
            return 0;
        
         return this.status.getLastModification();
-    }
-    
-    /*
-     * Return the input stream of the file
-     */
-    public DataInputStream getInputStream() throws IOException {
-        loadStatus();
-        
-        if(this.status == null)
-           throw new IOException("Can not get input stream from null status");
-        
-        return this.filesystem.getFileInputStream(this.status);
     }
 }
