@@ -38,14 +38,14 @@ div.leftbox {
 }
 
 div.rightbox {
-    width:79%;
+    width:65%;
     position:relative;
-    float:right;
-    margin-right:12px;
+    float:left;
+    margin-left:12px;
 }
 
 div.wrapper {
-    width:85%;
+    width:100%;
     float:left;
     position:relative;
     clear:both;
@@ -55,7 +55,7 @@ div.footer {
     text-align:center;
 }
 
-ul {
+ul, li {
     list-style-type:none;
 }
 
@@ -106,6 +106,17 @@ table.createvolume {
 
 table.createvolume th {
     vertical-align:top;
+    padding:10px;
+}
+
+table.deletevolume {
+    margin-left:auto;
+    margin-right:auto;
+}
+
+table.deletevolume td {
+    text-align:center;
+    vertical-align:middle;
     padding:10px;
 }
 

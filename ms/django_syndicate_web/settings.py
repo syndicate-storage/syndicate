@@ -10,7 +10,7 @@ ADMINS = (
 
 MANAGERS = ADMINS
 
-DATABASES = {}
+DATABASES = {'default':{}}
 #if (os.getenv('SERVER_SOFTWARE', '').startswith('Google App Engine') or
 #    os.getenv('SETTINGS_MODE') == 'prod'):
     # Running on production App Engine, so use a Google Cloud SQL database.

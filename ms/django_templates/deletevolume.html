@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block head %}
+<h1> Delete:<a href='{% url django_home.views.viewvolume volume.name %}'>{{volume.name}}</a></h1>
+{% endblock %}
+
+{% block mainbody %}
+  <p> Are you sure you want to delete this volume? Deleting a volume is permanent; you will not be able to recover any of your files once deleted.</p>
+  <p class="error">{{ message }}</p><br>
+  <form action='{% url django_home.views.deletevolume volume.name %}' method="post">{% csrf_token %}
+    <div class="deletevolume">
+      <table class="deletevolume" border>
+	{{ form.as_table }}
+      </table>
+      <input class="submit" type="submit" value="Submit" />
+    </div>
+  </form>
+  {% endblock %}
+  {% block footer %}
+  <a href='{% url django_home.views.myvolumes %}'>My Volumes</a>
+  <a href='{% url django_home.views.home %}'>Home</a>
+{% endblock %}

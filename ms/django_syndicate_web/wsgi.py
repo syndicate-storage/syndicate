@@ -14,7 +14,7 @@ framework.
 
 """
 import os
-
+import sys
 
 os.environ['DJANGO_SETTINGS_MODULE'] = 'django_syndicate_web.settings'
 # This application object is used by any WSGI server configured to use this
@@ -23,6 +23,7 @@ os.environ['DJANGO_SETTINGS_MODULE'] = 'django_syndicate_web.settings'
 
 
 from django.core.wsgi import get_wsgi_application
+
 application = get_wsgi_application()
 
 # Apply WSGI middleware here.

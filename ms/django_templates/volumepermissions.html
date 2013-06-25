@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block head %}
+    <h1>{{volume.name}} Permissions </h1>
+{% endblock %}
+{% block mainbody %}
+
+	{{message}}
+
+    <form id='formset' action='{% url django_home.views.changepermissions volume.name %}' method="post">{% csrf_token %}
+	   {% if formset %}
+            {{ formset.management_form }}
+            <table class="permissions" border>
+                {% for form in formset %}
+                    {% if forloop.first %}
+                        <thead>
+                            <tr>
+                            {% for field in form.visible_fields %}
+                                <th>{{ field.label|capfirst }}</th>
+                            {% endfor %}
+                            </tr>
+                        </thead>
+                    {% endif %}
+                    <tr class="{{ forloop.counter0 }}">
+                        {% for field in form.visible_fields %}
+                            <td>{{ field }}</td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </table>
+            {{ passwordform.as_ul }}
+            <input class="submit" type="submit" value="Save changes">
+        {% else %}
+            <h4> No users attached to this volume <h4>
+        {% endif %}
+    </form>	
+    <br/>
+
+    <form id="addform" action="{% url django_home.views.addpermissions volume.name %}" method="post">{% csrf_token %}
+        <h4> Add new volume user </h4>
+        <table class="addpermissions" border>
+            {{ addform.as_table }}
+        </table>
+        {{ passwordform.as_ul }}
+        <input class="submit" type="submit" value="Submit" />
+    </form>
+
+{% endblock %}
+{% block footer %}
+    <a  href='{% url django_home.views.createvolume %}'>Create new volume</a>
+    <a  href='{% url django_home.views.home %}'>Back to home</a>
+{% endblock %}

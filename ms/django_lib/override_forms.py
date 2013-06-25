@@ -1,15 +1,28 @@
 from django import forms
+from django.forms import widgets
+#from django.forms.fields import BooleanField, EmailField
 
-from django.core.exceptions import ValidationError
-from django.forms.fields import Field, FileField
-from django.forms.util import flatatt, ErrorDict, ErrorList
-from django.forms.widgets import Media, media_property, TextInput, Textarea
-from django.utils.datastructures import SortedDict
-from django.utils.html import conditional_escape, format_html
-from django.utils.encoding import smart_text, force_text, python_2_unicode_compatible
-from django.utils.safestring import mark_safe
-from django.utils.translation import ugettext as _
-from django.utils import six
+
+'''
+class DisabledBooleanField(BooleanField):
+    def widget_attrs(self, widget):
+        attrs = super(BooleanField, self).widget_attrs(widget)
+        attrs['disabled'] = ""
+        return attrs
+
+class DisabledEmailField(EmailField):
+    def widget_attrs(self, widget):
+        attrs = super(EmailField, self).widget_attrs(widget)
+        attrs['disabled'] = ""
+        return attrs
+'''
+
+# http://stackoverflow.com/questions/324477/in-a-django-form-how-to-make-a-field-readonly-or-disabled-so-that-it-cannot-b
+class ReadOnlyWidget(widgets.Widget):
+    '''Some of these values are read only - just a bit of text...'''
+    def render(self, _, value, attrs=None):
+        return value
+
 
 class MyForm(forms.Form):
 
@@ -17,15 +30,15 @@ class MyForm(forms.Form):
         "Returns this form rendered as HTML <p>s."
         return self._html_output(
             normal_row = '<p%(html_class_attr)s>%(label)s %(field)s%(help_text)s</p>',
-            error_row = '%s',
+            error_row = '',
             row_ender = '</p>',
             help_text_html = ' <span class="helptext">%s</span>',
             errors_on_separate_row = True)
 
 
-
+'''
     def _html_output(self, normal_row, error_row, row_ender, help_text_html, errors_on_separate_row):
-        "Helper function for outputting HTML. Used by as_table(), as_ul(), as_p()."
+        "Helper function for outputting HTML. Used by as_table(), as_ul(), as_p(v)."
         top_errors = self.non_field_errors() # Errors that should be displayed above all fields.
         output, hidden_fields = [], []
 
@@ -93,3 +106,4 @@ class MyForm(forms.Form):
                 # hidden fields.
                 output.append(str_hidden)
         return mark_safe('\n'.join(output))
+'''

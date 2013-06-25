@@ -1,8 +1,9 @@
-<html>
-  <head>
+{% extends "base.html" %}
+{% block head %}
     <h1> Download stuff here later! </h1>
-  </head>
-  <body>
-    <a href='{% url "django_home.views.home" %}'>Back to home</a>
-  </body>
-</html>
+{% endblock %}
+{% block mainbody %}
+{% endblock %}
+{% block footer %}
+    <a href='{% url django_home.views.home %}'>Back to home</a>
+{% endblock %}

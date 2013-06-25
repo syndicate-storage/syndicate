@@ -1,25 +1,51 @@
 {% extends "base.html" %}
 {% block head %}
-    <h1> Volume: {{volume.name}} <span style="font-style:italic;font-size:80%;">(Version {{volume.version}})</span></h1>
+    <h1> {{volume.name}} <span style="font-style:italic;font-size:60%;">(Version {{volume.version}})</span></h1>
 {% endblock %}
 {% block mainbody %}
-    <div class="box">
-      <p> Volume is {% if volume.active = True %}active. {% else %}inactive.{% endif %}</p>
-      <p> Block size: {{volume.blocksize}}</p>
-      <br/>
-      <h3>{{volume.description}}</h3>
+    <div class="wrapper">
+
+      <div class="box leftbox">
+	<h3>Volume Settings</h3>
+	<hr/>
+	<ul>
+	  <li>
+
+	  {% if active %}
+
+	  <form action='{% url django_home.views.deactivatevolume volume.name %}' method="post">{% csrf_token %}
+	    <input class="submit" type="submit" value="Deactivate" />
+	  </form>
+
+	  {% else %}
+
+	  <form action='{% url django_home.views.activatevolume volume.name %}' method="post">{% csrf_token %}
+	    <input class="submit" type="submit" value="Activate" />
+	  </form>
+
+	  {% endif %}
+	  
+	  </li>
+
+	  <li><a href='{% url django_home.views.volumepermissions volume.name %}'>Permissions</a></li>
+
+	  <li><a href='{% url django_home.views.deletevolume volume.name %}'>Delete Volume</a></li>
+	</ul>
+      </div>
+
+      <div class="box rightbox">
+	<p> Volume is {% if active %}<span style="font-weight:bold;color:green;">active{% else %}<span style="font-weight:bold;color:red;">inactive{% endif %}</span>.</p>
+	<p> Block size:<span style="font-weight:bold;"> {{volume.blocksize}}</span></p>
+	<br/>
+	<p><span style="font-weight:bold;">Description:</span>{{volume.description}}
+	</p>
+      </div>
     </div>
-    <hr/>
-    <div id="volume_actions">
-      <h5>Volume Settings</h5>
-      <ul>
-	<li>Permissions</li>
-	<li>Activate/Disable</li>
-	<li>Delete</li>
-      </ul>
+    <br/>
+    <br/>
       {% endblock %}
       {% block footer %}
-    <a href='{% url "django_home.views.myvolumes" %}'>My Volumes</a>
-    <a href='{% url "django_home.views.home" %}'>Home</a>
+    <a href='{% url django_home.views.myvolumes %}'>My Volumes</a>
+    <a href='{% url django_home.views.home %}'>Home</a>
     {% endblock %}
 
