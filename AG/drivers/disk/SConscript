@@ -10,19 +10,17 @@ source_files = """
 # add source file search paths here
 CPPPATH = """
    #libsyndicate/
-   /usr/include/syndicate
-   /usr/local/include/syndicate
-   #AG/
+   #build/out/protobufs
 """
 
 # add library paths here
 LIBPATH = """
+   #build/out/libsyndicate
 """
 
 # add libraries here
 LIBS = """
    syndicate
-   dl
 """
 
 # add additional CPPFLAGS here
@@ -36,6 +34,7 @@ env = env.Clone()
 env.Append(LIBS = Split(LIBS))
 env.Append(CPPPATH = Split(CPPPATH))
 env.Append(CPPFLAGS = CPPFLAGS)
+env.Append(LIBPATH = Split(LIBPATH))
 
 # generate the shared library
 libAGdiskdriver = env.SharedLibrary( target="libAGdiskdriver.so", source=[Split(source_files)] )

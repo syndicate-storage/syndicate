@@ -8,7 +8,7 @@ source_files = """
 # add source file search paths here
 CPPPATH = """
    #libsyndicate/
-   /usr/local/include/syndicate
+   #build/out/protobufs
 """
 
 # add library paths here
