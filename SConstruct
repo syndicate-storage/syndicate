@@ -106,8 +106,8 @@ libsyndicate_install_library = env.InstallLibrary( lib_install_dir, libsyndicate
 env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers] )
 
 # alias installation targets for AG disk driver
-ag_driver_disk_install = env.InstallLibrary( lib_install_dir, ag_driver_disks )
-env.Alias( 'ag-disk-driver-install', [ag_driver_disk_install] )
+#ag_driver_disk_install = env.InstallLibrary( lib_install_dir, ag_driver_disks )
+#env.Alias( 'ag-disk-driver-install', [ag_driver_disk_install] )
 # initialization
 
 # set umask correctly
