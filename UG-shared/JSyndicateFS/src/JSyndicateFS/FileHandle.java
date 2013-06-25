@@ -33,7 +33,7 @@ public class FileHandle implements Closeable {
     /*
      * Construct FileHandle from FileSystem and FileStatus
      */
-    public FileHandle(FileSystem fs, FileStatus status, JSFSFileInfo fileinfo) throws IOException {
+    FileHandle(FileSystem fs, FileStatus status, JSFSFileInfo fileinfo) throws IOException {
         if(fs == null)
             throw new IllegalArgumentException("Can not create FileHandle from null filesystem");
         if(status == null)
@@ -52,7 +52,7 @@ public class FileHandle implements Closeable {
     /*
      * Return FileInfo
      */
-    public JSFSFileInfo getFileInfo() {
+    JSFSFileInfo getFileInfo() {
         return this.fileinfo;
     }
     
@@ -78,6 +78,20 @@ public class FileHandle implements Closeable {
     }
     
     /*
+     * Read data from the file
+     */
+    public int readFileData(byte[] buffer, int size, long offset) throws IOException {
+        return this.filesystem.readFileData(this, buffer, size, offset);
+    }
+    
+    /*
+     * Write data to the file
+     */
+    public void writeFileData(byte[] buffer, int size, long offset) throws IOException {
+        this.filesystem.writeFileData(this, buffer, size, offset);
+    }
+    
+    /*
      * True if the file is open
      */
     public boolean isOpen() {
@@ -93,6 +107,14 @@ public class FileHandle implements Closeable {
     public void close() throws IOException {
         this.filesystem.closeFileHandle(this);
         
+        this.fileinfo = null;
+        this.closed = true;
+    }
+    
+    /*
+     * This function will be called when handle is closed through other classes
+     */
+    void notifyClose() {
         this.fileinfo = null;
         this.closed = true;
     }

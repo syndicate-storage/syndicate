@@ -2,6 +2,7 @@
 
 # add dnlibs
 import dnlibs
+import os
 
 # get our environment
 Import('env')
@@ -10,10 +11,15 @@ env = env.Clone()
 # get current path
 CurPath = Dir('.').srcnode().abspath + "/"
 
+LibraryPath = "libs"
 DependencyFile = CurPath + "dependencies.xml"
-LibraryPath = CurPath + "libs/"
+LibraryAbsPath = CurPath + LibraryPath
 
-dnlibs.downloadDependencies(DependencyFile, LibraryPath)
+if not (os.path.isdir(LibraryAbsPath) and os.path.exists(LibraryAbsPath)):
+   # make dir
+   os.mkdir(LibraryAbsPath)
+
+dnlibs.downloadDependencies(DependencyFile, LibraryAbsPath + "/")
 
 Return(  )
 

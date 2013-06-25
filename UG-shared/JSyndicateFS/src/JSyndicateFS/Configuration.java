@@ -25,9 +25,12 @@ public class Configuration {
     public static final int MAX_METADATA_CACHE_SIZE = 0;
     // no timeout
     public static final int CACHE_TIMEOUT_SECOND = 0;
+    // read buffer size
+    public static final int READ_BUFFER_SIZE = 4096;
     
     private int maxMetadataCacheSize;
     private int cacheTimeoutSecond;
+    private int readBufferSize;
     
     public Configuration() {
         this.nativeConfig = new JSFSConfig();
@@ -38,6 +41,7 @@ public class Configuration {
         
         this.maxMetadataCacheSize = MAX_METADATA_CACHE_SIZE;
         this.cacheTimeoutSecond = CACHE_TIMEOUT_SECOND;
+        this.readBufferSize = READ_BUFFER_SIZE;
     }
     
     public File getConfigFile() {
@@ -139,6 +143,17 @@ public class Configuration {
             throw new IllegalAccessException("Can not modify the locked object");
         
         this.cacheTimeoutSecond = timeoutSecond;
+    }
+    
+    public int getReadBufferSize() {
+        return this.readBufferSize;
+    }
+    
+    public void setReadBufferSize(int bufferSize) throws IllegalAccessException {
+        if(this.lock)
+            throw new IllegalAccessException("Can not modify the locked object");
+        
+        this.readBufferSize = bufferSize;
     }
     
     public void lock() {

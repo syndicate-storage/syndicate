@@ -17,7 +17,7 @@ public class FileStatus {
     /*
      * Construct FileStatus
      */
-    public FileStatus(Path path, JSFSStat statbuf) {
+    FileStatus(Path path, JSFSStat statbuf) {
         if(path == null)
             throw new IllegalArgumentException("Can not create FileStatus from null Path");
         if(statbuf == null)
