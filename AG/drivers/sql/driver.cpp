@@ -82,7 +82,7 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     for (iter = fs2sql->begin(); iter != fs2sql->end(); iter++) {
 	publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second.c_str());
     }
-    //ms_client_destroy(mc);
+    ms_client_destroy(mc);
     return 0;
 }
 
@@ -129,15 +129,15 @@ static int publish(const char *fpath, int type, const char* sql_query)
     switch (type) {
 	case MD_ENTRY_DIR:
 	    ment->type = MD_ENTRY_DIR;
-	    //if ( (i = ms_client_mkdir(mc, ment)) < 0 ) {
+	    if ( (i = ms_client_mkdir(mc, ment)) < 0 ) {
 		cout<<"ms client mkdir "<<i<<endl;
-	    //}
+	    }
 	    break;
 	case MD_ENTRY_FILE:
 	    ment->type = MD_ENTRY_FILE;
-	    //if ( (i = ms_client_create(mc, ment)) < 0 ) {
+	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
 		cout<<"ms client create "<<i<<endl;
-	    //}
+	    }
 	    break;
 	default:
 	    break;

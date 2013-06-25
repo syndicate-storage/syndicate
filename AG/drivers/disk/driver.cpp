@@ -350,7 +350,7 @@ static int publish(const char *fpath, const struct stat *sb,
 	case FTW_F:
 	    ment->type = MD_ENTRY_FILE;
 	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
-		cout<<"ms client mkdir "<<i<<endl;
+		cout<<"ms client create "<<i<<endl;
 	    }
 	    break;
 	case FTW_SL:
