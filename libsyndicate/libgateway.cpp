@@ -825,6 +825,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    char* volume_name = NULL;
    char* volume_secret = NULL;
    char* dataset = NULL;
+   char* gw_driver = NULL;
    bool pub_mode = false;
    
    static struct option gateway_options[] = {
@@ -840,13 +841,14 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
       {"logfile\0Path to the log file",                     required_argument,   0, 'l'},
       {"pidfile\0Path to the PID file",                     required_argument,   0, 'i'},
       {"dataset\0Path to dataset",                     	    required_argument,   0, 'd'},
+      {"gw-driver\0Gateway driver",                         required_argument,   0, 'g'},
       {"help\0Print this message",                          no_argument,         0, 'h'},
       {0, 0, 0, 0}
    };
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:S:u:p:P:m:fwl:i:d:h", gateway_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:S:u:p:P:m:fwl:i:d:g:h", gateway_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -897,6 +899,10 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
 	    pub_mode = true;
             break;
          }
+         case 'g': {
+            gw_driver = optarg;
+            break;
+         }
          case 'h': {
             gateway_usage( argv[0], gateway_options, 0 );
             break;
@@ -926,11 +932,16 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    if( rc != 0 ) {
       exit(1);
    }
-
+   // override ag_driver provided in conf file if driver is 
+   // specified as a command line argument.
+   if ( gw_driver ) {
+       if (gateway_type == SYNDICATE_AG)
+	   conf.ag_driver = gw_driver;
+   }
    // copy conf to global_conf
    memcpy( global_conf, &conf, sizeof( struct md_syndicate_conf ) );
    // load AG driver
-   if ( conf.ag_driver ) {
+   if ( conf.ag_driver && gateway_type == SYNDICATE_AG) {
       if ( load_AG_driver( conf.ag_driver ) < 0)
 	 exit(1);
    }
