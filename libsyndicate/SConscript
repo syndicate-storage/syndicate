@@ -27,6 +27,7 @@ LIBS = """
    uriparser
    microhttpd
    rt
+   dl
 """
 
 # add headers here (will be returned by SCons)
