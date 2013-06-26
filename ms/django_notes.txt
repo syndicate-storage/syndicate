@@ -4,10 +4,10 @@ Author: John Whelchel
 Date: 5/28/13 - 6/20/13
 
 To-do:
-- Use formset.has_changed() to simplify changepermissions view. (is there an equilavent for pure forms we can iterate through?)
-- what is this line in server output:
-  INFO     2013-06-25 19:23:59,762 gaesession.py:518] gae-sessions: deleted 0 expired sessions from the datastore
 
+- This is more for the future, but create a test/suite
+- MyVolumes doesn't seem to be working on production
+- Create cron job for gaesessions
 - Convert all volume URL variables to volume_name
 - Create volume app to organize code better
 - Check to see if cache is messing up active/inactive check (google ndb cache) then move to other volume settings and possibly user settings

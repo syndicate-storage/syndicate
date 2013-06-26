@@ -13,13 +13,13 @@
 
 	  {% if active %}
 
-	  <form action='{% url django_home.views.deactivatevolume volume.name %}' method="post">{% csrf_token %}
+	  <form action='{% url django_volume.views.deactivatevolume volume.name %}' method="post">{% csrf_token %}
 	    <input class="submit" type="submit" value="Deactivate" />
 	  </form>
 
 	  {% else %}
 
-	  <form action='{% url django_home.views.activatevolume volume.name %}' method="post">{% csrf_token %}
+	  <form action='{% url django_volume.views.activatevolume volume.name %}' method="post">{% csrf_token %}
 	    <input class="submit" type="submit" value="Activate" />
 	  </form>
 
@@ -27,9 +27,9 @@
 	  
 	  </li>
 
-	  <li><a href='{% url django_home.views.volumepermissions volume.name %}'>Permissions</a></li>
+	  <li><a href='{% url django_volume.views.volumepermissions volume.name %}'>Permissions</a></li>
 
-	  <li><a href='{% url django_home.views.deletevolume volume.name %}'>Delete Volume</a></li>
+	  <li><a href='{% url django_volume.views.deletevolume volume.name %}'>Delete Volume</a></li>
 	</ul>
       </div>
 

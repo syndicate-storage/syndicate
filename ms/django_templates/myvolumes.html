@@ -15,7 +15,7 @@
 	{% for v in vols %} 
 
 	<tr>
-          <td><a href='{% url django_home.views.viewvolume v.name %}'>{{v.name}}</a></td>
+          <td><a href='{% url django_volume.views.viewvolume v.name %}'>{{v.name}}</a></td>
 	  <td>{{v.description}}</td>
 	  <td>{{v.active}}</td>
 	  <td>List of Users</td>

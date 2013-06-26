@@ -226,7 +226,7 @@ class Volume( storagetypes.Object ):
    @classmethod
    def Read( cls, name ):
       """
-      Given a volume ID (name), get the volume entity.
+      Given a volume ID (name), get the volume entity. Returns None on miss.
       """
       volume_key_name = Volume.make_key_name( name=name )
       volume_key = storagetypes.make_key( Volume, Volume.make_key_name( name=name ) )
@@ -234,7 +234,10 @@ class Volume( storagetypes.Object ):
       volume = storagetypes.memcache.get( volume_key_name )
       if volume == None:
          volume = volume_key.get( use_memcache=False )
-         storagetypes.memcache.set( volume_key_name, volume )
+         if not volume:
+            return None
+         else:
+            storagetypes.memcache.set( volume_key_name, volume )
 
       return volume
 
