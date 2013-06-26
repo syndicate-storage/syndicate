@@ -8,12 +8,14 @@ import JSyndicateFS.cache.TimeoutCache;
 import JSyndicateFSJNI.JSyndicateFS;
 import JSyndicateFSJNI.struct.JSFSConfig;
 import JSyndicateFSJNI.struct.JSFSFileInfo;
+import JSyndicateFSJNI.struct.JSFSFillDir;
 import JSyndicateFSJNI.struct.JSFSStat;
 import java.io.Closeable;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Hashtable;
 import java.util.Map;
@@ -262,9 +264,19 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not open file handle from null status");
             
         JSFSFileInfo fileinfo = new JSFSFileInfo();
-        int ret = JSyndicateFS.jsyndicatefs_open(status.getPath().getPath(), fileinfo);
-        if(ret != 0) {
-            throw new IOException("jsyndicatefs_open failed : " + ret);
+        
+        if(status.isFile()) {
+            int ret = JSyndicateFS.jsyndicatefs_open(status.getPath().getPath(), fileinfo);
+            if(ret != 0) {
+                throw new IOException("jsyndicatefs_open failed : " + ret);
+            }
+        } else if(status.isDirectory()) {
+            int ret = JSyndicateFS.jsyndicatefs_opendir(status.getPath().getPath(), fileinfo);
+            if(ret != 0) {
+                throw new IOException("jsyndicatefs_opendir failed : " + ret);
+            }
+        } else {
+            throw new IOException("Can not open file handle from unknown status");
         }
         
         FileHandle filehandle = new FileHandle(this, status, fileinfo);
@@ -296,9 +308,18 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not close null filehandle");
         
         if(filehandle.isOpen()) {
-            int ret = JSyndicateFS.jsyndicatefs_release(filehandle.getStatus().getPath().getPath(), filehandle.getFileInfo());
-            if(ret != 0) {
-                throw new IOException("jsyndicatefs_release failed : " + ret);
+            if(filehandle.getStatus().isFile()) {
+                int ret = JSyndicateFS.jsyndicatefs_release(filehandle.getStatus().getPath().getPath(), filehandle.getFileInfo());
+                if(ret != 0) {
+                    throw new IOException("jsyndicatefs_release failed : " + ret);
+                }
+            } else if(filehandle.getStatus().isDirectory()) {
+                int ret = JSyndicateFS.jsyndicatefs_releasedir(filehandle.getStatus().getPath().getPath(), filehandle.getFileInfo());
+                if(ret != 0) {
+                    throw new IOException("jsyndicatefs_releasedir failed : " + ret);
+                }
+            } else {
+                throw new IOException("Can not close file handle from unknown status");
             }
         }
         
@@ -315,6 +336,8 @@ public class FileSystem implements Closeable {
     public InputStream getFileInputStream(FileStatus status) throws IOException {
         if(status == null)
             throw new IllegalArgumentException("Can not open file handle from null status");
+        if(!status.isFile())
+            throw new IllegalArgumentException("Can not open file handle from status that is not a file");
         
         FileHandle filehandle = openFileHandle(status);
         return new FSInputStream(filehandle, this.conf.getReadBufferSize());
@@ -326,6 +349,8 @@ public class FileSystem implements Closeable {
     public OutputStream getFileOutputStream(FileStatus status) throws IOException {
         if(status == null)
             throw new IllegalArgumentException("Can not open file handle from null status");
+        if(!status.isFile())
+            throw new IllegalArgumentException("Can not open file handle from status that is not a file");
         
         FileHandle filehandle = openFileHandle(status);
         return new FSOutputStream(filehandle);
@@ -336,6 +361,8 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not read from null filehandle");
         if(!filehandle.isOpen())
             throw new IllegalArgumentException("Can not read from closed filehandle");
+        if(!filehandle.getStatus().isFile())
+            throw new IllegalArgumentException("Can not read from filehandle that is not a file");
         if(buffer == null)
             throw new IllegalArgumentException("Can not read to null buffer");
         if(buffer.length < size)
@@ -358,6 +385,8 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not write to null filehandle");
         if(!filehandle.isOpen())
             throw new IllegalArgumentException("Can not write to closed filehandle");
+        if(!filehandle.getStatus().isFile())
+            throw new IllegalArgumentException("Can not write to filehandle that is not a file");
         if(buffer == null)
             throw new IllegalArgumentException("Can not write null buffer");
         if(buffer.length < size)
@@ -375,6 +404,110 @@ public class FileSystem implements Closeable {
         if(ret < size) {
             // pending?
             throw new IOException("unexpected return : " + ret);
+        }
+    }
+    
+    public String[] readDirectoryEntries(Path path) throws FileNotFoundException, IOException {
+        if(path == null)
+            throw new IllegalArgumentException("Can not read directory entries from null path");
+            
+        FileHandle filehandle = openFileHandle(path);
+        if(filehandle == null)
+            throw new IOException("Can not read directory entries from null file handle");
+        
+        return readDirectoryEntries(filehandle);
+    }
+    
+    public String[] readDirectoryEntries(FileStatus status) throws IOException {
+        if(status == null)
+            throw new IllegalArgumentException("Can not read directory entries from null status");
+        
+        FileHandle filehandle = openFileHandle(status);
+        if(filehandle == null)
+            throw new IOException("Can not read directory entries from null file handle");
+        
+        return readDirectoryEntries(filehandle);
+    }
+    
+    public String[] readDirectoryEntries(FileHandle filehandle) throws IOException {
+        if(filehandle == null)
+            throw new IllegalArgumentException("Can not read directory entries from null filehandle");
+            
+        JSFSFileInfo fileinfo = new JSFSFileInfo();
+        DirFillerImpl filler = new DirFillerImpl();
+        
+        if(!filehandle.getStatus().isDirectory())
+            throw new IllegalArgumentException("Can not read directory entries from filehandle that is not a directory");
+        
+        int ret = JSyndicateFS.jsyndicatefs_readdir(filehandle.getPath().getPath(), filler, 0, fileinfo);
+        if(ret != 0) {
+            throw new IOException("jsyndicatefs_readdir failed : " + ret);
+        }
+        
+        return filler.getEntryNames();
+    }
+    
+    public void delete(FileStatus status) throws IOException {
+        if(status == null)
+            throw new IllegalArgumentException("Can not delete file from null status");
+        
+        if(status.isFile()) {
+            int ret = JSyndicateFS.jsyndicatefs_unlink(status.getPath().getPath());
+            if(ret < 0) {
+                throw new IOException("jsyndicatefs_unlink failed : " + ret);
+            }
+        } else if(status.isDirectory()) {
+            int ret = JSyndicateFS.jsyndicatefs_rmdir(status.getPath().getPath());
+            if(ret < 0) {
+                throw new IOException("jsyndicatefs_rmdir failed : " + ret);
+            }
+        } else {
+            throw new IOException("Can not delete file from unknown status");
+        }
+    }
+
+    public void rename(FileStatus status, Path newpath) throws IOException {
+        if(status == null)
+            throw new IllegalArgumentException("Can not rename file from null status");
+        if(newpath == null)
+            throw new IllegalArgumentException("Can not rename file to null new name");
+        
+        if(status.isFile() || status.isDirectory()) {
+            int ret = JSyndicateFS.jsyndicatefs_rename(status.getPath().getPath(), newpath.getPath());
+            if(ret < 0) {
+                throw new IOException("jsyndicatefs_rename failed : " + ret);
+            }
+        } else {
+            throw new IOException("Can not delete file from unknown status");
+        }
+    }
+
+    public void mkdir(Path path) throws IOException {
+        if(path == null)
+            throw new IllegalArgumentException("Can not mkdir from null path");
+        
+        int ret = JSyndicateFS.jsyndicatefs_mkdir(path.getPath(), 0x777);
+        if(ret < 0) {
+            throw new IOException("jsyndicatefs_mkdir failed : " + ret);
+        }
+    }
+
+    public void mkdirs(Path path) throws IOException {
+        if(path == null)
+            throw new IllegalArgumentException("Can not mkdir from null path");
+     
+        // recursive call
+        Path parent = path.getParent();
+        if(parent != null) {
+            if(!exists(parent)) {
+                // make
+                mkdirs(parent);
+            }
+        }
+        
+        int ret = JSyndicateFS.jsyndicatefs_mkdir(path.getPath(), 0x777);
+        if(ret < 0) {
+            throw new IOException("jsyndicatefs_mkdir failed : " + ret);
         }
     }
 }
