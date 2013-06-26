@@ -24,7 +24,7 @@ def downloadDependencies(downlistfile, targetPath):
         libname = libElement.find('name').text
         urlname = libElement.find('url').text
         filename = libElement.find('filename').text
-        savepath = targetPath + filename
+        savepath = os.path.join(targetPath, filename)
 
         print "Check Library : ", libname
         if checkFileExist(savepath):
