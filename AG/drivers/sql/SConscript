@@ -22,6 +22,7 @@ LIBPATH = """
 # add libraries here
 LIBS = """
    syndicate
+   xerces-c
 """
 
 # add additional CPPFLAGS here

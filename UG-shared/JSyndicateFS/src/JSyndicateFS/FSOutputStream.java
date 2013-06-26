@@ -3,8 +3,11 @@
  */
 package JSyndicateFS;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  *
@@ -12,6 +15,8 @@ import java.io.OutputStream;
  */
 public class FSOutputStream extends OutputStream {
 
+    public static final Log LOG = LogFactory.getLog(FSOutputStream.class);
+    
     public static final int DEFAULT_BUFFER_SIZE = 4096;
     
     private FileHandle filehandle;
@@ -22,7 +27,50 @@ public class FSOutputStream extends OutputStream {
     private long curOffset;
     private long nextWriteOffset;
 
+    FSOutputStream(File file) {
+        if(file == null)
+            throw new IllegalArgumentException("Can not create output stream from null file");
+        
+        int bufferSize = DEFAULT_BUFFER_SIZE;
+        
+        FileSystem filesystem = file.getFileSystem();
+        
+        if(filesystem != null) {
+            Configuration conf = filesystem.getConfiguration();
+            if(conf != null) {
+                bufferSize = conf.getWriteBufferSize();
+            }
+            
+            Path path = file.getPath();
+            try {
+                FileHandle filehandle = filesystem.openFileHandle(path);
+                initialize(filehandle, bufferSize);
+            } catch (FileNotFoundException ex) {
+                LOG.error(ex);
+                throw new IllegalArgumentException(ex.toString());
+            } catch (IOException ex) {
+                LOG.error(ex);
+                throw new IllegalArgumentException(ex.toString());
+            }
+        } else {
+            throw new IllegalArgumentException("Can not create input stream from null filesystem");
+        }
+    }
+    
     FSOutputStream(FileHandle filehandle) {
+        if(filehandle == null)
+            throw new IllegalArgumentException("Can not create output stream from null filehandle");
+
+        int bufferSize = DEFAULT_BUFFER_SIZE;
+        
+        FileSystem filesystem = filehandle.getFileSystem();
+        if(filesystem != null) {
+            Configuration conf = filesystem.getConfiguration();
+            if(conf != null) {
+                bufferSize = conf.getWriteBufferSize();
+            }
+        }
+        
         initialize(filehandle, DEFAULT_BUFFER_SIZE);
     }
     
