@@ -10,7 +10,7 @@ import logging
 
 import cgi
 import urlparse
-import sys
+import sys, os
 
 import traceback 
 
@@ -28,10 +28,11 @@ from openid.extensions import pape, sreg
 
 import gaesession
 
-TRUST_ROOT_HOST = "localhost:8080"
+if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
+    TRUST_ROOT_HOST = "localhost:8080"
+else:
+    TRUST_ROOT_HOST = "syndicate-metadata.appspot.com"
 HOST_URL = "http://" + TRUST_ROOT_HOST
-#TRUST_ROOT_HOST = "syndicate-metadata.appspot.com"
-#HOST_URL = "http://syndicate-metadata.appspot.com"
 
 OPENID_PROVIDER_NAME = "VICCI"
 

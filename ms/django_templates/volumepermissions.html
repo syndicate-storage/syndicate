@@ -6,7 +6,7 @@
 
 	{{message}}
 
-    <form id='formset' action='{% url django_home.views.changepermissions volume.name %}' method="post">{% csrf_token %}
+    <form id='formset' action='{% url django_volume.views.changepermissions volume.name %}' method="post">{% csrf_token %}
 	   {% if formset %}
             {{ formset.management_form }}
             <table class="permissions" border>
@@ -35,7 +35,7 @@
     </form>	
     <br/>
 
-    <form id="addform" action="{% url django_home.views.addpermissions volume.name %}" method="post">{% csrf_token %}
+    <form id="addform" action="{% url django_volume.views.addpermissions volume.name %}" method="post">{% csrf_token %}
         <h4> Add new volume user </h4>
         <table class="addpermissions" border>
             {{ addform.as_table }}

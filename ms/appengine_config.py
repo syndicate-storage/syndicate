@@ -14,8 +14,8 @@ appstats_CALC_RPC_COSTS = True
 def webapp_add_wsgi_middleware(app):
 
 #Does this get called too often?
-  while delete_expired_sessions() is False:
-    pass
+#  while delete_expired_sessions() is False:
+#    pass
 
   from google.appengine.ext.appstats import recording
   app = SessionMiddleware(app, cookie_key=SESSION_COOKIE_KEY)

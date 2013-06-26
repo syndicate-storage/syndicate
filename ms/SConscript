@@ -18,6 +18,7 @@ ms_files.extend( Glob("*.py") )
 
 # django application files
 ms_files.extend( Glob("django_home/*.py") )
+ms_files.extend( Glob("django_volume/*.py") )
 ms_files.extend( Glob("django_accounts/*.py") )
 ms_files.extend( Glob("django_syndicate_web/*.py") )
 
