@@ -305,6 +305,20 @@ public class FileSystem implements Closeable {
         return openFileHandle(status);
     }
     
+    public void flushFileHandle(FileHandle filehandle) throws IOException {
+        if(filehandle == null)
+            throw new IllegalArgumentException("Can not flush null filehandle");
+        if(filehandle.isDirty())
+            throw new IOException("Can not flush dirty file handle");
+        
+        if(filehandle.isOpen()) {
+            int ret = JSyndicateFS.jsyndicatefs_flush(filehandle.getStatus().getPath().getPath(), filehandle.getFileInfo());
+            if(ret != 0) {
+                throw new IOException("jsyndicatefs_flush failed : " + ret);
+            }
+        }
+    }
+    
     /*
      * Close file handle
      */
@@ -351,7 +365,7 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not open file handle from status that is not a file");
         
         FileHandle filehandle = openFileHandle(status);
-        return new FSInputStream(filehandle, this.conf.getReadBufferSize());
+        return new FSInputStream(filehandle);
     }
     
     /*

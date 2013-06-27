@@ -379,6 +379,8 @@ public class File {
         
         try {
             this.filesystem.rename(this.status, dest.path);
+            // update my path
+            this.path = this.filesystem.getAbsolutePath(dest.path);
             return true;
         } catch (IOException ex) {
             LOG.error(ex);
