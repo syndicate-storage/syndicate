@@ -12,6 +12,21 @@ h1 {
     text-align:center
 }
 
+a.navbar:link {
+    text-decoration: none;
+    color:ivory !important;
+}
+
+a.navbar:active {
+    text-decoration: none;
+    color:ivory !important;
+}
+
+a.navbar:visited {
+    text-decoration: none;
+    color:ivory !important;
+}
+
 div.box {
     margin: 1px;
     padding: 8px;

@@ -7,7 +7,7 @@ class CreateVolume(override_forms.MyForm):
     name = forms.CharField(label="Volume name",
                            initial="My_Volume",
                            max_length=20,
-                           help_text="20 characters maximum, no spaces.")
+                           help_text="20 characters maximum, no spaces. This cannot be changed later.")
 
     blocksize = forms.IntegerField(label="Desired size of data blocks",
                                    initial="61440",
