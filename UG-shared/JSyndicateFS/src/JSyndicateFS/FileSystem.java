@@ -8,14 +8,12 @@ import JSyndicateFS.cache.TimeoutCache;
 import JSyndicateFSJNI.JSyndicateFS;
 import JSyndicateFSJNI.struct.JSFSConfig;
 import JSyndicateFSJNI.struct.JSFSFileInfo;
-import JSyndicateFSJNI.struct.JSFSFillDir;
 import JSyndicateFSJNI.struct.JSFSStat;
 import java.io.Closeable;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Hashtable;
 import java.util.Map;
@@ -29,6 +27,7 @@ import org.apache.commons.logging.LogFactory;
 public class FileSystem implements Closeable {
 
     public static final Log LOG = LogFactory.getLog(FileSystem.class);
+    
     private static final String FS_ROOT_PATH = "file:///";
     
     private static FileSystem fsInstance;
@@ -174,14 +173,14 @@ public class FileSystem implements Closeable {
         if(path == null)
             throw new IllegalArgumentException("Can not get absolute file path from null path");
         
-        Path absolute = null;
+        Path absolute;
         if(!path.isAbsolute()) {
             // start from working dir
             absolute = new Path(this.workingDir, path);
         } else {
             absolute = path;
         }
-        return path;
+        return absolute;
     }
     
     /*
@@ -191,17 +190,11 @@ public class FileSystem implements Closeable {
         if(path == null)
             throw new IllegalArgumentException("Can not get file status from null path");
         
-        Path absolute = null;
-        if(!path.isAbsolute()) {
-            // start from working dir
-            absolute = new Path(this.workingDir, path);
-        } else {
-            absolute = path;
-        }
+        Path absolute = getAbsolutePath(path);
         
         // check filestatus cache
         FileStatus cachedFileStatus = this.metadataCache.get(absolute);
-        if(cachedFileStatus != null) {
+        if(cachedFileStatus != null && !cachedFileStatus.isDirty()) {
             // has cache
             return cachedFileStatus;
         }
@@ -218,6 +211,16 @@ public class FileSystem implements Closeable {
         this.metadataCache.insert(absolute, status);
         
         return status;
+    }
+    
+    public void invalidateFileStatus(FileStatus status) {
+        if(status == null)
+            throw new IllegalArgumentException("Can not invalidate file status from null status");
+        
+        // invalidate cache
+        this.metadataCache.invalidate(status.getPath());
+        
+        status.setDirty();
     }
     
     /*
@@ -262,6 +265,8 @@ public class FileSystem implements Closeable {
     public FileHandle openFileHandle(FileStatus status) throws IOException {
         if(status == null)
             throw new IllegalArgumentException("Can not open file handle from null status");
+        if(status.isDirty())
+            throw new IllegalArgumentException("Can not open file handle from dirty status");
             
         JSFSFileInfo fileinfo = new JSFSFileInfo();
         
@@ -306,14 +311,18 @@ public class FileSystem implements Closeable {
     public void closeFileHandle(FileHandle filehandle) throws IOException {
         if(filehandle == null)
             throw new IllegalArgumentException("Can not close null filehandle");
+        //if(filehandle.isDirty())
+        //    throw new IOException("Can not close dirty file handle");
         
         if(filehandle.isOpen()) {
-            if(filehandle.getStatus().isFile()) {
+            FileStatus status = filehandle.getStatus();
+                
+            if(status.isFile()) {
                 int ret = JSyndicateFS.jsyndicatefs_release(filehandle.getStatus().getPath().getPath(), filehandle.getFileInfo());
                 if(ret != 0) {
                     throw new IOException("jsyndicatefs_release failed : " + ret);
                 }
-            } else if(filehandle.getStatus().isDirectory()) {
+            } else if(status.isDirectory()) {
                 int ret = JSyndicateFS.jsyndicatefs_releasedir(filehandle.getStatus().getPath().getPath(), filehandle.getFileInfo());
                 if(ret != 0) {
                     throw new IOException("jsyndicatefs_releasedir failed : " + ret);
@@ -336,6 +345,8 @@ public class FileSystem implements Closeable {
     public InputStream getFileInputStream(FileStatus status) throws IOException {
         if(status == null)
             throw new IllegalArgumentException("Can not open file handle from null status");
+        if(status.isDirty())
+            throw new IllegalArgumentException("Can not open file handle from dirty status");
         if(!status.isFile())
             throw new IllegalArgumentException("Can not open file handle from status that is not a file");
         
@@ -349,6 +360,8 @@ public class FileSystem implements Closeable {
     public OutputStream getFileOutputStream(FileStatus status) throws IOException {
         if(status == null)
             throw new IllegalArgumentException("Can not open file handle from null status");
+        if(status.isDirty())
+            throw new IllegalArgumentException("Can not open file handle from dirty status");
         if(!status.isFile())
             throw new IllegalArgumentException("Can not open file handle from status that is not a file");
         
@@ -361,6 +374,8 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not read from null filehandle");
         if(!filehandle.isOpen())
             throw new IllegalArgumentException("Can not read from closed filehandle");
+        if(filehandle.isDirty())
+            throw new IllegalArgumentException("Can not read from dirty filehandle");
         if(!filehandle.getStatus().isFile())
             throw new IllegalArgumentException("Can not read from filehandle that is not a file");
         if(buffer == null)
@@ -385,6 +400,8 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not write to null filehandle");
         if(!filehandle.isOpen())
             throw new IllegalArgumentException("Can not write to closed filehandle");
+        if(filehandle.isDirty())
+            throw new IllegalArgumentException("Can not write to from dirty filehandle");
         if(!filehandle.getStatus().isFile())
             throw new IllegalArgumentException("Can not write to filehandle that is not a file");
         if(buffer == null)
@@ -405,6 +422,10 @@ public class FileSystem implements Closeable {
             // pending?
             throw new IOException("unexpected return : " + ret);
         }
+        
+        // update file size temporarily
+        if(filehandle.getStatus().getSize() < offset + size)
+            filehandle.getStatus().setSize(offset + size);
     }
     
     public String[] readDirectoryEntries(Path path) throws FileNotFoundException, IOException {
@@ -421,6 +442,8 @@ public class FileSystem implements Closeable {
     public String[] readDirectoryEntries(FileStatus status) throws IOException {
         if(status == null)
             throw new IllegalArgumentException("Can not read directory entries from null status");
+        if(status.isDirty())
+            throw new IllegalArgumentException("Can not read directory entries from dirty status");
         
         FileHandle filehandle = openFileHandle(status);
         if(filehandle == null)
@@ -432,7 +455,9 @@ public class FileSystem implements Closeable {
     public String[] readDirectoryEntries(FileHandle filehandle) throws IOException {
         if(filehandle == null)
             throw new IllegalArgumentException("Can not read directory entries from null filehandle");
-            
+        if(filehandle.isDirty())
+            throw new IllegalArgumentException("Can not read directory entries from dirty filehandle");
+
         JSFSFileInfo fileinfo = new JSFSFileInfo();
         DirFillerImpl filler = new DirFillerImpl();
         
@@ -450,7 +475,9 @@ public class FileSystem implements Closeable {
     public void delete(FileStatus status) throws IOException {
         if(status == null)
             throw new IllegalArgumentException("Can not delete file from null status");
-        
+        if(status.isDirty())
+            throw new IllegalArgumentException("Can not delete file from dirty status");
+
         if(status.isFile()) {
             int ret = JSyndicateFS.jsyndicatefs_unlink(status.getPath().getPath());
             if(ret < 0) {
@@ -464,11 +491,15 @@ public class FileSystem implements Closeable {
         } else {
             throw new IOException("Can not delete file from unknown status");
         }
+        
+        invalidateFileStatus(status);
     }
 
     public void rename(FileStatus status, Path newpath) throws IOException {
         if(status == null)
             throw new IllegalArgumentException("Can not rename file from null status");
+        if(status.isDirty())
+            throw new IllegalArgumentException("Can not rename file from dirty status");
         if(newpath == null)
             throw new IllegalArgumentException("Can not rename file to null new name");
         
@@ -480,6 +511,8 @@ public class FileSystem implements Closeable {
         } else {
             throw new IOException("Can not delete file from unknown status");
         }
+        
+        invalidateFileStatus(status);
     }
 
     public void mkdir(Path path) throws IOException {

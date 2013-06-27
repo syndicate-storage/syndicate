@@ -86,7 +86,8 @@ public class FSInputStream extends InputStream {
     private void initialize(FileHandle filehandle, int bufferSize) {
         if(filehandle == null)
             throw new IllegalArgumentException("Can not create input stream from null filehandle");
-        
+        if(filehandle.isDirty())
+            throw new IllegalArgumentException("Can not create input stream from dirty filehandle");
         if(!filehandle.isOpen())
             throw new IllegalArgumentException("Can not create input stream from closed filehandle");
         

@@ -13,6 +13,9 @@ public class FileStatus {
 
     private Path path;
     private JSFSStat stat;
+    private boolean dirty;
+    private boolean sizeModified;
+    private long localFileSize;
     
     /*
      * Construct FileStatus
@@ -25,6 +28,9 @@ public class FileStatus {
             
         this.path = path;
         this.stat = statbuf;
+        this.dirty = false;
+        this.sizeModified = false;
+        this.localFileSize = 0;
     }
     
     public Path getPath() {
@@ -53,7 +59,15 @@ public class FileStatus {
      * Return the size in byte of this file
      */
     public long getSize() {
-        return this.stat.getSt_size();
+        if(this.sizeModified)
+            return this.localFileSize;
+        else
+            return this.stat.getSt_size();
+    }
+    
+    void setSize(long size) {
+        this.localFileSize = size;
+        this.sizeModified = true;
     }
     
     /*
@@ -68,5 +82,19 @@ public class FileStatus {
      */
     public long getLastModification() {
         return this.stat.getSt_mtim();
+    }
+    
+    /*
+     * Return True if data is modified after loaded
+     */
+    public boolean isDirty() {
+        return this.dirty;
+    }
+    
+    /*
+     * Set this status is invalid
+     */
+    public void setDirty() {
+        this.dirty = true;
     }
 }

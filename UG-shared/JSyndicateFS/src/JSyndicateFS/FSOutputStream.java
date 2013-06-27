@@ -81,7 +81,8 @@ public class FSOutputStream extends OutputStream {
     private void initialize(FileHandle filehandle, int bufferSize) {
         if(filehandle == null)
             throw new IllegalArgumentException("Can not create output stream from null filehandle");
-        
+        if(filehandle.isDirty())
+            throw new IllegalArgumentException("Can not create output stream from dirty filehandle");
         if(!filehandle.isOpen())
             throw new IllegalArgumentException("Can not create output stream from closed filehandle");
         

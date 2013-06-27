@@ -55,7 +55,18 @@ public class File {
     }
     
     private void loadStatus() {
-        if(!this.loadStatus) {
+        if(this.loadStatus) {
+            if(this.status.isDirty()) {
+                // reload
+                try {
+                    this.status = this.filesystem.getFileStatus(this.path);
+                } catch (FileNotFoundException ex) {
+                    LOG.debug("Fail loading FileStatus : " + this.path.toString());
+                } catch (IOException ex) {
+                    LOG.debug("Fail loading FileStatus : " + this.path.toString());
+                }
+            }
+        } else {
             try {
                 this.status = this.filesystem.getFileStatus(this.path);
             } catch (FileNotFoundException ex) {
@@ -65,11 +76,6 @@ public class File {
             }
             this.loadStatus = true;
         }
-    }
-    
-    private void reloadStatus() {
-        this.loadStatus = false;
-        loadStatus();
     }
     
     /*
@@ -349,8 +355,6 @@ public class File {
         loadStatus();
         
         if(this.status == null) {
-            
-            reloadStatus();
             try {
                 this.filesystem.mkdirs(this.path);
                 return true;

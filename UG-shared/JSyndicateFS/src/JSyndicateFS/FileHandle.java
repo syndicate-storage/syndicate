@@ -122,4 +122,13 @@ public class FileHandle implements Closeable {
         this.fileinfo = null;
         this.closed = true;
     }
+    
+    /*
+     * Return True if data is modified after loaded
+     */
+    public boolean isDirty() {
+        if(this.status != null)
+            return this.status.isDirty();
+        return false;
+    }
 }
