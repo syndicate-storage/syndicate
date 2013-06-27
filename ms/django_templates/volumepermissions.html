@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block head %}
-    <h1>{{volume.name}} Permissions </h1>
+    <h1><a href='{% url django_volume.views.viewvolume volume.name %}'>{{volume.name}}</a> Permissions </h1>
 {% endblock %}
 {% block mainbody %}
 

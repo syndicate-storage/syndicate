@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+  
+ 	{% block head %}
+   		<h1><a href='{% url django_volume.views.viewvolume volume.name %}'>{{volume.name}}</a> settings </h1>
+ 	{% endblock %}
+ 	{% block mainbody %}
+ 		{{message}}
+ 		<div class="box">
+ 			<h3>Activation status:{% if volume.active %}<span style="font-weight:bold;color:green;"> Active{% else %}<span style="font-weight:bold;color:red;"> Inactive{% endif %}</span></h3>
+ 			{% if volume.active %}
+	
+				<form action='{% url django_volume.views.deactivatevolume volume.name %}' method="post">{% csrf_token %}
+					{{ password.as_ul }}
+					<input class="submit" type="submit" value="Deactivate" />
+	 			</form>
+	
+			{% else %}
+	
+	 			<form action='{% url django_volume.views.activatevolume volume.name %}' method="post">{% csrf_token %}
+	 				{{ password.as_ul }}
+	   				<input class="submit" type="submit" value="Activate" />
+	 			</form>
+	
+			{% endif %}
+			<hr/>
+			<h3>Change Volume description</h3>
+			<form action='{% url django_volume.views.changevolume volume.name %}' method="post">{% csrf_token %}
+				{{ desc_form.as_ul }}
+				{{ password.as_ul }}
+				<input class="submit" type="submit" value="Change" />
+			</form>
+			<hr/>
+			<h3>Change volume password</h3>
+			<form action='{% url django_volume.views.changevolumepassword volume.name %}' method="post">{% csrf_token %}
+				{{pass_form.as_ul}}
+				<input class="submit" type="submit" value="Change" />
+			</form>
+		</div>
+	{% endblock %}
+  	{% block footer %}
+  		<a href='{% url django_home.views.myvolumes %}'>My volume</a>
+  		<a href='{% url django_home.views.home %}'>Home</
+  	{% endblock %}

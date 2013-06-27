@@ -42,12 +42,12 @@ def volume_update_shard_count( volume_name, num_shards ):
    return Volume.update_shard_count( volume_name, num_shards )
 
    
-def update_volume( volume_id, **fields ):
-   return Volume.Update( volume_id, **fields )
+def update_volume( volume_name, **fields ):
+   return Volume.Update( volume_name, **fields )
 
    
-def delete_volume( volume_id ):
-   return Volume.Delete( volume_id )
+def delete_volume( volume_name ):
+   return Volume.Delete( volume_name )
 
    
 def list_volumes( **attrs ):

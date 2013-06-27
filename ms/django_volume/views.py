@@ -232,14 +232,9 @@ def viewvolume(request, volume_name):
     vol = Volume.query(Volume.name == volume_name)
     for v in vol:
         realvol = v
-        if v.active:
-            active = True
-        else:
-            active = None
     t = loader.get_template('viewvolume.html')
     c = RequestContext(request, {'username':username,
                                  'volume':realvol,
-                                 'active':active,
                                  } 
                        )
     return HttpResponse(t.render(c))
@@ -271,7 +266,12 @@ def deletevolume(request, volume_name):
     username = session['login_email']
 
     message = ""
-    vol = db.read_volume(volume_name)
+    # The reason why query() is used here instead of db.read_volume() is
+    # because it is guaranteed to skip the cache, which is what we want in
+    # this case. (active issues with stale cache).
+    volq = Volume.query(Volume.name == volume_name)
+    for v in volq:
+        vol = v
     if request.method == "POST":
         form = forms.DeleteVolume(request.POST)
         if form.is_valid():
@@ -292,3 +292,111 @@ def deletevolume(request, volume_name):
         t = loader.get_template('deletevolume.html')
         c = RequestContext(request, {'username':username, 'form':form, 'message':message,'volume':vol} )
         return HttpResponse(t.render(c))    
+
+@authenticate
+def volumesettings(request, volume_name, message=""):
+    session = request.session
+    username = session['login_email']
+    # The reason why query() is used here instead of db.read_volume() is
+    # because it is guaranteed to skip the cache, which is what we want in
+    # this case. (active issues with stale cache).
+    volq = Volume.query(Volume.name == volume_name)
+    for v in volq:
+        vol = v
+
+    desc_form = forms.ChangeVolumeD(initial={'description':vol.description})
+    pass_form = forms.ChangePassword()
+    password = forms.Password()
+
+    t = loader.get_template('volumesettings.html')
+    c = RequestContext(request, {'username':username,
+                                 'volume': vol,
+                                 'desc_form':desc_form,
+                                 'pass_form':pass_form,
+                                 'password':password,
+                                 'message':message,
+                                 } )
+    return HttpResponse(t.render(c))
+
+@authenticate
+def changevolume(request, volume_name):
+    session = request.session
+    username = session['login_email']
+    # The reason why query() is used here instead of db.read_volume() is
+    # because it is guaranteed to skip the cache, which is what we want in
+    # this case. (active issues with stale cache).
+    volq = Volume.query(Volume.name == volume_name)
+    for v in volq:
+        vol = v
+
+    if request.method != "POST":
+        return HttpResponseRedirect('/syn/volume/' + volume_name + '/settings')
+
+    logging.info("Received change description post")
+    form = forms.Password(request.POST)
+    if not form.is_valid():
+        message = "Password required."
+        return volumesettings(request, volume_name, message)
+    logging.info("Password entered: " + form.cleaned_data['password'])
+    # Check password hash
+    hash_check = Volume.generate_password_hash(form.cleaned_data['password'], vol.volume_secret_salt)
+    if hash_check != vol.volume_secret_salted_hash:
+        message = "Incorrect password."
+        return volumesettings(request, volume_name, message)
+    logging.info("Password matches")
+
+    desc_form = forms.ChangeVolumeD(request.POST)
+
+    if not desc_form.is_valid():
+        message = "Invalid description field entries."
+        return volumesettings(request, volume_name, message)
+
+    logging.info("Attempting to change description")
+    kwargs = {}
+    if desc_form.cleaned_data['description']:
+        kwargs['description'] = desc_form.cleaned_data['description']
+    db.update_volume(volume_name, **kwargs)
+    return HttpResponseRedirect('/syn/volume/' + volume_name + '/settings')
+
+
+
+
+@authenticate
+def changevolumepassword(request, volume_name):
+    session = request.session
+    username = session['login_email']
+    # The reason why query() is used here instead of db.read_volume() is
+    # because it is guaranteed to skip the cache, which is what we want in
+    # this case. (active issues with stale cache).
+    volq = Volume.query(Volume.name == volume_name)
+    for v in volq:
+        vol = v
+
+    if request.method != "POST":
+        return HttpResponseRedirect('/syn/volume/' + volume_name + '/settings')
+
+    logging.info("Received post to change password")
+    form = forms.ChangePassword(request.POST)
+    if not form.is_valid():
+        message = "You must fill out all password fields."
+        return volumesettings(request, volume_name, message)
+    else:
+
+        # Check password hash
+        hash_check = Volume.generate_password_hash(form.cleaned_data['oldpassword'], vol.volume_secret_salt)
+        if hash_check != vol.volume_secret_salted_hash:
+            message = "Incorrect password."
+            return volumesettings(request, volume_name, message)
+        elif form.cleaned_data['newpassword_1'] != form.cleaned_data['newpassword_2']:
+            message = "Your new passwords did not match each other."
+            return volumesettings(request, volume_name, message)
+        logging.info("Password given was " + form.cleaned_data['oldpassword'] + " and new guys matched.")
+        # Ok change password 
+        kwargs = {}
+        new_volume_secret_salt, new_volume_secret_salted_hash = Volume.generate_volume_secret(form.cleaned_data['newpassword_1'])
+        kwargs['volume_secret_salted_hash'] = new_volume_secret_salted_hash
+        kwargs['volume_secret_salt'] = new_volume_secret_salt
+        db.update_volume(volume_name, **kwargs)
+        logging.info("Password apparently changed.")
+        return HttpResponseRedirect('/syn/volume/' + volume_name + '/settings')
+

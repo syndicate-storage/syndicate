@@ -6,35 +6,20 @@
     <div class="wrapper">
 
       <div class="box leftbox">
-	<h3>Volume Settings</h3>
+	<h3>Volume Actions</h3>
 	<hr/>
 	<ul>
-	  <li>
-
-	  {% if active %}
-
-	  <form action='{% url django_volume.views.deactivatevolume volume.name %}' method="post">{% csrf_token %}
-	    <input class="submit" type="submit" value="Deactivate" />
-	  </form>
-
-	  {% else %}
-
-	  <form action='{% url django_volume.views.activatevolume volume.name %}' method="post">{% csrf_token %}
-	    <input class="submit" type="submit" value="Activate" />
-	  </form>
-
-	  {% endif %}
-	  
+	  <li><a href="{% url django_volume.views.volumesettings volume.name %}">Volume Settings</a>
 	  </li>
 
-	  <li><a href='{% url django_volume.views.volumepermissions volume.name %}'>Permissions</a></li>
+	  <li><a href='{% url django_volume.views.volumepermissions volume.name %}'>Change Permissions</a></li>
 
 	  <li><a href='{% url django_volume.views.deletevolume volume.name %}'>Delete Volume</a></li>
 	</ul>
       </div>
 
       <div class="box rightbox">
-	<p> Volume is {% if active %}<span style="font-weight:bold;color:green;">active{% else %}<span style="font-weight:bold;color:red;">inactive{% endif %}</span>.</p>
+	<p> Volume is {% if volume.active %}<span style="font-weight:bold;color:green;">active{% else %}<span style="font-weight:bold;color:red;">inactive{% endif %}</span>.</p>
 	<p> Block size:<span style="font-weight:bold;"> {{volume.blocksize}}</span></p>
 	<br/>
 	<p><span style="font-weight:bold;">Description:</span>{{volume.description}}
