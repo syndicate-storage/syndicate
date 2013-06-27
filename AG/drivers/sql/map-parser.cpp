@@ -10,8 +10,8 @@
  *   <?xml version="1.0"?>
  *   <Map>
  *     <Pair>
- *       <Key>/foo/bar</Key>
- *       <Value>SQL</Value>
+ *       <File>/foo/bar</File>
+ *       <Query>SQL</Query>
  *     </Pair>
  *   </Map>
  * </summary>
@@ -21,7 +21,7 @@
 
 
 
-MapParserHandler::MapParserHandler(map<string, string>* xmlmap)
+MapParserHandler::MapParserHandler(map<string, struct map_info>* xmlmap)
 {
     this->xmlmap = xmlmap;
     open_key = false;
@@ -29,6 +29,7 @@ MapParserHandler::MapParserHandler(map<string, string>* xmlmap)
     element_buff = NULL;
     current_key = NULL;
     current_val = NULL;
+
 }
 
 void MapParserHandler::startElement(const   XMLCh* const    uri,
@@ -42,6 +43,22 @@ void MapParserHandler::startElement(const   XMLCh* const    uri,
     }
     if (!strncmp(tag, VALUE_TAG, strlen(VALUE_TAG))) {
 	open_key = true;
+    }
+    for (XMLSize_t i=0; i < attrs.getLength(); i++) {
+	char* attr = XMLString::transcode(attrs.getLocalName(i));
+	if (!strncmp(attr, PERM_ATTR, strlen(PERM_ATTR))) {
+	    char* perm_str = XMLString::transcode(attrs.getValue(i));
+	    if (perm_str) {
+		uint16_t usr = (uint16_t)perm_str[0];
+		usr <<= 6;
+		uint16_t grp = (uint16_t)perm_str[1];
+		grp <<= 3;
+		uint16_t oth = (uint16_t)perm_str[2];
+		current_perm = (usr | grp | oth);
+		XMLString::release(&perm_str);
+	    }
+	}
+	XMLString::release(&attr);
     }
     XMLString::release(&tag);
 }
@@ -61,8 +78,12 @@ void MapParserHandler::endElement (
 	current_val = strdup(element_buff);
     }
     if (!strncmp(tag, PAIR_TAG, strlen(PAIR_TAG))) {
-	if (current_key && current_val)
-	    (*xmlmap)[string(current_key)] = string(current_val);
+	if (current_key && current_val) {
+	    struct map_info mi;
+	    mi.query = current_val;
+	    mi.file_perm = current_perm;
+	    (*xmlmap)[string(current_key)] =mi;
+	}
 	if (current_key) {
 	    free(current_key);
 	    current_key = NULL;
@@ -116,7 +137,7 @@ void MapParserHandler::fatalError(const SAXParseException& exception)
 MapParser::MapParser( char* mapfile)
 {
     this->mapfile = mapfile;
-    FS2SQLMap = new map<string, string>;
+    FS2SQLMap = new map<string, struct map_info>;
 }
 
 int MapParser::parse()
@@ -156,7 +177,7 @@ int MapParser::parse()
     return 0;
 }
 	
-map<string, string>* MapParser::get_map()
+map<string, struct map_info>* MapParser::get_map()
 {
     return FS2SQLMap;
 }

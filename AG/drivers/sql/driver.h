@@ -4,12 +4,16 @@
 #include <map>
 #include <string>
 #include <set>
+#include <sstream>
+
 #include "libgateway.h"
 #include "libsyndicate.h"
 #include "map-parser.h"
+
 #include <sys/types.h>
-#include <dirent.h>
+#include <unistd.h>
 #include <errno.h>
+#include <time.h>
 
 using namespace std;
 
@@ -19,6 +23,11 @@ using namespace std;
 #define SYNDICATEFS_AG_DB_PROTO         "synadb://"
 #define SYNDICATEFS_AG_DB_DIR           1
 #define SYNDICATEFS_AG_DB_FILE          2
+#define FILE_PERMISSIONS_MASK		(S_IRUSR | S_IRGRP | S_IROTH | S_IFREG)
+#define DIR_PERMISSIONS_MASK		(S_IRUSR | S_IRGRP | S_IROTH | S_IFDIR)
+
+#define GET_SYNADB_PATH(url)\
+    (char*)url + strlen(SYNDICATEFS_AG_DB_PROTO)
 
 struct gateway_ctx {
     int request_type;
@@ -31,8 +40,8 @@ struct gateway_ctx {
     off_t num_read;
     // file block info
     uint64_t block_id;
-    // input descriptor
-    int fd;
+    // SQL query
+    char* sql_query;
 };
 
 struct path_comp {
@@ -62,7 +71,8 @@ struct path_comp {
 };   
 
 typedef map<string, struct md_entry*> content_map;
-static int publish(const char *fpath, int type, const char* sql_query);
+typedef map<string, struct map_info> query_map;
+static int publish(const char *fpath, int type, struct map_info mi);
 
 #endif //_SQL_DRIVER_H_
 

@@ -12,6 +12,9 @@ struct md_syndicate_conf CONF;
 // set of files we're exposing
 content_map DATA;
 
+// set of files we map to SQL queries
+query_map* FS2SQL = NULL;
+
 // Metadata service client of the AG
 ms_client *mc = NULL;
 
@@ -33,22 +36,162 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
 
 // read dataset or manifest 
 extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* user_cls ) {
-   errorf("%s", "INFO: get_dataset\n"); 
-    return 0;
+    errorf("%s", "INFO: get_dataset\n"); 
+    ssize_t ret = 0;
+    struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
+
+    if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
+	// read from database using ctx->sql_query...
+    }
+    else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
+	// read from RAM
+	memcpy( buf, ctx->data + ctx->data_offset, MIN( len, ctx->data_len - ctx->data_offset ) );
+	ctx->data_offset += len;
+	ret = (ssize_t)len;
+    }
+    else {
+	// invalid structure
+	ret = -EINVAL;
+    }
+
+    return ret;
 }
 
 
 // get metadata for a dataset
 extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blockinfo* info, void* usercls ) {
-   errorf("%s", "INFO: metadata_dataset\n"); 
-   return 0;
+    errorf("%s", "INFO: metadata_dataset\n"); 
+    char* file_path = NULL;
+    int64_t file_version = 0;
+    uint64_t block_id = 0;
+    int64_t block_version = 0;
+    struct timespec manifest_timestamp;
+    manifest_timestamp.tv_sec = 0;
+    manifest_timestamp.tv_nsec = 0;
+    bool staging = false;
+
+    int rc = md_HTTP_parse_url_path( (char*)dat->url_path, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
+    if( rc != 0 ) {
+	errorf( "failed to parse '%s', rc = %d\n", dat->url_path, rc );
+	free( file_path );
+	return -EINVAL;
+    }
+
+    content_map::iterator itr = DATA.find( string(file_path) );
+    if( itr == DATA.end() ) {
+	// not found in this volume
+	return -ENOENT;
+    }
+
+    struct gateway_ctx* ctx = (struct gateway_ctx*)usercls;
+    struct md_entry* ent = itr->second;
+
+    info->set_progress( ms::ms_gateway_blockinfo::COMMITTED );     // ignored, but needs to be filled in
+    info->set_blocking_factor( global_conf->blocking_factor );
+
+    info->set_file_version( file_version );
+    info->set_block_id( ctx->block_id );
+    info->set_block_version( block_version );
+    info->set_fs_path( string(ctx->file_path) );
+    info->set_file_mtime_sec( ent->mtime_sec );
+    info->set_file_mtime_nsec( ent->mtime_nsec );
+    info->set_write_time( ent->mtime_sec );
+
+    return 0;
 }
 
 
 // interpret an inbound GET request
 extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    errorf("%s", "INFO: connect_dataset\n"); 
-    return NULL;
+   char* file_path = NULL;
+   int64_t file_version = 0;
+   uint64_t block_id = 0;
+   int64_t block_version = 0;
+   struct timespec manifest_timestamp;
+   manifest_timestamp.tv_sec = 0;
+   manifest_timestamp.tv_nsec = 0;
+   bool staging = false;
+
+   int rc = md_HTTP_parse_url_path( (char*)replica_ctx->url_path, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
+   if( rc != 0 ) {
+       errorf( "failed to parse '%s', rc = %d\n", replica_ctx->url_path, rc );
+       free( file_path );
+       return NULL;
+   }
+
+   if( staging ) {
+       errorf("invalid URL path %s\n", replica_ctx->url_path );
+       free( file_path );
+       return NULL;
+   }
+
+   struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
+
+   // is there metadata for this file?
+   string fs_path( file_path );
+   content_map::iterator itr = DATA.find( fs_path );
+   if( itr == DATA.end() ) {
+       // no entry; nothing to do
+       free( file_path );
+       return NULL;
+   }
+
+   struct md_entry* ent = DATA[ file_path ];
+
+   // is this a request for a manifest?
+   if( manifest_timestamp.tv_sec > 0 ) {
+       // request for a manifest
+       int rc = gateway_generate_manifest( replica_ctx, ctx, ent );
+       if( rc != 0 ) {
+	   // failed
+	   errorf( "gateway_generate_manifest rc = %d\n", rc );
+
+	   // meaningful error code
+	   if( rc == -ENOENT )
+	       replica_ctx->err = -404;
+	   else if( rc == -EACCES )
+	       replica_ctx->err = -403;
+	   else
+	       replica_ctx->err = -500;
+
+	   free( ctx );
+	   free( file_path );
+
+	   return NULL;
+       }
+
+       ctx->request_type = GATEWAY_REQUEST_TYPE_MANIFEST;
+       ctx->data_offset = 0;
+       ctx->block_id = 0;
+       ctx->num_read = 0;
+       replica_ctx->size = ctx->data_len;
+   }
+   else {
+
+       struct map_info mi = (*FS2SQL)[string(file_path)];
+       ctx->sql_query = mi.query; 
+       if( !ctx->sql_query ) {
+	   free( ctx );
+	   free( file_path );
+	   return NULL;
+       }
+       else {
+	   // set up for reading
+	   off_t offset = block_id;
+	   // open a connection to db and set in ctx
+       }
+
+       ctx->num_read = 0;
+       ctx->block_id = block_id;
+       ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
+       // -1 switches libmicrohttpd to chunk transfer mode
+       replica_ctx->size = -1;
+   }
+
+   ctx->file_path = file_path;
+   return ctx;
+
 }
 
 
@@ -61,11 +204,11 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 	char* dataset ) {
     mc = client;
     MapParser mp = MapParser(dataset);
-    map<string, string>::iterator iter;
+    map<string, struct map_info>::iterator iter;
     set<char*, path_comp> dir_hierachy;
     mp.parse();
-    map<string, string> *fs2sql = mp.get_map();
-    for (iter = fs2sql->begin(); iter != fs2sql->end(); iter++) {
+    FS2SQL = mp.get_map();
+    for (iter = FS2SQL->begin(); iter != FS2SQL->end(); iter++) {
 	const char* full_path = iter->first.c_str();
 	char* path = strrchr((char*)full_path, '/');
 	size_t dir_path_len = path - full_path;
@@ -76,22 +219,23 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     }
     set<char*, path_comp>::iterator it;
     for( it = dir_hierachy.begin(); it != dir_hierachy.end(); it++ ) {
-	publish (*it, MD_ENTRY_DIR, NULL);
+	struct map_info mi;
+	publish (*it, MD_ENTRY_DIR, mi);
     }
 
-    for (iter = fs2sql->begin(); iter != fs2sql->end(); iter++) {
-	publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second.c_str());
+    for (iter = FS2SQL->begin(); iter != FS2SQL->end(); iter++) {
+	publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second);
     }
     ms_client_destroy(mc);
     return 0;
 }
 
-static int publish(const char *fpath, int type, const char* sql_query)
+static int publish(const char *fpath, int type, struct map_info mi)
 {
     int i = 0;
     struct md_entry* ment = new struct md_entry;
     size_t len = strlen(fpath);
-    size_t local_proto_len = strlen( SYNDICATEFS_LOCAL_PROTO ); 
+    size_t local_proto_len = strlen( SYNDICATEFS_AG_DB_PROTO ); 
     size_t url_len = local_proto_len + len;
     if ( len < datapath_len ) { 
 	pfunc_exit_code = -EINVAL;
@@ -110,31 +254,39 @@ static int publish(const char *fpath, int type, const char* sql_query)
     //Set primary replica 
     ment->url = ( char* )malloc( url_len + 1);
     memset( ment->url, 0, url_len + 1 );
-    strncat( ment->url, SYNDICATEFS_LOCAL_PROTO, local_proto_len );
+    strncat( ment->url, SYNDICATEFS_AG_DB_PROTO, local_proto_len );
     strncat( ment->url + local_proto_len, fpath, len );
 
-    //ment->url_replicas = mc->conf->replica_urls;
+    ment->url_replicas = mc->conf->replica_urls;
     ment->local_path = NULL;
-    //ment->ctime_sec = sb->st_ctime;
-    ment->ctime_nsec = 0;
-    //ment->mtime_sec = sb->st_mtime;
-    ment->mtime_nsec = 0;
-    //ment->mode = sb->st_mode;
+    //Set time from the real time clock
+    struct timespec rtime; 
+    if ((i = clock_gettime(CLOCK_REALTIME, &rtime)) < 0) {
+	errorf("Error: clock_gettime: %i\n", i); 
+	return -1;
+    }
+    ment->ctime_sec = rtime.tv_sec;
+    ment->ctime_nsec = rtime.tv_nsec;
+    ment->mtime_sec = rtime.tv_sec;
+    ment->mtime_nsec = rtime.tv_nsec;
+    ment->mode = mi.file_perm;
     ment->version = 1;
     ment->max_read_freshness = 360000;
     ment->max_write_freshness = 1;
-    //ment->volume = mc->conf->volume;
-    //ment->size = sb->st_size;
-    //ment->owner = mc->conf->volume_owner;
+    ment->volume = mc->conf->volume;
+    ment->size = -1;
+    ment->owner = mc->conf->volume_owner;
     switch (type) {
 	case MD_ENTRY_DIR:
 	    ment->type = MD_ENTRY_DIR;
+	    ment->mode = DIR_PERMISSIONS_MASK;
 	    if ( (i = ms_client_mkdir(mc, ment)) < 0 ) {
 		cout<<"ms client mkdir "<<i<<endl;
 	    }
 	    break;
 	case MD_ENTRY_FILE:
 	    ment->type = MD_ENTRY_FILE;
+	    ment->mode &= FILE_PERMISSIONS_MASK;
 	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
 		cout<<"ms client create "<<i<<endl;
 	    }

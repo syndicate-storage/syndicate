@@ -25,17 +25,28 @@
 #include <iostream>
 #include <string>
 #include <string.h>
+#include <inttypes.h>
 #include <xercesc/sax2/DefaultHandler.hpp>
 #include <xercesc/sax2/SAX2XMLReader.hpp>
 #include <xercesc/sax2/XMLReaderFactory.hpp>
 #include <xercesc/sax2/DefaultHandler.hpp>
 #include <xercesc/util/XMLString.hpp>
+#include <xercesc/sax2/Attributes.hpp>
+
 using namespace std;
 using namespace xercesc;
+
 #define MAP_TAG     "Map"
 #define PAIR_TAG    "Pair"
-#define KEY_TAG     "Key"
-#define VALUE_TAG   "Value"
+#define KEY_TAG     "File"
+#define VALUE_TAG   "Query"
+#define PERM_ATTR   "perm"
+
+struct map_info {
+    char* query;
+    uint16_t file_perm;
+};
+
 class MapParserHandler : public DefaultHandler {
     private:
 	bool open_key;
@@ -43,9 +54,10 @@ class MapParserHandler : public DefaultHandler {
 	char* element_buff;
 	char* current_key;
 	char* current_val;
-	map<string, string>* xmlmap;
+	int current_perm;
+	map<string, struct map_info>* xmlmap;
     public:
-	MapParserHandler(map<string, string> *xmlmap);
+	MapParserHandler(map<string, struct map_info> *xmlmap);
 	void startElement(
 		const   XMLCh* const    uri,
 		const   XMLCh* const    localname,
@@ -66,11 +78,11 @@ class MapParserHandler : public DefaultHandler {
 
 class MapParser {
     private:
-	map<string, string> *FS2SQLMap;
+	map<string, struct map_info> *FS2SQLMap;
 	char *mapfile;
     public:
 	MapParser( char* mapfile );
-	map<string, string>* get_map( );
+	map<string, struct map_info>* get_map( );
 	int parse();
 };
 #endif //_MAP_PARSER_H_

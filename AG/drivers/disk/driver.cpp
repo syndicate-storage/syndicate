@@ -144,9 +144,9 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
    info->set_progress( ms::ms_gateway_blockinfo::COMMITTED );     // ignored, but needs to be filled in
    info->set_blocking_factor( global_conf->blocking_factor );
    
-   info->set_file_version( 1 );
+   info->set_file_version( file_version );
    info->set_block_id( ctx->block_id );
-   info->set_block_version( 1 );
+   info->set_block_version( block_version );
    info->set_fs_path( string(ctx->file_path) );
    info->set_file_mtime_sec( ent->mtime_sec );
    info->set_file_mtime_nsec( ent->mtime_nsec );
