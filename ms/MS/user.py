@@ -159,6 +159,9 @@ class SyndicateUser( storagetypes.Object ):
 
    @classmethod
    def Update( cls, email, **fields ):
+      '''
+      Update volume identified by name with fields specified as a dictionary.
+      '''
       user = SyndicateUser.Read(email)
       for key, value in fields.iteritems():
          setattr(user, key, value)
@@ -170,12 +173,30 @@ class SyndicateUser( storagetypes.Object ):
 
    @classmethod
    def Delete( cls, email ):
+      '''
+      Delete user from datastore.
+      '''
       user = SyndicateUser.Read(email)
       return user.key.delete()
 
    @classmethod
-   def ListAll( cls, **filter_attrs ):
-      raise NotImplementedError
+   def ListAll( cls, **attrs ):
+      '''
+      Attributes must be in dictionary, using format "SyndicateUser.PROPERTY: [operator] [value]"
+      eg {'User.volumes_r': '== 5', ...} NOTE make sure to use SyndicateUser before properties, not whatever
+      you mave imported the package as (i.e. import user.SyndicateUser as User)
+
+      '''
+      query_clause = ""
+      for key, value in attrs.iteritems():
+         if query_clause: 
+            query_clause+=","
+         query_clause += (key + value)
+      if query_clause:
+         exec ("result = SyndicateUser.query(%s)" % query_clause)
+         return result
+      else:
+         return SyndicateUser.query()
 
    
    

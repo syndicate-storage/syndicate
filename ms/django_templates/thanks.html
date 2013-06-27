@@ -1,9 +1,13 @@
 {% extends "base.html" %}
   
   {% block head %}
-    <h1> Title </h1>
+    <h1> Thanks! </h1>
   {% endblock %}
   {% block mainbody %}
+  	<div style="text-align:center">
+  		<h5>{{new_change}}</h5>
+  		<a href="{{next_url}}">{{next_message}}</a>
+  	</div>	
   {% endblock %}
   {% block footer %}
   	<a href='{% url django_home.views.myvolumes %}'>My volumes</a>

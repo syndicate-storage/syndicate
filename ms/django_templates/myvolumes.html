@@ -9,16 +9,26 @@
 	<th> Description </th>
 	<th> Active </th>
 	<th> Users </th>
+	<th> Blocksize </th>
       </thead>
       <tbody>
 
-	{% for v in vols %} 
+	{% for v, user_set  in vols %} 
 
 	<tr>
-          <td><a href='{% url django_volume.views.viewvolume v.name %}'>{{v.name}}</a></td>
+      <td><a href='{% url django_volume.views.viewvolume v.name %}'>{{v.name}}</a></td>
 	  <td>{{v.description}}</td>
-	  <td>{{v.active}}</td>
-	  <td>List of Users</td>
+	  <td>{% if v.active %}<span style="font-weight:bold;color:green;"> Active{% else %}<span style="font-weight:bold;color:red;"> Inactive{% endif %}</span></td>
+	  <td>
+	  	{% for u in user_set %}
+	  		{% if forloop.last %}
+	  			{{u.email}}
+	  		{% else %}
+	  			{{u.email}}<br>
+	  		{% endif %}
+	  	{% endfor %}
+	  </td>
+	  <td>{{v.blocksize}}</td>
 	</tr>
 
 	{% empty %}

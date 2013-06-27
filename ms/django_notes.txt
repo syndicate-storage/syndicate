@@ -1,29 +1,34 @@
 This is the collection of files for the Syndicate front-end, using Django and webpp2 inside Google App Engine.
 
 Author: John Whelchel
-Date: 5/28/13 - 6/20/13
+Date: 5/28/13 - 6/27/13
+
 
 To-do:
 
+- finish change password in django_home.views
+- move createvolume to django_volume/
+- When not entering password for add permissions or change permissions, make sure to return the form the way they had it originally
+- Clear out some of the extra logging messages
+- Talk to Jude about ancestor keys
 - This is more for the future, but create a test/suite
-- MyVolumes doesn't seem to be working on production
+- EDIT seems to be working now: MyVolumes doesn't seem to be working on production 
 - Create cron job for gaesessions
+- Talk with Jude about Read_Fresh and cache issues.
 
-- Check to see if cache is messing up active/inactive check (google ndb cache) then move to other volume settings and possibly user settings
-- Should activate/deactivate require password?
+- Set up email to owner for 'request to join'
+
+- User settings
 - Should volumes be public/private?
-- Transaction-ify createvolume due to usermodficiations and permissions !!! importnat
 - Get rid of django stupid error messages, or just modify css to fix them and get rid of mine.
-- Create a thanks page post-creation/deletion/activation to give datastore time, have links to home and myvolumes etc.
-- Authenticate doesn't seem to be working perfectly when stopping/starting server and going straight to random pages (try myvolumes)
+
+- Authenticate doesn't seem to be working perfectly when stopping/starting server and going straight to random pages (try myvolumes). This has to do with stale sessions. Connect with cron
+job issues.
 -SEt a max value for blocksize in django_home/forms.py
--Fix the permissions in the viewvolume in django_home...
--Make website front-facing...
 -Internal validation in MS/ for create_user and create_volume (i.e. length and what charactesr are allowed). 
 -Secret key for gae_sessions django. 
 -Figure out how to gracefully handle errors on form entry pages for creating things. 
 -And for wonky usernames in emails possibly.
--Implement list-all methods
 
 Notes:
 	The ms/ subdirectory contains essentially a webapp2 and django app combined under the auspice of GAE. GAE routes via app.yaml anything with the URI prefix '/syn' to the Django WSGI and everything else to MS. '/' handles login etc, and then routes to '/syn/home'. All django files are contained in the various directories prefixed django. 'django_syndicate_web' is the main project app. 'django_home' contains most of the views. Templates and media are self-explanatory.

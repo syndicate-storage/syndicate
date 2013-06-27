@@ -5,8 +5,8 @@ from django.forms.formsets import formset_factory
 from django_lib.auth import authenticate
 import django_volume.forms as forms
 
-import logging
 
+from storage.storagetypes import transactional
 import storage.storage as db
 from MS.volume import Volume
 from MS.user import SyndicateUser as User
@@ -16,7 +16,7 @@ from MS.gateway import UserGateway as UG,  ReplicaGateway as RG, AcquisitionGate
 def addpermissions(request, volume_name):
     session = request.session
     username = session['login_email']
-    vol = db.read_volume(volume_name)
+    vol = db.read_volume_fresh(volume_name)
 
     if request.method != "POST":
         return HttpResponseRedirect('syn/volume/' + volume_name + '/permissions')
@@ -35,12 +35,12 @@ def addpermissions(request, volume_name):
 
         # Password required, send them back.
         if not psv:
-            return volumepermissions(request, volume_name, message="Password required")
+            return volumepermissions(request, volume_name, message="Password required", initial_data=session['initial_data'])
         else:
             # Check password hash
             if vol.volume_secret_salted_hash != Volume.generate_password_hash(passwordform.cleaned_data['password'], vol.volume_secret_salt):
                 message = "Incorrect password"
-                return volumepermissions(request, volume_name, message) 
+                return volumepermissions(request, volume_name, message, initial_data=session['initial_data']) 
         
         # Adduser fulfillment
         if afv:
@@ -51,12 +51,12 @@ def addpermissions(request, volume_name):
             for data in session['initial_data']:
                 if data['user'] == new_username:
                     message = "User already has rights for volume."
-                    return volumepermissions(request, volume_name, message)
+                    return volumepermissions(request, volume_name, message, initial_data=session['initial_data'])
             
             new_user = db.read_user(new_username)
             if not new_user:
                 message = "No Syndicate user with the email {} exists.".format(new_username)
-                return volumepermissions(request, volume_name, message)
+                return volumepermissions(request, volume_name, message, initial_data=session['initial_data'])
             if write:
                 if read:
                     new_volumes_rw = new_user.volumes_rw + [vol.volume_id]
@@ -64,24 +64,30 @@ def addpermissions(request, volume_name):
                     db.update_user(new_username, **fields)
                 else:
                     message = "Write permissions require read permissions as well."
-                    return volumepermissions(request, volume_name, message)
+                    return volumepermissions(request, volume_name, message, initial_data=session['initial_data'])
             elif read:
                 new_volumes_r = new_user.volumes_r + [vol.volume_id]
                 fields = {'volumes_r':new_volumes_r}
                 db.update_user(new_username, **fields)
         else:
             message = "Incorrect entry fields: likely invalid email address."
-            return volumepermissions(request,volume_name, message)
+            return volumepermissions(request,volume_name, message, initial_data=session['initial_data'])
 
-        return HttpResponseRedirect('/syn/volume/' + volume_name + '/permissions')    
-                    
+        session['new_change'] = "We've saved a new user to your volume."
+        session['next_url'] = '/syn/volume/' + volume_name + '/permissions'
+        session['next_message'] = "Click here to see your volumes permissions."
+        return HttpResponseRedirect('/syn/thanks')    
 
 
+# Since this method is transactional, all queries must be ancestral. Since currently,
+# we don't seem to be doing ancestral keys, we can skip it by passing initial data back.
+# This also saves calculation etc. I think I'll add it to all calls of volumepermissions().                    
+@transactional(xg=True)
 @authenticate
 def changepermissions(request, volume_name):
     session = request.session
     username = session['login_email']
-    vol = db.read_volume(volume_name)
+    vol = db.read_volume_fresh(volume_name)
 
     PermissionFormSet = formset_factory(forms.Permissions, extra=0)
     
@@ -102,16 +108,16 @@ def changepermissions(request, volume_name):
 
         # Password required, send them back.
         if not psv:
-            return volumepermissions(request, volume_name, message="Password required")
+            return volumepermissions(request, volume_name, message="Password required", initial_data=session['initial_data'])
         else:
             # Check password hash
             if vol.volume_secret_salted_hash != Volume.generate_password_hash(passwordform.cleaned_data['password'], vol.volume_secret_salt):
                 message = "Incorrect password"
-                return volumepermissions(request, volume_name, message)
+                return volumepermissions(request, volume_name, message, initial_data=session['initial_data'])
 
         # Formset fulfillment
         if fsv:
-            intial_and_forms = zip(session['initial_data'], formset.forms)
+            initial_and_forms = zip(session['initial_data'], formset.forms)
             for data, form in initial_and_forms:
 
                 check_username = data['user']
@@ -121,7 +127,7 @@ def changepermissions(request, volume_name):
 
                 if check_write and not check_read:
                     message = "Write permissions require read permissions as well."
-                    return volumepermissions(request, volume_name, message)
+                    return volumepermissions(request, volume_name, message, initial_data=session['initial_data'])
 
                 if data['write']:
                     if check_write:
@@ -162,35 +168,42 @@ def changepermissions(request, volume_name):
                         fields = {'volumes_r':new_volumes_r}
                         db.update_user(check_username, **fields)
         else:
-            return volumepermissions(request, volume_name, message="Invalid field entries.")
+            return volumepermissions(request, volume_name, message="Invalid field entries.", initial_data=session['initial_data'])
 
-        return HttpResponseRedirect('/syn/volume/' + volume_name + '/permissions')    
-
+        session['new_change'] = "We've saved your new permissions."
+        session['next_url'] = '/syn/volume/' + volume_name + '/permissions'
+        session['next_message'] = "Click here to see your volumes permissions."
+        return HttpResponseRedirect('/syn/thanks') 
 
 @authenticate
-def volumepermissions(request, volume_name, message=""):
+def volumepermissions(request, volume_name, message="", initial_data=None):
     session = request.session
     username = session['login_email']
 #    user = db.read_user(username)
-    vol = db.read_volume(volume_name)
+    vol = db.read_volume_fresh(volume_name)
 
-    users = User.query()
-    rw = User.query(User.volumes_rw==vol.volume_id)
-    r = User.query(User.volumes_r==vol.volume_id)
-
-    initial_data = []
-    for u in rw:
-        if u.email == username:
-            continue;
-        initial_data.append( {'user':u.email,
-                              'read':True,
-                              'write':True} )
-    for u in r:
-        initial_data.append( {'user':u.email,
-                              'read':True,
-                              'write':False} )
-
-    session['initial_data'] = initial_data
+    if not initial_data:
+        rw_attrs = {'SyndicateUser.volumes_rw':'== ' + str(vol.volume_id)}
+        rw = db.list_users(**rw_attrs)
+        r_attrs = {'SyndicateUser.volumes_r':'== ' + str(vol.volume_id)}
+        r = db.list_users(**r_attrs)
+    
+        #rw = User.query(User.volumes_rw==vol.volume_id)
+        #r = User.query(User.volumes_r==vol.volume_id)
+    
+        initial_data = []
+        for u in rw:
+            if u.email == username:
+                continue;
+            initial_data.append( {'user':u.email,
+                                  'read':True,
+                                  'write':True} )
+        for u in r:
+            initial_data.append( {'user':u.email,
+                                  'read':True,
+                                  'write':False} )
+    
+        session['initial_data'] = initial_data
     PermissionFormSet = formset_factory(forms.Permissions, extra=0)
     addform = forms.AddPermissions
     passwordform = forms.Password
@@ -226,15 +239,10 @@ def viewvolume(request, volume_name):
         c = Context({'username':username})
         return HttpResponse(t.render(c))
    
-    # The reason why query() is used here instead of db.read_volume() is
-    # because it is guaranteed to skip the cache, which is what we want in
-    # this case. (active issues with stale cache).
-    vol = Volume.query(Volume.name == volume_name)
-    for v in vol:
-        realvol = v
+    vol = db.read_volume_fresh(volume_name)
     t = loader.get_template('viewvolume.html')
     c = RequestContext(request, {'username':username,
-                                 'volume':realvol,
+                                 'volume':vol,
                                  } 
                        )
     return HttpResponse(t.render(c))
@@ -243,20 +251,50 @@ def viewvolume(request, volume_name):
 def activatevolume(request, volume_name):
     session = request.session
     username = session['login_email']
-
+    vol = db.read_volume_fresh(volume_name)
     if request.method == "POST":
+
+        form = forms.Password(request.POST)
+        if not form.is_valid():
+            message = "Password required."
+            return volumesettings(request, volume_name, message)
+        # Check password hash
+        hash_check = Volume.generate_password_hash(form.cleaned_data['password'], vol.volume_secret_salt)
+        if hash_check != vol.volume_secret_salted_hash:
+            message = "Incorrect password."
+            return volumesettings(request, volume_name, message)
+
         fields = {'active':True}
         db.update_volume(volume_name, **fields)
-    return HttpResponseRedirect("/syn/volume/" + volume_name)
+        session['new_change'] = "We've activated your volume."
+        session['next_url'] = '/syn/volume/' + volume_name
+        session['next_message'] = "Click here to go back to your volume."
+        return HttpResponseRedirect('/syn/thanks') 
+    return HttpResponseRedirect('/syn/volume/' + volume_name)
 
 @authenticate
 def deactivatevolume(request, volume_name):
     session = request.session
     username = session['login_email']
-
+    vol = db.read_volume_fresh(volume_name)
     if request.method == "POST":
+
+        form = forms.Password(request.POST)
+        if not form.is_valid():
+            message = "Password required."
+            return volumesettings(request, volume_name, message)
+        # Check password hash
+        hash_check = Volume.generate_password_hash(form.cleaned_data['password'], vol.volume_secret_salt)
+        if hash_check != vol.volume_secret_salted_hash:
+            message = "Incorrect password."
+            return volumesettings(request, volume_name, message)
+
         fields = {'active':False}
         db.update_volume(volume_name, **fields)
+        session['new_change'] = "We've deactivated your volume."
+        session['next_url'] = '/syn/volume/' + volume_name
+        session['next_message'] = "Click here to go back to your volume."
+        return HttpResponseRedirect('/syn/thanks')
     return HttpResponseRedirect("/syn/volume/" + volume_name)
 
 @authenticate
@@ -266,21 +304,19 @@ def deletevolume(request, volume_name):
     username = session['login_email']
 
     message = ""
-    # The reason why query() is used here instead of db.read_volume() is
-    # because it is guaranteed to skip the cache, which is what we want in
-    # this case. (active issues with stale cache).
-    volq = Volume.query(Volume.name == volume_name)
-    for v in volq:
-        vol = v
+    vol = db.read_volume_fresh(volume_name)
     if request.method == "POST":
         form = forms.DeleteVolume(request.POST)
         if form.is_valid():
-            # Check password hash
+            # hCheck password hash
             hash_check = Volume.generate_password_hash(form.cleaned_data['password'], vol.volume_secret_salt)
             if hash_check == vol.volume_secret_salted_hash:
                 # Ok to delete
                 db.delete_volume(volume_name)
-                return HttpResponseRedirect("/syn/myvolumes")
+                session['new_change'] = "We've deleted your volume."
+                session['next_url'] = '/syn/myvolumes/'
+                session['next_message'] = "Click here to go back to your volumes."
+                return HttpResponseRedirect('/syn/thanks')
             else:
                 message = "Invalid password"
                 form = forms.DeleteVolume()
@@ -297,12 +333,7 @@ def deletevolume(request, volume_name):
 def volumesettings(request, volume_name, message=""):
     session = request.session
     username = session['login_email']
-    # The reason why query() is used here instead of db.read_volume() is
-    # because it is guaranteed to skip the cache, which is what we want in
-    # this case. (active issues with stale cache).
-    volq = Volume.query(Volume.name == volume_name)
-    for v in volq:
-        vol = v
+    vol = db.read_volume_fresh(volume_name)
 
     desc_form = forms.ChangeVolumeD(initial={'description':vol.description})
     pass_form = forms.ChangePassword()
@@ -322,28 +353,20 @@ def volumesettings(request, volume_name, message=""):
 def changevolume(request, volume_name):
     session = request.session
     username = session['login_email']
-    # The reason why query() is used here instead of db.read_volume() is
-    # because it is guaranteed to skip the cache, which is what we want in
-    # this case. (active issues with stale cache).
-    volq = Volume.query(Volume.name == volume_name)
-    for v in volq:
-        vol = v
+    vol = db.read_volume_fresh(volume_name)
 
     if request.method != "POST":
         return HttpResponseRedirect('/syn/volume/' + volume_name + '/settings')
 
-    logging.info("Received change description post")
     form = forms.Password(request.POST)
     if not form.is_valid():
         message = "Password required."
         return volumesettings(request, volume_name, message)
-    logging.info("Password entered: " + form.cleaned_data['password'])
     # Check password hash
     hash_check = Volume.generate_password_hash(form.cleaned_data['password'], vol.volume_secret_salt)
     if hash_check != vol.volume_secret_salted_hash:
         message = "Incorrect password."
         return volumesettings(request, volume_name, message)
-    logging.info("Password matches")
 
     desc_form = forms.ChangeVolumeD(request.POST)
 
@@ -351,31 +374,25 @@ def changevolume(request, volume_name):
         message = "Invalid description field entries."
         return volumesettings(request, volume_name, message)
 
-    logging.info("Attempting to change description")
     kwargs = {}
     if desc_form.cleaned_data['description']:
         kwargs['description'] = desc_form.cleaned_data['description']
     db.update_volume(volume_name, **kwargs)
-    return HttpResponseRedirect('/syn/volume/' + volume_name + '/settings')
-
-
+    session['new_change'] = "We've changed your volume description."
+    session['next_url'] = '/syn/volume/' + volume_name
+    session['next_message'] = "Click here to go back to your volume."
+    return HttpResponseRedirect('/syn/thanks')
 
 
 @authenticate
 def changevolumepassword(request, volume_name):
     session = request.session
     username = session['login_email']
-    # The reason why query() is used here instead of db.read_volume() is
-    # because it is guaranteed to skip the cache, which is what we want in
-    # this case. (active issues with stale cache).
-    volq = Volume.query(Volume.name == volume_name)
-    for v in volq:
-        vol = v
+    vol = db.read_volume_fresh(volume_name)
 
     if request.method != "POST":
         return HttpResponseRedirect('/syn/volume/' + volume_name + '/settings')
 
-    logging.info("Received post to change password")
     form = forms.ChangePassword(request.POST)
     if not form.is_valid():
         message = "You must fill out all password fields."
@@ -390,13 +407,15 @@ def changevolumepassword(request, volume_name):
         elif form.cleaned_data['newpassword_1'] != form.cleaned_data['newpassword_2']:
             message = "Your new passwords did not match each other."
             return volumesettings(request, volume_name, message)
-        logging.info("Password given was " + form.cleaned_data['oldpassword'] + " and new guys matched.")
+
         # Ok change password 
         kwargs = {}
         new_volume_secret_salt, new_volume_secret_salted_hash = Volume.generate_volume_secret(form.cleaned_data['newpassword_1'])
         kwargs['volume_secret_salted_hash'] = new_volume_secret_salted_hash
         kwargs['volume_secret_salt'] = new_volume_secret_salt
         db.update_volume(volume_name, **kwargs)
-        logging.info("Password apparently changed.")
-        return HttpResponseRedirect('/syn/volume/' + volume_name + '/settings')
 
+        session['new_change'] = "We've changed your volume's password."
+        session['next_url'] = '/syn/volume/' + volume_name
+        session['next_message'] = "Click here to go back to your volume."
+        return HttpResponseRedirect('/syn/thanks')

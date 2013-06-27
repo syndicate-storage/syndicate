@@ -44,6 +44,7 @@ memcache = backend.memcache
 
 # aliases for transaction
 transaction = backend.transaction
+transactional = backend.transactional
 
 
 def clock_gettime():
