@@ -6,6 +6,7 @@ import os
 source_files = """
    driver.cpp
    map-parser.cpp
+   odbc-handler.cpp
 """
 
 # add source file search paths here
@@ -23,6 +24,7 @@ LIBPATH = """
 LIBS = """
    syndicate
    xerces-c
+   odbc
 """
 
 # add additional CPPFLAGS here

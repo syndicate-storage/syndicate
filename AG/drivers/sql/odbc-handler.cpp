@@ -1,4 +1,4 @@
-#include "odbc_handler.h"
+#include "odbc-handler.h"
 
 ODBCHandler::ODBCHandler()
 {
@@ -7,8 +7,8 @@ ODBCHandler::ODBCHandler()
 
 ODBCHandler::ODBCHandler(unsigned char *con_str) 
 {
-    SQLCHAR outstr[1024];
-    SQLSMALLINT outstrlen;
+    //SQLCHAR outstr[1024];
+    //SQLSMALLINT outstrlen;
     string ODBC_error; 
     SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env);
     SQLSetEnvAttr(env, SQL_ATTR_ODBC_VERSION, (void *) SQL_OV_ODBC3, 0);
@@ -17,11 +17,11 @@ ODBCHandler::ODBCHandler(unsigned char *con_str)
 	    NULL, 0, NULL, SQL_DRIVER_COMPLETE);
     if (SQL_SUCCEEDED(ret)) {
 	if (ret == SQL_SUCCESS_WITH_INFO) {
-	    ODBC_error = extract_error("SQLDriverConnect", dbc, SQL_HANDLE_DBC);
+	    ODBC_error = extract_error(dbc, SQL_HANDLE_DBC);
 	}
 	SQLDisconnect(dbc);
     } else {
-	ODBC_error = extract_error("SQLDriverConnect", dbc, SQL_HANDLE_DBC);
+	ODBC_error = extract_error(dbc, SQL_HANDLE_DBC);
 	if (&dbc)
 	    SQLFreeHandle(SQL_HANDLE_DBC, dbc);
 	if (&env)
@@ -35,8 +35,8 @@ char* ODBCHandler::executeQuery(unsigned char* sql_query)
 {
     SQLHSTMT stmt;
     SQLRETURN ret; 
-    SQLCHAR outstr[1024];
-    SQLSMALLINT outstrlen;
+    //SQLCHAR outstr[1024];
+    //SQLSMALLINT outstrlen;
     SQLSMALLINT nr_columns;
     int nr_rows = 0;
     SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
@@ -62,7 +62,7 @@ char* ODBCHandler::executeQuery(unsigned char* sql_query)
     return NULL;
 }
 
-string ODBCHandler::extract_error(char *fn, SQLHANDLE handle, SQLSMALLINT type)
+string ODBCHandler::extract_error(SQLHANDLE handle, SQLSMALLINT type)
 {
     SQLINTEGER		i = 0;
     SQLINTEGER		native;

@@ -24,8 +24,7 @@ class ODBCHandler
 	ODBCHandler();
 	ODBCHandler(unsigned char* con_str);
 	char*	    executeQuery(unsigned char* sql_query);
-	static string extract_error( char *fn, SQLHANDLE handle, 
-		SQLSMALLINT type);
+	static string extract_error(SQLHANDLE handle, SQLSMALLINT type);
 };
 
 
