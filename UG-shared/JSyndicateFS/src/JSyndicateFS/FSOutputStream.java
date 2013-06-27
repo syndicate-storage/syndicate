@@ -17,34 +17,21 @@ public class FSOutputStream extends OutputStream {
 
     public static final Log LOG = LogFactory.getLog(FSOutputStream.class);
     
-    public static final int DEFAULT_BUFFER_SIZE = 4096;
-    
     private FileHandle filehandle;
-    
-    private byte[] buffer;
-    private int bufferSize;
-    private int curOffsetOfBuffer;
-    private long curOffset;
-    private long nextWriteOffset;
+    private byte[] buffer = new byte[4096];
+    private long offset;
 
     FSOutputStream(File file) {
         if(file == null)
             throw new IllegalArgumentException("Can not create output stream from null file");
         
-        int bufferSize = DEFAULT_BUFFER_SIZE;
-        
         FileSystem filesystem = file.getFileSystem();
         
         if(filesystem != null) {
-            Configuration conf = filesystem.getConfiguration();
-            if(conf != null) {
-                bufferSize = conf.getWriteBufferSize();
-            }
-            
             Path path = file.getPath();
             try {
                 FileHandle filehandle = filesystem.openFileHandle(path);
-                initialize(filehandle, bufferSize);
+                initialize(filehandle);
             } catch (FileNotFoundException ex) {
                 LOG.error(ex);
                 throw new IllegalArgumentException(ex.toString());
@@ -61,24 +48,10 @@ public class FSOutputStream extends OutputStream {
         if(filehandle == null)
             throw new IllegalArgumentException("Can not create output stream from null filehandle");
 
-        int bufferSize = DEFAULT_BUFFER_SIZE;
-        
-        FileSystem filesystem = filehandle.getFileSystem();
-        if(filesystem != null) {
-            Configuration conf = filesystem.getConfiguration();
-            if(conf != null) {
-                bufferSize = conf.getWriteBufferSize();
-            }
-        }
-        
-        initialize(filehandle, DEFAULT_BUFFER_SIZE);
+        initialize(filehandle);
     }
     
-    FSOutputStream(FileHandle filehandle, int bufferSize) {
-        initialize(filehandle, bufferSize);
-    }
-    
-    private void initialize(FileHandle filehandle, int bufferSize) {
+    private void initialize(FileHandle filehandle) {
         if(filehandle == null)
             throw new IllegalArgumentException("Can not create output stream from null filehandle");
         if(filehandle.isDirty())
@@ -87,114 +60,82 @@ public class FSOutputStream extends OutputStream {
             throw new IllegalArgumentException("Can not create output stream from closed filehandle");
         
         this.filehandle = filehandle;
-        if(bufferSize <= 0)
-            this.bufferSize = DEFAULT_BUFFER_SIZE;
-        else
-            this.bufferSize = bufferSize;
-        
-        this.buffer = new byte[this.bufferSize];
-        this.curOffsetOfBuffer = 0;
-        this.curOffset = 0;
-        this.nextWriteOffset = 0;
+        this.offset = 0;
     }
 
     @Override
     public void write(int i) throws IOException {
         if(!this.filehandle.isOpen())
             throw new IOException("Can not write data from closed file handle");
+        if(this.filehandle.isDirty())
+            throw new IOException("Can not write data from dirty file handle");
         
         try {
-            this.buffer[this.curOffsetOfBuffer] = (byte)i;
+            this.buffer[0] = (byte)i;
+            this.filehandle.writeFileData(this.buffer, 1, this.offset);
         } catch (Exception ex) {
-            // array bound exception
             throw new IOException(ex.toString());
         }
         
-        this.curOffset++;
-        this.curOffsetOfBuffer++;
-        
-        if(this.bufferSize <= this.curOffsetOfBuffer) {
-            flush();
-        }
+        this.offset++;
     }
     
     @Override
     public void write(byte[] bytes) throws IOException {
-        write(bytes, 0, bytes.length);
+        if(!this.filehandle.isOpen())
+            throw new IOException("Can not write data from closed file handle");
+        if(this.filehandle.isDirty())
+            throw new IOException("Can not write data from dirty file handle");
+        
+        this.filehandle.writeFileData(bytes, bytes.length, this.offset);
+        
+        this.offset += bytes.length;
     }
     
     @Override
     public void write(byte[] bytes, int offset, int size) throws IOException {
         if(!this.filehandle.isOpen())
             throw new IOException("Can not write data from closed file handle");
+        if(this.filehandle.isDirty())
+            throw new IOException("Can not write data from dirty file handle");
         
-        int bufferAvailable = this.bufferSize - this.curOffsetOfBuffer;
-        if(size > bufferAvailable) {
-            // need more space
-            int bytesLeft = size;
-            int windowOffset = offset;
+        int writeLeft = size;
+        int targetOffset = offset;
+        
+        while(writeLeft > 0) {
+            int writeLen = writeLeft;
+            if(writeLeft > this.buffer.length)
+                writeLen = this.buffer.length;
             
-            while(bytesLeft > 0) {
-                try {
-                    int windowSize;
-                    if(bytesLeft < bufferAvailable)
-                        windowSize = bytesLeft;
-                    else
-                        windowSize = bufferAvailable;
-                    
-                    System.arraycopy(bytes, windowOffset, this.buffer, this.curOffsetOfBuffer, windowSize);
-                    
-                    this.curOffset += windowSize;
-                    this.curOffsetOfBuffer += windowSize;
-                    windowOffset += windowSize;
-                    bytesLeft -= windowSize;
-                    
-                    if(this.curOffsetOfBuffer >= this.bufferSize) {
-                        flush();
-                    }
-                    
-                    bufferAvailable = this.bufferSize - this.curOffsetOfBuffer;
-                    
-                } catch (Exception ex) {
-                    // array bound exception
-                    throw new IOException(ex.toString());
-                }    
-            }
-        } else {
-            // write to buffer
-            try {
-                System.arraycopy(bytes, offset, this.buffer, this.curOffsetOfBuffer, size);
-                this.curOffset += size;
-                this.curOffsetOfBuffer += size;
-                
-                if(this.curOffsetOfBuffer >= this.bufferSize) {
-                    flush();
-                }
-            } catch (Exception ex) {
-                // array bound exception
-                throw new IOException(ex.toString());
-            }
+            System.arraycopy(bytes, targetOffset, this.buffer, 0, writeLen);
+            
+            this.filehandle.writeFileData(this.buffer, writeLen, this.offset);
+         
+            this.offset += writeLen;
+            targetOffset += writeLen;
+            writeLeft -= writeLen;
         }
     }
     
     @Override
     public void flush() throws IOException {
-        if(this.curOffsetOfBuffer > 0) {
-            this.filehandle.writeFileData(this.buffer, this.curOffsetOfBuffer, this.nextWriteOffset);
+        if(!this.filehandle.isOpen())
+            throw new IOException("Can not write data from closed file handle");
+        if(this.filehandle.isDirty())
+            throw new IOException("Can not write data from dirty file handle");
 
-            this.nextWriteOffset += this.curOffsetOfBuffer;
-            this.curOffsetOfBuffer = 0;
-        }
+        this.filehandle.flush();
     }
     
     @Override
     public void close() throws IOException {
-        
-        flush();
+        try {
+            this.filehandle.flush();
+        } catch(Exception ex) {
+            LOG.error(ex);
+        }
         
         this.filehandle.close();
-        this.curOffsetOfBuffer = 0;
-        this.curOffset = 0;
-        this.nextWriteOffset = 0;
+        this.offset = 0;
     }
 }

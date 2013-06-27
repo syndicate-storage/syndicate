@@ -17,39 +17,21 @@ public class FSInputStream extends InputStream {
 
     public static final Log LOG = LogFactory.getLog(FSInputStream.class);
     
-    public static final int DEFAULT_BUFFER_SIZE = 4096;
-    
     private FileHandle filehandle;
-    
-    private byte[] buffer;
-    private int bufferSize;
-    private int availSizeOfBuffer;
-    private int curOffsetOfBuffer;
-    private long curOffset;
-    private long nextReadOffset;
-    private long fileSize;
-    
-    private long markedOffset;
-    private byte[] markedData;
+    private byte[] buffer = new byte[4096];
+    private long offset;
     
     FSInputStream(File file) {
         if(file == null)
             throw new IllegalArgumentException("Can not create input stream from null file");
         
-        int bufferSize = DEFAULT_BUFFER_SIZE;
-        
         FileSystem filesystem = file.getFileSystem();
         
         if(filesystem != null) {
-            Configuration conf = filesystem.getConfiguration();
-            if(conf != null) {
-                bufferSize = conf.getReadBufferSize();
-            }
-            
             Path path = file.getPath();
             try {
                 FileHandle filehandle = filesystem.openFileHandle(path);
-                initialize(filehandle, bufferSize);
+                initialize(filehandle);
             } catch (FileNotFoundException ex) {
                 LOG.error(ex);
                 throw new IllegalArgumentException(ex.toString());
@@ -66,24 +48,10 @@ public class FSInputStream extends InputStream {
         if(filehandle == null)
             throw new IllegalArgumentException("Can not create input stream from null filehandle");
 
-        int bufferSize = DEFAULT_BUFFER_SIZE;
-        
-        FileSystem filesystem = filehandle.getFileSystem();
-        if(filesystem != null) {
-            Configuration conf = filesystem.getConfiguration();
-            if(conf != null) {
-                bufferSize = conf.getReadBufferSize();
-            }
-        }
-            
-        initialize(filehandle, bufferSize);
+        initialize(filehandle);
     }
     
-    FSInputStream(FileHandle filehandle, int bufferSize) {
-        initialize(filehandle, bufferSize);
-    }
-    
-    private void initialize(FileHandle filehandle, int bufferSize) {
+    private void initialize(FileHandle filehandle) {
         if(filehandle == null)
             throw new IllegalArgumentException("Can not create input stream from null filehandle");
         if(filehandle.isDirty())
@@ -92,31 +60,9 @@ public class FSInputStream extends InputStream {
             throw new IllegalArgumentException("Can not create input stream from closed filehandle");
         
         this.filehandle = filehandle;
-        if(bufferSize <= 0)
-            this.bufferSize = DEFAULT_BUFFER_SIZE;
-        else
-            this.bufferSize = bufferSize;
-        
-        this.buffer = new byte[this.bufferSize];
-        this.availSizeOfBuffer = 0;
-        this.curOffsetOfBuffer = 0;
-        this.curOffset = 0;
-        this.nextReadOffset = 0;
-        this.fileSize = filehandle.getStatus().getSize();
+        this.offset = 0;
     }
 
-    private void fillBuffer() throws IOException {
-        if(this.availSizeOfBuffer <= this.curOffsetOfBuffer) {
-            int ret = this.filehandle.readFileData(this.buffer, this.bufferSize, this.nextReadOffset);
-            if(ret <= 0)
-                throw new IOException("Can not read data from the file handle, readSize is " + ret);
-            
-            this.availSizeOfBuffer = ret;
-            this.nextReadOffset += ret;
-            this.curOffsetOfBuffer = 0;
-        }
-    }
-    
     /*
      * Reads the next byte of data from the input stream. The value byte is returned as an int in the range 0 to 255. If no byte is available because the end of the stream has been reached, the value -1 is returned. This method blocks until input data is available, the end of the stream is detected, or an exception is thrown. 
      * A subclass must provide an implementation of this method. 
@@ -125,111 +71,124 @@ public class FSInputStream extends InputStream {
     public int read() throws IOException {
         if(!this.filehandle.isOpen())
             throw new IOException("Can not read data from closed file handle");
-        
-        if(this.fileSize <= this.curOffset) {
+        if(this.filehandle.isDirty())
+            throw new IOException("Can not read data from dirty file handle");
+            
+        if(this.filehandle.getStatus().getSize() <= this.offset) {
             // EOF
             return -1;
         }
         
-        fillBuffer();
-        
         int readData = 0;
         
         try {
-            readData = (int)this.buffer[this.curOffsetOfBuffer];
+            int ret = this.filehandle.readFileData(this.buffer, 1, this.offset);
+            if(ret <= 0) {
+                throw new IOException("Can not read data from the file handle, readSize is " + ret);
+            }
+            readData = (int)this.buffer[0];
         } catch (Exception ex) {
-            // array bound exception
             throw new IOException(ex.toString());
         }
         
-        this.curOffset++;
-        this.curOffsetOfBuffer++;
+        this.offset++;
         
         return readData;
     }
     
     @Override
     public int read(byte[] b) throws IOException {
-        return read(b, 0, b.length);
-    }
-    
-    @Override
-    public int read(byte[] b, int off, int len) throws IOException {
         if(!this.filehandle.isOpen())
             throw new IOException("Can not read data from closed file handle");
+        if(this.filehandle.isDirty())
+            throw new IOException("Can not read data from dirty file handle");
         
-        if(this.fileSize <= this.curOffset) {
+        if(this.filehandle.getStatus().getSize() <= this.offset) {
             // EOF
             return -1;
         }
         
-        long bytesLeft = len;
-        int targetOffset = off;
-        int readBytes = 0;
-        
-        if(this.fileSize <= this.curOffset + len) {
-            bytesLeft = this.fileSize - this.curOffset;
+        int readLen = 0;
+        int ret = this.filehandle.readFileData(b, b.length, this.offset);
+        if(ret <= 0) {
+            throw new IOException("Can not read data from the file handle, readSize is " + ret);
         }
         
-        while(bytesLeft > 0) {
-            try {
-                fillBuffer();
-
-                int bufferBytesLeft = this.availSizeOfBuffer - this.curOffsetOfBuffer;
-                System.arraycopy(this.buffer, this.curOffsetOfBuffer, b, targetOffset, bufferBytesLeft);
-
-                this.curOffsetOfBuffer += bufferBytesLeft;
-                this.curOffset += bufferBytesLeft;
-                bytesLeft -= bufferBytesLeft;
-                targetOffset += bufferBytesLeft;
-                
-                readBytes += bufferBytesLeft;
-                
-            } catch(Exception ex) {
-                // array bound exception
-                throw new IOException(ex.toString());
-            }    
+        readLen = ret;
+        this.offset += readLen;
+        
+        return readLen;
+    }
+    
+    @Override
+    public int read(byte[] bytes, int offset, int size) throws IOException {
+        if(!this.filehandle.isOpen())
+            throw new IOException("Can not read data from closed file handle");
+        if(this.filehandle.isDirty())
+            throw new IOException("Can not read data from dirty file handle");
+        
+        if(this.filehandle.getStatus().getSize() <= this.offset) {
+            // EOF
+            return -1;
         }
         
-        return readBytes;
+        long readLeft = size;
+        if(this.filehandle.getStatus().getSize() <= this.offset + size) {
+            readLeft = this.filehandle.getStatus().getSize() - this.offset;
+        }
+        
+        int targetOffset = offset;
+        int readTotal = 0;
+        
+        while(readLeft > 0) {
+            int readLen = 0;
+            int readWant = (int)readLeft;
+            if(readLeft > this.buffer.length)
+                readWant = this.buffer.length;
+                
+            int ret = this.filehandle.readFileData(this.buffer, readWant, this.offset);
+            if(ret <= 0) {
+                throw new IOException("Can not read data from the file handle, readSize is " + ret);
+            }
+         
+            readLen = ret;
+            this.offset += readLen;
+            
+            System.arraycopy(this.buffer, 0, bytes, targetOffset, readLen);
+            
+            targetOffset += readLen;
+            readTotal += readLen;
+            readLeft -= readLen;
+        }
+        
+        return readTotal;
     }
     
     @Override
     public long skip(long n) throws IOException {
         if(!this.filehandle.isOpen())
             throw new IOException("Can not read data from closed file handle");
+        if(this.filehandle.isDirty())
+            throw new IOException("Can not read data from dirty file handle");
         
-        if(this.fileSize <= this.curOffset) {
+        if(this.filehandle.getStatus().getSize() <= this.offset) {
             // EOF
             return -1;
         }
         
-        long bytesLeft = n;
+        long bytesSkip = n;
         
-        if(this.fileSize <= this.curOffset + n) {
-            bytesLeft = this.fileSize - this.curOffset;
+        if(this.filehandle.getStatus().getSize() <= this.offset + n) {
+            bytesSkip = this.filehandle.getStatus().getSize() - this.offset;
         }
         
-        int bufferBytesLeft = this.availSizeOfBuffer - this.curOffsetOfBuffer;
-        
-        if(bufferBytesLeft > bytesLeft) {
-            this.curOffsetOfBuffer += bytesLeft;
-            this.curOffset += bytesLeft;
-            return bytesLeft;
-        } else {
-            this.curOffsetOfBuffer += bufferBytesLeft;
-            
-            this.curOffset += bytesLeft;
-            this.curOffsetOfBuffer = 0;
-            this.availSizeOfBuffer = 0;
-            this.nextReadOffset = this.curOffset;
-            return bytesLeft;
-        }
+        this.offset += bytesSkip;
+        return bytesSkip;
     }
     
     @Override
     public int available() throws IOException {
-        return (int)(this.fileSize - this.curOffset);
+        return (int)(this.filehandle.getStatus().getSize() - this.offset);
     }
     
     public synchronized void mark(int readlimit) {
@@ -245,9 +204,6 @@ public class FSInputStream extends InputStream {
     @Override
     public void close() throws IOException {
         this.filehandle.close();
-        this.availSizeOfBuffer = 0;
-        this.curOffsetOfBuffer = 0;
-        this.curOffset = 0;
-        this.nextReadOffset = 0;
+        this.offset = 0;
     }
 }

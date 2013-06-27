@@ -110,11 +110,6 @@ public class FileHandle implements Closeable {
         return !this.closed;
     }
     
-    @Override
-    public void close() throws IOException {
-        this.filesystem.closeFileHandle(this);
-    }
-    
     /*
      * This function will be called when handle is closed through other classes
      */
@@ -130,5 +125,14 @@ public class FileHandle implements Closeable {
         if(this.status != null)
             return this.status.isDirty();
         return false;
+    }
+    
+    public void flush() throws IOException {
+        this.filesystem.flushFileHandle(this);
+    }
+    
+    @Override
+    public void close() throws IOException {
+        this.filesystem.closeFileHandle(this);
     }
 }

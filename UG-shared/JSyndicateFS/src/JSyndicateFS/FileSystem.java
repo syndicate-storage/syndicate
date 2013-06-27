@@ -305,6 +305,20 @@ public class FileSystem implements Closeable {
         return openFileHandle(status);
     }
     
+    public void flushFileHandle(FileHandle filehandle) throws IOException {
+        if(filehandle == null)
+            throw new IllegalArgumentException("Can not flush null filehandle");
+        if(filehandle.isDirty())
+            throw new IOException("Can not flush dirty file handle");
+        
+        if(filehandle.isOpen()) {
+            int ret = JSyndicateFS.jsyndicatefs_flush(filehandle.getStatus().getPath().getPath(), filehandle.getFileInfo());
+            if(ret != 0) {
+                throw new IOException("jsyndicatefs_flush failed : " + ret);
+            }
+        }
+    }
+    
     /*
      * Close file handle
      */
@@ -351,7 +365,7 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not open file handle from status that is not a file");
         
         FileHandle filehandle = openFileHandle(status);
-        return new FSInputStream(filehandle, this.conf.getReadBufferSize());
+        return new FSInputStream(filehandle);
     }
     
     /*
@@ -541,6 +555,20 @@ public class FileSystem implements Closeable {
         int ret = JSyndicateFS.jsyndicatefs_mkdir(path.getPath(), 0x777);
         if(ret < 0) {
             throw new IOException("jsyndicatefs_mkdir failed : " + ret);
+        }
+    }
+
+    public boolean createNewFile(Path path) throws IOException {
+        FileStatus status = getFileStatus(path);
+        if(status == null) {
+            JSFSFileInfo fi = new JSFSFileInfo();
+            int ret = JSyndicateFS.jsyndicatefs_create(path.getPath(), 0x777, fi);
+            if(ret < 0) {
+                throw new IOException("jsyndicatefs_create failed : " + ret);
+            }
+            return true;
+        } else {
+            return false;
         }
     }
 }

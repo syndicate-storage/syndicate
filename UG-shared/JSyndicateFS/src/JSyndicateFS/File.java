@@ -379,10 +379,26 @@ public class File {
         
         try {
             this.filesystem.rename(this.status, dest.path);
+            // update my path
+            this.path = this.filesystem.getAbsolutePath(dest.path);
             return true;
         } catch (IOException ex) {
             LOG.error(ex);
             return false;
+        }
+    }
+    
+    /*
+     * Create the file denoted by this abstract pathname. 
+     */
+    public boolean createNewFile() throws IOException {
+        loadStatus();
+        
+        if(this.status == null) {
+            // create new
+            return this.filesystem.createNewFile(this.path);
+        } else {
+            return false;    
         }
     }
 }
