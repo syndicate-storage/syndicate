@@ -557,4 +557,18 @@ public class FileSystem implements Closeable {
             throw new IOException("jsyndicatefs_mkdir failed : " + ret);
         }
     }
+
+    public boolean createNewFile(Path path) throws IOException {
+        FileStatus status = getFileStatus(path);
+        if(status == null) {
+            JSFSFileInfo fi = new JSFSFileInfo();
+            int ret = JSyndicateFS.jsyndicatefs_create(path.getPath(), 0x777, fi);
+            if(ret < 0) {
+                throw new IOException("jsyndicatefs_create failed : " + ret);
+            }
+            return true;
+        } else {
+            return false;
+        }
+    }
 }

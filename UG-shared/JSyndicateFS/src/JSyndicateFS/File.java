@@ -387,4 +387,18 @@ public class File {
             return false;
         }
     }
+    
+    /*
+     * Create the file denoted by this abstract pathname. 
+     */
+    public boolean createNewFile() throws IOException {
+        loadStatus();
+        
+        if(this.status == null) {
+            // create new
+            return this.filesystem.createNewFile(this.path);
+        } else {
+            return false;    
+        }
+    }
 }
