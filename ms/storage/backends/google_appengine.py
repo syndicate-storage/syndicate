@@ -39,3 +39,4 @@ memcache = google_memcache
 
 # aliases for transaction
 transaction = ndb.transaction
+transactional = ndb.transactional

@@ -25,3 +25,4 @@ class CreateVolume(override_forms.MyForm):
                                max_length=20,
                                help_text="20 characters maximum",
                                widget=forms.PasswordInput)
+

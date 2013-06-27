@@ -4,13 +4,25 @@ from django.forms.formsets import formset_factory
 
 from django_lib.auth import authenticate
 import django_home.forms as forms
+from django_volume.forms import ChangePassword, Password
 
-import logging
+from storage.storagetypes import transactional
 
 import storage.storage as db
 from MS.volume import Volume
 from MS.user import SyndicateUser as User
 from MS.gateway import UserGateway as UG,  ReplicaGateway as RG, AcquisitionGateway as AG
+
+@authenticate
+def thanks(request):
+    session = request.session
+    username = session['login_email']
+    new_change = session['new_change']
+    next_url = session['next_url']
+    next_message = session['next_message']
+    t = loader.get_template('thanks.html')
+    c = Context({'username':username, 'new_change':new_change, 'next_url':next_url, 'next_message':next_message})
+    return HttpResponse(t.render(c))
 
 
 @authenticate
@@ -60,23 +72,85 @@ def myvolumes(request):
     session = request.session
     username = session['login_email']
     user = db.read_user(username)
-    myvols = []
-    for v_id in user.volumes_o:
-        q = Volume.query(Volume.volume_id == v_id)
-        for v in q: # should be one
-            myvols.append(v)
+
+    attrs = {}
+    attrs['Volume.volume_id'] = ".IN(%s)" % str(user.volumes_o)
+    myvols = db.list_volumes(**attrs)
+
+    all_users = []
+
+    for v in myvols:
+        uattrs = {}
+        users_set = []
+        uattrs['SyndicateUser.volumes_rw'] = "== %s" % v.volume_id 
+        q = db.list_users(**uattrs)
+        for u in q:
+            users_set.append(u)
+        uattrs = {}
+        uattrs['SyndicateUser.volumes_r'] = "== %s" % v.volume_id 
+        q = db.list_users(**uattrs)
+        for u in q:
+            users_set.append(u)
+        all_users.append(users_set)
+            
+
+    vols_users =zip(myvols, all_users)
     t = loader.get_template('myvolumes.html')
-    c = Context({'username':username, 'vols':myvols})
+    c = Context({'username':username, 'vols':vols_users})
     return HttpResponse(t.render(c))
 
 @authenticate
-def settings(request):
+def settings(request, message=""):
     session = request.session
     username = session['login_email']
+
+    pass_form = ChangePassword()
+    password = Password()
+
     t = loader.get_template('settings.html')
-    # myvol = Queryset.getvols(user=user)
-    c = Context({'username':username})
+    c = RequestContext(request, {'username':username,
+                                 'pass_form':pass_form,
+                                 'message':message,
+                                 } )
     return HttpResponse(t.render(c))
+
+@authenticate
+def changepassword(request, username):
+    session = request.session
+    # should be made 'fresh'
+    user = db.read_user(username)
+
+    if not request.POST:
+        return HttpResponseRedirect('/syn/settings')
+
+    form = ChangePassword(request.POST)
+    if not form.is_valid():
+        message = "You must fill out all password fields."
+        return settings(request, message)
+    else:
+        # Check password hash
+        hash_check = Volume.generate_password_hash(form.cleaned_data['oldpassword'], vol.volume_secret_salt)
+        if hash_check != vol.volume_secret_salted_hash:
+            message = "Incorrect password."
+            return settings(request, message)
+        elif form.cleaned_data['newpassword_1'] != form.cleaned_data['newpassword_2']:
+            message = "Your new passwords did not match each other."
+            return settings(request, message)
+
+    # Ok change password 
+    '''
+    kwargs = {}
+    new_volume_secret_salt, new_volume_secret_salted_hash = Volume.generate_volume_secret(form.cleaned_data['newpassword_1'])
+    kwargs['volume_secret_salted_hash'] = new_volume_secret_salted_hash
+    kwargs['volume_secret_salt'] = new_volume_secret_salt
+    db.update_volume(volume_name, **kwargs)'''
+    session['new_change'] = "We've changed your volume's password."
+    session['next_url'] = '/syn/volume/' + volume_name
+    session['next_message'] = "Click here to go back to your volume."
+    return HttpResponseRedirect('/syn/thanks')
+
+
+
 
 @authenticate
 def downloads(request):
@@ -86,6 +160,7 @@ def downloads(request):
     c = Context({'username':username})
     return HttpResponse(t.render(c))
 
+@transactional(xg=True)
 @authenticate
 def createvolume(request):
     session = request.session
@@ -134,7 +209,10 @@ def createvolume(request):
             fields = {'volumes_o':new_volumes_o, 'volumes_rw':new_volumes_rw}
             db.update_user(username, **fields)
 
-            return HttpResponseRedirect('/syn/myvolumes/')
+            session['new_change'] = "Your new volume is ready."
+            session['next_url'] = '/syn/myvolumes/'
+            session['next_message'] = "Click here to see your volumes."
+            return HttpResponseRedirect('/syn/thanks/')
 
         else:
 

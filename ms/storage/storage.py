@@ -37,6 +37,8 @@ def create_volume( user, **kwargs ):
 def read_volume( name ):
    return Volume.Read( name )
 
+def read_volume_fresh( name ):
+   return Volume.ReadFresh( name )
 
 def volume_update_shard_count( volume_name, num_shards ):
    return Volume.update_shard_count( volume_name, num_shards )

@@ -2,6 +2,9 @@ from django.http import HttpResponseRedirect
 import storage.storage as db
 from MS.user import SyndicateUser as User
 
+from storage.storagetypes import transactional
+
+@transactional(xg=True)
 def authenticate(f):
 
     def wrapper(*args, **kw):

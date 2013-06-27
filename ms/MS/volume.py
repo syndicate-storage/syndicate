@@ -21,6 +21,7 @@ import time
 import datetime
 import random
 import string
+import logging
 
 VOLUME_SECRET_LENGTH = 256
 VOLUME_SECRET_SALT_LENGTH = 256
@@ -222,7 +223,20 @@ class Volume( storagetypes.Object ):
 
          return volume.key
 
-         
+   @classmethod
+   def ReadFresh( cls, name):
+      """
+      Given a volume ID (name), get the volume entity. Skip cache.
+      """
+      volume_key_name = Volume.make_key_name( name=name )
+      volume_key = storagetypes.make_key( Volume, Volume.make_key_name( name=name ) )   
+
+      volume = volume_key.get( use_memcache=False )
+      if not volume:
+         return None
+      else:
+         return volume
+
    @classmethod
    def Read( cls, name ):
       """
@@ -270,8 +284,14 @@ class Volume( storagetypes.Object ):
 # Changed volume_id to name in parameters - John
    @classmethod
    def Update( cls, name, **fields ):
-      volume = Volume.Read(name)
+      '''
+      Update volume identified by name with fields specified as a dictionary.
+      '''
+      volume = Volume.ReadFresh(name)
+      logging.info(volume)
       for key, value in fields.iteritems():
+         logging.info(key)
+         logging.info(value)
          setattr(volume, key, value)
       vol_future = volume.put_async()
       storagetypes.wait_futures([vol_future])
@@ -280,11 +300,26 @@ class Volume( storagetypes.Object ):
 
    @classmethod
    def Delete( cls, name ):
+      '''
+      Delete volume from datastore.
+      '''
       volume = Volume.Read(name) 
       return volume.key.delete()
 
    @classmethod
    def ListAll( cls, **attrs ):
-      raise NotImplementedError
+      '''
+      Attributes must be in dictionary, using format "Volume.PROPERTY: [operator] [value]"
+      eg {'Volume.volume_id': '== 5', ...} Yet to be tested/debugged.
 
-   
+      '''
+      query_clause = ""
+      for key, value in attrs.iteritems():
+         if query_clause: 
+            query_clause+=","
+         query_clause += (key + value)
+      if query_clause:
+         exec ("result = Volume.query(%s)" % query_clause)
+         return result
+      else:
+         return Volume.query()
