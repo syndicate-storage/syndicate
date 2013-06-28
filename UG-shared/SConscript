@@ -34,4 +34,8 @@ jni = SConscript("jni/SConscript")
 # build JSyndicateFS java package
 jsyndicatefs = SConscript("JSyndicateFS/SConscript")
 
-Return( 'jni jsyndicatefs' )
+# build SyndicateHadoop java package
+syndicatehadoop = SConscript("SyndicateHadoop/SConscript")
+
+Return( 'jni jsyndicatefs syndicatehadoop' )
+

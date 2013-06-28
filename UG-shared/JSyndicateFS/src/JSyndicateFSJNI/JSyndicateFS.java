@@ -27,7 +27,7 @@ public class JSyndicateFS {
         // check library is already loaded
         if(isLibraryLoaded) return;
         
-        String libraryFilename = System.getProperty(LIBRARY_FILE_PATH_KEY, null);
+        String libraryFilename = System.getProperty(LIBRARY_FILE_PATH_KEY, LIBRARY_FILE_NAME);
         
         if((libraryFilename != null) && (!libraryFilename.isEmpty())) {
             File jsfsDLL = new File(libraryFilename);
