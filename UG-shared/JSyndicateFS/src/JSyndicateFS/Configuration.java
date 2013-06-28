@@ -182,7 +182,7 @@ public class Configuration {
     /*
      * Return JSFSConfig which is a JNI layer config type
      */
-    public JSFSConfig getJSFSConfig() {
+    JSFSConfig getJSFSConfig() {
         return this.nativeConfig;
     }
     
