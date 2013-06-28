@@ -80,7 +80,7 @@ class UserGateway( Gateway ):
    @classmethod
    def generate_credentials( cls ):
       """
-      Generate (usernaem, password, SHA256(password)) for this gateway
+      Generate (username, password, SHA256(password)) for this gateway
       """
       password = os.urandom( PASSWORD_LENGTH )
 

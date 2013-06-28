@@ -3,20 +3,18 @@ This is the collection of files for the Syndicate front-end, using Django and we
 Author: John Whelchel
 Date: 5/28/13 - 6/27/13
 
+Done:
+- move createvolume to django_volume/
+- When not entering password for add permissions or change permissions, make sure to return the form the way they had it originally
+- Set up email to owner for 'request to join'
 
 To-do:
 
-- finish change password in django_home.views
-- move createvolume to django_volume/
-- When not entering password for add permissions or change permissions, make sure to return the form the way they had it originally
 - Clear out some of the extra logging messages
 - Talk to Jude about ancestor keys
 - This is more for the future, but create a test/suite
-- EDIT seems to be working now: MyVolumes doesn't seem to be working on production 
 - Create cron job for gaesessions
 - Talk with Jude about Read_Fresh and cache issues.
-
-- Set up email to owner for 'request to join'
 
 - User settings
 - Should volumes be public/private?

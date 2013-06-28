@@ -62,6 +62,9 @@ def create_user( **kwargs ):
 
 def read_user( email ):
    return SyndicateUser.Read( email )
+
+def read_user_fresh( email ):
+   return SyndicateUser.ReadFresh( email )
    
 
 def update_user( email, **fields ):

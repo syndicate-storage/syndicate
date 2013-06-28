@@ -34,7 +34,7 @@
 	{% empty %}
 
 	<tr>
-	  <td colspan="4"> No volumes exist </td>
+	  <td colspan="5"> No volumes exist </td>
 	</tr>
 
 	{% endfor %}
@@ -43,6 +43,6 @@
     </table>
     {% endblock %}
     {% block footer %}
-    <a  href='{% url django_home.views.createvolume %}'>Create new volume</a>
+    <a  href='{% url django_volume.views.createvolume %}'>Create new volume</a>
     <a  href='{% url django_home.views.home %}'>Back to home</a>
     {% endblock %}

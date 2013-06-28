@@ -229,7 +229,7 @@ class Volume( storagetypes.Object ):
       Given a volume ID (name), get the volume entity. Skip cache.
       """
       volume_key_name = Volume.make_key_name( name=name )
-      volume_key = storagetypes.make_key( Volume, Volume.make_key_name( name=name ) )   
+      volume_key = storagetypes.make_key( Volume, volume_key_name )   
 
       volume = volume_key.get( use_memcache=False )
       if not volume:
@@ -243,7 +243,7 @@ class Volume( storagetypes.Object ):
       Given a volume ID (name), get the volume entity. Returns None on miss.
       """
       volume_key_name = Volume.make_key_name( name=name )
-      volume_key = storagetypes.make_key( Volume, Volume.make_key_name( name=name ) )
+      volume_key = storagetypes.make_key( Volume, volume_key_name )
       
       volume = storagetypes.memcache.get( volume_key_name )
       if volume == None:
