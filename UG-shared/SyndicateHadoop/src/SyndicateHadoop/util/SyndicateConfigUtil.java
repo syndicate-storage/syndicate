@@ -3,6 +3,9 @@
  */
 package SyndicateHadoop.util;
 
+import JSyndicateFS.FilenameFilter;
+import JSyndicateFS.Path;
+import java.io.IOException;
 import java.net.URL;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -22,17 +25,17 @@ public class SyndicateConfigUtil {
     
     public static final Log LOG = LogFactory.getLog(SyndicateConfigUtil.class);
     
-    public static final String CONFIG_FILE_KEY = "syndicate.conf.config_file";
-    public static final String PASSWORD_KEY = "syndicate.conf.password";
-    public static final String USERNAME_KEY = "syndicate.conf.username";
-    public static final String VOLUME_NAME_KEY = "syndicate.conf.volume_name";
-    public static final String VOLUME_SECRET_KEY = "syndicate.conf.volume_secret";
-    public static final String MSURL_KEY = "syndicate.conf.ms_url";
-    public static final String PORT_KEY = "syndicate.conf.port";
-    public static final String MAX_METADATA_CACHE_KEY = "syndicate.conf.max_metadata_cache";
-    public static final String TIMEOUT_METADATA_CACHE_KEY = "syndicate.conf.timeout_metadata_cache";
-    public static final String FILE_READ_BUFFER_SIZE_KEY = "syndicate.conf.file_read_buffer_size";
-    public static final String FILE_WRITE_BUFFER_SIZE_KEY = "syndicate.conf.file_write_buffer_size";
+    public static final String CONFIG_FILE = "syndicate.conf.config_file";
+    public static final String PASSWORD = "syndicate.conf.password";
+    public static final String USERNAME = "syndicate.conf.username";
+    public static final String VOLUME_NAME = "syndicate.conf.volume_name";
+    public static final String VOLUME_SECRET = "syndicate.conf.volume_secret";
+    public static final String MSURL = "syndicate.conf.ms_url";
+    public static final String PORT = "syndicate.conf.port";
+    public static final String MAX_METADATA_CACHE = "syndicate.conf.max_metadata_cache";
+    public static final String TIMEOUT_METADATA_CACHE = "syndicate.conf.timeout_metadata_cache";
+    public static final String FILE_READ_BUFFER_SIZE = "syndicate.conf.file_read_buffer_size";
+    public static final String FILE_WRITE_BUFFER_SIZE = "syndicate.conf.file_write_buffer_size";
     
     public static final String JOB_MAPPER = "syndicate.job.mapper";
     public static final String JOB_COMBINER = "syndicate.job.combiner";
@@ -48,46 +51,51 @@ public class SyndicateConfigUtil {
 
     public static final String JOB_OUTPUT_KEY = "syndicate.job.output.key";
     public static final String JOB_OUTPUT_VALUE = "syndicate.job.output.value";
+    
+    public static final String MIN_INPUT_SPLIT_SIZE = "mapred.min.split.size";
+    public static final String MAX_INPUT_SPLIT_SIZE = "mapred.max.split.size";
 
+    public static final String INPUT_DIR = "mapred.input.dir";
+    public static final String INPUT_PATH_FILTER = "mapred.input.pathFilter.class";
     
     public static void setConfigFile(Configuration conf, String path) {
-        conf.set(CONFIG_FILE_KEY, path);
+        conf.set(CONFIG_FILE, path);
     }
     
     public static String getConfigFile(Configuration conf) {
-        return conf.get(CONFIG_FILE_KEY);
+        return conf.get(CONFIG_FILE);
     }
     
     public static void setPassword(Configuration conf, String password) {
-        conf.set(PASSWORD_KEY, password);
+        conf.set(PASSWORD, password);
     }
     
     public static String getPassword(Configuration conf) {
-        return conf.get(PASSWORD_KEY);
+        return conf.get(PASSWORD);
     }
     
     public static void setUserName(Configuration conf, String username) {
-        conf.set(USERNAME_KEY, username);
+        conf.set(USERNAME, username);
     }
     
     public static String getUserName(Configuration conf) {
-        return conf.get(USERNAME_KEY);
+        return conf.get(USERNAME);
     }
     
     public static void setVolumeName(Configuration conf, String volumename) {
-        conf.set(VOLUME_NAME_KEY, volumename);
+        conf.set(VOLUME_NAME, volumename);
     }
     
     public static String getVolumeName(Configuration conf) {
-        return conf.get(VOLUME_NAME_KEY);
+        return conf.get(VOLUME_NAME);
     }
     
     public static void setVolumeSecret(Configuration conf, String volumesecret) {
-        conf.set(VOLUME_SECRET_KEY, volumesecret);
+        conf.set(VOLUME_SECRET, volumesecret);
     }
     
     public static String getVolumeSecret(Configuration conf) {
-        return conf.get(VOLUME_SECRET_KEY);
+        return conf.get(VOLUME_SECRET);
     }
     
     public static void setMSUrl(Configuration conf, String msurl) {
@@ -103,51 +111,51 @@ public class SyndicateConfigUtil {
         if(msurl == null)
             throw new IllegalArgumentException("Can not set url from null parameter");
         
-        conf.set(MSURL_KEY, msurl.toString());
+        conf.set(MSURL, msurl.toString());
     }
     
     public static String getMSUrl(Configuration conf) {
-        return conf.get(MSURL_KEY);
+        return conf.get(MSURL);
     }
     
     public static void setPort(Configuration conf, int port) {
-        conf.setInt(PORT_KEY, port);
+        conf.setInt(PORT, port);
     }
     
     public static int getPort(Configuration conf) {
-        return conf.getInt(PORT_KEY, 0);
+        return conf.getInt(PORT, 0);
     }
     
     public static void setMaxMetadataCacheNum(Configuration conf, int maxCache) {
-        conf.setInt(MAX_METADATA_CACHE_KEY, maxCache);
+        conf.setInt(MAX_METADATA_CACHE, maxCache);
     }
     
     public static int getMaxMetadataCacheNum(Configuration conf) {
-        return conf.getInt(MAX_METADATA_CACHE_KEY, 0);
+        return conf.getInt(MAX_METADATA_CACHE, 0);
     }
     
     public static void setMetadataCacheTimeout(Configuration conf, int timeoutSec) {
-        conf.setInt(TIMEOUT_METADATA_CACHE_KEY, timeoutSec);
+        conf.setInt(TIMEOUT_METADATA_CACHE, timeoutSec);
     }
     
     public static int getMetadataCacheTimeout(Configuration conf) {
-        return conf.getInt(TIMEOUT_METADATA_CACHE_KEY, 0);
+        return conf.getInt(TIMEOUT_METADATA_CACHE, 0);
     }
     
     public static void setFileReadBufferSize(Configuration conf, int bufferSize) {
-        conf.setInt(FILE_READ_BUFFER_SIZE_KEY, bufferSize);
+        conf.setInt(FILE_READ_BUFFER_SIZE, bufferSize);
     }
     
     public static int getFileReadBufferSize(Configuration conf) {
-        return conf.getInt(FILE_READ_BUFFER_SIZE_KEY, 0);
+        return conf.getInt(FILE_READ_BUFFER_SIZE, 0);
     }
     
     public static void setFileWriteBufferSize(Configuration conf, int bufferSize) {
-        conf.setInt(FILE_WRITE_BUFFER_SIZE_KEY, bufferSize);
+        conf.setInt(FILE_WRITE_BUFFER_SIZE, bufferSize);
     }
     
     public static int getFileWriteBufferSize(Configuration conf) {
-        return conf.getInt(FILE_WRITE_BUFFER_SIZE_KEY, 0);
+        return conf.getInt(FILE_WRITE_BUFFER_SIZE, 0);
     }
     
     public static Class<? extends Mapper> getMapper(Configuration conf) {
@@ -236,5 +244,61 @@ public class SyndicateConfigUtil {
 
     public static void setInputFormat(Configuration conf, Class<? extends InputFormat> val) {
         conf.setClass(JOB_INPUT_FORMAT, val, InputFormat.class);
+    }
+    
+    public static void setMinInputSplitSize(Configuration conf, long val) {
+        conf.setLong(MIN_INPUT_SPLIT_SIZE, val);
+    }
+    
+    public static long getMinInputSplitSize(Configuration conf) {
+        return conf.getLong(MIN_INPUT_SPLIT_SIZE, 1);
+    }
+    
+    public static void setMaxInputSplitSize(Configuration conf, long val) {
+        conf.setLong(MAX_INPUT_SPLIT_SIZE, val);
+    }
+    
+    public static long getMaxInputSplitSize(Configuration conf) {
+        return conf.getLong(MAX_INPUT_SPLIT_SIZE, Long.MAX_VALUE);
+    }
+
+    public static void setInputPaths(Configuration conf, String pathstrings) throws IOException {
+        String[] pathstr = StringUtils.getPathStrings(pathstrings);
+        Path[] patharr = StringUtils.stringToPath(pathstr);
+        setInputPaths(conf, patharr);
+    }
+    
+    public static void addInputPaths(Configuration conf, String pathstrings) throws IOException {
+        String[] pathstr = StringUtils.getPathStrings(pathstrings);
+        for(String str : pathstr) {
+            addInputPath(conf, StringUtils.stringToPath(str));
+        }
+    }
+    
+    public static void setInputPaths(Configuration conf, Path... inputPaths) throws IOException {
+        String path = StringUtils.generatePathString(inputPaths);
+        conf.set(INPUT_DIR, path);
+    }
+    
+    public static void addInputPath(Configuration conf, Path path) throws IOException {
+        String dirs = conf.get(INPUT_DIR);
+        
+        String newDirs = StringUtils.addPathString(dirs, path);
+        conf.set(INPUT_DIR, newDirs);
+    }
+    
+    public static Path[] getInputPaths(Configuration conf) {
+        String dirs = conf.get(INPUT_DIR, "");
+        
+        String[] list = StringUtils.getPathStrings(dirs);
+        return StringUtils.stringToPath(list);
+    }
+    
+    public static void setInputPathFilter(Configuration conf, Class<? extends FilenameFilter> filter) {
+        conf.setClass(INPUT_PATH_FILTER, filter, FilenameFilter.class);
+    }
+    
+    public static Class<? extends FilenameFilter> getInputPathFilter(Configuration conf) {
+        return conf.getClass(INPUT_PATH_FILTER, null, FilenameFilter.class);
     }
 }

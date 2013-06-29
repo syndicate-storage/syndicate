@@ -4,10 +4,17 @@
  */
 package SyndicateHadoop;
 
+import JSyndicateFS.FilenameFilter;
+import JSyndicateFS.Path;
 import SyndicateHadoop.util.SyndicateConfigUtil;
 import java.io.DataInput;
+import java.io.File;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.RawComparator;
 import org.apache.hadoop.mapreduce.InputFormat;
@@ -21,6 +28,8 @@ import org.apache.hadoop.mapreduce.Reducer;
  * @author iychoi
  */
 public class SyndicateConfig {
+
+    public static final Log LOG = LogFactory.getLog(SyndicateConfig.class);
     
     private Configuration config;
     
@@ -125,6 +134,105 @@ public class SyndicateConfig {
         SyndicateConfigUtil.setFileWriteBufferSize(this.config, val);
     }
     
+    public JSyndicateFS.Configuration getJSFSConfiguration() {
+        JSyndicateFS.Configuration jsfsConfig = new JSyndicateFS.Configuration();
+        
+        String configFile = getConfigFile();
+        if(configFile != null) {
+            File configFileObj = new File(configFile);
+            try {
+                jsfsConfig.setConfigFile(configFileObj);
+            } catch (IllegalAccessException ex) {
+                LOG.error(ex);
+            }
+        }
+        
+        String username = getUserName();
+        if(username != null) {
+            try {
+                jsfsConfig.setUsername(username);
+            } catch (IllegalAccessException ex) {
+                LOG.error(ex);
+            }
+        }
+        
+        String password = getPassword();
+        if(password != null) {
+            try {
+                jsfsConfig.setPassword(password);
+            } catch (IllegalAccessException ex) {
+                LOG.error(ex);
+            }
+        }
+        
+        String volumeName = getVolumeName();
+        if(volumeName != null) {
+            try {
+                jsfsConfig.setVolumeName(volumeName);
+            } catch (IllegalAccessException ex) {
+                LOG.error(ex);
+            }
+        }
+        
+        String volumeSecret = getVolumeSecret();
+        if(volumeSecret != null) {
+            try {
+                jsfsConfig.setVolumeSecret(volumeSecret);
+            } catch (IllegalAccessException ex) {
+                LOG.error(ex);
+            }
+        }
+        
+        String msUrl = getMSUrl();
+        if(msUrl != null) {
+            try {
+                URI msurlObj = new URI(msUrl);
+                jsfsConfig.setMSUrl(msurlObj);
+            } catch (IllegalAccessException ex) {
+                LOG.error(ex);
+            } catch (URISyntaxException ex) {
+                LOG.error(ex);
+            }
+        }
+        
+        int port = getPort();
+        try {
+            jsfsConfig.setPort(port);
+        } catch (IllegalAccessException ex) {
+            LOG.error(ex);
+        }
+        
+        int maxMetadataCacheSize = getMaxMetadataCacheNum();
+        try {
+            jsfsConfig.setMaxMetadataCacheSize(maxMetadataCacheSize);
+        } catch (IllegalAccessException ex) {
+            LOG.error(ex);
+        }
+        
+        int metadataCacheTimeout = getMetadataCacheTimeout();
+        try {
+            jsfsConfig.setCacheTimeoutSecond(metadataCacheTimeout);
+        } catch (IllegalAccessException ex) {
+            LOG.error(ex);
+        }
+        
+        int readBufferSize = this.getFileReadBufferSize();
+        try {
+            jsfsConfig.setReadBufferSize(readBufferSize);
+        } catch (IllegalAccessException ex) {
+            LOG.error(ex);
+        }
+        
+        int writeBufferSize = this.getFileWriteBufferSize();
+        try {
+            jsfsConfig.setWriteBufferSize(writeBufferSize);
+        } catch (IllegalAccessException ex) {
+            LOG.error(ex);
+        }
+        
+        return jsfsConfig;
+    }
+    
     public Class<? extends Mapper> getMapper() {
         return SyndicateConfigUtil.getMapper(this.config);
     }
@@ -211,5 +319,45 @@ public class SyndicateConfig {
 
     public void setInputFormat(Class<? extends InputFormat> val) {
         SyndicateConfigUtil.setInputFormat(this.config, val);
+    }
+    
+    public void setMinInputSplitSize(long val) {
+        SyndicateConfigUtil.setMinInputSplitSize(this.config, val);
+    }
+    
+    public long getMinInputSplitSize() {
+        return SyndicateConfigUtil.getMinInputSplitSize(this.config);
+    }
+    
+    public void setMaxInputSplitSize(long val) {
+        SyndicateConfigUtil.setMaxInputSplitSize(this.config, val);
+    }
+    
+    public long getMaxInputSplitSize() {
+        return SyndicateConfigUtil.getMaxInputSplitSize(this.config);
+    }
+    
+    public void setInputPaths(String commaSeparatedPaths) throws IOException {
+        SyndicateConfigUtil.setInputPaths(this.config, commaSeparatedPaths);
+    }
+
+    public void addInputPaths(String commaSeparatedPaths) throws IOException {
+        SyndicateConfigUtil.addInputPaths(this.config, commaSeparatedPaths);
+    }
+    
+    public void setInputPaths(Path... inputPaths) throws IOException {
+        SyndicateConfigUtil.setInputPaths(this.config, inputPaths);
+    }
+    
+    public Path[] getInputPaths() throws IOException {
+        return SyndicateConfigUtil.getInputPaths(this.config);
+    }
+    
+    public Class<? extends FilenameFilter> getInputPathFilter() {
+        return SyndicateConfigUtil.getInputPathFilter(this.config);
+    }
+    
+    public void setInputPathFilter(Class<? extends FilenameFilter> val) {
+        SyndicateConfigUtil.setInputPathFilter(this.config, val);
     }
 }
