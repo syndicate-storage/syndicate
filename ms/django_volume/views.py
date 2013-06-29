@@ -330,12 +330,14 @@ def deletevolume(request, volume_name):
         return HttpResponse(t.render(c))    
 
 @authenticate
-def volumesettings(request, volume_name, message=""):
+def volumesettings(request, volume_name, message="", old_data=None):
     session = request.session
     username = session['login_email']
     vol = db.read_volume_fresh(volume_name)
-
-    desc_form = forms.ChangeVolumeD(initial={'description':vol.description})
+    if old_data:
+        desc_form = forms.ChangeVolumeD(initial={'description': old_data['desc']})
+    else:
+        desc_form = forms.ChangeVolumeD(initial={'description':vol.description})
     pass_form = forms.ChangePassword()
     password = forms.Password()
 
@@ -359,16 +361,27 @@ def changevolume(request, volume_name):
         return HttpResponseRedirect('/syn/volume/' + volume_name + '/settings')
 
     form = forms.Password(request.POST)
+    desc_form = forms.ChangeVolumeD(request.POST)
+    old_data = {}
+
     if not form.is_valid():
         message = "Password required."
-        return volumesettings(request, volume_name, message)
+        desc_form.is_valid()
+        if desc_form.errors:
+            old_data['desc'] = ""
+        else:
+            old_data['desc'] = desc_form.cleaned_data['description']
+        return volumesettings(request, volume_name, message, old_data)
     # Check password hash
     hash_check = Volume.generate_password_hash(form.cleaned_data['password'], vol.volume_secret_salt)
     if hash_check != vol.volume_secret_salted_hash:
         message = "Incorrect password."
-        return volumesettings(request, volume_name, message)
-
-    desc_form = forms.ChangeVolumeD(request.POST)
+        desc_form.is_valid()
+        if desc_form.errors:
+            old_data['desc'] = ""
+        else:
+            old_data['desc'] = desc_form.cleaned_data['description']
+        return volumesettings(request, volume_name, message, old_data)
 
     if not desc_form.is_valid():
         message = "Invalid description field entries."
@@ -419,3 +432,98 @@ def changevolumepassword(request, volume_name):
         session['next_url'] = '/syn/volume/' + volume_name
         session['next_message'] = "Click here to go back to your volume."
         return HttpResponseRedirect('/syn/thanks')
+
+
+@transactional(xg=True)
+@authenticate
+def createvolume(request):
+    session = request.session
+    username = session['login_email']
+
+    message = ""
+
+    if request.method == "POST":
+
+        # Validate input forms
+        form = forms.CreateVolume(request.POST)
+        if form.is_valid():
+
+            # Ensure volume name is unique
+            if db.read_volume(form.cleaned_data['name']):
+                message = "A volume with the name '{}' already exists.".format(form.cleaned_data['name'])
+                form = forms.CreateVolume()
+                t = loader.get_template('createvolume.html')
+                c = RequestContext(request, {'username':username,'form':form, 'message':message})
+                return HttpResponse(t.render(c))
+
+            # CREATE VOLUME
+            kwargs = {}
+            kwargs['name'] = form.cleaned_data['name']
+            kwargs['blocksize'] = form.cleaned_data['blocksize']
+            kwargs['description'] = form.cleaned_data['description']
+            kwargs['volume_secret'] = form.cleaned_data['password']
+            user = db.read_user(username)
+            volume_key = db.create_volume(user, **kwargs)
+        
+#            user_volumes = user.volumes
+#            if user_volumes is None:
+#                user.volumes = [volume_key.get().volume_id]
+#            else:
+#                user.volumes.append(volume_key.get().volume_id)
+
+            # Update user volume fields (o and rw)
+            new_volumes_o = user.volumes_o
+            new_volumes_rw = user.volumes_rw
+
+            v_id = volume_key.get().volume_id
+
+            new_volumes_o.append(v_id)
+            new_volumes_rw.append(v_id)
+
+            fields = {'volumes_o':new_volumes_o, 'volumes_rw':new_volumes_rw}
+            db.update_user(username, **fields)
+
+            session['new_change'] = "Your new volume is ready."
+            session['next_url'] = '/syn/myvolumes/'
+            session['next_message'] = "Click here to see your volumes."
+            return HttpResponseRedirect('/syn/thanks/')
+
+        else:
+
+            # Prep returned form values (so they don't have to re-enter stuff)
+
+            if 'name' in form.errors:
+                oldname = ""
+            else:
+                oldname = request.POST['name']
+            if 'blocksize' in form.errors:
+                oldblocksize = ""
+            else:
+                oldblocksize = request.POST['blocksize']
+            if 'description' in form.errors:
+                olddescription = ""
+            else:
+                olddescription = request.POST['description']
+
+            # Prep error message
+            message = "Invalid form entry: "
+
+            for k, v in form.errors.items():
+                message = message + "\"" + k + "\"" + " -> " 
+                for m in v:
+                    message = message + m + " "
+
+            # Give then the form again
+            form = forms.CreateVolume({'name': oldname,
+                                       'blocksize': oldblocksize,
+                                       'description': olddescription
+                                       })
+            t = loader.get_template('createvolume.html')
+            c = RequestContext(request, {'username':username,'form':form, 'message':message})
+            return HttpResponse(t.render(c))
+
+    # Not a POST, give them blank form
+    form = forms.CreateVolume()
+    t = loader.get_template('createvolume.html')
+    c = RequestContext(request, {'username':username,'form':form, 'message':message})
+    return HttpResponse(t.render(c))
