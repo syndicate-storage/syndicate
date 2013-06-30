@@ -9,6 +9,8 @@
 #include "libgateway.h"
 #include "libsyndicate.h"
 #include "map-parser.h"
+#include "odbc-handler.h"
+#include <sstream>
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -42,6 +44,12 @@ struct gateway_ctx {
     uint64_t block_id;
     // SQL query
     char* sql_query;
+    // ODBC handle
+    ODBCHandler& odh; 
+    // is this corresponds to .db_info file?
+    bool is_db_info;
+    // are we done?
+    bool complete;
 };
 
 struct path_comp {

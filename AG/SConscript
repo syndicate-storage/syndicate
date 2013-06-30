@@ -45,7 +45,8 @@ env.Append(LIBPATH = Split(LIBPATH))
 env.Append(CPPPATH = Split(CPPPATH))
 env.Append(CPPFLAGS = Split(CPPFLAGS))
 env.Append(CPPDEFINES = CPPDEFINES)
-
+env.Append(LINKFLAGS = ['-Wl,--export-dynamic'])
+	
 AG = env.Program("AG", source=Split(source_files) )
 
 Return( 'AG' )
