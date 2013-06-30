@@ -9,8 +9,6 @@ urlpatterns = patterns('django_home.views',
                        url(r'^myvolumes/?$', 'myvolumes'),
                        url(r'^settings/?$', 'settings'),
                        url(r'^downloads/?$','downloads'),
-                       url(r'^createvolume/?$', 'createvolume'),
-                       url(r'^changepassword/(?P<username>\w*)/?$', 'changepassword')
                        url(r'^logout/?$', 'logout'),
 
 )

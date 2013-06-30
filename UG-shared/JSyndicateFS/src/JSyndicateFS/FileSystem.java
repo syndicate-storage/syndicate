@@ -14,6 +14,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Hashtable;
 import java.util.Map;
@@ -570,5 +571,97 @@ public class FileSystem implements Closeable {
         } else {
             return false;
         }
+    }
+    
+    private ArrayList<Path> listAllFilesRecursive(Path absPath) throws IOException {
+        if(absPath == null)
+            throw new IllegalArgumentException("Can not list files from null path");
+        
+        ArrayList<Path> result = new ArrayList<Path>();
+        
+        if(isFile(absPath)) {
+            result.add(absPath);
+        } else if(isDirectory(absPath)) {
+            // entries
+            String[] entries = readDirectoryEntries(absPath);
+            
+            if(entries != null) {
+                for(String entry : entries) {
+                    Path newEntryPath = new Path(absPath, entry);
+                    ArrayList<Path> rec_result = listAllFilesRecursive(newEntryPath);
+                    result.addAll(rec_result);
+                }
+            }
+        }
+        
+        return result;
+    }
+    
+    public Path[] listAllFiles(Path path) throws IOException {
+        if(path == null)
+            throw new IllegalArgumentException("Can not list files from null path");
+     
+        Path absPath = path;
+        if(!path.isAbsolute())
+            absPath = getAbsolutePath(path);
+        
+        ArrayList<Path> result = listAllFilesRecursive(absPath);
+        
+        Path[] paths = new Path[result.size()];
+        paths = result.toArray(paths);
+        return paths;
+    }
+    
+    private ArrayList<Path> listAllFilesRecursive(Path absPath, FilenameFilter filter) throws IOException {
+        if(absPath == null)
+            throw new IllegalArgumentException("Can not list files from null path");
+        
+        ArrayList<Path> result = new ArrayList<Path>();
+        
+        if(isFile(absPath)) {
+            if(filter != null) {
+                if(filter.accept(new File(this, absPath.getParent()), absPath.getName())) {
+                    result.add(absPath);
+                }
+            } else {
+                result.add(absPath);
+            }
+        } else if(isDirectory(absPath)) {
+            // entries
+            String[] entries = readDirectoryEntries(absPath);
+            
+            if(entries != null) {
+                for(String entry : entries) {
+                    Path newEntryPath = new Path(absPath, entry);
+                    
+                    if(filter != null) {
+                        if(filter.accept(new File(this, absPath), entry)) {
+                            ArrayList<Path> rec_result = listAllFilesRecursive(newEntryPath);
+                            result.addAll(rec_result);
+                        }
+                    } else {
+                        ArrayList<Path> rec_result = listAllFilesRecursive(newEntryPath);
+                        result.addAll(rec_result);
+                    }
+                }
+            }
+        }
+        
+        return result;
+    }
+    
+    public Path[] listAllFiles(Path path, FilenameFilter filter) throws IOException {
+        if(path == null)
+            throw new IllegalArgumentException("Can not list files from null path");
+     
+        Path absPath = path;
+        if(!path.isAbsolute())
+            absPath = getAbsolutePath(path);
+        
+        ArrayList<Path> result = listAllFilesRecursive(absPath, filter);
+        
+        Path[] paths = new Path[result.size()];
+        paths = result.toArray(paths);
+        return paths;
     }
 }

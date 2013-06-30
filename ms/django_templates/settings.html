@@ -3,14 +3,6 @@
     <h1> Settings </h1>
 {% endblock %}
 {% block mainbody %}
-	<div class="box">
-		{{message}}
-		<h3>Change password (not yet implemented)</h3>
-		<form action='{% url django_home.views.changepassword username %}' method="post">{% csrf_token %}
-				{{pass_form.as_ul}}
-				<input class="submit" type="submit" value="Change" />
-		</form>
-	</div>
 {% endblock %}
 {% block footer %}
     <a href='{% url django_home.views.home %}'>Back to home</a>

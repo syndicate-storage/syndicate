@@ -1,0 +1,58 @@
+# build SyndicateHadoop adapter package
+
+# add dnlibs
+import dnlibs
+import os
+
+# set class(output) directory
+dest_path = "classes"
+
+# get our environment
+Import('env')
+env = env.Clone()
+
+# get current path
+CurPath = Dir('.').srcnode().abspath
+SourcePath = "src"
+LibraryPath = "libs"
+
+DependencyFile = os.path.join(CurPath, "dependencies.xml")
+LibraryAbsPath = os.path.join(CurPath, LibraryPath)
+SourceAbsPath = os.path.join(CurPath, SourcePath)
+
+# make library directory
+if not (os.path.isdir(LibraryAbsPath) and os.path.exists(LibraryAbsPath)):
+   os.mkdir(LibraryAbsPath)
+
+# download dependencies from external servers
+dnlibs.downloadDependencies(DependencyFile, LibraryAbsPath)
+
+
+# generate classpath for javac
+library_jar_files = Glob(os.path.join(LibraryAbsPath, "*.jar"))
+classpath = ""
+for package in library_jar_files:
+   classpath = classpath + str(package) + ":"
+
+
+env.Append(JAVACFLAGS = ["-cp", classpath])
+
+# compile class files
+syndicatehadoop_classes = env.Java(target=dest_path, source=SourceAbsPath)
+
+# make target library directory
+TargetLibPath = os.path.join(Dir(".").abspath, LibraryPath)
+
+if not (os.path.isdir(TargetLibPath) and os.path.exists(TargetLibPath)):
+   os.mkdir(TargetLibPath)
+
+# copy target libraries
+for package in library_jar_files:
+   Command(os.path.join(TargetLibPath, os.path.basename(str(package))), str(package), Copy("$TARGET", "$SOURCE"))
+
+# generate jar package
+syndicatehadoop = Jar(target = 'SyndicateHadoop.jar', source = syndicatehadoop_classes)
+
+
+Return( 'syndicatehadoop' )
+

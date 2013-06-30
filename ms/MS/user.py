@@ -148,12 +148,35 @@ class SyndicateUser( storagetypes.Object ):
 
 
    @classmethod
+   def ReadFresh( cls, email):
+      '''
+      Read a user, given username, skipping cache
+      '''
+      user_key_name = SyndicateUser.make_key_name( email=email)
+      user_key = storagetypes.make_key( SyndicateUser,user_key_name )
+      user = user_key.get( use_memcache=False )
+      if not user:
+         return None
+      else:
+         storagetypes.memcache.set( user_key_name, user )
+         return user
+
+   @classmethod
    def Read( cls, email ):
       """
       Read a user, given the username
       """
-      user_key = storagetypes.make_key( SyndicateUser, SyndicateUser.make_key_name( email=email ) )
-      user = user_key.get()
+      user_key_name = SyndicateUser.make_key_name( email=email)
+      user_key = storagetypes.make_key( SyndicateUser, user_key_name )
+
+      user = storagetypes.memcache.get( user_key_name )
+      if user == None:
+         user = user_key.get( use_memcache=False )
+         if not user:
+            return None
+         else:
+            storagetypes.memcache.set( user_key_name, user )
+            return user
       return user
 
 
