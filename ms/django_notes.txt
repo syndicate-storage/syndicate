@@ -1,18 +1,11 @@
 This is the collection of files for the Syndicate front-end, using Django and webpp2 inside Google App Engine.
 
 Author: John Whelchel
-Date: 5/28/13 - 6/27/13
-
-Done:
-- Changed validation for volume names (allow spaces, disallow @ signs per RFC https://www.ietf.org/rfc/rfc2396.txt). Spaces are treatead internally as underscore.
-- Enabled private/public volumes, added to volume settings.
-- allowed deleting from cache to prevent stale data when updating volumes/users
-- Verified ownership of volumes for any setting changes, while anyone with read rights can see basic info
-- Added GAE cronjob to clear expired sessions every 24 hours
-- Hard-coded new blocksizes.
+Date: 5/28/13 - 7/1/13
 
 To-do:
 
+- what's with the security issue (live) on firefox?
 - After changing settings -> thanks page, where UI-wise should we be redirected to?
 - How should 'active' behave? I.e. can you delete an active volume?
 - Make a UG handler to a certain POST with certain headers that authenticates a user, makes sure they have rights to the volume they're trying to attach a UG
