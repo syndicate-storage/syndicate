@@ -21,7 +21,7 @@ public class FSInputStream extends InputStream {
     private byte[] buffer = new byte[4096];
     private long offset;
     
-    FSInputStream(File file) {
+    public FSInputStream(File file) {
         if(file == null)
             throw new IllegalArgumentException("Can not create input stream from null file");
         
@@ -184,6 +184,19 @@ public class FSInputStream extends InputStream {
         
         this.offset += bytesSkip;
         return bytesSkip;
+    }
+    
+    public void seek(long start) throws IOException {
+        if(!this.filehandle.isOpen())
+            throw new IOException("Can not read data from closed file handle");
+        if(this.filehandle.isDirty())
+            throw new IOException("Can not read data from dirty file handle");
+        
+        if(this.filehandle.getStatus().getSize() <= start) {
+            this.offset = this.filehandle.getStatus().getSize();
+        } else {
+            this.offset = start;
+        }
     }
     
     @Override

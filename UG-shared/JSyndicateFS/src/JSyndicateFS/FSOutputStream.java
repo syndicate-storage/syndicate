@@ -21,7 +21,7 @@ public class FSOutputStream extends OutputStream {
     private byte[] buffer = new byte[4096];
     private long offset;
 
-    FSOutputStream(File file) {
+    public FSOutputStream(File file) {
         if(file == null)
             throw new IllegalArgumentException("Can not create output stream from null file");
         
