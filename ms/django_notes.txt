@@ -4,44 +4,38 @@ Author: John Whelchel
 Date: 5/28/13 - 6/27/13
 
 Done:
-- move createvolume to django_volume/
-- When not entering password for add permissions or change permissions, make sure to return the form the way they had it originally
-- Set up email to owner for 'request to join'
+- Changed validation for volume names (allow spaces, disallow @ signs per RFC https://www.ietf.org/rfc/rfc2396.txt). Spaces are treatead internally as underscore.
+- Enabled private/public volumes, added to volume settings.
+- allowed deleting from cache to prevent stale data when updating volumes/users
+- Verified ownership of volumes for any setting changes, while anyone with read rights can see basic info
+- Added GAE cronjob to clear expired sessions every 24 hours
+- Hard-coded new blocksizes.
 
 To-do:
 
+- After changing settings -> thanks page, where UI-wise should we be redirected to?
 - How should 'active' behave? I.e. can you delete an active volume?
 - Make a UG handler to a certain POST with certain headers that authenticates a user, makes sure they have rights to the volume they're trying to attach a UG
 to, and then create it, update it, or delete it. ms_username should be auto-generated, standard, based on what had been going on with the previous creations
 etc. MS will store all hashes. Each UG will store it's own password. Each UG
 will have all other UG's (on that volume) hashes. Each post will have:
 username, userpassword, volume name, UG-username, UG-password-hash, host, port (change away from base_url)
-- Transactions = slow, make sure they're all necessary (i.e. Auth.py)
 - Clear out some of the extra logging messages
 - This is more for the future, but create a test/suite
-- Create cron job for gaesessions
-- Just delete from memcache via memcache.delete()
 
-
-- Make volumes ability to be private/public, and white-list of users who can
-discover it, if private. Forms->Views->intial data everywhere->template
 - Javascript pagination for all/myvolumes.
-- Get rid of django stupid error messages, or just modify css to fix them and get rid of mine.
-- Let volume names have spaces.
-- Use NDB max length for strings for volume_names. (500)
-- Passwords have infinite length. I'm goint to make an exec decision and say max length for volume description is now 2000 chars.
 
-- Authenticate doesn't seem to be working perfectly when stopping/starting server and going straight to random pages (try myvolumes). This has to do with stale sessions. Connect with cron job issues. Actually, I think this might be normal behavior; the sessions aren't 'stale' yet. But we can add a cron job to GAE I'm sure
-to delete stale sessions.
+-Secret key for gae_sessions django:|4[Y1!b:?j\9*DE/(^r_[5xHrpSEq>bZY>2wSdcx&c_h+1Rs=%jC 18tmX9Y*cguL~\b>&
+ cZ'U,4.XzE FkBG-fV=}-##J-92nDx
+-lguwLv[h-"a5rR}6][jP5|PesM=Z
+{JS[9xMTDk I%SA+ d[
+hT;|',Zg#Vn<
+IQM{%fV`UZ;{Z9L"3m+LKe?eiHwzPd(^OVZ?~8eEV
+ x
+D?LHj?jl=g1[?yF'o@ WV}Sug:%eDZ;Gj9]|*B\J+
 
--SEt a max value for blocksize in django_home/forms.py
- - just give them a list of choices form 'smart' options,
- ie powers of 2 above say 256 or something?
- - min 1000 kb and powers of 2 up to 1 MB (hardcoded options). Small data=small blocksizes, vice-versa.
--Internal validation in MS/ for create_user and create_volume (i.e. length and what charactesr are allowed). 
--Secret key for gae_sessions django. Paste it here. Just go get a random salt from a volume. 
--Figure out how to gracefully handle errors on form entry pages for creating things. 
--And for wonky usernames in emails possibly.
+
+
 
 Notes:
 	The ms/ subdirectory contains essentially a webapp2 and django app combined under the auspice of GAE. GAE routes via app.yaml anything with the URI prefix '/syn' to the Django WSGI and everything else to MS. '/' handles login etc, and then routes to '/syn/home'. All django files are contained in the various directories prefixed django. 'django_syndicate_web' is the main project app. 'django_home' contains most of the views. Templates and media are self-explanatory.

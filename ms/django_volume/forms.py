@@ -2,32 +2,40 @@ from django_lib import override_forms
 from django import forms
 from django_lib.override_forms import ReadOnlyWidget
 
+BLOCKSIZE_CHOICES = (
+  (10, "10 kB"),
+  (20, 20),
+  (40, 40),
+  (80, 80),
+  (160,160),
+  (320,320),
+  (640,640),
+  (1024,"1 MB"),
+  )
+
 class CreateVolume(override_forms.MyForm):
  
     name = forms.CharField(label="Volume name",
-                           initial="My_Volume",
-                           max_length=20,
-                           help_text="20 characters maximum, no spaces. This cannot be changed later.")
+                           initial="My Volume",
+                           max_length=499,
+                           help_text="Your volume's name cannot be changed later.")
 
     private = forms.BooleanField(label="Private",
                                   initial=False,
                                   required=False)
 
-    blocksize = forms.IntegerField(label="Desired size of data blocks",
-                                   initial="61440",
-                                   help_text="Bytes. Don't use less than a few KB.",
-                                   min_value=1,
-                                   max_value=100000)
+    blocksize = forms.ChoiceField(label="Desired size of data blocks",
+                                   choices=BLOCKSIZE_CHOICES,
+                                   help_text="in kilobytes")
     
     description = forms.CharField(widget=forms.Textarea,
                                   label="Volume description",
                                   initial="This is my new amazing volume.",
-                                  max_length=500,
-                                  help_text="500 characters maximum")
+                                  max_length=2000,
+                                  help_text="2000 characters maximum")
     
     password = forms.CharField(label="Volume password",
-                               max_length=20,
-                               help_text="20 characters maximum",
+                               max_length=499,
                                widget=forms.PasswordInput)
 
 
@@ -37,24 +45,21 @@ class ChangeVolumeD(override_forms.MyForm):
                                   required=False,
                                   label="Volume description",
                                   initial="This is my new amazing volume.",
-                                  max_length=500,
-                                  help_text="500 characters maximum")
+                                  max_length=2000,
+                                  help_text="2000 characters maximum")
 
 class ChangePassword(override_forms.MyForm):
 
     oldpassword = forms.CharField(label="Old password",
                                max_length=20,
-                               help_text="20 characters maximum",
                                widget=forms.PasswordInput)
 
     newpassword_1 = forms.CharField(label="New password",
                                max_length=20,
-                               help_text="20 characters maximum",
                                widget=forms.PasswordInput)
 
     newpassword_2 = forms.CharField(label="Re-enter new password",
                                max_length=20,
-                               help_text="20 characters maximum",
                                widget=forms.PasswordInput)
 
 
@@ -65,7 +70,6 @@ class DeleteVolume(override_forms.MyForm):
 
     password = forms.CharField(label="Volume password",
                                max_length=20,
-                               help_text="20 characters maximum",
                                widget=forms.PasswordInput)
 
 class Permissions(override_forms.MyForm):
@@ -95,5 +99,4 @@ class Password(override_forms.MyForm):
 
     password = forms.CharField(label="Volume password",
                                max_length=20,
-                               help_text="20 characters maximum",
                                widget=forms.PasswordInput)

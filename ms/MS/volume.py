@@ -45,7 +45,7 @@ class Volume( storagetypes.Object ):
    HTTP_VOLUME_SECRET = "Syndicate-VolumeSecret"
    
    name = storagetypes.String()
-   blocksize = storagetypes.Integer( indexed=False )
+   blocksize = storagetypes.Integer( indexed=False ) # Stored in kilobytes!!
    active = storagetypes.Boolean()
    description = storagetypes.Text()
    owner_id = storagetypes.Integer()
@@ -88,7 +88,7 @@ class Volume( storagetypes.Object ):
    ]
 
    validators = {
-      "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.@")) ) == 0 )
+      "name": (lambda cls, value: len( value.translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")) ) == 0 )
    }
 
    default_values = {
@@ -179,6 +179,7 @@ class Volume( storagetypes.Object ):
       if len(missing) != 0:
          raise Exception( "Missing attributes: %s" % (", ".join( missing )))
 
+      kwargs['name'] = unicode(kwargs['name']).replace(" ","_")
       invalid = Volume.validate_fields( kwargs )
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
@@ -188,6 +189,13 @@ class Volume( storagetypes.Object ):
       name = kwargs.get( "name" )
       blocksize = kwargs.get( "blocksize" )
       description = kwargs.get( "description" )
+      if "private" in kwargs:
+         if type(kwargs['private']) is bool:
+            private = kwargs['private']
+         else:
+            raise Exception( "Private must be a boolean value")
+      else:
+         private = False
 
       volume_key = storagetypes.make_key( Volume, Volume.make_key_name( name=name ) )
       volume = volume_key.get()
@@ -214,6 +222,7 @@ class Volume( storagetypes.Object ):
                         active=kwargs.get('active',False),
                         replica_gateway_urls=[],
                         version=1,
+                        private=private,
                         volume_secret_salted_hash=volume_secret_salted_hash,
                         volume_secret_salt=volume_secret_salt
                         )
@@ -223,20 +232,6 @@ class Volume( storagetypes.Object ):
          storagetypes.wait_futures( [vid_future, vol_future] )
 
          return volume.key
-
-   @classmethod
-   def ReadFresh( cls, name):
-      """
-      Given a volume ID (name), get the volume entity. Skip cache.
-      """
-      volume_key_name = Volume.make_key_name( name=name )
-      volume_key = storagetypes.make_key( Volume, volume_key_name )   
-
-      volume = volume_key.get( use_memcache=False )
-      if not volume:
-         return None
-      else:
-         return volume
 
    @classmethod
    def Read( cls, name ):
@@ -288,8 +283,10 @@ class Volume( storagetypes.Object ):
       '''
       Update volume identified by name with fields specified as a dictionary.
       '''
-      volume = Volume.ReadFresh(name)
-      logging.info(volume)
+      volume = Volume.Read(name)
+      volume_key_name = Volume.make_key_name( name=name )
+      storagetypes.memcache.delete(volume_key_name)
+
       for key, value in fields.iteritems():
          logging.info(key)
          logging.info(value)
