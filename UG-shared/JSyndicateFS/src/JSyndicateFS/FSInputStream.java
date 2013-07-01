@@ -21,7 +21,7 @@ public class FSInputStream extends InputStream {
     private byte[] buffer = new byte[4096];
     private long offset;
     
-    FSInputStream(File file) {
+    public FSInputStream(File file) {
         if(file == null)
             throw new IllegalArgumentException("Can not create input stream from null file");
         
