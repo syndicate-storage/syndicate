@@ -286,6 +286,24 @@ public class File {
        return this.status.getSize();
     }
     
+    public long getBlockSize() {
+        loadStatus();
+        
+        if(this.status == null)
+            return 0;
+        
+        return this.status.getBlockSize();
+    }
+    
+    public long getBlocks() {
+        loadStatus();
+        
+        if(this.status == null)
+            return 0;
+        
+        return this.status.getBlocks();
+    }
+    
     /*
      * Return the last access time
      */

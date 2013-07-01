@@ -71,6 +71,28 @@ public class FileStatus {
     }
     
     /*
+     * Return the block size
+     */
+    public long getBlockSize() {
+        return this.stat.getSt_blksize();
+    }
+    
+    /*
+     * Return the number of blocks
+     */
+    public long getBlocks() {
+        if(this.sizeModified) {
+            long blockSize = this.stat.getSt_blksize();
+            long blocks = this.localFileSize / blockSize;
+            if(this.localFileSize % blockSize != 0)
+                blocks++;
+            return blocks;
+        } else {
+            return this.stat.getSt_blocks();
+        }
+    }
+    
+    /*
      * Return the last access time
      */
     public long getLastAccess() {
