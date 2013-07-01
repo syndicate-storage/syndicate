@@ -360,4 +360,13 @@ public class SyndicateConfig {
     public void setInputPathFilter(Class<? extends FilenameFilter> val) {
         SyndicateConfigUtil.setInputPathFilter(this.config, val);
     }
+    
+    public void setOutputPath(Path path) {
+        SyndicateConfigUtil.setOutputPath(this.config, path);
+    }
+
+    public Path getOutputPath() {
+        return SyndicateConfigUtil.getOutputPath(this.config);
+    }
+
 }
