@@ -148,20 +148,6 @@ class SyndicateUser( storagetypes.Object ):
 
 
    @classmethod
-   def ReadFresh( cls, email):
-      '''
-      Read a user, given username, skipping cache
-      '''
-      user_key_name = SyndicateUser.make_key_name( email=email)
-      user_key = storagetypes.make_key( SyndicateUser,user_key_name )
-      user = user_key.get( use_memcache=False )
-      if not user:
-         return None
-      else:
-         storagetypes.memcache.set( user_key_name, user )
-         return user
-
-   @classmethod
    def Read( cls, email ):
       """
       Read a user, given the username
@@ -186,6 +172,9 @@ class SyndicateUser( storagetypes.Object ):
       Update volume identified by name with fields specified as a dictionary.
       '''
       user = SyndicateUser.Read(email)
+      user_key_name = SyndicateUser.make_key_name( email=email)
+      storagetypes.memcache.delete( user_key_name )
+
       for key, value in fields.iteritems():
          setattr(user, key, value)
 

@@ -30,6 +30,7 @@ ms_files.extend( Glob("django_templates/accounts/*.html") )
 # django supplementary files
 ms_files.extend( Glob("django_static/*") )
 ms_files.extend( Glob("django_lib/*") )
+ms_files.extend( Glob("django_home/templatetags/*.py"))
 
 # googlepb files
 ms_files.extend( Glob("googlepb/*.py") )

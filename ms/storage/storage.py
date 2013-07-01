@@ -36,9 +36,7 @@ def create_volume( user, **kwargs ):
 
 def read_volume( name ):
    return Volume.Read( name )
-
-def read_volume_fresh( name ):
-   return Volume.ReadFresh( name )
+   
 
 def volume_update_shard_count( volume_name, num_shards ):
    return Volume.update_shard_count( volume_name, num_shards )
@@ -63,9 +61,6 @@ def create_user( **kwargs ):
 def read_user( email ):
    return SyndicateUser.Read( email )
 
-def read_user_fresh( email ):
-   return SyndicateUser.ReadFresh( email )
-   
 
 def update_user( email, **fields ):
    return SyndicateUser.Update( email, **fields )

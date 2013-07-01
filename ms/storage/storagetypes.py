@@ -4,7 +4,7 @@
 """
 
 
-import logging
+
 import random
 
 import types
@@ -373,7 +373,6 @@ class Object( Model ):
       invalid = []
       for (attr, value) in attrdict.items():
          if cls.validators.has_key( attr ):
-            logging.info("Hello" + str(value))
             valid = cls.validators[attr]( cls, value )
             if not valid:
                invalid.append( attr )
