@@ -19,12 +19,20 @@ class ODBCHandler
 	//ODBC components...
 	SQLHENV env;
 	SQLHDBC dbc;
+	static ODBCHandler& odh;
 
-    public:
 	ODBCHandler();
 	ODBCHandler(unsigned char* con_str);
-	char*	    executeQuery(unsigned char* sql_query);
-	static string extract_error(SQLHANDLE handle, SQLSMALLINT type);
+	ODBCHandler(ODBCHandler const&);
+
+    public:
+	static  ODBCHandler&  get_handle(unsigned char* con_str);
+	char*   execute_query(unsigned char* sql_query);
+	string  get_tables();
+	string  get_db_info();
+	string  extract_error(SQLHANDLE handle, SQLSMALLINT type);
+	//void operator=(ODBCHandler const&);
+	void    print();
 };
 
 

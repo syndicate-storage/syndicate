@@ -1017,7 +1017,7 @@ int start_gateway_service( struct md_syndicate_conf *conf, ms_client *client, md
 int load_AG_driver( char *lib ) 
 {
    // open library
-   driver = dlopen( lib, RTLD_LAZY );
+   driver = dlopen( lib, RTLD_NOW );
    if ( driver == NULL ) {
       errorf( "load_AG_gateway_driver = %s\n", dlerror() );
       return -EINVAL;

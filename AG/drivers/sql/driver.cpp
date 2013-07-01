@@ -27,10 +27,12 @@ size_t  datapath_len = 0;
 // publish_func exit code
 int pfunc_exit_code = 0;
 
+ODBCHandler& odh = ODBCHandler::get_handle((unsigned char*)"DSN=sqlite");
+
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
-   errorf("%s", "INFO: gateway_generate_manifest\n"); 
-   return 0;
+    errorf("%s", "INFO: gateway_generate_manifest\n"); 
+    return 0;
 }
 
 
@@ -42,6 +44,21 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 
     if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
 	// read from database using ctx->sql_query...
+	if (ctx->is_db_info && !ctx->complete) {
+	    stringstream info;
+	    string tbl_info = odh.get_tables();
+	    string db_info = odh.get_db_info();
+	    info<<"Database"<<endl<<"========"<<endl<<db_info<<endl;
+	    info<<"Tables"<<endl<<"======"<<endl<<tbl_info<<endl;
+	    string info_str = info.str();
+	    const char* info_c_str = info_str.c_str();
+	    size_t info_len = info.str().length();
+	    memcpy(buf, info_c_str, info_len);
+	    ret = info_len;
+	    ctx->complete = true;
+	}
+	else if (ctx->complete)
+	    ret = 0;
     }
     else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
 	// read from RAM
@@ -137,6 +154,13 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        return NULL;
    }
 
+   // default fo is_db_info is false
+   ctx->is_db_info = false;
+   // complete is initially false
+   ctx->complete = false;
+   // if this is a regarding "/.db_info"
+   if (strstr(fs_path.c_str(), ".db_info"))
+       ctx->is_db_info = true;
    struct md_entry* ent = DATA[ file_path ];
 
    // is this a request for a manifest?
@@ -179,7 +203,9 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        else {
 	   // set up for reading
 	   off_t offset = block_id;
-	   // open a connection to db and set in ctx
+	   /*xxx.print();
+	   ctx->odh = xxx;
+	   ctx->odh.print();*/
        }
 
        ctx->num_read = 0;
