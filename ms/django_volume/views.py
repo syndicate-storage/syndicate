@@ -187,7 +187,7 @@ def volumepermissions(request, volume_name, message="", initial_data=None):
         rw = db.list_users(**rw_attrs)
         r_attrs = {'SyndicateUser.volumes_r':'== ' + str(vol.volume_id)}
         r = db.list_users(**r_attrs)
-    
+        
         #rw = User.query(User.volumes_rw==vol.volume_id)
         #r = User.query(User.volumes_r==vol.volume_id)
     
@@ -462,6 +462,7 @@ def createvolume(request):
             kwargs['blocksize'] = form.cleaned_data['blocksize']
             kwargs['description'] = form.cleaned_data['description']
             kwargs['volume_secret'] = form.cleaned_data['password']
+            kwargs['private'] = form.cleaned_data['private']
             user = db.read_user(username)
             volume_key = db.create_volume(user, **kwargs)
         

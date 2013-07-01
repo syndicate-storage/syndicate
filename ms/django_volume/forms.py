@@ -9,6 +9,10 @@ class CreateVolume(override_forms.MyForm):
                            max_length=20,
                            help_text="20 characters maximum, no spaces. This cannot be changed later.")
 
+    private = forms.BooleanField(label="Private",
+                                  initial=False,
+                                  required=False)
+
     blocksize = forms.IntegerField(label="Desired size of data blocks",
                                    initial="61440",
                                    help_text="Bytes. Don't use less than a few KB.",
@@ -86,7 +90,7 @@ class AddPermissions(override_forms.MyForm):
     
     write = forms.BooleanField(label="Write",
                               required=False)
-    
+
 class Password(override_forms.MyForm):
 
     password = forms.CharField(label="Volume password",

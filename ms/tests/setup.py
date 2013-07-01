@@ -873,8 +873,8 @@ def test( ignore1, args ):
                return (500, "Failed to read volume '%s'" % test_volume_name)
 
          # assign volume to user
-         if volume.volume_id not in user.volumes:
-            user.volumes.append( volume.volume_id )
+         if volume.volume_id not in user.volumes_o:
+            user.volumes_o.append( volume.volume_id )
             user.put()
 
          # create a root MSEntry, with some sane defaults

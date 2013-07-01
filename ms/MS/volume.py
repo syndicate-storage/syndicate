@@ -52,6 +52,7 @@ class Volume( storagetypes.Object ):
    volume_id = storagetypes.Integer()
    replica_gateway_urls = storagetypes.String( repeated=True )     # multiple replica servers allowed
    version = storagetypes.Integer( indexed=False )                 # version of this metadata
+   private = storagetypes.Boolean()
 
    num_shards = storagetypes.Integer(default=20, indexed=False)    # number of shards per entry in this volume
 
@@ -87,12 +88,12 @@ class Volume( storagetypes.Object ):
    ]
 
    validators = {
-      "name": (lambda cls, value: len( value.translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.@")) ) == 0 )
+      "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.@")) ) == 0 )
    }
 
    default_values = {
       "blocksize": (lambda cls, attrs: 61440), # 60 KB
-      "version": (lambda cls, attrs: 1)
+      "version": (lambda cls, attrs: 1),
    }
    
    def protobuf( self, volume_metadata, user_gateways, **kwargs ):
