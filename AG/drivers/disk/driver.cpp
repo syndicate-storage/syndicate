@@ -43,7 +43,9 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
    Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
    bbmsg->set_start_id( 0 );
    bbmsg->set_end_id( num_blocks );
-   bbmsg->set_file_url( string(ent->url) );
+   stringstream strstrm;
+   strstrm << ent->url << ent->path;
+   bbmsg->set_file_url( strstrm.str() );
 
    for( uint64_t i = 0; i < num_blocks; i++ ) {
       bbmsg->add_block_versions( 0 );
@@ -230,7 +232,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
          return NULL;
       }
       // request for local file
-      char* fp = md_fullpath( global_conf->data_root, GET_PATH( ent->url ), NULL );
+      char* fp = md_fullpath( global_conf->data_root, ent->path, NULL );
       ctx->fd = open( fp, O_RDONLY );
       if( ctx->fd < 0 ) {
          rc = -errno;
@@ -305,8 +307,6 @@ static int publish(const char *fpath, const struct stat *sb,
     int i = 0;
     struct md_entry* ment = new struct md_entry;
     size_t len = strlen(fpath);
-    size_t local_proto_len = strlen( SYNDICATEFS_LOCAL_PROTO ); 
-    size_t url_len = local_proto_len + len;
     if ( len < datapath_len ) { 
 	pfunc_exit_code = -EINVAL;
 	return -EINVAL;
@@ -322,10 +322,10 @@ static int publish(const char *fpath, const struct stat *sb,
     strncpy( ment->path, fpath + datapath_len, path_len );
 
     //Set primary replica 
-    ment->url = ( char* )malloc( url_len + 1);
-    memset( ment->url, 0, url_len + 1 );
-    strncat( ment->url, SYNDICATEFS_LOCAL_PROTO, local_proto_len );
-    strncat( ment->url + local_proto_len, fpath, len );
+    size_t content_url_len = strlen(global_conf->content_url);
+    ment->url = ( char* )malloc( content_url_len + 1);
+    memset( ment->url, 0, content_url_len + 1 );
+    strncpy( ment->url, global_conf->content_url, content_url_len );
 
     ment->url_replicas = mc->conf->replica_urls;
     ment->local_path = NULL;
