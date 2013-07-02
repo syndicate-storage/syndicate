@@ -3,6 +3,8 @@ This is the collection of files for the Syndicate front-end, using Django and we
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
+Done-
+
 To-do:
 
 - what's with the security issue (live) on firefox?
@@ -15,6 +17,7 @@ will have all other UG's (on that volume) hashes. Each post will have:
 username, userpassword, volume name, UG-username, UG-password-hash, host, port (change away from base_url)
 - Clear out some of the extra logging messages
 - This is more for the future, but create a test/suite
+- maybe upgrade django to 1.5 (?)
 
 - Javascript pagination for all/myvolumes.
 

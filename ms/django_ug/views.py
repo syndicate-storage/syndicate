@@ -74,6 +74,8 @@ def delete(request):
         post = request.POST.dict()
         if "ug_name" in post:
             ug = db.read_user_gateway(post['ug_name'])
+            if not ug:
+                return HttpResponse("UG %s does not exist." % post['ug_name'])
             if ug.owner_id != user.owner_id:
                 return HttpResponse("You must own this UG to delete it.")
         else:
@@ -87,3 +89,46 @@ def delete(request):
         return HttpResponse("Gateway succesfully deleted.")
     else:
         return HttpResponse("Hi")
+
+@csrf_exempt
+@authenticate
+def urlcreate(request, volume_name, ug_name, ug_password, host, port):
+    session = request.session
+    username = session['login_email']
+    user = db.read_user(username)
+
+    kwargs = {}
+
+    kwargs['port'] = int(port)
+    kwargs['host'] = host
+    kwargs['ms_username'] = ug_name
+    kwargs['ms_password'] = ug_password
+    vol = db.read_volume(volume_name)
+    if not vol:
+        return HttpResponse("No volume %s exists." % volume_name)
+    if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
+        return HttpResponse("Must have read rights to volume %s to create UG for it." % volume_name)
+
+    try:
+        new_ug = db.create_user_gateway(user, vol, **kwargs)
+    except Exception as E:
+        return HttpResponse("UG creation error: %s" % E)
+
+    return HttpResponse("UG succesfully created: " + str(new_ug))
+
+@csrf_exempt
+@authenticate
+def urldelete(request, ug_name, ug_password):
+    session = request.session
+    username = session['login_email']
+    user = db.read_user(username)
+
+    ug = db.read_user_gateway(ug_name)
+    if not ug:
+        return HttpResponse("UG %s does not exist." % ug_name)
+    if ug.owner_id != user.owner_id:
+        return HttpResponse("You must own this UG to delete it.")
+    if not UG.authenticate(ug, ug_password):
+        return HttpResponse("Incorrect UG password.")
+    db.delete_user_gateway(ug_name)
+    return HttpResponse("Gateway succesfully deleted.")
