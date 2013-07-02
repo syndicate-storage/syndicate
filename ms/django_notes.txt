@@ -7,6 +7,23 @@ Done-
 
 To-do:
 
+- Create AG and RG in gateway.py
+Ag have to publish the existence of data in the MS. They can also serve data. Function like UG, can read and write metadata
+Rg cannot interact with MS directly, can only read, not write.
+
+MS needs to be able to transmit info/config to gateways (they have to authenticate)
+User needs to able to enter JSon/XML or something that specifies configuration of RG (or AG or UG) that dicates
+   Ug needs to know whta edge caches to use -> proxy URL and a very simple python function that will take as arg atleast a URL and transforms it into a URL to a network cache. Also needs to go through all volumes, find all UG's with write values to that volume, pass hashed credentials to those UG's so they can all verify each other, based on changes. (this should be periodic too, to detect partitions)
+
+   AG needs generic file (text or something)
+   RG same (text or something)
+Whenver config changes, needs to be pushed to G's
+
+
+- Any action a UG does needs Suser credentials -> sessions , renewed every hour or so. (GAESession -> regenerate keys)
+- UG's need new boolean flag to dictate read or read/write.
+
+- Use Kib?
 - what's with the security issue (live) on firefox?
 - After changing settings -> thanks page, where UI-wise should we be redirected to?
 - How should 'active' behave? I.e. can you delete an active volume?
