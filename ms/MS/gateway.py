@@ -26,11 +26,13 @@ PASSWORD_LENGTH = 256
 
 class Gateway( storagetypes.Object ):
 
-   base_url = storagetypes.Text()
+   host = storagetypes.Text()
+   port = storagetypes.Integer()
    volume_id = storagetypes.Integer()           # which volume are we attached to?
 
    required_attrs = [
-      "base_url",
+      "host",
+      "port",
       "volume_id"
    ]
    
@@ -52,7 +54,7 @@ class UserGateway( Gateway ):
    ]
 
    validators = Gateway.merge_dict( Gateway.validators, {
-      "ms_password_hash": (lambda cls, value: len( value.translate(None, "0123456789abcdef") ) == 0)
+      "ms_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0)
    })
 
    key_attrs = Gateway.key_attrs + [
@@ -74,7 +76,7 @@ class UserGateway( Gateway ):
 
       pw_hash = h.hexdigest()
 
-      return pw_hash
+      return unicode(pw_hash)
       
 
    @classmethod
@@ -161,7 +163,7 @@ class UserGateway( Gateway ):
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
 
-      # TODO: transaction
+      # TODO: transaction -jcnelson
 
       ug_key = storagetypes.make_key( UserGateway, UserGateway.make_key_name( ms_username=kwargs["ms_username"] ) )
       ug = ug_key.get()
@@ -171,7 +173,8 @@ class UserGateway( Gateway ):
          raise Exception( "User Gateway '%s' already exists!" % kwargs["ms_username"] )
 
       else:
-         del kwargs['ms_password']
+         if 'ms_password' in kwargs:
+            del kwargs['ms_password']
          ug = UserGateway( key=ug_key, **kwargs )
 
          # clear cached UG listings
@@ -206,6 +209,8 @@ class UserGateway( Gateway ):
       ug_key = storagetypes.make_key( UserGateway, ug_key_name )
 
       ug_key.delete()
+      
+      storagetypes.memcache.delete(ug_key_name)
 
       return True
       

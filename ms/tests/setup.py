@@ -913,7 +913,7 @@ def test( ignore1, args ):
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          try:
-            storage.create_user_gateway( user, volume, ms_username=UG_name(node), ms_password="sniff", base_url="https://" + node + ":32780/" )
+            storage.create_user_gateway( user, volume, ms_username=UG_name(node), ms_password="sniff", host=node, port="32780" )
          except:
             # already exists
             pass
@@ -936,7 +936,7 @@ def test( ignore1, args ):
                return (500, "Missing argument: ug_host")
 
          try:
-            storage.create_user_gateway( user, volume, ms_username=ug_name, ms_password="sniff", base_url="http://" + ug_host + ":" + str(ug_port) )
+            storage.create_user_gateway( user, volume, ms_username=ug_name, ms_password="sniff", host=ug_host, port=str(ug_port) )
          except:
             return (500, "User gateway '%s' already exists" % ug_name)
 

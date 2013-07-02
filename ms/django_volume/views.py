@@ -10,7 +10,6 @@ from storage.storagetypes import transactional
 import storage.storage as db
 from MS.volume import Volume
 from MS.user import SyndicateUser as User
-from MS.gateway import UserGateway as UG,  ReplicaGateway as RG, AcquisitionGateway as AG
 
 @verifyownership
 @authenticate

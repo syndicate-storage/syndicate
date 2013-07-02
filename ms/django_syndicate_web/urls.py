@@ -5,6 +5,7 @@ from django.conf.urls import patterns, include, url
 # admin.autodiscover()
 
 urlpatterns = patterns('',
+                        url(r'^syn/UG/', include('django_ug.urls')),
 						url(r'^syn/volume/', include('django_volume.urls')),
 						url(r'^syn/', include('django_home.urls')),
                         url(r'^syn', 'django_home.views.home'),

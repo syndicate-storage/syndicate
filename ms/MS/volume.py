@@ -21,7 +21,6 @@ import time
 import datetime
 import random
 import string
-import logging
 
 VOLUME_SECRET_LENGTH = 256
 VOLUME_SECRET_SALT_LENGTH = 256
@@ -288,8 +287,6 @@ class Volume( storagetypes.Object ):
       storagetypes.memcache.delete(volume_key_name)
 
       for key, value in fields.iteritems():
-         logging.info(key)
-         logging.info(value)
          setattr(volume, key, value)
       vol_future = volume.put_async()
       storagetypes.wait_futures([vol_future])
