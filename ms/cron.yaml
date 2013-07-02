@@ -1,0 +1,4 @@
+cron:
+- description: clearing stale sessions
+  url: /cron
+  schedule: every 24 hours

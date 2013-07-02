@@ -719,14 +719,14 @@ users = [
    "jcnelson@cs.princeton.edu",
    "muneeb@cs.princeton.edu",
    "wathsala@cs.princeton.edu",
-   "john.l.whelchel@gmail.com",
+   "jlwhelch@princeton.edu",
    "bugsoda@gmail.com"
 ]
 
 DEFAULT_USERNAME=users[0]
 
 def testvolume_name( username ):
-   return "testvolume-%s" % username
+   return "testvolume-%s" % username.replace("@", "-")
 
 def UG_name( nodename ):
    return "UG-%s" % nodename
@@ -844,9 +844,9 @@ def test( ignore1, args ):
 
    if do_init:
       # create users and make them all volumes
-      for user_email in users:
+      for i, user_email in enumerate(users):
          try:
-            user_key = storage.create_user( email=user_email, openid_url="https://vicci.org/id/%s" % user_email )
+            user_key = storage.create_user( email=user_email, openid_url="https://vicci.org/id/%s" % user_email)
             user = user_key.get()
          except:
             logging.info( "traceback: " + traceback.format_exc() )
@@ -861,7 +861,7 @@ def test( ignore1, args ):
          try:
             # volume name: testvolume-$name
             # volume secret: abcdef
-            volume_key = storage.create_volume( user, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, volume_secret="abcdef", volume_secret_salt="abcdef", active=True )
+            volume_key = storage.create_volume( user, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, volume_secret="abcdef", volume_secret_salt="abcdef", active=True, owner_id=i+1 )
             volume = volume_key.get()
 
          except:
@@ -875,6 +875,9 @@ def test( ignore1, args ):
          # assign volume to user
          if volume.volume_id not in user.volumes_o:
             user.volumes_o.append( volume.volume_id )
+            user.put()
+         if volume.volume_id not in user.volumes_rw:
+            user.volumes_rw.append( volume.volume_id )
             user.put()
 
          # create a root MSEntry, with some sane defaults

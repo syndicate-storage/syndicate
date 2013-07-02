@@ -51,8 +51,8 @@ def logout(request):
 def allvolumes(request):
     session = request.session
     username = session['login_email']
-    # all queries to be replaced with db.list_all()
-    volumes = Volume.query()
+    v_attrs = {'Volume.private':'!=True'}
+    volumes = db.list_volumes(**v_attrs)
     owners = []
     for v in volumes:
         volume_owner = v.owner_id
@@ -68,7 +68,7 @@ def allvolumes(request):
 def myvolumes(request):
     session = request.session
     username = session['login_email']
-    user = db.read_user_fresh(username)
+    user = db.read_user(username)
 
     attrs = {}
     if user.volumes_o:

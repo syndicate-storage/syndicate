@@ -13,6 +13,10 @@ builtins:
 - deferred: on
 
 handlers:
+- url: /cron.*
+  script: cron.app
+  login: admin
+
 - url: /django_static
   static_dir: django_static
 

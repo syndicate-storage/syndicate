@@ -1,9 +1,11 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>{% block title %} Syndicate {% endblock %}</title>
   {% block header %}
+    {% load ms_extras %}
     {% load staticfiles %}
     <link rel="stylesheet" type="text/css" href='{% static "main.css" %}'>
   {% endblock %}

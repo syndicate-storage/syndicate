@@ -57,6 +57,7 @@ public class SyndicateConfigUtil {
 
     public static final String INPUT_DIR = "mapred.input.dir";
     public static final String INPUT_PATH_FILTER = "mapred.input.pathFilter.class";
+    public static final String OUTPUT_DIR = "mapred.output.dir";
     
     public static void setConfigFile(Configuration conf, String path) {
         conf.set(CONFIG_FILE, path);
@@ -300,5 +301,13 @@ public class SyndicateConfigUtil {
     
     public static Class<? extends FilenameFilter> getInputPathFilter(Configuration conf) {
         return conf.getClass(INPUT_PATH_FILTER, null, FilenameFilter.class);
+    }
+    
+    public static void setOutputPath(Configuration conf, Path path) {
+        conf.set(OUTPUT_DIR, path.getPath());
+    }
+
+    public static Path getOutputPath(Configuration conf) {
+        return StringUtils.stringToPath(conf.get(OUTPUT_DIR));
     }
 }

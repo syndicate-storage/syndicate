@@ -7,8 +7,8 @@ import JSyndicateFS.File;
 import JSyndicateFS.FileSystem;
 import JSyndicateFS.FilenameFilter;
 import JSyndicateFS.Path;
-import SyndicateHadoop.SyndicateConfig;
 import SyndicateHadoop.input.SyndicateInputSplit;
+import SyndicateHadoop.util.FileSystemUtil;
 import SyndicateHadoop.util.SyndicateConfigUtil;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -19,9 +19,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.InputFormat;
 import org.apache.hadoop.mapreduce.InputSplit;
-import org.apache.hadoop.mapred.JobConf;
-import org.apache.hadoop.mapred.RecordReader;
-import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.util.ReflectionUtils;
 
@@ -74,9 +71,9 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
             return null;
     }
 
-    private ArrayList<Path> listFiles(JobContext job) throws IOException {
+    private ArrayList<Path> listFiles(JobContext context) throws IOException {
         ArrayList<Path> result = new ArrayList<Path>();
-        Path[] dirs = SyndicateConfigUtil.getInputPaths(job.getConfiguration());
+        Path[] dirs = SyndicateConfigUtil.getInputPaths(context.getConfiguration());
         if(dirs == null || dirs.length == 0) {
             throw new IOException("No input paths specified in job");
         }
@@ -87,7 +84,7 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
         filters.add(hiddenFileFilter);
         
         // add user filter
-        FilenameFilter jobFilter = getInputPathFilter(job);
+        FilenameFilter jobFilter = getInputPathFilter(context);
         if (jobFilter != null) {
             filters.add(jobFilter);
         }
@@ -95,11 +92,9 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
         // bind them together
         FilenameFilter inputFilter = new MultiPathFilter(filters);
 
-        SyndicateConfig syndicateConfig = new SyndicateConfig(job.getConfiguration());
-        JSyndicateFS.Configuration jsfsConfig = syndicateConfig.getJSFSConfiguration();
-        FileSystem syndicateFS;
+        FileSystem syndicateFS = null;
         try {
-            syndicateFS = FileSystem.getInstance(jsfsConfig);
+            syndicateFS = FileSystemUtil.getFileSystem(context.getConfiguration());
         } catch (InstantiationException ex) {
             throw new IOException(ex);
         }
@@ -119,24 +114,21 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
     }
     
     @Override
-    public List<InputSplit> getSplits(JobContext job) throws IOException {
-        Configuration config = job.getConfiguration();
+    public List<InputSplit> getSplits(JobContext context) throws IOException {
+        Configuration config = context.getConfiguration();
         
         long minSize = Math.max(getFormatMinSplitSize(), SyndicateConfigUtil.getMinInputSplitSize(config));
         long maxSize = SyndicateConfigUtil.getMaxInputSplitSize(config);
         
-        SyndicateConfig syndicateConfig = new SyndicateConfig(job.getConfiguration());
-        JSyndicateFS.Configuration jsfsConfig = syndicateConfig.getJSFSConfiguration();
-        
-        FileSystem syndicateFS;
+        FileSystem syndicateFS = null;
         try {
-            syndicateFS = FileSystem.getInstance(jsfsConfig);
+            syndicateFS = FileSystemUtil.getFileSystem(config);
         } catch (InstantiationException ex) {
             throw new IOException(ex);
         }
         
         ArrayList<InputSplit> splits = new ArrayList<InputSplit>();
-        for(Path path : listFiles(job)) {
+        for(Path path : listFiles(context)) {
             File file = new File(syndicateFS, path);
             
             long length = file.getSize();

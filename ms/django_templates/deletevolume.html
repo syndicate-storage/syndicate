@@ -1,6 +1,8 @@
 {% extends "base.html" %}
+{% load ms_extras %}
+
 {% block head %}
-<h1> Delete:<a href='{% url django_volume.views.viewvolume volume.name %}'>{{volume.name}}</a></h1>
+<h1> Delete:<a href='{% url django_volume.views.viewvolume volume.name %}'>{{volume.name|replace:"_|| "}}</a></h1>
 {% endblock %}
 
 {% block mainbody %}
