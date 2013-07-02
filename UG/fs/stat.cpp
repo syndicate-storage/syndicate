@@ -205,6 +205,8 @@ static int fs_entry_do_stat( struct fs_core* core, struct fs_entry* fent, struct
       ftype = S_IFREG;
    else if( fent->ftype == FTYPE_DIR )
       ftype = S_IFDIR;
+   else if( fent->ftype == FTYPE_FIFO )
+      ftype = S_IFIFO;
 
    sb->st_mode = ftype | fent->mode;
    sb->st_nlink = fent->link_count;
@@ -259,7 +261,6 @@ int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uid_
 
    // have entry read-locked
    fs_entry_do_stat( core, fent, sb );
-
    fs_entry_unlock( fent );
 
    return 0;

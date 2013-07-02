@@ -227,7 +227,8 @@ int fs_unlink_children( struct fs_core* core, fs_entry_set* dir_children, bool r
       fent->ftype = FTYPE_DEAD;
       fent->link_count = 0;
 
-      if( old_type == FTYPE_FILE ) {
+      if( old_type == FTYPE_FILE ||
+	      old_type == FTYPE_FIFO ) {
          if( fent->open_count == 0 ) {
             if( URL_LOCAL( fent->url ) && remove_data ) {
                fs_entry_remove_local_data( core, GET_FS_PATH( core->conf->data_root, fent->url ), fent->version );
@@ -308,7 +309,7 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    fent->acting_owner = acting_owner;
    fent->acting_owner = owner;
    fent->volume = volume;
-   fent->mode = mode & 0777;
+   fent->mode = mode;
    fent->size = size;
    fent->ctime_sec = ts.tv_sec;
    fent->ctime_nsec = ts.tv_nsec;
@@ -345,6 +346,18 @@ static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, in
 int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
    fs_entry_init_common( core, fent, FTYPE_FILE, name, url, version, owner, acting_owner, volume, mode, size, mtime_sec, mtime_nsec );
    fent->ftype = FTYPE_FILE;
+
+   if( URL_LOCAL( url ) )
+      return fs_entry_publish_file( core, GET_FS_PATH( core->conf->data_root, fent->url ), version, mode );
+   else
+      return 0;
+}
+
+
+// create an FS entry that is a file
+int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+   fs_entry_init_common( core, fent, FTYPE_FILE, name, url, version, owner, acting_owner, volume, mode, size, mtime_sec, mtime_nsec );
+   fent->ftype = FTYPE_FIFO;
 
    if( URL_LOCAL( url ) )
       return fs_entry_publish_file( core, GET_FS_PATH( core->conf->data_root, fent->url ), version, mode );
@@ -401,11 +414,13 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
       // this is a directory
       fs_entry_init_dir( core, fent, basename, ent->url, ent->version, ent->owner, ent->acting_owner, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
    }
-   else {
+   else if (S_ISREG(ent->mode)){
       // this is a file
       fs_entry_init_file( core, fent, basename, ent->url, ent->version, ent->owner, ent->acting_owner, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
    }
-
+   else if (S_ISFIFO(ent->mode)){
+      fs_entry_init_fifo( core, fent, basename, ent->url, ent->version, ent->owner, ent->acting_owner, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
+   }
    free( basename );
    return 0;
 }
@@ -588,17 +603,16 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
    struct fs_entry* prev_ent = NULL;
 
    while( name != NULL ) {
+       // if this isn't a directory, then invalid path
+       if( cur_ent->ftype != FTYPE_DIR ) {
+	   if( cur_ent->ftype == FTYPE_FILE )
+	       *err = -ENOTDIR;
+	   else
+	       *err = -ENOENT;
 
-      // if this isn't a directory, then invalid path
-      if( cur_ent->ftype != FTYPE_DIR ) {
-         if( cur_ent->ftype == FTYPE_FILE )
-            *err = -ENOTDIR;
-         else
-            *err = -ENOENT;
-
-         free( fpath );
-         fs_entry_unlock( cur_ent );
-         if( prev_ent )
+	   free( fpath );
+	   fs_entry_unlock( cur_ent );
+	   if( prev_ent )
             fs_entry_unlock( prev_ent );
 
          return NULL;
