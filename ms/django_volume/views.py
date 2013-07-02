@@ -511,7 +511,7 @@ def createvolume(request):
             # CREATE VOLUME
             kwargs = {}
             kwargs['name'] = form.cleaned_data['name']
-            kwargs['blocksize'] = form.cleaned_data['blocksize']
+            kwargs['blocksize'] = int(form.cleaned_data['blocksize'])
             kwargs['description'] = form.cleaned_data['description']
             kwargs['volume_secret'] = form.cleaned_data['password']
             kwargs['private'] = form.cleaned_data['private']
