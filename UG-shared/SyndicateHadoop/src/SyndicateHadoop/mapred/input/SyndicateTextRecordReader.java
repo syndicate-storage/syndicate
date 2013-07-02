@@ -9,6 +9,7 @@ import JSyndicateFS.FileSystem;
 import JSyndicateFS.Path;
 import SyndicateHadoop.input.SyndicateInputSplit;
 import SyndicateHadoop.util.FileSystemUtil;
+import SyndicateHadoop.util.SyndicateConfigUtil;
 import java.io.IOException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -69,7 +70,11 @@ public class SyndicateTextRecordReader extends RecordReader<LongWritable, Text> 
             is.seek(this.start);
         }
         
-        this.in = new LineReader(is, conf);
+        int bufferSize = (int)file.getBlockSize();
+        if(SyndicateConfigUtil.getFileReadBufferSize(conf) != 0) {
+            bufferSize = SyndicateConfigUtil.getFileReadBufferSize(conf);
+        }
+        this.in = new LineReader(is, bufferSize);
         
         if (skipFirstLine) {
             // skip first line and re-establish "start".
