@@ -90,11 +90,14 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    struct timespec ts;
    clock_gettime( CLOCK_REALTIME, &ts );
    int mmode = 0;
-   if (S_ISFIFO(mode))
+   if (S_ISFIFO(mode)) {
        mmode = ( mode & 0777 ) | S_IFIFO;
-   if (S_ISREG(mode))
+       err = fs_entry_init_fifo( core, child, path_basename, url, fs_entry_next_file_version(), user, user, vol, mmode, 0, ts.tv_sec, ts.tv_nsec );
+   }
+   if (S_ISREG(mode)) {
        mmode = ( mode & 0777 );
-   err = fs_entry_init_file( core, child, path_basename, url, fs_entry_next_file_version(), user, user, vol, mmode, 0, ts.tv_sec, ts.tv_nsec );
+       err = fs_entry_init_file( core, child, path_basename, url, fs_entry_next_file_version(), user, user, vol, mmode, 0, ts.tv_sec, ts.tv_nsec );
+   }
    free( url );
 
    if( err == 0 ) {
