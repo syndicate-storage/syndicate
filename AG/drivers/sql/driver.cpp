@@ -24,9 +24,6 @@ char *datapath = NULL;
 // Length of datapath varaiable
 size_t  datapath_len = 0;
 
-// publish_func exit code
-int pfunc_exit_code = 0;
-
 ODBCHandler& odh = ODBCHandler::get_handle((unsigned char*)"DSN=sqlite");
 
 // generate a manifest for an existing file, putting it into the gateway context
@@ -261,14 +258,12 @@ static int publish(const char *fpath, int type, struct map_info mi)
     int i = 0;
     struct md_entry* ment = new struct md_entry;
     size_t len = strlen(fpath);
-    size_t local_proto_len = strlen( SYNDICATEFS_AG_DB_PROTO ); 
-    size_t url_len = local_proto_len + len;
+    //size_t local_proto_len = strlen( SYNDICATEFS_AG_DB_PROTO ); 
+    //size_t url_len = local_proto_len + len;
     if ( len < datapath_len ) { 
-	pfunc_exit_code = -EINVAL;
 	return -EINVAL;
     }
     if ( len == datapath_len ) {
-	pfunc_exit_code = 0;
 	return 0;
     }
     //Set volume path
@@ -278,10 +273,10 @@ static int publish(const char *fpath, int type, struct map_info mi)
     strncpy( ment->path, fpath + datapath_len, path_len );
 
     //Set primary replica 
-    ment->url = ( char* )malloc( url_len + 1);
-    memset( ment->url, 0, url_len + 1 );
-    strncat( ment->url, SYNDICATEFS_AG_DB_PROTO, local_proto_len );
-    strncat( ment->url + local_proto_len, fpath, len );
+    size_t content_url_len = strlen(global_conf->content_url);
+    ment->url = ( char* )malloc( content_url_len + 1);
+    memset( ment->url, 0, content_url_len + 1 );
+    strncpy( ment->url, global_conf->content_url, content_url_len ); 
 
     ment->url_replicas = mc->conf->replica_urls;
     ment->local_path = NULL;
@@ -297,22 +292,25 @@ static int publish(const char *fpath, int type, struct map_info mi)
     ment->mtime_nsec = rtime.tv_nsec;
     ment->mode = mi.file_perm;
     ment->version = 1;
-    ment->max_read_freshness = 360000;
+    ment->max_read_freshness = 1000;
     ment->max_write_freshness = 1;
     ment->volume = mc->conf->volume;
-    ment->size = -1;
     ment->owner = mc->conf->volume_owner;
     switch (type) {
 	case MD_ENTRY_DIR:
+	    ment->size = 4096;
 	    ment->type = MD_ENTRY_DIR;
 	    ment->mode = DIR_PERMISSIONS_MASK;
+	    ment->mode |= S_IFDIR;
 	    if ( (i = ms_client_mkdir(mc, ment)) < 0 ) {
 		cout<<"ms client mkdir "<<i<<endl;
 	    }
 	    break;
 	case MD_ENTRY_FILE:
+	    ment->size = 0;
 	    ment->type = MD_ENTRY_FILE;
 	    ment->mode &= FILE_PERMISSIONS_MASK;
+	    ment->mode |= S_IFIFO;
 	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
 		cout<<"ms client create "<<i<<endl;
 	    }
@@ -321,8 +319,7 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	    break;
     }
     DATA[ment->path] = ment;
-    //delete ment;
-    pfunc_exit_code = 0;
+    //pfunc_exit_code = 0;
     return 0;  
 }
 

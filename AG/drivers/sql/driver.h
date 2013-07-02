@@ -25,8 +25,10 @@ using namespace std;
 #define SYNDICATEFS_AG_DB_PROTO         "synadb://"
 #define SYNDICATEFS_AG_DB_DIR           1
 #define SYNDICATEFS_AG_DB_FILE          2
-#define FILE_PERMISSIONS_MASK		(S_IRUSR | S_IRGRP | S_IROTH | S_IFREG)
-#define DIR_PERMISSIONS_MASK		(S_IRUSR | S_IRGRP | S_IROTH | S_IFDIR)
+#define FILE_PERMISSIONS_MASK		(S_IRUSR | S_IRGRP | S_IROTH )
+#define DIR_PERMISSIONS_MASK		(S_IRUSR | S_IWUSR | S_IXUSR |\
+       	S_IRGRP | S_IXGRP |\
+	S_IXOTH)
 
 #define GET_SYNADB_PATH(url)\
     (char*)url + strlen(SYNDICATEFS_AG_DB_PROTO)

@@ -37,7 +37,8 @@ using namespace std;
 
 #define FTYPE_FILE 1
 #define FTYPE_DIR  2
-#define FTYPE_DEAD 3
+#define FTYPE_FIFO 3
+#define FTYPE_DEAD 4
 
 #define IS_READABLE( mode, node_user, node_vol, user, vol ) ((user) == SYS_USER || ((mode) & S_IROTH) || ((node_vol) == (vol) && ((mode) & S_IRGRP)) || ((node_user) == (user) && ((mode) & S_IRUSR)))
 #define IS_DIR_READABLE( mode, node_user, node_vol, user, vol ) ((user) == SYS_USER || ((mode) & S_IXOTH) || ((node_vol) == (vol) && ((mode) & S_IXGRP)) || ((node_user) == (user) && ((mode) & S_IXUSR)))
@@ -157,6 +158,7 @@ int fs_core_unlock( struct fs_core* core );
 // fs_entry initialization
 int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
 int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
+int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
 int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_entry* ent );
 
 int64_t fs_entry_next_file_version(void);

@@ -154,7 +154,8 @@ static struct fs_entry* fs_entry_attach_ms_file( struct fs_core* core, struct fs
    fs_entry_init_md( core, new_file, ms_record );
 
    // Make sure this is a directory we're attaching
-   if( new_file->ftype != FTYPE_FILE ) {
+   if( ( new_file->ftype != FTYPE_FILE ) &&
+	  ( new_file->ftype != FTYPE_FIFO )) {
       // invalid MS data
       errorf("not a file: %s\n", ms_record->path );
       fs_entry_destroy( new_file, true );
@@ -225,7 +226,9 @@ static int fs_entry_replace( struct fs_core* core, struct fs_entry* parent, stru
       }
    }
    // If the MS record is a file but the existing entry is not, then remove it and its children and replace it with a file
-   else if( ent->type == MD_ENTRY_FILE && child->ftype != FTYPE_FILE ) {
+   else if( ent->type == MD_ENTRY_FILE &&
+	   child->ftype != FTYPE_FILE && 
+	   child->ftype != FTYPE_FIFO) {
       int rc = fs_unlink_children( core, child->children, true );
       if( rc != 0 ) {
          // failed to remove children; FS will be inconsistent

@@ -44,7 +44,7 @@ struct fs_file_handle* fs_entry_create( struct fs_core* core, char const* path, 
 // make a node (regular files only at this time)
 int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t dev, uid_t user, gid_t vol ) {
    // only regular files at this time...
-   if( !S_ISREG( mode ) ) {
+   if( ! ( S_ISREG( mode ) || S_ISFIFO( mode ) ) ) {
       return -ENOTSUP;
    }
 
@@ -89,7 +89,12 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    char* url = fs_entry_local_file_url( core, path );
    struct timespec ts;
    clock_gettime( CLOCK_REALTIME, &ts );
-   err = fs_entry_init_file( core, child, path_basename, url, fs_entry_next_file_version(), user, user, vol, mode & 0777, 0, ts.tv_sec, ts.tv_nsec );
+   int mmode = 0;
+   if (S_ISFIFO(mode))
+       mmode = ( mode & 0777 ) | S_IFIFO;
+   if (S_ISREG(mode))
+       mmode = ( mode & 0777 );
+   err = fs_entry_init_file( core, child, path_basename, url, fs_entry_next_file_version(), user, user, vol, mmode, 0, ts.tv_sec, ts.tv_nsec );
    free( url );
 
    if( err == 0 ) {
