@@ -720,7 +720,7 @@ users = [
    "muneeb@cs.princeton.edu",
    "wathsala@cs.princeton.edu",
    "jlwhelch@princeton.edu",
-   "bugsoda@gmail.com"
+   "iychoi@email.arizona.edu"
 ]
 
 DEFAULT_USERNAME=users[0]
