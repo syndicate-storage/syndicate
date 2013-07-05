@@ -108,15 +108,40 @@ def read_msentry_path( volume, fs_path ):
    
 def create_user_gateway( user, volume, **kwargs ):
    return UserGateway.Create( user, volume, **kwargs )
-      
 
 def read_user_gateway( ms_username ):
    return UserGateway.Read( ms_username )
-   
 
 def list_user_gateways( volume_id ):
    return UserGateway.ListAll( volume_id )
    
 def delete_user_gateway( ms_username ):
    return UserGateway.Delete( ms_username )
+
+
+def create_acquisition_gateway( volume, **kwargs ):
+   return AcquisitionGateway.Create( volume, **kwargs )
+      
+def read_acquisition_gateway( ms_username ):
+   return AcquisitionGateway.Read( ms_username )
+   
+def list_acquisition_gateways( volume_id ):
+   return AcquisitionGateway.ListAll( volume_id )
+   
+def delete_acquisition_gateway( ms_username ):
+   return AcquisitionGateway.Delete( ms_username )
+
+
+def create_replica_gateway( volume, **kwargs ):
+   return ReplicaGateway.Create( volume, **kwargs )
+
+def read_replica_gateway( ms_username ):
+   return ReplicaGateway.Read( ms_username )
+   
+
+def list_replica_gateways( volume_id ):
+   return ReplicaGateway.ListAll( volume_id )
+   
+def delete_replica_gateway( ms_username ):
+   return ReplicaGateway.Delete( ms_username )
    

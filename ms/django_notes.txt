@@ -3,10 +3,14 @@ This is the collection of files for the Syndicate front-end, using Django and we
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
-Done-
+Done-s
 
 To-do:
 
+- AG/RG ListAll
+- AG/RG parameters
+- Consolidate AG/RG views if possible
+- Ask Jude about key_listing methond in Gateway...
 - Create AG and RG in gateway.py
 Ag have to publish the existence of data in the MS. They can also serve data. Function like UG, can read and write metadata
 Rg cannot interact with MS directly, can only read, not write.
