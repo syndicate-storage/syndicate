@@ -2,6 +2,11 @@ from django.conf.urls import patterns, include, url
 
 
 urlpatterns = patterns('django_volume.views',
+
+                        url(r'^allvolumes/?$', 'allvolumes'),
+
+                        url(r'^myvolumes/?$', 'myvolumes'),
+                        
                         url(r'^createvolume/?$', 'createvolume'),
                         
 			url(r'^(?P<volume_name>[\w\.-]*)/activate/?',

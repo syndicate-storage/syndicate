@@ -167,6 +167,7 @@ class UserGateway( Gateway ):
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
 
+      kwargs['ms_username'] = unicode(kwargs['ms_username']).replace(" ","_")
       # TODO: transaction -jcnelson
       ug_key_name = UserGateway.make_key_name( ms_username=kwargs["ms_username"] )
       ug_key = storagetypes.make_key( UserGateway, ug_key_name)
@@ -191,6 +192,7 @@ class UserGateway( Gateway ):
       """
       Given a UG username, find the UG record
       """
+      ms_username = unicode(ms_username).replace(" ","_")
       ug_key_name = UserGateway.make_key_name( ms_username=ms_username )
 
       ug = storagetypes.memcache.get( ug_key_name )
@@ -308,6 +310,7 @@ class AcquisitionGateway( Gateway ):
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
 
       # TODO: transaction -jcnelson
+      kwargs['ms_username'] = unicode(kwargs['ms_username']).replace(" ","_")
       ag_key_name = AcquisitionGateway.make_key_name( ms_username=kwargs["ms_username"] ) 
       ag_key = storagetypes.make_key( AcquisitionGateway, ag_key_name )
       ag = ag_key.get()
@@ -332,6 +335,7 @@ class AcquisitionGateway( Gateway ):
       """
       Given a AG username, find the AG record
       """
+      ms_username = unicode(ms_username).replace(" ","_")
       ag_key_name = AcquisitionGateway.make_key_name( ms_username=ms_username )
 
       ag = storagetypes.memcache.get( ag_key_name )
@@ -449,13 +453,14 @@ class ReplicaGateway( Gateway ):
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
 
       # TODO: transaction -jcnelson
+      kwargs['ms_username'] = unicode(kwargs['ms_username']).replace(" ","_")      
       rg_key_name = ReplicaGateway.make_key_name( ms_username=kwargs["ms_username"] ) 
       rg_key = storagetypes.make_key( ReplicaGateway, rg_key_name )
       rg = rg_key.get()
 
       # if this is not new, then we're in error
       if rg != None and rg.ms_username != None and len( rg.ms_username ) > 0:
-         raise Exception( "Acquisition Gateway '%s' already exists!" % kwargs["ms_username"] )
+         raise Exception( "Replica Gateway '%s' already exists!" % kwargs["ms_username"] )
 
       else:
          if 'ms_password' in kwargs:
@@ -473,6 +478,7 @@ class ReplicaGateway( Gateway ):
       """
       Given a RG username, find the RG record
       """
+      ms_username = unicode(ms_username).replace(" ","_")
       rg_key_name = ReplicaGateway.make_key_name( ms_username=ms_username )
 
       rg = storagetypes.memcache.get( rg_key_name )

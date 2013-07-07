@@ -6,8 +6,16 @@ Date: 5/28/13 - 7/1/13
 Done-s
 
 To-do:
-
-- AG/RG ListAll
+- Why is user a paramter to create UG?
+- Make template folder for all the gateway crap, and use {% extend %} to simplify it.
+- get rid of all queries
+- fix error for UG delete gateway
+- Put URL instructions at the top of gateway creation/deletion pages.
+- for AG/RG/UG Guis, rather than do HttpResponses on errors, do "message" style.
+- make sure gateway names can handle spaces the way volumes do.
+- are override forms actually necessary?
+- Does Django home.forms.py need to exist?
+- AG/RG ListAll Jude style and add my style for all 3 to make more consistent with Volumes.
 - AG/RG parameters
 - Consolidate AG/RG views if possible
 - Ask Jude about key_listing methond in Gateway...

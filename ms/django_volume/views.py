@@ -4,12 +4,64 @@ from django.forms.formsets import formset_factory
 
 from django_lib.auth import authenticate, verifyownership
 import django_volume.forms as forms
+import django_lib.forms as libforms
 
 
 from storage.storagetypes import transactional
 import storage.storage as db
 from MS.volume import Volume
 from MS.user import SyndicateUser as User
+
+@authenticate
+def myvolumes(request):
+    session = request.session
+    username = session['login_email']
+    user = db.read_user(username)
+
+    attrs = {}
+    if user.volumes_o:
+        attrs['Volume.volume_id'] = ".IN(%s)" % str(user.volumes_o)
+        myvols = db.list_volumes(**attrs)
+    else:
+        myvols = []
+    all_users = []
+
+    for v in myvols:
+        uattrs = {}
+        users_set = []
+        uattrs['SyndicateUser.volumes_rw'] = "== %s" % v.volume_id 
+        q = db.list_users(**uattrs)
+        for u in q:
+            users_set.append(u)
+        uattrs = {}
+        uattrs['SyndicateUser.volumes_r'] = "== %s" % v.volume_id 
+        q = db.list_users(**uattrs)
+        for u in q:
+            users_set.append(u)
+        all_users.append(users_set)
+            
+
+    vols_users =zip(myvols, all_users)
+    t = loader.get_template('myvolumes.html')
+    c = Context({'username':username, 'vols':vols_users})
+    return HttpResponse(t.render(c))
+
+@authenticate
+def allvolumes(request):
+    session = request.session
+    username = session['login_email']
+    v_attrs = {'Volume.private':'!=True'}
+    volumes = db.list_volumes(**v_attrs)
+    owners = []
+    for v in volumes:
+        volume_owner = v.owner_id
+        qry = User.query(User.owner_id == volume_owner)
+        for owner in qry:
+            owners.append(owner)
+    vols = zip(volumes, owners)
+    t = loader.get_template('allvolumes.html')
+    c = Context({'username':username, 'vols':vols})
+    return HttpResponse(t.render(c))
 
 @verifyownership
 @authenticate
@@ -23,7 +75,7 @@ def addpermissions(request, volume_name):
     else:
 
         addform = forms.AddPermissions(request.POST)
-        passwordform = forms.Password(request.POST)
+        passwordform = libforms.Password(request.POST)
 
         afv = False # addform is valid?
         psv = False # passwordform is valid?
@@ -90,7 +142,7 @@ def changepermissions(request, volume_name):
     username = session['login_email']
     vol = db.read_volume(volume_name)
 
-    PermissionFormSet = formset_factory(forms.Permissions, extra=0)
+    PermissionFormSet = formset_factory(libforms.Permissions, extra=0)
     
     if request.method != "POST":
         return HttpResponseRedirect('syn/volume/' + volume_name + '/permissions')
@@ -99,7 +151,7 @@ def changepermissions(request, volume_name):
         fsv = False # Formset is valid?
         psv = False # passwordform is valid?
 
-        passwordform = forms.Password(request.POST)
+        passwordform = libforms.Password(request.POST)
         formset = PermissionFormSet(request.POST)
         
         if formset.is_valid():
@@ -181,7 +233,7 @@ def changepermissions(request, volume_name):
 def volumepermissions(request, volume_name, message="", initial_data=None):
     session = request.session
     username = session['login_email']
-#    user = db.read_user(username)
+    #user = db.read_user(username)
     vol = db.read_volume(volume_name)
 
     if not initial_data:
@@ -203,9 +255,9 @@ def volumepermissions(request, volume_name, message="", initial_data=None):
                                   'write':False} )
     
         session['initial_data'] = initial_data
-    PermissionFormSet = formset_factory(forms.Permissions, extra=0)
+    PermissionFormSet = formset_factory(libforms.Permissions, extra=0)
     addform = forms.AddPermissions
-    passwordform = forms.Password
+    passwordform = libforms.Password
     if initial_data:
         formset = PermissionFormSet(initial=initial_data)
     else:
@@ -261,7 +313,7 @@ def activatevolume(request, volume_name):
 
     if request.method == "POST":
 
-        form = forms.Password(request.POST)
+        form = libforms.Password(request.POST)
         if not form.is_valid():
             message = "Password required."
             return volumesettings(request, volume_name=volume_name, message=message)
@@ -288,7 +340,7 @@ def deactivatevolume(request, volume_name):
 
     if request.method == "POST":
 
-        form = forms.Password(request.POST)
+        form = libforms.Password(request.POST)
         if not form.is_valid():
             message = "Password required."
             return volumesettings(request, volume_name=volume_name, message=message)
@@ -351,7 +403,7 @@ def volumesettings(request, volume_name, message="", old_data=None):
     else:
         desc_form = forms.ChangeVolumeD(initial={'description':vol.description})
     pass_form = forms.ChangePassword()
-    password = forms.Password()
+    password = libforms.Password()
 
     t = loader.get_template('volumesettings.html')
     c = RequestContext(request, {'username':username,
@@ -371,7 +423,7 @@ def volumeprivacy(request, volume_name):
     vol = db.read_volume(volume_name)
     if request.POST:
 
-        form = forms.Password(request.POST)
+        form = libforms.Password(request.POST)
         if not form.is_valid():
             message = "Password required."
             return volumesettings(request, volume_name=volume_name, message=message)
@@ -411,7 +463,7 @@ def changevolume(request, volume_name):
         return HttpResponseRedirect('/syn/volume/' + volume_name + '/settings')
 
 
-    form = forms.Password(request.POST)
+    form = libforms.Password(request.POST)
     desc_form = forms.ChangeVolumeD(request.POST)
     old_data = {}
 

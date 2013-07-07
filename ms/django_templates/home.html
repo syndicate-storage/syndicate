@@ -6,9 +6,16 @@
     <div class="wrapper">
       <div class="box leftbox">
 	<ul>
-	  <li><a href='{% url django_home.views.myvolumes %}'>My Volumes</a></li>
-	  <li><a href='{% url django_home.views.allvolumes %}'>All Volumes</a></li>
-	  <li><a href='{% url django_home.views.downloads %}'>Gateways</a></li>
+	  <li><a href='{% url django_volume.views.myvolumes %}'>My Volumes</a></li>
+	  <li><a href='{% url django_volume.views.allvolumes %}'>All Volumes</a></li>
+	  <br/>
+	  <li><a href='{% url django_ug.views.mygateways %}'>My User Gateways</a></li>
+	  <li><a href='{% url django_ug.views.allgateways %}'>All User Gateways</a></li>
+	  <br/>
+	  <li><a href='{% url django_rg.views.allgateways %}'>All Replica Gateways</a></li>
+	  <br/>
+	  <li><a href='{% url django_ag.views.allgateways %}'>All Acquisition Gateways</a></li>
+	  <br/>
 	  <li><a href='{% url django_home.views.settings %}'>Account Settings</a></li>
 	  <br/>
 	  <li><a href='{% url django_home.views.logout %}'>Logout</a></li>
