@@ -94,9 +94,3 @@ class AddPermissions(override_forms.MyForm):
     
     write = forms.BooleanField(label="Write",
                               required=False)
-
-class Password(override_forms.MyForm):
-
-    password = forms.CharField(label="Volume password",
-                               max_length=20,
-                               widget=forms.PasswordInput)

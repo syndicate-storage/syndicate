@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load ms_extras %}
+  {% block head %}
+    <h1> All Acquisition Gateways </h1>
+  {% endblock %}
+
+  {% block mainbody %}
+    <table class="volume" border>
+      <thead>
+	<th> Gateway Name </th>
+	<th> Volume </th>
+	<th> Volume Owner </th>
+	<th> Host </th>
+	<th> Port </th>
+	<th> Delete </th>
+      </thead>
+      <tbody>
+
+	{% for g, v, o in gateway_vols_owners %} 
+
+	<tr>
+      <td>{{g.ms_username|replace:"_|| "}}</td>
+	  <td>{{v.name|replace:"_|| "}}</td>
+	  <td>{{o.email}}</td>
+	  <td>{{g.host}}</td>
+	  <td>{{g.port}}</td>
+	  <td><a href="{% url django_ag.views.delete g.ms_username %}">Delete</a></td>
+	</tr>
+
+	{% empty %}
+
+	<tr>
+	  <td colspan="6"> No gateways exist </td>
+	</tr>
+
+	{% endfor %}
+
+      </tbody>
+    </table>
+    {% endblock %}
+  {% block footer %}
+  	<a href='{% url django_ag.views.create %}'>Create Acquisition Gateway</a>
+  	<a href='{% url django_home.views.home %}'>Home</a>
+  {% endblock %}

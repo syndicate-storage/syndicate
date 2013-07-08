@@ -5,6 +5,7 @@ for this to work.
 import logging
 
 from django_lib.auth import authenticate
+from django_lib import gatewayforms
 from django.http import HttpResponse, HttpResponseRedirect
 from django.template import Context, loader, RequestContext
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
@@ -15,84 +16,211 @@ from MS.volume import Volume
 from MS.user import SyndicateUser as User
 from MS.gateway import AcquisitionGateway as AG
 
+@authenticate
+def allgateways(request):
+    session = request.session
+    username = session['login_email']
+    user = db.read_user(username)
+
+    try:
+        qry = AG.query()
+    except:
+        qry = []
+    gateways = []
+    for g in qry:
+        logging.info(g)
+        gateways.append(g)
+    vols = []
+    for g in gateways:
+        attrs = {"Volume.volume_id":"== " + str(g.volume_id)}
+        volumequery = db.list_volumes(**attrs) # should be one
+        for v in volumequery:
+            logging.info(v)
+            vols.append(v)
+    owners = []
+    for v in vols:
+        volume_owner = v.owner_id
+        ownerquery = User.query(User.owner_id == volume_owner)
+        for owner in ownerquery:
+            owners.append(owner)
+    gateway_vols_owners = zip(gateways, vols, owners)
+    t = loader.get_template('allacquisitiongateways.html')
+    c = RequestContext(request, {'username':username, 'gateway_vols_owners':gateway_vols_owners})
+    return HttpResponse(t.render(c))
+
+'''
+@authenticate
+def mygateways(request):
+    session = request.session
+    username = session['login_email']
+    user = db.read_user(username)
+
+    # should change this
+    try:
+        qry = AG.query(AG.owner_id == user.owner_id)
+    except:
+        qry = []
+    gateways = []
+    for g in qry:
+        gateways.append(g)
+    vols = []
+    for g in gateways:
+        attrs = {"Volume.volume_id":"== " + str(g.volume_id)}
+        volumequery = db.list_volumes(**attrs) # should be one
+        for v in volumequery:
+            vols.append(v)
+            logging.info(v)
+    gateway_vols = zip(gateways, vols)
+    t = loader.get_template('myacquisitiongateways.html')
+    c = RequestContext(request, {'username':username, 'gateway_vols':gateway_vols})
+    return HttpResponse(t.render(c))
+'''
+
 @csrf_exempt
 @authenticate
 def create(request):
+
     session = request.session
     username = session['login_email']
     user = db.read_user(username)
+    message = ""
+
+    def give_create_form(username, message):
+        form = gatewayforms.CreateAG()
+        t = loader.get_template('create_acquisition_gateway.html')
+        c = RequestContext(request, {'username':username,'form':form, 'message':message})
+        return HttpResponse(t.render(c))
 
     if request.POST:
-        post = request.POST.dict()
-        # Create UG
-        kwargs = {}
+        # Validate input forms
+        form = gatewayforms.CreateAG(request.POST)
+        if form.is_valid():
+            vol = db.read_volume(form.cleaned_data['volume_name'])
+            if not vol:
+                message = "No volume %s exists." % form.cleaned_data['volume_name']
+                return give_create_form(username, message)
+            if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
+                message = "Must have read rights to volume %s to create AG for it." % volume_name
+                return give_create_form(username, message)
+            try:
+                kwargs = {}
+                kwargs['ms_username'] = form.cleaned_data['g_name']
+                kwargs['port'] = form.cleaned_data['port']
+                kwargs['host'] = form.cleaned_data['host']
+                kwargs['ms_password'] = form.cleaned_data['g_password']
+                new_ag = db.create_acquisition_gateway(vol, **kwargs)
+            except Exception as E:
+                message = "AG creation error: %s" % E
+                return give_create_form(username, message)
 
-        if "port" in post:
-            kwargs['port'] = int(post['port'])
+            session['new_change'] = "Your new gateway is ready."
+            session['next_url'] = '/syn/AG/allgateways'
+            session['next_message'] = "Click here to see your acquisition gateways."
+            return HttpResponseRedirect('/syn/thanks/')
         else:
-            return HttpResponse("Need port number in post data.")
-        if "host" in post:
-            kwargs['host'] = post['host']
-        else:
-            return HttpResponse("Need host name in post data.")
-        if "ug_name" in post:
-            kwargs['ms_username'] = post['ag_name']
-        else:
-            return HttpResponse("Need ag_name in post data.")
-        if "ug_password" in post:
-            kwargs['ms_password'] = post['ag_password']
-        else:
-            return HttpResponse("Need ag_hash in post data.")
+            # Prep returned form values (so they don't have to re-enter stuff)
 
-        if 'volume' in post:
-            volume_name = post['volume']
-        else:
-            return HttpResponse( "Need volume name in post data." )
-        try:
-            vol = db.read_volume(volume_name)
-        except:
-            return HttpResponse("No volume %s exists." % volume_name)
-        if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
-            return HttpResponse("Must have read rights to volume %s to create AG for it." % volume_name)
+            if 'g_name' in form.errors:
+                oldname = ""
+            else:
+                oldname = request.POST['g_name']
+            if 'volume_name' in form.errors:
+                oldvolume_name = ""
+            else:
+                oldvolume_name = request.POST['volume_name']
+            if 'host' in form.errors:
+                oldhost = ""
+            else:
+                oldhost = request.POST['host']
+            if 'port' in form.errors:
+                oldport = ""
+            else:
+                oldport = request.POST['port']
 
-        try:
-            new_ug = db.create_acquisition_gateway(vol, **kwargs)
-        except Exception as E:
-            return HttpResponse("AG creation error: %s" % E)
+            # Prep error message
+            message = "Invalid form entry: "
 
-        return HttpResponse("AG succesfully created: " + str(new_ug))
+            for k, v in form.errors.items():
+                message = message + "\"" + k + "\"" + " -> " 
+                for m in v:
+                    message = message + m + " "
+
+            # Give then the form again
+            form = gatewayforms.CreateAG(initial={'g_name': oldname,
+                                       'volume_name': oldvolume_name,
+                                       'host': oldhost,
+                                       'port': oldport,
+                                       })
+            t = loader.get_template('create_acquisition_gateway.html')
+            c = RequestContext(request, {'username':username,'form':form, 'message':message})
+            return HttpResponse(t.render(c))
+
     else:
-        return HttpResponse("Hi")
+        # Not a POST, give them blank form
+        return give_create_form(username, message)
 
 @csrf_exempt
 @authenticate
-def delete(request):
+def delete(request, g_name):
+
+    def give_delete_form(username, g_name, message):
+        form = gatewayforms.DeleteGateway()
+        t = loader.get_template('delete_acquisition_gateway.html')
+        c = RequestContext(request, {'username':username, 'g_name':g_name, 'form':form, 'message':message})
+        return HttpResponse(t.render(c))
+
     session = request.session
     username = session['login_email']
     user = db.read_user(username)
+    message = ""
+
+    ag = db.read_acquisition_gateway(g_name)
+    if not ag:
+        t = loader.get_template('delete_acquisition_gateway_failure.html')
+        c = RequestContext(request, {'username':username, 'g_name':g_name})
+        return HttpResponse(t.render(c))
+
+    '''
+    if ag.owner_id != user.owner_id:
+                t = loader.get_template('delete_acquisition_gateway_failure.html')
+                c = RequestContext(request, {'username':username, 'g_name':g_name})
+                return HttpResponse(t.render(c))
+    '''
     if request.POST:
-        post = request.POST.dict()
-        if "ag_name" in post:
-            ag = db.read_acquisition_gateway(post['ag_name'])
-            if not ug:
-                return HttpResponse("AG %s does not exist." % post['ag_name'])
-            if ag.owner_id != user.owner_id:
-                return HttpResponse("You must own this Ag to delete it.")
-        else:
-            return HttpResponse("Need ag_name in post data.")
-        if "ag_password" in post:
-            if not AG.authenticate(ag, post['ug_password']):
-                return HttpResponse("Incorrect AG password.")
-        else:
-            return HttpResponse("Need ag_password.")
-        db.delete_acquisition_gateway(post['ag_name'])
-        return HttpResponse("Gateway succesfully deleted.")
+        # Validate input forms
+        form = gatewayforms.DeleteGateway(request.POST)
+        if form.is_valid():
+            if not AG.authenticate(ag, form.cleaned_data['g_password']):
+                message = "Incorrect Acquisition Gateway password"
+                return give_delete_form(username, g_name, message)
+            if not form.cleaned_data['confirm_delete']:
+                message = "You must tick the delete confirmation box."
+                return give_delete_form(user, g_name, message)
+            
+            db.delete_acquisition_gateway(g_name)
+            session['new_change'] = "Your gateway has been deleted."
+            session['next_url'] = '/syn/AG/allgateways'
+            session['next_message'] = "Click here to see all acquisition gateways."
+            return HttpResponseRedirect('/syn/thanks/')
+
+        # invalid forms
+        else:  
+            # Prep error message
+            message = "Invalid form entry: "
+
+            for k, v in form.errors.items():
+                message = message + "\"" + k + "\"" + " -> " 
+                for m in v:
+                    message = message + m + " "
+
+            return give_delete_form(username, g_name, message)
     else:
-        return HttpResponse("Hi")
+        # Not a POST, give them blank form
+        return give_delete_form(username, g_name, message)
 
 @csrf_exempt
 @authenticate
-def urlcreate(request, volume_name, ag_name, ag_password, host, port):
+def urlcreate(request, volume_name, g_name, g_password, host, port):
     session = request.session
     username = session['login_email']
     user = db.read_user(username)
@@ -101,8 +229,8 @@ def urlcreate(request, volume_name, ag_name, ag_password, host, port):
 
     kwargs['port'] = int(port)
     kwargs['host'] = host
-    kwargs['ms_username'] = ag_name
-    kwargs['ms_password'] = ag_password
+    kwargs['ms_username'] = g_name
+    kwargs['ms_password'] = g_password
     vol = db.read_volume(volume_name)
     if not vol:
         return HttpResponse("No volume %s exists." % volume_name)
@@ -118,17 +246,17 @@ def urlcreate(request, volume_name, ag_name, ag_password, host, port):
 
 @csrf_exempt
 @authenticate
-def urldelete(request, AG_name, AG_password):
+def urldelete(request, g_name, g_password):
     session = request.session
     username = session['login_email']
     user = db.read_user(username)
 
-    ag = db.read_user_gateway(ag_name)
+    ag = db.read_acquisition_gateway(g_name)
     if not ag:
-        return HttpResponse("AG %s does not exist." % ag_name)
-    if ag.owner_id != user.owner_id:
-        return HttpResponse("You must own this AG to delete it.")
-    if not AG.authenticate(ag, ag_password):
+        return HttpResponse("AG %s does not exist." % g_name)
+    #if ag.owner_id != user.owner_id:
+    #    return HttpResponse("You must own this AG to delete it.")
+    if not AG.authenticate(ag, g_password):
         return HttpResponse("Incorrect AG password.")
-    db.delete_user_gateway(ag_name)
+    db.delete_acquisition_gateway(g_name)
     return HttpResponse("Gateway succesfully deleted.")

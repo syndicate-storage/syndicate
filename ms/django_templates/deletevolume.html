@@ -6,6 +6,7 @@
 {% endblock %}
 
 {% block mainbody %}
+
   <p> Are you sure you want to delete this volume? Deleting a volume is permanent; you will not be able to recover any of your files once deleted.</p>
   <p class="error">{{ message }}</p><br>
   <form action='{% url django_volume.views.deletevolume volume.name %}' method="post">{% csrf_token %}
@@ -18,6 +19,6 @@
   </form>
   {% endblock %}
   {% block footer %}
-  <a href='{% url django_home.views.myvolumes %}'>My Volumes</a>
+  <a href='{% url django_volume.views.myvolumes %}'>My Volumes</a>
   <a href='{% url django_home.views.home %}'>Home</a>
 {% endblock %}

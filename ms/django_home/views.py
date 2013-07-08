@@ -45,58 +45,6 @@ def logout(request):
     session = request.session
     session.terminate()
     return HttpResponseRedirect('/')
-    
-
-@authenticate
-def allvolumes(request):
-    session = request.session
-    username = session['login_email']
-    v_attrs = {'Volume.private':'!=True'}
-    volumes = db.list_volumes(**v_attrs)
-    owners = []
-    for v in volumes:
-        volume_owner = v.owner_id
-        qry = User.query(User.owner_id == volume_owner)
-        for owner in qry:
-            owners.append(owner)
-    vols = zip(volumes, owners)
-    t = loader.get_template('allvolumes.html')
-    c = Context({'username':username, 'vols':vols})
-    return HttpResponse(t.render(c))
-
-@authenticate
-def myvolumes(request):
-    session = request.session
-    username = session['login_email']
-    user = db.read_user(username)
-
-    attrs = {}
-    if user.volumes_o:
-        attrs['Volume.volume_id'] = ".IN(%s)" % str(user.volumes_o)
-        myvols = db.list_volumes(**attrs)
-    else:
-        myvols = []
-    all_users = []
-
-    for v in myvols:
-        uattrs = {}
-        users_set = []
-        uattrs['SyndicateUser.volumes_rw'] = "== %s" % v.volume_id 
-        q = db.list_users(**uattrs)
-        for u in q:
-            users_set.append(u)
-        uattrs = {}
-        uattrs['SyndicateUser.volumes_r'] = "== %s" % v.volume_id 
-        q = db.list_users(**uattrs)
-        for u in q:
-            users_set.append(u)
-        all_users.append(users_set)
-            
-
-    vols_users =zip(myvols, all_users)
-    t = loader.get_template('myvolumes.html')
-    c = Context({'username':username, 'vols':vols_users})
-    return HttpResponse(t.render(c))
 
 @authenticate
 def settings(request, message=""):
