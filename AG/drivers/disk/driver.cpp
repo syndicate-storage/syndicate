@@ -327,7 +327,6 @@ static int publish(const char *fpath, const struct stat *sb,
     memset( ment->url, 0, content_url_len + 1 );
     strncpy( ment->url, global_conf->content_url, content_url_len );
 
-    ment->url_replicas = mc->conf->replica_urls;
     ment->local_path = NULL;
     ment->ctime_sec = sb->st_ctime;
     ment->ctime_nsec = 0;

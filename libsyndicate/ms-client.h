@@ -67,7 +67,14 @@ struct ms_client {
    bool uploading;      // set to true if we're uploading something on ms_write
    bool more_work;      // set to true if more work arrives while we're working
    bool uploader_running;  // set to true if the uploader is running
+
+   // gateway view-change structures
+   pthread_t view_thread;
+   struct md_user_entry** UG_creds;
+   char** RG_urls;
+   int num_RG_urls;
    uint64_t volume_version;      // version of the volume's metadata
+   pthread_rwlock_t view_lock;
 
    char* volume_secret;          // secret for authenticating ourselves to the volume
 
@@ -81,12 +88,16 @@ struct ms_client {
 extern "C" {
    
 int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, char const* volume_name, char const* username, char const* passwd );
-int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name, char const* password, uint64_t* version, uid_t* my_owner_id, uid_t* volume_owner_id, gid_t* volume_id, char*** replica_urls, uint64_t* blocksize, struct md_user_entry*** user_gateways );
+int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name, char const* password, uint64_t* version, uid_t* my_owner_id, uid_t* volume_owner_id, gid_t* volume_id, uint64_t* blocksize );
 int ms_client_destroy( struct ms_client* client );
 
 int ms_client_rlock( struct ms_client* client );
 int ms_client_wlock( struct ms_client* client );
 int ms_client_unlock( struct ms_client* client );
+
+int ms_client_view_rlock( struct ms_client* client );
+int ms_client_view_wlock( struct ms_client* client );
+int ms_client_view_unlock( struct ms_client* client );
 
 int ms_client_queue_update( struct ms_client* client, char const* path, struct md_entry* update, uint64_t deadline_ms, uint64_t deadline_delta_ms );
 int ms_client_clear_update( struct ms_client* client, char const* path );
@@ -100,6 +111,14 @@ int ms_client_sync_update( struct ms_client* client, char const* path );
 int ms_client_sync_updates( struct ms_client* client, uint64_t freshness_ms );
 
 int ms_client_resolve_path( struct ms_client* client, char const* path, vector<struct md_entry>* result_dirs, vector<struct md_entry>* result_base, struct timespec* lastmod, int* md_rc );
+
+int ms_client_claim( struct ms_client* client, char const* path );
+
+uid_t ms_client_authenticate( struct ms_client* client, struct md_HTTP_connection_data* data, char* username, char* password );
+
+char** ms_client_RG_urls_copy( struct ms_client* client );
+
+uint64_t ms_client_volume_version( struct ms_client* client );
 
 }
 

@@ -164,6 +164,14 @@ char* sha256_printable( unsigned char const* sha256 ) {
    return ret;
 }
 
+// make a printable sha256 from data
+char* sha256_hash_printable( char const* input, size_t len) {
+   unsigned char* sha256 = sha256_hash_data( input, len );
+   char* sha256_str = sha256_printable( sha256 );
+   free( sha256 );
+   return sha256_str;
+}
+
 // make a printable sha-1 hash into data
 unsigned char* sha256_data( char const* sha256_printed ) {
    unsigned char* ret = (unsigned char*)calloc( SHA256_DIGEST_LENGTH, 1 );

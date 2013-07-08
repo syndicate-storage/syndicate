@@ -549,26 +549,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          }
       }
       
-      else if( strcmp( key, REPLICA_URL_KEY ) == 0 ) {
-         // replica URL
-         if( conf->replica_urls == NULL ) {
-            conf->replica_urls = CALLOC_LIST( char*, 2 );
-            conf->replica_urls[0] = strdup(values[0]);
-         }
-         else {
-            char** tmp = conf->replica_urls;
-            int sz = 0;
-            SIZE_LIST( &sz, conf->replica_urls );
-            
-            conf->replica_urls = CALLOC_LIST( char*, sz + 2 );
-            for( int i = 0; i < sz; i++ )
-               conf->replica_urls[i] = tmp[i];
-            
-            conf->replica_urls[sz] = strdup(values[0]);
-            free( tmp );
-         }
-      }
-      
       else if( strcmp( key, DEBUG_KEY ) == 0 ) {
          if( strcmp(values[0], "0" ) != 0 )
             md_debug(1);
@@ -651,10 +631,6 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
    if( conf->content_url ) {
       free( conf->content_url );
       conf->content_url = NULL;
-   }
-   if( conf->replica_urls ) {
-      FREE_LIST( conf->replica_urls );
-      conf->replica_urls = NULL;
    }
    if( conf->data_root ) {
       free( conf->data_root );
@@ -2726,88 +2702,25 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
                                        void** con_cls ) {
    
    struct md_HTTP* http_ctx = (struct md_HTTP*)cls;
+   struct md_HTTP_connection_data* con_data = (struct md_HTTP_connection_data*)con_cls;
 
-   md_http_rlock( http_ctx );
-   
-   struct md_user_entry** users = http_ctx->users;
-
-   md_http_unlock( http_ctx );
-   
    // need to create connection data?
-   if( *con_cls == NULL ) {
-
-      md_http_rlock( http_ctx );
-
-      users = http_ctx->users;
+   if( con_data == NULL ) {
 
       // verify that the URL starts with '/'
       if( strlen(url) > 0 && url[0] != '/' ) {
          errorf( "malformed URL %s\n", url );
-         md_http_unlock( http_ctx );
          return md_HTTP_default_send_response( connection, MHD_HTTP_BAD_REQUEST, NULL );
       }
       
-      struct md_HTTP_connection_data* con_data = CALLOC_LIST( struct md_HTTP_connection_data, 1 );
+      con_data = CALLOC_LIST( struct md_HTTP_connection_data, 1 );
       if( !con_data ) {
-         md_http_unlock( http_ctx );
          return MHD_NO;
       }
-         
-      struct md_user_entry* uent = NULL;
-      if( users ) {
-         // authenticate the user, if users are given
-         char* password = NULL;
-         char* username = MHD_basic_auth_get_username_password( connection, &password );
-         
-         char* password_ptr = password;
-         if( password_ptr == NULL )
-            password_ptr = (char*)"";
-         
-         if( username ) {
-            uent = md_find_user_entry( username, users );
-            if( uent == NULL ) {
-               // user does not exist
-               dbprintf( "user '%s' not found\n", username);
-               free( username );
-               free( con_data );
-               md_http_unlock( http_ctx );
-               return md_HTTP_default_send_response( connection, MHD_HTTP_UNAUTHORIZED, NULL );
-            }
-            if( !md_validate_user_password( password_ptr, uent ) ) {
-               // invalid password
-               dbprintf( "invalid password for user '%s'\n", username);
-               free( username );
-               free( con_data );
-               md_http_unlock( http_ctx );
-               return md_HTTP_default_send_response( connection, MHD_HTTP_UNAUTHORIZED, NULL );
-            }
-            
-            free( username );
-         }
-         
-         if( password )
-            free( password );
-      }
-      else {
-         // TODO: webdav
-         // make sure we don't need authentication
-         if( strcmp( method, "GET") == 0 && (http_ctx->authentication_mode & HTTP_AUTHENTICATE_READ) ) {
-            // authentication is needed
-            errorf( "%s", "no username given, but we require authentication for GET (READ)\n");
-            md_http_unlock( http_ctx );
-            return md_HTTP_default_send_response( connection, MHD_HTTP_UNAUTHORIZED, NULL );
-         }
-         else if( (strcmp( method, "PUT" ) == 0 || strcmp( method, "POST" ) == 0) && (http_ctx->authentication_mode & HTTP_AUTHENTICATE_WRITE) ) {
-            // authentication is needed
-            errorf( "%s", "no username given, but we require authentication for POST (WRITE)\n");
-            md_http_unlock( http_ctx );
-            return md_HTTP_default_send_response( connection, MHD_HTTP_UNAUTHORIZED, NULL );
-         }
-      }
-      
-      int mode = MD_HTTP_UNKNOWN;
+
       struct MHD_PostProcessor* pp = NULL;
-      
+      int mode = MD_HTTP_UNKNOWN;
+
       if( strcmp( method, "GET" ) == 0 ) {
          if( http_ctx->HTTP_GET_handler )
             mode = MD_HTTP_GET;
@@ -2817,7 +2730,7 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
             mode = MD_HTTP_HEAD;
       }
       else if( strcmp( method, "POST" ) == 0 ) {
-         
+
          if( http_ctx->HTTP_POST_iterator ) {
 
             char const* encoding = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_TYPE );
@@ -2829,7 +2742,6 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
                if( pp == NULL ) {
                   errorf( "failed to create POST processor for %s\n", method);
                   free( con_data );
-                  md_http_unlock( http_ctx );
                   return md_HTTP_default_send_response( connection, 400, NULL );
                }
             }
@@ -2843,7 +2755,7 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       else if( strcmp( method, "PUT" ) == 0 ) {
 
          if( http_ctx->HTTP_PUT_iterator ) {
-            
+
             char const* encoding = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_TYPE );
             if( strncasecmp( encoding, MHD_HTTP_POST_ENCODING_FORM_URLENCODED, strlen( MHD_HTTP_POST_ENCODING_FORM_URLENCODED ) ) == 0 ||
                 strncasecmp( encoding, MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA, strlen( MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA ) ) == 0 ) {
@@ -2852,7 +2764,6 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
                if( pp == NULL ) {
                   errorf( "failed to create POST processor for %s\n", method);
                   free( con_data );
-                  md_http_unlock( http_ctx );
                   return md_HTTP_default_send_response( connection, 400, NULL );
                }
             }
@@ -2871,19 +2782,10 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
          // unsupported method
          struct md_HTTP_response* resp = CALLOC_LIST(struct md_HTTP_response, 1);
          md_create_HTTP_response_ram_static( resp, "text/plain", 501, MD_HTTP_501_MSG, strlen(MD_HTTP_501_MSG) + 1 );
-         md_http_unlock( http_ctx );
          return md_HTTP_send_response( connection, resp );
       }
       
-      if( uent == NULL ) {
-         // make a "guest" user 
-         uent = &md_guest_user;
-      }
-      
-      con_data->user = md_user_entry_dup( uent );
-      con_data->pp = pp;
-      con_data->status = 200;
-      con_data->mode = mode;
+      // build up con_data from what we know
       con_data->conf = http_ctx->conf;
       con_data->http = http_ctx;
       con_data->url_path = md_flatten_path( url );
@@ -2892,22 +2794,21 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       con_data->rb = new response_buffer_t();
       con_data->remote_host = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_HOST );
       con_data->method = method;
-
-      // done reading this 
-      md_http_unlock( http_ctx );
+      con_data->cls = NULL;
 
       char const* content_length_str = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_LENGTH );
-      if( content_length_str != NULL ) 
+      if( content_length_str != NULL )
          con_data->content_length = strtol( content_length_str, NULL, 10 );
       else
          con_data->content_length = 0;
-      
-      if( index( con_data->url_path, '?' ) != NULL ) {
-         char* p = (char*)index( con_data->url_path, '?' );
+
+      // split query string on '?'
+      if( con_data->query_string != NULL ) {
+         char* p = con_data->query_string;
          *p = 0;
          con_data->url_path = p;
       }
-      
+
       // get headers
       vector<struct md_HTTP_header*> headers_vec;
       MHD_get_connection_values( connection, MHD_HEADER_KIND, md_accumulate_headers, (void*)&headers_vec );
@@ -2919,10 +2820,37 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       }
 
       con_data->headers = headers;
-
-      con_data->cls = NULL;
-      *con_cls = con_data;
       
+      // perform authentication
+      if( http_ctx->HTTP_authenticate != NULL ) {
+
+         char* password = NULL;
+         char* username = MHD_basic_auth_get_username_password( connection, &password );
+
+         uid_t uid = (*http_ctx->HTTP_authenticate)( con_data, username, password );
+
+         if( uid == MD_INVALID_UID ) {
+            errorf("Invalid userpass %s:%s\n", username, password );
+
+            free( username );
+            if( password != NULL )
+               free( password );
+
+            md_HTTP_free_connection_data( con_data );
+            free( con_data );
+            
+            return md_HTTP_default_send_response( connection, MHD_HTTP_UNAUTHORIZED, NULL );
+         }
+
+         con_data->user = CALLOC_LIST( struct md_user_entry, 1 );
+         con_data->user->username = username;
+         con_data->user->password_hash = sha256_hash_printable( password, strlen(password) );
+         con_data->user->uid = uid;
+
+         if( password )
+            free( password );
+      }
+
       if( http_ctx->HTTP_connect ) {
          con_data->cls = (*http_ctx->HTTP_connect)( con_data );
 
@@ -2932,12 +2860,10 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
          }
       }
 
+      *con_cls = con_data;
       
       return MHD_YES;
    }
-
-   struct md_HTTP_connection_data* con_data = (struct md_HTTP_connection_data*)(*con_cls);
-   // writers
 
    // POST
    if( con_data->mode == MD_HTTP_POST ) {
@@ -3052,6 +2978,44 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
    return md_HTTP_default_send_response( connection, MHD_HTTP_BAD_REQUEST, NULL );
 }
 
+
+// free a connection state
+void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data ) {
+   if( con_data->pp ) {
+      MHD_destroy_post_processor( con_data->pp );
+   }
+   if( con_data->resp ) {
+      md_free_HTTP_response( con_data->resp );
+      free( con_data->resp );
+   }
+   if( con_data->url_path ) {
+      free( con_data->url_path );
+      con_data->url_path = NULL;
+   }
+   if( con_data->query_string ) {
+      free( con_data->query_string );
+      con_data->query_string = NULL;
+   }
+   if( con_data->version ) {
+      free( con_data->version );
+      con_data->version = NULL;
+   }
+   if( con_data->headers ) {
+      md_free_headers( con_data->headers );
+      con_data->headers = NULL;
+   }
+   if( con_data->rb ) {
+      response_buffer_free( con_data->rb );
+      delete con_data->rb;
+      con_data->rb = NULL;
+   }
+   if( con_data->user ) {
+      md_free_user_entry( con_data->user );
+      free( con_data->user );
+      con_data->user = NULL;
+   }
+}
+
 // default cleanup handler
 // calls user-supplied cleanup handler as well
 void md_HTTP_cleanup( void *cls, struct MHD_Connection *connection, void **con_cls, enum MHD_RequestTerminationCode term ) {
@@ -3067,49 +3031,15 @@ void md_HTTP_cleanup( void *cls, struct MHD_Connection *connection, void **con_c
       con_data->cls = NULL;
    }
    if( con_data ) {
-      if( con_data->pp ) {
-         MHD_destroy_post_processor( con_data->pp );
-      }
-      if( con_data->resp ) {
-         md_free_HTTP_response( con_data->resp );
-         free( con_data->resp );
-      }
-      if( con_data->url_path ) {
-         free( con_data->url_path );
-         con_data->url_path = NULL;
-      }
-      if( con_data->query_string ) {
-         free( con_data->query_string );
-         con_data->query_string = NULL;
-      }
-      if( con_data->version ) {
-         free( con_data->version );
-         con_data->version = NULL;
-      }
-      if( con_data->headers ) {
-         md_free_headers( con_data->headers );
-         con_data->headers = NULL;
-      }
-      if( con_data->rb ) {
-         response_buffer_free( con_data->rb );
-         delete con_data->rb;
-         con_data->rb = NULL;
-      }
-      if( con_data->user ) {
-         md_free_user_entry( con_data->user );
-         free( con_data->user );
-         con_data->user = NULL;
-      }
-      
+      md_HTTP_free_connection_data( con_data );
       free( con_data );
    }
 }
 
 // set fields in an HTTP structure
-int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf, struct md_user_entry** users ) {
+int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf ) {
    memset( http, 0, sizeof(struct md_HTTP) );
    http->conf = conf;
-   http->users = users;
    http->server_type = server_type;
    return 0;
 }
@@ -3217,26 +3147,19 @@ int md_stop_HTTP( struct md_HTTP* http ) {
 
 // free the HTTP server
 int md_free_HTTP( struct md_HTTP* http ) {
-   if( http->users ) {
-      for( int i = 0; http->users[i] != NULL; i++ ) {
-         md_free_user_entry( http->users[i] );
-      }
-      free( http->users );
-      http->users = NULL;
-   }
    pthread_rwlock_destroy( &http->lock );
    return 0;
 }
 
-int md_http_rlock( struct md_HTTP* http ) {
+int md_HTTP_rlock( struct md_HTTP* http ) {
    return pthread_rwlock_rdlock( &http->lock );
 }
 
-int md_http_wlock( struct md_HTTP* http ) {
+int md_HTTP_wlock( struct md_HTTP* http ) {
    return pthread_rwlock_wrlock( &http->lock );
 }
 
-int md_http_unlock( struct md_HTTP* http ) {
+int md_HTTP_unlock( struct md_HTTP* http ) {
    return pthread_rwlock_unlock( &http->lock );
 }
 
@@ -3563,7 +3486,6 @@ int md_init( int gateway_type,
              char const* config_file,
              struct md_syndicate_conf* conf,
              struct ms_client* client,
-             struct md_user_entry*** users,
              int portnum,
              char const* ms_url,
              char const* volume_name,
@@ -3637,7 +3559,7 @@ int md_init( int gateway_type,
    }
 
    // get the volume metadata
-   rc = ms_client_get_volume_metadata( client, conf->volume_name, volume_secret, &conf->volume_version, &conf->owner, &conf->volume_owner, &conf->volume, &conf->replica_urls, &conf->blocking_factor, users );
+   rc = ms_client_get_volume_metadata( client, conf->volume_name, volume_secret, &conf->volume_version, &conf->owner, &conf->volume_owner, &conf->volume, &conf->blocking_factor );
    if( rc != 0 ) {
       errorf("ms_client_get_volume_metadata rc = %d\n", rc );
       return rc;
@@ -3683,7 +3605,6 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->metadata_url = NULL;
    conf->metadata_username = NULL;
    conf->metadata_password = NULL;
-   conf->replica_urls = NULL;
    conf->blocking_factor = 0;
    conf->owner = getuid();
    conf->usermask = 0377;
@@ -3748,9 +3669,6 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
       if( conf->staging_root == NULL ) {
          rc = -EINVAL;
          fprintf(stderr, err_fmt, STAGING_ROOT_KEY );
-      }
-      if( conf->replica_urls == NULL || conf->replica_urls[0] == NULL ) {
-         fprintf(stderr, "%s", "WARN: no RG URLs given\n");
       }
    }
 
