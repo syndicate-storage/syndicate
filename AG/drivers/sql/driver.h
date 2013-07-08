@@ -10,12 +10,12 @@
 #include "libsyndicate.h"
 #include "map-parser.h"
 #include "odbc-handler.h"
-#include <sstream>
 
 #include <sys/types.h>
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
+#include <math.h>
 
 using namespace std;
 

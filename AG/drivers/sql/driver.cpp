@@ -5,6 +5,7 @@
 
 #include "driver.h"
 #include "libgateway.h"
+#include "fs/fs_entry.h"
 
 // server config 
 struct md_syndicate_conf CONF;
@@ -29,6 +30,47 @@ ODBCHandler& odh = ODBCHandler::get_handle((unsigned char*)"DSN=sqlite");
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
     errorf("%s", "INFO: gateway_generate_manifest\n"); 
+    // populate a manifest
+    Serialization::ManifestMsg* mmsg = new Serialization::ManifestMsg();
+    mmsg->set_size( ent->size );
+    mmsg->set_file_version( 1 );
+    mmsg->set_mtime_sec( ent->mtime_sec );
+    mmsg->set_mtime_nsec( 0 );
+    mmsg->set_manifest_mtime_sec( ent->mtime_sec );
+    mmsg->set_manifest_mtime_nsec( 0 );
+
+    uint64_t num_blocks = ent->size / global_conf->blocking_factor;
+    if( ent->size % global_conf->blocking_factor != 0 )
+	num_blocks++;
+
+    Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
+    bbmsg->set_start_id( 0 );
+    bbmsg->set_end_id( num_blocks );
+    stringstream strstrm;
+    strstrm << ent->url << ent->path;
+    bbmsg->set_file_url( strstrm.str() );
+
+    for( uint64_t i = 0; i < num_blocks; i++ ) {
+	bbmsg->add_block_versions( 0 );
+    }
+
+    // serialize
+    string mmsg_str;
+    bool src = mmsg->SerializeToString( &mmsg_str );
+    if( !src ) {
+	// failed
+	errorf( "%s", "failed to serialize" );
+	delete mmsg;
+	return -EINVAL;
+    }
+
+    ctx->data_len = mmsg_str.size();
+    ctx->data = CALLOC_LIST( char, mmsg_str.size() );
+    replica_ctx->last_mod = ent->mtime_sec;
+    memcpy( ctx->data, mmsg_str.data(), mmsg_str.size() );
+
+    delete mmsg;
+
     return 0;
 }
 
@@ -54,8 +96,9 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	    ret = info_len;
 	    ctx->complete = true;
 	}
-	else if (ctx->complete)
+	else if (ctx->complete) {
 	    ret = 0;
+	}
     }
     else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
 	// read from RAM
@@ -307,10 +350,10 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	    }
 	    break;
 	case MD_ENTRY_FILE:
-	    ment->size = 0;
+	    ment->size = 0;//(ssize_t)pow(2, 32);
 	    ment->type = MD_ENTRY_FILE;
 	    ment->mode &= FILE_PERMISSIONS_MASK;
-	    ment->mode |= S_IFIFO;
+	    ment->mode |= S_IFSTRM;
 	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
 		cout<<"ms client create "<<i<<endl;
 	    }
