@@ -23,7 +23,6 @@ struct syndicate_state {
    FILE* replica_logfile;
    struct ms_client* ms;   // metadata service client
    struct fs_core* core;   // core of the system
-   struct md_user_entry** users;    // other UGs
    Collator* col;          // collator
 
    // mounter info (since apparently FUSE doesn't do this right)

@@ -45,8 +45,7 @@ BEGIN_EXTERN_C
 int RG_main( int argc, char** argv );
 int AG_main( int argc, char** argv );
 int gateway_main( int gateway_type, int argc, char** argv );
-int start_gateway_service( struct md_syndicate_conf *conf, ms_client *client, md_user_entry** users,
-			   char* logfile, char* pidfile, bool make_daemon );
+int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *client, char* logfile, char* pidfile, bool make_daemon );
 
 // NOTE: on GET, the passed method should set the size field in the given gateway_context structure.
 // NOTE: the passed method should return NULL on error, and non-NULL on success

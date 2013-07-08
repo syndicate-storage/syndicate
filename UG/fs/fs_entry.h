@@ -58,6 +58,7 @@ typedef map<uint64_t, int64_t> modification_map;
 // pre-declare these
 class Collator;
 class file_manifest;
+struct RG_channel;
 
 // Syndicate filesystem entry
 struct fs_entry {
@@ -94,7 +95,7 @@ struct fs_entry {
    bool write_locked;
 };
 
-// SyndicateFS file handle
+// Syndicate file handle
 struct fs_file_handle {
    struct fs_entry* fent;     // reference to the fs_entry this handle represents
    int open_count;            // how many processes have opened this handle

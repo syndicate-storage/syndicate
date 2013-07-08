@@ -237,6 +237,7 @@ class Volume( storagetypes.Object ):
       """
       Given a volume ID (name), get the volume entity. Returns None on miss.
       """
+      name = unicode(name).replace(" ","_")
       volume_key_name = Volume.make_key_name( name=name )
       volume_key = storagetypes.make_key( Volume, volume_key_name )
       

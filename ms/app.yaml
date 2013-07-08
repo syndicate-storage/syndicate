@@ -25,7 +25,7 @@ handlers:
   secure: always
 
 - url: .*
-  script: ms.app
+  script: msapp.app
   secure: always
 
 libraries:

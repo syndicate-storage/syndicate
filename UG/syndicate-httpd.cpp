@@ -8,6 +8,21 @@
 bool g_running = false;
 struct md_HTTP g_http;
 
+// HTTP authentication callback
+uid_t httpd_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
+
+   struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
+   struct syndicate_state* state = syncon->state;
+   struct ms_client* client = state->ms;
+
+   uid_t ug = ms_client_authenticate( client, md_con_data, username, password );
+   if( ug == MD_GUEST_UID ) {
+      // someone we don't know
+      return -EACCES;
+   }
+   return 0;
+}
+
 // GET streaming handler (note: never return 0)
 ssize_t httpd_GET_stream(void* cls, uint64_t pos, char* buf, size_t max) {
    struct httpd_GET_data* data = (struct httpd_GET_data*)(cls);
@@ -793,8 +808,8 @@ int main( int argc, char** argv ) {
    // create our HTTP server
    memset( &g_http, 0, sizeof(g_http) );
    
-   md_HTTP_init( &g_http, MD_HTTP_TYPE_STATEMACHINE | MHD_USE_DEBUG | MHD_USE_POLL, conf, syndicate_http.users );
-   md_HTTP_auth_mode( g_http, conf->http_authentication_mode );
+   md_HTTP_init( &g_http, MD_HTTP_TYPE_STATEMACHINE | MHD_USE_DEBUG | MHD_USE_POLL, conf );
+   md_HTTP_authenticate( g_http, httpd_HTTP_authenticate );
    md_HTTP_connect( g_http, httpd_HTTP_connect );
    md_HTTP_GET( g_http, httpd_HTTP_GET_handler );
    md_HTTP_HEAD( g_http, httpd_HTTP_HEAD_handler );

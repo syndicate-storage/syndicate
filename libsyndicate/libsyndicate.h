@@ -113,7 +113,6 @@ struct md_entry {
    int type;            // file or directory?
    char* path;          // path
    char* url;           // URL to the primary replica
-   char** url_replicas; // list of replica URLs (NULL if there are none)
    char* local_path;    // only valid for local content--if set, it's the absolute local path on disk where the content can be found
    int64_t ctime_sec;   // creation time (seconds)
    int32_t ctime_nsec;  // creation time (nanoseconds)
@@ -127,7 +126,7 @@ struct md_entry {
    gid_t volume;        // id of the volume
    mode_t mode;         // file permission bits
    off_t size;          // size of the file
-   unsigned char* checksum;      // SHA-1 hash (NULL if not given)
+   unsigned char* checksum;      // SHA256 hash (NULL if not given)
 };
 
 typedef list<struct md_entry*> md_entry_list;
@@ -179,6 +178,7 @@ struct md_user_entry {
 };
 
 #define MD_GUEST_UID 0xFFFFFFFF
+#define MD_INVALID_UID 0xFFFFFFFE
 
 // chubby path locks
 struct md_path_locks {
@@ -277,7 +277,6 @@ struct md_HTTP {
    pthread_rwlock_t lock;
    
    struct md_syndicate_conf* conf;
-   struct md_user_entry** users;
    int authentication_mode;
    struct MHD_Daemon* http_daemon;
    int server_type;   // one of the MHD options
@@ -286,6 +285,7 @@ struct md_HTTP {
    char* server_pkey;
    
    void*                     (*HTTP_connect)( struct md_HTTP_connection_data* md_con_data );
+   uid_t                     (*HTTP_authenticate)( struct md_HTTP_connection_data* md_con_data, char* username, char* password );
    struct md_HTTP_response*  (*HTTP_HEAD_handler)( struct md_HTTP_connection_data* md_con_data );
    struct md_HTTP_response*  (*HTTP_GET_handler)( struct md_HTTP_connection_data* md_con_data );
    int                       (*HTTP_POST_iterator)(void *coninfo_cls, enum MHD_ValueKind kind, 
@@ -325,6 +325,7 @@ extern char const* MD_HTTP_DEFAULT_MSG;
 #define MD_MIN_POST_DATA 4096
 
 #define md_HTTP_connect( http, callback ) (http).HTTP_connect = (callback)
+#define md_HTTP_authenticate( http, callback ) (http.HTTP_authenticate) = (callback)
 #define md_HTTP_GET( http, callback ) (http).HTTP_GET_handler = (callback)
 #define md_HTTP_HEAD( http, callback ) (http).HTTP_HEAD_handler = (callback)
 #define md_HTTP_POST_iterator( http, callback ) (http).HTTP_POST_iterator = (callback)
@@ -377,7 +378,6 @@ struct md_syndicate_conf {
    char* metadata_url;                                // URL (or path on disk) where to get the metadata
    char* metadata_username;                           // metadata authentication username
    char* metadata_password;                           // metadata authentication password
-   char** replica_urls;                               // where to send file replicas
    uint64_t blocking_factor;                          // how many bytes blocks will be
    uid_t owner;                                       // what is our UID in Syndicate?  Files created in this UG will assume this UID as their owner
    mode_t usermask;                                   // umask of the user running this program
@@ -473,9 +473,6 @@ struct md_syndicate_conf {
 
 #define SYNDICATE_DATA_PREFIX "/SYNDICATE-DATA/"
 #define SYNDICATE_STAGING_PREFIX "/SYNDICATE-STAGING/"
-
-// name of blacklist file to keep in the master copy
-#define BLACKLIST_FILENAME    ".mdblacklist"
 
 // maximum length of a single line of metadata
 #define MD_MAX_LINE_LEN       65536
@@ -612,9 +609,9 @@ int md_response_buffer_upload_iterator(void *coninfo_cls, enum MHD_ValueKind kin
                                        uint64_t off, size_t size);
 char* md_flatten_path( char const* path );
 char* md_cdn_url( char const* url );
-int md_http_rlock( struct md_HTTP* http );
-int md_http_wlock( struct md_HTTP* http );
-int md_http_unlock( struct md_HTTP* http );
+int md_HTTP_rlock( struct md_HTTP* http );
+int md_HTTP_wlock( struct md_HTTP* http );
+int md_HTTP_unlock( struct md_HTTP* http );
 
 
 // HTTP server
@@ -628,7 +625,7 @@ void md_free_HTTP_response( struct md_HTTP_response* resp );
 void* md_cls_get( void* cls );
 void md_cls_set_status( void* cls, int status );
 struct md_HTTP_response* md_cls_set_response( void* cls, struct md_HTTP_response* resp );
-int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf, struct md_user_entry** users );
+int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf );
 int md_start_HTTP( struct md_HTTP* http, int portnum );
 int md_stop_HTTP( struct md_HTTP* http );
 int md_free_HTTP( struct md_HTTP* http );
@@ -639,6 +636,7 @@ void md_init_curl_handle( CURL* curl, char const* url, time_t query_time );
 char const* md_find_HTTP_header( struct md_HTTP_header** headers, char const* header );
 int md_HTTP_add_header( struct md_HTTP_response* resp, char const* header, char const* value );
 int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_version, uint64_t* block_id, int64_t* block_version, struct timespec* manifest_timestamp, bool* staging );
+void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data );
 
 // user manipulation
 struct md_user_entry** md_parse_secrets_file( char const* path );
@@ -659,7 +657,6 @@ int md_init( int gateway_type,
              char const* config_file,
              struct md_syndicate_conf* conf,
              struct ms_client* client,
-             struct md_user_entry*** users,
              int portnum,
              char const* ms_url,
              char const* volume_name,

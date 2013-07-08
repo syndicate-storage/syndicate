@@ -15,6 +15,21 @@ void* syndicate_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    return syncon;
 }
 
+// HTTP authentication callback
+uid_t syndicate_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
+
+   struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
+   struct syndicate_state* state = syncon->state;
+   struct ms_client* client = state->ms;
+
+   uid_t ug = ms_client_authenticate( client, md_con_data, username, password );
+   if( ug == MD_GUEST_UID ) {
+      // someone we don't know
+      return -EACCES;
+   }
+   return 0;
+}
+
 // HTTP HEAD handler
 struct md_HTTP_response* syndicate_HTTP_HEAD_handler( struct md_HTTP_connection_data* md_con_data ) {
 
@@ -320,6 +335,7 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
       return;
    }
 
+   /*
    // ensure that it corresponds to the correct session
    uint64_t current_session = state->col->get_session_id();
    if( msg->session_id() != current_session ) {
@@ -332,7 +348,8 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
       return;
    }
-
+   */
+   
    // prepare an ACK
    char const* fs_path = NULL;
    int64_t file_version = -1;
@@ -491,7 +508,7 @@ int syndicate_init( char const* config_file, struct md_HTTP* http_server, int po
    state->ms = CALLOC_LIST( struct ms_client, 1 );
 
 
-   int rc = md_init( SYNDICATE_UG, config_file, &state->conf, state->ms, &state->users, portnum, ms_url, volume_name, volume_secret, md_username, md_password );
+   int rc = md_init( SYNDICATE_UG, config_file, &state->conf, state->ms, portnum, ms_url, volume_name, volume_secret, md_username, md_password );
    if( rc != 0 ) {
       errorf("md_init rc = %d\n", rc );
       return rc;
@@ -534,11 +551,11 @@ int syndicate_init( char const* config_file, struct md_HTTP* http_server, int po
    state->mounttime = currentTimeSeconds();
 
    // start up replication
-   replication_init( &state->conf );
+   replication_init( state->ms );
 
    // start HTTP server
    memset( http_server, 0, sizeof( struct md_HTTP ) );
-   md_HTTP_init( http_server, MD_HTTP_TYPE_STATEMACHINE, &state->conf, state->users );
+   md_HTTP_init( http_server, MD_HTTP_TYPE_STATEMACHINE, &state->conf );
    
    http_server->HTTP_connect = syndicate_HTTP_connect;
    http_server->HTTP_GET_handler = syndicate_HTTP_GET_handler;
@@ -546,6 +563,7 @@ int syndicate_init( char const* config_file, struct md_HTTP* http_server, int po
    http_server->HTTP_HEAD_handler = syndicate_HTTP_HEAD_handler;
    http_server->HTTP_POST_iterator = md_response_buffer_upload_iterator;
    http_server->HTTP_POST_finish = syndicate_HTTP_POST_finish;
+   http_server->HTTP_authenticate = syndicate_HTTP_authenticate;
 
    dbprintf( "Starting Syndicate HTTP server on port %d\n", state->conf.portnum );
    rc =  md_start_HTTP( http_server, state->conf.portnum );

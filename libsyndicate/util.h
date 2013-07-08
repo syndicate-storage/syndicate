@@ -420,7 +420,7 @@ private:
 };
 
 
-
+/*
 class TransactionProcessor;
 
 // 2-phase transaction
@@ -584,7 +584,7 @@ private:
    pthread_mutex_t next_lock;
    pthread_mutex_t session_lock;
 };
-
+*/
 
 // file functions
 char* dir_path( const char* path );
@@ -599,7 +599,9 @@ int64_t currentTimeMicros();
 
 // misc functions
 unsigned char* sha256_hash( char const* input );
+unsigned char* sha256_hash_data( char const* input, size_t len );
 char* sha256_printable( unsigned char const* sha256 );
+char* sha256_hash_printable( char const* input, size_t len );
 unsigned char* sha256_data( char const* sha256_print );
 unsigned char* sha256_file( char const* path );
 unsigned char* sha256_fd( int fd );

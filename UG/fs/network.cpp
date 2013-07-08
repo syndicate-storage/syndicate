@@ -168,8 +168,8 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, ch
 // set up a write message
 int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core, Serialization::WriteMsg_MsgType type ) {
    writeMsg->set_type( type );
-   writeMsg->set_write_id( core->col->next_transaction_id() );
-   writeMsg->set_session_id( core->col->get_session_id() );
+   //writeMsg->set_write_id( core->col->next_transaction_id() );
+   //writeMsg->set_session_id( core->col->get_session_id() );
    writeMsg->set_user_id( core->conf->owner );
    writeMsg->set_volume_id( core->conf->volume );
 

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block head %}
+    <h1> You do not have permission to access this User Gateway/page, or the gateway does not exist.</h1>
+{% endblock %}
+{% block mainbody %}
+{% endblock %}
+{% block footer %}
+    <a href='{% url django_ug.views.mygateways %}'>My User Gateways</a>
+    <a href='{% url django_home.views.home %}'>Home</a>
+{% endblock %}

@@ -134,6 +134,8 @@ INSTALLED_APPS = (
     'django_home',
     'django_volume',
     'django_ug',
+    'django_ag',
+    'django_rg',
     # Uncomment the next line to enable the admin:
     # 'django.contrib.admin',
     # Uncomment the next line to enable admin documentation:

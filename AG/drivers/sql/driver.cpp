@@ -321,7 +321,6 @@ static int publish(const char *fpath, int type, struct map_info mi)
     memset( ment->url, 0, content_url_len + 1 );
     strncpy( ment->url, global_conf->content_url, content_url_len ); 
 
-    ment->url_replicas = mc->conf->replica_urls;
     ment->local_path = NULL;
     //Set time from the real time clock
     struct timespec rtime; 

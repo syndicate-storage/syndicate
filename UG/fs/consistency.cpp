@@ -927,12 +927,13 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    int rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
    if( rc < 0 ) {
       // try each replica
-      if( core->conf->replica_urls ) {
-         for( int i = 0; core->conf->replica_urls[i] != NULL; i++ ) {
+      ms_client_view_rlock( core->ms );
+      if( core->ms->RG_urls ) {
+         for( int i = 0; core->ms->RG_urls[i] != NULL; i++ ) {
             free( manifest_url );
 
             // next replica
-            manifest_url = fs_entry_remote_manifest_url( fs_path, core->conf->replica_urls[i], fent->version, &manifest_mtime );
+            manifest_url = fs_entry_remote_manifest_url( fs_path, core->ms->RG_urls[i], fent->version, &manifest_mtime );
             rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
 
             // success?
@@ -940,6 +941,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
                break;
          }
       }
+      ms_client_view_unlock( core->ms );
       if( rc < 0 ) {
          errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
       }
