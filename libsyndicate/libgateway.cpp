@@ -712,11 +712,11 @@ static void cleanup_stale_transactions( struct md_syndicate_conf* conf ) {
 
 
 // start up server
-static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf, struct md_user_entry** users ) {
+static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf ) {
    
    md_path_locks_create( &gateway_md_locks );
 
-   md_HTTP_init( http, MHD_USE_SELECT_INTERNALLY | MHD_USE_POLL | MHD_USE_DEBUG, conf, users );
+   md_HTTP_init( http, MHD_USE_SELECT_INTERNALLY | MHD_USE_POLL | MHD_USE_DEBUG, conf );
    md_HTTP_auth_mode( *http, conf->http_authentication_mode );
    md_HTTP_connect( *http, gateway_HTTP_connect );
    md_HTTP_GET( *http, gateway_GET_handler );
@@ -925,10 +925,9 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
 
    // set up Syndicate
    struct ms_client client;
-   struct md_user_entry** users = NULL;
    struct md_syndicate_conf conf;
    
-   rc = md_init( gateway_type, config_file, &conf, &client, &users, portnum, metadata_url, volume_name, volume_secret, username, password );
+   rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, volume_secret, username, password );
    if( rc != 0 ) {
       exit(1);
    }
@@ -955,15 +954,14 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
            exit(1);
        }
    }
-   if ( (rc = start_gateway_service( &conf, &client, users, logfile, pidfile, make_daemon )) ) {
+   if ( (rc = start_gateway_service( &conf, &client, logfile, pidfile, make_daemon )) ) {
        errorf( "start_gateway_service rc = %d\n", rc);	
    } 
 
    return 0;
 }
 
-int start_gateway_service( struct md_syndicate_conf *conf, ms_client *client, md_user_entry** users,
-			   char* logfile, char* pidfile, bool make_daemon ) {
+int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *client, char* logfile, char* pidfile, bool make_daemon ) {
    int rc = 0;
    // clean up stale records
    cleanup_stale_transactions( conf );
@@ -985,7 +983,7 @@ int start_gateway_service( struct md_syndicate_conf *conf, ms_client *client, md
    // start gateway server
    struct md_HTTP http;
 
-   rc = gateway_init( &http, conf, users );
+   rc = gateway_init( &http, conf );
    if( rc != 0 ) {
       return rc;
    }

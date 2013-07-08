@@ -59,6 +59,7 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, ch
    }
 
    pthread_rwlock_init( &client->lock, NULL );
+   pthread_rwlock_init( &client->view_lock, NULL );
 
    client->updates = new update_set();
    client->conf = conf;
@@ -104,7 +105,22 @@ int ms_client_destroy( struct ms_client* client ) {
    curl_easy_cleanup( client->ms_read );
    curl_easy_cleanup( client->ms_write );
 
+   // clean up view
+   pthread_rwlock_wrlock( &client->view_lock );
+   for( int i = 0; client->RG_urls[i] != NULL; i++ ) {
+      free( client->RG_urls[i] );
+      client->RG_urls[i] = NULL;
+   }
+   free( client->RG_urls );
 
+   for( int i = 0; client->UG_creds[i] != NULL; i++ ) {
+      md_free_user_entry( client->UG_creds[i] );
+   }
+   free( client->UG_creds );
+
+   pthread_rwlock_unlock( &client->view_lock );
+   pthread_rwlock_destroy( &client->view_lock );
+   
    // clean up our state
    if( client->userpass )
       free( client->userpass );
@@ -381,7 +397,7 @@ static void ms_client_wlock_backoff( struct ms_client* client, bool* downloading
 }
 
 // get volume metadata
-int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name, char const* password, uint64_t* version, uid_t* my_owner_id, uid_t* volume_owner_id, gid_t* volume_id, char*** replica_urls, uint64_t* blocksize, struct md_user_entry*** user_gateways ) {
+int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name, char const* password, uint64_t* version, uid_t* my_owner_id, uid_t* volume_owner_id, gid_t* volume_id, uint64_t* blocksize ) {
 
    // sanity check
    if( volume_name == NULL) {
@@ -468,12 +484,13 @@ int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_
 
    free( volume_url );
 
-   *replica_urls = CALLOC_LIST( char*, volume_md.replica_urls_size() + 1 );
+   client->RG_urls = CALLOC_LIST( char*, volume_md.replica_urls_size() + 1 );
    
    // extract
    for( int i = 0; i < volume_md.replica_urls_size(); i++ ) {
-      (*replica_urls)[i] = strdup( volume_md.replica_urls(i).c_str() );
+      client->RG_urls[i] = strdup( volume_md.replica_urls(i).c_str() );
    }
+   client->num_RG_urls = volume_md.replica_urls_size();
 
    *version = volume_md.volume_version();
    *my_owner_id = volume_md.requester_id();
@@ -497,7 +514,7 @@ int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_
       users[i] = uent;
    }
 
-   *user_gateways = users;
+   client->UG_creds = users;
 
    return 0;
 }
@@ -517,6 +534,22 @@ int ms_client_wlock( struct ms_client* client ) {
 int ms_client_unlock( struct ms_client* client ) {
    return pthread_rwlock_unlock( &client->lock );
 }
+
+// read-lock a client context's view
+int ms_client_view_rlock( struct ms_client* client ) {
+   return pthread_rwlock_rdlock( &client->view_lock );
+}
+
+// write-lock a client context's view
+int ms_client_view_wlock( struct ms_client* client ) {
+   return pthread_rwlock_wrlock( &client->view_lock );
+}
+
+// unlock a client context's view
+int ms_client_view_unlock( struct ms_client* client ) {
+   return pthread_rwlock_unlock( &client->view_lock );
+}
+
 
 // put an update to the client context
 // return 0 on success
@@ -1137,5 +1170,33 @@ int ms_client_resolve_path( struct ms_client* client, char const* path, vector<s
    
    free( md_url );
    return rc;
+}
+
+
+// attempt to become the acting owner of an MSEntry if we can't reach its owner
+int ms_client_claim( struct ms_client* client, char const* path ) {
+   // TODO
+   return -EACCES;
+}
+
+// authenticate a remote UG
+uid_t ms_client_authenticate( struct ms_client* client, struct md_HTTP_connection_data* data, char* username, char* password ) {
+   // TODO
+   return MD_GUEST_UID;
+}
+
+
+// get a copy of the RG URLs
+char** ms_client_RG_urls_copy( struct ms_client* client ) {
+   ms_client_view_rlock( client );
+   
+   char** urls = CALLOC_LIST( char*, client->num_RG_urls + 1 );
+   for( int i = 0; i < client->num_RG_urls; i++ ) {
+      urls[i] = strdup( client->RG_urls[i] );
+   }
+
+   ms_client_view_unlock( client );
+
+   return urls;
 }
 
