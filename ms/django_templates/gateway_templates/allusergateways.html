@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+  {% block head %}
+    <h1> All User Gateways </h1>
+  {% endblock %}
+
+  {% block mainbody %}
+  	{% include "gateway_templates/gatewaytable_user.html" %}
+  {% endblock %}
+
+  {% block footer %}
+  	<a href='{% url django_ug.views.create %}'>Create User Gateway</a>
+  	<a href='{% url django_home.views.home %}'>Home</a>
+  {% endblock %}
