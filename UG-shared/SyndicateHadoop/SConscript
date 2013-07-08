@@ -15,10 +15,13 @@ env = env.Clone()
 CurPath = Dir('.').srcnode().abspath
 SourcePath = "src"
 LibraryPath = "libs"
+DependentProject = "JSyndicateFS"
+DependentProjectJar = "JSyndicateFS.jar"
 
 DependencyFile = os.path.join(CurPath, "dependencies.xml")
 LibraryAbsPath = os.path.join(CurPath, LibraryPath)
 SourceAbsPath = os.path.join(CurPath, SourcePath)
+DependentProjectJarAbsPath = os.path.join(os.path.join(Dir("..").abspath, DependentProject), DependentProjectJar)
 
 # make library directory
 if not (os.path.isdir(LibraryAbsPath) and os.path.exists(LibraryAbsPath)):
@@ -34,6 +37,7 @@ classpath = ""
 for package in library_jar_files:
    classpath = classpath + str(package) + ":"
 
+classpath = classpath + DependentProjectJarAbsPath
 
 env.Append(JAVACFLAGS = ["-cp", classpath])
 
