@@ -390,8 +390,8 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
 
          Serialization::WriteMsg *withdraw_ack = new Serialization::WriteMsg();
 
-         truncate_msg->set_write_id( core->col->next_transaction_id() );
-         truncate_msg->set_session_id( core->col->get_session_id() );
+         //truncate_msg->set_write_id( core->col->next_transaction_id() );
+         //truncate_msg->set_session_id( core->col->get_session_id() );
 
          *err = fs_entry_post_write( withdraw_ack, core, child->url, truncate_msg );
          if( *err < 0 ) {

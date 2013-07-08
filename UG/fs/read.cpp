@@ -55,10 +55,11 @@ ssize_t fs_entry_do_read_block( struct fs_core* core, char const* fs_path, struc
       ssize_t nr = fs_entry_download_block( core, block_url, block_bits );
       if( nr <= 0 ) {
          // try a replica
-         if( core->conf->replica_urls != NULL ) {
-            for( int i = 0; core->conf->replica_urls[i] != NULL; i++ ) {
+         ms_client_view_rlock( core->ms );
+         if( core->ms->RG_urls != NULL ) {
+            for( int i = 0; core->ms->RG_urls[i] != NULL; i++ ) {
                uint64_t block_id = fs_entry_block_id( offset, core->conf );
-               char* replica_block_url = fs_entry_replica_block_url( core->conf->replica_urls[i], fent->version, block_id, fent->manifest->get_block_version( block_id ) );
+               char* replica_block_url = fs_entry_replica_block_url( core->ms->RG_urls[i], fent->version, block_id, fent->manifest->get_block_version( block_id ) );
                nr = fs_entry_download_block( core, replica_block_url, block_bits );
                free( replica_block_url );
 
@@ -66,6 +67,7 @@ ssize_t fs_entry_do_read_block( struct fs_core* core, char const* fs_path, struc
                   break;
             }
          }
+         ms_client_view_unlock( core->ms );
       }
       if( nr <= 0 ) {
          nr = -ENODATA;

@@ -1,3 +1,0 @@
-%2fjude http%3a%2f%2fwww.cs.princeton.edu%2f~jcnelson%2findex.html 12345 644 12842 1320349689 f0b3a436f27c8908ac18240ba206b1d2317ea773
-%2ftest%2f http%3a%2f%2flocalhost%3A8888%2f~llp%2f 12345 644 4096 1320349689 ced17940e93977aebbb8c5f11e3c3aa8e9814efd
-%2ftest%2fllp http%3a%2f%2fwww.cs.princeton.edu%2f~llp%2findex.html 12345 644 1687 1320349689 8c5d9880cfe3f6b94fab0b104ec7e5862685a49e

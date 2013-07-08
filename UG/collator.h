@@ -23,7 +23,7 @@ struct release_entry {
 typedef vector< release_entry > release_list;
 
 // send re-integration messages asynchronously
-class Collator : public TransactionProcessor {
+class Collator { //: public TransactionProcessor {
 public:
    Collator( struct fs_core* core );
    ~Collator();
