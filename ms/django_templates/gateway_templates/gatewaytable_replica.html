@@ -1,11 +1,5 @@
-{% extends "base.html" %}
 {% load ms_extras %}
-  {% block head %}
-    <h1> All Replica Gateways </h1>
-  {% endblock %}
-
-  {% block mainbody %}
-    <table class="volume" border>
+<table class="volume" border>
       <thead>
 	<th> Gateway Name </th>
 	<th> Volume </th>
@@ -37,8 +31,3 @@
 
       </tbody>
     </table>
-    {% endblock %}
-  {% block footer %}
-  	<a href='{% url django_rg.views.create %}'>Create Replica Gateway</a>
-  	<a href='{% url django_home.views.home %}'>Home</a>
-  {% endblock %}

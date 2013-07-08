@@ -23,7 +23,7 @@ def allgateways(request):
     user = db.read_user(username)
 
     try:
-        qry = RG.query()
+        qry = db.list_replica_gateways()
     except:
         qry = []
     gateways = []
@@ -33,18 +33,14 @@ def allgateways(request):
     vols = []
     for g in gateways:
         attrs = {"Volume.volume_id":"== " + str(g.volume_id)}
-        volumequery = db.list_volumes(**attrs) # should be one
-        for v in volumequery:
-            logging.info(v)
-            vols.append(v)
+        vols.append(db.get_volume(**attrs))
     owners = []
     for v in vols:
         volume_owner = v.owner_id
-        ownerquery = User.query(User.owner_id == volume_owner)
-        for owner in ownerquery:
-            owners.append(owner)
+        attrs = {"SyndicateUser.owner_id":"== " + str(volume_owner)}
+        owners.append(db.get_user(**attrs))
     gateway_vols_owners = zip(gateways, vols, owners)
-    t = loader.get_template('allreplicagateways.html')
+    t = loader.get_template('gateway_templates/allreplicagateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols_owners':gateway_vols_owners})
     return HttpResponse(t.render(c))
 
@@ -73,7 +69,7 @@ def mygateways(request):
             vols.append(v)
             logging.info(v)
     gateway_vols = zip(gateways, vols)
-    t = loader.get_template('myreplicagateways.html')
+    t = loader.get_template('gateway_templates/myreplicagateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols':gateway_vols})
     return HttpResponse(t.render(c))
 '''
@@ -89,7 +85,7 @@ def create(request):
 
     def give_create_form(username, message):
         form = gatewayforms.CreateRG()
-        t = loader.get_template('create_replica_gateway.html')
+        t = loader.get_template('gateway_templates/create_replica_gateway.html')
         c = RequestContext(request, {'username':username,'form':form, 'message':message})
         return HttpResponse(t.render(c))
 
@@ -153,7 +149,7 @@ def create(request):
                                        'host': oldhost,
                                        'port': oldport,
                                        })
-            t = loader.get_template('create_replica_gateway.html')
+            t = loader.get_template('gateway_templates/create_replica_gateway.html')
             c = RequestContext(request, {'username':username,'form':form, 'message':message})
             return HttpResponse(t.render(c))
 
@@ -167,7 +163,7 @@ def delete(request, g_name):
 
     def give_delete_form(username, g_name, message):
         form = gatewayforms.DeleteGateway()
-        t = loader.get_template('delete_replica_gateway.html')
+        t = loader.get_template('gateway_templates/delete_replica_gateway.html')
         c = RequestContext(request, {'username':username, 'g_name':g_name, 'form':form, 'message':message})
         return HttpResponse(t.render(c))
 
@@ -178,13 +174,13 @@ def delete(request, g_name):
 
     rg = db.read_replica_gateway(g_name)
     if not rg:
-        t = loader.get_template('delete_replica_gateway_failure.html')
+        t = loader.get_template('gateway_templates/delete_replica_gateway_failure.html')
         c = RequestContext(request, {'username':username, 'g_name':g_name})
         return HttpResponse(t.render(c))
 
     '''
     if rg.owner_id != user.owner_id:
-                t = loader.get_template('delete_replica_gateway_failure.html')
+                t = loader.get_template('gateway_templates/delete_replica_gateway_failure.html')
                 c = RequestContext(request, {'username':username, 'g_name':g_name})
                 return HttpResponse(t.render(c))
     '''

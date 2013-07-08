@@ -27,13 +27,11 @@ ms_files.extend( Glob('django_ug/*.py') )
 
 # django templates
 ms_files.extend( Glob("django_templates/*") )
-ms_files.extend( Glob("django_templates/loggedin/*.html") )
-ms_files.extend( Glob("django_templates/accounts/*.html") )
+ms_files.extend( Glob("django_templates/gateway_templates/*.html"))
 
 # django supplementary files
 ms_files.extend( Glob("django_static/*") )
 ms_files.extend( Glob("django_lib/*") )
-ms_files.extend( Glob("django_lib/simplejson/*") )
 ms_files.extend( Glob("django_home/templatetags/*.py"))
 
 # googlepb files
