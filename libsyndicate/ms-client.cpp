@@ -1200,3 +1200,10 @@ char** ms_client_RG_urls_copy( struct ms_client* client ) {
    return urls;
 }
 
+// get the current view version
+uint64_t ms_client_volume_version( struct ms_client* client ) {
+   ms_client_view_rlock( client );
+   uint64_t ret = client->volume_version;
+   ms_client_view_unlock( client );
+   return ret;
+}

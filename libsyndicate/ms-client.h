@@ -118,6 +118,8 @@ uid_t ms_client_authenticate( struct ms_client* client, struct md_HTTP_connectio
 
 char** ms_client_RG_urls_copy( struct ms_client* client );
 
+uint64_t ms_client_volume_version( struct ms_client* client );
+
 }
 
 #endif

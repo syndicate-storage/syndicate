@@ -285,7 +285,7 @@ struct md_HTTP {
    char* server_pkey;
    
    void*                     (*HTTP_connect)( struct md_HTTP_connection_data* md_con_data );
-   int                       (*HTTP_authenticate)( struct md_HTTP_connection_data* md_con_data, char* username, char* password );
+   uid_t                     (*HTTP_authenticate)( struct md_HTTP_connection_data* md_con_data, char* username, char* password );
    struct md_HTTP_response*  (*HTTP_HEAD_handler)( struct md_HTTP_connection_data* md_con_data );
    struct md_HTTP_response*  (*HTTP_GET_handler)( struct md_HTTP_connection_data* md_con_data );
    int                       (*HTTP_POST_iterator)(void *coninfo_cls, enum MHD_ValueKind kind, 
