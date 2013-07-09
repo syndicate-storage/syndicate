@@ -21,8 +21,8 @@ int jsyndicatefs_init_config(struct JSyndicateFS_Config *cfg) {
 int jsyndicatefs_uninit_config(struct JSyndicateFS_Config *cfg) {
     if(cfg != NULL) {
         if(cfg->config_file) free(cfg->config_file);
-        if(cfg->username) free(cfg->username);
-        if(cfg->password) free(cfg->password);
+        if(cfg->ug_name) free(cfg->ug_name);
+        if(cfg->ug_password) free(cfg->ug_password);
         if(cfg->volume_name) free(cfg->volume_name);
         if(cfg->volume_secret) free(cfg->volume_secret);
         if(cfg->ms_url) free(cfg->ms_url);
@@ -51,11 +51,11 @@ int jsyndicatefs_init_JSFSConfig_Structure(JNIEnv *jenv) {
     jsfsconfig_class_structure.config_file_id = jenv->GetFieldID(jsfsconfig_class_structure.ref_clazz, "config_file", "Ljava/lang/String;");
     if(!jsfsconfig_class_structure.config_file_id) return -1;
     
-    jsfsconfig_class_structure.username_id = jenv->GetFieldID(jsfsconfig_class_structure.ref_clazz, "username", "Ljava/lang/String;");
-    if(!jsfsconfig_class_structure.username_id) return -1;
+    jsfsconfig_class_structure.ug_name_id = jenv->GetFieldID(jsfsconfig_class_structure.ref_clazz, "ug_name", "Ljava/lang/String;");
+    if(!jsfsconfig_class_structure.ug_name_id) return -1;
     
-    jsfsconfig_class_structure.password_id = jenv->GetFieldID(jsfsconfig_class_structure.ref_clazz, "password", "Ljava/lang/String;");
-    if(!jsfsconfig_class_structure.password_id) return -1;
+    jsfsconfig_class_structure.ug_password_id = jenv->GetFieldID(jsfsconfig_class_structure.ref_clazz, "ug_password", "Ljava/lang/String;");
+    if(!jsfsconfig_class_structure.ug_password_id) return -1;
     
     jsfsconfig_class_structure.volume_name_id = jenv->GetFieldID(jsfsconfig_class_structure.ref_clazz, "volume_name", "Ljava/lang/String;");
     if(!jsfsconfig_class_structure.volume_name_id) return -1;
@@ -102,30 +102,30 @@ int jsyndicatefs_copy_JSFSConfig_to_Native(JNIEnv *jenv, jobject jobj, struct JS
         jenv->ReleaseStringUTFChars(obj_config_file, pc);
     }
     
-    jstring obj_username = (jstring)jenv->GetObjectField(jobj, jsfsconfig_class_structure.username_id);
-    if(obj_username) {
-        const char *pc = jenv->GetStringUTFChars(obj_username, 0);
+    jstring obj_ug_name = (jstring)jenv->GetObjectField(jobj, jsfsconfig_class_structure.ug_name_id);
+    if(obj_ug_name) {
+        const char *pc = jenv->GetStringUTFChars(obj_ug_name, 0);
         
         if(pc) {
-            cfg->username = strdup(pc); // alloc & copy
+            cfg->ug_name = strdup(pc); // alloc & copy
         } else {
-            cfg->username = NULL;
+            cfg->ug_name = NULL;
         }
         
-        jenv->ReleaseStringUTFChars(obj_username, pc);
+        jenv->ReleaseStringUTFChars(obj_ug_name, pc);
     }
     
-    jstring obj_password = (jstring)jenv->GetObjectField(jobj, jsfsconfig_class_structure.password_id);
-    if(obj_password) {
-        const char *pc = jenv->GetStringUTFChars(obj_password, 0);
+    jstring obj_ug_password = (jstring)jenv->GetObjectField(jobj, jsfsconfig_class_structure.ug_password_id);
+    if(obj_ug_password) {
+        const char *pc = jenv->GetStringUTFChars(obj_ug_password, 0);
         
         if(pc) {
-            cfg->password = strdup(pc); // alloc & copy
+            cfg->ug_password = strdup(pc); // alloc & copy
         } else {
-            cfg->password = NULL;
+            cfg->ug_password = NULL;
         }
         
-        jenv->ReleaseStringUTFChars(obj_password, pc);
+        jenv->ReleaseStringUTFChars(obj_ug_password, pc);
     }
     
     jstring obj_volume_name = (jstring)jenv->GetObjectField(jobj, jsfsconfig_class_structure.volume_name_id);
@@ -187,18 +187,18 @@ int jsyndicatefs_copy_Native_to_JSFSConfig(JNIEnv *jenv, jobject jobj, struct JS
         jenv->SetObjectField(jobj, jsfsconfig_class_structure.config_file_id, (jobject)NULL);
     }
     
-    if(cfg->username) {
-        jstring obj_username = jenv->NewStringUTF(cfg->username);
-        jenv->SetObjectField(jobj, jsfsconfig_class_structure.username_id, (jobject)obj_username);
+    if(cfg->ug_name) {
+        jstring obj_ug_name = jenv->NewStringUTF(cfg->ug_name);
+        jenv->SetObjectField(jobj, jsfsconfig_class_structure.ug_name_id, (jobject)obj_ug_name);
     } else {
-        jenv->SetObjectField(jobj, jsfsconfig_class_structure.username_id, (jobject)NULL);
+        jenv->SetObjectField(jobj, jsfsconfig_class_structure.ug_name_id, (jobject)NULL);
     }
     
-    if(cfg->password) {
-        jstring obj_password = jenv->NewStringUTF(cfg->password);
-        jenv->SetObjectField(jobj, jsfsconfig_class_structure.password_id, (jobject)obj_password);
+    if(cfg->ug_password) {
+        jstring obj_ug_password = jenv->NewStringUTF(cfg->ug_password);
+        jenv->SetObjectField(jobj, jsfsconfig_class_structure.ug_password_id, (jobject)obj_ug_password);
     } else {
-        jenv->SetObjectField(jobj, jsfsconfig_class_structure.password_id, (jobject)NULL);
+        jenv->SetObjectField(jobj, jsfsconfig_class_structure.ug_password_id, (jobject)NULL);
     }
     
     if(cfg->volume_name) {

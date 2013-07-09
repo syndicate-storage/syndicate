@@ -83,11 +83,11 @@ JNIEXPORT jint JNICALL Java_JSyndicateFSJNI_JSyndicateFSJNI_jsyndicatefs_1init(J
 #ifdef JSYNDICATEFS_JNI_ARGUMENT_PASSING_TEST
     printf("cfg.config_file = %s\n", cfg.config_file);
     printf("cfg.ms_url = %s\n", cfg.ms_url);
-    printf("cfg.password = %s\n", cfg.password);
-    printf("cfg.portnum = %d\n", cfg.portnum);
-    printf("cfg.username = %s\n", cfg.username);
+    printf("cfg.ug_name = %s\n", cfg.ug_name);
+    printf("cfg.ug_password = %s\n", cfg.ug_password);
     printf("cfg.volume_name = %s\n", cfg.volume_name);
     printf("cfg.volume_secret = %s\n", cfg.volume_secret);
+    printf("cfg.portnum = %d\n", cfg.portnum);
     
     jresult = (jint) 0;
 #else

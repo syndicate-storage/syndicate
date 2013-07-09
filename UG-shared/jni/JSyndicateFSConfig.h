@@ -19,8 +19,8 @@ extern "C" {
     
 struct JSyndicateFS_Config {
     char* config_file;
-    char* username;
-    char* password;
+    char* ug_name;
+    char* ug_password;
     char* volume_name;
     char* volume_secret;
     char* ms_url;
@@ -33,8 +33,8 @@ struct JSFSConfig_Class_Structure {
     jclass      clazz;
     jclass      ref_clazz;
     jfieldID    config_file_id;
-    jfieldID    username_id;
-    jfieldID    password_id;
+    jfieldID    ug_name_id;
+    jfieldID    ug_password_id;
     jfieldID    volume_name_id;
     jfieldID    volume_secret_id;
     jfieldID    ms_url_id;
