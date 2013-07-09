@@ -48,7 +48,7 @@ public class FileSystem implements Closeable {
         if(fsInstance == null) {
             fsInstance = new FileSystem(conf);
         } else {
-            LOG.info("Get FileSystem instance already created : " + conf.getUsername() + "," + conf.getVolumeName() + "," + conf.getMSUrl().toString());
+            LOG.info("Get FileSystem instance already created : " + conf.getUGName() + "," + conf.getVolumeName() + "," + conf.getMSUrl().toString());
         }
             
         return fsInstance;
@@ -65,7 +65,7 @@ public class FileSystem implements Closeable {
         if(conf == null)
             throw new IllegalArgumentException("Can not initialize the filesystem from null configuration");
         
-        LOG.info("Initialize FileSystem : " + conf.getUsername() + "," + conf.getVolumeName() + "," + conf.getMSUrl().toString());
+        LOG.info("Initialize FileSystem : " + conf.getUGName() + "," + conf.getVolumeName() + "," + conf.getMSUrl().toString());
         
         // set configuration unmodifiable
         conf.lock();

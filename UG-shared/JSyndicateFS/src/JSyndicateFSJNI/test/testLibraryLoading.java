@@ -24,11 +24,11 @@ public class testLibraryLoading {
         }
         
         JSFSConfig cfg = new JSFSConfig();
-        cfg.setMs_url("https://syndicate-metadata.appspot.com");
-        cfg.setUsername("UG-planetlab3.rutgers.edu");
-        cfg.setPassword("sniff");
-        cfg.setVolume_name("testvolume");
-        cfg.setVolume_secret("abcdef");
+        cfg.setMs_url("http://localhost");
+        cfg.setUGName("Hadoop");
+        cfg.setUGPassword("sniff");
+        cfg.setVolume_name("SyndicateHadoop");
+        cfg.setVolume_secret("sniff");
         cfg.setPortnum(32780);
         
         int result = 0;

@@ -50,20 +50,20 @@ public class SyndicateConfig {
         SyndicateConfigUtil.setConfigFile(this.config, val);
     }
     
-    public String getPassword() {
-        return SyndicateConfigUtil.getPassword(this.config);
+    public String getUGPassword() {
+        return SyndicateConfigUtil.getUGPassword(this.config);
     }
     
-    public void setPassword(String val) {
-        SyndicateConfigUtil.setPassword(this.config, val);
+    public void setUGPassword(String val) {
+        SyndicateConfigUtil.setUGPassword(this.config, val);
     }
     
-    public String getUserName() {
-        return SyndicateConfigUtil.getUserName(this.config);
+    public String getUGName() {
+        return SyndicateConfigUtil.getUGName(this.config);
     }
     
-    public void setUserName(String val) {
-        SyndicateConfigUtil.setUserName(this.config, val);
+    public void setUGName(String val) {
+        SyndicateConfigUtil.setUGName(this.config, val);
     }
     
     public String getVolumeName() {
@@ -147,19 +147,19 @@ public class SyndicateConfig {
             }
         }
         
-        String username = getUserName();
+        String username = getUGName();
         if(username != null) {
             try {
-                jsfsConfig.setUsername(username);
+                jsfsConfig.setUGName(username);
             } catch (IllegalAccessException ex) {
                 LOG.error(ex);
             }
         }
         
-        String password = getPassword();
+        String password = getUGPassword();
         if(password != null) {
             try {
-                jsfsConfig.setPassword(password);
+                jsfsConfig.setUGPassword(password);
             } catch (IllegalAccessException ex) {
                 LOG.error(ex);
             }
