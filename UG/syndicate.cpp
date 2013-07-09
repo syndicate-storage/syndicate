@@ -318,6 +318,8 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
    char* msg_buf = response_buffer_to_string( rb );
    size_t msg_sz = response_buffer_size( rb );
 
+   dbprintf("received message of length %zu\n", msg_sz);
+
    // extract the actual message
    Serialization::WriteMsg *msg = new Serialization::WriteMsg();
    bool valid = msg->ParseFromString( string(msg_buf, msg_sz) );

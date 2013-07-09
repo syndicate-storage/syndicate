@@ -168,8 +168,8 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, ch
 // set up a write message
 int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core, Serialization::WriteMsg_MsgType type ) {
    writeMsg->set_type( type );
-   //writeMsg->set_write_id( core->col->next_transaction_id() );
-   //writeMsg->set_session_id( core->col->get_session_id() );
+   writeMsg->set_write_id( 0 );
+   writeMsg->set_session_id( 0 );
    writeMsg->set_user_id( core->conf->owner );
    writeMsg->set_volume_id( core->conf->volume );
 
@@ -249,10 +249,10 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
 
    BEGIN_TIMING_DATA( ts );
    
-   dbprintf( "send WriteMsg type %d\n", sendMsg->type() );
+   dbprintf( "send WriteMsg type %d length %zu\n", sendMsg->type(), msg_data_str.size() );
    int rc = curl_easy_perform( curl_h );
 
-   END_TIMING_DATA( ts, ts2, "MS update" );
+   END_TIMING_DATA( ts, ts2, "Remote write" );
    
    curl_easy_setopt( curl_h, CURLOPT_HTTPPOST, NULL );
    curl_formfree( post );
