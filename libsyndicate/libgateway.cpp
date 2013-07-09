@@ -282,7 +282,11 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
    }
    
    con_data->ctx.url_path = md_con_data->url_path;
-   con_data->ctx.username = md_con_data->user->username;
+
+   if( md_con_data->user != NULL ) {
+      con_data->ctx.username = md_con_data->user->username;
+   }
+   
    con_data->ctx.hostname = md_con_data->remote_host;
    con_data->ctx.method = md_con_data->method;
    con_data->ctx.size = md_con_data->conf->blocking_factor;
