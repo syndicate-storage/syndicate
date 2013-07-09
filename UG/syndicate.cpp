@@ -322,7 +322,14 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
    // extract the actual message
    Serialization::WriteMsg *msg = new Serialization::WriteMsg();
-   bool valid = msg->ParseFromString( string(msg_buf, msg_sz) );
+   bool valid = false;
+
+   try {
+      valid = msg->ParseFromString( string(msg_buf, msg_sz) );
+   }
+   catch( exception e ) {
+      errorf("%p: failed to parse message, caught exception\n", md_con_data );
+   }
 
    free( msg_buf );
 
