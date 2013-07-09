@@ -54,10 +54,8 @@ def allvolumes(request):
     volumes = db.list_volumes(**v_attrs)
     owners = []
     for v in volumes:
-        volume_owner = v.owner_id
-        qry = User.query(User.owner_id == volume_owner)
-        for owner in qry:
-            owners.append(owner)
+        attrs = {"SyndicateUser.owner_id":"== " + str(v.owner_id)}
+        owners.append(db.get_user(**attrs))
     vols = zip(volumes, owners)
     t = loader.get_template('allvolumes.html')
     c = Context({'username':username, 'vols':vols})

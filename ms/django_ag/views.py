@@ -23,28 +23,25 @@ def allgateways(request):
     user = db.read_user(username)
 
     try:
-        qry = AG.query()
+        qry = db.list_acquisition_gateways()
     except:
         qry = []
     gateways = []
     for g in qry:
-        logging.info(g)
         gateways.append(g)
     vols = []
     for g in gateways:
         attrs = {"Volume.volume_id":"== " + str(g.volume_id)}
-        volumequery = db.list_volumes(**attrs) # should be one
-        for v in volumequery:
-            logging.info(v)
-            vols.append(v)
+        vols.append(db.get_volume(**attrs))
+    logging.info(vols)
     owners = []
     for v in vols:
         volume_owner = v.owner_id
-        ownerquery = User.query(User.owner_id == volume_owner)
-        for owner in ownerquery:
-            owners.append(owner)
+        attrs = {"SyndicateUser.owner_id":"== " + str(volume_owner)}
+        owners.append(db.get_user(**attrs))
+    logging.info(owners)
     gateway_vols_owners = zip(gateways, vols, owners)
-    t = loader.get_template('allacquisitiongateways.html')
+    t = loader.get_template('gateway_templates/allacquisitiongateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols_owners':gateway_vols_owners})
     return HttpResponse(t.render(c))
 
@@ -71,7 +68,7 @@ def mygateways(request):
             vols.append(v)
             logging.info(v)
     gateway_vols = zip(gateways, vols)
-    t = loader.get_template('myacquisitiongateways.html')
+    t = loader.get_template('gateway_templates/myacquisitiongateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols':gateway_vols})
     return HttpResponse(t.render(c))
 '''
@@ -87,7 +84,7 @@ def create(request):
 
     def give_create_form(username, message):
         form = gatewayforms.CreateAG()
-        t = loader.get_template('create_acquisition_gateway.html')
+        t = loader.get_template('gateway_templates/create_acquisition_gateway.html')
         c = RequestContext(request, {'username':username,'form':form, 'message':message})
         return HttpResponse(t.render(c))
 
@@ -151,7 +148,7 @@ def create(request):
                                        'host': oldhost,
                                        'port': oldport,
                                        })
-            t = loader.get_template('create_acquisition_gateway.html')
+            t = loader.get_template('gateway_templates/create_acquisition_gateway.html')
             c = RequestContext(request, {'username':username,'form':form, 'message':message})
             return HttpResponse(t.render(c))
 
@@ -165,7 +162,7 @@ def delete(request, g_name):
 
     def give_delete_form(username, g_name, message):
         form = gatewayforms.DeleteGateway()
-        t = loader.get_template('delete_acquisition_gateway.html')
+        t = loader.get_template('gateway_templates/delete_acquisition_gateway.html')
         c = RequestContext(request, {'username':username, 'g_name':g_name, 'form':form, 'message':message})
         return HttpResponse(t.render(c))
 
@@ -176,13 +173,13 @@ def delete(request, g_name):
 
     ag = db.read_acquisition_gateway(g_name)
     if not ag:
-        t = loader.get_template('delete_acquisition_gateway_failure.html')
+        t = loader.get_template('gateway_templates/delete_acquisition_gateway_failure.html')
         c = RequestContext(request, {'username':username, 'g_name':g_name})
         return HttpResponse(t.render(c))
 
     '''
     if ag.owner_id != user.owner_id:
-                t = loader.get_template('delete_acquisition_gateway_failure.html')
+                t = loader.get_template('gateway_templates/delete_acquisition_gateway_failure.html')
                 c = RequestContext(request, {'username':username, 'g_name':g_name})
                 return HttpResponse(t.render(c))
     '''

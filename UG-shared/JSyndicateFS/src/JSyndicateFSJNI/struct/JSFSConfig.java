@@ -13,8 +13,8 @@ public class JSFSConfig {
     public static final String DEFAULT_CONFIG_FILE_PATH = "/etc/syndicate/syndicate-client.conf";
     
     private String config_file;
-    private String username;
-    private String password;
+    private String ug_name;
+    private String ug_password;
     private String volume_name;
     private String volume_secret;
     private String ms_url;
@@ -22,18 +22,18 @@ public class JSFSConfig {
 
     public JSFSConfig() {
         this.config_file = DEFAULT_CONFIG_FILE_PATH;
-        this.username = "";
-        this.password = "";
+        this.ug_name = "";
+        this.ug_password = "";
         this.volume_name = "";
         this.volume_secret = "";
         this.ms_url = "";
         this.portnum = -1;
     }
     
-    public JSFSConfig(String config_file, String username, String password, String volume_name, String volume_secret, String ms_url, int portnum) {
+    public JSFSConfig(String config_file, String ug_name, String ug_password, String volume_name, String volume_secret, String ms_url, int portnum) {
         this.config_file = config_file;
-        this.username = username;
-        this.password = password;
+        this.ug_name = ug_name;
+        this.ug_password = ug_password;
         this.volume_name = volume_name;
         this.volume_secret = volume_secret;
         this.ms_url = ms_url;
@@ -55,31 +55,31 @@ public class JSFSConfig {
     }
 
     /**
-     * @return the username
+     * @return the UG name
      */
-    public String getUsername() {
-        return username;
+    public String getUGName() {
+        return ug_name;
     }
 
     /**
-     * @param username the username to set
+     * @param ug_name the UG name to set
      */
-    public void setUsername(String username) {
-        this.username = username;
+    public void setUGName(String ug_name) {
+        this.ug_name = ug_name;
     }
 
     /**
-     * @return the password
+     * @return the UG password
      */
-    public String getPassword() {
-        return password;
+    public String getUGPassword() {
+        return ug_password;
     }
 
     /**
-     * @param password the password to set
+     * @param ug_password the password to set
      */
-    public void setPassword(String password) {
-        this.password = password;
+    public void setUGPassword(String ug_password) {
+        this.ug_password = ug_password;
     }
 
     /**
@@ -146,9 +146,9 @@ public class JSFSConfig {
         JSFSConfig other = (JSFSConfig) o;
         if(!this.config_file.equals(other.config_file))
             return false;
-        if(!this.username.equals(other.username))
+        if(!this.ug_name.equals(other.ug_name))
             return false;
-        if(!this.password.equals(other.password))
+        if(!this.ug_password.equals(other.ug_password))
             return false;
         if(!this.volume_name.equals(other.volume_name))
             return false;
@@ -164,7 +164,7 @@ public class JSFSConfig {
     
     @Override
     public int hashCode() {
-        return this.config_file.hashCode() ^ this.username.hashCode() ^ this.password.hashCode()
+        return this.config_file.hashCode() ^ this.ug_name.hashCode() ^ this.ug_password.hashCode()
                 ^ this.volume_name.hashCode() ^ this.volume_secret.hashCode() ^ this.ms_url.hashCode() 
                 ^ this.portnum;
     }

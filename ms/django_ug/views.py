@@ -23,7 +23,7 @@ def allgateways(request):
     user = db.read_user(username)
 
     try:
-        qry = UG.query()
+        qry = db.list_user_gateways()
     except:
         qry = []
     gateways = []
@@ -32,17 +32,14 @@ def allgateways(request):
     vols = []
     for g in gateways:
         attrs = {"Volume.volume_id":"== " + str(g.volume_id)}
-        volumequery = db.list_volumes(**attrs) # should be one
-        for v in volumequery:
-            vols.append(v)
+        vols.append(db.get_volume(**attrs))
     owners = []
     for v in vols:
         volume_owner = v.owner_id
-        ownerquery = User.query(User.owner_id == volume_owner)
-        for owner in ownerquery:
-            owners.append(owner)
+        attrs = {"SyndicateUser.owner_id":"== " + str(volume_owner)}
+        owners.append(db.read_user(**attrs))
     gateway_vols_owners = zip(gateways, vols, owners)
-    t = loader.get_template('allusergateways.html')
+    t = loader.get_template('gateway_templates/allusergateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols_owners':gateway_vols_owners})
     return HttpResponse(t.render(c))
 
@@ -54,7 +51,8 @@ def mygateways(request):
 
     # should change this
     try:
-        qry = UG.query(UG.owner_id == user.owner_id)
+        attrs = {"UserGateway.owner_id":"== " + str(user.owner_id)}
+        qry = db.list_user_gateways(**attrs)
     except:
         qry = []
     gateways = []
@@ -63,12 +61,9 @@ def mygateways(request):
     vols = []
     for g in gateways:
         attrs = {"Volume.volume_id":"== " + str(g.volume_id)}
-        volumequery = db.list_volumes(**attrs) # should be one
-        for v in volumequery:
-            vols.append(v)
-            logging.info(v)
+        vols.append(db.get_volume(**attrs))
     gateway_vols = zip(gateways, vols)
-    t = loader.get_template('myusergateways.html')
+    t = loader.get_template('gateway_templates/myusergateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols':gateway_vols})
     return HttpResponse(t.render(c))
 
@@ -84,7 +79,7 @@ def create(request):
 
     def give_create_form(username, message):
         form = gatewayforms.CreateUG()
-        t = loader.get_template('create_user_gateway.html')
+        t = loader.get_template('gateway_templates/create_user_gateway.html')
         c = RequestContext(request, {'username':username,'form':form, 'message':message})
         return HttpResponse(t.render(c))
 
@@ -149,7 +144,7 @@ def create(request):
                                        'host': oldhost,
                                        'port': oldport,
                                        })
-            t = loader.get_template('create_user_gateway.html')
+            t = loader.get_template('gateway_templates/create_user_gateway.html')
             c = RequestContext(request, {'username':username,'form':form, 'message':message})
             return HttpResponse(t.render(c))
 
@@ -163,7 +158,7 @@ def delete(request, g_name):
 
     def give_delete_form(username, g_name, message):
         form = gatewayforms.DeleteGateway()
-        t = loader.get_template('delete_user_gateway.html')
+        t = loader.get_template('gateway_templates/delete_user_gateway.html')
         c = RequestContext(request, {'username':username, 'g_name':g_name, 'form':form, 'message':message})
         return HttpResponse(t.render(c))
 
@@ -174,12 +169,12 @@ def delete(request, g_name):
 
     ug = db.read_user_gateway(g_name)
     if not ug:
-        t = loader.get_template('delete_user_gateway_failure.html')
+        t = loader.get_template('gateway_templates/delete_user_gateway_failure.html')
         c = RequestContext(request, {'username':username, 'g_name':g_name})
         return HttpResponse(t.render(c))
 
     if ug.owner_id != user.owner_id:
-                t = loader.get_template('delete_user_gateway_failure.html')
+                t = loader.get_template('gateway_templates/delete_user_gateway_failure.html')
                 c = RequestContext(request, {'username':username, 'g_name':g_name})
                 return HttpResponse(t.render(c))
 

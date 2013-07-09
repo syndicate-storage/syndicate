@@ -53,6 +53,16 @@ def delete_volume( volume_name ):
 def list_volumes( **attrs ):
    return Volume.ListAll( **attrs )
 
+
+def get_volume( **attr ):
+   allvolumes = list_volumes(**attr)
+   if allvolumes.count(limit=2) > 1:
+      raise Exception("More than one volume satisfies attrs: %s" % attr)
+   for v in allvolumes:
+      return v
+   return None
+
+
    
 def create_user( **kwargs ):
    return SyndicateUser.Create( **kwargs )
@@ -72,6 +82,15 @@ def delete_user( email, **fields ):
    
 def list_users( **attrs ):
    return SyndicateUser.ListAll( **attrs )
+
+def get_user( **attr ):
+   allusers = list_users(**attr)
+   if allusers.count(limit=2) > 1:
+      raise Exception("More than one users satisfies attrs: %s" % attr)
+   for u in allusers:
+      return u
+   return None
+
 
    
 def make_root( volume, **root_attrs ):
@@ -112,11 +131,23 @@ def create_user_gateway( user, volume, **kwargs ):
 def read_user_gateway( ms_username ):
    return UserGateway.Read( ms_username )
 
-def list_user_gateways( volume_id ):
-   return UserGateway.ListAll( volume_id )
+def list_user_gateways(**attrs):
+   return UserGateway.ListAll(**attrs)
+
+def list_user_gateways_by_volume( volume_id ):
+   return UserGateway.ListAll_ByVolume( volume_id )
    
 def delete_user_gateway( ms_username ):
    return UserGateway.Delete( ms_username )
+
+def get_user_gateway( **attr ):
+   allugs = list_user_gateways(**attr)
+   if allugs.count(limit=2) > 1:
+      raise Exception("More than one UG satisfies attrs: %s" % attr)
+   for ug in allugs:
+      return ug
+   return None
+
 
 
 def create_acquisition_gateway( volume, **kwargs ):
@@ -125,11 +156,19 @@ def create_acquisition_gateway( volume, **kwargs ):
 def read_acquisition_gateway( ms_username ):
    return AcquisitionGateway.Read( ms_username )
    
-def list_acquisition_gateways( volume_id ):
-   return AcquisitionGateway.ListAll( volume_id )
+def list_acquisition_gateways( **attrs ):
+   return AcquisitionGateway.ListAll( **attrs )
    
 def delete_acquisition_gateway( ms_username ):
    return AcquisitionGateway.Delete( ms_username )
+
+def get_acquisition_gateway( **attr ):
+   allags = list_acquisition_gateways(**attr)
+   if allags.count(limit=2) > 1:
+      raise Exception("More than one AG satisfies attrs: %s" % attr)
+   for ag in allags:
+      return ag
+   return None
 
 
 def create_replica_gateway( volume, **kwargs ):
@@ -138,10 +177,16 @@ def create_replica_gateway( volume, **kwargs ):
 def read_replica_gateway( ms_username ):
    return ReplicaGateway.Read( ms_username )
    
-
-def list_replica_gateways( volume_id ):
-   return ReplicaGateway.ListAll( volume_id )
+def list_replica_gateways( **attrs ):
+   return ReplicaGateway.ListAll( **attrs )
    
 def delete_replica_gateway( ms_username ):
    return ReplicaGateway.Delete( ms_username )
-   
+
+def get_replica_gateway( **attr ):
+   allrgs = list_replica_gateway(**attr)
+   if allrgs.count(limit=2) > 1:
+      raise Exception("More than one RG satisfies attrs: %s" % attr)
+   for rg in allrgs:
+      return rg
+   return None
