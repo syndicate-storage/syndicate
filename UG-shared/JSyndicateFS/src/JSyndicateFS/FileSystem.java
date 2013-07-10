@@ -473,13 +473,12 @@ public class FileSystem implements Closeable {
         if(filehandle.isDirty())
             throw new IllegalArgumentException("Can not read directory entries from dirty filehandle");
 
-        JSFSFileInfo fileinfo = new JSFSFileInfo();
         DirFillerImpl filler = new DirFillerImpl();
         
         if(!filehandle.getStatus().isDirectory())
             throw new IllegalArgumentException("Can not read directory entries from filehandle that is not a directory");
         
-        int ret = JSyndicateFS.jsyndicatefs_readdir(filehandle.getPath().getPath(), filler, 0, fileinfo);
+        int ret = JSyndicateFS.jsyndicatefs_readdir(filehandle.getPath().getPath(), filler, 0, filehandle.getFileInfo());
         if(ret != 0) {
             throw new IOException("jsyndicatefs_readdir failed : " + ret);
         }
@@ -560,10 +559,16 @@ public class FileSystem implements Closeable {
     }
 
     public boolean createNewFile(Path path) throws IOException {
-        FileStatus status = getFileStatus(path);
+        Path absPath = getAbsolutePath(path);
+        
+        FileStatus status = null;
+        try {
+            status = getFileStatus(absPath);
+        } catch(IOException ex) {}
+        
         if(status == null) {
             JSFSFileInfo fi = new JSFSFileInfo();
-            int ret = JSyndicateFS.jsyndicatefs_create(path.getPath(), 0x777, fi);
+            int ret = JSyndicateFS.jsyndicatefs_create(absPath.getPath(), 0x777, fi);
             if(ret < 0) {
                 throw new IOException("jsyndicatefs_create failed : " + ret);
             }
@@ -601,9 +606,7 @@ public class FileSystem implements Closeable {
         if(path == null)
             throw new IllegalArgumentException("Can not list files from null path");
      
-        Path absPath = path;
-        if(!path.isAbsolute())
-            absPath = getAbsolutePath(path);
+        Path absPath = getAbsolutePath(path);
         
         ArrayList<Path> result = listAllFilesRecursive(absPath);
         
@@ -654,9 +657,7 @@ public class FileSystem implements Closeable {
         if(path == null)
             throw new IllegalArgumentException("Can not list files from null path");
      
-        Path absPath = path;
-        if(!path.isAbsolute())
-            absPath = getAbsolutePath(path);
+        Path absPath = getAbsolutePath(path);
         
         ArrayList<Path> result = listAllFilesRecursive(absPath, filter);
         
