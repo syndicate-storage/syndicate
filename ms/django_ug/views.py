@@ -212,7 +212,7 @@ def delete(request, g_name):
 
 @csrf_exempt
 @authenticate
-def urlcreate(request, volume_name, g_name, g_password, host, port):
+def urlcreate(request, volume_name, g_name, g_password, host, port, read_write):
     session = request.session
     username = session['login_email']
     user = db.read_user(username)
@@ -223,6 +223,7 @@ def urlcreate(request, volume_name, g_name, g_password, host, port):
     kwargs['host'] = host
     kwargs['ms_username'] = g_name
     kwargs['ms_password'] = g_password
+    kwargs['read_write'] = read_write
     vol = db.read_volume(volume_name)
     if not vol:
         return HttpResponse("No volume %s exists." % volume_name)

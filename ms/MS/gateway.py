@@ -29,14 +29,12 @@ class Gateway( storagetypes.Object ):
 
    host = storagetypes.Text()
    port = storagetypes.Integer()
-   volume_id = storagetypes.Integer()           # which volume are we attached to?
    ms_username = storagetypes.String()
    ms_password_hash = storagetypes.String()
 
    required_attrs = [
       "host",
       "port",
-      "volume_id",
       "ms_username",
       "ms_password"
    ]
@@ -75,14 +73,18 @@ class UserGateway( Gateway ):
    # owner ID of all files created by this gateway
    owner_id = storagetypes.Integer()
    read_write = storagetypes.Boolean()
+   volume_id = storagetypes.Integer()           # which volume are we attached to?
+
 
    required_attrs = Gateway.required_attrs + [
       "owner_id",
+      "volume_id",
       "read_write"
    ]
 
    default_values = {
-      "read_write": (lambda cls, attrs: False) # Default is only read
+      "read_write": (lambda cls, attrs: False), # Default is only read
+      "port": (lambda cls, attrs:80)
    }
 
    
@@ -263,9 +265,12 @@ class AcquisitionGateway( Gateway ):
 
    # This is temporary; we should know what is really needed.   
    json_config = storagetypes.Text()
+   volume_id = storagetypes.Integer()           # which volume are we attached to?
+
 
    required_attrs = Gateway.required_attrs + [
-      "json_config"
+      "json_config",
+      "volume_id"
    ]
 
    default_values = {
@@ -425,13 +430,18 @@ class ReplicaGateway( Gateway ):
 
    # This is temporary; we should know what is really needed.
    json_config = storagetypes.Text()
+   private = storagetypes.Boolean()
+   volume_ids = storagetypes.Integer(repeated=True)           # which volume(s) are we attached to?
+
 
    required_attrs = Gateway.required_attrs + [
-      "json_config"
+      "json_config",
+      "volume_ids"
    ]
 
    default_values = {
-      "json_config": (lambda cls, attrs: "Blank JSON") # Default is only read
+      "json_config": (lambda cls, attrs: "Blank JSON"), # Default is only read
+      "private": (lambda cls, attrs: False) # Default is public
    }
 
    def get_credential_entry(self):
@@ -466,9 +476,10 @@ class ReplicaGateway( Gateway ):
          ms_password          str
          ms_password_hash     str
          json_config          str
+         private              bool
       """
 
-      kwargs['volume_id'] = volume.volume_id
+      kwargs['volume_ids'] = [volume.volume_id]
 
       ReplicaGateway.fill_defaults( kwargs )
 

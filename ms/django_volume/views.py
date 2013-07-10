@@ -374,7 +374,7 @@ def deletevolume(request, volume_name, message=""):
                 # Ok to delete
                 db.delete_volume(volume_name)
                 session['new_change'] = "We've deleted your volume."
-                session['next_url'] = '/syn/myvolumes/'
+                session['next_url'] = '/syn/volume/myvolumes/'
                 session['next_message'] = "Click here to go back to your volumes."
                 return HttpResponseRedirect('/syn/thanks')
             else:
@@ -586,7 +586,7 @@ def createvolume(request):
             db.update_user(username, **fields)
 
             session['new_change'] = "Your new volume is ready."
-            session['next_url'] = '/syn/myvolumes/'
+            session['next_url'] = '/syn/volume/myvolumes/'
             session['next_message'] = "Click here to see your volumes."
             return HttpResponseRedirect('/syn/thanks/')
 
