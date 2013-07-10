@@ -751,6 +751,9 @@ def test( ignore1, args ):
 
    # form flags
    do_ugs = False                # create default UG records (form argument: do_ugs=1) owned by the accompanied User identified by username
+   do_rgs = False                # create default RG records (form argument: do_ugs=1) 
+   do_ags = False                # create default AG records (form argument: do_ugs=1) 
+
    do_init = False               # create all default users and test volumes (form argument: do_init=1)
    reset_volume = False          # reset a volume's records (form argument: reset_volume=...)
    reset_volume_name = None      # volume to reset (taken from reset_volume=...)
