@@ -32,16 +32,18 @@ def allgateways(request):
         gateways.append(g)
     vols = []
     for g in gateways:
-        attrs = {"Volume.volume_id":"== " + str(g.volume_id)}
-        vols.append(db.get_volume(**attrs))
-    owners = []
-    for v in vols:
-        volume_owner = v.owner_id
-        attrs = {"SyndicateUser.owner_id":"== " + str(volume_owner)}
-        owners.append(db.get_user(**attrs))
-    gateway_vols_owners = zip(gateways, vols, owners)
+        print "HIHIDHFIDOIFHODHF"
+        volset = []
+        for v in g.volume_ids:
+            logging.info(v)
+            attrs = {"Volume.volume_id":"== " + str(v)}
+            volset.append(db.get_volume(**attrs))
+            logging.info(volset)
+        vols.append(volset)
+    logging.info(vols)
+    gateway_vols = zip(gateways, vols)
     t = loader.get_template('gateway_templates/allreplicagateways.html')
-    c = RequestContext(request, {'username':username, 'gateway_vols_owners':gateway_vols_owners})
+    c = RequestContext(request, {'username':username, 'gateway_vols':gateway_vols})
     return HttpResponse(t.render(c))
 
 '''
@@ -106,6 +108,7 @@ def create(request):
                 kwargs['port'] = form.cleaned_data['port']
                 kwargs['host'] = form.cleaned_data['host']
                 kwargs['ms_password'] = form.cleaned_data['g_password']
+                kwargs['private'] = form.cleaned_data['private']
                 new_RG = db.create_replica_gateway(vol, **kwargs)
             except Exception as E:
                 message = "RG creation error: %s" % E
@@ -219,7 +222,7 @@ def delete(request, g_name):
 
 @csrf_exempt
 @authenticate
-def urlcreate(request, volume_name, g_name, g_password, host, port):
+def urlcreate(request, volume_name, g_name, g_password, host, port, private=False):
     session = request.session
     username = session['login_email']
     user = db.read_user(username)
@@ -230,6 +233,7 @@ def urlcreate(request, volume_name, g_name, g_password, host, port):
     kwargs['host'] = host
     kwargs['ms_username'] = g_name
     kwargs['ms_password'] = g_password
+    kwargs['private'] = private
     vol = db.read_volume(volume_name)
     if not vol:
         return HttpResponse("No volume %s exists." % volume_name)

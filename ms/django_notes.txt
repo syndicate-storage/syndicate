@@ -3,14 +3,23 @@ This is the collection of files for the Syndicate front-end, using Django and we
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
-Done
-- Create storage method wrapper get_xyz for returning one object when you know there should be one and otherwise throws an exception
-- get rid of all exposed queries
-- Added ListAll methods for all gateway types, and modified UG's listall to have two different types (by_voLUme and generic)
-- Consolidate gateway templates
-- made django gateway templates more DRY
-
 To-do:
+- Make sure to update setup.py when changing parameters
+
+- Make setup better to allow auto-creation of AG's/RG's.
+
+- Ask Jude.
+	Should Volume record in MS store information on AGs/RGs, or gateway records store information about volumes, or both?
+	How should configuration for RG be represented in MS? Or does it need to be at all?
+	When a
+
+- Allow addition of volumes to RGs via GUI.
+
+- Adding to Volume -> AG parameter (repeated? Yeah probably.) check
+				   -> RG parameter (repeated?)
+
+- Adding to RG -> Private/Public "private", meaning that it can only be bound to a Volume owned by the same user that owns the RG -> Volumes (repeated) check
+
 - fix error for UG delete gateway (? What is this)
 - AG/RG parameters
 - Ask Jude about key_listing methond in Gateway...

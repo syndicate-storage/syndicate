@@ -42,4 +42,5 @@ class CreateAG(CreateGateway):
     pass
 
 class CreateRG(CreateGateway):
-    pass
+    private = forms.BooleanField(required=False,
+                                  label="Replica Gateway is private. It can only be attached to volumes owned by you.")

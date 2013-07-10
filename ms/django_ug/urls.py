@@ -7,6 +7,6 @@ urlpatterns = patterns('django_ug.views',
 					   url(r'^mygateways/?$', 'mygateways'),
                        url(r'^create/?$', 'create'),
                        url(r'^delete/(?P<g_name>[\w\.=]*)/?$', 'delete'),
-                       url(r'^create/(?P<volume_name>[\w\.-]*)/(?P<g_name>[\w\.-]*)/(?P<g_password>[\w\.-]*)/(?P<host>[\w\.-]*)/(?P<port>[\d]*)/?', 'urlcreate'),
+                       url(r'^create/(?P<volume_name>[\w\.-]*)/(?P<g_name>[\w\.-]*)/(?P<g_password>[\w\.-]*)/(?P<host>[\w\.-]*)/(?P<port>[\d]*)/(?P<read_write>[\w]*)/?', 'urlcreate'),
                        url(r'^delete/(?P<g_name>[\w\.-]*)/(?P<g_password>[\w\.-]*)/?', 'urldelete'),
 )
