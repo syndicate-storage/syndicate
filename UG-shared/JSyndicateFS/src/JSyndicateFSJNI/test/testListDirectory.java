@@ -29,7 +29,7 @@ public class testListDirectory {
     }
     
     public static void main(String[] args) {
-        testLibraryLoading.load();
+        testLibraryLoading.load(false);
         
         if(args.length > 0)
             listDir(args[0]);

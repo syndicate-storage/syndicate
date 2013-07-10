@@ -60,26 +60,26 @@ public class Configuration {
         this.nativeConfig.setConfig_file(file.getAbsolutePath());
     }
 
-    public String getPassword() {
-        return this.nativeConfig.getPassword();
+    public String getUGPassword() {
+        return this.nativeConfig.getUGPassword();
     }
     
-    public void setPassword(String password) throws IllegalAccessException {
+    public void setUGPassword(String ug_password) throws IllegalAccessException {
         if(this.lock)
             throw new IllegalAccessException("Can not modify the locked object");
         
-        this.nativeConfig.setPassword(password);
+        this.nativeConfig.setUGPassword(ug_password);
     }
 
-    public String getUsername() {
-        return this.nativeConfig.getUsername();
+    public String getUGName() {
+        return this.nativeConfig.getUGName();
     }
     
-    public void setUsername(String username) throws IllegalAccessException {
+    public void setUGName(String ug_name) throws IllegalAccessException {
         if(this.lock)
             throw new IllegalAccessException("Can not modify the locked object");
         
-        this.nativeConfig.setUsername(username);
+        this.nativeConfig.setUGName(ug_name);
     }
 
     public String getVolumeName() {

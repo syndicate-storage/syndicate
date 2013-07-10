@@ -26,10 +26,10 @@ public class SyndicateConfigUtil {
     public static final Log LOG = LogFactory.getLog(SyndicateConfigUtil.class);
     
     public static final String CONFIG_FILE = "syndicate.conf.config_file";
-    public static final String PASSWORD = "syndicate.conf.password";
-    public static final String USERNAME = "syndicate.conf.username";
-    public static final String VOLUME_NAME = "syndicate.conf.volume_name";
-    public static final String VOLUME_SECRET = "syndicate.conf.volume_secret";
+    public static final String UG_PASSWORD = "syndicate.conf.ug.password";
+    public static final String UG_NAME = "syndicate.conf.ug.name";
+    public static final String VOLUME_NAME = "syndicate.conf.volume.name";
+    public static final String VOLUME_SECRET = "syndicate.conf.volume.secret";
     public static final String MSURL = "syndicate.conf.ms_url";
     public static final String PORT = "syndicate.conf.port";
     public static final String MAX_METADATA_CACHE = "syndicate.conf.max_metadata_cache";
@@ -67,32 +67,32 @@ public class SyndicateConfigUtil {
         return conf.get(CONFIG_FILE);
     }
     
-    public static void setPassword(Configuration conf, String password) {
-        conf.set(PASSWORD, password);
+    public static void setUGPassword(Configuration conf, String ug_password) {
+        conf.set(UG_PASSWORD, ug_password);
     }
     
-    public static String getPassword(Configuration conf) {
-        return conf.get(PASSWORD);
+    public static String getUGPassword(Configuration conf) {
+        return conf.get(UG_PASSWORD);
     }
     
-    public static void setUserName(Configuration conf, String username) {
-        conf.set(USERNAME, username);
+    public static void setUGName(Configuration conf, String ug_name) {
+        conf.set(UG_NAME, ug_name);
     }
     
-    public static String getUserName(Configuration conf) {
-        return conf.get(USERNAME);
+    public static String getUGName(Configuration conf) {
+        return conf.get(UG_NAME);
     }
     
-    public static void setVolumeName(Configuration conf, String volumename) {
-        conf.set(VOLUME_NAME, volumename);
+    public static void setVolumeName(Configuration conf, String volume_name) {
+        conf.set(VOLUME_NAME, volume_name);
     }
     
     public static String getVolumeName(Configuration conf) {
         return conf.get(VOLUME_NAME);
     }
     
-    public static void setVolumeSecret(Configuration conf, String volumesecret) {
-        conf.set(VOLUME_SECRET, volumesecret);
+    public static void setVolumeSecret(Configuration conf, String volume_secret) {
+        conf.set(VOLUME_SECRET, volume_secret);
     }
     
     public static String getVolumeSecret(Configuration conf) {

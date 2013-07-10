@@ -101,13 +101,14 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
    }
 
    // make sure we have data root and staging root
-   char* cwd = getenv( "HOME" );
-   char* data_root = md_fullpath( cwd, ".syndicate/data", NULL );
-   char* staging_root = md_fullpath( cwd, ".syndicate/staging", NULL );
-   char* logfile_path = md_fullpath( cwd, ".syndicate/access.log", NULL );
-   char* replica_logfile_path = md_fullpath( cwd, ".syndicate/replica.log", NULL );
-   char* RG_metadata_path = md_fullpath( cwd, ".syndicate/RG-metadata", NULL );
-   char* AG_metadata_path = md_fullpath( cwd, ".syndicate/AG-metadata", NULL );
+   char cwd[100];
+   sprintf(cwd, "/tmp/syndicate.%d", getpid() );
+   char* data_root = md_fullpath( cwd, "data", NULL );
+   char* staging_root = md_fullpath( cwd, "staging", NULL );
+   char* logfile_path = md_fullpath( cwd, "access.log", NULL );
+   char* replica_logfile_path = md_fullpath( cwd, "replica.log", NULL );
+   char* RG_metadata_path = md_fullpath( cwd, "RG-metadata", NULL );
+   char* AG_metadata_path = md_fullpath( cwd, "AG-metadata", NULL );
    
    if( c->data_root == NULL )
       c->data_root = strdup( data_root );
@@ -2702,7 +2703,7 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
                                        void** con_cls ) {
    
    struct md_HTTP* http_ctx = (struct md_HTTP*)cls;
-   struct md_HTTP_connection_data* con_data = (struct md_HTTP_connection_data*)con_cls;
+   struct md_HTTP_connection_data* con_data = (struct md_HTTP_connection_data*)(*con_cls);
 
    // need to create connection data?
    if( con_data == NULL ) {
@@ -2715,7 +2716,8 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       
       con_data = CALLOC_LIST( struct md_HTTP_connection_data, 1 );
       if( !con_data ) {
-         return MHD_NO;
+         errorf("%s\n", "out of memory" );
+         return md_HTTP_default_send_response( connection, MHD_HTTP_INTERNAL_SERVER_ERROR, NULL );
       }
 
       struct MHD_PostProcessor* pp = NULL;
@@ -2782,6 +2784,10 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
          // unsupported method
          struct md_HTTP_response* resp = CALLOC_LIST(struct md_HTTP_response, 1);
          md_create_HTTP_response_ram_static( resp, "text/plain", 501, MD_HTTP_501_MSG, strlen(MD_HTTP_501_MSG) + 1 );
+         free( con_data );
+         
+         errorf("unknown HTTP method '%s'\n", method);
+         
          return md_HTTP_send_response( connection, resp );
       }
       
@@ -2794,7 +2800,10 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       con_data->rb = new response_buffer_t();
       con_data->remote_host = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_HOST );
       con_data->method = method;
+      con_data->mode = mode;
       con_data->cls = NULL;
+      con_data->status = 200;
+      con_data->pp = pp;
 
       char const* content_length_str = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_LENGTH );
       if( content_length_str != NULL )
@@ -2806,7 +2815,7 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       if( con_data->query_string != NULL ) {
          char* p = con_data->query_string;
          *p = 0;
-         con_data->url_path = p;
+         con_data->query_string = p + 1;
       }
 
       // get headers
@@ -2820,7 +2829,22 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       }
 
       con_data->headers = headers;
+
+      dbprintf("%s %s, query=%s, requester=%s, user=%s\n", method, con_data->url_path, con_data->query_string, con_data->remote_host, (con_data->user != NULL ? con_data->user->username : "NONE") );
       
+      // perform connection setup
+      if( http_ctx->HTTP_connect != NULL ) {
+         con_data->cls = (*http_ctx->HTTP_connect)( con_data );
+
+         if( con_data->status >= 300 ) {
+            // not going to serve data
+            errorf("connect status = %d\n", con_data->status );
+            return md_HTTP_send_response( connection, con_data->resp );
+         }
+      }
+
+      *con_cls = con_data;
+
       // perform authentication
       if( http_ctx->HTTP_authenticate != NULL ) {
 
@@ -2835,32 +2859,20 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
             free( username );
             if( password != NULL )
                free( password );
-
-            md_HTTP_free_connection_data( con_data );
-            free( con_data );
             
             return md_HTTP_default_send_response( connection, MHD_HTTP_UNAUTHORIZED, NULL );
          }
 
          con_data->user = CALLOC_LIST( struct md_user_entry, 1 );
          con_data->user->username = username;
-         con_data->user->password_hash = sha256_hash_printable( password, strlen(password) );
+         con_data->user->password_hash = NULL;
          con_data->user->uid = uid;
 
-         if( password )
+         if( password ) {
+            con_data->user->password_hash = sha256_hash_printable( password, strlen(password) );
             free( password );
-      }
-
-      if( http_ctx->HTTP_connect ) {
-         con_data->cls = (*http_ctx->HTTP_connect)( con_data );
-
-         if( con_data->status != 200 ) {
-            // error
-            return md_HTTP_send_response( connection, con_data->resp );
          }
       }
-
-      *con_cls = con_data;
       
       return MHD_YES;
    }

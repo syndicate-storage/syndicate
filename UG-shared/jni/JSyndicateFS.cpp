@@ -12,28 +12,28 @@ int jsyndicatefs_init(const JSyndicateFS_Config *cfg) {
     int rc = 0;
 
     char* config_file = (char*) CLIENT_DEFAULT_CONFIG;
-    char* username = NULL;
-    char* password = NULL;
+    char* ug_name = NULL;
+    char* ug_password = NULL;
     char* volume_name = NULL;
     char* volume_secret = NULL;
     char* ms_url = NULL;
     int portnum = -1;
 
     if(cfg != NULL) {
-        volume_name = cfg->volume_name;
         config_file = cfg->config_file;
-        volume_secret = cfg->volume_secret;
-        username = cfg->username;
-        password = cfg->password;
-        portnum = cfg->portnum;
         ms_url = cfg->ms_url;
+        ug_name = cfg->ug_name;
+        ug_password = cfg->ug_password;
+        volume_name = cfg->volume_name;
+        volume_secret = cfg->volume_secret;
+        portnum = cfg->portnum;
     }
 
     JSyndicateFS_Context* syndicate_context = jsyndicatefs_get_context();
     
     struct md_HTTP* syndicate_http = &syndicate_context->syndicate_http;
 
-    rc = syndicate_init(config_file, syndicate_http, portnum, ms_url, volume_name, volume_secret, username, password);
+    rc = syndicate_init(config_file, syndicate_http, portnum, ms_url, volume_name, volume_secret, ug_name, ug_password);
     if (rc != 0) {
         return rc;
     }
