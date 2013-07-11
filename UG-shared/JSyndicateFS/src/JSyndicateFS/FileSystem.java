@@ -436,7 +436,7 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not write too small buffer");
         if(size <= 0)
             throw new IllegalArgumentException("Can not write negative size data");
-        if(offset <= 0)
+        if(offset < 0)
             throw new IllegalArgumentException("Can not write negative offset");
         
         int ret = JSyndicateFS.jsyndicatefs_write(filehandle.getStatus().getPath().getPath(), buffer, size, offset, filehandle.getFileInfo());
