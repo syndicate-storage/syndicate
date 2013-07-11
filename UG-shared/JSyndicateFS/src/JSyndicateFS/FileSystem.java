@@ -30,6 +30,8 @@ public class FileSystem implements Closeable {
     public static final Log LOG = LogFactory.getLog(FileSystem.class);
     
     private static final String FS_ROOT_PATH = "file:///";
+    private static final int DEFAULT_NEW_FILE_PERMISSION = 33204;
+    private static final int DEFAULT_NEW_DIR_PERMISSION = 33204;
     
     private static FileSystem fsInstance;
     
@@ -547,7 +549,7 @@ public class FileSystem implements Closeable {
         if(path == null)
             throw new IllegalArgumentException("Can not mkdir from null path");
         
-        int ret = JSyndicateFS.jsyndicatefs_mkdir(path.getPath(), 0x777);
+        int ret = JSyndicateFS.jsyndicatefs_mkdir(path.getPath(), DEFAULT_NEW_DIR_PERMISSION);
         if(ret < 0) {
             String errmsg = ErrorUtils.generateErrorMessage(ret);
             throw new IOException("jsyndicatefs_mkdir failed : " + errmsg);
@@ -567,7 +569,7 @@ public class FileSystem implements Closeable {
             }
         }
         
-        int ret = JSyndicateFS.jsyndicatefs_mkdir(path.getPath(), 0x777);
+        int ret = JSyndicateFS.jsyndicatefs_mkdir(path.getPath(), DEFAULT_NEW_DIR_PERMISSION);
         if(ret < 0) {
             String errmsg = ErrorUtils.generateErrorMessage(ret);
             throw new IOException("jsyndicatefs_mkdir failed : " + errmsg);
@@ -584,7 +586,7 @@ public class FileSystem implements Closeable {
         
         if(status == null) {
             JSFSFileInfo fi = new JSFSFileInfo();
-            int ret = JSyndicateFS.jsyndicatefs_create(absPath.getPath(), 0x777, fi);
+            int ret = JSyndicateFS.jsyndicatefs_create(absPath.getPath(), DEFAULT_NEW_FILE_PERMISSION, fi);
             if(ret < 0) {
                 String errmsg = ErrorUtils.generateErrorMessage(ret);
                 throw new IOException("jsyndicatefs_create failed : " + errmsg);
