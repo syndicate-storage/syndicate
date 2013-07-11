@@ -40,7 +40,7 @@ struct gateway_ctx {
     // data buffer (manifest or remote block data)
     char* data;
     size_t data_len;
-    size_t data_offset;
+    off_t data_offset;
     off_t num_read;
     // file block info
     uint64_t block_id;

@@ -1,4 +1,6 @@
 #include "odbc-handler.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 ODBCHandler::ODBCHandler()
 {
@@ -102,7 +104,7 @@ string ODBCHandler::get_tables()
     return tbl_list.str();
 }
 
-string ODBCHandler::execute_query(unsigned char* sql_query, ssize_t block_offset, ssize_t nr_blocks, ssize_t block_size) 
+string ODBCHandler::execute_query(unsigned char* sql_query, ssize_t read_size, off_t byte_offset, off_t block_offset, ssize_t block_size) 
 {
     SQLHSTMT	    stmt;
     SQLRETURN	    ret; 
@@ -114,6 +116,9 @@ string ODBCHandler::execute_query(unsigned char* sql_query, ssize_t block_offset
     ssize_t	    partial_size = 0;
     bool	    start_bound = false;
     bool	    end_bound = false;
+    off_t	    descard_offset = 
+		    ( block_offset * block_size ) + byte_offset; 
+    off_t	    end_offset = descard_offset + read_size;
     
     SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
     ret = SQLPrepare(stmt, sql_query , SQL_NTS);
@@ -160,23 +165,21 @@ string ODBCHandler::execute_query(unsigned char* sql_query, ssize_t block_offset
 	    partial_size = shadow_result_str.str().size();
 	else
 	    partial_size = result_str.str().size();
-	if ( ( block_offset * block_size ) <= partial_size &&
+	if ( descard_offset < partial_size &&
 		!start_bound ) {
-	    const char* tmp_buff = shadow_result_str.str().c_str();
-	    const char* buff_boundary = tmp_buff + 
-				( block_offset * block_size );
+	    const string tmp_buff_str =  shadow_result_str.str();
+	    const char* tmp_buff_cstr = tmp_buff_str.c_str();
+	    const char* buff_boundary = tmp_buff_cstr + descard_offset; 
 	    result_str<<buff_boundary;
 	    start_bound = true;
 	}
-	else if (( nr_blocks * block_size ) <= partial_size) {
+	else if (end_offset <= partial_size) {
 	    ret_str = result_str.str();
-	    ret_str.erase( ret_str.begin() + 
-		    (nr_blocks * block_size), 
-		    ret_str.end());
+	    ret_str.erase( ret_str.begin() + read_size, ret_str.end());
 	    end_bound = true;
 	}
     }
-    if (( nr_blocks * block_size ) > partial_size) {
+    if (end_offset > partial_size) {
 	ret_str = result_str.str();
     }
     return ret_str;

@@ -97,15 +97,18 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	    ctx->complete = true;
 	}
 	else if (!ctx->complete) {
-		<<global_conf->blocking_factor<<endl;
-	    string results = odh.execute_query(ctx->sql_query, 
-				    ctx->block_id, 1, 
-				    global_conf->blocking_factor);
+	    size_t rem_len = global_conf->blocking_factor - ctx->data_offset;
+	    size_t read_len = (rem_len > len)?len:rem_len;
+	    ctx->complete  = (rem_len > len)?false:true;
+	    string results = odh.execute_query(ctx->sql_query, read_len,  
+						ctx->data_offset, 
+						ctx->block_id,  
+						global_conf->blocking_factor);
 	    const char* results_c_str = results.c_str();
 	    size_t results_len = results.length();
 	    memcpy(buf, results_c_str, results_len);
 	    ret = results_len;
-	    ctx->complete = true;
+	    ctx->data_offset += ret;
 	}
 	else if (ctx->complete) {
 	    ret = 0;
@@ -252,10 +255,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        }
        else {
 	   // set up for reading
-	   off_t offset = block_id;
-	   /*xxx.print();
-	   ctx->odh = xxx;
-	   ctx->odh.print();*/
+	   ctx->data_offset = 0;
        }
 
        ctx->num_read = 0;
