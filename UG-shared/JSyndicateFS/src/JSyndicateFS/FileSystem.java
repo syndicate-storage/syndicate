@@ -409,7 +409,7 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not read to too small buffer");
         if(size <= 0)
             throw new IllegalArgumentException("Can not read negative size data");
-        if(offset <= 0)
+        if(offset < 0)
             throw new IllegalArgumentException("Can not read negative offset");
         
         int ret = JSyndicateFS.jsyndicatefs_read(filehandle.getStatus().getPath().getPath(), buffer, size, offset, filehandle.getFileInfo());
