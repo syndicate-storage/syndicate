@@ -2,12 +2,16 @@
 #define _ODBC_HANDLER_H_
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <sql.h>
 #include <sqlext.h>
 #include <string.h>
 
 #include <sstream>
 #include <iostream>
+#include <vector>
+
+#include <block_index.h>
 
 //#include "libsyndicate.h"
 
@@ -33,7 +37,8 @@ class ODBCHandler
 	string  get_tables();
 	string  get_db_info();
 	string  extract_error(SQLHANDLE handle, SQLSMALLINT type);
-	//void operator=(ODBCHandler const&);
+	void	encode_results(stringstream& str_stream, char* column, 
+				bool row_bound);
 	void    print();
 };
 
