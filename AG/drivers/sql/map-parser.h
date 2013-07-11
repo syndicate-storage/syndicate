@@ -43,7 +43,7 @@ using namespace xercesc;
 #define PERM_ATTR   "perm"
 
 struct map_info {
-    char* query;
+    unsigned char* query;
     uint16_t file_perm;
 };
 

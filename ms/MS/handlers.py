@@ -128,7 +128,7 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
       
       # request for volume metadata
       volume_metadata = ms_pb2.ms_volume_metadata();
-      user_gateways = UserGateway.ListAll( volume.volume_id )
+      user_gateways = storage.list_user_gateways_by_volume( volume.volume_id )
       
       volume.protobuf( volume_metadata, user_gateways )
       

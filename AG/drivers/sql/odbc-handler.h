@@ -27,7 +27,9 @@ class ODBCHandler
 
     public:
 	static  ODBCHandler&  get_handle(unsigned char* con_str);
-	char*   execute_query(unsigned char* sql_query);
+	string  execute_query(unsigned char* sql_query, ssize_t read_size, 
+				off_t byte_offset, off_t block_offset, 
+				ssize_t block_size);
 	string  get_tables();
 	string  get_db_info();
 	string  extract_error(SQLHANDLE handle, SQLSMALLINT type);

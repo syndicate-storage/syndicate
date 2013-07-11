@@ -80,7 +80,10 @@ void MapParserHandler::endElement (
     if (!strncmp(tag, PAIR_TAG, strlen(PAIR_TAG))) {
 	if (current_key && current_val) {
 	    struct map_info mi;
-	    mi.query = current_val;
+	    size_t current_val_len = strlen(current_val);
+	    mi.query = (unsigned char*)malloc(current_val_len + 1);
+	    strncpy((char*)mi.query, current_val, current_val_len);
+	    mi.query[current_val_len] = 0;
 	    mi.file_perm = current_perm;
 	    (*xmlmap)[string(current_key)] =mi;
 	}
