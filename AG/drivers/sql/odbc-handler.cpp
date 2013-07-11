@@ -1,6 +1,4 @@
 #include "odbc-handler.h"
-#include <stdio.h>
-#include <stdlib.h>
 
 ODBCHandler::ODBCHandler()
 {
@@ -104,7 +102,8 @@ string ODBCHandler::get_tables()
     return tbl_list.str();
 }
 
-string ODBCHandler::execute_query(unsigned char* sql_query, ssize_t read_size, off_t byte_offset, off_t block_offset, ssize_t block_size) 
+string ODBCHandler::execute_query(unsigned char* sql_query, ssize_t read_size, 
+				    off_t byte_offset, off_t block_offset, ssize_t block_size) 
 {
     SQLHSTMT	    stmt;
     SQLRETURN	    ret; 
@@ -116,9 +115,11 @@ string ODBCHandler::execute_query(unsigned char* sql_query, ssize_t read_size, o
     ssize_t	    partial_size = 0;
     bool	    start_bound = false;
     bool	    end_bound = false;
-    off_t	    descard_offset = 
+    bool	    row_bound = false;
+    off_t	    discard_offset = 
 		    ( block_offset * block_size ) + byte_offset; 
-    off_t	    end_offset = descard_offset + read_size;
+    off_t	    end_offset = discard_offset + read_size;
+    off_t	    row_count = 0;
     
     SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
     ret = SQLPrepare(stmt, sql_query , SQL_NTS);
@@ -137,39 +138,33 @@ string ODBCHandler::execute_query(unsigned char* sql_query, ssize_t read_size, o
 	SQLUSMALLINT i;
 	if (end_bound)
 	    break;
+	row_count++;
 	for (i = 1; i <= nr_columns; i++) {
 	    SQLLEN indicator;
 	    char buf[512];
 	    ret = SQLGetData(stmt, i, SQL_C_CHAR,
 		    buf, sizeof(buf), &indicator);
+	    if (i == nr_columns)
+		row_bound = true;
 	    if (SQL_SUCCEEDED(ret)) {
 		if (indicator == SQL_NULL_DATA) 
 		    strcpy(buf, "NULL");
 		if (!start_bound)
-		    shadow_result_str<<buf;
+		    encode_results(shadow_result_str, buf, row_bound);
 		else
-		    result_str<<buf;
-		if ( i != nr_columns ) {
-		    if (!start_bound)
-			shadow_result_str<<",";
-		    else
-			result_str<<",";
-		}
+		    encode_results(result_str, buf, row_bound);
 	    }
 	}
-	if (!start_bound)
-	    shadow_result_str<<"\n";
-	else
-	    result_str<<"\n";
+	row_bound = false;
 	if (!start_bound)
 	    partial_size = shadow_result_str.str().size();
 	else
 	    partial_size = result_str.str().size();
-	if ( descard_offset < partial_size &&
+	if ( discard_offset < partial_size &&
 		!start_bound ) {
 	    const string tmp_buff_str =  shadow_result_str.str();
 	    const char* tmp_buff_cstr = tmp_buff_str.c_str();
-	    const char* buff_boundary = tmp_buff_cstr + descard_offset; 
+	    const char* buff_boundary = tmp_buff_cstr + discard_offset; 
 	    result_str<<buff_boundary;
 	    start_bound = true;
 	}
@@ -183,6 +178,16 @@ string ODBCHandler::execute_query(unsigned char* sql_query, ssize_t read_size, o
 	ret_str = result_str.str();
     }
     return ret_str;
+}
+
+void ODBCHandler::encode_results(stringstream& str_stream, char* column, bool row_bound)
+{
+    if (column)
+	str_stream<<column;
+    if (!row_bound)
+	str_stream<<",";
+    else
+	str_stream<<"\n";
 }
 
 string ODBCHandler::extract_error(SQLHANDLE handle, SQLSMALLINT type)
