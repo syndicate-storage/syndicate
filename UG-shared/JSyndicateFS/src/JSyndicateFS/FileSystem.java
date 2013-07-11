@@ -499,6 +499,17 @@ public class FileSystem implements Closeable {
         return filler.getEntryNames();
     }
     
+    public void delete(Path path) throws IOException {
+        if(path == null)
+            throw new IllegalArgumentException("Can not delete from null path");
+        
+        FileStatus status = getFileStatus(path);
+        if(status == null)
+            throw new IOException("Can not delete file from null file status");
+        
+        delete(status);
+    }
+            
     public void delete(FileStatus status) throws IOException {
         if(status == null)
             throw new IllegalArgumentException("Can not delete file from null status");
