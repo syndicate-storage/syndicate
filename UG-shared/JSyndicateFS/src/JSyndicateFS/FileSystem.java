@@ -18,6 +18,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Hashtable;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -232,7 +234,7 @@ public class FileSystem implements Closeable {
     /*
      * True if the path exists
      */
-    public boolean exists(Path path) throws IOException {
+    public boolean exists(Path path) {
         try {
             if(getFileStatus(path) == null)
                 return false;
@@ -240,16 +242,20 @@ public class FileSystem implements Closeable {
                 return true;
         } catch (FileNotFoundException e) {
             return false;
+        } catch (IOException ex) {
+            return false;
         }
     }
 
     /*
      * True if the path is a directory
      */
-    public boolean isDirectory(Path path) throws IOException {
+    public boolean isDirectory(Path path) {
         try {
             return getFileStatus(path).isDirectory();
-        } catch (FileNotFoundException e) {
+        } catch (FileNotFoundException ex) {
+            return false;
+        } catch (IOException ex) {
             return false;
         }
     }
@@ -257,10 +263,12 @@ public class FileSystem implements Closeable {
     /*
      * True if the path is a regular file
      */
-    public boolean isFile(Path path) throws IOException {
+    public boolean isFile(Path path) {
         try {
             return getFileStatus(path).isFile();
-        } catch (FileNotFoundException e) {
+        } catch (FileNotFoundException ex) {
+            return false;
+        } catch (IOException ex) {
             return false;
         }
     }
