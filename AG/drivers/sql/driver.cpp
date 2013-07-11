@@ -96,6 +96,17 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	    ret = info_len;
 	    ctx->complete = true;
 	}
+	else if (!ctx->complete) {
+		<<global_conf->blocking_factor<<endl;
+	    string results = odh.execute_query(ctx->sql_query, 
+				    ctx->block_id, 1, 
+				    global_conf->blocking_factor);
+	    const char* results_c_str = results.c_str();
+	    size_t results_len = results.length();
+	    memcpy(buf, results_c_str, results_len);
+	    ret = results_len;
+	    ctx->complete = true;
+	}
 	else if (ctx->complete) {
 	    ret = 0;
 	}
@@ -232,7 +243,6 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        replica_ctx->size = ctx->data_len;
    }
    else {
-
        struct map_info mi = (*FS2SQL)[string(file_path)];
        ctx->sql_query = mi.query; 
        if( !ctx->sql_query ) {
@@ -251,7 +261,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        ctx->num_read = 0;
        ctx->block_id = block_id;
        ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
-       // -1 switches libmicrohttpd to chunk transfer mode
+       // Negative size switches libmicrohttpd to chunk transfer mode
        replica_ctx->size = -1;
    }
 
@@ -349,10 +359,10 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	    }
 	    break;
 	case MD_ENTRY_FILE:
-	    ment->size = 0;//(ssize_t)pow(2, 32);
+	    ment->size = (ssize_t)pow(2, 32);
 	    ment->type = MD_ENTRY_FILE;
 	    ment->mode &= FILE_PERMISSIONS_MASK;
-	    ment->mode |= S_IFSTRM;
+	    ment->mode |= S_IFREG;
 	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
 		cout<<"ms client create "<<i<<endl;
 	    }

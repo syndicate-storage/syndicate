@@ -45,7 +45,7 @@ struct gateway_ctx {
     // file block info
     uint64_t block_id;
     // SQL query
-    char* sql_query;
+    unsigned char* sql_query;
     // ODBC handle
     ODBCHandler& odh; 
     // is this corresponds to .db_info file?
