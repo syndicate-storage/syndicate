@@ -13,7 +13,10 @@ import java.util.ArrayList;
  */
 public class DirFillerImpl extends JSFSFillDir {
     
+    private static final String[] SKIP_FILES = {".", ".."};
+    
     private ArrayList<String> entries = new ArrayList<String>();
+    
     
     DirFillerImpl() {
         
@@ -21,7 +24,16 @@ public class DirFillerImpl extends JSFSFillDir {
             
     @Override
     public void fill(String name, JSFSStat stbuf, long off) {
-        entries.add(name);
+        boolean skip = false;
+        for(String skip_file : SKIP_FILES) {
+            if(name.equals(skip_file)) {
+                skip = true;
+            }
+        }
+        
+        if(!skip) {
+            entries.add(name);
+        }
     }
 
     public String[] getEntryNames() {
