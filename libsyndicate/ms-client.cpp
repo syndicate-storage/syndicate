@@ -923,6 +923,7 @@ int ms_client_sync_update( struct ms_client* client, char const* path ) {
 
    // if we failed, then put the updates back and try again later
    if( rc != 0 ) {
+      errorf("ms_client_send_updates(%s) rc = %d\n", path, rc);
       ms_client_put_update( client->updates, client->deadlines, path_hash, &update, old_deadline );
    }
 
@@ -1181,8 +1182,23 @@ int ms_client_claim( struct ms_client* client, char const* path ) {
 
 // authenticate a remote UG
 uid_t ms_client_authenticate( struct ms_client* client, struct md_HTTP_connection_data* data, char* username, char* password ) {
-   // TODO
-   return MD_GUEST_UID;
+   uid_t uid = MD_INVALID_UID;
+
+   // there must be a password, otherwise this is a guest (and can only access world-readable stuff)
+   if( password == NULL )
+      return MD_GUEST_UID;
+   
+   char* password_hash = sha256_hash_printable( password, strlen(password) );
+   
+   ms_client_view_rlock( client );
+
+   for( int i = 0; client->UG_creds[i] != NULL; i++ ) {
+      
+   }
+   
+   ms_client_view_unlock( client );
+   
+   return uid;
 }
 
 
