@@ -11,7 +11,7 @@
 #include <iostream>
 #include <vector>
 
-#include <block_index.h>
+#include <block-index.h>
 
 //#include "libsyndicate.h"
 
