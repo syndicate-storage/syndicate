@@ -10,18 +10,27 @@ import JSyndicateFS.FSOutputStream;
 import JSyndicateFS.File;
 import JSyndicateFS.FileSystem;
 import JSyndicateFS.Path;
+import static JSyndicateFS.test.testFileIO.createNewFile;
+import static JSyndicateFS.test.testFileIO.initFS;
+import static JSyndicateFS.test.testFileIO.listRootFiles;
+import static JSyndicateFS.test.testFileIO.uninitFS;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  *
  * @author iychoi
  */
-public class testFileIO {
-    
+public class testBigFileIO {
     private static FileSystem filesystem;
+    private static final long KILOBYTE = 1024;
+    private static final long MEGABYTE = 1024*1024;
     
     public static void initFS() throws IllegalAccessException, URISyntaxException, InstantiationException {
         Configuration conf = new Configuration();
@@ -42,7 +51,7 @@ public class testFileIO {
     }
     
     public static void createNewFile() throws IOException {
-        Path path = new Path("testFileIO.txt");
+        Path path = new Path("testBigFileIO.txt");
         
         System.out.println("start file check");
         if(filesystem.exists(path)) {
@@ -58,21 +67,58 @@ public class testFileIO {
             if(file.isFile() && file.exist()) {
                 System.out.println("file created");
                 
-                String msg = "hello world!";
-                FSOutputStream out = new FSOutputStream(file);
-                out.write(msg.getBytes());
-                out.close();
-                System.out.println("msg written");
+                long size = MEGABYTE * 64;
                 
-                FSInputStream in = new FSInputStream(file);
+                FSOutputStream outSource = new FSOutputStream(file);
+                BufferedOutputStream out = new BufferedOutputStream(outSource, (int)MEGABYTE);
                 
-                byte[] buffer = new byte[256];
-                int read = in.read(buffer);
-                if(read > 0) {
-                    String readmsg = new String(buffer, 0, read);
-                    System.out.println("msg read : " + readmsg);
+                byte[] wbuff = new byte[1];
+                
+                byte data = 0;
+                for(long i=0;i<size;i++) {
+                    // fill buffer
+                    wbuff[0] = data;
+                    out.write(wbuff);
+                    
+                    data++;
                 }
-                in.close();
+                
+                out.close();
+                
+                if(file.getSize() != size) {
+                    System.out.println("msg written failed");
+                } else {
+                    System.out.println("msg written");
+                    
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ex) {}
+
+                    FSInputStream inSource = new FSInputStream(file);
+                    BufferedInputStream in = new BufferedInputStream(inSource, (int)MEGABYTE);
+                    
+                    data = 0;
+                    byte[] rbuff = new byte[1];
+                    boolean success = true;
+
+                    for(long i=0;i<size;i++) {
+                        int read = in.read(rbuff);
+                        if(read > 0) {
+                            if(data != rbuff[0]) {
+                                System.out.println("data not matching");
+                                success = false;
+                                break;
+                            }
+                        }
+
+                        data++;
+                    }
+                    in.close();
+                    
+                    if(success) {
+                        System.out.println("msg read success");
+                    }
+                }
                 
                 System.out.println("filename : " + file.getName() + ", size : " + file.getSize() + ", blocks : " + file.getBlocks() + ", blockSize : " + file.getBlockSize());
                 

@@ -117,22 +117,22 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
 
    // handle 302, 400, and 404
    rc = http_handle_redirect( resp, state, fs_path, file_version, block_id, block_version, &manifest_timestamp, &sb, staging );
-   if( rc == 0 ) {
-      // redirected!
+   if( rc <= 0 ) {
+      // handled!
       free( fs_path );
       return resp;
    }
-   if( rc < 0 ) {
-      // error!
-      free( fs_path );
-      return resp;
-   }
+   
    if( rc == HTTP_REDIRECT_REMOTE ) {
-      // requested object is not here
+      // requested object is not here.
+      // will not redirect; that can lead to loops.
       md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
       free( fs_path );
       return resp;
    }
+
+   // check authorization
+   //rc = fs_entry_access( 
 
    // if this is a request for a directory, then bail
    if( S_ISDIR( sb.st_mode ) ) {

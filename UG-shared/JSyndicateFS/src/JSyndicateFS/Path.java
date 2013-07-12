@@ -169,6 +169,8 @@ public class Path implements Comparable {
         
         if (lastSlash == -1) {
             return new Path(createPathUri(this.uri.getScheme(), this.uri.getAuthority(), "."));
+        } else if (lastSlash == 0) {
+            return new Path(createPathUri(this.uri.getScheme(), this.uri.getAuthority(), "/"));
         } else {
             String parent = path.substring(0, lastSlash);
             return new Path(createPathUri(this.uri.getScheme(), this.uri.getAuthority(), parent));

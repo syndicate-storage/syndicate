@@ -30,6 +30,8 @@ public class FileSystem implements Closeable {
     public static final Log LOG = LogFactory.getLog(FileSystem.class);
     
     private static final String FS_ROOT_PATH = "file:///";
+    private static final int DEFAULT_NEW_FILE_PERMISSION = 33204;
+    private static final int DEFAULT_NEW_DIR_PERMISSION = 509;
     
     private static FileSystem fsInstance;
     
@@ -79,11 +81,8 @@ public class FileSystem implements Closeable {
         }
         
         this.conf = conf;
-        
         this.workingDir = getRootPath();
-        
         this.metadataCache = new TimeoutCache<Path, FileStatus>(conf.getMaxMetadataCacheSize(), conf.getCacheTimeoutSecond());
-        
         this.closed = false;
     }
     
@@ -109,17 +108,25 @@ public class FileSystem implements Closeable {
      * Set the working directory of the filesystem
      */
     public void setWorkingDirectory(Path path) {
-        if(path == null)
+        if(path == null) {
             this.workingDir = new Path(FS_ROOT_PATH);
-        else
-            this.workingDir = path;
+        } else {
+            if(path.isAbsolute()) {
+                this.workingDir = path;
+            }
+        }
     }
     
     private void closeAllOpenFiles() throws PendingExceptions {
         PendingExceptions pe = new PendingExceptions();
         
         Collection<FileHandle> values = this.openFileHandles.values();
-        for(FileHandle handle : values) {
+        
+        // This is necessary in order to avoid accessing value collection while openFileHandles is modifying
+        FileHandle[] tempHandles = new FileHandle[values.size()];
+        tempHandles = values.toArray(tempHandles);
+        
+        for(FileHandle handle : tempHandles) {
             try {
                 closeFileHandle(handle);
             } catch(IOException e) {
@@ -202,6 +209,14 @@ public class FileSystem implements Closeable {
             return cachedFileStatus;
         }
         
+        // check parent dir's FileStatus recursively
+        if(absolute.getParent() != null) {
+            FileStatus parentStatus = getFileStatus(absolute.getParent());
+            if(parentStatus == null) {
+                return null;
+            }
+        }
+        
         JSFSStat statbuf = new JSFSStat();
         int ret = JSyndicateFSJNI.JSyndicateFS.jsyndicatefs_getattr(absolute.getPath(), statbuf);
         if(ret != 0) {
@@ -230,7 +245,7 @@ public class FileSystem implements Closeable {
     /*
      * True if the path exists
      */
-    public boolean exists(Path path) throws IOException {
+    public boolean exists(Path path) {
         try {
             if(getFileStatus(path) == null)
                 return false;
@@ -238,16 +253,20 @@ public class FileSystem implements Closeable {
                 return true;
         } catch (FileNotFoundException e) {
             return false;
+        } catch (IOException ex) {
+            return false;
         }
     }
 
     /*
      * True if the path is a directory
      */
-    public boolean isDirectory(Path path) throws IOException {
+    public boolean isDirectory(Path path) {
         try {
             return getFileStatus(path).isDirectory();
-        } catch (FileNotFoundException e) {
+        } catch (FileNotFoundException ex) {
+            return false;
+        } catch (IOException ex) {
             return false;
         }
     }
@@ -255,10 +274,12 @@ public class FileSystem implements Closeable {
     /*
      * True if the path is a regular file
      */
-    public boolean isFile(Path path) throws IOException {
+    public boolean isFile(Path path) {
         try {
             return getFileStatus(path).isFile();
-        } catch (FileNotFoundException e) {
+        } catch (FileNotFoundException ex) {
+            return false;
+        } catch (IOException ex) {
             return false;
         }
     }
@@ -355,11 +376,11 @@ public class FileSystem implements Closeable {
             }
         }
         
-        if(this.openFileHandles.containsKey(filehandle.getHandleID()))
-            this.openFileHandles.remove(filehandle.getHandleID());
-        
         // notify object is closed
         filehandle.notifyClose();
+        
+        if(this.openFileHandles.containsKey(filehandle.getHandleID()))
+            this.openFileHandles.remove(filehandle.getHandleID());
     }
 
     /*
@@ -407,7 +428,7 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not read to too small buffer");
         if(size <= 0)
             throw new IllegalArgumentException("Can not read negative size data");
-        if(offset <= 0)
+        if(offset < 0)
             throw new IllegalArgumentException("Can not read negative offset");
         
         int ret = JSyndicateFS.jsyndicatefs_read(filehandle.getStatus().getPath().getPath(), buffer, size, offset, filehandle.getFileInfo());
@@ -434,7 +455,7 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not write too small buffer");
         if(size <= 0)
             throw new IllegalArgumentException("Can not write negative size data");
-        if(offset <= 0)
+        if(offset < 0)
             throw new IllegalArgumentException("Can not write negative offset");
         
         int ret = JSyndicateFS.jsyndicatefs_write(filehandle.getStatus().getPath().getPath(), buffer, size, offset, filehandle.getFileInfo());
@@ -497,6 +518,17 @@ public class FileSystem implements Closeable {
         return filler.getEntryNames();
     }
     
+    public void delete(Path path) throws IOException {
+        if(path == null)
+            throw new IllegalArgumentException("Can not delete from null path");
+        
+        FileStatus status = getFileStatus(path);
+        if(status == null)
+            throw new IOException("Can not delete file from null file status");
+        
+        delete(status);
+    }
+            
     public void delete(FileStatus status) throws IOException {
         if(status == null)
             throw new IllegalArgumentException("Can not delete file from null status");
@@ -531,7 +563,18 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not rename file to null new name");
         
         if(status.isFile() || status.isDirectory()) {
-            int ret = JSyndicateFS.jsyndicatefs_rename(status.getPath().getPath(), newpath.getPath());
+            
+            Path absNewPath = getAbsolutePath(newpath);
+            
+            // check parent dir's FileStatus recursively
+            if(absNewPath.getParent() != null) {
+                FileStatus parentStatus = getFileStatus(absNewPath.getParent());
+                if(parentStatus == null) {
+                    throw new IOException("Can not move the file to non-exist directory");
+                }
+            }
+            
+            int ret = JSyndicateFS.jsyndicatefs_rename(status.getPath().getPath(), absNewPath.getPath());
             if(ret < 0) {
                 String errmsg = ErrorUtils.generateErrorMessage(ret);
                 throw new IOException("jsyndicatefs_rename failed : " + errmsg);
@@ -545,9 +588,19 @@ public class FileSystem implements Closeable {
 
     public void mkdir(Path path) throws IOException {
         if(path == null)
-            throw new IllegalArgumentException("Can not mkdir from null path");
+            throw new IllegalArgumentException("Can not create a new directory from null path");
         
-        int ret = JSyndicateFS.jsyndicatefs_mkdir(path.getPath(), 0x777);
+        Path absPath = getAbsolutePath(path);
+        
+        // check parent dir's FileStatus recursively
+        if(absPath.getParent() != null) {
+            FileStatus parentStatus = getFileStatus(absPath.getParent());
+            if(parentStatus == null) {
+                throw new IOException("Can not create a new directory without existing parent directory");
+            }
+        }
+        
+        int ret = JSyndicateFS.jsyndicatefs_mkdir(absPath.getPath(), DEFAULT_NEW_DIR_PERMISSION);
         if(ret < 0) {
             String errmsg = ErrorUtils.generateErrorMessage(ret);
             throw new IOException("jsyndicatefs_mkdir failed : " + errmsg);
@@ -556,10 +609,12 @@ public class FileSystem implements Closeable {
 
     public void mkdirs(Path path) throws IOException {
         if(path == null)
-            throw new IllegalArgumentException("Can not mkdir from null path");
-     
+            throw new IllegalArgumentException("Can not create a new directory from null path");
+        
+        Path absPath = getAbsolutePath(path);
+        
         // recursive call
-        Path parent = path.getParent();
+        Path parent = absPath.getParent();
         if(parent != null) {
             if(!exists(parent)) {
                 // make
@@ -567,7 +622,7 @@ public class FileSystem implements Closeable {
             }
         }
         
-        int ret = JSyndicateFS.jsyndicatefs_mkdir(path.getPath(), 0x777);
+        int ret = JSyndicateFS.jsyndicatefs_mkdir(absPath.getPath(), DEFAULT_NEW_DIR_PERMISSION);
         if(ret < 0) {
             String errmsg = ErrorUtils.generateErrorMessage(ret);
             throw new IOException("jsyndicatefs_mkdir failed : " + errmsg);
@@ -575,7 +630,18 @@ public class FileSystem implements Closeable {
     }
 
     public boolean createNewFile(Path path) throws IOException {
+        if(path == null)
+            throw new IllegalArgumentException("Can create new file from null path");
+        
         Path absPath = getAbsolutePath(path);
+        
+        // check parent dir's FileStatus recursively
+        if(absPath.getParent() != null) {
+            FileStatus parentStatus = getFileStatus(absPath.getParent());
+            if(parentStatus == null) {
+                throw new IOException("Can not create a file without existing parent directory");
+            }
+        }
         
         FileStatus status = null;
         try {
@@ -584,7 +650,7 @@ public class FileSystem implements Closeable {
         
         if(status == null) {
             JSFSFileInfo fi = new JSFSFileInfo();
-            int ret = JSyndicateFS.jsyndicatefs_create(absPath.getPath(), 0x777, fi);
+            int ret = JSyndicateFS.jsyndicatefs_create(absPath.getPath(), DEFAULT_NEW_FILE_PERMISSION, fi);
             if(ret < 0) {
                 String errmsg = ErrorUtils.generateErrorMessage(ret);
                 throw new IOException("jsyndicatefs_create failed : " + errmsg);
