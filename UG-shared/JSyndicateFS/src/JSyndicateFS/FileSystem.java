@@ -121,7 +121,12 @@ public class FileSystem implements Closeable {
         PendingExceptions pe = new PendingExceptions();
         
         Collection<FileHandle> values = this.openFileHandles.values();
-        for(FileHandle handle : values) {
+        
+        // This is necessary in order to avoid accessing value collection while openFileHandles is modifying
+        FileHandle[] tempHandles = new FileHandle[values.size()];
+        tempHandles = values.toArray(tempHandles);
+        
+        for(FileHandle handle : tempHandles) {
             try {
                 closeFileHandle(handle);
             } catch(IOException e) {
@@ -363,11 +368,11 @@ public class FileSystem implements Closeable {
             }
         }
         
-        if(this.openFileHandles.containsKey(filehandle.getHandleID()))
-            this.openFileHandles.remove(filehandle.getHandleID());
-        
         // notify object is closed
         filehandle.notifyClose();
+        
+        if(this.openFileHandles.containsKey(filehandle.getHandleID()))
+            this.openFileHandles.remove(filehandle.getHandleID());
     }
 
     /*
