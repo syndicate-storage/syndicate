@@ -214,6 +214,10 @@ public class FileSystem implements Closeable {
             FileStatus parentStatus = getFileStatus(absolute.getParent());
             if(parentStatus == null) {
                 return null;
+            } 
+            
+            if(!parentStatus.isDirectory()) {
+                throw new FileNotFoundException("Can not get file status of parent directory");
             }
         }
         
@@ -572,6 +576,10 @@ public class FileSystem implements Closeable {
                 if(parentStatus == null) {
                     throw new IOException("Can not move the file to non-exist directory");
                 }
+                
+                if(!parentStatus.isDirectory()) {
+                    throw new IOException("Can not get file status of parent directory");
+                }
             }
             
             int ret = JSyndicateFS.jsyndicatefs_rename(status.getPath().getPath(), absNewPath.getPath());
@@ -597,6 +605,10 @@ public class FileSystem implements Closeable {
             FileStatus parentStatus = getFileStatus(absPath.getParent());
             if(parentStatus == null) {
                 throw new IOException("Can not create a new directory without existing parent directory");
+            }
+            
+            if(!parentStatus.isDirectory()) {
+                throw new IOException("Can not get file status of parent directory");
             }
         }
         
@@ -640,6 +652,10 @@ public class FileSystem implements Closeable {
             FileStatus parentStatus = getFileStatus(absPath.getParent());
             if(parentStatus == null) {
                 throw new IOException("Can not create a file without existing parent directory");
+            }
+            
+            if(!parentStatus.isDirectory()) {
+                throw new IOException("Can not get file status of parent directory");
             }
         }
         
