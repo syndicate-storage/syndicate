@@ -5,6 +5,7 @@
 
 #include "driver.h"
 #include "libgateway.h"
+#include "fs/fs_entry.h"
 
 // server config 
 struct md_syndicate_conf CONF;
@@ -29,6 +30,47 @@ ODBCHandler& odh = ODBCHandler::get_handle((unsigned char*)"DSN=sqlite");
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
     errorf("%s", "INFO: gateway_generate_manifest\n"); 
+    // populate a manifest
+    Serialization::ManifestMsg* mmsg = new Serialization::ManifestMsg();
+    mmsg->set_size( ent->size );
+    mmsg->set_file_version( 1 );
+    mmsg->set_mtime_sec( ent->mtime_sec );
+    mmsg->set_mtime_nsec( 0 );
+    mmsg->set_manifest_mtime_sec( ent->mtime_sec );
+    mmsg->set_manifest_mtime_nsec( 0 );
+
+    uint64_t num_blocks = ent->size / global_conf->blocking_factor;
+    if( ent->size % global_conf->blocking_factor != 0 )
+	num_blocks++;
+
+    Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
+    bbmsg->set_start_id( 0 );
+    bbmsg->set_end_id( num_blocks );
+    stringstream strstrm;
+    strstrm << ent->url << ent->path;
+    bbmsg->set_file_url( strstrm.str() );
+
+    for( uint64_t i = 0; i < num_blocks; i++ ) {
+	bbmsg->add_block_versions( 0 );
+    }
+
+    // serialize
+    string mmsg_str;
+    bool src = mmsg->SerializeToString( &mmsg_str );
+    if( !src ) {
+	// failed
+	errorf( "%s", "failed to serialize" );
+	delete mmsg;
+	return -EINVAL;
+    }
+
+    ctx->data_len = mmsg_str.size();
+    ctx->data = CALLOC_LIST( char, mmsg_str.size() );
+    replica_ctx->last_mod = ent->mtime_sec;
+    memcpy( ctx->data, mmsg_str.data(), mmsg_str.size() );
+
+    delete mmsg;
+
     return 0;
 }
 
@@ -54,8 +96,23 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	    ret = info_len;
 	    ctx->complete = true;
 	}
-	else if (ctx->complete)
+	else if (!ctx->complete) {
+	    size_t rem_len = global_conf->blocking_factor - ctx->data_offset;
+	    size_t read_len = (rem_len > len)?len:rem_len;
+	    ctx->complete  = (rem_len > len)?false:true;
+	    string results = odh.execute_query(ctx->sql_query, read_len,  
+						ctx->data_offset, 
+						ctx->block_id,  
+						global_conf->blocking_factor);
+	    const char* results_c_str = results.c_str();
+	    size_t results_len = results.length();
+	    memcpy(buf, results_c_str, results_len);
+	    ret = results_len;
+	    ctx->data_offset += ret;
+	}
+	else if (ctx->complete) {
 	    ret = 0;
+	}
     }
     else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
 	// read from RAM
@@ -189,7 +246,6 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        replica_ctx->size = ctx->data_len;
    }
    else {
-
        struct map_info mi = (*FS2SQL)[string(file_path)];
        ctx->sql_query = mi.query; 
        if( !ctx->sql_query ) {
@@ -199,16 +255,13 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        }
        else {
 	   // set up for reading
-	   off_t offset = block_id;
-	   /*xxx.print();
-	   ctx->odh = xxx;
-	   ctx->odh.print();*/
+	   ctx->data_offset = 0;
        }
 
        ctx->num_read = 0;
        ctx->block_id = block_id;
        ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
-       // -1 switches libmicrohttpd to chunk transfer mode
+       // Negative size switches libmicrohttpd to chunk transfer mode
        replica_ctx->size = -1;
    }
 
@@ -306,10 +359,10 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	    }
 	    break;
 	case MD_ENTRY_FILE:
-	    ment->size = 0;
+	    ment->size = (ssize_t)pow(2, 32);
 	    ment->type = MD_ENTRY_FILE;
 	    ment->mode &= FILE_PERMISSIONS_MASK;
-	    ment->mode |= S_IFIFO;
+	    ment->mode |= S_IFREG;
 	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
 		cout<<"ms client create "<<i<<endl;
 	    }

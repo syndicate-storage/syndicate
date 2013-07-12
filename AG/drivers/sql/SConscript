@@ -12,6 +12,7 @@ source_files = """
 # add source file search paths here
 CPPPATH = """
    #libsyndicate/
+   #UG
    #build/out/protobufs
 """
 
@@ -25,6 +26,7 @@ LIBS = """
    syndicate
    xerces-c
    odbc
+   m
 """
 
 # add additional CPPFLAGS here

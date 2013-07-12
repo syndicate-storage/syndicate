@@ -10,12 +10,12 @@
 #include "libsyndicate.h"
 #include "map-parser.h"
 #include "odbc-handler.h"
-#include <sstream>
 
 #include <sys/types.h>
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
+#include <math.h>
 
 using namespace std;
 
@@ -40,12 +40,12 @@ struct gateway_ctx {
     // data buffer (manifest or remote block data)
     char* data;
     size_t data_len;
-    size_t data_offset;
+    off_t data_offset;
     off_t num_read;
     // file block info
     uint64_t block_id;
     // SQL query
-    char* sql_query;
+    unsigned char* sql_query;
     // ODBC handle
     ODBCHandler& odh; 
     // is this corresponds to .db_info file?

@@ -34,15 +34,11 @@ ODBCHandler&  ODBCHandler::get_handle(unsigned char* con_str)
 
 string ODBCHandler::get_db_info()
 {
-    SQLHSTMT	    stmt;
-    SQLRETURN	    ret; 
-    SQLSMALLINT	    nr_columns;
     stringstream    info_stream;
     string	    ODBC_error; 
     SQLCHAR	    dbms_name[256], dbms_ver[256];
     SQLUINTEGER	    getdata_support;
     SQLUSMALLINT    max_concur_act;
-    SQLSMALLINT	    string_len;
 
     SQLGetInfo(dbc, SQL_DBMS_NAME, (SQLPOINTER)dbms_name,
 	    sizeof(dbms_name), NULL);
@@ -106,13 +102,24 @@ string ODBCHandler::get_tables()
     return tbl_list.str();
 }
 
-char* ODBCHandler::execute_query(unsigned char* sql_query) 
+string ODBCHandler::execute_query(unsigned char* sql_query, ssize_t read_size, 
+				    off_t byte_offset, off_t block_offset, ssize_t block_size) 
 {
-    SQLHSTMT stmt;
-    SQLRETURN ret; 
-    SQLSMALLINT nr_columns;
-    int nr_rows = 0;
-    string ODBC_error; 
+    SQLHSTMT	    stmt;
+    SQLRETURN	    ret; 
+    SQLSMALLINT	    nr_columns;
+    string	    ODBC_error; 
+    stringstream    result_str;
+    stringstream    shadow_result_str;
+    string	    ret_str;
+    ssize_t	    partial_size = 0;
+    bool	    start_bound = false;
+    bool	    end_bound = false;
+    bool	    row_bound = false;
+    off_t	    discard_offset = 
+		    ( block_offset * block_size ) + byte_offset; 
+    off_t	    end_offset = discard_offset + read_size;
+    off_t	    row_count = 0;
     
     SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
     ret = SQLPrepare(stmt, sql_query , SQL_NTS);
@@ -129,22 +136,58 @@ char* ODBCHandler::execute_query(unsigned char* sql_query)
     SQLNumResultCols(stmt, &nr_columns);
     while (SQL_SUCCEEDED(ret = SQLFetch(stmt))) {
 	SQLUSMALLINT i;
-	cout<<"Row "<<nr_rows++<<endl;;
-	/* Loop through the nr_columns */
+	if (end_bound)
+	    break;
+	row_count++;
 	for (i = 1; i <= nr_columns; i++) {
 	    SQLLEN indicator;
 	    char buf[512];
-	    /* retrieve column data as a string */
 	    ret = SQLGetData(stmt, i, SQL_C_CHAR,
 		    buf, sizeof(buf), &indicator);
+	    if (i == nr_columns)
+		row_bound = true;
 	    if (SQL_SUCCEEDED(ret)) {
-		/* Handle null nr_columns */
-		if (indicator == SQL_NULL_DATA) strcpy(buf, "NULL");
-		cout<<"  Column "<<i<<":"<<buf<<endl;
+		if (indicator == SQL_NULL_DATA) 
+		    strcpy(buf, "NULL");
+		if (!start_bound)
+		    encode_results(shadow_result_str, buf, row_bound);
+		else
+		    encode_results(result_str, buf, row_bound);
 	    }
 	}
+	row_bound = false;
+	if (!start_bound)
+	    partial_size = shadow_result_str.str().size();
+	else
+	    partial_size = result_str.str().size();
+	if ( discard_offset < partial_size &&
+		!start_bound ) {
+	    const string tmp_buff_str =  shadow_result_str.str();
+	    const char* tmp_buff_cstr = tmp_buff_str.c_str();
+	    const char* buff_boundary = tmp_buff_cstr + discard_offset; 
+	    result_str<<buff_boundary;
+	    start_bound = true;
+	}
+	else if (end_offset <= partial_size) {
+	    ret_str = result_str.str();
+	    ret_str.erase( ret_str.begin() + read_size, ret_str.end());
+	    end_bound = true;
+	}
     }
-    return NULL;
+    if (end_offset > partial_size) {
+	ret_str = result_str.str();
+    }
+    return ret_str;
+}
+
+void ODBCHandler::encode_results(stringstream& str_stream, char* column, bool row_bound)
+{
+    if (column)
+	str_stream<<column;
+    if (!row_bound)
+	str_stream<<",";
+    else
+	str_stream<<"\n";
 }
 
 string ODBCHandler::extract_error(SQLHANDLE handle, SQLSMALLINT type)
