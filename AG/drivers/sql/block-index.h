@@ -3,6 +3,7 @@
 
 #include <sys/types.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #include <map>
 #include <vector>
@@ -23,10 +24,13 @@ typedef struct {
 
 
 typedef map<string, vector<block_index_entry*>*> BlockMap;
+typedef map<string, pthread_mutex_t> MutexMap;
 
 class BlockIndex {
     private:
-	BlockMap blk_map;
+	BlockMap	    blk_map;
+	MutexMap	    mutex_map;
+	pthread_mutex_t	    *map_mutex;
     public:
 	BlockIndex();
 	block_index_entry* alloc_block_index_entry();

@@ -3,7 +3,8 @@
 
 BlockIndex::BlockIndex()
 {
-    //Initialize file locks here...
+    map_mutex = new pthread_mutex_t;
+    pthread_mutex_init(map_mutex, NULL);
 }
 
 block_index_entry* BlockIndex::alloc_block_index_entry()
@@ -18,10 +19,14 @@ block_index_entry* BlockIndex::alloc_block_index_entry()
 
 void BlockIndex::update_block_index(string file_name, off_t block_id, block_index_entry* blkie)
 {
-    vector<block_index_entry*> *blk_list = NULL;
+    vector<block_index_entry*> *blk_list = NULL, *old_blk_list = NULL;
     block_index_entry *old_entry = NULL;
+    pthread_mutex_t blk_index_mutex = PTHREAD_MUTEX_INITIALIZER;
     BlockMap::iterator itr = blk_map.find(file_name);
-    if (itr != blk_map.end()) {
+    MutexMap::iterator mitr = mutex_map.find(file_name);
+    if (itr != blk_map.end() && mitr != mutex_map.end()) {
+	//Acquire lock for this file's block index
+	pthread_mutex_lock(&(mitr->second));
 	blk_list = itr->second;
 	if((old_entry = (*blk_list)[block_id]) != NULL) {
 	    (*blk_list)[block_id] = blkie;
@@ -31,13 +36,29 @@ void BlockIndex::update_block_index(string file_name, off_t block_id, block_inde
 	    blk_list->resize(blk_list->size() + 1);
 	    (*blk_list)[block_id] = blkie;
 	}
+	//Release block index lock
+	pthread_mutex_unlock(&(mitr->second));
     }
     else {
 	blk_list = new vector<block_index_entry*>();
 	blk_list->reserve(MAX_INDEX_SIZE);
 	blk_list->resize(1);
 	(*blk_list)[block_id] = blkie;
-	blk_map[file_name] = blk_list;
+	//Acquire locks for maps...
+	pthread_mutex_lock(map_mutex);
+	//Check whether some one has already updated 
+	//blk_map and mutex_map... if so replace them.
+	if ((old_blk_list = blk_map[file_name]) != NULL) {
+	    blk_map[file_name] = blk_list;
+	    delete old_blk_list;
+	    mutex_map[file_name] = blk_index_mutex;
+	}
+	else {
+	    blk_map[file_name] = blk_list;
+	    mutex_map[file_name] = blk_index_mutex;
+	}
+	//Release locks for maps...
+	pthread_mutex_unlock(map_mutex);
     }
 }
 
@@ -49,7 +70,10 @@ const block_index_entry* BlockIndex::get_block(string file_name, off_t block_id)
     BlockMap::iterator itr = blk_map.find(file_name);
     if (itr != blk_map.end()) {
 	blk_list = itr->second;
-	return (*blk_list)[block_id];
+	if (blk_list)
+	    return (*blk_list)[block_id];
+	else
+	    return NULL;
     }
     else 
 	return NULL;
@@ -61,8 +85,11 @@ const block_index_entry* BlockIndex::get_last_block(string file_name)
     BlockMap::iterator itr = blk_map.find(file_name);
     if (itr != blk_map.end()) {
 	blk_list = itr->second;
-	block_index_entry *blkie =  blk_list->back();
-	return blkie;
+	if (blk_list) {
+	    block_index_entry *blkie =  blk_list->back();
+	    return blkie;
+	}
+	return NULL;
     }
     else 
 	return NULL;
