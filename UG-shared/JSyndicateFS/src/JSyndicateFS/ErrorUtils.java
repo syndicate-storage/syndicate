@@ -203,7 +203,7 @@ public class ErrorUtils {
                 constructor = detail.getExceptionClass().getConstructor(String.class);
                 return (Exception)constructor.newInstance(errmsg);
             } catch (Exception ex) {
-                LOG.error(ex);
+                LOG.error("Can not generate Exception from errno : " + errno);
             }
             
             return null;
