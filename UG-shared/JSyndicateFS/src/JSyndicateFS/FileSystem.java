@@ -209,6 +209,14 @@ public class FileSystem implements Closeable {
             return cachedFileStatus;
         }
         
+        // check parent dir's FileStatus recursively
+        if(absolute.getParent() != null) {
+            FileStatus parentStatus = getFileStatus(absolute.getParent());
+            if(parentStatus == null) {
+                return null;
+            }
+        }
+        
         JSFSStat statbuf = new JSFSStat();
         int ret = JSyndicateFSJNI.JSyndicateFS.jsyndicatefs_getattr(absolute.getPath(), statbuf);
         if(ret != 0) {
@@ -558,6 +566,14 @@ public class FileSystem implements Closeable {
             
             Path absNewPath = getAbsolutePath(newpath);
             
+            // check parent dir's FileStatus recursively
+            if(absNewPath.getParent() != null) {
+                FileStatus parentStatus = getFileStatus(absNewPath.getParent());
+                if(parentStatus == null) {
+                    throw new IOException("Can not move the file to non-exist directory");
+                }
+            }
+            
             int ret = JSyndicateFS.jsyndicatefs_rename(status.getPath().getPath(), absNewPath.getPath());
             if(ret < 0) {
                 String errmsg = ErrorUtils.generateErrorMessage(ret);
@@ -575,6 +591,14 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not create a new directory from null path");
         
         Path absPath = getAbsolutePath(path);
+        
+        // check parent dir's FileStatus recursively
+        if(absPath.getParent() != null) {
+            FileStatus parentStatus = getFileStatus(absPath.getParent());
+            if(parentStatus == null) {
+                throw new IOException("Can not create a new directory without existing parent directory");
+            }
+        }
         
         int ret = JSyndicateFS.jsyndicatefs_mkdir(absPath.getPath(), DEFAULT_NEW_DIR_PERMISSION);
         if(ret < 0) {
@@ -610,6 +634,14 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can create new file from null path");
         
         Path absPath = getAbsolutePath(path);
+        
+        // check parent dir's FileStatus recursively
+        if(absPath.getParent() != null) {
+            FileStatus parentStatus = getFileStatus(absPath.getParent());
+            if(parentStatus == null) {
+                throw new IOException("Can not create a file without existing parent directory");
+            }
+        }
         
         FileStatus status = null;
         try {
