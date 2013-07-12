@@ -81,11 +81,8 @@ public class FileSystem implements Closeable {
         }
         
         this.conf = conf;
-        
         this.workingDir = getRootPath();
-        
         this.metadataCache = new TimeoutCache<Path, FileStatus>(conf.getMaxMetadataCacheSize(), conf.getCacheTimeoutSecond());
-        
         this.closed = false;
     }
     
@@ -111,10 +108,13 @@ public class FileSystem implements Closeable {
      * Set the working directory of the filesystem
      */
     public void setWorkingDirectory(Path path) {
-        if(path == null)
+        if(path == null) {
             this.workingDir = new Path(FS_ROOT_PATH);
-        else
-            this.workingDir = path;
+        } else {
+            if(path.isAbsolute()) {
+                this.workingDir = path;
+            }
+        }
     }
     
     private void closeAllOpenFiles() throws PendingExceptions {
@@ -550,7 +550,10 @@ public class FileSystem implements Closeable {
             throw new IllegalArgumentException("Can not rename file to null new name");
         
         if(status.isFile() || status.isDirectory()) {
-            int ret = JSyndicateFS.jsyndicatefs_rename(status.getPath().getPath(), newpath.getPath());
+            
+            Path absNewPath = getAbsolutePath(newpath);
+            
+            int ret = JSyndicateFS.jsyndicatefs_rename(status.getPath().getPath(), absNewPath.getPath());
             if(ret < 0) {
                 String errmsg = ErrorUtils.generateErrorMessage(ret);
                 throw new IOException("jsyndicatefs_rename failed : " + errmsg);
@@ -564,9 +567,11 @@ public class FileSystem implements Closeable {
 
     public void mkdir(Path path) throws IOException {
         if(path == null)
-            throw new IllegalArgumentException("Can not mkdir from null path");
+            throw new IllegalArgumentException("Can not create a new directory from null path");
         
-        int ret = JSyndicateFS.jsyndicatefs_mkdir(path.getPath(), DEFAULT_NEW_DIR_PERMISSION);
+        Path absPath = getAbsolutePath(path);
+        
+        int ret = JSyndicateFS.jsyndicatefs_mkdir(absPath.getPath(), DEFAULT_NEW_DIR_PERMISSION);
         if(ret < 0) {
             String errmsg = ErrorUtils.generateErrorMessage(ret);
             throw new IOException("jsyndicatefs_mkdir failed : " + errmsg);
@@ -575,10 +580,12 @@ public class FileSystem implements Closeable {
 
     public void mkdirs(Path path) throws IOException {
         if(path == null)
-            throw new IllegalArgumentException("Can not mkdir from null path");
-     
+            throw new IllegalArgumentException("Can not create a new directory from null path");
+        
+        Path absPath = getAbsolutePath(path);
+        
         // recursive call
-        Path parent = path.getParent();
+        Path parent = absPath.getParent();
         if(parent != null) {
             if(!exists(parent)) {
                 // make
@@ -586,7 +593,7 @@ public class FileSystem implements Closeable {
             }
         }
         
-        int ret = JSyndicateFS.jsyndicatefs_mkdir(path.getPath(), DEFAULT_NEW_DIR_PERMISSION);
+        int ret = JSyndicateFS.jsyndicatefs_mkdir(absPath.getPath(), DEFAULT_NEW_DIR_PERMISSION);
         if(ret < 0) {
             String errmsg = ErrorUtils.generateErrorMessage(ret);
             throw new IOException("jsyndicatefs_mkdir failed : " + errmsg);
@@ -594,6 +601,9 @@ public class FileSystem implements Closeable {
     }
 
     public boolean createNewFile(Path path) throws IOException {
+        if(path == null)
+            throw new IllegalArgumentException("Can create new file from null path");
+        
         Path absPath = getAbsolutePath(path);
         
         FileStatus status = null;
