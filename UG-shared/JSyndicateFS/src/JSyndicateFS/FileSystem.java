@@ -660,7 +660,7 @@ public class FileSystem implements Closeable {
         LOG.debug("path : " + status.getPath().getPath());
         LOG.debug("new path : " + newpath.getPath());
         
-        if(status.isFile() || status.isDirectory()) {
+        if(status.isFile()) {
             
             Path absNewPath = getAbsolutePath(newpath);
             
@@ -684,9 +684,12 @@ public class FileSystem implements Closeable {
                 LOG.error("jsyndicatefs_rename failed : " + errmsg);
                 throw new IOException("jsyndicatefs_rename failed : " + errmsg);
             }
+        } else if(status.isDirectory()) {
+            LOG.error("Can not rename directory - not supported yet");
+            throw new IOException("Can not rename directory - not supported yet");
         } else {
-            LOG.error("Can not delete file from unknown status");
-            throw new IOException("Can not delete file from unknown status");
+            LOG.error("Can not rename file from unknown status");
+            throw new IOException("Can not rename file from unknown status");
         }
         
         invalidateFileStatus(status);
