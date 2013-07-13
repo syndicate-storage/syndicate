@@ -158,9 +158,11 @@ public class testDirectory {
                 
                 System.out.println("filename : " + file.getName() + ", size : " + file.getSize() + ", blocks : " + file.getBlocks() + ", blockSize : " + file.getBlockSize());
                 
+                /*
                 file.renameTo(new Path("a/b/c/d/complexNew.txt"));
                 
                 System.out.println("file renamed : " + file.getPath().getPath());
+                */
 
                 /*
                 File dir = new File(filesystem, "a");
@@ -186,6 +188,12 @@ public class testDirectory {
         }
     }
     
+    public static void deleteAll() throws IOException {
+        Path path = new Path("/a");
+        
+        filesystem.deleteAll(path);
+    }
+    
     public static void main(String[] args) {
         try {
             initFS();
@@ -194,6 +202,8 @@ public class testDirectory {
             createNewFile();
 
             listAllFiles();
+            
+            deleteAll();
             
             Thread.sleep(3000);
             uninitFS();

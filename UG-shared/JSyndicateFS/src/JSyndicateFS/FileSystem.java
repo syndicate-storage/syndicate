@@ -18,6 +18,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Hashtable;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -403,7 +405,7 @@ public class FileSystem implements Closeable {
         
         LOG.debug("path : " + filehandle.getPath().getPath());
         
-        if(filehandle.isOpen()) {
+        if(filehandle.isOpen() && !filehandle.isDirty()) {
             FileStatus status = filehandle.getStatus();
                 
             if(status.isFile()) {
@@ -557,7 +559,10 @@ public class FileSystem implements Closeable {
             throw new IOException("Can not read directory entries from null file handle");
         }
         
-        return readDirectoryEntries(filehandle);
+        String[] result = readDirectoryEntries(filehandle);
+        //Temporarily defer close : unknown bug
+        //filehandle.close();
+        return result;
     }
     
     public String[] readDirectoryEntries(FileStatus status) throws IOException {
@@ -572,7 +577,10 @@ public class FileSystem implements Closeable {
             throw new IOException("Can not read directory entries from null file handle");
         }
         
-        return readDirectoryEntries(filehandle);
+        String[] result = readDirectoryEntries(filehandle);
+        //Temporarily defer close : unknown bug
+        //filehandle.close();
+        return result;
     }
     
     public String[] readDirectoryEntries(FileHandle filehandle) throws IOException {
@@ -888,5 +896,43 @@ public class FileSystem implements Closeable {
         Path[] paths = new Path[result.size()];
         paths = result.toArray(paths);
         return paths;
+    }
+    
+    private void deleteAllRecursive(Path absPath) throws IOException {
+        if(absPath == null)
+            throw new IllegalArgumentException("Can not delete files from null path");
+        
+        if(isFile(absPath)) {
+            // remove file
+            LOG.debug("delete file : " + absPath.getPath());
+            delete(absPath);
+        } else if(isDirectory(absPath)) {
+            // entries
+            String[] entries = readDirectoryEntries(absPath);
+            
+            if(entries != null) {
+                for(String entry : entries) {
+                    Path newEntryPath = new Path(absPath, entry);
+                    deleteAllRecursive(newEntryPath);
+                }
+            }
+            
+            // remove dir
+            LOG.debug("delete directory : " + absPath.getPath());
+            delete(absPath);
+        }
+    }
+    
+    public void deleteAll(Path path) throws IOException {
+        LOG.info("deleteAll");
+        
+        if(path == null)
+            throw new IllegalArgumentException("Can not remove from null path");
+        
+        LOG.debug("path : " + path);
+        
+        Path absPath = getAbsolutePath(path);
+        
+        deleteAllRecursive(absPath);
     }
 }
