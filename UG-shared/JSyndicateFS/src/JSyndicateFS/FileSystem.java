@@ -664,7 +664,7 @@ public class FileSystem implements Closeable {
             
             Path absNewPath = getAbsolutePath(newpath);
             
-            // check parent dir's FileStatus recursively
+            // check parent dir's FileStatus
             if(absNewPath.getParent() != null) {
                 FileStatus parentStatus = getFileStatus(absNewPath.getParent());
                 if(parentStatus == null) {
@@ -702,7 +702,7 @@ public class FileSystem implements Closeable {
         
         Path absPath = getAbsolutePath(path);
         
-        // check parent dir's FileStatus recursively
+        // check parent dir's FileStatus
         if(absPath.getParent() != null) {
             FileStatus parentStatus = getFileStatus(absPath.getParent());
             if(parentStatus == null) {
@@ -734,20 +734,17 @@ public class FileSystem implements Closeable {
         
         Path absPath = getAbsolutePath(path);
         
-        // recursive call
-        Path parent = absPath.getParent();
-        if(parent != null) {
-            if(!exists(parent)) {
-                // make
-                mkdirs(parent);
+        Path[] ancestors = absPath.getAncestors();
+        if(ancestors != null) {
+            for(Path ancestor : ancestors) {
+                if(!exists(ancestor)) {
+                    mkdir(ancestor);
+                }
             }
         }
         
-        int ret = JSyndicateFS.jsyndicatefs_mkdir(absPath.getPath(), DEFAULT_NEW_DIR_PERMISSION);
-        if(ret < 0) {
-            String errmsg = ErrorUtils.generateErrorMessage(ret);
-            LOG.error("jsyndicatefs_mkdir failed : " + errmsg);
-            throw new IOException("jsyndicatefs_mkdir failed : " + errmsg);
+        if(!exists(absPath)) {
+            mkdir(absPath);
         }
     }
 
@@ -761,7 +758,7 @@ public class FileSystem implements Closeable {
         
         Path absPath = getAbsolutePath(path);
         
-        // check parent dir's FileStatus recursively
+        // check parent dir's FileStatus
         if(absPath.getParent() != null) {
             FileStatus parentStatus = getFileStatus(absPath.getParent());
             if(parentStatus == null) {
