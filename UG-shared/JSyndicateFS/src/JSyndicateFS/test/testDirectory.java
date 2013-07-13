@@ -161,11 +161,13 @@ public class testDirectory {
                 file.renameTo(new Path("a/b/c/d/complexNew.txt"));
                 
                 System.out.println("file renamed : " + file.getPath().getPath());
-                
+
+                /*
                 File dir = new File(filesystem, "a");
                 dir.renameTo(new Path("aa"));
                 
                 System.out.println("dir renamed : " + dir.getPath().getPath());
+                */
             }
         } else {
             System.out.println("file creation failed");
