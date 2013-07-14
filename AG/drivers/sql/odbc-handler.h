@@ -12,8 +12,7 @@
 #include <vector>
 
 #include <block-index.h>
-
-//#include "libsyndicate.h"
+#include <gateway-ctx.h>
 
 using namespace std;
 
@@ -21,9 +20,10 @@ class ODBCHandler
 {
     private:
 	//ODBC components...
-	SQLHENV env;
-	SQLHDBC dbc;
+	SQLHENV		    env;
+	SQLHDBC		    dbc;
 	static ODBCHandler& odh;
+	BlockIndex	    blk_index; 
 
 	ODBCHandler();
 	ODBCHandler(unsigned char* con_str);
@@ -31,13 +31,11 @@ class ODBCHandler
 
     public:
 	static  ODBCHandler&  get_handle(unsigned char* con_str);
-	string  execute_query(unsigned char* sql_query, ssize_t read_size, 
-				off_t byte_offset, off_t block_offset, 
-				ssize_t block_size);
+	string  execute_query(struct gateway_ctx<ODBCHandler> *ctx, ssize_t read_size, ssize_t block_size); 
 	string  get_tables();
 	string  get_db_info();
 	string  extract_error(SQLHANDLE handle, SQLSMALLINT type);
-	void	encode_results(stringstream& str_stream, char* column, 
+	ssize_t	encode_results(stringstream& str_stream, char* column, 
 				bool row_bound);
 	void    print();
 };

@@ -28,7 +28,8 @@ size_t  datapath_len = 0;
 ODBCHandler& odh = ODBCHandler::get_handle((unsigned char*)"DSN=sqlite");
 
 // generate a manifest for an existing file, putting it into the gateway context
-extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
+extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, 
+					    struct gateway_ctx<ODBCHandler>* ctx, struct md_entry* ent ) {
     errorf("%s", "INFO: gateway_generate_manifest\n"); 
     // populate a manifest
     Serialization::ManifestMsg* mmsg = new Serialization::ManifestMsg();
@@ -79,7 +80,7 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
 extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* user_cls ) {
     errorf("%s", "INFO: get_dataset\n"); 
     ssize_t ret = 0;
-    struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
+    struct gateway_ctx<ODBCHandler>* ctx = (struct gateway_ctx<ODBCHandler>*)user_cls;
 
     if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
 	// read from database using ctx->sql_query...
@@ -100,10 +101,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	    size_t rem_len = global_conf->blocking_factor - ctx->data_offset;
 	    size_t read_len = (rem_len > len)?len:rem_len;
 	    ctx->complete  = (rem_len > len)?false:true;
-	    string results = odh.execute_query(ctx->sql_query, read_len,  
-						ctx->data_offset, 
-						ctx->block_id,  
-						global_conf->blocking_factor);
+	    string results = odh.execute_query(ctx, read_len, global_conf->blocking_factor);
 	    const char* results_c_str = results.c_str();
 	    size_t results_len = results.length();
 	    memcpy(buf, results_c_str, results_len);
@@ -154,7 +152,7 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
 	return -ENOENT;
     }
 
-    struct gateway_ctx* ctx = (struct gateway_ctx*)usercls;
+    struct gateway_ctx<ODBCHandler>* ctx = (struct gateway_ctx<ODBCHandler>*)usercls;
     struct md_entry* ent = itr->second;
 
     info->set_progress( ms::ms_gateway_blockinfo::COMMITTED );     // ignored, but needs to be filled in
@@ -197,7 +195,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        return NULL;
    }
 
-   struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
+   struct gateway_ctx<ODBCHandler>* ctx = CALLOC_LIST( struct gateway_ctx<ODBCHandler>, 1 );
 
    // is there metadata for this file?
    string fs_path( file_path );
@@ -247,8 +245,9 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    }
    else {
        struct map_info mi = (*FS2SQL)[string(file_path)];
-       ctx->sql_query = mi.query; 
-       if( !ctx->sql_query ) {
+       ctx->sql_query_bounded = mi.query; 
+       ctx->sql_query_unbounded = mi.unbounded_query; 
+       if( !ctx->sql_query_bounded ) {
 	   free( ctx );
 	   free( file_path );
 	   return NULL;
@@ -261,6 +260,8 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        ctx->num_read = 0;
        ctx->block_id = block_id;
        ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
+       ctx->blkie = NULL;
+       ctx->row_offset = 0;
        // Negative size switches libmicrohttpd to chunk transfer mode
        replica_ctx->size = -1;
    }
