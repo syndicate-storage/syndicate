@@ -556,6 +556,49 @@ public class FileSystem implements Closeable {
             filehandle.getStatus().setSize(offset + size);
     }
     
+    public void truncateFile(Path path, long size) throws IOException {
+        if(path == null)
+            throw new IllegalArgumentException("Can not truncate file from null path");
+        if(size < 0)
+            throw new IllegalArgumentException("Can not truncate file to negative size data");
+        
+        FileStatus status = getFileStatus(path);
+        if(status == null) {
+            LOG.error("Can not truncate file from null file status");
+            throw new IOException("Can not truncate file from null file status");
+        }
+        
+        truncateFile(status, size);
+    }
+    
+    public void truncateFile(FileStatus status, long size) throws IOException {
+        LOG.info("truncateFile");
+        
+        if(status == null)
+            throw new IllegalArgumentException("Can not truncate file from null status");
+        if(status.isDirty())
+            throw new IllegalArgumentException("Can not truncate file from dirty status");
+        if(size < 0)
+            throw new IllegalArgumentException("Can not truncate file to negative size data");
+        
+        if(!status.isFile())
+            throw new IOException("Can not truncate non-file");
+
+        LOG.debug("path : " + status.getPath().getPath());
+        LOG.debug("size : " + size);
+        
+        
+        int ret = JSyndicateFS.jsyndicatefs_truncate(status.getPath().getPath(), size);
+        if(ret < 0) {
+            String errmsg = ErrorUtils.generateErrorMessage(ret);
+            LOG.error("jsyndicatefs_truncate failed : " + errmsg);
+            throw new IOException("jsyndicatefs_truncate failed : " + errmsg);
+        }
+        
+        // update file size temporarily
+        status.setSize(size);
+    }
+    
     public String[] readDirectoryEntries(Path path) throws FileNotFoundException, IOException {
         if(path == null)
             throw new IllegalArgumentException("Can not read directory entries from null path");

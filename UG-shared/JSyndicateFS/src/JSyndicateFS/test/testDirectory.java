@@ -69,36 +69,28 @@ public class testDirectory {
             System.out.println("file deleted");
         }
         
-        if(filesystem.createNewFile(complexpath)) {
-            File file = new File(filesystem, complexpath);
-            if(file.isFile() && file.exist()) {
-                System.out.println("file created");
-                
-                String msg = "hello world!";
-                FSOutputStream out = new FSOutputStream(file);
-                out.write(msg.getBytes());
-                out.close();
-                System.out.println("msg written");
-                
-                FSInputStream in = new FSInputStream(file);
-                
-                byte[] buffer = new byte[256];
-                int read = in.read(buffer);
-                if(read > 0) {
-                    String readmsg = new String(buffer, 0, read);
-                    System.out.println("msg read : " + readmsg);
-                }
-                in.close();
-                
-                System.out.println("filename : " + file.getName() + ", size : " + file.getSize() + ", blocks : " + file.getBlocks() + ", blockSize : " + file.getBlockSize());
-                
-                //file.renameTo(new Path("a/b/c/d/complexNew.txt"));
-                
-                //System.out.println("file renamed : " + file.getPath().getPath());
-            }
-        } else {
-            System.out.println("file creation failed");
+        File file = new File(filesystem, complexpath);
+        String msg = "hello world!";
+        FSOutputStream out = new FSOutputStream(file);
+        out.write(msg.getBytes());
+        out.close();
+        System.out.println("msg written");
+
+        FSInputStream in = new FSInputStream(file);
+
+        byte[] buffer = new byte[256];
+        int read = in.read(buffer);
+        if(read > 0) {
+            String readmsg = new String(buffer, 0, read);
+            System.out.println("msg read : " + readmsg);
         }
+        in.close();
+
+        System.out.println("filename : " + file.getName() + ", size : " + file.getSize() + ", blocks : " + file.getBlocks() + ", blockSize : " + file.getBlockSize());
+
+        //file.renameTo(new Path("a/b/c/d/complexNew.txt"));
+
+        //System.out.println("file renamed : " + file.getPath().getPath());
     }
     
     public static void listAllFiles() throws FileNotFoundException, IOException {
