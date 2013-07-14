@@ -395,10 +395,16 @@ public class File {
         if(this.status == null)
            return false;
         
+        return renameTo(dest.path);
+    }
+    
+    public boolean renameTo(Path dest) {
+        loadStatus();
+        
         try {
-            this.filesystem.rename(this.status, dest.path);
+            this.filesystem.rename(this.status, dest);
             // update my path
-            this.path = this.filesystem.getAbsolutePath(dest.path);
+            this.path = this.filesystem.getAbsolutePath(dest);
             return true;
         } catch (IOException ex) {
             LOG.error(ex);

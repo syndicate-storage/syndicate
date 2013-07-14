@@ -44,35 +44,7 @@ public class testDirectory {
     }
     
     public static void createNewDirs() throws IOException {
-        Path master = new Path("master");
-        Path sub = new Path("master/sub");
-        
-        System.out.println("create master dir");
-        if(filesystem.exists(master) && filesystem.isDirectory(master)) {
-            System.out.println("dir already exists");
-        } else {
-            filesystem.mkdir(master);
-            
-            if(filesystem.exists(master) && filesystem.isDirectory(master)) {
-                System.out.println("dir created");
-                
-                System.out.println("create sub dir");
-                if(filesystem.exists(sub) && filesystem.isDirectory(sub)) {
-                    System.out.println("dir already exists");
-                } else {
-                    filesystem.mkdir(sub);
-
-                    if(filesystem.exists(sub) && filesystem.isDirectory(sub)) {
-                        System.out.println("dir created");
-
-                    }
-                }
-                
-            }
-        }
-        
-        
-        Path complex = new Path("a/b/c/d/e/f/g/h/i/j/k");
+        Path complex = new Path("a/b/c");
         
         System.out.println("create complex dir");
         if(filesystem.exists(complex) && filesystem.isDirectory(complex)) {
@@ -87,45 +59,7 @@ public class testDirectory {
     }
     
     public static void createNewFile() throws IOException {
-        Path path = new Path("master/sub/testFileIO.txt");
-        
-        System.out.println("start file check");
-        if(filesystem.exists(path)) {
-            System.out.println("file already exists");
-            
-            filesystem.delete(path);
-            System.out.println("file deleted");
-        }
-        
-        if(filesystem.createNewFile(path)) {
-            File file = new File(filesystem, path);
-            if(file.isFile() && file.exist()) {
-                System.out.println("file created");
-                
-                String msg = "hello world!";
-                FSOutputStream out = new FSOutputStream(file);
-                out.write(msg.getBytes());
-                out.close();
-                System.out.println("msg written");
-                
-                FSInputStream in = new FSInputStream(file);
-                
-                byte[] buffer = new byte[256];
-                int read = in.read(buffer);
-                if(read > 0) {
-                    String readmsg = new String(buffer, 0, read);
-                    System.out.println("msg read : " + readmsg);
-                }
-                in.close();
-                
-                System.out.println("filename : " + file.getName() + ", size : " + file.getSize() + ", blocks : " + file.getBlocks() + ", blockSize : " + file.getBlockSize());
-            }
-        } else {
-            System.out.println("file creation failed");
-        }
-        
-        
-        Path complexpath = new Path("a/b/c/d/e/f/g/h/i/j/k/complex.txt");
+        Path complexpath = new Path("a/b/c/complex.txt");
         
         System.out.println("start file check");
         if(filesystem.exists(complexpath)) {
@@ -157,6 +91,10 @@ public class testDirectory {
                 in.close();
                 
                 System.out.println("filename : " + file.getName() + ", size : " + file.getSize() + ", blocks : " + file.getBlocks() + ", blockSize : " + file.getBlockSize());
+                
+                //file.renameTo(new Path("a/b/c/d/complexNew.txt"));
+                
+                //System.out.println("file renamed : " + file.getPath().getPath());
             }
         } else {
             System.out.println("file creation failed");
@@ -175,6 +113,12 @@ public class testDirectory {
         }
     }
     
+    public static void deleteAll() throws IOException {
+        Path path = new Path("/a");
+        
+        filesystem.deleteAll(path);
+    }
+    
     public static void main(String[] args) {
         try {
             initFS();
@@ -182,7 +126,9 @@ public class testDirectory {
             createNewDirs();
             createNewFile();
 
-            listAllFiles();
+            //listAllFiles();
+            
+            deleteAll();
             
             Thread.sleep(3000);
             uninitFS();
