@@ -7,7 +7,7 @@
   <p style="text-align:center"> It is also possible to create Acquisition Gateways just by url via the following format: <br/> HOST/syn/AG/create/[volumename]/[gateway_name]/[gateway_password]/[host]/[port]
   </p>
   <p class="error">{{ message }}</p><br>
-  <form action='{% url django_ag.views.create %}' method="post">{% csrf_token %}
+  <form action='{% url django_ag.views.create %}' method="post" enctype="multipart/form-data">{% csrf_token %}
     <table class="createvolume" border>
       {{ form.as_table }}
     </table>

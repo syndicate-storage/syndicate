@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% load ms_extras %}  
+
+  {% block head %}
+    <h1> {{gateway.ms_username|replace:" ||_"}} </h1>
+  {% endblock %}

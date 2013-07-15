@@ -207,7 +207,7 @@ Acquistion/Replica Gateways:
 
     These gateways currently only have a GUI creation tool. Their parameters
     are most in flux right now. A tool will be added to upload JSON config
-    files. RG's have the extra 'private' boolean paramter, meaning
+    files. RG's have the extra 'private' boolean parameter, meaning
     that it can only be bound to a Volume owned by the same user that owns the RG.
     This functionality has not been quite implemented yet, although the parameter
     exists. They have the same generic parameters as UG's above.

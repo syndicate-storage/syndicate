@@ -6,6 +6,7 @@ import logging
 
 from django_lib.auth import authenticate
 from django_lib import gatewayforms
+from django_lib import forms as libforms
 from django.http import HttpResponse, HttpResponseRedirect
 from django.template import Context, loader, RequestContext
 from django.views.decorators.csrf import csrf_exempt, csrf_protect

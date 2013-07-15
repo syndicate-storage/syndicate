@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block head %}
+    <h1> You do not have permission to access this gateway/page, or the gateway does not exist.</h1>
+    <p class="error">{{message}}</p>
+{% endblock %}
+{% block mainbody %}
+{% endblock %}
+{% block footer %}
+    <a href='{% url django_home.views.home %}'>Home</a>
+{% endblock %}

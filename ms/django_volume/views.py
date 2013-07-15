@@ -140,7 +140,7 @@ def changepermissions(request, volume_name):
     username = session['login_email']
     vol = db.read_volume(volume_name)
 
-    PermissionFormSet = formset_factory(libforms.Permissions, extra=0)
+    PermissionFormSet = formset_factory(forms.Permissions, extra=0)
     
     if request.method != "POST":
         return HttpResponseRedirect('syn/volume/' + volume_name + '/permissions')
@@ -253,7 +253,7 @@ def volumepermissions(request, volume_name, message="", initial_data=None):
                                   'write':False} )
     
         session['initial_data'] = initial_data
-    PermissionFormSet = formset_factory(libforms.Permissions, extra=0)
+    PermissionFormSet = formset_factory(forms.Permissions, extra=0)
     addform = forms.AddPermissions
     passwordform = libforms.Password
     if initial_data:
@@ -400,7 +400,7 @@ def volumesettings(request, volume_name, message="", old_data=None):
         desc_form = forms.ChangeVolumeD(initial={'description': old_data['desc']})
     else:
         desc_form = forms.ChangeVolumeD(initial={'description':vol.description})
-    pass_form = forms.ChangePassword()
+    pass_form = libforms.ChangePassword()
     password = libforms.Password()
 
     t = loader.get_template('volumesettings.html')
@@ -507,7 +507,7 @@ def changevolumepassword(request, volume_name):
     if request.method != "POST":
         return HttpResponseRedirect('/syn/volume/' + volume_name + '/settings')
 
-    form = forms.ChangePassword(request.POST)
+    form = libforms.ChangePassword(request.POST)
     if not form.is_valid():
         message = "You must fill out all password fields."
         return volumesettings(request, volume_name=volume_name, message=message)
