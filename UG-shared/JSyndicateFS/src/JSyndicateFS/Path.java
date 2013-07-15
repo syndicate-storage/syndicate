@@ -5,6 +5,7 @@ package JSyndicateFS;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
 
 /**
  *
@@ -169,6 +170,8 @@ public class Path implements Comparable {
         
         if (lastSlash == -1) {
             return new Path(createPathUri(this.uri.getScheme(), this.uri.getAuthority(), "."));
+        } else if (lastSlash == 0) {
+            return new Path(createPathUri(this.uri.getScheme(), this.uri.getAuthority(), "/"));
         } else {
             String parent = path.substring(0, lastSlash);
             return new Path(createPathUri(this.uri.getScheme(), this.uri.getAuthority(), parent));
@@ -228,6 +231,21 @@ public class Path implements Comparable {
         }
         
         return depth;
+    }
+    
+    public Path[] getAncestors() {
+        ArrayList<Path> ancestors = new ArrayList<Path>();
+        
+        Path parent = getParent();
+        while(parent != null) {
+            ancestors.add(0, parent);
+            
+            parent = parent.getParent();
+        }
+        
+        Path[] ancestors_array = new Path[ancestors.size()];
+        ancestors_array = ancestors.toArray(ancestors_array);
+        return ancestors_array;
     }
     
     @Override

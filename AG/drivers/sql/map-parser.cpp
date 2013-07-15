@@ -26,10 +26,11 @@ MapParserHandler::MapParserHandler(map<string, struct map_info>* xmlmap)
     this->xmlmap = xmlmap;
     open_key = false;
     open_val = false;
+    is_bounded_query = true;
     element_buff = NULL;
     current_key = NULL;
-    current_val = NULL;
-
+    bounded_query = NULL;
+    unbounded_query = NULL;
 }
 
 void MapParserHandler::startElement(const   XMLCh* const    uri,
@@ -58,6 +59,16 @@ void MapParserHandler::startElement(const   XMLCh* const    uri,
 		XMLString::release(&perm_str);
 	    }
 	}
+	if (!strncmp(attr, QUERY_BOUND_ATTR, strlen(QUERY_BOUND_ATTR))) {
+	    char* bound_str = XMLString::transcode(attrs.getValue(i));
+	    if (bound_str) {
+		if (atol(bound_str) > 0)
+		    is_bounded_query = true;
+		else
+		    is_bounded_query = false;
+		XMLString::release(&bound_str);
+	    }
+	}
 	XMLString::release(&attr);
     }
     XMLString::release(&tag);
@@ -73,24 +84,42 @@ void MapParserHandler::endElement (
 	open_key = false;
 	current_key = strdup(element_buff);
     }
-    if (!strncmp(tag, VALUE_TAG, strlen(VALUE_TAG)) && open_key) {
+    if (!strncmp(tag, VALUE_TAG, strlen(VALUE_TAG)) && open_key 
+	    && is_bounded_query) {
 	open_key = false;
-	current_val = strdup(element_buff);
+	bounded_query = strdup(element_buff);
+    }
+    if (!strncmp(tag, VALUE_TAG, strlen(VALUE_TAG)) && open_key 
+	    && !is_bounded_query) {
+	open_key = false;
+	is_bounded_query = true;
+	unbounded_query = strdup(element_buff);
     }
     if (!strncmp(tag, PAIR_TAG, strlen(PAIR_TAG))) {
-	if (current_key && current_val) {
-	    struct map_info mi;
-	    mi.query = current_val;
-	    mi.file_perm = current_perm;
-	    (*xmlmap)[string(current_key)] =mi;
-	}
 	if (current_key) {
+	    struct map_info mi;
+	    mi.query = NULL;
+	    mi.unbounded_query = NULL;
+	    mi.file_perm = current_perm;
+	    if (bounded_query) {
+		size_t bounded_query_len = strlen(bounded_query);
+		mi.query = (unsigned char*)malloc(bounded_query_len + 1);
+		strncpy((char*)mi.query, bounded_query, bounded_query_len);
+		mi.query[bounded_query_len] = 0;
+		free(bounded_query);
+		bounded_query = NULL;
+	    }
+	    if (unbounded_query) {
+		size_t unbounded_query_len = strlen(unbounded_query);
+		mi.unbounded_query = (unsigned char*)malloc(unbounded_query_len + 1);
+		strncpy((char*)mi.unbounded_query, unbounded_query, unbounded_query_len);
+		mi.unbounded_query[unbounded_query_len] = 0;
+		free(unbounded_query);
+		unbounded_query = NULL;
+	    }
+	    (*xmlmap)[string(current_key)] =mi;
 	    free(current_key);
 	    current_key = NULL;
-	    if (current_val) {
-		free(current_val);
-		current_val = NULL;
-	    }
 	    if (element_buff) {
 		free(element_buff);
 		element_buff = NULL;

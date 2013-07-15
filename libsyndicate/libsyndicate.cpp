@@ -103,12 +103,12 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
    // make sure we have data root and staging root
    char cwd[100];
    sprintf(cwd, "/tmp/syndicate.%d", getpid() );
-   char* data_root = md_fullpath( cwd, "data", NULL );
-   char* staging_root = md_fullpath( cwd, "staging", NULL );
+   char* data_root = md_fullpath( cwd, "data/", NULL );
+   char* staging_root = md_fullpath( cwd, "staging/", NULL );
    char* logfile_path = md_fullpath( cwd, "access.log", NULL );
    char* replica_logfile_path = md_fullpath( cwd, "replica.log", NULL );
-   char* RG_metadata_path = md_fullpath( cwd, "RG-metadata", NULL );
-   char* AG_metadata_path = md_fullpath( cwd, "AG-metadata", NULL );
+   char* RG_metadata_path = md_fullpath( cwd, "RG-metadata/", NULL );
+   char* AG_metadata_path = md_fullpath( cwd, "AG-metadata/", NULL );
    
    if( c->data_root == NULL )
       c->data_root = strdup( data_root );

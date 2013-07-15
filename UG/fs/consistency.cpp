@@ -31,8 +31,11 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
    
    int rc = ms_client_sync_update( core->ms, fh->path );
    if( rc != 0 ) {
-      // ENOENT allowed because the update thread could have preempted us
       errorf("ms_client_sync_update(%s) rc = %d\n", fh->path, rc );
+
+      // ENOENT allowed because the update thread could have preempted us
+      if( rc == -ENOENT )
+         rc = 0;
    }
    
    fs_file_handle_unlock( fh );
@@ -56,7 +59,7 @@ bool fs_entry_is_read_stale( struct fs_entry* fent ) {
    uint64_t now_ms = currentTimeMillis();
    uint64_t refresh_ms = (uint64_t)(fent->refresh_time.tv_sec) * 1000 + (uint64_t)(fent->refresh_time.tv_nsec) / 1000000;
 
-   dbprintf("%" PRIu64 " millis old, max is %d\n", now_ms - refresh_ms, fent->max_read_freshness );
+   dbprintf("%s is %" PRIu64 " millis old, max is %d\n", fent->name, now_ms - refresh_ms, fent->max_read_freshness );
    if( now_ms - refresh_ms >= (uint64_t)fent->max_read_freshness )
       return true;
    else

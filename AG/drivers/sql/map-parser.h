@@ -36,14 +36,16 @@
 using namespace std;
 using namespace xercesc;
 
-#define MAP_TAG     "Map"
-#define PAIR_TAG    "Pair"
-#define KEY_TAG     "File"
-#define VALUE_TAG   "Query"
-#define PERM_ATTR   "perm"
+#define MAP_TAG		    "Map"
+#define PAIR_TAG	    "Pair"
+#define KEY_TAG		    "File"
+#define VALUE_TAG	    "Query"
+#define PERM_ATTR	    "perm"
+#define QUERY_BOUND_ATTR    "bounded"
 
 struct map_info {
-    char* query;
+    unsigned char* query;
+    unsigned char* unbounded_query;
     uint16_t file_perm;
 };
 
@@ -53,8 +55,10 @@ class MapParserHandler : public DefaultHandler {
 	bool open_val;
 	char* element_buff;
 	char* current_key;
-	char* current_val;
+	char* bounded_query;
+	char* unbounded_query;
 	int current_perm;
+	bool is_bounded_query;
 	map<string, struct map_info>* xmlmap;
     public:
 	MapParserHandler(map<string, struct map_info> *xmlmap);

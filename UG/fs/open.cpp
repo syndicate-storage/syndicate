@@ -390,8 +390,8 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
 
          Serialization::WriteMsg *withdraw_ack = new Serialization::WriteMsg();
 
-         //truncate_msg->set_write_id( core->col->next_transaction_id() );
-         //truncate_msg->set_session_id( core->col->get_session_id() );
+         truncate_msg->set_write_id( 0 );
+         truncate_msg->set_session_id( 0 );
 
          *err = fs_entry_post_write( withdraw_ack, core, child->url, truncate_msg );
          if( *err < 0 ) {
@@ -442,33 +442,26 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
       struct md_entry data;
       fs_entry_to_md_entry( core, path, child, &data );
 
-      if( parent_write_ttl == 0 ) {
-         // create synchronously
-         *err = ms_client_create( core->ms, &data );
+      // create synchronously
+      *err = ms_client_create( core->ms, &data );
 
-         if( *err != 0 ) {
-            errorf("ms_client_create(%s) rc = %d\n", data.path, *err );
-            *err = -EREMOTEIO;
+      if( *err != 0 ) {
+         errorf("ms_client_create(%s) rc = %d\n", data.path, *err );
+         *err = -EREMOTEIO;
 
-            // revert
-            child->open_count = 0;
+         // revert
+         child->open_count = 0;
 
-            // NOTE: parent will still exist--we can't remove a non-empty directory
-            fs_entry_wlock( parent );
-            fs_entry_detach_lowlevel( core, parent, child, true );
-            fs_entry_unlock( parent );
+         // NOTE: parent will still exist--we can't remove a non-empty directory
+         fs_entry_wlock( parent );
+         fs_entry_detach_lowlevel( core, parent, child, true );
+         fs_entry_unlock( parent );
 
-            fs_core_wlock( core );
-            core->num_files--;
-            fs_core_unlock( core );
-         }
+         fs_core_wlock( core );
+         core->num_files--;
+         fs_core_unlock( core );
       }
-
-      else {
-         // create later. If it fails, it'll be unlinked normally
-         *err = ms_client_queue_update( core->ms, path, &data, currentTimeMillis() + parent_write_ttl, 0 );
-      }
-
+      
       md_entry_free( &data );
    }
 

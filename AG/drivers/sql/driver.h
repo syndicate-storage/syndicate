@@ -6,16 +6,18 @@
 #include <set>
 #include <sstream>
 
-#include "libgateway.h"
-#include "libsyndicate.h"
-#include "map-parser.h"
-#include "odbc-handler.h"
-#include <sstream>
+#include <libgateway.h>
+#include <libsyndicate.h>
+#include <map-parser.h>
+#include <odbc-handler.h>
+#include <block-index.h>
+#include <gateway-ctx.h>
 
 #include <sys/types.h>
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
+#include <math.h>
 
 using namespace std;
 
@@ -32,27 +34,6 @@ using namespace std;
 
 #define GET_SYNADB_PATH(url)\
     (char*)url + strlen(SYNDICATEFS_AG_DB_PROTO)
-
-struct gateway_ctx {
-    int request_type;
-    // file info 
-    char const* file_path;
-    // data buffer (manifest or remote block data)
-    char* data;
-    size_t data_len;
-    size_t data_offset;
-    off_t num_read;
-    // file block info
-    uint64_t block_id;
-    // SQL query
-    char* sql_query;
-    // ODBC handle
-    ODBCHandler& odh; 
-    // is this corresponds to .db_info file?
-    bool is_db_info;
-    // are we done?
-    bool complete;
-};
 
 struct path_comp {
     bool operator()(char *path1, char *path2) 

@@ -10,6 +10,9 @@ import JSyndicateFS.FSOutputStream;
 import JSyndicateFS.File;
 import JSyndicateFS.FileSystem;
 import JSyndicateFS.Path;
+import static JSyndicateFS.test.testFileIO.createNewFile;
+import static JSyndicateFS.test.testFileIO.initFS;
+import static JSyndicateFS.test.testFileIO.uninitFS;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
@@ -19,8 +22,7 @@ import java.net.URISyntaxException;
  *
  * @author iychoi
  */
-public class testFileIO {
-    
+public class testDirectory {
     private static FileSystem filesystem;
     
     public static void initFS() throws IllegalAccessException, URISyntaxException, InstantiationException {
@@ -41,69 +43,84 @@ public class testFileIO {
         filesystem.close();
     }
     
-    public static void createNewFile() throws IOException {
-        Path path = new Path("testFileIO.txt");
+    public static void createNewDirs() throws IOException {
+        Path complex = new Path("a/b/c");
         
-        System.out.println("start file check");
-        if(filesystem.exists(path)) {
-            System.out.println("file already exists");
-            
-            filesystem.delete(path);
-            System.out.println("file deleted");
-        }
-        
-        boolean result = filesystem.createNewFile(path);
-        if(result) {
-            File file = new File(filesystem, path);
-            if(file.isFile() && file.exist()) {
-                System.out.println("file created");
-                
-                String msg = "hello world!";
-                FSOutputStream out = new FSOutputStream(file);
-                out.write(msg.getBytes());
-                out.close();
-                System.out.println("msg written");
-                
-                FSInputStream in = new FSInputStream(file);
-                
-                byte[] buffer = new byte[256];
-                int read = in.read(buffer);
-                if(read > 0) {
-                    String readmsg = new String(buffer, 0, read);
-                    System.out.println("msg read : " + readmsg);
-                }
-                in.close();
-                
-                System.out.println("filename : " + file.getName() + ", size : " + file.getSize() + ", blocks : " + file.getBlocks() + ", blockSize : " + file.getBlockSize());
-                
-                if(file.delete()) {
-                    System.out.println("file deleted");
-                }
-            }
+        System.out.println("create complex dir");
+        if(filesystem.exists(complex) && filesystem.isDirectory(complex)) {
+            System.out.println("dir already exists");
         } else {
-            System.out.println("file creation failed");
+            filesystem.mkdirs(complex);
+            
+            if(filesystem.exists(complex) && filesystem.isDirectory(complex)) {
+                System.out.println("dir created");
+            }
         }
     }
     
-    public static void listRootFiles() throws FileNotFoundException, IOException {
+    public static void createNewFile() throws IOException {
+        Path complexpath = new Path("a/b/c/complex.txt");
+        
+        System.out.println("start file check");
+        if(filesystem.exists(complexpath)) {
+            System.out.println("file already exists");
+            
+            filesystem.delete(complexpath);
+            System.out.println("file deleted");
+        }
+        
+        File file = new File(filesystem, complexpath);
+        String msg = "hello world!";
+        FSOutputStream out = new FSOutputStream(file);
+        out.write(msg.getBytes());
+        out.close();
+        System.out.println("msg written");
+
+        FSInputStream in = new FSInputStream(file);
+
+        byte[] buffer = new byte[256];
+        int read = in.read(buffer);
+        if(read > 0) {
+            String readmsg = new String(buffer, 0, read);
+            System.out.println("msg read : " + readmsg);
+        }
+        in.close();
+
+        System.out.println("filename : " + file.getName() + ", size : " + file.getSize() + ", blocks : " + file.getBlocks() + ", blockSize : " + file.getBlockSize());
+
+        //file.renameTo(new Path("a/b/c/d/complexNew.txt"));
+
+        //System.out.println("file renamed : " + file.getPath().getPath());
+    }
+    
+    public static void listAllFiles() throws FileNotFoundException, IOException {
         Path path = new Path("/");
         
-        String[] entries = filesystem.readDirectoryEntries(path);
+        Path[] entries = filesystem.listAllFiles(path);
         if(entries != null) {
             System.out.println("number of entries : " + entries.length);
-            for(String entry : entries) {
-                System.out.println("file : " + entry);
+            for(Path entry : entries) {
+                System.out.println("file : " + entry.getPath());
             }
         }
+    }
+    
+    public static void deleteAll() throws IOException {
+        Path path = new Path("/a");
+        
+        filesystem.deleteAll(path);
     }
     
     public static void main(String[] args) {
         try {
             initFS();
             
-            //listRootFiles();
-            
+            createNewDirs();
             createNewFile();
+
+            //listAllFiles();
+            
+            deleteAll();
             
             Thread.sleep(3000);
             uninitFS();
