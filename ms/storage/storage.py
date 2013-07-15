@@ -131,6 +131,9 @@ def create_user_gateway( user, volume, **kwargs ):
 def read_user_gateway( ms_username ):
    return UserGateway.Read( ms_username )
 
+def update_user_gateway( ms_username, **fields):
+   return UserGateway.Update( ms_username, **fields )
+
 def list_user_gateways(**attrs):
    return UserGateway.ListAll(**attrs)
 
@@ -149,13 +152,15 @@ def get_user_gateway( **attr ):
    return None
 
 
-
-def create_acquisition_gateway( volume, **kwargs ):
-   return AcquisitionGateway.Create( volume, **kwargs )
+def create_acquisition_gateway( user, **kwargs ):
+   return AcquisitionGateway.Create( user, **kwargs )
       
 def read_acquisition_gateway( ms_username ):
    return AcquisitionGateway.Read( ms_username )
-   
+
+def update_acquisition_gateway( ms_username, **fields ):
+   return AcquisitionGateway.Update( ms_username, **fields )
+
 def list_acquisition_gateways( **attrs ):
    return AcquisitionGateway.ListAll( **attrs )
    
@@ -170,13 +175,16 @@ def get_acquisition_gateway( **attr ):
       return ag
    return None
 
+def create_replica_gateway( user, **kwargs ):
+   return ReplicaGateway.Create( user, **kwargs )
 
-def create_replica_gateway( volume, **kwargs ):
-   return ReplicaGateway.Create( volume, **kwargs )
 
 def read_replica_gateway( ms_username ):
    return ReplicaGateway.Read( ms_username )
-   
+
+def update_replica_gateway( ms_username, **fields ):
+   return ReplicaGateway.Update( ms_username, **fields )
+
 def list_replica_gateways( **attrs ):
    return ReplicaGateway.ListAll( **attrs )
    
