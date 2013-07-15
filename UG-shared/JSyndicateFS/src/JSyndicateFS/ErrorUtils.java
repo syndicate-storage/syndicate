@@ -6,7 +6,6 @@ package JSyndicateFS;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
-import java.nio.file.FileAlreadyExistsException;
 import java.util.Hashtable;
 import java.util.Map;
 import org.apache.commons.logging.Log;
@@ -73,7 +72,7 @@ public class ErrorUtils {
         putErrorEntry(14, "EFAULT", "Bad address", IOException.class);
         putErrorEntry(15, "ENOTBLK", "Block device required", IOException.class);
         putErrorEntry(16, "EBUSY", "Device or resource busy", IOException.class);
-        putErrorEntry(17, "EEXIST", "File exists", FileAlreadyExistsException.class);
+        putErrorEntry(17, "EEXIST", "File exists", IOException.class);
         putErrorEntry(18, "EXDEV", "Cross-device link", IOException.class);
         putErrorEntry(19, "ENODEV", "No such device", IOException.class);
         putErrorEntry(20, "ENOTDIR", "Not a directory", IOException.class);
