@@ -58,6 +58,9 @@ public class SyndicateConfigUtil {
     public static final String INPUT_DIR = "mapred.input.dir";
     public static final String INPUT_PATH_FILTER = "mapred.input.pathFilter.class";
     public static final String OUTPUT_DIR = "mapred.output.dir";
+    public static final String BASE_OUTPUT_NAME = "mapred.output.basename";
+    
+    public static final String TEXT_OUTPUT_FORMAT_SEPARATOR = "mapred.textoutputformat.separator";
     
     public static void setConfigFile(Configuration conf, String path) {
         conf.set(CONFIG_FILE, path);
@@ -313,5 +316,21 @@ public class SyndicateConfigUtil {
 
     public static Path getOutputPath(Configuration conf) {
         return StringUtils.stringToPath(conf.get(OUTPUT_DIR));
+    }
+    
+    public static void setOutputBaseName(Configuration conf, String basename) {
+        conf.set(BASE_OUTPUT_NAME, basename);
+    }
+    
+    public static String getOutputBaseName(Configuration conf) {
+        return conf.get(BASE_OUTPUT_NAME, "part");
+    }
+    
+    public static void setTextOutputFormatSeparator(Configuration conf, String separator) {
+        conf.set(TEXT_OUTPUT_FORMAT_SEPARATOR, separator);
+    }
+    
+    public static String getTextOutputFormatSeparator(Configuration conf) {
+        return conf.get(TEXT_OUTPUT_FORMAT_SEPARATOR, "\t");
     }
 }
