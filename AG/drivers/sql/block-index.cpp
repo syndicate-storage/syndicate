@@ -42,11 +42,11 @@ void BlockIndex::update_block_index(string file_name, off_t block_id, block_inde
     else {
 	blk_list = new vector<block_index_entry*>();
 	blk_list->reserve(MAX_INDEX_SIZE);
-	blk_list->resize(1);
+	blk_list->resize(2);
 	(*blk_list)[block_id] = blkie;
 	//Acquire locks for maps...
 	pthread_mutex_lock(map_mutex);
-	//Check whether some one has already updated 
+	//Check whether someone has already updated 
 	//blk_map and mutex_map... if so replace them.
 	if ((old_blk_list = blk_map[file_name]) != NULL) {
 	    blk_map[file_name] = blk_list;

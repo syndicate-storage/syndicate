@@ -115,11 +115,11 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	}
 	else if (ctx->complete) {
 	    ret = 0;
-	    if (ctx->data != NULL) {
+	    /*if (ctx->data != NULL) {
 		free(ctx->data);
 		ctx->data_len = 0;
 		ctx->data_offset = 0;
-	    }
+	    }*/
 	}
     }
     else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
