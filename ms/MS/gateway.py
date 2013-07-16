@@ -6,6 +6,7 @@
 """
 
 import storage.storagetypes as storagetypes
+
 from Crypto.Hash import SHA256
 
 import os
@@ -19,20 +20,45 @@ import errno
 import time
 import datetime
 import random
-import json
 
 
 USERNAME_LENGTH = 256
 PASSWORD_LENGTH = 256
 
+class AG_IDCounter( storagetypes.Object ):
+   value = storagetypes.Integer()
+
+   required_attrs = [
+      "value"
+   ]
+
+   @classmethod
+   def make_key_name( cls, **attrs ):
+      return "AG_IDCounter"
+
+class RG_IDCounter( storagetypes.Object ):
+   value = storagetypes.Integer()
+
+   required_attrs = [
+      "value"
+   ]
+
+   @classmethod
+   def make_key_name( cls, **attrs ):
+      return "RG_IDCounter"
+
+
 class Gateway( storagetypes.Object ):
 
+   # owner ID of all files created by this gateway
+   owner_id = storagetypes.Integer()
    host = storagetypes.Text()
    port = storagetypes.Integer()
    ms_username = storagetypes.String()
    ms_password_hash = storagetypes.String()
 
    required_attrs = [
+      "owner_id",
       "host",
       "port",
       "ms_username",
@@ -70,14 +96,11 @@ class Gateway( storagetypes.Object ):
 
 class UserGateway( Gateway ):
 
-   # owner ID of all files created by this gateway
-   owner_id = storagetypes.Integer()
    read_write = storagetypes.Boolean()
    volume_id = storagetypes.Integer()           # which volume are we attached to?
 
 
    required_attrs = Gateway.required_attrs + [
-      "owner_id",
       "volume_id",
       "read_write"
    ]
@@ -169,7 +192,7 @@ class UserGateway( Gateway ):
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
 
-      kwargs['ms_username'] = unicode(kwargs['ms_username']).replace(" ","_")
+      kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")
       # TODO: transaction -jcnelson
       ug_key_name = UserGateway.make_key_name( ms_username=kwargs["ms_username"] )
       ug_key = storagetypes.make_key( UserGateway, ug_key_name)
@@ -194,7 +217,7 @@ class UserGateway( Gateway ):
       """
       Given a UG username, find the UG record
       """
-      ms_username = unicode(ms_username).replace(" ","_")
+      ms_username = unicode(ms_username).strip().replace(" ","_")
       ug_key_name = UserGateway.make_key_name( ms_username=ms_username )
 
       ug = storagetypes.memcache.get( ug_key_name )
@@ -205,6 +228,23 @@ class UserGateway( Gateway ):
 
       return ug
 
+   @classmethod
+   def Update( cls, ms_username, **fields ):
+      '''
+      Update UG identified by ms_username with fields specified as a dictionary.
+      '''
+      gateway = UserGateway.Read(ms_username)
+      gateway_key_name = UserGateway.make_key_name( ms_username=ms_username )
+      storagetypes.memcache.delete(gateway_key_name)
+
+      for key, value in fields.iteritems():
+         try:
+            setattr(gateway, key, value)
+         except:
+            raise Exception("UserGatewayUpdate: Unable to set attribute: %s, %s." % (key, value))
+      UG_future = gateway.put_async()
+      storagetypes.wait_futures([UG_future])
+      return gateway.key
       
    @classmethod
    def Delete( cls, ms_username ):
@@ -264,17 +304,16 @@ class UserGateway( Gateway ):
 class AcquisitionGateway( Gateway ):
 
    # This is temporary; we should know what is really needed.   
-   json_config = storagetypes.Text()
-   volume_id = storagetypes.Integer()           # which volume are we attached to?
-
+   json_config = storagetypes.Json()
+   volume_ids = storagetypes.Integer(repeated=True)           # which volumes are we attached to?
+   ag_id = storagetypes.Integer()
 
    required_attrs = Gateway.required_attrs + [
-      "json_config",
-      "volume_id"
+      "json_config"
    ]
 
    default_values = {
-      "json_config": (lambda cls, attrs: "Blank JSON") # Default is only read
+      "json_config": (lambda cls, attrs: {}) # Default is only read
    }
 
    def get_credential_entry(self):
@@ -301,16 +340,16 @@ class AcquisitionGateway( Gateway ):
       return ( password, pw_hash)  
 
    @classmethod
-   def Create( cls, volume, **kwargs ):
+   def Create( cls, user, **kwargs ):
       """
       Given a volume, create an AcquisitionGateway gateway.
       Extra kwargs:
          ms_password          str
          ms_password_hash     str
-         json_config          str
+         json_config          JSON (dict)
       """
 
-      kwargs['volume_id'] = volume.volume_id
+      kwargs['owner_id'] = user.owner_id
 
       AcquisitionGateway.fill_defaults( kwargs )
 
@@ -333,7 +372,7 @@ class AcquisitionGateway( Gateway ):
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
 
       # TODO: transaction -jcnelson
-      kwargs['ms_username'] = unicode(kwargs['ms_username']).replace(" ","_")
+      kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")
       ag_key_name = AcquisitionGateway.make_key_name( ms_username=kwargs["ms_username"] ) 
       ag_key = storagetypes.make_key( AcquisitionGateway, ag_key_name )
       ag = ag_key.get()
@@ -343,6 +382,15 @@ class AcquisitionGateway( Gateway ):
          raise Exception( "Acquisition Gateway '%s' already exists!" % kwargs["ms_username"] )
 
       else:
+         # gateway does not exist
+         gid_counter = AG_IDCounter.get_or_insert( AG_IDCounter.make_key_name(), value=0 )
+         
+         gid_counter.value += 1
+
+         gid_future = gid_counter.put_async()
+
+         kwargs['ag_id'] = gid_counter.value
+
          if 'ms_password' in kwargs:
             del kwargs['ms_password']
          ag = AcquisitionGateway( key=ag_key, **kwargs )
@@ -358,7 +406,7 @@ class AcquisitionGateway( Gateway ):
       """
       Given a AG username, find the AG record
       """
-      ms_username = unicode(ms_username).replace(" ","_")
+      ms_username = unicode(ms_username).strip().replace(" ","_")
       ag_key_name = AcquisitionGateway.make_key_name( ms_username=ms_username )
 
       ag = storagetypes.memcache.get( ag_key_name )
@@ -369,27 +417,23 @@ class AcquisitionGateway( Gateway ):
 
       return ag
 
-   ''' NECESSARY?
    @classmethod
-   def ListAll_ByVolume( cls, volume_id ):
-      """
-      Given a volume id, find all AcquisitionGateway records bound to it.  Cache the results
-      """
-      cache_key = UserGateway.cache_listing_key( volume_id=volume_id )
+   def Update( cls, ms_username, **fields ):
+      '''
+      Update AG identified by ms_username with fields specified as a dictionary.
+      '''
+      gateway = AcquisitionGateway.Read(ms_username)
+      gateway_key_name = AcquisitionGateway.make_key_name( ms_username=ms_username )
+      storagetypes.memcache.delete(gateway_key_name)
 
-      results = storagetypes.memcache.get( cache_key )
-      if results == None:
-         qry = UserGateway.query( UserGateway.volume_id == volume_id )
-         results_qry = qry.fetch(None, batch_size=1000 )
-
-         results = []
-         for rr in results_qry:
-            results.append( rr )
-
-         storagetypes.memcache.add( cache_key, results )
-
-      return results
-   '''
+      for key, value in fields.iteritems():
+         try:
+            setattr(gateway, key, value)
+         except:
+            raise Exception("AcquisitionGatewayUpdate: Unable to set attribute: %s, %s." % (key, value))
+      AG_future = gateway.put_async()
+      storagetypes.wait_futures([AG_future])
+      return gateway.key
 
    @classmethod
    def ListAll( cls, **attrs ):
@@ -429,18 +473,17 @@ class AcquisitionGateway( Gateway ):
 class ReplicaGateway( Gateway ):
 
    # This is temporary; we should know what is really needed.
-   json_config = storagetypes.Text()
+   json_config = storagetypes.Json()
    private = storagetypes.Boolean()
    volume_ids = storagetypes.Integer(repeated=True)           # which volume(s) are we attached to?
-
+   rg_id = storagetypes.Integer()
 
    required_attrs = Gateway.required_attrs + [
-      "json_config",
-      "volume_ids"
+      "json_config"
    ]
 
    default_values = {
-      "json_config": (lambda cls, attrs: "Blank JSON"), # Default is only read
+      "json_config": (lambda cls, attrs: {}), # Default is only read
       "private": (lambda cls, attrs: False) # Default is public
    }
 
@@ -469,17 +512,17 @@ class ReplicaGateway( Gateway ):
       return ( password, pw_hash)  
 
    @classmethod
-   def Create( cls, volume, **kwargs ):
+   def Create( cls, user, **kwargs ):
       """
       Given a volume, create an Replica gateway.
       Extra kwargs:
          ms_password          str
          ms_password_hash     str
-         json_config          str
+         json_config          JSON (dict)
          private              bool
       """
 
-      kwargs['volume_ids'] = [volume.volume_id]
+      kwargs['owner_id'] = user.owner_id
 
       ReplicaGateway.fill_defaults( kwargs )
 
@@ -502,7 +545,7 @@ class ReplicaGateway( Gateway ):
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
 
       # TODO: transaction -jcnelson
-      kwargs['ms_username'] = unicode(kwargs['ms_username']).replace(" ","_")      
+      kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")      
       rg_key_name = ReplicaGateway.make_key_name( ms_username=kwargs["ms_username"] ) 
       rg_key = storagetypes.make_key( ReplicaGateway, rg_key_name )
       rg = rg_key.get()
@@ -512,6 +555,16 @@ class ReplicaGateway( Gateway ):
          raise Exception( "Replica Gateway '%s' already exists!" % kwargs["ms_username"] )
 
       else:
+
+         # gateway does not exist
+         gid_counter = RG_IDCounter.get_or_insert( RG_IDCounter.make_key_name(), value=0 )
+         
+         gid_counter.value += 1
+
+         gid_future = gid_counter.put_async()
+
+         kwargs['rg_id'] = gid_counter.value
+
          if 'ms_password' in kwargs:
             del kwargs['ms_password']
          rg = ReplicaGateway( key=rg_key, **kwargs )
@@ -527,7 +580,7 @@ class ReplicaGateway( Gateway ):
       """
       Given a RG username, find the RG record
       """
-      ms_username = unicode(ms_username).replace(" ","_")
+      ms_username = unicode(ms_username).strip().replace(" ","_")
       rg_key_name = ReplicaGateway.make_key_name( ms_username=ms_username )
 
       rg = storagetypes.memcache.get( rg_key_name )
@@ -537,6 +590,25 @@ class ReplicaGateway( Gateway ):
          storagetypes.memcache.set( rg_key_name, rg )
 
       return rg
+
+
+   @classmethod
+   def Update( cls, ms_username, **fields ):
+      '''
+      Update RG identified by ms_username with fields specified as a dictionary.
+      '''
+      gateway = ReplicaGateway.Read(ms_username)
+      gateway_key_name = ReplicaGateway.make_key_name( ms_username=ms_username )
+      storagetypes.memcache.delete(gateway_key_name)
+
+      for key, value in fields.iteritems():
+         try:
+            setattr(gateway, key, value)
+         except:
+            raise Exception("ReplicaGatewayUpdate: Unable to set attribute: %s, %s." % (key, value))
+      RG_future = gateway.put_async()
+      storagetypes.wait_futures([RG_future])
+      return gateway.key
 
       
    @classmethod
@@ -592,4 +664,3 @@ class ReplicaGateway( Gateway ):
          return result
       else:
          return ReplicaGateway.query()
-

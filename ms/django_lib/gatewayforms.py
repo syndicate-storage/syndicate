@@ -1,6 +1,37 @@
 from django_lib import override_forms
 from django import forms
+from django_lib.override_forms import ReadOnlyWidget
 
+class ModifyGatewayConfig(override_forms.MyForm):
+  
+  json_config = forms.FileField(required=False,
+                                label="Gateway Configuration"
+                                )
+
+
+class ModifyGatewayLocation(override_forms.MyForm):
+
+  host = forms.CharField(label="New Gateway host",
+                           max_length = 499)
+
+  port = forms.IntegerField(label="New Port number",
+                            max_value=65535)
+
+
+class GatewayRemoveVolume(override_forms.MyForm):
+
+  volume_name = forms.CharField(label="Volume name",
+                           widget=ReadOnlyWidget(),
+                           required=False,
+                           max_length=499)
+
+  remove = forms.BooleanField(label="Remove",
+                              required=False)
+
+class GatewayAddVolume(override_forms.MyForm):
+
+  volume_name = forms.CharField(label="Volume name",
+                           max_length=499)
 
 class CreateGateway(override_forms.MyForm):
 
@@ -19,9 +50,6 @@ class CreateGateway(override_forms.MyForm):
 	port = forms.IntegerField(label="Port number",
 								max_value=65535)
 
-	volume_name = forms.CharField(label="Volume name",
-                           max_length=499)
-
 class DeleteGateway(override_forms.MyForm):
     
     confirm_delete = forms.BooleanField(required=True,
@@ -34,13 +62,36 @@ class DeleteGateway(override_forms.MyForm):
 
 class CreateUG(CreateGateway):
 
+    volume_name = forms.CharField(label="Volume name",
+                           max_length=499)
+
     read_write = forms.BooleanField(required=False,
                                     label="UG can write to other gateways.")
 
 # JSON config et al to come for these gateways.
 class CreateAG(CreateGateway):
-    pass
+    
+    json_config = forms.FileField(required=False,
+                                  label="Gateway Configuration",
+                                  help_text="If no file is specified, blank config will be used.")
+
+    json_config_text = forms.CharField(required=False,
+                                        max_length=5000,
+                                        widget=forms.Textarea,
+                                        label="Gateway Configuration (alternate)",
+                                        help_text="This can also be used to manually config the gateway with text in JSON format. The upload file will take priority however.")
 
 class CreateRG(CreateGateway):
+
+    json_config = forms.FileField(required=False,
+                                  label="Gateway Configuration",
+                                  help_text="If no file is specified, blank config will be used.")
+
+    json_config_text = forms.CharField(required=False,
+                                        max_length=5000,
+                                        widget=forms.Textarea,
+                                        label="Gateway Configuration (alternate)",
+                                        help_text="This can also be used to manually config the gateway with text in JSON format. The upload file will take priority however.")
+
     private = forms.BooleanField(required=False,
                                   label="Replica Gateway is private. It can only be attached to volumes owned by you.")

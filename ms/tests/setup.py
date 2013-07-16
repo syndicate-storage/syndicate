@@ -881,7 +881,7 @@ def test( ignore1, args ):
          try:
             # volume name: testvolume-$name
             # volume secret: abcdef
-            volume_key = storage.create_volume( user, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, volume_secret="abcdef", volume_secret_salt="abcdef", active=True, owner_id=i+1 )
+            volume_key = storage.create_volume( user, name=test_volume_name, description="%s's test volume" % user_email, blocksize=64, volume_secret="abcdef", volume_secret_salt="abcdef", active=True, owner_id=i+1 )
             volume = volume_key.get()
 
          except:
@@ -924,14 +924,11 @@ def test( ignore1, args ):
       user = get_user( username )
       if user == None:
          return (500, "Invalid username %s" % username)
-
-      volume_name = testvolume_name( user.email )
-      volume = storage.read_volume( volume_name )
       
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          try:
-            storage.create_acquisition_gateway( volume, ms_username=G_name("AG", node), ms_password="sniff", host=node, port=32780 )
+            storage.create_acquisition_gateway(user, ms_username=G_name("AG", node), ms_password="sniff", host=node, port=32780 )
             logging.info("Created AG %s" % G_name("AG", node))
          except:
             logging.info("traceback: %s" % traceback.format_exc())
@@ -942,14 +939,11 @@ def test( ignore1, args ):
       user = get_user( username )
       if user == None:
          return (500, "Invalid username %s" % username)
-
-      volume_name = testvolume_name( user.email )
-      volume = storage.read_volume( volume_name )
       
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          try:
-            storage.create_replica_gateway( volume, ms_username=G_name("RG", node), ms_password="sniff", host=node, port=32780, private=False )
+            storage.create_replica_gateway( user, ms_username=G_name("RG", node), ms_password="sniff", host=node, port=32780, private=False )
             logging.info("Created RG %s" % G_name("RG", node))
          except:
             logging.info("traceback: %s" % traceback.format_exc())
