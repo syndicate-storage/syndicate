@@ -14,11 +14,11 @@ struct gateway_ctx {
     char const* file_path;
     // data buffer (manifest or remote block data)
     char* data;
-    size_t data_len;
+    ssize_t data_len;
     off_t data_offset;
     off_t num_read;
     // file block info
-    uint64_t block_id;
+    off_t block_id;
     // bounded SQL query
     unsigned char* sql_query_bounded;
     // unbounded SQL query
@@ -29,10 +29,6 @@ struct gateway_ctx {
     bool is_db_info;
     // are we done?
     bool complete;
-    // Pointer to block index entry pointer. Allocated bye execute_db.
-    block_index_entry *blkie;
-    // Row offset
-    off_t row_offset;
 };
 
 #endif //_GATEWAY_CTX_H_

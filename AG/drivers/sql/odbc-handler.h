@@ -31,8 +31,9 @@ class ODBCHandler
 
     public:
 	static  ODBCHandler&  get_handle(unsigned char* con_str);
-	string  execute_query(struct gateway_ctx<ODBCHandler> *ctx, ssize_t read_size, ssize_t block_size); 
+	void    execute_query(struct gateway_ctx<ODBCHandler> *ctx, ssize_t read_size, ssize_t block_size); 
 	string  get_tables();
+	string  execute_query(unsigned char* query, ssize_t threashold, off_t *row_count, ssize_t *len, ssize_t *last_row_len); 
 	string  get_db_info();
 	string  extract_error(SQLHANDLE handle, SQLSMALLINT type);
 	ssize_t	encode_results(stringstream& str_stream, char* column, 
