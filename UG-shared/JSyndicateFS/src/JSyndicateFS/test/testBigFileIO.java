@@ -12,7 +12,6 @@ import JSyndicateFS.FileSystem;
 import JSyndicateFS.Path;
 import static JSyndicateFS.test.testFileIO.createNewFile;
 import static JSyndicateFS.test.testFileIO.initFS;
-import static JSyndicateFS.test.testFileIO.listRootFiles;
 import static JSyndicateFS.test.testFileIO.uninitFS;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -20,8 +19,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  *
@@ -32,9 +29,13 @@ public class testBigFileIO {
     private static final long KILOBYTE = 1024;
     private static final long MEGABYTE = 1024*1024;
     
-    public static void initFS() throws IllegalAccessException, URISyntaxException, InstantiationException {
+    public static void initFS(boolean localms) throws IllegalAccessException, URISyntaxException, InstantiationException {
         Configuration conf = new Configuration();
-        conf.setMSUrl(new URI("http://localhost:8080"));
+        if(localms) {
+            conf.setMSUrl(new URI("http://localhost:8080"));
+        } else {
+            conf.setMSUrl(new URI("https://syndicate-metadata.appspot.com"));
+        }
         conf.setUGName("Hadoop");
         conf.setUGPassword("sniff");
         conf.setVolumeName("testvolume-iychoi-email.arizona.edu");
@@ -145,7 +146,10 @@ public class testBigFileIO {
     
     public static void main(String[] args) {
         try {
-            initFS();
+            if(args.length > 0)
+                initFS(Boolean.parseBoolean(args[0]));
+            else
+                initFS(false);
             
             //listRootFiles();
             

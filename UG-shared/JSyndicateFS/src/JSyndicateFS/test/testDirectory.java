@@ -25,9 +25,13 @@ import java.net.URISyntaxException;
 public class testDirectory {
     private static FileSystem filesystem;
     
-    public static void initFS() throws IllegalAccessException, URISyntaxException, InstantiationException {
+    public static void initFS(boolean localms) throws IllegalAccessException, URISyntaxException, InstantiationException {
         Configuration conf = new Configuration();
-        conf.setMSUrl(new URI("http://localhost:8080"));
+        if(localms) {
+            conf.setMSUrl(new URI("http://localhost:8080"));
+        } else {
+            conf.setMSUrl(new URI("https://syndicate-metadata.appspot.com"));
+        }
         conf.setUGName("Hadoop");
         conf.setUGPassword("sniff");
         conf.setVolumeName("testvolume-iychoi-email.arizona.edu");
@@ -113,7 +117,10 @@ public class testDirectory {
     
     public static void main(String[] args) {
         try {
-            initFS();
+            if(args.length > 0)
+                initFS(Boolean.parseBoolean(args[0]));
+            else
+                initFS(false);
             
             createNewDirs();
             createNewFile();
