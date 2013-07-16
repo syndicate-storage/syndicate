@@ -100,8 +100,8 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	else if (!ctx->complete) {
 	    if (ctx->data == NULL)
 		odh.execute_query(ctx, 0, global_conf->blocking_factor);
-	    if (ctx->data != NULL) {
-		size_t rem_len = global_conf->blocking_factor - ctx->data_offset;
+	    if (ctx->data_len) {
+		size_t rem_len = ctx->data_len - ctx->data_offset;
 		size_t read_len = (rem_len > len)?len:rem_len;
 		ctx->complete  = (rem_len > len)?false:true;
 		memcpy(buf, ctx->data + ctx->data_offset, read_len);

@@ -112,6 +112,7 @@ string ODBCHandler::execute_query(unsigned char* query, ssize_t threashold,
     stringstream	result_str;
     bool		row_bound = false;
 
+    cout<<"Query: "<<query<<endl;
     SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
     ret = SQLPrepare(stmt, query , SQL_NTS);
     if (!SQL_SUCCEEDED(ret)) { 
@@ -210,6 +211,11 @@ void ODBCHandler::execute_query(struct gateway_ctx<ODBCHandler> *ctx, ssize_t re
 	    db_read_size = block_size + start_byte_offset;
 	    results = execute_query(query, db_read_size, &row_count, &len, &last_row_len);
 
+	    //If there is no data do not proceed...
+	    if (!(len + last_row_len)) {
+		break;
+	    }
+
 	    //Update the block index
 	    new_blkie = blk_index.alloc_block_index_entry();
 	    new_blkie->start_row = start_row;
@@ -233,10 +239,12 @@ void ODBCHandler::execute_query(struct gateway_ctx<ODBCHandler> *ctx, ssize_t re
 	len = (block_size > len - blkie->start_byte_offset)?len - blkie->start_byte_offset:block_size;
 	block_start_byte_offset = blkie->start_byte_offset;
     }
-    results_cstr = results.c_str();
-    ctx->data_len = len;
-    ctx->data = (char*)malloc(ctx->data_len);
-    memcpy(ctx->data, results_cstr+block_start_byte_offset, ctx->data_len);
+    if (len) {
+	results_cstr = results.c_str();
+	ctx->data_len = len;
+	ctx->data = (char*)malloc(ctx->data_len);
+	memcpy(ctx->data, results_cstr+block_start_byte_offset, ctx->data_len);
+    }
 }
 
 ssize_t ODBCHandler::encode_results(stringstream& str_stream, char* column, bool row_bound)
