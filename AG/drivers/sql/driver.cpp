@@ -98,23 +98,33 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	    ctx->complete = true;
 	}
 	else if (!ctx->complete) {
-	    size_t rem_len = global_conf->blocking_factor - ctx->data_offset;
-	    size_t read_len = (rem_len > len)?len:rem_len;
-	    ctx->complete  = (rem_len > len)?false:true;
-	    string results = odh.execute_query(ctx, read_len, global_conf->blocking_factor);
-	    const char* results_c_str = results.c_str();
-	    size_t results_len = results.length();
-	    memcpy(buf, results_c_str, results_len);
-	    ret = results_len;
-	    ctx->data_offset += ret;
+	    if (ctx->data == NULL)
+		odh.execute_query(ctx, 0, global_conf->blocking_factor);
+	    if (ctx->data != NULL) {
+		size_t rem_len = global_conf->blocking_factor - ctx->data_offset;
+		size_t read_len = (rem_len > len)?len:rem_len;
+		ctx->complete  = (rem_len > len)?false:true;
+		memcpy(buf, ctx->data + ctx->data_offset, read_len);
+		ret = read_len;
+		ctx->data_offset += ret;
+	    }
+	    else {
+		ret = 0;
+		ctx->complete = true;
+	    }
 	}
 	else if (ctx->complete) {
 	    ret = 0;
+	    if (ctx->data != NULL) {
+		free(ctx->data);
+		ctx->data_len = 0;
+		ctx->data_offset = 0;
+	    }
 	}
     }
     else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
 	// read from RAM
-	memcpy( buf, ctx->data + ctx->data_offset, MIN( len, ctx->data_len - ctx->data_offset ) );
+	memcpy( buf, ctx->data + ctx->data_offset, MIN( (ssize_t)len, ctx->data_len - ctx->data_offset ) );
 	ctx->data_offset += len;
 	ret = (ssize_t)len;
     }
@@ -240,7 +250,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        ctx->request_type = GATEWAY_REQUEST_TYPE_MANIFEST;
        ctx->data_offset = 0;
        ctx->block_id = 0;
-       ctx->num_read = 0;
+       //ctx->num_read = 0;
        replica_ctx->size = ctx->data_len;
    }
    else {
@@ -257,11 +267,10 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	   ctx->data_offset = 0;
        }
 
-       ctx->num_read = 0;
+       //ctx->num_read = 0;
        ctx->block_id = block_id;
+       ctx->data = NULL;
        ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
-       ctx->blkie = NULL;
-       ctx->row_offset = 0;
        // Negative size switches libmicrohttpd to chunk transfer mode
        replica_ctx->size = -1;
    }

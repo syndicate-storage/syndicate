@@ -70,6 +70,8 @@ const block_index_entry* BlockIndex::get_block(string file_name, off_t block_id)
     BlockMap::iterator itr = blk_map.find(file_name);
     if (itr != blk_map.end()) {
 	blk_list = itr->second;
+	if (blk_list->size() <= block_id)
+	    return NULL;
 	if (blk_list)
 	    return (*blk_list)[block_id];
 	else
@@ -79,7 +81,7 @@ const block_index_entry* BlockIndex::get_block(string file_name, off_t block_id)
 	return NULL;
 }
 
-const block_index_entry* BlockIndex::get_last_block(string file_name)
+const block_index_entry* BlockIndex::get_last_block(string file_name, off_t *block_id)
 {
     vector<block_index_entry*> *blk_list = NULL;
     BlockMap::iterator itr = blk_map.find(file_name);
@@ -87,6 +89,7 @@ const block_index_entry* BlockIndex::get_last_block(string file_name)
 	blk_list = itr->second;
 	if (blk_list) {
 	    block_index_entry *blkie =  blk_list->back();
+	    *block_id = blk_map.size() - 1;
 	    return blkie;
 	}
 	return NULL;

@@ -38,7 +38,7 @@ class BlockIndex {
 				block_index_entry* blkie);
 	const block_index_entry* get_block(string file_name,
 					   off_t block_id);
-	const block_index_entry* get_last_block(string file_name);
+	const block_index_entry* get_last_block(string file_name, off_t *block_id);
 };
 
 #endif //_BLOCK_INDEX_H_
