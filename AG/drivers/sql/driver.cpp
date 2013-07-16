@@ -25,7 +25,10 @@ char *datapath = NULL;
 // Length of datapath varaiable
 size_t  datapath_len = 0;
 
-ODBCHandler& odh = ODBCHandler::get_handle((unsigned char*)"DSN=sqlite");
+// ODBC DSN string
+unsigned char* dsn_string = NULL;
+
+//ODBCHandler& odh = ODBCHandler::get_handle((unsigned char*)"DSN=sqlite");
 
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, 
@@ -80,6 +83,7 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx,
 extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* user_cls ) {
     errorf("%s", "INFO: get_dataset\n"); 
     ssize_t ret = 0;
+    ODBCHandler& odh = ODBCHandler::get_handle(dsn_string);
     struct gateway_ctx<ODBCHandler>* ctx = (struct gateway_ctx<ODBCHandler>*)user_cls;
 
     if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
@@ -295,6 +299,10 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     map<string, struct map_info>::iterator iter;
     set<char*, path_comp> dir_hierachy;
     mp.parse();
+    unsigned char* dsn = mp.get_dsn();
+    init(dsn);
+
+    ODBCHandler& odh = ODBCHandler::get_handle(dsn_string);
     FS2SQL = mp.get_map();
     for (iter = FS2SQL->begin(); iter != FS2SQL->end(); iter++) {
 	const char* full_path = iter->first.c_str();
@@ -385,5 +393,16 @@ static int publish(const char *fpath, int type, struct map_info mi)
     DATA[ment->path] = ment;
     //pfunc_exit_code = 0;
     return 0;  
+}
+
+
+void init(unsigned char* dsn) {
+    if (dsn_string == NULL) {
+	size_t dsn_len = strlen((const char*)dsn) + strlen((const char*)ODBC_DSN_PREFIX);
+	dsn_string = (unsigned char*)malloc(dsn_len + 1);
+	memset(dsn_string, 0, dsn_len + 1);
+	memcpy(dsn_string, ODBC_DSN_PREFIX, strlen((const char*)ODBC_DSN_PREFIX));
+	memcpy(dsn_string + strlen((const char*)ODBC_DSN_PREFIX), dsn, strlen((const char*)dsn));
+    }
 }
 
