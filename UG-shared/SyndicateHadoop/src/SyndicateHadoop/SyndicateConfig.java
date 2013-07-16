@@ -66,6 +66,10 @@ public class SyndicateConfig {
         SyndicateConfigUtil.setUGName(this.config, val);
     }
     
+    public String generateUGName(String prefix) {
+        return SyndicateConfigUtil.generateUGName(prefix);
+    }
+    
     public String getVolumeName() {
         return SyndicateConfigUtil.getVolumeName(this.config);
     }

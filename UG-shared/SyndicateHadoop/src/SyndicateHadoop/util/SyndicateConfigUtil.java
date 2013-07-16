@@ -83,6 +83,10 @@ public class SyndicateConfigUtil {
         return conf.get(UG_NAME);
     }
     
+    public static String generateUGName(String prefix) {
+        return UGNameUtil.getUGName(prefix);
+    }
+    
     public static void setVolumeName(Configuration conf, String volume_name) {
         conf.set(VOLUME_NAME, volume_name);
     }
