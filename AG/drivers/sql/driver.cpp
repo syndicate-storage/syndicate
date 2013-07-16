@@ -115,11 +115,6 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	}
 	else if (ctx->complete) {
 	    ret = 0;
-	    /*if (ctx->data != NULL) {
-		free(ctx->data);
-		ctx->data_len = 0;
-		ctx->data_offset = 0;
-	    }*/
 	}
     }
     else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
@@ -283,7 +278,14 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 
 // clean up a transfer 
 extern "C" void cleanup_dataset( void* cls ) {   
-   errorf("%s", "INFO: cleanup_dataset\n"); 
+    errorf("%s", "INFO: cleanup_dataset\n"); 
+    struct gateway_ctx<ODBCHandler>* ctx = (struct gateway_ctx<ODBCHandler>*)cls;
+    if (ctx) {
+	if (ctx->data != NULL) {
+	    free(ctx->data);
+	}
+	free (ctx);
+    }
 }
 
 extern "C" int publish_dataset (struct gateway_context*, ms_client *client, 
