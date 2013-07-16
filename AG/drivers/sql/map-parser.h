@@ -38,10 +38,21 @@ using namespace xercesc;
 
 #define MAP_TAG		    "Map"
 #define PAIR_TAG	    "Pair"
+#define CONFIG_TAG	    "Config"
+#define DSN_TAG		    "DSN"
 #define KEY_TAG		    "File"
 #define VALUE_TAG	    "Query"
 #define PERM_ATTR	    "perm"
-#define QUERY_BOUND_ATTR    "bounded"
+#define QUERY_TYPE_ATTR     "type"
+
+#define	QUERY_TYPE_SHELL		    0
+#define	QUERY_TYPE_STR_SHELL		    "sell"
+#define	QUERY_TYPE_BOUNDED_SQL		    1
+#define	QUERY_TYPE_STR_BOUNDED_SQL	    "bounded-sql"
+#define QUERY_TYPE_UNBOUNDED_SQL	    2
+#define QUERY_TYPE_STR_UNBOUNDED_SQL	    "unbounded-sql"
+
+#define QUERY_TYPE_DEFAULT	QUERY_TYPE_BOUNDED_SQL
 
 struct map_info {
     unsigned char* query;
@@ -58,7 +69,10 @@ class MapParserHandler : public DefaultHandler {
 	char* bounded_query;
 	char* unbounded_query;
 	int current_perm;
-	bool is_bounded_query;
+	unsigned int type;
+	unsigned char* dsn_str;
+	bool open_dsn;
+
 	map<string, struct map_info>* xmlmap;
     public:
 	MapParserHandler(map<string, struct map_info> *xmlmap);
@@ -78,16 +92,19 @@ class MapParserHandler : public DefaultHandler {
 		const   unsigned int    length   
 		);   
 	void fatalError(const SAXParseException&);
+	unsigned char* get_dsn();
 };
 
 class MapParser {
     private:
 	map<string, struct map_info> *FS2SQLMap;
 	char *mapfile;
+	unsigned char* dsn_str;
     public:
 	MapParser( char* mapfile );
 	map<string, struct map_info>* get_map( );
 	int parse();
+	unsigned char* get_dsn();
 };
 #endif //_MAP_PARSER_H_
 

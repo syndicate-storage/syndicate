@@ -26,11 +26,12 @@ MapParserHandler::MapParserHandler(map<string, struct map_info>* xmlmap)
     this->xmlmap = xmlmap;
     open_key = false;
     open_val = false;
-    is_bounded_query = true;
+    open_dsn = false;
     element_buff = NULL;
     current_key = NULL;
     bounded_query = NULL;
     unbounded_query = NULL;
+    type = QUERY_TYPE_DEFAULT;
 }
 
 void MapParserHandler::startElement(const   XMLCh* const    uri,
@@ -44,6 +45,9 @@ void MapParserHandler::startElement(const   XMLCh* const    uri,
     }
     if (!strncmp(tag, VALUE_TAG, strlen(VALUE_TAG))) {
 	open_key = true;
+    }
+    if (!strncmp(tag, DSN_TAG, strlen(DSN_TAG))) {
+	open_dsn = true;
     }
     for (XMLSize_t i=0; i < attrs.getLength(); i++) {
 	char* attr = XMLString::transcode(attrs.getLocalName(i));
@@ -59,14 +63,19 @@ void MapParserHandler::startElement(const   XMLCh* const    uri,
 		XMLString::release(&perm_str);
 	    }
 	}
-	if (!strncmp(attr, QUERY_BOUND_ATTR, strlen(QUERY_BOUND_ATTR))) {
-	    char* bound_str = XMLString::transcode(attrs.getValue(i));
-	    if (bound_str) {
-		if (atol(bound_str) > 0)
-		    is_bounded_query = true;
-		else
-		    is_bounded_query = false;
-		XMLString::release(&bound_str);
+	if (!strncmp(attr, QUERY_TYPE_ATTR, strlen(QUERY_TYPE_ATTR))) {
+	    char* type_str = XMLString::transcode(attrs.getValue(i));
+	    if (type_str == NULL || (type_str != NULL && 
+			!strncmp(type_str, QUERY_TYPE_STR_BOUNDED_SQL, strlen(QUERY_TYPE_STR_BOUNDED_SQL)))) {
+		type = QUERY_TYPE_BOUNDED_SQL;
+	    }
+	    else if (!strncmp(type_str, QUERY_TYPE_STR_SHELL, strlen(QUERY_TYPE_STR_SHELL))) {
+		type = QUERY_TYPE_SHELL;
+		XMLString::release(&type_str);
+	    }
+	    else if (!strncmp(type_str, QUERY_TYPE_STR_UNBOUNDED_SQL, strlen(QUERY_TYPE_STR_UNBOUNDED_SQL))) {
+		type = QUERY_TYPE_UNBOUNDED_SQL;
+		XMLString::release(&type_str);
 	    }
 	}
 	XMLString::release(&attr);
@@ -80,20 +89,25 @@ void MapParserHandler::endElement (
 	const   XMLCh *const    qname) 
 {
     char* tag = XMLString::transcode(localname);
+    if (!strncmp(tag, DSN_TAG, strlen(DSN_TAG)) && open_dsn) {
+	open_dsn = false;
+	dsn_str = (unsigned char*)strdup(element_buff);
+    }
     if (!strncmp(tag, KEY_TAG, strlen(KEY_TAG)) && open_key) {
 	open_key = false;
 	current_key = strdup(element_buff);
     }
     if (!strncmp(tag, VALUE_TAG, strlen(VALUE_TAG)) && open_key 
-	    && is_bounded_query) {
+	    && (type == QUERY_TYPE_BOUNDED_SQL)) {
 	open_key = false;
 	bounded_query = strdup(element_buff);
+	type = QUERY_TYPE_DEFAULT;
     }
     if (!strncmp(tag, VALUE_TAG, strlen(VALUE_TAG)) && open_key 
-	    && !is_bounded_query) {
+	    && (type == QUERY_TYPE_UNBOUNDED_SQL)) {
 	open_key = false;
-	is_bounded_query = true;
 	unbounded_query = strdup(element_buff);
+	type = QUERY_TYPE_DEFAULT;
     }
     if (!strncmp(tag, PAIR_TAG, strlen(PAIR_TAG))) {
 	if (current_key) {
@@ -101,7 +115,7 @@ void MapParserHandler::endElement (
 	    mi.query = NULL;
 	    mi.unbounded_query = NULL;
 	    mi.file_perm = current_perm;
-	    if (bounded_query) {
+	    if (bounded_query != NULL) {
 		size_t bounded_query_len = strlen(bounded_query);
 		mi.query = (unsigned char*)malloc(bounded_query_len + 1);
 		strncpy((char*)mi.query, bounded_query, bounded_query_len);
@@ -109,7 +123,7 @@ void MapParserHandler::endElement (
 		free(bounded_query);
 		bounded_query = NULL;
 	    }
-	    if (unbounded_query) {
+	    if (unbounded_query != NULL) {
 		size_t unbounded_query_len = strlen(unbounded_query);
 		mi.unbounded_query = (unsigned char*)malloc(unbounded_query_len + 1);
 		strncpy((char*)mi.unbounded_query, unbounded_query, unbounded_query_len);
@@ -155,6 +169,21 @@ void MapParserHandler::characters (
 	}
 	XMLString::release(&element);
     }
+    if (open_dsn) {
+	if (!element_buff) { 
+	    element_buff = (char*)malloc(length+1);
+	    element_buff[length] = 0;
+	    strncpy(element_buff, element, length);
+	}
+	else { 
+	    int current_len = strlen(element_buff); 
+	    element_buff = (char*)realloc
+		(element_buff, current_len + length + 1);
+	    element_buff[current_len + length] = 0;
+	    strncat(element_buff + current_len, element, length);
+	}
+	XMLString::release(&element);
+    }
 }
 
 void MapParserHandler::fatalError(const SAXParseException& exception)
@@ -162,6 +191,11 @@ void MapParserHandler::fatalError(const SAXParseException& exception)
     char* message = XMLString::transcode(exception.getMessage());
     XMLString::release(&message);
 }   
+
+unsigned char* MapParserHandler::get_dsn()
+{
+    return dsn_str;
+}
 
 MapParser::MapParser( char* mapfile)
 {
@@ -201,6 +235,7 @@ int MapParser::parse()
     catch (...) {
 	return -1;
     }
+    dsn_str = mph->get_dsn();
     delete parser;
     delete mph;
     return 0;
@@ -210,4 +245,10 @@ map<string, struct map_info>* MapParser::get_map()
 {
     return FS2SQLMap;
 }
+
+unsigned char* MapParser::get_dsn()
+{
+    return dsn_str;
+}
+
 
