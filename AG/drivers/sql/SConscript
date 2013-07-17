@@ -6,7 +6,7 @@ import os
 source_files = """
    odbc-handler.cpp
    driver.cpp
-   map-parser.cpp
+   ../common/map-parser.cpp
    block-index.cpp
 """
 
