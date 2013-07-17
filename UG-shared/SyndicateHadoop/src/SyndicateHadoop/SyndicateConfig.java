@@ -1,6 +1,5 @@
 /*
- * To change this template, choose Tools | Templates
- * and open the template in the editor.
+ * Configuration class for Syndicate
  */
 package SyndicateHadoop;
 
@@ -46,24 +45,24 @@ public class SyndicateConfig {
         return SyndicateConfigUtil.getConfigFile(this.config);
     }
     
-    public void setConfigFile(String val) {
-        SyndicateConfigUtil.setConfigFile(this.config, val);
+    public void setConfigFile(String path) {
+        SyndicateConfigUtil.setConfigFile(this.config, path);
     }
     
     public String getUGPassword() {
         return SyndicateConfigUtil.getUGPassword(this.config);
     }
     
-    public void setUGPassword(String val) {
-        SyndicateConfigUtil.setUGPassword(this.config, val);
+    public void setUGPassword(String ug_password) {
+        SyndicateConfigUtil.setUGPassword(this.config, ug_password);
     }
     
     public String getUGName() {
         return SyndicateConfigUtil.getUGName(this.config);
     }
     
-    public void setUGName(String val) {
-        SyndicateConfigUtil.setUGName(this.config, val);
+    public void setUGName(String ug_name) {
+        SyndicateConfigUtil.setUGName(this.config, ug_name);
     }
     
     public String generateUGName(String prefix) {
@@ -74,68 +73,68 @@ public class SyndicateConfig {
         return SyndicateConfigUtil.getVolumeName(this.config);
     }
     
-    public void setVolumeName(String val) {
-        SyndicateConfigUtil.setVolumeName(this.config, val);
+    public void setVolumeName(String volume_name) {
+        SyndicateConfigUtil.setVolumeName(this.config, volume_name);
     }
     
     public String getVolumeSecret() {
         return SyndicateConfigUtil.getVolumeSecret(this.config);
     }
     
-    public void setVolumeSecret(String val) {
-        SyndicateConfigUtil.setVolumeSecret(this.config, val);
+    public void setVolumeSecret(String volume_secret) {
+        SyndicateConfigUtil.setVolumeSecret(this.config, volume_secret);
     }
     
     public String getMSUrl() {
         return SyndicateConfigUtil.getMSUrl(this.config);
     }
     
-    public void setMSUrl(String val) {
-        SyndicateConfigUtil.setMSUrl(this.config, val);
+    public void setMSUrl(String msurl) {
+        SyndicateConfigUtil.setMSUrl(this.config, msurl);
     }
     
-    public void setMSUrl(URL val) {
-        SyndicateConfigUtil.setMSUrl(this.config, val);
+    public void setMSUrl(URL msurl) {
+        SyndicateConfigUtil.setMSUrl(this.config, msurl);
     }
     
     public int getPort() {
         return SyndicateConfigUtil.getPort(this.config);
     }
     
-    public void setPort(int val) {
-        SyndicateConfigUtil.setPort(this.config, val);
+    public void setPort(int port) {
+        SyndicateConfigUtil.setPort(this.config, port);
     }
     
     public int getMaxMetadataCacheNum() {
         return SyndicateConfigUtil.getMaxMetadataCacheNum(this.config);
     }
     
-    public void setMaxMetadataCacheNum(int val) {
-        SyndicateConfigUtil.setMaxMetadataCacheNum(this.config, val);
+    public void setMaxMetadataCacheNum(int maxCache) {
+        SyndicateConfigUtil.setMaxMetadataCacheNum(this.config, maxCache);
     }
     
     public int getMetadataCacheTimeout() {
         return SyndicateConfigUtil.getMetadataCacheTimeout(this.config);
     }
     
-    public void setMetadataCacheTimeout(int val) {
-        SyndicateConfigUtil.setMetadataCacheTimeout(this.config, val);
+    public void setMetadataCacheTimeout(int timeoutSec) {
+        SyndicateConfigUtil.setMetadataCacheTimeout(this.config, timeoutSec);
     }
     
     public int getFileReadBufferSize() {
         return SyndicateConfigUtil.getFileReadBufferSize(this.config);
     }
     
-    public void setFileReadBufferSize(int val) {
-        SyndicateConfigUtil.setFileReadBufferSize(this.config, val);
+    public void setFileReadBufferSize(int bufferSize) {
+        SyndicateConfigUtil.setFileReadBufferSize(this.config, bufferSize);
     }
     
     public int getFileWriteBufferSize() {
         return SyndicateConfigUtil.getFileWriteBufferSize(this.config);
     }
     
-    public void setFileWriteBufferSize(int val) {
-        SyndicateConfigUtil.setFileWriteBufferSize(this.config, val);
+    public void setFileWriteBufferSize(int bufferSize) {
+        SyndicateConfigUtil.setFileWriteBufferSize(this.config, bufferSize);
     }
     
     public JSyndicateFS.Configuration getJSFSConfiguration() {
@@ -325,16 +324,16 @@ public class SyndicateConfig {
         SyndicateConfigUtil.setInputFormat(this.config, val);
     }
     
-    public void setMinInputSplitSize(long val) {
-        SyndicateConfigUtil.setMinInputSplitSize(this.config, val);
+    public void setMinInputSplitSize(long minSize) {
+        SyndicateConfigUtil.setMinInputSplitSize(this.config, minSize);
     }
     
     public long getMinInputSplitSize() {
         return SyndicateConfigUtil.getMinInputSplitSize(this.config);
     }
     
-    public void setMaxInputSplitSize(long val) {
-        SyndicateConfigUtil.setMaxInputSplitSize(this.config, val);
+    public void setMaxInputSplitSize(long maxSize) {
+        SyndicateConfigUtil.setMaxInputSplitSize(this.config, maxSize);
     }
     
     public long getMaxInputSplitSize() {
@@ -365,12 +364,35 @@ public class SyndicateConfig {
         SyndicateConfigUtil.setInputPathFilter(this.config, val);
     }
     
-    public void setOutputPath(Path path) {
-        SyndicateConfigUtil.setOutputPath(this.config, path);
+    public void setOutputPath(Path outputPath) {
+        SyndicateConfigUtil.setOutputPath(this.config, outputPath);
     }
 
     public Path getOutputPath() {
         return SyndicateConfigUtil.getOutputPath(this.config);
     }
 
+    public void setOutputBaseName(String basename) {
+        SyndicateConfigUtil.setOutputBaseName(this.config, basename);
+    }
+    
+    public String getOutputBaseName() {
+        return SyndicateConfigUtil.getOutputBaseName(this.config);
+    }
+    
+    public void setTextOutputFormatSeparator(String separator) {
+        SyndicateConfigUtil.setTextOutputFormatSeparator(this.config, separator);
+    }
+    
+    public String getTextOutputFormatSeparator() {
+        return SyndicateConfigUtil.getTextOutputFormatSeparator(this.config);
+    }
+    
+    public void setTextInputMaxLength(int maxlength) {
+        SyndicateConfigUtil.setTextInputMaxLength(this.config, maxlength);
+    }
+    
+    public int getTextInputMaxLength() {
+        return SyndicateConfigUtil.getTextInputMaxLength(this.config);
+    }
 }

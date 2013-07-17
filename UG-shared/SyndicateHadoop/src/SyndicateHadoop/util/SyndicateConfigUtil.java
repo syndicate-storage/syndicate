@@ -62,6 +62,8 @@ public class SyndicateConfigUtil {
     
     public static final String TEXT_OUTPUT_FORMAT_SEPARATOR = "mapred.textoutputformat.separator";
     
+    public static final String TEXT_INPUT_MAX_LENGTH = "mapred.linerecordreader.maxlength";
+    
     public static void setConfigFile(Configuration conf, String path) {
         conf.set(CONFIG_FILE, path);
     }
@@ -254,16 +256,16 @@ public class SyndicateConfigUtil {
         conf.setClass(JOB_INPUT_FORMAT, val, InputFormat.class);
     }
     
-    public static void setMinInputSplitSize(Configuration conf, long val) {
-        conf.setLong(MIN_INPUT_SPLIT_SIZE, val);
+    public static void setMinInputSplitSize(Configuration conf, long minSize) {
+        conf.setLong(MIN_INPUT_SPLIT_SIZE, minSize);
     }
     
     public static long getMinInputSplitSize(Configuration conf) {
         return conf.getLong(MIN_INPUT_SPLIT_SIZE, 1);
     }
     
-    public static void setMaxInputSplitSize(Configuration conf, long val) {
-        conf.setLong(MAX_INPUT_SPLIT_SIZE, val);
+    public static void setMaxInputSplitSize(Configuration conf, long maxSize) {
+        conf.setLong(MAX_INPUT_SPLIT_SIZE, maxSize);
     }
     
     public static long getMaxInputSplitSize(Configuration conf) {
@@ -288,10 +290,10 @@ public class SyndicateConfigUtil {
         conf.set(INPUT_DIR, path);
     }
     
-    public static void addInputPath(Configuration conf, Path path) throws IOException {
+    public static void addInputPath(Configuration conf, Path inputPath) throws IOException {
         String dirs = conf.get(INPUT_DIR);
         
-        String newDirs = StringUtils.addPathString(dirs, path);
+        String newDirs = StringUtils.addPathString(dirs, inputPath);
         conf.set(INPUT_DIR, newDirs);
     }
     
@@ -310,8 +312,8 @@ public class SyndicateConfigUtil {
         return conf.getClass(INPUT_PATH_FILTER, null, FilenameFilter.class);
     }
     
-    public static void setOutputPath(Configuration conf, Path path) {
-        conf.set(OUTPUT_DIR, path.getPath());
+    public static void setOutputPath(Configuration conf, Path outputPath) {
+        conf.set(OUTPUT_DIR, outputPath.getPath());
     }
 
     public static Path getOutputPath(Configuration conf) {
@@ -332,5 +334,13 @@ public class SyndicateConfigUtil {
     
     public static String getTextOutputFormatSeparator(Configuration conf) {
         return conf.get(TEXT_OUTPUT_FORMAT_SEPARATOR, "\t");
+    }
+    
+    public static void setTextInputMaxLength(Configuration conf, int maxlength) {
+        conf.setInt(TEXT_INPUT_MAX_LENGTH, maxlength);
+    }
+    
+    public static int getTextInputMaxLength(Configuration conf) {
+        return conf.getInt(TEXT_INPUT_MAX_LENGTH, Integer.MAX_VALUE);
     }
 }
