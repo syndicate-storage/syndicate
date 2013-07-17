@@ -267,9 +267,10 @@ class UserGateway( Gateway ):
       """
       Given a volume id, find all UserGateway records bound to it.  Cache the results
       """
-      cache_key = UserGateway.cache_listing_key( volume_id=volume_id )
+      #cache_key = UserGateway.cache_listing_key( volume_id=volume_id )
 
-      results = storagetypes.memcache.get( cache_key )
+      #results = storagetypes.memcache.get( cache_key )
+      results = None
       if results == None:
          qry = UserGateway.query( UserGateway.volume_id == volume_id )
          results_qry = qry.fetch(None, batch_size=1000 )
@@ -278,7 +279,7 @@ class UserGateway( Gateway ):
          for rr in results_qry:
             results.append( rr )
 
-         storagetypes.memcache.add( cache_key, results )
+         #storagetypes.memcache.add( cache_key, results )
 
       return results
 
@@ -338,6 +339,12 @@ class AcquisitionGateway( Gateway ):
       pw_hash = Gateway.generate_password_hash( password )
       
       return ( password, pw_hash)  
+
+
+   @classmethod
+   def cache_listing_key( cls, **kwargs ):
+      assert 'volume_id' in kwargs, "Required attributes: volume_id"
+      return "AGs: volume=%s" % kwargs['volume_id']
 
    @classmethod
    def Create( cls, user, **kwargs ):
@@ -453,6 +460,26 @@ class AcquisitionGateway( Gateway ):
       else:
          return AcquisitionGateway.query()
 
+   @classmethod
+   def ListAll_ByVolume( cls, volume_id ):
+      """
+      Given a volume id, find all AcquisitionGateway records bound to it.  Cache the results
+      """
+      #cache_key = AcquisitionGateway.cache_listing_key( volume_id=volume_id )
+
+      #results = storagetypes.memcache.get( cache_key )
+      results = None
+      if results == None:
+         qry = AcquisitionGateway.query( AcquisitionGateway.volume_ids == volume_id )
+         results_qry = qry.fetch(None, batch_size=1000 )
+
+         results = []
+         for rr in results_qry:
+            results.append( rr )
+
+         #storagetypes.memcache.add( cache_key, results )
+
+      return results
 
       
    @classmethod
@@ -510,6 +537,11 @@ class ReplicaGateway( Gateway ):
       pw_hash = Gateway.generate_password_hash( password )
       
       return ( password, pw_hash)  
+
+   @classmethod
+   def cache_listing_key( cls, **kwargs ):
+      assert 'volume_id' in kwargs, "Required attributes: volume_id"
+      return "RGs: volume=%s" % kwargs['volume_id']
 
    @classmethod
    def Create( cls, user, **kwargs ):
@@ -597,6 +629,9 @@ class ReplicaGateway( Gateway ):
       '''
       Update RG identified by ms_username with fields specified as a dictionary.
       '''
+      import logging
+      logging.info(ms_username)
+      logging.info(fields)
       gateway = ReplicaGateway.Read(ms_username)
       gateway_key_name = ReplicaGateway.make_key_name( ms_username=ms_username )
       storagetypes.memcache.delete(gateway_key_name)
@@ -604,7 +639,8 @@ class ReplicaGateway( Gateway ):
       for key, value in fields.iteritems():
          try:
             setattr(gateway, key, value)
-         except:
+         except Exception as e:
+            logging.info(e)
             raise Exception("ReplicaGatewayUpdate: Unable to set attribute: %s, %s." % (key, value))
       RG_future = gateway.put_async()
       storagetypes.wait_futures([RG_future])
@@ -626,27 +662,28 @@ class ReplicaGateway( Gateway ):
 
       return True
    
-   ''' Same as AG, is this necessary?   
    @classmethod
    def ListAll_ByVolume( cls, volume_id ):
       """
-      Given a volume id, find all UserGateway records bound to it.  Cache the results
+      Given a volume id, find all ReplicaGateway records bound to it.  Cache the results
       """
-      cache_key = UserGateway.cache_listing_key( volume_id=volume_id )
+      #cache_key = ReplicaGateway.cache_listing_key( volume_id=volume_id )
 
-      results = storagetypes.memcache.get( cache_key )
+      #results = storagetypes.memcache.get( cache_key )
+      results = None 
       if results == None:
-         qry = UserGateway.query( UserGateway.volume_id == volume_id )
+         qry = ReplicaGateway.query( ReplicaGateway.volume_ids == volume_id )
          results_qry = qry.fetch(None, batch_size=1000 )
 
          results = []
          for rr in results_qry:
             results.append( rr )
 
-         storagetypes.memcache.add( cache_key, results )
+         #storagetypes.memcache.add( cache_key, results )
 
       return results
-   '''
+
+
    @classmethod
    def ListAll( cls, **attrs ):
       '''

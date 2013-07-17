@@ -141,12 +141,16 @@ def changepassword(request, g_name):
             session['next_message'] = "Click here to go back to your volume."
             return HttpResponseRedirect('/syn/thanks')
 
-@transactional(xg=True)
 @authenticate
 def addvolume(request, g_name):
     session = request.session
     username = session['login_email']
     user = db.read_user(username)
+
+    @transactional(xg=True)
+    def update(vname, gname, vfields, gfields):
+        db.update_volume(vname, **vfields)
+        db.update_acquisition_gateway(g_name, **gfields)
 
     if request.POST:
         failure = precheck(request, g_name)
@@ -164,16 +168,15 @@ def addvolume(request, g_name):
 
         gateway = db.read_acquisition_gateway(g_name)
 
-        # update volume state
+        # prepate volume state
         if volume.ag_ids:
             new_ags = volume.ag_ids[:]
             new_ags.append(gateway.ag_id)
         else:
             new_ags = [gateway.ag_id]
-        fields = {'ag_ids':new_ags}
-        db.update_volume(form.cleaned_data['volume_name'], **fields)
+        vfields = {'ag_ids':new_ags}
 
-        # update AG state
+        # prepare AG state
         old_vids = gateway.volume_ids
         new_vid = volume.volume_id
         if new_vid in old_vids:
@@ -185,10 +188,10 @@ def addvolume(request, g_name):
         else:
             new_vids = [new_vid]
         try:
-            fields={'volume_ids':new_vids}
-            db.update_acquisition_gateway(g_name, **fields)
+            gfields={'volume_ids':new_vids}
+            update(form.cleaned_data['volume_name'], g_name, vfields, gfields)
         except Exception as e:
-            logging.error("Unable to update acquisition gateway %s. Exception %s" % (g_name, e))
+            logging.error("Unable to update acquisition gateway %s or volume %s. Exception %s" % (g_name, form.cleaned_data['volume_name'], e))
             message = "Unable to update gateway."
             return viewgateway(request, g_name, message)
         session['new_change'] = "We've updated your AG's volumes."

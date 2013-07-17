@@ -161,6 +161,9 @@ def read_acquisition_gateway( ms_username ):
 def update_acquisition_gateway( ms_username, **fields ):
    return AcquisitionGateway.Update( ms_username, **fields )
 
+def list_acquisition_gateways_by_volume( volume_id ):
+   return AcquisitionGateway.ListAll_ByVolume( volume_id )
+
 def list_acquisition_gateways( **attrs ):
    return AcquisitionGateway.ListAll( **attrs )
    
@@ -184,6 +187,10 @@ def read_replica_gateway( ms_username ):
 
 def update_replica_gateway( ms_username, **fields ):
    return ReplicaGateway.Update( ms_username, **fields )
+
+def list_replica_gateways_by_volume( volume_id ):
+   return ReplicaGateway.ListAll_ByVolume( volume_id )
+
 
 def list_replica_gateways( **attrs ):
    return ReplicaGateway.ListAll( **attrs )

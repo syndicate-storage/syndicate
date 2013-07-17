@@ -229,7 +229,7 @@ def addvolume(request, g_name):
         return HttpResponseRedirect('/syn/thanks')
     else:
         message = "Invalid entries for adding volumes."
-        return viewgateway(request, g_name, message, session['initial_data']) 
+        return viewgateway(request, g_name, message) 
 
 @authenticate
 def removevolumes(request, g_name):
@@ -316,7 +316,7 @@ def changelocation(request, g_name):
         return redirect('django_rg.views.viewgateway', g_name=g_name)
 
 @authenticate
-def viewgateway(request, g_name="", message="", initial_data=[]):
+def viewgateway(request, g_name="", message=""):
     session = request.session
     username = session['login_email']
     user = db.read_user(username)
@@ -339,6 +339,7 @@ def viewgateway(request, g_name="", message="", initial_data=[]):
 
     owners = []
     vols = []
+    initial_data = []
     for v_id in g.volume_ids:
         attrs = {'Volume.volume_id':"== %s" % v_id}
         vol = db.get_volume(**attrs)
@@ -347,16 +348,17 @@ def viewgateway(request, g_name="", message="", initial_data=[]):
         vols.append(vol)
         attrs = {"SyndicateUser.owner_id":"== %s" % vol.volume_id}
         owners.append(db.get_user(**attrs))
-
-    if not initial_data:
-        for v in vols:
-            initial_data.append({'volume_name':v.name,
+    for v in vols:
+        logging.info(v)
+        initial_data.append({'volume_name':v.name,
                              'remove':False})
 
     vol_owners = zip(vols, owners)
+    logging.info("length of vol_owners" + str(len(vol_owners)))
     VolumeFormSet = formset_factory(gatewayforms.GatewayRemoveVolume, extra=0)
     if initial_data:
         formset = VolumeFormSet(initial=initial_data)
+        logging.info("length of formset is " + str(len(formset.forms)))
     else:
         formset = []
     session['initial_data'] = initial_data
