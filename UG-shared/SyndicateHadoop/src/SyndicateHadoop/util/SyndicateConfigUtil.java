@@ -37,20 +37,20 @@ public class SyndicateConfigUtil {
     public static final String FILE_READ_BUFFER_SIZE = "syndicate.conf.file_read_buffer_size";
     public static final String FILE_WRITE_BUFFER_SIZE = "syndicate.conf.file_write_buffer_size";
     
-    public static final String JOB_MAPPER = "syndicate.job.mapper";
-    public static final String JOB_COMBINER = "syndicate.job.combiner";
-    public static final String JOB_PARTITIONER = "syndicate.job.partitioner";
-    public static final String JOB_REDUCER = "syndicate.job.reducer";
-    public static final String JOB_SORT_COMPARATOR = "syndicate.job.sort_comparator";
+    public static final String JOB_MAPPER = "mapreduce.map.class";
+    public static final String JOB_COMBINER = "mapreduce.combine.class";
+    public static final String JOB_PARTITIONER = "mapreduce.partitioner.class";
+    public static final String JOB_REDUCER = "mapreduce.reduce.class";
+    public static final String JOB_SORT_COMPARATOR = "mapred.output.key.comparator.class";
 
-    public static final String JOB_MAPPER_OUTPUT_KEY = "syndicate.job.mapper.output.key";
-    public static final String JOB_MAPPER_OUTPUT_VALUE = "syndicate.job.mapper.output.value";
+    public static final String JOB_MAPPER_OUTPUT_KEY = "mapred.mapoutput.key.class";
+    public static final String JOB_MAPPER_OUTPUT_VALUE = "mapred.mapoutput.value.class";
 
-    public static final String JOB_INPUT_FORMAT = "syndicate.job.input.format";
-    public static final String JOB_OUTPUT_FORMAT = "syndicate.job.output.format";
+    public static final String JOB_INPUT_FORMAT = "mapred.input.format.class";
+    public static final String JOB_OUTPUT_FORMAT = "mapred.output.format.class";
 
-    public static final String JOB_OUTPUT_KEY = "syndicate.job.output.key";
-    public static final String JOB_OUTPUT_VALUE = "syndicate.job.output.value";
+    public static final String JOB_OUTPUT_KEY = "mapred.mapoutput.key.class";
+    public static final String JOB_OUTPUT_VALUE = "mapred.mapoutput.value.class";
     
     public static final String MIN_INPUT_SPLIT_SIZE = "mapred.min.split.size";
     public static final String MAX_INPUT_SPLIT_SIZE = "mapred.max.split.size";
@@ -58,9 +58,11 @@ public class SyndicateConfigUtil {
     public static final String INPUT_DIR = "mapred.input.dir";
     public static final String INPUT_PATH_FILTER = "mapred.input.pathFilter.class";
     public static final String OUTPUT_DIR = "mapred.output.dir";
-    public static final String BASE_OUTPUT_NAME = "mapred.output.basename";
+    public static final String BASE_OUTPUT_NAME = "mapreduce.output.basename";
     
     public static final String TEXT_OUTPUT_FORMAT_SEPARATOR = "mapred.textoutputformat.separator";
+    
+    public static final String TEXT_INPUT_MAX_LENGTH = "mapred.linerecordreader.maxlength";
     
     public static void setConfigFile(Configuration conf, String path) {
         conf.set(CONFIG_FILE, path);
@@ -254,16 +256,16 @@ public class SyndicateConfigUtil {
         conf.setClass(JOB_INPUT_FORMAT, val, InputFormat.class);
     }
     
-    public static void setMinInputSplitSize(Configuration conf, long val) {
-        conf.setLong(MIN_INPUT_SPLIT_SIZE, val);
+    public static void setMinInputSplitSize(Configuration conf, long minSize) {
+        conf.setLong(MIN_INPUT_SPLIT_SIZE, minSize);
     }
     
     public static long getMinInputSplitSize(Configuration conf) {
         return conf.getLong(MIN_INPUT_SPLIT_SIZE, 1);
     }
     
-    public static void setMaxInputSplitSize(Configuration conf, long val) {
-        conf.setLong(MAX_INPUT_SPLIT_SIZE, val);
+    public static void setMaxInputSplitSize(Configuration conf, long maxSize) {
+        conf.setLong(MAX_INPUT_SPLIT_SIZE, maxSize);
     }
     
     public static long getMaxInputSplitSize(Configuration conf) {
@@ -288,10 +290,10 @@ public class SyndicateConfigUtil {
         conf.set(INPUT_DIR, path);
     }
     
-    public static void addInputPath(Configuration conf, Path path) throws IOException {
+    public static void addInputPath(Configuration conf, Path inputPath) throws IOException {
         String dirs = conf.get(INPUT_DIR);
         
-        String newDirs = StringUtils.addPathString(dirs, path);
+        String newDirs = StringUtils.addPathString(dirs, inputPath);
         conf.set(INPUT_DIR, newDirs);
     }
     
@@ -310,8 +312,12 @@ public class SyndicateConfigUtil {
         return conf.getClass(INPUT_PATH_FILTER, null, FilenameFilter.class);
     }
     
-    public static void setOutputPath(Configuration conf, Path path) {
-        conf.set(OUTPUT_DIR, path.getPath());
+    public static void setOutputPath(Configuration conf, String outputPath) {
+        conf.set(OUTPUT_DIR, outputPath);
+    }
+    
+    public static void setOutputPath(Configuration conf, Path outputPath) {
+        conf.set(OUTPUT_DIR, outputPath.getPath());
     }
 
     public static Path getOutputPath(Configuration conf) {
@@ -332,5 +338,13 @@ public class SyndicateConfigUtil {
     
     public static String getTextOutputFormatSeparator(Configuration conf) {
         return conf.get(TEXT_OUTPUT_FORMAT_SEPARATOR, "\t");
+    }
+    
+    public static void setTextInputMaxLength(Configuration conf, int maxlength) {
+        conf.setInt(TEXT_INPUT_MAX_LENGTH, maxlength);
+    }
+    
+    public static int getTextInputMaxLength(Configuration conf) {
+        return conf.getInt(TEXT_INPUT_MAX_LENGTH, Integer.MAX_VALUE);
     }
 }
