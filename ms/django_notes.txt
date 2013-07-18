@@ -6,17 +6,13 @@ This is the collection of files for the Syndicate front-end, using Django and we
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
-- These new features not yet pushed live!
-- Changed volume permission settings to allow anyone to view. Modification still requires password. This way all admins can at least see everything.
-- add ListAll_by_volume for AG/RG
-- Add AGs/RGs to view volume page, can be removed in volume settings.
-- Made functions affecting multiple database updates transactional regarding gateways.
-- Added UG settings page, allowing modification of most settings (Not all yet)
+- Enabled changing volumes for UG's. Now, essentially all settings/parameters
+  can be manually changed on the MS admin site, and creation is also possible for
+  everything.
 
 Current task TD -> 
 	HERE
-	Allow changing volumes for UG
-
+	Things to change back -> authenticates, session middleware,
 
 Tomorrow
 - Should precheck be a decorator?
@@ -41,8 +37,6 @@ Tomorrow
 
 
 Long term
-- For some reason, adding volumes to RG doesn't update quite right, although it does
-eventually, unlike AG. Not a huge deal.
 - Admin site layout consistency for tables. Make sure they scale well with weird text (large names, descrips, configs etc)
 - Make more adminy, less fluff.
 

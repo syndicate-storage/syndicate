@@ -45,51 +45,51 @@ def precheck(request, g_name):
 # Doesn't use precheck() because doesn't use Password() form, just ChangePassword() form.
 @authenticate
 def changepassword(request, g_name):
-            session = request.session
-            username = session['login_email']
-            user = db.read_user(username)
+    session = request.session
+    username = session['login_email']
+    user = db.read_user(username)
 
-            if request.method != "POST":
-                return HttpResponseRedirect('/syn/UG/viewgateway' + g_name)
+    if request.method != "POST":
+        return HttpResponseRedirect('/syn/UG/viewgateway' + g_name)
 
+    try:
+        g = db.read_user_gateway(g_name)
+        if not g:
+            raise Exception("No gateway exists.")
+    except Exception as e:
+        logging.error("Error reading gateway %s : Exception: %s" % (g_name, e))
+        message = "No user gateway by the name of %s exists." % g_name
+        t = loader.get_template("gateway_templates/viewgateway_failure.html")
+        c = Context({'message':message, 'username':username})
+        return HttpResponse(t.render(c))
+
+    form = libforms.ChangePassword(request.POST)
+    if not form.is_valid():
+        message = "You must fill out all password fields."
+        return viewgateway(request, g_name, message=message)
+    else:
+        # Check password hash
+        if not UG.authenticate(g, form.cleaned_data['oldpassword']):
+            message = "Incorrect password."
+            return viewgateway(request, g_name, message=message)
+        elif form.cleaned_data['newpassword_1'] != form.cleaned_data['newpassword_2']:
+            message = "Your new passwords did not match each other."
+            return viewgateway(request, g_name, message=message)
+        # Ok to change password
+        else:
+            new_hash = UG.generate_password_hash(form.cleaned_data['newpassword_1'])
+            fields = {'ms_password_hash':new_hash}
             try:
-                g = db.read_user_gateway(g_name)
-                if not g:
-                    raise Exception("No gateway exists.")
+                db.update_user_gateway(g_name, **fields)
             except Exception as e:
-                logging.error("Error reading gateway %s : Exception: %s" % (g_name, e))
-                message = "No user gateway by the name of %s exists." % g_name
-                t = loader.get_template("gateway_templates/viewgateway_failure.html")
-                c = Context({'message':message, 'username':username})
-                return HttpResponse(t.render(c))
+                logging.error("Unable to update user gateway %s. Exception %s" % (g_name, e))
+                message = "Unable to update gateway."
+                return viewgateway(request, g_name, message)
 
-            form = libforms.ChangePassword(request.POST)
-            if not form.is_valid():
-                message = "You must fill out all password fields."
-                return viewgateway(request, g_name, message=message)
-            else:
-                # Check password hash
-                if not UG.authenticate(g, form.cleaned_data['oldpassword']):
-                    message = "Incorrect password."
-                    return viewgateway(request, g_name, message=message)
-                elif form.cleaned_data['newpassword_1'] != form.cleaned_data['newpassword_2']:
-                    message = "Your new passwords did not match each other."
-                    return viewgateway(request, g_name, message=message)
-                # Ok to change password
-                else:
-                    new_hash = UG.generate_password_hash(form.cleaned_data['newpassword_1'])
-                    fields = {'ms_password_hash':new_hash}
-                    try:
-                        db.update_user_gateway(g_name, **fields)
-                    except Exception as e:
-                        logging.error("Unable to update user gateway %s. Exception %s" % (g_name, e))
-                        message = "Unable to update gateway."
-                        return viewgateway(request, g_name, message)
-
-                    session['new_change'] = "We've changed your gateways's password."
-                    session['next_url'] = '/syn/UG/viewgateway/' + g_name
-                    session['next_message'] = "Click here to go back to your volume."
-                    return HttpResponseRedirect('/syn/thanks')
+            session['new_change'] = "We've changed your gateways's password."
+            session['next_url'] = '/syn/UG/viewgateway/' + g_name
+            session['next_message'] = "Click here to go back to your volume."
+            return HttpResponseRedirect('/syn/thanks')
 
 @authenticate
 def changelocation(request, g_name):
@@ -129,7 +129,27 @@ def changevolume(request, g_name):
         failure = precheck(request, g_name)
         if failure:
             return failure
-        return redirect('django_ug.views.viewgateway', g_name=g_name)
+        # Start here.
+        form = gatewayforms.ChangeVolume(request.POST)
+        if form.is_valid():
+            new_vol = db.read_volume(form.cleaned_data['volume_name'])
+            if not new_vol:
+                message = "No volume %s exists." % form.cleaned_data['volume_name']
+                return viewgateway(request, g_name, message)
+            if (new_vol.volume_id not in user.volumes_r) and (new_vol.volume_id not in user.volumes_rw):
+                message = "Must have read rights to volume %s to assign UG to it." % form.cleaned_data['volume_name']
+                return viewgateway(request, g_name, message)
+            fields = {"volume_id":new_vol.volume_id}
+            try:
+                db.update_user_gateway(g_name, **fields)
+            except Exception, e:
+                logging.error("Unable to update UG: %s. Error was %s." % (g_name, e))
+                message = "Error. Unable to change user gateway."
+                return viewgateway(request, g_name, message)
+            session['new_change'] = "We've updated your UG."
+            session['next_url'] = '/syn/UG/viewgateway/' + g_name
+            session['next_message'] = "Click here to go back to your gateway."
+            return HttpResponseRedirect('/syn/home')
     else:
         return redirect('django_ug.views.viewgateway', g_name=g_name)
 
