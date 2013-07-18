@@ -312,6 +312,10 @@ public class SyndicateConfigUtil {
         return conf.getClass(INPUT_PATH_FILTER, null, FilenameFilter.class);
     }
     
+    public static void setOutputPath(Configuration conf, String outputPath) {
+        conf.set(OUTPUT_DIR, outputPath);
+    }
+    
     public static void setOutputPath(Configuration conf, Path outputPath) {
         conf.set(OUTPUT_DIR, outputPath.getPath());
     }

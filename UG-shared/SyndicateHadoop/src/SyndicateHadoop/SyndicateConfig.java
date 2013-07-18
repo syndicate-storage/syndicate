@@ -367,6 +367,10 @@ public class SyndicateConfig {
     public void setOutputPath(Path outputPath) {
         SyndicateConfigUtil.setOutputPath(this.config, outputPath);
     }
+    
+    public void setOutputPath(String outputPath) {
+        SyndicateConfigUtil.setOutputPath(this.config, outputPath);
+    }
 
     public Path getOutputPath() {
         return SyndicateConfigUtil.getOutputPath(this.config);
