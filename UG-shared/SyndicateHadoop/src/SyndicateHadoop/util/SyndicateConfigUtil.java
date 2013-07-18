@@ -27,7 +27,7 @@ public class SyndicateConfigUtil {
     
     public static final String CONFIG_FILE = "syndicate.conf.config_file";
     public static final String UG_PASSWORD = "syndicate.conf.ug.password";
-    public static final String UG_NAME = "syndicate.conf.ug.name";
+    public static final String UG_NAME_PREFIX = "syndicate.conf.ug.name.prefix";
     public static final String VOLUME_NAME = "syndicate.conf.volume.name";
     public static final String VOLUME_SECRET = "syndicate.conf.volume.secret";
     public static final String MSURL = "syndicate.conf.ms_url";
@@ -80,15 +80,16 @@ public class SyndicateConfigUtil {
         return conf.get(UG_PASSWORD);
     }
     
-    public static void setUGName(Configuration conf, String ug_name) {
-        conf.set(UG_NAME, ug_name);
+    public static void setUGNamePrefix(Configuration conf, String ug_name_prefix) {
+        conf.set(UG_NAME_PREFIX, ug_name_prefix);
+    }
+    
+    public static String getUGNamePrefix(Configuration conf) {
+        return conf.get(UG_NAME_PREFIX);
     }
     
     public static String getUGName(Configuration conf) {
-        return conf.get(UG_NAME);
-    }
-    
-    public static String generateUGName(String prefix) {
+        String prefix = getUGNamePrefix(conf);
         return UGNameUtil.getUGName(prefix);
     }
     
