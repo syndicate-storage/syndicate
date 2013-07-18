@@ -7,7 +7,7 @@ import JSyndicateFS.FSOutputStream;
 import JSyndicateFS.File;
 import JSyndicateFS.FileSystem;
 import JSyndicateFS.Path;
-import SyndicateHadoop.mapred.output.SyndicateHadoopRecordWriter;
+import SyndicateHadoop.mapred.output.SyndicateRecordWriter;
 import SyndicateHadoop.util.FileSystemUtil;
 import SyndicateHadoop.util.SyndicateConfigUtil;
 import java.io.DataOutputStream;
@@ -39,6 +39,6 @@ public class SyndicateTextOutputFormat<K, V> extends SyndicateOutputFormat<K, V>
         
         File file = new File(syndicateFS, path);
         DataOutputStream fileOut = new DataOutputStream(new FSOutputStream(file));
-        return new SyndicateHadoopRecordWriter<K, V>(fileOut, keyValueSeparator);
+        return new SyndicateRecordWriter<K, V>(fileOut, keyValueSeparator);
     }
 }
