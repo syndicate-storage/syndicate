@@ -8,6 +8,10 @@ class ModifyGatewayConfig(override_forms.MyForm):
                                 label="Gateway Configuration"
                                 )
 
+class ChangeVolume(override_forms.MyForm):
+
+  volume_name = forms.CharField(label="New Volume name",
+                                max_length=499)
 
 class ModifyGatewayLocation(override_forms.MyForm):
 

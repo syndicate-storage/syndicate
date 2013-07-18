@@ -33,7 +33,7 @@
     <!-- private -->
     {% block additional %}
     <h4/>
-    <h4>Change Privacy</h4>
+    <h4>Change Privacy</h4><h5>(Currently {% if gateway.private %}Private{% else %}Public{% endif %})</h5>
       <form action='{% url django_rg.views.changeprivacy gateway.ms_username %}' method='post'>{% csrf_token %}
         {{password_form.as_ul}}
         <input class ="submit" type="submit" value="Change" />

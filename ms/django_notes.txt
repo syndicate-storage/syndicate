@@ -1,41 +1,26 @@
 Concepts:
-I think for admin site, just password, not ownwership, should be required to change things. Change this for
-viewvolume etc. Not an issue with gateways.
+Does the my/all distinction need to even exist?
 
 This is the collection of files for the Syndicate front-end, using Django and webpp2 inside Google App Engine.
 
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
-- put volume version on admin page
-- add owners to Rg/AG and display them on admin page
-- changed volume_id in AG/RG to be repeated so they can be mapped to multiple ones.
-- Convert JSON config string to JsonProperty()
-- Enable manual entry on Admin of JSON config for RG's and AG's.
-- Enable file upload/changing of JSON configuration.
-- Add gateway owners to templates/views for Ag/Rg
-- Set up volume versioning
-- removed the requirement of attaching volumes for creating AGs/RGs*
-- set up AG settings page
-- set up RG settings page
+- These new features not yet pushed live!
+- Changed volume permission settings to allow anyone to view. Modification still requires password. This way all admins can at least see everything.
+- add ListAll_by_volume for AG/RG
+- Add AGs/RGs to view volume page, can be removed in volume settings.
+- Made functions affecting multiple database updates transactional regarding gateways.
+- Added UG settings page, allowing modification of most settings (Not all yet)
 
 Current task TD -> 
 	HERE
-	
-	Port ag to rg and ug. Enable 
-	ag/rg removal on volumesttigs page.
+	Allow changing volumes for UG
 
-	Update volume as well as AG/RG!
-
-	json_config change form
-	rg/ug main view. 
-	viewgateway_failure.html 
-	view__gateway.html (*3) 
-	ar/rg/ug changelocation view
-	ag/rg removevolumes view
-	ag/rg addvolume view
 
 Tomorrow
+- Should precheck be a decorator?
+- Turn session stuff and thanks stuff at start and end of every view into decorator
 - Make "message" views like ag.urls.py
 - Handle all left out fieds and wrong fields for AG.
 - Handle someone trying to add same volume twice to AG.

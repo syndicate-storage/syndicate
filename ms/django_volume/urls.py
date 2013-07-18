@@ -36,6 +36,12 @@ urlpatterns = patterns('django_volume.views',
                         url(r'^(?P<volume_name>[\w\.-]*)/change/password/?',
                          'changevolumepassword'),
 
+                        url(r'^(?P<volume_name>[\w\.-]*)/change/ags/?',
+                         'changegateways_ag'),
+                        
+                        url(r'^(?P<volume_name>[\w\.-]*)/change/rgs/?',
+                         'changegateways_rg'),
+
                         url(r'^(?P<volume_name>[\w\.-]*)/privacy/?',
                          'volumeprivacy'),
                         

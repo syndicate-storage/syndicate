@@ -3,15 +3,15 @@ from django import forms
 from django_lib.override_forms import ReadOnlyWidget
 
 BLOCKSIZE_CHOICES = (
-  (10, "10 kB"),
-  (20, 20),
-  (40, 40),
-  (80, 80),
-  (160,160),
-  (320,320),
-  (640,640),
-  (1024,"1 MB"),
-  )
+    (10, "10 kB"),
+    (20, 20),
+    (40, 40),
+    (80, 80),
+    (160,160),
+    (320,320),
+    (640,640),
+    (1024,"1 MB"),
+)
 
 class CreateVolume(override_forms.MyForm):
  
@@ -57,6 +57,17 @@ class DeleteVolume(override_forms.MyForm):
     password = forms.CharField(label="Volume password",
                                max_length=20,
                                widget=forms.PasswordInput)
+
+class Gateway(override_forms.MyForm):
+
+    g_name = forms.CharField(label="Gateway name",
+                             widget=ReadOnlyWidget(),
+                             required=False,
+                             max_length=499)
+
+    remove = forms.BooleanField(label="Remove",
+                                required=False)
+        
 
 class Permissions(override_forms.MyForm):
     
