@@ -28,11 +28,10 @@ size_t  datapath_len = 0;
 // ODBC DSN string
 unsigned char* dsn_string = NULL;
 
-//ODBCHandler& odh = ODBCHandler::get_handle((unsigned char*)"DSN=sqlite");
 
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, 
-					    struct gateway_ctx<ODBCHandler>* ctx, struct md_entry* ent ) {
+					    struct gateway_ctx* ctx, struct md_entry* ent ) {
     errorf("%s", "INFO: gateway_generate_manifest\n"); 
     // populate a manifest
     Serialization::ManifestMsg* mmsg = new Serialization::ManifestMsg();
@@ -84,7 +83,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
     errorf("%s", "INFO: get_dataset\n"); 
     ssize_t ret = 0;
     ODBCHandler& odh = ODBCHandler::get_handle(dsn_string);
-    struct gateway_ctx<ODBCHandler>* ctx = (struct gateway_ctx<ODBCHandler>*)user_cls;
+    struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
 
     if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
 	// read from database using ctx->sql_query...
@@ -161,7 +160,7 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
 	return -ENOENT;
     }
 
-    struct gateway_ctx<ODBCHandler>* ctx = (struct gateway_ctx<ODBCHandler>*)usercls;
+    struct gateway_ctx* ctx = (struct gateway_ctx*)usercls;
     struct md_entry* ent = itr->second;
 
     info->set_progress( ms::ms_gateway_blockinfo::COMMITTED );     // ignored, but needs to be filled in
@@ -204,7 +203,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        return NULL;
    }
 
-   struct gateway_ctx<ODBCHandler>* ctx = CALLOC_LIST( struct gateway_ctx<ODBCHandler>, 1 );
+   struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
 
    // is there metadata for this file?
    string fs_path( file_path );
@@ -283,7 +282,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 // clean up a transfer 
 extern "C" void cleanup_dataset( void* cls ) {   
     errorf("%s", "INFO: cleanup_dataset\n"); 
-    struct gateway_ctx<ODBCHandler>* ctx = (struct gateway_ctx<ODBCHandler>*)cls;
+    struct gateway_ctx* ctx = (struct gateway_ctx*)cls;
     if (ctx) {
 	if (ctx->data != NULL) {
 	    free(ctx->data);
@@ -302,7 +301,6 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     unsigned char* dsn = mp.get_dsn();
     init(dsn);
 
-    ODBCHandler& odh = ODBCHandler::get_handle(dsn_string);
     FS2SQL = mp.get_map();
     for (iter = FS2SQL->begin(); iter != FS2SQL->end(); iter++) {
 	const char* full_path = iter->first.c_str();

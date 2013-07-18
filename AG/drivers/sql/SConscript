@@ -15,6 +15,7 @@ CPPPATH = """
    #libsyndicate/
    #UG
    #build/out/protobufs
+   #AG/drivers/common
 """
 
 # add library paths here

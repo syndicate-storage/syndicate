@@ -7,7 +7,7 @@
 #include <libsyndicate.h>
 #include <block-index.h>
 
-template <typename T>
+//template <typename T>
 struct gateway_ctx {
     int request_type;
     // file info 
@@ -24,7 +24,7 @@ struct gateway_ctx {
     // unbounded SQL query
     unsigned char* sql_query_unbounded;
     // ODBC handle
-    T& odh; 
+    //T& odh; 
     // is this corresponds to .db_info file?
     bool is_db_info;
     // are we done?

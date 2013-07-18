@@ -153,7 +153,7 @@ string ODBCHandler::execute_query(unsigned char* query, ssize_t threashold,
     return result_str.str();
 }
 
-void ODBCHandler::execute_query(struct gateway_ctx<ODBCHandler> *ctx, ssize_t read_size, ssize_t block_size) 
+void ODBCHandler::execute_query(struct gateway_ctx *ctx, ssize_t read_size, ssize_t block_size) 
 {
     stringstream	result_str;
     stringstream	shadow_result_str;
