@@ -6,43 +6,28 @@ This is the collection of files for the Syndicate front-end, using Django and we
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
-- These new features not yet pushed live!
-- Changed volume permission settings to allow anyone to view. Modification still requires password. This way all admins can at least see everything.
-- add ListAll_by_volume for AG/RG
-- Add AGs/RGs to view volume page, can be removed in volume settings.
-- Made functions affecting multiple database updates transactional regarding gateways.
-- Added UG settings page, allowing modification of most settings (Not all yet)
+- Factored out a lot of repeated code in ug/rg/ag views.py
+- Fixed a URL redirect issue.
+- Fixed a URL mapping issue
 
 Current task TD -> 
-	HERE
-	Allow changing volumes for UG
-
 
 Tomorrow
-- Should precheck be a decorator?
-- Turn session stuff and thanks stuff at start and end of every view into decorator
-- Make "message" views like ag.urls.py
-- Handle all left out fieds and wrong fields for AG.
-- Handle someone trying to add same volume twice to AG.
-- Turn direct view-to-view calls in rg/ag/ug views into redirect shortcuts. Too much exposure of urls.
+- create catchall url.py patterns for weird matches (i.e. avoid 404? or custom 404?)
+- if going to /, loggedin users should get redirected home
 - Center all boolean check-boxes
 - IN all views (especially gateways) get rid of excess user calls.
 - In all URLS.pys, make *s +s when appropriate to prevent 'blank' variables
-- Should AG creation immediately ask for volume??
 - volume cycle through in AG_tempalte_table and RB_template_table
 - allgateways in rg (cycling through volumes to volset like AG)
 - read through others code.
-- volume version (?)
+
 - Solidfy AG/RG/UG/Volume parameters. (version!)
-- Create RG modifciation GUI
-- Create AG modification GUI
 - Clean out magic numbers
 - put Try blocks on all gateway.py, user.py, and volume.py Update methods for setattr.
 
 
 Long term
-- For some reason, adding volumes to RG doesn't update quite right, although it does
-eventually, unlike AG. Not a huge deal.
 - Admin site layout consistency for tables. Make sure they scale well with weird text (large names, descrips, configs etc)
 - Make more adminy, less fluff.
 
@@ -51,7 +36,6 @@ To-do:
 - Is it possible to make ALL errors for Ag/RG creation maintain state?
 - Make sure to update setup.py when changing parameters
 
-- Make setup better to allow auto-creation of AG's/RG's.
 
 - Ask Jude.
 	Should Volume record in MS store information on AGs/RGs, or gateway records store information about volumes, or both?

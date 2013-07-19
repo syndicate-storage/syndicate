@@ -9,7 +9,7 @@ urlpatterns = patterns('django_ag.views',
                        url(r'^removevolumes/(?P<g_name>[\w\.-]+)/?$', 'removevolumes'),
                        url(r'^addvolume/(?P<g_name>[\w\.-]+)/?$', 'addvolume'),
 
-                       url(r'^viewgateway/(?P<g_name>[\w\.-]+)/?$', 'viewgateway', {'message':''}),
+                       url(r'^viewgateway/(?P<g_name>[\w\.-]+)/?$', 'viewgateway'),
                        url(r'^allgateways/?$', 'allgateways'),
                        url(r'^create/?$', 'create'),
                        url(r'^delete/(?P<g_name>[\w\.-]+)/?$', 'delete'),
