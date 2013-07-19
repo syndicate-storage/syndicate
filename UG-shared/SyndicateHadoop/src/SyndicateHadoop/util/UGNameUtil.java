@@ -64,9 +64,9 @@ public class UGNameUtil {
             return null;
         } else {
             if(prefix == null)
-                return address.replaceAll("\\.", "_");
+                return address;
             else
-                return prefix + address.replaceAll("\\.", "_");
+                return prefix + address;
         }
     }
 }
