@@ -151,6 +151,8 @@ class UserGateway( Gateway ):
       cred_pb.owner_id = self.owner_id
       cred_pb.username = self.ms_username
       cred_pb.password_hash = self.ms_password_hash
+      cred_pb.host = self.host
+      cred_pb.port = self.port
 
    @classmethod
    def cache_listing_key( cls, **kwargs ):
@@ -167,6 +169,8 @@ class UserGateway( Gateway ):
          ms_password          str
          ms_password_hash     str
          read_write           bool
+         host                 str
+         port                 int
       """
 
       kwargs['volume_id'] = volume.volume_id
@@ -284,13 +288,13 @@ class UserGateway( Gateway ):
       return results
 
    @classmethod
-   def ListAll( cls, **attrs ):
+   def ListAll( cls, fltr ):
       '''
       Attributes must be in dictionary, using format "UserGateway.PROPERTY: [operator] [value]"
 
       '''
       qry = UserGateway.query()
-      cls.ListAll_buildQuery( qry, **attrs )
+      cls.ListAll_buildQuery( qry, fltr )
 
       return qry
 
@@ -443,7 +447,7 @@ class AcquisitionGateway( Gateway ):
 
       '''
       qry = AcquisitionGateway.query()
-      cls.ListAll_buildQuery( qry, **attrs )
+      cls.ListAll_buildQuery( qry, attrs )
 
       return qry
 
@@ -679,7 +683,7 @@ class ReplicaGateway( Gateway ):
       '''
 
       qry = ReplicaGateway.query()
-      cls.ListAll_buildQuery( qry, **attrs )
+      cls.ListAll_buildQuery( qry, attrs )
 
       return qry
 

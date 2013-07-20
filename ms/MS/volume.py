@@ -51,8 +51,8 @@ class Volume( storagetypes.Object ):
    RG_version = storagetypes.Integer( indexed=False )              # version of the RG listing in this Volume
    private = storagetypes.Boolean( indexed=False )
    session_timeout = storagetypes.Integer( default=-1, indexed=False )  # how long a gateway session on this Volume lasts
-   ag_ids = storagetypes.Integer( repeated=True ) #AG's publishing data to this volume
-   rg_ids = storagetypes.Integer( repeated=True ) #RG's replicating data for this volume.
+   ag_ids = storagetypes.Integer( repeated=True )                  # AG's publishing data to this volume
+   rg_ids = storagetypes.Integer( repeated=True )                  # RG's replicating data for this volume.
 
 
    num_shards = storagetypes.Integer(default=20, indexed=False)    # number of shards per entry in this volume
@@ -85,7 +85,6 @@ class Volume( storagetypes.Object ):
       Convert to a protobuf (ms_volume_metadata).
       """
 
-      volume_metadata.cred = ms_pb2.ms_volume_gateway_cred()
       caller_UG.protobuf_cred( volume_metadata.cred )
       
       volume_metadata.owner_id = kwargs.get( 'owner_id', self.owner_id )
@@ -259,12 +258,12 @@ class Volume( storagetypes.Object ):
 
       
    @classmethod
-   def ListAll( cls, **attrs ):
+   def ListAll( cls, attrs ):
       '''
       Attributes must be in dictionary, using format "Volume.PROPERTY: [operator] [value]"
       Returns a query, to iterate over the listing
       '''
       qry = Volume.query()
-      cls.ListAll_buildQuery( qry, **attrs )
+      cls.ListAll_buildQuery( qry, attrs )
 
       return qry

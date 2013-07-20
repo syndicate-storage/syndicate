@@ -398,23 +398,41 @@ class Object( Model ):
       raise NotImplementedError
 
    @classmethod
-   def ListAll( cls, **filter_attrs ):
+   def ListAll( cls, filter_attrs ):
       raise NotImplementedError
 
    @classmethod
-   def ListAll_buildQuery( cls, qry, **filter_attrs ):
-      operators = ['=', '!=', '<', '>', '<=', '>=', 'IN']
-      for (attr, value) in filter_attrs:
+   def ListAll_buildQuery( cls, qry, filter_attrs ):
+      operators = ['==', '!=', '<', '>', '<=', '>=', 'IN' ]
+      for (attr, value) in filter_attrs.items():
          attr_parts = attr.split()
+         op = ''
          if len(attr_parts) > 1:
             # sanity check--must be a valid operator
             if attr_parts[1] not in operators:
                raise Exception("Invalid operator '%s'" % attr_parts[1])
 
+            attr = attr_parts[0]
+            op = attr_parts[1]
          else:
             # default: =
-            attr = attr + " ="
+            op = "=="
 
-         qry.filter( attr, value )
+         if op == '==':
+            qry.filter( cls._properties[attr] == value )
+         elif op == "!=":
+            qry.filter( cls._properties[attr] != value )
+         elif op == ">":
+            qry.filter( cls._properties[attr] > value )
+         elif op == ">=":
+            qry.filter( cls._properties[attr] >= value )
+         elif op == "<":
+            qry.filter( cls._properties[attr] < value )
+         elif op == "<=":
+            qry.filter( cls._properties[attr] <= value )
+         elif op == "IN":
+            qry.filter( cls._properties[attr].IN( value ) )
          
+      qry_ret = qry.fetch( None )
+      return qry_ret
       

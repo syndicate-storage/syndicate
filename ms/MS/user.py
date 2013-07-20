@@ -192,12 +192,12 @@ class SyndicateUser( storagetypes.Object ):
       return user.key.delete()
 
    @classmethod
-   def ListAll( cls, **attrs ):
+   def ListAll( cls, attrs ):
       '''
       Attributes must be in dictionary, using format "SyndicateUser.PROPERTY: [operator] [value]"
       '''
       qry = SyndicateUser.query()
-      cls.ListAll_buildQuery( qry, **attrs )
+      cls.ListAll_buildQuery( qry, attrs )
 
       return qry
 

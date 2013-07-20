@@ -81,6 +81,8 @@ message ms_volume_gateway_cred {
    required int32 owner_id = 1;           // ID of gateway
    required string username = 2;          // name of gateway
    required string password_hash = 3;     // hash of session password
+   required string host = 4;              // hostname of this gateway
+   required int32 port = 5;               // port number of this gateway
 }
 
 
@@ -108,5 +110,6 @@ message ms_volume_UGs {
 // RGs
 message ms_volume_RGs {
    required uint64 rg_version = 1;
-   repeated string rg_urls = 2;
+   repeated string rg_hosts = 2;
+   repeated int32 rg_ports = 3;
 }

@@ -18,7 +18,7 @@ import storage.storagetypes as storagetypes
 
 from entry import MSEntry
 from volume import Volume
-from gateway import UserGateway
+from gateway import UserGateway, ReplicaGateway
 
 import errno
 import logging
@@ -86,15 +86,6 @@ def response_begin( request_handler, volume_name ):
       request_handler.response.write("No such volume\n")
       return (None, None, None)
 
-   """
-   # authenticate the request to the Volume
-   authenticated = volume.authenticate_gateway( request_handler.request.headers )
-   if not authenticated:
-      request_handler.response.status = 403
-      request_handler.response.write("Authorization Failed\n")
-      return
-   """
-
    if not volume.active:
       # inactive volume
       request_handler.response.status = 503
@@ -133,7 +124,7 @@ def response_begin( request_handler, volume_name ):
       return (None, None, None)
 
    # make sure this UG is allowed to access this Volume
-   valid_UG = Volume.authenticate_UG( UG )
+   valid_UG = volume.authenticate_UG( UG )
    if not valid_UG:
       # UG does not belong to this Volume
       request_handler.response.status = 403
@@ -152,13 +143,14 @@ def response_begin( request_handler, volume_name ):
 def response_end( request_handler, status, data, content_type=None, timing=None ):
    if content_type == None:
       content_type = "application/octet-stream"
-      
+
    if timing != None:
       request_total = storagetypes.get_time() - timing['request_start']
-      timing['X-Total-Time'] = request_total
+      timing['X-Total-Time'] = str(request_total)
+      
       del timing['request_start']
-
-      for (time_header, time) in timing:
+      
+      for (time_header, time) in timing.items():
          request_handler.response.headers[time_header] = time
 
    request_handler.response.headers['Content-Type'] = content_type
@@ -175,7 +167,7 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
    """
 
    def get( self, volume_name ):
-      UG, volume, timing = response_begin( self )
+      UG, volume, timing = response_begin( self, volume_name )
       if UG == None or volume == None:
          return
 
@@ -184,7 +176,7 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
       volume.protobuf( volume_metadata, UG )
       data = volume_metadata.SerializeToString()
 
-      response_end( self, 200, data, timing )
+      response_end( self, 200, data, "application/octet-stream", timing )
       return
       
       """
@@ -261,43 +253,43 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
 
 class MSUGRequestHandler( webapp2.RequestHandler ):
    def get( self, volume_name ):
-      UG, volume, timing = response_begin( self )
+      UG, volume, timing = response_begin( self, volume_name )
       if UG == None or volume == None:
          return
 
       ug_metadata = ms_pb2.ms_volume_UGs()
-      ug_metadata.ug_version = volume.UG_version
       
-      user_gateways = UserGateway.ListAll( {'volume_id' : '== %s' % volume.volume_id} )
+      user_gateways = UserGateway.ListAll( {'volume_id ==' : volume.volume_id} )
 
+      ug_metadata.ug_version = volume.UG_version
       for ug in user_gateways:
-         ug_pb = ug_metadata.UG_creds.add()
+         ug_pb = ug_metadata.ug_creds.add()
          ug.protobuf_cred( ug_pb )
 
       data = ug_metadata.SerializeToString()
 
-      response_end( self, 200, data, timing )
+      response_end( self, 200, data, "application/octet-stream", timing )
       return
 
 
 class MSRGRequestHandler( webapp2.RequestHandler ):
    def get( self, volume_name ):
-      UG, volume, timing = response_begin( self )
+      UG, volume, timing = response_begin( self, volume_name )
       if UG == None or volume == None:
          return
 
       rg_metadata = ms_pb2.ms_volume_RGs()
+      
+      rgs = ReplicaGateway.ListAll( {'rg_id IN' : volume.rg_ids} )
+
       rg_metadata.rg_version = volume.RG_version
+      for rg in rgs:
+         rg_metadata.rg_hosts.append( rg.host )
+         rg_metadata.rg_ports.append( rg.port )
 
-      rgs = ReplicaGateway.ListAll( {'volume_id' : '== %s' % volume.volume_id} )
+      data = rg_metadata.SerializeToString()
 
-      for ug in user_gateways:
-         ug_pb = ug_metadata.UG_creds.add()
-         ug.protobuf_cred( ug_pb )
-
-      data = ug_metadata.SerializeToString()
-
-      response_end( self, 200, data, timing )
+      response_end( self, 200, data, "application/octet-stream", timing )
       return
 
    
@@ -470,13 +462,13 @@ class MSFileRequestHandler(webapp2.RequestHandler):
 
          else:
             # not a valid method
-            response_end( self, 202, "%s\n" % -errno.ENOSYS, "text/plain" )
+            response_end( self, 202, "%s\n" % -errno.ENOSYS, "text/plain", None )
             return
 
          if rc != 0:
             # error in creation, but not in processing.
             # send back the error code
-            response_end( self, 202, "%s\n" % -errno.ENOSYS, "text/plain" )
+            response_end( self, 202, "%s\n" % -errno.ENOSYS, "text/plain", None )
             return
 
 

@@ -107,17 +107,22 @@ int ms_client_destroy( struct ms_client* client ) {
 
    // clean up view
    pthread_rwlock_wrlock( &client->view_lock );
-   for( int i = 0; client->RG_urls[i] != NULL; i++ ) {
-      free( client->RG_urls[i] );
-      client->RG_urls[i] = NULL;
-   }
-   free( client->RG_urls );
 
-   for( int i = 0; client->UG_creds[i] != NULL; i++ ) {
-      md_free_user_entry( client->UG_creds[i] );
+   if( client->RG_urls != NULL ) {
+      for( int i = 0; client->RG_urls[i] != NULL; i++ ) {
+         free( client->RG_urls[i] );
+         client->RG_urls[i] = NULL;
+      }
+      free( client->RG_urls );
    }
-   free( client->UG_creds );
 
+   if( client->UG_creds != NULL ) {
+      for( int i = 0; client->UG_creds[i] != NULL; i++ ) {
+         md_free_user_entry( client->UG_creds[i] );
+      }
+      free( client->UG_creds );
+   }
+   
    pthread_rwlock_unlock( &client->view_lock );
    pthread_rwlock_destroy( &client->view_lock );
    
@@ -519,6 +524,8 @@ int ms_client_reload_UGs( struct ms_client* client, char const* volume_name ) {
       uent->password_hash = strdup( volume_ugs.ug_creds(i).password_hash().c_str() );
 
       users[i] = uent;
+
+      dbprintf("UG: %d : %s\n", uent->uid, uent->username );
    }
 
    uint64_t UG_version = volume_ugs.ug_version();
@@ -531,11 +538,13 @@ int ms_client_reload_UGs( struct ms_client* client, char const* volume_name ) {
 
    ms_client_view_unlock( client );
 
-   for( int i = 0; old_users[i] != NULL; i++ ) {
-      md_free_user_entry( old_users[i] );
-      free( old_users[i] );
+   if( old_users ) {
+      for( int i = 0; old_users[i] != NULL; i++ ) {
+         md_free_user_entry( old_users[i] );
+         free( old_users[i] );
+      }
+      free( old_users );
    }
-   free( old_users );
 
    return 0;
 }
@@ -558,14 +567,38 @@ int ms_client_reload_RGs( struct ms_client* client, char const* volume_name ) {
    bool valid = volume_rgs.ParseFromString( string(bits, len) );
    free( bits );
 
+   if( valid ) {
+      // sanity check--the number of hosts and ports must be the same
+      if( volume_rgs.rg_hosts_size() != volume_rgs.rg_ports_size() )
+         valid = false;
+
+      // sanity check---the ports must be between 1 and 65535
+      for( int i = 0; i < volume_rgs.rg_ports_size(); i++ ) {
+         if( volume_rgs.rg_ports(i) < 1 || volume_rgs.rg_ports(i) > 65534 ) {
+            valid = false;
+            break;
+         }
+      }
+   }
+
    if( !valid ) {
       errorf("invalid UG metadata from %s\n", volume_name );
       return -EINVAL;
    }
 
-   char** rgs = CALLOC_LIST( char*, volume_rgs.rg_urls_size() + 1 );
-   for( int i = 0; i < volume_rgs.rg_urls_size(); i++ ) {
-      rgs[i] = strdup( volume_rgs.rg_urls(i).c_str() );
+   char** rg_urls = CALLOC_LIST( char*, volume_rgs.rg_hosts_size() + 1 );
+   for( int i = 0; i < volume_rgs.rg_hosts_size(); i++ ) {
+      char* tmp = md_prepend( "https://", volume_rgs.rg_hosts(i).c_str(), NULL );
+      
+      char portbuf[20];
+      sprintf(portbuf, ":%d", volume_rgs.rg_ports(i) );
+              
+      char* url = md_prepend( tmp, portbuf, NULL );
+      rg_urls[i] = url;
+
+      dbprintf("RG: %s\n", url );
+      
+      free( tmp );
    }
 
    uint64_t RG_version = volume_rgs.rg_version();
@@ -573,15 +606,17 @@ int ms_client_reload_RGs( struct ms_client* client, char const* volume_name ) {
    ms_client_view_wlock( client );
 
    char** old_rgs = client->RG_urls;
-   client->RG_urls = rgs;
+   client->RG_urls = rg_urls;
    client->RG_version = RG_version;
 
    ms_client_view_unlock( client );
 
-   for( int i = 0; old_rgs[i] != NULL; i++ ) {
-      free( old_rgs[i] );
+   if( old_rgs ) {
+      for( int i = 0; old_rgs[i] != NULL; i++ ) {
+         free( old_rgs[i] );
+      }
+      free( old_rgs );
    }
-   free( old_rgs );
 
    return 0;
 }
