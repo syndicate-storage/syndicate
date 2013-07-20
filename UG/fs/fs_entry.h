@@ -95,6 +95,8 @@ struct fs_entry {
    bool write_locked;
 };
 
+#define IS_STREAM_FILE( fent ) ((fent).size < 0)
+
 // Syndicate file handle
 struct fs_file_handle {
    struct fs_entry* fent;     // reference to the fs_entry this handle represents

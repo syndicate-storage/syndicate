@@ -112,7 +112,7 @@ struct md_syndicate_conf;
 struct md_entry {
    int type;            // file or directory?
    char* path;          // path
-   char* url;           // URL to the primary replica
+   char* url;           // URL to the UG that hosts its data
    char* local_path;    // only valid for local content--if set, it's the absolute local path on disk where the content can be found
    int64_t ctime_sec;   // creation time (seconds)
    int32_t ctime_nsec;  // creation time (nanoseconds)
