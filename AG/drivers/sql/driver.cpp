@@ -377,7 +377,7 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	    }
 	    break;
 	case MD_ENTRY_FILE:
-	    ment->size = (ssize_t)pow(2, 32);
+	    ment->size = -1;
 	    ment->type = MD_ENTRY_FILE;
 	    ment->mode &= FILE_PERMISSIONS_MASK;
 	    ment->mode |= S_IFREG;
