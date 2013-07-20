@@ -1,19 +1,46 @@
+Concepts:
+Does the my/all distinction need to even exist?
+
 This is the collection of files for the Syndicate front-end, using Django and webpp2 inside Google App Engine.
 
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
+- Factored out a lot of repeated code in ug/rg/ag views.py
+- Fixed a URL redirect issue.
+- Fixed a URL mapping issue
+
+Current task TD -> 
+
+Tomorrow
+- create catchall url.py patterns for weird matches (i.e. avoid 404? or custom 404?)
+- if going to /, loggedin users should get redirected home
+- Center all boolean check-boxes
+- IN all views (especially gateways) get rid of excess user calls.
+- In all URLS.pys, make *s +s when appropriate to prevent 'blank' variables
+- volume cycle through in AG_tempalte_table and RB_template_table
+- allgateways in rg (cycling through volumes to volset like AG)
+- read through others code.
+
+- Solidfy AG/RG/UG/Volume parameters. (version!)
+- Clean out magic numbers
+- put Try blocks on all gateway.py, user.py, and volume.py Update methods for setattr.
+
+
+Long term
+- Admin site layout consistency for tables. Make sure they scale well with weird text (large names, descrips, configs etc)
+- Make more adminy, less fluff.
+
 To-do:
+
+- Is it possible to make ALL errors for Ag/RG creation maintain state?
 - Make sure to update setup.py when changing parameters
 
-- Make setup better to allow auto-creation of AG's/RG's.
 
 - Ask Jude.
 	Should Volume record in MS store information on AGs/RGs, or gateway records store information about volumes, or both?
 	How should configuration for RG be represented in MS? Or does it need to be at all?
 	When a
-
-- Allow addition of volumes to RGs via GUI.
 
 - Adding to Volume -> AG parameter (repeated? Yeah probably.) check
 				   -> RG parameter (repeated?)

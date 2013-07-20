@@ -23,6 +23,7 @@ String = backend.String
 Text = backend.Text
 Key = backend.Key
 Boolean = backend.Boolean
+Json = backend.Json
 
 # aliases for keys
 make_key = backend.make_key

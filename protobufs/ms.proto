@@ -76,23 +76,37 @@ message ms_gateway_blockinfo {
 }
 
 
-// volume gateway credential set
+// volume gateway credential set.  Lets gateways authenticate to the MS
 message ms_volume_gateway_cred {
-   required int32 owner_id = 1;
-   required string username = 2;
-   required string password_hash = 3;
+   required int32 owner_id = 1;           // ID of gateway
+   required string username = 2;          // name of gateway
+   required string password_hash = 3;     // hash of session password
 }
 
 
-// volume metadata reply.
+// volume metadata 
 message ms_volume_metadata {
-   required uint64 blocksize = 1;
-   required uint64 requester_id = 2;           // UID of the requester
+   required ms_volume_gateway_cred cred = 1;   // session credentials for the requester
+   required uint64 blocksize = 2;
    required uint64 owner_id = 3;               // UID of the volume owner
    required uint64 volume_id = 4;
    required uint64 volume_version = 5;
-   required string name = 6;
-   required string description = 7;
-   repeated string replica_urls = 8;
-   repeated ms_volume_gateway_cred user_gateway_creds = 9;
+   required uint64 UG_version = 6;
+   required uint64 RG_version = 7;
+   required int64 session_timeout = 8;
+   required string name = 9;
+   required string description = 10;
+}
+
+
+// UGs
+message ms_volume_UGs {
+   required uint64 ug_version = 1;
+   repeated ms_volume_gateway_cred ug_creds = 2;  // session credentials for the other write-capable UGs in this Volume
+}
+
+// RGs
+message ms_volume_RGs {
+   required uint64 rg_version = 1;
+   repeated string rg_urls = 2;
 }

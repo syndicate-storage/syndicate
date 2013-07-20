@@ -51,6 +51,9 @@ class Volume( storagetypes.Object ):
    RG_version = storagetypes.Integer( indexed=False )              # version of the RG listing in this Volume
    private = storagetypes.Boolean( indexed=False )
    session_timeout = storagetypes.Integer( default=-1, indexed=False )  # how long a gateway session on this Volume lasts
+   ag_ids = storagetypes.Integer( repeated=True ) #AG's publishing data to this volume
+   rg_ids = storagetypes.Integer( repeated=True ) #RG's replicating data for this volume.
+
 
    num_shards = storagetypes.Integer(default=20, indexed=False)    # number of shards per entry in this volume
 
@@ -70,6 +73,8 @@ class Volume( storagetypes.Object ):
    }
 
    default_values = {
+      "ag_ids": (lambda cls, attrs: []),
+      "rg_ids": (lambda cls, attrs: []),
       "blocksize": (lambda cls, attrs: 61440), # 60 KB
       "version": (lambda cls, attrs: 1)
    }
@@ -125,7 +130,7 @@ class Volume( storagetypes.Object ):
       if len(missing) != 0:
          raise Exception( "Missing attributes: %s" % (", ".join( missing )))
 
-      kwargs['name'] = unicode(kwargs['name']).replace(" ","_")
+      kwargs['name'] = unicode(kwargs['name']).strip().replace(" ","_")
       invalid = Volume.validate_fields( kwargs )
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
@@ -183,10 +188,10 @@ class Volume( storagetypes.Object ):
       """
       Given a volume ID (name), get the volume entity. Returns None on miss.
       """
-      name = unicode(name).replace(" ","_")
+      name = unicode(name).strip().replace(" ","_")
       volume_key_name = Volume.make_key_name( name=name )
       volume_key = storagetypes.make_key( Volume, volume_key_name )
-      
+
       volume = storagetypes.memcache.get( volume_key_name )
       if volume == None:
          volume = volume_key.get( use_memcache=False )
@@ -236,6 +241,8 @@ class Volume( storagetypes.Object ):
 
       for key, value in fields.iteritems():
          setattr(volume, key, value)
+      oldversion = volume.version
+      setattr(volume, 'version', oldversion+1)
       vol_future = volume.put_async()
       storagetypes.wait_futures([vol_future])
       return volume.key

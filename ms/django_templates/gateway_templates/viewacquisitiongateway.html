@@ -1,0 +1,112 @@
+{% extends "gateway_templates/viewgateway.html" %}
+
+  {% block mainbody %}
+  <div class="box">
+    {% block gatewaytitle %}
+  	<h2 style="text-align:center"> Acquisition Gateway Information </h2>
+    {% endblock %}
+  	<ul>
+  		<li><span style="font-weight:bold">Host</span>: {{gateway.host}}</li>
+  		<li><span style="font-weight:bold">Port</span>: {{gateway.port}}</li>
+      {% block extra %}{% endblock %}
+  	</ul>
+    <br/>
+  	<h4> Attached Volumes </h4>
+  	<table border>
+  		<thead>
+  			<th>Name</th>
+  			<th>Owner</th>
+  		</thead>
+  		<tbody>
+  			{% for v, o in vol_owners %}
+        <tr>
+  				<td><a href="{% url django_volume.views.viewvolume v.name %}">{{v.name}}</a></td>
+  				<td>{{o.email}}</td>
+        </tr>
+  			{% empty %}
+  				<td colspan="2">No attached volumes</td>
+        </tr>
+  			{% endfor %}
+  		</tbody>
+  	</table>
+    <br/>
+  	<h4> Configuration Data </h4>
+  	<p style="text-indent: 0em;">{{gateway.json_config}}</p>
+  </div>
+  <br/>
+  <br/>
+  <div class="box">
+    <p class="error">{{message}}</p>
+  	<h3 style="text-align:center">Change Settings</h3>
+  	<h4>Gateway Location</h4>
+    {% block location %}
+  	<form action='{% url django_ag.views.changelocation gateway.ms_username %}' method="post">{% csrf_token %}
+    {% endblock %}  
+  		{{location_form.as_ul}}
+  		{{password_form.as_ul}}
+  		<input class="submit" type="submit" value="Change" />
+	  </form>
+    {% if remove_forms %}
+    <hr/>
+    <h4>Remove Attached Volumes</h4>
+    {% block remove %}
+    <form action='{% url django_ag.views.removevolumes gateway.ms_username %}' method="post">{% csrf_token %}
+      {% endblock %}
+      {{ remove_forms.management_form }}
+  			<table class="permissions" border>
+                {% for form in remove_forms %}
+                    {% if forloop.first %}
+                        <thead>
+                            <tr>
+                            {% for field in form.visible_fields %}
+                                <th>{{ field.label|capfirst }}</th>
+                            {% endfor %}
+                            </tr>
+                        </thead>
+                    {% endif %}
+                    <tr class="{{ forloop.counter0 }}">
+                        {% for field in form.visible_fields %}
+                            <td>{{ field }}</td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </table>
+  		  {{password_form.as_ul}}
+  		<input class="submit" type="submit" value="Remove" />
+  	</form>	
+    {% endif %}
+    <hr/>
+  	<h4>Attach New Volume</h4>
+    {% block add %}
+	  <form action='{% url django_ag.views.addvolume gateway.ms_username %}' method='post'>{% csrf_token %}
+    {% endblock %}
+		{{add_form.as_ul}}
+		{{password_form.as_ul}}
+		<input class ="submit" type="submit" value="Add" />
+	</form>
+  <hr/>
+  <h4>Change JSON Config</h4>
+    {% block json %}
+    <form action='{% url django_ag.views.changejson gateway.ms_username %}' method='post' enctype="multipart/form-data">{% csrf_token %}
+    {% endblock %}
+      {{json_form.as_ul}}
+      {{password_form.as_ul}}
+      <input class="submit" type="submit" value="Change"/>
+    </form>
+  <hr/>
+	<h4>Change Password</h4>
+  {% block password %}
+	<form action='{% url django_ag.views.changepassword gateway.ms_username %}' method='post'>{% csrf_token %}
+		{% endblock %}
+    {{change_password_form.as_ul}}
+		<input class ="submit" type="submit" value="Change" />
+	</form>
+    {% block additional %}
+    {% endblock %}
+  </div>
+
+  {% endblock %}
+  {% block footer %}
+  	<a href='{% url django_ag.views.allgateways %}'>Acquisition Gateways</a>
+  	<a href='{% url django_home.views.home %}'>Home</a>
+  {% endblock %}

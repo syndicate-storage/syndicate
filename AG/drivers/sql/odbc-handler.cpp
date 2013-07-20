@@ -102,65 +102,17 @@ string ODBCHandler::get_tables()
     return tbl_list.str();
 }
 
-string ODBCHandler::execute_query(struct gateway_ctx<ODBCHandler> *ctx, ssize_t read_size, ssize_t block_size) 
+string ODBCHandler::execute_query(unsigned char* query, ssize_t threashold, 
+				  off_t *row_count, ssize_t *len, ssize_t *last_row_len)
 {
     SQLHSTMT		stmt;
     SQLRETURN		ret; 
     SQLSMALLINT		nr_columns;
     string		ODBC_error; 
     stringstream	result_str;
-    stringstream	shadow_result_str;
-    string		ret_str;
-    ssize_t		partial_size = 0;
-    bool		start_bound = false;
-    bool		end_bound = false;
     bool		row_bound = false;
-    ssize_t		row_size = 0;
-    off_t		discard_offset = 
-			    ( ctx->block_id * block_size ) + ctx->data_offset; 
-    off_t		end_offset = discard_offset + read_size;
-    off_t		row_count = 0;
-    const block_index_entry	*blkie = NULL;
-    block_index_entry		*new_blkie = NULL;
-    bool		create_blkie = false;
-    ssize_t		query_len = 0;
-    unsigned char*	query = NULL;
 
-    //Get the block_index_entry for ctx->block_id of the file_name.
-    //If it is there, skip rows. Else get the last block_index_entry
-    //for the file. If its block id is ctx->block_id - 1 then process 
-    //from there and update block index for ctx->block_id block. 
-    //Else go through last block to ctx->block_id and update block index
-    //for each block.
-
-    blkie = blk_index.get_block(ctx->file_path, ctx->block_id);
-    if (blkie != NULL) {
-	if (ctx->sql_query_bounded == NULL)
-	    return NULL;
-	//I'm feeling lucky...
-	query_len = strlen((const char*)ctx->sql_query_bounded) + 21;
-	query = (unsigned char*)malloc(query_len);
-	memset(query, 0, query_len);
-	snprintf((char*)query, query_len, (const char*)ctx->sql_query_bounded, 
-	     (blkie->end_row - blkie->start_row), blkie->start_row);
-    }
-    else {
-	blkie = blk_index.get_last_block(ctx->file_path);
-	if (blkie != NULL) {
-
-	}
-	else {
-	    //ctx->block_id == 0, we haven't built the block index yet.
-	    if (ctx->sql_query_unbounded == NULL)
-		return NULL;
-	    query_len = strlen((const char*)ctx->sql_query_unbounded) + 11;
-	    query = (unsigned char*)malloc(query_len);
-	    memset(query, 0, query_len);
-	    snprintf((char*)query, query_len, (const char*)ctx->sql_query_unbounded, 0);
-	    create_blkie = true;
-	}
-    }
-    
+    cout<<"Query: "<<query<<endl;
     SQLAllocHandle(SQL_HANDLE_STMT, dbc, &stmt);
     ret = SQLPrepare(stmt, query , SQL_NTS);
     if (!SQL_SUCCEEDED(ret)) { 
@@ -174,12 +126,12 @@ string ODBCHandler::execute_query(struct gateway_ctx<ODBCHandler> *ctx, ssize_t 
     }
 
     SQLNumResultCols(stmt, &nr_columns);
+    *row_count = 0;
+    *len = 0;
     while (SQL_SUCCEEDED(ret = SQLFetch(stmt))) {
 	SQLUSMALLINT i;
-	if (end_bound)
-	    break;
-	row_count++;
-	row_size = 0;
+	*len += *last_row_len;
+	(*last_row_len) = 0;
 	for (i = 1; i <= nr_columns; i++) {
 	    SQLLEN indicator;
 	    char buf[512];
@@ -190,62 +142,109 @@ string ODBCHandler::execute_query(struct gateway_ctx<ODBCHandler> *ctx, ssize_t 
 	    if (SQL_SUCCEEDED(ret)) {
 		if (indicator == SQL_NULL_DATA) 
 		    strcpy(buf, "NULL");
-		if (!start_bound)
-		    row_size += encode_results(shadow_result_str, buf, row_bound);
-		else
-		    row_size += encode_results(result_str, buf, row_bound);
+		*last_row_len += encode_results(result_str, buf, row_bound);
 	    }
 	}
+	if (*len + *last_row_len >= threashold)
+	    break;
+	(*row_count)++;
 	row_bound = false;
-	if (!start_bound)
-	    partial_size = shadow_result_str.str().size();
-	else {
-	    partial_size = result_str.str().size();
-	    ctx->row_offset++;
-	}
-	if ( discard_offset < partial_size &&
-		!start_bound ) {
-	    const string tmp_buff_str =  shadow_result_str.str();
-	    const char* tmp_buff_cstr = tmp_buff_str.c_str();
-	    const char* buff_boundary = tmp_buff_cstr + discard_offset; 
-	    result_str<<buff_boundary;
-	    start_bound = true;
-	    if (create_blkie) {
-		if (ctx->blkie == NULL) {
-		    new_blkie = blk_index.alloc_block_index_entry();
-		    new_blkie->start_row = ctx->row_offset;
-		    new_blkie->start_byte_offset = discard_offset;
-		    ctx->blkie = new_blkie; 
-		}
-		else {
-		    new_blkie = ctx->blkie;
-		}
+    }
+    return result_str.str();
+}
+
+void ODBCHandler::execute_query(struct gateway_ctx *ctx, ssize_t read_size, ssize_t block_size) 
+{
+    stringstream	result_str;
+    stringstream	shadow_result_str;
+    string		ret_str;
+    const block_index_entry	*blkie = NULL;
+    block_index_entry	*new_blkie = NULL;
+    ssize_t		query_len = 0;
+    unsigned char*	query = NULL;
+    off_t		last_blk_id = 0;
+    bool		query_unbound = false;
+    off_t		row_count = 0;
+    ssize_t		len = 0, last_row_len = 0;
+    string		results;
+    const char*		results_cstr;
+    off_t		block_start_byte_offset = 0;
+    ssize_t		db_read_size = 0;
+
+    //Get the block_index_entry for ctx->block_id of the file_name.
+    //If it is there, skip rows. Else get the last block_index_entry
+    //for the file. If its block id is ctx->block_id - 1 then process 
+    //from there and update block index for ctx->block_id block. 
+    //Else go through last block to ctx->block_id and update block index
+    //for each block.
+
+    blkie = blk_index.get_block(ctx->file_path, ctx->block_id);
+    if (blkie != NULL) {
+	if (ctx->sql_query_bounded == NULL)
+	    return;
+	//I'm feeling lucky...
+	query_len = strlen((const char*)ctx->sql_query_bounded) + 21;
+	query = (unsigned char*)malloc(query_len);
+	memset(query, 0, query_len);
+	snprintf((char*)query, query_len, (const char*)ctx->sql_query_bounded, 
+	     (blkie->end_row - blkie->start_row) + 1, blkie->start_row);
+    }
+    else {
+	blkie = blk_index.get_last_block(ctx->file_path, &last_blk_id);
+	if (ctx->sql_query_unbounded == NULL)
+	    return;
+	query_unbound = true;
+	query_len = strlen((const char*)ctx->sql_query_unbounded) + 11;
+	query = (unsigned char*)malloc(query_len);
+    }
+
+    if (query_unbound) {
+	off_t blk_count = (blkie != NULL)?last_blk_id+1:0;
+	off_t start_row = (blkie != NULL)?blkie->end_row:0;
+	off_t start_byte_offset = (blkie != NULL)?blkie->end_byte_offset:0;
+	for (; blk_count < ctx->block_id+1; blk_count++) {
+	    row_count = 0;
+	    len = 0;
+	    last_row_len = 0;
+	    memset(query, 0, query_len);
+	    snprintf((char*)query, query_len, (const char*)ctx->sql_query_unbounded, start_row);
+	    db_read_size = block_size + start_byte_offset;
+	    results = execute_query(query, db_read_size, &row_count, &len, &last_row_len);
+
+	    //If there is no data do not proceed...
+	    if (!(len + last_row_len)) {
+		break;
 	    }
-	}
-	else if (end_offset <= partial_size) {
-	    ret_str = result_str.str();
-	    ret_str.erase( ret_str.begin() + read_size, ret_str.end());
-	    end_bound = true;
-	    if (create_blkie) {
-		if (partial_size >= block_size) {
-		    new_blkie->end_row += ctx->row_offset;
-		    new_blkie->end_byte_offset = row_size - (partial_size - end_offset);
-		    blk_index.update_block_index(ctx->file_path, ctx->block_id, 
-			    new_blkie);
-		}
-	    }
+
+	    //Update the block index
+	    new_blkie = blk_index.alloc_block_index_entry();
+	    new_blkie->start_row = start_row;
+	    new_blkie->start_byte_offset = start_byte_offset;
+	    block_start_byte_offset = start_byte_offset;
+	    new_blkie->end_row = start_row + row_count;
+	    new_blkie->end_byte_offset = db_read_size - len;
+	    len += last_row_len;
+	    len = (block_size > len - start_byte_offset)?len - start_byte_offset:block_size;
+	    blk_index.update_block_index(ctx->file_path, blk_count, new_blkie);
+
+	    //Update start_row and start_byte_offset for the next block
+	    start_row += row_count;
+	    start_byte_offset = new_blkie->end_byte_offset;
 	}
     }
-    if (end_offset > partial_size) {
-	ret_str = result_str.str();
-	if (create_blkie) {
-	    new_blkie->end_row = row_count - 1;
-	    new_blkie->end_byte_offset = row_size;
-	    blk_index.update_block_index(ctx->file_path, ctx->block_id, 
-		    new_blkie);
-	}
+    else {
+	db_read_size = block_size + blkie->start_byte_offset;
+	results = execute_query(query, db_read_size, &row_count, &len, &last_row_len);
+	len += last_row_len;
+	len = (block_size > len - blkie->start_byte_offset)?len - blkie->start_byte_offset:block_size;
+	block_start_byte_offset = blkie->start_byte_offset;
     }
-    return ret_str;
+    if (len) {
+	results_cstr = results.c_str();
+	ctx->data_len = len;
+	ctx->data = (char*)malloc(ctx->data_len);
+	memcpy(ctx->data, results_cstr+block_start_byte_offset, ctx->data_len);
+    }
 }
 
 ssize_t ODBCHandler::encode_results(stringstream& str_stream, char* column, bool row_bound)

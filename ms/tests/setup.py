@@ -923,14 +923,11 @@ def test( ignore1, args ):
       user = get_user( username )
       if user == None:
          return (500, "Invalid username %s" % username)
-
-      volume_name = testvolume_name( user.email )
-      volume = storage.read_volume( volume_name )
       
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          try:
-            storage.create_acquisition_gateway( volume, ms_username=G_name("AG", node), ms_password="sniff", host=node, port=32780 )
+            storage.create_acquisition_gateway(user, ms_username=G_name("AG", node), ms_password="sniff", host=node, port=32780 )
             logging.info("Created AG %s" % G_name("AG", node))
          except:
             logging.info("traceback: %s" % traceback.format_exc())
@@ -941,14 +938,11 @@ def test( ignore1, args ):
       user = get_user( username )
       if user == None:
          return (500, "Invalid username %s" % username)
-
-      volume_name = testvolume_name( user.email )
-      volume = storage.read_volume( volume_name )
       
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          try:
-            storage.create_replica_gateway( volume, ms_username=G_name("RG", node), ms_password="sniff", host=node, port=32780, private=False )
+            storage.create_replica_gateway( user, ms_username=G_name("RG", node), ms_password="sniff", host=node, port=32780, private=False )
             logging.info("Created RG %s" % G_name("RG", node))
          except:
             logging.info("traceback: %s" % traceback.format_exc())

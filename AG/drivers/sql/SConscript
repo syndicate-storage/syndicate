@@ -6,7 +6,7 @@ import os
 source_files = """
    odbc-handler.cpp
    driver.cpp
-   map-parser.cpp
+   ../common/map-parser.cpp
    block-index.cpp
 """
 
@@ -15,6 +15,7 @@ CPPPATH = """
    #libsyndicate/
    #UG
    #build/out/protobufs
+   #AG/drivers/common
 """
 
 # add library paths here

@@ -35,6 +35,7 @@ using namespace std;
 #define GET_SYNADB_PATH(url)\
     (char*)url + strlen(SYNDICATEFS_AG_DB_PROTO)
 
+#define ODBC_DSN_PREFIX			"DSN="
 struct path_comp {
     bool operator()(char *path1, char *path2) 
     {
@@ -64,6 +65,7 @@ struct path_comp {
 typedef map<string, struct md_entry*> content_map;
 typedef map<string, struct map_info> query_map;
 static int publish(const char *fpath, int type, struct map_info mi);
+void	init(unsigned char* dsn);
 
 #endif //_SQL_DRIVER_H_
 
