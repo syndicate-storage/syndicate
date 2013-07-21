@@ -3,14 +3,14 @@ from django import forms
 from django_lib.override_forms import ReadOnlyWidget
 
 BLOCKSIZE_CHOICES = (
-    (10, "10 kB"),
-    (20, 20),
-    (40, 40),
-    (80, 80),
-    (160,160),
-    (320,320),
-    (640,640),
-    (1024,"1 MB"),
+    (10*1024, "10 kB"),
+    (20*1024, 20),
+    (40*1024, 40),
+    (80*1024, 80),
+    (160*1024,160),
+    (320*1024,320),
+    (640*1024,640),
+    (1024*1024,"1 MB"),
 )
 
 class CreateVolume(override_forms.MyForm):

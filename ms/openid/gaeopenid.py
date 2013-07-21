@@ -241,7 +241,7 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
                 session[field_name] = value
 
 
-            self.setRedirect('/syn/home')
+            self.setRedirect('/syn/')
             session.regenerate_id()
             return
 
