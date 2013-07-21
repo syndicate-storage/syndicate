@@ -30,7 +30,6 @@ PRECHECK_REDIRECT = 'django_ag.views.viewgateway'
 def viewgateway(request, g_name=""):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     message = session.pop('message', "")
     initial_data = session.pop('initial_data', [])
@@ -96,7 +95,6 @@ def viewgateway(request, g_name=""):
 def changejson(request, g_name):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     form = gatewayforms.ModifyGatewayConfig(request.POST)
     if form.is_valid():
@@ -133,7 +131,6 @@ def changejson(request, g_name):
 def changepassword(request, g_name):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     if request.method != "POST":
         return HttpResponseRedirect('/syn/AG/viewgateway' + g_name)
@@ -182,7 +179,6 @@ def changepassword(request, g_name):
 def addvolume(request, g_name):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     @transactional(xg=True)
     def update(vname, gname, vfields, gfields):
@@ -237,7 +233,6 @@ def addvolume(request, g_name):
 def removevolumes(request, g_name):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     VolumeFormSet = formset_factory(gatewayforms.GatewayRemoveVolume, extra=0)
     formset = VolumeFormSet(request.POST)
@@ -282,7 +277,6 @@ def removevolumes(request, g_name):
 def changelocation(request, g_name):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
         
 
     form = gatewayforms.ModifyGatewayLocation(request.POST)
@@ -308,7 +302,6 @@ def changelocation(request, g_name):
 def allgateways(request):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     try:
         qry = db.list_acquisition_gateways()
@@ -322,10 +315,8 @@ def allgateways(request):
     for g in gateways:
         volset = []
         for v in g.volume_ids:
-            #logging.info(v)
             attrs = {"Volume.volume_id":"== " + str(v)}
             volset.append(db.get_volume(**attrs))
-            #logging.info(volset)
         vols.append(volset)
         attrs = {"SyndicateUser.owner_id":"== " + str(g.owner_id)}
         g_owners.append(db.get_user(**attrs))
@@ -334,33 +325,6 @@ def allgateways(request):
     c = RequestContext(request, {'username':username, 'gateway_vols_owners':gateway_vols_owners})
     return HttpResponse(t.render(c))
 
-'''
-@authenticate
-def mygateways(request):
-    session = request.session
-    username = session['login_email']
-    user = db.read_user(username)
-
-    # should change this
-    try:
-        qry = AG.query(AG.owner_id == user.owner_id)
-    except:
-        qry = []
-    gateways = []
-    for g in qry:
-        gateways.append(g)
-    vols = []
-    for g in gateways:
-        attrs = {"Volume.volume_id":"== " + str(g.volume_id)}
-        volumequery = db.list_volumes(**attrs) # should be one
-        for v in volumequery:
-            vols.append(v)
-            logging.info(v)
-    gateway_vols = zip(gateways, vols)
-    t = loader.get_template('gateway_templates/myacquisitiongateways.html')
-    c = RequestContext(request, {'username':username, 'gateway_vols':gateway_vols})
-    return HttpResponse(t.render(c))
-'''
 
 @csrf_exempt
 @authenticate
@@ -368,7 +332,6 @@ def create(request):
 
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     def give_create_form(username, session):
         message = session.pop('message', "")
@@ -477,7 +440,6 @@ def delete(request, g_name):
 
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     ag = db.read_acquisition_gateway(g_name)
     if not ag:
@@ -485,12 +447,6 @@ def delete(request, g_name):
         c = RequestContext(request, {'username':username, 'g_name':g_name})
         return HttpResponse(t.render(c))
 
-    '''
-    if ag.owner_id != user.owner_id:
-                t = loader.get_template('gateway_templates/delete_acquisition_gateway_failure.html')
-                c = RequestContext(request, {'username':username, 'g_name':g_name})
-                return HttpResponse(t.render(c))
-    '''
     if request.POST:
         # Validate input forms
         form = gatewayforms.DeleteGateway(request.POST)
@@ -528,7 +484,6 @@ def delete(request, g_name):
 def urlcreate(request, g_name, g_password, host, port, volume_name="",):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     kwargs = {}
 
@@ -556,7 +511,6 @@ def urlcreate(request, g_name, g_password, host, port, volume_name="",):
 def urldelete(request, g_name, g_password):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     ag = db.read_acquisition_gateway(g_name)
     if not ag:

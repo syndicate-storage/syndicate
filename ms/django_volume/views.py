@@ -753,6 +753,26 @@ def createvolume(request):
             fields = {'volumes_o':new_volumes_o, 'volumes_rw':new_volumes_rw}
             db.update_user(username, **fields)
 
+            # Create root for volume
+            # Ask Jude about these defaults
+            rc = db.make_root( volume,
+                                    ftype=MSENTRY_TYPE_DIR,
+                                    fs_path="/",
+                                    url="http://localhost:32780/",
+                                    version=1,
+                                    ctime_sec=1360015114,
+                                    ctime_nsec=0,
+                                    mtime_sec=1360015114,
+                                    mtime_nsec=0,
+                                    owner_id=volume.owner_id,
+                                    acting_owner_id=volume.owner_id,
+                                    volume_id=volume.volume_id,
+                                    mode=0777,
+                                    size=4096,
+                                    max_read_freshness=5000,
+                                    max_write_freshness=0
+                                  )
+
             session['new_change'] = "Your new volume is ready."
             session['next_url'] = '/syn/volume/myvolumes/'
             session['next_message'] = "Click here to see your volumes."

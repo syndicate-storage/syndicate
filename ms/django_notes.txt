@@ -6,23 +6,19 @@ This is the collection of files for the Syndicate front-end, using Django and we
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
-- Factored out a lot of repeated code in ug/rg/ag views.py
-- Fixed a URL redirect issue.
-- Fixed a URL mapping issue
+DONE -
+- did some css changes, centering
+- if going to /, loggedin users should get redirected home
+- In all URLS.pys, make *s +s when appropriate to prevent 'blank' variables
+- Got rid of some excess DB calls
 
 Current task TD -> 
 
 Tomorrow
-- create catchall url.py patterns for weird matches (i.e. avoid 404? or custom 404?)
-- if going to /, loggedin users should get redirected home
-- Center all boolean check-boxes
-- IN all views (especially gateways) get rid of excess user calls.
-- In all URLS.pys, make *s +s when appropriate to prevent 'blank' variables
-- volume cycle through in AG_tempalte_table and RB_template_table
-- allgateways in rg (cycling through volumes to volset like AG)
+- Make root dir when creating volumes
+	- Defaults for making root dir per volume (?)
 - read through others code.
 
-- Solidfy AG/RG/UG/Volume parameters. (version!)
 - Clean out magic numbers
 - put Try blocks on all gateway.py, user.py, and volume.py Update methods for setattr.
 

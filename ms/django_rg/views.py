@@ -30,7 +30,6 @@ PRECHECK_REDIRECT = 'django_rg.views.viewgateway'
 def viewgateway(request, g_name=""):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
     message = session.pop('message', "")
     logging.info("JSDKFJDLFJDLSFJSDLK")
     logging.info(message)
@@ -98,7 +97,6 @@ def viewgateway(request, g_name=""):
 def changeprivacy(request, g_name):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     g = db.read_replica_gateway(g_name)
     if g.private:
@@ -122,7 +120,6 @@ def changeprivacy(request, g_name):
 def changejson(request, g_name):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     form = gatewayforms.ModifyGatewayConfig(request.POST)
     if form.is_valid():
@@ -157,58 +154,56 @@ def changejson(request, g_name):
 # Doesn't use precheck() because doesn't use Password() form, just ChangePassword() form.
 @authenticate
 def changepassword(request, g_name):
-            session = request.session
-            username = session['login_email']
-            user = db.read_user(username)
+    session = request.session
+    username = session['login_email']
 
-            if request.method != "POST":
-                return HttpResponseRedirect('/syn/RG/viewgateway' + g_name)
+    if request.method != "POST":
+        return HttpResponseRedirect('/syn/RG/viewgateway' + g_name)
 
+    try:
+        g = db.read_replica_gateway(g_name)
+        if not g:
+            raise Exception("No gateway exists.")
+    except Exception as e:
+        logging.error("Error reading gateway %s : Exception: %s" % (g_name, e))
+        message = "No replica gateway by the name of %s exists." % g_name
+        t = loader.get_template("gateway_templates/viewgateway_failure.html")
+        c = Context({'message':message, 'username':username})
+        return HttpResponse(t.render(c))
+
+    form = libforms.ChangePassword(request.POST)
+    if not form.is_valid():
+        session['message'] = "You must fill out all password fields."
+        return redirect('django_rg.views.viewgateway', g_name)
+    else:
+        # Check password hash
+        if not RG.authenticate(g, form.cleaned_data['oldpassword']):
+            session['message'] = "Incorrect password."
+            return redirect('django_rg.views.viewgateway', g_name)
+        elif form.cleaned_data['newpassword_1'] != form.cleaned_data['newpassword_2']:
+            session['message'] = "Your new passwords did not match each other."
+            return redirect('django_rg.views.viewgateway', g_name)
+        # Ok to change password
+        else:
+            new_hash = RG.generate_password_hash(form.cleaned_data['newpassword_1'])
+            fields = {'ms_password_hash':new_hash}
             try:
-                g = db.read_replica_gateway(g_name)
-                if not g:
-                    raise Exception("No gateway exists.")
+                db.update_replica_gateway(g_name, **fields)
             except Exception as e:
-                logging.error("Error reading gateway %s : Exception: %s" % (g_name, e))
-                message = "No replica gateway by the name of %s exists." % g_name
-                t = loader.get_template("gateway_templates/viewgateway_failure.html")
-                c = Context({'message':message, 'username':username})
-                return HttpResponse(t.render(c))
-
-            form = libforms.ChangePassword(request.POST)
-            if not form.is_valid():
-                session['message'] = "You must fill out all password fields."
+                logging.error("Unable to update replica gateway %s. Exception %s" % (g_name, e))
+                session['message'] = "Unable to update gateway."
                 return redirect('django_rg.views.viewgateway', g_name)
-            else:
-                # Check password hash
-                if not RG.authenticate(g, form.cleaned_data['oldpassword']):
-                    session['message'] = "Incorrect password."
-                    return redirect('django_rg.views.viewgateway', g_name)
-                elif form.cleaned_data['newpassword_1'] != form.cleaned_data['newpassword_2']:
-                    session['message'] = "Your new passwords did not match each other."
-                    return redirect('django_rg.views.viewgateway', g_name)
-                # Ok to change password
-                else:
-                    new_hash = RG.generate_password_hash(form.cleaned_data['newpassword_1'])
-                    fields = {'ms_password_hash':new_hash}
-                    try:
-                        db.update_replica_gateway(g_name, **fields)
-                    except Exception as e:
-                        logging.error("Unable to update replica gateway %s. Exception %s" % (g_name, e))
-                        session['message'] = "Unable to update gateway."
-                        return redirect('django_rg.views.viewgateway', g_name)
 
-                    session['new_change'] = "We've changed your gateways's password."
-                    session['next_url'] = '/syn/RG/viewgateway/' + g_name
-                    session['next_message'] = "Click here to go back to your volume."
-                    return HttpResponseRedirect('/syn/thanks')
+            session['new_change'] = "We've changed your gateways's password."
+            session['next_url'] = '/syn/RG/viewgateway/' + g_name
+            session['next_message'] = "Click here to go back to your volume."
+            return HttpResponseRedirect('/syn/thanks')
 
 @authenticate
 @precheck("RG", PRECHECK_REDIRECT)
 def addvolume(request, g_name):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     @transactional(xg=True)
     def update(vname, gname, vfields, gfields):
@@ -263,7 +258,6 @@ def addvolume(request, g_name):
 def removevolumes(request, g_name):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     VolumeFormSet = formset_factory(gatewayforms.GatewayRemoveVolume, extra=0)
     formset = VolumeFormSet(request.POST)
@@ -308,7 +302,6 @@ def removevolumes(request, g_name):
 def changelocation(request, g_name):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     form = gatewayforms.ModifyGatewayLocation(request.POST)
     if form.is_valid():
@@ -333,7 +326,6 @@ def changelocation(request, g_name):
 def allgateways(request):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     try:
         qry = db.list_replica_gateways()
@@ -341,17 +333,14 @@ def allgateways(request):
         qry = []
     gateways = []
     for g in qry:
-        #logging.info(g)
         gateways.append(g)
     vols = []
     g_owners = []
     for g in gateways:
         volset = []
         for v in g.volume_ids:
-            #logging.info(v)
             attrs = {"Volume.volume_id":"== " + str(v)}
             volset.append(db.get_volume(**attrs))
-            #logging.info(volset)
         vols.append(volset)
         attrs = {"SyndicateUser.owner_id":"== " + str(g.owner_id)}
         g_owners.append(db.get_user(**attrs))
@@ -365,7 +354,6 @@ def allgateways(request):
 def mygateways(request):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     # should change this
     try:
@@ -396,7 +384,6 @@ def create(request):
 
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     def give_create_form(username, session):
         message = session.pop('message' "")
@@ -500,12 +487,11 @@ def delete(request, g_name):
     def give_delete_form(username, g_name, session):
         form = gatewayforms.DeleteGateway()
         t = loader.get_template('gateway_templates/delete_replica_gateway.html')
-        c = RequestContext(request, {'username':username, 'g_name':g_name, 'form':form, 'message':message})
+        c = RequestContext(request, {'username':username, 'g_name':g_name, 'form':form, 'message':session.pop('message', "")})
         return HttpResponse(t.render(c))
 
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     rg = db.read_replica_gateway(g_name)
     if not rg:
@@ -557,7 +543,6 @@ def delete(request, g_name):
 def urlcreate(request, g_name, g_password, host, port, private=False, volume_name="",):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     kwargs = {}
 
@@ -586,7 +571,6 @@ def urlcreate(request, g_name, g_password, host, port, private=False, volume_nam
 def urldelete(request, g_name, g_password):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     rg = db.read_replica_gateway(g_name)
     if not rg:
