@@ -89,15 +89,20 @@ span.helptext {
 }
 
 input {
-    margin: 5px auto;
+    margin: auto;
 }
 
-input.submit {
+input.center {
+    margin-top: 10px;
+    margin-bottom: 10px;
+    display:block;
 
 }
 
 table {
     background-color:white;
+    margin-right: 50px;
+    margin-left: 50px;
 }
 
 table.volume {
@@ -129,7 +134,7 @@ table.deletevolume {
     margin-right:auto;
 }
 
-table.deletevolume td {
+table td {
     text-align:center;
     vertical-align:middle;
     padding:10px;

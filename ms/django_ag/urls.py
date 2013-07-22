@@ -1,6 +1,6 @@
 from django.conf.urls import patterns, include, url
 
-# The long URLS are for admin purposes and will be eliminated. Make GUI, and have posts work for both admin and real gateways in the wild.
+# The long URLS are for admin purposes and will be eliminated.
 
 urlpatterns = patterns('django_ag.views',
                        url(r'^changejson/(?P<g_name>[\w\.-]+)/?$', 'changejson'),

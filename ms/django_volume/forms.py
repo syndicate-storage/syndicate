@@ -45,7 +45,7 @@ class ChangeVolumeD(override_forms.MyForm):
 
     description = forms.CharField(widget=forms.Textarea,
                                   required=False,
-                                  label="Volume description",
+                                  label="",
                                   initial="This is my new amazing volume.",
                                   max_length=2000,
                                   help_text="2000 characters maximum")

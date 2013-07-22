@@ -90,6 +90,11 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
             for k, v in cgi.parse_qsl(self.parsed_uri[4]):
                 self.query[k] = v.decode('utf-8')
 
+            session = self.getSession()
+            if 'authenticated' in session:
+                self.setRedirect('/syn/')
+                return
+
             path = self.parsed_uri[2]
             if path == '/':
                self.render()
@@ -241,7 +246,7 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
                 session[field_name] = value
 
 
-            self.setRedirect('/syn/home')
+            self.setRedirect('/syn/')
             session.regenerate_id()
             return
 

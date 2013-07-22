@@ -128,8 +128,6 @@ def changepassword(request, g_name):
 @precheck("UG", PRECHECK_REDIRECT)
 def changelocation(request, g_name):
     session = request.session
-    username = session['login_email']
-    user = db.read_user(username)
 
     form = gatewayforms.ModifyGatewayLocation(request.POST)
     if form.is_valid():
@@ -153,6 +151,8 @@ def changelocation(request, g_name):
 @authenticate
 @precheck("UG", PRECHECK_REDIRECT)
 def changevolume(request, g_name):
+
+    session = request.session
 
     form = gatewayforms.ChangeVolume(request.POST)
     if form.is_valid():
@@ -179,8 +179,6 @@ def changevolume(request, g_name):
 @precheck("UG", PRECHECK_REDIRECT)
 def changewrite(request, g_name):
     session = request.session
-    username = session['login_email']
-    user = db.read_user(username)
     
 
     g = db.read_user_gateway(g_name)
@@ -204,7 +202,6 @@ def changewrite(request, g_name):
 def allgateways(request):
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     try:
         qry = db.list_user_gateways()
@@ -349,7 +346,6 @@ def delete(request, g_name):
 
     session = request.session
     username = session['login_email']
-    user = db.read_user(username)
 
     ug = db.read_user_gateway(g_name)
     if not ug:
