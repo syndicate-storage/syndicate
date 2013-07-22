@@ -11,6 +11,9 @@ static bool gateway_running = true;
 static bool allow_overwrite = false;
 static md_path_locks gateway_md_locks;
 
+// gloabl config
+struct md_syndicate_conf *global_conf = NULL;
+
 // session ID for written data
 static int64_t SESSION_ID = 0;
 
