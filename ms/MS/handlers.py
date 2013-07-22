@@ -289,7 +289,7 @@ class MSFileRequestHandler(webapp2.RequestHandler):
          return
 
       # begin the response
-      UG, volume, timing = response_begin( self )
+      UG, volume, timing = response_begin( self, volume_name )
       if UG == None or volume == None:
          return
 
