@@ -46,8 +46,8 @@ public class SyndicateConfigUtil {
     public static final String JOB_MAPPER_OUTPUT_KEY = "mapred.mapoutput.key.class";
     public static final String JOB_MAPPER_OUTPUT_VALUE = "mapred.mapoutput.value.class";
 
-    public static final String JOB_INPUT_FORMAT = "mapred.input.format.class";
-    public static final String JOB_OUTPUT_FORMAT = "mapred.output.format.class";
+    public static final String JOB_INPUT_FORMAT = "mapreduce.inputformat.class";
+    public static final String JOB_OUTPUT_FORMAT = "mapreduce.outputformat.class";
 
     public static final String JOB_OUTPUT_KEY = "mapred.mapoutput.key.class";
     public static final String JOB_OUTPUT_VALUE = "mapred.mapoutput.value.class";
