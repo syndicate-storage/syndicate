@@ -302,9 +302,6 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
    }
 
    // now child exists.
-   // before releasing the parent, get info from it
-   uint64_t parent_write_ttl = parent->max_write_freshness;
-
    
    // safe to lock it so we can release the parent
    fs_entry_wlock( child );

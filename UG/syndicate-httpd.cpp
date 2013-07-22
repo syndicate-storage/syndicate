@@ -746,7 +746,6 @@ int main( int argc, char** argv ) {
    static struct option syndicate_options[] = {
       {"config-file",     required_argument,   0, 'c'},
       {"volume-name",     required_argument,   0, 'v'},
-      {"volume-secret",   required_argument,   0, 's'},
       {"username",        required_argument,   0, 'u'},
       {"password",        required_argument,   0, 'p'},
       {"port",            required_argument,   0, 'P'},
@@ -757,7 +756,7 @@ int main( int argc, char** argv ) {
 
    int opt_index = 0;
    
-   while((c = getopt_long(argc, argv, "c:v:s:u:p:P:fm:", syndicate_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:fm:", syndicate_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -765,10 +764,6 @@ int main( int argc, char** argv ) {
          }
          case 'c': {
             config_file = optarg;
-            break;
-         }
-         case 's': {
-            volume_secret = optarg;
             break;
          }
          case 'u': {
@@ -797,7 +792,7 @@ int main( int argc, char** argv ) {
       }
    }
 
-   int rc = syndicate_init( config_file, &syndicate_http, portnum, ms_url, volume_name, volume_secret, username, password );
+   int rc = syndicate_init( config_file, &syndicate_http, portnum, ms_url, volume_name, username, password );
    if( rc != 0 )
       exit(1);
    

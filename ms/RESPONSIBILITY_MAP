@@ -1,0 +1,148 @@
+Questions:
+
+Within volumes, replica_gateway_urls refers to the locations of any RG's the volume is 
+using? Shuld acquisitiong_gateway_urls exist too? In essence, it is a mapping of 
+RG's/AG's to a volume.
+
+How should RG hash/write publication work (i.e. all RG's need to be able to authenticate 
+each other and determine which UG's can write).
+
+
+
+MS RECORDS LAYOUT
+
+    USER
+        email -> essentially username
+        owner_id -> unique number for identifying USERS
+        openid_url -> OpenID provider
+        volumes_o -> list of volume_ids that this user owns
+        volumes_r -> list of volume_ids that this user can read (mutually exclusive with 
+        volumes_rw)
+        volumes_rw -> list of volume_ids that this user can read/write
+
+    AG
+        owner_id -> corresponds to a USER
+        gateway host -> location of AG process
+        gateway port -> port of AG process
+        ms_username -> unique name of AG
+        ms_password_hash -> used to authenticate all AG actions 
+        JSON config data -> used to configure behavior of AG
+
+        TO BE ADDED:
+
+        volume_ids -> list of volumes able to get published AG data
+
+    RG
+        owner_id -> corresponds to a USER
+        gateway host -> location of RG process
+        gateway port -> port of RG process
+        ms_username -> unique name of RG
+        ms_password_hash -> used to authenticate all RG actions
+        JSON config data -> used to configure behavior of RG
+
+        TO BE ADDED:
+
+        top_level -> this boolean indicates a top-level RG that directly interacts with 
+        UGs. If it is false, this RG is only talking to other RGs with an ultimate RG at 
+        the top.
+
+        A) 
+            volume_ids -> list of volumes able to use RG. Only valid if top_level is true
+            .
+
+           rg_children -> if top_level is true and RG has children, list of RG.
+           user_names for whom this RG is a parent.
+
+        B) 
+            rg_parent -> if top_level is false, indicates the RG one level higher in the 
+            RG hierarchy.
+
+    UG
+        owner_id -> corresponds to a USER
+        gateway host -> location of UG process
+        gateway port -> port of UG process
+        ms_username -> unique name of UG
+        ms_password_hash -> used to authenticate all UG actions
+        read_write -> boolean indicating if UG has power to write to RG's (Not just read)
+        volume_id -> volume_id behind this UG (that this UG is attached to)
+
+
+    VOL
+        name -> unique volume name  
+        blocksize -> blocksize of data in KB
+        active (bool) -> Indicates whether or not this volume is active.
+        description -> Description of volume
+        owner_id -> corresponds to a USER
+        volume_id -> unique ID # for every volume   
+        replica_gateway_urls -> location of RG's in rg_ids (?)
+        version (int that counts up; TBImplemented) -> used to notify other gateways 
+        that data in this volume has changed (increments on change)
+        private (bool) -> if true, only owner can see/use this volume
+        num_shards
+        volume_secret_salted_hash -> authentication tool
+        volume_secret_salt -> authentication tool
+
+        TO BE ADDED:
+        ag_ids -> AG's publishing data to this volume
+        rg_ids -> RG's replicating data for this volume.
+
+
+
+
+RESPONSIBILITY MAP for MS
+
+	AG
+        - when a AG.volume_id is removed from the MS record via either the AG itself on 
+        behalf of its owner or via admin tool, notify corresponding UG's mounting that 
+        volume_id that they no longer have read access to that data. Block future 
+        requests for that AG's location.
+
+        - when a AG.volume_id is added to the MS record via either the AG itself on 
+        behalf of its owner or via admin tool, notify corresponding UG's mounting that 
+        volume_id that they have read access to new data. Accept future requests for 
+        that AG's location.
+
+        - when AG.JSON is changed, push new JSON to AG.
+
+        - When a UG requests to use a certain public AG, authenticate, then update AG.
+        volume_ids and Volume.ag_ids.
+
+	RG
+        - when a RG.volume_id is removed from the MS record via either the RG itself on 
+        behalf of its owner or via admin tool, notify corresponding UG's mounting that 
+        volume_id that they no longer have read access to that data. Block future 
+        requests for that AG's location.
+
+        - when a RG.volume_id is added to the MS record via either the RG itself on 
+        behalf of its owner or via admin tool, notify corresponding UG's mounting that 
+        volume_id that they have read access to new data. Accept future requests for 
+        that AG's location.
+
+        - When a UG requests to use a certain public RG, authenticate, then update RG.
+        volume_ids and Volume.rg_ids. When a UG requests to use a private RG, ensure
+        RG.owner_id matches that UG's Volume.owner_id.
+
+        - When a UG tries to write to an RG, allow RG to request confirmation of UG's 
+        write capabilites.
+
+        - when RG.JSON is changed, push new JSON to RG.
+
+        - when RG.children, RG.top_level, or RG.parent change, notifying RG's who are 
+        affected.
+
+	UG
+        - when a UG wants to locate an AG to get data on behalf of its volume, 
+        authenticate their request, make sure it conforms with internal records (i.e. is 
+        UG.volume_id in AG.volume_ids ),
+        and return AG.host:AG.port
+
+        - when a UG wants to locate an RG to get data on behalf of its volume, 
+        authenticate their make sure it conforms with internal records (i.e. is RG 
+        top_level true, is UG.volume_id in RG.volume_ids ),
+        and return RG.host:RG.port
+
+	VOL
+        - can request AG location from MS via ag_ids via UG (?)
+        - can request RG location from MS via rg_ids via UG. This should be stored in 
+        replica_gateway_urls for easy access (?). Should acquisition_gateway_urls exist 
+        too?

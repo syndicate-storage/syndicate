@@ -151,6 +151,8 @@ class UserGateway( Gateway ):
       cred_pb.owner_id = self.owner_id
       cred_pb.username = self.ms_username
       cred_pb.password_hash = self.ms_password_hash
+      cred_pb.host = self.host
+      cred_pb.port = self.port
 
    @classmethod
    def cache_listing_key( cls, **kwargs ):
@@ -167,6 +169,8 @@ class UserGateway( Gateway ):
          ms_password          str
          ms_password_hash     str
          read_write           bool
+         host                 str
+         port                 int
       """
 
       kwargs['volume_id'] = volume.volume_id
@@ -284,22 +288,15 @@ class UserGateway( Gateway ):
       return results
 
    @classmethod
-   def ListAll( cls, **attrs ):
+   def ListAll( cls, attrs ):
       '''
-      Attributes must be in dictionary, using format "UserGateway.PROPERTY: [operator] [value]"
-      eg {'UserGateway.volume_id': '== 5', ...} Yet to be THOROUGHLY tested/debugged.
+      Attributes must be in dictionary, using format "UserGateway.PROPERTY [operator]: [value]"
 
       '''
-      query_clause = ""
-      for key, value in attrs.iteritems():
-         if query_clause: 
-            query_clause+=","
-         query_clause += (key + value)
-      if query_clause:
-         exec ("result = UserGateway.query(%s)" % query_clause)
-         return result
-      else:
-         return UserGateway.query()
+      qry = UserGateway.query()
+      ret = cls.ListAll_runQuery( qry, attrs )
+
+      return ret
 
    
 class AcquisitionGateway( Gateway ):
@@ -443,22 +440,16 @@ class AcquisitionGateway( Gateway ):
       return gateway.key
 
    @classmethod
-   def ListAll( cls, **attrs ):
+   def ListAll( cls, attrs ):
       '''
       Attributes must be in dictionary, using format "AcquisitionGateway.PROPERTY: [operator] [value]"
       eg {'AcquisitionGateway.volume_id': '== 5', ...} Yet to be THOROUGHLY tested/debugged.
 
       '''
-      query_clause = ""
-      for key, value in attrs.iteritems():
-         if query_clause: 
-            query_clause+=","
-         query_clause += (key + value)
-      if query_clause:
-         exec ("result = AcquisitionGateway.query(%s)" % query_clause)
-         return result
-      else:
-         return AcquisitionGateway.query()
+      qry = AcquisitionGateway.query()
+      ret = cls.ListAll_runQuery( qry, attrs )
+
+      return ret
 
    @classmethod
    def ListAll_ByVolume( cls, volume_id ):
@@ -496,6 +487,7 @@ class AcquisitionGateway( Gateway ):
       storagetypes.memcache.delete(ag_key_name)
 
       return True
+      
 
 class ReplicaGateway( Gateway ):
 
@@ -685,19 +677,13 @@ class ReplicaGateway( Gateway ):
 
 
    @classmethod
-   def ListAll( cls, **attrs ):
+   def ListAll( cls, attrs ):
       '''
-      Attributes must be in dictionary, using format "ReplicaGateway.PROPERTY: [operator] [value]"
-      eg {'ReplicaGateway.volume_id': '== 5', ...} Yet to be THOROUGHLY tested/debugged.
+      Attributes must be in dictionary, using format "ReplicaGateway.PROPERTY [operator]: [value]"
+      '''
 
-      '''
-      query_clause = ""
-      for key, value in attrs.iteritems():
-         if query_clause: 
-            query_clause+=","
-         query_clause += (key + value)
-      if query_clause:
-         exec ("result = ReplicaGateway.query(%s)" % query_clause)
-         return result
-      else:
-         return ReplicaGateway.query()
+      qry = ReplicaGateway.query()
+      ret = cls.ListAll_runQuery( qry, attrs )
+
+      return ret
+

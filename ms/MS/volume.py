@@ -21,7 +21,9 @@ import time
 import datetime
 import random
 import string
+import logging
 
+# DEPRICATED
 VOLUME_SECRET_LENGTH = 256
 VOLUME_SECRET_SALT_LENGTH = 256
 
@@ -49,34 +51,38 @@ class Volume( storagetypes.Object ):
    description = storagetypes.Text()
    owner_id = storagetypes.Integer()
    volume_id = storagetypes.Integer()
-   replica_gateway_urls = storagetypes.String( repeated=True )     # multiple replica servers allowed
-   version = storagetypes.Integer( indexed=False )                 # version of this metadata
+   version = storagetypes.Integer( indexed=False )                 # version of this Volume's metadata
+   UG_version = storagetypes.Integer( indexed=False )              # version of the UG listing in this Volume
+   RG_version = storagetypes.Integer( indexed=False )              # version of the RG listing in this Volume
    private = storagetypes.Boolean()
-   ag_ids = storagetypes.Integer( repeated=True ) #AG's publishing data to this volume
-   rg_ids = storagetypes.Integer( repeated=True ) #RG's replicating data for this volume.
-
+   session_timeout = storagetypes.Integer( default=-1, indexed=False )  # how long a gateway session on this Volume lasts
+   ag_ids = storagetypes.Integer( repeated=True )                  # AG's publishing data to this volume
+   rg_ids = storagetypes.Integer( repeated=True )                  # RG's replicating data for this volume.
 
 
    num_shards = storagetypes.Integer(default=20, indexed=False)    # number of shards per entry in this volume
 
+   # DEPRICATED
    volume_secret_salted_hash = storagetypes.Text()                 # salted hash of shared secret between the volume and its gateways
    volume_secret_salt = storagetypes.Text()                        # salt for the above hashed value
 
+   # DEPRICATED
    @classmethod
    def generate_password_hash( cls, password, salt ):
       h = SHA256.new()
       h.update( salt )
       h.update( password )
       return h.hexdigest()
-      
+
+   # DEPRICATED
    @classmethod
    def generate_volume_secret( cls, secret ):
-      
+
       salt = digits = "".join( [random.choice(string.printable) for i in xrange(VOLUME_SECRET_SALT_LENGTH)] )
       secret_salted_hash = Volume.generate_password_hash( secret, salt )
 
       return (salt, secret_salted_hash)
-      
+
    
    required_attrs = [
       "name",
@@ -100,15 +106,16 @@ class Volume( storagetypes.Object ):
       "ag_ids": (lambda cls, attrs: []),
       "rg_ids": (lambda cls, attrs: []),
       "blocksize": (lambda cls, attrs: 61440), # 60 KB
-      "version": (lambda cls, attrs: 1),
+      "version": (lambda cls, attrs: 1)
    }
-   
-   def protobuf( self, volume_metadata, user_gateways, **kwargs ):
+
+      
+   def protobuf( self, volume_metadata, caller_UG, **kwargs ):
       """
       Convert to a protobuf (ms_volume_metadata).
-      Extra kwargs:
-         user_gateways:          [UserGateway]
       """
+
+      caller_UG.protobuf_cred( volume_metadata.cred )
       
       volume_metadata.owner_id = kwargs.get( 'owner_id', self.owner_id )
       volume_metadata.blocksize = kwargs.get( 'blocksize', self.blocksize )
@@ -116,40 +123,22 @@ class Volume( storagetypes.Object ):
       volume_metadata.description = kwargs.get( 'description', self.description )
       volume_metadata.volume_id = kwargs.get( 'volume_id', self.volume_id )
       volume_metadata.volume_version = kwargs.get('volume_version', self.version )
-
-      replica_urls = kwargs.get( 'replica_gateway_urls', self.replica_gateway_urls )
-      
-      for url in replica_urls:
-         volume_metadata.replica_urls.append( url )
-
-      for ug in user_gateways:
-         ug_pb = volume_metadata.user_gateway_creds.add()
-         ug.protobuf_cred( ug_pb )
+      volume_metadata.UG_version = kwargs.get('UG_version', self.UG_version )
+      volume_metadata.RG_version = kwargs.get('RG_version', self.RG_version )
+      volume_metadata.session_timeout = kwargs.get( 'session_timeout', self.session_timeout )
       
       return
 
 
-   def authenticate_gateway( self, http_headers ):
-      """
-      Given HTTP headers, determine if the request came from an authenticated UG.
-      """
-      volume_secret = http_headers.get( Volume.HTTP_VOLUME_SECRET, None )
-      if volume_secret == None:
-         # no authentication header given
-         return False
-
-      h = SHA256.new()
-      h.update( self.volume_secret_salt )
-      h.update( volume_secret )
-
-      result = h.hexdigest()
-
-      if result != self.volume_secret_salted_hash:
-         # incorrect secret
+   def authenticate_UG( self, UG ):
+      if not self.private:
+         return True
+         
+      if UG.volume_id != self.volume_id:
          return False
 
       return True
-
+      
 
    @classmethod
    def Create( cls, user, **kwargs ):
@@ -160,14 +149,12 @@ class Volume( storagetypes.Object ):
          name: str
          blocksize: int
          description: str
-         volume_secret: str
       """
 
       kwargs['owner_id'] = user.owner_id
       Volume.fill_defaults( kwargs )
 
-
-
+      # DEPRICATED
       # Get or finalize credentials
       volume_secret = kwargs.get("volume_secret")
 
@@ -218,7 +205,6 @@ class Volume( storagetypes.Object ):
 
          vid_future = vid_counter.put_async()
 
-
          # new volume
          volume = Volume( name=name,
                         key=volume_key,
@@ -227,11 +213,15 @@ class Volume( storagetypes.Object ):
                         owner_id=user.owner_id,
                         volume_id=vid_counter.value,
                         active=kwargs.get('active',False),
-                        replica_gateway_urls=[],
                         version=1,
+                        UG_version=1,
+                        RG_version=1,
                         private=private,
-                        volume_secret_salted_hash=volume_secret_salted_hash,
-                        volume_secret_salt=volume_secret_salt
+                        rg_ids=kwargs['rg_ids'],
+                        ag_ids=kwargs['ag_ids'],
+                        # DEPRICATED
+                        volume_secret_salt = kwargs['volume_secret_salt'],
+                        volume_secret_salted_hash = kwargs['volume_secret_salted_hash']
                         )
 
          vol_future = volume.put_async()
@@ -278,19 +268,20 @@ class Volume( storagetypes.Object ):
       """
       Update the shard count of the volume, but in a transaction.
       """
-
+      volume_name = unicode(volume_name).replace(" ","_")
       volume_key = storagetypes.make_key( Volume, Volume.make_key_name( name=volume_name ) )
       
       num_shards = storagetypes.transaction( lambda: __volume_update_shard_count( volume_key, num_shards ), **txn_args )
       
       return num_shards
 
-# Changed volume_id to name in parameters - John
+   # Changed volume_id to name in parameters - John
    @classmethod
    def Update( cls, name, **fields ):
       '''
       Update volume identified by name with fields specified as a dictionary.
       '''
+      name = unicode(name).replace(" ","_")
       volume = Volume.Read(name)
       volume_key_name = Volume.make_key_name( name=name )
       storagetypes.memcache.delete(volume_key_name)
@@ -309,23 +300,17 @@ class Volume( storagetypes.Object ):
       '''
       Delete volume from datastore.
       '''
-      volume = Volume.Read(name) 
-      return volume.key.delete()
+      name = unicode(name).replace(" ","_")
+      volume_key = storagetypes.make_key( Volume, Volume.make_key_name( name=volume_name ) )
+      return volume_key.delete()
 
+      
    @classmethod
-   def ListAll( cls, **attrs ):
+   def ListAll( cls, attrs ):
       '''
-      Attributes must be in dictionary, using format "Volume.PROPERTY: [operator] [value]"
-      eg {'Volume.volume_id': '== 5', ...} Yet to be tested/debugged.
+      attrs is a dictionary of Volume.PROPERTY [operator]: [value]
+      '''
+      qry = Volume.query()
+      ret = cls.ListAll_runQuery( qry, attrs )
 
-      '''
-      query_clause = ""
-      for key, value in attrs.iteritems():
-         if query_clause: 
-            query_clause+=","
-         query_clause += (key + value)
-      if query_clause:
-         exec ("result = Volume.query(%s)" % query_clause)
-         return result
-      else:
-         return Volume.query()
+      return ret

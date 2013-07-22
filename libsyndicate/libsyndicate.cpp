@@ -3501,7 +3501,6 @@ int md_init( int gateway_type,
              int portnum,
              char const* ms_url,
              char const* volume_name,
-             char const* volume_secret,
              char const* md_username,
              char const* md_password ) {
 
@@ -3571,7 +3570,7 @@ int md_init( int gateway_type,
    }
 
    // get the volume metadata
-   rc = ms_client_get_volume_metadata( client, conf->volume_name, volume_secret, &conf->volume_version, &conf->owner, &conf->volume_owner, &conf->volume, &conf->blocking_factor );
+   rc = ms_client_get_volume_metadata( client, conf->volume_name, &conf->owner, &conf->volume_owner, &conf->volume, &conf->blocking_factor );
    if( rc != 0 ) {
       errorf("ms_client_get_volume_metadata rc = %d\n", rc );
       return rc;
@@ -3624,7 +3623,6 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->volume_owner = 0;
    conf->mountpoint = NULL;      // filled by md_runtime_init
    conf->hostname = NULL;        // filled by md_runtime_init
-   conf->volume_version = 0;
 
    return 0;
 }

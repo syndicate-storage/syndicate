@@ -6,32 +6,16 @@ This is the collection of files for the Syndicate front-end, using Django and we
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
-- Enabled changing volumes for UG's. Now, essentially all settings/parameters
-  can be manually changed on the MS admin site, and creation is also possible for
-  everything.
+DONE ->
+- commented all of django_ag
 
 Current task TD -> 
-	HERE
-	Things to change back -> authenticates, session middleware,
 
 Tomorrow
-- Should precheck be a decorator?
-- Turn session stuff and thanks stuff at start and end of every view into decorator
-- Make "message" views like ag.urls.py
-- Handle all left out fieds and wrong fields for AG.
-- Handle someone trying to add same volume twice to AG.
-- Turn direct view-to-view calls in rg/ag/ug views into redirect shortcuts. Too much exposure of urls.
-- Center all boolean check-boxes
-- IN all views (especially gateways) get rid of excess user calls.
-- In all URLS.pys, make *s +s when appropriate to prevent 'blank' variables
-- Should AG creation immediately ask for volume??
-- volume cycle through in AG_tempalte_table and RB_template_table
-- allgateways in rg (cycling through volumes to volset like AG)
+- Make root dir when creating volumes
+	- Defaults for making root dir per volume (?)
 - read through others code.
-- volume version (?)
-- Solidfy AG/RG/UG/Volume parameters. (version!)
-- Create RG modifciation GUI
-- Create AG modification GUI
+- Transatctionify ag_views.py.deletevolumes. This might be necessary for Rg and Ug as well!
 - Clean out magic numbers
 - put Try blocks on all gateway.py, user.py, and volume.py Update methods for setattr.
 
@@ -39,26 +23,17 @@ Tomorrow
 Long term
 - Admin site layout consistency for tables. Make sure they scale well with weird text (large names, descrips, configs etc)
 - Make more adminy, less fluff.
+- Mabye make tests?
 
 To-do:
 
-- Is it possible to make ALL errors for Ag/RG creation maintain state?
-- Make sure to update setup.py when changing parameters
-
-- Make setup better to allow auto-creation of AG's/RG's.
 
 - Ask Jude.
 	Should Volume record in MS store information on AGs/RGs, or gateway records store information about volumes, or both?
 	How should configuration for RG be represented in MS? Or does it need to be at all?
 	When a
 
-- Adding to Volume -> AG parameter (repeated? Yeah probably.) check
-				   -> RG parameter (repeated?)
-
-- Adding to RG -> Private/Public "private", meaning that it can only be bound to a Volume owned by the same user that owns the RG -> Volumes (repeated) check
-
 - fix error for UG delete gateway (? What is this)
-- AG/RG parameters
 - Ask Jude about key_listing methond in Gateway...
 
 Ag have to publish the existence of data in the MS. They can also serve data. Function like UG, can read and write metadata

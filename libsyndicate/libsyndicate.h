@@ -112,7 +112,7 @@ struct md_syndicate_conf;
 struct md_entry {
    int type;            // file or directory?
    char* path;          // path
-   char* url;           // URL to the primary replica
+   char* url;           // URL to the UG that hosts its data
    char* local_path;    // only valid for local content--if set, it's the absolute local path on disk where the content can be found
    int64_t ctime_sec;   // creation time (seconds)
    int32_t ctime_nsec;  // creation time (nanoseconds)
@@ -170,11 +170,11 @@ struct md_linked_list {
    struct md_linked_list* next;
 };
 
-// HTTP server user account entry
+// gateway user session
 struct md_user_entry {
    uid_t uid;
    char* username;
-   char* password_hash;
+   char* password_hash;    // used as a session secret
 };
 
 #define MD_GUEST_UID 0xFFFFFFFF
@@ -385,7 +385,6 @@ struct md_syndicate_conf {
    uid_t volume_owner;                                // user ID of the metadata server we're subscribed to
    char* mountpoint;                                  // absolute path to the place where the metadata server is mounted
    char* hostname;                                    // what's our hostname?
-   uint64_t volume_version;                           // version of the volume state
    char* ag_driver;				      // AG gatway driver that encompasses gateway callbacks
 };
 
@@ -660,7 +659,6 @@ int md_init( int gateway_type,
              int portnum,
              char const* ms_url,
              char const* volume_name,
-             char const* volume_secret,
              char const* md_username,
              char const* md_password
            );

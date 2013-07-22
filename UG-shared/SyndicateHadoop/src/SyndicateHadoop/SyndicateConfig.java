@@ -57,16 +57,16 @@ public class SyndicateConfig {
         SyndicateConfigUtil.setUGPassword(this.config, ug_password);
     }
     
+    public String getUGNamePrefix() {
+        return SyndicateConfigUtil.getUGNamePrefix(this.config);
+    }
+    
+    public void setUGNamePrefix(String ug_name) {
+        SyndicateConfigUtil.setUGNamePrefix(this.config, ug_name);
+    }
+    
     public String getUGName() {
         return SyndicateConfigUtil.getUGName(this.config);
-    }
-    
-    public void setUGName(String ug_name) {
-        SyndicateConfigUtil.setUGName(this.config, ug_name);
-    }
-    
-    public String generateUGName(String prefix) {
-        return SyndicateConfigUtil.generateUGName(prefix);
     }
     
     public String getVolumeName() {
@@ -150,19 +150,19 @@ public class SyndicateConfig {
             }
         }
         
-        String username = getUGName();
-        if(username != null) {
+        String ugName = getUGName();
+        if(ugName != null) {
             try {
-                jsfsConfig.setUGName(username);
+                jsfsConfig.setUGName(ugName);
             } catch (IllegalAccessException ex) {
                 LOG.error(ex);
             }
         }
         
-        String password = getUGPassword();
-        if(password != null) {
+        String ugPassword = getUGPassword();
+        if(ugPassword != null) {
             try {
-                jsfsConfig.setUGPassword(password);
+                jsfsConfig.setUGPassword(ugPassword);
             } catch (IllegalAccessException ex) {
                 LOG.error(ex);
             }

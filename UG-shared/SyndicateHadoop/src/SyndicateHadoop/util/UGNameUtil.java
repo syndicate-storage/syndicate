@@ -8,7 +8,6 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Enumeration;
-import org.apache.hadoop.conf.Configuration;
 
 /**
  *
@@ -16,44 +15,58 @@ import org.apache.hadoop.conf.Configuration;
  */
 public class UGNameUtil {
     
-    private static String getIPAddress() throws SocketException {
-        Enumeration e = NetworkInterface.getNetworkInterfaces();
-        while(e.hasMoreElements()) {
-            NetworkInterface n = (NetworkInterface) e.nextElement();
-            Enumeration ee = n.getInetAddresses();
-            while(ee.hasMoreElements()) {
-                InetAddress i = (InetAddress) ee.nextElement();
-                
-                if(i instanceof Inet4Address) {
-                    if(i.isLoopbackAddress())
-                        continue;
-                    if(i.isMulticastAddress())
-                        continue;
-                    if(i.isSiteLocalAddress())
-                        continue;
-                
-                    return i.getHostAddress();
+    private static String ipAddress = null;
+    private static boolean ipAddressChecked = false;
+    
+    private static String getIPAddress() {
+        if(!ipAddressChecked) {
+            try {
+                Enumeration e = NetworkInterface.getNetworkInterfaces();
+                while (e.hasMoreElements()) {
+                    NetworkInterface n = (NetworkInterface) e.nextElement();
+                    Enumeration ee = n.getInetAddresses();
+                    while (ee.hasMoreElements()) {
+                        InetAddress i = (InetAddress) ee.nextElement();
+
+                        if (i instanceof Inet4Address) {
+                            if (i.isLoopbackAddress()) {
+                                continue;
+                            }
+                            if (i.isMulticastAddress()) {
+                                continue;
+                            }
+                            if (i.isSiteLocalAddress()) {
+                                continue;
+                            }
+
+                            // get first ipaddress
+                            ipAddress = i.getHostAddress();
+                            ipAddressChecked = true;
+                            return ipAddress;
+                        }
+                    }
                 }
+            } catch (SocketException ex) {
+                ipAddress = null;
+                ipAddressChecked = true;
+                return null;
             }
         }
         
-        return null;
+        return ipAddress;
     }
     
     public static String getUGName(String prefix) {
         String address = null;
-        
-        try {
-            address = getIPAddress();
-        } catch (SocketException ex) {}
+        address = getIPAddress();
         
         if(address == null || address.isEmpty()) {
             return null;
         } else {
             if(prefix == null)
-                return address.replaceAll("\\.", "_");
+                return address;
             else
-                return prefix + address.replaceAll("\\.", "_");
+                return prefix + address;
         }
     }
 }

@@ -7,9 +7,7 @@
 #include "collator.h"
 
 // create a Collator
-Collator::Collator( struct fs_core* core ) //:
-   //TransactionProcessor() {
-      {
+Collator::Collator( struct fs_core* core ) {
 
    pthread_mutex_init( &this->release_queue_lock, NULL );
 

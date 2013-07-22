@@ -11,6 +11,7 @@ import types
 import errno
 import time
 import datetime
+import logging
 
 import backends as backend
 
@@ -398,5 +399,52 @@ class Object( Model ):
       raise NotImplementedError
 
    @classmethod
-   def ListAll( cls, **filter_attrs ):
+   def ListAll( cls, filter_attrs ):
       raise NotImplementedError
+
+   @classmethod
+   def ListAll_runQuery( cls, qry, filter_attrs ):
+      if filter_attrs == None:
+         filter_attrs = {}
+         
+      operators = ['==', '!=', '<', '>', '<=', '>=', 'IN' ]
+      for (attr, value) in filter_attrs.items():
+         attr_parts = attr.split()
+         op = ''
+         if len(attr_parts) > 1:
+            # sanity check--must be a valid operator
+            if attr_parts[1] not in operators:
+               raise Exception("Invalid operator '%s'" % attr_parts[1])
+
+            attr = attr_parts[0]
+            op = attr_parts[1]
+         else:
+            # default: =
+            op = "=="
+
+         # get the field name
+         if '.' in attr_parts[0]:
+            attr_name = attr_parts[0].split(".")[-1]
+         else:
+            attr_name = attr_parts[0]
+         
+         if op == '==':
+            qry = qry.filter( cls._properties[attr_name] == value )
+         elif op == "!=":
+            qry = qry.filter( cls._properties[attr_name] != value )
+         elif op == ">":
+            qry = qry.filter( cls._properties[attr_name] > value )
+         elif op == ">=":
+            qry = qry.filter( cls._properties[attr_name] >= value )
+         elif op == "<":
+            qry = qry.filter( cls._properties[attr_name] < value )
+         elif op == "<=":
+            qry = qry.filter( cls._properties[attr_name] <= value )
+         elif op == "IN":
+            qry = qry.filter( cls._properties[attr_name].IN( value ) )
+
+         logging.info("%s %s" % (op, value))
+
+      qry_ret = qry.fetch( None )
+      return qry_ret
+      
