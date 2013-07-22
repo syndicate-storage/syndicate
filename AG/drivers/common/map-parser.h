@@ -55,8 +55,14 @@ using namespace xercesc;
 #define QUERY_TYPE_DEFAULT	QUERY_TYPE_BOUNDED_SQL
 
 struct map_info {
-    unsigned char* query;
-    unsigned char* unbounded_query;
+    union {
+	unsigned char* shell_command;
+	struct {
+	    unsigned char* query;
+	    unsigned char* unbounded_query;
+	};
+    };
+    uint64_t id;
     uint16_t file_perm;
 };
 
@@ -68,10 +74,12 @@ class MapParserHandler : public DefaultHandler {
 	char* current_key;
 	char* bounded_query;
 	char* unbounded_query;
+	char* shell_cmd;
 	int current_perm;
 	unsigned int type;
 	unsigned char* dsn_str;
 	bool open_dsn;
+	uint64_t current_id;
 
 	map<string, struct map_info>* xmlmap;
     public:
