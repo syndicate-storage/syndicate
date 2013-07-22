@@ -56,7 +56,7 @@ def viewgateway(request, g_name=""):
 
     # Check for passed error messages or inital data from session-state.
     message = session.pop('message', "")
-    initial_data = session.pop('initial_data', [])
+    initial_data = session.get('initial_data', [])
 
     # Make sure this gateway actually exists.
     g = db.read_acquisition_gateway(g_name)
@@ -97,7 +97,10 @@ def viewgateway(request, g_name=""):
     session['initial_data'] = initial_data
 
     VolumeFormSet = formset_factory(gatewayforms.GatewayRemoveVolume, extra=0)
-    formset = VolumeFormSet(initial=initial_data)
+    if initial_data:
+        formset = VolumeFormSet(initial=initial_data)
+    else:
+        formset = None
 
     vol_owners = zip(vols, owners)
 
@@ -216,14 +219,14 @@ def changepassword(request, g_name):
             session['next_message'] = "Click here to go back to your gateway."
             return HttpResponseRedirect('/syn/thanks')
 
+
+
 @authenticate
 @precheck("AG", PRECHECK_REDIRECT)
 def addvolume(request, g_name):
     '''
     Handler for adding a volume to the gateay.
     '''
-    session = request.session
-    username = session['login_email']
 
     # This is a helper method that isolates the @transactional decorator, speeding
     # up the code when it doesn't reach update() in this view and allowing for
@@ -232,8 +235,10 @@ def addvolume(request, g_name):
     def update(vname, gname, vfields, gfields):
         db.update_volume(vname, **vfields)
         db.update_acquisition_gateway(g_name, **gfields)
+        session.pop('initial_data')
 
-
+    session = request.session
+    username = session['login_email']
 
     form = gatewayforms.GatewayAddVolume(request.POST)
     if form.is_valid():
@@ -284,39 +289,60 @@ def addvolume(request, g_name):
 @precheck("AG", PRECHECK_REDIRECT)
 def removevolumes(request, g_name):
     '''
-    SKIPPED COMMENTING TIL UPDATE IS FIXED AND TRANSACTIONAL
+    This handler allows removal of one or many volumes from an Aqcquisition
+    Gateway. It calls multi_update() as a helper method to allow transactional
+    updates to the database.
     '''
+    # This is a helper method that isolates the @transactional decorator, speeding
+    # up the code when it doesn't reach update() in this view and allowing for
+    # errors that would break in GAE if the decorator was applied to the entire view.
+    # It updates multiple volumes at once
+    @transactional(xg=True)
+    def multi_update(vnames, gname, vfields, gfields):
+
+        for vname, vfield in zip(vnames, vfields):
+            db.update_volume(vname, **vfield)
+        db.update_acquisition_gateway(g_name, **gfields)
+        session.pop('initial_data')
+
+
     session = request.session
     username = session['login_email']
 
     VolumeFormSet = formset_factory(gatewayforms.GatewayRemoveVolume, extra=0)
     formset = VolumeFormSet(request.POST)
+
+    # This call is not checked because the formset will always be valid (readonly widgets)
     formset.is_valid()
 
     volume_ids_to_be_removed = []
+    volume_names_to_be_removed = []
+    new_ags_set = []
 
-    initial_and_forms = zip(session['initial_data'], formset.forms)
+    initial_and_forms = zip(session,get('initial_data', []), formset.forms)
     for i, f in initial_and_forms:
-        if f.cleaned_data['remove']:
 
+        if f.cleaned_data['remove']:
             vol = db.read_volume(i['volume_name'])
 
-            # update volume state
+            # update each volume's new AG list
             new_ags = vol.ag_ids[:]
             new_ags.remove(db.read_acquisition_gateway(g_name).ag_id)
-            fields = {'ag_ids':new_ags}
-            db.update_volume(i['volume_name'], **fields)
+            new_ags_set.append({'ag_ids':new_ags})
 
-            # Add to list of volumes to be removed.
+            # update info for AG update
             volume_ids_to_be_removed.append(db.read_volume(i['volume_name']).volume_id)
+            volume_names_to_be_removed.append(i['volume_name'])
+
     if not volume_ids_to_be_removed:
         session['message'] = "You must select at least one volume to remove."
         return redirect('django_ag.views.viewgateway', g_name)
+
     old_vids = set(db.read_acquisition_gateway(g_name).volume_ids)
     new_vids = list(old_vids - set(volume_ids_to_be_removed))
-    fields = {'volume_ids':new_vids}
+    gfields = {'volume_ids':new_vids}
     try:
-        db.update_acquisition_gateway(g_name, **fields)
+        multi_update(volume_names_to_be_removed, g_name, new_ags_set, gfields)
     except Exception as e:
         logging.error("Unable to update acquisition gateway %s. Exception %s" % (g_name, e))
         session['message'] = "Unable to update gateway."

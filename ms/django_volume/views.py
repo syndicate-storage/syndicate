@@ -5,14 +5,15 @@ from django.shortcuts import redirect
 from django_lib.auth import authenticate, verifyownership
 import django_volume.forms as forms
 import django_lib.forms as libforms
-import logging
 from django.forms.formsets import formset_factory
 
+import logging
 
-from storage.storagetypes import transactional
+from storage.storagetypes import transactional, clock_gettime, get_time
 import storage.storage as db
 from MS.volume import Volume
 from MS.user import SyndicateUser as User
+from MS.entry import MSENTRY_TYPE_DIR
 
 
 @authenticate
@@ -369,9 +370,61 @@ def deactivatevolume(request, volume_name):
 
 #@verifyownership
 @authenticate
-def deletevolume(request, volume_name, message=""):
+def deletevolume(request, volume_name):
+
+    @transactional(xg=True)
+    def multi_update(volume_name, usernames, usergateways, acquisitiongateways, replicagateways):
+        v_id = db.read_volume(volume_name).volume_id
+        db.delete_volume(volume_name)
+
+        for user in users:
+            fields = {}
+
+            if v_id in user.volumes_o:
+                new_volumes_o = user.volumes_o[:]
+                new_volumes_o.remove(v_id)
+                fields['volumes_o'] = new_volumes_o
+
+            if v_id in user.volumes_rw:
+                new_volumes_rw = user.volumes_rw[:]
+                new_volumes_rw.remove(v_id)
+                fields['volumes_rw'] = new_volumes_rw
+
+            if v_id in user.volumes_r:
+                new_volumes_r = user.volumes_r[:]
+                new_volumes_r.remove(v_id)
+                fields['volumes_r'] = new_volumes_r
+
+            if fields:
+                db.update_user(user.email, **fields)
+
+
+        for ug in usergateways:
+            fields = {}
+            fields['volume_id'] = 0
+            db.update_user_gateway(ug.ms_username, **fields)
+
+        for ag in acquisitiongateways:
+            logging.info(ag)
+            fields = {}
+            new_ids = ag.volume_ids[:].remove(v_id)
+            if not new_ids:
+                fields['volume_ids'] = []
+            else:
+                fields['volume_ids'] = new_ids
+            db.update_acquisition_gateway(ag.ms_username, **fields)
+
+        for rg in replicagateways:
+            fields = {}
+            new_ids = rg.volume_ids[:].remove(v_id)
+            if not new_ids:
+                fields['volume_ids'] = []
+            else:
+                fields['volume_ids'] = new_ids
+            db.update_replica_gateway(rg.ms_username, **fields)
 
     session = request.session
+    message = session.pop('message', "")
     username = session['login_email']
     vol = db.read_volume(volume_name)
 
@@ -379,21 +432,28 @@ def deletevolume(request, volume_name, message=""):
 
         form = forms.DeleteVolume(request.POST)
         if form.is_valid():
-            # hCheck password hash
+            # Check password hash
             hash_check = Volume.generate_password_hash(form.cleaned_data['password'], vol.volume_secret_salt)
             if hash_check == vol.volume_secret_salted_hash:
                 # Ok to delete
-                db.delete_volume(volume_name)
+                attrs = {}
+                users = db.list_users({'SyndicateUser.volumes_rw ==':vol.volume_id})
+                ags = db.list_acquisition_gateways_by_volume(vol.volume_id)
+                rgs = db.list_replica_gateways_by_volume(vol.volume_id)
+                ugs = db.list_user_gateways_by_volume(vol.volume_id)
+                try:
+                    multi_update(volume_name, users, ugs, ags, rgs)
+                except Exception as e:
+                     logging.error("Unable to delete volume %s" % e)
+                     session['message'] = "Unable to delete volume."
+                     return redirect('django_volume.views.deletevolume', volume_name=volume_name)
                 session['new_change'] = "We've deleted your volume."
                 session['next_url'] = '/syn/volume/myvolumes/'
                 session['next_message'] = "Click here to go back to your volumes."
                 return HttpResponseRedirect('/syn/thanks')
             else:
-                message = "Invalid password"
-                form = forms.DeleteVolume()
-                t = loader.get_template('deletevolume.html')
-                c = RequestContext(request, {'username':username, 'form':form, 'message':message, 'volume':vol} )
-                return HttpResponse(t.render(c))
+                session['message'] = "Invalid password"
+                return redirect('django_volume.views.deletevolume', volume_name=volume_name)
     else:
         form = forms.DeleteVolume()
         t = loader.get_template('deletevolume.html')
@@ -733,19 +793,21 @@ def createvolume(request):
             kwargs['volume_secret'] = form.cleaned_data['password']
             kwargs['private'] = form.cleaned_data['private']
             user = db.read_user(username)
-            volume_key = db.create_volume(user, **kwargs)
-        
-#            user_volumes = user.volumes
-#            if user_volumes is None:
-#                user.volumes = [volume_key.get().volume_id]
-#            else:
-#                user.volumes.append(volume_key.get().volume_id)
+            try:
+                volume_key = db.create_volume(user, **kwargs)
+            except:
+                form = forms.CreateVolume()
+                message = "Unable to create volume: does your volume name use an extended alphabet?"
+                t = loader.get_template('createvolume.html')
+                c = RequestContext(request, {'username':username,'form':form, 'message':message})
+                return HttpResponse(t.render(c))
+            vol = volume_key.get()
 
             # Update user volume fields (o and rw)
             new_volumes_o = user.volumes_o
             new_volumes_rw = user.volumes_rw
 
-            v_id = volume_key.get().volume_id
+            v_id = vol.volume_id
 
             new_volumes_o.append(v_id)
             new_volumes_rw.append(v_id)
@@ -753,25 +815,26 @@ def createvolume(request):
             fields = {'volumes_o':new_volumes_o, 'volumes_rw':new_volumes_rw}
             db.update_user(username, **fields)
 
+            now_sec, now_nsec = clock_gettime()
+
             # Create root for volume
-            # Ask Jude about these defaults
-            rc = db.make_root( volume,
-                                    ftype=MSENTRY_TYPE_DIR,
-                                    fs_path="/",
-                                    url="http://localhost:32780/",
-                                    version=1,
-                                    ctime_sec=1360015114,
-                                    ctime_nsec=0,
-                                    mtime_sec=1360015114,
-                                    mtime_nsec=0,
-                                    owner_id=volume.owner_id,
-                                    acting_owner_id=volume.owner_id,
-                                    volume_id=volume.volume_id,
-                                    mode=0777,
-                                    size=4096,
-                                    max_read_freshness=5000,
-                                    max_write_freshness=0
-                                  )
+            rc = db.make_root(vol,
+                              ftype=MSENTRY_TYPE_DIR,
+                              fs_path="/",
+                              url="http://syndicate-metadata.appspot.com",
+                              version=1,
+                              ctime_sec=now_sec,
+                              ctime_nsec=now_nsec,
+                              mtime_sec=now_sec,
+                              mtime_nsec=now_nsec,
+                              owner_id=vol.owner_id,
+                              acting_owner_id=vol.owner_id,
+                              volume_id=vol.volume_id,
+                              mode=0755,
+                              size=4096,
+                              max_read_freshness=5000,
+                              max_write_freshness=0
+                            )
 
             session['new_change'] = "Your new volume is ready."
             session['next_url'] = '/syn/volume/myvolumes/'

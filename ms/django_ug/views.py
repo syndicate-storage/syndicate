@@ -273,7 +273,7 @@ def create(request):
                 session['message'] = "No volume %s exists." % form.cleaned_data['volume_name']
                 return give_create_form(username, session)
             if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
-                session['message'] = "Must have read rights to volume %s to create UG for it." % volume_name
+                session['message'] = "Must have read rights to volume %s to create UG for it." % form.cleaned_data['volume_name']
                 return give_create_form(username, session)
             try:
                 kwargs = {}

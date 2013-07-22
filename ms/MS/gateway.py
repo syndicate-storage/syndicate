@@ -237,6 +237,7 @@ class UserGateway( Gateway ):
       '''
       Update UG identified by ms_username with fields specified as a dictionary.
       '''
+      ms_username = unicode(ms_username).strip().replace(" ","_")
       gateway = UserGateway.Read(ms_username)
       gateway_key_name = UserGateway.make_key_name( ms_username=ms_username )
       storagetypes.memcache.delete(gateway_key_name)
@@ -255,6 +256,7 @@ class UserGateway( Gateway ):
       """
       Given a UG username, delete it
       """
+      ms_username = unicode(ms_username).strip().replace(" ","_")
       ug_key_name = UserGateway.make_key_name( ms_username=ms_username )
 
       ug_key = storagetypes.make_key( UserGateway, ug_key_name )
@@ -426,6 +428,7 @@ class AcquisitionGateway( Gateway ):
       '''
       Update AG identified by ms_username with fields specified as a dictionary.
       '''
+      ms_username = unicode(ms_username).strip().replace(" ","_")
       gateway = AcquisitionGateway.Read(ms_username)
       gateway_key_name = AcquisitionGateway.make_key_name( ms_username=ms_username )
       storagetypes.memcache.delete(gateway_key_name)
@@ -478,6 +481,7 @@ class AcquisitionGateway( Gateway ):
       """
       Given a AG username, delete it
       """
+      ms_username = unicode(ms_username).strip().replace(" ","_")
       ag_key_name = AcquisitionGateway.make_key_name( ms_username=ms_username )
 
       ag_key = storagetypes.make_key( AcquisitionGateway, ag_key_name )
@@ -621,9 +625,7 @@ class ReplicaGateway( Gateway ):
       '''
       Update RG identified by ms_username with fields specified as a dictionary.
       '''
-      import logging
-      logging.info(ms_username)
-      logging.info(fields)
+      ms_username = unicode(ms_username).strip().replace(" ","_")
       gateway = ReplicaGateway.Read(ms_username)
       gateway_key_name = ReplicaGateway.make_key_name( ms_username=ms_username )
       storagetypes.memcache.delete(gateway_key_name)
@@ -644,6 +646,7 @@ class ReplicaGateway( Gateway ):
       """
       Given a RG username, delete it
       """
+      ms_username = unicode(ms_username).strip().replace(" ","_")
       rg_key_name = ReplicaGateway.make_key_name( ms_username=ms_username )
 
       rg_key = storagetypes.make_key( ReplicaGateway, rg_key_name )

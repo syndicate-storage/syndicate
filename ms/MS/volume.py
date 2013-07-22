@@ -268,7 +268,7 @@ class Volume( storagetypes.Object ):
       """
       Update the shard count of the volume, but in a transaction.
       """
-      volume_name = unicode(volume_name).replace(" ","_")
+      volume_name = unicode(volume_name).strip().replace(" ","_")
       volume_key = storagetypes.make_key( Volume, Volume.make_key_name( name=volume_name ) )
       
       num_shards = storagetypes.transaction( lambda: __volume_update_shard_count( volume_key, num_shards ), **txn_args )
@@ -281,7 +281,7 @@ class Volume( storagetypes.Object ):
       '''
       Update volume identified by name with fields specified as a dictionary.
       '''
-      name = unicode(name).replace(" ","_")
+      name = unicode(name).strip().replace(" ","_")
       volume = Volume.Read(name)
       volume_key_name = Volume.make_key_name( name=name )
       storagetypes.memcache.delete(volume_key_name)
@@ -296,11 +296,11 @@ class Volume( storagetypes.Object ):
          
 
    @classmethod
-   def Delete( cls, name ):
+   def Delete( cls, volume_name ):
       '''
       Delete volume from datastore.
       '''
-      name = unicode(name).replace(" ","_")
+      name = unicode(volume_name).strip().replace(" ","_")
       volume_key = storagetypes.make_key( Volume, Volume.make_key_name( name=volume_name ) )
       return volume_key.delete()
 
