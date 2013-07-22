@@ -30,32 +30,48 @@ public class JSyndicateFS {
         
         String libraryFilename = System.getProperty(LIBRARY_FILE_PATH_KEY, LIBRARY_FILE_NAME);
         
-        if((libraryFilename != null) && (!libraryFilename.isEmpty())) {
-            File jsfsDLL = new File(libraryFilename);
+        if(libraryFilename.equals(LIBRARY_FILE_NAME)) {
+            // default case -- find in class path
+            LOG.info("JSFS Library Load in ClassPath : " + LIBRARY_FILE_NAME);
             
-            LOG.info("JSFS Library Load : " + jsfsDLL.getAbsolutePath());
-            
-            if(jsfsDLL.exists() && jsfsDLL.canRead() && jsfsDLL.isFile()) {
-                try {
-                    System.load(jsfsDLL.getAbsolutePath());
-                    isLibraryLoaded = true;
-                } catch (Exception ex) {
+            try {
+                System.loadLibrary(libraryFilename);
+                isLibraryLoaded = true;
+            } catch(Exception ex) {
+                isLibraryLoaded = false;
+
+                LOG.error("Library loading failed : " + ex.toString());
+
+                throw new UnsatisfiedLinkError("Invalid JSyndicateFSNative Library : " + libraryFilename);
+            }
+        } else {
+            // path was given
+            if((libraryFilename != null) && (!libraryFilename.isEmpty())) {
+                File jsfsDLL = new File(libraryFilename);
+                LOG.info("JSFS Library Load : " + jsfsDLL.getAbsolutePath());
+
+                if(jsfsDLL.exists() && jsfsDLL.canRead() && jsfsDLL.isFile()) {
+                    try {
+                        System.load(jsfsDLL.getAbsolutePath());
+                        isLibraryLoaded = true;
+                    } catch (Exception ex) {
+                        isLibraryLoaded = false;
+
+                        LOG.error("Library loading failed : " + ex.toString());
+
+                        throw new UnsatisfiedLinkError("Invalid JSyndicateFSNative Library : " + libraryFilename);
+                    }
+                } else {
                     isLibraryLoaded = false;
-                    
-                    LOG.error("Library loading failed : " + ex.toString());
-                    
+
+                    LOG.error("Library loading failed (path error) : " + libraryFilename);
+
                     throw new UnsatisfiedLinkError("Invalid JSyndicateFSNative Library : " + libraryFilename);
                 }
             } else {
                 isLibraryLoaded = false;
-                
-                LOG.error("Library loading failed (path error) : " + libraryFilename);
-                
-                throw new UnsatisfiedLinkError("Invalid JSyndicateFSNative Library : " + libraryFilename);
+                throw new UnsatisfiedLinkError("Invalid JSyndicateFSNative Library : Empty Path");
             }
-        } else {
-            isLibraryLoaded = false;
-            throw new UnsatisfiedLinkError("Invalid JSyndicateFSNative Library : Empty Path");
         }
     }
     
