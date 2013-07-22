@@ -23,8 +23,8 @@ def myvolumes(request):
 
     attrs = {}
     if user.volumes_o:
-        attrs['Volume.volume_id'] = ".IN(%s)" % str(user.volumes_o)
-        myvols = db.list_volumes(**attrs)
+        attrs['Volume.volume_id IN'] = user.volumes_o
+        myvols = db.list_volumes(attrs)
     else:
         myvols = []
     all_users = []
@@ -32,13 +32,13 @@ def myvolumes(request):
     for v in myvols:
         uattrs = {}
         users_set = []
-        uattrs['SyndicateUser.volumes_rw'] = "== %s" % v.volume_id 
-        q = db.list_users(**uattrs)
+        uattrs['SyndicateUser.volumes_rw =='] = v.volume_id 
+        q = db.list_users(uattrs)
         for u in q:
             users_set.append(u)
         uattrs = {}
-        uattrs['SyndicateUser.volumes_r'] = "== %s" % v.volume_id 
-        q = db.list_users(**uattrs)
+        uattrs['SyndicateUser.volumes_r =='] = v.volume_id 
+        q = db.list_users(uattrs)
         for u in q:
             users_set.append(u)
         all_users.append(users_set)
@@ -52,12 +52,12 @@ def myvolumes(request):
 def allvolumes(request):
     session = request.session
     username = session['login_email']
-    v_attrs = {'Volume.private':'!=True'}
-    volumes = db.list_volumes(**v_attrs)
+    v_attrs = {'Volume.private !=': True}
+    volumes = db.list_volumes(v_attrs)
     owners = []
     for v in volumes:
-        attrs = {"SyndicateUser.owner_id":"== " + str(v.owner_id)}
-        owners.append(db.get_user(**attrs))
+        attrs = {"SyndicateUser.owner_id ==": v.owner_id}
+        owners.append(db.get_user(attrs))
     vols = zip(volumes, owners)
     t = loader.get_template('allvolumes.html')
     c = Context({'username':username, 'vols':vols})
@@ -237,10 +237,10 @@ def volumepermissions(request, volume_name, message="", initial_data=None):
     vol = db.read_volume(volume_name)
 
     if not initial_data:
-        rw_attrs = {'SyndicateUser.volumes_rw':'== ' + str(vol.volume_id)}
-        rw = db.list_users(**rw_attrs)
-        r_attrs = {'SyndicateUser.volumes_r':'== ' + str(vol.volume_id)}
-        r = db.list_users(**r_attrs)
+        rw_attrs = {'SyndicateUser.volumes_rw ==': vol.volume_id}
+        rw = db.list_users(rw_attrs)
+        r_attrs = {'SyndicateUser.volumes_r ==': vol.volume_id}
+        r = db.list_users(r_attrs)
     
         initial_data = []
         for u in rw:

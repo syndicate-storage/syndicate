@@ -56,13 +56,13 @@ def viewgateway(request, g_name=""):
     vols = []
     initial_data = []
     for v_id in g.volume_ids:
-        attrs = {'Volume.volume_id':"== %s" % v_id}
-        vol = db.get_volume(**attrs)
+        attrs = {'Volume.volume_id ==': v_id}
+        vol = db.get_volume(attrs)
         if not vol:
             logging.error("Volume ID in gateways volume_ids does not map to volume. Gateway: %s" % g_name)
         vols.append(vol)
-        attrs = {"SyndicateUser.owner_id":"== %s" % vol.volume_id}
-        owners.append(db.get_user(**attrs))
+        attrs = {"SyndicateUser.owner_id ==": vol.volume_id}
+        owners.append(db.get_user(attrs))
     for v in vols:
         logging.info(v)
         initial_data.append({'volume_name':v.name,
@@ -349,12 +349,12 @@ def allgateways(request):
         volset = []
         for v in g.volume_ids:
             #logging.info(v)
-            attrs = {"Volume.volume_id":"== " + str(v)}
-            volset.append(db.get_volume(**attrs))
+            attrs = {"Volume.volume_id ==": v}
+            volset.append(db.get_volume(attrs))
             #logging.info(volset)
         vols.append(volset)
-        attrs = {"SyndicateUser.owner_id":"== " + str(g.owner_id)}
-        g_owners.append(db.get_user(**attrs))
+        attrs = {"SyndicateUser.owner_id ==":g.owner_id}
+        g_owners.append(db.get_user(attrs))
     gateway_vols_owners = zip(gateways, vols, g_owners)
     t = loader.get_template('gateway_templates/allreplicagateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols_owners':gateway_vols_owners})

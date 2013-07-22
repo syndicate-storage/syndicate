@@ -880,7 +880,7 @@ def test( ignore1, args ):
          
          try:
             # volume name: testvolume-$name
-            volume_key = storage.create_volume( user, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, active=True, owner_id=i+1 )
+            volume_key = storage.create_volume( user, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, active=True, owner_id=i+1, volume_secret="abcdef" )
             volume = volume_key.get()
 
          except:
@@ -915,7 +915,7 @@ def test( ignore1, args ):
                                  mode=0777,
                                  size=4096,
                                  max_read_freshness=5000,
-                                 max_write_freshness=0
+                                 max_write_freshness=0,
                               )
 
 

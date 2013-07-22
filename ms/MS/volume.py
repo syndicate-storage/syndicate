@@ -21,6 +21,11 @@ import time
 import datetime
 import random
 import string
+import logging
+
+# DEPRICATED
+VOLUME_SECRET_LENGTH = 256
+VOLUME_SECRET_SALT_LENGTH = 256
 
 
 class VolumeIDCounter( storagetypes.Object ):
@@ -49,7 +54,7 @@ class Volume( storagetypes.Object ):
    version = storagetypes.Integer( indexed=False )                 # version of this Volume's metadata
    UG_version = storagetypes.Integer( indexed=False )              # version of the UG listing in this Volume
    RG_version = storagetypes.Integer( indexed=False )              # version of the RG listing in this Volume
-   private = storagetypes.Boolean( indexed=False )
+   private = storagetypes.Boolean()
    session_timeout = storagetypes.Integer( default=-1, indexed=False )  # how long a gateway session on this Volume lasts
    ag_ids = storagetypes.Integer( repeated=True )                  # AG's publishing data to this volume
    rg_ids = storagetypes.Integer( repeated=True )                  # RG's replicating data for this volume.
@@ -57,11 +62,36 @@ class Volume( storagetypes.Object ):
 
    num_shards = storagetypes.Integer(default=20, indexed=False)    # number of shards per entry in this volume
 
+   # DEPRICATED
+   volume_secret_salted_hash = storagetypes.Text()                 # salted hash of shared secret between the volume and its gateways
+   volume_secret_salt = storagetypes.Text()                        # salt for the above hashed value
+
+   # DEPRICATED
+   @classmethod
+   def generate_password_hash( cls, password, salt ):
+      h = SHA256.new()
+      h.update( salt )
+      h.update( password )
+      return h.hexdigest()
+
+   # DEPRICATED
+   @classmethod
+   def generate_volume_secret( cls, secret ):
+
+      salt = digits = "".join( [random.choice(string.printable) for i in xrange(VOLUME_SECRET_SALT_LENGTH)] )
+      secret_salted_hash = Volume.generate_password_hash( secret, salt )
+
+      return (salt, secret_salted_hash)
+
    
    required_attrs = [
       "name",
       "blocksize",
       "owner_id",
+      "volume_secret_salt",
+      "volume_secret_salted_hash",
+      "ag_ids",
+      "rg_ids"
    ]
 
    key_attrs = [
@@ -124,6 +154,20 @@ class Volume( storagetypes.Object ):
       kwargs['owner_id'] = user.owner_id
       Volume.fill_defaults( kwargs )
 
+      # DEPRICATED
+      # Get or finalize credentials
+      volume_secret = kwargs.get("volume_secret")
+
+      if volume_secret == None:
+         raise Exception( "No password given")
+
+      else:
+         volume_secret_salt, volume_secret_salted_hash = Volume.generate_volume_secret(volume_secret)
+
+      kwargs['volume_secret_salt'] = volume_secret_salt
+      kwargs['volume_secret_salted_hash'] = volume_secret_salted_hash
+
+
       # Validate
       missing = Volume.find_missing_attrs( kwargs )
       if len(missing) != 0:
@@ -161,7 +205,6 @@ class Volume( storagetypes.Object ):
 
          vid_future = vid_counter.put_async()
 
-
          # new volume
          volume = Volume( name=name,
                         key=volume_key,
@@ -173,7 +216,12 @@ class Volume( storagetypes.Object ):
                         version=1,
                         UG_version=1,
                         RG_version=1,
-                        private=private
+                        private=private,
+                        rg_ids=kwargs['rg_ids'],
+                        ag_ids=kwargs['ag_ids'],
+                        # DEPRICATED
+                        volume_secret_salt = kwargs['volume_secret_salt'],
+                        volume_secret_salted_hash = kwargs['volume_secret_salted_hash']
                         )
 
          vol_future = volume.put_async()
@@ -260,10 +308,9 @@ class Volume( storagetypes.Object ):
    @classmethod
    def ListAll( cls, attrs ):
       '''
-      Attributes must be in dictionary, using format "Volume.PROPERTY: [operator] [value]"
-      Returns a query, to iterate over the listing
+      attrs is a dictionary of Volume.PROPERTY [operator]: [value]
       '''
       qry = Volume.query()
-      cls.ListAll_buildQuery( qry, attrs )
+      ret = cls.ListAll_runQuery( qry, attrs )
 
-      return qry
+      return ret

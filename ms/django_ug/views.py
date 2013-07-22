@@ -49,14 +49,14 @@ def viewgateway(request, g_name=""):
                                                                 'port':g.port})
     change_form = gatewayforms.ChangeVolume()
 
-    attrs = {'Volume.volume_id':"== %s" % g.volume_id}
-    vol = db.get_volume(**attrs)
+    attrs = {'Volume.volume_id ==': g.volume_id}
+    vol = db.get_volume(attrs)
     if not vol:
         logging.error("Volume ID in gateways volume_ids does not map to volume. Gateway: %s" % g_name)
         return redirect('django_ug.views.allgateways')
     
-    attrs = {"SyndicateUser.owner_id":"== %s" % vol.owner_id}
-    owner = db.get_user(**attrs)
+    attrs = {"SyndicateUser.owner_id ==": vol.owner_id}
+    owner = db.get_user(attrs)
     logging.info(owner)
     logging.info(vol.owner_id)
 
@@ -215,13 +215,13 @@ def allgateways(request):
         gateways.append(g)
     vols = []
     for g in gateways:
-        attrs = {"Volume.volume_id":"== " + str(g.volume_id)}
-        vols.append(db.get_volume(**attrs))
+        attrs = {"Volume.volume_id ==":g.volume_id}
+        vols.append(db.get_volume(attrs))
     owners = []
     for v in vols:
         volume_owner = v.owner_id
-        attrs = {"SyndicateUser.owner_id":"== " + str(volume_owner)}
-        owners.append(db.get_user(**attrs))
+        attrs = {"SyndicateUser.owner_id ==":volume_owner}
+        owners.append(db.get_user(attrs))
     gateway_vols_owners = zip(gateways, vols, owners)
     t = loader.get_template('gateway_templates/allusergateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols_owners':gateway_vols_owners})
@@ -235,8 +235,8 @@ def mygateways(request):
 
     # should change this
     try:
-        attrs = {"UserGateway.owner_id":"== " + str(user.owner_id)}
-        qry = db.list_user_gateways(**attrs)
+        attrs = {"UserGateway.owner_id ==":user.owner_id}
+        qry = db.list_user_gateways(attrs)
     except:
         qry = []
     gateways = []
@@ -244,8 +244,8 @@ def mygateways(request):
         gateways.append(g)
     vols = []
     for g in gateways:
-        attrs = {"Volume.volume_id":"== " + str(g.volume_id)}
-        vols.append(db.get_volume(**attrs))
+        attrs = {"Volume.volume_id ==":g.volume_id}
+        vols.append(db.get_volume(attrs))
     gateway_vols = zip(gateways, vols)
     t = loader.get_template('gateway_templates/myusergateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols':gateway_vols})

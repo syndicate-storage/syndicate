@@ -194,12 +194,12 @@ class SyndicateUser( storagetypes.Object ):
    @classmethod
    def ListAll( cls, attrs ):
       '''
-      Attributes must be in dictionary, using format "SyndicateUser.PROPERTY: [operator] [value]"
+      Attributes must be in dictionary, using format "SyndicateUser.PROPERTY [operator]: [value]"
       '''
       qry = SyndicateUser.query()
-      cls.ListAll_buildQuery( qry, attrs )
+      ret = cls.ListAll_runQuery( qry, attrs )
 
-      return qry
+      return ret
 
    
    

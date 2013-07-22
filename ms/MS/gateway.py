@@ -288,15 +288,15 @@ class UserGateway( Gateway ):
       return results
 
    @classmethod
-   def ListAll( cls, fltr ):
+   def ListAll( cls, attrs ):
       '''
-      Attributes must be in dictionary, using format "UserGateway.PROPERTY: [operator] [value]"
+      Attributes must be in dictionary, using format "UserGateway.PROPERTY [operator]: [value]"
 
       '''
       qry = UserGateway.query()
-      cls.ListAll_buildQuery( qry, fltr )
+      ret = cls.ListAll_runQuery( qry, attrs )
 
-      return qry
+      return ret
 
    
 class AcquisitionGateway( Gateway ):
@@ -447,9 +447,9 @@ class AcquisitionGateway( Gateway ):
 
       '''
       qry = AcquisitionGateway.query()
-      cls.ListAll_buildQuery( qry, attrs )
+      ret = cls.ListAll_runQuery( qry, attrs )
 
-      return qry
+      return ret
 
    @classmethod
    def ListAll_ByVolume( cls, volume_id ):
@@ -679,11 +679,11 @@ class ReplicaGateway( Gateway ):
    @classmethod
    def ListAll( cls, attrs ):
       '''
-      Attributes must be in dictionary, using format "ReplicaGateway.PROPERTY: [operator] [value]"
+      Attributes must be in dictionary, using format "ReplicaGateway.PROPERTY [operator]: [value]"
       '''
 
       qry = ReplicaGateway.query()
-      cls.ListAll_buildQuery( qry, attrs )
+      ret = cls.ListAll_runQuery( qry, attrs )
 
-      return qry
+      return ret
 
