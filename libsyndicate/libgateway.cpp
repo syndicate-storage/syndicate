@@ -65,6 +65,15 @@ void gateway_publish_func( int (*publish_func)(struct gateway_context*, ms_clien
    publish_callback = publish_func;
 }
 
+// get the HTTP status
+int get_http_status( struct gateway_context* ctx, int default_value ) {
+   int ret = default_value;
+   if( ctx->http_status != 0 ) {
+      ret = ctx->http_status;
+   }
+   return ret;
+}
+
 // separate a CGI argument into its key and value
 int gateway_key_value( char* arg, char* key, char* value ) {
    int eq_off = 0;
@@ -294,6 +303,7 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
    con_data->ctx.method = md_con_data->method;
    con_data->ctx.size = md_con_data->conf->blocking_factor;
    con_data->ctx.err = 0;
+   con_data->ctx.http_status = 0;
    
    md_con_data->status = 200;
    
@@ -301,9 +311,7 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
 
       void* cls = (*connect_callback)( &con_data->ctx );
       if( cls == NULL ) {
-         md_con_data->status = -500;
-         if( con_data->ctx.err != 0 )
-            md_con_data->status = con_data->ctx.err;
+         md_con_data->status = -abs( get_http_status( &con_data->ctx, 500 ) );
       }
 
       con_data->user_cls = cls;
@@ -415,7 +423,8 @@ static int gateway_POST_iterator(void *coninfo_cls, enum MHD_ValueKind kind,
                ssize_t num_put = (*put_callback)( &con_data->ctx, data, size, con_data->user_cls );
                if( num_put != (signed)size ) {
                   errorf( "user PUT returned %zd\n", num_put );
-                  md_con_data->status = -500;
+
+                  md_con_data->status = -abs( get_http_status( &con_data->ctx, 500 ) );
                   con_data->err = num_put;
                   return MHD_NO;
                }
@@ -472,8 +481,9 @@ static ssize_t gateway_HTTP_read_callback( void* cls, uint64_t pos, char* buf, s
    ssize_t ret = -1;
    if( get_callback ) {
       ret = (*get_callback)( &rpc->ctx, buf, max, rpc->user_cls );
-      if( ret == 0 )
+      if( ret == 0 ) {
          ret = -1;
+      }
    }
    return ret;
 }
@@ -524,7 +534,9 @@ static struct md_HTTP_response* gateway_GET_handler( struct md_HTTP_connection_d
    
    if( rc != 0 ) {
       // no metadata for this entry
-      md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
+      int http_status = get_http_status( &rpc->ctx, 404 );
+      char const* msg = "Unable to read metadata";
+      md_create_HTTP_response_ram_static( resp, "text/plain", http_status, msg, strlen(msg) + 1 );
    }
    else {
       if( info.progress() == ms::ms_gateway_blockinfo::COMMITTED ) {
@@ -541,7 +553,8 @@ static struct md_HTTP_response* gateway_GET_handler( struct md_HTTP_connection_d
    if( rc == 0 ) {
       // have entry! start reading
       if( get_callback ) {
-         md_create_HTTP_response_stream( resp, "application/octet-stream", 200, rpc->ctx.size, 4096, gateway_HTTP_read_callback, rpc, NULL );
+         int http_status = get_http_status( &rpc->ctx, 200 );
+         md_create_HTTP_response_stream( resp, "application/octet-stream", http_status, rpc->ctx.size, 4096, gateway_HTTP_read_callback, rpc, NULL );
          add_last_mod_header( resp, last_mod );
       }
       else {
@@ -580,7 +593,11 @@ static struct md_HTTP_response* gateway_HEAD_handler( struct md_HTTP_connection_
 
    if( rc != 0 ) {
       // error
-      md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
+      int http_status = get_http_status( &rpc->ctx, 404 );
+
+      char const* msg = "Unable to read metadata";
+      
+      md_create_HTTP_response_ram_static( resp, "text/plain", http_status, msg, strlen(msg) + 1 );
    }
    else {
       string info_str;
@@ -591,7 +608,8 @@ static struct md_HTTP_response* gateway_HEAD_handler( struct md_HTTP_connection_
          rc = -500;
       }
       else {
-         md_create_HTTP_response_ram( resp, "text/plain", 200, info_str.c_str(), info_str.size() );
+         int http_status = get_http_status( &rpc->ctx, 200 );
+         md_create_HTTP_response_ram( resp, "text/plain", http_status, info_str.c_str(), info_str.size() );
          add_last_mod_header( resp, info.write_time() );
       }
    }
@@ -639,7 +657,9 @@ static struct md_HTTP_response* gateway_DELETE_handler( struct md_HTTP_connectio
 
                char buf[15];
                sprintf(buf, "%d", rc );
-               md_create_HTTP_response_ram( resp, "text/plain", 500, buf, strlen(buf) + 1 );
+               int http_status = get_http_status( &rpc->ctx, 500 );
+               
+               md_create_HTTP_response_ram( resp, "text/plain", http_status, buf, strlen(buf) + 1 );
             }
          }
       }
