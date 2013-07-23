@@ -10,7 +10,7 @@ package JSyndicateFSJNI.struct;
  */
 public class JSFSConfig {
     
-    public static final String DEFAULT_CONFIG_FILE_PATH = "/etc/syndicate/syndicate-client.conf";
+    public static final String DEFAULT_CONFIG_FILE_PATH = "/etc/syndicate/syndicate-UG.conf";
     
     private String config_file;
     private String ug_name;
