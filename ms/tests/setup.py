@@ -880,12 +880,12 @@ def test( ignore1, args ):
          
          try:
             # volume name: testvolume-$name
-            volume_key = storage.create_volume( user, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, active=True, owner_id=i+1, volume_secret="abcdef" )
-
+            volume_key = storage.create_volume( user.email, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, active=True, owner_id=i+1, volume_secret="abcdef" )
+            volume = volume_key.get()
          except:
             logging.info( "traceback: " + traceback.format_exc() )
             try:
-               volume = storage.read_volume( name=test_volume_name )
+               volume = storage.get_volume_by_name( test_volume_name )
             except:
                logging.info( "traceback: " + traceback.format_exc() )
                return (500, "Failed to read volume '%s'" % test_volume_name)
@@ -955,7 +955,7 @@ def test( ignore1, args ):
          return (500, "Invalid username %s" % username)
 
       volume_name = testvolume_name( user.email )
-      volume = storage.read_volume( volume_name )
+      volume = storage.get_volume_by_name( volume_name )
       
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
@@ -977,7 +977,7 @@ def test( ignore1, args ):
          return (500, "Invalid username %s" % username)
 
       volume_name = testvolume_name( user.email )
-      volume = storage.read_volume( volume_name )
+      volume = storage.get_volume_by_name( volume_name )
 
       if ug_action == "create":
 
