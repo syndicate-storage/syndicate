@@ -21,9 +21,9 @@ public class StringUtils {
             sb.append(paths[0].getPath());
         }
         
-        for(Path path : paths) {
+        for(int i=1;i<paths.length;i++) {
             sb.append(MULTI_FILEPATH_SEPARATOR_CH);
-            sb.append(path.getPath());
+            sb.append(paths[i].getPath());
         }
         
         return sb.toString();
