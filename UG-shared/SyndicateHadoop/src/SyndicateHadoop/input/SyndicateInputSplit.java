@@ -23,6 +23,10 @@ public class SyndicateInputSplit extends InputSplit implements Writable {
     private long start;
     private long length;
 
+    // default constructor
+    public SyndicateInputSplit() {
+    }
+    
     /*
      * Constructs a split
      */
