@@ -1,0 +1,133 @@
+#!/usr/bin/env python
+# Copyright 2013 The Trustees of Princeton University
+# All Rights Reserved
+ 
+#!/usr/bin/python
+
+import StringIO
+import os
+import sys
+import shutil
+import tempfile
+import time
+from gslib.third_party.oauth2_plugin import oauth2_plugin
+
+import boto
+
+# URI scheme for Google Cloud Storage.
+GOOGLE_STORAGE = 'gs'
+# URI scheme for accessing local files.
+LOCAL_FILE = 'file'
+
+PROJECT_ID = '344533994214'
+
+DEBUG = True
+
+FILE_ROOT = os.path.abspath(os.path.dirname(__file__))
+CONFIG_PATH = os.path.join(FILE_ROOT, "config/")
+
+HEADER_VALUES= {"x-goog-api-version": "2",
+                "x-goog-project-id": PROJECT_ID}
+
+#-------------------------
+def create_bucket(bucket_name):
+   
+    # instantiate a BucketStorageUri object.
+    uri = boto.storage_uri(bucket_name, GOOGLE_STORAGE)
+  
+    try:
+        uri.create_bucket(headers=HEADER_VALUES)
+        
+    except boto.exception.StorageCreateError, e:
+        print "Failed to create bucket: ", e
+
+    else:
+        if(DEBUG): print "Successfully created bucket: " + bucket_name
+
+    return True
+
+#-------------------------
+def list_buckets():
+
+    uri = boto.storage_uri('', GOOGLE_STORAGE)
+  
+    for bucket in uri.get_all_buckets(headers=HEADER_VALUES):
+        print bucket.name
+
+	return True
+
+#-------------------------
+def delete_bucket(bucket_name):
+
+    uri = boto.storage_uri(bucket, GOOGLE_STORAGE)
+
+    
+#-------------------------
+def write_file(file_name, bucket_name):
+    
+    if(DEBUG): print "Writing File: " + file_name
+
+    contents = file(file_name, 'r')
+
+    dst_uri = boto.storage_uri(bucket_name + '/' + file_name, GOOGLE_STORAGE)
+
+    # The key-related functions are a consequence of boto's
+    # interoperability with Amazon S3 (which employs the
+    # concept of a key mapping to contents).
+    dst_uri.new_key(headers=HEADER_VALUES).set_contents_from_file(contents)
+    
+    contents.close()
+
+    print 'Successfully created "%s/%s"' % (dst_uri.bucket_name, dst_uri.object_name)
+    
+    if(DEBUG): print "Written file to GS: " + file_name
+
+    return True
+
+#-------------------------
+def read_file(file_name, bucket_name):
+    
+    if(DEBUG): print "Reading File: " + file_name
+ 
+    if(DEBUG): print "Read data from GS to file: " + file_name_with_path
+    
+    return True
+   
+#-------------------------
+def delete_file(file_name, bucket_name):
+    
+    if(DEBUG): print "Deleting File: " + file_name
+    
+    if(DEBUG): print "Deleted GS file: " + bucket_name + '/' + file_name
+
+    return True
+
+#-------------------------    
+def usage():
+    print 'Usage: {prog} [OPTIONS -w -r -d] <file_name> <bucket_name>'.format(prog=sys.argv[0])
+    return -1 
+
+#-------------------------    
+if __name__ == "__main__":
+  
+    if len(sys.argv) != 4:
+        usage() 
+    else:
+    	option = sys.argv[1]
+    	file_name = sys.argv[2]
+    	bucket_name = sys.argv[3]
+
+    	if(option == '-w'):
+        	write_file(file_name,bucket_name)
+        elif(option == '-r'):
+        	read_file(file_name,bucket_name)
+        elif(option == '-d'):
+        	delete_file(file_name,bucket_name)
+        elif(option == '--create'):
+        	create_bucket(bucket_name)
+        elif(option == '--list'):
+            list_buckets()
+        else:
+            usage()
+
+
