@@ -17,7 +17,7 @@ public class JSyndicateFS {
 
     public static final Log LOG = LogFactory.getLog(JSyndicateFS.class);
     
-    public static final String LIBRARY_FILE_NAME = "libjsyndicatefs.so";
+    public static final String LIBRARY_FILE_NAME = "libjsyndicatefs";
     public static final String LIBRARY_FILE_PATH_KEY = "JSyndicateFS.JSyndicateFSJNI.LibraryPath";
     private static boolean isLibraryLoaded = false;
     private static boolean isSyndicateInitialized = false;
