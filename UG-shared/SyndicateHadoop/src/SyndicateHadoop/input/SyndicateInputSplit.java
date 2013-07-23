@@ -5,14 +5,18 @@ package SyndicateHadoop.input;
 
 import JSyndicateFS.FileSystem;
 import JSyndicateFS.Path;
+import java.io.DataInput;
+import java.io.DataOutput;
 import java.io.IOException;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapreduce.InputSplit;
 
 /**
  *
  * @author iychoi
  */
-public class SyndicateInputSplit extends InputSplit {
+public class SyndicateInputSplit extends InputSplit implements Writable {
 
     private FileSystem filesystem;
     private Path path;
@@ -67,6 +71,21 @@ public class SyndicateInputSplit extends InputSplit {
 
     @Override
     public String[] getLocations() throws IOException, InterruptedException {
-        return null;
+        String volume = this.filesystem.getConfiguration().getVolumeName();
+        return new String[] {volume};
+    }
+
+    @Override
+    public void write(DataOutput out) throws IOException {
+        Text.writeString(out, this.path.getPath());
+        out.writeLong(this.start);
+        out.writeLong(this.length);
+    }
+
+    @Override
+    public void readFields(DataInput in) throws IOException {
+        this.path = new Path(Text.readString(in));
+        this.start = in.readLong();
+        this.length = in.readLong();
     }
 }
