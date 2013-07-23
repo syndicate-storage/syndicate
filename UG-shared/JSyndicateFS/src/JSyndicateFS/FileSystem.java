@@ -74,6 +74,10 @@ public class FileSystem implements Closeable {
         // set configuration unmodifiable
         conf.lock();
         
+        if(conf.getNativeLibraryFile() != null) {
+            JSyndicateFSJNI.JSyndicateFS.setLibraryPath(conf.getNativeLibraryFile().getAbsolutePath());
+        }
+        
         // Convert Configuration to JSFSConfig
         JSFSConfig config = conf.getJSFSConfig();
         int ret = JSyndicateFSJNI.JSyndicateFS.jsyndicatefs_init(config);

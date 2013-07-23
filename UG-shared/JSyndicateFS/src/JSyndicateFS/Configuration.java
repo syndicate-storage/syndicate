@@ -20,6 +20,7 @@ public class Configuration {
     private File configFile;
     private URI msURL;
     private JSFSConfig nativeConfig;
+    private File nativeLibraryFile;
     
     // unlimited size
     public static final int MAX_METADATA_CACHE_SIZE = 0;
@@ -41,11 +42,23 @@ public class Configuration {
         // set default
         this.configFile = new File(JSFSConfig.DEFAULT_CONFIG_FILE_PATH);
         this.nativeConfig.setConfig_file(this.configFile.getAbsolutePath());
+        this.nativeLibraryFile = null;
         
         this.maxMetadataCacheSize = MAX_METADATA_CACHE_SIZE;
         this.cacheTimeoutSecond = CACHE_TIMEOUT_SECOND;
         this.readBufferSize = READ_BUFFER_SIZE;
         this.writeBufferSize = WRITE_BUFFER_SIZE;
+    }
+    
+    public File getNativeLibraryFile() {
+        return this.nativeLibraryFile;
+    }
+    
+    public void setNativeLibraryFile(File file) throws IllegalAccessException {
+        if(this.lock)
+            throw new IllegalAccessException("Can not modify the locked object");
+        
+        this.nativeLibraryFile = file.getAbsoluteFile();
     }
     
     public File getConfigFile() {
