@@ -9,13 +9,13 @@ bool g_running = false;
 struct md_HTTP g_http;
 
 // HTTP authentication callback
-uid_t httpd_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
+uint64_t httpd_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
 
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state* state = syncon->state;
    struct ms_client* client = state->ms;
 
-   uid_t ug = ms_client_authenticate( client, md_con_data, username, password );
+   uint64_t ug = ms_client_authenticate( client, md_con_data, username, password );
    if( ug == MD_GUEST_UID ) {
       // someone we don't know
       return -EACCES;
@@ -105,7 +105,7 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
    char* url = md_con_data->url_path;
    struct syndicate_state* state = syndicate_get_state();
 
-   uid_t owner = 0;
+   uint64_t owner = 0;
    if( md_con_data->user )
       owner = md_con_data->user->uid;
    else
@@ -196,7 +196,7 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
    struct syndicate_state* state = syndicate_get_state();
    struct md_HTTP_header** client_headers = md_con_data->headers;
 
-   uid_t owner = 0;
+   uint64_t owner = 0;
    if( md_con_data->user )
       owner = md_con_data->user->uid;
    else
@@ -424,7 +424,7 @@ mode_t httpd_get_mode_header( struct md_HTTP_header** headers ) {
 
 
 // apply any uploaded headers
-int httpd_upload_apply_headers( struct md_HTTP_connection_data* md_con_data, uid_t owner, gid_t volume, bool do_utime ) {
+int httpd_upload_apply_headers( struct md_HTTP_connection_data* md_con_data, uint64_t owner, uint64_t volume, bool do_utime ) {
    struct syndicate_state *state = syndicate_get_state();
    
    mode_t mode = httpd_get_mode_header( md_con_data->headers );
@@ -464,7 +464,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
    struct md_HTTP_header** client_headers = md_con_data->headers;
    struct httpd_connection_data* dat = (struct httpd_connection_data*)md_con_data->cls;
 
-   uid_t owner = 0;
+   uint64_t owner = 0;
    if( md_con_data->user != NULL )
       owner = md_con_data->user->uid;
    else
@@ -648,7 +648,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
 struct md_HTTP_response* httpd_HTTP_DELETE_handler( struct md_HTTP_connection_data* md_con_data, int depth ) {
    struct syndicate_state *state = syndicate_get_state();
 
-   uid_t owner = 0;
+   uint64_t owner = 0;
    if( md_con_data->user != NULL )
       owner = md_con_data->user->uid;
    else

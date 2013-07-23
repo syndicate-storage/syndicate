@@ -12,7 +12,7 @@
 #include <ftw.h>
 #include <dlfcn.h>
 
-struct md_syndicate_conf *global_conf = NULL;
+extern struct md_syndicate_conf *global_conf;
 
 struct gateway_context {
    char const* url_path;

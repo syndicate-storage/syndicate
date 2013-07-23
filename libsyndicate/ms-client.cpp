@@ -10,8 +10,16 @@ static void* ms_client_uploader_thread( void* arg );
 static void ms_client_uploader_signal( struct ms_client* client );
 static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void *userdata);
 
+static void print_timings( uint64_t* timings, size_t num_timings, char const* hdr ) {
+   if( num_timings > 0 ) {
+      for( size_t i = 0; i < num_timings; i++ ) {
+         DATA( hdr, (double)(timings[i]) / 1e9 );
+      }
+   }
+}
+
 // create an MS client context
-int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, char const* volume_name, char const* username, char const* passwd ) {
+int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, char const* username, char const* passwd ) {
 
    memset( client, 0, sizeof(struct ms_client) );
    
@@ -20,14 +28,9 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, ch
    client->ms_write = curl_easy_init();
 
    client->url = strdup( conf->metadata_url );
-   char* tmp = md_fullpath( client->url, "/FILE/", NULL);
-   char* tmp2 = md_fullpath( tmp, volume_name, NULL );
-   client->file_url = md_fullpath( tmp2, "/", NULL );    // must end in /
-   free( tmp );
-   free( tmp2 );
-   
-   md_init_curl_handle( client->ms_read, client->file_url, conf->metadata_connect_timeout);
-   md_init_curl_handle( client->ms_write, client->file_url, conf->metadata_connect_timeout );
+
+   md_init_curl_handle( client->ms_read, "http://localhost", conf->metadata_connect_timeout);
+   md_init_curl_handle( client->ms_write, "http://localhost", conf->metadata_connect_timeout);
 
    curl_easy_setopt( client->ms_write, CURLOPT_POST, 1L);
    curl_easy_setopt( client->ms_write, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );
@@ -399,7 +402,7 @@ static void ms_client_wlock_backoff( struct ms_client* client, bool* downloading
 }
 
 
-int ms_client_begin_downloading( struct ms_client* client, char* url, struct curl_slist* headers ) {
+int ms_client_begin_downloading( struct ms_client* client, char const* url, struct curl_slist* headers ) {
    ms_client_wlock_backoff( client, &client->downloading );
 
    client->downloading = true;
@@ -435,30 +438,103 @@ int ms_client_end_downloading( struct ms_client* client ) {
 }
 
 
+int ms_client_begin_uploading( struct ms_client* client, response_buffer_t* rb, struct curl_httppost* forms ) {
+   // lock, but back off if someone else is uploading
+   ms_client_wlock_backoff( client, &client->uploading );
 
-// download metadata from the MS for a Volume.
-// metadata_path should be an absolute directory path (like /VOLUME/, or /UG/, or /RG/)
-// returns the HTTP response on success, or negative on error
-int ms_client_download_volume_metadata( struct ms_client* client, char const* volume_name, char const* metadata_path, char** buf, ssize_t* buflen ) {
-   // sanity check
-   if( volume_name == NULL) {
-      errorf("%s", "Missing volume name\n");
-      return -EINVAL;
+   client->uploading = true;
+
+   curl_easy_setopt( client->ms_write, CURLOPT_URL, client->file_url );
+   curl_easy_setopt( client->ms_write, CURLOPT_WRITEDATA, (void*)rb );
+   curl_easy_setopt( client->ms_write, CURLOPT_HTTPPOST, forms );
+
+   memset( &client->write_times, 0, sizeof(client->write_times) );
+
+   ms_client_unlock( client );
+
+   return 0;
+}
+
+
+int ms_client_end_uploading( struct ms_client* client ) {
+   // not uploading anymore, reaquire
+   ms_client_wlock( client );
+
+   print_timings( client->write_times.create_times, client->write_times.num_create_times, HTTP_CREATE_TIMES );
+   print_timings( client->write_times.update_times, client->write_times.num_update_times, HTTP_UPDATE_TIMES );
+   print_timings( client->write_times.delete_times, client->write_times.num_delete_times, HTTP_DELETE_TIMES );
+
+   if( client->write_times.create_times ) {
+      free( client->write_times.create_times );
+      client->write_times.create_times = NULL;
    }
-   
-   char* volume_md_path = md_fullpath( metadata_path, volume_name, NULL );
+
+   if( client->write_times.update_times ) {
+      free( client->write_times.update_times );
+      client->write_times.update_times = NULL;
+   }
+
+   if( client->write_times.delete_times ) {
+      free( client->write_times.delete_times );
+      client->write_times.delete_times = NULL;
+   }
+
+   DATA( HTTP_VOLUME_TIME, (double)client->write_times.volume_time / 1e9 );
+   DATA( HTTP_UG_TIME, (double)client->write_times.ug_time / 1e9 );
+   DATA( HTTP_TOTAL_TIME, (double)client->write_times.total_time / 1e9 );
+
+   client->uploading = false;
+
+
+   // get the results
+   long http_response = 0;
+   curl_easy_getinfo( client->ms_write, CURLINFO_RESPONSE_CODE, &http_response );
+   curl_easy_setopt( client->ms_write, CURLOPT_URL, NULL );
+   curl_easy_setopt( client->ms_write, CURLOPT_HTTPPOST, NULL );
+
+   ms_client_unlock( client );
+
+   return http_response;
+}
+
+
+char* ms_client_url( struct ms_client* client, char const* metadata_path ) {
+   char volume_id[50];
+   sprintf(volume_id, "%" PRIu64, client->volume_id);
+
+   char* volume_md_path = md_fullpath( metadata_path, volume_id, NULL );
 
    ms_client_rlock( client );
-   char* volume_url = md_fullpath( client->url, volume_md_path, NULL );
+   char* url = md_fullpath( client->url, volume_md_path, NULL );
+   ms_client_unlock( client );
+
+   free( volume_md_path );
+   
+   return url;
+}
+
+char* ms_client_volume_url( struct ms_client* client, char const* volume_name ) {
+   char* volume_md_path = md_fullpath( "/VOLUME/", volume_name, NULL );
+
+   ms_client_rlock( client );
+   char* url = md_fullpath( client->url, volume_md_path, NULL );
    ms_client_unlock( client );
 
    free( volume_md_path );
 
+   return url;
+}
+
+// download metadata from the MS for a Volume.
+// metadata_path should be an absolute directory path (like /VOLUME/, or /UG/, or /RG/)
+// returns the HTTP response on success, or negative on error
+int ms_client_download_volume_metadata( struct ms_client* client, char const* url, char** buf, ssize_t* buflen ) {
+   
    char* bits = NULL;
    ssize_t len = 0;
    int http_response = 0;
 
-   ms_client_begin_downloading( client, volume_url, NULL );
+   ms_client_begin_downloading( client, url, NULL );
 
    // do the download
    memset( &client->read_times, 0, sizeof(client->read_times) );
@@ -467,15 +543,12 @@ int ms_client_download_volume_metadata( struct ms_client* client, char const* vo
    http_response = ms_client_end_downloading( client );
 
    if( len < 0 ) {
-      errorf("md_download_file5(%s) rc = %zd\n", volume_url, len );
-      free( volume_url );
+      errorf("md_download_file5(%s) rc = %zd\n", url, len );
       return (int)len;
    }
-   
-   free( volume_url );
 
    if( http_response != 200 ) {
-      errorf("ms_client_download_volume_metadata( /UG/%s ) HTTP status = %d\n", volume_name, http_response );
+      errorf("md_download_file5(%s) HTTP status = %d\n", url, http_response );
 
       if( http_response == 0 ) {
          // really bad--MS bug
@@ -494,15 +567,20 @@ int ms_client_download_volume_metadata( struct ms_client* client, char const* vo
 
 
 // get UG metadata
-int ms_client_reload_UGs( struct ms_client* client, char const* volume_name ) {
+int ms_client_reload_UGs( struct ms_client* client ) {
    ms::ms_volume_UGs volume_ugs;
 
    char* bits = NULL;
    ssize_t len = 0;
 
-   int rc = ms_client_download_volume_metadata( client, volume_name, "/UG/", &bits, &len );
+   char* UG_url = ms_client_url( client, "/UG/" );
+   
+   int rc = ms_client_download_volume_metadata( client, UG_url, &bits, &len );
+   
+   free( UG_url );
+   
    if( rc < 0 ) {
-      errorf("ms_client_download_volume_metadata( /UG/%s ) rc = %d\n", volume_name, rc );
+      errorf("ms_client_download_volume_metadata( /UG/ ) rc = %d\n", rc );
       return rc;
    }
 
@@ -511,7 +589,7 @@ int ms_client_reload_UGs( struct ms_client* client, char const* volume_name ) {
    free( bits );
 
    if( !valid ) {
-      errorf("invalid UG metadata from %s\n", volume_name );
+      errorf("%s", "invalid UG metadata\n" );
       return -EINVAL;
    }
 
@@ -525,7 +603,7 @@ int ms_client_reload_UGs( struct ms_client* client, char const* volume_name ) {
 
       users[i] = uent;
 
-      dbprintf("UG: %d : %s\n", uent->uid, uent->username );
+      dbprintf("UG: %" PRIu64 " : %s\n", uent->uid, uent->username );
    }
 
    uint64_t UG_version = volume_ugs.ug_version();
@@ -551,15 +629,20 @@ int ms_client_reload_UGs( struct ms_client* client, char const* volume_name ) {
 
 
 // get RG metadata
-int ms_client_reload_RGs( struct ms_client* client, char const* volume_name ) {
+int ms_client_reload_RGs( struct ms_client* client ) {
    ms::ms_volume_RGs volume_rgs;
 
    char* bits = NULL;
    ssize_t len = 0;
 
-   int rc = ms_client_download_volume_metadata( client, volume_name, "/RG/", &bits, &len );
+   char* RG_url = ms_client_url( client, "/RG/" );
+
+   int rc = ms_client_download_volume_metadata( client, RG_url, &bits, &len );
+
+   free( RG_url );
+   
    if( rc < 0 ) {
-      errorf("ms_client_download_volume_metadata( /RG/%s ) rc = %d\n", volume_name, rc );
+      errorf("ms_client_download_volume_metadata( /RG/ ) rc = %d\n", rc );
       return rc;
    }
 
@@ -582,7 +665,7 @@ int ms_client_reload_RGs( struct ms_client* client, char const* volume_name ) {
    }
 
    if( !valid ) {
-      errorf("invalid UG metadata from %s\n", volume_name );
+      errorf("%s", "invalid RG metadata from %s\n" );
       return -EINVAL;
    }
 
@@ -622,17 +705,21 @@ int ms_client_reload_RGs( struct ms_client* client, char const* volume_name ) {
 }
 
 // get volume metadata
-int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name, uid_t* my_owner_id, uid_t* volume_owner_id, gid_t* volume_id, uint64_t* blocksize ) {
+int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name ) {
 
    ms::ms_volume_metadata volume_md;
 
    char* bits = NULL;
    ssize_t len = 0;
 
-   int rc = ms_client_download_volume_metadata( client, volume_name, "/VOLUME/", &bits, &len );
+   char* volume_url = ms_client_volume_url( client, volume_name );
+   
+   int rc = ms_client_download_volume_metadata( client, volume_url, &bits, &len );
+
+   free( volume_url );
 
    if( rc < 0 ) {
-      errorf("ms_client_download_volume_metadata( /VOLUME/%s ) rc = %d\n", volume_name, rc );
+      errorf("ms_client_download_volume_metadata( %s ) rc = %d\n", volume_name, rc );
       return rc;
    }
 
@@ -651,12 +738,26 @@ int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_
    cred.uid = volume_md.cred().owner_id();
    cred.username = strdup( volume_md.cred().username().c_str() );
    cred.password_hash = strdup( volume_md.cred().password_hash().c_str() );
-   
-   *my_owner_id = volume_md.cred().owner_id();
-   *volume_owner_id = volume_md.owner_id();
-   *volume_id = volume_md.volume_id();
-   *blocksize = volume_md.blocksize();
 
+   ms_client_wlock( client );
+
+   client->owner_id = volume_md.cred().owner_id();
+   client->volume_owner_id = volume_md.owner_id();
+   client->volume_id = volume_md.volume_id();
+   client->blocksize = volume_md.blocksize();
+
+   if( client->file_url == NULL ) {
+      // build the /FILE/ url 
+      char* tmp = md_fullpath( client->url, "/FILE/", NULL );
+      char buf[50];
+      sprintf(buf, "%" PRIu64 "/", client->volume_id );
+
+      client->file_url = md_fullpath( tmp, buf, NULL );
+      free( tmp );
+   }
+
+   ms_client_unlock( client );
+   
    uint64_t version = volume_md.volume_version();
    uint64_t UG_version = volume_md.ug_version();
    uint64_t RG_version = volume_md.rg_version();
@@ -679,12 +780,12 @@ int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_
    ms_client_view_unlock( client );
 
    if( prev_UG_version != UG_version ) {
-      rc = ms_client_reload_UGs( client, volume_name );
+      rc = ms_client_reload_UGs( client );
       dbprintf("ms_client_reload_UGs(%s) rc = %d\n", volume_name, rc );
    }
 
    if( prev_RG_version != RG_version ) {
-      rc = ms_client_reload_RGs( client, volume_name );
+      rc = ms_client_reload_RGs( client );
       dbprintf("ms_client_reload_RGs(%s) rc = %d\n", volume_name, rc );
    }
 
@@ -694,52 +795,77 @@ int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_
 
 // read-lock a client context 
 int ms_client_rlock( struct ms_client* client ) {
+   dbprintf("ms_client_rlock %p\n", client);
    return pthread_rwlock_rdlock( &client->lock );
 }
 
 // write-lock a client context 
 int ms_client_wlock( struct ms_client* client ) {
+   dbprintf("ms_client_wlock %p\n", client);
    return pthread_rwlock_wrlock( &client->lock );
 }
 
 // unlock a client context 
 int ms_client_unlock( struct ms_client* client ) {
+   dbprintf("ms_client_unlock %p\n", client);
    return pthread_rwlock_unlock( &client->lock );
 }
 
 // read-lock a client context's view
 int ms_client_view_rlock( struct ms_client* client ) {
+   dbprintf("ms_client_view_rlock %p\n", client);
    return pthread_rwlock_rdlock( &client->view_lock );
 }
 
 // write-lock a client context's view
 int ms_client_view_wlock( struct ms_client* client ) {
+   dbprintf("ms_client_view_wlock %p\n", client);
    return pthread_rwlock_wrlock( &client->view_lock );
 }
 
 // unlock a client context's view
 int ms_client_view_unlock( struct ms_client* client ) {
+   dbprintf("ms_client_view_unlock %p\n", client);
    return pthread_rwlock_unlock( &client->view_lock );
 }
 
 
-// put an update to the client context
+// put back an update to the client context, but only if it is the most recent one
 // return 0 on success
-// return -EEXIST if the update already exists
+// return -EEXIST if a more recent update already exists
 static inline int ms_client_put_update( update_set* updates, deadline_queue* deadlines, long path_hash, struct md_update* update, uint64_t deadline ) {
-   if( updates ) {
-      memcpy( &((*updates)[ path_hash ]), update, sizeof(struct md_update) );
-   }
-   if( deadlines )
-      (*deadlines)[deadline] = path_hash;
+   bool replace = true;
+   int rc = 0;
    
-   return 0;
+   if( updates ) {
+      if( updates->count( path_hash ) == 0 ) {
+         memcpy( &((*updates)[ path_hash ]), update, sizeof(struct md_update) );
+      }
+      else {
+         struct md_update* current_update = &((*updates)[path_hash]);
+         if( current_update->ent.mtime_sec > update->ent.mtime_sec || (current_update->ent.mtime_sec == update->ent.mtime_sec && current_update->ent.mtime_nsec > update->ent.mtime_nsec) ) {
+            // current update is more recent
+            replace = false;
+            rc = -EEXIST;
+         }
+         else {
+            md_update_free( &((*updates)[ path_hash ]) );
+            memcpy( &((*updates)[ path_hash ]), update, sizeof(struct md_update) );
+         }
+      }
+   }
+   if( deadlines && replace ) {
+      (*deadlines)[deadline] = path_hash;
+   }
+   
+   return rc;
 }
 
 
 // add or replace an existing update in the client context
 // return 0 on success 
 int ms_client_queue_update( struct ms_client* client, char const* path, struct md_entry* update, uint64_t deadline_ms, uint64_t deadline_delta ) {
+
    int rc = 0;
 
    ms_client_wlock( client );
@@ -750,7 +876,6 @@ int ms_client_queue_update( struct ms_client* client, char const* path, struct m
       // not yet added
       struct md_update* up = &(*client->updates)[path_hash];
       up->op = ms::ms_update::UPDATE;
-      up->timestamp = currentTimeMillis();
       md_entry_dup2( update, &up->ent );
 
       (*client->deadlines)[deadline_ms] = path_hash;
@@ -775,7 +900,6 @@ int ms_client_queue_update( struct ms_client* client, char const* path, struct m
 
       struct md_update* up = &(*client->updates)[path_hash];
       up->op = ms::ms_update::UPDATE;
-      up->timestamp = currentTimeMillis();
       md_entry_dup2( update, &up->ent );
 
       (*client->deadlines)[new_deadline] = path_hash;
@@ -837,17 +961,7 @@ int ms_client_clear_update( struct ms_client* client, char const* path ) {
    return rc;
 }
 
-static void print_timings( uint64_t* timings, size_t num_timings, char const* hdr ) {
-   if( num_timings > 0 ) {
-      for( size_t i = 0; i < num_timings; i++ ) {
-         DATA( hdr, (double)(timings[i]) / 1e9 );
-      }
-   }
-}
-
-
 // post data
-// NOTE: client must be write-locked before sending this!
 static int ms_client_send( struct ms_client* client, char const* data, size_t len ) {
    struct curl_httppost *post = NULL, *last = NULL;
    int rc = 0;
@@ -856,73 +970,25 @@ static int ms_client_send( struct ms_client* client, char const* data, size_t le
    // send as multipart/form-data file
    curl_formadd( &post, &last, CURLFORM_COPYNAME, "ms-metadata-updates", CURLFORM_BUFFER, "data", CURLFORM_BUFFERPTR, data, CURLFORM_BUFFERLENGTH, len, CURLFORM_END );
 
-   // lock, but back off if someone else is uploading
-   ms_client_wlock_backoff( client, &client->uploading );
-
-   client->uploading = true;
-
-   curl_easy_setopt( client->ms_write, CURLOPT_URL, client->file_url );
-   curl_easy_setopt( client->ms_write, CURLOPT_WRITEDATA, (void*)rb );
-   curl_easy_setopt( client->ms_write, CURLOPT_HTTPPOST, post );
+   ms_client_begin_uploading( client, rb, post );
    
-   ms_client_unlock( client );
-
    // do the upload
    struct timespec ts, ts2;
    BEGIN_TIMING_DATA( ts );
    
-   memset( &client->write_times, 0, sizeof(client->write_times) );
    rc = curl_easy_perform( client->ms_write );
 
    END_TIMING_DATA( ts, ts2, "MS send" );
-   
-   // not uploading anymore, reaquire
-   ms_client_wlock( client );
 
-   print_timings( client->write_times.create_times, client->write_times.num_create_times, HTTP_CREATE_TIMES );
-   print_timings( client->write_times.update_times, client->write_times.num_update_times, HTTP_UPDATE_TIMES );
-   print_timings( client->write_times.delete_times, client->write_times.num_delete_times, HTTP_DELETE_TIMES );
-
-   if( client->write_times.create_times ) {
-      free( client->write_times.create_times );
-      client->write_times.create_times = NULL;
-   }
-
-   if( client->write_times.update_times ) {
-      free( client->write_times.update_times );
-      client->write_times.update_times = NULL;
-   }
-
-   if( client->write_times.delete_times ) {
-      free( client->write_times.delete_times );
-      client->write_times.delete_times = NULL;
-   }
-   
-   DATA( HTTP_VOLUME_TIME, (double)client->write_times.volume_time / 1e9 );
-   DATA( HTTP_UG_TIME, (double)client->write_times.ug_time / 1e9 );
-   DATA( HTTP_TOTAL_TIME, (double)client->write_times.total_time / 1e9 );
-   
-   client->uploading = false;
-
-   
-   // get the results
-   int http_response = 0;
-   curl_easy_getinfo( client->ms_write, CURLINFO_RESPONSE_CODE, &http_response );
-   curl_easy_setopt( client->ms_write, CURLOPT_URL, NULL );
-   curl_easy_setopt( client->ms_write, CURLOPT_HTTPPOST, NULL );
-
-   ms_client_unlock( client );
+   int http_response = ms_client_end_uploading( client );
    
    // what happened?
    if( rc != 0 ) {
       // curl failed
       errorf( "curl_easy_perform rc = %d\n", rc );
-      
-      response_buffer_free( rb );
    }
    else if( http_response == 200 ) {
       // we're good!
-      response_buffer_free( rb );
       rc = 0;
    }
    else if( http_response == 202 ) {
@@ -936,15 +1002,16 @@ static int ms_client_send( struct ms_client* client, char const* data, size_t le
 
          free( ret );
       }
-      response_buffer_free( rb );
    }
    else {
       // some other HTTP code
       rc = -http_response;
-      response_buffer_free( rb );
+      
    }
 
+   response_buffer_free( rb );
    delete rb;
+   
    curl_formfree( post );
    
    return rc;
@@ -955,7 +1022,6 @@ static int ms_client_send( struct ms_client* client, char const* data, size_t le
 static int ms_client_post( struct ms_client* client, int op, struct md_entry* ent ) {
    struct md_update up;
    up.op = op;
-   up.timestamp = currentTimeMillis();
    memcpy( &up.ent, ent, sizeof(struct md_entry) );
    
    // send the update
@@ -972,10 +1038,8 @@ static int ms_client_post( struct ms_client* client, int op, struct md_entry* en
       return (int)update_text_len;
    }
 
-   ms_client_wlock( client );
    int rc = ms_client_send( client, update_text, update_text_len );
-   ms_client_unlock( client );
-
+   
    free( update_text );
    
    return rc;
@@ -1070,23 +1134,24 @@ int ms_client_sync_update( struct ms_client* client, char const* path ) {
    struct md_update update;
    int rc = 0;
    
-   ms_client_wlock( client );
-
    long path_hash = md_hash( path );
    uint64_t old_deadline = 0;
 
+   ms_client_wlock( client );
+   
    if( client->updates->count( path_hash ) != 0 ) {
       // clear it out
-      rc = ms_client_remove_update( client, path_hash, &update, &old_deadline );
+      rc = ms_client_remove_update( client, path_hash, &update, &old_deadline );  
    }
    else {
       ms_client_unlock( client );
       return 0;
    }
 
+   ms_client_unlock( client );
+
    if( rc != 0 ) {
       // error
-      ms_client_unlock( client );
       return rc;
    }
 
@@ -1098,14 +1163,19 @@ int ms_client_sync_update( struct ms_client* client, char const* path ) {
    // if we failed, then put the updates back and try again later
    if( rc != 0 ) {
       errorf("ms_client_send_updates(%s) rc = %d\n", path, rc);
-      ms_client_put_update( client->updates, client->deadlines, path_hash, &update, old_deadline );
+
+      ms_client_wlock( client );
+      int replace_rc = ms_client_put_update( client->updates, client->deadlines, path_hash, &update, old_deadline );
+      ms_client_unlock( client );
+
+      if( replace_rc == -EEXIST ) {
+         // this update can be freed
+         md_update_free( &update );
+      }
    }
 
-   // done with the client
-   ms_client_unlock( client );
-
    // free memory if it is no longer needed
-   if( rc == 0 ) {
+   else {
       md_update_free( &update );
    }
 
@@ -1156,22 +1226,30 @@ int ms_client_sync_updates( struct ms_client* client, uint64_t freshness_ms ) {
       client->deadlines->erase( old_itr );
    }
 
+   // done with the client for now
+   ms_client_unlock( client );
+
    if( updates.size() > 0 ) {
       rc = ms_client_send_updates( client, &updates );
    }
-   
+
    // if we failed, then put the updates back and try again later
    if( rc != 0 ) {
+      ms_client_wlock( client );
+      
       for( update_set::iterator itr = updates.begin(); itr != updates.end(); itr++ ) {
-         ms_client_put_update( client->updates, client->deadlines, itr->first, &itr->second, old_deadlines[itr->first] );
+         int put_rc = ms_client_put_update( client->updates, client->deadlines, itr->first, &itr->second, old_deadlines[itr->first] );
+         if( put_rc == -EEXIST ) {
+            // this update can be freed, since we didn't put it back
+            md_update_free( &itr->second );
+         }
       }
+
+      ms_client_unlock( client );
    }
          
-   // done with the client
-   ms_client_unlock( client );
-   
    // if we succeeded, free the posted updates (they're no longer present in the client context)
-   if( rc == 0 ) {
+   else {
       for( update_set::iterator itr = updates.begin(); itr != updates.end(); itr++ ) {
          md_update_free( &itr->second );
       }
@@ -1332,8 +1410,8 @@ int ms_client_claim( struct ms_client* client, char const* path ) {
 }
 
 // authenticate a remote UG
-uid_t ms_client_authenticate( struct ms_client* client, struct md_HTTP_connection_data* data, char* username, char* password ) {
-   uid_t uid = MD_INVALID_UID;
+uint64_t ms_client_authenticate( struct ms_client* client, struct md_HTTP_connection_data* data, char* username, char* password ) {
+   uint64_t uid = MD_INVALID_UID;
 
    // there must be a password, otherwise this is a guest (and can only access world-readable stuff)
    if( password == NULL )

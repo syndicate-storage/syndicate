@@ -78,7 +78,7 @@ message ms_gateway_blockinfo {
 
 // volume gateway credential set.  Lets gateways authenticate to the MS
 message ms_volume_gateway_cred {
-   required int32 owner_id = 1;           // ID of gateway
+   required uint64 owner_id = 1;           // ID of gateway
    required string username = 2;          // name of gateway
    required string password_hash = 3;     // hash of session password
    required string host = 4;              // hostname of this gateway

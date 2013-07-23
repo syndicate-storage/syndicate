@@ -9,7 +9,7 @@
 
 // rename a file
 // TODO: make atomic
-int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new_path, uid_t user, gid_t volume ) {
+int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new_path, uint64_t user, uint64_t volume ) {
    int err_old = 0, err_new = 0, err = 0;
 
    int rc = 0;

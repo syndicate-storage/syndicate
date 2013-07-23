@@ -12,11 +12,11 @@
     <h3>Volume Actions</h3>
     <hr/>
     <ul>
-      <li><a href="{% url django_volume.views.volumesettings volume.name %}">Volume Settings</a></li>
+      <li><a href="{% url django_volume.views.volumesettings volume.volume_id %}">Volume Settings</a></li>
 
-      <li><a href='{% url django_volume.views.volumepermissions volume.name %}'>Change Permissions</a></li>
+      <li><a href='{% url django_volume.views.volumepermissions volume.volume_id %}'>Change Permissions</a></li>
 
-      <li><a href='{% url django_volume.views.deletevolume volume.name %}'>Delete Volume</a></li>
+      <li><a href='{% url django_volume.views.deletevolume volume.volume_id %}'>Delete Volume</a></li>
     </ul>
   </div>
   <div class="box rightbox">

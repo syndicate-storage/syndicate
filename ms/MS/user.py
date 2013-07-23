@@ -162,10 +162,35 @@ class SyndicateUser( storagetypes.Object ):
             return None
          else:
             storagetypes.memcache.set( user_key_name, user )
-            return user
+            
       return user
 
 
+   @classmethod
+   def add_volume_to_owner( cls, volume_id, username ):
+      """
+      Update a SyndicateUser, so that the SyndicateUser owns the Volume and the Volume is put to the datastore.
+      Run this in a transaction.
+      """
+      user = SyndicateUser.Read( username )
+
+      diff = False
+      if volume_id not in user.volumes_o:
+         user.volumes_o.append( volume_id )
+         diff = True
+
+      if volume_id not in user.volumes_rw:
+         user.volumes_rw.append( volume_id )
+         diff = True
+
+      if diff:
+         user_key_name = SyndicateUser.make_key_name( email=username )
+         storagetypes.memcache.delete( user_key_name )
+         return user.put()
+
+      return None
+      
+      
    @classmethod
    def Update( cls, email, **fields ):
       '''
@@ -175,12 +200,9 @@ class SyndicateUser( storagetypes.Object ):
       user_key_name = SyndicateUser.make_key_name( email=email)
       storagetypes.memcache.delete( user_key_name )
 
-      for key, value in fields.iteritems():
-         setattr(user, key, value)
-
-      user_future = user.put_async()
-      storagetypes.wait_futures( [user_future] )
-      return user.key
+      for (k,v) in fields.items():
+         setattr(user, k, v )
+      return user.put()
       
 
    @classmethod
@@ -188,9 +210,11 @@ class SyndicateUser( storagetypes.Object ):
       '''
       Delete user from datastore.
       '''
-      user = SyndicateUser.Read(email)
-      return user.key.delete()
+      user_key_name = SyndicateUser.make_key_name( email=email)
+      user_key = make_key( SyndicateUser, user_key_name )
+      return user_key.delete()
 
+   """
    @classmethod
    def ListAll( cls, attrs ):
       '''
@@ -200,6 +224,6 @@ class SyndicateUser( storagetypes.Object ):
       ret = cls.ListAll_runQuery( qry, attrs )
 
       return ret
-
+   """
    
    

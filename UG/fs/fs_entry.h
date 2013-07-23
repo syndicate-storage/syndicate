@@ -68,9 +68,9 @@ struct fs_entry {
    int64_t version;           // version of this file
    file_manifest* manifest;   // current file manifest
 
-   uid_t owner;               // Syndicate UID of the file's owner (should NOT match any local system entries)
-   uid_t acting_owner;        // acting owner of this file (should match owner if this UG created the file)
-   gid_t volume;              // volume ID on which this file resides (analogous to the group ID)
+   uint64_t owner;               // Syndicate UID of the file's owner (should NOT match any local system entries)
+   uint64_t acting_owner;        // acting owner of this file (should match owner if this UG created the file)
+   uint64_t volume;              // volume ID on which this file resides (analogous to the group ID)
    mode_t mode;               // access permissions
    off_t size;                // how big is this file's content?
    int link_count;            // how many other fs_entry structures refer to this file
@@ -159,9 +159,9 @@ int fs_core_wlock( struct fs_core* core );
 int fs_core_unlock( struct fs_core* core );
 
 // fs_entry initialization
-int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
-int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
-int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
+int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
+int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
+int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
 int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_entry* ent );
 
 int64_t fs_entry_next_file_version(void);
@@ -200,8 +200,8 @@ int fs_dir_handle_unlock( struct fs_dir_handle* dh );
 long fs_entry_name_hash( char const* name );
 
 // resolution
-struct fs_entry* fs_entry_resolve_path( struct fs_core* core, char const* path, uid_t user, gid_t vol, bool writelock, int* err );
-struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* path, uid_t user, gid_t vol, bool writelock, int* err, int (*ent_eval)( struct fs_entry*, void* ), void* cls );
+struct fs_entry* fs_entry_resolve_path( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err );
+struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err, int (*ent_eval)( struct fs_entry*, void* ), void* cls );
 char* fs_entry_resolve_block( struct fs_core* core, struct fs_file_handle* fh, off_t offset );
 uint64_t fs_entry_block_id( off_t offset, struct md_syndicate_conf* conf );
 
@@ -217,7 +217,7 @@ struct fs_entry* fs_entry_set_get( fs_entry_set::iterator* itr );
 long fs_entry_set_get_name_hash( fs_entry_set::iterator* itr );
 
 // conversion
-int fs_entry_to_md_entry( struct fs_core* core, char const* fs_path, uid_t owner, gid_t volume, struct md_entry* dest);
+int fs_entry_to_md_entry( struct fs_core* core, char const* fs_path, uint64_t owner, uint64_t volume, struct md_entry* dest);
 int fs_entry_to_md_entry( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct md_entry* dest );
 
 // versioning

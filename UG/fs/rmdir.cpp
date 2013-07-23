@@ -8,7 +8,7 @@
 #include "unlink.h"
 
 // remove a directory, if it is empty
-int fs_entry_rmdir( struct fs_core* core, char const* path, uid_t user, gid_t volume ) {
+int fs_entry_rmdir( struct fs_core* core, char const* path, uint64_t user, uint64_t volume ) {
 
    // get some info about this directory first
    int rc = 0;

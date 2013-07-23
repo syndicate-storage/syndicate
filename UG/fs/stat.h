@@ -10,16 +10,16 @@
 #include "fs_entry.h"
 
 // read metadata
-int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uid_t user, gid_t volume );
+int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uint64_t user, uint64_t volume );
 int fs_entry_block_stat( struct fs_core* core, char const* path, uint64_t block_id, struct stat* sb );         // system use only
-bool fs_entry_is_local( struct fs_core* core, char const* path, uid_t user, gid_t volume, int* err );
-bool fs_entry_is_block_local( struct fs_core* core, char const* path, uid_t user, gid_t volume, uint64_t block_id );
-char* fs_entry_get_url( struct fs_core* core, char const* path, uid_t user, gid_t volume, int* err );
-char* fs_entry_get_host_url( struct fs_core* core, char const* path, char const* proto, uid_t user, gid_t volume, int* err );
+bool fs_entry_is_local( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, int* err );
+bool fs_entry_is_block_local( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, uint64_t block_id );
+char* fs_entry_get_url( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, int* err );
+char* fs_entry_get_host_url( struct fs_core* core, char const* path, char const* proto, uint64_t user, uint64_t volume, int* err );
 int fs_entry_fstat( struct fs_core* core, struct fs_file_handle* fh, struct stat* sb );
 int fs_entry_fstat_dir( struct fs_core* core, struct fs_dir_handle* dh, struct stat* sb );
-int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *statv, uid_t user, gid_t volume );
-int fs_entry_access( struct fs_core* core, char const* path, int mode, uid_t user, gid_t volume );
+int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *statv, uint64_t user, uint64_t volume );
+int fs_entry_access( struct fs_core* core, char const* path, int mode, uint64_t user, uint64_t volume );
 int fs_entry_get_creation_time( struct fs_core* core, char const* fs_path, struct timespec* t );
 int fs_entry_get_mod_time( struct fs_core* core, char const* fs_path, struct timespec* t );
 int fs_entry_set_mod_time( struct fs_core* core, char const* fs_path, struct timespec* t );
@@ -32,8 +32,8 @@ ssize_t fs_entry_serialize_manifest( struct fs_core* core, char* fs_path, char**
 ssize_t fs_entry_serialize_manifest( struct fs_core* core, struct fs_entry* fent, char** manifest_bits );
 
 // write metadata
-int fs_entry_chown( struct fs_core* core, char const* path, uid_t user, gid_t volume, uid_t new_user );
-int fs_entry_chmod( struct fs_core* core, char const* path, uid_t user, gid_t volume, mode_t mode );
-int fs_entry_utime( struct fs_core* core, char const* path, struct utimbuf* tb, uid_t user, gid_t volume );
+int fs_entry_chown( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, uint64_t new_user );
+int fs_entry_chmod( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, mode_t mode );
+int fs_entry_utime( struct fs_core* core, char const* path, struct utimbuf* tb, uint64_t user, uint64_t volume );
 
 #endif

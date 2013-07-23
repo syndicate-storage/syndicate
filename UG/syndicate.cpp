@@ -16,13 +16,13 @@ void* syndicate_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
 }
 
 // HTTP authentication callback
-uid_t syndicate_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
+uint64_t syndicate_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
 
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state* state = syncon->state;
    struct ms_client* client = state->ms;
 
-   uid_t ug = ms_client_authenticate( client, md_con_data, username, password );
+   uint64_t ug = ms_client_authenticate( client, md_con_data, username, password );
    if( ug == MD_GUEST_UID ) {
       // someone we don't know
       return -EACCES;

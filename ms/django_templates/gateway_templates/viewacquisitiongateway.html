@@ -20,7 +20,7 @@
   		<tbody>
   			{% for v, o in vol_owners %}
         <tr>
-  				<td><a href="{% url django_volume.views.viewvolume v.name %}">{{v.name}}</a></td>
+  				<td><a href="{% url django_volume.views.viewvolume v.volume_id %}">{{v.name}}</a></td>
   				<td>{{o.email}}</td>
         </tr>
   			{% empty %}

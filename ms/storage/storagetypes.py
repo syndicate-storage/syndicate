@@ -399,11 +399,13 @@ class Object( Model ):
       raise NotImplementedError
 
    @classmethod
-   def ListAll( cls, filter_attrs ):
-      raise NotImplementedError
+   def ListAll( cls, filter_attrs, limit=None ):
+      qry = cls.query()
+      ret = cls.ListAll_runQuery( qry, filter_attrs, limit )
+      return ret
 
    @classmethod
-   def ListAll_runQuery( cls, qry, filter_attrs ):
+   def ListAll_runQuery( cls, qry, filter_attrs, limit=None ):
       if filter_attrs == None:
          filter_attrs = {}
          
@@ -443,8 +445,6 @@ class Object( Model ):
          elif op == "IN":
             qry = qry.filter( cls._properties[attr_name].IN( value ) )
 
-         logging.info("%s %s" % (op, value))
-
-      qry_ret = qry.fetch( None )
+      qry_ret = qry.fetch( limit )
       return qry_ret
       

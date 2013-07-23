@@ -92,7 +92,7 @@ int fs_entry_detach_lowlevel( struct fs_core* core, struct fs_entry* parent, str
 
 // detach a file from the filesystem
 // Only remove a directory if it is empty.
-int fs_entry_detach( struct fs_core* core, char const* path, uid_t user, gid_t vol ) {
+int fs_entry_detach( struct fs_core* core, char const* path, uint64_t user, uint64_t vol ) {
 
    // resolve the parent of this child (and write-lock it)
    char* path_dirname = md_dirname( path, NULL );
@@ -153,7 +153,7 @@ int fs_entry_detach( struct fs_core* core, char const* path, uid_t user, gid_t v
 
 // unlink a file from the filesystem
 // pass -1 if the version is not known, or pass the known version to be unlinked
-int fs_entry_versioned_unlink( struct fs_core* core, char const* path, int64_t known_version, uid_t owner, gid_t volume ) {
+int fs_entry_versioned_unlink( struct fs_core* core, char const* path, int64_t known_version, uint64_t owner, uint64_t volume ) {
 
    // get some info about this file first
    int rc = 0;

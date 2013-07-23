@@ -16,9 +16,9 @@ app = webapp2.WSGIApplication([
     ('/process', OpenIDRequestHandler),
     ('/affiliate', OpenIDRequestHandler),
     ('/debug/([^/]+)/(.*)', MSDebugHandler),
-    ('/FILE/([^/]+)/(.*)', MSFileRequestHandler),
+    ('/FILE/([0123456789]+)/(.*)', MSFileRequestHandler),
     ('/VOLUME/([^/]+)', MSVolumeRequestHandler),
-    ('/UG/([^/]+)', MSUGRequestHandler),
-    ('/RG/([^/]+)', MSRGRequestHandler)
+    ('/UG/([0123456789]+)', MSUGRequestHandler),
+    ('/RG/([0123456789]+)', MSRGRequestHandler)
 ], debug=True)
 

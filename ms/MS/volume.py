@@ -265,7 +265,7 @@ class Volume( storagetypes.Object ):
 
          # add this Volume to this User
          try:
-            storagetypes.transaction( lambda: SyndicateUser.add_volume_to_user(volume_id, username), retries=10 )
+            storagetypes.transaction( lambda: SyndicateUser.add_volume_to_owner(volume_id, username), retries=10 )
          except Exception, e:
             logging.exception( "__try_add_volume_to_user exception", e )
 
@@ -314,8 +314,7 @@ class Volume( storagetypes.Object ):
       """
       Update the shard count of the volume, but in a transaction.
       """
-      volume_key = storagetypes.make_key( Volume, Volume.make_key_name( volume_id=volume_id ) )
-      
+      volume_key = storagetypes.make_key( Volume, Volume.make_key_name( volume_id=volume_id ) )      
       num_shards = storagetypes.transaction( lambda: __volume_update_shard_count( volume_key, num_shards ), **txn_args )
       
       return num_shards
@@ -327,15 +326,17 @@ class Volume( storagetypes.Object ):
       '''
       volume = Volume.Read(volume_id)
       volume_key_name = Volume.make_key_name( volume_id=volume_id )
+
       storagetypes.memcache.delete(volume_key_name)
 
-      for key, value in fields.iteritems():
-         setattr(volume, key, value)
-      oldversion = volume.version
-      setattr(volume, 'version', oldversion+1)
-      vol_future = volume.put_async()
-      storagetypes.wait_futures([vol_future])
-      return volume.key
+      old_version = volume.version
+
+      for (k,v) in fields.items():
+         setattr( volume, k, v )
+      
+      volume.version = old_version + 1
+
+      return volume.put()
          
 
    @classmethod

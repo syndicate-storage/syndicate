@@ -31,8 +31,7 @@ def viewgateway(request, g_name=""):
     session = request.session
     username = session['login_email']
     message = session.pop('message', "")
-    logging.info("JSDKFJDLFJDLSFJSDLK")
-    logging.info(message)
+    initial_data = session.get('initial_data', [])
 
     try:
         g = db.read_replica_gateway(g_name)
@@ -53,7 +52,6 @@ def viewgateway(request, g_name=""):
 
     owners = []
     vols = []
-    initial_data = []
     for v_id in g.volume_ids:
         vol = db.get_volume(v_id)
         if not vol:
@@ -61,10 +59,11 @@ def viewgateway(request, g_name=""):
         vols.append(vol)
         attrs = {"SyndicateUser.owner_id ==": vol.volume_id}
         owners.append(db.get_user(attrs))
-    for v in vols:
-        logging.info(v)
-        initial_data.append({'volume_name':v.name,
-                             'remove':False})
+    if not initial_data:
+        for v in vols:
+            initial_data.append({'volume_name':v.name,
+                                 'remove':False})
+        session['initial_data'] = initial_data
 
     vol_owners = zip(vols, owners)
     logging.info("length of vol_owners" + str(len(vol_owners)))
@@ -74,7 +73,6 @@ def viewgateway(request, g_name=""):
         logging.info("length of formset is " + str(len(formset.forms)))
     else:
         formset = []
-    session['initial_data'] = initial_data
     password_form = libforms.Password()
     change_password_form = libforms.ChangePassword()
 
@@ -208,6 +206,7 @@ def addvolume(request, g_name):
     def update(vname, gname, vfields, gfields):
         db.update_volume(vname, **vfields)
         db.update_replica_gateway(g_name, **gfields)
+        session.pop('initial_data')
 
     form = gatewayforms.GatewayAddVolume(request.POST)
     if form.is_valid():
@@ -255,6 +254,19 @@ def addvolume(request, g_name):
 @authenticate
 @precheck("RG", PRECHECK_REDIRECT)
 def removevolumes(request, g_name):
+
+    # This is a helper method that isolates the @transactional decorator, speeding
+    # up the code when it doesn't reach update() in this view and allowing for
+    # errors that would break in GAE if the decorator was applied to the entire view.
+    # It updates multiple volumes at once
+    @transactional(xg=True)
+    def multi_update(vnames, gname, vfields, gfields):
+
+        for vname, vfield in zip(vnames, vfields):
+            db.update_volume(vname, **vfield)
+        db.update_replica_gateway(g_name, **gfields)
+        session.pop('initial_data', "")
+
     session = request.session
     username = session['login_email']
 
@@ -263,33 +275,35 @@ def removevolumes(request, g_name):
     formset.is_valid()
 
     volume_ids_to_be_removed = []
+    volume_names_to_be_removed = []
 
-    initial_and_forms = zip(session['initial_data'], formset.forms)
+    initial_and_forms = zip(session.get('initial_data', []), formset.forms)
+    new_rgs_set = []
     for i, f in initial_and_forms:
         if f.cleaned_data['remove']:
-
             vol = db.read_volume(i['volume_name'])
 
-            # update volume state
+            # update each volumes new RG list
             new_rgs = vol.rg_ids[:]
             new_rgs.remove(db.read_replica_gateway(g_name).rg_id)
-            fields = {'rg_ids':new_rgs}
-            db.update_volume(i['volume_name'], **fields)
+            new_rgs_set.append({'rg_ids':new_rgs})
 
-            # Add to list of volumes to be removed.
+            volume_names_to_be_removed.append(i['volume_name'])
             volume_ids_to_be_removed.append(db.read_volume(i['volume_name']).volume_id)
+
     if not volume_ids_to_be_removed:
         session['message'] = "You must select at least one volume to remove."
         return redirect('django_rg.views.viewgateway', g_name)
+
     old_vids = set(db.read_replica_gateway(g_name).volume_ids)
     new_vids = list(old_vids - set(volume_ids_to_be_removed))
-    fields = {'volume_ids':new_vids}
+    gfields = {'volume_ids':new_vids}
     try:
-        db.update_replica_gateway(g_name, **fields)
+        multi_update(volume_names_to_be_removed, g_name, new_rgs_set, gfields)
     except Exception as e:
-        logging.error("Unable to update replica gateway %s. Exception %s" % (g_name, e))
-        session['message'] = "Unable to update gateway."
-        return redirect('django_rg.views.viewgateway', g_name)
+         logging.error("Unable to update replica gateway %s. Exception %s" % (g_name, e))
+         session['message'] = "Unable to update gateway."
+         return redirect('django_rg.views.viewgateway', g_name)
     session['new_change'] = "We've updated your RG's volumes."
     session['next_url'] = '/syn/RG/viewgateway/' + g_name
     session['next_message'] = "Click here to go back to your gateway."
@@ -346,35 +360,6 @@ def allgateways(request):
     t = loader.get_template('gateway_templates/allreplicagateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols_owners':gateway_vols_owners})
     return HttpResponse(t.render(c))
-
-'''
-@authenticate
-def mygateways(request):
-    session = request.session
-    username = session['login_email']
-
-    # should change this
-    try:
-        qry = RG.query(RG.owner_id == user.owner_id)
-    except:
-        qry = []
-    gateways = []
-    logging.info(qry)
-    for g in qry:
-        gateways.append(g)
-    vols = []
-    logging.info(gateways)
-    for g in gateways:
-        attrs = {"Volume.volume_id":"== " + str(g.volume_id)}
-        volumequery = db.list_volumes(**attrs) # should be one
-        for v in volumequery:
-            vols.append(v)
-            logging.info(v)
-    gateway_vols = zip(gateways, vols)
-    t = loader.get_template('gateway_templates/myreplicagateways.html')
-    c = RequestContext(request, {'username':username, 'gateway_vols':gateway_vols})
-    return HttpResponse(t.render(c))
-'''
 
 @csrf_exempt
 @authenticate

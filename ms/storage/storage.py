@@ -30,39 +30,43 @@ import time
 import datetime
 import random
    
-def create_volume( user, **kwargs ):
-   return Volume.Create( user, **kwargs )
+def create_volume( username, **kwargs ):
+   return Volume.Create( username, **kwargs )
    
 
-def read_volume( name ):
-   return Volume.Read( name )
+def read_volume( volume_id ):
+   return Volume.Read( volume_id )
    
 
-def volume_update_shard_count( volume_name, num_shards ):
-   return Volume.update_shard_count( volume_name, num_shards )
+def volume_update_shard_count( volume_id, num_shards ):
+   return Volume.update_shard_count( volume_id, num_shards )
 
    
-def update_volume( volume_name, **fields ):
-   return Volume.Update( volume_name, **fields )
+def update_volume( volume_id, **fields ):
+   return Volume.Update( volume_id, **fields )
 
    
-def delete_volume( volume_name ):
-   return Volume.Delete( volume_name )
+def delete_volume( volume_id ):
+   return Volume.Delete( volume_id )
 
    
 def list_volumes( attrs=None ):
    return Volume.ListAll( attrs )
 
 
-def get_volume( attr ):
-   allvolumes = list_volumes(attr)
-   if len(allvolumes) > 1:
-      raise Exception("More than one volume satisfies attrs: %s" % attr)
-   for v in allvolumes:
-      return v
-   return None
+def get_volume( volume_id ):
+   return read_volume( volume_id )
 
+def get_volume_by_name( volume_name ):
+   vols = list_volumes( {"Volume.name ==": volume_name} )
+   if len(vols) > 1:
+      raise Exception("More than one Volume by the name of '%s'" % volume_name)
 
+   if len(vols) == 0:
+      return None
+
+   return vols[0]
+   
    
 def create_user( **kwargs ):
    return SyndicateUser.Create( **kwargs )
@@ -143,13 +147,8 @@ def list_user_gateways_by_volume( volume_id ):
 def delete_user_gateway( ms_username ):
    return UserGateway.Delete( ms_username )
 
-def get_user_gateway( attr ):
-   allugs = list_user_gateways(attr)
-   if len(allugs) > 1:
-      raise Exception("More than one UG satisfies attrs: %s" % attr)
-   for ug in allugs:
-      return ug
-   return None
+def get_user_gateway( ms_username ):
+   return read_user_gateway( ms_username )
 
 
 def create_acquisition_gateway( user, **kwargs ):
@@ -170,13 +169,9 @@ def list_acquisition_gateways( attrs=None ):
 def delete_acquisition_gateway( ms_username ):
    return AcquisitionGateway.Delete( ms_username )
 
-def get_acquisition_gateway( attr ):
-   allags = list_acquisition_gateways(attr)
-   if len(allags) > 1:
-      raise Exception("More than one AG satisfies attrs: %s" % attr)
-   for ag in allags:
-      return ag
-   return None
+def get_acquisition_gateway( ms_username ):
+   return read_acquisition_gateway( ms_username )
+   
 
 def create_replica_gateway( user, **kwargs ):
    return ReplicaGateway.Create( user, **kwargs )
@@ -198,10 +193,6 @@ def list_replica_gateways( attrs=None ):
 def delete_replica_gateway( ms_username ):
    return ReplicaGateway.Delete( ms_username )
 
-def get_replica_gateway( attr ):
-   allrgs = list_replica_gateway(attr)
-   if len(allrgs) > 1:
-      raise Exception("More than one RG satisfies attrs: %s" % attr)
-   for rg in allrgs:
-      return rg
-   return None
+def get_replica_gateway( ms_username ):
+   return read_replica_gateway( ms_username )
+   

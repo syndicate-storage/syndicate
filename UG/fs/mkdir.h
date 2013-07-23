@@ -13,6 +13,6 @@
 #include "unlink.h"
 #include "consistency.h"
 
-int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uid_t user, gid_t vol );
+int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_t user, uint64_t vol );
 
 #endif

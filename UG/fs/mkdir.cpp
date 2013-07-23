@@ -6,7 +6,7 @@
 #include "mkdir.h"
 
 // low-level mkdir
-int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_entry* parent, char const* path_basename, mode_t mode, uid_t user, gid_t vol, int64_t mtime_sec, int32_t mtime_nsec ) {
+int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_entry* parent, char const* path_basename, mode_t mode, uint64_t user, uint64_t vol, int64_t mtime_sec, int32_t mtime_nsec ) {
    
    // resolve the child
    struct fs_entry* child = fs_entry_set_find_name( parent->children, path_basename );
@@ -51,7 +51,7 @@ int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_e
 
 
 // create a directory
-int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uid_t user, gid_t vol ) {
+int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_t user, uint64_t vol ) {
    int err = 0;
 
    // resolve the parent of this child (and write-lock it)
@@ -76,7 +76,6 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uid_t u
 
    struct fs_entry* parent = fs_entry_resolve_path( core, path_dirname, user, vol, true, &err );
    
-
    if( parent == NULL || err ) {
       // parent not found
       free( path_basename );
@@ -93,7 +92,7 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uid_t u
    }
    if( !IS_WRITEABLE(parent->mode, parent->owner, parent->volume, user, vol) ) {
       // parent is not writeable
-      errorf( "%s is not writable by %d (%o, %d, %d, %d, %d)\n", path_dirname, user, parent->mode, parent->owner, parent->volume, user, vol );
+      errorf( "%s is not writable by %" PRIu64 " (%o, %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ")\n", path_dirname, user, parent->mode, parent->owner, parent->volume, user, vol );
       fs_entry_unlock( parent );
       free( path_basename );
       free( path_dirname );
@@ -112,13 +111,11 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uid_t u
       free( path_dirname );
       return -1;
    }
-   
-   parent->mtime_sec = ts.tv_sec;
-   parent->mtime_nsec = ts.tv_nsec;
 
-   struct fs_entry* child = fs_entry_set_find_name( parent->children, path_basename );
+   else {
 
-   if( err == 0 ) {
+      struct fs_entry* child = fs_entry_set_find_name( parent->children, path_basename );
+
       fs_entry_rlock( child );
 
       // create this directory in the MS
@@ -146,6 +143,9 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uid_t u
          fs_core_wlock( core );
          core->num_files++;
          fs_core_unlock( core );
+
+         parent->mtime_sec = ts.tv_sec;
+         parent->mtime_nsec = ts.tv_nsec;
       }
 
       fs_entry_unlock( child );

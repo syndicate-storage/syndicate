@@ -20,9 +20,9 @@
        {% for volume in v %}
        {% if not volume.private %}
        {% if not forloop.last %}
-       <a href="{% url django_volume.views.viewvolume volume.name %}">{{volume.name|replace:"_|| "}}</a>,<br>
+       <a href="{% url django_volume.views.viewvolume volume.volume_id %}">{{volume.name|replace:"_|| "}}</a>,<br>
        {% else %}
-       <a href="{% url django_volume.views.viewvolume volume.name %}">{{volume.name|replace:"_|| "}}</a><br>
+       <a href="{% url django_volume.views.viewvolume volume.volume_id %}">{{volume.name|replace:"_|| "}}</a><br>
        {% endif %}
        {% endif %}
        {% endfor %}

@@ -12,6 +12,6 @@
 // opendir
 struct fs_dir_handle* fs_dir_handle_create( struct fs_entry* dir, char const* path );
 int fs_dir_handle_open( struct fs_dir_handle* dirh );
-struct fs_dir_handle* fs_entry_opendir( struct fs_core* core, char const* path, uid_t user, gid_t vol, int* err );
+struct fs_dir_handle* fs_entry_opendir( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, int* err );
 
 #endif
