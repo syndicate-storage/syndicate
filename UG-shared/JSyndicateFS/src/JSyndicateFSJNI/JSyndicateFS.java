@@ -44,6 +44,13 @@ public class JSyndicateFS {
                 LOG.debug("Classpath used : " + System.getProperty("java.library.path"));
 
                 throw new UnsatisfiedLinkError("Invalid JSyndicateFSNative Library : " + libraryFilename);
+            } catch(UnsatisfiedLinkError ex) {
+                isLibraryLoaded = false;
+
+                LOG.error("Library loading failed : " + ex.toString());
+                LOG.debug("Classpath used : " + System.getProperty("java.library.path"));
+
+                throw new UnsatisfiedLinkError("Invalid JSyndicateFSNative Library : " + libraryFilename);
             }
         } else {
             // path was given
@@ -56,6 +63,12 @@ public class JSyndicateFS {
                         System.load(jsfsDLL.getAbsolutePath());
                         isLibraryLoaded = true;
                     } catch (Exception ex) {
+                        isLibraryLoaded = false;
+
+                        LOG.error("Library loading failed : " + ex.toString());
+
+                        throw new UnsatisfiedLinkError("Invalid JSyndicateFSNative Library : " + libraryFilename);
+                    } catch (UnsatisfiedLinkError ex) {
                         isLibraryLoaded = false;
 
                         LOG.error("Library loading failed : " + ex.toString());
