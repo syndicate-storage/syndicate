@@ -41,6 +41,7 @@ public class JSyndicateFS {
                 isLibraryLoaded = false;
 
                 LOG.error("Library loading failed : " + ex.toString());
+                LOG.debug("Classpath used : " + System.getProperty("java.library.path"));
 
                 throw new UnsatisfiedLinkError("Invalid JSyndicateFSNative Library : " + libraryFilename);
             }
