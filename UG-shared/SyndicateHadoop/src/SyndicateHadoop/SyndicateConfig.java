@@ -41,6 +41,14 @@ public class SyndicateConfig {
         this.config.readFields(in);
     }
     
+    public String getNativeLibraryFile() {
+        return SyndicateConfigUtil.getNativeLibraryFile(this.config);
+    }
+    
+    public void setNativeLibraryFile(String path) {
+        SyndicateConfigUtil.setNativeLibraryFile(this.config, path);
+    }
+    
     public String getConfigFile() {
         return SyndicateConfigUtil.getConfigFile(this.config);
     }
@@ -139,6 +147,16 @@ public class SyndicateConfig {
     
     public JSyndicateFS.Configuration getJSFSConfiguration() {
         JSyndicateFS.Configuration jsfsConfig = new JSyndicateFS.Configuration();
+        
+        String nativeLibraryFile = getNativeLibraryFile();
+        if(nativeLibraryFile != null) {
+            File nativeLibFileObj = new File(nativeLibraryFile);
+            try {
+                jsfsConfig.setNativeLibraryFile(nativeLibFileObj);
+            } catch (IllegalAccessException ex) {
+                LOG.error(ex);
+            }
+        }
         
         String configFile = getConfigFile();
         if(configFile != null) {

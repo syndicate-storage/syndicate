@@ -24,7 +24,8 @@ import org.apache.hadoop.mapreduce.Reducer;
 public class SyndicateConfigUtil {
     
     public static final Log LOG = LogFactory.getLog(SyndicateConfigUtil.class);
-    
+
+    public static final String SYNDICATE_NATIVE_LIB_FILE = "syndicate.conf.native_file";
     public static final String CONFIG_FILE = "syndicate.conf.config_file";
     public static final String UG_PASSWORD = "syndicate.conf.ug.password";
     public static final String UG_NAME_PREFIX = "syndicate.conf.ug.name.prefix";
@@ -63,6 +64,14 @@ public class SyndicateConfigUtil {
     public static final String TEXT_OUTPUT_FORMAT_SEPARATOR = "mapred.textoutputformat.separator";
     
     public static final String TEXT_INPUT_MAX_LENGTH = "mapred.linerecordreader.maxlength";
+    
+    public static void setNativeLibraryFile(Configuration conf, String path) {
+        conf.set(SYNDICATE_NATIVE_LIB_FILE, path);
+    }
+    
+    public static String getNativeLibraryFile(Configuration conf) {
+        return conf.get(SYNDICATE_NATIVE_LIB_FILE);
+    }
     
     public static void setConfigFile(Configuration conf, String path) {
         conf.set(CONFIG_FILE, path);
