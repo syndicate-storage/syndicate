@@ -80,8 +80,7 @@ def viewgateway(request, g_name=""):
     owners = []
     vols = []
     for v_id in g.volume_ids:
-        attrs = {'Volume.volume_id ==': v_id}
-        vol = db.get_volume(attrs)
+        vol = db.get_volume( v_id )
         if not vol:
             logging.error("Volume ID in gateways volume_ids does not map to volume. Gateway: %s" % g_name)
         else:
@@ -382,8 +381,7 @@ def allgateways(request):
     for g in gateways:
         volset = []
         for v in g.volume_ids:
-            attrs = {"Volume.volume_id ==":v}
-            volset.append(db.get_volume(attrs))
+            volset.append(db.get_volume(v))
         vols.append(volset)
         attrs = {"SyndicateUser.owner_id ==":g.owner_id}
         g_owners.append(db.get_user(attrs))
