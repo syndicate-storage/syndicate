@@ -49,8 +49,7 @@ def viewgateway(request, g_name=""):
                                                                 'port':g.port})
     change_form = gatewayforms.ChangeVolume()
 
-    attrs = {'Volume.volume_id ==': g.volume_id}
-    vol = db.get_volume(attrs)
+    vol = db.get_volume(g.volume_id)
     if not vol:
         logging.error("Volume ID in gateways volume_ids does not map to volume. Gateway: %s" % g_name)
         return redirect('django_ug.views.allgateways')
@@ -212,8 +211,7 @@ def allgateways(request):
         gateways.append(g)
     vols = []
     for g in gateways:
-        attrs = {"Volume.volume_id ==":g.volume_id}
-        vols.append(db.get_volume(attrs))
+        vols.append(db.get_volume(g.volume_id))
     owners = []
     for v in vols:
         volume_owner = v.owner_id
@@ -241,8 +239,7 @@ def mygateways(request):
         gateways.append(g)
     vols = []
     for g in gateways:
-        attrs = {"Volume.volume_id ==":g.volume_id}
-        vols.append(db.get_volume(attrs))
+        vols.append(db.get_volume(g.volume_id))
     gateway_vols = zip(gateways, vols)
     t = loader.get_template('gateway_templates/myusergateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols':gateway_vols})
