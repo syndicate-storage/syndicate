@@ -32,7 +32,7 @@ char* fs_entry_mkpath( char const* fs_path, int64_t version ) {
       strncpy( ret, fs_path, t );
    }
 
-   char buf[23];     // 2^63 has 19 digits
+   char buf[50];
 
    if( delim )
       sprintf(buf, ".%" PRId64 "/", version );

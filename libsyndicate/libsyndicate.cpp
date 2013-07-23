@@ -103,12 +103,12 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
    // make sure we have data root and staging root
    char cwd[100];
    sprintf(cwd, "/tmp/syndicate.%d", getpid() );
-   char* data_root = md_fullpath( cwd, "data", NULL );
-   char* staging_root = md_fullpath( cwd, "staging", NULL );
+   char* data_root = md_fullpath( cwd, "data/", NULL );
+   char* staging_root = md_fullpath( cwd, "staging/", NULL );
    char* logfile_path = md_fullpath( cwd, "access.log", NULL );
    char* replica_logfile_path = md_fullpath( cwd, "replica.log", NULL );
-   char* RG_metadata_path = md_fullpath( cwd, "RG-metadata", NULL );
-   char* AG_metadata_path = md_fullpath( cwd, "AG-metadata", NULL );
+   char* RG_metadata_path = md_fullpath( cwd, "RG-metadata/", NULL );
+   char* AG_metadata_path = md_fullpath( cwd, "AG-metadata/", NULL );
    
    if( c->data_root == NULL )
       c->data_root = strdup( data_root );
@@ -2434,7 +2434,6 @@ void md_update_free( struct md_update* update ) {
 // duplicate an update
 void md_update_dup2( struct md_update* src, struct md_update* dest ) {
    dest->op = src->op;
-   dest->timestamp = src->timestamp;
    md_entry_dup2( &src->ent, &dest->ent );
 }
 
@@ -2558,7 +2557,7 @@ struct md_user_entry* md_find_user_entry( char const* username, struct md_user_e
 
 
 // find a user entry, given a uid
-struct md_user_entry* md_find_user_entry2( uid_t uid, struct md_user_entry** users ) {
+struct md_user_entry* md_find_user_entry2( uint64_t uid, struct md_user_entry** users ) {
    for( int i = 0; users[i] != NULL; i++ ) {
       if( users[i]->uid == uid )
          return users[i];
@@ -2851,7 +2850,7 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
          char* password = NULL;
          char* username = MHD_basic_auth_get_username_password( connection, &password );
 
-         uid_t uid = (*http_ctx->HTTP_authenticate)( con_data, username, password );
+         uint64_t uid = (*http_ctx->HTTP_authenticate)( con_data, username, password );
 
          if( uid == MD_INVALID_UID ) {
             errorf("Invalid userpass %s:%s\n", username, password );
@@ -3397,7 +3396,7 @@ struct md_user_entry** md_parse_secrets_file2( FILE* passwd_file, char const* pa
       
       // sanity check on UID
       char* next = NULL;
-      uid_t uid = strtol( uid_str, &next, 10 );
+      uint64_t uid = strtol( uid_str, &next, 10 );
       if( next == uid_str ) {
          errorf( "Could not read password file %s: invalid UID '%s' at line %d\n", path, uid_str, line_num );
          return NULL;
@@ -3409,7 +3408,7 @@ struct md_user_entry** md_parse_secrets_file2( FILE* passwd_file, char const* pa
       uent->username = strdup( username_str );
       uent->password_hash = strdup( password_hash );
       
-      dbprintf( "%d %s %s\n", uid, username_str, password_hash);
+      dbprintf( "%" PRIu64 " %s %s\n", uid, username_str, password_hash);
 
       user_ents.push_back( uent );
    }
@@ -3501,7 +3500,6 @@ int md_init( int gateway_type,
              int portnum,
              char const* ms_url,
              char const* volume_name,
-             char const* volume_secret,
              char const* md_username,
              char const* md_password ) {
 
@@ -3564,18 +3562,25 @@ int md_init( int gateway_type,
    }
 
    // connect to the MS
-   rc = ms_client_init( client, conf, conf->volume_name, conf->metadata_username, conf->metadata_password );
+   rc = ms_client_init( client, conf, conf->metadata_username, conf->metadata_password );
    if( rc != 0 ) {
       errorf("ms_client_init rc = %d\n", rc );
       return rc;
    }
 
    // get the volume metadata
-   rc = ms_client_get_volume_metadata( client, conf->volume_name, volume_secret, &conf->volume_version, &conf->owner, &conf->volume_owner, &conf->volume, &conf->blocking_factor );
+   rc = ms_client_get_volume_metadata( client, conf->volume_name );
    if( rc != 0 ) {
       errorf("ms_client_get_volume_metadata rc = %d\n", rc );
       return rc;
    }
+
+   ms_client_rlock( client );
+   conf->owner = client->owner_id;
+   conf->volume_owner = client->volume_owner_id;
+   conf->volume = client->volume_id;
+   conf->blocking_factor = client->blocksize;
+   ms_client_unlock( client );
 
    return 0;
 }
@@ -3624,7 +3629,6 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->volume_owner = 0;
    conf->mountpoint = NULL;      // filled by md_runtime_init
    conf->hostname = NULL;        // filled by md_runtime_init
-   conf->volume_version = 0;
 
    return 0;
 }

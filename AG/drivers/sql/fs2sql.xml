@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<Map>
+    <Config>
+	<DSN>sqlite</DSN>
+    </Config>
+    <Pair>
+	<File perm="400">/.db_info</File>
+	<Query>DB_INFO</Query>
+    </Pair>
+    <Pair>
+	<File perm="740">/foo/bar</File>
+	<Query>SELECT * FROM mytable LIMIT %i OFFSET %i</Query>
+	<Query type="unbounded-sql">SELECT * FROM mytable LIMIT -1 OFFSET %i</Query>
+    </Pair>
+    <Pair>
+	<File perm="444">/xyz/efg</File>
+	<Query>Query 2</Query>
+    </Pair>
+    <Pair>
+	<File perm="540">/foo/xyz/bar1</File>
+	<Query>Query 3</Query>
+    </Pair>
+    <Pair>
+	<File perm="440">/pqrff/ixj</File>
+	<Query>Query 4</Query>
+    </Pair>
+</Map>

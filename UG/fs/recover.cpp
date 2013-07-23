@@ -29,7 +29,7 @@ int fs_entry_restore_file_from_disk( struct fs_core* core, struct fs_entry* fent
    
    if( max_version != fent->version ) {
       // version from the metadata server conflicts with the version here
-      errorf( "%s: stale version %lld, most recent is %lld\n", fs_path, max_version, fent->version );
+      errorf( "%s: stale version %" PRId64 ", most recent is %" PRId64 "\n", fs_path, max_version, fent->version );
       free( publish_path );
       return -ESTALE;
    }
@@ -123,7 +123,7 @@ int fs_entry_restore_file_from_disk( struct fs_core* core, struct fs_entry* fent
    uint64_t num_missing = 0;
    for( uint64_t i = 0; i < num_blocks; i++ ) {
       if( block_versions[i] == -1 ) {
-         errorf( "%s (at %s): missing block %lld\n", fs_path, versioned_publish_path, i );
+         errorf( "%s (at %s): missing block %" PRIu64 "\n", fs_path, versioned_publish_path, i );
          num_missing++;
       }
    }

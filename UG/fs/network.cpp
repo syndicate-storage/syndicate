@@ -24,7 +24,14 @@ int fs_entry_download_cached( struct fs_core* core, char const* url, char** bits
          errorf("md_download_file_proxied(%s) from %s rc = %zd\n", cdn_url, core->conf->proxy_url, len);
       }
       else if ( status_code != 200 ) {
+         
          errorf("md_download_file_proxied(%s) from %s HTTP status %d\n", cdn_url, core->conf->proxy_url, status_code );
+
+         if( status_code == 0 ) {
+            // status code can only be 0 if there's a bug, or the remote host crashed
+            status_code = 500;
+         }
+         
          len = -status_code;
 
          if( *bits ) {
@@ -94,7 +101,15 @@ int fs_entry_download_manifest( struct fs_core* core, char const* manifest_url, 
 
    if( rc >= 0 ) {
       // got data!  parse it
-      bool valid = mmsg->ParseFromString( string(manifest_data, manifest_data_len) );
+      bool valid = false;
+      try {
+         valid = mmsg->ParseFromString( string(manifest_data, manifest_data_len) );
+      }
+      catch( exception e ) {
+         errorf("failed to parse manifest %s, caught exception\n", manifest_url);
+         rc = -EIO;
+      }
+      
       if( !valid ) {
          errorf( "invalid manifest (%zd bytes)\n", manifest_data_len );
          rc = -EIO;
@@ -282,7 +297,14 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       string msg_buf_str( msg_buf, response_buffer_size( &buf ) );
 
       Serialization::WriteMsg promise_msg;
-      bool valid = recvMsg->ParseFromString( msg_buf_str );
+      bool valid = false;
+
+      try {
+         valid = recvMsg->ParseFromString( msg_buf_str );
+      }
+      catch( exception e ) {
+         errorf("failed to parse response from %s, caught exception\n", url);
+      }
 
       free( msg_buf );
       response_buffer_free( &buf );
@@ -290,7 +312,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       if( !valid ) {
          // not a valid message
          rc = -EBADMSG;
-         errorf("%s", " recv bad message\n");
+         errorf("recv bad message from %s\n", url);
       }
       else {
          rc = 0;

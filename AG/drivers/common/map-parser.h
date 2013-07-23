@@ -36,14 +36,33 @@
 using namespace std;
 using namespace xercesc;
 
-#define MAP_TAG     "Map"
-#define PAIR_TAG    "Pair"
-#define KEY_TAG     "File"
-#define VALUE_TAG   "Query"
-#define PERM_ATTR   "perm"
+#define MAP_TAG		    "Map"
+#define PAIR_TAG	    "Pair"
+#define CONFIG_TAG	    "Config"
+#define DSN_TAG		    "DSN"
+#define KEY_TAG		    "File"
+#define VALUE_TAG	    "Query"
+#define PERM_ATTR	    "perm"
+#define QUERY_TYPE_ATTR     "type"
+
+#define	QUERY_TYPE_SHELL		    0
+#define	QUERY_TYPE_STR_SHELL		    "sell"
+#define	QUERY_TYPE_BOUNDED_SQL		    1
+#define	QUERY_TYPE_STR_BOUNDED_SQL	    "bounded-sql"
+#define QUERY_TYPE_UNBOUNDED_SQL	    2
+#define QUERY_TYPE_STR_UNBOUNDED_SQL	    "unbounded-sql"
+
+#define QUERY_TYPE_DEFAULT	QUERY_TYPE_BOUNDED_SQL
 
 struct map_info {
-    char* query;
+    union {
+	unsigned char* shell_command;
+	struct {
+	    unsigned char* query;
+	    unsigned char* unbounded_query;
+	};
+    };
+    uint64_t id;
     uint16_t file_perm;
 };
 
@@ -53,8 +72,15 @@ class MapParserHandler : public DefaultHandler {
 	bool open_val;
 	char* element_buff;
 	char* current_key;
-	char* current_val;
+	char* bounded_query;
+	char* unbounded_query;
+	char* shell_cmd;
 	int current_perm;
+	unsigned int type;
+	unsigned char* dsn_str;
+	bool open_dsn;
+	uint64_t current_id;
+
 	map<string, struct map_info>* xmlmap;
     public:
 	MapParserHandler(map<string, struct map_info> *xmlmap);
@@ -74,16 +100,19 @@ class MapParserHandler : public DefaultHandler {
 		const   unsigned int    length   
 		);   
 	void fatalError(const SAXParseException&);
+	unsigned char* get_dsn();
 };
 
 class MapParser {
     private:
 	map<string, struct map_info> *FS2SQLMap;
 	char *mapfile;
+	unsigned char* dsn_str;
     public:
 	MapParser( char* mapfile );
 	map<string, struct map_info>* get_map( );
 	int parse();
+	unsigned char* get_dsn();
 };
 #endif //_MAP_PARSER_H_
 

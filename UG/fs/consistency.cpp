@@ -31,8 +31,11 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
    
    int rc = ms_client_sync_update( core->ms, fh->path );
    if( rc != 0 ) {
-      // ENOENT allowed because the update thread could have preempted us
       errorf("ms_client_sync_update(%s) rc = %d\n", fh->path, rc );
+
+      // ENOENT allowed because the update thread could have preempted us
+      if( rc == -ENOENT )
+         rc = 0;
    }
    
    fs_file_handle_unlock( fh );
@@ -56,7 +59,7 @@ bool fs_entry_is_read_stale( struct fs_entry* fent ) {
    uint64_t now_ms = currentTimeMillis();
    uint64_t refresh_ms = (uint64_t)(fent->refresh_time.tv_sec) * 1000 + (uint64_t)(fent->refresh_time.tv_nsec) / 1000000;
 
-   dbprintf("%" PRIu64 " millis old, max is %d\n", now_ms - refresh_ms, fent->max_read_freshness );
+   dbprintf("%s is %" PRIu64 " millis old, max is %d\n", fent->name, now_ms - refresh_ms, fent->max_read_freshness );
    if( now_ms - refresh_ms >= (uint64_t)fent->max_read_freshness )
       return true;
    else
@@ -926,19 +929,35 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    Serialization::ManifestMsg manifest_msg;
    int rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
    if( rc < 0 ) {
+      char** RG_urls_save = NULL;
+      
       // try each replica
       ms_client_view_rlock( core->ms );
       if( core->ms->RG_urls ) {
+
          for( int i = 0; core->ms->RG_urls[i] != NULL; i++ ) {
             free( manifest_url );
 
             // next replica
             manifest_url = fs_entry_remote_manifest_url( fs_path, core->ms->RG_urls[i], fent->version, &manifest_mtime );
+
+            // release MS, but check later to see if we got reloaded in the mean time
+            RG_urls_save = core->ms->RG_urls;
+            ms_client_view_unlock( core->ms );
+            
             rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
+
+            ms_client_view_rlock( core->ms );
 
             // success?
             if( rc == 0 )
                break;
+
+            // new RGs?
+            if( RG_urls_save != core->ms->RG_urls ) {
+               rc = -EAGAIN;
+               break;
+            }
          }
       }
       ms_client_view_unlock( core->ms );

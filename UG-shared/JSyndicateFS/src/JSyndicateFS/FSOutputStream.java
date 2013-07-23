@@ -21,7 +21,7 @@ public class FSOutputStream extends OutputStream {
     private byte[] buffer = new byte[4096];
     private long offset;
 
-    public FSOutputStream(File file) {
+    public FSOutputStream(File file) throws IOException {
         if(file == null)
             throw new IllegalArgumentException("Can not create output stream from null file");
         
@@ -29,15 +29,33 @@ public class FSOutputStream extends OutputStream {
         
         if(filesystem != null) {
             Path path = file.getPath();
+            
+            if(!filesystem.exists(path)) {
+                // create before write
+                try {
+                    boolean created = filesystem.createNewFile(path);
+                    if(!created) {
+                        LOG.error("Can not create the file");
+                        throw new IOException("Can not create the file");
+                    }
+                } catch (IOException ex) {
+                    LOG.error(ex);
+                    throw new IOException(ex.toString());
+                }
+            } else {
+                // truncate before write
+                filesystem.truncateFile(path, 0);
+            }
+            
             try {
                 FileHandle filehandle = filesystem.openFileHandle(path);
                 initialize(filehandle);
             } catch (FileNotFoundException ex) {
                 LOG.error(ex);
-                throw new IllegalArgumentException(ex.toString());
+                throw new IOException(ex.toString());
             } catch (IOException ex) {
                 LOG.error(ex);
-                throw new IllegalArgumentException(ex.toString());
+                throw new IOException(ex.toString());
             }
         } else {
             throw new IllegalArgumentException("Can not create input stream from null filesystem");

@@ -16,13 +16,13 @@ void* syndicate_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
 }
 
 // HTTP authentication callback
-uid_t syndicate_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
+uint64_t syndicate_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
 
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state* state = syncon->state;
    struct ms_client* client = state->ms;
 
-   uid_t ug = ms_client_authenticate( client, md_con_data, username, password );
+   uint64_t ug = ms_client_authenticate( client, md_con_data, username, password );
    if( ug == MD_GUEST_UID ) {
       // someone we don't know
       return -EACCES;
@@ -117,22 +117,22 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
 
    // handle 302, 400, and 404
    rc = http_handle_redirect( resp, state, fs_path, file_version, block_id, block_version, &manifest_timestamp, &sb, staging );
-   if( rc == 0 ) {
-      // redirected!
+   if( rc <= 0 ) {
+      // handled!
       free( fs_path );
       return resp;
    }
-   if( rc < 0 ) {
-      // error!
-      free( fs_path );
-      return resp;
-   }
+   
    if( rc == HTTP_REDIRECT_REMOTE ) {
-      // requested object is not here
+      // requested object is not here.
+      // will not redirect; that can lead to loops.
       md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
       free( fs_path );
       return resp;
    }
+
+   // check authorization
+   //rc = fs_entry_access( 
 
    // if this is a request for a directory, then bail
    if( S_ISDIR( sb.st_mode ) ) {
@@ -322,7 +322,14 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
    // extract the actual message
    Serialization::WriteMsg *msg = new Serialization::WriteMsg();
-   bool valid = msg->ParseFromString( string(msg_buf, msg_sz) );
+   bool valid = false;
+
+   try {
+      valid = msg->ParseFromString( string(msg_buf, msg_sz) );
+   }
+   catch( exception e ) {
+      errorf("%p: failed to parse message, caught exception\n", md_con_data );
+   }
 
    free( msg_buf );
 
@@ -336,21 +343,6 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
       return;
    }
-
-   /*
-   // ensure that it corresponds to the correct session
-   uint64_t current_session = state->col->get_session_id();
-   if( msg->session_id() != current_session ) {
-      // nope
-      errorf( "invalid session %" PRId64 " (current = %" PRId64 ")\n", msg->session_id(), current_session );
-
-      md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
-      md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 400, "INVALID SESSION", strlen("INVALID_SESSION") + 1 );
-      delete msg;
-
-      return;
-   }
-   */
    
    // prepare an ACK
    char const* fs_path = NULL;
@@ -500,7 +492,7 @@ void syndicate_HTTP_cleanup(struct MHD_Connection *connection, void *con_cls, en
 
 
 // initialize
-int syndicate_init( char const* config_file, struct md_HTTP* http_server, int portnum, char const* ms_url, char const* volume_name, char const* volume_secret, char const* md_username, char const* md_password ) {
+int syndicate_init( char const* config_file, struct md_HTTP* http_server, int portnum, char const* ms_url, char const* volume_name, char const* md_username, char const* md_password ) {
 
 
    // initialize Syndicate state
@@ -510,7 +502,7 @@ int syndicate_init( char const* config_file, struct md_HTTP* http_server, int po
    state->ms = CALLOC_LIST( struct ms_client, 1 );
 
 
-   int rc = md_init( SYNDICATE_UG, config_file, &state->conf, state->ms, portnum, ms_url, volume_name, volume_secret, md_username, md_password );
+   int rc = md_init( SYNDICATE_UG, config_file, &state->conf, state->ms, portnum, ms_url, volume_name, md_username, md_password );
    if( rc != 0 ) {
       errorf("md_init rc = %d\n", rc );
       return rc;

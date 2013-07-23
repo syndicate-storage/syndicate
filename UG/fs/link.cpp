@@ -24,7 +24,7 @@ int fs_entry_attach_lowlevel( struct fs_core* core, struct fs_entry* parent, str
 
 // attach a file to the filesystem (same as link())
 // THIS METHOD ONLY UPDATES THE METADATA; IT DOES NOT TOUCH STABLE STORAGE
-int fs_entry_attach( struct fs_core* core, struct fs_entry* fent, char const* path, uid_t user, gid_t vol ) {
+int fs_entry_attach( struct fs_core* core, struct fs_entry* fent, char const* path, uint64_t user, uint64_t vol ) {
    // sanity check: path's basename should be fent's name
    char* path_base = md_basename( path, NULL );
    if( strcmp( fent->name, path_base ) != 0 ) {

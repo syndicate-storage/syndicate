@@ -29,8 +29,6 @@ public class SyndicateTextRecordReader extends RecordReader<LongWritable, Text> 
 
     private static final Log LOG = LogFactory.getLog(SyndicateTextRecordReader.class);
     
-    public static final String MAX_LINE_LENGTH = "mapred.linerecordreader.maxlength";
-    
     private long start;
     private long pos;
     private long end;
@@ -47,7 +45,7 @@ public class SyndicateTextRecordReader extends RecordReader<LongWritable, Text> 
         SyndicateInputSplit split = (SyndicateInputSplit) genericSplit;
         Configuration conf = context.getConfiguration();
         
-        this.maxLineLength = conf.getInt(MAX_LINE_LENGTH, Integer.MAX_VALUE);
+        this.maxLineLength = SyndicateConfigUtil.getTextInputMaxLength(conf);
         this.start = split.getStart();
         this.end = this.start + split.getLength();
         

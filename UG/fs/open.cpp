@@ -35,14 +35,14 @@ int fs_file_handle_open( struct fs_file_handle* fh, int flags, mode_t mode ) {
 }
 
 // create an entry (equivalent to open with O_CREAT|O_WRONLY|O_TRUNC
-struct fs_file_handle* fs_entry_create( struct fs_core* core, char const* path, char const* url, uid_t user, gid_t vol, mode_t mode, int* err ) {
+struct fs_file_handle* fs_entry_create( struct fs_core* core, char const* path, char const* url, uint64_t user, uint64_t vol, mode_t mode, int* err ) {
    dbprintf( "create %s\n", path );
    return fs_entry_open( core, path, url, user, vol, O_CREAT|O_WRONLY|O_TRUNC, mode, err );
 }
 
 
 // make a node (regular files only at this time)
-int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t dev, uid_t user, gid_t vol ) {
+int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t dev, uint64_t user, uint64_t vol ) {
    // only regular files at this time...
    if( ! ( S_ISREG( mode ) || S_ISFIFO( mode ) ) ) {
       return -ENOTSUP;
@@ -163,7 +163,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
 
 
 // mark an fs_entry as having been opened, and/or create a file
-struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, char const* url, uid_t user, gid_t vol, int flags, mode_t mode, int* err ) {
+struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, char const* url, uint64_t user, uint64_t vol, int flags, mode_t mode, int* err ) {
 
    char* path = strdup(_path);
    md_sanitize_path( path );
@@ -302,9 +302,6 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
    }
 
    // now child exists.
-   // before releasing the parent, get info from it
-   uint64_t parent_write_ttl = parent->max_write_freshness;
-
    
    // safe to lock it so we can release the parent
    fs_entry_wlock( child );
@@ -390,8 +387,8 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
 
          Serialization::WriteMsg *withdraw_ack = new Serialization::WriteMsg();
 
-         //truncate_msg->set_write_id( core->col->next_transaction_id() );
-         //truncate_msg->set_session_id( core->col->get_session_id() );
+         truncate_msg->set_write_id( 0 );
+         truncate_msg->set_session_id( 0 );
 
          *err = fs_entry_post_write( withdraw_ack, core, child->url, truncate_msg );
          if( *err < 0 ) {
@@ -442,33 +439,26 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
       struct md_entry data;
       fs_entry_to_md_entry( core, path, child, &data );
 
-      if( parent_write_ttl == 0 ) {
-         // create synchronously
-         *err = ms_client_create( core->ms, &data );
+      // create synchronously
+      *err = ms_client_create( core->ms, &data );
 
-         if( *err != 0 ) {
-            errorf("ms_client_create(%s) rc = %d\n", data.path, *err );
-            *err = -EREMOTEIO;
+      if( *err != 0 ) {
+         errorf("ms_client_create(%s) rc = %d\n", data.path, *err );
+         *err = -EREMOTEIO;
 
-            // revert
-            child->open_count = 0;
+         // revert
+         child->open_count = 0;
 
-            // NOTE: parent will still exist--we can't remove a non-empty directory
-            fs_entry_wlock( parent );
-            fs_entry_detach_lowlevel( core, parent, child, true );
-            fs_entry_unlock( parent );
+         // NOTE: parent will still exist--we can't remove a non-empty directory
+         fs_entry_wlock( parent );
+         fs_entry_detach_lowlevel( core, parent, child, true );
+         fs_entry_unlock( parent );
 
-            fs_core_wlock( core );
-            core->num_files--;
-            fs_core_unlock( core );
-         }
+         fs_core_wlock( core );
+         core->num_files--;
+         fs_core_unlock( core );
       }
-
-      else {
-         // create later. If it fails, it'll be unlinked normally
-         *err = ms_client_queue_update( core->ms, path, &data, currentTimeMillis() + parent_write_ttl, 0 );
-      }
-
+      
       md_entry_free( &data );
    }
 

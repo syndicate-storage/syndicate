@@ -552,6 +552,8 @@ int fs_entry_block_stat( struct fs_core* core, char const* path, uint64_t block_
 
    fs_entry_unlock( fent );
 
+   free( block_url );
+   
    return rc;
 }
 

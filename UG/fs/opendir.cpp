@@ -32,7 +32,7 @@ int fs_dir_handle_open( struct fs_dir_handle* dirh )  {
 
 
 // open a directory
-struct fs_dir_handle* fs_entry_opendir( struct fs_core* core, char const* _path, uid_t user, gid_t vol, int* err ) {
+struct fs_dir_handle* fs_entry_opendir( struct fs_core* core, char const* _path, uint64_t user, uint64_t vol, int* err ) {
 
    // ensure path ends in /
    char path[PATH_MAX];

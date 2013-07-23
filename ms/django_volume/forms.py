@@ -2,16 +2,18 @@ from django_lib import override_forms
 from django import forms
 from django_lib.override_forms import ReadOnlyWidget
 
+BLOCKSIZE_MULTIPLIER = 1024
+
 BLOCKSIZE_CHOICES = (
-  (10, "10 kB"),
-  (20, 20),
-  (40, 40),
-  (80, 80),
-  (160,160),
-  (320,320),
-  (640,640),
-  (1024,"1 MB"),
-  )
+    (10*BLOCKSIZE_MULTIPLIER, "10 kB"),
+    (20*BLOCKSIZE_MULTIPLIER, 20),
+    (40*BLOCKSIZE_MULTIPLIER, 40),
+    (80*BLOCKSIZE_MULTIPLIER, 80),
+    (160*BLOCKSIZE_MULTIPLIER, 160),
+    (320*BLOCKSIZE_MULTIPLIER, 320),
+    (640*BLOCKSIZE_MULTIPLIER, 640),
+    (1024*BLOCKSIZE_MULTIPLIER,"1 MB"),
+)
 
 class CreateVolume(override_forms.MyForm):
  
@@ -43,24 +45,10 @@ class ChangeVolumeD(override_forms.MyForm):
 
     description = forms.CharField(widget=forms.Textarea,
                                   required=False,
-                                  label="Volume description",
+                                  label="",
                                   initial="This is my new amazing volume.",
                                   max_length=2000,
                                   help_text="2000 characters maximum")
-
-class ChangePassword(override_forms.MyForm):
-
-    oldpassword = forms.CharField(label="Old password",
-                               max_length=20,
-                               widget=forms.PasswordInput)
-
-    newpassword_1 = forms.CharField(label="New password",
-                               max_length=20,
-                               widget=forms.PasswordInput)
-
-    newpassword_2 = forms.CharField(label="Re-enter new password",
-                               max_length=20,
-                               widget=forms.PasswordInput)
 
 
 class DeleteVolume(override_forms.MyForm):
@@ -71,6 +59,17 @@ class DeleteVolume(override_forms.MyForm):
     password = forms.CharField(label="Volume password",
                                max_length=20,
                                widget=forms.PasswordInput)
+
+class Gateway(override_forms.MyForm):
+
+    g_name = forms.CharField(label="Gateway name",
+                             widget=ReadOnlyWidget(),
+                             required=False,
+                             max_length=499)
+
+    remove = forms.BooleanField(label="Remove",
+                                required=False)
+        
 
 class Permissions(override_forms.MyForm):
     

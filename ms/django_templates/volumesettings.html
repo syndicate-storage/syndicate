@@ -1,62 +1,123 @@
 {% extends "base.html" %}
 {% load ms_extras %}
+
+{% block head %}
+<h1><a href='{% url django_volume.views.viewvolume volume.volume_id %}'>{{volume.name|replace:"_|| "}}</a> settings </h1>
+{% endblock %}
+
+{% block mainbody %}
+<p class="error">{{ message }}</p><br>
+<div class="box">
+
+  <h3>Activation status:{% if volume.active %}<span style="font-weight:normal;color:green;"> Active{% else %}<span style="font-weight:normal;color:red;"> Inactive{% endif %}</span></h3>
+  {% if volume.active %}
   
- 	{% block head %}
-   		<h1><a href='{% url django_volume.views.viewvolume volume.name %}'>{{volume.name|replace:"_|| "}}</a> settings </h1>
- 	{% endblock %}
- 	{% block mainbody %}
- 		{{message}}
- 		<div class="box">
+  <form action='{% url django_volume.views.deactivatevolume volume.volume_id %}' method="post">{% csrf_token %}
+    {{ password.as_ul }}
+    <input class="submit" type="submit" value="Deactivate" />
+  </form>
+  
+  {% else %}
+  
+  <form action='{% url django_volume.views.activatevolume volume.volume_id %}' method="post">{% csrf_token %}
+    {{ password.as_ul }}
+    <input class="submit" type="submit" value="Activate" />
+  </form>
+  
+  {% endif %}
+  <hr/>
 
- 			<h3>Activation status:{% if volume.active %}<span style="font-weight:normal;color:green;"> Active{% else %}<span style="font-weight:normal;color:red;"> Inactive{% endif %}</span></h3>
- 			{% if volume.active %}
-	
-				<form action='{% url django_volume.views.deactivatevolume volume.name %}' method="post">{% csrf_token %}
-					{{ password.as_ul }}
-					<input class="submit" type="submit" value="Deactivate" />
-	 			</form>
-	
-			{% else %}
-	
-	 			<form action='{% url django_volume.views.activatevolume volume.name %}' method="post">{% csrf_token %}
-	 				{{ password.as_ul }}
-	   				<input class="submit" type="submit" value="Activate" />
-	 			</form>
-	
-			{% endif %}
-			<hr/>
+  <h3>Privacy status:<span style="font-weight:normal;">{% if volume.private %} Private{% else %} Public{% endif %}</span></h3>
+  {% if volume.private %}
+  <form action='{% url django_volume.views.volumeprivacy volume.volume_id %}' method="post">{% csrf_token %}
+    {{password.as_ul}}
+    <input class="submit" type="submit" value="Make Public"/>
+  </form>
+  {% else %}
+  <form action='{% url django_volume.views.volumeprivacy volume.volume_id %}' method="post">{% csrf_token %}
+    {{password.as_ul}}
+    <input class="submit" type="submit" value="Make Private"/>
+  </form>
+  {% endif %}
+  <hr/>
 
-			<h3>Privacy status:<span style="font-weight:normal;">{% if volume.private %} Private{% else %} Public{% endif %}</span></h3>
-			{% if volume.private %}
-				<form action='{% url django_volume.views.volumeprivacy volume.name %}' method="post">{% csrf_token %}
-					{{password.as_ul}}
-					<input class="submit" type="submit" value="Make Public"/>
-				</form>
-			{% else %}
-				<form action='{% url django_volume.views.volumeprivacy volume.name %}' method="post">{% csrf_token %}
-					{{password.as_ul}}
-					<input class="submit" type="submit" value="Make Private"/>
-				</form>
-			{% endif %}
-			<hr/>
+  <h3>Change volume description</h3>
+  <form action='{% url django_volume.views.changevolume volume.volume_id %}' method="post">{% csrf_token %}
+    {{ desc_form.as_ul }}
+    {{ password.as_ul }}
+    <input class="submit" type="submit" value="Change" />
+  </form>
+  <hr/>
 
-			<h3>Change volume description</h3>
-			<form action='{% url django_volume.views.changevolume volume.name %}' method="post">{% csrf_token %}
-				{{ desc_form.as_ul }}
-				{{ password.as_ul }}
-				<input class="submit" type="submit" value="Change" />
-			</form>
-			<hr/>
+  <h3>Remove Replica Gateways</h3>
+  <form action='{% url django_volume.views.changegateways_rg volume.volume_id %}' method="post">{% csrf_token %}
+    {% if rg_form %}
+      {{ rg_form.management_form }}
+      <table border>
+        {% for form in rg_form %}
+          {% if forloop.first %}
+            <thead>
+              <tr>
+                {% for field in form.visible_fields %}
+                  <th>{{ field.label|capfirst }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+          {% endif %}
+          <tr class="{{ forloop.counter0 }}">
+            {% for field in form.visible_fields %}
+              <td>{{ field }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </table> 
+      {{ password.as_ul }}
+      <input class="submit" type="submit" value="Change" />
+    {% else %}
+      <h5> No Replica Gateways attached to this volume</h5>
+    {% endif %}
+  </form>
+  <hr/>
 
-			<h3>Change volume password</h3>
-			<form action='{% url django_volume.views.changevolumepassword volume.name %}' method="post">{% csrf_token %}
-				{{pass_form.as_ul}}
-				<input class="submit" type="submit" value="Change" />
-			</form>
+  <h3>Remove Acquisition Gateways</h3>
+  <form action='{% url django_volume.views.changegateways_ag volume.volume_id %}' method="post">{% csrf_token %}
+    {% if ag_form %}
+      {{ ag_form.management_form }}
+      <table border>
+        {% for form in ag_form %}
+          {% if forloop.first %}
+            <thead>
+              <tr>
+                {% for field in form.visible_fields %}
+                  <th>{{ field.label|capfirst }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+          {% endif %}
+          <tr class="{{ forloop.counter0 }}">
+            {% for field in form.visible_fields %}
+              <td>{{ field }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </table> 
+      {{ password.as_ul }}
+      <input class="submit" type="submit" value="Change" />
+    {% else %}
+      <h4> No Acquisition Gateways attached to this volume</h4>
+    {% endif %}  </form>
+  <hr/>
 
-		</div>
-	{% endblock %}
-  	{% block footer %}
-  		<a href='{% url django_volume.views.myvolumes %}'>My volume</a>
-  		<a href='{% url django_home.views.home %}'>Home</
-  	{% endblock %}
+
+  <h3>Change volume password</h3>
+  <form action='{% url django_volume.views.changevolumepassword volume.volume_id %}' method="post">{% csrf_token %}
+    {{pass_form.as_ul}}
+    <input class="submit" type="submit" value="Change" />
+  </form>
+
+</div>
+{% endblock %}
+{% block footer %}
+<a href='{% url django_volume.views.myvolumes %}'>My volume</a>
+<a href='{% url django_home.views.home %}'>Home</
+  {% endblock %}

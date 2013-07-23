@@ -5,6 +5,7 @@
 
 #include "driver.h"
 #include "libgateway.h"
+#include "fs/fs_entry.h"
 
 // server config 
 struct md_syndicate_conf CONF;
@@ -24,11 +25,55 @@ char *datapath = NULL;
 // Length of datapath varaiable
 size_t  datapath_len = 0;
 
-ODBCHandler& odh = ODBCHandler::get_handle((unsigned char*)"DSN=sqlite");
+// ODBC DSN string
+unsigned char* dsn_string = NULL;
+
 
 // generate a manifest for an existing file, putting it into the gateway context
-extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
+extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, 
+					    struct gateway_ctx* ctx, struct md_entry* ent ) {
     errorf("%s", "INFO: gateway_generate_manifest\n"); 
+    // populate a manifest
+    Serialization::ManifestMsg* mmsg = new Serialization::ManifestMsg();
+    mmsg->set_size( ent->size );
+    mmsg->set_file_version( 1 );
+    mmsg->set_mtime_sec( ent->mtime_sec );
+    mmsg->set_mtime_nsec( 0 );
+    mmsg->set_manifest_mtime_sec( ent->mtime_sec );
+    mmsg->set_manifest_mtime_nsec( 0 );
+
+    uint64_t num_blocks = ent->size / global_conf->blocking_factor;
+    if( ent->size % global_conf->blocking_factor != 0 )
+	num_blocks++;
+
+    Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
+    bbmsg->set_start_id( 0 );
+    bbmsg->set_end_id( num_blocks );
+    stringstream strstrm;
+    strstrm << ent->url << ent->path;
+    bbmsg->set_file_url( strstrm.str() );
+
+    for( uint64_t i = 0; i < num_blocks; i++ ) {
+	bbmsg->add_block_versions( 0 );
+    }
+
+    // serialize
+    string mmsg_str;
+    bool src = mmsg->SerializeToString( &mmsg_str );
+    if( !src ) {
+	// failed
+	errorf( "%s", "failed to serialize" );
+	delete mmsg;
+	return -EINVAL;
+    }
+
+    ctx->data_len = mmsg_str.size();
+    ctx->data = CALLOC_LIST( char, mmsg_str.size() );
+    replica_ctx->last_mod = ent->mtime_sec;
+    memcpy( ctx->data, mmsg_str.data(), mmsg_str.size() );
+
+    delete mmsg;
+
     return 0;
 }
 
@@ -37,6 +82,7 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
 extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* user_cls ) {
     errorf("%s", "INFO: get_dataset\n"); 
     ssize_t ret = 0;
+    ODBCHandler& odh = ODBCHandler::get_handle(dsn_string);
     struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
 
     if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
@@ -54,12 +100,29 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	    ret = info_len;
 	    ctx->complete = true;
 	}
-	else if (ctx->complete)
+	else if (!ctx->complete) {
+	    if (ctx->data == NULL)
+		odh.execute_query(ctx, 0, global_conf->blocking_factor);
+	    if (ctx->data_len) {
+		size_t rem_len = ctx->data_len - ctx->data_offset;
+		size_t read_len = (rem_len > len)?len:rem_len;
+		ctx->complete  = (rem_len > len)?false:true;
+		memcpy(buf, ctx->data + ctx->data_offset, read_len);
+		ret = read_len;
+		ctx->data_offset += ret;
+	    }
+	    else {
+		ret = 0;
+		ctx->complete = true;
+	    }
+	}
+	else if (ctx->complete) {
 	    ret = 0;
+	}
     }
     else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
 	// read from RAM
-	memcpy( buf, ctx->data + ctx->data_offset, MIN( len, ctx->data_len - ctx->data_offset ) );
+	memcpy( buf, ctx->data + ctx->data_offset, MIN( (ssize_t)len, ctx->data_len - ctx->data_offset ) );
 	ctx->data_offset += len;
 	ret = (ssize_t)len;
     }
@@ -185,30 +248,28 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        ctx->request_type = GATEWAY_REQUEST_TYPE_MANIFEST;
        ctx->data_offset = 0;
        ctx->block_id = 0;
-       ctx->num_read = 0;
+       //ctx->num_read = 0;
        replica_ctx->size = ctx->data_len;
    }
    else {
-
        struct map_info mi = (*FS2SQL)[string(file_path)];
-       ctx->sql_query = mi.query; 
-       if( !ctx->sql_query ) {
+       ctx->sql_query_bounded = mi.query; 
+       ctx->sql_query_unbounded = mi.unbounded_query; 
+       if( !ctx->sql_query_bounded ) {
 	   free( ctx );
 	   free( file_path );
 	   return NULL;
        }
        else {
 	   // set up for reading
-	   off_t offset = block_id;
-	   /*xxx.print();
-	   ctx->odh = xxx;
-	   ctx->odh.print();*/
+	   ctx->data_offset = 0;
        }
 
-       ctx->num_read = 0;
+       //ctx->num_read = 0;
        ctx->block_id = block_id;
+       ctx->data = NULL;
        ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
-       // -1 switches libmicrohttpd to chunk transfer mode
+       // Negative size switches libmicrohttpd to chunk transfer mode
        replica_ctx->size = -1;
    }
 
@@ -220,7 +281,14 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 
 // clean up a transfer 
 extern "C" void cleanup_dataset( void* cls ) {   
-   errorf("%s", "INFO: cleanup_dataset\n"); 
+    errorf("%s", "INFO: cleanup_dataset\n"); 
+    struct gateway_ctx* ctx = (struct gateway_ctx*)cls;
+    if (ctx) {
+	if (ctx->data != NULL) {
+	    free(ctx->data);
+	}
+	free (ctx);
+    }
 }
 
 extern "C" int publish_dataset (struct gateway_context*, ms_client *client, 
@@ -230,6 +298,9 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     map<string, struct map_info>::iterator iter;
     set<char*, path_comp> dir_hierachy;
     mp.parse();
+    unsigned char* dsn = mp.get_dsn();
+    init(dsn);
+
     FS2SQL = mp.get_map();
     for (iter = FS2SQL->begin(); iter != FS2SQL->end(); iter++) {
 	const char* full_path = iter->first.c_str();
@@ -306,10 +377,10 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	    }
 	    break;
 	case MD_ENTRY_FILE:
-	    ment->size = 0;
+	    ment->size = -1;
 	    ment->type = MD_ENTRY_FILE;
 	    ment->mode &= FILE_PERMISSIONS_MASK;
-	    ment->mode |= S_IFIFO;
+	    ment->mode |= S_IFREG;
 	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
 		cout<<"ms client create "<<i<<endl;
 	    }
@@ -320,5 +391,16 @@ static int publish(const char *fpath, int type, struct map_info mi)
     DATA[ment->path] = ment;
     //pfunc_exit_code = 0;
     return 0;  
+}
+
+
+void init(unsigned char* dsn) {
+    if (dsn_string == NULL) {
+	size_t dsn_len = strlen((const char*)dsn) + strlen((const char*)ODBC_DSN_PREFIX);
+	dsn_string = (unsigned char*)malloc(dsn_len + 1);
+	memset(dsn_string, 0, dsn_len + 1);
+	memcpy(dsn_string, ODBC_DSN_PREFIX, strlen((const char*)ODBC_DSN_PREFIX));
+	memcpy(dsn_string + strlen((const char*)ODBC_DSN_PREFIX), dsn, strlen((const char*)dsn));
+    }
 }
 

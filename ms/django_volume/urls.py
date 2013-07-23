@@ -9,37 +9,43 @@ urlpatterns = patterns('django_volume.views',
                         
                         url(r'^createvolume/?$', 'createvolume'),
                         
-			url(r'^(?P<volume_name>[\w\.-]*)/activate/?',
+			url(r'^(?P<volume_id>[\w\.-]+)/activate/?',
 					     'activatevolume'),
 
-                        url(r'^(?P<volume_name>[\w\.-]*)/deactivate/?',
+                        url(r'^(?P<volume_id>[\w\.-]+)/deactivate/?',
                          'deactivatevolume'),
 
-                        url(r'^(?P<volume_name>[\w\.-]*)/delete/?',
+                        url(r'^(?P<volume_id>[\w\.-]+)/delete/?',
                          'deletevolume'),
 
-                        url(r'^(?P<volume_name>[\w\.-]*)/addpermissions/?',
+                        url(r'^(?P<volume_id>[\w\.-]+)/addpermissions/?',
                          'addpermissions'),
 
-                        url(r'^(?P<volume_name>[\w\.-]*)/changepermissions/?',
+                        url(r'^(?P<volume_id>[\w\.-]+)/changepermissions/?',
                          'changepermissions'),
 
-                        url(r'^(?P<volume_name>[\w\.-]*)/permissions/?',
+                        url(r'^(?P<volume_id>[\w\.-]+)/permissions/?',
                          'volumepermissions'),
 
-                        url(r'^(?P<volume_name>[\w\.-]*)/settings/?',
+                        url(r'^(?P<volume_id>[\w\.-]+)/settings/?',
                          'volumesettings'),
 
-                        url(r'^(?P<volume_name>[\w\.-]*)/change/description/?',
+                        url(r'^(?P<volume_id>[\w\.-]+)/change/description/?',
                          'changevolume'),
                         
-                        url(r'^(?P<volume_name>[\w\.-]*)/change/password/?',
+                        url(r'^(?P<volume_id>[\w\.-]+)/change/password/?',
                          'changevolumepassword'),
 
-                        url(r'^(?P<volume_name>[\w\.-]*)/privacy/?',
+                        url(r'^(?P<volume_id>[\w\.-]+)/change/ags/?',
+                         'changegateways_ag'),
+                        
+                        url(r'^(?P<volume_id>[\w\.-]+)/change/rgs/?',
+                         'changegateways_rg'),
+
+                        url(r'^(?P<volume_id>[\w\.-]+)/privacy/?',
                          'volumeprivacy'),
                         
-                        url(r'^(?P<volume_name>[\w\.-]*)/?',
+                        url(r'^(?P<volume_id>[\w\.-]+)/?',
                          'viewvolume'),
 
 )

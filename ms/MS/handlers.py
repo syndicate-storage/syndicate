@@ -18,7 +18,7 @@ import storage.storagetypes as storagetypes
 
 from entry import MSEntry
 from volume import Volume
-from gateway import UserGateway
+from gateway import UserGateway, ReplicaGateway
 
 import errno
 import logging
@@ -70,6 +70,108 @@ def get_UG( username, password ):
    UG = UserGateway.Read( username )
    return UG
 
+
+def response_begin( request_handler, volume_name_or_id ):
+   
+   volume_id = -1
+   try:
+      volume_id = int( volume_name_or_id )
+   except:
+      pass
+
+   timing = {}
+   
+   timing['request_start'] = storagetypes.get_time()
+
+   volume_read_start = storagetypes.get_time()
+
+   volume = None
+   if volume_id > 0:
+      volume = storage.read_volume( volume_id )
+   else:
+      volume = storage.get_volume_by_name( volume_name_or_id )
+      
+   volume_read_time = storagetypes.get_time() - volume_read_start
+
+   if volume == None:
+      # no volume
+      request_handler.response.status = 404
+      request_handler.response.write("No such volume\n")
+      return (None, None, None)
+
+   if not volume.active:
+      # inactive volume
+      request_handler.response.status = 503
+      request_handler.response.headers['Content-Type'] = "text/plain"
+      request_handler.response.write("Service Not Available\n")
+      return (None, None, None)
+
+   # get the UG's credentials
+   username, password = read_basic_auth( request_handler.request.headers )
+
+   if username == None or password == None:
+      request_handler.response.status = 401
+      request_handler.response.headers['Content-Type'] = "text/plain"
+      request_handler.response.write("Authentication Required\n")
+      return (None, None, None)
+
+   # look up the requesting UG
+   ug_read_start = storagetypes.get_time()
+   UG = get_UG( username, password )
+   ug_read_time = storagetypes.get_time() - ug_read_start
+
+   if UG == None:
+      # no UG
+      request_handler.response.status = 403
+      request_handler.response.headers['Content-Type'] = "text/plain"
+      request_handler.response.write("Authorization Failed\n")
+      return (None, None, None)
+
+   # make sure this UG account is legit
+   valid_UG = UG.authenticate( password )
+   if not valid_UG:
+      # invalid credentials
+      request_handler.response.status = 403
+      request_handler.response.headers['Content-Type'] = "text/plain"
+      request_handler.response.write("Authorization Failed\n")
+      return (None, None, None)
+
+   # make sure this UG is allowed to access this Volume
+   valid_UG = volume.authenticate_UG( UG )
+   if not valid_UG:
+      # UG does not belong to this Volume
+      request_handler.response.status = 403
+      request_handler.response.headers['Content-Type'] = "text/plain"
+      request_handler.response.write("Authorization Failed\n")
+      return (None, None, None)
+
+   # if we're still here, we're good to go
+
+   timing['X-Volume-Time'] = str(volume_read_time)
+   timing['X-UG-Time'] = str(ug_read_time)
+   
+   return (UG, volume, timing)
+
+
+def response_end( request_handler, status, data, content_type=None, timing=None ):
+   if content_type == None:
+      content_type = "application/octet-stream"
+
+   if timing != None:
+      request_total = storagetypes.get_time() - timing['request_start']
+      timing['X-Total-Time'] = str(request_total)
+      
+      del timing['request_start']
+      
+      for (time_header, time) in timing.items():
+         request_handler.response.headers[time_header] = time
+
+   request_handler.response.headers['Content-Type'] = content_type
+   request_handler.response.status = status
+   request_handler.response.write( data )
+   return
+   
+   
    
 
 class MSVolumeRequestHandler(webapp2.RequestHandler):
@@ -78,72 +180,63 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
    """
 
    def get( self, volume_name ):
-      volume_request_start = storagetypes.get_time()
-
-      volume_read_start = storagetypes.get_time()
-      volume = Volume.Read( volume_name )
-      volume_read_time = storagetypes.get_time() - volume_read_start
-      
-      if volume == None:
-         # no volume
-         self.response.status = 404
-         self.response.write("No such volume\n")
+      UG, volume, timing = response_begin( self, volume_name )
+      if UG == None or volume == None:
          return
 
-      # authenticate the request to the Volume
-      authenticated = volume.authenticate_gateway( self.request.headers )
-      if not authenticated:
-         self.response.status = 403
-         self.response.write("Authorization Failed\n")
-         return
-      
-      # get the UG's credentials
-      username, password = read_basic_auth( self.request.headers )
-
-      if username == None or password == None:
-         self.response.status = 401
-         self.response.write("Authentication Required\n")
-         return
-      
-      # look up the requesting UG
-      ug_read_start = storagetypes.get_time()
-      UG = get_UG( username, password )
-      ug_read_time = storagetypes.get_time() - ug_read_start
-      
-      if UG == None:
-         # no UG
-         self.response.status = 403
-         self.response.write("Authorization Failed\n")
-         return
-
-      # authenticate the requesting UG
-      valid_UG = UG.authenticate( password )
-      if not valid_UG:
-         # invalid credentials
-         self.response.status = 403
-         self.response.write("Authorization Failed\n")
-         return
-
-      # if we're still here, we're good to go
-      
       # request for volume metadata
       volume_metadata = ms_pb2.ms_volume_metadata();
-      user_gateways = UserGateway.ListAll( volume.volume_id )
-      
-      volume.protobuf( volume_metadata, user_gateways )
-      
-      volume_metadata.requester_id = UG.owner_id
-      
+      volume.protobuf( volume_metadata, UG )
       data = volume_metadata.SerializeToString()
 
-      self.response.status = 200
-      self.response.headers['X-Volume-Time'] = str(volume_read_time)
-      self.response.headers['X-UG-Time'] = str(ug_read_time)
-      self.response.headers['X-Total-Time'] = str( storagetypes.get_time() - volume_request_start )
-      
-      self.response.write( data )
+      response_end( self, 200, data, "application/octet-stream", timing )
       return
+
+
+
+class MSUGRequestHandler( webapp2.RequestHandler ):
+   def get( self, volume_id_str ):
+      UG, volume, timing = response_begin( self, volume_id_str )
+      if UG == None or volume == None:
+         return
+
+      ug_metadata = ms_pb2.ms_volume_UGs()
       
+      user_gateways = storage.list_user_gateways( {'UserGateway.volume_id ==' : volume.volume_id} )
+
+      ug_metadata.ug_version = volume.UG_version
+      for ug in user_gateways:
+         ug_pb = ug_metadata.ug_creds.add()
+         ug.protobuf_cred( ug_pb )
+
+      data = ug_metadata.SerializeToString()
+
+      response_end( self, 200, data, "application/octet-stream", timing )
+      return
+
+
+class MSRGRequestHandler( webapp2.RequestHandler ):
+   def get( self, volume_id_str ):
+      UG, volume, timing = response_begin( self, volume_id_str )
+      if UG == None or volume == None:
+         return
+
+      rg_metadata = ms_pb2.ms_volume_RGs()
+
+      rgs = []
+      
+      if len(volume.rg_ids) > 0:
+         rgs = storage.list_replica_gateways( {'ReplicaGateway.rg_id IN' : volume.rg_ids} )
+
+      rg_metadata.rg_version = volume.RG_version
+      for rg in rgs:
+         rg_metadata.rg_hosts.append( rg.host )
+         rg_metadata.rg_ports.append( rg.port )
+
+      data = rg_metadata.SerializeToString()
+
+      response_end( self, 200, data, "application/octet-stream", timing )
+      return
 
    
 class MSFileRequestHandler(webapp2.RequestHandler):
@@ -154,7 +247,7 @@ class MSFileRequestHandler(webapp2.RequestHandler):
    It will create, delete, and update metadata entries via POST.
    """
 
-   def get( self, volume_name, path ):
+   def get( self, volume_id_str, path ):
       file_request_start = storagetypes.get_time()
       
       if len(path) == 0:
@@ -162,52 +255,9 @@ class MSFileRequestHandler(webapp2.RequestHandler):
 
       if path[0] != '/':
          path = "/" + path
-      
-      # request to a volume.  Look up the volume
-      volume_read_start = storagetypes.get_time()
-      volume = Volume.Read( volume_name )
-      volume_read_time = storagetypes.get_time() - volume_read_start
-      
-      if volume == None:
-         # no volume
-         self.response.status = 202
-         self.response.headers['Content-Type'] = "text/plain"
-         self.response.write("%s\n" % -errno.ENODEV)
-         return
 
-      if not volume.active:
-         # volume is inactive
-         self.response.status = 202
-         self.response.headers['Content-Type'] = "text/plain"
-         self.response.write("%s\n" % -errno.ENODATA)
-         return
-
-
-      # get the UG's credentials
-      username, password = read_basic_auth( self.request.headers )
-
-      if username == None or password == None:
-         self.response.status = 401
-         self.response.write("Authentication Required")
-         return
-
-      # look up the requesting UG
-      ug_read_start = storagetypes.get_time()
-      UG = get_UG( username, password )
-      ug_read_time = storagetypes.get_time() - ug_read_start
-      
-      if UG == None:
-         # no UG
-         self.response.status = 403
-         self.response.write("Authorization Failed")
-         return
-
-      # authenticate the requesting UG
-      valid_UG = UG.authenticate( password )
-      if not valid_UG:
-         # invalid credentials
-         self.response.status = 403
-         self.response.write("Authorization Failed")
+      UG, volume, timing = response_begin( self, volume_id_str )
+      if UG == None or volume == None:
          return
 
       # request for a path's worth of metadata
@@ -215,21 +265,15 @@ class MSFileRequestHandler(webapp2.RequestHandler):
       reply = Resolve( UG.owner_id, volume, path )
       resolve_time = storagetypes.get_time() - resolve_start
 
-      # serialize
-      reply_str = reply.SerializeToString()
-      
-      self.response.status = 200
-      self.response.headers['Content-Type'] = "application/octet-stream"
-      self.response.headers['X-Volume-Time'] = str( volume_read_time )
-      self.response.headers['X-UG-Time'] = str( ug_read_time )
-      self.response.headers['X-Resolve-Time'] = str( resolve_time )
-      self.response.headers['X-Total-Time'] =  str( storagetypes.get_time() - file_request_start )
-      self.response.write( reply_str )
+      timing['X-Resolve-Time'] = str(resolve_time)
 
+      data = reply.SerializeToString()
+
+      response_end( self, 200, data, "application/octet-stream", timing )
       return
-
       
-   def post(self, volume_name, path ):
+      
+   def post(self, volume_id_str, path ):
 
       file_post_start = storagetypes.get_time()
       
@@ -256,45 +300,10 @@ class MSFileRequestHandler(webapp2.RequestHandler):
          self.response.headers['Content-Type'] = "text/plain"
          self.response.write("%s\n" % -errno.EINVAL)
          return
-         
-      # get authentication tokens
-      username, password = read_basic_auth( self.request.headers )
 
-      if username == None or password == None:
-         self.response.status = 202
-         self.response.headers['Content-Type'] = "text/plain"
-         self.response.write("%s\n" % -errno.EINVAL )
-         return
-
-      # get the UG
-      ug_read_start = storagetypes.get_time()
-      UG = get_UG( username, password )
-      ug_read_time = storagetypes.get_time() - ug_read_start
-      
-      if UG == None:
-         # no such UG
-         self.response.status = 202
-         self.response.headers['Content-Type'] = "text/plain"
-         self.response.write("%s\n" % -errno.EPERM)
-
-      # authenticate the UG
-      valid_UG = UG.authenticate( password )
-      if not valid_UG:
-         # invalid credentials
-         self.response.status = 202
-         self.response.headers['Content-Type'] = "text/plain"
-         self.response.write("%s\n" % -errno.EACCES)
-         
-      # look up the volume
-      volume_read_start = storagetypes.get_time()
-      volume = Volume.Read( volume_name )
-      volume_read_time = storagetypes.get_time() - volume_read_start
-      
-      if volume == None:
-         # no volume
-         self.response.status = 202
-         self.response.headers['Content-Type'] = "text/plain"
-         self.response.write("%s\n" % -errno.ENODEV )
+      # begin the response
+      UG, volume, timing = response_begin( self, volume_id_str )
+      if UG == None or volume == None:
          return
 
       create_times = []
@@ -308,7 +317,7 @@ class MSFileRequestHandler(webapp2.RequestHandler):
          attrs = MSEntry.unprotobuf_dict( update.entry )
 
          rc = 0
-         
+
          # create?
          if update.type == ms_pb2.ms_update.CREATE:
             create_start = storagetypes.get_time()
@@ -332,36 +341,28 @@ class MSFileRequestHandler(webapp2.RequestHandler):
 
          else:
             # not a valid method
-            self.response.status = 202
-            self.response.headers['Content-Type'] = "text/plain"
-            self.response.write("%s\n" % -errno.ENOSYS)
+            response_end( self, 202, "%s\n" % -errno.ENOSYS, "text/plain", None )
             return
-            
+
          if rc != 0:
             # error in creation, but not in processing.
             # send back the error code
-            self.response.status = 202
-            self.response.headers['Content-Type'] = "text/plain"
-            self.response.write( "%s\n" % rc )
+            response_end( self, 202, "%s\n" % -errno.ENOSYS, "text/plain", None )
             return
-      
-      self.response.status = 200
-      self.response.headers['Content-Type'] = "text/plain"
-      self.response.headers['X-UG-Time'] = str(ug_read_time)
-      self.response.headers['X-Volume-Time'] = str(volume_read_time)
+
 
       if len(create_times) > 0:
-         self.response.headers['X-Create-Times'] = ",".join( [str(t) for t in create_times] )
+         timing['X-Create-Times'] = ",".join( [str(t) for t in create_times] )
 
       if len(update_times) > 0:
-         self.response.headers['X-Update-Times'] = ",".join( [str(t) for t in update_times] )
+         timing['X-Update-Times'] = ",".join( [str(t) for t in update_times] )
 
       if len(delete_times) > 0:
-         self.response.headers['X-Delete-Times'] = ",".join( [str(t) for t in delete_times] )
-         
-      self.response.headers['X-Total-Time'] = str( storagetypes.get_time() - file_post_start )
-      self.response.write("OK")
+         timing['X-Delete-Times'] = ",".join( [str(t) for t in delete_times] )
+
+
+      response_end( self, 200, "OK\n", "text/plain", timing )
       return
-            
+
          
          

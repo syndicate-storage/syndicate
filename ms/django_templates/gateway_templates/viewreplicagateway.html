@@ -1,0 +1,46 @@
+{% extends "gateway_templates/viewacquisitiongateway.html" %}
+    
+    {% block extra %}
+      <br/>
+      <li><span style="font-weight:bold">{% if gateway.private %}Private{% else %}Public{% endif %}</span></li>
+      <br/>
+    {% endblock %}
+
+    {% block gatewaytitle %}
+      <h2 style="text-align:center"> Replica Gateway Information </h2>
+    {% endblock %}
+
+    {% block location %}
+  	  <form action='{% url django_rg.views.changelocation gateway.ms_username %}' method="post">{% csrf_token %}
+    {% endblock %}  
+  
+    {% block remove %}
+      <form action='{% url django_rg.views.removevolumes gateway.ms_username %}' method="post">{% csrf_token %}
+    {% endblock %}
+  
+    {% block add %}
+	   <form action='{% url django_rg.views.addvolume gateway.ms_username %}' method='post'>{% csrf_token %}
+    {% endblock %}
+		
+    {% block json %}
+      <form action='{% url django_rg.views.changejson gateway.ms_username %}' method='post' enctype="multipart/form-data">{% csrf_token %}
+    {% endblock %}
+
+    {% block password %}
+	    <form action='{% url django_rg.views.changepassword gateway.ms_username %}' method='post'>{% csrf_token %}
+		{% endblock %}
+    
+    <!-- private -->
+    {% block additional %}
+    <h4/>
+    <h4>Change Privacy</h4><h5>(Currently {% if gateway.private %}Private{% else %}Public{% endif %})</h5>
+      <form action='{% url django_rg.views.changeprivacy gateway.ms_username %}' method='post'>{% csrf_token %}
+        {{password_form.as_ul}}
+        <input class ="submit" type="submit" value="Change" />
+      </form>
+    {% endblock %}
+
+  {% block footer %}
+  	<a href='{% url django_rg.views.allgateways %}'>Replica Gateways</a>
+  	<a href='{% url django_home.views.home %}'>Home</a>
+  {% endblock %}

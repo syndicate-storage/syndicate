@@ -1,18 +1,61 @@
+Concepts:
+Does the my/all distinction need to even exist?
+
 This is the collection of files for the Syndicate front-end, using Django and webpp2 inside Google App Engine.
 
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
-Done
-- Create storage method wrapper get_xyz for returning one object when you know there should be one and otherwise throws an exception
-- get rid of all exposed queries
-- Added ListAll methods for all gateway types, and modified UG's listall to have two different types (by_voLUme and generic)
-- Consolidate gateway templates
-- made django gateway templates more DRY
+DONE ->
+- commented all of django_ag/
+- When volumes are now created, so is a root directory for them. Default 755 permissions
+- Fixed a UG creation error #32
+- Made ag_views.deletevolumes and rg_views.deletevolumes transactions
+- Changed defaults in setup.py for creating root directories
+    + 755 permissions, actual time created used as well.
+- Fixed some naming bugs regarding spaces for names for gateways and volumes. Now
+  all calls will strip() before converting spaces to underscore 
+- On AG viewgateway, if no volumes are attached, now no button shows up asking
+  you to remove attached volumes.
+- Now when deleting volumes, all other entities are updated accordingly. This is
+  yet to be done for other entities yet, so be aware when deleting them that
+  there might be rogue ghost traces of it in the MS.
+
+
+Current task TD -> 
+Change strip rules in all the different stuff (volume is done)
+get rid of submit buttons when no vols attache (RG/AG admin site)
+
+Tomorrow
+- Allow creation of unattached UG's (set v_id to zero)
+    + conversely, allow attaching and detaching of volumes.
+- Walk through django_rg.views simultaneously with ag after commenting
+- Ask Jude: do we want name restrictions on G's to match those on Volumes (i.e. Unicode)?
+    + what about for passwords?
+- when deleting volumes, is clean-up happening for users and gateways attached?
+    + 
+- conversely, when deleting gateways, is clean-up happenging for owners and volumes?
+- read through others code.
+- Transatctionify ag_views.py.deletevolumes. This might be necessary for Rg and Ug as well!
+- Clean out magic numbers
+- put Try blocks on all gateway.py, user.py, and volume.py Update methods for setattr.
+
+
+Long term
+- Admin site layout consistency for tables. Make sure they scale well with weird text (large names, descrips, configs etc)
+- Make more adminy, less fluff.
+- Mabye make tests?
+- Are the places where I'm using list-slicing to make deep copies ineffecient?
 
 To-do:
+
+
+- Ask Jude.
+	Should Volume record in MS store information on AGs/RGs, or gateway records store information about volumes, or both?
+	How should configuration for RG be represented in MS? Or does it need to be at all?
+	When a
+
 - fix error for UG delete gateway (? What is this)
-- AG/RG parameters
 - Ask Jude about key_listing methond in Gateway...
 
 Ag have to publish the existence of data in the MS. They can also serve data. Function like UG, can read and write metadata

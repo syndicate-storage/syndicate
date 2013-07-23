@@ -2,10 +2,12 @@
 <table class="volume" border>
       <thead>
 	<th> Gateway Name </th>
-	<th> Volume </th>
-	<th> Volume Owner </th>
+	<th> Gateway Owner </th>
+	<th> Volume(s) </th>
 	<th> Host </th>
 	<th> Port </th>
+	<th> Config </th>
+	<th> Private </th>
 	<th> Delete </th>
       </thead>
       <tbody>
@@ -13,18 +15,36 @@
 	{% for g, v, o in gateway_vols_owners %} 
 
 	<tr>
-      <td>{{g.ms_username|replace:"_|| "}}</td>
-	  <td>{{v.name|replace:"_|| "}}</td>
-	  <td>{{o.email}}</td>
+      <td><a href="{% url django_rg.views.viewgateway g.ms_username %}">{{g.ms_username|replace:"_|| "}}</a></td>
+      <td>{{o.email}}</td>
+      <td>
+      {% for volume in v %}
+      {% if not volume.private %}
+      {% if not forloop.last %}
+	  	<a href="{% url django_volume.views.viewvolume volume.volume_id %}">{{volume.name|replace:"_|| "}}</a>,<br>
+	  {% else %}
+	  	<a href="{% url django_volume.views.viewvolume volume.volume_id %}">{{volume.name|replace:"_|| "}}</a><br>
+	  {% endif %}
+	  {% endif %}
+	  {% endfor %}
+	  </td>
 	  <td>{{g.host}}</td>
 	  <td>{{g.port}}</td>
+	  <td>{{g.json_config}}</td>
+	  <td>
+	  {% if g.private %}
+	  	Yes
+	  {% else %}
+	    No
+	  {% endif %}
+	  </td>
 	  <td><a href="{% url django_rg.views.delete g.ms_username %}">Delete</a></td>
 	</tr>
 
 	{% empty %}
 
 	<tr>
-	  <td colspan="6"> No gateways exist </td>
+	  <td colspan="8"> No gateways exist </td>
 	</tr>
 
 	{% endfor %}

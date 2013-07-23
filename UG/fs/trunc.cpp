@@ -35,7 +35,7 @@ static void fs_entry_prepare_truncate_message( Serialization::WriteMsg* truncate
 // truncate an open file.
 // fent must be write locked.
 // NOTE: we must reversion the file on truncate, since size can't decrease on the MS for the same version of the entry!
-int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size, uid_t user, gid_t volume ) {
+int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size, uint64_t user, uint64_t volume ) {
 
    // make sure we have the latest manifest 
    int err = fs_entry_revalidate_manifest( core, fs_path, fent );
@@ -194,7 +194,7 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 
 
 // truncate, only if the version is correct (or ignore it if it's -1)
-int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t newsize, int64_t known_version, uid_t user, gid_t volume ) {
+int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t newsize, int64_t known_version, uint64_t user, uint64_t volume ) {
 
    int err = fs_entry_revalidate_path( core, fs_path );
    if( err != 0 ) {
@@ -231,7 +231,7 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t
 
 
 // truncate an file
-int fs_entry_truncate( struct fs_core* core, char const* fs_path, off_t size, uid_t user, gid_t volume ) {
+int fs_entry_truncate( struct fs_core* core, char const* fs_path, off_t size, uint64_t user, uint64_t volume ) {
    
    int err = fs_entry_revalidate_path( core, fs_path );
    if( err != 0 ) {
@@ -255,7 +255,7 @@ int fs_entry_truncate( struct fs_core* core, char const* fs_path, off_t size, ui
 }
 
 // truncate a file
-int fs_entry_ftruncate( struct fs_core* core, struct fs_file_handle* fh, off_t size, uid_t user, gid_t volume ) {
+int fs_entry_ftruncate( struct fs_core* core, struct fs_file_handle* fh, off_t size, uint64_t user, uint64_t volume ) {
    fs_file_handle_rlock( fh );
    fs_entry_wlock( fh->fent );
 

@@ -11,6 +11,9 @@ static bool gateway_running = true;
 static bool allow_overwrite = false;
 static md_path_locks gateway_md_locks;
 
+// gloabl config
+struct md_syndicate_conf *global_conf = NULL;
+
 // session ID for written data
 static int64_t SESSION_ID = 0;
 
@@ -282,7 +285,11 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
    }
    
    con_data->ctx.url_path = md_con_data->url_path;
-   con_data->ctx.username = md_con_data->user->username;
+
+   if( md_con_data->user != NULL ) {
+      con_data->ctx.username = md_con_data->user->username;
+   }
+   
    con_data->ctx.hostname = md_con_data->remote_host;
    con_data->ctx.method = md_con_data->method;
    con_data->ctx.size = md_con_data->conf->blocking_factor;
@@ -823,7 +830,6 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    char* username = NULL;
    char* password = NULL;
    char* volume_name = NULL;
-   char* volume_secret = NULL;
    char* dataset = NULL;
    char* gw_driver = NULL;
    bool pub_mode = false;
@@ -831,7 +837,6 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    static struct option gateway_options[] = {
       {"config-file\0Gateway configuration file path",      required_argument,   0, 'c'},
       {"volume-name\0Name of the volume to join",           required_argument,   0, 'v'},
-      {"volume-secret\0Volume authentication secret",       required_argument,   0, 'S'},
       {"username\0Gateway authentication identity",         required_argument,   0, 'u'},
       {"password\0Gateway authentication secret",           required_argument,   0, 'p'},
       {"port\0Syndicate port number",                       required_argument,   0, 'P'},
@@ -848,7 +853,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:S:u:p:P:m:fwl:i:d:g:h", gateway_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:g:h", gateway_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -856,10 +861,6 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
          }
          case 'c': {
             config_file = optarg;
-            break;
-         }
-         case 'S': {
-            volume_secret = optarg;
             break;
          }
          case 'u': {
@@ -927,7 +928,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    struct ms_client client;
    struct md_syndicate_conf conf;
    
-   rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, volume_secret, username, password );
+   rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, username, password );
    if( rc != 0 ) {
       exit(1);
    }

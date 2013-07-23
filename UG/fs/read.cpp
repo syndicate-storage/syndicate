@@ -53,18 +53,33 @@ ssize_t fs_entry_do_read_block( struct fs_core* core, char const* fs_path, struc
    else {
       // this is a remotely-hosted block--get its bits
       ssize_t nr = fs_entry_download_block( core, block_url, block_bits );
-      if( nr <= 0 ) {
+      if( nr <= 0 && !IS_STREAM_FILE( *fent ) ) {
+         char** RG_urls_save = NULL;
+         
          // try a replica
          ms_client_view_rlock( core->ms );
          if( core->ms->RG_urls != NULL ) {
             for( int i = 0; core->ms->RG_urls[i] != NULL; i++ ) {
                uint64_t block_id = fs_entry_block_id( offset, core->conf );
                char* replica_block_url = fs_entry_replica_block_url( core->ms->RG_urls[i], fent->version, block_id, fent->manifest->get_block_version( block_id ) );
+
+               // check after download to see if the RG set changed...
+               RG_urls_save = core->ms->RG_urls;
+               ms_client_view_unlock( core->ms );
+               
                nr = fs_entry_download_block( core, replica_block_url, block_bits );
                free( replica_block_url );
 
+               ms_client_view_rlock( core->ms );
+
                if( nr > 0 )
                   break;
+
+               if( core->ms->RG_urls != RG_urls_save ) {
+                  // RG set changed under us
+                  nr = -EAGAIN;
+                  break;
+               }
             }
          }
          ms_client_view_unlock( core->ms );
@@ -132,7 +147,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
    
    fs_entry_wlock( fh->fent );
    
-   if( fh->fent->size < offset ) {
+   if( !IS_STREAM_FILE( *(fh->fent) ) && fh->fent->size < offset ) {
       // eof
       fs_entry_unlock( fh->fent );
       fs_file_handle_unlock( fh );
@@ -174,29 +189,36 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
          break;
       }
 
+      // TODO: unlock fent somehow while we're reading/downloading
       ssize_t tmp = fs_entry_read_block( core, fh, offset + total_read, block );
       
       if( tmp > 0 ) {
-         ssize_t total_copy = MIN( file_size - (total_read + offset), (unsigned)MIN( (size_t)(tmp - block_offset), count - total_read ) );
+         size_t read_if_not_eof = (unsigned)MIN( (size_t)(tmp - block_offset), count - total_read );
+         size_t read_if_eof = file_size - (total_read + offset);
+         
+         ssize_t total_copy = IS_STREAM_FILE( *(fh->fent) ) ? read_if_not_eof : MIN( read_if_eof, read_if_not_eof );
+         
          dbprintf("file_size = %zd, total_read = %zd, tmp = %zd, block_offset = %zd, count = %lu, total_copy = %zd\n", file_size, total_read, tmp, block_offset, count, total_copy);
          
-         memcpy( buf + total_read, block + block_offset, total_copy );         
+         memcpy( buf + total_read, block + block_offset, total_copy );
 
-         // did we re-integrate this block?
-         // if so, store it
-         int64_t block_id = fs_entry_block_id( offset + total_read, core->conf );
-         if( URL_LOCAL( fh->fent->url ) && !fh->fent->manifest->is_block_local( block_id ) ) {
-            int rc = fs_entry_collate( core, fh->path, fh->fent, block_id, fh->fent->manifest->get_block_version( block_id ), block );
-            if( rc != 0 ) {
-               errorf("WARN: fs_entry_collate_block(%s, %" PRId64 ") rc = %d\n", fh->path, block_id, rc );
+         if( !IS_STREAM_FILE( *(fh->fent) ) ) {
+            // did we re-integrate this block?
+            // if so, store it
+            int64_t block_id = fs_entry_block_id( offset + total_read, core->conf );
+            if( URL_LOCAL( fh->fent->url ) && !fh->fent->manifest->is_block_local( block_id ) ) {
+               int rc = fs_entry_collate( core, fh->path, fh->fent, block_id, fh->fent->manifest->get_block_version( block_id ), block );
+               if( rc != 0 ) {
+                  errorf("WARN: fs_entry_collate_block(%s, %" PRId64 ") rc = %d\n", fh->path, block_id, rc );
+               }
             }
          }
          
          total_read += total_copy;
       }
-      else if( tmp == 0 ) {
+      else if( tmp != (signed)core->conf->blocking_factor ) {
          // EOF
-         ret = tmp;
+         ret = total_read;
          done = true;
       }
       

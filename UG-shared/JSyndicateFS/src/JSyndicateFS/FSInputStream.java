@@ -21,7 +21,7 @@ public class FSInputStream extends InputStream {
     private byte[] buffer = new byte[4096];
     private long offset;
     
-    public FSInputStream(File file) {
+    public FSInputStream(File file) throws IOException {
         if(file == null)
             throw new IllegalArgumentException("Can not create input stream from null file");
         
@@ -34,10 +34,10 @@ public class FSInputStream extends InputStream {
                 initialize(filehandle);
             } catch (FileNotFoundException ex) {
                 LOG.error(ex);
-                throw new IllegalArgumentException(ex.toString());
+                throw new IOException(ex.toString());
             } catch (IOException ex) {
                 LOG.error(ex);
-                throw new IllegalArgumentException(ex.toString());
+                throw new IOException(ex.toString());
             }
         } else {
             throw new IllegalArgumentException("Can not create input stream from null filesystem");

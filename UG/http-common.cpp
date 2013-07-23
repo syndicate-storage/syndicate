@@ -180,7 +180,6 @@ int http_get_redirect_url( char** redirect_url, struct syndicate_state* state, c
    if( block_id != INVALID_BLOCK_ID ) {
 
       // get the status of this block
-      // TODO: stat the path directly; don't call out to MS
       rc = http_block_exists( state, fs_path, block_id, sb );
       if( rc == -EXDEV ) {
          // block exists, and is remote

@@ -291,7 +291,7 @@ int fs_destroy( struct fs_core* core ) {
 
 
 
-static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int type, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int type, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
    struct timespec ts;
    clock_gettime( CLOCK_REALTIME, &ts );
    
@@ -333,7 +333,7 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
 
 // common fs_entry initializion code
 // a version of <= 0 will cause the FS to look at the underlying data to deduce the correct version
-static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, int type, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec) {
+static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, int type, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec) {
 
    memset( fent, 0, sizeof(struct fs_entry) );
    fs_entry_init_data( core, fent, type, name, url, version, owner, acting_owner, volume, mode, size, mtime_sec, mtime_nsec );
@@ -343,7 +343,7 @@ static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, in
 }
 
 // create an FS entry that is a file
-int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
    fs_entry_init_common( core, fent, FTYPE_FILE, name, url, version, owner, acting_owner, volume, mode, size, mtime_sec, mtime_nsec );
    fent->ftype = FTYPE_FILE;
 
@@ -355,7 +355,7 @@ int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const*
 
 
 // create an FS entry that is a file
-int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
    fs_entry_init_common( core, fent, FTYPE_FILE, name, url, version, owner, acting_owner, volume, mode, size, mtime_sec, mtime_nsec );
    fent->ftype = FTYPE_FIFO;
 
@@ -366,7 +366,7 @@ int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const*
 }
 
 // create an FS entry that is a directory
-int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uid_t owner, uid_t acting_owner, gid_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
    fs_entry_init_common( core, fent, FTYPE_DIR, name, url, version, owner, acting_owner, volume, mode, size, mtime_sec, mtime_nsec );
    fent->ftype = FTYPE_DIR;
    fent->children = new fs_entry_set();
@@ -563,7 +563,7 @@ int fs_core_unlock( struct fs_core* core ) {
 
 // resolve an absolute path, running a given function on each entry as the path is walked
 // returns the locked fs_entry at the end of the path on success
-struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* path, uid_t user, gid_t vol, bool writelock, int* err, int (*ent_eval)( struct fs_entry*, void* ), void* cls ) {
+struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err, int (*ent_eval)( struct fs_entry*, void* ), void* cls ) {
 
    // if this path ends in '/', then append a '.'
    char* fpath = NULL;
@@ -703,14 +703,14 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
 
 // resolve an absolute path.
 // returns the locked fs_entry at the end of the path on success
-struct fs_entry* fs_entry_resolve_path( struct fs_core* core, char const* path, uid_t user, gid_t vol, bool writelock, int* err ) {
+struct fs_entry* fs_entry_resolve_path( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err ) {
    return fs_entry_resolve_path_cls( core, path, user, vol, writelock, err, NULL, NULL );
 }
 
 
 // convert an fs_entry to an md_entry.
 // the URLs will all be public.
-int fs_entry_to_md_entry( struct fs_core* core, char const* fs_path, uid_t owner, gid_t volume, struct md_entry* dest ) {
+int fs_entry_to_md_entry( struct fs_core* core, char const* fs_path, uint64_t owner, uint64_t volume, struct md_entry* dest ) {
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, owner, volume, false, &err );
    if( !fent || err ) {

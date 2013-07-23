@@ -2,37 +2,50 @@
 {% load ms_extras %}
 
 {% block head %}
-    <h1> {{volume.name|replace:"_|| "}} <span style="font-style:italic;font-size:60%;">(Version {{volume.version}})</span></h1>
+<h1> {{volume.name|replace:"_|| "}} <span style="font-style:italic;font-size:60%;">(Version {{volume.version}})</span></h1>
 {% endblock %}
+
 {% block mainbody %}
-    <div class="wrapper">
+<div class="wrapper">
 
-      <div class="box leftbox">
-	<h3>Volume Actions</h3>
-	<hr/>
-	<ul>
-	  <li><a href="{% url django_volume.views.volumesettings volume.name %}">Volume Settings</a>
-	  </li>
+  <div class="box leftbox">
+    <h3>Volume Actions</h3>
+    <hr/>
+    <ul>
+      <li><a href="{% url django_volume.views.volumesettings volume.volume_id %}">Volume Settings</a></li>
 
-	  <li><a href='{% url django_volume.views.volumepermissions volume.name %}'>Change Permissions</a></li>
+      <li><a href='{% url django_volume.views.volumepermissions volume.volume_id %}'>Change Permissions</a></li>
 
-	  <li><a href='{% url django_volume.views.deletevolume volume.name %}'>Delete Volume</a></li>
-	</ul>
-      </div>
-
-      <div class="box rightbox">
-	<p> Volume is {% if volume.active %}<span style="font-weight:bold;color:green;">active{% else %}<span style="font-weight:bold;color:red;">inactive{% endif %}</span>.</p>
-	<p> Block size:<span style="font-weight:bold;"> {{volume.blocksize}}</span></p>
-	<br/>
-	<p><span style="font-weight:bold;">Description:</span>{{volume.description}}
-	</p>
-      </div>
-    </div>
+      <li><a href='{% url django_volume.views.deletevolume volume.volume_id %}'>Delete Volume</a></li>
+    </ul>
+  </div>
+  <div class="box rightbox">
+    <p> Volume is {% if volume.active %}<span style="font-weight:bold;color:green;">active{% else %}<span style="font-weight:bold;color:red;">inactive{% endif %}</span>.</p>
+    <p> Block size:<span style="font-weight:bold;"> {{volume.blocksize}}</span></p>
     <br/>
+    <p><span style="font-weight:bold;">Description:</span>{{volume.description}}
+    </p>
     <br/>
-      {% endblock %}
-      {% block footer %}
-    <a href='{% url django_volume.views.myvolumes %}'>My Volumes</a>
-    <a href='{% url django_home.views.home %}'>Home</a>
-    {% endblock %}
+    <p><span style="font-weight:bold;">Attached Replica Gateways:</span></p>
+    <li>
+      {% for g in rgs %}
+      <p><a href="{% url django_rg.views.viewgateway g.ms_username %}">{{ g.ms_username|replace:"_|| " }}</a></p>
+      {% endfor %}
+    </li>
+    <br/>
+    <p><span style="font-weight:bold;">Attached Acquisition Gateways:</span></p>
+    <li>
+      {% for g in ags %}
+        <p><a href="{% url django_rg.views.viewgateway g.ms_username %}">{{ g.ms_username|replace:"_|| " }}</a></p>
+      {% endfor %}
+    </li>
+  </div>
+</div>
+<br/>
+<br/>
+{% endblock %}
 
+{% block footer %}
+<a href='{% url django_volume.views.myvolumes %}'>My Volumes</a>
+<a href='{% url django_home.views.home %}'>Home</a>
+{% endblock %}

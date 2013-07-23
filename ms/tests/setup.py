@@ -728,8 +728,8 @@ DEFAULT_USERNAME=users[0]
 def testvolume_name( username ):
    return "testvolume-%s" % username.replace("@", "-")
 
-def UG_name( nodename ):
-   return "UG-%s" % nodename
+def G_name( gatetype, nodename ):
+   return "%s-%s" % (gatetype, nodename)
 
 def get_user( username ):
    if username not in users:
@@ -751,6 +751,9 @@ def test( ignore1, args ):
 
    # form flags
    do_ugs = False                # create default UG records (form argument: do_ugs=1) owned by the accompanied User identified by username
+   do_rgs = False                # create default RG records (form argument: do_ugs=1) 
+   do_ags = False                # create default AG records (form argument: do_ugs=1) 
+
    do_init = False               # create all default users and test volumes (form argument: do_init=1)
    reset_volume = False          # reset a volume's records (form argument: reset_volume=...)
    reset_volume_name = None      # volume to reset (taken from reset_volume=...)
@@ -771,14 +774,31 @@ def test( ignore1, args ):
       if args.has_key('do_ugs'):
          # create UGs from start_idx to end_idx
          do_ugs = True
+      if args.has_key('do_rgs'):
+         # create UGs from start_idx to end_idx
+         do_rgs = True
+      if args.has_key('do_ags'):
+         # create UGs from start_idx to end_idx
+         do_ags = True
       if args.has_key('do_init'):
-         # create all UGs and users
+         # create all Gs and users
          do_init = True
       if args.has_key('do_local_ug'):
          # only create a UG for localhost (good for local debugging on the dev_server)
          start_idx = len(nodes) - 1
          end_idx = len(nodes)
          do_ugs = True
+      if args.has_key('do_local_rg'):
+         # create an RG for localhost in MS records
+         start_idx = len(nodes) - 1
+         end_idx = len(nodes)
+         do_rgs = True
+      if args.has_key('do_local_ag'):
+         start_idx = len(nodes) - 1
+         end_idx = len(nodes)
+         # create an AG for localhost in MS records
+         do_ags = True
+
       if args.has_key('reset_volume'):
          # delete all MSEntry records for a volume, and recreate the root.
          reset_volume = True
@@ -827,14 +847,14 @@ def test( ignore1, args ):
                               fs_path="/",
                               url="http://localhost:32780/",
                               version=1,
-                              ctime_sec=1360015114,
-                              ctime_nsec=0,
-                              mtime_sec=1360015114,
-                              mtime_nsec=0,
+                              ctime_sec=now_sec,
+                              ctime_nsec=now_nsec,
+                              mtime_sec=now_sec,
+                              mtime_nsec=now_nsec,
                               owner_id=volume.owner_id,
                               acting_owner_id=volume.owner_id,
                               volume_id=volume.volume_id,
-                              mode=0777,
+                              mode=0755,
                               size=4096,
                               max_read_freshness=5000,
                               max_write_freshness=0
@@ -860,14 +880,12 @@ def test( ignore1, args ):
          
          try:
             # volume name: testvolume-$name
-            # volume secret: abcdef
-            volume_key = storage.create_volume( user, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, volume_secret="abcdef", volume_secret_salt="abcdef", active=True, owner_id=i+1 )
+            volume_key = storage.create_volume( user.email, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, active=True, owner_id=i+1, volume_secret="abcdef" )
             volume = volume_key.get()
-
          except:
             logging.info( "traceback: " + traceback.format_exc() )
             try:
-               volume = storage.read_volume( name=test_volume_name )
+               volume = storage.get_volume_by_name( test_volume_name )
             except:
                logging.info( "traceback: " + traceback.format_exc() )
                return (500, "Failed to read volume '%s'" % test_volume_name)
@@ -896,11 +914,40 @@ def test( ignore1, args ):
                                  mode=0777,
                                  size=4096,
                                  max_read_freshness=5000,
-                                 max_write_freshness=0
+                                 max_write_freshness=0,
                               )
 
 
+   if do_ags:
+      user = get_user( username )
+      if user == None:
+         return (500, "Invalid username %s" % username)
       
+      for i in xrange(start_idx, end_idx):
+         node = nodes[i]
+         try:
+            storage.create_acquisition_gateway(user, ms_username=G_name("AG", node), ms_password="sniff", host=node, port=32780 )
+            logging.info("Created AG %s" % G_name("AG", node))
+         except:
+            logging.info("traceback: %s" % traceback.format_exc())
+            # possibly already exists
+            pass
+
+   if do_rgs:
+      user = get_user( username )
+      if user == None:
+         return (500, "Invalid username %s" % username)
+      
+      for i in xrange(start_idx, end_idx):
+         node = nodes[i]
+         try:
+            storage.create_replica_gateway( user, ms_username=G_name("RG", node), ms_password="sniff", host=node, port=32780, private=False )
+            logging.info("Created RG %s" % G_name("RG", node))
+         except:
+            logging.info("traceback: %s" % traceback.format_exc())
+            # already exists
+            pass 
+
    # create fake UGs?
    if do_ugs:
       user = get_user( username )
@@ -908,13 +955,15 @@ def test( ignore1, args ):
          return (500, "Invalid username %s" % username)
 
       volume_name = testvolume_name( user.email )
-      volume = storage.read_volume( volume_name )
-         
+      volume = storage.get_volume_by_name( volume_name )
+      
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          try:
-            storage.create_user_gateway( user, volume, ms_username=UG_name(node), ms_password="sniff", host=node, port="32780" )
+            storage.create_user_gateway( user, volume, ms_username=G_name("UG", node), ms_password="sniff", host=node, port=32780, read_write=True )
+            logging.info("Created UG %s" % G_name("UG", node))
          except:
+            logging.info("traceback: %s" % traceback.format_exc())
             # already exists
             pass
 
@@ -928,7 +977,7 @@ def test( ignore1, args ):
          return (500, "Invalid username %s" % username)
 
       volume_name = testvolume_name( user.email )
-      volume = storage.read_volume( volume_name )
+      volume = storage.get_volume_by_name( volume_name )
 
       if ug_action == "create":
 
