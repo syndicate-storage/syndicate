@@ -71,13 +71,26 @@ def get_UG( username, password ):
    return UG
 
 
-def response_begin( request_handler, volume_name ):
+def response_begin( request_handler, volume_name_or_id ):
+   
+   volume_id = -1
+   try:
+      volume_id = int( volume_name_or_id )
+   except:
+      pass
+
    timing = {}
    
    timing['request_start'] = storagetypes.get_time()
 
    volume_read_start = storagetypes.get_time()
-   volume = Volume.Read( volume_name )
+
+   volume = None
+   if volume_id > 0:
+      volume = storage.read_volume( volume_id )
+   else:
+      volume = storage.get_volume_by_name( volume_name_or_id )
+      
    volume_read_time = storagetypes.get_time() - volume_read_start
 
    if volume == None:
@@ -182,8 +195,8 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
 
 
 class MSUGRequestHandler( webapp2.RequestHandler ):
-   def get( self, volume_name ):
-      UG, volume, timing = response_begin( self, volume_name )
+   def get( self, volume_id_str ):
+      UG, volume, timing = response_begin( self, volume_id_str )
       if UG == None or volume == None:
          return
 
@@ -203,8 +216,8 @@ class MSUGRequestHandler( webapp2.RequestHandler ):
 
 
 class MSRGRequestHandler( webapp2.RequestHandler ):
-   def get( self, volume_name ):
-      UG, volume, timing = response_begin( self, volume_name )
+   def get( self, volume_id_str ):
+      UG, volume, timing = response_begin( self, volume_id_str )
       if UG == None or volume == None:
          return
 
@@ -234,7 +247,7 @@ class MSFileRequestHandler(webapp2.RequestHandler):
    It will create, delete, and update metadata entries via POST.
    """
 
-   def get( self, volume_name, path ):
+   def get( self, volume_id_str, path ):
       file_request_start = storagetypes.get_time()
       
       if len(path) == 0:
@@ -243,7 +256,7 @@ class MSFileRequestHandler(webapp2.RequestHandler):
       if path[0] != '/':
          path = "/" + path
 
-      UG, volume, timing = response_begin( self, volume_name )
+      UG, volume, timing = response_begin( self, volume_id_str )
       if UG == None or volume == None:
          return
 
@@ -260,7 +273,7 @@ class MSFileRequestHandler(webapp2.RequestHandler):
       return
       
       
-   def post(self, volume_name, path ):
+   def post(self, volume_id_str, path ):
 
       file_post_start = storagetypes.get_time()
       
@@ -289,7 +302,7 @@ class MSFileRequestHandler(webapp2.RequestHandler):
          return
 
       # begin the response
-      UG, volume, timing = response_begin( self )
+      UG, volume, timing = response_begin( self, volume_id_str )
       if UG == None or volume == None:
          return
 
