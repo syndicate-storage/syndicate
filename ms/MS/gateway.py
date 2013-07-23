@@ -287,17 +287,6 @@ class UserGateway( Gateway ):
 
       return results
 
-   @classmethod
-   def ListAll( cls, attrs ):
-      '''
-      Attributes must be in dictionary, using format "UserGateway.PROPERTY [operator]: [value]"
-
-      '''
-      qry = UserGateway.query()
-      ret = cls.ListAll_runQuery( qry, attrs )
-
-      return ret
-
    
 class AcquisitionGateway( Gateway ):
 
@@ -439,18 +428,7 @@ class AcquisitionGateway( Gateway ):
       storagetypes.wait_futures([AG_future])
       return gateway.key
 
-   @classmethod
-   def ListAll( cls, attrs ):
-      '''
-      Attributes must be in dictionary, using format "AcquisitionGateway.PROPERTY: [operator] [value]"
-      eg {'AcquisitionGateway.volume_id': '== 5', ...} Yet to be THOROUGHLY tested/debugged.
-
-      '''
-      qry = AcquisitionGateway.query()
-      ret = cls.ListAll_runQuery( qry, attrs )
-
-      return ret
-
+   
    @classmethod
    def ListAll_ByVolume( cls, volume_id ):
       """
@@ -674,16 +652,4 @@ class ReplicaGateway( Gateway ):
          #storagetypes.memcache.add( cache_key, results )
 
       return results
-
-
-   @classmethod
-   def ListAll( cls, attrs ):
-      '''
-      Attributes must be in dictionary, using format "ReplicaGateway.PROPERTY [operator]: [value]"
-      '''
-
-      qry = ReplicaGateway.query()
-      ret = cls.ListAll_runQuery( qry, attrs )
-
-      return ret
 
