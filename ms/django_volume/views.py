@@ -14,6 +14,7 @@ import storage.storage as db
 from MS.volume import Volume
 from MS.user import SyndicateUser as User
 
+from MS.entry import MSENTRY_TYPE_DIR
 
 @authenticate
 def myvolumes(request):
@@ -703,7 +704,6 @@ def changevolumepassword(request, volume_name):
         return HttpResponseRedirect('/syn/thanks')
 
 
-@transactional(xg=True)
 @authenticate
 def createvolume(request):
     session = request.session
@@ -717,14 +717,7 @@ def createvolume(request):
         form = forms.CreateVolume(request.POST)
         if form.is_valid():
 
-            # Ensure volume name is unique
-            if db.read_volume(form.cleaned_data['name']):
-                message = "A volume with the name '{}' already exists.".format(form.cleaned_data['name'])
-                form = forms.CreateVolume()
-                t = loader.get_template('createvolume.html')
-                c = RequestContext(request, {'username':username,'form':form, 'message':message})
-                return HttpResponse(t.render(c))
-
+            # attempt to create the volume
             # CREATE VOLUME
             kwargs = {}
             kwargs['name'] = form.cleaned_data['name']
@@ -732,46 +725,36 @@ def createvolume(request):
             kwargs['description'] = form.cleaned_data['description']
             kwargs['volume_secret'] = form.cleaned_data['password']
             kwargs['private'] = form.cleaned_data['private']
-            user = db.read_user(username)
-            volume_key = db.create_volume(user, **kwargs)
-        
-#            user_volumes = user.volumes
-#            if user_volumes is None:
-#                user.volumes = [volume_key.get().volume_id]
-#            else:
-#                user.volumes.append(volume_key.get().volume_id)
 
-            # Update user volume fields (o and rw)
-            new_volumes_o = user.volumes_o
-            new_volumes_rw = user.volumes_rw
-
-            v_id = volume_key.get().volume_id
-
-            new_volumes_o.append(v_id)
-            new_volumes_rw.append(v_id)
-
-            fields = {'volumes_o':new_volumes_o, 'volumes_rw':new_volumes_rw}
-            db.update_user(username, **fields)
+            try:
+               volume_key = db.create_volume(username, **kwargs)
+               volume = volume_key.get()
+            except Exception, e:
+               logging.exception( e )
+               message = "Unable to create Volume '{}': {}".format( form.cleaned_data['name'], e.message )
+               form = forms.CreateVolume()
+               t = loader.get_template('createvolume.html')
+               c = RequestContext(request, {'username':username,'form':form, 'message':message})
+               return HttpResponse(t.render(c))
 
             # Create root for volume
-            # Ask Jude about these defaults
             rc = db.make_root( volume,
-                                    ftype=MSENTRY_TYPE_DIR,
-                                    fs_path="/",
-                                    url="http://localhost:32780/",
-                                    version=1,
-                                    ctime_sec=1360015114,
-                                    ctime_nsec=0,
-                                    mtime_sec=1360015114,
-                                    mtime_nsec=0,
-                                    owner_id=volume.owner_id,
-                                    acting_owner_id=volume.owner_id,
-                                    volume_id=volume.volume_id,
-                                    mode=0777,
-                                    size=4096,
-                                    max_read_freshness=5000,
-                                    max_write_freshness=0
-                                  )
+                               ftype=MSENTRY_TYPE_DIR,
+                               fs_path="/",
+                               url="http://localhost:32780/",
+                               version=1,
+                               ctime_sec=1360015114,
+                               ctime_nsec=0,
+                               mtime_sec=1360015114,
+                               mtime_nsec=0,
+                               owner_id=volume.owner_id,
+                               acting_owner_id=volume.owner_id,
+                               volume_id=volume.volume_id,
+                               mode=0777,
+                               size=4096,
+                               max_read_freshness=5000,
+                               max_write_freshness=0
+                             )
 
             session['new_change'] = "Your new volume is ready."
             session['next_url'] = '/syn/volume/myvolumes/'
