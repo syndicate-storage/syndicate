@@ -137,11 +137,11 @@ public class JSyndicateFS {
         }
         
         LOG.info("jsyndicatefs_init");
-        LOG.debug("Config - config_file : " + cfg.getConfig_file());
-        LOG.debug("Config - MS_url : " + cfg.getMs_url());
-        LOG.debug("Config - volume_name : " + cfg.getVolume_name());
+        LOG.info("Config - config_file : " + cfg.getConfig_file());
+        LOG.info("Config - MS_url : " + cfg.getMs_url());
+        LOG.info("Config - volume_name : " + cfg.getVolume_name());
         LOG.debug("Config - volume_password : " + cfg.getVolume_secret());
-        LOG.debug("Config - UG_name : " + cfg.getUGName());
+        LOG.info("Config - UG_name : " + cfg.getUGName());
         LOG.debug("Config - UG_password : " + cfg.getUGPassword());
         
         int ret = JSyndicateFSJNI.jsyndicatefs_init(cfg);
