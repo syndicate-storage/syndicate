@@ -78,6 +78,11 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
             throw new IOException("No input paths specified in job");
         }
         
+        LOG.info("input paths length : " + dirs.length);
+        for(Path dir : dirs) {
+            LOG.info("input path : " + dir.getPath());
+        }
+        
         ArrayList<FilenameFilter> filters = new ArrayList<FilenameFilter>();
         
         // add hidden file filter by default
