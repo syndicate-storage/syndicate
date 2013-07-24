@@ -23,6 +23,7 @@ struct gateway_context {
    time_t last_mod;     // for GET, this is the last-mod time of the file to be served
    char** args;
    int err;
+   int http_status;
 };
 
 
