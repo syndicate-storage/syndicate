@@ -19,6 +19,7 @@ GOOGLE_STORAGE = 'gs'
 # URI scheme for accessing local files.
 LOCAL_FILE = 'file'
 
+#XX this should be removed from here
 PROJECT_ID = '344533994214'
 
 DEBUG = True
@@ -71,16 +72,13 @@ def write_file(file_name, bucket_name):
 
     dst_uri = boto.storage_uri(bucket_name + '/' + file_name, GOOGLE_STORAGE)
 
-    # The key-related functions are a consequence of boto's
-    # interoperability with Amazon S3 (which employs the
-    # concept of a key mapping to contents).
+    # the key-related functions are a consequence of boto's interoperability with s3
+    # (concept of a key mapping to contents).
     dst_uri.new_key(headers=HEADER_VALUES).set_contents_from_file(contents)
     
     contents.close()
 
-    print 'Successfully created "%s/%s"' % (dst_uri.bucket_name, dst_uri.object_name)
-    
-    if(DEBUG): print "Written file to GS: " + file_name
+    if(DEBUG): print 'Written file to GS: "%s/%s"' % (dst_uri.bucket_name, dst_uri.object_name)
 
     return True
 
@@ -89,28 +87,71 @@ def read_file(file_name, bucket_name):
     
     if(DEBUG): print "Reading File: " + file_name
  
-    if(DEBUG): print "Read data from GS to file: " + file_name_with_path
-    
+    # Create a file-like object for holding the object contents.
+    object_contents = StringIO.StringIO()
+
+    src_uri = boto.storage_uri(bucket_name + '/' + file_name, GOOGLE_STORAGE)
+
+    # get_file() doesn't return the file contents
+    # it writes the file contents to "object_contents" instead
+    src_uri.get_key(headers=HEADER_VALUES).get_file(object_contents)
+
+    local_dst_uri = boto.storage_uri(file_name, LOCAL_FILE)
+
+    bucket_dst_uri = boto.storage_uri(bucket_name + '/' + file_name, GOOGLE_STORAGE)
+
+    for dst_uri in (local_dst_uri, bucket_dst_uri):
+        object_contents.seek(0)
+        dst_uri.new_key(headers=HEADER_VALUES).set_contents_from_file(object_contents)
+
+    object_contents.close()
+
+    if(DEBUG): print "Read data from GCS to file: " + file_name
+
     return True
    
 #-------------------------
 def delete_file(file_name, bucket_name):
     
-    if(DEBUG): print "Deleting File: " + file_name
-    
+    if(DEBUG): print "Deleting File: " + bucket_name + '/' + file_name
+
+    uri = boto.storage_uri(bucket_name + '/' + file_name, GOOGLE_STORAGE)
+  
+    #XX find the right delete object method
+    #uri.delete_object()
+  
     if(DEBUG): print "Deleted GS file: " + bucket_name + '/' + file_name
+
+    return True
+
+#-------------------------
+def delete_bucket(bucket_name):
+    
+    if(DEBUG): print "Deleting bucket: " + bucket_name
+
+    uri = boto.storage_uri(bucket_name, GOOGLE_STORAGE)
+  
+    #bucket must be empty before it can be deleted
+    #so delete objects first
+    for obj in uri.get_bucket():
+        print 'Deleting object: %s...' % obj.name
+        obj.delete()
+ 
+    uri.delete_bucket()
+
+    if(DEBUG): print "Deleted bucket: " + bucket_name 
 
     return True
 
 #-------------------------    
 def usage():
-    print 'Usage: {prog} [OPTIONS -w -r -d] <file_name> <bucket_name>'.format(prog=sys.argv[0])
+    print 'Usage: {prog} [OPTIONS -w -r -d --list] <file_name> <bucket_name>'.format(prog=sys.argv[0])
     return -1 
 
 #-------------------------    
 if __name__ == "__main__":
   
-    if len(sys.argv) != 4:
+    if len(sys.argv) < 4:
         usage() 
     else:
     	option = sys.argv[1]
@@ -122,7 +163,7 @@ if __name__ == "__main__":
         elif(option == '-r'):
         	read_file(file_name,bucket_name)
         elif(option == '-d'):
-        	delete_file(file_name,bucket_name)
+        	delete_bucket(bucket_name)
         elif(option == '--create'):
         	create_bucket(bucket_name)
         elif(option == '--list'):
