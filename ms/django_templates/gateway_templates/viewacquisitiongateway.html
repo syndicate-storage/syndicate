@@ -1,4 +1,5 @@
 {% extends "gateway_templates/viewgateway.html" %}
+{% load ms_extras %}
 
   {% block mainbody %}
   <div class="box">
@@ -20,7 +21,7 @@
   		<tbody>
   			{% for v, o in vol_owners %}
         <tr>
-  				<td><a href="{% url django_volume.views.viewvolume v.volume_id %}">{{v.name}}</a></td>
+  				<td><a href="{% url django_volume.views.viewvolume v.volume_id %}">{{v.name|replace:"_|| "}}</a></td>
   				<td>{{o.email}}</td>
         </tr>
   			{% empty %}
@@ -40,7 +41,7 @@
   	<h3 style="text-align:center">Change Settings</h3>
   	<h4>Gateway Location</h4>
     {% block location %}
-  	<form action='{% url django_ag.views.changelocation gateway.ms_username %}' method="post">{% csrf_token %}
+  	<form action='{% url django_ag.views.changelocation gateway.g_id %}' method="post">{% csrf_token %}
     {% endblock %}  
   		{{location_form.as_ul}}
   		{{password_form.as_ul}}
@@ -50,7 +51,7 @@
     <hr/>
     <h4>Remove Attached Volumes</h4>
     {% block remove %}
-    <form action='{% url django_ag.views.removevolumes gateway.ms_username %}' method="post">{% csrf_token %}
+    <form action='{% url django_ag.views.removevolumes gateway.g_id %}' method="post">{% csrf_token %}
       {% endblock %}
       {{ remove_forms.management_form }}
   			<table class="permissions" border>
@@ -78,7 +79,7 @@
     <hr/>
   	<h4>Attach New Volume</h4>
     {% block add %}
-	  <form action='{% url django_ag.views.addvolume gateway.ms_username %}' method='post'>{% csrf_token %}
+	  <form action='{% url django_ag.views.addvolume gateway.g_id %}' method='post'>{% csrf_token %}
     {% endblock %}
 		{{add_form.as_ul}}
 		{{password_form.as_ul}}
@@ -87,7 +88,7 @@
   <hr/>
   <h4>Change JSON Config</h4>
     {% block json %}
-    <form action='{% url django_ag.views.changejson gateway.ms_username %}' method='post' enctype="multipart/form-data">{% csrf_token %}
+    <form action='{% url django_ag.views.changejson gateway.g_id %}' method='post' enctype="multipart/form-data">{% csrf_token %}
     {% endblock %}
       {{json_form.as_ul}}
       {{password_form.as_ul}}
@@ -96,7 +97,7 @@
   <hr/>
 	<h4>Change Password</h4>
   {% block password %}
-	<form action='{% url django_ag.views.changepassword gateway.ms_username %}' method='post'>{% csrf_token %}
+	<form action='{% url django_ag.views.changepassword gateway.g_id %}' method='post'>{% csrf_token %}
 		{% endblock %}
     {{change_password_form.as_ul}}
 		<input class ="submit" type="submit" value="Change" />

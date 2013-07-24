@@ -1,6 +1,6 @@
 import logging
 
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, HttpResponse
 import storage.storage as db
 from django.template import Context, loader
 from django.shortcuts import redirect
@@ -24,27 +24,27 @@ def precheck(g_type, redirect_view):
     + redirect_view is the location to be redirected
 
     - request
-    - g_name
+    - g_id
     '''
 
     # Three decorator types
 
     def ag_gateway_precheck(f):
 
-        def ag_wrapper(request, g_name):
+        def ag_wrapper(request, g_id):
 
             if not request.POST:
-                return redirect('django_ag.views.viewgateway', g_name=g_name)
+                return redirect('django_ag.views.viewgateway', g_id=g_id)
 
             session = request.session
             username = session['login_email']
             try:
-                g = db.read_acquisition_gateway(g_name)
+                g = db.read_acquisition_gateway(g_id)
                 if not g:
                     raise Exception("No gateway exists.")
             except Exception as e:
-                logging.error("Error reading gateway %s : Exception: %s" % (g_name, e))
-                message = "No acquisition gateway by the name of %s exists." % g_name
+                logging.error("Error reading gateway %s : Exception: %s" % (g_id, e))
+                message = "No acquisition gateway by the name of %s exists." % g_id
                 t = loader.get_template("gateway_templates/viewgateway_failure.html")
                 c = Context({'message':message, 'username':username})
                 return HttpResponse(t.render(c))
@@ -52,33 +52,33 @@ def precheck(g_type, redirect_view):
             form = libforms.Password(request.POST)
             if not form.is_valid():
                 session['message'] = "Password required."
-                return redirect(redirect_view, g_name)
+                return redirect(redirect_view, g_id)
             # Check password hash
             if not AG.authenticate(g, form.cleaned_data['password']):
                 session['message'] = "Incorrect password."
-                return redirect(redirect_view, g_name)
+                return redirect(redirect_view, g_id)
 
-            return f(request, g_name)
+            return f(request, g_id)
 
         return ag_wrapper
 
     def ug_gateway_precheck(f):
         
-        def ug_wrapper(request, g_name):
+        def ug_wrapper(request, g_id):
             
             if not request.POST:
-                return redirect('django_ug.views.viewgateway', g_name=g_name)
+                return redirect('django_ug.views.viewgateway', g_id=g_id)
 
             session = request.session
             username = session['login_email']
 
             try:
-                g = db.read_user_gateway(g_name)
+                g = db.read_user_gateway(g_id)
                 if not g:
                     raise Exception("No gateway exists.")
             except Exception as e:
-                logging.error("Error reading gateway %s : Exception: %s" % (g_name, e))
-                message = "No user gateway by the name of %s exists." % g_name
+                logging.error("Error reading gateway %s : Exception: %s" % (g_id, e))
+                message = "No user gateway by the name of %s exists." % g_id
                 t = loader.get_template("gateway_templates/viewgateway_failure.html")
                 c = Context({'message':message, 'username':username})
                 return HttpResponse(t.render(c))
@@ -86,33 +86,33 @@ def precheck(g_type, redirect_view):
             form = libforms.Password(request.POST)
             if not form.is_valid():
                 session['message'] = "Password required."
-                return redirect(redirect_view, g_name)
+                return redirect(redirect_view, g_id)
             # Check password hash
             if not UG.authenticate(g, form.cleaned_data['password']):
                 session['message'] = "Incorrect password."
-                return redirect(redirect_view, g_name)
+                return redirect(redirect_view, g_id)
 
-            return f(request, g_name)
+            return f(request, g_id)
 
         return ug_wrapper
 
 
     def rg_gateway_precheck(f):
         
-        def rg_wrapper(request, g_name):
+        def rg_wrapper(request, g_id):
             
             if not request.POST:
-                return redirect('django_rg.views.viewgateway', g_name=g_name)
+                return redirect('django_rg.views.viewgateway', g_id=g_id)
 
             session = request.session
             username = session['login_email']
             try:
-                g = db.read_replica_gateway(g_name)
+                g = db.read_replica_gateway(g_id)
                 if not g:
                     raise Exception("No gateway exists.")
             except Exception as e:
-                logging.error("Error reading gateway %s : Exception: %s" % (g_name, e))
-                message = "No replica gateway by the name of %s exists." % g_name
+                logging.error("Error reading gateway %s : Exception: %s" % (g_id, e))
+                message = "No replica gateway by the name of %s exists." % g_id
                 t = loader.get_template("gateway_templates/viewgateway_failure.html")
                 c = Context({'message':message, 'username':username})
                 return HttpResponse(t.render(c))
@@ -120,13 +120,13 @@ def precheck(g_type, redirect_view):
             form = libforms.Password(request.POST)
             if not form.is_valid():
                 session['message'] = "Password required."
-                return redirect(redirect_view, g_name)
+                return redirect(redirect_view, g_id)
             # Check password hash
             if not RG.authenticate(g, form.cleaned_data['password']):
                 session['message'] = "Incorrect password."
-                return redirect(redirect_view, g_name)
+                return redirect(redirect_view, g_id)
 
-            return f(request, g_name)
+            return f(request, g_id)
 
         return rg_wrapper
 

@@ -50,8 +50,8 @@ def delete_volume( volume_id ):
    return Volume.Delete( volume_id )
 
    
-def list_volumes( attrs=None ):
-   return Volume.ListAll( attrs )
+def list_volumes( attrs=None, limit=None ):
+   return Volume.ListAll( attrs, limit=limit )
 
 
 def get_volume( volume_id ):
@@ -84,8 +84,8 @@ def delete_user( email, **fields ):
    return SyndicateUser.Delete( email, **fields )
 
    
-def list_users( attrs=None ):
-   return SyndicateUser.ListAll( attrs )
+def list_users( attrs=None, limit=None ):
+   return SyndicateUser.ListAll( attrs, limit=limit )
 
 def get_user( attr ):
    allusers = list_users(attr)
@@ -132,67 +132,59 @@ def read_msentry_path( volume, fs_path ):
 def create_user_gateway( user, volume, **kwargs ):
    return UserGateway.Create( user, volume, **kwargs )
 
-def read_user_gateway( ms_username ):
-   return UserGateway.Read( ms_username )
+def read_user_gateway( g_id ):
+   return UserGateway.Read( g_id )
 
-def update_user_gateway( ms_username, **fields):
-   return UserGateway.Update( ms_username, **fields )
+def update_user_gateway( g_id, **fields):
+   return UserGateway.Update( g_id, **fields )
 
-def list_user_gateways(attrs=None):
-   return UserGateway.ListAll(attrs)
+def list_user_gateways(attrs=None, limit=None):
+   return UserGateway.ListAll(attrs, limit=limit)
 
 def list_user_gateways_by_volume( volume_id ):
    return UserGateway.ListAll_ByVolume( volume_id )
    
-def delete_user_gateway( ms_username ):
-   return UserGateway.Delete( ms_username )
-
-def get_user_gateway( ms_username ):
-   return read_user_gateway( ms_username )
+def delete_user_gateway( g_id ):
+   return UserGateway.Delete( g_id )
 
 
 def create_acquisition_gateway( user, **kwargs ):
    return AcquisitionGateway.Create( user, **kwargs )
       
-def read_acquisition_gateway( ms_username ):
-   return AcquisitionGateway.Read( ms_username )
+def read_acquisition_gateway( g_id ):
+   return AcquisitionGateway.Read( g_id )
 
-def update_acquisition_gateway( ms_username, **fields ):
-   return AcquisitionGateway.Update( ms_username, **fields )
+def update_acquisition_gateway( g_id, **fields ):
+   return AcquisitionGateway.Update( g_id, **fields )
 
 def list_acquisition_gateways_by_volume( volume_id ):
    return AcquisitionGateway.ListAll_ByVolume( volume_id )
 
-def list_acquisition_gateways( attrs=None ):
-   return AcquisitionGateway.ListAll( attrs )
+def list_acquisition_gateways( attrs=None, limit=None ):
+   return AcquisitionGateway.ListAll( attrs, limit=limit )
    
-def delete_acquisition_gateway( ms_username ):
-   return AcquisitionGateway.Delete( ms_username )
+def delete_acquisition_gateway( g_id ):
+   return AcquisitionGateway.Delete( g_id )
 
-def get_acquisition_gateway( ms_username ):
-   return read_acquisition_gateway( ms_username )
    
 
 def create_replica_gateway( user, **kwargs ):
    return ReplicaGateway.Create( user, **kwargs )
 
 
-def read_replica_gateway( ms_username ):
-   return ReplicaGateway.Read( ms_username )
+def read_replica_gateway( g_id ):
+   return ReplicaGateway.Read( g_id )
 
-def update_replica_gateway( ms_username, **fields ):
-   return ReplicaGateway.Update( ms_username, **fields )
+def update_replica_gateway( g_id, **fields ):
+   return ReplicaGateway.Update( g_id, **fields )
 
 def list_replica_gateways_by_volume( volume_id ):
    return ReplicaGateway.ListAll_ByVolume( volume_id )
 
 
-def list_replica_gateways( attrs=None ):
-   return ReplicaGateway.ListAll( attrs )
+def list_replica_gateways( attrs=None, limit=None ):
+   return ReplicaGateway.ListAll( attrs, limit=limit )
    
-def delete_replica_gateway( ms_username ):
-   return ReplicaGateway.Delete( ms_username )
-
-def get_replica_gateway( ms_username ):
-   return read_replica_gateway( ms_username )
+def delete_replica_gateway( g_id ):
+   return ReplicaGateway.Delete( g_id )
    

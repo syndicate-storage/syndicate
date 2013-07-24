@@ -1,4 +1,5 @@
 {% extends "gateway_templates/viewgateway.html" %}
+{% load ms_extras %}
 
 {% block mainbody %}
 <div class="box">
@@ -19,7 +20,7 @@
     </thead>
     <tbody>
       <tr>
-        <td><a href="{% url django_volume.views.viewvolume vol.volume_id %}">{{vol.name}}</a></td>
+        <td><a href="{% url django_volume.views.viewvolume vol.volume_id %}">{{vol.name|replace:"_|| "}}</a></td>
         <td>{{owner.email}}</td>
       </tr>
     </tbody>
@@ -33,21 +34,21 @@
   <p class="error">{{message}}</p>
   <h3 style="text-align:center">Change Settings</h3>
   <h4>Change Gateway Location</h4>
-  <form action='{% url django_ug.views.changelocation gateway.ms_username %}' method="post">{% csrf_token %}
+  <form action='{% url django_ug.views.changelocation gateway.g_id %}' method="post">{% csrf_token %}
     {{location_form.as_ul}}
     {{password_form.as_ul}}
     <input class="submit" type="submit" value="Change" />
   </form>
   <hr/>
-  <h4>Change Attached Volume (not yet implemented)</h4>
-  <form action='{% url django_ug.views.changevolume gateway.ms_username %}' method="post">{% csrf_token %}
+  <h4>Change Attached Volume</h4>
+  <form action='{% url django_ug.views.changevolume gateway.g_id %}' method="post">{% csrf_token %}
       {{ change_form.as_ul }}
       {{ password_form.as_ul }}
     <input class="submit" type="submit" value="Change" />
   </form> 
   <hr/>
   <h4>Change Write Settings</h4><h5>Currently {% if gateway.read_write %}capable {% else %}incapable {% endif %}</h5>
-  <form action='{% url django_ug.views.changewrite gateway.ms_username %}' method='post' enctype="multipart/form-data">{% csrf_token %}
+  <form action='{% url django_ug.views.changewrite gateway.g_id %}' method='post' enctype="multipart/form-data">{% csrf_token %}
     {{password_form.as_ul}}
     {% if gateway.read_write %}
       <input class="submit" type="submit" value="Remove Write"/>
@@ -57,7 +58,7 @@
   </form>
   <hr/>
   <h4>Change Password</h4>
-  <form action='{% url django_ug.views.changepassword gateway.ms_username %}' method='post'>{% csrf_token %}
+  <form action='{% url django_ug.views.changepassword gateway.g_id %}' method='post'>{% csrf_token %}
     {{change_password_form.as_ul}}
     <input class ="submit" type="submit" value="Change" />
   </form>

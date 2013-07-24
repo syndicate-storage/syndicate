@@ -19,12 +19,12 @@
     {% for g, v in gateway_vols %} 
 
     <tr>
-      <td><a href="{% url django_ug.views.viewgateway g.ms_username %}">{{g.ms_username|replace:"_|| "}}</a></td>
+      <td><a href="{% url django_ug.views.viewgateway g.g_id %}">{{g.ms_username|replace:"_|| "}}</a></td>
       <td>{{v.name|replace:"_|| "}}</td>
       <td>{{g.host}}</td>
       <td>{{g.port}}</td>
       <td>{% if g.read_write %}Yes{% else %}No{% endif %}</td>
-      <td><a href="{% url django_ug.views.delete g.ms_username %}">Delete</a></td>
+      <td><a href="{% url django_ug.views.delete g.g_id %}">Delete</a></td>
     </tr>
 
     {% empty %}

@@ -2,7 +2,7 @@ from django.http import HttpResponseRedirect, HttpResponse
 import storage.storage as db
 from django.template import Context, loader
 from MS.user import SyndicateUser as User
-
+import logging
 from storage.storagetypes import transactional
 
 def authenticate(f):
@@ -31,7 +31,7 @@ def verifyownership(f):
         session = args[0].session
         user = db.read_user(session['login_email'])
         try:
-            vol = db.read_volume(kw['volume_name'])
+            vol = db.read_volume(kw['volume_id'])
         except:
             t = loader.get_template('viewvolume_failure.html')
             c = Context({'username':session['login_email']})

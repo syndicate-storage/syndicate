@@ -24,8 +24,6 @@ from django.template import Context, loader, RequestContext
 from django.views.decorators.csrf import csrf_exempt
 from django.forms.formsets import formset_factory
 
-
-
 from django_lib.auth import authenticate
 from django_lib.decorators import precheck
 from django_lib import gatewayforms
@@ -46,23 +44,24 @@ PRECHECK_REDIRECT = 'django_ag.views.viewgateway'
 
 
 @authenticate
-def viewgateway(request, g_name=""):
+def viewgateway(request, g_id=0):
     '''
     The view for viewing and changing any of the main settings on any AG. Passes
     forms for changing different settings, and the volumes attached to the gateway.
     '''
     session = request.session
     username = session['login_email']
+    g_id = int(g_id)
 
     # Check for passed error messages or inital data from session-state.
     message = session.pop('message', "")
-    initial_data = session.get('initial_data', [])
+    ag_initial_data = session.get('ag_initial_data', [])
 
     # Make sure this gateway actually exists.
-    g = db.read_acquisition_gateway(g_name)
+    g = db.read_acquisition_gateway(g_id)
     if not g:
-        logging.error("Error reading gateway %s : Does not exist." % (g_name))
-        message = "No acquisition gateway by the name of %s exists." % g_name
+        logging.error("Error reading gateway %s : Does not exist." % (g_id))
+        message = "No acquisition gateway with the ID %s exists." % g_id
         t = loader.get_template("gateway_templates/viewgateway_failure.html")
         c = Context({'message':message, 'username':username})
         return HttpResponse(t.render(c))
@@ -80,24 +79,24 @@ def viewgateway(request, g_name=""):
     owners = []
     vols = []
     for v_id in g.volume_ids:
-        vol = db.get_volume( v_id )
+        vol = db.read_volume( v_id )
         if not vol:
             logging.error("Volume ID in gateways volume_ids does not map to volume. Gateway: %s" % g_name)
         else:
             vols.append(vol)
-            attrs = {"SyndicateUser.owner_id ==":vol.volume_id}
+            attrs = {"SyndicateUser.owner_id ==":vol.owner_id}
             owners.append(db.get_user(attrs))
 
     # Create formatted data based on vols for the formset, if not passed in state.
-    if not initial_data:
+    if not ag_initial_data:
         for v in vols:
-            initial_data.append({'volume_name':v.name,
+            ag_initial_data.append({'volume_name':v.name,
                                  'remove':False})
-    session['initial_data'] = initial_data
+    session['ag_initial_data'] = ag_initial_data
 
     VolumeFormSet = formset_factory(gatewayforms.GatewayRemoveVolume, extra=0)
-    if initial_data:
-        formset = VolumeFormSet(initial=initial_data)
+    if ag_initial_data:
+        formset = VolumeFormSet(initial=ag_initial_data)
     else:
         formset = None
 
@@ -118,23 +117,28 @@ def viewgateway(request, g_name=""):
 
 @authenticate
 @precheck("AG", PRECHECK_REDIRECT)
-def changejson(request, g_name):
+def changejson(request, g_id):
     '''
     Handler for changing json config file.
     '''
     session = request.session
     username = session['login_email']
+    g_id = int(g_id)
 
     form = gatewayforms.ModifyGatewayConfig(request.POST)
     if form.is_valid():
+        g = db.read_acquisition_gateway(g_id)
+        if not g:
+            session['message'] = "Gateway with ID {} does not exist.".format(g_id)
+            return redirect('django_ag.views.viewgateway', g_id)
 
         # Verify upload success
         if 'json_config' not in request.FILES:
             session['message'] = "No uploaded file."
-            return redirect('django_ag.views.viewgateway', g_name)
+            return redirect('django_ag.views.viewgateway', g_id)
         if request.FILES['json_config'].multiple_chunks():
             session['message'] = "Uploaded file too large; please make smaller than 2.5M"
-            return redirect('django_ag.views.viewgateway', g_name)
+            return redirect('django_ag.views.viewgateway', g_id)
         config = request.FILES['json_config'].read()
 
         # Verify JSON format
@@ -149,40 +153,41 @@ def changejson(request, g_name):
             except Exception as e:
                 logging.error("Definite JSON load error %s" % e)
                 session['message'] = "Error parsing given JSON text."
-                return redirect('django_ag.views.viewgateway', g_name)
+                return redirect('django_ag.views.viewgateway', g_id)
 
         # Update and redirect
-        db.update_acquisition_gateway(g_name, **fields)
+        db.update_acquisition_gateway(g_id, **fields)
         session['new_change'] = "We've changed your gateways's JSON configuration."
-        session['next_url'] = '/syn/AG/viewgateway/' + g_name
+        session['next_url'] = '/syn/AG/viewgateway/' + g_id
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
 
     else:
         session['message'] = "Invalid form. Did you upload a file?"
-        return redirect('django_ag.views.viewgateway', g_name)
+        return redirect('django_ag.views.viewgateway', g_id)
 
 @authenticate
-def changepassword(request, g_name):
+def changepassword(request, g_id):
     '''
     Handler for changing gateway password. Since it can't use precheck because of password reasons,
     must verify POST-ness itself.
     '''
     session = request.session
     username = session['login_email']
+    g_id = int(g_id)
 
 
     # Precheck
     if request.method != "POST":
-        return HttpResponseRedirect('/syn/AG/viewgateway' + g_name)
+        return HttpResponseRedirect('/syn/AG/viewgateway/' + g_id)
 
     try:
-        g = db.read_acquisition_gateway(g_name)
+        g = db.read_acquisition_gateway(g_id)
         if not g:
             raise Exception("No gateway exists.")
     except Exception as e:
-        logging.error("Error reading gateway %s : Exception: %s" % (g_name, e))
-        message = "No acquisition gateway by the name of %s exists." % g_name
+        logging.error("Error reading gateway with ID %d : Exception: %s" % (g_id, e))
+        message = "No acquisition gateway with the ID %d exists." % g_id
         t = loader.get_template("gateway_templates/viewgateway_failure.html")
         c = Context({'message':message, 'username':username})
         return HttpResponse(t.render(c))
@@ -193,28 +198,28 @@ def changepassword(request, g_name):
 
     if not form.is_valid():
         session['message'] = "You must fill out all password fields."
-        return redirect('django_ag.views.viewgateway', g_name)
+        return redirect('django_ag.views.viewgateway', g_id)
     else:
         # Check password hash
         if not AG.authenticate(g, form.cleaned_data['oldpassword']):
             session['message'] = "Incorrect password."
-            return redirect('django_ag.views.viewgateway', g_name)
+            return redirect('django_ag.views.viewgateway', g_id)
         elif form.cleaned_data['newpassword_1'] != form.cleaned_data['newpassword_2']:
             session['message'] = "Your new passwords did not match each other."
-            return viewgateway(request, g_name)
+            return redirect('django_ag.views.viewgateway', g_id)
         # Ok to change password, then redirect
         else:
             new_hash = AG.generate_password_hash(form.cleaned_data['newpassword_1'])
             fields = {'ms_password_hash':new_hash}
             try:
-                db.update_acquisition_gateway(g_name, **fields)
+                db.update_acquisition_gateway(g_id, **fields)
             except Exception as e:
-                logging.error("Unable to update acquisition gateway %s. Exception %s" % (g_name, e))
+                logging.error("Unable to update acquisition gateway %d. Exception %s" % (g_id, e))
                 session['message'] = "Unable to update gateway."
-                return redirect('django_ag.views.viewgateway', g_name)
+                return redirect('django_ag.views.viewgateway', g_id)
 
             session['new_change'] = "We've changed your gateways's password."
-            session['next_url'] = '/syn/AG/viewgateway' + g_name
+            session['next_url'] = '/syn/AG/viewgateway/' + g_id
             session['next_message'] = "Click here to go back to your gateway."
             return HttpResponseRedirect('/syn/thanks')
 
@@ -222,7 +227,7 @@ def changepassword(request, g_name):
 
 @authenticate
 @precheck("AG", PRECHECK_REDIRECT)
-def addvolume(request, g_name):
+def addvolume(request, g_id):
     '''
     Handler for adding a volume to the gateay.
     '''
@@ -231,29 +236,34 @@ def addvolume(request, g_name):
     # up the code when it doesn't reach update() in this view and allowing for
     # errors that would break in GAE if the decorator was applied to the entire view.
     @transactional(xg=True)
-    def update(vname, gname, vfields, gfields):
-        db.update_volume(vname, **vfields)
-        db.update_acquisition_gateway(g_name, **gfields)
-        session.pop('initial_data')
+    def update(v_id, g_id, vfields, gfields):
+        db.update_volume(v_id, **vfields)
+        db.update_acquisition_gateway(g_id, **gfields)
+        session.pop('ag_initial_data')
 
     session = request.session
     username = session['login_email']
+    g_id = int(g_id)
 
     form = gatewayforms.GatewayAddVolume(request.POST)
     if form.is_valid():
-        volume = db.read_volume(form.cleaned_data['volume_name'])
-        if not volume:
+        attrs = {"Volume.name ==":form.cleaned_data['volume_name'].strip().replace(" ", "_")}
+        vols = db.list_volumes(attrs, limit=1)
+        if vols:
+            volume = vols[0]
+            logging.info(volume)
+        else:
             session['message'] = "The volume %s doesn't exist." % form.cleaned_data['volume_name']
-            return redirect('django_ag.views.viewgateway', g_name)
+            return redirect('django_ag.views.viewgateway', g_id)
 
-        gateway = db.read_acquisition_gateway(g_name)
+        gateway = db.read_acquisition_gateway(g_id)
 
         # Prepare upcoming volume state
         if volume.ag_ids:
             new_ags = volume.ag_ids[:]
             new_ags.append(gateway.ag_id)
         else:
-            new_ags = [gateway.ag_id]
+            new_ags = [gateway.g_id]
         vfields = {'ag_ids':new_ags}
 
         # Preare upcoming AG state
@@ -261,7 +271,7 @@ def addvolume(request, g_name):
         new_vid = volume.volume_id
         if new_vid in old_vids:
             session['message'] = "That volume is already attached to this gateway!"
-            return redirect('django_ag.views.viewgateway', g_name)
+            return redirect('django_ag.views.viewgateway', g_id)
         if old_vids:
             old_vids.append(new_vid)
             new_vids = old_vids
@@ -271,22 +281,22 @@ def addvolume(request, g_name):
         # Update and redirect    
         try:
             gfields={'volume_ids':new_vids}
-            update(form.cleaned_data['volume_name'], g_name, vfields, gfields)
+            update(volume.volume_id, g_id, vfields, gfields)
         except Exception as e:
-            logging.error("Unable to update acquisition gateway %s or volume %s. Exception %s" % (g_name, form.cleaned_data['volume_name'], e))
+            logging.error("Unable to update acquisition gateway %s or volume %s. Exception %s" % (gateway.ms_username, form.cleaned_data['volume_name'], e))
             session['message'] = "Unable to update gateway."
-            return redirect('django_ag.views.viewgateway', g_name)
+            return redirect('django_ag.views.viewgateway', g_id)
         session['new_change'] = "We've updated your AG's volumes."
-        session['next_url'] = '/syn/AG/viewgateway/' + g_name
+        session['next_url'] = '/syn/AG/viewgateway/' + g_id
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:
         session['message'] = "Invalid entries for adding volumes."
-        return viewgateway(request, g_name)
+        return redirect('django_ag.views.viewgateway', g_id)
 
 @authenticate
 @precheck("AG", PRECHECK_REDIRECT)
-def removevolumes(request, g_name):
+def removevolumes(request, g_id):
     '''
     This handler allows removal of one or many volumes from an Aqcquisition
     Gateway. It calls multi_update() as a helper method to allow transactional
@@ -297,16 +307,17 @@ def removevolumes(request, g_name):
     # errors that would break in GAE if the decorator was applied to the entire view.
     # It updates multiple volumes at once
     @transactional(xg=True)
-    def multi_update(vnames, gname, vfields, gfields):
+    def multi_update(v_ids, g_id, vfields, gfields):
 
-        for vname, vfield in zip(vnames, vfields):
-            db.update_volume(vname, **vfield)
-        db.update_acquisition_gateway(g_name, **gfields)
-        session.pop('initial_data')
+        for v_id, vfield in zip(v_ids, vfields):
+            db.update_volume(v_id, **vfield)
+        db.update_acquisition_gateway(g_id, **gfields)
+        session.pop('ag_initial_data')
 
 
     session = request.session
     username = session['login_email']
+    g_id = int(g_id)
 
     VolumeFormSet = formset_factory(gatewayforms.GatewayRemoveVolume, extra=0)
     formset = VolumeFormSet(request.POST)
@@ -315,51 +326,52 @@ def removevolumes(request, g_name):
     formset.is_valid()
 
     volume_ids_to_be_removed = []
-    volume_names_to_be_removed = []
     new_ags_set = []
 
-    initial_and_forms = zip(session,get('initial_data', []), formset.forms)
+    initial_and_forms = zip(session.get('ag_initial_data', []), formset.forms)
     for i, f in initial_and_forms:
 
         if f.cleaned_data['remove']:
-            vol = db.read_volume(i['volume_name'])
+            attrs = {"Volume.name ==":i['volume_name']}
+            vols = db.list_volumes(attrs, limit=1)
+            vol = vols[0]
 
             # update each volume's new AG list
             new_ags = vol.ag_ids[:]
-            new_ags.remove(db.read_acquisition_gateway(g_name).ag_id)
+            new_ags.remove(int(g_id))
             new_ags_set.append({'ag_ids':new_ags})
 
             # update info for AG update
-            volume_ids_to_be_removed.append(db.read_volume(i['volume_name']).volume_id)
-            volume_names_to_be_removed.append(i['volume_name'])
+            volume_ids_to_be_removed.append(vol.volume_id)
 
     if not volume_ids_to_be_removed:
         session['message'] = "You must select at least one volume to remove."
-        return redirect('django_ag.views.viewgateway', g_name)
+        return redirect('django_ag.views.viewgateway', g_id)
 
-    old_vids = set(db.read_acquisition_gateway(g_name).volume_ids)
+    old_vids = set(db.read_acquisition_gateway(g_id).volume_ids)
     new_vids = list(old_vids - set(volume_ids_to_be_removed))
     gfields = {'volume_ids':new_vids}
     try:
-        multi_update(volume_names_to_be_removed, g_name, new_ags_set, gfields)
+        multi_update(volume_ids_to_be_removed, g_id, new_ags_set, gfields)
     except Exception as e:
-        logging.error("Unable to update acquisition gateway %s. Exception %s" % (g_name, e))
+        logging.error("Unable to update acquisition gateway %s. Exception %s" % (g_id, e))
         session['message'] = "Unable to update gateway."
-        return redirect('django_ag.views.viewgateway', g_name)
+        return redirect('django_ag.views.viewgateway', g_id)
     session['new_change'] = "We've updated your AG's volumes."
-    session['next_url'] = '/syn/AG/viewgateway/' + g_name
+    session['next_url'] = '/syn/AG/viewgateway/' + g_id
     session['next_message'] = "Click here to go back to your gateway."
     return HttpResponseRedirect('/syn/thanks')
 
 
 @authenticate
 @precheck("AG", PRECHECK_REDIRECT)
-def changelocation(request, g_name):
+def changelocation(request, g_id):
     '''
     Handler for changing the host:port of the gateway.
     '''
     session = request.session
     username = session['login_email']
+    g_id = int(g_id)
         
 
     form = gatewayforms.ModifyGatewayLocation(request.POST)
@@ -370,19 +382,19 @@ def changelocation(request, g_name):
 
         # Update and redirect
         try:
-            db.update_acquisition_gateway(g_name, **fields)
+            db.update_acquisition_gateway(g_id, **fields)
         except Exception as e:
-            logging.error("Unable to update AG: %s. Error was %s." % (g_name, e))
+            logging.error("Unable to update AG: %d. Error was %s." % (g_id, e))
             session['message'] = "Error. Unable to change acquisition gateway."
-            return redirect('django_ag.views.viewgateway', g_name)
+            return redirect('django_ag.views.viewgateway', g_id)
 
         session['new_change'] = "We've updated your AG."
-        session['next_url'] = '/syn/AG/viewgateway/' + g_name
+        session['next_url'] = '/syn/AG/viewgateway/' + g_id
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:
         session['message'] = "Invalid form entries for gateway location."
-        return redirect('django_ag.views.viewgateway', g_name)
+        return redirect('django_ag.views.viewgateway', g_id)
 
 @authenticate
 def allgateways(request):
@@ -407,7 +419,7 @@ def allgateways(request):
     for g in gateways:
         volset = []
         for v in g.volume_ids:
-            volset.append(db.get_volume(v))
+            volset.append(db.read_volume(v))
         vols.append(volset)
         attrs = {"SyndicateUser.owner_id ==":g.owner_id}
         g_owners.append(db.get_user(attrs))
@@ -526,29 +538,30 @@ def create(request):
         return give_create_form(username, session)
 
 @authenticate
-def delete(request, g_name):
+def delete(request, g_id):
     '''
     View for deleting AG.
     '''
 
     # Helper method used to simplify error-handling. When fields are entered incorrectly,
     # a session message is set and this method is called.
-    def give_delete_form(username, g_name, session):
+    def give_delete_form(username, g, session):
         message = session.pop('message', "")
         form = gatewayforms.DeleteGateway()
         t = loader.get_template('gateway_templates/delete_acquisition_gateway.html')
-        c = RequestContext(request, {'username':username, 'g_name':g_name, 'form':form, 'message':message})
+        c = RequestContext(request, {'username':username, 'g':g, 'form':form, 'message':message})
         return HttpResponse(t.render(c))
 
 
 
     session = request.session
     username = session['login_email']
+    g_id = int(g_id)
 
-    ag = db.read_acquisition_gateway(g_name)
+    ag = db.read_acquisition_gateway(g_id)
     if not ag:
         t = loader.get_template('gateway_templates/delete_acquisition_gateway_failure.html')
-        c = RequestContext(request, {'username':username, 'g_name':g_name})
+        c = RequestContext(request, {'username':username})
         return HttpResponse(t.render(c))
 
     if request.POST:
@@ -557,12 +570,12 @@ def delete(request, g_name):
         if form.is_valid():
             if not AG.authenticate(ag, form.cleaned_data['g_password']):
                 session['message'] = "Incorrect Acquisition Gateway password"
-                return give_delete_form(username, g_name, session)
+                return give_delete_form(username, ag, session)
             if not form.cleaned_data['confirm_delete']:
                 session['message'] = "You must tick the delete confirmation box."
-                return give_delete_form(username, g_name, session)
+                return give_delete_form(username, ag, session)
             
-            db.delete_acquisition_gateway(g_name)
+            db.delete_acquisition_gateway(g_id)
             session['new_change'] = "Your gateway has been deleted."
             session['next_url'] = '/syn/AG/allgateways'
             session['next_message'] = "Click here to see all acquisition gateways."
@@ -578,10 +591,10 @@ def delete(request, g_name):
                 for m in v:
                     session['message'] = session['message'] + m + " "
 
-            return give_delete_form(username, g_name, session)
+            return give_delete_form(username, ag, session)
     else:
         # Not a POST, give them blank form
-        return give_delete_form(username, g_name, session)
+        return give_delete_form(username, ag, session)
 
 
 @csrf_exempt
@@ -623,8 +636,11 @@ def urldelete(request, g_name, g_password):
     session = request.session
     username = session['login_email']
 
-    ag = db.read_acquisition_gateway(g_name)
-    if not ag:
+    attrs = {"AcquisitionGateway.ms_username ==":g_name}
+    ags = db.list_acquisition_gateways(attrs, limit=1)
+    if ags:
+        ag = ags[0]
+    else:
         return HttpResponse("AG %s does not exist." % g_name)
     if not AG.authenticate(ag, g_password):
         return HttpResponse("Incorrect AG password.")

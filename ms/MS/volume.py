@@ -73,7 +73,7 @@ class Volume( storagetypes.Object ):
    HTTP_VOLUME_SECRET = "Syndicate-VolumeSecret"
    
    name = storagetypes.String()
-   blocksize = storagetypes.Integer( indexed=False ) # Stored in kilobytes!!
+   blocksize = storagetypes.Integer( indexed=False ) # Stored in bytes!!
    active = storagetypes.Boolean()
    description = storagetypes.Text()
    owner_id = storagetypes.Integer()
@@ -128,7 +128,7 @@ class Volume( storagetypes.Object ):
 
       
    validators = {
-      "name": (lambda cls, value: len( value.translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")) ) == 0 and not is_int(value) ),
+      "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")) ) == 0 and not is_int(value) ),
       "private": (lambda cls, value: type(value) is bool)
    }
 
