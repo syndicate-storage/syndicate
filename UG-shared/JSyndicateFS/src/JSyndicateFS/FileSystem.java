@@ -34,6 +34,7 @@ public class FileSystem implements Closeable {
     private static final int DEFAULT_NEW_DIR_PERMISSION = 509;
     
     private static FileSystem fsInstance;
+    private static ArrayList<FileSystemEventHandler> eventHandlers = new ArrayList<FileSystemEventHandler>();
     
     private Configuration conf;
     private Path workingDir;
@@ -56,6 +57,20 @@ public class FileSystem implements Closeable {
         return fsInstance;
     }
     
+    public static void addEventHandler(FileSystemEventHandler handler) {
+        if(handler == null) 
+            throw new IllegalArgumentException("Cannot add null handler");
+        
+        eventHandlers.add(handler);
+    }
+    
+    public static void removeEventHandler(FileSystemEventHandler handler) {
+        if(handler == null) 
+            throw new IllegalArgumentException("Cannot remove null handler");
+        
+        eventHandlers.remove(handler);
+    }
+    
     /*
      * Construct FileSystem from configuration
      */
@@ -69,6 +84,11 @@ public class FileSystem implements Closeable {
         if(conf == null) {
             LOG.error("FileSystem Initialize failed : configuration is null");
             throw new IllegalArgumentException("Can not initialize the filesystem from null configuration");
+        }
+        
+        // call handler
+        for(FileSystemEventHandler handler : eventHandlers) {
+            handler.onBeforeCreate(conf);
         }
         
         // set configuration unmodifiable
@@ -91,6 +111,11 @@ public class FileSystem implements Closeable {
         this.workingDir = getRootPath();
         this.metadataCache = new TimeoutCache<Path, FileStatus>(conf.getMaxMetadataCacheSize(), conf.getCacheTimeoutSecond());
         this.closed = false;
+        
+        // call handler
+        for(FileSystemEventHandler handler : eventHandlers) {
+            handler.onAfterCreate(conf);
+        }
     }
     
     public Configuration getConfiguration() {
@@ -168,6 +193,11 @@ public class FileSystem implements Closeable {
             throw new IOException("The filesystem is already closed");
         }
         
+        // call handler
+        for(FileSystemEventHandler handler : eventHandlers) {
+            handler.onBeforeDestroy(conf);
+        }
+        
         PendingExceptions pe = new PendingExceptions();
         
         // destroy all opened files
@@ -189,6 +219,11 @@ public class FileSystem implements Closeable {
         
         // destroy all caches
         this.metadataCache.clear();
+        
+        // call handler
+        for(FileSystemEventHandler handler : eventHandlers) {
+            handler.onAfterDestroy(conf);
+        }
         
         if(!pe.isEmpty()) {
             throw new IOException(pe.getMessage());
