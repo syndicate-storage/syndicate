@@ -357,6 +357,14 @@ block_status ProcHandler::get_block_status(struct gateway_ctx *ctx)
 		blk_stat.in_progress = true;
 	    }
 	}
+	else if (ctx->block_id == pte->current_max_block) {
+	    if (pte->is_read_complete) {
+		blk_stat.block_available = true;
+	    }
+	    else {
+		blk_stat.in_progress = true;
+	    }
+	}
 	else {
 		blk_stat.block_available = true;
 	}
