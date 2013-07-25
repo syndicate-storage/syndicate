@@ -344,6 +344,7 @@ class AcquisitionGateway( Gateway ):
       """
       cred_pb.username = self.ms_username
       cred_pb.password_hash = self.ms_password_hash
+      
 
    @classmethod
    def generate_credentials( cls ):

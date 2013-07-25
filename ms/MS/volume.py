@@ -330,9 +330,24 @@ class Volume( storagetypes.Object ):
       storagetypes.memcache.delete(volume_key_name)
 
       old_version = volume.version
+      old_rg_version = volume.RG_version
+      old_ug_version = volume.UG_version
+
       for (k,v) in fields.items():
          setattr( volume, k, v )
-      
+
+      # If rg_ids change update, RG_version, but don't allow manual changing.
+      if "RG_version" in fields:
+         volume.RG_version = old_rg_version
+      if "rg_ids" in fields:
+         volume.RG_version = old_rg_version + 1
+
+      # Kinda hacky, but allows deliberate updating of UG_version field when changing 
+      # UG's attached volume by assuming any attempt to change UG_version is a desire to increment
+      if "UG_version" in fields:
+         logging.info("SDKJFLDJF")
+         setattr( volume, "UG_version", old_ug_version + 1)
+
       volume.version = old_version + 1
       return volume.put()
          

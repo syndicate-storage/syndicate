@@ -10,8 +10,7 @@ DONE ->
 
 Current task TD -> 
 
-- Fixed bug in ug.views
-- Allow exitence and creation of UG's unattached to volumes.
+Enabled UG and RG version on Volumes
 
 ON HOLD (1st after finsiehd with TD)
 
@@ -20,16 +19,10 @@ Tomorrow
 
 - Comment django_home, django_lib, django_ug, django_volume
 
-- Transactionify create in gateway.py for all 3 gateways.
+- Transactionify create in gateway.py for all 3 gateways, as well as for Volume!
 
 - Is override forms even necessary?
 
-- Since schema change, to be checked by Jude
-  + *G.py authenticate()
-  + Protobuf stuff
-  + rg/ag version?
-
-- Is it bad form to have URL's with unmasked volume_ids?
 - Ask Jude: do we want name restrictions on G's to match those on Volumes (i.e. Unicode allowed or not? Currently NOT allowed).
     + what about for passwords?
 

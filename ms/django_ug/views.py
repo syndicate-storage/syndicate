@@ -160,6 +160,18 @@ def changevolume(request, g_id):
     username = session['login_email']
     user = db.read_user(username)
     g_id = int(g_id)
+    g = db.read_user_gateway(g_id)
+
+    @transactional(xg=True)
+    def update_ug_and_vol(g_id, gfields, vol1_id, vol2_id):
+        db.update_user_gateway(g_id, **gfields)
+        attrs = {"UG_version":1}
+
+        # Force update of UG version
+        db.update_volume(vol1_id, **attrs)
+        db.update_volume(vol2_id, **attrs)
+
+
 
     form = gatewayforms.ChangeVolume(request.POST)
     if form.is_valid():
@@ -167,16 +179,16 @@ def changevolume(request, g_id):
         vols = db.list_volumes(attrs, limit=1)
         if vols:
             new_vol = vols[0]
-            logging.info(new_vol)
         else:
             session['message'] = "No volume %s exists." % form.cleaned_data['volume_name']
             return redirect('django_ug.views.viewgateway', g_id)
         if (new_vol.volume_id not in user.volumes_r) and (new_vol.volume_id not in user.volumes_rw):
             session['message'] = "Must have read rights to volume %s to assign UG to it." % form.cleaned_data['volume_name']
             return redirect('django_ug.views.viewgateway', g_id)
+        old_vol = g.volume_id
         fields = {"volume_id":new_vol.volume_id}
         try:
-            db.update_user_gateway(g_id, **fields)
+            update_ug_and_vol(g_id, fields, old_vol, new_vol.volume_id)
         except Exception, e:
             logging.error("Unable to update UG with ID %s. Error was %s." % (g_id, e))
             session['message'] = "Error. Unable to change user gateway."
@@ -303,6 +315,9 @@ def create(request):
                 if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
                     session['message'] = "Must have read rights to volume %s to create UG for it." % form.cleaned_data['volume_name']
                     return give_create_form(username, session)
+                # Force update of UG version
+                attrs = {"UG_version":1}
+                db.update_volume(vol.volume_id, **attrs)
             try:
                 kwargs = {}
                 kwargs['read_write'] = form.cleaned_data['read_write']
