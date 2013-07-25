@@ -18,8 +18,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Hashtable;
 import java.util.Map;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -52,6 +50,12 @@ public class FileSystem implements Closeable {
         } else {
             LOG.info("Get FileSystem instance already created : " + conf.getUGName());
         }
+    }
+    
+    public static boolean isInitialized() {
+        if(fsInstance == null)
+            return false;
+        return true;
     }
     
     /*
