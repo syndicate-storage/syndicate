@@ -103,7 +103,7 @@ def changeprivacy(request, g_id):
     try:
         db.update_replica_gateway(g_id, **fields)
         session['new_change'] = "We've changed your gateways's privacy setting."
-        session['next_url'] = '/syn/RG/viewgateway/' + g_id
+        session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     except Exception as e:
@@ -142,7 +142,7 @@ def changejson(request, g_id):
                 return redirect('django_rg.views.viewgateway', g_id)
         db.update_replica_gateway(g_id, **fields)
         session['new_change'] = "We've changed your gateways's JSON configuration."
-        session['next_url'] = '/syn/RG/viewgateway/' + g_id
+        session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:
@@ -157,7 +157,7 @@ def changepassword(request, g_id):
     g_id = int(g_id)
 
     if request.method != "POST":
-        return HttpResponseRedirect('/syn/RG/viewgateway/' + g_id)
+        return HttpResponseRedirect('/syn/RG/viewgateway/' + str(g_id))
 
     try:
         g = db.read_replica_gateway(g_id)
@@ -194,7 +194,7 @@ def changepassword(request, g_id):
                 return redirect('django_rg.views.viewgateway', g_id)
 
             session['new_change'] = "We've changed your gateways's password."
-            session['next_url'] = '/syn/RG/viewgateway/' + g_id
+            session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
             session['next_message'] = "Click here to go back to your volume."
             return HttpResponseRedirect('/syn/thanks')
 
@@ -251,7 +251,7 @@ def addvolume(request, g_id):
             session['message'] = "Unable to update."
             return redirect('django_rg.views.viewgateway', g_id)
         session['new_change'] = "We've updated your RG's volumes."
-        session['next_url'] = '/syn/RG/viewgateway/' + g_id
+        session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:
@@ -313,7 +313,7 @@ def removevolumes(request, g_id):
          session['message'] = "Unable to update gateway."
          return redirect('django_rg.views.viewgateway', g_id)
     session['new_change'] = "We've updated your RG's volumes."
-    session['next_url'] = '/syn/RG/viewgateway/' + g_id
+    session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
     session['next_message'] = "Click here to go back to your gateway."
     return HttpResponseRedirect('/syn/thanks')
 
@@ -337,7 +337,7 @@ def changelocation(request, g_id):
             session['message'] = "Error. Unable to change replica gateway."
             return redirect('django_rg.views.viewgateway', g_id)
         session['new_change'] = "We've updated your RG."
-        session['next_url'] = '/syn/RG/viewgateway/' + g_id
+        session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:
