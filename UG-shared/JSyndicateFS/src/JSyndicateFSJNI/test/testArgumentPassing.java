@@ -537,7 +537,7 @@ public class testArgumentPassing {
     }
     
     public static void main(String[] args) {
-        testLibraryLoading.load(false);
+        testLibraryLoading.load();
         
         System.out.println("test start!");
         

@@ -15,7 +15,7 @@ import java.util.logging.Logger;
  */
 public class testLibraryLoading {
     
-    public static void load(boolean local) {
+    public static void load() {
         System.out.println("testLibraryLoading");
         System.out.println("loading : " + System.getProperty(JSyndicateFS.LIBRARY_FILE_PATH_KEY));
         
@@ -24,25 +24,11 @@ public class testLibraryLoading {
         }
         
         JSFSConfig cfg = new JSFSConfig();
-        if(local)
-            cfg.setMs_url("http://localhost:8080");
-        else
-            cfg.setMs_url("https://syndicate-metadata.appspot.com");
-        
         cfg.setUGName("Hadoop");
-        cfg.setUGPassword("sniff");
-        cfg.setVolume_name("SyndicateHadoop");
-        cfg.setVolume_secret("sniff");
-        cfg.setPortnum(32780);
         
         int result = 0;
         
-        System.out.println("MS : " + cfg.getMs_url());
         System.out.println("UG name : " + cfg.getUGName());
-        System.out.println("UG password : " + cfg.getUGPassword());
-        System.out.println("Volume name : " + cfg.getVolume_name());
-        System.out.println("Volume secret : " + cfg.getVolume_secret());
-        System.out.println("Port : " + cfg.getPortnum());
         
         result = JSyndicateFS.jsyndicatefs_init(cfg);
         if(result != 0) {
@@ -62,13 +48,7 @@ public class testLibraryLoading {
     
     public static void main(String[] args) {
         
-        boolean local = false;
-        
-        if(args.length > 0) {
-            local = Boolean.parseBoolean(args[0]);
-        }
-        
-        load(local);
+        load();
         
         try {
             Thread.sleep(5000);

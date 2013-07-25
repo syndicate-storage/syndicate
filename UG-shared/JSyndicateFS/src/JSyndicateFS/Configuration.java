@@ -5,7 +5,6 @@ package JSyndicateFS;
 
 import JSyndicateFSJNI.struct.JSFSConfig;
 import java.io.File;
-import java.net.URI;
 
 /**
  *
@@ -17,8 +16,6 @@ public class Configuration {
      */
     private boolean lock = false;
     
-    private File configFile;
-    private URI msURL;
     private JSFSConfig nativeConfig;
     private File nativeLibraryFile;
     
@@ -40,8 +37,6 @@ public class Configuration {
         this.nativeConfig = new JSFSConfig();
         
         // set default
-        this.configFile = new File(JSFSConfig.DEFAULT_CONFIG_FILE_PATH);
-        this.nativeConfig.setConfig_file(this.configFile.getAbsolutePath());
         this.nativeLibraryFile = null;
         
         this.maxMetadataCacheSize = MAX_METADATA_CACHE_SIZE;
@@ -61,29 +56,6 @@ public class Configuration {
         this.nativeLibraryFile = file.getAbsoluteFile();
     }
     
-    public File getConfigFile() {
-        return this.configFile;
-    }
-    
-    public void setConfigFile(File file) throws IllegalAccessException {
-        if(this.lock)
-            throw new IllegalAccessException("Can not modify the locked object");
-        
-        this.configFile = file.getAbsoluteFile();
-        this.nativeConfig.setConfig_file(file.getAbsolutePath());
-    }
-
-    public String getUGPassword() {
-        return this.nativeConfig.getUGPassword();
-    }
-    
-    public void setUGPassword(String ug_password) throws IllegalAccessException {
-        if(this.lock)
-            throw new IllegalAccessException("Can not modify the locked object");
-        
-        this.nativeConfig.setUGPassword(ug_password);
-    }
-
     public String getUGName() {
         return this.nativeConfig.getUGName();
     }
@@ -95,51 +67,6 @@ public class Configuration {
         this.nativeConfig.setUGName(ug_name);
     }
 
-    public String getVolumeName() {
-        return this.nativeConfig.getVolume_name();
-    }
-    
-    public void setVolumeName(String volumeName) throws IllegalAccessException {
-        if(this.lock)
-            throw new IllegalAccessException("Can not modify the locked object");
-        
-        this.nativeConfig.setVolume_name(volumeName);
-    }
-
-    public String getVolumeSecret() {
-        return this.nativeConfig.getVolume_secret();
-    }
-    
-    public void setVolumeSecret(String volumeSecret) throws IllegalAccessException {
-        if(this.lock)
-            throw new IllegalAccessException("Can not modify the locked object");
-        
-        this.nativeConfig.setVolume_secret(volumeSecret);
-    }
-
-    public URI getMSUrl() {
-        return this.msURL;
-    }
-    
-    public void setMSUrl(URI msUrl) throws IllegalAccessException {
-        if(this.lock)
-            throw new IllegalAccessException("Can not modify the locked object");
-        
-        this.msURL = msUrl;
-        this.nativeConfig.setMs_url(msUrl.toString());
-    }
-
-    public int getPort() {
-        return this.nativeConfig.getPortnum();
-    }
-    
-    public void setPort(int port) throws IllegalAccessException {
-        if(this.lock)
-            throw new IllegalAccessException("Can not modify the locked object");
-        
-        this.nativeConfig.setPortnum(port);
-    }
-    
     public int getMaxMetadataCacheSize() {
         return this.maxMetadataCacheSize;
     }
@@ -205,10 +132,6 @@ public class Configuration {
             return false;
         
         Configuration other = (Configuration) o;
-        if(!this.configFile.equals(other.configFile))
-            return false;
-        if(!this.msURL.equals(other.msURL))
-            return false;
         if(!this.nativeConfig.equals(other.nativeConfig))
             return false;
         
@@ -217,6 +140,6 @@ public class Configuration {
     
     @Override
     public int hashCode() {
-        return this.configFile.hashCode() ^ this.msURL.hashCode() ^ this.nativeConfig.hashCode();
+        return this.nativeConfig.hashCode();
     }
 }

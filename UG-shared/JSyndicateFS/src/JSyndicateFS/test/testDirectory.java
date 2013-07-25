@@ -15,7 +15,6 @@ import static JSyndicateFS.test.testFileIO.initFS;
 import static JSyndicateFS.test.testFileIO.uninitFS;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.net.URI;
 import java.net.URISyntaxException;
 
 /**
@@ -25,21 +24,13 @@ import java.net.URISyntaxException;
 public class testDirectory {
     private static FileSystem filesystem;
     
-    public static void initFS(boolean localms) throws IllegalAccessException, URISyntaxException, InstantiationException {
+    public static void initFS() throws IllegalAccessException, URISyntaxException, InstantiationException {
         Configuration conf = new Configuration();
-        if(localms) {
-            conf.setMSUrl(new URI("http://localhost:8080"));
-        } else {
-            conf.setMSUrl(new URI("https://syndicate-metadata.appspot.com"));
-        }
         conf.setUGName("Hadoop");
-        conf.setUGPassword("sniff");
-        conf.setVolumeName("testvolume-iychoi-email.arizona.edu");
-        conf.setVolumeSecret("sniff");
-        conf.setPort(32780);
 
         System.out.println("JSyndicateFS is Opening");
-        filesystem = FileSystem.getInstance(conf);
+        FileSystem.init(conf);
+        filesystem = FileSystem.getInstance();
     }
     
     public static void uninitFS() throws IOException {
@@ -117,10 +108,7 @@ public class testDirectory {
     
     public static void main(String[] args) {
         try {
-            if(args.length > 0)
-                initFS(Boolean.parseBoolean(args[0]));
-            else
-                initFS(false);
+            initFS();
             
             createNewDirs();
             createNewFile();

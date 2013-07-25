@@ -18,6 +18,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Hashtable;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -43,17 +45,23 @@ public class FileSystem implements Closeable {
     
     private ICache<Path, FileStatus> metadataCache;
     private Map<Long, FileHandle> openFileHandles = new Hashtable<Long, FileHandle>();
+
+    public static void init(Configuration conf) throws InstantiationException {
+        if(fsInstance == null) {
+            fsInstance = new FileSystem(conf);
+        } else {
+            LOG.info("Get FileSystem instance already created : " + conf.getUGName());
+        }
+    }
     
     /*
      * Construct or Get FileSystem from configuration
      */
-    public synchronized static FileSystem getInstance(Configuration conf) throws InstantiationException {
+    public synchronized static FileSystem getInstance() throws InstantiationException {
         if(fsInstance == null) {
-            fsInstance = new FileSystem(conf);
-        } else {
-            LOG.info("Get FileSystem instance already created : " + conf.getUGName() + "," + conf.getVolumeName() + "," + conf.getMSUrl().toString());
+            LOG.error("FileSystem is not initialized");
+            throw new InstantiationException("FileSystem is not initialized");
         }
-            
         return fsInstance;
     }
     
@@ -88,7 +96,7 @@ public class FileSystem implements Closeable {
         
         // call handler
         for(FileSystemEventHandler handler : eventHandlers) {
-            handler.onBeforeCreate(conf);
+            handler.onBeforeCreate(this);
         }
         
         // set configuration unmodifiable
@@ -112,10 +120,30 @@ public class FileSystem implements Closeable {
         this.metadataCache = new TimeoutCache<Path, FileStatus>(conf.getMaxMetadataCacheSize(), conf.getCacheTimeoutSecond());
         this.closed = false;
         
+        // add shutdown hook
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public void run() {
+                LOG.info("Runtime shutdown was detected");
+                
+                if(closed == false) {
+                    try {
+                        close();
+                    } catch (IOException ex) {
+                        LOG.error(ex);
+                    }
+                }
+            }
+        });
+        
         // call handler
         for(FileSystemEventHandler handler : eventHandlers) {
-            handler.onAfterCreate(conf);
+            handler.onAfterCreate(this);
         }
+    }
+    
+    public synchronized boolean isClosed() {
+        return this.closed;
     }
     
     public Configuration getConfiguration() {
@@ -132,15 +160,20 @@ public class FileSystem implements Closeable {
     /*
      * Return the working directory of the filesystem
      */
-    public Path getWorkingDirectory() {
+    public synchronized Path getWorkingDirectory() {
         return this.workingDir;
     }
     
     /*
      * Set the working directory of the filesystem
      */
-    public void setWorkingDirectory(Path path) {
+    public synchronized void setWorkingDirectory(Path path) {
         LOG.info("setWorkingDirectory");
+        
+        if(this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(path == null) {
             LOG.debug("path : null -- set default");
@@ -153,7 +186,7 @@ public class FileSystem implements Closeable {
         }
     }
     
-    private void closeAllOpenFiles() throws PendingExceptions {
+    private synchronized void closeAllOpenFiles() throws PendingExceptions {
         LOG.info("closeAllOpenFiles");
         
         PendingExceptions pe = new PendingExceptions();
@@ -185,17 +218,17 @@ public class FileSystem implements Closeable {
      * Close and release all resources of the filesystem
      */
     @Override
-    public void close() throws IOException {
+    public synchronized void close() throws IOException {
         LOG.info("close");
         
         if(this.closed) {
-            LOG.error("FileSystem is already closed");
-            throw new IOException("The filesystem is already closed");
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
         }
         
         // call handler
         for(FileSystemEventHandler handler : eventHandlers) {
-            handler.onBeforeDestroy(conf);
+            handler.onBeforeDestroy(this);
         }
         
         PendingExceptions pe = new PendingExceptions();
@@ -222,7 +255,7 @@ public class FileSystem implements Closeable {
         
         // call handler
         for(FileSystemEventHandler handler : eventHandlers) {
-            handler.onAfterDestroy(conf);
+            handler.onAfterDestroy(this);
         }
         
         if(!pe.isEmpty()) {
@@ -251,8 +284,13 @@ public class FileSystem implements Closeable {
     /*
      * Return FileStatus from path
      */
-    public FileStatus getFileStatus(Path path) throws FileNotFoundException, IOException {
+    public synchronized FileStatus getFileStatus(Path path) throws FileNotFoundException, IOException {
         LOG.info("getFileStatus");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(path == null)
             throw new IllegalArgumentException("Can not get file status from null path");
@@ -299,8 +337,13 @@ public class FileSystem implements Closeable {
         return status;
     }
     
-    public void invalidateFileStatus(Path path) {
+    public synchronized void invalidateFileStatus(Path path) {
         LOG.info("invalidateFileStatus");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(path == null)
             throw new IllegalArgumentException("Can not invalidate file status from null path");
@@ -310,8 +353,13 @@ public class FileSystem implements Closeable {
         this.metadataCache.invalidate(path);
     }
     
-    public void invalidateFileStatus(FileStatus status) {
+    public synchronized void invalidateFileStatus(FileStatus status) {
         LOG.info("invalidateFileStatus");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(status == null)
             throw new IllegalArgumentException("Can not invalidate file status from null status");
@@ -325,6 +373,12 @@ public class FileSystem implements Closeable {
      * True if the path exists
      */
     public boolean exists(Path path) {
+        
+        if(this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
+        
         try {
             if(getFileStatus(path) == null)
                 return false;
@@ -341,6 +395,12 @@ public class FileSystem implements Closeable {
      * True if the path is a directory
      */
     public boolean isDirectory(Path path) {
+        
+        if(this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
+        
         try {
             return getFileStatus(path).isDirectory();
         } catch (FileNotFoundException ex) {
@@ -354,6 +414,12 @@ public class FileSystem implements Closeable {
      * True if the path is a regular file
      */
     public boolean isFile(Path path) {
+        
+        if(this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
+        
         try {
             return getFileStatus(path).isFile();
         } catch (FileNotFoundException ex) {
@@ -366,8 +432,13 @@ public class FileSystem implements Closeable {
     /*
      * Return the file handle from file status
      */
-    FileHandle openFileHandle(FileStatus status) throws IOException {
+    synchronized FileHandle openFileHandle(FileStatus status) throws IOException {
         LOG.info("openFileHandle");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(status == null)
             throw new IllegalArgumentException("Can not open file handle from null status");
@@ -409,7 +480,13 @@ public class FileSystem implements Closeable {
     /*
      * Return the file handle from path
      */
-    FileHandle openFileHandle(Path path) throws FileNotFoundException, IOException {
+    synchronized FileHandle openFileHandle(Path path) throws FileNotFoundException, IOException {
+        
+        if(this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
+        
         FileStatus status = getFileStatus(path);
         
         if(status == null)
@@ -418,8 +495,13 @@ public class FileSystem implements Closeable {
         return openFileHandle(status);
     }
     
-    void flushFileHandle(FileHandle filehandle) throws IOException {
+    synchronized void flushFileHandle(FileHandle filehandle) throws IOException {
         LOG.info("flushFileHandle");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(filehandle == null)
             throw new IllegalArgumentException("Can not flush null filehandle");
@@ -441,8 +523,13 @@ public class FileSystem implements Closeable {
     /*
      * Close file handle
      */
-    void closeFileHandle(FileHandle filehandle) throws IOException {
+    synchronized void closeFileHandle(FileHandle filehandle) throws IOException {
         LOG.info("closeFileHandle");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(filehandle == null)
             throw new IllegalArgumentException("Can not close null filehandle");
@@ -484,8 +571,13 @@ public class FileSystem implements Closeable {
     /*
      * Return input stream from file status
      */
-    public InputStream getFileInputStream(FileStatus status) throws IOException {
+    public synchronized InputStream getFileInputStream(FileStatus status) throws IOException {
         LOG.info("getFileInputStream");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(status == null)
             throw new IllegalArgumentException("Can not open file handle from null status");
@@ -503,8 +595,13 @@ public class FileSystem implements Closeable {
     /*
      * Return output stream frmo file status
      */
-    public OutputStream getFileOutputStream(FileStatus status) throws IOException {
+    public synchronized OutputStream getFileOutputStream(FileStatus status) throws IOException {
         LOG.info("getFileOutputStream");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(status == null)
             throw new IllegalArgumentException("Can not open file handle from null status");
@@ -519,8 +616,13 @@ public class FileSystem implements Closeable {
         return new FSOutputStream(filehandle);
     }
     
-    int readFileData(FileHandle filehandle, byte[] buffer, int size, long offset) throws IOException {
+    synchronized int readFileData(FileHandle filehandle, byte[] buffer, int size, long offset) throws IOException {
         LOG.info("readFileData");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(filehandle == null)
             throw new IllegalArgumentException("Can not read from null filehandle");
@@ -553,8 +655,13 @@ public class FileSystem implements Closeable {
         return ret;
     }
 
-    void writeFileData(FileHandle filehandle, byte[] buffer, int size, long offset) throws IOException {
+    synchronized void writeFileData(FileHandle filehandle, byte[] buffer, int size, long offset) throws IOException {
         LOG.info("writeFileData");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(filehandle == null)
             throw new IllegalArgumentException("Can not write to null filehandle");
@@ -595,7 +702,13 @@ public class FileSystem implements Closeable {
             filehandle.getStatus().setSize(offset + size);
     }
     
-    public void truncateFile(Path path, long size) throws IOException {
+    public synchronized void truncateFile(Path path, long size) throws IOException {
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
+        
         if(path == null)
             throw new IllegalArgumentException("Can not truncate file from null path");
         if(size < 0)
@@ -610,8 +723,13 @@ public class FileSystem implements Closeable {
         truncateFile(status, size);
     }
     
-    public void truncateFile(FileStatus status, long size) throws IOException {
+    public synchronized void truncateFile(FileStatus status, long size) throws IOException {
         LOG.info("truncateFile");
+
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(status == null)
             throw new IllegalArgumentException("Can not truncate file from null status");
@@ -622,7 +740,7 @@ public class FileSystem implements Closeable {
         
         if(!status.isFile())
             throw new IOException("Can not truncate non-file");
-
+        
         LOG.debug("path : " + status.getPath().getPath());
         LOG.debug("size : " + size);
         
@@ -638,7 +756,12 @@ public class FileSystem implements Closeable {
         status.setSize(size);
     }
     
-    public String[] readDirectoryEntries(Path path) throws FileNotFoundException, IOException {
+    public synchronized String[] readDirectoryEntries(Path path) throws FileNotFoundException, IOException {
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
+        
         if(path == null)
             throw new IllegalArgumentException("Can not read directory entries from null path");
             
@@ -651,7 +774,13 @@ public class FileSystem implements Closeable {
         return readDirectoryEntries(status);
     }
     
-    public String[] readDirectoryEntries(FileStatus status) throws IOException {
+    public synchronized String[] readDirectoryEntries(FileStatus status) throws IOException {
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
+        
         if(status == null)
             throw new IllegalArgumentException("Can not read directory entries from null status");
         if(status.isDirty())
@@ -673,8 +802,13 @@ public class FileSystem implements Closeable {
         return result;
     }
     
-    String[] readDirectoryEntries(FileHandle filehandle) throws IOException {
+    synchronized String[] readDirectoryEntries(FileHandle filehandle) throws IOException {
         LOG.info("readDirectoryEntries");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(filehandle == null)
             throw new IllegalArgumentException("Can not read directory entries from null filehandle");
@@ -700,7 +834,13 @@ public class FileSystem implements Closeable {
         return filler.getEntryNames();
     }
     
-    public void delete(Path path) throws IOException {
+    public synchronized void delete(Path path) throws IOException {
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
+        
         if(path == null)
             throw new IllegalArgumentException("Can not delete from null path");
         
@@ -713,8 +853,13 @@ public class FileSystem implements Closeable {
         delete(status);
     }
             
-    public void delete(FileStatus status) throws IOException {
+    public synchronized void delete(FileStatus status) throws IOException {
         LOG.info("delete");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(status == null)
             throw new IllegalArgumentException("Can not delete file from null status");
@@ -748,8 +893,13 @@ public class FileSystem implements Closeable {
         invalidateFileStatus(status);
     }
 
-    public void rename(FileStatus status, Path newpath) throws IOException {
+    public synchronized void rename(FileStatus status, Path newpath) throws IOException {
         LOG.info("rename");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(status == null)
             throw new IllegalArgumentException("Can not rename file from null status");
@@ -796,8 +946,13 @@ public class FileSystem implements Closeable {
         invalidateFileStatus(status);
     }
 
-    public void mkdir(Path path) throws IOException {
+    public synchronized void mkdir(Path path) throws IOException {
         LOG.info("mkdir");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(path == null)
             throw new IllegalArgumentException("Can not create a new directory from null path");
@@ -828,8 +983,13 @@ public class FileSystem implements Closeable {
         }
     }
 
-    public void mkdirs(Path path) throws IOException {
+    public synchronized void mkdirs(Path path) throws IOException {
         LOG.info("mkdirs");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(path == null)
             throw new IllegalArgumentException("Can not create a new directory from null path");
@@ -852,8 +1012,13 @@ public class FileSystem implements Closeable {
         }
     }
 
-    public boolean createNewFile(Path path) throws IOException {
+    public synchronized boolean createNewFile(Path path) throws IOException {
         LOG.info("createNewFile");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(path == null)
             throw new IllegalArgumentException("Can create new file from null path");
@@ -909,7 +1074,7 @@ public class FileSystem implements Closeable {
         }
     }
     
-    private ArrayList<Path> listAllFilesRecursive(Path absPath) throws IOException {
+    private synchronized ArrayList<Path> listAllFilesRecursive(Path absPath) throws IOException {
         if(absPath == null)
             throw new IllegalArgumentException("Can not list files from null path");
         
@@ -933,8 +1098,13 @@ public class FileSystem implements Closeable {
         return result;
     }
     
-    public Path[] listAllFiles(Path path) throws IOException {
+    public synchronized Path[] listAllFiles(Path path) throws IOException {
         LOG.info("listAllFiles");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(path == null)
             throw new IllegalArgumentException("Can not list files from null path");
@@ -950,7 +1120,7 @@ public class FileSystem implements Closeable {
         return paths;
     }
     
-    private ArrayList<Path> listAllFilesRecursive(Path absPath, FilenameFilter filter) throws IOException {
+    private synchronized ArrayList<Path> listAllFilesRecursive(Path absPath, FilenameFilter filter) throws IOException {
         if(absPath == null)
             throw new IllegalArgumentException("Can not list files from null path");
         
@@ -988,8 +1158,13 @@ public class FileSystem implements Closeable {
         return result;
     }
     
-    public Path[] listAllFiles(Path path, FilenameFilter filter) throws IOException {
+    public synchronized Path[] listAllFiles(Path path, FilenameFilter filter) throws IOException {
         LOG.info("listAllFiles");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(path == null)
             throw new IllegalArgumentException("Can not list files from null path");
@@ -1005,7 +1180,7 @@ public class FileSystem implements Closeable {
         return paths;
     }
     
-    private void deleteAllRecursive(Path absPath) throws IOException {
+    private synchronized void deleteAllRecursive(Path absPath) throws IOException {
         if(absPath == null)
             throw new IllegalArgumentException("Can not delete files from null path");
         
@@ -1030,8 +1205,13 @@ public class FileSystem implements Closeable {
         }
     }
     
-    public void deleteAll(Path path) throws IOException {
+    public synchronized void deleteAll(Path path) throws IOException {
         LOG.info("deleteAll");
+        
+        if (this.closed) {
+            LOG.error("filesystem is already closed");
+            throw new IllegalStateException("filesystem is already closed");
+        }
         
         if(path == null)
             throw new IllegalArgumentException("Can not remove from null path");
