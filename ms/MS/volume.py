@@ -330,12 +330,10 @@ class Volume( storagetypes.Object ):
       storagetypes.memcache.delete(volume_key_name)
 
       old_version = volume.version
-
       for (k,v) in fields.items():
          setattr( volume, k, v )
       
       volume.version = old_version + 1
-
       return volume.put()
          
 

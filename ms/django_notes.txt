@@ -6,35 +6,26 @@ This is the collection of files for the Syndicate front-end, using Django and we
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
-- Fixed a few small bugs
-- Modified schema across AG, RG, and UG to be based on id's, not ms_username, like volume.py
-- Fixed a problem with session variable conflicts.
-
-Meeting:
-- Worked on getting admin pages up for all gateways,
-  allowing changing of settings etc.
-- Fixing bugs as they showed up
-- Cleaning up code, transactions etc.
-- Working on fixing schema
-- In volume.py, how should AG/RG version work?
-
 DONE ->
 
+Numerous bug fixes, session functionality fixes, URI gateway creation/deletion deprecation
 
+- Fix another stale session data bug from deleting volumes
+- When deleting RG's and AG's, attached volumes are now updated as well.
+  + this does not apply for the URL delete right now, but that's going
+  to be changed probably anyway, so currently don't use it.
+- Comment django_rg/
+- Fix bug when removing both read and write permissions for user to volume
+- Fix bug where owner would show up with read/write permissions on volume they owned, if they
+  were not the current logged-in user.
+- Fix bug where session data was being carried from volume to volume and gateway to gateway.
+- Fix bug when deleting volumes, users with read rights would keep ghost rights for the deleted volume.
+- Handle situtation where URL requested asks for volume that doesn't exist.
+- Eliminated some 'magic' numbers
 
 Current task TD -> 
 
-
-
 ON HOLD (1st after finsiehd with TD)
-- When deleting UG's, account for everything else that might have their iD #
-- When delting AG's, account for volumes everything else that might have their iD #
-- When delting RG's, account for volumes everything else that might have their iD #
-- Comment django_rg
-    + after commenting, walk through ag views and rg views just to ensure similarity
-
-- Leaving all urlcreates and urldeletes til later to adjust and debug with new id from ms_username change
-- Get rid of non-session based messages in django_volume.views.py
 
 - UG's w/t volumes (set v_id to zero, add that as a comment!)
     + allow creatin w/t volume
@@ -42,85 +33,42 @@ ON HOLD (1st after finsiehd with TD)
     + allow attachment of volume
     + allow removal of volume
 
-- Whenever ListAll is used with volume or gatway names, you must strip and replace!
-
 Tomorrow
+
+- Comment django_home, django_lib, django_ug, django_volume
+
 
 - Since schema change, to be checked by Jude
   + *G.py authenticate()
   + Protobuf stuff
-- Since default for volumes are private now, make sure to explicitly make public
-in creations!!!
+  + rg/ag version?
+
 - Is it bad form to have URL's with unmasked volume_ids?
-- Ask Jude: do we want name restrictions on G's to match those on Volumes (i.e. Unicode)?
+- Ask Jude: do we want name restrictions on G's to match those on Volumes (i.e. Unicode allowed or not? Currently NOT allowed).
     + what about for passwords?
+
 - read through others code.
     + Look at code Jude removed to eliminate exec() how did he do it?
-- Transatctionify ag_views.py.deletevolumes. This might be necessary for Rg and Ug as well!
-- Clean out magic numbers
-- put Try blocks on all gateway.py, user.py, and volume.py Update methods for setattr.
 
 
 Long term
 - Admin site layout consistency for tables. Make sure they scale well with weird text (large names, descrips, configs etc)
-- Make more adminy, less fluff.
-- Mabye make tests?
+- Mabye make tests?!
 - Are the places where I'm using list-slicing to make deep copies ineffecient?
 
 To-do:
 
-
-- Ask Jude.
-	Should Volume record in MS store information on AGs/RGs, or gateway records store information about volumes, or both?
-	How should configuration for RG be represented in MS? Or does it need to be at all?
-	When a
-
-- fix error for UG delete gateway (? What is this)
 - Ask Jude about key_listing methond in Gateway...
-
-Ag have to publish the existence of data in the MS. They can also serve data. Function like UG, can read and write metadata
-Rg cannot interact with MS directly, can only read, not write.
-
-MS needs to be able to transmit info/config to gateways (they have to authenticate)
-User needs to able to enter JSon/XML or something that specifies configuration of RG (or AG or UG) that dicates
-   Ug needs to know whta edge caches to use -> proxy URL and a very simple python function that will take as arg atleast a URL and transforms it into a URL to a network cache. Also needs to go through all volumes, find all UG's with write values to that volume, pass hashed credentials to those UG's so they can all verify each other, based on changes. (this should be periodic too, to detect partitions)
-
-   AG needs generic file (text or something)
-   RG same (text or something)
-Whenver config changes, needs to be pushed to G's
-
-
-- Any action a UG does needs Suser credentials -> sessions , renewed every hour or so. (GAESession -> regenerate keys)
-- UG's need new boolean flag to dictate read or read/write.
-
 - Use Kib?
 - what's with the security issue (live) on firefox?
-- After changing settings -> thanks page, where UI-wise should we be redirected to?
 - How should 'active' behave? I.e. can you delete an active volume?
-- Make a UG handler to a certain POST with certain headers that authenticates a user, makes sure they have rights to the volume they're trying to attach a UG
-to, and then create it, update it, or delete it. ms_username should be auto-generated, standard, based on what had been going on with the previous creations
-etc. MS will store all hashes. Each UG will store it's own password. Each UG
-will have all other UG's (on that volume) hashes. Each post will have:
-username, userpassword, volume name, UG-username, UG-password-hash, host, port (change away from base_url)
-- Clear out some of the extra logging messages
-- This is more for the future, but create a test/suite
 - maybe upgrade django to 1.5 (?)
 
 - Javascript pagination for all/myvolumes.
 
--Secret key for gae_sessions django:|4[Y1!b:?j\9*DE/(^r_[5xHrpSEq>bZY>2wSdcx&c_h+1Rs=%jC 18tmX9Y*cguL~\b>&
- cZ'U,4.XzE FkBG-fV=}-##J-92nDx
--lguwLv[h-"a5rR}6][jP5|PesM=Z
-{JS[9xMTDk I%SA+ d[
-hT;|',Zg#Vn<
-IQM{%fV`UZ;{Z9L"3m+LKe?eiHwzPd(^OVZ?~8eEV
- x
-D?LHj?jl=g1[?yF'o@ WV}Sug:%eDZ;Gj9]|*B\J+
-
-
+-Secret key for gae_sessions django?
 
 
 Notes:
-	The ms/ subdirectory contains essentially a webapp2 and django app combined under the auspice of GAE. GAE routes via app.yaml anything with the URI prefix '/syn' to the Django WSGI and everything else to MS. '/' handles login etc, and then routes to '/syn/home'. All django files are contained in the various directories prefixed django. 'django_syndicate_web' is the main project app. 'django_home' contains most of the views. Templates and media are self-explanatory.
 
 Django SuperUser=syndicate/planetlab

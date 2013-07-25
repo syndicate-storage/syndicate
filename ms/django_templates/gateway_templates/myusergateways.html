@@ -20,7 +20,7 @@
 
     <tr>
       <td><a href="{% url django_ug.views.viewgateway g.g_id %}">{{g.ms_username|replace:"_|| "}}</a></td>
-      <td>{{v.name|replace:"_|| "}}</td>
+      <td>{% if v %}{{v.name|replace:"_|| "}}{% else %}No attached volume.{% endif %}</td>
       <td>{{g.host}}</td>
       <td>{{g.port}}</td>
       <td>{% if g.read_write %}Yes{% else %}No{% endif %}</td>

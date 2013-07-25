@@ -12,6 +12,7 @@
     {% block extra %}{% endblock %}
   </ul>
   <br/>
+  {% if vol %}
   <h4> Attached Volume </h4>
   <table border>
     <thead>
@@ -26,6 +27,9 @@
     </tbody>
   </table>
   <br/>
+  {% else %}
+  <h4>No attached volume.</h4>
+  {% endif %}
   <h4> Write Capable: </h4>{% if gateway.read_write %}Yes {% else %}No {% endif %}
 </div>
 <br/>

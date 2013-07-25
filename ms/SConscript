@@ -75,4 +75,3 @@ for pypb in protobuf_py_files:
 targets = ms_files + cmds
 
 Return( 'targets' )
-

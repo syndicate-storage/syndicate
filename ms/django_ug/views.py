@@ -38,7 +38,7 @@ def viewgateway(request, g_id=0):
         if not g:
             raise Exception("No gateway exists.")
     except Exception as e:
-        logging.error("Error reading gateway %s : Exception: %s" % (g_id, e))
+        logging.error("Error reading gateway %d : Exception: %s" % (g_id, e))
         message = "No user gateway with the ID %s exists." % g_id
         t = loader.get_template("gateway_templates/viewgateway_failure.html")
         c = Context({'message':message, 'username':username})
@@ -50,13 +50,18 @@ def viewgateway(request, g_id=0):
 
     vol = db.read_volume(g.volume_id)
     if not vol:
-        logging.error("Volume ID in gateways volume_ids does not map to volume. Gateway: %s" % g_name)
-        return redirect('django_ug.views.allgateways')
+        if g.volume_id != 0:
+            logging.error("Volume ID in gateways volume_ids does not map to volume. Gateway: %d" % g_id)
+            return redirect('django_ug.views.allgateways')
+        else:
+            vol = None
+            owner = None
+    else:
+        attrs = {"SyndicateUser.owner_id ==": vol.owner_id}
+        owner = db.get_user(attrs)
+        logging.info(owner)
+        logging.info(vol.owner_id)
     
-    attrs = {"SyndicateUser.owner_id ==": vol.owner_id}
-    owner = db.get_user(attrs)
-    logging.info(owner)
-    logging.info(vol.owner_id)
 
     password_form = libforms.Password()
     change_password_form = libforms.ChangePassword()
@@ -222,12 +227,21 @@ def allgateways(request):
         gateways.append(g)
     vols = []
     for g in gateways:
-        vols.append(db.read_volume(g.volume_id))
+        add_vol = db.read_volume(g.volume_id)
+        if add_vol:
+            vols.append(add_vol)
+        else:
+            vols.append([])
     owners = []
     for v in vols:
-        volume_owner = v.owner_id
-        attrs = {"SyndicateUser.owner_id ==":volume_owner}
-        owners.append(db.get_user(attrs))
+
+        if v:
+            volume_owner = v.owner_id
+            attrs = {"SyndicateUser.owner_id ==":volume_owner}
+            owners.append(db.get_user(attrs))
+        else:
+            owners.append("")
+
     gateway_vols_owners = zip(gateways, vols, owners)
     t = loader.get_template('gateway_templates/allusergateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols_owners':gateway_vols_owners})

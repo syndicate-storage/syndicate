@@ -2,7 +2,7 @@ Name: Syndicate Metadata-Service (MS)
 
 Authors: Jude Nelson and John Whelchel
 
-Readme last updated: 7/9/13 23:00 PM
+Readme last updated: 7/25/13
 
 The files in syndicate/ms run the Syndicate meta-data service. The overall
 application is a combination of the frameworks webapp2 and django, running
@@ -35,10 +35,8 @@ LOCAL BASICS:
 	User Gateways, Replica Gateways, and Acquisition Gateways, as well as modify
 	some of their settings. 
 
-	(*)useful parameter for dev_appserver 'clear-datastore=yes'
+	(*)useful parameter for dev_appserver '--clear-datastore=yes'
 
-	N.B. Currently, the actual parameters for MS records, especially for gateways,
-	are in flux. Keep that in mind when creating new ones.
 
 UPDATING LIVE:
 
@@ -173,6 +171,8 @@ Volumes:
 
 
 User Gateways:
+
+    *** The pure URI feature is deprecated and buggy. Don't use ***
 
     User Gateways can be created in the UG subsection of the site, as well as
     through pure URIs. The pure URI format requires a previous manual login
