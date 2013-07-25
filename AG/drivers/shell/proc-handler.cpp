@@ -345,8 +345,11 @@ block_status ProcHandler::get_block_status(struct gateway_ctx *ctx)
 	blk_stat.no_block = true;
     }
     proc_table_entry *pte = proc_table[ctx->id];
-    if (pte == NULL) {
+    if (pte == NULL && ctx->file_path == NULL) {
 	blk_stat.no_file = true;
+    }
+    else if (pte == NULL && ctx->file_path != NULL) {
+	blk_stat.block_available = true;
     }
     else {
 	if (ctx->block_id > pte->current_max_block) {
@@ -371,6 +374,7 @@ block_status ProcHandler::get_block_status(struct gateway_ctx *ctx)
     }
     return blk_stat;
 }
+
 /*
 void ProcHandler::operator=(ProcHandler const& x) 
 {
