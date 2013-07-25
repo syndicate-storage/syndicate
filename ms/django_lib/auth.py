@@ -31,7 +31,7 @@ def verifyownership(f):
         session = args[0].session
         user = db.read_user(session['login_email'])
         try:
-            vol = db.read_volume(kw['volume_name'])
+            vol = db.get_volume_by_name(kw['volume_name'])
         except:
             t = loader.get_template('viewvolume_failure.html')
             c = Context({'username':session['login_email']})
