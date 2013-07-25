@@ -42,7 +42,15 @@ struct _proc_table_entry {
     off_t   block_byte_offset;
 }; 
 
-typedef struct _proc_table_entry proc_table_entry;
+struct _block_status { 
+    bool    in_progress;
+    bool    no_block;
+    bool    block_available;
+    bool    no_file;
+};
+
+typedef struct _proc_table_entry    proc_table_entry;
+typedef struct _block_status	    block_status;
 
 struct proc_table_entry_comp {
     bool operator()(proc_table_entry *lproc, proc_table_entry *rproc) {
@@ -71,6 +79,7 @@ class ProcHandler
 	ssize_t	encode_results();
 	static proc_table_entry* alloc_proc_table_entry();
 	static bool is_proc_alive(pid_t);
+	block_status get_block_status(struct gateway_ctx *ctx);
 	pthread_t get_thread_id();
 };
 

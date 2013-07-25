@@ -13,7 +13,7 @@
 	{% for g, v, o in gateway_vols_owners %} 
 
 	<tr>
-      <td><a href='{% url django_ug.views.viewgateway g.ms_username %}'>{{g.ms_username|replace:"_|| "}}</a></td>
+      <td><a href='{% url django_ug.views.viewgateway g.g_id %}'>{{g.ms_username|replace:"_|| "}}</a></td>
 	  <td>{{v.name|replace:"_|| "}}</td>
 	  <td>{{o.email}}</td>
 	  <td>{{g.host}}</td>

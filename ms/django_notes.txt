@@ -6,36 +6,56 @@ This is the collection of files for the Syndicate front-end, using Django and we
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
+- Fixed a few small bugs
+- Modified schema across AG, RG, and UG to be based on id's, not ms_username, like volume.py
+- Fixed a problem with session variable conflicts.
+
+Meeting:
+- Worked on getting admin pages up for all gateways,
+  allowing changing of settings etc.
+- Fixing bugs as they showed up
+- Cleaning up code, transactions etc.
+- Working on fixing schema
+- In volume.py, how should AG/RG version work?
+
 DONE ->
-- commented all of django_ag/
-- When volumes are now created, so is a root directory for them. Default 755 permissions
-- Fixed a UG creation error #32
-- Made ag_views.deletevolumes and rg_views.deletevolumes transactions
-- Changed defaults in setup.py for creating root directories
-    + 755 permissions, actual time created used as well.
-- Fixed some naming bugs regarding spaces for names for gateways and volumes. Now
-  all calls will strip() before converting spaces to underscore 
-- On AG viewgateway, if no volumes are attached, now no button shows up asking
-  you to remove attached volumes.
-- Now when deleting volumes, all other entities are updated accordingly. This is
-  yet to be done for other entities yet, so be aware when deleting them that
-  there might be rogue ghost traces of it in the MS.
+
 
 
 Current task TD -> 
-Change strip rules in all the different stuff (volume is done)
-get rid of submit buttons when no vols attache (RG/AG admin site)
+
+
+
+ON HOLD (1st after finsiehd with TD)
+- When deleting UG's, account for everything else that might have their iD #
+- When delting AG's, account for volumes everything else that might have their iD #
+- When delting RG's, account for volumes everything else that might have their iD #
+- Comment django_rg
+    + after commenting, walk through ag views and rg views just to ensure similarity
+
+- Leaving all urlcreates and urldeletes til later to adjust and debug with new id from ms_username change
+- Get rid of non-session based messages in django_volume.views.py
+
+- UG's w/t volumes (set v_id to zero, add that as a comment!)
+    + allow creatin w/t volume
+        - change required_attrs
+    + allow attachment of volume
+    + allow removal of volume
+
+- Whenever ListAll is used with volume or gatway names, you must strip and replace!
 
 Tomorrow
-- Allow creation of unattached UG's (set v_id to zero)
-    + conversely, allow attaching and detaching of volumes.
-- Walk through django_rg.views simultaneously with ag after commenting
+
+- Since schema change, to be checked by Jude
+  + *G.py authenticate()
+  + Protobuf stuff
+- Since default for volumes are private now, make sure to explicitly make public
+in creations!!!
+- Is it bad form to have URL's with unmasked volume_ids?
 - Ask Jude: do we want name restrictions on G's to match those on Volumes (i.e. Unicode)?
     + what about for passwords?
-- when deleting volumes, is clean-up happening for users and gateways attached?
-    + 
-- conversely, when deleting gateways, is clean-up happenging for owners and volumes?
 - read through others code.
+    + Look at code Jude removed to eliminate exec() how did he do it?
 - Transatctionify ag_views.py.deletevolumes. This might be necessary for Rg and Ug as well!
 - Clean out magic numbers
 - put Try blocks on all gateway.py, user.py, and volume.py Update methods for setattr.

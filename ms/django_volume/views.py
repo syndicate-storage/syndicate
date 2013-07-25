@@ -68,12 +68,14 @@ def allvolumes(request):
 def addpermissions(request, volume_id):
     session = request.session
     username = session['login_email']
-    vol = db.read_volume( volume_id )
 
     if request.method != "POST":
         return HttpResponseRedirect('syn/volume/' + str(vol.volume_id) + '/permissions')
     else:
 
+        vol = db.read_volume( volume_id )
+        if not vol:
+            pass
         addform = forms.AddPermissions(request.POST)
         passwordform = libforms.Password(request.POST)
 
@@ -97,6 +99,7 @@ def addpermissions(request, volume_id):
         # Adduser fulfillment
         if afv:
             new_username = addform.cleaned_data['user']
+            
             read = addform.cleaned_data['read']
             write = addform.cleaned_data['write']
 
@@ -109,6 +112,11 @@ def addpermissions(request, volume_id):
             if not new_user:
                 message = "No Syndicate user with the email {} exists.".format(new_username)
                 return volumepermissions(request, vol.volume_id, message=message, initial_data=session['initial_data'])
+            
+            if vol.owner_id == new_user.owner_id:
+                message = "You already own this volume."
+                return volumepermissions(request, vol.volume_id, message=message, initial_data=session['initial_data'])
+                
             if write:
                 if read:
                     new_volumes_rw = new_user.volumes_rw + [vol.volume_id]
@@ -401,7 +409,7 @@ def deletevolume(request, volume_id):
         for ug in usergateways:
             fields = {}
             fields['volume_id'] = 0
-            db.update_user_gateway(ug.ms_username, **fields)
+            db.update_user_gateway(ug.g_id, **fields)
 
         for ag in acquisitiongateways:
             logging.info(ag)
@@ -411,7 +419,7 @@ def deletevolume(request, volume_id):
                 fields['volume_ids'] = []
             else:
                 fields['volume_ids'] = new_ids
-            db.update_acquisition_gateway(ag.ms_username, **fields)
+            db.update_acquisition_gateway(ag.g_id, **fields)
 
         for rg in replicagateways:
             fields = {}
@@ -420,7 +428,8 @@ def deletevolume(request, volume_id):
                 fields['volume_ids'] = []
             else:
                 fields['volume_ids'] = new_ids
-            db.update_replica_gateway(rg.ms_username, **fields)
+            db.update_replica_gateway(rg.g_id, **fields)
+
 
     session = request.session
     message = session.pop('message', "")
@@ -428,7 +437,6 @@ def deletevolume(request, volume_id):
     vol = db.read_volume( volume_id )
 
     if request.method == "POST":
-
         form = forms.DeleteVolume(request.POST)
         if form.is_valid():
             # Check password hash
@@ -453,6 +461,9 @@ def deletevolume(request, volume_id):
             else:
                 session['message'] = "Invalid password"
                 return redirect('django_volume.views.deletevolume', volume_id=vol.volume_id)
+        else:
+            session['message'] = "Please fill out all entries"
+            return redirect('django_volume.views.deletevolume', vol.volume_id)
     else:
         form = forms.DeleteVolume()
         t = loader.get_template('deletevolume.html')

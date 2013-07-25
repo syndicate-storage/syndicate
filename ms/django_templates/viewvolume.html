@@ -29,14 +29,14 @@
     <p><span style="font-weight:bold;">Attached Replica Gateways:</span></p>
     <li>
       {% for g in rgs %}
-      <p><a href="{% url django_rg.views.viewgateway g.ms_username %}">{{ g.ms_username|replace:"_|| " }}</a></p>
+      <p><a href="{% url django_rg.views.viewgateway g.g_id %}">{{ g.ms_username|replace:"_|| " }}</a></p>
       {% endfor %}
     </li>
     <br/>
     <p><span style="font-weight:bold;">Attached Acquisition Gateways:</span></p>
     <li>
       {% for g in ags %}
-        <p><a href="{% url django_rg.views.viewgateway g.ms_username %}">{{ g.ms_username|replace:"_|| " }}</a></p>
+        <p><a href="{% url django_rg.views.viewgateway g.g_id %}">{{ g.ms_username|replace:"_|| " }}</a></p>
       {% endfor %}
     </li>
   </div>

@@ -12,7 +12,7 @@ struct md_syndicate_conf CONF;
 // set of files we're exposing
 content_map DATA;
 
-// set of files we map to SQL queries
+// set of files we map to command
 query_map* FS2CMD = NULL;
 
 // Metadata service client of the AG
@@ -83,12 +83,33 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx,
 extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* user_cls ) {
     errorf("%s", "INFO: get_dataset\n"); 
     ssize_t ret = 0;
+    ssize_t err_code_len = 0;
     ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
     struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
-
+    if (dat->http_status == 404)
+	return 0;
     if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
 	if (!ctx->complete) {
 	    ret = prch.execute_command(ctx, buf, len, global_conf->blocking_factor);
+	    if (ret < 0) {
+		if (ret == -EAGAIN) {
+		    err_code_len = strlen(EAGAIN_STR);
+		    memcpy(buf, EAGAIN_STR, err_code_len);
+		}
+		else if (ret == -EIO) {
+		    err_code_len = strlen(EIO_STR);
+		    memcpy(buf, EIO_STR, err_code_len);
+		}
+		else {
+		    err_code_len = strlen(EUNKNOWN_STR);
+		    memcpy(buf, EUNKNOWN_STR, err_code_len);
+		}
+		dat->err = -404;
+		dat->http_status = 404;
+		ctx->complete = true;
+		dat->size = err_code_len;
+		return err_code_len;
+	    }
 	    if (ctx->data_offset == (ssize_t)global_conf->blocking_factor)
 		ctx->complete = true;
 	    if (ret < 0)
@@ -225,19 +246,26 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        replica_ctx->size = ctx->data_len;
    }
    else {
-       struct map_info mi = (*FS2CMD)[string(file_path)];
-       char** cmd_array = str2array((char*)mi.shell_command);
-       ctx->proc_name = cmd_array[0];
-       ctx->argv = cmd_array;
-       ctx->envp = NULL;
-       ctx->data_offset = 0;
-       ctx->block_id = block_id;
-       ctx->fd = -1;
-       ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
-       // Negative size switches libmicrohttpd to chunk transfer mode
-       replica_ctx->size = -1;
+       struct map_info mi; 
+       query_map::iterator itr = FS2CMD->find(string(file_path));
+       if (itr != FS2CMD->end()) {
+	   mi = itr->second;
+	   char** cmd_array = str2array((char*)mi.shell_command);
+	   ctx->proc_name = cmd_array[0];
+	   ctx->argv = cmd_array;
+	   ctx->envp = NULL;
+	   ctx->data_offset = 0;
+	   ctx->block_id = block_id;
+	   ctx->fd = -1;
+	   ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
+	   // Negative size switches libmicrohttpd to chunk transfer mode
+	   replica_ctx->size = -1;
+	   // Check the block status and set the http response appropriately
+       }
+       else {
+	   replica_ctx->http_status = 404;
+       }
    }
-
    ctx->file_path = file_path;
    return ctx;
 }
@@ -337,7 +365,7 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	    ment->mode = DIR_PERMISSIONS_MASK;
 	    ment->mode |= S_IFDIR;
 	    if ( (i = ms_client_mkdir(mc, ment)) < 0 ) {
-		cout<<"ms client mkdir "<<i<<endl;
+		cerr<<"ms client mkdir "<<i<<endl;
 	    }
 	    break;
 	case MD_ENTRY_FILE:
@@ -346,7 +374,7 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	    ment->mode &= FILE_PERMISSIONS_MASK;
 	    ment->mode |= S_IFREG;
 	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
-		cout<<"ms client create "<<i<<endl;
+		cerr<<"ms client create "<<i<<endl;
 	    }
 	    break;
 	default:

@@ -201,6 +201,7 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
     char **argv  = ctx->argv;
     char **envp = ctx->envp;
     ssize_t len = 0;
+    struct stat st_buf;
 
     if (ctx->id >= DEFAULT_INIT_PROC_TBL_LEN)
 	return -EIO;
@@ -216,6 +217,23 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	    perror("open");
 	    return -EIO;
 	}
+	ctx->fd = fd;
+
+	if (fstat(fd, &st_buf) < 0) {
+	    perror("stat");
+	    return -EIO;
+	}
+	if (st_buf.st_size < (off_t)(ctx->block_id * BLK_SIZE)) {
+	    if (!pte->is_read_complete)
+		return -EAGAIN;
+	    else
+		return 0;
+	}
+	off_t seek_len = ctx->block_id  * BLK_SIZE;
+	if (lseek(fd, seek_len, SEEK_SET) < 0) {
+	    perror("lseek");
+	    return -EIO;
+	}
 	uint bk_off_count = 0, bk_off = 0;;
 	while ((len = read(fd, buffer, read_size)) == 0 &&
 		bk_off <= MAX_BACK_OFF_TIME) {
@@ -224,7 +242,6 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	    bk_off_count++;
 	}
 	ctx->data_offset += len;
-	ctx->fd = fd;
 	return len;
     }
     else {
@@ -237,6 +254,14 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	if (pte->current_max_block >= ctx->block_id) {
 	    off_t current_offset = (ctx->block_id * block_size) + 
 			    ctx->data_offset;
+	    if (ctx->fd < 0) {
+		int fd = open(pte->block_file, O_RDONLY);
+		if (fd < 0) {
+		    perror("open");
+		    return -EIO;
+		}
+		ctx->fd = fd;
+	    }
 	    if (((pte->current_max_block == ctx->block_id) && 
 		    pte->block_byte_offset > ctx->data_offset) ||
 		    pte->current_max_block > ctx->block_id) {
@@ -303,10 +328,49 @@ char* ProcHandler::get_random_string()
     return rand_str;
 }
 
-pthread_t ProcHandler::get_thread_id() {
+pthread_t ProcHandler::get_thread_id() 
+{
     return inotify_event_thread;
 } 
 
+block_status ProcHandler::get_block_status(struct gateway_ctx *ctx) 
+{
+    block_status blk_stat;
+    blk_stat.in_progress = false;
+    blk_stat.no_block = false;
+    blk_stat.no_file = false;
+    blk_stat.block_available = false;
+
+    if (ctx->id >= DEFAULT_INIT_PROC_TBL_LEN) {
+	blk_stat.no_block = true;
+    }
+    proc_table_entry *pte = proc_table[ctx->id];
+    if (pte == NULL) {
+	blk_stat.no_file = true;
+    }
+    else {
+	if (ctx->block_id > pte->current_max_block) {
+	    if (pte->is_read_complete) {
+		blk_stat.no_block = true;
+	    }
+	    else {
+		blk_stat.in_progress = true;
+	    }
+	}
+	else if (ctx->block_id == pte->current_max_block) {
+	    if (pte->is_read_complete) {
+		blk_stat.block_available = true;
+	    }
+	    else {
+		blk_stat.in_progress = true;
+	    }
+	}
+	else {
+		blk_stat.block_available = true;
+	}
+    }
+    return blk_stat;
+}
 /*
 void ProcHandler::operator=(ProcHandler const& x) 
 {
