@@ -63,7 +63,7 @@ def viewgateway(request, g_id=0):
     if not rg_initial_data:
         for v in vols:
             rg_initial_data.append({'volume_name':v.name,
-                                 'remove':False})
+                                    'remove':False})
         session['rg_initial_data'] = rg_initial_data
 
     vol_owners = zip(vols, owners)
@@ -376,6 +376,7 @@ def create(request):
 
     session = request.session
     username = session['login_email']
+    user = db.read_user( username )
 
     def give_create_form(username, session):
         message = session.pop('message' "")
@@ -538,7 +539,7 @@ def urlcreate(request, g_name, g_password, host, port, private=False, volume_nam
     kwargs['ms_password'] = g_password
     kwargs['private'] = private
     if volume_name:
-        vol = db.read_volume(volume_name)        
+        vol = db.get_volume_by_name(volume_name)        
         if not vol:
             return HttpResponse("No volume %s exists." % volume_name)
         if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):

@@ -308,12 +308,10 @@ def removevolumes(request, g_id):
     # It updates multiple volumes at once
     @transactional(xg=True)
     def multi_update(v_ids, g_id, vfields, gfields):
-
         for v_id, vfield in zip(v_ids, vfields):
             db.update_volume(v_id, **vfield)
         db.update_acquisition_gateway(g_id, **gfields)
         session.pop('ag_initial_data')
-
 
     session = request.session
     username = session['login_email']
@@ -437,6 +435,7 @@ def create(request):
     '''
     session = request.session
     username = session['login_email']
+    user = db.read_user( username )
 
     # Helper method used to simplify error-handling. When fields are entered incorrectly,
     # a session message is set and this method is called.
@@ -613,7 +612,7 @@ def urlcreate(request, g_name, g_password, host, port, volume_name="",):
     kwargs['ms_username'] = g_name
     kwargs['ms_password'] = g_password
     if volume_name:
-        vol = db.read_volume(volume_name)
+        vol = db.get_volume_by_name(volume_name)
         if not vol:
             return HttpResponse("No volume %s exists." % volume_name)
         if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
