@@ -251,7 +251,7 @@ def addvolume(request, g_id):
             session['message'] = "Unable to update."
             return redirect('django_rg.views.viewgateway', g_id)
         session['new_change'] = "We've updated your RG's volumes."
-        session['next_url'] = '/syn/RG/viewgateway/' + g_id
+        session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:
@@ -313,7 +313,7 @@ def removevolumes(request, g_id):
          session['message'] = "Unable to update gateway."
          return redirect('django_rg.views.viewgateway', g_id)
     session['new_change'] = "We've updated your RG's volumes."
-    session['next_url'] = '/syn/RG/viewgateway/' + g_id
+    session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
     session['next_message'] = "Click here to go back to your gateway."
     return HttpResponseRedirect('/syn/thanks')
 
@@ -337,7 +337,7 @@ def changelocation(request, g_id):
             session['message'] = "Error. Unable to change replica gateway."
             return redirect('django_rg.views.viewgateway', g_id)
         session['new_change'] = "We've updated your RG."
-        session['next_url'] = '/syn/RG/viewgateway/' + g_id
+        session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:

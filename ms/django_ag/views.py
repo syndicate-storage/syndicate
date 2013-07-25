@@ -158,7 +158,7 @@ def changejson(request, g_id):
         # Update and redirect
         db.update_acquisition_gateway(g_id, **fields)
         session['new_change'] = "We've changed your gateways's JSON configuration."
-        session['next_url'] = '/syn/AG/viewgateway/' + g_id
+        session['next_url'] = '/syn/AG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
 
@@ -179,7 +179,7 @@ def changepassword(request, g_id):
 
     # Precheck
     if request.method != "POST":
-        return HttpResponseRedirect('/syn/AG/viewgateway/' + g_id)
+        return HttpResponseRedirect('/syn/AG/viewgateway/' + str(g_id))
 
     try:
         g = db.read_acquisition_gateway(g_id)
@@ -219,7 +219,7 @@ def changepassword(request, g_id):
                 return redirect('django_ag.views.viewgateway', g_id)
 
             session['new_change'] = "We've changed your gateways's password."
-            session['next_url'] = '/syn/AG/viewgateway/' + g_id
+            session['next_url'] = '/syn/AG/viewgateway/' + str(g_id)
             session['next_message'] = "Click here to go back to your gateway."
             return HttpResponseRedirect('/syn/thanks')
 
@@ -287,7 +287,7 @@ def addvolume(request, g_id):
             session['message'] = "Unable to update gateway."
             return redirect('django_ag.views.viewgateway', g_id)
         session['new_change'] = "We've updated your AG's volumes."
-        session['next_url'] = '/syn/AG/viewgateway/' + g_id
+        session['next_url'] = '/syn/AG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:
@@ -356,7 +356,7 @@ def removevolumes(request, g_id):
         session['message'] = "Unable to update gateway."
         return redirect('django_ag.views.viewgateway', g_id)
     session['new_change'] = "We've updated your AG's volumes."
-    session['next_url'] = '/syn/AG/viewgateway/' + g_id
+    session['next_url'] = '/syn/AG/viewgateway/' + str(g_id)
     session['next_message'] = "Click here to go back to your gateway."
     return HttpResponseRedirect('/syn/thanks')
 
@@ -387,7 +387,7 @@ def changelocation(request, g_id):
             return redirect('django_ag.views.viewgateway', g_id)
 
         session['new_change'] = "We've updated your AG."
-        session['next_url'] = '/syn/AG/viewgateway/' + g_id
+        session['next_url'] = '/syn/AG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:
