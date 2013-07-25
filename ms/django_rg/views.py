@@ -61,7 +61,7 @@ def viewgateway(request, g_name=""):
         owners.append(db.get_user(attrs))
     if not initial_data:
         for v in vols:
-            initial_data.append({'volume_name':v.name,
+            initial_data.append({'volume_id':v.volume_id,
                                  'remove':False})
         session['initial_data'] = initial_data
 
@@ -203,14 +203,14 @@ def addvolume(request, g_name):
     username = session['login_email']
 
     @transactional(xg=True)
-    def update(vname, gname, vfields, gfields):
-        db.update_volume(vname, **vfields)
+    def update(v_id, gname, vfields, gfields):
+        db.update_volume(v_id, **vfields)
         db.update_replica_gateway(g_name, **gfields)
         session.pop('initial_data')
 
     form = gatewayforms.GatewayAddVolume(request.POST)
     if form.is_valid():
-        volume = db.read_volume(form.cleaned_data['volume_name'])
+        volume = db.get_volume_by_name( form.cleaned_data['volume_name'] )
         if not volume:
             session['message'] = "The volume %s doesn't exist." % form.cleaned_data['volume_name']
             return redirect('django_rg.views.viewgateway', g_name)
@@ -238,7 +238,7 @@ def addvolume(request, g_name):
             new_vids = [new_vid]
         try:
             gfields={'volume_ids':new_vids}
-            update(form.cleaned_data['volume_name'], g_name, vfields, gfields)
+            update(volume.volume_id, g_name, vfields, gfields)
         except Exception as e:
             logging.error("Unable to update replica gateway %s or volume %s. Exception %s" % (g_name, form.cleaned_data['volume_name'], e))
             session['message'] = "Unable to update."
@@ -260,10 +260,10 @@ def removevolumes(request, g_name):
     # errors that would break in GAE if the decorator was applied to the entire view.
     # It updates multiple volumes at once
     @transactional(xg=True)
-    def multi_update(vnames, gname, vfields, gfields):
+    def multi_update(v_ids, gname, vfields, gfields):
 
-        for vname, vfield in zip(vnames, vfields):
-            db.update_volume(vname, **vfield)
+        for v_id, vfield in zip(v_id, vfields):
+            db.update_volume(v_id, **vfield)
         db.update_replica_gateway(g_name, **gfields)
         session.pop('initial_data', "")
 
@@ -275,21 +275,19 @@ def removevolumes(request, g_name):
     formset.is_valid()
 
     volume_ids_to_be_removed = []
-    volume_names_to_be_removed = []
 
     initial_and_forms = zip(session.get('initial_data', []), formset.forms)
     new_rgs_set = []
     for i, f in initial_and_forms:
         if f.cleaned_data['remove']:
-            vol = db.read_volume(i['volume_name'])
+            vol = db.get_volume_by_name(i['volume_name'])
 
             # update each volumes new RG list
             new_rgs = vol.rg_ids[:]
             new_rgs.remove(db.read_replica_gateway(g_name).rg_id)
             new_rgs_set.append({'rg_ids':new_rgs})
 
-            volume_names_to_be_removed.append(i['volume_name'])
-            volume_ids_to_be_removed.append(db.read_volume(i['volume_name']).volume_id)
+            volume_ids_to_be_removed.append(vol.volume_id)
 
     if not volume_ids_to_be_removed:
         session['message'] = "You must select at least one volume to remove."
@@ -299,7 +297,7 @@ def removevolumes(request, g_name):
     new_vids = list(old_vids - set(volume_ids_to_be_removed))
     gfields = {'volume_ids':new_vids}
     try:
-        multi_update(volume_names_to_be_removed, g_name, new_rgs_set, gfields)
+        multi_update(volume_ids_to_be_removed, g_name, new_rgs_set, gfields)
     except Exception as e:
          logging.error("Unable to update replica gateway %s. Exception %s" % (g_name, e))
          session['message'] = "Unable to update gateway."
@@ -367,6 +365,7 @@ def create(request):
 
     session = request.session
     username = session['login_email']
+    user = db.read_user( username )
 
     def give_create_form(username, session):
         message = session.pop('message' "")
@@ -535,7 +534,7 @@ def urlcreate(request, g_name, g_password, host, port, private=False, volume_nam
     kwargs['ms_password'] = g_password
     kwargs['private'] = private
     if volume_name:
-        vol = db.read_volume(volume_name)        
+        vol = db.get_volume_by_name(volume_name)        
         if not vol:
             return HttpResponse("No volume %s exists." % volume_name)
         if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
