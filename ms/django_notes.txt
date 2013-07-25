@@ -10,17 +10,17 @@ DONE ->
 
 Current task TD -> 
 
+- Fixed bug in ug.views
+- Allow exitence and creation of UG's unattached to volumes.
+
 ON HOLD (1st after finsiehd with TD)
 
-- UG's w/t volumes (set v_id to zero, add that as a comment!)
-    + allow creatin w/t volume
-        - change required_attrs
-    + allow attachment of volume
-    + allow removal of volume
 
 Tomorrow
 
 - Comment django_home, django_lib, django_ug, django_volume
+
+- Transactionify create in gateway.py for all 3 gateways.
 
 - Is override forms even necessary?
 

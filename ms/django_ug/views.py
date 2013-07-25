@@ -124,7 +124,7 @@ def changepassword(request, g_id):
                 return redirect('django_ug.views.viewgateway', g_id)
 
             session['new_change'] = "We've changed your gateways's password."
-            session['next_url'] = '/syn/UG/viewgateway/' + g_id
+            session['next_url'] = '/syn/UG/viewgateway/' + str(g_id)
             session['next_message'] = "Click here to go back to your volume."
             return HttpResponseRedirect('/syn/thanks')
 
@@ -146,7 +146,7 @@ def changelocation(request, g_id):
             session['message'] = "Error. Unable to change user gateway."
             return redirect('django_ug.views.viewgateway', g_id)
         session['new_change'] = "We've updated your UG."
-        session['next_url'] = '/syn/UG/viewgateway/' + g_id
+        session['next_url'] = '/syn/UG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:
@@ -182,7 +182,7 @@ def changevolume(request, g_id):
             session['message'] = "Error. Unable to change user gateway."
             return redirect('django_ug.views.viewgateway', g_id)
         session['new_change'] = "We've updated your UG."
-        session['next_url'] = '/syn/UG/viewgateway/' + g_id
+        session['next_url'] = '/syn/UG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:
@@ -208,7 +208,7 @@ def changewrite(request, g_id):
         session['message'] = "Error. Unable to change user gateway."
         return redirect('django_ug.views.viewgateway', g_id)
     session['new_change'] = "We've updated your UG."
-    session['next_url'] = '/syn/UG/viewgateway/' + g_id
+    session['next_url'] = '/syn/UG/viewgateway/' + str(g_id)
     session['next_message'] = "Click here to go back to your gateway."
     return HttpResponseRedirect('/syn/thanks')
 
@@ -289,17 +289,20 @@ def create(request):
         # Validate input forms
         form = gatewayforms.CreateUG(request.POST)
         if form.is_valid():
-            attrs = {"Volume.name ==":form.cleaned_data['volume_name'].strip().replace(" ", "_")}
-            vols = db.list_volumes(attrs, limit=1)
-            if vols:
-                vol = vols[0]
-                logging.info(vol)
+            if not form.cleaned_data['volume_name']:
+                logging.info("DLFKJSDF")
+                vol = None
             else:
-                session['message'] = "No volume %s exists." % form.cleaned_data['volume_name']
-                return give_create_form(username, session)
-            if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
-                session['message'] = "Must have read rights to volume %s to create UG for it." % form.cleaned_data['volume_name']
-                return give_create_form(username, session)
+                attrs = {"Volume.name ==":form.cleaned_data['volume_name'].strip().replace(" ", "_")}
+                vols = db.list_volumes(attrs, limit=1)
+                if vols:
+                    vol = vols[0]
+                else:
+                    session['message'] = "No volume %s exists." % form.cleaned_data['volume_name']
+                    return give_create_form(username, session)
+                if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
+                    session['message'] = "Must have read rights to volume %s to create UG for it." % form.cleaned_data['volume_name']
+                    return give_create_form(username, session)
             try:
                 kwargs = {}
                 kwargs['read_write'] = form.cleaned_data['read_write']

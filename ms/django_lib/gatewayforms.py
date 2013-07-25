@@ -70,7 +70,8 @@ class DeleteGateway(override_forms.MyForm):
 
 class CreateUG(CreateGateway):
 
-    volume_name = forms.CharField(label="Volume name",
+    volume_name = forms.CharField(label="Volume name (optional)",
+                                  required=False,
                            max_length=LONGEST_CHAR_FIELD)
 
     read_write = forms.BooleanField(required=False,

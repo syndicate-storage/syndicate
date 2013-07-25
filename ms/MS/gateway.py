@@ -123,7 +123,6 @@ class UserGateway( Gateway ):
 
 
    required_attrs = Gateway.required_attrs + [
-      "volume_id",
       "read_write"
    ]
 
@@ -183,7 +182,7 @@ class UserGateway( Gateway ):
 
 
    @classmethod
-   def Create( cls, user, volume, **kwargs ):
+   def Create( cls, user, volume=None, **kwargs ):
       """
       Given a user and volume, create a user gateway.
       Extra kwargs:
@@ -195,7 +194,10 @@ class UserGateway( Gateway ):
          port                 int
       """
 
-      kwargs['volume_id'] = volume.volume_id
+      if volume:
+         kwargs['volume_id'] = volume.volume_id
+      else:
+         kwargs['volume_id'] = 0
       kwargs['owner_id'] = user.owner_id
 
       UserGateway.fill_defaults( kwargs )
@@ -239,7 +241,7 @@ class UserGateway( Gateway ):
          ug = UserGateway( key=ug_key, **kwargs )
 
          # clear cached UG listings
-         storagetypes.memcache.delete( UserGateway.cache_listing_key( volume_id=volume.volume_id ) )
+         storagetypes.memcache.delete( UserGateway.cache_listing_key( volume_id=kwargs['volume_id'] ) )
          return ug.put()
 
 
