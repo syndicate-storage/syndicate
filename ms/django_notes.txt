@@ -8,21 +8,6 @@ Date: 5/28/13 - 7/1/13
 
 DONE ->
 
-Numerous bug fixes, session functionality fixes, URI gateway creation/deletion deprecation
-
-- Fix another stale session data bug from deleting volumes
-- When deleting RG's and AG's, attached volumes are now updated as well.
-  + this does not apply for the URL delete right now, but that's going
-  to be changed probably anyway, so currently don't use it.
-- Comment django_rg/
-- Fix bug when removing both read and write permissions for user to volume
-- Fix bug where owner would show up with read/write permissions on volume they owned, if they
-  were not the current logged-in user.
-- Fix bug where session data was being carried from volume to volume and gateway to gateway.
-- Fix bug when deleting volumes, users with read rights would keep ghost rights for the deleted volume.
-- Handle situtation where URL requested asks for volume that doesn't exist.
-- Eliminated some 'magic' numbers
-
 Current task TD -> 
 
 ON HOLD (1st after finsiehd with TD)
@@ -37,6 +22,7 @@ Tomorrow
 
 - Comment django_home, django_lib, django_ug, django_volume
 
+- Is override forms even necessary?
 
 - Since schema change, to be checked by Jude
   + *G.py authenticate()

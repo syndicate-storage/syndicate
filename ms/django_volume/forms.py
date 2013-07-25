@@ -1,4 +1,5 @@
-from django_lib import override_forms, LONGEST_CHAR_FIELD, LONGEST_PASS_FIELD, LONGEST_DESC
+from django_lib import override_forms
+from django_lib.forms import LONGEST_CHAR_FIELD, LONGEST_PASS_FIELD, LONGEST_DESC
 from django import forms
 from django_lib.override_forms import ReadOnlyWidget
 
