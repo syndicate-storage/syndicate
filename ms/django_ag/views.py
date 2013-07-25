@@ -91,7 +91,7 @@ def viewgateway(request, g_name=""):
     # Create formatted data based on vols for the formset, if not passed in state.
     if not initial_data:
         for v in vols:
-            initial_data.append({'volume_name':v.name,
+            initial_data.append({'volume_id':v.volume_id,
                                  'remove':False})
     session['initial_data'] = initial_data
 
@@ -231,8 +231,8 @@ def addvolume(request, g_name):
     # up the code when it doesn't reach update() in this view and allowing for
     # errors that would break in GAE if the decorator was applied to the entire view.
     @transactional(xg=True)
-    def update(vname, gname, vfields, gfields):
-        db.update_volume(vname, **vfields)
+    def update(v_id, gname, vfields, gfields):
+        db.update_volume(v_id, **vfields)
         db.update_acquisition_gateway(g_name, **gfields)
         session.pop('initial_data')
 
@@ -241,7 +241,7 @@ def addvolume(request, g_name):
 
     form = gatewayforms.GatewayAddVolume(request.POST)
     if form.is_valid():
-        volume = db.read_volume(form.cleaned_data['volume_name'])
+        volume = db.get_volume_by_name( form.cleaned_data['volume_name'] )
         if not volume:
             session['message'] = "The volume %s doesn't exist." % form.cleaned_data['volume_name']
             return redirect('django_ag.views.viewgateway', g_name)
@@ -271,7 +271,7 @@ def addvolume(request, g_name):
         # Update and redirect    
         try:
             gfields={'volume_ids':new_vids}
-            update(form.cleaned_data['volume_name'], g_name, vfields, gfields)
+            update(volume.volume_id, g_name, vfields, gfields)
         except Exception as e:
             logging.error("Unable to update acquisition gateway %s or volume %s. Exception %s" % (g_name, form.cleaned_data['volume_name'], e))
             session['message'] = "Unable to update gateway."
@@ -297,10 +297,10 @@ def removevolumes(request, g_name):
     # errors that would break in GAE if the decorator was applied to the entire view.
     # It updates multiple volumes at once
     @transactional(xg=True)
-    def multi_update(vnames, gname, vfields, gfields):
+    def multi_update(v_ids, gname, vfields, gfields):
 
-        for vname, vfield in zip(vnames, vfields):
-            db.update_volume(vname, **vfield)
+        for v_id, vfield in zip(v_ids, vfields):
+            db.update_volume(v_id, **vfield)
         db.update_acquisition_gateway(g_name, **gfields)
         session.pop('initial_data')
 
@@ -315,14 +315,13 @@ def removevolumes(request, g_name):
     formset.is_valid()
 
     volume_ids_to_be_removed = []
-    volume_names_to_be_removed = []
     new_ags_set = []
 
     initial_and_forms = zip(session,get('initial_data', []), formset.forms)
     for i, f in initial_and_forms:
 
         if f.cleaned_data['remove']:
-            vol = db.read_volume(i['volume_name'])
+            vol = db.get_volume_by_name(i['volume_name'])
 
             # update each volume's new AG list
             new_ags = vol.ag_ids[:]
@@ -330,8 +329,7 @@ def removevolumes(request, g_name):
             new_ags_set.append({'ag_ids':new_ags})
 
             # update info for AG update
-            volume_ids_to_be_removed.append(db.read_volume(i['volume_name']).volume_id)
-            volume_names_to_be_removed.append(i['volume_name'])
+            volume_ids_to_be_removed.append(vol.volume_id)
 
     if not volume_ids_to_be_removed:
         session['message'] = "You must select at least one volume to remove."
@@ -341,7 +339,7 @@ def removevolumes(request, g_name):
     new_vids = list(old_vids - set(volume_ids_to_be_removed))
     gfields = {'volume_ids':new_vids}
     try:
-        multi_update(volume_names_to_be_removed, g_name, new_ags_set, gfields)
+        multi_update(volume_ids_to_be_removed, g_name, new_ags_set, gfields)
     except Exception as e:
         logging.error("Unable to update acquisition gateway %s. Exception %s" % (g_name, e))
         session['message'] = "Unable to update gateway."
@@ -425,6 +423,7 @@ def create(request):
     '''
     session = request.session
     username = session['login_email']
+    user = db.read_user( username )
 
     # Helper method used to simplify error-handling. When fields are entered incorrectly,
     # a session message is set and this method is called.
@@ -600,7 +599,7 @@ def urlcreate(request, g_name, g_password, host, port, volume_name="",):
     kwargs['ms_username'] = g_name
     kwargs['ms_password'] = g_password
     if volume_name:
-        vol = db.read_volume(volume_name)
+        vol = db.get_volume_by_name(volume_name)
         if not vol:
             return HttpResponse("No volume %s exists." % volume_name)
         if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
