@@ -5,6 +5,8 @@ package SyndicateHadoop.util;
 
 import JSyndicateFS.FileSystem;
 import SyndicateHadoop.SyndicateConfig;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 
 /**
@@ -12,9 +14,17 @@ import org.apache.hadoop.conf.Configuration;
  * @author iychoi
  */
 public class FileSystemUtil {
+
+    public static final Log LOG = LogFactory.getLog(FileSystemUtil.class);
+    
     public static final FileSystem getFileSystem(Configuration conf) throws InstantiationException {
-        SyndicateConfig syndicateConfig = new SyndicateConfig(conf);
-        JSyndicateFS.Configuration jsfsConfig = syndicateConfig.getJSFSConfiguration();
-        return FileSystem.getInstance(jsfsConfig);
+        if(!FileSystem.isInitialized()) {
+            SyndicateConfig syndicateConfig = new SyndicateConfig(conf);
+            JSyndicateFS.Configuration jsfsConfig = syndicateConfig.getJSFSConfiguration();
+            
+            FileSystem.init(jsfsConfig);
+        }
+
+        return FileSystem.getInstance();
     }
 }

@@ -75,8 +75,8 @@ public class SyndicateInputSplit extends InputSplit implements Writable {
 
     @Override
     public String[] getLocations() throws IOException, InterruptedException {
-        String volume = this.filesystem.getConfiguration().getVolumeName();
-        return new String[] {volume};
+        String ugname = this.filesystem.getConfiguration().getUGName();
+        return new String[] {ugname};
     }
 
     @Override

@@ -49,68 +49,12 @@ public class SyndicateConfig {
         SyndicateConfigUtil.setNativeLibraryFile(this.config, path);
     }
     
-    public String getConfigFile() {
-        return SyndicateConfigUtil.getConfigFile(this.config);
-    }
-    
-    public void setConfigFile(String path) {
-        SyndicateConfigUtil.setConfigFile(this.config, path);
-    }
-    
-    public String getUGPassword() {
-        return SyndicateConfigUtil.getUGPassword(this.config);
-    }
-    
-    public void setUGPassword(String ug_password) {
-        SyndicateConfigUtil.setUGPassword(this.config, ug_password);
-    }
-    
-    public String getUGNamePrefix() {
-        return SyndicateConfigUtil.getUGNamePrefix(this.config);
-    }
-    
-    public void setUGNamePrefix(String ug_name) {
-        SyndicateConfigUtil.setUGNamePrefix(this.config, ug_name);
-    }
-    
     public String getUGName() {
         return SyndicateConfigUtil.getUGName(this.config);
     }
     
-    public String getVolumeName() {
-        return SyndicateConfigUtil.getVolumeName(this.config);
-    }
-    
-    public void setVolumeName(String volume_name) {
-        SyndicateConfigUtil.setVolumeName(this.config, volume_name);
-    }
-    
-    public String getVolumeSecret() {
-        return SyndicateConfigUtil.getVolumeSecret(this.config);
-    }
-    
-    public void setVolumeSecret(String volume_secret) {
-        SyndicateConfigUtil.setVolumeSecret(this.config, volume_secret);
-    }
-    
-    public String getMSUrl() {
-        return SyndicateConfigUtil.getMSUrl(this.config);
-    }
-    
-    public void setMSUrl(String msurl) {
-        SyndicateConfigUtil.setMSUrl(this.config, msurl);
-    }
-    
-    public void setMSUrl(URL msurl) {
-        SyndicateConfigUtil.setMSUrl(this.config, msurl);
-    }
-    
-    public int getPort() {
-        return SyndicateConfigUtil.getPort(this.config);
-    }
-    
-    public void setPort(int port) {
-        SyndicateConfigUtil.setPort(this.config, port);
+    public void setUGName(String ug_name) {
+        SyndicateConfigUtil.setUGName(this.config, ug_name);
     }
     
     public int getMaxMetadataCacheNum() {
@@ -158,16 +102,6 @@ public class SyndicateConfig {
             }
         }
         
-        String configFile = getConfigFile();
-        if(configFile != null) {
-            File configFileObj = new File(configFile);
-            try {
-                jsfsConfig.setConfigFile(configFileObj);
-            } catch (IllegalAccessException ex) {
-                LOG.error(ex);
-            }
-        }
-        
         String ugName = getUGName();
         if(ugName != null) {
             try {
@@ -175,52 +109,6 @@ public class SyndicateConfig {
             } catch (IllegalAccessException ex) {
                 LOG.error(ex);
             }
-        }
-        
-        String ugPassword = getUGPassword();
-        if(ugPassword != null) {
-            try {
-                jsfsConfig.setUGPassword(ugPassword);
-            } catch (IllegalAccessException ex) {
-                LOG.error(ex);
-            }
-        }
-        
-        String volumeName = getVolumeName();
-        if(volumeName != null) {
-            try {
-                jsfsConfig.setVolumeName(volumeName);
-            } catch (IllegalAccessException ex) {
-                LOG.error(ex);
-            }
-        }
-        
-        String volumeSecret = getVolumeSecret();
-        if(volumeSecret != null) {
-            try {
-                jsfsConfig.setVolumeSecret(volumeSecret);
-            } catch (IllegalAccessException ex) {
-                LOG.error(ex);
-            }
-        }
-        
-        String msUrl = getMSUrl();
-        if(msUrl != null) {
-            try {
-                URI msurlObj = new URI(msUrl);
-                jsfsConfig.setMSUrl(msurlObj);
-            } catch (IllegalAccessException ex) {
-                LOG.error(ex);
-            } catch (URISyntaxException ex) {
-                LOG.error(ex);
-            }
-        }
-        
-        int port = getPort();
-        try {
-            jsfsConfig.setPort(port);
-        } catch (IllegalAccessException ex) {
-            LOG.error(ex);
         }
         
         int maxMetadataCacheSize = getMaxMetadataCacheNum();

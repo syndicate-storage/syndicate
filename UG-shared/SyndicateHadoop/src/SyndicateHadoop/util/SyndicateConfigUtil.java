@@ -6,7 +6,6 @@ package SyndicateHadoop.util;
 import JSyndicateFS.FilenameFilter;
 import JSyndicateFS.Path;
 import java.io.IOException;
-import java.net.URL;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -26,13 +25,7 @@ public class SyndicateConfigUtil {
     public static final Log LOG = LogFactory.getLog(SyndicateConfigUtil.class);
 
     public static final String SYNDICATE_NATIVE_LIB_FILE = "syndicate.conf.native_file";
-    public static final String CONFIG_FILE = "syndicate.conf.config_file";
-    public static final String UG_PASSWORD = "syndicate.conf.ug.password";
-    public static final String UG_NAME_PREFIX = "syndicate.conf.ug.name.prefix";
-    public static final String VOLUME_NAME = "syndicate.conf.volume.name";
-    public static final String VOLUME_SECRET = "syndicate.conf.volume.secret";
-    public static final String MSURL = "syndicate.conf.ms_url";
-    public static final String PORT = "syndicate.conf.port";
+    public static final String UG_NAME = "syndicate.conf.ug.name";
     public static final String MAX_METADATA_CACHE = "syndicate.conf.max_metadata_cache";
     public static final String TIMEOUT_METADATA_CACHE = "syndicate.conf.timeout_metadata_cache";
     public static final String FILE_READ_BUFFER_SIZE = "syndicate.conf.file_read_buffer_size";
@@ -73,77 +66,12 @@ public class SyndicateConfigUtil {
         return conf.get(SYNDICATE_NATIVE_LIB_FILE);
     }
     
-    public static void setConfigFile(Configuration conf, String path) {
-        conf.set(CONFIG_FILE, path);
-    }
-    
-    public static String getConfigFile(Configuration conf) {
-        return conf.get(CONFIG_FILE);
-    }
-    
-    public static void setUGPassword(Configuration conf, String ug_password) {
-        conf.set(UG_PASSWORD, ug_password);
-    }
-    
-    public static String getUGPassword(Configuration conf) {
-        return conf.get(UG_PASSWORD);
-    }
-    
-    public static void setUGNamePrefix(Configuration conf, String ug_name_prefix) {
-        conf.set(UG_NAME_PREFIX, ug_name_prefix);
-    }
-    
-    public static String getUGNamePrefix(Configuration conf) {
-        return conf.get(UG_NAME_PREFIX);
+    public static void setUGName(Configuration conf, String ug_name) {
+        conf.set(UG_NAME, ug_name);
     }
     
     public static String getUGName(Configuration conf) {
-        String prefix = getUGNamePrefix(conf);
-        return UGNameUtil.getUGName(prefix);
-    }
-    
-    public static void setVolumeName(Configuration conf, String volume_name) {
-        conf.set(VOLUME_NAME, volume_name);
-    }
-    
-    public static String getVolumeName(Configuration conf) {
-        return conf.get(VOLUME_NAME);
-    }
-    
-    public static void setVolumeSecret(Configuration conf, String volume_secret) {
-        conf.set(VOLUME_SECRET, volume_secret);
-    }
-    
-    public static String getVolumeSecret(Configuration conf) {
-        return conf.get(VOLUME_SECRET);
-    }
-    
-    public static void setMSUrl(Configuration conf, String msurl) {
-        try {
-            URL url = new URL(msurl);
-            setMSUrl(conf, url);
-        } catch(Exception ex) {
-            throw new IllegalArgumentException("Given msurl is not a valid format");
-        }
-    }
-    
-    public static void setMSUrl(Configuration conf, URL msurl) {
-        if(msurl == null)
-            throw new IllegalArgumentException("Can not set url from null parameter");
-        
-        conf.set(MSURL, msurl.toString());
-    }
-    
-    public static String getMSUrl(Configuration conf) {
-        return conf.get(MSURL);
-    }
-    
-    public static void setPort(Configuration conf, int port) {
-        conf.setInt(PORT, port);
-    }
-    
-    public static int getPort(Configuration conf) {
-        return conf.getInt(PORT, 0);
+        return conf.get(UG_NAME);
     }
     
     public static void setMaxMetadataCacheNum(Configuration conf, int maxCache) {
@@ -283,35 +211,35 @@ public class SyndicateConfigUtil {
     }
 
     public static void setInputPaths(Configuration conf, String pathstrings) throws IOException {
-        String[] pathstr = StringUtils.getPathStrings(pathstrings);
-        Path[] patharr = StringUtils.stringToPath(pathstr);
+        String[] pathstr = StringUtil.getPathStrings(pathstrings);
+        Path[] patharr = StringUtil.stringToPath(pathstr);
         setInputPaths(conf, patharr);
     }
     
     public static void addInputPaths(Configuration conf, String pathstrings) throws IOException {
-        String[] pathstr = StringUtils.getPathStrings(pathstrings);
+        String[] pathstr = StringUtil.getPathStrings(pathstrings);
         for(String str : pathstr) {
-            addInputPath(conf, StringUtils.stringToPath(str));
+            addInputPath(conf, StringUtil.stringToPath(str));
         }
     }
     
     public static void setInputPaths(Configuration conf, Path... inputPaths) throws IOException {
-        String path = StringUtils.generatePathString(inputPaths);
+        String path = StringUtil.generatePathString(inputPaths);
         conf.set(INPUT_DIR, path);
     }
     
     public static void addInputPath(Configuration conf, Path inputPath) throws IOException {
         String dirs = conf.get(INPUT_DIR);
         
-        String newDirs = StringUtils.addPathString(dirs, inputPath);
+        String newDirs = StringUtil.addPathString(dirs, inputPath);
         conf.set(INPUT_DIR, newDirs);
     }
     
     public static Path[] getInputPaths(Configuration conf) {
         String dirs = conf.get(INPUT_DIR, "");
         
-        String[] list = StringUtils.getPathStrings(dirs);
-        return StringUtils.stringToPath(list);
+        String[] list = StringUtil.getPathStrings(dirs);
+        return StringUtil.stringToPath(list);
     }
     
     public static void setInputPathFilter(Configuration conf, Class<? extends FilenameFilter> filter) {
@@ -331,7 +259,7 @@ public class SyndicateConfigUtil {
     }
 
     public static Path getOutputPath(Configuration conf) {
-        return StringUtils.stringToPath(conf.get(OUTPUT_DIR));
+        return StringUtil.stringToPath(conf.get(OUTPUT_DIR));
     }
     
     public static void setOutputBaseName(Configuration conf, String basename) {
