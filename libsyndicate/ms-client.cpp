@@ -18,6 +18,19 @@ static void print_timings( uint64_t* timings, size_t num_timings, char const* hd
    }
 }
 
+
+static void UG_cred_free( struct UG_cred* cred ) {
+   if( cred->hostname ) {
+      free( cred->hostname );
+      cred->hostname = NULL;
+   }
+
+   if( cred->name ) {
+      free( cred->name );
+      cred->name = NULL;
+   }
+}
+
 // create an MS client context
 int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, char const* username, char const* passwd ) {
 
@@ -51,6 +64,8 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, ch
    
    if( username && passwd ) {
       // we have authentication tokens!
+      // TODO: username must be the gateway ID, not the gateway name
+      // TODO: passwd must be the gateway session password
       curl_easy_setopt( client->ms_read, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
       curl_easy_setopt( client->ms_write, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
       
@@ -593,32 +608,33 @@ int ms_client_reload_UGs( struct ms_client* client ) {
       return -EINVAL;
    }
 
-   struct md_user_entry** users = CALLOC_LIST( struct md_user_entry*, volume_ugs.ug_creds_size() + 1 );
+   struct UG_cred** ugs = CALLOC_LIST( struct UG_cred*, volume_ugs.ug_creds_size() + 1 );
    for( int i = 0; i < volume_ugs.ug_creds_size(); i++ ) {
-      struct md_user_entry* uent = CALLOC_LIST( struct md_user_entry, 1 );
+      struct UG_cred* uent = CALLOC_LIST( struct UG_cred, 1 );
 
       uent->uid = volume_ugs.ug_creds(i).owner_id();
-      uent->username = strdup( volume_ugs.ug_creds(i).username().c_str() );
-      uent->password_hash = strdup( volume_ugs.ug_creds(i).password_hash().c_str() );
+      uent->name = strdup( volume_ugs.ug_creds(i).name().c_str() );
+      uent->hostname = strdup( volume_ugs.ug_creds(i).hostname().c_str() );
+      uent->portnum = volume_ugs.ug_creds(i).portnum();
 
-      users[i] = uent;
+      ugs[i] = uent;
 
-      dbprintf("UG: %" PRIu64 " : %s\n", uent->uid, uent->username );
+      dbprintf("UG: %" PRIu64 " : %s\n", uent->uid, uent->name );
    }
 
    uint64_t UG_version = volume_ugs.ug_version();
    
    ms_client_view_wlock( client );
 
-   struct md_user_entry** old_users = client->UG_creds;
-   client->UG_creds = users;
+   struct UG_creds** old_users = client->UG_creds;
+   client->UG_creds = ugs;
    client->UG_version = UG_version;
 
    ms_client_view_unlock( client );
 
    if( old_users ) {
       for( int i = 0; old_users[i] != NULL; i++ ) {
-         md_free_user_entry( old_users[i] );
+         UG_cred_free( old_users[i] );
          free( old_users[i] );
       }
       free( old_users );
@@ -732,14 +748,26 @@ int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_
       return -EINVAL;
    }
 
-   struct md_user_entry cred;
+   struct UG_cred cred;
    memset( &cred, 0, sizeof(cred) );
 
    cred.uid = volume_md.cred().owner_id();
-   cred.username = strdup( volume_md.cred().username().c_str() );
-   cred.password_hash = strdup( volume_md.cred().password_hash().c_str() );
+   cred.name = strdup( volume_md.cred().name().c_str() );
+   cred.hostname = strdup( volume_md.cred().host().c_str() );
+   cred.portnum = volume_md.cred().port();
+
 
    ms_client_wlock( client );
+
+   
+   // verify that our host and port match the MS's record
+   if( strcmp( cred.hostname != client->conf->hostname ) != 0 || cred.portnum != client->conf->portnum ) {
+      // wrong host
+      errorf("ERR: This UG is running on %s:%d, but the MS says it should be running on %s:%d.\n", client->conf->hostname, client->conf->portnum, cred.hostname, cred.portnum );
+      ms_client_unlock( client );
+
+      return -ENOTCONN;
+   }
 
    client->owner_id = volume_md.cred().owner_id();
    client->volume_owner_id = volume_md.owner_id();
@@ -772,21 +800,27 @@ int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_
    client->UG_version = UG_version;
    client->RG_version = RG_version;
    client->session_timeout = volume_md.session_timeout();
-   if( client->session_token ) {
-      md_free_user_entry( client->session_token );
-      memcpy( client->session_token, &cred, sizeof(cred) );
+   
+   if( client->session_cred ) {
+      UG_cred_free( client->session_cred );
    }
+   
+   memcpy( client->session_cred, &cred, sizeof(cred) );
    
    ms_client_view_unlock( client );
 
    if( prev_UG_version != UG_version ) {
       rc = ms_client_reload_UGs( client );
-      dbprintf("ms_client_reload_UGs(%s) rc = %d\n", volume_name, rc );
+      if( rc != 0 ) {
+         dbprintf("ms_client_reload_UGs(%s) rc = %d\n", volume_name, rc );
+      }
    }
 
    if( prev_RG_version != RG_version ) {
       rc = ms_client_reload_RGs( client );
-      dbprintf("ms_client_reload_RGs(%s) rc = %d\n", volume_name, rc );
+      if( rc != 0 ) {
+         dbprintf("ms_client_reload_RGs(%s) rc = %d\n", volume_name, rc );
+      }
    }
 
    return 0;
@@ -1417,7 +1451,7 @@ uint64_t ms_client_authenticate( struct ms_client* client, struct md_HTTP_connec
    if( password == NULL )
       return MD_GUEST_UID;
    
-   char* password_hash = sha256_hash_printable( password, strlen(password) );
+   char* signature = sha256_hash_printable( password, strlen(password) );
    
    ms_client_view_rlock( client );
 

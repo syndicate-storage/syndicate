@@ -3575,7 +3575,7 @@ int md_init( int gateway_type,
       return rc;
    }
 
-   ms_client_rlock( client );
+   ms_client_wlock( client );
    conf->owner = client->owner_id;
    conf->volume_owner = client->volume_owner_id;
    conf->volume = client->volume_id;

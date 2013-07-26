@@ -14,6 +14,7 @@ from storage import storage
 import random
 import os
 import errno
+import crypto
 
 import logging
 
@@ -21,6 +22,8 @@ def make_ms_reply( volume, error ):
    reply = ms_pb2.ms_reply()
 
    reply.volume_version = volume.version
+   reply.UG_version = volume.UG_version
+   reply.RG_version = volume.RG_version
    reply.error = error
 
    return reply

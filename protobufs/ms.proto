@@ -44,16 +44,20 @@ message ms_update {
 
 // collection of object updates
 message ms_updates {
-   repeated ms_update updates = 1;
+   required string signature = 1;
+   repeated ms_update updates = 2;
 }
 
 // metadata information for the entries of a path
 message ms_reply {
-   required int64 volume_version = 1;           // version of this volume's metadata
-   repeated ms_entry entries_dir = 2;
-   repeated ms_entry entries_base = 3;
-   required int32 error = 4;
-   optional string errormsg = 5;
+   required uint64 volume_version = 1;           // version of this volume's metadata
+   required uint64 UG_version = 2;               // version of this volume's UGs
+   required uint64 RG_version = 3;               // version of this volume's RGs
+   required string signature = 4;                // Volume signature
+   repeated ms_entry entries_dir = 5;
+   repeated ms_entry entries_base = 6;
+   required int32 error = 7;
+   optional string errormsg = 8;
 }
 
 // metadata information on a block
@@ -78,11 +82,11 @@ message ms_gateway_blockinfo {
 
 // volume gateway credential set.  Lets gateways authenticate to the MS
 message ms_volume_gateway_cred {
-   required uint64 owner_id = 1;           // ID of gateway
-   required string username = 2;          // name of gateway
-   required string password_hash = 3;     // hash of session password
-   required string host = 4;              // hostname of this gateway
-   required int32 port = 5;               // port number of this gateway
+   required uint64 owner_id = 1;          // ID of gateway
+   required string name = 2;             // name of gateway
+   required string host = 3;              // hostname of this gateway
+   required int32 port = 4;               // port number of this gateway
+   required string public_key = 5;        // public key of this gateway
 }
 
 
@@ -95,21 +99,26 @@ message ms_volume_metadata {
    required uint64 volume_version = 5;
    required uint64 UG_version = 6;
    required uint64 RG_version = 7;
-   required int64 session_timeout = 8;
+   required int64 session_timeout = 8;       // how long is the sesion password good for (negative for "forever")
    required string name = 9;
    required string description = 10;
+   required string volume_public_key = 11;
+   required string signature = 12;              // Volume signature of this message (NOTE: it is self-signed)
+   required string session_password = 13;       // temporary password the caller should use in the future to authenticate to the MS
 }
 
 
 // UGs
 message ms_volume_UGs {
    required uint64 ug_version = 1;
-   repeated ms_volume_gateway_cred ug_creds = 2;  // session credentials for the other write-capable UGs in this Volume
+   required string signature = 2;                  // Volume signature of this message
+   repeated ms_volume_gateway_cred ug_creds = 3;  // session credentials for the other write-capable UGs in this Volume
 }
 
 // RGs
 message ms_volume_RGs {
    required uint64 rg_version = 1;
-   repeated string rg_hosts = 2;
-   repeated int32 rg_ports = 3;
+   required string signature = 2;      // Volume signature of this message
+   repeated string rg_hosts = 3;
+   repeated int32 rg_ports = 4;
 }

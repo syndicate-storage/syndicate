@@ -45,6 +45,14 @@ struct ms_client_timing {
    uint64_t resolve_time;
 };
 
+
+struct UG_cred {
+   uint64_t uid;
+   char* name;
+   char* hostname;
+   int portnum;
+};
+
 struct ms_client {
    pthread_rwlock_t lock;
    
@@ -76,7 +84,7 @@ struct ms_client {
 
    // gateway view-change structures
    pthread_t view_thread;
-   struct md_user_entry** UG_creds;
+   struct UG_cred** UG_creds;
    char** RG_urls;
    int num_RG_urls;
    uint64_t volume_version;      // version of the volume's metadata
@@ -85,7 +93,7 @@ struct ms_client {
    pthread_rwlock_t view_lock;
 
    // session information
-   struct md_user_entry* session_token;
+   struct UG_cred* session_cred;
    int64_t session_timeout;                 // how long the session is valid
 
    // MS public key

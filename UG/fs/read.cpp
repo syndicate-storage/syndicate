@@ -9,6 +9,8 @@
 #include "network.h"
 #include "url.h"
 
+// TODO : interpret HTTP 204 as EAGAIN
+
 // Given an offset, get the corresponding block's data
 // fent must be at least read-locked first
 ssize_t fs_entry_do_read_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t offset, char* block_bits ) {
