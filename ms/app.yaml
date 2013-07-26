@@ -17,7 +17,7 @@ handlers:
   script: cron.app
   login: admin
 
-- url: /django_static
+- url: /static
   static_dir: django_static
 
 - url: /syn.*

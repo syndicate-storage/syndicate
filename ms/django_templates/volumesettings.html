@@ -42,7 +42,7 @@
   <hr/>
 
   <h3>Change volume description</h3>
-  <form action='{% url django_volume.views.changevolume volume.volume_id %}' method="post">{% csrf_token %}
+  <form action='{% url django_volume.views.changedesc volume.volume_id %}' method="post">{% csrf_token %}
     {{ desc_form.as_ul }}
     {{ password.as_ul }}
     <input class="submit" type="submit" value="Change" />

@@ -273,7 +273,7 @@ def addvolume(request, g_id):
 
         # prepare volume state
         if volume.rg_ids:
-            new_rgs = volume.rg_ids[:]
+            new_rgs = volume.rg_ids
             new_rgs.append(gateway.g_id)
         else:
             new_rgs = [gateway.g_id]
@@ -349,7 +349,7 @@ def removevolumes(request, g_id):
             vol = vols[0]
 
             # update each volumes new RG list
-            new_rgs = vol.rg_ids[:]
+            new_rgs = vol.rg_ids
             new_rgs.remove(g_id)
             new_rgs_set.append({'rg_ids':new_rgs})
 
@@ -451,7 +451,7 @@ def create(request):
     # Helper method used to simplify error-handling. When fields are entered incorrectly,
     # a session message is set and this method is called.
     def give_create_form(username, session):
-        message = session.pop('message' "")
+        message = session.pop('message', "")
         form = gatewayforms.CreateRG()
         t = loader.get_template('gateway_templates/create_replica_gateway.html')
         c = RequestContext(request, {'username':username,'form':form, 'message':message})
@@ -570,7 +570,7 @@ def delete(request, g_id):
             vol = db.read_volume(v)
             if not vol:
                 continue
-            new_rg_ids = vol.rg_ids[:]
+            new_rg_ids = vol.rg_ids
             new_rg_ids.remove(rg_id)
             attrs = {"rg_ids":new_rg_ids}
             db.update_volume(v, **attrs)

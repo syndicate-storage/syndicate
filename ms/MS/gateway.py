@@ -22,7 +22,6 @@ import datetime
 import random
 import logging
 
-
 USERNAME_LENGTH = 256
 PASSWORD_LENGTH = 256
 
@@ -50,7 +49,7 @@ class IDCounter( storagetypes.Object ):
 
    @classmethod
    def next_value(cls):
-      return storagetypes.transaction( lambda: cls.__next_value() )
+      return cls.__next_value()
 
 class AG_IDCounter( IDCounter ):
    gateway_type = "AG"
@@ -193,6 +192,24 @@ class UserGateway( Gateway ):
          host                 str
          port                 int
       """
+      # Isolates the DB elements in a transactioned call
+      @storagetypes.transactional(xg=True)
+      def transactional_create(**kwargs):
+         ug_id = UG_IDCounter.next_value()
+         kwargs['g_id'] = ug_id
+
+         ug_key_name = UserGateway.make_key_name( g_id=ug_id )
+         ug_key = storagetypes.make_key( UserGateway, ug_key_name)
+         ug = ug_key.get()
+         
+         if 'ms_password' in kwargs:
+            del kwargs['ms_password']
+         ug = UserGateway( key=ug_key, **kwargs )
+
+         # clear cached UG listings
+         storagetypes.memcache.delete( UserGateway.cache_listing_key( volume_id=kwargs['volume_id'] ) )
+         return ug.put()
+
 
       if volume:
          kwargs['volume_id'] = volume.volume_id
@@ -226,23 +243,8 @@ class UserGateway( Gateway ):
       if len(existing_gateways) > 0:
          # gateway already exists
          raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
-
       else:
-         # TODO: transaction -jcnelson
-         ug_id = UG_IDCounter.next_value()
-         kwargs['g_id'] = ug_id
-
-         ug_key_name = UserGateway.make_key_name( g_id=ug_id )
-         ug_key = storagetypes.make_key( UserGateway, ug_key_name)
-         ug = ug_key.get()
-         
-         if 'ms_password' in kwargs:
-            del kwargs['ms_password']
-         ug = UserGateway( key=ug_key, **kwargs )
-
-         # clear cached UG listings
-         storagetypes.memcache.delete( UserGateway.cache_listing_key( volume_id=kwargs['volume_id'] ) )
-         return ug.put()
+         return transactional_create(**kwargs)
 
 
    @classmethod
@@ -371,6 +373,25 @@ class AcquisitionGateway( Gateway ):
          ms_password_hash     str
          json_config          JSON (dict)
       """
+      # Isolates the DB elements in a transactioned call
+      @storagetypes.transactional(xg=True)
+      def transactional_create(**kwargs):
+         ag_id = AG_IDCounter.next_value()
+         kwargs['g_id'] = ag_id
+
+         ag_key_name = AcquisitionGateway.make_key_name( g_id=ag_id ) 
+         ag_key = storagetypes.make_key( AcquisitionGateway, ag_key_name )
+         ag = ag_key.get()
+
+         if 'ms_password' in kwargs:
+            del kwargs['ms_password']
+         ag = AcquisitionGateway( key=ag_key, **kwargs )
+
+         # clear cached AG listings
+         storagetypes.memcache.delete(ag_key_name)
+         return ag.put()
+
+
 
       kwargs['owner_id'] = user.owner_id
 
@@ -403,21 +424,7 @@ class AcquisitionGateway( Gateway ):
          # gateway already exists
          raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
       else:
-         ag_id = AG_IDCounter.next_value()
-         kwargs['g_id'] = ag_id
-
-         ag_key_name = AcquisitionGateway.make_key_name( g_id=ag_id ) 
-         ag_key = storagetypes.make_key( AcquisitionGateway, ag_key_name )
-         ag = ag_key.get()
-
-         if 'ms_password' in kwargs:
-            del kwargs['ms_password']
-         ag = AcquisitionGateway( key=ag_key, **kwargs )
-
-         # clear cached AG listings
-         storagetypes.memcache.delete(ag_key_name)
-
-         return ag.put()
+         return transactional_create(**kwargs)
 
 
    @classmethod
@@ -547,6 +554,23 @@ class ReplicaGateway( Gateway ):
          json_config          JSON (dict)
          private              bool
       """
+      # Isolates the DB elements in a transactioned call
+      @storagetypes.transactional(xg=True)
+      def transactional_create(**kwargs):
+         rg_id = RG_IDCounter.next_value()
+         kwargs['g_id'] = rg_id
+
+         rg_key_name = ReplicaGateway.make_key_name( g_id=rg_id ) 
+         rg_key = storagetypes.make_key( ReplicaGateway, rg_key_name )
+         rg = rg_key.get()
+         if 'ms_password' in kwargs:
+            del kwargs['ms_password']
+         rg = ReplicaGateway( key=rg_key, **kwargs )
+
+         # clear cached RG listings
+         storagetypes.memcache.delete(rg_key_name)
+         
+         return rg.put()
 
       kwargs['owner_id'] = user.owner_id
 
@@ -579,22 +603,7 @@ class ReplicaGateway( Gateway ):
          # gateway already exists
          raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
       else:
-
-         rg_id = RG_IDCounter.next_value()
-         kwargs['g_id'] = rg_id
-
-         rg_key_name = ReplicaGateway.make_key_name( g_id=rg_id ) 
-         rg_key = storagetypes.make_key( ReplicaGateway, rg_key_name )
-         rg = rg_key.get()
-         if 'ms_password' in kwargs:
-            del kwargs['ms_password']
-         rg = ReplicaGateway( key=rg_key, **kwargs )
-
-         # clear cached RG listings
-         storagetypes.memcache.delete(rg_key_name)
-
-         return rg.put()
-
+         return transactional_create(**kwargs)
 
    @classmethod
    def Read( cls, g_id ):

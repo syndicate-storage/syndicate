@@ -260,7 +260,7 @@ def addvolume(request, g_id):
 
         # Prepare upcoming volume state
         if volume.ag_ids:
-            new_ags = volume.ag_ids[:]
+            new_ags = volume.ag_ids
             new_ags.append(gateway.g_id)
         else:
             new_ags = [gateway.g_id]
@@ -335,7 +335,7 @@ def removevolumes(request, g_id):
             vol = vols[0]
 
             # update each volume's new AG list
-            new_ags = vol.ag_ids[:]
+            new_ags = vol.ag_ids
             new_ags.remove(int(g_id))
             new_ags_set.append({'ag_ids':new_ags})
 
@@ -559,7 +559,7 @@ def delete(request, g_id):
             vol = db.read_volume(v)
             if not vol:
                 continue
-            new_ag_ids = vol.ag_ids[:]
+            new_ag_ids = vol.ag_ids
             new_ag_ids.remove(ag_id)
             attrs = {"ag_ids":new_ag_ids}
             db.update_volume(v, **attrs)

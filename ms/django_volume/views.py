@@ -1,22 +1,41 @@
+'''
+
+All of these views are predicated on the user already being logged in to
+valid session.
+
+djago_volume/views.py
+John Whelchel
+Summer 2013
+
+These are the views for the Volume section of the administration
+site. They are all decorated with @authenticate to make sure that a user is 
+logged in; if not, they are redirected to the login page. They can
+be decorated with verifyownership to minimize access to un-owned volumes.
+
+'''
+import logging
+
 from django.http import HttpResponse, HttpResponseRedirect
 from django.template import Context, loader, RequestContext
 from django.shortcuts import redirect
-
-from django_lib.auth import authenticate, verifyownership
-import django_volume.forms as forms
-import django_lib.forms as libforms
 from django.forms.formsets import formset_factory
 
-import logging
+from django_lib.auth import authenticate, verifyownership, verifyownership_private
+import django_lib.forms as libforms
+import django_volume.forms as forms
 
-from storage.storagetypes import transactional, clock_gettime, get_time
 import storage.storage as db
+from storage.storagetypes import transactional, clock_gettime, get_time
+
 from MS.volume import Volume
 from MS.user import SyndicateUser as User
 from MS.entry import MSENTRY_TYPE_DIR
 
 @authenticate
 def myvolumes(request):
+    '''
+    View that display all of user's owned volumes
+    '''
     session = request.session
     username = session['login_email']
     user = db.read_user(username)
@@ -50,6 +69,9 @@ def myvolumes(request):
 
 @authenticate
 def allvolumes(request):
+    '''
+    Display all public volumes
+    '''
     session = request.session
     username = session['login_email']
     v_attrs = {'Volume.private !=': True}
@@ -63,14 +85,17 @@ def allvolumes(request):
     c = Context({'username':username, 'vols':vols})
     return HttpResponse(t.render(c))
 
-#@verifyownership
+@verifyownership_private
 @authenticate
 def addpermissions(request, volume_id):
+    '''
+    This handler allows adding users to volumes so they can have either read access or read and write access.
+    '''
     session = request.session
     username = session['login_email']
 
     if request.method != "POST":
-        return HttpResponseRedirect('syn/volume/' + str(vol.volume_id) + '/permissions')
+        return redirect('syn/volume/' + str(vol.volume_id) + '/permissions')
     else:
 
         vol = db.read_volume( volume_id )
@@ -79,16 +104,7 @@ def addpermissions(request, volume_id):
         addform = forms.AddPermissions(request.POST)
         passwordform = libforms.Password(request.POST)
 
-        afv = False # addform is valid?
-        psv = False # passwordform is valid?
-
-        if addform.is_valid():
-            afv = True
-        if passwordform.is_valid():
-            psv = True
-
-        # Password required, send them back.
-        if not psv:
+        if not passwordform.is_valid():
             session['message'] = "Password required."
             return redirect('django_volume.views.volumepermissions', vol.volume_id)
         else:
@@ -96,9 +112,13 @@ def addpermissions(request, volume_id):
             if vol.volume_secret_salted_hash != Volume.generate_password_hash(passwordform.cleaned_data['password'], vol.volume_secret_salt):
                 session['message'] = "Incorrect password"
                 return redirect('django_volume.views.volumepermissions', vol.volume_id)
-        
-        # Adduser fulfillment
-        if afv:
+
+        if not addform.is_valid():
+            session['message'] = "Incorrect entry fields: likely invalid email address."
+            return redirect('django_volume.views.volumepermissions', vol.volume_id)
+
+        # Ok to update
+        else:
             new_username = addform.cleaned_data['user']
             
             read = addform.cleaned_data['read']
@@ -132,23 +152,24 @@ def addpermissions(request, volume_id):
                 db.update_user(new_username, **fields)
             # Clear out old permissions data.
             session.pop('initial_perms' + str(volume_id), None)
-        else:
-            session['message'] = "Incorrect entry fields: likely invalid email address."
-            return redirect('django_volume.views.volumepermissions', vol.volume_id)
 
-        session['new_change'] = "We've saved a new user to your volume."
-        session['next_url'] = '/syn/volume/' + str(vol.volume_id) + '/permissions'
-        session['next_message'] = "Click here to see your volumes permissions."
-        return HttpResponseRedirect('/syn/thanks')    
+            session['new_change'] = "We've saved a new user to your volume."
+            session['next_url'] = '/syn/volume/' + str(vol.volume_id) + '/permissions'
+            session['next_message'] = "Click here to see your volumes permissions."
+            return redirect('/syn/thanks')    
 
 
 # Since this method is transactional, all queries must be ancestral. Since currently,
-# we don't seem to be doing ancestral keys, we can skip it by passing initial data back.
-# This also saves calculation etc. I think I'll add it to all calls of volumepermissions().                    
+# we don't seem to be doing ancestral keys, we can skip it by passing initial perms back.
+                  
 @transactional(xg=True)
-#@verifyownership
+@verifyownership_private
 @authenticate
 def changepermissions(request, volume_id):
+    '''
+    This view handles modification or removal of rights to the volume for users who 
+    already had some rights.
+    '''
     session = request.session
     username = session['login_email']
     vol = db.read_volume( volume_id )
@@ -158,22 +179,12 @@ def changepermissions(request, volume_id):
     PermissionFormSet = formset_factory(forms.Permissions, extra=0)
     
     if request.method != "POST":
-        return HttpResponseRedirect('syn/volume/' + str(vol.volume_id) + '/permissions')
+        return redirect('syn/volume/' + str(vol.volume_id) + '/permissions')
     else:
-
-        fsv = False # Formset is valid?
-        psv = False # passwordform is valid?
-
         passwordform = libforms.Password(request.POST)
         formset = PermissionFormSet(request.POST)
         
-        if formset.is_valid():
-            fsv = True
-        if passwordform.is_valid():
-            psv = True
-
-        # Password required, send them back.
-        if not psv:
+        if not passwordform.is_valid():
             session['message'] = "Password required."
             return redirect('django_volume.views.volumepermissions', vol.volume_id)
         else:
@@ -182,8 +193,10 @@ def changepermissions(request, volume_id):
                 session['message'] = "Incorrect password"
                 return redirect('django_volume.views.volumepermissions', vol.volume_id)
 
-        # Formset fulfillment
-        if fsv:
+        if not formset.is_valid():
+            session['message'] = "Invalid field entries."
+            return redirect('django_volume.views.volumepermissions', vol.volume_id)
+        else:
             initial_and_forms = zip(session['initial_perms' + str(volume_id)], formset.forms)
             for data, form in initial_and_forms:
 
@@ -234,20 +247,22 @@ def changepermissions(request, volume_id):
                             new_volumes_r = []
                         fields = {'volumes_r':new_volumes_r}
                         db.update_user(check_username, **fields)
+
             # Clear out stale data.
             session.pop("initial_perms" + str(volume_id), None)
-        else:
-            session['message'] = "Invalid field entries."
-            return redirect('django_volume.views.volumepermissions', vol.volume_id)
 
-        session['new_change'] = "We've saved your new permissions."
-        session['next_url'] = '/syn/volume/' + str(vol.volume_id) + '/permissions'
-        session['next_message'] = "Click here to see your volumes permissions."
-        return HttpResponseRedirect('/syn/thanks') 
+            session['new_change'] = "We've saved your new permissions."
+            session['next_url'] = '/syn/volume/' + str(vol.volume_id) + '/permissions'
+            session['next_message'] = "Click here to see your volumes permissions."
+            return redirect('/syn/thanks') 
 
-#@verifyownership
+@verifyownership_private
 @authenticate
 def volumepermissions(request, volume_id):
+    '''
+    View for the webpage that shows the current state of user permissions for 
+    the volume. Populates initial_perms if not already extant.
+    '''
     session = request.session
     username = session['login_email']
     vol = db.read_volume( volume_id )
@@ -298,6 +313,7 @@ def volumepermissions(request, volume_id):
                         'message':message} )
     return HttpResponse(t.render(c))
 
+@verifyownership_private
 @authenticate
 def viewvolume(request, volume_id):
 
@@ -307,7 +323,7 @@ def viewvolume(request, volume_id):
     vol = db.read_volume( volume_id )
 
     if not vol:
-        return redirect('django_volume.views.viewvolume', volume_id)
+        return redirect('django_volume.views.failure')
 
     rgs = db.list_replica_gateways_by_volume(vol.volume_id)
     ags = db.list_acquisition_gateways_by_volume(vol.volume_id)
@@ -321,7 +337,7 @@ def viewvolume(request, volume_id):
                        )
     return HttpResponse(t.render(c))
 
-#@verifyownership
+@verifyownership_private
 @authenticate
 def activatevolume(request, volume_id):
 
@@ -349,10 +365,10 @@ def activatevolume(request, volume_id):
         session['new_change'] = "We've activated your volume."
         session['next_url'] = '/syn/volume/' + str(vol.volume_id)
         session['next_message'] = "Click here to go back to your volume."
-        return HttpResponseRedirect('/syn/thanks') 
-    return HttpResponseRedirect('/syn/volume/' + str(vol.volume_id))
+        return redirect('/syn/thanks') 
+    return redirect('/syn/volume/' + str(vol.volume_id))
 
-#@verifyownership
+@verifyownership_private
 @authenticate
 def deactivatevolume(request, volume_id):
     session = request.session
@@ -378,13 +394,19 @@ def deactivatevolume(request, volume_id):
         session['new_change'] = "We've deactivated your volume."
         session['next_url'] = '/syn/volume/' + str(vol.volume_id)
         session['next_message'] = "Click here to go back to your volume."
-        return HttpResponseRedirect('/syn/thanks')
-    return HttpResponseRedirect("/syn/volume/" + str(vol.volume_id))
+        return redirect('/syn/thanks')
+    return redirect("/syn/volume/" + str(vol.volume_id))
 
-#@verifyownership
+@verifyownership_private
 @authenticate
 def deletevolume(request, volume_id):
+    '''
+    View for deleting volumes. Since so many other entites have properties related
+    to volume ID's, numerous db updates need to be checked. CQ, they are all grouped
+    together into the transactional helper method multi_update().
+    '''
 
+    # Clear out volume_id in properties for users, UG's, AG's, and RG's.
     @transactional(xg=True)
     def multi_update(vol, users, usergateways, acquisitiongateways, replicagateways):
         v_id = vol.volume_id
@@ -395,17 +417,17 @@ def deletevolume(request, volume_id):
             fields = {}
 
             if v_id in user.volumes_o:
-                new_volumes_o = user.volumes_o[:]
+                new_volumes_o = user.volumes_o
                 new_volumes_o.remove(v_id)
                 fields['volumes_o'] = new_volumes_o
 
             if v_id in user.volumes_rw:
-                new_volumes_rw = user.volumes_rw[:]
+                new_volumes_rw = user.volumes_rw
                 new_volumes_rw.remove(v_id)
                 fields['volumes_rw'] = new_volumes_rw
 
             if v_id in user.volumes_r:
-                new_volumes_r = user.volumes_r[:]
+                new_volumes_r = user.volumes_r
                 new_volumes_r.remove(v_id)
                 fields['volumes_r'] = new_volumes_r
 
@@ -421,7 +443,7 @@ def deletevolume(request, volume_id):
         for ag in acquisitiongateways:
             logging.info(ag)
             fields = {}
-            new_ids = ag.volume_ids[:].remove(v_id)
+            new_ids = ag.volume_ids.remove(v_id)
             if not new_ids:
                 fields['volume_ids'] = []
             else:
@@ -430,7 +452,7 @@ def deletevolume(request, volume_id):
 
         for rg in replicagateways:
             fields = {}
-            new_ids = rg.volume_ids[:].remove(v_id)
+            new_ids = rg.volume_ids.remove(v_id)
             if not new_ids:
                 fields['volume_ids'] = []
             else:
@@ -450,7 +472,6 @@ def deletevolume(request, volume_id):
     vol = db.read_volume( volume_id )
     if not vol:
         return redirect('django_volume.views.viewvolume', volume_id)
-
 
     if request.method == "POST":
         form = forms.DeleteVolume(request.POST)
@@ -474,7 +495,7 @@ def deletevolume(request, volume_id):
                 session['new_change'] = "We've deleted your volume."
                 session['next_url'] = '/syn/volume/myvolumes/'
                 session['next_message'] = "Click here to go back to your volumes."
-                return HttpResponseRedirect('/syn/thanks')
+                return redirect('/syn/thanks')
             else:
                 session['message'] = "Invalid password"
                 return redirect('django_volume.views.deletevolume', volume_id=vol.volume_id)
@@ -488,7 +509,7 @@ def deletevolume(request, volume_id):
         return HttpResponse(t.render(c))    
 
 
-#@verifyownership
+@verifyownership_private
 @authenticate
 def changegateways_ag(request, volume_id):
     session = request.session
@@ -540,7 +561,7 @@ def changegateways_ag(request, volume_id):
 
         gfields = []
         for g in remove_gateways:
-            new_vol_ids = g.volume_ids[:]
+            new_vol_ids = g.volume_ids
             new_vol_ids.remove(vol.volume_id)
             gfields.append({"volume_ids":new_vol_ids})
         try:
@@ -551,13 +572,13 @@ def changegateways_ag(request, volume_id):
         session['new_change'] = "We've updated your volume."
         session['next_url'] = '/syn/volume/' + str(vol.volume_id)+ '/settings'
         session['next_message'] = "Click here to go back to your volume."
-        return HttpResponseRedirect('/syn/thanks')
+        return redirect('/syn/thanks')
 
     else:
         return redirect('django_volume.views.volumesettings', volume_id=vol.volume_id)
 
 
-#@verifyownership
+@verifyownership_private
 @authenticate
 def changegateways_rg(request, volume_id):
     session = request.session
@@ -611,7 +632,7 @@ def changegateways_rg(request, volume_id):
 
         gfields = []
         for g in remove_gateways:
-            new_vol_ids = g.volume_ids[:]
+            new_vol_ids = g.volume_ids
             new_vol_ids.remove(vol.volume_id)
             gfields.append({"volume_ids":new_vol_ids})
         try:
@@ -623,12 +644,12 @@ def changegateways_rg(request, volume_id):
         session['new_change'] = "We've updated your volume."
         session['next_url'] = '/syn/volume/' + str(vol.volume_id) + '/settings'
         session['next_message'] = "Click here to go back to your volume."
-        return HttpResponseRedirect('/syn/thanks')
+        return redirect('/syn/thanks')
 
     else:
         return redirect('django_volume.views.volumesettings', volume_id=vol.volume_id)
 
-#@verifyownership
+@verifyownership_private
 @authenticate
 def volumesettings(request, volume_id):
     '''
@@ -692,7 +713,7 @@ def volumesettings(request, volume_id):
                                  } )
     return HttpResponse(t.render(c))
 
-#@verifyownership
+@verifyownership_private
 @authenticate
 def volumeprivacy(request, volume_id):
     session = request.session
@@ -719,23 +740,22 @@ def volumeprivacy(request, volume_id):
             session['new_change'] = "We've publicized your volume."
             session['next_url'] = '/syn/volume/' + str(vol.volume_id)
             session['next_message'] = "Click here to go back to your volume."
-            return HttpResponseRedirect('/syn/thanks')
+            return redirect('/syn/thanks')
         else:
             fields = {"private":True}
             db.update_volume(vol.volume_id, **fields)
             session['new_change'] = "We've privatized your volume."
             session['next_url'] = '/syn/volume/' + str(vol.volume_id)
             session['next_message'] = "Click here to go back to your volume."
-            return HttpResponseRedirect('/syn/thanks')
+            return redirect('/syn/thanks')
 
     else:
-        return HttpResponseRedirect("/syn/volume/" + str(vol.volume_id))
+        return redirect("/syn/volume/" + str(vol.volume_id))
 
 
-# CHANGES VOLUME DESCRIPTION
-#@verifyownership
+@verifyownership_private
 @authenticate
-def changevolume(request, volume_id):
+def changedesc(request, volume_id):
     session = request.session
     username = session['login_email']
     vol = db.read_volume( volume_id )
@@ -743,7 +763,7 @@ def changevolume(request, volume_id):
         return redirect('django_volume.views.viewvolume', volume_id)
 
     if request.method != "POST":
-        return HttpResponseRedirect('/syn/volume/' + str(vol.volume_id) + '/settings')
+        return redirect('/syn/volume/' + str(vol.volume_id) + '/settings')
 
 
     form = libforms.Password(request.POST)
@@ -782,9 +802,9 @@ def changevolume(request, volume_id):
     session['new_change'] = "We've changed your volume description."
     session['next_url'] = '/syn/volume/' + str(vol.volume_id)
     session['next_message'] = "Click here to go back to your volume."
-    return HttpResponseRedirect('/syn/thanks')
+    return redirect('/syn/thanks')
 
-#@verifyownership
+@verifyownership_private
 @authenticate
 def changevolumepassword(request, volume_id):
     session = request.session
@@ -794,7 +814,7 @@ def changevolumepassword(request, volume_id):
         return redirect('django_volume.views.viewvolume', volume_id)
 
     if request.method != "POST":
-        return HttpResponseRedirect('/syn/volume/' + str(volume_id) + '/settings')
+        return redirect('/syn/volume/' + str(volume_id) + '/settings')
 
     form = libforms.ChangePassword(request.POST)
     if not form.is_valid():
@@ -821,15 +841,27 @@ def changevolumepassword(request, volume_id):
         session['new_change'] = "We've changed your volume's password."
         session['next_url'] = '/syn/volume/' + str(vol.volume_id)
         session['next_message'] = "Click here to go back to your volume."
-        return HttpResponseRedirect('/syn/thanks')
+        return redirect('/syn/thanks')
 
+
+@authenticate
+def failure(request):
+    ''' 
+    This view is passed when someone tries to access
+    a volume that doesn't exist or they don't have permission to acess.
+    '''
+    session = request.session
+    username = session['login_email']
+    t = loader.get_template('viewvolume_failure.html')
+    c = Context({'username':session['login_email']})
+    return HttpResponse(t.render(c))
 
 @authenticate
 def createvolume(request):
     session = request.session
     username = session['login_email']
-
     message = ""
+
 
     if request.method == "POST":
 
@@ -880,7 +912,7 @@ def createvolume(request):
             session['new_change'] = "Your new volume is ready."
             session['next_url'] = '/syn/volume/myvolumes/'
             session['next_message'] = "Click here to see your volumes."
-            return HttpResponseRedirect('/syn/thanks/')
+            return redirect('/syn/thanks/')
 
         else:
 
