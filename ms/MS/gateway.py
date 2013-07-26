@@ -152,7 +152,6 @@ class Gateway( storagetypes.Object ):
       now = int( time.time() )
       if self.session_password == None or (now > self.session_expires and self.session_expires > 0) or new_session:
          self.session_password = Gateway.generate_session_credentials()
-
          if volume.session_timeout > 0:
             self.session_expires = now + volume.session_timeout
          else:
@@ -246,7 +245,7 @@ class UserGateway( Gateway ):
       
 
    @classmethod
-   def Create( cls, user, volume, **kwargs ):
+   def Create( cls, user, volume=None, **kwargs ):
       """
       Given a user and volume, create a user gateway.
       Extra kwargs:
@@ -258,7 +257,10 @@ class UserGateway( Gateway ):
          port                 int
       """
 
-      kwargs['volume_id'] = volume.volume_id
+      if volume:
+         kwargs['volume_id'] = volume.volume_id
+      else:
+         kwargs['volume_id'] = 0
       kwargs['owner_id'] = user.owner_id
 
       UserGateway.fill_defaults( kwargs )
@@ -302,7 +304,7 @@ class UserGateway( Gateway ):
          ug = UserGateway( key=ug_key, **kwargs )
 
          # clear cached UG listings
-         storagetypes.memcache.delete( UserGateway.cache_listing_key( volume_id=volume.volume_id ) )
+         storagetypes.memcache.delete( UserGateway.cache_listing_key( volume_id=kwargs['volume_id'] ) )
          return ug.put()
 
 
@@ -392,6 +394,7 @@ class AcquisitionGateway( Gateway ):
    default_values = dict( Gateway.default_values.items() + {
       "json_config": (lambda cls, attrs: {}) # Default is only read
    }.items() )
+
 
    @classmethod
    def cache_listing_key( cls, **kwargs ):

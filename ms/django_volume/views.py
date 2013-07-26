@@ -75,7 +75,7 @@ def addpermissions(request, volume_id):
 
         vol = db.read_volume( volume_id )
         if not vol:
-            pass
+            return redirect('django_volume.views.viewvolume', volume_id)
         addform = forms.AddPermissions(request.POST)
         passwordform = libforms.Password(request.POST)
 
@@ -89,12 +89,13 @@ def addpermissions(request, volume_id):
 
         # Password required, send them back.
         if not psv:
-            return volumepermissions(request, vol.volume_id, message="Password required", initial_data=session['initial_data'])
+            session['message'] = "Password required."
+            return redirect('django_volume.views.volumepermissions', vol.volume_id)
         else:
             # Check password hash
             if vol.volume_secret_salted_hash != Volume.generate_password_hash(passwordform.cleaned_data['password'], vol.volume_secret_salt):
-                message = "Incorrect password"
-                return volumepermissions(request, vol.volume_id, message=message, initial_data=session['initial_data']) 
+                session['message'] = "Incorrect password"
+                return redirect('django_volume.views.volumepermissions', vol.volume_id)
         
         # Adduser fulfillment
         if afv:
@@ -103,19 +104,19 @@ def addpermissions(request, volume_id):
             read = addform.cleaned_data['read']
             write = addform.cleaned_data['write']
 
-            for data in session['initial_data']:
+            for data in session['initial_perms' + str(volume_id)]:
                 if data['user'] == new_username:
-                    message = "User already has rights for volume."
-                    return volumepermissions(request, vol.volume_id, message=message, initial_data=session['initial_data'])
+                    session['message'] = "User already has rights for volume."
+                    return redirect('django_volume.views.volumepermissions', vol.volume_id)
             
             new_user = db.read_user(new_username)
             if not new_user:
-                message = "No Syndicate user with the email {} exists.".format(new_username)
-                return volumepermissions(request, vol.volume_id, message=message, initial_data=session['initial_data'])
-            
+                session['message'] = "No Syndicate user with the email {} exists.".format(new_username)
+                return redirect('django_volume.views.volumepermissions', vol.volume_id)
+                            
             if vol.owner_id == new_user.owner_id:
-                message = "You already own this volume."
-                return volumepermissions(request, vol.volume_id, message=message, initial_data=session['initial_data'])
+                session['message'] = "You already own this volume."
+                return redirect('django_volume.views.volumepermissions', vol.volume_id)
                 
             if write:
                 if read:
@@ -123,15 +124,17 @@ def addpermissions(request, volume_id):
                     fields = {'volumes_rw':new_volumes_rw}
                     db.update_user(new_username, **fields)
                 else:
-                    message = "Write permissions require read permissions as well."
-                    return volumepermissions(request, vol.volume_id, message=message, initial_data=session['initial_data'])
+                    session['message'] = "Write permissions require read permissions as well."
+                    return redirect('django_volume.views.volumepermissions', vol.volume_id)
             elif read:
                 new_volumes_r = new_user.volumes_r + [vol.volume_id]
                 fields = {'volumes_r':new_volumes_r}
                 db.update_user(new_username, **fields)
+            # Clear out old permissions data.
+            session.pop('initial_perms' + str(volume_id), None)
         else:
-            message = "Incorrect entry fields: likely invalid email address."
-            return volumepermissions(request,vol.volume_id, message=message, initial_data=session['initial_data'])
+            session['message'] = "Incorrect entry fields: likely invalid email address."
+            return redirect('django_volume.views.volumepermissions', vol.volume_id)
 
         session['new_change'] = "We've saved a new user to your volume."
         session['next_url'] = '/syn/volume/' + str(vol.volume_id) + '/permissions'
@@ -149,6 +152,9 @@ def changepermissions(request, volume_id):
     session = request.session
     username = session['login_email']
     vol = db.read_volume( volume_id )
+    if not vol:
+        return redirect('django_volume.views.viewvolume', volume_id)
+
     PermissionFormSet = formset_factory(forms.Permissions, extra=0)
     
     if request.method != "POST":
@@ -168,16 +174,17 @@ def changepermissions(request, volume_id):
 
         # Password required, send them back.
         if not psv:
-            return volumepermissions(request, vol.volume_id, message="Password required", initial_data=session['initial_data'])
+            session['message'] = "Password required."
+            return redirect('django_volume.views.volumepermissions', vol.volume_id)
         else:
             # Check password hash
             if vol.volume_secret_salted_hash != Volume.generate_password_hash(passwordform.cleaned_data['password'], vol.volume_secret_salt):
-                message = "Incorrect password"
-                return volumepermissions(request, vol.volume_id, message=message, initial_data=session['initial_data'])
+                session['message'] = "Incorrect password"
+                return redirect('django_volume.views.volumepermissions', vol.volume_id)
 
         # Formset fulfillment
         if fsv:
-            initial_and_forms = zip(session['initial_data'], formset.forms)
+            initial_and_forms = zip(session['initial_perms' + str(volume_id)], formset.forms)
             for data, form in initial_and_forms:
 
                 check_username = data['user']
@@ -186,8 +193,8 @@ def changepermissions(request, volume_id):
                 check_user = db.read_user(check_username)
 
                 if check_write and not check_read:
-                    message = "Write permissions require read permissions as well."
-                    return volumepermissions(request, vol.volume_id, message=message, initial_data=session['initial_data'])
+                    session['message'] = "Write permissions require read permissions as well."
+                    return redirect('django_volume.views.volumepermissions', vol.volume_id)
 
                 if data['write']:
                     if check_write:
@@ -207,7 +214,7 @@ def changepermissions(request, volume_id):
                             new_volumes_rw = []
                         fields = {'volumes_rw':new_volumes_rw}
                         db.update_user(check_username, **fields)
-                if data['read']:
+                elif data['read']:
                     if check_write:
 
                         # Give write, take away read
@@ -227,8 +234,11 @@ def changepermissions(request, volume_id):
                             new_volumes_r = []
                         fields = {'volumes_r':new_volumes_r}
                         db.update_user(check_username, **fields)
+            # Clear out stale data.
+            session.pop("initial_perms" + str(volume_id), None)
         else:
-            return volumepermissions(request, vol.volume_id, message="Invalid field entries.", initial_data=session['initial_data'])
+            session['message'] = "Invalid field entries."
+            return redirect('django_volume.views.volumepermissions', vol.volume_id)
 
         session['new_change'] = "We've saved your new permissions."
         session['next_url'] = '/syn/volume/' + str(vol.volume_id) + '/permissions'
@@ -237,11 +247,15 @@ def changepermissions(request, volume_id):
 
 #@verifyownership
 @authenticate
-def volumepermissions(request, volume_id, message="", initial_data=None):
+def volumepermissions(request, volume_id):
     session = request.session
     username = session['login_email']
     vol = db.read_volume( volume_id )
-    #user = db.read_user(username)
+    if not vol:
+        return redirect('django_volume.views.viewvolume', volume_id)    
+
+    message = session.pop('message', "")
+    initial_data = session.get('initial_perms' + str(volume_id), None)
 
     if not initial_data:
         rw_attrs = {'SyndicateUser.volumes_rw ==': vol.volume_id}
@@ -251,7 +265,7 @@ def volumepermissions(request, volume_id, message="", initial_data=None):
     
         initial_data = []
         for u in rw:
-            if u.email == username:
+            if u.owner_id == vol.owner_id:
                 continue;
             initial_data.append( {'user':u.email,
                                   'read':True,
@@ -261,7 +275,7 @@ def volumepermissions(request, volume_id, message="", initial_data=None):
                                   'read':True,
                                   'write':False} )
     
-        session['initial_data'] = initial_data
+        session['initial_perms' + str(volume_id)] = initial_data
     PermissionFormSet = formset_factory(forms.Permissions, extra=0)
     addform = forms.AddPermissions
     passwordform = libforms.Password
@@ -293,23 +307,10 @@ def viewvolume(request, volume_id):
     vol = db.read_volume( volume_id )
 
     if not vol:
-        t = loader.get_template('viewvolume_failure.html')
-        c = RequestContext(request, {'username':username} 
-                           )    
-        return HttpResponse(t.render(c))
-
-    # Ensure right to read
-    
-    # if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
-    #     t = loader.get_template('viewvolume_failure.html')
-    #     c = Context({'username':username})
-    #     return HttpResponse(t.render(c))
+        return redirect('django_volume.views.viewvolume', volume_id)
 
     rgs = db.list_replica_gateways_by_volume(vol.volume_id)
     ags = db.list_acquisition_gateways_by_volume(vol.volume_id)
-
-    logging.info(ags)
-    logging.info(rgs)
 
     t = loader.get_template('viewvolume.html')
     c = RequestContext(request, {'username':username,
@@ -328,17 +329,20 @@ def activatevolume(request, volume_id):
     username = session['login_email']
     vol = db.read_volume( volume_id )
 
+    if not vol:
+        return redirect('django_volume.views.viewvolume', volume_id)
+
     if request.method == "POST":
 
         form = libforms.Password(request.POST)
         if not form.is_valid():
-            message = "Password required."
-            return volumesettings(request, vol.volume_id, message=message)
+            session['message'] = "Password required."
+            return redirect('django_volume.views.volumesettings', vol.volume_id)
         # Check password hash
         hash_check = Volume.generate_password_hash(form.cleaned_data['password'], vol.volume_secret_salt)
         if hash_check != vol.volume_secret_salted_hash:
-            message = "Incorrect password."
-            return volumesettings(request, vol.volume_id, message=message)
+            session['message'] = "Incorrect password."
+            return redirect('django_volume.views.volumesettings', vol.volume_id)
 
         fields = {'active':True}
         db.update_volume(vol.volume_id, **fields)
@@ -354,19 +358,21 @@ def deactivatevolume(request, volume_id):
     session = request.session
     username = session['login_email']
     vol = db.read_volume( volume_id )
+    if not vol:
+        return redirect('django_volume.views.viewvolume', volume_id)
+
 
     if request.method == "POST":
 
         form = libforms.Password(request.POST)
         if not form.is_valid():
-            message = "Password required."
-            return volumesettings(request, vol.volume_id, message=message)
+            session['message'] = "Password required."
+            return redirect('django_volume.views.volumesettings', vol.volume_id)
         # Check password hash
         hash_check = Volume.generate_password_hash(form.cleaned_data['password'], vol.volume_secret_salt)
         if hash_check != vol.volume_secret_salted_hash:
-            message = "Incorrect password."
-            return volumesettings(request, vol.volume_id, message=message)
-
+            session['message'] = "Incorrect password."
+            return redirect('django_volume.views.volumesettings', vol.volume_id)
         fields = {'active':False}
         db.update_volume(vol.volume_id, **fields)
         session['new_change'] = "We've deactivated your volume."
@@ -380,9 +386,10 @@ def deactivatevolume(request, volume_id):
 def deletevolume(request, volume_id):
 
     @transactional(xg=True)
-    def multi_update(vol, usernames, usergateways, acquisitiongateways, replicagateways):
+    def multi_update(vol, users, usergateways, acquisitiongateways, replicagateways):
         v_id = vol.volume_id
         db.delete_volume(v_id)
+        logging.info(users)
 
         for user in users:
             fields = {}
@@ -430,11 +437,20 @@ def deletevolume(request, volume_id):
                 fields['volume_ids'] = new_ids
             db.update_replica_gateway(rg.g_id, **fields)
 
+        # Clear initial data session variable to prevent stale tables in ag.views.viewgateway and rg.views.viewgateway
+        session.pop("rg_initial_data" + str(v_id), None)
+        session.pop("ag_initial_data" + str(v_id), None)
+        # Clear initial data session variable to prevent stale data in volume settings, change rgs, and change ags.
+        session.pop("volume_initial_ags" + str(v_id), None)
+        session.pop("volume_initial_rgs" + str(v_id), None)
 
     session = request.session
     message = session.pop('message', "")
     username = session['login_email']
     vol = db.read_volume( volume_id )
+    if not vol:
+        return redirect('django_volume.views.viewvolume', volume_id)
+
 
     if request.method == "POST":
         form = forms.DeleteVolume(request.POST)
@@ -445,6 +461,7 @@ def deletevolume(request, volume_id):
                 # Ok to delete
                 attrs = {}
                 users = db.list_users({'SyndicateUser.volumes_rw ==':vol.volume_id})
+                users.extend(db.list_users({'SyndicateUser.volumes_r ==':vol.volume_id}))
                 ags = db.list_acquisition_gateways_by_volume(vol.volume_id)
                 rgs = db.list_replica_gateways_by_volume(vol.volume_id)
                 ugs = db.list_user_gateways_by_volume(vol.volume_id)
@@ -477,23 +494,30 @@ def changegateways_ag(request, volume_id):
     session = request.session
     username = session['login_email']
     vol = db.read_volume( volume_id )
+    if not vol:
+        return redirect('django_volume.views.viewvolume', volume_id)
+
+    # make sure this variable exists, i.e. they came from the settings page.
+    if not 'volume_initial_ags' + str(volume_id) in session:
+        return redirect("django_volume.views.volumesettings", volume_id)
 
     @transactional(xg=True)
     def update(v_id, gnames, vfields, gfields):
         db.update_volume(v_id, **vfields)
         for g, gfield in zip(gnames, gfields):
             db.update_acquisition_gateway(g, **gfield)
+        session.pop('volume_initial_ags' + str(volume_id), None)
 
     if request.POST:
         passwordform = libforms.Password(request.POST)
         if not passwordform.is_valid():
-            message = "Password required."
-            return volumesettings(request, vol.volume_id, message, initial_data_rg=session['initial_rg'], initial_data_ag=session['initial_ag'])
+            session['message'] = "Password required."
+            return redirect('django_volume.views.volumesettings', vol.volume_id)
         else:
             hash_check = Volume.generate_password_hash(passwordform.cleaned_data['password'], vol.volume_secret_salt)
             if hash_check != vol.volume_secret_salted_hash:
-                message = "Incorrect password."
-                return volumesettings(request, vol.volume_id, message, initial_data_rg=session['initial_rg'], initial_data_ag=session['initial_ag'])
+                session['message'] = "Incorrect password."
+                return redirect('django_volume.views.volumesettings', vol.volume_id)
 
         GatewayFormset = formset_factory(forms.Gateway, extra=0)
         formset = GatewayFormset(request.POST)
@@ -502,7 +526,7 @@ def changegateways_ag(request, volume_id):
         remove_gateway_names = []
         remove_gateway_ids = []
 
-        for data, form in zip(session['initial_ag'], formset.forms):
+        for data, form in zip(session['volume_initial_ags' + str(volume_id)], formset.forms):
             if form.cleaned_data['remove']:
                 g = db.read_acquisition_gateway(data['g_name'])
                 remove_gateways.append(g)
@@ -522,8 +546,8 @@ def changegateways_ag(request, volume_id):
         try:
             update(vol.volume_id, remove_gateway_names, vfields, gfields)
         except Exception as e:
-            message = "Unable to update volume or AG's."
-            return volumesettings(request, vol.volume_id, message, initial_data_rg=session['initial_rg'], initial_data_ag=session['initial_ag'])
+            session['message'] = "Unable to update volume or AG's."
+            return redirect('django_volume.views.volumesettings', vol.volume_id)
         session['new_change'] = "We've updated your volume."
         session['next_url'] = '/syn/volume/' + str(vol.volume_id)+ '/settings'
         session['next_message'] = "Click here to go back to your volume."
@@ -539,23 +563,32 @@ def changegateways_rg(request, volume_id):
     session = request.session
     username = session['login_email']
     vol = db.read_volume( volume_id )
+    if not vol:
+        return redirect('django_volume.views.viewvolume', volume_id)
+
 
     @transactional(xg=True)
     def update(v_id, gnames, vfields, gfields):
         db.update_volume(v_id, **vfields)
         for g, gfield in zip(gnames, gfields):
             db.update_replica_gateway(g, **gfield)
+        session.pop('volume_initial_rgs' + str(volume_id), None)
+
+
+    # make sure this variable exists, i.e. they came from the settings page.
+    if not 'volume_initial_rgs' + str(volume_id) in session:
+        return redirect("django_volume.views.volumesettings", volume_id)
 
     if request.POST:
         passwordform = libforms.Password(request.POST)
         if not passwordform.is_valid():
-            message = "Password required."
-            return volumesettings(request, vol.volume_id, message, initial_data_rg=session['initial_rg'], initial_data_ag=session['initial_ag'])
+            session['message'] = "Password required."
+            return redirect('django_volume.views.volumesettings', volume_id)
         else:
             hash_check = Volume.generate_password_hash(passwordform.cleaned_data['password'], vol.volume_secret_salt)
             if hash_check != vol.volume_secret_salted_hash:
-                message = "Incorrect password."
-                return volumesettings(request, vol.volume_id, message, initial_data_rg=session['initial_rg'], initial_data_ag=session['initial_ag'])
+                session['message'] = "Incorrect password."
+                return redirect('django_volume.views.volumesettings', volume_id)
 
         GatewayFormset = formset_factory(forms.Gateway, extra=0)
         formset = GatewayFormset(request.POST)
@@ -564,14 +597,14 @@ def changegateways_rg(request, volume_id):
         remove_gateway_names = []
         remove_gateway_ids = []
 
-        for data, form in zip(session['initial_rg'], formset.forms):
+        for data, form in zip(session['volume_initial_rgs' + str(volume_id)], formset.forms):
             if form.cleaned_data['remove']:
                 g = db.read_replica_gateway(data['g_name'])
                 remove_gateways.append(g)
                 remove_gateway_names.append(data['g_name'])
                 remove_gateway_ids.append(g.rg_id)
         if not remove_gateways:
-            return redirect('django_volume.views.volumesettings', volume_id=vol.volume_id)
+            return redirect('django_volume.views.volumesettings', volume_id)
     
         new_rgs = list(set(vol.rg_ids) - set(remove_gateway_ids))
         vfields = {'rg_ids':new_rgs}
@@ -584,8 +617,9 @@ def changegateways_rg(request, volume_id):
         try:
             update(vol.volume_id, remove_gateway_names, vfields, gfields)
         except Exception as e:
-            message = "Unable to update volume or RG's."
-            return volumesettings(request, vol.volume_id, message, initial_data_rg=session['initial_rg'], initial_data_ag=session['initial_ag'])
+            session['message'] = "Unable to update volume or RG's."
+            return redirect('django_volume.views.volumesettings', volume_id)
+
         session['new_change'] = "We've updated your volume."
         session['next_url'] = '/syn/volume/' + str(vol.volume_id) + '/settings'
         session['next_message'] = "Click here to go back to your volume."
@@ -596,7 +630,7 @@ def changegateways_rg(request, volume_id):
 
 #@verifyownership
 @authenticate
-def volumesettings(request, volume_id, message="", old_data=None, initial_data_rg=None, initial_data_ag=None):
+def volumesettings(request, volume_id):
     '''
     old_data is for keeping state while changing the description when the password is wrong,
     no password is entered, etc.
@@ -607,23 +641,30 @@ def volumesettings(request, volume_id, message="", old_data=None, initial_data_r
     session = request.session
     username = session['login_email']
     vol = db.read_volume( volume_id )
+    if not vol:
+        return redirect('django_volume.views.viewvolume', volume_id)
+
+    message = session.pop('message', "")
+    initial_data_ag = session.get('volume_initial_ags' + str(volume_id), None)
+    initial_data_rg = session.get('volume_initial_rgs' + str(volume_id), None)
+    old_data = session.get('old_data' + str(volume_id), None)
 
     if not initial_data_ag:
         initial_data_ag = []
         ags = db.list_acquisition_gateways_by_volume(vol.volume_id)
         for g in ags:
             initial_data_ag.append({'g_name':g.ms_username, 'remove':False})
-        session['initial_ag'] = initial_data_ag
+        session['volume_initial_ags' + str(volume_id)] = initial_data_ag
     
     if not initial_data_rg:
         initial_data_rg = []
         rgs = db.list_replica_gateways_by_volume(vol.volume_id)
         for g in rgs:
             initial_data_rg.append({'g_name':g.ms_username, 'remove':False})
-        session['initial_rg'] = initial_data_rg
+        session['volume_initial_rgs' + str(volume_id)] = initial_data_rg
 
     if old_data:
-        desc_form = forms.ChangeVolumeD(initial={'description': old_data['desc']})
+        desc_form = forms.ChangeVolumeD(initial={'description': old_data})
     else:
         desc_form = forms.ChangeVolumeD(initial={'description':vol.description})
     pass_form = libforms.ChangePassword()
@@ -657,18 +698,20 @@ def volumeprivacy(request, volume_id):
     session = request.session
     username = session['login_email']
     vol = db.read_volume( volume_id )
+    if not vol:
+        return redirect('django_volume.views.viewvolume', volume_id)
 
     if request.POST:
 
         form = libforms.Password(request.POST)
         if not form.is_valid():
-            message = "Password required."
-            return volumesettings(request, vol.volume_id, message=message)
+            session['message'] = "Password required."
+            return redirect('django_volume.views.volumesettings', volume_id)
         # Check password hash
         hash_check = Volume.generate_password_hash(form.cleaned_data['password'], vol.volume_secret_salt)
         if hash_check != vol.volume_secret_salted_hash:
-            message = "Incorrect password."
-            return volumesettings(request, vol.volume_id, message=message)
+            session['message'] = "Incorrect password."
+            return redirect('django_volume.views.volumesettings', volume_id)
 
         if vol.private:
             fields = {"private":False}
@@ -688,12 +731,16 @@ def volumeprivacy(request, volume_id):
     else:
         return HttpResponseRedirect("/syn/volume/" + str(vol.volume_id))
 
+
+# CHANGES VOLUME DESCRIPTION
 #@verifyownership
 @authenticate
 def changevolume(request, volume_id):
     session = request.session
     username = session['login_email']
     vol = db.read_volume( volume_id )
+    if not vol:
+        return redirect('django_volume.views.viewvolume', volume_id)
 
     if request.method != "POST":
         return HttpResponseRedirect('/syn/volume/' + str(vol.volume_id) + '/settings')
@@ -704,32 +751,34 @@ def changevolume(request, volume_id):
     old_data = {}
 
     if not form.is_valid():
-        message = "Password required."
+        session['message'] = "Password required."
         desc_form.is_valid()
         if desc_form.errors:
-            old_data['desc'] = ""
+            session['old_data' + str(volume_id)] = ""
         else:
-            old_data['desc'] = desc_form.cleaned_data['description']
-        return volumesettings(request, vol.volume_id, message=message, old_data=old_data)
+            session['old_data' + str(volume_id)] = desc_form.cleaned_data['description']
+        return redirect('django_volume.views.volumesettings', volume_id)
+
     # Check password hash
     hash_check = Volume.generate_password_hash(form.cleaned_data['password'], vol.volume_secret_salt)
     if hash_check != vol.volume_secret_salted_hash:
-        message = "Incorrect password."
+        session['message'] = "Incorrect password."
         desc_form.is_valid()
         if desc_form.errors:
-            old_data['desc'] = ""
+            session['old_data' + str(volume_id)] = ""
         else:
-            old_data['desc'] = desc_form.cleaned_data['description']
-        return volumesettings(request, vol.volume_id, message=message, old_data=old_data)
+            session['old_data' + str(volume_id)] = desc_form.cleaned_data['description']
+        return redirect('django_volume.views.volumesettings', volume_id)
 
     if not desc_form.is_valid():
-        message = "Invalid description field entries."
-        return volumesettings(request, vol.volume_id, message=message)
+        session['message'] = "Invalid description field entries."
+        return redirect('django_volume.views.volumesettings', volume_id)
 
     kwargs = {}
     if desc_form.cleaned_data['description']:
         kwargs['description'] = desc_form.cleaned_data['description']
     db.update_volume(vol.volume_id, **kwargs)
+    session.pop('old_data' + str(volume_id), None)
     session['new_change'] = "We've changed your volume description."
     session['next_url'] = '/syn/volume/' + str(vol.volume_id)
     session['next_message'] = "Click here to go back to your volume."
@@ -741,24 +790,26 @@ def changevolumepassword(request, volume_id):
     session = request.session
     username = session['login_email']
     vol = db.read_volume( volume_id )
+    if not vol:
+        return redirect('django_volume.views.viewvolume', volume_id)
 
     if request.method != "POST":
-        return HttpResponseRedirect('/syn/volume/' + str(vol.volume_id) + '/settings')
+        return HttpResponseRedirect('/syn/volume/' + str(volume_id) + '/settings')
 
     form = libforms.ChangePassword(request.POST)
     if not form.is_valid():
-        message = "You must fill out all password fields."
-        return volumesettings(request, vol.volume_id, message=message)
+        session['message'] = "You must fill out all password fields."
+        return redirect('django_volume.views.volumesettings', volume_id)
     else:
 
         # Check password hash
         hash_check = Volume.generate_password_hash(form.cleaned_data['oldpassword'], vol.volume_secret_salt)
         if hash_check != vol.volume_secret_salted_hash:
-            message = "Incorrect password."
-            return volumesettings(request, vol.volume_id, message=message)
+            session['message'] = "Incorrect password."
+            return redirect('django_volume.views.volumesettings', volume_id)
         elif form.cleaned_data['newpassword_1'] != form.cleaned_data['newpassword_2']:
-            message = "Your new passwords did not match each other."
-            return volumesettings(request, vol.volume_id, message=message)
+            session['message'] = "Your new passwords did not match each other."
+            return redirect('django_volume.views.volumesettings', volume_id)
 
         # Ok change password 
         kwargs = {}

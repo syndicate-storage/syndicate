@@ -13,10 +13,12 @@ from MS.gateway import UserGateway as UG,  ReplicaGateway as RG, AcquisitionGate
 @authenticate
 def thanks(request):
     session = request.session
+
     username = session['login_email']
-    new_change = session['new_change']
-    next_url = session['next_url']
-    next_message = session['next_message']
+    new_change = session.pop('new_change', "")
+    next_url = session.pop('next_url', "")
+    next_message = session.pop('next_message', "")
+    
     t = loader.get_template('thanks.html')
     c = Context({'username':username, 'new_change':new_change, 'next_url':next_url, 'next_message':next_message})
     return HttpResponse(t.render(c))
@@ -34,7 +36,7 @@ def make_user(request, email):
 def home(request):
     session = request.session
     username = session['login_email']
-#   Uncomment this line to test security via @authenticate
+#   Uncomment this line to test security via @authenticate on any page
 #    session.clear()
     t = loader.get_template('home.html')
     c = Context({'username':username})

@@ -38,7 +38,7 @@ def viewgateway(request, g_id=0):
         if not g:
             raise Exception("No gateway exists.")
     except Exception as e:
-        logging.error("Error reading gateway %s : Exception: %s" % (g_id, e))
+        logging.error("Error reading gateway %d : Exception: %s" % (g_id, e))
         message = "No user gateway with the ID %s exists." % g_id
         t = loader.get_template("gateway_templates/viewgateway_failure.html")
         c = Context({'message':message, 'username':username})
@@ -50,13 +50,18 @@ def viewgateway(request, g_id=0):
 
     vol = db.read_volume(g.volume_id)
     if not vol:
-        logging.error("Volume ID in gateways volume_ids does not map to volume. Gateway: %s" % g_name)
-        return redirect('django_ug.views.allgateways')
+        if g.volume_id != 0:
+            logging.error("Volume ID in gateways volume_ids does not map to volume. Gateway: %d" % g_id)
+            return redirect('django_ug.views.allgateways')
+        else:
+            vol = None
+            owner = None
+    else:
+        attrs = {"SyndicateUser.owner_id ==": vol.owner_id}
+        owner = db.get_user(attrs)
+        logging.info(owner)
+        logging.info(vol.owner_id)
     
-    attrs = {"SyndicateUser.owner_id ==": vol.owner_id}
-    owner = db.get_user(attrs)
-    logging.info(owner)
-    logging.info(vol.owner_id)
 
     password_form = libforms.Password()
     change_password_form = libforms.ChangePassword()
@@ -119,7 +124,7 @@ def changepassword(request, g_id):
                 return redirect('django_ug.views.viewgateway', g_id)
 
             session['new_change'] = "We've changed your gateways's password."
-            session['next_url'] = '/syn/UG/viewgateway/' + g_id
+            session['next_url'] = '/syn/UG/viewgateway/' + str(g_id)
             session['next_message'] = "Click here to go back to your volume."
             return HttpResponseRedirect('/syn/thanks')
 
@@ -141,7 +146,7 @@ def changelocation(request, g_id):
             session['message'] = "Error. Unable to change user gateway."
             return redirect('django_ug.views.viewgateway', g_id)
         session['new_change'] = "We've updated your UG."
-        session['next_url'] = '/syn/UG/viewgateway/' + g_id
+        session['next_url'] = '/syn/UG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:
@@ -155,6 +160,18 @@ def changevolume(request, g_id):
     username = session['login_email']
     user = db.read_user(username)
     g_id = int(g_id)
+    g = db.read_user_gateway(g_id)
+
+    @transactional(xg=True)
+    def update_ug_and_vol(g_id, gfields, vol1_id, vol2_id):
+        db.update_user_gateway(g_id, **gfields)
+        attrs = {"UG_version":1}
+
+        # Force update of UG version
+        db.update_volume(vol1_id, **attrs)
+        db.update_volume(vol2_id, **attrs)
+
+
 
     form = gatewayforms.ChangeVolume(request.POST)
     if form.is_valid():
@@ -162,22 +179,22 @@ def changevolume(request, g_id):
         vols = db.list_volumes(attrs, limit=1)
         if vols:
             new_vol = vols[0]
-            logging.info(new_vol)
         else:
             session['message'] = "No volume %s exists." % form.cleaned_data['volume_name']
             return redirect('django_ug.views.viewgateway', g_id)
         if (new_vol.volume_id not in user.volumes_r) and (new_vol.volume_id not in user.volumes_rw):
             session['message'] = "Must have read rights to volume %s to assign UG to it." % form.cleaned_data['volume_name']
             return redirect('django_ug.views.viewgateway', g_id)
+        old_vol = g.volume_id
         fields = {"volume_id":new_vol.volume_id}
         try:
-            db.update_user_gateway(g_id, **fields)
+            update_ug_and_vol(g_id, fields, old_vol, new_vol.volume_id)
         except Exception, e:
             logging.error("Unable to update UG with ID %s. Error was %s." % (g_id, e))
             session['message'] = "Error. Unable to change user gateway."
             return redirect('django_ug.views.viewgateway', g_id)
         session['new_change'] = "We've updated your UG."
-        session['next_url'] = '/syn/UG/viewgateway/' + g_id
+        session['next_url'] = '/syn/UG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
         return HttpResponseRedirect('/syn/thanks')
     else:
@@ -203,7 +220,7 @@ def changewrite(request, g_id):
         session['message'] = "Error. Unable to change user gateway."
         return redirect('django_ug.views.viewgateway', g_id)
     session['new_change'] = "We've updated your UG."
-    session['next_url'] = '/syn/UG/viewgateway/' + g_id
+    session['next_url'] = '/syn/UG/viewgateway/' + str(g_id)
     session['next_message'] = "Click here to go back to your gateway."
     return HttpResponseRedirect('/syn/thanks')
 
@@ -222,12 +239,21 @@ def allgateways(request):
         gateways.append(g)
     vols = []
     for g in gateways:
-        vols.append(db.read_volume(g.volume_id))
+        add_vol = db.read_volume(g.volume_id)
+        if add_vol:
+            vols.append(add_vol)
+        else:
+            vols.append([])
     owners = []
     for v in vols:
-        volume_owner = v.owner_id
-        attrs = {"SyndicateUser.owner_id ==":volume_owner}
-        owners.append(db.get_user(attrs))
+
+        if v:
+            volume_owner = v.owner_id
+            attrs = {"SyndicateUser.owner_id ==":volume_owner}
+            owners.append(db.get_user(attrs))
+        else:
+            owners.append("")
+
     gateway_vols_owners = zip(gateways, vols, owners)
     t = loader.get_template('gateway_templates/allusergateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols_owners':gateway_vols_owners})
@@ -275,17 +301,23 @@ def create(request):
         # Validate input forms
         form = gatewayforms.CreateUG(request.POST)
         if form.is_valid():
-            attrs = {"Volume.name ==":form.cleaned_data['volume_name'].strip().replace(" ", "_")}
-            vols = db.list_volumes(attrs, limit=1)
-            if vols:
-                vol = vols[0]
-                logging.info(vol)
+            if not form.cleaned_data['volume_name']:
+                logging.info("DLFKJSDF")
+                vol = None
             else:
-                session['message'] = "No volume %s exists." % form.cleaned_data['volume_name']
-                return give_create_form(username, session)
-            if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
-                session['message'] = "Must have read rights to volume %s to create UG for it." % form.cleaned_data['volume_name']
-                return give_create_form(username, session)
+                attrs = {"Volume.name ==":form.cleaned_data['volume_name'].strip().replace(" ", "_")}
+                vols = db.list_volumes(attrs, limit=1)
+                if vols:
+                    vol = vols[0]
+                else:
+                    session['message'] = "No volume %s exists." % form.cleaned_data['volume_name']
+                    return give_create_form(username, session)
+                if (vol.volume_id not in user.volumes_r) and (vol.volume_id not in user.volumes_rw):
+                    session['message'] = "Must have read rights to volume %s to create UG for it." % form.cleaned_data['volume_name']
+                    return give_create_form(username, session)
+                # Force update of UG version
+                attrs = {"UG_version":1}
+                db.update_volume(vol.volume_id, **attrs)
             try:
                 kwargs = {}
                 kwargs['read_write'] = form.cleaned_data['read_write']

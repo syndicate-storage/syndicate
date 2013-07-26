@@ -1,8 +1,9 @@
 from django_lib import override_forms
+from django_lib.forms import LONGEST_CHAR_FIELD, LONGEST_PASS_FIELD, LONGEST_DESC
 from django import forms
 from django_lib.override_forms import ReadOnlyWidget
 
-BLOCKSIZE_MULTIPLIER = 1024
+BLOCKSIZE_MULTIPLIER = 1024 # Kilobytes
 
 BLOCKSIZE_CHOICES = (
     (10*BLOCKSIZE_MULTIPLIER, "10 kB"),
@@ -19,7 +20,7 @@ class CreateVolume(override_forms.MyForm):
  
     name = forms.CharField(label="Volume name",
                            initial="My Volume",
-                           max_length=499,
+                           max_length=LONGEST_CHAR_FIELD,
                            help_text="Your volume's name cannot be changed later.")
 
     private = forms.BooleanField(label="Private",
@@ -33,11 +34,11 @@ class CreateVolume(override_forms.MyForm):
     description = forms.CharField(widget=forms.Textarea,
                                   label="Volume description",
                                   initial="This is my new amazing volume.",
-                                  max_length=2000,
-                                  help_text="2000 characters maximum")
+                                  max_length=LONGEST_DESC,
+                                  help_text=str(LONGEST_DESC) + " characters maximum")
     
     password = forms.CharField(label="Volume password",
-                               max_length=499,
+                               max_length=LONGEST_PASS_FIELD,
                                widget=forms.PasswordInput)
 
 
@@ -47,8 +48,8 @@ class ChangeVolumeD(override_forms.MyForm):
                                   required=False,
                                   label="",
                                   initial="This is my new amazing volume.",
-                                  max_length=2000,
-                                  help_text="2000 characters maximum")
+                                  max_length=LONGEST_DESC,
+                                  help_text=str(LONGEST_DESC) + " characters maximum")
 
 
 class DeleteVolume(override_forms.MyForm):
@@ -57,7 +58,7 @@ class DeleteVolume(override_forms.MyForm):
                                         label="Yes, I understand that this action is permament and my files will be lost.")
 
     password = forms.CharField(label="Volume password",
-                               max_length=20,
+                               max_length=LONGEST_PASS_FIELD,
                                widget=forms.PasswordInput)
 
 class Gateway(override_forms.MyForm):
@@ -65,7 +66,7 @@ class Gateway(override_forms.MyForm):
     g_name = forms.CharField(label="Gateway name",
                              widget=ReadOnlyWidget(),
                              required=False,
-                             max_length=499)
+                             max_length=LONGEST_CHAR_FIELD)
 
     remove = forms.BooleanField(label="Remove",
                                 required=False)

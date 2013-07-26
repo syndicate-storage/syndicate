@@ -1,15 +1,27 @@
 '''
-We're going to assume you need to be logged in already and have a valid session
-for this to work.
+
+All of these views are predicated on the user already being logged in to
+valid session.
+
+djago_ag/views.py
+John Whelchel
+Summer 2013
+
+These are the views for the Replica Gateway section of the administration
+site. They are all decorated with @authenticate to make sure that a user is 
+logged in; if not, they are redirected to the login page. Some are decorated
+with precheck, a decorator that makes sure the passed g_id and passwords
+are valid.
+
 '''
 import logging
 import json
 
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse
 from django.shortcuts import redirect
 
 from django.template import Context, loader, RequestContext
-from django.views.decorators.csrf import csrf_exempt, csrf_protect
+from django.views.decorators.csrf import csrf_exempt
 from django.forms.formsets import formset_factory
 
 from django_lib.auth import authenticate
@@ -24,56 +36,70 @@ from MS.volume import Volume
 from MS.user import SyndicateUser as User
 from MS.gateway import ReplicaGateway as RG
 
+
+# This is the view to be redirected to when precheck fails; i.e.
+# the given password or g_id is wrong.
 PRECHECK_REDIRECT = 'django_rg.views.viewgateway'
+
+
 
 @authenticate
 def viewgateway(request, g_id=0):
+    '''
+    The view for viewing and changing any of the main settings on any RG. Passes
+    forms for changing different settings, and the volumes attached to the gateway.
+    '''
     session = request.session
     username = session['login_email']
-    message = session.pop('message', "")
-    rg_initial_data = session.get('rg_initial_data', [])
     g_id = int(g_id)
 
-    try:
-        g = db.read_replica_gateway(g_id)
-        if not g:
-            raise Exception("No gateway exists.")
-    except Exception as e:
+    # Check for any passed error messages and initial_data from state to save db calls.
+    message = session.pop('message', "")
+    rg_initial_data = session.get('rg_initial_data' + str(g_id), [])
+
+    # Make sure gateway exists.
+    g = db.read_replica_gateway(g_id)
+    if not g:
         logging.error("Error reading gateway %d : Exception: %s" % (g_id, e))
         message = "No replica gateway with the ID %d exists." % g_id
         t = loader.get_template("gateway_templates/viewgateway_failure.html")
         c = Context({'message':message, 'username':username})
         return HttpResponse(t.render(c))
 
+    # Create forms for changing location, adding volumes,
+    # changing password, getting password, and changing config
     location_form = gatewayforms.ModifyGatewayLocation(initial={'host':g.host,
                                                                 'port':g.port})
     add_form = gatewayforms.GatewayAddVolume()
-
     json_form = gatewayforms.ModifyGatewayConfig()
+    password_form = libforms.Password()
+    change_password_form = libforms.ChangePassword()
 
+    # Get all attached volumes and their respective owners
     owners = []
     vols = []
     for v_id in g.volume_ids:
         vol = db.read_volume(v_id)
         if not vol:
             logging.error("Volume ID in gateways volume_ids does not map to volume. Gateway: %s" % g_name)
-        vols.append(vol)
-        attrs = {"SyndicateUser.owner_id ==": vol.owner_id}
-        owners.append(db.get_user(attrs))
+        else:
+            vols.append(vol)
+            attrs = {"SyndicateUser.owner_id ==": vol.owner_id}
+            owners.append(db.get_user(attrs))
+    vol_owners = zip(vols, owners)
+
+    # Create formatted data based on vols for the formset, if not passed in state.
     if not rg_initial_data:
         for v in vols:
             rg_initial_data.append({'volume_name':v.name,
                                     'remove':False})
-        session['rg_initial_data'] = rg_initial_data
+        session['rg_initial_data' + str(g_id)] = rg_initial_data
 
-    vol_owners = zip(vols, owners)
     VolumeFormSet = formset_factory(gatewayforms.GatewayRemoveVolume, extra=0)
     if rg_initial_data:
         formset = VolumeFormSet(initial=rg_initial_data)
     else:
         formset = []
-    password_form = libforms.Password()
-    change_password_form = libforms.ChangePassword()
 
     t = loader.get_template("gateway_templates/viewreplicagateway.html")
     c = RequestContext(request, {'username':username,
@@ -91,6 +117,9 @@ def viewgateway(request, g_id=0):
 @authenticate
 @precheck("RG", PRECHECK_REDIRECT)
 def changeprivacy(request, g_id):
+    '''
+    Handler for changing privacy settings.
+    '''
     session = request.session
     username = session['login_email']
     g_id = int(g_id)
@@ -103,9 +132,9 @@ def changeprivacy(request, g_id):
     try:
         db.update_replica_gateway(g_id, **fields)
         session['new_change'] = "We've changed your gateways's privacy setting."
-        session['next_url'] = '/syn/RG/viewgateway/' + g_id
+        session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
-        return HttpResponseRedirect('/syn/thanks')
+        return redirect('/syn/thanks')
     except Exception as e:
         session['message'] = "Unable to update gateway."
         logging.info(message)
@@ -115,6 +144,9 @@ def changeprivacy(request, g_id):
 @authenticate
 @precheck("RG", PRECHECK_REDIRECT)
 def changejson(request, g_id):
+    '''
+    Handler for changing json config file.
+    '''
     session = request.session
     username = session['login_email']
     g_id = int(g_id)
@@ -142,9 +174,9 @@ def changejson(request, g_id):
                 return redirect('django_rg.views.viewgateway', g_id)
         db.update_replica_gateway(g_id, **fields)
         session['new_change'] = "We've changed your gateways's JSON configuration."
-        session['next_url'] = '/syn/RG/viewgateway/' + g_id
+        session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
-        return HttpResponseRedirect('/syn/thanks')
+        return redirect('/syn/thanks')
     else:
         session['message'] = "Invalid form. Did you upload a file?"
         return redirect('django_rg.views.viewgateway', g_id)
@@ -152,12 +184,17 @@ def changejson(request, g_id):
 # Doesn't use precheck() because doesn't use Password() form, just ChangePassword() form.
 @authenticate
 def changepassword(request, g_id):
+    '''
+    Handler for changing gateway password. Since it can't use precheck because of password reasons,
+    must verify POST-ness itself.
+    '''
     session = request.session
     username = session['login_email']
     g_id = int(g_id)
 
+    # Precheck
     if request.method != "POST":
-        return HttpResponseRedirect('/syn/RG/viewgateway/' + g_id)
+        return redirect('/syn/RG/viewgateway/' + str(g_id))
 
     try:
         g = db.read_replica_gateway(g_id)
@@ -169,6 +206,8 @@ def changepassword(request, g_id):
         t = loader.get_template("gateway_templates/viewgateway_failure.html")
         c = Context({'message':message, 'username':username})
         return HttpResponse(t.render(c))
+
+
 
     form = libforms.ChangePassword(request.POST)
     if not form.is_valid():
@@ -194,22 +233,30 @@ def changepassword(request, g_id):
                 return redirect('django_rg.views.viewgateway', g_id)
 
             session['new_change'] = "We've changed your gateways's password."
-            session['next_url'] = '/syn/RG/viewgateway/' + g_id
+            session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
             session['next_message'] = "Click here to go back to your volume."
-            return HttpResponseRedirect('/syn/thanks')
+            return redirect('/syn/thanks')
 
 @authenticate
 @precheck("RG", PRECHECK_REDIRECT)
 def addvolume(request, g_id):
-    session = request.session
-    username = session['login_email']
-    g_id = int(g_id)
+    '''
+    Handler for adding a volume to the gateay.
+    '''
 
+    # This is a helper method that isolates the @transactional decorator, speeding
+    # up the code when it doesn't reach update() in this view and allowing for
+    # errors that would break in GAE if the decorator was applied to the entire view.
     @transactional(xg=True)
     def update(v_id, g_id, vfields, gfields):
         db.update_volume(v_id, **vfields)
         db.update_replica_gateway(g_id, **gfields)
-        session.pop('rg_initial_data')
+        session.pop('rg_initial_data' + str(g_id))
+
+    session = request.session
+    username = session['login_email']
+    g_id = int(g_id)
+
 
     form = gatewayforms.GatewayAddVolume(request.POST)
     if form.is_valid():
@@ -243,6 +290,8 @@ def addvolume(request, g_id):
             new_vids = old_vids
         else:
             new_vids = [new_vid]
+
+        # Update and redirect
         try:
             gfields={'volume_ids':new_vids}
             update(volume.volume_id, g_id, vfields, gfields)
@@ -253,7 +302,7 @@ def addvolume(request, g_id):
         session['new_change'] = "We've updated your RG's volumes."
         session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
-        return HttpResponseRedirect('/syn/thanks')
+        return redirect('/syn/thanks')
     else:
         session['message'] = "Invalid entries for adding volumes."
         return redirect('django_rg.views.viewgateway', g_id)
@@ -261,7 +310,11 @@ def addvolume(request, g_id):
 @authenticate
 @precheck("RG", PRECHECK_REDIRECT)
 def removevolumes(request, g_id):
-
+    '''
+    This handler allows removal of one or many volumes from an Aqcquisition
+    Gateway. It calls multi_update() as a helper method to allow transactional
+    updates to the database.
+    '''
     # This is a helper method that isolates the @transactional decorator, speeding
     # up the code when it doesn't reach update() in this view and allowing for
     # errors that would break in GAE if the decorator was applied to the entire view.
@@ -272,7 +325,7 @@ def removevolumes(request, g_id):
         for v_id, vfield in zip(v_ids, vfields):
             db.update_volume(v_id, **vfield)
         db.update_replica_gateway(g_id, **gfields)
-        session.pop('rg_initial_data')
+        session.pop('rg_initial_data' + str(g_id))
 
     session = request.session
     username = session['login_email']
@@ -280,13 +333,16 @@ def removevolumes(request, g_id):
 
     VolumeFormSet = formset_factory(gatewayforms.GatewayRemoveVolume, extra=0)
     formset = VolumeFormSet(request.POST)
+
+    # This call is not checked because the formset will always be valid (readonly widgets)
     formset.is_valid()
 
     volume_ids_to_be_removed = []
-
-    initial_and_forms = zip(session.get('rg_initial_data', []), formset.forms)
     new_rgs_set = []
+
+    initial_and_forms = zip(session.get('rg_initial_data' + str(g_id), []), formset.forms)
     for i, f in initial_and_forms:
+
         if f.cleaned_data['remove']:
             attrs = {"Volume.name ==":i['volume_name']}
             vols = db.list_volumes(attrs, limit=1)
@@ -297,6 +353,7 @@ def removevolumes(request, g_id):
             new_rgs.remove(g_id)
             new_rgs_set.append({'rg_ids':new_rgs})
 
+            # update info for AG update
             volume_ids_to_be_removed.append(vol.volume_id)
 
     if not volume_ids_to_be_removed:
@@ -315,12 +372,15 @@ def removevolumes(request, g_id):
     session['new_change'] = "We've updated your RG's volumes."
     session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
     session['next_message'] = "Click here to go back to your gateway."
-    return HttpResponseRedirect('/syn/thanks')
+    return redirect('/syn/thanks')
 
 
 @authenticate
 @precheck("RG", PRECHECK_REDIRECT)
 def changelocation(request, g_id):
+    '''
+    Handler for changing the host:port of the gateway.
+    '''
     session = request.session
     username = session['login_email']
     g_id = int(g_id)
@@ -330,6 +390,8 @@ def changelocation(request, g_id):
         new_host = form.cleaned_data['host']
         new_port = form.cleaned_data['port']
         fields = {'host':new_host, 'port':new_port}
+
+        # update and redirect
         try:
             db.update_replica_gateway(g_id, **fields)
         except Exception as e:
@@ -339,16 +401,20 @@ def changelocation(request, g_id):
         session['new_change'] = "We've updated your RG."
         session['next_url'] = '/syn/RG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
-        return HttpResponseRedirect('/syn/thanks')
+        return redirect('/syn/thanks')
     else:
         session['message'] = "Invalid form entries for gateway location."
         return redirect('django_rg.views.viewgateway', g_id)
 
 @authenticate
 def allgateways(request):
+    '''
+    View to look at all AG's in a tabular format, with owners and attached volumes.
+    '''
     session = request.session
     username = session['login_email']
 
+    # Get gateways
     try:
         qry = db.list_replica_gateways()
     except:
@@ -356,6 +422,8 @@ def allgateways(request):
     gateways = []
     for g in qry:
         gateways.append(g)
+
+    # Get volumes and owners
     vols = []
     g_owners = []
     for g in gateways:
@@ -365,19 +433,23 @@ def allgateways(request):
         vols.append(volset)
         attrs = {"SyndicateUser.owner_id ==":g.owner_id}
         g_owners.append(db.get_user(attrs))
+
     gateway_vols_owners = zip(gateways, vols, g_owners)
     t = loader.get_template('gateway_templates/allreplicagateways.html')
     c = RequestContext(request, {'username':username, 'gateway_vols_owners':gateway_vols_owners})
     return HttpResponse(t.render(c))
 
-@csrf_exempt
 @authenticate
 def create(request):
-
+    '''
+    View to handle creation of AG's
+    '''
     session = request.session
     username = session['login_email']
     user = db.read_user( username )
 
+    # Helper method used to simplify error-handling. When fields are entered incorrectly,
+    # a session message is set and this method is called.
     def give_create_form(username, session):
         message = session.pop('message' "")
         form = gatewayforms.CreateRG()
@@ -391,7 +463,8 @@ def create(request):
         if form.is_valid():
             kwargs = {}
             
-            # Try and load JSON config file/data, if present
+            # Try and load JSON config file/data, if present. First check uploaded files, then
+            # the text box.
             if "json_config" in request.FILES:
                 if request.FILES['json_config'].multiple_chunks():
                     session['message'] = "Uploaded file too large; please make smaller than 2.5M"
@@ -407,6 +480,8 @@ def create(request):
                         logging.error("Definite JSON load error %s" % e)
                         session['message'] = "Error parsing given JSON text."
                         return give_create_form(username, session)
+
+            # No upload, check text-box
             elif "json_config_text" in form.cleaned_data:
                 try:
                     kwargs['json_config'] = json.loads(form.cleaned_data['json_config_text'])
@@ -434,7 +509,7 @@ def create(request):
             session['new_change'] = "Your new gateway is ready."
             session['next_url'] = '/syn/RG/allgateways/'
             session['next_message'] = "Click here to see all replica gateways."
-            return HttpResponseRedirect('/syn/thanks/')
+            return redirect('/syn/thanks/')
         else:
             # Prep returned form values (so they don't have to re-enter stuff)
             if 'g_name' in form.errors:
@@ -473,15 +548,33 @@ def create(request):
         # Not a POST, give them blank form
         return give_create_form(username, session)
 
-@csrf_exempt
 @authenticate
 def delete(request, g_id):
+    '''
+    View for deleting AG.
+    '''
 
+    # Helper method used to simplify error-handling. When fields are entered incorrectly,
+    # a session message is set and this method is called.
     def give_delete_form(username, g, session):
         form = gatewayforms.DeleteGateway()
         t = loader.get_template('gateway_templates/delete_replica_gateway.html')
         c = RequestContext(request, {'username':username, 'g':g, 'form':form, 'message':session.pop('message', "")})
         return HttpResponse(t.render(c))
+
+    # Once again isolating transactional for views that update multiple entities
+    @transactional(xg=True)
+    def delete_and_update(rg_id, attached_volume_ids):
+        db.delete_replica_gateway(rg_id)
+        for v in attached_volume_ids:
+            vol = db.read_volume(v)
+            if not vol:
+                continue
+            new_rg_ids = vol.rg_ids[:]
+            new_rg_ids.remove(rg_id)
+            attrs = {"rg_ids":new_rg_ids}
+            db.update_volume(v, **attrs)
+        session.pop("rg_initial_data" + str(g_id), None)
 
     session = request.session
     username = session['login_email']
@@ -504,11 +597,11 @@ def delete(request, g_id):
                 session['message'] = "You must tick the delete confirmation box."
                 return give_delete_form(username, rg, session)
             
-            db.delete_replica_gateway(g_id)
+            delete_and_update(g_id, rg.volume_ids)
             session['new_change'] = "Your gateway has been deleted."
             session['next_url'] = '/syn/RG/allgateways'
             session['next_message'] = "Click here to see all replica gateways."
-            return HttpResponseRedirect('/syn/thanks/')
+            return redirect('/syn/thanks/')
 
         # invalid forms
         else:  
@@ -528,6 +621,9 @@ def delete(request, g_id):
 @csrf_exempt
 @authenticate
 def urlcreate(request, g_name, g_password, host, port, private=False, volume_name="",):
+    '''
+    For debugging purposes only, allows creation of RG via pure URL
+    '''
     session = request.session
     username = session['login_email']
 
@@ -556,6 +652,9 @@ def urlcreate(request, g_name, g_password, host, port, private=False, volume_nam
 @csrf_exempt
 @authenticate
 def urldelete(request, g_name, g_password):
+    '''
+    For debugging purposes only, allows deletion of RG via pure URL
+    '''
     session = request.session
     username = session['login_email']
 

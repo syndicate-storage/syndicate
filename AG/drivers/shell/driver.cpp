@@ -86,34 +86,23 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
     ssize_t err_code_len = 0;
     ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
     struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
-    if (dat->http_status == 404)
-	return 0;
-    if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
+    if (dat->http_status == 404 && !ctx->complete) {
+	ret = 0;
+	ctx->complete = true;
+    }
+    else if (dat->http_status == 204 && !ctx->complete) {
+	ret = 0;
+	ctx->complete = true;
+    }
+    else if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
 	if (!ctx->complete) {
 	    ret = prch.execute_command(ctx, buf, len, global_conf->blocking_factor);
-	    if (ret < 0) {
-		if (ret == -EAGAIN) {
-		    err_code_len = strlen(EAGAIN_STR);
-		    memcpy(buf, EAGAIN_STR, err_code_len);
-		}
-		else if (ret == -EIO) {
-		    err_code_len = strlen(EIO_STR);
-		    memcpy(buf, EIO_STR, err_code_len);
-		}
-		else {
-		    err_code_len = strlen(EUNKNOWN_STR);
-		    memcpy(buf, EUNKNOWN_STR, err_code_len);
-		}
-		dat->err = -404;
-		dat->http_status = 404;
-		ctx->complete = true;
-		dat->size = err_code_len;
-		return err_code_len;
-	    }
 	    if (ctx->data_offset == (ssize_t)global_conf->blocking_factor)
 		ctx->complete = true;
-	    if (ret < 0)
+	    if (ret < 0) {
+		ret = 0;
 		ctx->complete = true;
+	    }
 	}
 	else {
 	    ret = 0;
@@ -129,7 +118,6 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	// invalid structure
 	ret = -EINVAL;
     }
-
     return ret;
 }
 
@@ -242,6 +230,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        ctx->request_type = GATEWAY_REQUEST_TYPE_MANIFEST;
        ctx->data_offset = 0;
        ctx->block_id = 0;
+       ctx->file_path = file_path;
        //ctx->num_read = 0;
        replica_ctx->size = ctx->data_len;
    }
@@ -258,15 +247,34 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	   ctx->block_id = block_id;
 	   ctx->fd = -1;
 	   ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
+	   ctx->file_path = file_path;
 	   // Negative size switches libmicrohttpd to chunk transfer mode
 	   replica_ctx->size = -1;
 	   // Check the block status and set the http response appropriately
+
+	   ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
+	   block_status blk_stat = prch.get_block_status(ctx);
+	   if (blk_stat.in_progress) {
+	       replica_ctx->err = -204;
+	       replica_ctx->http_status = 204;
+	   } 
+	   else if (blk_stat.block_available) {
+	       replica_ctx->err = -200;
+	       replica_ctx->http_status = 200;
+	   }
+	   else if (blk_stat.no_block) {
+	       replica_ctx->err = -200;
+	       replica_ctx->http_status = 200;
+	   }
+	   else {
+	       replica_ctx->err = -404;
+	       replica_ctx->http_status = 404;
+	   }
        }
        else {
 	   replica_ctx->http_status = 404;
        }
    }
-   ctx->file_path = file_path;
    return ctx;
 }
 
