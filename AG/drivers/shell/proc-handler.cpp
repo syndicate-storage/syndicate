@@ -8,7 +8,7 @@ int self_pipe[2];
 set<proc_table_entry*, proc_table_entry_comp> running_proc_set;
 map<pid_t, proc_table_entry*> pid_map;
 
-static void sigchld_handler(int signum) {
+void sigchld_handler(int signum) {
     pid_t pid = 0;
     while ((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
 	update_death(pid);
@@ -35,7 +35,7 @@ void update_death(pid_t pid) {
     it = pid_map.find(pid);
     proc_table_entry *pte = NULL;
     if (it != pid_map.end()) {
-	proc_table_entry *pte = it->second;
+	pte = it->second;
 	pte->is_read_complete = true;
 	set<proc_table_entry*, proc_table_entry_comp>::iterator sit;
 	sit = running_proc_set.find(pte);

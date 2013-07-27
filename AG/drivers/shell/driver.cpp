@@ -83,7 +83,6 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx,
 extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* user_cls ) {
     errorf("%s", "INFO: get_dataset\n"); 
     ssize_t ret = 0;
-    ssize_t err_code_len = 0;
     ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
     struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
     if (dat->http_status == 404 && !ctx->complete) {
@@ -250,6 +249,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	   ctx->fd = -1;
 	   ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
 	   ctx->file_path = file_path;
+	   ctx->id = mi.id;
 	   // Negative size switches libmicrohttpd to chunk transfer mode
 	   replica_ctx->size = -1;
 	   // Check the block status and set the http response appropriately
