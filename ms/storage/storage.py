@@ -129,7 +129,7 @@ def read_msentry_path( volume, fs_path ):
    return MSEntry.Read( volume, fs_path )
 
    
-def create_user_gateway( user, volume, **kwargs ):
+def create_user_gateway( user, volume=None, **kwargs ):
    return UserGateway.Create( user, volume, **kwargs )
 
 def read_user_gateway( g_id ):

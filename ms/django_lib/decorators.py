@@ -1,6 +1,16 @@
+'''
+
+John Whelchel
+Summer 2013
+
+Library of decorators that simplify some views by grouping code that is
+always run at the start or end of views.
+
+'''
+
 import logging
 
-from django.http import HttpResponseRedirect, HttpResponse
+from django.http import HttpResponse
 import storage.storage as db
 from django.template import Context, loader
 from django.shortcuts import redirect
@@ -145,4 +155,4 @@ def precheck(g_type, redirect_view):
         return decorators[g_type]
     except KeyError:
         logging.error("Gatway type argument %s for decorators.precheck doesn't exist." % g_type)
-        return HttpResponseRedirect('/syn/home')
+        return redirect('/syn/home')

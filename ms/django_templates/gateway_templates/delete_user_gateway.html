@@ -4,8 +4,6 @@
     <h1> Delete User Gateway: {{g_name|replace:"_|| "}} </h1>
   {% endblock %}
   {% block mainbody %}
-  <p style="text-align:center"> It is also possible to delete User Gateways just by url via the following format: <br/> HOST/syn/UG/delete/[gateway_name]/[gateway_password]
-  </p>
   <p class="error">{{ message }}</p><br>
   <form action='{% url django_ug.views.delete g_id %}' method="post">{% csrf_token %}
     <table class="createvolume" border>

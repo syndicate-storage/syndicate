@@ -10,14 +10,14 @@ Summer 2013
 These are the views for the Acquisition Gateway section of the administration
 site. They are all decorated with @authenticate to make sure that a user is 
 logged in; if not, they are redirected to the login page. Some are decorated
-with precheck, a decorator that makes sure the passed g_name and passwords
+with precheck, a decorator that makes sure the passed g_id and passwords
 are valid.
 
 '''
 import logging
 import json
 
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse
 from django.shortcuts import redirect
 
 from django.template import Context, loader, RequestContext
@@ -38,7 +38,7 @@ from MS.gateway import AcquisitionGateway as AG
 
 
 # This is the view to be redirected to when precheck fails; i.e.
-# the given password or g_name is wrong.
+# the given password or g_id is wrong.
 PRECHECK_REDIRECT = 'django_ag.views.viewgateway'
 
 
@@ -55,7 +55,7 @@ def viewgateway(request, g_id=0):
 
     # Check for passed error messages or inital data from session-state.
     message = session.pop('message', "")
-    ag_initial_data = session.get('ag_initial_data', [])
+    ag_initial_data = session.get('ag_initial_data' + str(g_id), [])
 
     # Make sure this gateway actually exists.
     g = db.read_acquisition_gateway(g_id)
@@ -66,7 +66,7 @@ def viewgateway(request, g_id=0):
         c = Context({'message':message, 'username':username})
         return HttpResponse(t.render(c))
 
-    # Create forms for chaning location, adding volumes,
+    # Create forms for changing location, adding volumes,
     # changing password, getting password, and changing config
     location_form = gatewayforms.ModifyGatewayLocation(initial={'host':g.host,
                                                                 'port':g.port})
@@ -86,21 +86,20 @@ def viewgateway(request, g_id=0):
             vols.append(vol)
             attrs = {"SyndicateUser.owner_id ==":vol.owner_id}
             owners.append(db.get_user(attrs))
+    vol_owners = zip(vols, owners)
 
     # Create formatted data based on vols for the formset, if not passed in state.
     if not ag_initial_data:
         for v in vols:
             ag_initial_data.append({'volume_name':v.name,
                                  'remove':False})
-    session['ag_initial_data'] = ag_initial_data
+    session['ag_initial_data' + str(g_id)] = ag_initial_data
 
     VolumeFormSet = formset_factory(gatewayforms.GatewayRemoveVolume, extra=0)
     if ag_initial_data:
         formset = VolumeFormSet(initial=ag_initial_data)
     else:
         formset = None
-
-    vol_owners = zip(vols, owners)
 
     t = loader.get_template("gateway_templates/viewacquisitiongateway.html")
     c = RequestContext(request, {'username':username,
@@ -160,12 +159,13 @@ def changejson(request, g_id):
         session['new_change'] = "We've changed your gateways's JSON configuration."
         session['next_url'] = '/syn/AG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
-        return HttpResponseRedirect('/syn/thanks')
+        return redirect('/syn/thanks')
 
     else:
         session['message'] = "Invalid form. Did you upload a file?"
         return redirect('django_ag.views.viewgateway', g_id)
 
+# Doesn't use precheck() because doesn't use Password() form, just ChangePassword() form.
 @authenticate
 def changepassword(request, g_id):
     '''
@@ -179,7 +179,7 @@ def changepassword(request, g_id):
 
     # Precheck
     if request.method != "POST":
-        return HttpResponseRedirect('/syn/AG/viewgateway/' + str(g_id))
+        return redirect('/syn/AG/viewgateway/' + str(g_id))
 
     try:
         g = db.read_acquisition_gateway(g_id)
@@ -221,7 +221,7 @@ def changepassword(request, g_id):
             session['new_change'] = "We've changed your gateways's password."
             session['next_url'] = '/syn/AG/viewgateway/' + str(g_id)
             session['next_message'] = "Click here to go back to your gateway."
-            return HttpResponseRedirect('/syn/thanks')
+            return redirect('/syn/thanks')
 
 
 
@@ -239,7 +239,7 @@ def addvolume(request, g_id):
     def update(v_id, g_id, vfields, gfields):
         db.update_volume(v_id, **vfields)
         db.update_acquisition_gateway(g_id, **gfields)
-        session.pop('ag_initial_data')
+        session.pop('ag_initial_data' + str(g_id))
 
     session = request.session
     username = session['login_email']
@@ -260,7 +260,7 @@ def addvolume(request, g_id):
 
         # Prepare upcoming volume state
         if volume.ag_ids:
-            new_ags = volume.ag_ids[:]
+            new_ags = volume.ag_ids
             new_ags.append(gateway.g_id)
         else:
             new_ags = [gateway.g_id]
@@ -289,7 +289,7 @@ def addvolume(request, g_id):
         session['new_change'] = "We've updated your AG's volumes."
         session['next_url'] = '/syn/AG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
-        return HttpResponseRedirect('/syn/thanks')
+        return redirect('/syn/thanks')
     else:
         session['message'] = "Invalid entries for adding volumes."
         return redirect('django_ag.views.viewgateway', g_id)
@@ -311,7 +311,7 @@ def removevolumes(request, g_id):
         for v_id, vfield in zip(v_ids, vfields):
             db.update_volume(v_id, **vfield)
         db.update_acquisition_gateway(g_id, **gfields)
-        session.pop('ag_initial_data')
+        session.pop('ag_initial_data' + str(g_id))
 
     session = request.session
     username = session['login_email']
@@ -326,7 +326,7 @@ def removevolumes(request, g_id):
     volume_ids_to_be_removed = []
     new_ags_set = []
 
-    initial_and_forms = zip(session.get('ag_initial_data', []), formset.forms)
+    initial_and_forms = zip(session.get('ag_initial_data' + str(g_id), []), formset.forms)
     for i, f in initial_and_forms:
 
         if f.cleaned_data['remove']:
@@ -335,7 +335,7 @@ def removevolumes(request, g_id):
             vol = vols[0]
 
             # update each volume's new AG list
-            new_ags = vol.ag_ids[:]
+            new_ags = vol.ag_ids
             new_ags.remove(int(g_id))
             new_ags_set.append({'ag_ids':new_ags})
 
@@ -358,7 +358,7 @@ def removevolumes(request, g_id):
     session['new_change'] = "We've updated your AG's volumes."
     session['next_url'] = '/syn/AG/viewgateway/' + str(g_id)
     session['next_message'] = "Click here to go back to your gateway."
-    return HttpResponseRedirect('/syn/thanks')
+    return redirect('/syn/thanks')
 
 
 @authenticate
@@ -389,7 +389,7 @@ def changelocation(request, g_id):
         session['new_change'] = "We've updated your AG."
         session['next_url'] = '/syn/AG/viewgateway/' + str(g_id)
         session['next_message'] = "Click here to go back to your gateway."
-        return HttpResponseRedirect('/syn/thanks')
+        return redirect('/syn/thanks')
     else:
         session['message'] = "Invalid form entries for gateway location."
         return redirect('django_ag.views.viewgateway', g_id)
@@ -497,7 +497,7 @@ def create(request):
             session['new_change'] = "Your new gateway is ready."
             session['next_url'] = '/syn/AG/allgateways'
             session['next_message'] = "Click here to see your acquisition gateways."
-            return HttpResponseRedirect('/syn/thanks/')
+            return redirect('/syn/thanks/')
         else:
             # Prep returned form values (so they don't have to re-enter stuff)
 
@@ -551,7 +551,19 @@ def delete(request, g_id):
         c = RequestContext(request, {'username':username, 'g':g, 'form':form, 'message':message})
         return HttpResponse(t.render(c))
 
-
+    # Once again isolating transactional for views that update multiple entities
+    @transactional(xg=True)
+    def delete_and_update(ag_id, attached_volume_ids):
+        db.delete_acquisition_gateway(ag_id)
+        for v in attached_volume_ids:
+            vol = db.read_volume(v)
+            if not vol:
+                continue
+            new_ag_ids = vol.ag_ids
+            new_ag_ids.remove(ag_id)
+            attrs = {"ag_ids":new_ag_ids}
+            db.update_volume(v, **attrs)
+        session.pop("ag_initial_data", None)
 
     session = request.session
     username = session['login_email']
@@ -574,11 +586,11 @@ def delete(request, g_id):
                 session['message'] = "You must tick the delete confirmation box."
                 return give_delete_form(username, ag, session)
             
-            db.delete_acquisition_gateway(g_id)
+            delete_and_update(g_id, ag.volume_ids)
             session['new_change'] = "Your gateway has been deleted."
             session['next_url'] = '/syn/AG/allgateways'
             session['next_message'] = "Click here to see all acquisition gateways."
-            return HttpResponseRedirect('/syn/thanks/')
+            return redirect('/syn/thanks/')
 
         # Invalid forms
         else:  
@@ -630,7 +642,7 @@ def urlcreate(request, g_name, g_password, host, port, volume_name="",):
 @authenticate
 def urldelete(request, g_name, g_password):
     '''
-    For debugging purposes only, allows creation of AG via pure URL
+    For debugging purposes only, allows deletion of AG via pure URL
     '''
     session = request.session
     username = session['login_email']

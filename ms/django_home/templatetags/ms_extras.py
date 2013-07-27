@@ -1,3 +1,9 @@
+'''
+John Whelchel
+Summer 2013
+
+Custom django template tags for metadata website.
+'''
 from django import template
 from django.template.defaultfilters import stringfilter
 

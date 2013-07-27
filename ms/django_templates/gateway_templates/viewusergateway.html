@@ -12,6 +12,7 @@
     {% block extra %}{% endblock %}
   </ul>
   <br/>
+  {% if vol %}
   <h4> Attached Volume </h4>
   <table border>
     <thead>
@@ -26,6 +27,9 @@
     </tbody>
   </table>
   <br/>
+  {% else %}
+  <h4>No attached volume.</h4>
+  {% endif %}
   <h4> Write Capable: </h4>{% if gateway.read_write %}Yes {% else %}No {% endif %}
 </div>
 <br/>
@@ -40,13 +44,18 @@
     <input class="submit" type="submit" value="Change" />
   </form>
   <hr/>
+  {% if gateway.volume_id != 0 %}
   <h4>Change Attached Volume</h4>
+  {% else %}
+  <h4>Attach Volume</h4>
+  {% endif %}
   <form action='{% url django_ug.views.changevolume gateway.g_id %}' method="post">{% csrf_token %}
       {{ change_form.as_ul }}
       {{ password_form.as_ul }}
     <input class="submit" type="submit" value="Change" />
   </form> 
   <hr/>
+
   <h4>Change Write Settings</h4><h5>Currently {% if gateway.read_write %}capable {% else %}incapable {% endif %}</h5>
   <form action='{% url django_ug.views.changewrite gateway.g_id %}' method='post' enctype="multipart/form-data">{% csrf_token %}
     {{password_form.as_ul}}
