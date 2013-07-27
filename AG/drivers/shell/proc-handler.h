@@ -15,6 +15,7 @@
 #include <sys/select.h>
 #include <sys/time.h>
 #include <signal.h>
+#include <sys/wait.h>
 
 #include <string.h>
 #include <sstream>
@@ -59,6 +60,9 @@ struct proc_table_entry_comp {
 };
 
 void* inotify_event_receiver(void *cls);
+void update_death(pid_t pid);
+static void sigchld_handler(int signum); 
+int  set_sigchld_handler();
 
 class ProcHandler 
 {

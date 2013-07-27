@@ -91,8 +91,10 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	ctx->complete = true;
     }
     else if (dat->http_status == 204 && !ctx->complete) {
+	//This is the first request for this file.
 	ret = 0;
 	ctx->complete = true;
+	prch.execute_command(ctx, NULL, 0, global_conf->blocking_factor);
     }
     else if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
 	if (!ctx->complete) {
@@ -287,6 +289,13 @@ extern "C" void cleanup_dataset( void* cls ) {
 	if (ctx->data != NULL) {
 	    free(ctx->data);
 	}
+	if (ctx->argv != NULL) {
+	    free(ctx->argv);
+	}
+	if (ctx->envp != NULL) {
+	    free(ctx->envp);
+	}
+	close(ctx->fd);
 	free (ctx);
     }
 }
