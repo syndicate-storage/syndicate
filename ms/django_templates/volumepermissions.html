@@ -2,13 +2,13 @@
 {% load ms_extras %}
 
 {% block head %}
-    <h1><a href='{% url django_volume.views.viewvolume volume.name %}'>{{volume.name|replace:"_|| "}}</a> Permissions </h1>
+    <h1><a href='{% url django_volume.views.viewvolume volume.volume_id %}'>{{volume.name|replace:"_|| "}}</a> Permissions </h1>
 {% endblock %}
 {% block mainbody %}
 
-	{{message}}
+	<p class="error">{{message}}</p>
 
-    <form id='formset' action='{% url django_volume.views.changepermissions volume.name %}' method="post">{% csrf_token %}
+    <form id='formset' action='{% url django_volume.views.changepermissions volume.volume_id %}' method="post">{% csrf_token %}
 	   {% if formset %}
             {{ formset.management_form }}
             <table class="permissions" border>
@@ -37,7 +37,7 @@
     </form>	
     <br/>
 
-    <form id="addform" action="{% url django_volume.views.addpermissions volume.name %}" method="post">{% csrf_token %}
+    <form id="addform" action="{% url django_volume.views.addpermissions volume.volume_id %}" method="post">{% csrf_token %}
         <h4> Add new volume user </h4>
         <table class="addpermissions" border>
             {{ addform.as_table }}

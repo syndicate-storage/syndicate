@@ -13,9 +13,13 @@
 	{% for g, v, o in gateway_vols_owners %} 
 
 	<tr>
-      <td><a href='{% url django_ug.views.viewgateway g.ms_username %}'>{{g.ms_username|replace:"_|| "}}</a></td>
+      <td><a href='{% url django_ug.views.viewgateway g.g_id %}'>{{g.ms_username|replace:"_|| "}}</a></td>
+      {% if v %}
 	  <td>{{v.name|replace:"_|| "}}</td>
 	  <td>{{o.email}}</td>
+      {% else %}
+      <td colspan="2">No attached volume.</td>
+      {% endif %}
 	  <td>{{g.host}}</td>
 	  <td>{{g.port}}</td>
 	  <td>{% if g.read_write %}Yes{% else %}No{% endif %}</td>

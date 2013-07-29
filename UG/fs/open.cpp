@@ -35,14 +35,14 @@ int fs_file_handle_open( struct fs_file_handle* fh, int flags, mode_t mode ) {
 }
 
 // create an entry (equivalent to open with O_CREAT|O_WRONLY|O_TRUNC
-struct fs_file_handle* fs_entry_create( struct fs_core* core, char const* path, char const* url, uid_t user, gid_t vol, mode_t mode, int* err ) {
+struct fs_file_handle* fs_entry_create( struct fs_core* core, char const* path, char const* url, uint64_t user, uint64_t vol, mode_t mode, int* err ) {
    dbprintf( "create %s\n", path );
    return fs_entry_open( core, path, url, user, vol, O_CREAT|O_WRONLY|O_TRUNC, mode, err );
 }
 
 
 // make a node (regular files only at this time)
-int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t dev, uid_t user, gid_t vol ) {
+int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t dev, uint64_t user, uint64_t vol ) {
    // only regular files at this time...
    if( ! ( S_ISREG( mode ) || S_ISFIFO( mode ) ) ) {
       return -ENOTSUP;
@@ -163,7 +163,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
 
 
 // mark an fs_entry as having been opened, and/or create a file
-struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, char const* url, uid_t user, gid_t vol, int flags, mode_t mode, int* err ) {
+struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, char const* url, uint64_t user, uint64_t vol, int flags, mode_t mode, int* err ) {
 
    char* path = strdup(_path);
    md_sanitize_path( path );
@@ -302,9 +302,6 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
    }
 
    // now child exists.
-   // before releasing the parent, get info from it
-   uint64_t parent_write_ttl = parent->max_write_freshness;
-
    
    // safe to lock it so we can release the parent
    fs_entry_wlock( child );

@@ -162,10 +162,35 @@ class SyndicateUser( storagetypes.Object ):
             return None
          else:
             storagetypes.memcache.set( user_key_name, user )
-            return user
+            
       return user
 
 
+   @classmethod
+   def add_volume_to_owner( cls, volume_id, username ):
+      """
+      Update a SyndicateUser, so that the SyndicateUser owns the Volume and the Volume is put to the datastore.
+      Run this in a transaction.
+      """
+      user = SyndicateUser.Read( username )
+
+      diff = False
+      if volume_id not in user.volumes_o:
+         user.volumes_o.append( volume_id )
+         diff = True
+
+      if volume_id not in user.volumes_rw:
+         user.volumes_rw.append( volume_id )
+         diff = True
+
+      if diff:
+         user_key_name = SyndicateUser.make_key_name( email=username )
+         storagetypes.memcache.delete( user_key_name )
+         return user.put()
+
+      return None
+      
+      
    @classmethod
    def Update( cls, email, **fields ):
       '''
@@ -175,12 +200,9 @@ class SyndicateUser( storagetypes.Object ):
       user_key_name = SyndicateUser.make_key_name( email=email)
       storagetypes.memcache.delete( user_key_name )
 
-      for key, value in fields.iteritems():
-         setattr(user, key, value)
-
-      user_future = user.put_async()
-      storagetypes.wait_futures( [user_future] )
-      return user.key
+      for (k,v) in fields.items():
+         setattr(user, k, v )
+      return user.put()
       
 
    @classmethod
@@ -188,27 +210,20 @@ class SyndicateUser( storagetypes.Object ):
       '''
       Delete user from datastore.
       '''
-      user = SyndicateUser.Read(email)
-      return user.key.delete()
+      user_key_name = SyndicateUser.make_key_name( email=email)
+      user_key = make_key( SyndicateUser, user_key_name )
+      return user_key.delete()
 
+   """
    @classmethod
-   def ListAll( cls, **attrs ):
+   def ListAll( cls, attrs ):
       '''
-      Attributes must be in dictionary, using format "SyndicateUser.PROPERTY: [operator] [value]"
-      eg {'User.volumes_r': '== 5', ...} NOTE make sure to use SyndicateUser before properties, not whatever
-      you mave imported the package as (i.e. import user.SyndicateUser as User)
-
+      Attributes must be in dictionary, using format "SyndicateUser.PROPERTY [operator]: [value]"
       '''
-      query_clause = ""
-      for key, value in attrs.iteritems():
-         if query_clause: 
-            query_clause+=","
-         query_clause += (key + value)
-      if query_clause:
-         exec ("result = SyndicateUser.query(%s)" % query_clause)
-         return result
-      else:
-         return SyndicateUser.query()
+      qry = SyndicateUser.query()
+      ret = cls.ListAll_runQuery( qry, attrs )
 
+      return ret
+   """
    
    

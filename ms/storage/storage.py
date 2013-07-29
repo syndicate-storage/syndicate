@@ -30,39 +30,43 @@ import time
 import datetime
 import random
    
-def create_volume( user, **kwargs ):
-   return Volume.Create( user, **kwargs )
+def create_volume( username, **kwargs ):
+   return Volume.Create( username, **kwargs )
    
 
-def read_volume( name ):
-   return Volume.Read( name )
+def read_volume( volume_id ):
+   return Volume.Read( volume_id )
    
 
-def volume_update_shard_count( volume_name, num_shards ):
-   return Volume.update_shard_count( volume_name, num_shards )
+def volume_update_shard_count( volume_id, num_shards ):
+   return Volume.update_shard_count( volume_id, num_shards )
 
    
-def update_volume( volume_name, **fields ):
-   return Volume.Update( volume_name, **fields )
+def update_volume( volume_id, **fields ):
+   return Volume.Update( volume_id, **fields )
 
    
-def delete_volume( volume_name ):
-   return Volume.Delete( volume_name )
+def delete_volume( volume_id ):
+   return Volume.Delete( volume_id )
 
    
-def list_volumes( **attrs ):
-   return Volume.ListAll( **attrs )
+def list_volumes( attrs=None, limit=None ):
+   return Volume.ListAll( attrs, limit=limit )
 
 
-def get_volume( **attr ):
-   allvolumes = list_volumes(**attr)
-   if allvolumes.count(limit=2) > 1:
-      raise Exception("More than one volume satisfies attrs: %s" % attr)
-   for v in allvolumes:
-      return v
-   return None
+def get_volume( volume_id ):
+   return read_volume( volume_id )
 
+def get_volume_by_name( volume_name ):
+   vols = list_volumes( {"Volume.name ==": volume_name} )
+   if len(vols) > 1:
+      raise Exception("More than one Volume by the name of '%s'" % volume_name)
 
+   if len(vols) == 0:
+      return None
+
+   return vols[0]
+   
    
 def create_user( **kwargs ):
    return SyndicateUser.Create( **kwargs )
@@ -80,12 +84,12 @@ def delete_user( email, **fields ):
    return SyndicateUser.Delete( email, **fields )
 
    
-def list_users( **attrs ):
-   return SyndicateUser.ListAll( **attrs )
+def list_users( attrs=None, limit=None ):
+   return SyndicateUser.ListAll( attrs, limit=limit )
 
-def get_user( **attr ):
-   allusers = list_users(**attr)
-   if allusers.count(limit=2) > 1:
+def get_user( attr ):
+   allusers = list_users(attr)
+   if len(allusers) > 1:
       raise Exception("More than one users satisfies attrs: %s" % attr)
    for u in allusers:
       return u
@@ -125,83 +129,62 @@ def read_msentry_path( volume, fs_path ):
    return MSEntry.Read( volume, fs_path )
 
    
-def create_user_gateway( user, volume, **kwargs ):
+def create_user_gateway( user, volume=None, **kwargs ):
    return UserGateway.Create( user, volume, **kwargs )
 
-def read_user_gateway( ms_username ):
-   return UserGateway.Read( ms_username )
+def read_user_gateway( g_id ):
+   return UserGateway.Read( g_id )
 
-def update_user_gateway( ms_username, **fields):
-   return UserGateway.Update( ms_username, **fields )
+def update_user_gateway( g_id, **fields):
+   return UserGateway.Update( g_id, **fields )
 
-def list_user_gateways(**attrs):
-   return UserGateway.ListAll(**attrs)
+def list_user_gateways(attrs=None, limit=None):
+   return UserGateway.ListAll(attrs, limit=limit)
 
 def list_user_gateways_by_volume( volume_id ):
    return UserGateway.ListAll_ByVolume( volume_id )
    
-def delete_user_gateway( ms_username ):
-   return UserGateway.Delete( ms_username )
-
-def get_user_gateway( **attr ):
-   allugs = list_user_gateways(**attr)
-   if allugs.count(limit=2) > 1:
-      raise Exception("More than one UG satisfies attrs: %s" % attr)
-   for ug in allugs:
-      return ug
-   return None
+def delete_user_gateway( g_id ):
+   return UserGateway.Delete( g_id )
 
 
 def create_acquisition_gateway( user, **kwargs ):
    return AcquisitionGateway.Create( user, **kwargs )
       
-def read_acquisition_gateway( ms_username ):
-   return AcquisitionGateway.Read( ms_username )
+def read_acquisition_gateway( g_id ):
+   return AcquisitionGateway.Read( g_id )
 
-def update_acquisition_gateway( ms_username, **fields ):
-   return AcquisitionGateway.Update( ms_username, **fields )
+def update_acquisition_gateway( g_id, **fields ):
+   return AcquisitionGateway.Update( g_id, **fields )
 
 def list_acquisition_gateways_by_volume( volume_id ):
    return AcquisitionGateway.ListAll_ByVolume( volume_id )
 
-def list_acquisition_gateways( **attrs ):
-   return AcquisitionGateway.ListAll( **attrs )
+def list_acquisition_gateways( attrs=None, limit=None ):
+   return AcquisitionGateway.ListAll( attrs, limit=limit )
    
-def delete_acquisition_gateway( ms_username ):
-   return AcquisitionGateway.Delete( ms_username )
+def delete_acquisition_gateway( g_id ):
+   return AcquisitionGateway.Delete( g_id )
 
-def get_acquisition_gateway( **attr ):
-   allags = list_acquisition_gateways(**attr)
-   if allags.count(limit=2) > 1:
-      raise Exception("More than one AG satisfies attrs: %s" % attr)
-   for ag in allags:
-      return ag
-   return None
+   
 
 def create_replica_gateway( user, **kwargs ):
    return ReplicaGateway.Create( user, **kwargs )
 
 
-def read_replica_gateway( ms_username ):
-   return ReplicaGateway.Read( ms_username )
+def read_replica_gateway( g_id ):
+   return ReplicaGateway.Read( g_id )
 
-def update_replica_gateway( ms_username, **fields ):
-   return ReplicaGateway.Update( ms_username, **fields )
+def update_replica_gateway( g_id, **fields ):
+   return ReplicaGateway.Update( g_id, **fields )
 
 def list_replica_gateways_by_volume( volume_id ):
    return ReplicaGateway.ListAll_ByVolume( volume_id )
 
 
-def list_replica_gateways( **attrs ):
-   return ReplicaGateway.ListAll( **attrs )
+def list_replica_gateways( attrs=None, limit=None ):
+   return ReplicaGateway.ListAll( attrs, limit=limit )
    
-def delete_replica_gateway( ms_username ):
-   return ReplicaGateway.Delete( ms_username )
-
-def get_replica_gateway( **attr ):
-   allrgs = list_replica_gateway(**attr)
-   if allrgs.count(limit=2) > 1:
-      raise Exception("More than one RG satisfies attrs: %s" % attr)
-   for rg in allrgs:
-      return rg
-   return None
+def delete_replica_gateway( g_id ):
+   return ReplicaGateway.Delete( g_id )
+   

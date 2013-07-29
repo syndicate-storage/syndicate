@@ -749,14 +749,12 @@ int main(int argc, char** argv) {
    char* username = NULL;
    char* password = NULL;
    char* volume_name = NULL;
-   char* volume_secret = NULL;
    char* ms_url = NULL;
    int portnum = -1;
    
    static struct option syndicate_options[] = {
       {"config-file",     required_argument,   0, 'c'},
       {"volume-name",     required_argument,   0, 'v'},
-      {"volume-secret",   required_argument,   0, 'S'},
       {"username",        required_argument,   0, 'u'},
       {"password",        required_argument,   0, 'p'},
       {"port",            required_argument,   0, 'P'},
@@ -766,7 +764,7 @@ int main(int argc, char** argv) {
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:S:u:p:P:o:m:fs", syndicate_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:o:m:fs", syndicate_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -774,10 +772,6 @@ int main(int argc, char** argv) {
          }
          case 'c': {
             config_file = optarg;
-            break;
-         }
-         case 'S': {
-            volume_secret = optarg;
             break;
          }
          case 'u': {
@@ -828,7 +822,7 @@ int main(int argc, char** argv) {
 
    // we need a mountpoint, and possibly other options
    if( argv[argc-1][0] == '-' ) {
-      errorf("Usage: %s [-n] [-c CONF_FILE] [-m MS_URL] [-u USERNAME] [-p PASSWORD] [-v VOLUME] [-S VOLUME-SECRET] [-P PORTNUM] [FUSE OPTS] <mountpoint>\n", argv[0]);
+      errorf("Usage: %s [-n] [-c CONF_FILE] [-m MS_URL] [-u USERNAME] [-p PASSWORD] [-v VOLUME] [-P PORTNUM] [FUSE OPTS] <mountpoint>\n", argv[0]);
       exit(1);
    }
 
@@ -838,7 +832,7 @@ int main(int argc, char** argv) {
 
    struct md_HTTP syndicate_http;
    
-   rc = syndicate_init( config_file, &syndicate_http, portnum, ms_url, volume_name, volume_secret, username, password );
+   rc = syndicate_init( config_file, &syndicate_http, portnum, ms_url, volume_name, username, password );
    if( rc != 0 )
       exit(1);
 

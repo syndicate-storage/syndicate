@@ -112,7 +112,7 @@ struct md_syndicate_conf;
 struct md_entry {
    int type;            // file or directory?
    char* path;          // path
-   char* url;           // URL to the primary replica
+   char* url;           // URL to the UG that hosts its data
    char* local_path;    // only valid for local content--if set, it's the absolute local path on disk where the content can be found
    int64_t ctime_sec;   // creation time (seconds)
    int32_t ctime_nsec;  // creation time (nanoseconds)
@@ -121,9 +121,9 @@ struct md_entry {
    int64_t version;     // publish version
    int32_t max_read_freshness;      // how long is this entry fresh until it needs revalidation?
    int32_t max_write_freshness;     // how long can we delay publishing this entry?
-   uid_t owner;         // uid of the owner
-   uid_t acting_owner;  // uid of the acting owner
-   gid_t volume;        // id of the volume
+   uint64_t owner;         // uid of the owner
+   uint64_t acting_owner;  // uid of the acting owner
+   uint64_t volume;        // id of the volume
    mode_t mode;         // file permission bits
    off_t size;          // size of the file
    unsigned char* checksum;      // SHA256 hash (NULL if not given)
@@ -137,7 +137,6 @@ typedef list<struct md_entry*> md_entry_list;
 // [command] [timestamp] [entry text]
 struct md_update {
    char op;               // update operation
-   int64_t timestamp;    // timestamp of when the update was received (if op == MD_OP_ERR, then this is instead a value of errno)
    struct md_entry ent;
 };
 
@@ -170,11 +169,11 @@ struct md_linked_list {
    struct md_linked_list* next;
 };
 
-// HTTP server user account entry
+// gateway user session
 struct md_user_entry {
-   uid_t uid;
+   uint64_t uid;
    char* username;
-   char* password_hash;
+   char* password_hash;    // used as a session secret
 };
 
 #define MD_GUEST_UID 0xFFFFFFFF
@@ -285,7 +284,7 @@ struct md_HTTP {
    char* server_pkey;
    
    void*                     (*HTTP_connect)( struct md_HTTP_connection_data* md_con_data );
-   uid_t                     (*HTTP_authenticate)( struct md_HTTP_connection_data* md_con_data, char* username, char* password );
+   uint64_t                  (*HTTP_authenticate)( struct md_HTTP_connection_data* md_con_data, char* username, char* password );
    struct md_HTTP_response*  (*HTTP_HEAD_handler)( struct md_HTTP_connection_data* md_con_data );
    struct md_HTTP_response*  (*HTTP_GET_handler)( struct md_HTTP_connection_data* md_con_data );
    int                       (*HTTP_POST_iterator)(void *coninfo_cls, enum MHD_ValueKind kind, 
@@ -354,7 +353,7 @@ struct md_syndicate_conf {
    char* replica_logfile;                             // path on disk to replica log
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
 
-   // gateway server
+   // RG/AG servers
    bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers
    unsigned int num_http_threads;                     // how many HTTP threads to create
    int http_authentication_mode;                      // for which operations do we authenticate?
@@ -379,13 +378,12 @@ struct md_syndicate_conf {
    char* metadata_username;                           // metadata authentication username
    char* metadata_password;                           // metadata authentication password
    uint64_t blocking_factor;                          // how many bytes blocks will be
-   uid_t owner;                                       // what is our UID in Syndicate?  Files created in this UG will assume this UID as their owner
+   uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
    mode_t usermask;                                   // umask of the user running this program
-   gid_t volume;                                      // volume ID of the metadata server we're subscribed to
-   uid_t volume_owner;                                // user ID of the metadata server we're subscribed to
+   uint64_t volume;                                   // volume ID
+   uint64_t volume_owner;                             // user ID of the volume owner
    char* mountpoint;                                  // absolute path to the place where the metadata server is mounted
    char* hostname;                                    // what's our hostname?
-   uint64_t volume_version;                           // version of the volume state
    char* ag_driver;				      // AG gatway driver that encompasses gateway callbacks
 };
 
@@ -644,7 +642,7 @@ struct md_user_entry** md_parse_secrets_file2( FILE* passwd_file, char const* pa
 struct md_user_entry* md_user_entry_dup( struct md_user_entry* uent );
 void md_free_user_entry( struct md_user_entry* uent );
 struct md_user_entry* md_find_user_entry( char const* username, struct md_user_entry** users );
-struct md_user_entry* md_find_user_entry2( uid_t uid, struct md_user_entry** users );
+struct md_user_entry* md_find_user_entry2( uint64_t uid, struct md_user_entry** users );
 bool md_validate_user_password( char const* password, struct md_user_entry* uent );
 
 // response buffers
@@ -660,7 +658,6 @@ int md_init( int gateway_type,
              int portnum,
              char const* ms_url,
              char const* volume_name,
-             char const* volume_secret,
              char const* md_username,
              char const* md_password
            );

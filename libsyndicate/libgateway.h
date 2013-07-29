@@ -12,7 +12,7 @@
 #include <ftw.h>
 #include <dlfcn.h>
 
-struct md_syndicate_conf *global_conf = NULL;
+extern struct md_syndicate_conf *global_conf;
 
 struct gateway_context {
    char const* url_path;
@@ -23,6 +23,7 @@ struct gateway_context {
    time_t last_mod;     // for GET, this is the last-mod time of the file to be served
    char** args;
    int err;
+   int http_status;
 };
 
 

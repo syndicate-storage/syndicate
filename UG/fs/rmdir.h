@@ -10,6 +10,6 @@
 #include "fs_entry.h"
 #include "consistency.h"
 
-int fs_entry_rmdir( struct fs_core* core, char const* path, uid_t user, gid_t volume );
+int fs_entry_rmdir( struct fs_core* core, char const* path, uint64_t user, uint64_t volume );
 
 #endif

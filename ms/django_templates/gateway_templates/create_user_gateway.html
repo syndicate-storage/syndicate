@@ -4,14 +4,12 @@
     <h1> Create User Gateway </h1>
   {% endblock %}
   {% block mainbody %}
-  <p style="text-align:center"> It is also possible to create User Gateways just by url via the following format: <br/> HOST/syn/UG/create/[volumename]/[gateway_name]/[gateway_password]/[host]/[port]
-  </p>
   <p class="error">{{ message }}</p><br>
   <form action='{% url django_ug.views.create %}' method="post">{% csrf_token %}
     <table class="createvolume" border>
       {{ form.as_table }}
     </table>
-    <input class="submit" type="submit" value="Submit" />
+    <input class="submit center" type="submit" value="Submit" />
   </form>
   {% endblock %}
   {% block footer %}

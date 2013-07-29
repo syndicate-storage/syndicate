@@ -57,9 +57,13 @@ struct ms_client {
    update_set* updates;
    deadline_queue* deadlines;
 
-   char* url;
-   char* userpass;
-   char* file_url;
+   char* url;           // MS URL
+   char* userpass;      // HTTP username:password string
+   char* file_url;      // URL to the MS's /FILE handler
+   uint64_t owner_id;   // ID of the account running this ms_client
+   uint64_t volume_id;  // which volume are we attached to
+   uint64_t volume_owner_id;  // ID of the owner of this volume
+   uint64_t blocksize;        // size of blocks for this Volume
 
    pthread_t uploader_thread;
    bool running;        // set to true if the uploader thread is running
@@ -67,6 +71,8 @@ struct ms_client {
    bool uploading;      // set to true if we're uploading something on ms_write
    bool more_work;      // set to true if more work arrives while we're working
    bool uploader_running;  // set to true if the uploader is running
+   pthread_mutex_t uploader_lock;     // wake up the uploader thread when there is work to do
+   pthread_cond_t uploader_cv;
 
    // gateway view-change structures
    pthread_t view_thread;
@@ -74,21 +80,25 @@ struct ms_client {
    char** RG_urls;
    int num_RG_urls;
    uint64_t volume_version;      // version of the volume's metadata
+   uint64_t UG_version;          // version of the volume's UGs listing
+   uint64_t RG_version;          // version of the volume's RGs listing
    pthread_rwlock_t view_lock;
 
-   char* volume_secret;          // secret for authenticating ourselves to the volume
+   // session information
+   struct md_user_entry* session_token;
+   int64_t session_timeout;                 // how long the session is valid
 
-   // wake up the uploader thread when there is work to do
-   pthread_mutex_t uploader_lock;
-   pthread_cond_t uploader_cv;
-   
+   // MS public key
+   char* ms_public_key;
+
+   // reference to syndicate config 
    struct md_syndicate_conf* conf;
 };
 
 extern "C" {
    
-int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, char const* volume_name, char const* username, char const* passwd );
-int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name, char const* password, uint64_t* version, uid_t* my_owner_id, uid_t* volume_owner_id, gid_t* volume_id, uint64_t* blocksize );
+int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, char const* username, char const* passwd );
+int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name );
 int ms_client_destroy( struct ms_client* client );
 
 int ms_client_rlock( struct ms_client* client );
@@ -114,7 +124,7 @@ int ms_client_resolve_path( struct ms_client* client, char const* path, vector<s
 
 int ms_client_claim( struct ms_client* client, char const* path );
 
-uid_t ms_client_authenticate( struct ms_client* client, struct md_HTTP_connection_data* data, char* username, char* password );
+uint64_t ms_client_authenticate( struct ms_client* client, struct md_HTTP_connection_data* data, char* username, char* password );
 
 char** ms_client_RG_urls_copy( struct ms_client* client );
 

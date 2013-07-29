@@ -6,94 +6,36 @@ This is the collection of files for the Syndicate front-end, using Django and we
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
-- Factored out a lot of repeated code in ug/rg/ag views.py
-- Fixed a URL redirect issue.
-- Fixed a URL mapping issue
+DONE ->
+- Fix transactions in volume.py.create and gateway.py.create[s]
+- Got rid of override forms
+- Got rid of 'settings' and 'downloads'
+- Commented django_home/, django_lib/, django_syndicate_web/, django_ug/, django_volume
+- Created a 'failure' view for volumes when the volume is private and the user trying to access
+  it doesn't own it (or if the volume) doesn't exist, which hides the URL's better.
 
 Current task TD -> 
 
 Tomorrow
-- create catchall url.py patterns for weird matches (i.e. avoid 404? or custom 404?)
-- if going to /, loggedin users should get redirected home
-- Center all boolean check-boxes
-- IN all views (especially gateways) get rid of excess user calls.
-- In all URLS.pys, make *s +s when appropriate to prevent 'blank' variables
-- volume cycle through in AG_tempalte_table and RB_template_table
-- allgateways in rg (cycling through volumes to volset like AG)
+
+- Transaction on volume.views.create for creating Root dir?
+    + Is there ever a situation where creating a volume doesn't involve creating a root dir? Can I add that to volume.py create?
+
+- Ask Jude: do we want name restrictions on G's to match those on Volumes (i.e. Unicode allowed or not? Currently NOT allowed).
+    + what about for passwords?
+
 - read through others code.
-
-- Solidfy AG/RG/UG/Volume parameters. (version!)
-- Clean out magic numbers
-- put Try blocks on all gateway.py, user.py, and volume.py Update methods for setattr.
-
 
 Long term
 - Admin site layout consistency for tables. Make sure they scale well with weird text (large names, descrips, configs etc)
-- Make more adminy, less fluff.
+- Mabye make tests?!
 
-To-do:
-
-- Is it possible to make ALL errors for Ag/RG creation maintain state?
-- Make sure to update setup.py when changing parameters
-
-
-- Ask Jude.
-	Should Volume record in MS store information on AGs/RGs, or gateway records store information about volumes, or both?
-	How should configuration for RG be represented in MS? Or does it need to be at all?
-	When a
-
-- Adding to Volume -> AG parameter (repeated? Yeah probably.) check
-				   -> RG parameter (repeated?)
-
-- Adding to RG -> Private/Public "private", meaning that it can only be bound to a Volume owned by the same user that owns the RG -> Volumes (repeated) check
-
-- fix error for UG delete gateway (? What is this)
-- AG/RG parameters
-- Ask Jude about key_listing methond in Gateway...
-
-Ag have to publish the existence of data in the MS. They can also serve data. Function like UG, can read and write metadata
-Rg cannot interact with MS directly, can only read, not write.
-
-MS needs to be able to transmit info/config to gateways (they have to authenticate)
-User needs to able to enter JSon/XML or something that specifies configuration of RG (or AG or UG) that dicates
-   Ug needs to know whta edge caches to use -> proxy URL and a very simple python function that will take as arg atleast a URL and transforms it into a URL to a network cache. Also needs to go through all volumes, find all UG's with write values to that volume, pass hashed credentials to those UG's so they can all verify each other, based on changes. (this should be periodic too, to detect partitions)
-
-   AG needs generic file (text or something)
-   RG same (text or something)
-Whenver config changes, needs to be pushed to G's
-
-
-- Any action a UG does needs Suser credentials -> sessions , renewed every hour or so. (GAESession -> regenerate keys)
-- UG's need new boolean flag to dictate read or read/write.
-
-- Use Kib?
+To-do (future):
 - what's with the security issue (live) on firefox?
-- After changing settings -> thanks page, where UI-wise should we be redirected to?
-- How should 'active' behave? I.e. can you delete an active volume?
-- Make a UG handler to a certain POST with certain headers that authenticates a user, makes sure they have rights to the volume they're trying to attach a UG
-to, and then create it, update it, or delete it. ms_username should be auto-generated, standard, based on what had been going on with the previous creations
-etc. MS will store all hashes. Each UG will store it's own password. Each UG
-will have all other UG's (on that volume) hashes. Each post will have:
-username, userpassword, volume name, UG-username, UG-password-hash, host, port (change away from base_url)
-- Clear out some of the extra logging messages
-- This is more for the future, but create a test/suite
 - maybe upgrade django to 1.5 (?)
-
 - Javascript pagination for all/myvolumes.
-
--Secret key for gae_sessions django:|4[Y1!b:?j\9*DE/(^r_[5xHrpSEq>bZY>2wSdcx&c_h+1Rs=%jC 18tmX9Y*cguL~\b>&
- cZ'U,4.XzE FkBG-fV=}-##J-92nDx
--lguwLv[h-"a5rR}6][jP5|PesM=Z
-{JS[9xMTDk I%SA+ d[
-hT;|',Zg#Vn<
-IQM{%fV`UZ;{Z9L"3m+LKe?eiHwzPd(^OVZ?~8eEV
- x
-D?LHj?jl=g1[?yF'o@ WV}Sug:%eDZ;Gj9]|*B\J+
-
-
-
+- Secret key for gae_sessions django?
 
 Notes:
-	The ms/ subdirectory contains essentially a webapp2 and django app combined under the auspice of GAE. GAE routes via app.yaml anything with the URI prefix '/syn' to the Django WSGI and everything else to MS. '/' handles login etc, and then routes to '/syn/home'. All django files are contained in the various directories prefixed django. 'django_syndicate_web' is the main project app. 'django_home' contains most of the views. Templates and media are self-explanatory.
 
 Django SuperUser=syndicate/planetlab

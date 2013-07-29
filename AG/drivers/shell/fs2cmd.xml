@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<Map>
+    <Config>
+	<DSN>/tmp/xxx</DSN>
+    </Config>
+    <Pair>
+	<File perm="740">/foo/bar</File>
+	<Query type="shell">/usr/bin/wget -q -O - http://www.google.com</Query>
+    </Pair>
+    <Pair>
+	<File perm="444">/foo/mlab</File>
+	<Query type="shell">/usr/bin/mlab-test</Query>
+    </Pair>
+    <Pair>
+	<File perm="540">/foo/xyz/bar1</File>
+	<Query type="shell">COMMAND 3</Query>
+    </Pair>
+    <Pair>
+	<File perm="440">/pqrff/ixj</File>
+	<Query type="shell">COMMAND 4</Query>
+    </Pair>
+</Map>

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block head %}
+    <br>
+    <h1> Oops. This page doesn't seem to exist.</h1>
+    <p class="error">{{message}}</p>
+{% endblock %}
+{% block mainbody %}
+{% endblock %}
+{% block footer %}
+    <a href='{% url django_home.views.home %}'>Home</a>
+{% endblock %}

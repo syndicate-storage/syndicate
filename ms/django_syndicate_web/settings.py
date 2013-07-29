@@ -1,40 +1,20 @@
-# Django settings for syndicatetestweb project.
+'''
+
+John Whelchel
+Summer 2013
+
+Django settings for Syndicate project.
+
+'''
+
 import os
 BASE_DIR = os.path.abspath(os.path.dirname(__file__)) + os.sep
 DEBUG = True
 TEMPLATE_DEBUG = DEBUG
 
-ADMINS = (
-    # ('Your Name', 'your_email@example.com'),
-)
-
-MANAGERS = ADMINS
-
 DATABASES = {'default':{}}
-#if (os.getenv('SERVER_SOFTWARE', '').startswith('Google App Engine') or
-#    os.getenv('SETTINGS_MODE') == 'prod'):
-    # Running on production App Engine, so use a Google Cloud SQL database.
-#    DATABASES = {
-#        'default': {
-#            'ENGINE': 'google.appengine.ext.django.backends.rdbms',
-#            'INSTANCE': 'syndicate-web:syndicate',
-#            'NAME': 'syndicate1',
-#        }
-#    }
-#else:
-    # Running in development, so use a local MySQL database
-#    DATABASES = {
-#        'default': {
-#            'ENGINE': 'django.db.backends.mysql',
-#            'USER': 'root',
-#            'PASSWORD': 'toor',
-#            'NAME': 'syndicate1',
-#        }
-#    }
 
-# Hosts/domain names that are valid for this site; required if DEBUG is False
-# See https://docs.djangoproject.com/en/1.4/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['.syndicate-metadata.appspot.com']
 
 # Local time zone for this installation. Choices can be found here:
 # http://en.wikipedia.org/wiki/List_of_tz_zones_by_name
@@ -76,7 +56,7 @@ STATIC_ROOT = os.path.join(os.path.dirname(__file__), '../django_static').replac
 
 # URL prefix for static files.
 # Example: "http://media.lawrence.com/static/"
-STATIC_URL = '/django_static/'
+STATIC_URL = '/static/'
 
 # Additional locations of static files
 STATICFILES_DIRS = (
@@ -135,40 +115,7 @@ INSTALLED_APPS = (
     'django_volume',
     'django_ug',
     'django_ag',
-    'django_rg',
-    # Uncomment the next line to enable the admin:
-    # 'django.contrib.admin',
-    # Uncomment the next line to enable admin documentation:
-    # 'django.contrib.admindocs',
+    'django_rg'
 )
 
 LOGIN_URL = '/'
-
-# A sample logging configuration. The only tangible logging
-# performed by this configuration is to send an email to
-# the site admins on every HTTP 500 error when DEBUG=False.
-# See http://docs.djangoproject.com/en/dev/topics/logging for
-# more details on how to customize your logging configuration.
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'filters': {
-        'require_debug_false': {
-            '()': 'django.utils.log.RequireDebugFalse'
-        }
-    },
-    'handlers': {
-        'mail_admins': {
-            'level': 'ERROR',
-            'filters': ['require_debug_false'],
-            'class': 'django.utils.log.AdminEmailHandler'
-        }
-    },
-    'loggers': {
-        'django.request': {
-            'handlers': ['mail_admins'],
-            'level': 'ERROR',
-            'propagate': True,
-        },
-    }
-}

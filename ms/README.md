@@ -2,7 +2,7 @@ Name: Syndicate Metadata-Service (MS)
 
 Authors: Jude Nelson and John Whelchel
 
-Readme last updated: 7/9/13 23:00 PM
+Readme last updated: 7/25/13
 
 The files in syndicate/ms run the Syndicate meta-data service. The overall
 application is a combination of the frameworks webapp2 and django, running
@@ -35,10 +35,8 @@ LOCAL BASICS:
 	User Gateways, Replica Gateways, and Acquisition Gateways, as well as modify
 	some of their settings. 
 
-	(*)useful parameter for dev_appserver 'clear-datastore=yes'
+	(*)useful parameter for dev_appserver '--clear-datastore=yes'
 
-	N.B. Currently, the actual parameters for MS records, especially for gateways,
-	are in flux. Keep that in mind when creating new ones.
 
 UPDATING LIVE:
 
@@ -132,14 +130,14 @@ NON-GUI URIS:
 
     The VOLUME URI path allows requesting meta-data for a volume from the MS. Requires
     both volume password and UG authentication HTTP headers. See 
-    handlers.MSVolumeRequestHandler for more info. The volume name is the next level of
-    the URI (i.e. /VOLUME/<volume_name>)
+    handlers.MSVolumeRequestHandler for more info. The volume ID is the next level of
+    the URI (i.e. /VOLUME/<volume_id>)
 
     FILE
 
     The FILE URI path will read and list metadata entries via GET, and
     create, delete, and update metadata entries via POST. The URI format
-    is /FILE/<volume_name>/<path>
+    is /FILE/<volume_id>/<path>
 
     Look at handlers.MSFileRequestHandler for details on headers.
 
@@ -174,17 +172,19 @@ Volumes:
 
 User Gateways:
 
+    *** The pure URI feature is deprecated and buggy. Don't use ***
+
     User Gateways can be created in the UG subsection of the site, as well as
     through pure URIs. The pure URI format requires a previous manual login
     however. The format (subject to change based on parameters * see NB above)
     is:
 
-    /syn/UG/create/<volume_name>/<g_name>/<g_password>/<host>/<port>/<read_write>.
+    /syn/UG/create/<volume_id>/<g_name>/<g_password>/<host>/<port>/<read_write>.
 
 
     GATEWAY GENERIC
 
-    - volume_name is the volume to which the UG will be attached. It must already
+    - volume_id is the volume to which the UG will be attached. It must already
     exist.
     - g_name represents the gateway name by which the MS will identify the
     UG. 

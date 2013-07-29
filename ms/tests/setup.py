@@ -847,14 +847,14 @@ def test( ignore1, args ):
                               fs_path="/",
                               url="http://localhost:32780/",
                               version=1,
-                              ctime_sec=1360015114,
-                              ctime_nsec=0,
-                              mtime_sec=1360015114,
-                              mtime_nsec=0,
+                              ctime_sec=now_sec,
+                              ctime_nsec=now_nsec,
+                              mtime_sec=now_sec,
+                              mtime_nsec=now_nsec,
                               owner_id=volume.owner_id,
                               acting_owner_id=volume.owner_id,
                               volume_id=volume.volume_id,
-                              mode=0777,
+                              mode=0755,
                               size=4096,
                               max_read_freshness=5000,
                               max_write_freshness=0
@@ -880,14 +880,12 @@ def test( ignore1, args ):
          
          try:
             # volume name: testvolume-$name
-            # volume secret: abcdef
-            volume_key = storage.create_volume( user, name=test_volume_name, description="%s's test volume" % user_email, blocksize=64, volume_secret="abcdef", volume_secret_salt="abcdef", active=True, owner_id=i+1 )
+            volume_key = storage.create_volume( user.email, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, active=True, private=False, owner_id=i+1, volume_secret="abcdef" )
             volume = volume_key.get()
-
          except:
             logging.info( "traceback: " + traceback.format_exc() )
             try:
-               volume = storage.read_volume( name=test_volume_name )
+               volume = storage.get_volume_by_name( test_volume_name )
             except:
                logging.info( "traceback: " + traceback.format_exc() )
                return (500, "Failed to read volume '%s'" % test_volume_name)
@@ -916,7 +914,7 @@ def test( ignore1, args ):
                                  mode=0777,
                                  size=4096,
                                  max_read_freshness=5000,
-                                 max_write_freshness=0
+                                 max_write_freshness=0,
                               )
 
 
@@ -957,7 +955,7 @@ def test( ignore1, args ):
          return (500, "Invalid username %s" % username)
 
       volume_name = testvolume_name( user.email )
-      volume = storage.read_volume( volume_name )
+      volume = storage.get_volume_by_name( volume_name )
       
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
@@ -979,7 +977,7 @@ def test( ignore1, args ):
          return (500, "Invalid username %s" % username)
 
       volume_name = testvolume_name( user.email )
-      volume = storage.read_volume( volume_name )
+      volume = storage.get_volume_by_name( volume_name )
 
       if ug_action == "create":
 

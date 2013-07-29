@@ -239,7 +239,7 @@ static int fs_entry_do_stat( struct fs_core* core, struct fs_entry* fent, struct
 
 
 // stat
-int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uid_t user, gid_t volume ) {
+int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uint64_t user, uint64_t volume ) {
 
    // revalidate
    int rc = fs_entry_revalidate_path( core, path );
@@ -269,7 +269,7 @@ int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uid_
 
 
 // is this local?  That is, is the block hosted here?
-bool fs_entry_is_block_local( struct fs_core* core, char const* path, uid_t user, gid_t volume, uint64_t block_id ) {
+bool fs_entry_is_block_local( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, uint64_t block_id ) {
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, false, &err );
    if( !fent || err ) {
@@ -298,7 +298,7 @@ bool fs_entry_is_block_local( struct fs_core* core, char const* path, uid_t user
 }
 
 // is a file local?
-bool fs_entry_is_local( struct fs_core* core, char const* path, uid_t user, gid_t volume, int* err ) {
+bool fs_entry_is_local( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, int* err ) {
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, false, err );
    if( !fent || *err ) {
       if( !*err )
@@ -313,7 +313,7 @@ bool fs_entry_is_local( struct fs_core* core, char const* path, uid_t user, gid_
 }
 
 // get a file's url
-char* fs_entry_get_url( struct fs_core* core, char const* path, uid_t user, gid_t volume, int* err ) {
+char* fs_entry_get_url( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, int* err ) {
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, false, err );
    if( !fent || *err ) {
       if( !*err )
@@ -331,7 +331,7 @@ char* fs_entry_get_url( struct fs_core* core, char const* path, uid_t user, gid_
 }
 
 // get proto://file_host:file_portnum/
-char* fs_entry_get_host_url( struct fs_core* core, char const* path, char const* proto, uid_t user, gid_t volume, int* err ) {
+char* fs_entry_get_host_url( struct fs_core* core, char const* path, char const* proto, uint64_t user, uint64_t volume, int* err ) {
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, false, err );
    if( !fent || *err ) {
       if( !*err )
@@ -412,7 +412,7 @@ int fs_entry_fstat_dir( struct fs_core* core, struct fs_dir_handle* dh, struct s
 
 
 // statfs
-int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *statv, uid_t user, gid_t vol ) {
+int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *statv, uint64_t user, uint64_t vol ) {
    // make sure this path refers to a path in the FS
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, vol, false, &err );
@@ -444,7 +444,7 @@ int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *sta
 }
 
 // access
-int fs_entry_access( struct fs_core* core, char const* path, int mode, uid_t user, gid_t volume ) {
+int fs_entry_access( struct fs_core* core, char const* path, int mode, uint64_t user, uint64_t volume ) {
    // make sure this path exists
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, false, &err );
@@ -472,13 +472,13 @@ int fs_entry_access( struct fs_core* core, char const* path, int mode, uid_t use
 }
 
 // chown
-int fs_entry_chown( struct fs_core* core, char const* path, uid_t user, gid_t volume, uid_t new_user ) {
+int fs_entry_chown( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, uint64_t new_user ) {
    return -ENOSYS;
 }
 
 
 // chmod
-int fs_entry_chmod( struct fs_core* core, char const* path, uid_t user, gid_t volume, mode_t mode ) {
+int fs_entry_chmod( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, mode_t mode ) {
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, true, &err );
    if( !fent || err ) {
@@ -507,7 +507,7 @@ int fs_entry_chmod( struct fs_core* core, char const* path, uid_t user, gid_t vo
 }
 
 // utime
-int fs_entry_utime( struct fs_core* core, char const* path, struct utimbuf* tb, uid_t user, gid_t volume ) {
+int fs_entry_utime( struct fs_core* core, char const* path, struct utimbuf* tb, uint64_t user, uint64_t volume ) {
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, true, &err );
    if( !fent || err ) {

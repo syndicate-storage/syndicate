@@ -16,13 +16,13 @@ void* syndicate_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
 }
 
 // HTTP authentication callback
-uid_t syndicate_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
+uint64_t syndicate_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
 
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state* state = syncon->state;
    struct ms_client* client = state->ms;
 
-   uid_t ug = ms_client_authenticate( client, md_con_data, username, password );
+   uint64_t ug = ms_client_authenticate( client, md_con_data, username, password );
    if( ug == MD_GUEST_UID ) {
       // someone we don't know
       return -EACCES;
@@ -343,21 +343,6 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
       return;
    }
-
-   /*
-   // ensure that it corresponds to the correct session
-   uint64_t current_session = state->col->get_session_id();
-   if( msg->session_id() != current_session ) {
-      // nope
-      errorf( "invalid session %" PRId64 " (current = %" PRId64 ")\n", msg->session_id(), current_session );
-
-      md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
-      md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 400, "INVALID SESSION", strlen("INVALID_SESSION") + 1 );
-      delete msg;
-
-      return;
-   }
-   */
    
    // prepare an ACK
    char const* fs_path = NULL;
@@ -507,7 +492,7 @@ void syndicate_HTTP_cleanup(struct MHD_Connection *connection, void *con_cls, en
 
 
 // initialize
-int syndicate_init( char const* config_file, struct md_HTTP* http_server, int portnum, char const* ms_url, char const* volume_name, char const* volume_secret, char const* md_username, char const* md_password ) {
+int syndicate_init( char const* config_file, struct md_HTTP* http_server, int portnum, char const* ms_url, char const* volume_name, char const* md_username, char const* md_password ) {
 
 
    // initialize Syndicate state
@@ -517,7 +502,7 @@ int syndicate_init( char const* config_file, struct md_HTTP* http_server, int po
    state->ms = CALLOC_LIST( struct ms_client, 1 );
 
 
-   int rc = md_init( SYNDICATE_UG, config_file, &state->conf, state->ms, portnum, ms_url, volume_name, volume_secret, md_username, md_password );
+   int rc = md_init( SYNDICATE_UG, config_file, &state->conf, state->ms, portnum, ms_url, volume_name, md_username, md_password );
    if( rc != 0 ) {
       errorf("md_init rc = %d\n", rc );
       return rc;

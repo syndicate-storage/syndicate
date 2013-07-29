@@ -13,40 +13,59 @@ import os
 import base64
 import uuid
 
-import protobufs.ms_pb2 as ms_pb2
+#import protobufs.ms_pb2 as ms_pb2
 
 import types
 import errno
 import time
 import datetime
 import random
-
+import logging
 
 USERNAME_LENGTH = 256
 PASSWORD_LENGTH = 256
 
-class AG_IDCounter( storagetypes.Object ):
+class IDCounter( storagetypes.Object ):
    value = storagetypes.Integer()
 
    required_attrs = [
       "value"
    ]
 
-   @classmethod
-   def make_key_name( cls, **attrs ):
-      return "AG_IDCounter"
-
-class RG_IDCounter( storagetypes.Object ):
-   value = storagetypes.Integer()
-
-   required_attrs = [
-      "value"
-   ]
+   gateway_type = "G"
 
    @classmethod
-   def make_key_name( cls, **attrs ):
-      return "RG_IDCounter"
+   def make_key_name(cls, **attrs):
+      return cls.gateway_type + "IDCounter"
 
+   @classmethod
+   def __next_value(cls):
+      # gateway does not exist
+      gid_counter = cls.get_or_insert( IDCounter.make_key_name(), value=0)
+      gid_counter.value += 1
+      ret = gid_counter.value
+      gid_key = gid_counter.put()
+      return ret
+
+   @classmethod
+   def next_value(cls):
+      return cls.__next_value()
+
+class AG_IDCounter( IDCounter ):
+   gateway_type = "AG"
+
+class RG_IDCounter( IDCounter ):
+   gateway_type = "RG"
+
+class UG_IDCounter( IDCounter ):
+   gateway_type = "UG"
+
+def is_int( x ):
+   try:
+      y = int(x)
+      return True
+   except:
+      return False
 
 class Gateway( storagetypes.Object ):
 
@@ -56,21 +75,23 @@ class Gateway( storagetypes.Object ):
    port = storagetypes.Integer()
    ms_username = storagetypes.String()
    ms_password_hash = storagetypes.String()
+   g_id = storagetypes.Integer()
 
    required_attrs = [
       "owner_id",
       "host",
       "port",
       "ms_username",
-      "ms_password"
+      "ms_password",
    ]
 
    validators = {
-      "ms_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0)
+      "ms_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
+      "ms_username": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-. ")) ) == 0 and not is_int(value) )
    }
 
    key_attrs = [
-      "ms_username"
+      "g_id"
    ]
 
    def authenticate( self, password ):
@@ -101,7 +122,6 @@ class UserGateway( Gateway ):
 
 
    required_attrs = Gateway.required_attrs + [
-      "volume_id",
       "read_write"
    ]
 
@@ -151,6 +171,8 @@ class UserGateway( Gateway ):
       cred_pb.owner_id = self.owner_id
       cred_pb.username = self.ms_username
       cred_pb.password_hash = self.ms_password_hash
+      cred_pb.host = self.host
+      cred_pb.port = self.port
 
    @classmethod
    def cache_listing_key( cls, **kwargs ):
@@ -159,7 +181,7 @@ class UserGateway( Gateway ):
 
 
    @classmethod
-   def Create( cls, user, volume, **kwargs ):
+   def Create( cls, user, volume=None, **kwargs ):
       """
       Given a user and volume, create a user gateway.
       Extra kwargs:
@@ -167,9 +189,32 @@ class UserGateway( Gateway ):
          ms_password          str
          ms_password_hash     str
          read_write           bool
+         host                 str
+         port                 int
       """
+      # Isolates the DB elements in a transactioned call
+      @storagetypes.transactional(xg=True)
+      def transactional_create(**kwargs):
+         ug_id = UG_IDCounter.next_value()
+         kwargs['g_id'] = ug_id
 
-      kwargs['volume_id'] = volume.volume_id
+         ug_key_name = UserGateway.make_key_name( g_id=ug_id )
+         ug_key = storagetypes.make_key( UserGateway, ug_key_name)
+         ug = ug_key.get()
+         
+         if 'ms_password' in kwargs:
+            del kwargs['ms_password']
+         ug = UserGateway( key=ug_key, **kwargs )
+
+         # clear cached UG listings
+         storagetypes.memcache.delete( UserGateway.cache_listing_key( volume_id=kwargs['volume_id'] ) )
+         return ug.put()
+
+
+      if volume:
+         kwargs['volume_id'] = volume.volume_id
+      else:
+         kwargs['volume_id'] = 0
       kwargs['owner_id'] = user.owner_id
 
       UserGateway.fill_defaults( kwargs )
@@ -193,48 +238,39 @@ class UserGateway( Gateway ):
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
 
       kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")
-      # TODO: transaction -jcnelson
-      ug_key_name = UserGateway.make_key_name( ms_username=kwargs["ms_username"] )
-      ug_key = storagetypes.make_key( UserGateway, ug_key_name)
-      ug = ug_key.get()
 
-      # if this is not new, then we're in error
-      if ug != None and ug.ms_username != None and len( ug.ms_username ) > 0:
-         raise Exception( "User Gateway '%s' already exists!" % kwargs["ms_username"] )
-
+      existing_gateways = UserGateway.ListAll( {"UserGateway.ms_username ==" : kwargs['ms_username']} )
+      if len(existing_gateways) > 0:
+         # gateway already exists
+         raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
       else:
-         if 'ms_password' in kwargs:
-            del kwargs['ms_password']
-         ug = UserGateway( key=ug_key, **kwargs )
-
-         # clear cached UG listings
-         storagetypes.memcache.delete( UserGateway.cache_listing_key( volume_id=volume.volume_id ) )
-         return ug.put()
+         return transactional_create(**kwargs)
 
 
    @classmethod
-   def Read( cls, ms_username ):
+   def Read( cls, g_id ):
       """
-      Given a UG username, find the UG record
+      Given a UG ID, find the UG record
       """
-      ms_username = unicode(ms_username).strip().replace(" ","_")
-      ug_key_name = UserGateway.make_key_name( ms_username=ms_username )
+      ug_key_name = UserGateway.make_key_name( g_id=g_id )
 
       ug = storagetypes.memcache.get( ug_key_name )
       if ug == None:
-         ug_key = storagetypes.make_key( UserGateway, UserGateway.make_key_name( ms_username=ms_username ) )
+         logging.info("UG with ID of {} not found in cache".format(g_id))
+         ug_key = storagetypes.make_key( UserGateway, UserGateway.make_key_name( g_id=g_id ) )
          ug = ug_key.get( use_memcache=False )
+         if not ug:
+            logging.error("UG not found at all!.")
          storagetypes.memcache.set( ug_key_name, ug )
-
       return ug
 
    @classmethod
-   def Update( cls, ms_username, **fields ):
+   def Update( cls, g_id, **fields ):
       '''
-      Update UG identified by ms_username with fields specified as a dictionary.
+      Update UG identified by ID with fields specified as a dictionary.
       '''
-      gateway = UserGateway.Read(ms_username)
-      gateway_key_name = UserGateway.make_key_name( ms_username=ms_username )
+      gateway = UserGateway.Read(g_id)
+      gateway_key_name = UserGateway.make_key_name( g_id=g_id )
       storagetypes.memcache.delete(gateway_key_name)
 
       for key, value in fields.iteritems():
@@ -247,11 +283,11 @@ class UserGateway( Gateway ):
       return gateway.key
       
    @classmethod
-   def Delete( cls, ms_username ):
+   def Delete( cls, g_id ):
       """
-      Given a UG username, delete it
+      Given a UG ID, delete it
       """
-      ug_key_name = UserGateway.make_key_name( ms_username=ms_username )
+      ug_key_name = UserGateway.make_key_name( g_id=g_id )
 
       ug_key = storagetypes.make_key( UserGateway, ug_key_name )
 
@@ -283,31 +319,12 @@ class UserGateway( Gateway ):
 
       return results
 
-   @classmethod
-   def ListAll( cls, **attrs ):
-      '''
-      Attributes must be in dictionary, using format "UserGateway.PROPERTY: [operator] [value]"
-      eg {'UserGateway.volume_id': '== 5', ...} Yet to be THOROUGHLY tested/debugged.
-
-      '''
-      query_clause = ""
-      for key, value in attrs.iteritems():
-         if query_clause: 
-            query_clause+=","
-         query_clause += (key + value)
-      if query_clause:
-         exec ("result = UserGateway.query(%s)" % query_clause)
-         return result
-      else:
-         return UserGateway.query()
-
    
 class AcquisitionGateway( Gateway ):
 
    # This is temporary; we should know what is really needed.   
    json_config = storagetypes.Json()
    volume_ids = storagetypes.Integer(repeated=True)           # which volumes are we attached to?
-   ag_id = storagetypes.Integer()
 
    required_attrs = Gateway.required_attrs + [
       "json_config"
@@ -329,6 +346,7 @@ class AcquisitionGateway( Gateway ):
       """
       cred_pb.username = self.ms_username
       cred_pb.password_hash = self.ms_password_hash
+      
 
    @classmethod
    def generate_credentials( cls ):
@@ -355,6 +373,25 @@ class AcquisitionGateway( Gateway ):
          ms_password_hash     str
          json_config          JSON (dict)
       """
+      # Isolates the DB elements in a transactioned call
+      @storagetypes.transactional(xg=True)
+      def transactional_create(**kwargs):
+         ag_id = AG_IDCounter.next_value()
+         kwargs['g_id'] = ag_id
+
+         ag_key_name = AcquisitionGateway.make_key_name( g_id=ag_id ) 
+         ag_key = storagetypes.make_key( AcquisitionGateway, ag_key_name )
+         ag = ag_key.get()
+
+         if 'ms_password' in kwargs:
+            del kwargs['ms_password']
+         ag = AcquisitionGateway( key=ag_key, **kwargs )
+
+         # clear cached AG listings
+         storagetypes.memcache.delete(ag_key_name)
+         return ag.put()
+
+
 
       kwargs['owner_id'] = user.owner_id
 
@@ -380,57 +417,38 @@ class AcquisitionGateway( Gateway ):
 
       # TODO: transaction -jcnelson
       kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")
-      ag_key_name = AcquisitionGateway.make_key_name( ms_username=kwargs["ms_username"] ) 
-      ag_key = storagetypes.make_key( AcquisitionGateway, ag_key_name )
-      ag = ag_key.get()
 
-      # if this is not new, then we're in error
-      if ag != None and ag.ms_username != None and len( ag.ms_username ) > 0:
-         raise Exception( "Acquisition Gateway '%s' already exists!" % kwargs["ms_username"] )
 
+      existing_gateways = AcquisitionGateway.ListAll( {"AcquisitionGateway.ms_username ==" : kwargs['ms_username']} )
+      if len(existing_gateways) > 0:
+         # gateway already exists
+         raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
       else:
-         # gateway does not exist
-         gid_counter = AG_IDCounter.get_or_insert( AG_IDCounter.make_key_name(), value=0 )
-         
-         gid_counter.value += 1
-
-         gid_future = gid_counter.put_async()
-
-         kwargs['ag_id'] = gid_counter.value
-
-         if 'ms_password' in kwargs:
-            del kwargs['ms_password']
-         ag = AcquisitionGateway( key=ag_key, **kwargs )
-
-         # clear cached UG listings
-         storagetypes.memcache.delete(ag_key_name)
-
-         return ag.put()
+         return transactional_create(**kwargs)
 
 
    @classmethod
-   def Read( cls, ms_username ):
+   def Read( cls, g_id ):
       """
-      Given a AG username, find the AG record
+      Given a AG id, find the AG record
       """
-      ms_username = unicode(ms_username).strip().replace(" ","_")
-      ag_key_name = AcquisitionGateway.make_key_name( ms_username=ms_username )
+      ag_key_name = AcquisitionGateway.make_key_name( g_id=g_id )
 
       ag = storagetypes.memcache.get( ag_key_name )
       if ag == None:
-         ag_key = storagetypes.make_key( AcquisitionGateway, AcquisitionGateway.make_key_name( ms_username=ms_username ) )
+         ag_key = storagetypes.make_key( AcquisitionGateway, AcquisitionGateway.make_key_name( g_id=g_id ) )
          ag = ag_key.get( use_memcache=False )
          storagetypes.memcache.set( ag_key_name, ag )
 
       return ag
 
    @classmethod
-   def Update( cls, ms_username, **fields ):
+   def Update( cls, g_id, **fields ):
       '''
-      Update AG identified by ms_username with fields specified as a dictionary.
+      Update AG identified by g_id with fields specified as a dictionary.
       '''
-      gateway = AcquisitionGateway.Read(ms_username)
-      gateway_key_name = AcquisitionGateway.make_key_name( ms_username=ms_username )
+      gateway = AcquisitionGateway.Read(g_id)
+      gateway_key_name = AcquisitionGateway.make_key_name( g_id=g_id )
       storagetypes.memcache.delete(gateway_key_name)
 
       for key, value in fields.iteritems():
@@ -442,24 +460,7 @@ class AcquisitionGateway( Gateway ):
       storagetypes.wait_futures([AG_future])
       return gateway.key
 
-   @classmethod
-   def ListAll( cls, **attrs ):
-      '''
-      Attributes must be in dictionary, using format "AcquisitionGateway.PROPERTY: [operator] [value]"
-      eg {'AcquisitionGateway.volume_id': '== 5', ...} Yet to be THOROUGHLY tested/debugged.
-
-      '''
-      query_clause = ""
-      for key, value in attrs.iteritems():
-         if query_clause: 
-            query_clause+=","
-         query_clause += (key + value)
-      if query_clause:
-         exec ("result = AcquisitionGateway.query(%s)" % query_clause)
-         return result
-      else:
-         return AcquisitionGateway.query()
-
+   
    @classmethod
    def ListAll_ByVolume( cls, volume_id ):
       """
@@ -483,11 +484,11 @@ class AcquisitionGateway( Gateway ):
 
       
    @classmethod
-   def Delete( cls, ms_username ):
+   def Delete( cls, g_id ):
       """
-      Given a AG username, delete it
+      Given a AG ID, delete it
       """
-      ag_key_name = AcquisitionGateway.make_key_name( ms_username=ms_username )
+      ag_key_name = AcquisitionGateway.make_key_name( g_id=g_id )
 
       ag_key = storagetypes.make_key( AcquisitionGateway, ag_key_name )
 
@@ -496,6 +497,7 @@ class AcquisitionGateway( Gateway ):
       storagetypes.memcache.delete(ag_key_name)
 
       return True
+      
 
 class ReplicaGateway( Gateway ):
 
@@ -503,7 +505,6 @@ class ReplicaGateway( Gateway ):
    json_config = storagetypes.Json()
    private = storagetypes.Boolean()
    volume_ids = storagetypes.Integer(repeated=True)           # which volume(s) are we attached to?
-   rg_id = storagetypes.Integer()
 
    required_attrs = Gateway.required_attrs + [
       "json_config"
@@ -553,6 +554,23 @@ class ReplicaGateway( Gateway ):
          json_config          JSON (dict)
          private              bool
       """
+      # Isolates the DB elements in a transactioned call
+      @storagetypes.transactional(xg=True)
+      def transactional_create(**kwargs):
+         rg_id = RG_IDCounter.next_value()
+         kwargs['g_id'] = rg_id
+
+         rg_key_name = ReplicaGateway.make_key_name( g_id=rg_id ) 
+         rg_key = storagetypes.make_key( ReplicaGateway, rg_key_name )
+         rg = rg_key.get()
+         if 'ms_password' in kwargs:
+            del kwargs['ms_password']
+         rg = ReplicaGateway( key=rg_key, **kwargs )
+
+         # clear cached RG listings
+         storagetypes.memcache.delete(rg_key_name)
+         
+         return rg.put()
 
       kwargs['owner_id'] = user.owner_id
 
@@ -578,46 +596,25 @@ class ReplicaGateway( Gateway ):
 
       # TODO: transaction -jcnelson
       kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")      
-      rg_key_name = ReplicaGateway.make_key_name( ms_username=kwargs["ms_username"] ) 
-      rg_key = storagetypes.make_key( ReplicaGateway, rg_key_name )
-      rg = rg_key.get()
 
-      # if this is not new, then we're in error
-      if rg != None and rg.ms_username != None and len( rg.ms_username ) > 0:
-         raise Exception( "Replica Gateway '%s' already exists!" % kwargs["ms_username"] )
 
+      existing_gateways = ReplicaGateway.ListAll( {"ReplicaGateway.ms_username ==" : kwargs['ms_username']} )
+      if len(existing_gateways) > 0:
+         # gateway already exists
+         raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
       else:
-
-         # gateway does not exist
-         gid_counter = RG_IDCounter.get_or_insert( RG_IDCounter.make_key_name(), value=0 )
-         
-         gid_counter.value += 1
-
-         gid_future = gid_counter.put_async()
-
-         kwargs['rg_id'] = gid_counter.value
-
-         if 'ms_password' in kwargs:
-            del kwargs['ms_password']
-         rg = ReplicaGateway( key=rg_key, **kwargs )
-
-         # clear cached UG listings
-         storagetypes.memcache.delete(rg_key_name)
-
-         return rg.put()
-
+         return transactional_create(**kwargs)
 
    @classmethod
-   def Read( cls, ms_username ):
+   def Read( cls, g_id ):
       """
-      Given a RG username, find the RG record
+      Given a RG ID, find the RG record
       """
-      ms_username = unicode(ms_username).strip().replace(" ","_")
-      rg_key_name = ReplicaGateway.make_key_name( ms_username=ms_username )
+      rg_key_name = ReplicaGateway.make_key_name( g_id=g_id )
 
       rg = storagetypes.memcache.get( rg_key_name )
       if rg == None:
-         rg_key = storagetypes.make_key( ReplicaGateway, ReplicaGateway.make_key_name( ms_username=ms_username ) )
+         rg_key = storagetypes.make_key( ReplicaGateway, ReplicaGateway.make_key_name( g_id=g_id ) )
          rg = rg_key.get( use_memcache=False )
          storagetypes.memcache.set( rg_key_name, rg )
 
@@ -625,15 +622,12 @@ class ReplicaGateway( Gateway ):
 
 
    @classmethod
-   def Update( cls, ms_username, **fields ):
+   def Update( cls, g_id, **fields ):
       '''
-      Update RG identified by ms_username with fields specified as a dictionary.
+      Update RG identified by g_id with fields specified as a dictionary.
       '''
-      import logging
-      logging.info(ms_username)
-      logging.info(fields)
-      gateway = ReplicaGateway.Read(ms_username)
-      gateway_key_name = ReplicaGateway.make_key_name( ms_username=ms_username )
+      gateway = ReplicaGateway.Read(g_id)
+      gateway_key_name = ReplicaGateway.make_key_name( g_id=g_id )
       storagetypes.memcache.delete(gateway_key_name)
 
       for key, value in fields.iteritems():
@@ -648,11 +642,11 @@ class ReplicaGateway( Gateway ):
 
       
    @classmethod
-   def Delete( cls, ms_username ):
+   def Delete( cls, g_id ):
       """
-      Given a RG username, delete it
+      Given a RG ID, delete it
       """
-      rg_key_name = ReplicaGateway.make_key_name( ms_username=ms_username )
+      rg_key_name = ReplicaGateway.make_key_name( g_id=g_id )
 
       rg_key = storagetypes.make_key( ReplicaGateway, rg_key_name )
 
@@ -682,22 +676,3 @@ class ReplicaGateway( Gateway ):
          #storagetypes.memcache.add( cache_key, results )
 
       return results
-
-
-   @classmethod
-   def ListAll( cls, **attrs ):
-      '''
-      Attributes must be in dictionary, using format "ReplicaGateway.PROPERTY: [operator] [value]"
-      eg {'ReplicaGateway.volume_id': '== 5', ...} Yet to be THOROUGHLY tested/debugged.
-
-      '''
-      query_clause = ""
-      for key, value in attrs.iteritems():
-         if query_clause: 
-            query_clause+=","
-         query_clause += (key + value)
-      if query_clause:
-         exec ("result = ReplicaGateway.query(%s)" % query_clause)
-         return result
-      else:
-         return ReplicaGateway.query()

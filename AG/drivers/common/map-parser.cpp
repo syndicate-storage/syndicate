@@ -32,6 +32,7 @@ MapParserHandler::MapParserHandler(map<string, struct map_info>* xmlmap)
     bounded_query = NULL;
     unbounded_query = NULL;
     type = QUERY_TYPE_DEFAULT;
+    current_id = 0;
 }
 
 void MapParserHandler::startElement(const   XMLCh* const    uri,
@@ -109,6 +110,12 @@ void MapParserHandler::endElement (
 	unbounded_query = strdup(element_buff);
 	type = QUERY_TYPE_DEFAULT;
     }
+    if (!strncmp(tag, VALUE_TAG, strlen(VALUE_TAG)) && open_key 
+	    && (type == QUERY_TYPE_SHELL)) {
+	open_key = false;
+	shell_cmd = strdup(element_buff);
+	type = QUERY_TYPE_DEFAULT;
+    }
     if (!strncmp(tag, PAIR_TAG, strlen(PAIR_TAG))) {
 	if (current_key) {
 	    struct map_info mi;
@@ -131,6 +138,16 @@ void MapParserHandler::endElement (
 		free(unbounded_query);
 		unbounded_query = NULL;
 	    }
+	    if (shell_cmd != NULL) {
+		size_t shell_cmd_len = strlen(shell_cmd);
+		mi.shell_command = (unsigned char*)malloc(shell_cmd_len + 1);
+		strncpy((char*)mi.shell_command, shell_cmd, shell_cmd_len);
+		mi.shell_command[shell_cmd_len] = 0;
+		free(shell_cmd);
+		shell_cmd = NULL;
+	    }
+	    mi.id = current_id;
+	    current_id++;
 	    (*xmlmap)[string(current_key)] =mi;
 	    free(current_key);
 	    current_key = NULL;
