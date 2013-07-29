@@ -28,9 +28,6 @@ env.Append(LIBS = Split(LIBS))
 env.Append(CPPPATH = Split(CPPPATH))
 env.Append(CPPFLAGS = Split(CPPFLAGS))
 
-# build jni
-jni = SConscript("jni/SConscript")
-
 # build JSyndicateFS java package
 jsyndicatefs = SConscript("JSyndicateFS/SConscript")
 
