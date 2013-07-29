@@ -3,10 +3,8 @@
  */
 package SyndicateHadoop.mapred;
 
-import JSyndicateFS.FSOutputStream;
-import JSyndicateFS.File;
-import JSyndicateFS.FileSystem;
-import JSyndicateFS.Path;
+import JSyndicateFS.JSFSFileSystem;
+import JSyndicateFS.JSFSPath;
 import SyndicateHadoop.mapred.output.SyndicateRecordWriter;
 import SyndicateHadoop.util.FileSystemUtil;
 import SyndicateHadoop.util.SyndicateConfigUtil;
@@ -28,17 +26,16 @@ public class SyndicateTextOutputFormat<K, V> extends SyndicateOutputFormat<K, V>
         String keyValueSeparator = SyndicateConfigUtil.getTextOutputFormatSeparator(conf);
         
         String extension = "";
-        Path path = getDefaultWorkFile(context, extension);
+        JSFSPath path = getDefaultWorkFile(context, extension);
         
-        FileSystem syndicateFS = null;
+        JSFSFileSystem syndicateFS = null;
         try {
             syndicateFS = FileSystemUtil.getFileSystem(context.getConfiguration());
         } catch (InstantiationException ex) {
             throw new IOException(ex);
         }
         
-        File file = new File(syndicateFS, path);
-        DataOutputStream fileOut = new DataOutputStream(new FSOutputStream(file));
+        DataOutputStream fileOut = new DataOutputStream(syndicateFS.getFileOutputStream(path));
         return new SyndicateRecordWriter<K, V>(fileOut, keyValueSeparator);
     }
 }

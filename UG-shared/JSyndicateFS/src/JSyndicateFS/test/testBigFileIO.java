@@ -4,36 +4,32 @@
  */
 package JSyndicateFS.test;
 
-import JSyndicateFS.Configuration;
-import JSyndicateFS.FSInputStream;
-import JSyndicateFS.FSOutputStream;
-import JSyndicateFS.File;
-import JSyndicateFS.FileSystem;
-import JSyndicateFS.Path;
-import static JSyndicateFS.test.testFileIO.createNewFile;
-import static JSyndicateFS.test.testFileIO.uninitFS;
+import JSyndicateFS.JSFSFileSystem;
+import JSyndicateFS.JSFSPath;
+import JSyndicateFS.backend.sharedfs.SharedFSConfiguration;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.FileNotFoundException;
+import java.io.File;
 import java.io.IOException;
-import java.net.URISyntaxException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  *
  * @author iychoi
  */
 public class testBigFileIO {
-    private static FileSystem filesystem;
+    private static JSFSFileSystem filesystem;
     private static final long KILOBYTE = 1024;
     private static final long MEGABYTE = 1024*1024;
     
-    public static void initFS() throws IllegalAccessException, URISyntaxException, InstantiationException {
-        Configuration conf = new Configuration();
-        conf.setUGName("Hadoop");
-
+    public static void initFS() throws IllegalAccessException, InstantiationException {
+        SharedFSConfiguration conf = new SharedFSConfiguration();
+        File mountpoint = new File("/mnt/syndicatefs");
+        conf.setMountPoint(mountpoint);
+        
         System.out.println("JSyndicateFS is Opening");
-        FileSystem.init(conf);
-        filesystem = FileSystem.getInstance();
+        filesystem = JSFSFileSystem.createInstance(conf);
     }
     
     public static void uninitFS() throws IOException {
@@ -42,7 +38,7 @@ public class testBigFileIO {
     }
     
     public static void createNewFile() throws IOException {
-        Path path = new Path("testBigFileIO.txt");
+        JSFSPath path = new JSFSPath("testBigFileIO.txt");
         
         System.out.println("start file check");
         if(filesystem.exists(path)) {
@@ -52,93 +48,62 @@ public class testBigFileIO {
             System.out.println("file deleted");
         }
         
-        boolean result = filesystem.createNewFile(path);
-        if(result) {
-            File file = new File(filesystem, path);
-            if(file.isFile() && file.exist()) {
-                System.out.println("file created");
-                
-                long size = MEGABYTE * 64;
-                
-                FSOutputStream outSource = new FSOutputStream(file);
-                BufferedOutputStream out = new BufferedOutputStream(outSource, (int)MEGABYTE);
-                
-                byte[] wbuff = new byte[1];
-                
-                byte data = 0;
-                for(long i=0;i<size;i++) {
-                    // fill buffer
-                    wbuff[0] = data;
-                    out.write(wbuff);
-                    
-                    data++;
-                }
-                
-                out.close();
-                
-                if(file.getSize() != size) {
-                    System.out.println("msg written failed");
-                } else {
-                    System.out.println("msg written");
-                    
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException ex) {}
-
-                    FSInputStream inSource = new FSInputStream(file);
-                    BufferedInputStream in = new BufferedInputStream(inSource, (int)MEGABYTE);
-                    
-                    data = 0;
-                    byte[] rbuff = new byte[1];
-                    boolean success = true;
-
-                    for(long i=0;i<size;i++) {
-                        int read = in.read(rbuff);
-                        if(read > 0) {
-                            if(data != rbuff[0]) {
-                                System.out.println("data not matching");
-                                success = false;
-                                break;
-                            }
-                        }
-
-                        data++;
-                    }
-                    in.close();
-                    
-                    if(success) {
-                        System.out.println("msg read success");
-                    }
-                }
-                
-                System.out.println("filename : " + file.getName() + ", size : " + file.getSize() + ", blocks : " + file.getBlocks() + ", blockSize : " + file.getBlockSize());
-                
-                if(file.delete()) {
-                    System.out.println("file deleted");
-                }
-            }
-        } else {
-            System.out.println("file creation failed");
-        }
-    }
-    
-    public static void listRootFiles() throws FileNotFoundException, IOException {
-        Path path = new Path("/");
+        long size = MEGABYTE * 64;
         
-        String[] entries = filesystem.readDirectoryEntries(path);
-        if(entries != null) {
-            System.out.println("number of entries : " + entries.length);
-            for(String entry : entries) {
-                System.out.println("file : " + entry);
-            }
+        OutputStream outSource = filesystem.getFileOutputStream(path);
+        BufferedOutputStream out = new BufferedOutputStream(outSource, (int)MEGABYTE);
+        byte[] wbuff = new byte[1];
+
+        byte data = 0;
+        for(long i=0;i<size;i++) {
+            // fill buffer
+            wbuff[0] = data;
+            out.write(wbuff);
+
+            data++;
         }
+
+        out.close();
+                
+        if(filesystem.getSize(path) != size) {
+            System.out.println("msg written failed");
+        } else {
+            System.out.println("msg written");
+        }
+
+        InputStream inSource = filesystem.getFileInputStream(path);
+        BufferedInputStream in = new BufferedInputStream(inSource, (int)MEGABYTE);
+                    
+        data = 0;
+        byte[] rbuff = new byte[1];
+        boolean success = true;
+
+        for(long i=0;i<size;i++) {
+            int read = in.read(rbuff);
+            if(read > 0) {
+                if(data != rbuff[0]) {
+                    System.out.println("data not matching");
+                    success = false;
+                    break;
+                }
+            }
+
+            data++;
+        }
+        in.close();
+
+        if(success) {
+            System.out.println("msg read success");
+        }
+        
+        System.out.println("filename : " + path.getPath() + ", size : " + size);
+
+        filesystem.delete(path);
     }
     
     public static void main(String[] args) {
         try {
             initFS();
-            
-            //listRootFiles();
             
             createNewFile();
             
@@ -147,8 +112,6 @@ public class testBigFileIO {
         } catch (InstantiationException ex) {
             System.out.println(ex.toString());
         } catch (IOException ex) {
-            System.out.println(ex.toString());
-        } catch (URISyntaxException ex) {
             System.out.println(ex.toString());
         } catch (IllegalAccessException ex) {
             System.out.println(ex.toString());

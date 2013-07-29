@@ -3,14 +3,13 @@
  */
 package SyndicateHadoop.mapred.input;
 
-import JSyndicateFS.FSInputStream;
-import JSyndicateFS.File;
-import JSyndicateFS.FileSystem;
-import JSyndicateFS.Path;
+import JSyndicateFS.JSFSFileSystem;
+import JSyndicateFS.JSFSPath;
 import SyndicateHadoop.input.SyndicateInputSplit;
 import SyndicateHadoop.util.FileSystemUtil;
 import SyndicateHadoop.util.SyndicateConfigUtil;
 import java.io.IOException;
+import java.io.InputStream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -32,7 +31,7 @@ public class SyndicateTextRecordReader extends RecordReader<LongWritable, Text> 
     private long start;
     private long pos;
     private long end;
-    private LineReader in;
+    private LineReader reader;
     private int maxLineLength;
     private LongWritable key = null;
     private Text value = null;
@@ -49,42 +48,43 @@ public class SyndicateTextRecordReader extends RecordReader<LongWritable, Text> 
         this.start = split.getStart();
         this.end = this.start + split.getLength();
         
-        Path path = split.getPath();
+        JSFSPath path = split.getPath();
         
-        FileSystem syndicateFS = null;
+        JSFSFileSystem syndicateFS = null;
         try {
             syndicateFS = FileSystemUtil.getFileSystem(conf);
         } catch (InstantiationException ex) {
             throw new IOException(ex);
         }
         
-        File file = new File(syndicateFS, path);
-        FSInputStream is = new FSInputStream(file);
+        InputStream is = syndicateFS.getFileInputStream(path);
         
         boolean skipFirstLine = false;
         if (this.start != 0) {
             skipFirstLine = true;
             --this.start;
-            is.seek(this.start);
+            is.skip(this.start);
+            //is.seek(this.start);
         }
         
-        int bufferSize = (int)file.getBlockSize();
+        int bufferSize = (int)syndicateFS.getBlockSize();
         if(SyndicateConfigUtil.getFileReadBufferSize(conf) != 0) {
             bufferSize = SyndicateConfigUtil.getFileReadBufferSize(conf);
         }
-        this.in = new LineReader(is, bufferSize);
+        
+        this.reader = new LineReader(is, bufferSize);
         
         if (skipFirstLine) {
             // skip first line and re-establish "start".
-            this.start += this.in.readLine(new Text(), 0, (int) Math.min((long) Integer.MAX_VALUE, this.end - this.start));
+            this.start += this.reader.readLine(new Text(), 0, (int) Math.min((long) Integer.MAX_VALUE, this.end - this.start));
         }
         this.pos = this.start;
     }
     
     @Override
     public void close() throws IOException {
-        if (this.in != null) {
-            this.in.close();
+        if (this.reader != null) {
+            this.reader.close();
         }
     }
 
@@ -111,7 +111,7 @@ public class SyndicateTextRecordReader extends RecordReader<LongWritable, Text> 
         
         int newSize = 0;
         while (this.pos < this.end) {
-            newSize = this.in.readLine(this.value, this.maxLineLength, Math.max((int) Math.min(Integer.MAX_VALUE, this.end - this.pos), this.maxLineLength));
+            newSize = this.reader.readLine(this.value, this.maxLineLength, Math.max((int) Math.min(Integer.MAX_VALUE, this.end - this.pos), this.maxLineLength));
             if (newSize == 0) {
                 break;
             }

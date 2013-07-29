@@ -3,9 +3,8 @@
  */
 package SyndicateHadoop.mapred;
 
-import JSyndicateFS.File;
-import JSyndicateFS.FileSystem;
-import JSyndicateFS.Path;
+import JSyndicateFS.JSFSFileSystem;
+import JSyndicateFS.JSFSPath;
 import SyndicateHadoop.output.SyndicateOutputCommitter;
 import SyndicateHadoop.util.FileSystemUtil;
 import SyndicateHadoop.util.SyndicateConfigUtil;
@@ -42,20 +41,19 @@ public abstract class SyndicateOutputFormat<K, V> extends OutputFormat<K, V> {
     @Override
     public void checkOutputSpecs(JobContext context) throws FileAlreadyExistsException, IOException, InterruptedException {
         Configuration conf = context.getConfiguration();
-        Path outDir = SyndicateConfigUtil.getOutputPath(conf);
+        JSFSPath outDir = SyndicateConfigUtil.getOutputPath(conf);
         if (outDir == null) {
             throw new InvalidJobConfException("Output directory not set.");
         }
         
-        FileSystem syndicateFS = null;
+        JSFSFileSystem syndicateFS = null;
         try {
             syndicateFS = FileSystemUtil.getFileSystem(context.getConfiguration());
         } catch (InstantiationException ex) {
             throw new IOException(ex);
         }
         
-        File outFile = new File(syndicateFS, outDir);
-        if(outFile.exist()) {
+        if(syndicateFS.exists(outDir)) {
             throw new FileAlreadyExistsException("Output directory " + outDir + " already exists");
         }
     }
@@ -63,9 +61,9 @@ public abstract class SyndicateOutputFormat<K, V> extends OutputFormat<K, V> {
     @Override
     public OutputCommitter getOutputCommitter(TaskAttemptContext context) throws IOException {
         if (this.committer == null) {
-            Path output = SyndicateConfigUtil.getOutputPath(context.getConfiguration());
+            JSFSPath output = SyndicateConfigUtil.getOutputPath(context.getConfiguration());
             
-            FileSystem syndicateFS = null;
+            JSFSFileSystem syndicateFS = null;
             try {
                 syndicateFS = FileSystemUtil.getFileSystem(context.getConfiguration());
             } catch (InstantiationException ex) {
@@ -77,12 +75,12 @@ public abstract class SyndicateOutputFormat<K, V> extends OutputFormat<K, V> {
         return this.committer;
     }
     
-    public Path getDefaultWorkFile(TaskAttemptContext context, String extension) throws IOException {
+    public JSFSPath getDefaultWorkFile(TaskAttemptContext context, String extension) throws IOException {
         SyndicateOutputCommitter committer = (SyndicateOutputCommitter) getOutputCommitter(context);
         Configuration conf = context.getConfiguration();
         String basename = SyndicateConfigUtil.getOutputBaseName(conf);
         String uniquename = getUniqueFile(context, basename, extension);
-        return new Path(committer.getOutputPath(), uniquename);
+        return new JSFSPath(committer.getOutputPath(), uniquename);
     }
     
     public synchronized static String getUniqueFile(TaskAttemptContext context, String name, String extension) {

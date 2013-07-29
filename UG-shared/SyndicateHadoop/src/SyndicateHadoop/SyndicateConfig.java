@@ -1,17 +1,14 @@
 /*
- * Configuration class for Syndicate
+ * JSFSConfiguration class for Syndicate
  */
 package SyndicateHadoop;
 
-import JSyndicateFS.FilenameFilter;
-import JSyndicateFS.Path;
+import JSyndicateFS.JSFSFilenameFilter;
+import JSyndicateFS.JSFSPath;
 import SyndicateHadoop.util.SyndicateConfigUtil;
+import SyndicateHadoop.util.SyndicateConfigUtil.Backend;
 import java.io.DataInput;
-import java.io.File;
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -41,20 +38,36 @@ public class SyndicateConfig {
         this.config.readFields(in);
     }
     
-    public String getNativeLibraryFile() {
-        return SyndicateConfigUtil.getNativeLibraryFile(this.config);
+    public Backend getBackend() {
+        return SyndicateConfigUtil.getBackend(this.config);
     }
     
-    public void setNativeLibraryFile(String path) {
-        SyndicateConfigUtil.setNativeLibraryFile(this.config, path);
+    public void setBackend(Backend backend) {
+        SyndicateConfigUtil.setBackend(this.config, backend);
     }
     
-    public String getUGName() {
-        return SyndicateConfigUtil.getUGName(this.config);
+    public int getIPC_Port() {
+        return SyndicateConfigUtil.getIPC_Port(this.config);
     }
     
-    public void setUGName(String ug_name) {
-        SyndicateConfigUtil.setUGName(this.config, ug_name);
+    public void setIPC_Port(int port) {
+        SyndicateConfigUtil.setIPC_Port(this.config, port);
+    }
+    
+    public String getIPC_UGName() {
+        return SyndicateConfigUtil.getIPC_UGName(this.config);
+    }
+    
+    public void setIPC_UGName(String ug_name) {
+        SyndicateConfigUtil.setIPC_UGName(this.config, ug_name);
+    }
+    
+    public String getSFS_MountPath() {
+        return SyndicateConfigUtil.getSFS_MountPath(this.config);
+    }
+    
+    public void setSFS_MountPath(String path) {
+        SyndicateConfigUtil.setSFS_MountPath(this.config, path);
     }
     
     public int getMaxMetadataCacheNum() {
@@ -87,59 +100,6 @@ public class SyndicateConfig {
     
     public void setFileWriteBufferSize(int bufferSize) {
         SyndicateConfigUtil.setFileWriteBufferSize(this.config, bufferSize);
-    }
-    
-    public JSyndicateFS.Configuration getJSFSConfiguration() {
-        JSyndicateFS.Configuration jsfsConfig = new JSyndicateFS.Configuration();
-        
-        String nativeLibraryFile = getNativeLibraryFile();
-        if(nativeLibraryFile != null) {
-            File nativeLibFileObj = new File(nativeLibraryFile);
-            try {
-                jsfsConfig.setNativeLibraryFile(nativeLibFileObj);
-            } catch (IllegalAccessException ex) {
-                LOG.error(ex);
-            }
-        }
-        
-        String ugName = getUGName();
-        if(ugName != null) {
-            try {
-                jsfsConfig.setUGName(ugName);
-            } catch (IllegalAccessException ex) {
-                LOG.error(ex);
-            }
-        }
-        
-        int maxMetadataCacheSize = getMaxMetadataCacheNum();
-        try {
-            jsfsConfig.setMaxMetadataCacheSize(maxMetadataCacheSize);
-        } catch (IllegalAccessException ex) {
-            LOG.error(ex);
-        }
-        
-        int metadataCacheTimeout = getMetadataCacheTimeout();
-        try {
-            jsfsConfig.setCacheTimeoutSecond(metadataCacheTimeout);
-        } catch (IllegalAccessException ex) {
-            LOG.error(ex);
-        }
-        
-        int readBufferSize = this.getFileReadBufferSize();
-        try {
-            jsfsConfig.setReadBufferSize(readBufferSize);
-        } catch (IllegalAccessException ex) {
-            LOG.error(ex);
-        }
-        
-        int writeBufferSize = this.getFileWriteBufferSize();
-        try {
-            jsfsConfig.setWriteBufferSize(writeBufferSize);
-        } catch (IllegalAccessException ex) {
-            LOG.error(ex);
-        }
-        
-        return jsfsConfig;
     }
     
     public Class<? extends Mapper> getMapper() {
@@ -254,23 +214,23 @@ public class SyndicateConfig {
         SyndicateConfigUtil.addInputPaths(this.config, commaSeparatedPaths);
     }
     
-    public void setInputPaths(Path... inputPaths) throws IOException {
+    public void setInputPaths(JSFSPath... inputPaths) throws IOException {
         SyndicateConfigUtil.setInputPaths(this.config, inputPaths);
     }
     
-    public Path[] getInputPaths() throws IOException {
+    public JSFSPath[] getInputPaths() throws IOException {
         return SyndicateConfigUtil.getInputPaths(this.config);
     }
     
-    public Class<? extends FilenameFilter> getInputPathFilter() {
+    public Class<? extends JSFSFilenameFilter> getInputPathFilter() {
         return SyndicateConfigUtil.getInputPathFilter(this.config);
     }
     
-    public void setInputPathFilter(Class<? extends FilenameFilter> val) {
+    public void setInputPathFilter(Class<? extends JSFSFilenameFilter> val) {
         SyndicateConfigUtil.setInputPathFilter(this.config, val);
     }
     
-    public void setOutputPath(Path outputPath) {
+    public void setOutputPath(JSFSPath outputPath) {
         SyndicateConfigUtil.setOutputPath(this.config, outputPath);
     }
     
@@ -278,7 +238,7 @@ public class SyndicateConfig {
         SyndicateConfigUtil.setOutputPath(this.config, outputPath);
     }
 
-    public Path getOutputPath() {
+    public JSFSPath getOutputPath() {
         return SyndicateConfigUtil.getOutputPath(this.config);
     }
 

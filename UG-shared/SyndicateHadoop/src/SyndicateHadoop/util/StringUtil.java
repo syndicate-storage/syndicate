@@ -3,7 +3,7 @@
  */
 package SyndicateHadoop.util;
 
-import JSyndicateFS.Path;
+import JSyndicateFS.JSFSPath;
 import java.util.ArrayList;
 
 /**
@@ -14,7 +14,7 @@ public class StringUtil {
     
     public static char MULTI_FILEPATH_SEPARATOR_CH = ',';
 
-    public static String generatePathString(Path... paths) {
+    public static String generatePathString(JSFSPath... paths) {
         StringBuilder sb = new StringBuilder();
         
         if(paths.length > 0) {
@@ -29,7 +29,7 @@ public class StringUtil {
         return sb.toString();
     }
     
-    static String addPathString(String dirs, Path path) {
+    static String addPathString(String dirs, JSFSPath path) {
         if(dirs == null || dirs.isEmpty()) {
             return path.getPath();
         } else {
@@ -37,22 +37,22 @@ public class StringUtil {
         }
     }
     
-    public static Path stringToPath(String str) {
+    public static JSFSPath stringToPath(String str) {
         if(str == null) {
             return null;
         }
         
-        return new Path(str);
+        return new JSFSPath(str);
     }
     
-    public static Path[] stringToPath(String[] str) {
+    public static JSFSPath[] stringToPath(String[] str) {
         if (str == null) {
             return null;
         }
         
-        Path[] path = new Path[str.length];
+        JSFSPath[] path = new JSFSPath[str.length];
         for (int i=0;i<str.length;i++) {
-            path[i] = new Path(str[i]);
+            path[i] = new JSFSPath(str[i]);
         }
         return path;
     }

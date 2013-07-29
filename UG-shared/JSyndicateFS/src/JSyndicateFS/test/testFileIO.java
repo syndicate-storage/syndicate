@@ -4,15 +4,13 @@
  */
 package JSyndicateFS.test;
 
-import JSyndicateFS.Configuration;
-import JSyndicateFS.FSInputStream;
-import JSyndicateFS.FSOutputStream;
-import JSyndicateFS.File;
-import JSyndicateFS.FileSystem;
-import JSyndicateFS.Path;
+import JSyndicateFS.JSFSFileSystem;
+import JSyndicateFS.JSFSPath;
+import JSyndicateFS.backend.sharedfs.SharedFSConfiguration;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.net.URISyntaxException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  *
@@ -20,15 +18,15 @@ import java.net.URISyntaxException;
  */
 public class testFileIO {
     
-    private static FileSystem filesystem;
+    private static JSFSFileSystem filesystem;
     
-    public static void initFS() throws IllegalAccessException, URISyntaxException, InstantiationException {
-        Configuration conf = new Configuration();
-        conf.setUGName("Hadoop");
-
+    public static void initFS() throws IllegalAccessException, InstantiationException {
+        SharedFSConfiguration conf = new SharedFSConfiguration();
+        java.io.File mountpoint = new java.io.File("/mnt/syndicatefs");
+        conf.setMountPoint(mountpoint);
+        
         System.out.println("JSyndicateFS is Opening");
-        FileSystem.init(conf);
-        filesystem = FileSystem.getInstance();
+        filesystem = JSFSFileSystem.createInstance(conf);
     }
     
     public static void uninitFS() throws IOException {
@@ -37,53 +35,35 @@ public class testFileIO {
     }
     
     public static void createNewFile() throws IOException {
-        Path path = new Path("testFileIO.txt");
+        JSFSPath path = new JSFSPath("testFileIO.txt");
         
         System.out.println("start file check");
-        if(filesystem.exists(path)) {
-            System.out.println("file already exists");
-            
-            filesystem.delete(path);
-            System.out.println("file deleted");
-        }
+        String msg = "hello world!";
         
-        boolean result = filesystem.createNewFile(path);
-        if(result) {
-            File file = new File(filesystem, path);
-            if(file.isFile() && file.exist()) {
-                System.out.println("file created");
+        OutputStream out = filesystem.getFileOutputStream(path);
+        out.write(msg.getBytes());
+        out.close();
+        System.out.println("msg written");
                 
-                String msg = "hello world!";
-                FSOutputStream out = new FSOutputStream(file);
-                out.write(msg.getBytes());
-                out.close();
-                System.out.println("msg written");
+        InputStream in = filesystem.getFileInputStream(path);
                 
-                FSInputStream in = new FSInputStream(file);
-                
-                byte[] buffer = new byte[256];
-                int read = in.read(buffer);
-                if(read > 0) {
-                    String readmsg = new String(buffer, 0, read);
-                    System.out.println("msg read : " + readmsg);
-                }
-                in.close();
-                
-                System.out.println("filename : " + file.getName() + ", size : " + file.getSize() + ", blocks : " + file.getBlocks() + ", blockSize : " + file.getBlockSize());
-                
-                if(file.delete()) {
-                    System.out.println("file deleted");
-                }
-            }
-        } else {
-            System.out.println("file creation failed");
+        byte[] buffer = new byte[256];
+        int read = in.read(buffer);
+        if(read > 0) {
+            String readmsg = new String(buffer, 0, read);
+            System.out.println("msg read : " + readmsg);
         }
+        in.close();
+                
+        System.out.println("filename : " + path.getPath() + ", size : " + read);
+
+        filesystem.delete(path);
     }
     
     public static void listRootFiles() throws FileNotFoundException, IOException {
-        Path path = new Path("/");
+        JSFSPath path = new JSFSPath("/");
         
-        String[] entries = filesystem.readDirectoryEntries(path);
+        String[] entries = filesystem.readDirectoryEntryNames(path);
         if(entries != null) {
             System.out.println("number of entries : " + entries.length);
             for(String entry : entries) {
@@ -96,7 +76,7 @@ public class testFileIO {
         try {
             initFS();
             
-            //listRootFiles();
+            listRootFiles();
             
             createNewFile();
             
@@ -105,8 +85,6 @@ public class testFileIO {
         } catch (InstantiationException ex) {
             System.out.println(ex.toString());
         } catch (IOException ex) {
-            System.out.println(ex.toString());
-        } catch (URISyntaxException ex) {
             System.out.println(ex.toString());
         } catch (IllegalAccessException ex) {
             System.out.println(ex.toString());
