@@ -315,6 +315,8 @@ class Volume( storagetypes.Object ):
       Update volume identified by name with fields specified as a dictionary.
       '''
       volume = Volume.Read(volume_id)
+      if not volume:
+         raise Exception("No volume with the ID %d exists.", volume_id)
       volume_key_name = Volume.make_key_name( volume_id=volume_id )
 
       storagetypes.memcache.delete(volume_key_name)

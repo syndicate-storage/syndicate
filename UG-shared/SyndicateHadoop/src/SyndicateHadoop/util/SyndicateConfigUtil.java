@@ -3,10 +3,13 @@
  */
 package SyndicateHadoop.util;
 
-import JSyndicateFS.FilenameFilter;
-import JSyndicateFS.Path;
+import JSyndicateFS.JSFSConfiguration;
+import JSyndicateFS.JSFSFilenameFilter;
+import JSyndicateFS.JSFSPath;
+import JSyndicateFS.backend.ipc.IPCConfiguration;
+import JSyndicateFS.backend.sharedfs.SharedFSConfiguration;
+import java.io.File;
 import java.io.IOException;
-import java.net.URL;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -25,13 +28,18 @@ public class SyndicateConfigUtil {
     
     public static final Log LOG = LogFactory.getLog(SyndicateConfigUtil.class);
     
-    public static final String CONFIG_FILE = "syndicate.conf.config_file";
-    public static final String UG_PASSWORD = "syndicate.conf.ug.password";
-    public static final String UG_NAME_PREFIX = "syndicate.conf.ug.name.prefix";
-    public static final String VOLUME_NAME = "syndicate.conf.volume.name";
-    public static final String VOLUME_SECRET = "syndicate.conf.volume.secret";
-    public static final String MSURL = "syndicate.conf.ms_url";
-    public static final String PORT = "syndicate.conf.port";
+    private static JSFSConfiguration instance;
+    
+    public static enum Backend {
+        IPC,
+        SHARED_FS
+    }
+
+    public static final String BACKEND = "syndicate.conf.backend";
+    public static final String IPC_UG_NAME = "syndicate.conf.ipc.ug.name";
+    public static final String IPC_PORT = "syndicate.conf.ipc.port";
+    public static final String SFS_MOUNT_PATH = "syndicate.conf.sfs.mountpath";
+    
     public static final String MAX_METADATA_CACHE = "syndicate.conf.max_metadata_cache";
     public static final String TIMEOUT_METADATA_CACHE = "syndicate.conf.timeout_metadata_cache";
     public static final String FILE_READ_BUFFER_SIZE = "syndicate.conf.file_read_buffer_size";
@@ -46,8 +54,8 @@ public class SyndicateConfigUtil {
     public static final String JOB_MAPPER_OUTPUT_KEY = "mapred.mapoutput.key.class";
     public static final String JOB_MAPPER_OUTPUT_VALUE = "mapred.mapoutput.value.class";
 
-    public static final String JOB_INPUT_FORMAT = "mapred.input.format.class";
-    public static final String JOB_OUTPUT_FORMAT = "mapred.output.format.class";
+    public static final String JOB_INPUT_FORMAT = "mapreduce.inputformat.class";
+    public static final String JOB_OUTPUT_FORMAT = "mapreduce.outputformat.class";
 
     public static final String JOB_OUTPUT_KEY = "mapred.mapoutput.key.class";
     public static final String JOB_OUTPUT_VALUE = "mapred.mapoutput.value.class";
@@ -64,77 +72,109 @@ public class SyndicateConfigUtil {
     
     public static final String TEXT_INPUT_MAX_LENGTH = "mapred.linerecordreader.maxlength";
     
-    public static void setConfigFile(Configuration conf, String path) {
-        conf.set(CONFIG_FILE, path);
+    public synchronized static JSFSConfiguration getJSFSConfigurationInstance(Configuration conf) throws InstantiationException {
+        if(instance == null) {
+            Backend backend = getBackend(conf);
+            if(backend.equals(Backend.IPC)) {
+                IPCConfiguration ipc_conf = new IPCConfiguration();
+                try {
+                    ipc_conf.setUGName(getIPC_UGName(conf));
+                } catch (IllegalAccessException ex) {
+                    LOG.error(ex);
+                    throw new InstantiationException(ex.getMessage());
+                }
+                
+                instance = ipc_conf;
+                
+                initJSFSConfiguration(conf, instance);
+                
+            } else if(backend.equals(Backend.SHARED_FS)) {
+                SharedFSConfiguration sfs_conf = new SharedFSConfiguration();
+                try {
+                    String mountPath = getSFS_MountPath(conf);
+                    File mountFile = new File(mountPath);
+                    if(!(mountFile.exists() && mountFile.isDirectory())) {
+                        LOG.error("mount point not exist");
+                        throw new InstantiationException("mount point not exist");
+                    }
+                    sfs_conf.setMountPoint(mountFile);
+                } catch (IllegalAccessException ex) {
+                    LOG.error(ex);
+                    throw new InstantiationException(ex.getMessage());
+                }
+                
+                instance = sfs_conf;
+                
+                initJSFSConfiguration(conf, instance);
+            } else {
+                LOG.error("invalid backend");
+                throw new InstantiationException("invalid backend");
+            }
+        }
+        
+        return instance;
     }
     
-    public static String getConfigFile(Configuration conf) {
-        return conf.get(CONFIG_FILE);
-    }
-    
-    public static void setUGPassword(Configuration conf, String ug_password) {
-        conf.set(UG_PASSWORD, ug_password);
-    }
-    
-    public static String getUGPassword(Configuration conf) {
-        return conf.get(UG_PASSWORD);
-    }
-    
-    public static void setUGNamePrefix(Configuration conf, String ug_name_prefix) {
-        conf.set(UG_NAME_PREFIX, ug_name_prefix);
-    }
-    
-    public static String getUGNamePrefix(Configuration conf) {
-        return conf.get(UG_NAME_PREFIX);
-    }
-    
-    public static String getUGName(Configuration conf) {
-        String prefix = getUGNamePrefix(conf);
-        return UGNameUtil.getUGName(prefix);
-    }
-    
-    public static void setVolumeName(Configuration conf, String volume_name) {
-        conf.set(VOLUME_NAME, volume_name);
-    }
-    
-    public static String getVolumeName(Configuration conf) {
-        return conf.get(VOLUME_NAME);
-    }
-    
-    public static void setVolumeSecret(Configuration conf, String volume_secret) {
-        conf.set(VOLUME_SECRET, volume_secret);
-    }
-    
-    public static String getVolumeSecret(Configuration conf) {
-        return conf.get(VOLUME_SECRET);
-    }
-    
-    public static void setMSUrl(Configuration conf, String msurl) {
+    private synchronized static void initJSFSConfiguration(Configuration conf, JSFSConfiguration jsfs_config) throws InstantiationException {
+        int maxMetadataCacheSize = getMaxMetadataCacheNum(conf);
         try {
-            URL url = new URL(msurl);
-            setMSUrl(conf, url);
-        } catch(Exception ex) {
-            throw new IllegalArgumentException("Given msurl is not a valid format");
+            jsfs_config.setMaxMetadataCacheSize(maxMetadataCacheSize);
+        } catch (IllegalAccessException ex) {
+            LOG.error(ex);
+        }
+        
+        int metadataCacheTimeout = getMetadataCacheTimeout(conf);
+        try {
+            jsfs_config.setCacheTimeoutSecond(metadataCacheTimeout);
+        } catch (IllegalAccessException ex) {
+            LOG.error(ex);
+        }
+        
+        int readBufferSize = getFileReadBufferSize(conf);
+        try {
+            jsfs_config.setReadBufferSize(readBufferSize);
+        } catch (IllegalAccessException ex) {
+            LOG.error(ex);
+        }
+        
+        int writeBufferSize = getFileWriteBufferSize(conf);
+        try {
+            jsfs_config.setWriteBufferSize(writeBufferSize);
+        } catch (IllegalAccessException ex) {
+            LOG.error(ex);
         }
     }
     
-    public static void setMSUrl(Configuration conf, URL msurl) {
-        if(msurl == null)
-            throw new IllegalArgumentException("Can not set url from null parameter");
-        
-        conf.set(MSURL, msurl.toString());
+    public static void setBackend(Configuration conf, Backend backend) {
+        conf.setEnum(BACKEND, backend);
     }
     
-    public static String getMSUrl(Configuration conf) {
-        return conf.get(MSURL);
+    public static Backend getBackend(Configuration conf) {
+        return conf.getEnum(BACKEND, null);
     }
     
-    public static void setPort(Configuration conf, int port) {
-        conf.setInt(PORT, port);
+    public static void setIPC_Port(Configuration conf, int port) {
+        conf.setInt(IPC_PORT, port);
     }
     
-    public static int getPort(Configuration conf) {
-        return conf.getInt(PORT, 0);
+    public static int getIPC_Port(Configuration conf) {
+        return conf.getInt(IPC_PORT, IPCConfiguration.DEFAULT_IPC_PORT);
+    }
+    
+    public static void setIPC_UGName(Configuration conf, String ug_name) {
+        conf.set(IPC_UG_NAME, ug_name);
+    }
+    
+    public static String getIPC_UGName(Configuration conf) {
+        return conf.get(IPC_UG_NAME);
+    }
+    
+    public static void setSFS_MountPath(Configuration conf, String path) {
+        conf.set(SFS_MOUNT_PATH, path);
+    }
+    
+    public static String getSFS_MountPath(Configuration conf) {
+        return conf.get(SFS_MOUNT_PATH);
     }
     
     public static void setMaxMetadataCacheNum(Configuration conf, int maxCache) {
@@ -274,55 +314,55 @@ public class SyndicateConfigUtil {
     }
 
     public static void setInputPaths(Configuration conf, String pathstrings) throws IOException {
-        String[] pathstr = StringUtils.getPathStrings(pathstrings);
-        Path[] patharr = StringUtils.stringToPath(pathstr);
+        String[] pathstr = StringUtil.getPathStrings(pathstrings);
+        JSFSPath[] patharr = StringUtil.stringToPath(pathstr);
         setInputPaths(conf, patharr);
     }
     
     public static void addInputPaths(Configuration conf, String pathstrings) throws IOException {
-        String[] pathstr = StringUtils.getPathStrings(pathstrings);
+        String[] pathstr = StringUtil.getPathStrings(pathstrings);
         for(String str : pathstr) {
-            addInputPath(conf, StringUtils.stringToPath(str));
+            addInputPath(conf, StringUtil.stringToPath(str));
         }
     }
     
-    public static void setInputPaths(Configuration conf, Path... inputPaths) throws IOException {
-        String path = StringUtils.generatePathString(inputPaths);
+    public static void setInputPaths(Configuration conf, JSFSPath... inputPaths) throws IOException {
+        String path = StringUtil.generatePathString(inputPaths);
         conf.set(INPUT_DIR, path);
     }
     
-    public static void addInputPath(Configuration conf, Path inputPath) throws IOException {
+    public static void addInputPath(Configuration conf, JSFSPath inputPath) throws IOException {
         String dirs = conf.get(INPUT_DIR);
         
-        String newDirs = StringUtils.addPathString(dirs, inputPath);
+        String newDirs = StringUtil.addPathString(dirs, inputPath);
         conf.set(INPUT_DIR, newDirs);
     }
     
-    public static Path[] getInputPaths(Configuration conf) {
+    public static JSFSPath[] getInputPaths(Configuration conf) {
         String dirs = conf.get(INPUT_DIR, "");
         
-        String[] list = StringUtils.getPathStrings(dirs);
-        return StringUtils.stringToPath(list);
+        String[] list = StringUtil.getPathStrings(dirs);
+        return StringUtil.stringToPath(list);
     }
     
-    public static void setInputPathFilter(Configuration conf, Class<? extends FilenameFilter> filter) {
-        conf.setClass(INPUT_PATH_FILTER, filter, FilenameFilter.class);
+    public static void setInputPathFilter(Configuration conf, Class<? extends JSFSFilenameFilter> filter) {
+        conf.setClass(INPUT_PATH_FILTER, filter, JSFSFilenameFilter.class);
     }
     
-    public static Class<? extends FilenameFilter> getInputPathFilter(Configuration conf) {
-        return conf.getClass(INPUT_PATH_FILTER, null, FilenameFilter.class);
+    public static Class<? extends JSFSFilenameFilter> getInputPathFilter(Configuration conf) {
+        return conf.getClass(INPUT_PATH_FILTER, null, JSFSFilenameFilter.class);
     }
     
     public static void setOutputPath(Configuration conf, String outputPath) {
         conf.set(OUTPUT_DIR, outputPath);
     }
     
-    public static void setOutputPath(Configuration conf, Path outputPath) {
+    public static void setOutputPath(Configuration conf, JSFSPath outputPath) {
         conf.set(OUTPUT_DIR, outputPath.getPath());
     }
 
-    public static Path getOutputPath(Configuration conf) {
-        return StringUtils.stringToPath(conf.get(OUTPUT_DIR));
+    public static JSFSPath getOutputPath(Configuration conf) {
+        return StringUtil.stringToPath(conf.get(OUTPUT_DIR));
     }
     
     public static void setOutputBaseName(Configuration conf, String basename) {

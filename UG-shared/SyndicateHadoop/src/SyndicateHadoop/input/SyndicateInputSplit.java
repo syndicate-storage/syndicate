@@ -3,26 +3,34 @@
  */
 package SyndicateHadoop.input;
 
-import JSyndicateFS.FileSystem;
-import JSyndicateFS.Path;
+import JSyndicateFS.JSFSFileSystem;
+import JSyndicateFS.JSFSPath;
+import java.io.DataInput;
+import java.io.DataOutput;
 import java.io.IOException;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapreduce.InputSplit;
 
 /**
  *
  * @author iychoi
  */
-public class SyndicateInputSplit extends InputSplit {
+public class SyndicateInputSplit extends InputSplit implements Writable {
 
-    private FileSystem filesystem;
-    private Path path;
+    private JSFSFileSystem filesystem;
+    private JSFSPath path;
     private long start;
     private long length;
 
+    // default constructor
+    public SyndicateInputSplit() {
+    }
+    
     /*
      * Constructs a split
      */
-    public SyndicateInputSplit(FileSystem fs, Path path, long start, long length) {
+    public SyndicateInputSplit(JSFSFileSystem fs, JSFSPath path, long start, long length) {
         if(fs == null)
             throw new IllegalArgumentException("Can not create Input Split from null file system");
         if(path == null)
@@ -34,14 +42,14 @@ public class SyndicateInputSplit extends InputSplit {
         this.length = length;
     }
 
-    public FileSystem getFileSystem() {
+    public JSFSFileSystem getFileSystem() {
         return this.filesystem;
     }
     
     /*
      * The file containing this split's data
      */
-    public Path getPath() {
+    public JSFSPath getPath() {
         return this.path;
     }
 
@@ -67,6 +75,21 @@ public class SyndicateInputSplit extends InputSplit {
 
     @Override
     public String[] getLocations() throws IOException, InterruptedException {
-        return null;
+        String fsName = this.filesystem.toString();
+        return new String[] {fsName};
+    }
+
+    @Override
+    public void write(DataOutput out) throws IOException {
+        Text.writeString(out, this.path.getPath());
+        out.writeLong(this.start);
+        out.writeLong(this.length);
+    }
+
+    @Override
+    public void readFields(DataInput in) throws IOException {
+        this.path = new JSFSPath(Text.readString(in));
+        this.start = in.readLong();
+        this.length = in.readLong();
     }
 }

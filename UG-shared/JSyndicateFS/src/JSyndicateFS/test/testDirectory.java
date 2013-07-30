@@ -4,42 +4,29 @@
  */
 package JSyndicateFS.test;
 
-import JSyndicateFS.Configuration;
-import JSyndicateFS.FSInputStream;
-import JSyndicateFS.FSOutputStream;
-import JSyndicateFS.File;
-import JSyndicateFS.FileSystem;
-import JSyndicateFS.Path;
-import static JSyndicateFS.test.testFileIO.createNewFile;
-import static JSyndicateFS.test.testFileIO.initFS;
-import static JSyndicateFS.test.testFileIO.uninitFS;
+import JSyndicateFS.JSFSFileSystem;
+import JSyndicateFS.JSFSPath;
+import JSyndicateFS.backend.sharedfs.SharedFSConfiguration;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  *
  * @author iychoi
  */
 public class testDirectory {
-    private static FileSystem filesystem;
+    private static JSFSFileSystem filesystem;
     
-    public static void initFS(boolean localms) throws IllegalAccessException, URISyntaxException, InstantiationException {
-        Configuration conf = new Configuration();
-        if(localms) {
-            conf.setMSUrl(new URI("http://localhost:8080"));
-        } else {
-            conf.setMSUrl(new URI("https://syndicate-metadata.appspot.com"));
-        }
-        conf.setUGName("Hadoop");
-        conf.setUGPassword("sniff");
-        conf.setVolumeName("testvolume-iychoi-email.arizona.edu");
-        conf.setVolumeSecret("sniff");
-        conf.setPort(32780);
-
+    public static void initFS() throws IllegalAccessException, InstantiationException {
+        SharedFSConfiguration conf = new SharedFSConfiguration();
+        File mountpoint = new File("/mnt/syndicatefs");
+        conf.setMountPoint(mountpoint);
+        
         System.out.println("JSyndicateFS is Opening");
-        filesystem = FileSystem.getInstance(conf);
+        filesystem = JSFSFileSystem.createInstance(conf);
     }
     
     public static void uninitFS() throws IOException {
@@ -48,39 +35,24 @@ public class testDirectory {
     }
     
     public static void createNewDirs() throws IOException {
-        Path complex = new Path("a/b/c");
+        JSFSPath complex = new JSFSPath("a/b/c");
         
         System.out.println("create complex dir");
-        if(filesystem.exists(complex) && filesystem.isDirectory(complex)) {
-            System.out.println("dir already exists");
-        } else {
-            filesystem.mkdirs(complex);
-            
-            if(filesystem.exists(complex) && filesystem.isDirectory(complex)) {
-                System.out.println("dir created");
-            }
-        }
+        filesystem.mkdirs(complex);
     }
     
     public static void createNewFile() throws IOException {
-        Path complexpath = new Path("a/b/c/complex.txt");
+        JSFSPath complexpath = new JSFSPath("a/b/c/complex.txt");
         
         System.out.println("start file check");
-        if(filesystem.exists(complexpath)) {
-            System.out.println("file already exists");
-            
-            filesystem.delete(complexpath);
-            System.out.println("file deleted");
-        }
         
-        File file = new File(filesystem, complexpath);
         String msg = "hello world!";
-        FSOutputStream out = new FSOutputStream(file);
+        OutputStream out = filesystem.getFileOutputStream(complexpath);
         out.write(msg.getBytes());
         out.close();
         System.out.println("msg written");
 
-        FSInputStream in = new FSInputStream(file);
+        InputStream in = filesystem.getFileInputStream(complexpath);
 
         byte[] buffer = new byte[256];
         int read = in.read(buffer);
@@ -90,42 +62,35 @@ public class testDirectory {
         }
         in.close();
 
-        System.out.println("filename : " + file.getName() + ", size : " + file.getSize() + ", blocks : " + file.getBlocks() + ", blockSize : " + file.getBlockSize());
-
-        //file.renameTo(new Path("a/b/c/d/complexNew.txt"));
-
-        //System.out.println("file renamed : " + file.getPath().getPath());
+        System.out.println("filename : " + complexpath.getPath() + ", size : " + read);
     }
     
     public static void listAllFiles() throws FileNotFoundException, IOException {
-        Path path = new Path("/");
+        JSFSPath path = new JSFSPath("/");
         
-        Path[] entries = filesystem.listAllFiles(path);
+        JSFSPath[] entries = filesystem.listAllFiles(path);
         if(entries != null) {
             System.out.println("number of entries : " + entries.length);
-            for(Path entry : entries) {
+            for(JSFSPath entry : entries) {
                 System.out.println("file : " + entry.getPath());
             }
         }
     }
     
     public static void deleteAll() throws IOException {
-        Path path = new Path("/a");
+        JSFSPath path = new JSFSPath("/a");
         
         filesystem.deleteAll(path);
     }
     
     public static void main(String[] args) {
         try {
-            if(args.length > 0)
-                initFS(Boolean.parseBoolean(args[0]));
-            else
-                initFS(false);
+            initFS();
             
             createNewDirs();
             createNewFile();
 
-            //listAllFiles();
+            listAllFiles();
             
             deleteAll();
             
@@ -134,8 +99,6 @@ public class testDirectory {
         } catch (InstantiationException ex) {
             System.out.println(ex.toString());
         } catch (IOException ex) {
-            System.out.println(ex.toString());
-        } catch (URISyntaxException ex) {
             System.out.println(ex.toString());
         } catch (IllegalAccessException ex) {
             System.out.println(ex.toString());

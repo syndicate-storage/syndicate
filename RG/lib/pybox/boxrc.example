@@ -1,0 +1,6 @@
+[app]
+api_key=YOUR_API_KEY
+
+[account-YOUR_ACCOUNT_LOGIN]
+auth_token=YOUR_AUTH_TOKEN
+
