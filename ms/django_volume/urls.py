@@ -3,6 +3,8 @@ from django.conf.urls import patterns, include, url
 
 urlpatterns = patterns('django_volume.views',
 
+                        url(r'^failure/?$', 'failure'),
+
                         url(r'^allvolumes/?$', 'allvolumes'),
 
                         url(r'^myvolumes/?$', 'myvolumes'),
@@ -31,7 +33,7 @@ urlpatterns = patterns('django_volume.views',
                          'volumesettings'),
 
                         url(r'^(?P<volume_id>[\w\.-]+)/change/description/?',
-                         'changevolume'),
+                         'changedesc'),
                         
                         url(r'^(?P<volume_id>[\w\.-]+)/change/password/?',
                          'changevolumepassword'),

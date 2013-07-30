@@ -6,7 +6,7 @@
 {% endblock %}
 {% block mainbody %}
 
-	{{message}}
+	<p class="error">{{message}}</p>
 
     <form id='formset' action='{% url django_volume.views.changepermissions volume.volume_id %}' method="post">{% csrf_token %}
 	   {% if formset %}

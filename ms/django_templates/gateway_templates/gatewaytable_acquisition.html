@@ -14,7 +14,7 @@
     {% for g, v, o in gateway_vols_owners %} 
 
     <tr>
-      <td><a href="{% url django_ag.views.viewgateway g.ms_username %}">{{g.ms_username|replace:"_|| "}}</a></td>
+      <td><a href="{% url django_ag.views.viewgateway g.g_id %}">{{g.ms_username|replace:"_|| "}}</a></td>
       <td>{{o.email}}</td>
       <td>
        {% for volume in v %}
@@ -25,13 +25,15 @@
        <a href="{% url django_volume.views.viewvolume volume.volume_id %}">{{volume.name|replace:"_|| "}}</a><br>
        {% endif %}
        {% endif %}
+       {% empty %}
+       No volumes attached.
        {% endfor %}
       </td>
       </td>
       <td>{{g.host}}</td>
       <td>{{g.port}}</td>
       <td>{{g.json_config}}</td>
-      <td><a href="{% url django_ag.views.delete g.ms_username %}">Delete</a></td>
+      <td><a href="{% url django_ag.views.delete g.g_id %}">Delete</a></td>
     </tr>
 
     {% empty %}

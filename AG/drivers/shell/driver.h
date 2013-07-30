@@ -33,8 +33,10 @@ using namespace std;
 
 #define GET_SYNADB_PATH(url)\
     (char*)url + strlen(SYNDICATEFS_AG_DB_PROTO)
+#define EAGAIN_STR	"EAGAIN"
+#define EIO_STR		"EIO"
+#define EUNKNOWN_STR    "EUNKNOWN"
 
-#define ODBC_DSN_PREFIX			"DSN="
 struct path_comp {
     bool operator()(char *path1, char *path2) 
     {

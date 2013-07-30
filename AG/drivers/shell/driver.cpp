@@ -12,7 +12,7 @@ struct md_syndicate_conf CONF;
 // set of files we're exposing
 content_map DATA;
 
-// set of files we map to SQL queries
+// set of files we map to command
 query_map* FS2CMD = NULL;
 
 // Metadata service client of the AG
@@ -85,14 +85,25 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
     ssize_t ret = 0;
     ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
     struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
-
-    if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
+    if (dat->http_status == 404 && !ctx->complete) {
+	ret = 0;
+	ctx->complete = true;
+    }
+    else if (dat->http_status == 204 && !ctx->complete) {
+	//This is the first request for this file.
+	ret = 0;
+	ctx->complete = true;
+	prch.execute_command(ctx, NULL, 0, global_conf->blocking_factor);
+    }
+    else if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
 	if (!ctx->complete) {
 	    ret = prch.execute_command(ctx, buf, len, global_conf->blocking_factor);
 	    if (ctx->data_offset == (ssize_t)global_conf->blocking_factor)
 		ctx->complete = true;
-	    if (ret < 0)
+	    if (ret < 0) {
+		ret = 0;
 		ctx->complete = true;
+	    }
 	}
 	else {
 	    ret = 0;
@@ -108,7 +119,6 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	// invalid structure
 	ret = -EINVAL;
     }
-
     return ret;
 }
 
@@ -221,24 +231,52 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        ctx->request_type = GATEWAY_REQUEST_TYPE_MANIFEST;
        ctx->data_offset = 0;
        ctx->block_id = 0;
+       ctx->file_path = file_path;
        //ctx->num_read = 0;
        replica_ctx->size = ctx->data_len;
    }
    else {
-       struct map_info mi = (*FS2CMD)[string(file_path)];
-       char** cmd_array = str2array((char*)mi.shell_command);
-       ctx->proc_name = cmd_array[0];
-       ctx->argv = cmd_array;
-       ctx->envp = NULL;
-       ctx->data_offset = 0;
-       ctx->block_id = block_id;
-       ctx->fd = -1;
-       ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
-       // Negative size switches libmicrohttpd to chunk transfer mode
-       replica_ctx->size = -1;
-   }
+       struct map_info mi; 
+       query_map::iterator itr = FS2CMD->find(string(file_path));
+       if (itr != FS2CMD->end()) {
+	   mi = itr->second;
+	   char** cmd_array = str2array((char*)mi.shell_command);
+	   ctx->proc_name = cmd_array[0];
+	   ctx->argv = cmd_array;
+	   ctx->envp = NULL;
+	   ctx->data_offset = 0;
+	   ctx->block_id = block_id;
+	   ctx->fd = -1;
+	   ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
+	   ctx->file_path = file_path;
+	   ctx->id = mi.id;
+	   // Negative size switches libmicrohttpd to chunk transfer mode
+	   replica_ctx->size = -1;
+	   // Check the block status and set the http response appropriately
 
-   ctx->file_path = file_path;
+	   ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
+	   block_status blk_stat = prch.get_block_status(ctx);
+	   if (blk_stat.in_progress) {
+	       replica_ctx->err = -204;
+	       replica_ctx->http_status = 204;
+	   } 
+	   else if (blk_stat.block_available) {
+	       replica_ctx->err = -200;
+	       replica_ctx->http_status = 200;
+	   }
+	   else if (blk_stat.no_block) {
+	       replica_ctx->err = -200;
+	       replica_ctx->http_status = 200;
+	   }
+	   else {
+	       replica_ctx->err = -404;
+	       replica_ctx->http_status = 404;
+	   }
+       }
+       else {
+	   replica_ctx->http_status = 404;
+       }
+   }
    return ctx;
 }
 
@@ -251,6 +289,13 @@ extern "C" void cleanup_dataset( void* cls ) {
 	if (ctx->data != NULL) {
 	    free(ctx->data);
 	}
+	if (ctx->argv != NULL) {
+	    free(ctx->argv);
+	}
+	if (ctx->envp != NULL) {
+	    free(ctx->envp);
+	}
+	close(ctx->fd);
 	free (ctx);
     }
 }
@@ -337,7 +382,7 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	    ment->mode = DIR_PERMISSIONS_MASK;
 	    ment->mode |= S_IFDIR;
 	    if ( (i = ms_client_mkdir(mc, ment)) < 0 ) {
-		cout<<"ms client mkdir "<<i<<endl;
+		cerr<<"ms client mkdir "<<i<<endl;
 	    }
 	    break;
 	case MD_ENTRY_FILE:
@@ -346,7 +391,7 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	    ment->mode &= FILE_PERMISSIONS_MASK;
 	    ment->mode |= S_IFREG;
 	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
-		cout<<"ms client create "<<i<<endl;
+		cerr<<"ms client create "<<i<<endl;
 	    }
 	    break;
 	default:

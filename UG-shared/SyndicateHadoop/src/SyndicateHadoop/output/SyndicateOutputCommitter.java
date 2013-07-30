@@ -4,8 +4,8 @@
  */
 package SyndicateHadoop.output;
 
-import JSyndicateFS.FileSystem;
-import JSyndicateFS.Path;
+import JSyndicateFS.JSFSFileSystem;
+import JSyndicateFS.JSFSPath;
 import java.io.IOException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -21,10 +21,10 @@ public class SyndicateOutputCommitter extends OutputCommitter {
 
     private static final Log LOG = LogFactory.getLog(SyndicateOutputCommitter.class);
     
-    private FileSystem outputFileSystem = null;
-    private Path outputPath = null;
+    private JSFSFileSystem outputFileSystem = null;
+    private JSFSPath outputPath = null;
     
-    public SyndicateOutputCommitter(FileSystem fs, Path output, TaskAttemptContext context) {
+    public SyndicateOutputCommitter(JSFSFileSystem fs, JSFSPath output, TaskAttemptContext context) {
         if(output != null) {
             this.outputPath = output;
             this.outputFileSystem = fs;
@@ -69,11 +69,11 @@ public class SyndicateOutputCommitter extends OutputCommitter {
         }
     }
     
-    public Path getOutputPath() {
+    public JSFSPath getOutputPath() {
         return this.outputPath;
     }
     
-    public FileSystem getOutFileSystem() {
+    public JSFSFileSystem getOutFileSystem() {
         return this.outputFileSystem;
     }
 }

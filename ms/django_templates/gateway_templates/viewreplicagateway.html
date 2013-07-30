@@ -11,30 +11,30 @@
     {% endblock %}
 
     {% block location %}
-  	  <form action='{% url django_rg.views.changelocation gateway.ms_username %}' method="post">{% csrf_token %}
+  	  <form action='{% url django_rg.views.changelocation gateway.g_id %}' method="post">{% csrf_token %}
     {% endblock %}  
   
     {% block remove %}
-      <form action='{% url django_rg.views.removevolumes gateway.ms_username %}' method="post">{% csrf_token %}
+      <form action='{% url django_rg.views.removevolumes gateway.g_id %}' method="post">{% csrf_token %}
     {% endblock %}
   
     {% block add %}
-	   <form action='{% url django_rg.views.addvolume gateway.ms_username %}' method='post'>{% csrf_token %}
+	   <form action='{% url django_rg.views.addvolume gateway.g_id %}' method='post'>{% csrf_token %}
     {% endblock %}
 		
     {% block json %}
-      <form action='{% url django_rg.views.changejson gateway.ms_username %}' method='post' enctype="multipart/form-data">{% csrf_token %}
+      <form action='{% url django_rg.views.changejson gateway.g_id %}' method='post' enctype="multipart/form-data">{% csrf_token %}
     {% endblock %}
 
     {% block password %}
-	    <form action='{% url django_rg.views.changepassword gateway.ms_username %}' method='post'>{% csrf_token %}
+	    <form action='{% url django_rg.views.changepassword gateway.g_id %}' method='post'>{% csrf_token %}
 		{% endblock %}
     
     <!-- private -->
     {% block additional %}
     <h4/>
     <h4>Change Privacy</h4><h5>(Currently {% if gateway.private %}Private{% else %}Public{% endif %})</h5>
-      <form action='{% url django_rg.views.changeprivacy gateway.ms_username %}' method='post'>{% csrf_token %}
+      <form action='{% url django_rg.views.changeprivacy gateway.g_id %}' method='post'>{% csrf_token %}
         {{password_form.as_ul}}
         <input class ="submit" type="submit" value="Change" />
       </form>

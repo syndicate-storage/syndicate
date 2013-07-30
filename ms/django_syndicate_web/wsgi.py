@@ -14,19 +14,14 @@ framework.
 
 """
 import os
-import sys
+from django.core.wsgi import get_wsgi_application
 
+# Set django settings in the environment
 os.environ['DJANGO_SETTINGS_MODULE'] = 'django_syndicate_web.settings'
-sys.path.append(os.path.dirname(__file__) + '/../django_lib/')
+
 # This application object is used by any WSGI server configured to use this
 # file. This includes Django's development server, if the WSGI_APPLICATION
 # setting points here.
 
-
-from django.core.wsgi import get_wsgi_application
-
+# This variable is called from app.yaml for /syn*
 application = get_wsgi_application()
-
-# Apply WSGI middleware here.
-# from helloworld.wsgi import HelloWorldApplication
-# application = HelloWorldApplication(application)

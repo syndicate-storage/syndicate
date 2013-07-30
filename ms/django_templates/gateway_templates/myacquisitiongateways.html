@@ -22,7 +22,7 @@
 	  <td>{{v.name|replace:"_|| "}}</td>
 	  <td>{{g.host}}</td>
 	  <td>{{g.port}}</td>
-	  <td><a href="{% url django_ag.views.delete g.ms_username %}">Delete</a></td>
+	  <td><a href="{% url django_ag.views.delete g.id %}">Delete</a></td>
 	</tr>
 
 	{% empty %}
