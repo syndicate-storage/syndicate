@@ -31,8 +31,26 @@ public class SyndicateConfigUtil {
     private static JSFSConfiguration instance;
     
     public static enum Backend {
-        IPC,
-        SHARED_FS
+        IPC(0), SHARED_FS(1);
+        
+        private int code = -1;
+        
+        private Backend(int c) {
+            this.code = c;
+        }
+
+        public int getCode() {
+            return this.code;
+        }
+
+        public static Backend getFrom(int code) {
+            Backend[] backends = Backend.values();
+            for(Backend backend : backends) {
+                if(backend.getCode() == code)
+                    return backend;
+            }
+            return null;
+        }
     }
 
     public static final String BACKEND = "syndicate.conf.backend";
@@ -75,6 +93,10 @@ public class SyndicateConfigUtil {
     public synchronized static JSFSConfiguration getJSFSConfigurationInstance(Configuration conf) throws InstantiationException {
         if(instance == null) {
             Backend backend = getBackend(conf);
+            if(backend == null) {
+                LOG.error("null backend");
+                throw new InstantiationException("null backend");
+            }
             if(backend.equals(Backend.IPC)) {
                 IPCConfiguration ipc_conf = new IPCConfiguration();
                 try {
@@ -146,11 +168,12 @@ public class SyndicateConfigUtil {
     }
     
     public static void setBackend(Configuration conf, Backend backend) {
-        conf.setEnum(BACKEND, backend);
+        conf.setInt(BACKEND, backend.getCode());
     }
     
     public static Backend getBackend(Configuration conf) {
-        return conf.getEnum(BACKEND, null);
+        int code = conf.getInt(BACKEND, 0);
+        return Backend.getFrom(code);
     }
     
     public static void setIPC_Port(Configuration conf, int port) {
