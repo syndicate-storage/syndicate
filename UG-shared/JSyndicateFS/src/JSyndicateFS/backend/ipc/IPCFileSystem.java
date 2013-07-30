@@ -16,6 +16,7 @@ import JSyndicateFS.backend.ipc.message.IPCFileInfo;
 import JSyndicateFS.backend.ipc.message.IPCStat;
 import JSyndicateFS.backend.ipc.struct.IPCFileHandle;
 import JSyndicateFS.backend.ipc.struct.IPCFileStatus;
+import static JSyndicateFS.backend.sharedfs.SharedFSFileSystem.LOG;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -64,6 +65,11 @@ public class IPCFileSystem extends JSFSFileSystem {
     }
     
     private IPCFileStatus getFileStatus(JSFSPath abspath) {
+        if(abspath == null) {
+            LOG.error("Can not get FileStatus from null abspath");
+            throw new IllegalArgumentException("Can not get FileStatus from null abspath");
+        }
+        
         // check memory cache
         IPCFileStatus cached_status = this.filestatus_cache.get(abspath);
         
@@ -100,6 +106,15 @@ public class IPCFileSystem extends JSFSFileSystem {
     }
     
     private IPCFileHandle getFileHandle(IPCFileStatus status) throws IOException {
+        if(status == null) {
+            LOG.error("Can not get FileHandle from null status");
+            throw new IllegalArgumentException("Can not get FileHandle from null status");
+        }
+        if(status.isDirty()) {
+            LOG.error("Can not get FileHandle from dirty status");
+            throw new IllegalArgumentException("Can not get FileHandle from dirty status");
+        }
+        
         IPCFileInfo fi = client.getFileHandle(status.getPath().getPath());
         if(fi == null) {
             LOG.error("Can not get file handle from status");
@@ -110,6 +125,11 @@ public class IPCFileSystem extends JSFSFileSystem {
     }
     
     private IPCFileHandle createNewFile(JSFSPath abspath) throws IOException {
+        if(abspath == null) {
+            LOG.error("abspath is null");
+            throw new IllegalArgumentException("abspath is null");
+        }
+        
         if(abspath.getParent() != null) {
             IPCFileStatus parent = getFileStatus(abspath.getParent());
             if(parent == null) {
@@ -137,6 +157,11 @@ public class IPCFileSystem extends JSFSFileSystem {
     
     @Override
     public boolean exists(JSFSPath path) {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath);
         if(status != null) {
@@ -147,6 +172,11 @@ public class IPCFileSystem extends JSFSFileSystem {
 
     @Override
     public boolean isDirectory(JSFSPath path) {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath);
         if(status != null) {
@@ -157,6 +187,11 @@ public class IPCFileSystem extends JSFSFileSystem {
 
     @Override
     public boolean isFile(JSFSPath path) {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath);
         if(status != null) {
@@ -167,6 +202,11 @@ public class IPCFileSystem extends JSFSFileSystem {
 
     @Override
     public long getSize(JSFSPath path) {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath);
         if(status != null) {
@@ -186,6 +226,11 @@ public class IPCFileSystem extends JSFSFileSystem {
 
     @Override
     public void delete(JSFSPath path) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath);
         if(status == null)
@@ -204,6 +249,15 @@ public class IPCFileSystem extends JSFSFileSystem {
 
     @Override
     public void rename(JSFSPath path, JSFSPath newpath) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        if(newpath == null) {
+            LOG.error("newpath is null");
+            throw new IllegalArgumentException("newpath is null");
+        }
+        
         JSFSPath absPath = getAbsolutePath(path);
         JSFSPath absNewPath = getAbsolutePath(newpath);
         
@@ -233,6 +287,11 @@ public class IPCFileSystem extends JSFSFileSystem {
 
     @Override
     public void mkdir(JSFSPath path) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath.getParent());
         if(status == null) {
@@ -244,6 +303,11 @@ public class IPCFileSystem extends JSFSFileSystem {
 
     @Override
     public InputStream getFileInputStream(JSFSPath path) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath);
         if(status == null) {
@@ -260,6 +324,11 @@ public class IPCFileSystem extends JSFSFileSystem {
 
     @Override
     public OutputStream getFileOutputStream(JSFSPath path) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath);
         
@@ -280,6 +349,11 @@ public class IPCFileSystem extends JSFSFileSystem {
 
     @Override
     public JSFSRandomAccess getRandomAccess(JSFSPath path) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath);
         if(status == null) {
@@ -296,6 +370,11 @@ public class IPCFileSystem extends JSFSFileSystem {
 
     @Override
     public String[] readDirectoryEntryNames(JSFSPath path, JSFSFilenameFilter filter) throws FileNotFoundException, IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath);
         if(status == null) {
@@ -323,6 +402,11 @@ public class IPCFileSystem extends JSFSFileSystem {
 
     @Override
     public String[] readDirectoryEntryNames(JSFSPath path, JSFSPathFilter filter) throws FileNotFoundException, IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath);
         if(status == null) {
@@ -349,14 +433,29 @@ public class IPCFileSystem extends JSFSFileSystem {
     }
     
     void notifyClosed(IPCInputStream inputStream) {
+        if(inputStream == null) {
+            LOG.error("inputStream is null");
+            throw new IllegalArgumentException("inputStream is null");
+        }
+        
         this.openInputStream.remove(inputStream);
     }
     
     void notifyClosed(IPCOutputStream outputStream) {
+        if(outputStream == null) {
+            LOG.error("outputStream is null");
+            throw new IllegalArgumentException("outputStream is null");
+        }
+        
         this.openOutputStream.remove(outputStream);
     }
     
     void notifyClosed(IPCRandomAccess raf) {
+        if(raf == null) {
+            LOG.error("RandomAccess is null");
+            throw new IllegalArgumentException("RandomAccess is null");
+        }
+        
         this.openRandomAccess.remove(raf);
     }
     

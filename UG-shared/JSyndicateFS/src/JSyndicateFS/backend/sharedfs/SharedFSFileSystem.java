@@ -54,8 +54,10 @@ public class SharedFSFileSystem extends JSFSFileSystem {
     }
     
     private String getLocalPath(JSFSPath path) {
-        if(path == null)
+        if(path == null) {
+            LOG.error("Can not get LocalAbsolutePath from null path");
             throw new IllegalArgumentException("Can not get LocalAbsolutePath from null path");
+        }
         
         JSFSPath absPath = getAbsolutePath(path);
         String absMountPath = this.mountPoint.getAbsolutePath();
@@ -83,6 +85,11 @@ public class SharedFSFileSystem extends JSFSFileSystem {
     
     @Override
     public boolean exists(JSFSPath path) {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         return file.exists();
@@ -90,6 +97,11 @@ public class SharedFSFileSystem extends JSFSFileSystem {
 
     @Override
     public boolean isDirectory(JSFSPath path) {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         return file.isDirectory();
@@ -97,6 +109,11 @@ public class SharedFSFileSystem extends JSFSFileSystem {
 
     @Override
     public boolean isFile(JSFSPath path) {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         return file.isFile();
@@ -104,6 +121,11 @@ public class SharedFSFileSystem extends JSFSFileSystem {
     
     @Override
     public long getSize(JSFSPath path) {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         return file.length();
@@ -117,15 +139,30 @@ public class SharedFSFileSystem extends JSFSFileSystem {
 
     @Override
     public void delete(JSFSPath path) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         if(!file.delete()) {
+            LOG.error("Can not delete file : " + path.getPath());
             throw new IOException("Can not delete file : " + path.getPath());
         }
     }
 
     @Override
     public void rename(JSFSPath path, JSFSPath newpath) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        if(newpath == null) {
+            LOG.error("newpath is null");
+            throw new IllegalArgumentException("newpath is null");
+        }
+        
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         String realToPath = getLocalPath(newpath);
@@ -137,6 +174,11 @@ public class SharedFSFileSystem extends JSFSFileSystem {
 
     @Override
     public void mkdir(JSFSPath path) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         if(!file.mkdir()) {
@@ -146,6 +188,11 @@ public class SharedFSFileSystem extends JSFSFileSystem {
 
     @Override
     public InputStream getFileInputStream(JSFSPath path) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         return new SharedFSInputStream(this, file);
@@ -153,6 +200,11 @@ public class SharedFSFileSystem extends JSFSFileSystem {
 
     @Override
     public OutputStream getFileOutputStream(JSFSPath path) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         return new SharedFSOutputStream(this, file);
@@ -160,6 +212,11 @@ public class SharedFSFileSystem extends JSFSFileSystem {
     
     @Override
     public JSFSRandomAccess getRandomAccess(JSFSPath path) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         return new SharedFSRandomAccess(this, file, "rw");
@@ -167,6 +224,11 @@ public class SharedFSFileSystem extends JSFSFileSystem {
 
     @Override
     public String[] readDirectoryEntryNames(final JSFSPath path, final JSFSFilenameFilter filter) throws FileNotFoundException, IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         return file.list(new FilenameFilter() {
@@ -184,6 +246,11 @@ public class SharedFSFileSystem extends JSFSFileSystem {
 
     @Override
     public String[] readDirectoryEntryNames(final JSFSPath path, final JSFSPathFilter filter) throws FileNotFoundException, IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         return file.list(new FilenameFilter() {
@@ -201,14 +268,29 @@ public class SharedFSFileSystem extends JSFSFileSystem {
     }
 
     void notifyClosed(SharedFSInputStream inputStream) {
+        if(inputStream == null) {
+            LOG.error("inputStream is null");
+            throw new IllegalArgumentException("inputStream is null");
+        }
+        
         this.openInputStream.remove(inputStream);
     }
     
     void notifyClosed(SharedFSOutputStream outputStream) {
+        if(outputStream == null) {
+            LOG.error("outputStream is null");
+            throw new IllegalArgumentException("outputStream is null");
+        }
+        
         this.openOutputStream.remove(outputStream);
     }
     
     void notifyClosed(SharedFSRandomAccess raf) {
+        if(raf == null) {
+            LOG.error("RandomAccess is null");
+            throw new IllegalArgumentException("RandomAccess is null");
+        }
+        
         this.openRandomAccess.remove(raf);
     }
     
