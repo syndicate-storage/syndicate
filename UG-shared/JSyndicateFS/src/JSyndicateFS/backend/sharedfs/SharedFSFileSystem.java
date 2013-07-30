@@ -35,7 +35,15 @@ public class SharedFSFileSystem extends JSFSFileSystem {
     private ArrayList<SharedFSOutputStream> openOutputStream = new ArrayList<SharedFSOutputStream>();
     private ArrayList<SharedFSRandomAccess> openRandomAccess = new ArrayList<SharedFSRandomAccess>();
     
+    public SharedFSFileSystem(SharedFSConfiguration conf) {
+        initialize(conf);
+    }
+    
     public SharedFSFileSystem(JSFSConfiguration conf) {
+        initialize((SharedFSConfiguration)conf);
+    }
+    
+    private void initialize(SharedFSConfiguration conf) {
         LOG.info("Initialize FileSystem");
         
         if(conf == null) {
@@ -45,7 +53,7 @@ public class SharedFSFileSystem extends JSFSFileSystem {
         
         super.raiseOnBeforeCreateEvent(conf);
         
-        this.configuration = (SharedFSConfiguration)conf;
+        this.configuration = conf;
         this.mountPoint = this.configuration.getMountPoint();
         
         super.initialize(conf);
