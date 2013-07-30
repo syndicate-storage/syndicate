@@ -84,21 +84,26 @@ class Gateway( storagetypes.Object ):
    public_key = storagetypes.Text();
 
    session_password = storagetypes.Text()
-   session_expires = Integer(default=-1, indexed=False)     # -1 means "never expires"
+   session_expires = storagetypes.Integer(default=-1, indexed=False)     # -1 means "never expires"
    
    required_attrs = [
       "owner_id",
       "host",
       "port",
       "ms_username",
-      "ms_password",
-      "public_key"
+      "ms_password"
    ]
 
    validators = {
       "ms_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
       "session_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
       "ms_username": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-. ")) ) == 0 and not is_int(value) )
+   }
+
+   # TODO: session expires in 3600 seconds
+   default_values = {
+      "session_expires": (lambda cls, attrs: -1),
+      "session_password": (lambda cls, attrs: Gateway.generate_session_credentials())
    }
 
    key_attrs = [
@@ -156,8 +161,6 @@ class Gateway( storagetypes.Object ):
             self.session_expires = now + volume.session_timeout
          else:
             self.session_expires = -1
-            
-         self.put()
 
       return self.session_password
 
@@ -198,7 +201,7 @@ class UserGateway( Gateway ):
 
    default_values = dict( Gateway.default_values.items() + {
       "read_write": (lambda cls, attrs: False), # Default is only read
-      "port": (lambda cls, attrs:80)
+      "port": (lambda cls, attrs:32780)
    }.items() )
    
 
