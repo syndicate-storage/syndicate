@@ -28,7 +28,8 @@ size_t  datapath_len = 0;
 unsigned char* cache_path = NULL;
 
 //extern struct md_syndicate_conf *global_conf;
-
+// Reversion daemon
+ReversionDaemon* revd = NULL;
 
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, 
@@ -365,6 +366,8 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	errorf("Error: clock_gettime: %i\n", i); 
 	return -1;
     }
+
+
     ment->ctime_sec = rtime.tv_sec;
     ment->ctime_nsec = rtime.tv_nsec;
     ment->mtime_sec = rtime.tv_sec;
@@ -386,7 +389,7 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	    }
 	    break;
 	case MD_ENTRY_FILE:
-	    ment->size = (ssize_t)pow(2, 32);
+	    ment->size = -1;
 	    ment->type = MD_ENTRY_FILE;
 	    ment->mode &= FILE_PERMISSIONS_MASK;
 	    ment->mode |= S_IFREG;
@@ -409,6 +412,10 @@ void init(unsigned char* dsn) {
 	cache_path = (unsigned char*)malloc(dsn_len + 1);
 	memset(cache_path, 0, dsn_len + 1);
 	memcpy(cache_path, dsn, strlen((const char*)dsn));
+    }
+    if (revd == NULL) {
+	revd = new ReversionDaemon();
+	revd->run();
     }
 }
 

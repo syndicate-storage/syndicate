@@ -11,6 +11,7 @@
 #include <map-parser.h>
 #include <proc-handler.h>
 #include <gateway-ctx.h>
+#include <reversion-daemon.h>
 
 #include <sys/types.h>
 #include <unistd.h>
