@@ -9,13 +9,13 @@ import JSyndicateFS.JSFSFilenameFilter;
 import JSyndicateFS.JSFSPath;
 import JSyndicateFS.JSFSPathFilter;
 import JSyndicateFS.JSFSPendingExceptions;
+import JSyndicateFS.JSFSRandomAccess;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.RandomAccessFile;
 import java.util.ArrayList;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -33,7 +33,7 @@ public class SharedFSFileSystem extends JSFSFileSystem {
     
     private ArrayList<SharedFSInputStream> openInputStream = new ArrayList<SharedFSInputStream>();
     private ArrayList<SharedFSOutputStream> openOutputStream = new ArrayList<SharedFSOutputStream>();
-    private ArrayList<SharedFSRandomAccessFile> openRandomAccessFile = new ArrayList<SharedFSRandomAccessFile>();
+    private ArrayList<SharedFSRandomAccess> openRandomAccess = new ArrayList<SharedFSRandomAccess>();
     
     public SharedFSFileSystem(JSFSConfiguration conf) {
         LOG.info("Initialize FileSystem");
@@ -159,10 +159,10 @@ public class SharedFSFileSystem extends JSFSFileSystem {
     }
     
     @Override
-    public RandomAccessFile getRandomAccessFile(JSFSPath path) throws IOException {
+    public JSFSRandomAccess getRandomAccess(JSFSPath path) throws IOException {
         String realPath = getLocalPath(path);
         File file = new File(realPath);
-        return new SharedFSRandomAccessFile(this, file, "rw");
+        return new SharedFSRandomAccess(this, file, "rw");
     }
 
     @Override
@@ -208,8 +208,8 @@ public class SharedFSFileSystem extends JSFSFileSystem {
         this.openOutputStream.remove(outputStream);
     }
     
-    void notifyClosed(SharedFSRandomAccessFile raf) {
-        this.openRandomAccessFile.remove(raf);
+    void notifyClosed(SharedFSRandomAccess raf) {
+        this.openRandomAccess.remove(raf);
     }
     
     @Override
@@ -242,7 +242,7 @@ public class SharedFSFileSystem extends JSFSFileSystem {
             }
         }
         
-        for(SharedFSRandomAccessFile raf : openRandomAccessFile) {
+        for(SharedFSRandomAccess raf : openRandomAccess) {
             try {
                 raf.close();
             } catch (IOException ex) {

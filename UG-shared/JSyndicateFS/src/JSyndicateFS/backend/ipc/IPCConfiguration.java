@@ -21,6 +21,7 @@ public class IPCConfiguration extends JSFSConfiguration {
     
     public IPCConfiguration() {
         this.ipcPort = DEFAULT_IPC_PORT;
+        this.UGName = null;
     }
     
     public String getUGName() {
