@@ -154,7 +154,7 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
             }
         }
         
-        LOG.debug("Total # of splits: " + splits.size());
+        LOG.info("Total # of splits: " + splits.size());
         return splits;
     }
     
