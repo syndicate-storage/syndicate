@@ -119,7 +119,7 @@ class Volume( storagetypes.Object ):
       RSAkey = RSA.generate(VOLUME_RSA_KEYSIZE, rng)
 
       private_key_pem = RSAkey.exportKey()
-      public_key_pem = RSAkey.publicKey().exportKey()
+      public_key_pem = RSAkey.publickey().exportKey()
 
       return (public_key_pem, private_key_pem)
       
