@@ -7,6 +7,7 @@ source_files = """
     driver.cpp
     proc-handler.cpp
     ../common/map-parser.cpp
+    ../common/reversion-daemon.cpp
 """
 
 # add source file search paths here

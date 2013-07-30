@@ -3,7 +3,7 @@
     <Config>
 	<DSN>/tmp/xxx</DSN>
     </Config>
-    <Pair>
+    <Pair reval="10s 5m">
 	<File perm="740">/foo/bar</File>
 	<Query type="shell">/usr/bin/wget -q -O - http://www.google.com</Query>
     </Pair>

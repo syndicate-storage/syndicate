@@ -33,6 +33,7 @@ MapParserHandler::MapParserHandler(map<string, struct map_info>* xmlmap)
     unbounded_query = NULL;
     type = QUERY_TYPE_DEFAULT;
     current_id = 0;
+    reval_secs = 0;
 }
 
 void MapParserHandler::startElement(const   XMLCh* const    uri,
@@ -78,6 +79,10 @@ void MapParserHandler::startElement(const   XMLCh* const    uri,
 		type = QUERY_TYPE_UNBOUNDED_SQL;
 		XMLString::release(&type_str);
 	    }
+	}
+	if (!strncmp(attr, MAP_REVALIDATE_ATTR, strlen(MAP_REVALIDATE_ATTR))) {
+	    char* rt_str = XMLString::transcode(attrs.getValue(i));
+	    set_time(rt_str);
 	}
 	XMLString::release(&attr);
     }
@@ -146,6 +151,8 @@ void MapParserHandler::endElement (
 		free(shell_cmd);
 		shell_cmd = NULL;
 	    }
+	    mi.reval_sec = reval_secs;
+	    reval_secs = 0;
 	    mi.id = current_id;
 	    current_id++;
 	    (*xmlmap)[string(current_key)] =mi;
@@ -212,6 +219,53 @@ void MapParserHandler::fatalError(const SAXParseException& exception)
 unsigned char* MapParserHandler::get_dsn()
 {
     return dsn_str;
+}
+
+void MapParserHandler::set_time(char *tm_str) {
+    //Parse the string, any character can be in between different time units.
+    stringstream strstream;
+    int tm_str_len = strlen(tm_str);
+    int count = 0;
+    uint64_t secs = 0;
+    for (; count < tm_str_len; count++) {
+	if (tm_str[count] < 58 && tm_str[count] > 47) {
+	    strstream << tm_str[count];
+	}
+	else if (tm_str[count] == MAP_REVAL_WEEK) {
+	    string week_str = strstream.str();
+	    secs += (uint64_t)atol(week_str.c_str()) * WEEK_SECS;
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else if (tm_str[count] == MAP_REVAL_DAY) {
+	    string day_str = strstream.str();
+	    secs += (uint64_t)atol(day_str.c_str()) * DAY_SECS;
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else if (tm_str[count] == MAP_REVAL_HOUR) {
+	    string hour_str = strstream.str();
+	    secs += (uint64_t)atol(hour_str.c_str()) * HOUR_SECS;
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else if (tm_str[count] == MAP_REVAL_MIN) {
+	    string min_str = strstream.str();
+	    secs += (uint64_t)atol(min_str.c_str()) * MIN_SECS;
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else if (tm_str[count] == MAP_REVAL_SEC) {
+	    string sec_str = strstream.str();
+	    secs += (uint64_t)atol(sec_str.c_str());
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else {
+	    //Ignore...
+	}
+    }
+    reval_secs = secs;
 }
 
 MapParser::MapParser( char* mapfile)
