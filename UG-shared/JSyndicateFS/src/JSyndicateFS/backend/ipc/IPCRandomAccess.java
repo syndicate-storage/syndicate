@@ -4,87 +4,90 @@
 package JSyndicateFS.backend.ipc;
 
 import JSyndicateFS.JSFSRandomAccess;
-import java.io.File;
-import java.io.FileNotFoundException;
+import JSyndicateFS.backend.ipc.struct.IPCFileHandle;
 import java.io.IOException;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  *
  * @author iychoi
  */
 public class IPCRandomAccess implements JSFSRandomAccess {
+    
+    public static final Log LOG = LogFactory.getLog(IPCRandomAccess.class);
+    
     private IPCFileSystem filesystem;
+    private IPCFileHandle handle;
+    private long offset;
     
-    public IPCRandomAccess(IPCFileSystem fs, String name, String mode) throws FileNotFoundException {
+    public IPCRandomAccess(IPCFileSystem fs, IPCFileHandle handle) {
         this.filesystem = fs;
-    }
-    
-    public IPCRandomAccess(IPCFileSystem fs, File file, String mode) throws FileNotFoundException {
-        this.filesystem = fs;
+        this.handle = handle;
+        
+        this.offset = 0;
     }
     
     @Override
     public void close() throws IOException {
+        this.handle.close();
         this.filesystem.notifyClosed(this);
     }
 
     @Override
     public int read() throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        byte[] buffer = new byte[1];
+        int read = this.handle.readFileData(buffer, 1, 0, this.offset);
+        if(read != 1) {
+            LOG.error("Read failed");
+            throw new IOException("Read failed");
+        }
+        this.offset++;
+        return buffer[0];
     }
 
     @Override
     public int read(byte[] bytes) throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        int read = this.handle.readFileData(bytes, bytes.length, 0, this.offset);
+        this.offset += read;
+        return read;
     }
 
     @Override
     public int read(byte[] bytes, int off, int len) throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        int read = this.handle.readFileData(bytes, len, off, this.offset);
+        this.offset += read;
+        return read;
     }
 
     @Override
     public int skip(int n) throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        long size = this.handle.getStatus().getSize();
+        if(size > this.offset + n) {
+            this.offset += n;
+        } else {
+            n = (int) (size - this.offset);
+            this.offset += n;
+        }
+        return n;
     }
 
     @Override
     public long getFilePointer() throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        return this.offset;
     }
 
     @Override
     public long length() throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public void setLength(long l) throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public void write(int i) throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public void write(byte[] bytes) throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public void write(byte[] bytes, int i, int i1) throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-    }
-
-    @Override
-    public void flush() throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        return this.handle.getStatus().getSize();
     }
 
     @Override
     public void seek(long l) throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        if(l < 0) {
+            LOG.error("seek point can not be negative");
+            throw new IOException("seek point can not be negative");
+        }
+        this.offset = l;
     }
 }

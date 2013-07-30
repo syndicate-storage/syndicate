@@ -3,10 +3,11 @@
  */
 package JSyndicateFS.backend.ipc;
 
-import JSyndicateFS.JSFSPath;
-import java.io.FileNotFoundException;
+import JSyndicateFS.backend.ipc.struct.IPCFileHandle;
 import java.io.IOException;
 import java.io.OutputStream;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  *
@@ -14,41 +15,48 @@ import java.io.OutputStream;
  */
 public class IPCOutputStream extends OutputStream {
 
+    public static final Log LOG = LogFactory.getLog(IPCOutputStream.class);
+    
     private IPCFileSystem filesystem;
-    private String filename;
+    private IPCFileHandle handle;
+    private long offset;
     
-    public IPCOutputStream(IPCFileSystem fs, String name) throws FileNotFoundException {
+    public IPCOutputStream(IPCFileSystem fs, IPCFileHandle handle) {
         this.filesystem = fs;
-        this.filename = name;
-    }
-    
-    public IPCOutputStream(IPCFileSystem fs, JSFSPath path) throws FileNotFoundException {
-        this.filesystem = fs;
-        this.filename = path.getPath();
+        this.handle = handle;
+        
+        this.offset = 0;
     }
     
     @Override
     public void write(int i) throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        byte[] buffer = new byte[1];
+        buffer[0] = (byte)i;
+        
+        this.handle.writeFileData(buffer, 1, 0, this.offset);
+        this.offset++;
     }
     
     @Override
     public void write(byte[] bytes) throws IOException {
-        
+        this.handle.writeFileData(bytes, bytes.length, 0, this.offset);
+        this.offset += bytes.length;
     }
     
     @Override
-    public void write(byte[] bytes, int i, int i1) throws IOException {
-        
+    public void write(byte[] bytes, int offset, int len) throws IOException {
+        this.handle.writeFileData(bytes, len, offset, this.offset);
+        this.offset += len;
     }
     
     @Override
     public void flush() throws IOException {
-        
+        this.handle.flush();
     }
     
     @Override
     public void close() throws IOException {
+        this.handle.close();
         this.filesystem.notifyClosed(this);        
     }
 }
