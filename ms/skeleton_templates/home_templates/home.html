@@ -1,0 +1,50 @@
+{% extends "sidebar_base.html" %}
+
+{% block title %}Syndicate:Home{% endblock %}
+
+
+
+{% block sidebar %}
+    <ul class="bar">
+        <li><a href="{% url 'publicvolumes' %}">Public Volumes</a></li>
+        <li><a href="{% url 'ag_gateways' %}">Public Datasets</a></li>
+        <li><a href="{% url 'providers' %}">Storage Providers</a></li>
+        <!-- insert ruler image -->
+        <li><a href="{% url 'tutorial' %}">Tutorial</a></li>
+        <li><a href="{% url 'faq' %}">FAQ</a></li>
+        <li><a href="{% url 'about' %}">About Syndicate</a></li>
+    </ul>
+{% endblock sidebar %}
+
+
+
+
+
+{% block sidebar_main %}
+    <div class="sidebar_center_wrap">
+        <div class="nine columns">
+
+            <div id="header">
+                <div class="header_content">
+                    <span><h2>{% block header_title %}Home{% endblock %}</h2></span>
+                </div>
+            </div>
+            <hr>
+            <h3>Welcome to Syndicate!</h3>
+            <p>First time here?<a href="{% url 'tutorial' %}">We can help.</a></p>
+            <br>
+            <p>Your current volumes and more info about them will go here</p>
+            <br>
+            <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Donec a diam lectus. Sed sit amet ipsum mauris. Maecenas congue ligula ac quam viverra nec consectetur ante hendrerit. Donec et mollis dolor. Praesent et diam eget libero egestas mattis sit amet vitae augue. Nam tincidunt congue enim, ut porta lorem lacinia consectetur. Donec ut libero sed arcu vehicula ultricies a non tortor. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aenean ut gravida lorem. Ut turpis felis, pulvinar a semper sed, adipiscing id dolor. Pellentesque auctor nisi id magna consequat sagittis. Curabitur dapibus enim sit amet elit pharetra tincidunt feugiat nisl imperdiet. Ut convallis libero in urna ultrices accumsan. Donec sed odio eros. Donec viverra mi quis quam pulvinar at malesuada arcu rhoncus. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. In rutrum accumsan ultricies. Mauris vitae nisi at sem facilisis semper ac in est.</p>
+        </div>
+    </div>
+
+    <div id="sidebar_info_wrap">
+        <div class="two columns offset-by-one">
+            {% block info_main %}
+                <!-- Put syndicate updates here via include. -->    
+            {% endblock info_main %}
+        </div>
+    </div>
+
+{% endblock sidebar_main %}

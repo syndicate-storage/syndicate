@@ -36,5 +36,5 @@ libraries:
 - name: pycrypto
   version: latest
 - name: django
-  version: 1.4
+  version: 1.5
 

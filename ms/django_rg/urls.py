@@ -25,7 +25,7 @@ urlpatterns = patterns('django_rg.views',
                         'viewgateway'),                      
 
                        url(r'^allgateways/?$',
-                        'allgateways'),
+                        'allgateways', name='rg_gateways'),
 
                        url(r'^create/?$',
                         'create'),

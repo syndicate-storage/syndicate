@@ -43,7 +43,7 @@ def home(request):
 #   Uncomment this line to test security via @authenticate on any page
 #    session.clear()
 
-    t = loader.get_template('home.html')
+    t = loader.get_template('home_templates/home.html')
     c = Context({'username':username})
     return HttpResponse(t.render(c))
 
@@ -55,3 +55,23 @@ def logout(request):
     session = request.session
     session.terminate()
     return HttpResponseRedirect('/')
+
+
+
+@authenticate
+def providers(request):
+    return HttpResponseRedirect('/syn')
+
+@authenticate
+def tutorial(request):
+    return HttpResponseRedirect('/syn')
+
+@authenticate
+def faq(request):
+    return HttpResponseRedirect('/syn')
+
+@authenticate
+def about(request):
+    return HttpResponseRedirect('/syn')
+
+

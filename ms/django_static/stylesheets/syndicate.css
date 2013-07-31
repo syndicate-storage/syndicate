@@ -1,0 +1,59 @@
+/*
+* Syndicate
+* John Whelchel
+*
+* 7/31/2013
+*/
+
+
+/* body basics
+================================================== */
+    body                                        {background-color:ivory; font-color:"#000033";}
+
+/* #navbar
+================================================== */
+
+    div#navbar                                  
+    {width:100%; background-color:#000066;font-color: ivory;
+     position: fixed; top: 0; z-index: 999;}
+
+    ul#nav-list                                 {margin-left:20px;margin-right:20px;}
+    ul#nav-list li                              {display:inline;}
+    ul#nav-list a:link, a:active, a:visited     {text-decoration: none; color:ivory !important;}
+    #left-navbar                                {float: left;margin-top:8px;margin-bottom:8px;font-size:120%;} /*Makes logo text bigger */
+    #right-navbar                               {float: right;margin-top:8px;margin-bottom:8px;}
+    span#username                               {color:#f7f78a; font-size:70%; margin-left:10px;} /* Compensates for larger logo text */
+
+
+/* #header
+================================================== */
+
+    div#header                                  {float:left;width:100%;clear:both;}
+    div.header_content                          {vertical-align: middle;}
+
+
+/* #sidebar pages
+================================================== */
+
+    div#all_sidebar_wrap                        {margin-top: 70px;}
+    div#sidebar                                 
+    {margin-top: 20px;border: 2px #000066 solid;background-color:#f7f78a;
+        
+    -moz-box-shadow: 10px 10px 5px #888;
+    -webkit-box-shadow: 10px 10px 5px #888;
+    box-shadow: 10px 10px 5px #888;
+    } 
+    .bar li                                   {margin-left:5px;margin-top: 3px;}
+
+
+/* #footer
+================================================== */
+
+    div.footer                                  
+    {width:100%; background-color:#000066;font-color: ivory;
+     position: fixed; bottom: 0; z-index: 999;}
+
+    .center-wrapper                                {margin:auto;}
+    ul#footer-list                                 {margin:20px;}
+    ul#footer-list li                              {display:inline;}
+    ul#footer-list a:link, a:active, a:visited     {text-decoration: none; color:ivory !important;}

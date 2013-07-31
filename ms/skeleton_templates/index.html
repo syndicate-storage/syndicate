@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<!--[if lt IE 7 ]><html class="ie ie6" lang="en"> <![endif]-->
+<!--[if IE 7 ]><html class="ie ie7" lang="en"> <![endif]-->
+<!--[if IE 8 ]><html class="ie ie8" lang="en"> <![endif]-->
+<!--[if (gte IE 9)|!(IE)]><!--><html lang="en"> <!--<![endif]-->
+<head>
+
+    <!-- Basic Page Needs
+  ================================================== -->
+    <title>{% block title %}Syndicate{% endblock %}</title>
+    {% block meta %}
+    <meta charset="utf-8">
+    <meta name="description" content="">
+    <meta name="author" content="">
+
+    <!-- Mobile Specific Metas
+  ================================================== -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    {% endblock %}
+    <!-- CSS
+  ================================================== -->
+    {% load staticfiles %}
+    {% block css %}
+    <link rel="stylesheet" href="{% static 'stylesheets/base.css' %}">
+    <link rel="stylesheet" href="{% static 'stylesheets/skeleton.css' %}">
+    <link rel="stylesheet" href="{% static 'stylesheets/layout.css' %}">
+    <link rel="stylesheet" href="{% static 'stylesheets/syndicate.css' %}">
+    {% endblock %}
+    {% block extra_css %}
+    {% endblock %}
+    <!--[if lt IE 9]>
+        <script src="http://html5shim.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- Favicons
+    ================================================== -->
+    <link rel="shortcut icon" href="{% static 'images/favicon.ico' %}">
+    <link rel="apple-touch-icon" href="{% static 'images/apple-touch-icon.png' %}">
+    <link rel="apple-touch-icon" sizes="72x72" href="{% static 'images/apple-touch-icon-72x72.png' %}">
+    <link rel="apple-touch-icon" sizes="114x114" href="{% static 'images/apple-touch-icon-114x114.png' %}">
+
+</head>
+<body>
+
+    <div id="navbar">
+        {% block navbar %}
+            <ul id="nav-list">
+                <div id="left-navbar">
+                    <li><a href="{% url 'home' %}">Syndicate Admin</a><span id="username">{{username}}</span></li>
+                </div>
+                <div id="right-navbar">
+                    <!-- Make this a drop down VVVV -->
+                    <li><a href="{% url 'myvolumes' %}">My Volumes</a></li>
+                    <!-- Veritcal Ruler! <img src="{% static 'images/ruler.jpg' %}" width=2 height=50> -->
+                    <li><a href="{% url 'rg_gateways' %}">Gateways</a></li>
+                </div>
+            </ul>
+        {% endblock navbar %}
+    </div>
+
+    <div id="under-nav">
+    
+        <div id="mainbody">
+            {% block mainbody %}
+
+            {% endblock %}
+        </div>
+
+        <div id="footer">
+            {% block footer %}
+                <div class="center-wrapper">
+                    <ul id="footer-list">
+                        <li><a href="#">FAQ</a></li>
+                        <li><a href="#">About</a><span id="username">{{username}}</span></li>
+                        <li><a href="mailto:princeton.syndicate@gmail.com">Contact</a></li>
+                        <li><a href="https://www.planet-lab.org/">PlanetLab</a></li>
+                        <li><a href="https://www.vicci.org">Vicci</a>
+                    </ul>
+                </div>
+            {% endblock %}
+        </div>
+    </div>
+</body>
+</html>

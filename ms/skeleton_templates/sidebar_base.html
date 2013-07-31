@@ -1,0 +1,16 @@
+{% extends "index.html" %}
+
+{% block mainbody %}
+    <div id="all_sidebar_wrap" class="container">
+        <div id="sidebar" class="three columns">
+            {% block sidebar %}
+                
+            {% endblock sidebar %}
+        </div>
+        <div id="sidebar_main" class="twelve columns">
+            {% block sidebar_main %}
+                
+            {% endblock sidebar_main %}
+        </div>
+    </div>
+{% endblock mainbody %}

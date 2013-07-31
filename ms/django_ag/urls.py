@@ -23,7 +23,7 @@ urlpatterns = patterns('django_ag.views',
                         'viewgateway'),
 
                        url(r'^allgateways/?$',
-                        'allgateways'),
+                        'allgateways', name='ag_gateways'),
 
                        url(r'^create/?$',
                         'create'),

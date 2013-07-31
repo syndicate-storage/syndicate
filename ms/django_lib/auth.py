@@ -23,6 +23,7 @@ def authenticate(f):
     '''
     def wrapper(*args, **kw):
         session = args[0].session
+
         if 'authenticated' in session:
             user = db.read_user(session['login_email'])
             if user:

@@ -5,9 +5,9 @@ urlpatterns = patterns('django_volume.views',
 
                         url(r'^failure/?$', 'failure'),
 
-                        url(r'^allvolumes/?$', 'allvolumes'),
+                        url(r'^allvolumes/?$', 'allvolumes', name='publicvolumes'),
 
-                        url(r'^myvolumes/?$', 'myvolumes'),
+                        url(r'^myvolumes/?$', 'myvolumes', name='myvolumes'),
                         
                         url(r'^createvolume/?$', 'createvolume'),
                         

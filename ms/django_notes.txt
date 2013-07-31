@@ -6,6 +6,10 @@ This is the collection of files for the Syndicate front-end, using Django and we
 Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
+- Should have all can read/write field for Volume/UG
+- Add UG field to volume
+- I have a slice now. Let's make this happen.
+
 DONE ->
 - Fix transactions in volume.py.create and gateway.py.create[s]
 - Got rid of override forms
