@@ -67,30 +67,6 @@ public class SharedFSRandomAccess implements JSFSRandomAccess {
     }
 
     @Override
-    public void setLength(long l) throws IOException {
-        this.raf.setLength(l);
-    }
-
-    @Override
-    public void write(int i) throws IOException {
-        this.raf.write(i);
-    }
-
-    @Override
-    public void write(byte[] bytes) throws IOException {
-        this.raf.write(bytes);
-    }
-
-    @Override
-    public void write(byte[] bytes, int off, int len) throws IOException {
-        this.raf.write(bytes, off, len);
-    }
-
-    @Override
-    public void flush() throws IOException {
-    }
-
-    @Override
     public void seek(long l) throws IOException {
         this.raf.seek(l);
     }

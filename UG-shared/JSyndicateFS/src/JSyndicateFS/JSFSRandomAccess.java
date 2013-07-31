@@ -24,16 +24,6 @@ public interface JSFSRandomAccess extends Closeable {
     
     public long length() throws IOException;
     
-    public void setLength(long l) throws IOException;
-    
-    public void write(int i) throws IOException;
-    
-    public void write(byte[] bytes) throws IOException;
-    
-    public void write(byte[] bytes, int i, int i1) throws IOException;
-    
-    public void flush() throws IOException;
-    
     public void seek(long l) throws IOException;
     
     @Override

@@ -3,10 +3,11 @@
  */
 package JSyndicateFS.backend.ipc;
 
-import JSyndicateFS.JSFSPath;
-import java.io.FileNotFoundException;
+import JSyndicateFS.backend.ipc.struct.IPCFileHandle;
 import java.io.IOException;
 import java.io.InputStream;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  *
@@ -14,47 +15,101 @@ import java.io.InputStream;
  */
 public class IPCInputStream extends InputStream {
 
+    public static final Log LOG = LogFactory.getLog(IPCInputStream.class);
+    
     private IPCFileSystem filesystem;
-    private String filename;
+    private IPCFileHandle handle;
+    private long offset;
+    private boolean closed;
     
-    public IPCInputStream(IPCFileSystem fs, String name) throws FileNotFoundException {
+    public IPCInputStream(IPCFileSystem fs, IPCFileHandle handle) {
         this.filesystem = fs;
-        this.filename = name;
-    }
-    
-    public IPCInputStream(IPCFileSystem fs, JSFSPath path) throws FileNotFoundException {
-        this.filesystem = fs;
-        this.filename = path.getPath();
+        this.handle = handle;
+        
+        this.offset = 0;
+        this.closed = false;
     }
     
     @Override
     public int read() throws IOException {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        if(this.closed) {
+            LOG.error("InputStream is already closed");
+            throw new IOException("InputStream is already closed");
+        }
+        
+        byte[] buffer = new byte[1];
+        int read = this.handle.readFileData(buffer, 1, 0, this.offset);
+        if(read != 1) {
+            LOG.error("Read failed");
+            throw new IOException("Read failed");
+        }
+        this.offset++;
+        return buffer[0];
     }
     
     @Override
     public int read(byte[] bytes) throws IOException {
-        return 0;
+        if(this.closed) {
+            LOG.error("InputStream is already closed");
+            throw new IOException("InputStream is already closed");
+        }
+        
+        int read = this.handle.readFileData(bytes, bytes.length, 0, this.offset);
+        this.offset += read;
+        return read;
     }
     
     @Override
     public int read(byte[] bytes, int off, int len) throws IOException {
-        return 0;
+        if(this.closed) {
+            LOG.error("InputStream is already closed");
+            throw new IOException("InputStream is already closed");
+        }
+        
+        int read = this.handle.readFileData(bytes, len, off, this.offset);
+        this.offset += read;
+        return read;
     }
     
     @Override
     public long skip(long n) throws IOException {
-        return 0;
+        if(this.closed) {
+            LOG.error("InputStream is already closed");
+            throw new IOException("InputStream is already closed");
+        }
+        
+        long size = this.handle.getStatus().getSize();
+        if(size > this.offset + n) {
+            this.offset += n;
+        } else {
+            n = size - this.offset;
+            this.offset = size;
+        }
+        return n;
     }
     
     @Override
     public int available() throws IOException {
-        return 0;
+        if(this.closed) {
+            LOG.error("InputStream is already closed");
+            throw new IOException("InputStream is already closed");
+        }
+        
+        long size = this.handle.getStatus().getSize();
+        long diff = size - this.offset;
+        
+        if(diff > this.handle.getStatus().getBlockSize()) {
+            return (int) this.handle.getStatus().getBlockSize();
+        } else {
+            return (int) diff;
+        }
     }
     
     @Override
     public void close() throws IOException {
+        this.handle.close();
         this.filesystem.notifyClosed(this);
+        this.closed = true;
     }
     
     @Override
@@ -63,6 +118,10 @@ public class IPCInputStream extends InputStream {
     
     @Override
     public synchronized void reset() throws IOException {
+        if(this.closed) {
+            LOG.error("InputStream is already closed");
+            throw new IOException("InputStream is already closed");
+        }
     }
     
     @Override

@@ -8,7 +8,7 @@ int self_pipe[2];
 set<proc_table_entry*, proc_table_entry_comp> running_proc_set;
 map<pid_t, proc_table_entry*> pid_map;
 
-void sigchld_handler(int signum) {
+static void sigchld_handler(int signum) {
     pid_t pid = 0;
     while ((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
 	update_death(pid);

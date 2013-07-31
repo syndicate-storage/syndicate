@@ -24,6 +24,8 @@
 #include <map>
 #include <iostream>
 #include <string>
+#include <sstream>
+#include <algorithm>
 #include <string.h>
 #include <inttypes.h>
 #include <xercesc/sax2/DefaultHandler.hpp>
@@ -36,14 +38,15 @@
 using namespace std;
 using namespace xercesc;
 
-#define MAP_TAG		    "Map"
-#define PAIR_TAG	    "Pair"
-#define CONFIG_TAG	    "Config"
-#define DSN_TAG		    "DSN"
-#define KEY_TAG		    "File"
-#define VALUE_TAG	    "Query"
-#define PERM_ATTR	    "perm"
-#define QUERY_TYPE_ATTR     "type"
+#define MAP_TAG			    "Map"
+#define PAIR_TAG		    "Pair"
+#define CONFIG_TAG		    "Config"
+#define DSN_TAG			    "DSN"
+#define KEY_TAG			    "File"
+#define VALUE_TAG		    "Query"
+#define PERM_ATTR		    "perm"
+#define QUERY_TYPE_ATTR		    "type"
+#define MAP_REVALIDATE_ATTR	    "reval"
 
 #define	QUERY_TYPE_SHELL		    0
 #define	QUERY_TYPE_STR_SHELL		    "sell"
@@ -51,6 +54,17 @@ using namespace xercesc;
 #define	QUERY_TYPE_STR_BOUNDED_SQL	    "bounded-sql"
 #define QUERY_TYPE_UNBOUNDED_SQL	    2
 #define QUERY_TYPE_STR_UNBOUNDED_SQL	    "unbounded-sql"
+
+#define	MAP_REVAL_WEEK			    'w'
+#define	MAP_REVAL_DAY			    'd'
+#define MAP_REVAL_HOUR			    'h'
+#define	MAP_REVAL_MIN			    'm'
+#define	MAP_REVAL_SEC			    's'
+
+#define WEEK_SECS	604800
+#define DAY_SECS	86400
+#define HOUR_SECS	3600
+#define MIN_SECS	60
 
 #define QUERY_TYPE_DEFAULT	QUERY_TYPE_BOUNDED_SQL
 
@@ -64,6 +78,7 @@ struct map_info {
     };
     uint64_t id;
     uint16_t file_perm;
+    uint64_t reval_sec;
 };
 
 class MapParserHandler : public DefaultHandler {
@@ -75,13 +90,16 @@ class MapParserHandler : public DefaultHandler {
 	char* bounded_query;
 	char* unbounded_query;
 	char* shell_cmd;
+	uint64_t reval_secs;
 	int current_perm;
 	unsigned int type;
 	unsigned char* dsn_str;
 	bool open_dsn;
 	uint64_t current_id;
-
 	map<string, struct map_info>* xmlmap;
+
+	void set_time(char *tm_str);
+
     public:
 	MapParserHandler(map<string, struct map_info> *xmlmap);
 	void startElement(
@@ -108,6 +126,7 @@ class MapParser {
 	map<string, struct map_info> *FS2SQLMap;
 	char *mapfile;
 	unsigned char* dsn_str;
+	uint64_t reval_secs;
     public:
 	MapParser( char* mapfile );
 	map<string, struct map_info>* get_map( );
