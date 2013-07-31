@@ -82,11 +82,12 @@ message ms_gateway_blockinfo {
 
 // volume gateway credential set.  Lets gateways authenticate to the MS
 message ms_volume_gateway_cred {
-   required uint64 owner_id = 1;          // ID of gateway
-   required string name = 2;             // name of gateway
-   required string host = 3;              // hostname of this gateway
-   required int32 port = 4;               // port number of this gateway
-   required string public_key = 5;        // public key of this gateway
+   required uint64 owner_id = 1;          // ID of user that owns this gateway
+   required uint64 gateway_id = 2;        // ID of this gateway
+   required string name = 3;              // name of gateway
+   required string host = 4;              // hostname of this gateway
+   required int32 port = 5;               // port number of this gateway
+   required string public_key = 6;        // public key of this gateway
 }
 
 
@@ -103,22 +104,34 @@ message ms_volume_metadata {
    required string name = 9;
    required string description = 10;
    required string volume_public_key = 11;
-   required string signature = 12;              // Volume signature of this message (NOTE: it is self-signed)
+   required string signature = 12;              // base64-encoded Volume signature of this message (NOTE: it is self-signed)
    required string session_password = 13;       // temporary password the caller should use in the future to authenticate to the MS
 }
-
 
 // UGs
 message ms_volume_UGs {
    required uint64 ug_version = 1;
-   required string signature = 2;                  // Volume signature of this message
+   required string signature = 2;                  // base64-encoded Volume signature of this message
    repeated ms_volume_gateway_cred ug_creds = 3;  // session credentials for the other write-capable UGs in this Volume
 }
 
 // RGs
 message ms_volume_RGs {
    required uint64 rg_version = 1;
-   required string signature = 2;      // Volume signature of this message
+   required string signature = 2;      // base64-encoded Volume signature of this message
    repeated string rg_hosts = 3;
    repeated int32 rg_ports = 4;
 }
+
+// OpenID authentication response
+message ms_openid_provider_reply {
+   required string redirect_url = 1;
+   required string auth_handler = 2;
+   required string username_field = 3;
+   required string password_field = 4;
+   required string extra_args = 5;
+   required string challenge_method = 6;
+   required string response_method = 7;
+   required string redirect_method = 8;
+}
+

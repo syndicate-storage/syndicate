@@ -765,58 +765,86 @@ def test( ignore1, args ):
 
    user = None
    volume = None
+
+   logging.info("args = %s" % args)
    
    if args != None:
       if args.has_key('start') and args.has_key('end'):
          # change the range of UGs to create
          start_idx = int(args['start'])
          end_idx = min( int(args['end']), len(nodes) )
+         logging.info("start_idx = %s, end_idx = %s" % (start_idx, end_idx) )
+         
       if args.has_key('do_ugs'):
          # create UGs from start_idx to end_idx
          do_ugs = True
+         logging.info("do_ugs = True")
+         
       if args.has_key('do_rgs'):
          # create UGs from start_idx to end_idx
          do_rgs = True
+         logging.info("do_rgs = True")
+         
       if args.has_key('do_ags'):
          # create UGs from start_idx to end_idx
          do_ags = True
+         logging.info("do_ags = True")
+         
       if args.has_key('do_init'):
          # create all Gs and users
          do_init = True
+         logging.info("do_init = True")
+         
       if args.has_key('do_local_ug'):
          # only create a UG for localhost (good for local debugging on the dev_server)
          start_idx = len(nodes) - 1
          end_idx = len(nodes)
          do_ugs = True
+         logging.info("do_local_ug = True")
+         
       if args.has_key('do_local_rg'):
          # create an RG for localhost in MS records
          start_idx = len(nodes) - 1
          end_idx = len(nodes)
          do_rgs = True
+         logging.info("do_local_rg = True")
+         
       if args.has_key('do_local_ag'):
          start_idx = len(nodes) - 1
          end_idx = len(nodes)
          # create an AG for localhost in MS records
          do_ags = True
+         logging.info("do_local_ag = True")
 
       if args.has_key('reset_volume'):
          # delete all MSEntry records for a volume, and recreate the root.
          reset_volume = True
          reset_volume_name=args['reset_volume']
+         logging.info("reset_volume = True")
+         
       if args.has_key('username'):
          username = args['username']
+         logging.info("username = %s" % username)
+         
       if args.has_key('ug_name'):
          ug_name = args['ug_name']
+         logging.info("ug_name = %s" % ug_name)
+         
       if args.has_key('ug_action'):
          ug_action = args['ug_action']
+         logging.info("ug_action = %s" % ug_action )
+         
       if args.has_key('ug_host'):
          ug_host = args['ug_host']
+         logging.info("ug_host = %s" % ug_host )
+         
       if args.has_key('ug_port'):
          try:
             ug_port = int(args['ug_port'])
          except:
             return (500, "Invalid argument value for ug_port")
-            
+
+         logging.info("ug_port = %s" % ug_port)
 
    if reset_volume:
 

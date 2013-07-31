@@ -59,7 +59,7 @@ class VolumeIDCounter( storagetypes.Object ):
 
    @classmethod
    def next_value( cls ):
-      return storagetypes.transaction( lambda: VolumeIDCounter.__next_value() )
+      return VolumeIDCounter.__next_value()
       
    
 
@@ -172,8 +172,12 @@ class Volume( storagetypes.Object ):
       volume_metadata.UG_version = kwargs.get('UG_version', self.UG_version )
       volume_metadata.RG_version = kwargs.get('RG_version', self.RG_version )
       volume_metadata.session_timeout = kwargs.get( 'session_timeout', self.session_timeout )
-      volume_metadata.public_key = kwargs.get( 'public_key', self.public_key )
-      volume_metadata.session_password = caller_UG.get_current_session_credentials( self, kwargs.get('new_session', False) )
+      volume_metadata.volume_public_key = kwargs.get( 'public_key', self.public_key )
+      volume_metadata.session_password = caller_UG.get_current_session_credentials()
+
+      if volume_metadata.session_password == None:
+         raise Exception("Regenerate gateway session credentials and try again")
+      
       volume_metadata.signature = ""
 
       # serialize, then sign, then insert the signature
@@ -230,11 +234,15 @@ class Volume( storagetypes.Object ):
 
 
    def sign_message( self, data ):
+      """
+      Return the base64-encoded crypto signature of the data,
+      signed with our private key.
+      """
       key = RSA.importKey( self.private_key )
       h = SHA256.new( data )
       signer = PKCS1_v1_5.new(key)
       signature = signer.sign( h )
-      return signature
+      return base64.b64encode( signature )
       
       
    @classmethod
@@ -248,6 +256,51 @@ class Volume( storagetypes.Object ):
          blocksize: int
          description: str
       """
+
+      # Isolates the DB elements in a transactioned call
+      @storagetypes.transactional(xg=True)
+      def transactional_create(username, **kwargs):
+         # get the user
+         user = SyndicateUser.Read( username )
+         
+         # Set up volume ID # and Key
+         volume_id = VolumeIDCounter.next_value()
+         volume_key_name = Volume.make_key_name( volume_id=volume_id )
+         volume_key = storagetypes.make_key( Volume, volume_key_name )
+
+         # new volume
+         volume = Volume( name=kwargs['name'],
+                        key = volume_key,
+                        blocksize=kwargs['blocksize'],
+                        description=kwargs['description'],
+                        owner_id=user.owner_id,
+                        volume_id=volume_id,
+                        active=kwargs.get('active',False),
+                        version=1,
+                        UG_version=1,
+                        RG_version=1,
+                        private=kwargs['private'],
+                        rg_ids=kwargs['rg_ids'],
+                        ag_ids=kwargs['ag_ids'],
+                        volume_secret_salt = kwargs['volume_secret_salt'],
+                        volume_secret_salted_hash = kwargs['volume_secret_salted_hash'],
+                        public_key = kwargs['public_key'],
+                        private_key = kwargs['private_key']
+                        )
+         volume.put()
+
+         # add this Volume to this User
+         try:
+            SyndicateUser.add_volume_to_owner(volume_id, username)
+         except Exception, e:
+            logging.exception( "add Volume to SyndicateUser exception", e )
+
+            # Roll back
+            raise Exception( "System is under heavy load right now.  Please try again later." )
+
+         # Ok, return key   
+         return volume_key
+         
 
       kwargs['owner_id'] = 0     # will look up user and fill with owner ID once we validate input.
       Volume.fill_defaults( kwargs )
@@ -277,73 +330,15 @@ class Volume( storagetypes.Object ):
       invalid = Volume.validate_fields( kwargs )
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
-
-
-      name = kwargs.get( "name" )
-      blocksize = kwargs.get( "blocksize" )
-      description = kwargs.get( "description" )
-      private = kwargs.get("private")
       
-      existing_volumes = Volume.ListAll( {"Volume.name ==" : name} )
+      existing_volumes = Volume.ListAll( {"Volume.name ==" : kwargs['name']} )
       if len(existing_volumes) > 0:
          # volume already exists
-         raise Exception( "Volume '%s' already exists" % name )
+         raise Exception( "Volume '%s' already exists" % kwargs['name'] )
 
       else:
          # Volume did not exist at the time of the query.
-         # Optimistically create it, and then verify that it is the only Volume with that name.
-         # Roll back if someone else created a Volume of the same name.
-
-         # get the user
-         user = SyndicateUser.Read( username )
-         
-         volume_id = VolumeIDCounter.next_value()
-         
-         volume_key_name = Volume.make_key_name( volume_id=volume_id )
-         volume_key = storagetypes.make_key( Volume, volume_key_name )
-
-         # new volume
-         volume = Volume( name=name,
-                        key = volume_key,
-                        blocksize=blocksize,
-                        description=description,
-                        owner_id=user.owner_id,
-                        volume_id=volume_id,
-                        active=kwargs.get('active',False),
-                        version=1,
-                        UG_version=1,
-                        RG_version=1,
-                        private=private,
-                        rg_ids=kwargs['rg_ids'],
-                        ag_ids=kwargs['ag_ids'],
-                        volume_secret_salt = kwargs['volume_secret_salt'],
-                        volume_secret_salted_hash = kwargs['volume_secret_salted_hash'],
-                        public_key = kwargs['public_key'],
-                        private_key = kwargs['private_key']
-                        )
-
-         volume.put()
-         
-         # verify that no other volumes with this name exist
-         existing_volumes = Volume.ListAll( {"Volume.name ==" : name} )
-         if len(existing_volumes) > 1:
-            # roll back
-            volume.key.delete()
-            raise Exception ("Volume '%s' already exists" % name)
-
-
-         # add this Volume to this User
-         try:
-            storagetypes.transaction( lambda: SyndicateUser.add_volume_to_owner(volume_id, username), retries=10 )
-         except Exception, e:
-            logging.exception( "__try_add_volume_to_user exception", e )
-
-            # roll back
-            volume.key.delete()
-
-            raise Exception( "System is under heavy load right now.  Please try again later." )
-            
-         return volume_key
+         return transactional_create(username, **kwargs)
          
 
    @classmethod
@@ -394,6 +389,8 @@ class Volume( storagetypes.Object ):
       Update volume identified by name with fields specified as a dictionary.
       '''
       volume = Volume.Read(volume_id)
+      if not volume:
+         raise Exception("No volume with the ID %d exists.", volume_id)
       volume_key_name = Volume.make_key_name( volume_id=volume_id )
 
       storagetypes.memcache.delete(volume_key_name)

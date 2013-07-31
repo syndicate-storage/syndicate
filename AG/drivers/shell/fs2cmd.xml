@@ -8,8 +8,8 @@
 	<Query type="shell">/usr/bin/wget -q -O - http://www.google.com</Query>
     </Pair>
     <Pair>
-	<File perm="444">/xyz/efg</File>
-	<Query type="shell">COMMAND 2</Query>
+	<File perm="444">/foo/mlab</File>
+	<Query type="shell">/usr/bin/mlab-test</Query>
     </Pair>
     <Pair>
 	<File perm="540">/foo/xyz/bar1</File>

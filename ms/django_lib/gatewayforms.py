@@ -1,23 +1,29 @@
-from django import forms
+'''
 
-from django_lib import override_forms
-from django_lib.forms import  LONGEST_CHAR_FIELD, LONGEST_PASS_FIELD, LONGEST_JSON_FIELD
-from django_lib.override_forms import ReadOnlyWidget
+John Whelchel
+Summer 2013
+
+Forms used just for gateways (AG, RG, and UG).
+
+'''
+
+from django import forms
+from django_lib.forms import  LONGEST_CHAR_FIELD, LONGEST_PASS_FIELD, LONGEST_JSON_FIELD, ReadOnlyWidget
 
 LARGEST_PORT = 65535
 
-class ModifyGatewayConfig(override_forms.MyForm):
+class ModifyGatewayConfig(forms.Form):
   
   json_config = forms.FileField(required=False,
                                 label="Gateway Configuration"
                                 )
 
-class ChangeVolume(override_forms.MyForm):
+class ChangeVolume(forms.Form):
 
   volume_name = forms.CharField(label="New Volume name",
                                 max_length=LONGEST_CHAR_FIELD)
 
-class ModifyGatewayLocation(override_forms.MyForm):
+class ModifyGatewayLocation(forms.Form):
 
   host = forms.CharField(label="New Gateway host",
                            max_length = LONGEST_CHAR_FIELD)
@@ -26,7 +32,7 @@ class ModifyGatewayLocation(override_forms.MyForm):
                             max_value=LARGEST_PORT)
 
 
-class GatewayRemoveVolume(override_forms.MyForm):
+class GatewayRemoveVolume(forms.Form):
 
   volume_name = forms.CharField(label="Volume name",
                            widget=ReadOnlyWidget(),
@@ -36,12 +42,26 @@ class GatewayRemoveVolume(override_forms.MyForm):
   remove = forms.BooleanField(label="Remove",
                               required=False)
 
-class GatewayAddVolume(override_forms.MyForm):
+class GatewayAddVolume(forms.Form):
 
   volume_name = forms.CharField(label="Volume name",
                            max_length=LONGEST_CHAR_FIELD)
 
-class CreateGateway(override_forms.MyForm):
+
+class DeleteGateway(forms.Form):
+    
+    confirm_delete = forms.BooleanField(required=True,
+                                        label="Yes, I understand that this action is permament and my gateway will be gone.")
+
+    g_password = forms.CharField(label="Gateway password",
+                               max_length=LONGEST_PASS_FIELD,
+                               widget=forms.PasswordInput,
+                               help_text="You must also own this gateway to delete it.")
+
+
+
+
+class CreateGateway(forms.Form):
 
 	g_name = forms.CharField(label="Gateway name",
 							initial="My Gateway",
@@ -58,16 +78,6 @@ class CreateGateway(override_forms.MyForm):
 	port = forms.IntegerField(label="Port number",
 								max_value=LARGEST_PORT)
 
-class DeleteGateway(override_forms.MyForm):
-    
-    confirm_delete = forms.BooleanField(required=True,
-                                        label="Yes, I understand that this action is permament and my gateway will be gone.")
-
-    g_password = forms.CharField(label="Gateway password",
-                               max_length=LONGEST_PASS_FIELD,
-                               widget=forms.PasswordInput,
-                               help_text="You must also own this gateway to delete it.")
-
 class CreateUG(CreateGateway):
 
     volume_name = forms.CharField(label="Volume name (optional)",
@@ -77,7 +87,7 @@ class CreateUG(CreateGateway):
     read_write = forms.BooleanField(required=False,
                                     label="UG can write to other gateways.")
 
-# JSON config et al to come for these gateways.
+
 class CreateAG(CreateGateway):
     
     json_config = forms.FileField(required=False,

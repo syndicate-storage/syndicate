@@ -9,6 +9,7 @@ import storage.storagetypes as storagetypes
 
 import os
 import base64
+import urllib
 import uuid
 from Crypto.Hash import SHA256, SHA
 from Crypto.PublicKey import RSA
@@ -23,11 +24,14 @@ import time
 import datetime
 import random
 import logging
-
+import string
+import traceback
 
 USERNAME_LENGTH = 256
 PASSWORD_LENGTH = 256
-SESSION_PASSWORD_LENGTH = 64
+GATEWAY_SALT_LENGTH = 256
+SESSION_PASSWORD_LENGTH = 16
+GATEWAY_RSA_KEYSIZE = 4096
 
 class IDCounter( storagetypes.Object ):
    value = storagetypes.Integer()
@@ -53,7 +57,7 @@ class IDCounter( storagetypes.Object ):
 
    @classmethod
    def next_value(cls):
-      return storagetypes.transaction( lambda: cls.__next_value() )
+      return cls.__next_value()
 
 class AG_IDCounter( IDCounter ):
    gateway_type = "AG"
@@ -78,10 +82,11 @@ class Gateway( storagetypes.Object ):
    host = storagetypes.Text()
    port = storagetypes.Integer()
    ms_username = storagetypes.String()
-   ms_password_hash = storagetypes.String()
+   ms_password_hash = storagetypes.Text()
+   ms_password_salt = storagetypes.Text()
    g_id = storagetypes.Integer()
 
-   public_key = storagetypes.Text();
+   public_key = storagetypes.Text()    # PEM-encoded RSA public key
 
    session_password = storagetypes.Text()
    session_expires = storagetypes.Integer(default=-1, indexed=False)     # -1 means "never expires"
@@ -91,7 +96,7 @@ class Gateway( storagetypes.Object ):
       "host",
       "port",
       "ms_username",
-      "ms_password"
+      "ms_password",
    ]
 
    validators = {
@@ -110,11 +115,27 @@ class Gateway( storagetypes.Object ):
       "g_id"
    ]
 
+   @classmethod
+   def is_valid_pubkey( self, pubkey_str ):
+      try:
+         key = RSA.importKey( pubkey_str )
+      except Exception, e:
+         logging.error("RSA.importKey %s", traceback.format_exc() )
+         return False
+
+      # must be 4096 bits
+      if key.size() != GATEWAY_RSA_KEYSIZE - 1:
+         logging.error("invalid key size = %s" % key.size() )
+         return False
+
+      return True
+
    def authenticate( self, password ):
       """
       Verify that a password is correct
       """
       h = SHA256.new()
+      h.update( self.ms_password_salt )
       h.update( password )
       pw_hash = h.hexdigest()
 
@@ -127,6 +148,7 @@ class Gateway( storagetypes.Object ):
       """
       return self.session_password == password
 
+      
    def verify_signature( self, data, sig ):
       key = RSA.importKey( self.public_key )
       h = SHA256.new( data )
@@ -145,42 +167,63 @@ class Gateway( storagetypes.Object ):
 
 
    @classmethod
-   def generate_session_credentials( cls ):
-      password = os.urandom( SESSION_PASSWORD_LENGTH )
+   def generate_password( cls, length ):
+      password = "".join( [random.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") for i in xrange(length)] )
       return password
 
+
+   @classmethod
+   def generate_session_credentials( cls ):
+      return cls.generate_password( SESSION_PASSWORD_LENGTH )
       
-   def get_current_session_credentials( self, volume, new_session=False ):
+   def get_current_session_credentials( self ):
       """
-      Get the session credentials, regenerating if necessary
+      Get the session credentials, returning None if they are too old
       """
       now = int( time.time() )
-      if self.session_password == None or (now > self.session_expires and self.session_expires > 0) or new_session:
-         self.session_password = Gateway.generate_session_credentials()
-         if volume.session_timeout > 0:
-            self.session_expires = now + volume.session_timeout
-         else:
-            self.session_expires = -1
+      if self.session_password == None or (now > self.session_expires and self.session_expires > 0):
+         return None
 
       return self.session_password
 
+   def regenerate_session_credentials( self, volume ):
+      """
+      Regenerate a session password, given the Volume it's bound to.
+      """
+      self.session_password = Gateway.generate_session_credentials()
+      if volume.session_timeout > 0:
+         self.session_expires = now + volume.session_timeout
+      else:
+         self.session_expires = -1
+         
 
    @classmethod
    def generate_credentials( cls ):
       """
-      Generate (password, SHA256(password)) for this gateway
+      Generate (password, SHA256(password), salt) for this gateway
       """
-      password = os.urandom( PASSWORD_LENGTH )
+      password = cls.generate_password( PASSWORD_LENGTH )
       pw_hash = Gateway.generate_password_hash( password )
+      salt = "".join( [random.choice(string.printable) for i in xrange(GATEWAY_SALT_LENGTH)] )
 
-      return ( password, pw_hash)  
+      return ( password, pw_hash, salt )  
 
 
+   def load_pubkey( self, pubkey_str ):
+      # pubkey_str is base64 encoded
+      pubkey_str_unencoded = base64.b64decode( pubkey_str )
+      if not Gateway.is_valid_pubkey( pubkey_str_unencoded ):
+         return False
+
+      self.public_key = RSA.importKey( pubkey_str_unencoded ).exportKey()
+      return True
+      
    def protobuf_cred( self, cred_pb ):
       """
       Populate an ms_volume_gateway_cred structure
       """
       cred_pb.owner_id = self.owner_id
+      cred_pb.gateway_id = self.g_id
       cred_pb.name = self.ms_username
       cred_pb.host = self.host
       cred_pb.port = self.port
@@ -217,6 +260,8 @@ class UserGateway( Gateway ):
       """
 
       sig = ms_update.signature
+      sig_bin = base64.b64decode( sig )
+      
       ms_update.signature = ""
       ms_update_str = ms_update.SerializeToString()
 
@@ -259,42 +304,9 @@ class UserGateway( Gateway ):
          host                 str
          port                 int
       """
-
-      if volume:
-         kwargs['volume_id'] = volume.volume_id
-      else:
-         kwargs['volume_id'] = 0
-      kwargs['owner_id'] = user.owner_id
-
-      UserGateway.fill_defaults( kwargs )
-
-      if kwargs.get("ms_password") != None:
-         kwargs[ "ms_password_hash" ] = Gateway.generate_password_hash( kwargs.get("ms_password") )
-
-      if kwargs.get("ms_username") == None or kwargs.get("ms_password_hash") == None:
-         # generate new credentials
-         password, password_hash = UserGateway.generate_credentials()
-         kwargs["ms_username"] = base64.encodestring( uuid.uuid4().urn )
-         kwargs["ms_password"] = password
-         kwargs["ms_password_hash"] = password_hash
-
-      missing = UserGateway.find_missing_attrs( kwargs )
-      if len(missing) != 0:
-         raise Exception( "Missing attributes: %s" % (", ".join( missing )))
-
-      invalid = UserGateway.validate_fields( kwargs )
-      if len(invalid) != 0:
-         raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
-
-      kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")
-
-      existing_gateways = UserGateway.ListAll( {"UserGateway.ms_username ==" : kwargs['ms_username']} )
-      if len(existing_gateways) > 0:
-         # gateway already exists
-         raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
-
-      else:
-         # TODO: transaction -jcnelson
+      # Isolates the DB elements in a transactioned call
+      @storagetypes.transactional(xg=True)
+      def transactional_create(**kwargs):
          ug_id = UG_IDCounter.next_value()
          kwargs['g_id'] = ug_id
 
@@ -311,6 +323,43 @@ class UserGateway( Gateway ):
          return ug.put()
 
 
+      if volume:
+         kwargs['volume_id'] = volume.volume_id
+      else:
+         kwargs['volume_id'] = 0
+      kwargs['owner_id'] = user.owner_id
+
+      UserGateway.fill_defaults( kwargs )
+
+      if kwargs.get("ms_password") != None:
+         kwargs[ "ms_password_hash" ] = Gateway.generate_password_hash( kwargs.get("ms_password") )
+
+      if kwargs.get("ms_username") == None or kwargs.get("ms_password_hash") == None:
+         # generate new credentials
+         password, password_hash, password_salt = UserGateway.generate_credentials()
+         kwargs["ms_username"] = base64.encodestring( uuid.uuid4().urn )
+         kwargs["ms_password"] = password
+         kwargs["ms_password_hash"] = password_hash
+         kwargs["ms_password_salt"] = password_salt
+
+      missing = UserGateway.find_missing_attrs( kwargs )
+      if len(missing) != 0:
+         raise Exception( "Missing attributes: %s" % (", ".join( missing )))
+
+      invalid = UserGateway.validate_fields( kwargs )
+      if len(invalid) != 0:
+         raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
+
+      kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")
+
+      existing_gateways = UserGateway.ListAll( {"UserGateway.ms_username ==" : kwargs['ms_username']} )
+      if len(existing_gateways) > 0:
+         # gateway already exists
+         raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
+      else:
+         return transactional_create(**kwargs)
+
+
    @classmethod
    def Read( cls, g_id ):
       """
@@ -320,7 +369,7 @@ class UserGateway( Gateway ):
 
       ug = storagetypes.memcache.get( ug_key_name )
       if ug == None:
-         logging.info("UG with ID of {} not found in cache".format(g_id))
+         #logging.info("UG with ID of {} not found in cache".format(g_id))
          ug_key = storagetypes.make_key( UserGateway, UserGateway.make_key_name( g_id=g_id ) )
          ug = ug_key.get( use_memcache=False )
          if not ug:
@@ -328,6 +377,12 @@ class UserGateway( Gateway ):
          storagetypes.memcache.set( ug_key_name, ug )
       return ug
 
+   @classmethod
+   def FlushCache( cls, g_id ):
+      gateway_key_name = UserGateway.make_key_name( g_id=g_id )
+      storagetypes.memcache.delete(gateway_key_name)
+
+      
    @classmethod
    def Update( cls, g_id, **fields ):
       '''
@@ -413,6 +468,25 @@ class AcquisitionGateway( Gateway ):
          ms_password_hash     str
          json_config          JSON (dict)
       """
+      # Isolates the DB elements in a transactioned call
+      @storagetypes.transactional(xg=True)
+      def transactional_create(**kwargs):
+         ag_id = AG_IDCounter.next_value()
+         kwargs['g_id'] = ag_id
+
+         ag_key_name = AcquisitionGateway.make_key_name( g_id=ag_id ) 
+         ag_key = storagetypes.make_key( AcquisitionGateway, ag_key_name )
+         ag = ag_key.get()
+
+         if 'ms_password' in kwargs:
+            del kwargs['ms_password']
+         ag = AcquisitionGateway( key=ag_key, **kwargs )
+
+         # clear cached AG listings
+         storagetypes.memcache.delete(ag_key_name)
+         return ag.put()
+
+
 
       kwargs['owner_id'] = user.owner_id
 
@@ -445,21 +519,7 @@ class AcquisitionGateway( Gateway ):
          # gateway already exists
          raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
       else:
-         ag_id = AG_IDCounter.next_value()
-         kwargs['g_id'] = ag_id
-
-         ag_key_name = AcquisitionGateway.make_key_name( g_id=ag_id ) 
-         ag_key = storagetypes.make_key( AcquisitionGateway, ag_key_name )
-         ag = ag_key.get()
-
-         if 'ms_password' in kwargs:
-            del kwargs['ms_password']
-         ag = AcquisitionGateway( key=ag_key, **kwargs )
-
-         # clear cached AG listings
-         storagetypes.memcache.delete(ag_key_name)
-
-         return ag.put()
+         return transactional_create(**kwargs)
 
 
    @classmethod
@@ -565,6 +625,23 @@ class ReplicaGateway( Gateway ):
          json_config          JSON (dict)
          private              bool
       """
+      # Isolates the DB elements in a transactioned call
+      @storagetypes.transactional(xg=True)
+      def transactional_create(**kwargs):
+         rg_id = RG_IDCounter.next_value()
+         kwargs['g_id'] = rg_id
+
+         rg_key_name = ReplicaGateway.make_key_name( g_id=rg_id ) 
+         rg_key = storagetypes.make_key( ReplicaGateway, rg_key_name )
+         rg = rg_key.get()
+         if 'ms_password' in kwargs:
+            del kwargs['ms_password']
+         rg = ReplicaGateway( key=rg_key, **kwargs )
+
+         # clear cached RG listings
+         storagetypes.memcache.delete(rg_key_name)
+         
+         return rg.put()
 
       kwargs['owner_id'] = user.owner_id
 
@@ -597,22 +674,7 @@ class ReplicaGateway( Gateway ):
          # gateway already exists
          raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
       else:
-
-         rg_id = RG_IDCounter.next_value()
-         kwargs['g_id'] = rg_id
-
-         rg_key_name = ReplicaGateway.make_key_name( g_id=rg_id ) 
-         rg_key = storagetypes.make_key( ReplicaGateway, rg_key_name )
-         rg = rg_key.get()
-         if 'ms_password' in kwargs:
-            del kwargs['ms_password']
-         rg = ReplicaGateway( key=rg_key, **kwargs )
-
-         # clear cached RG listings
-         storagetypes.memcache.delete(rg_key_name)
-
-         return rg.put()
-
+         return transactional_create(**kwargs)
 
    @classmethod
    def Read( cls, g_id ):

@@ -1,7 +1,5 @@
-from django_lib import override_forms
-from django_lib.forms import LONGEST_CHAR_FIELD, LONGEST_PASS_FIELD, LONGEST_DESC
+from django_lib.forms import LONGEST_CHAR_FIELD, LONGEST_PASS_FIELD, LONGEST_DESC, ReadOnlyWidget
 from django import forms
-from django_lib.override_forms import ReadOnlyWidget
 
 BLOCKSIZE_MULTIPLIER = 1024 # Kilobytes
 
@@ -16,7 +14,7 @@ BLOCKSIZE_CHOICES = (
     (1024*BLOCKSIZE_MULTIPLIER,"1 MB"),
 )
 
-class CreateVolume(override_forms.MyForm):
+class CreateVolume(forms.Form):
  
     name = forms.CharField(label="Volume name",
                            initial="My Volume",
@@ -42,7 +40,7 @@ class CreateVolume(override_forms.MyForm):
                                widget=forms.PasswordInput)
 
 
-class ChangeVolumeD(override_forms.MyForm):
+class ChangeVolumeD(forms.Form):
 
     description = forms.CharField(widget=forms.Textarea,
                                   required=False,
@@ -52,7 +50,7 @@ class ChangeVolumeD(override_forms.MyForm):
                                   help_text=str(LONGEST_DESC) + " characters maximum")
 
 
-class DeleteVolume(override_forms.MyForm):
+class DeleteVolume(forms.Form):
     
     confirm_delete = forms.BooleanField(required=True,
                                         label="Yes, I understand that this action is permament and my files will be lost.")
@@ -61,7 +59,7 @@ class DeleteVolume(override_forms.MyForm):
                                max_length=LONGEST_PASS_FIELD,
                                widget=forms.PasswordInput)
 
-class Gateway(override_forms.MyForm):
+class Gateway(forms.Form):
 
     g_name = forms.CharField(label="Gateway name",
                              widget=ReadOnlyWidget(),
@@ -72,7 +70,7 @@ class Gateway(override_forms.MyForm):
                                 required=False)
         
 
-class Permissions(override_forms.MyForm):
+class Permissions(forms.Form):
     
     user = forms.EmailField(label="User email",
                             widget=ReadOnlyWidget(),
@@ -85,7 +83,7 @@ class Permissions(override_forms.MyForm):
                               required=False)
 
 
-class AddPermissions(override_forms.MyForm):
+class AddPermissions(forms.Form):
     
     user = forms.EmailField(label="User email")
 

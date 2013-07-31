@@ -7,46 +7,34 @@ Author: John Whelchel
 Date: 5/28/13 - 7/1/13
 
 DONE ->
+- Fix transactions in volume.py.create and gateway.py.create[s]
+- Got rid of override forms
+- Got rid of 'settings' and 'downloads'
+- Commented django_home/, django_lib/, django_syndicate_web/, django_ug/, django_volume
+- Created a 'failure' view for volumes when the volume is private and the user trying to access
+  it doesn't own it (or if the volume) doesn't exist, which hides the URL's better.
 
 Current task TD -> 
 
-Enabled UG and RG version on Volumes
-
-ON HOLD (1st after finsiehd with TD)
-
-
 Tomorrow
 
-- Comment django_home, django_lib, django_ug, django_volume
-
-- Transactionify create in gateway.py for all 3 gateways, as well as for Volume!
-
-- Is override forms even necessary?
+- Transaction on volume.views.create for creating Root dir?
+    + Is there ever a situation where creating a volume doesn't involve creating a root dir? Can I add that to volume.py create?
 
 - Ask Jude: do we want name restrictions on G's to match those on Volumes (i.e. Unicode allowed or not? Currently NOT allowed).
     + what about for passwords?
 
 - read through others code.
-    + Look at code Jude removed to eliminate exec() how did he do it?
-
 
 Long term
 - Admin site layout consistency for tables. Make sure they scale well with weird text (large names, descrips, configs etc)
 - Mabye make tests?!
-- Are the places where I'm using list-slicing to make deep copies ineffecient?
 
-To-do:
-
-- Ask Jude about key_listing methond in Gateway...
-- Use Kib?
+To-do (future):
 - what's with the security issue (live) on firefox?
-- How should 'active' behave? I.e. can you delete an active volume?
 - maybe upgrade django to 1.5 (?)
-
 - Javascript pagination for all/myvolumes.
-
--Secret key for gae_sessions django?
-
+- Secret key for gae_sessions django?
 
 Notes:
 

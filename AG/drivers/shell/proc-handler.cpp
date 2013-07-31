@@ -6,6 +6,47 @@
 //Self pipe to singla inotify_even_receiver's select() to retrun immediately...
 int self_pipe[2];
 set<proc_table_entry*, proc_table_entry_comp> running_proc_set;
+map<pid_t, proc_table_entry*> pid_map;
+
+void sigchld_handler(int signum) {
+    pid_t pid = 0;
+    while ((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
+	update_death(pid);
+    }
+}
+
+int  set_sigchld_handler() {
+    struct sigaction action;
+    int err = 0;
+
+    memset (&action, 0, sizeof(struct sigaction));
+    action.sa_handler = sigchld_handler;
+
+    if ((err = sigaction(SIGCHLD, &action, 0)) < 0) {
+	perror ("sigaction");
+	return err;
+    }
+
+    return err;
+}
+
+void update_death(pid_t pid) {
+    map<pid_t, proc_table_entry*>::iterator it;
+    it = pid_map.find(pid);
+    proc_table_entry *pte = NULL;
+    if (it != pid_map.end()) {
+	pte = it->second;
+	pte->is_read_complete = true;
+	set<proc_table_entry*, proc_table_entry_comp>::iterator sit;
+	sit = running_proc_set.find(pte);
+	if (sit != running_proc_set.end()) {
+	    running_proc_set.erase(sit);
+	}
+	pid_map.erase(it);
+    }
+    else 
+	return;
+}
 
 void* inotify_event_receiver(void *cls) {
     //Initialize and start process monitoring thread using inotify...
@@ -14,6 +55,7 @@ void* inotify_event_receiver(void *cls) {
 	return NULL;
     //Select...
     fd_set read_fds;
+    set_sigchld_handler();
     int max_fd = (ifd > self_pipe[0])?ifd:self_pipe[0];
     while(true) {
 	FD_ZERO(&read_fds);
@@ -29,10 +71,24 @@ void* inotify_event_receiver(void *cls) {
 	    if ((read(self_pipe[0], &pte_addr, sizeof(ulong)) > 0) && 
 		    (pte_addr != 0)) {
 		proc_table_entry *pte = (proc_table_entry*)(pte_addr);
-		int wd = inotify_add_watch(ifd, pte->block_file, IN_MODIFY | IN_ATTRIB | IN_ACCESS);
+		int wd = inotify_add_watch(ifd, pte->block_file, 
+				IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE);
 		if (wd > 0) {
 		    pte->block_file_wd = wd;
 		    running_proc_set.insert(pte);
+		    pid_map[pte->proc_id] = pte;
+		    /*if (!ProcHandler::is_proc_alive(pte->proc_id)) {
+			struct stat buf;
+			if (stat(pte->block_file, &buf) < 0) {
+			    perror("stat");
+			}
+			else {
+			    //Update pte.
+			    pte->current_max_block = buf.st_size/BLK_SIZE; 
+			    pte->block_byte_offset = buf.st_size - pte->current_max_block * BLK_SIZE;
+			    pte->is_read_complete = true;
+			}
+		    }*/
 		}
 		else {
 		    perror("inotify_add_watch");
@@ -73,16 +129,14 @@ void* inotify_event_receiver(void *cls) {
 		    pte->current_max_block = stat_buff.st_size/BLK_SIZE;
 		    pte->block_byte_offset = stat_buff.st_size - 
 				    (pte->current_max_block * BLK_SIZE);
-		    if (!ProcHandler::is_proc_alive(pte->proc_id)) {
+		    /*if (!ProcHandler::is_proc_alive(pte->proc_id)) {
 			pte->is_read_complete = true;
 			if (inotify_rm_watch(ifd, ievent->wd) < 0)
 			    perror("inotify_rm_watch");
 			running_proc_set.erase(itr);
 			break;
-		    }
+		    }*/
 		    byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
-		    //cout<<">> max block: "<<pte->current_max_block<<endl;
-		    //cout<<">> byte offset: "<<pte->block_byte_offset<<endl;
 		}
 		else {
 		    //File not found in set, remove warch
@@ -91,6 +145,7 @@ void* inotify_event_receiver(void *cls) {
 		    break;
 		}
 	    }
+
 	}
     }
     perror("select");
@@ -111,9 +166,8 @@ ProcHandler::ProcHandler()
 
 ProcHandler::ProcHandler(char *cache_dir_str) 
 {
-    //running_proc_set = new 
-	//set<proc_table_entry*, proc_table_entry_comp>();
     cache_dir_path = cache_dir_str;
+    set_sigchld_handler();
     proc_table.resize(DEFAULT_INIT_PROC_TBL_LEN);
     if (pipe(self_pipe) < 0) 
 	perror("pipe");
@@ -146,11 +200,10 @@ int ProcHandler::execute_command(const char* proc_name, char *argv[], char *envp
     free(file_name);
     int old_fd = dup(STDOUT_FILENO);
 
-    //cout<<"file://"<<file_path<<endl;
     int blk_log_fd = open(file_path, O_CREAT | O_RDWR, 
 	    S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH); 
     if (blk_log_fd < 0) {
-	cout<<"Cannot open the file: "<<file_path<<endl;
+	cerr<<"Cannot open the file: "<<file_path<<endl;
 	return -EIO;
     }
 
@@ -177,6 +230,7 @@ int ProcHandler::execute_command(const char* proc_name, char *argv[], char *envp
 	pte->block_file_wd = -1;
 	pte->current_max_block = 0;
 	pte->proc_id = pid;
+	pte->is_read_complete = false;
 	proc_table[id] = pte;
 	ulong pte_addr = (ulong)pte;
 	if (write(self_pipe[1], &pte_addr, sizeof(ulong)) < 0) {
@@ -234,9 +288,9 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	    perror("lseek");
 	    return -EIO;
 	}
-	uint bk_off_count = 0, bk_off = 0;;
+	uint bk_off_count = 0, bk_off = 0;
 	while ((len = read(fd, buffer, read_size)) == 0 &&
-		bk_off <= MAX_BACK_OFF_TIME) {
+		bk_off <= MAX_BACK_OFF_TIME && read_size != 0) {
 	    bk_off = pow(2, bk_off_count);
 	    sleep(bk_off);
 	    bk_off_count++;
@@ -250,7 +304,7 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	if (ctx->data_offset >= block_size)
 	    return 0;
 	//get proc_table_entry by id and return the block... 
-	proc_table_entry *pte = proc_table[ctx->id];
+	//proc_table_entry *pte = proc_table[ctx->id];
 	if (pte->current_max_block >= ctx->block_id) {
 	    off_t current_offset = (ctx->block_id * block_size) + 
 			    ctx->data_offset;
@@ -349,7 +403,7 @@ block_status ProcHandler::get_block_status(struct gateway_ctx *ctx)
 	blk_stat.no_file = true;
     }
     else if (pte == NULL && ctx->file_path != NULL) {
-	blk_stat.block_available = true;
+	blk_stat.in_progress = true;
     }
     else {
 	if (ctx->block_id > pte->current_max_block) {

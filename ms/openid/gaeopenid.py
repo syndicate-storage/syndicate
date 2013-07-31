@@ -11,6 +11,7 @@ import logging
 import cgi
 import urlparse
 import sys, os
+import errno
 
 import traceback 
 
@@ -28,18 +29,150 @@ from openid.extensions import pape, sreg
 
 import gaesession
 
-if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
-    TRUST_ROOT_HOST = "localhost:8080"
-else:
-    TRUST_ROOT_HOST = "syndicate-metadata.appspot.com"
-HOST_URL = "http://" + TRUST_ROOT_HOST
 
-OPENID_PROVIDER_NAME = "VICCI"
-
-OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
-
-class OpenIDRequestHandler(webapp2.RequestHandler):
+class GAEOpenIDRequestHandler(webapp2.RequestHandler):
     """Request handler that knows how to verify an OpenID identity."""
+
+    TITLE = "OpenID"
+    USE_SREG = "use_sreg"
+    USE_PAPE = "use_pape"
+    IMMEDIATE_MODE = "immediate"
+    USE_STATELESS = "use_stateless"
+
+    if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
+      TRUST_ROOT_HOST = "localhost:8080"
+      HOST_URL = "http://" + TRUST_ROOT_HOST
+    else:
+      TRUST_ROOT_HOST = "syndicate-metadata.appspot.com"
+      HOST_URL = "https://" + TRUST_ROOT_HOST
+
+    OPENID_PROVIDER_NAME = "VICCI"
+
+    OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
+
+    OPENID_PROVIDER_AUTH_HANDLER = "https://www.vicci.org/id-allow"
+
+
+    def render_redirect( self, request, trust_root, return_to, immediate ):
+       """
+       Redirect response.
+       """
+       self.response.write(request.htmlMarkup(
+                              trust_root, return_to,
+                              form_tag_attrs={'id':'openid_message'},
+                              immediate=immediate)
+                           )
+
+       return
+
+
+    def render_success( self, info, sreg_resp=None, pape_resp=None ):
+      """
+      Render successful authentication
+      """
+      css_class = 'alert'
+      display_identifier = info.getDisplayIdentifier()
+      
+      fmt = "Successfully verified %s as identity."
+      message = fmt % (cgi.escape(display_identifier),)
+
+      if info.endpoint.canonicalID:
+            # You should authorize i-name users by their canonicalID,
+            # rather than their more human-friendly identifiers.  That
+            # way their account with you is not compromised if their
+            # i-name registration expires and is bought by someone else.
+            message += ("  This is an i-name, and its persistent ID is %s"
+                        % (cgi.escape(info.endpoint.canonicalID),))
+
+
+      self.render(message, css_class, display_identifier,
+                  sreg_data=sreg_resp, pape_data=pape_resp)
+
+      return
+
+
+    def render_failure( self, info, sreg_resp=None, pape_resp=None ):
+      """
+      Render failed authentication.
+      """
+      display_identifier = info.getDisplayIdentifier()
+
+      css_class = 'error'
+      message = None
+
+      if display_identifier:
+         fmt = "Verification of %s failed: %s"
+         message = fmt % (cgi.escape(display_identifier),
+                           info.message)
+
+      else:
+         message = "Verification failed"
+         display_identifier = ""
+         
+      logging.error( message )
+
+      self.render(message, css_class, display_identifier,
+                  sreg_data=sreg_resp, pape_data=pape_resp)
+
+      return
+
+
+    def render_error( self, info, sreg_resp=None, pape_resp=None ):
+      """
+      Render general error message.
+      """
+      
+      display_identifier = info.getDisplayIdentifier()
+      message = "Verification failed"
+
+      logging.error(message)
+
+      self.render(message, "error", display_identifier,
+            sreg_data=sreg_resp, pape_data=pape_resp)
+
+      return
+
+
+
+    def render_cancel( self, info, sreg_resp=None, pape_resp=None ):
+      """
+      Render cancelled authentication
+      """
+
+      display_identifier = info.getDisplayIdentifier()
+      message = "Verification canceled"
+
+      logging.error(message)
+      
+      self.render(message, "error", display_identifier,
+            sreg_data=sreg_resp, pape_data=pape_resp)
+
+      return
+
+
+    def render_setup_needed( self, info, sreg_resp=None, pape_resp=None ):
+      """
+      Render 'setup-needed' message.
+      """
+      css_class = 'error'
+      message = None
+      display_identifier = info.getDisplayIdentifier()
+      
+      if info.setup_url:
+            message = '<a href=%s>Setup needed</a>' % (quoteattr(info.setup_url),)
+      else:
+            # This means auth didn't succeed, but you're welcome to try
+            # non-immediate mode.
+            message = 'Setup needed'
+
+      logging.error(message)
+
+      self.render(message, "error", display_identifier,
+            sreg_data=sreg_resp, pape_data=pape_resp)
+
+      return
+
+
 
     def getConsumer(self, stateless=False):
         if stateless:
@@ -52,23 +185,51 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
     def getSession(self):
         """Return the existing session or a new session"""
         session = gaesession.get_current_session()
+            
         if not session.has_key( 'id' ):
-           # new session
-           sid = randomString(16, '0123456789abcdef')
-           session['id'] = sid
+           # load from datastore 
+           session = gaesession.Session( cookie_key = gaesession.SESSION_COOKIE_KEY )
+
+           if not session.has_key( 'id' ):
+               # new session
+               sid = randomString(16, '0123456789abcdef')
+               session['id'] = sid
         
         return session
 
         
-    def setSessionCookie(self):
-        sid = self.getSession()['id']
+    def setSessionCookie(self, session):
+        cookie_headers = session.make_cookie_headers()
+        for ch in cookie_headers:
+           self.response.headers.add( "Set-Cookie", ch )
+        
+        """
+        sid = session['id']
         session_cookie = '%s=%s;' % (gaesession.SESSION_COOKIE_KEY, sid)
         self.response.headers['Set-Cookie'] = session_cookie
+        """
 
 
     def setRedirect(self, url):
         self.response.status = 302
         self.response.headers['Location'] = url
+
+    def load_query( self ):
+       if not hasattr(self, "query"):
+          self.query = {}
+          if self.request.method == "GET":
+            self.parsed_uri = urlparse.urlparse(self.request.path_qs)
+            for k, v in cgi.parse_qsl(self.parsed_uri[4]):
+               self.query[k] = v.decode('utf-8')
+               
+          elif self.request.method == "POST":
+            post_data = self.request.body
+            for k, v in cgi.parse_qsl(post_data):
+                self.query[k] = v
+
+
+       logging.info("query = %s" % str(self.query) )
+       
         
     def get(self):
         """Dispatching logic. There are two paths defined:
@@ -85,16 +246,8 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
         written to the requesting browser.
         """
         try:
-            self.parsed_uri = urlparse.urlparse(self.request.path_qs)
-            self.query = {}
-            for k, v in cgi.parse_qsl(self.parsed_uri[4]):
-                self.query[k] = v.decode('utf-8')
-
-            session = self.getSession()
-            if 'authenticated' in session:
-                self.setRedirect('/syn/')
-                return
-
+            self.load_query()
+            
             path = self.parsed_uri[2]
             if path == '/':
                self.render()
@@ -111,84 +264,166 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
             logging.info("exception: %s" % traceback.format_exc() )
             self.response.status = 500
             self.response.headers['Content-type'] = 'text/plain'
-            self.setSessionCookie()
+            self.setSessionCookie( self.getSession() )
             self.response.write("Internal Server Error")
             logging.exception(e)
             
 
+    def begin_openid_auth( self ):
+      
+      """
+      Begin OpenID authentication.
+      Return:
+         request on success
+         throw consumer.DiscoveryFailure on discovery error
+         (None, -EINVAL) for no openid identifier
+         (None, -ENOTCONN) for no services
+      """
+
+      self.load_query()
+
+      # First, make sure that the user entered something
+      openid_url = urlparse.urljoin( self.OPENID_PROVIDER_URL, self.query.get('openid_username') )
+      if not openid_url:
+         logging.error("No OpenID URL given")
+         return (None, -errno.EINVAL)
+         
+      use_sreg = self.USE_SREG in self.query
+      use_pape = self.USE_PAPE in self.query
+      use_stateless = self.USE_STATELESS in self.query
+
+      oidconsumer = self.getConsumer(stateless = use_stateless)
+      try:
+         request = oidconsumer.begin(openid_url)
+      except consumer.DiscoveryFailure, exc:
+         logging.error("Error in discovery on %s: %s" % (cgi.escape(openid_url), cgi.escape(str(exc[0]))) )
+         raise exc
+
+      else:
+         if request is None:
+            logging.error("Error in discovery on %s: %s" % (cgi.escape(openid_url), cgi.escape(str(exc[0]))) )
+            return (None, -errno.ENOTCONN)
+            
+         else:
+            # Then, ask the library to begin the authorization.
+            # Here we find out the identity server that will verify the
+            # user's identity, and get a token that allows us to
+            # communicate securely with the identity server.
+            if use_sreg:
+               self.requestRegistrationData(request)
+
+            if use_pape:
+               self.requestPAPEDetails(request)
+
+            return (request, 0)
+            
+            
     def doVerify(self):
-        """Initating OpenID verification.
         """
-
-        # First, make sure that the user entered something
-        openid_url = urlparse.urljoin( OPENID_PROVIDER_URL, self.query.get('openid_username') )
-        if not openid_url:
-            self.render('Enter your OpenID Identifier',
-                        css_class='error', form_contents=openid_url)
-            return
-        session = self.getSession()
-        session['login_email'] = self.query.get('openid_username')
-        immediate = 'immediate' in self.query
-        use_sreg = 'use_sreg' in self.query
-        use_pape = 'use_pape' in self.query
-        use_stateless = 'use_stateless' in self.query
-
-        oidconsumer = self.getConsumer(stateless = use_stateless)
+        Initiating OpenID verification.
+        """
+        self.load_query()
+      
+        openid_url = urlparse.urljoin( self.OPENID_PROVIDER_URL, self.query.get('openid_username') )
+        
         try:
-            request = oidconsumer.begin(openid_url)
+            request, rc = self.begin_openid_auth()
         except consumer.DiscoveryFailure, exc:
-            fetch_error_string = 'Error in discovery: %s' % (
-                cgi.escape(str(exc[0])))
+           
+            fetch_error_string = 'Error in discovery: %s' % (cgi.escape(str(exc[0])))
+            
             self.render(fetch_error_string,
                         css_class='error',
                         form_contents=openid_url)
-                        
-            logging.error("Error in discovery on %s: %s" % (cgi.escape(openid_url), cgi.escape(str(exc[0]))) )
+
+            return
+            
+        if rc == -errno.EINVAL:
+           # bad input
+           self.render('Enter your OpenID Identifier', css_class='error')
+           return
+
+        elif rc == -errno.ENOTCONN:
+           # no service
+           msg = 'No OpenID services found for <code>%s</code>' % (cgi.escape(openid_url),)
+           self.render(msg, css_class='error', form_contents=openid_url)
+           return
 
         else:
-            if request is None:
-                msg = 'No OpenID services found for <code>%s</code>' % (
-                    cgi.escape(openid_url),)
-                self.render(msg, css_class='error', form_contents=openid_url)
-                
-                logging.error("No OpenID services found for %s" % (cgi.escape(openid_url)) )
-            else:
-                # Then, ask the library to begin the authorization.
-                # Here we find out the identity server that will verify the
-                # user's identity, and get a token that allows us to
-                # communicate securely with the identity server.
-                if use_sreg:
-                    self.requestRegistrationData(request)
+           # success!
+           trust_root = "http://" + self.TRUST_ROOT_HOST
+           return_to = self.buildURL( "process" )
+           immediate = self.IMMEDIATE_MODE in self.query
 
-                if use_pape:
-                    self.requestPAPEDetails(request)
+           redirect_url = request.redirectURL( trust_root, return_to, immediate=immediate )
 
-                trust_root = "http://" + TRUST_ROOT_HOST
-                return_to = self.buildURL( "process" )
-                if request.shouldSendRedirect():
-                   redirect_url = request.redirectURL( trust_root, return_to, immediate=immediate )
-                   self.setRedirect(redirect_url)
+           logging.info("redirect to %s" % redirect_url )
+           
+           if request.shouldSendRedirect():
+              self.setRedirect(redirect_url)   
+              
+           else:
+              #self.response.write("go back to %s" % (self.request.host_url + "/process") )
+              self.render_redirect( request, trust_root, return_to, immediate )
 
-                else:
-                   #self.response.write("go back to %s" % (self.request.host_url + "/process") )
-                   self.response.write(
-                        request.htmlMarkup(
-                           trust_root, return_to,
-                           form_tag_attrs={'id':'openid_message'},
-                           immediate=immediate)
-                        )
+           return  
 
+                   
     def requestRegistrationData(self, request):
         sreg_request = sreg.SRegRequest(
             required=['nickname'], optional=['fullname', 'email'])
         request.addExtension(sreg_request)
 
+        
     def requestPAPEDetails(self, request):
         pape_request = pape.Request([pape.AUTH_PHISHING_RESISTANT])
         request.addExtension(pape_request)
 
+
     def doProcess(self):
-        """Handle the redirect from the OpenID server.
+       self.load_query()
+      
+       info, sreg_resp, pape_resp  = self.complete_openid_auth()
+
+       if info.status == consumer.FAILURE:
+          # In the case of failure, if info is non-None, it is the
+          # URL that we were verifying. We include it in the error
+          # message to help the user figure out what happened.
+          self.render_failure( info, sreg_resp, pape_resp )
+
+       elif info.status == consumer.SUCCESS:
+          # Success means that the transaction completed without
+          # error. If info is None, it means that the user cancelled
+          # the verification.
+
+          # This is a successful verification attempt. If this
+          # was a real application, we would do our login,
+          # comment posting, etc. here.
+          self.render_success( info, sreg_resp, pape_resp )
+
+       elif info.status == consumer.CANCEL:
+          # canceled
+          self.render_cancel( info, sreg_resp, pape_resp )
+
+       elif info.status == consumer.SETUP_NEEDED:
+          # This means auth didn't succeed, but you're welcome to try
+          # non-immediate mode.
+          self.render_setup_needed( info, sreg_resp, pape_resp )
+
+       else:
+          # Either we don't understand the code or there is no
+          # openid_url included with the error. Give a generic
+          # failure message. The library should supply debug
+          # information in a log.
+          self.render_error( info, sreg_resp, pape_resp )
+          
+       
+    def complete_openid_auth(self):
+        self.load_query()
+      
+        """
+        Handle the redirect from the OpenID server.
+        return (consumer info, sreg response, pape response)
         """
         oidconsumer = self.getConsumer()
 
@@ -199,105 +434,53 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
         url = "http://" + self.request.headers.get("Host") + self.request.path
         info = oidconsumer.complete(self.query, url)
         
-        css_class = 'error'
-        sreg_resp = None
-        pape_resp = None
         display_identifier = info.getDisplayIdentifier()
+        pape_resp = None
+        sreg_resp = None
 
-        if info.status == consumer.FAILURE and display_identifier:
-            # In the case of failure, if info is non-None, it is the
-            # URL that we were verifying. We include it in the error
-            # message to help the user figure out what happened.
-            fmt = "Verification of %s failed: %s"
-            message = fmt % (cgi.escape(display_identifier),
-                             info.message)
-            logging.error( message )
-            
-
-        elif info.status == consumer.SUCCESS:
-            # Success means that the transaction completed without
-            # error. If info is None, it means that the user cancelled
-            # the verification.
-            
-            # This is a successful verification attempt. If this
-            # was a real application, we would do our login,
-            # comment posting, etc. here.
-            fmt = "Successfully verified %s as identity."
-            message = fmt % (cgi.escape(display_identifier),)
-
+        if info.status == consumer.SUCCESS:
             session = self.getSession()
             session['openid_url']=cgi.escape(display_identifier)
             session['authenticated'] = True
 
-            css_class = 'alert'
-            sreg_resp = sreg.SRegResponse.fromSuccessResponse(info)
             pape_resp = pape.Response.fromSuccessResponse(info)
-            if info.endpoint.canonicalID:
-                # You should authorize i-name users by their canonicalID,
-                # rather than their more human-friendly identifiers.  That
-                # way their account with you is not compromised if their
-                # i-name registration expires and is bought by someone else.
-                message += ("  This is an i-name, and its persistent ID is %s"
-                            % (cgi.escape(info.endpoint.canonicalID),))
-            sreg_list = sreg_resp.items()
-            for k, v in sreg_list:
-                field_name = str(sreg.data_fields.get(k, k))
-                value = cgi.escape(v.encode('UTF-8'))
-                session[field_name] = value
+            sreg_resp = sreg.SRegResponse.fromSuccessResponse(info)
 
+            if sreg_resp != None:
+               sreg_list = sreg_resp.items()
+               for k, v in sreg_list:
+                  field_name = str(sreg.data_fields.get(k, k))
+                  value = cgi.escape(v.encode('UTF-8'))
+                  session[field_name] = value
 
-            self.setRedirect('/syn/')
             session.regenerate_id()
-            return
-
-
-        elif info.status == consumer.CANCEL:
-            # cancelled
-            message = 'Verification cancelled'
-        elif info.status == consumer.SETUP_NEEDED:
-            # This means auth didn't succeed, but you're welcome to try
-            # non-immediate mode.
-            if info.setup_url:
-                message = '<a href=%s>Setup needed</a>' % (quoteattr(info.setup_url),)
-            else:
-                # This means auth didn't succeed, but you're welcome to try
-                # non-immediate mode.
-                message = 'Setup needed'
-
-        else:
-            # Either we don't understand the code or there is no
-            # openid_url included with the error. Give a generic
-            # failure message. The library should supply debug
-            # information in a log.
-            message = 'Verification failed.'
-
-        logging.info( message )
-
-        self.render(message, css_class, display_identifier,
-                    sreg_data=sreg_resp, pape_data=pape_resp)
+            
+        return (info, sreg_resp, pape_resp)
 
 
     def doAffiliate(self):
         """Direct the user sign up with an affiliate OpenID provider."""
         sreg_req = sreg.SRegRequest(['nickname'], ['fullname', 'email'])
-        href = sreg_req.toMessage().toURL(OPENID_PROVIDER_URL)
+        href = sreg_req.toMessage().toURL(self.OPENID_PROVIDER_URL)
 
         message = """Get an OpenID at <a href=%s>%s</a>""" % (
-            quoteattr(href), OPENID_PROVIDER_NAME)
+            quoteattr(href), self.OPENID_PROVIDER_NAME)
         self.render(message)
 
 
     def buildURL(self, action, **query):
         """Build a URL relative to the server base url, with the given
         query parameters added."""
-        base = urlparse.urljoin(HOST_URL, action)
+        base = urlparse.urljoin(self.HOST_URL, action)
         return appendArgs(base, query)
 
     def notFound(self):
+        self.load_query()
+      
         """Render a page with a 404 return code and a message."""
         fmt = 'The path <q>%s</q> was not understood by this server.'
         msg = fmt % (self.path,)
-        openid_url = urlparse.urljoin( OPENID_PROVIDER_URL, self.query.get('openid_username') )
+        openid_url = urlparse.urljoin( self.OPENID_PROVIDER_URL, self.query.get('openid_username') )
         self.render(msg, 'error', openid_url, status=404)
 
     def renderSREG(self, sreg_data):
@@ -343,7 +526,7 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
 
 
     def render(self, message=None, css_class='alert', form_contents=None,
-               status=200, title="Syndicate OpenID",
+               status=200, title=TITLE,
                sreg_data=None, pape_data=None):
         """Render a page."""
         self.response.status = status
@@ -363,7 +546,7 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
 
     def pageHeader(self, title):
         """Render the page header"""
-        self.setSessionCookie()
+        self.setSessionCookie( self.getSession() )
         self.response.headers['Content-type'] = 'text/html; charset=UTF-8'
         self.response.write('''\
 <html>
@@ -424,8 +607,8 @@ class OpenIDRequestHandler(webapp2.RequestHandler):
         if not form_contents:
             form_contents = ''
 
-        if form_contents.startswith( OPENID_PROVIDER_URL ):
-           form_contents = form_contents[ len(OPENID_PROVIDER_URL): ]
+        if form_contents.startswith( self.OPENID_PROVIDER_URL ):
+           form_contents = form_contents[ len(self.OPENID_PROVIDER_URL): ]
 
         self.response.write('''\
     <div id="verify-form">

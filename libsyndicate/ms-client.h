@@ -9,6 +9,10 @@
 
 #include <sstream>
 #include <queue>
+#include <openssl/pem.h>
+#include <openssl/ssl.h>
+#include <openssl/rand.h>
+#include <openssl/err.h>
 #include "libsyndicate.h"
 
 #define HTTP_VOLUME_SECRET "Syndicate-VolumeSecret"
@@ -21,6 +25,8 @@
 #define HTTP_UPDATE_TIMES  "X-Update-Times"
 #define HTTP_DELETE_TIMES  "X-Delete-Times"
 #define HTTP_MS_LASTMOD    "X-MS-LastMod"
+
+#define RSA_KEY_SIZE 4096
 
 using namespace std;
 
@@ -47,10 +53,12 @@ struct ms_client_timing {
 
 
 struct UG_cred {
-   uint64_t uid;
+   uint64_t user_id;
+   uint64_t gateway_id;
    char* name;
    char* hostname;
    int portnum;
+   EVP_PKEY* pubkey;
 };
 
 struct ms_client {
@@ -66,7 +74,7 @@ struct ms_client {
    deadline_queue* deadlines;
 
    char* url;           // MS URL
-   char* userpass;      // HTTP username:password string
+   char* userpass;      // HTTP username:password string.  Username is the gateway ID; password is the session password
    char* file_url;      // URL to the MS's /FILE handler
    uint64_t owner_id;   // ID of the account running this ms_client
    uint64_t volume_id;  // which volume are we attached to
@@ -93,21 +101,42 @@ struct ms_client {
    pthread_rwlock_t view_lock;
 
    // session information
-   struct UG_cred* session_cred;
+   struct UG_cred* session_cred;             // who am I?
    int64_t session_timeout;                 // how long the session is valid
+   char* session_password;
 
-   // MS public key
-   char* ms_public_key;
+   // key information
+   EVP_PKEY* my_key;
+
+   // volume public key
+   EVP_PKEY* volume_public_key;
 
    // reference to syndicate config 
    struct md_syndicate_conf* conf;
 };
 
 extern "C" {
-   
-int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, char const* username, char const* passwd );
-int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name );
+
+int ms_client_generate_key( EVP_PKEY** key );
+int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf );
 int ms_client_destroy( struct ms_client* client );
+
+int ms_client_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password );
+
+int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name );
+int ms_client_load_volume_metadata( struct ms_client* client, ms::ms_volume_metadata* volume_md );
+
+int ms_client_load_cred( struct UG_cred* cred, const ms::ms_volume_gateway_cred* ms_cred );
+
+int ms_client_reload_RGs( struct ms_client* client );
+int ms_client_reload_UGs( struct ms_client* client );
+
+int ms_client_verify_volume_metadata( struct ms_client* client, ms::ms_volume_metadata* volume_md );
+int ms_client_verify_UGs( struct ms_client* client, ms::ms_volume_UGs* ugs );
+int ms_client_verify_RGs( struct ms_client* client, ms::ms_volume_RGs* rgs );
+
+int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str );
+int ms_client_load_volume_pubkey( struct ms_client* client, char const* volume_pubkey_str );
 
 int ms_client_rlock( struct ms_client* client );
 int ms_client_wlock( struct ms_client* client );

@@ -145,7 +145,7 @@ def list_user_gateways_by_volume( volume_id ):
    return UserGateway.ListAll_ByVolume( volume_id )
 
 def get_user_gateway_by_name( name ):
-   ugs = list_user_gateways( {"ms_username ==", name} )
+   ugs = list_user_gateways( {"ms_username ==" : name} )
    if len(ugs) > 1:
       raise Exception("More than UG named %s" % name)
 
