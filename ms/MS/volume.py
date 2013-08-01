@@ -11,7 +11,10 @@ import storage.storagetypes as storagetypes
 
 import os
 import base64
-from Crypto.Hash import SHA256
+from Crypto.Hash import SHA256, SHA
+from Crypto.PublicKey import RSA
+from Crypto import Random
+from Crypto.Signature import PKCS1_v1_5
 
 import protobufs.ms_pb2 as ms_pb2
 
@@ -25,10 +28,10 @@ import logging
 
 from user import SyndicateUser
 
-# DEPRICATED
 VOLUME_SECRET_LENGTH = 256
 VOLUME_SECRET_SALT_LENGTH = 256
 
+VOLUME_RSA_KEYSIZE = 4096
 
 class VolumeIDCounter( storagetypes.Object ):
    value = storagetypes.Integer()
@@ -82,18 +85,19 @@ class Volume( storagetypes.Object ):
    UG_version = storagetypes.Integer( indexed=False )              # version of the UG listing in this Volume
    RG_version = storagetypes.Integer( indexed=False )              # version of the RG listing in this Volume
    private = storagetypes.Boolean()
-   session_timeout = storagetypes.Integer( default=-1, indexed=False )  # how long a gateway session on this Volume lasts
+   session_timeout = storagetypes.Integer( default=-1, indexed=False )  # how long a gateway session on this Volume lasts (-1 means "never expires")
    ag_ids = storagetypes.Integer( repeated=True )                  # AG's publishing data to this volume
    rg_ids = storagetypes.Integer( repeated=True )                  # RG's replicating data for this volume.
 
 
    num_shards = storagetypes.Integer(default=20, indexed=False)    # number of shards per entry in this volume
 
-   # DEPRICATED
-   volume_secret_salted_hash = storagetypes.Text()                 # salted hash of shared secret between the volume and its gateways
+   public_key = storagetypes.Text()          # Volume public key, in PEM format
+   private_key = storagetypes.Text()         # Volume private key, in PEM format
+
+   volume_secret_salted_hash = storagetypes.Text()                 # salted hash of shared secret between the volume and its administrator
    volume_secret_salt = storagetypes.Text()                        # salt for the above hashed value
 
-   # DEPRICATED
    @classmethod
    def generate_password_hash( cls, password, salt ):
       h = SHA256.new()
@@ -101,7 +105,6 @@ class Volume( storagetypes.Object ):
       h.update( password )
       return h.hexdigest()
 
-   # DEPRICATED
    @classmethod
    def generate_volume_secret( cls, secret ):
 
@@ -110,6 +113,16 @@ class Volume( storagetypes.Object ):
 
       return (salt, secret_salted_hash)
 
+   @classmethod
+   def generate_volume_keys( cls ):
+      rng = Random.new().read
+      RSAkey = RSA.generate(VOLUME_RSA_KEYSIZE, rng)
+
+      private_key_pem = RSAkey.exportKey()
+      public_key_pem = RSAkey.publickey().exportKey()
+
+      return (public_key_pem, private_key_pem)
+      
    
    required_attrs = [
       "name",
@@ -119,7 +132,9 @@ class Volume( storagetypes.Object ):
       "volume_secret_salted_hash",
       "ag_ids",
       "rg_ids",
-      "private"
+      "private",
+      "public_key",
+      "private_key"
    ]
 
    key_attrs = [
@@ -157,11 +172,58 @@ class Volume( storagetypes.Object ):
       volume_metadata.UG_version = kwargs.get('UG_version', self.UG_version )
       volume_metadata.RG_version = kwargs.get('RG_version', self.RG_version )
       volume_metadata.session_timeout = kwargs.get( 'session_timeout', self.session_timeout )
+      volume_metadata.volume_public_key = kwargs.get( 'public_key', self.public_key )
+      volume_metadata.session_password = caller_UG.get_current_session_credentials()
+
+      if volume_metadata.session_password == None:
+         raise Exception("Regenerate gateway session credentials and try again")
+      
+      volume_metadata.signature = ""
+
+      # serialize, then sign, then insert the signature
+      volume_metadata_str = volume_metadata.SerializeToString()
+      sig = self.sign_message( volume_metadata_str )
+
+      volume_metadata.signature = sig
       
       return
 
 
-   def authenticate_UG( self, UG ):
+   def protobuf_UGs( self, ug_metadata, user_gateways ):
+      
+      ug_metadata.ug_version = self.UG_version
+      for ug in user_gateways:
+         ug_pb = ug_metadata.ug_creds.add()
+         ug.protobuf_cred( ug_pb )
+
+      ug_metadata.signature = ""
+
+      # sign this 
+      data = ug_metadata.SerializeToString()
+      sig = self.sign_message( data )
+
+      ug_metadata.signature = sig
+      return
+
+
+   def protobuf_RGs( self, rg_metadata, rgs ):
+
+      rg_metadata.rg_version = self.RG_version
+      for rg in rgs:
+         rg_metadata.rg_hosts.append( rg.host )
+         rg_metadata.rg_ports.append( rg.port )
+
+      rg_metadata.signature = ""
+         
+      # sign this
+      data = rg_metadata.SerializeToString()
+      sig = self.sign_message( data )
+
+      rg_metadata.signature = sig
+      return
+
+
+   def is_UG_allowed( self, UG ):
       if not self.private:
          return True
          
@@ -169,6 +231,18 @@ class Volume( storagetypes.Object ):
          return False
 
       return True
+
+
+   def sign_message( self, data ):
+      """
+      Return the base64-encoded crypto signature of the data,
+      signed with our private key.
+      """
+      key = RSA.importKey( self.private_key )
+      h = SHA256.new( data )
+      signer = PKCS1_v1_5.new(key)
+      signature = signer.sign( h )
+      return base64.b64encode( signature )
       
       
    @classmethod
@@ -208,9 +282,10 @@ class Volume( storagetypes.Object ):
                         private=kwargs['private'],
                         rg_ids=kwargs['rg_ids'],
                         ag_ids=kwargs['ag_ids'],
-                        # DEPRICATED
                         volume_secret_salt = kwargs['volume_secret_salt'],
-                        volume_secret_salted_hash = kwargs['volume_secret_salted_hash']
+                        volume_secret_salted_hash = kwargs['volume_secret_salted_hash'],
+                        public_key = kwargs['public_key'],
+                        private_key = kwargs['private_key']
                         )
          volume.put()
 
@@ -218,7 +293,7 @@ class Volume( storagetypes.Object ):
          try:
             SyndicateUser.add_volume_to_owner(volume_id, username)
          except Exception, e:
-            logging.exception( "__try_add_volume_to_user exception", e )
+            logging.exception( "add Volume to SyndicateUser exception", e )
 
             # Roll back
             raise Exception( "System is under heavy load right now.  Please try again later." )
@@ -243,6 +318,8 @@ class Volume( storagetypes.Object ):
       kwargs['volume_secret_salt'] = volume_secret_salt
       kwargs['volume_secret_salted_hash'] = volume_secret_salted_hash
 
+      if kwargs.get('public_key') == None or kwargs.get('private_key') == None:
+         kwargs['public_key'], kwargs['private_key'] = Volume.generate_volume_keys()
 
       # Validate
       missing = Volume.find_missing_attrs( kwargs )
@@ -261,10 +338,7 @@ class Volume( storagetypes.Object ):
 
       else:
          # Volume did not exist at the time of the query.
-         # Optimistically create it, and then verify that it is the only Volume with that name.
-         # Roll back via transaction if someone else created a Volume of the same name.
          return transactional_create(username, **kwargs)
-
          
 
    @classmethod

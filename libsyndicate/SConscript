@@ -28,6 +28,7 @@ LIBS = """
    microhttpd
    rt
    dl
+   m
 """
 
 # add headers here (will be returned by SCons)

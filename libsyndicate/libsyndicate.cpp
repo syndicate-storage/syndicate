@@ -9,7 +9,7 @@
 int _DEBUG_SYNDICATE = 1;
 int _ERROR_SYNDICATE = 1;
 
-static struct md_syndicate_conf CONF;
+static struct md_syndicate_conf SYNDICATE_CONF;
 
 static unsigned long _connect_timeout = 30L;
 static unsigned long _transfer_timeout = 60L;     // 1 minute
@@ -163,7 +163,7 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
       }
    }
 
-   memcpy( &CONF, c, sizeof(CONF) );
+   memcpy( &SYNDICATE_CONF, c, sizeof(SYNDICATE_CONF) );
 
    return rc;
 }
@@ -386,12 +386,12 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       
       else if( strcmp( key, METADATA_USERNAME_KEY ) == 0 ) {
          // metadata server username
-         conf->metadata_username = strdup( values[0] );
+         conf->ms_username = strdup( values[0] );
       }
       
       else if( strcmp( key, METADATA_PASSWORD_KEY ) == 0 ) {
          // metadata server password
-         conf->metadata_password = strdup( values[0] );
+         conf->ms_password = strdup( values[0] );
       }
       else if( strcmp( key, METADATA_UID_KEY ) == 0 ) {
          // metadata server UID
@@ -535,8 +535,13 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       }
             
       else if( strcmp( key, VOLUME_NAME_KEY ) == 0 ) {
-         // volume ID
+         // volume name
          conf->volume_name = strdup( values[0] );
+      }
+
+      else if( strcmp( key, GATEWAY_NAME_KEY ) == 0 ) {
+         // gateway name
+         conf->gateway_name = strdup( values[0] );
       }
       
       else if( strcmp( key, GATEWAY_METADATA_KEY ) == 0 ) {
@@ -649,13 +654,13 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       free( conf->proxy_url );
       conf->proxy_url = NULL;
    }
-   if( conf->metadata_username ) {
-      free( conf->metadata_username );
-      conf->metadata_username = NULL;
+   if( conf->ms_username ) {
+      free( conf->ms_username );
+      conf->ms_username = NULL;
    }
-   if( conf->metadata_password ) {
-      free( conf->metadata_password );
-      conf->metadata_password = NULL;
+   if( conf->ms_password ) {
+      free( conf->ms_password );
+      conf->ms_password = NULL;
    }
    if( conf->server_key ) {
       free( conf->server_key );
@@ -1404,7 +1409,7 @@ ssize_t md_download_file3( char const* url, int fd, char const* username, char c
    curl_easy_setopt( curl_h, CURLOPT_URL, url );
    curl_easy_setopt( curl_h, CURLOPT_FOLLOWLOCATION, 1L );
    curl_easy_setopt( curl_h, CURLOPT_FILETIME, 1L );
-   curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, CONF.verify_peer ? 1L : 0L );
+   curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, SYNDICATE_CONF.verify_peer ? 1L : 0L );
    
    char* userpass = NULL;
    if( username && password ) {
@@ -1502,6 +1507,33 @@ int md_release_privileges() {
    return ret;
 }
 
+// get the scheme out of a URL
+char* md_url_scheme( char const* _url ) {
+   char* url = strdup( _url );
+
+   // find ://
+   char* host_port = strstr(url, "://" );
+   if( host_port == NULL ) {
+      free( url );
+      return NULL;
+   }
+   else {
+      // careful...pointer arithmetic 
+      int len = 0;
+      char* tmp = url;
+      while( tmp != host_port ) {
+         tmp++;
+         len++;
+      }
+
+      char* scheme = CALLOC_LIST( char, len + 1 );
+      strncpy( scheme, _url, len );
+
+      free( url );
+      return scheme;
+   }
+      
+}
 
 // get the hostname out of a URL
 char* md_url_hostname( char const* _url ) {
@@ -1782,7 +1814,7 @@ char* md_flatten_path( char const* path ) {
 // convert the URL into the CDN-ified form
 char* md_cdn_url( char const* url ) {
    // fix the URL so it is prefixed by the hostname and CDN, instead of being file://path or http://hostname/path
-   char* cdn_prefix = CONF.cdn_prefix;
+   char* cdn_prefix = SYNDICATE_CONF.cdn_prefix;
    char* host_path = md_strip_protocol( url );
    if( cdn_prefix == NULL || strlen(cdn_prefix) == 0 ) {
       // no prefix given
@@ -3500,6 +3532,7 @@ int md_init( int gateway_type,
              int portnum,
              char const* ms_url,
              char const* volume_name,
+             char const* gateway_name,
              char const* md_username,
              char const* md_password ) {
 
@@ -3528,16 +3561,16 @@ int md_init( int gateway_type,
       conf->metadata_url = strdup( ms_url );
    }
    if( md_username ) {
-      if( conf->metadata_username )
-         free( conf->metadata_username );
+      if( conf->ms_username )
+         free( conf->ms_username );
 
-      conf->metadata_username = strdup( md_username );
+      conf->ms_username = strdup( md_username );
    }
    if( md_password ) {
-      if( conf->metadata_password )
-         free( conf->metadata_password );
+      if( conf->ms_password )
+         free( conf->ms_password );
 
-      conf->metadata_password = strdup( md_password );
+      conf->ms_password = strdup( md_password );
    }
    if( volume_name ) {
       if( conf->volume_name )
@@ -3545,6 +3578,13 @@ int md_init( int gateway_type,
 
       conf->volume_name = strdup( volume_name );
    }
+   if( gateway_name ) {
+      if( conf->gateway_name )
+         free( conf->gateway_name );
+
+      conf->gateway_name = strdup( gateway_name );
+   }
+   
    if( portnum > 0 ) {
       conf->portnum = portnum;
    }
@@ -3561,21 +3601,21 @@ int md_init( int gateway_type,
       return rc;
    }
 
-   // connect to the MS
-   rc = ms_client_init( client, conf, conf->metadata_username, conf->metadata_password );
+   // setup the client
+   rc = ms_client_init( client, conf );
    if( rc != 0 ) {
       errorf("ms_client_init rc = %d\n", rc );
       return rc;
    }
 
-   // get the volume metadata
-   rc = ms_client_get_volume_metadata( client, conf->volume_name );
+   // register the gateway
+   rc = ms_client_register( client, gateway_name, conf->ms_username, conf->ms_password );
    if( rc != 0 ) {
-      errorf("ms_client_get_volume_metadata rc = %d\n", rc );
+      errorf("ms_client_register rc = %d\n", rc );
       return rc;
    }
 
-   ms_client_rlock( client );
+   ms_client_wlock( client );
    conf->owner = client->owner_id;
    conf->volume_owner = client->volume_owner_id;
    conf->volume = client->volume_id;
@@ -3620,8 +3660,8 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->transfer_timeout = 60;
 
    conf->metadata_url = NULL;
-   conf->metadata_username = NULL;
-   conf->metadata_password = NULL;
+   conf->ms_username = NULL;
+   conf->ms_password = NULL;
    conf->blocking_factor = 0;
    conf->owner = getuid();
    conf->usermask = 0377;
@@ -3629,6 +3669,9 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->volume_owner = 0;
    conf->mountpoint = NULL;      // filled by md_runtime_init
    conf->hostname = NULL;        // filled by md_runtime_init
+
+   conf->trust_volume_pubkey = true;
+   conf->volume_public_key = NULL;
 
    return 0;
 }
@@ -3663,17 +3706,21 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, METADATA_URL_KEY );
    }
-   if( conf->metadata_username == NULL ) {
+   if( conf->ms_username == NULL ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, METADATA_USERNAME_KEY );
    }
-   if( conf->metadata_password == NULL ) {
+   if( conf->ms_password == NULL ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, METADATA_PASSWORD_KEY );
    }
    if( conf->volume_name == NULL ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, VOLUME_NAME_KEY );
+   }
+   if( conf->gateway_name == NULL ) {
+      rc = -EINVAL;
+      fprintf(stderr, err_fmt, GATEWAY_NAME_KEY );
    }
    
    if( gateway_type == SYNDICATE_UG ) {

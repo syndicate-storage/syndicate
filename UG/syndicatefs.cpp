@@ -750,6 +750,7 @@ int main(int argc, char** argv) {
    char* password = NULL;
    char* volume_name = NULL;
    char* ms_url = NULL;
+   char* gateway_name = NULL;
    int portnum = -1;
    
    static struct option syndicate_options[] = {
@@ -757,6 +758,7 @@ int main(int argc, char** argv) {
       {"volume-name",     required_argument,   0, 'v'},
       {"username",        required_argument,   0, 'u'},
       {"password",        required_argument,   0, 'p'},
+      {"gateway",         required_argument,   0, 'G'},
       {"port",            required_argument,   0, 'P'},
       {"MS",              required_argument,   0, 'm'},
       {0, 0, 0, 0}
@@ -764,7 +766,7 @@ int main(int argc, char** argv) {
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:o:m:fs", syndicate_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:o:m:fsG:", syndicate_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -788,6 +790,10 @@ int main(int argc, char** argv) {
          }
          case 'm': {
             ms_url = optarg;
+            break;
+         }
+         case 'G': {
+            gateway_name = optarg;
             break;
          }
          case 'o': {
@@ -822,7 +828,7 @@ int main(int argc, char** argv) {
 
    // we need a mountpoint, and possibly other options
    if( argv[argc-1][0] == '-' ) {
-      errorf("Usage: %s [-n] [-c CONF_FILE] [-m MS_URL] [-u USERNAME] [-p PASSWORD] [-v VOLUME] [-P PORTNUM] [FUSE OPTS] <mountpoint>\n", argv[0]);
+      errorf("Usage: %s [-n] [-c CONF_FILE] [-m MS_URL] [-u USERNAME] [-p PASSWORD] [-v VOLUME] [-G GATEWAY] [-P PORTNUM] [FUSE OPTS] <mountpoint>\n", argv[0]);
       exit(1);
    }
 
@@ -832,7 +838,7 @@ int main(int argc, char** argv) {
 
    struct md_HTTP syndicate_http;
    
-   rc = syndicate_init( config_file, &syndicate_http, portnum, ms_url, volume_name, username, password );
+   rc = syndicate_init( config_file, &syndicate_http, portnum, ms_url, volume_name, gateway_name, username, password );
    if( rc != 0 )
       exit(1);
 

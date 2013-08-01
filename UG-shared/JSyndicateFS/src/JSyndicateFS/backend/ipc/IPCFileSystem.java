@@ -16,11 +16,11 @@ import JSyndicateFS.backend.ipc.message.IPCFileInfo;
 import JSyndicateFS.backend.ipc.message.IPCStat;
 import JSyndicateFS.backend.ipc.struct.IPCFileHandle;
 import JSyndicateFS.backend.ipc.struct.IPCFileStatus;
-import static JSyndicateFS.backend.sharedfs.SharedFSFileSystem.LOG;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -44,7 +44,15 @@ public class IPCFileSystem extends JSFSFileSystem {
     
     private ICache<JSFSPath, IPCFileStatus> filestatus_cache = new TimeoutCache<JSFSPath, IPCFileStatus>(0, 60);
     
-    public IPCFileSystem(JSFSConfiguration conf) {
+    public IPCFileSystem(IPCConfiguration conf) throws InstantiationException {
+        initialize(conf);
+    }
+    
+    public IPCFileSystem(JSFSConfiguration conf) throws InstantiationException {
+        initialize((IPCConfiguration)conf);
+    }
+    
+    private void initialize(IPCConfiguration conf) throws InstantiationException {
         LOG.info("Initialize FileSystem");
         
         if(conf == null) {
@@ -54,7 +62,7 @@ public class IPCFileSystem extends JSFSFileSystem {
         
         super.raiseOnBeforeCreateEvent(conf);
         
-        this.configuration = (IPCConfiguration)conf;
+        this.configuration = conf;
         this.UGName = this.configuration.getUGName();
         this.UGPort = this.configuration.getPort();
         this.client = new IPCInterfaceClient(this.UGName, this.UGPort);

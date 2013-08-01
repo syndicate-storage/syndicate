@@ -852,13 +852,14 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    char* volume_name = NULL;
    char* dataset = NULL;
    char* gw_driver = NULL;
+   char* gateway_name = NULL;
    bool pub_mode = false;
    
    static struct option gateway_options[] = {
       {"config-file\0Gateway configuration file path",      required_argument,   0, 'c'},
       {"volume-name\0Name of the volume to join",           required_argument,   0, 'v'},
-      {"username\0Gateway authentication identity",         required_argument,   0, 'u'},
-      {"password\0Gateway authentication secret",           required_argument,   0, 'p'},
+      {"username\0User authentication identity",             required_argument,   0, 'u'},
+      {"password\0User authentication secret",               required_argument,   0, 'p'},
       {"port\0Syndicate port number",                       required_argument,   0, 'P'},
       {"MS\0Metadata Service URL",                          required_argument,   0, 'm'},
       {"foreground\0Run in the foreground",                 no_argument,         0, 'f'},
@@ -867,13 +868,14 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
       {"pidfile\0Path to the PID file",                     required_argument,   0, 'i'},
       {"dataset\0Path to dataset",                     	    required_argument,   0, 'd'},
       {"gw-driver\0Gateway driver",                         required_argument,   0, 'g'},
+      {"gateway-name\0Name of this gateway",                required_argument,   0, 'G'},
       {"help\0Print this message",                          no_argument,         0, 'h'},
       {0, 0, 0, 0}
    };
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:g:h", gateway_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:g:hG:", gateway_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -928,6 +930,10 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
             gateway_usage( argv[0], gateway_options, 0 );
             break;
          }
+         case 'G': {
+            gateway_name = optarg;
+            break;
+         }
          default: {
             break;
          }
@@ -948,7 +954,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    struct ms_client client;
    struct md_syndicate_conf conf;
    
-   rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, username, password );
+   rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, gateway_name, username, password );
    if( rc != 0 ) {
       exit(1);
    }

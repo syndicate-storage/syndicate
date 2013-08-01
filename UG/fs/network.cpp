@@ -144,8 +144,14 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, ch
 
       int status_code = 0;
       nr = md_download_file( block_url, &tmpbuf, &status_code );
-      
-      if( nr < 0 || status_code != 200 ) {
+
+      if( status_code == 204 ) {
+         // EAGAIN
+         errorf( "md_download_file(%s) not ready yet\n", block_url );
+         nr = -EAGAIN;
+      }
+
+      else if( nr < 0 || status_code != 200 ) {
 
          if( nr < 0 ) {
             errorf( "md_download_file(%s) rc = %zd\n", block_url, nr );

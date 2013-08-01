@@ -27,7 +27,12 @@ import os
 import base64
 import urllib
 import time
+import cgi
 import datetime
+
+from openid.gaeopenid import GAEOpenIDRequestHandler
+from openid.consumer import consumer
+import openid.oidutil
 
 HTTP_MS_LASTMOD = "X-MS-LastMod"
 
@@ -62,26 +67,24 @@ def read_basic_auth( headers ):
 
 
 
-def get_UG( username, password ):
-   if username == None or password == None:
+def get_UG( ug_id ):
+   if ug_id == None:
       # invalid header
-      return None
+      return (None, 403, None)
 
-   UG = UserGateway.Read( username )
-   return UG
+   ug_read_start = storagetypes.get_time()
+   UG = UserGateway.Read( ug_id )
+   ug_read_time = storagetypes.get_time() - ug_read_start
+   return (UG, 200, ug_read_time)
 
 
-def response_begin( request_handler, volume_name_or_id ):
-   
+def get_volume( volume_name_or_id ):
+
    volume_id = -1
    try:
       volume_id = int( volume_name_or_id )
    except:
       pass
-
-   timing = {}
-   
-   timing['request_start'] = storagetypes.get_time()
 
    volume_read_start = storagetypes.get_time()
 
@@ -90,59 +93,116 @@ def response_begin( request_handler, volume_name_or_id ):
       volume = storage.read_volume( volume_id )
    else:
       volume = storage.get_volume_by_name( volume_name_or_id )
-      
+
    volume_read_time = storagetypes.get_time() - volume_read_start
 
    if volume == None:
       # no volume
-      request_handler.response.status = 404
-      request_handler.response.write("No such volume\n")
-      return (None, None, None)
+      return (None, 404, None)
 
    if not volume.active:
       # inactive volume
-      request_handler.response.status = 503
-      request_handler.response.headers['Content-Type'] = "text/plain"
+      return (None, 503, None)
+
+   return (volume, 200, volume_read_time)
+
+
+def response_volume_error( request_handler, status ):
+
+   request_handler.response.status = status
+   request_handler.response.headers['Content-Type'] = "text/plain"
+   
+   if status == 404:
+      # no volume
+      request_handler.response.write("No such volume\n")
+
+   elif status == 503:
+      # inactive volume
       request_handler.response.write("Service Not Available\n")
-      return (None, None, None)
 
-   # get the UG's credentials
-   username, password = read_basic_auth( request_handler.request.headers )
+   return
+   
 
-   if username == None or password == None:
-      request_handler.response.status = 401
-      request_handler.response.headers['Content-Type'] = "text/plain"
+def response_server_error( request_handler, status, msg=None ):
+   
+   request_handler.response.status = status
+   request_handler.response.headers['Content-Type'] = "text/plain"
+
+   if status == 500:
+      # server error
+      if msg == None:
+         msg = "Internal Server Error"
+      request_handler.response.write( msg )
+
+   return
+   
+
+def response_UG_error( request_handler, status ):
+
+   request_handler.response.status = status
+   request_handler.response.headers['Content-Type'] = "text/plain"
+
+   if status == 400:
+      request_handler.response.write("Invalid request\n")
+      
+   elif status == 404:
+      request_handler.response.write("No such gateway\n")
+      
+   elif status == 401:
       request_handler.response.write("Authentication Required\n")
-      return (None, None, None)
 
-   # look up the requesting UG
-   ug_read_start = storagetypes.get_time()
-   UG = get_UG( username, password )
-   ug_read_time = storagetypes.get_time() - ug_read_start
-
-   if UG == None:
-      # no UG
-      request_handler.response.status = 403
-      request_handler.response.headers['Content-Type'] = "text/plain"
+   elif status == 403:
       request_handler.response.write("Authorization Failed\n")
+
+   return
+
+response_user_error = response_UG_error
+
+
+
+def response_begin( request_handler, volume_name_or_id ):
+   
+   timing = {}
+   
+   timing['request_start'] = storagetypes.get_time()
+
+   volume, status, volume_read_time = get_volume( volume_name_or_id )
+
+   if status != 200:
+      response_volume_error( request_handler, status )
+      return (None, None, None)
+      
+   # get the UG's credentials
+   ug_id_str, password = read_basic_auth( request_handler.request.headers )
+
+   if ug_id_str == None or password == None:
+      response_UG_error( request_handler, 401 )
       return (None, None, None)
 
-   # make sure this UG account is legit
-   valid_UG = UG.authenticate( password )
+   ug_id = int( ug_id_str )
+   
+   # look up the requesting UG
+   UG, status, ug_read_time = get_UG( ug_id )
+
+   if status != 200:
+      response_UG_error( request_handler, status )
+      return (None, None, None)
+      
+   # make sure this UG is legit, if needed
+   valid_UG = UG.authenticate_session( password )
+
    if not valid_UG:
       # invalid credentials
-      request_handler.response.status = 403
-      request_handler.response.headers['Content-Type'] = "text/plain"
-      request_handler.response.write("Authorization Failed\n")
+      logging.error("Invalid session credentials")
+      response_UG_error( request_handler, 403 )
       return (None, None, None)
 
    # make sure this UG is allowed to access this Volume
-   valid_UG = volume.authenticate_UG( UG )
+   valid_UG = volume.is_UG_allowed( UG )
    if not valid_UG:
       # UG does not belong to this Volume
-      request_handler.response.status = 403
-      request_handler.response.headers['Content-Type'] = "text/plain"
-      request_handler.response.write("Authorization Failed\n")
+      logging.error("Not in this Volume")
+      response_UG_error( request_handler, 403 )
       return (None, None, None)
 
    # if we're still here, we're good to go
@@ -179,8 +239,8 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
    Volume metadata request handler.
    """
 
-   def get( self, volume_name ):
-      UG, volume, timing = response_begin( self, volume_name )
+   def get( self, volume_id_str ):
+      UG, volume, timing = response_begin( self, volume_id_str )
       if UG == None or volume == None:
          return
 
@@ -195,6 +255,9 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
 
 
 class MSUGRequestHandler( webapp2.RequestHandler ):
+   """
+   Get the list of (writeable) UGs in a Volume.
+   """
    def get( self, volume_id_str ):
       UG, volume, timing = response_begin( self, volume_id_str )
       if UG == None or volume == None:
@@ -204,11 +267,8 @@ class MSUGRequestHandler( webapp2.RequestHandler ):
       
       user_gateways = storage.list_user_gateways( {'UserGateway.volume_id ==' : volume.volume_id} )
 
-      ug_metadata.ug_version = volume.UG_version
-      for ug in user_gateways:
-         ug_pb = ug_metadata.ug_creds.add()
-         ug.protobuf_cred( ug_pb )
-
+      volume.protobuf_UGs( ug_metadata, user_gateways )
+      
       data = ug_metadata.SerializeToString()
 
       response_end( self, 200, data, "application/octet-stream", timing )
@@ -216,6 +276,9 @@ class MSUGRequestHandler( webapp2.RequestHandler ):
 
 
 class MSRGRequestHandler( webapp2.RequestHandler ):
+   """
+   Get the list of RGs in a Volume.
+   """
    def get( self, volume_id_str ):
       UG, volume, timing = response_begin( self, volume_id_str )
       if UG == None or volume == None:
@@ -228,17 +291,186 @@ class MSRGRequestHandler( webapp2.RequestHandler ):
       if len(volume.rg_ids) > 0:
          rgs = storage.list_replica_gateways( {'ReplicaGateway.rg_id IN' : volume.rg_ids} )
 
-      rg_metadata.rg_version = volume.RG_version
-      for rg in rgs:
-         rg_metadata.rg_hosts.append( rg.host )
-         rg_metadata.rg_ports.append( rg.port )
+      volume.protobuf_RGs( rg_metadata, rgs )
 
       data = rg_metadata.SerializeToString()
 
       response_end( self, 200, data, "application/octet-stream", timing )
       return
 
+
+class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
+   """
+   Generate a session certificate from a SyndicateUser account for a UG.
+   """
+
+   """
+   OPENID_PROVIDER_NAME = "VICCI"
+   OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
+   OPENID_PROVIDER_AUTH_HANDLER = "https://www.vicci.org/id-allow"
+   OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
+   OPENID_PROVIDER_USERNAME_FIELD = "login_as"
+   OPENID_PROVIDER_PASSWORD_FIELD = "password"
+   OPENID_PROVIDER_CHALLENGE_METHOD = "GET"
+   OPENID_PROVIDER_RESPONSE_METHOD = "POST"
+   """
+
+   OPENID_PROVIDER_NAME = "localhost"
+   OPENID_PROVIDER_URL = "http://localhost:8081/id/"
+   OPENID_PROVIDER_AUTH_HANDLER = "http://localhost:8081/allow"
+   OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
+   OPENID_PROVIDER_USERNAME_FIELD = "login_as"
+   OPENID_PROVIDER_PASSWORD_FIELD = "password"
+   OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
+   OPENID_PROVIDER_RESPONSE_METHOD = "POST"
+
    
+   OPENID_RP_REDIRECT_METHOD = "POST"     # POST to us for authentication, since we need to send the public key (which doesn't fit into a GET)
+
+   def load_objects( self, volume_name, ug_name, username ):
+      # get the Volume
+      volume, status, volume_read_time = get_volume( volume_name )
+
+      if status != 200:
+         logging.error("get_volume status = %d" % status)
+         response_volume_error( self, status )
+         return (None, None, None)
+
+      # get the UG
+      UG = storage.get_user_gateway_by_name( ug_name )
+      if UG == None:
+         logging.error("storage.get_user_gateway_by_name returned None")
+         response_UG_error( self, 404 )
+         return (None, None, None)
+
+      user = storage.read_user( username )
+      if user == None:
+         logging.error("storage.read_user returned None")
+         response_user_error( self, 401 )
+         return (None, None, None)
+
+      return (volume, UG, user)
+      
+   get = None
+   
+   def post( self, volume_name, ug_name, username, operation ):
+
+      volume, UG, user = self.load_objects( volume_name, ug_name, username )
+
+      if volume == None or UG == None or user == None:
+         return
+
+      # this SyndicateUser must own this Gateway
+      if user.owner_id != UG.owner_id:
+         response_user_error( self, 403 )
+         return
+
+      """
+      # this must be a valid public key
+      if not Gateway.is_valid_pubkey( pubkey ):
+         response_user_error( self, 400 )
+         return
+      """
+
+      logging.info("Headers = %s" % str(self.request.headers) )
+      
+      if operation == "begin":
+
+         # load the public key
+         if not "syndicatepubkey" in self.request.POST:
+            response_user_error( self, 400 )
+            return
+
+         pubkey = self.request.POST.get("syndicatepubkey")
+         if pubkey == None:
+            response_user_error( self, 400 )
+            return
+         
+         # begin the OpenID authentication
+         try:
+            oid_request, rc = self.begin_openid_auth()
+         except consumer.DiscoveryFailure, exc:
+
+            fetch_error_string = 'Error in discovery: %s' % (cgi.escape(str(exc[0])))
+
+            response_server_error( self, 500, fetch_error_string )
+            return
+
+         if rc != 0:
+            response_server_error( self, 500, "OpenID error %s" % rc )
+            return
+
+         # preserve the public key
+         session = self.getSession()
+         session['syndicatepubkey'] = pubkey
+
+         logging.info("session = %s" % str(session))
+         
+         # reply with the redirect URL
+         trust_root = self.HOST_URL
+         return_to = self.buildURL( "/REGISTER/%s/%s/%s/complete" % (volume_name, ug_name, username) )
+         immediate = self.IMMEDIATE_MODE in self.query
+
+         redirect_url = oid_request.redirectURL( trust_root, return_to, immediate=immediate )
+
+         openid_reply = ms_pb2.ms_openid_provider_reply()
+         openid_reply.redirect_url = redirect_url
+         openid_reply.auth_handler = self.OPENID_PROVIDER_AUTH_HANDLER
+         openid_reply.username_field = self.OPENID_PROVIDER_USERNAME_FIELD
+         openid_reply.password_field = self.OPENID_PROVIDER_PASSWORD_FIELD
+         openid_reply.extra_args = urllib.urlencode( self.OPENID_PROVIDER_EXTRA_ARGS )
+         openid_reply.challenge_method = self.OPENID_PROVIDER_CHALLENGE_METHOD
+         openid_reply.response_method = self.OPENID_PROVIDER_RESPONSE_METHOD
+         openid_reply.redirect_method = self.OPENID_RP_REDIRECT_METHOD
+
+         data = openid_reply.SerializeToString()
+
+         self.setSessionCookie( session )
+         session.save( True )
+         
+         response_end( self, 200, data, "application/octet-stream", None )
+         return
+
+      elif operation == "complete":
+
+         # get our saved pubkey
+         session = self.getSession()
+         logging.info("session = %s" % str(session))
+         
+         pubkey = session.get('syndicatepubkey')
+         if pubkey == None:
+            logging.error("could not load public key")
+            response_user_error( self, 400 )
+            return
+
+         # complete the authentication
+         info, _, _ = self.complete_openid_auth()
+         if info.status != consumer.SUCCESS:
+            # failed
+            response_user_error( self, 401 )
+            return
+         
+         # attempt to load it into the UG
+         if not UG.load_pubkey( pubkey ):
+            logging.error("invalid public key")
+            response_user_error( self, 400 )
+            return
+         
+         # generate a session password
+         UG.regenerate_session_credentials( volume )
+         
+         volume_metadata = ms_pb2.ms_volume_metadata()
+         volume.protobuf( volume_metadata, UG )
+         data = volume_metadata.SerializeToString()
+
+         # save the UG
+         UG.put()
+         UG.FlushCache( UG.g_id )
+
+         response_end( self, 200, data, "application/octet-stream", None )
+         return
+
+
 class MSFileRequestHandler(webapp2.RequestHandler):
 
    """
@@ -306,6 +538,14 @@ class MSFileRequestHandler(webapp2.RequestHandler):
       if UG == None or volume == None:
          return
 
+      # validate the message
+      if not UG.verify_ms_update( updates_set ):
+         # authentication failure
+         self.response.status = 401
+         self.response.headers['Content-Type'] = "text/plain"
+         self.response.write( "Signature validation failed\n" )
+         return
+
       create_times = []
       update_times = []
       delete_times = []
@@ -364,5 +604,45 @@ class MSFileRequestHandler(webapp2.RequestHandler):
       response_end( self, 200, "OK\n", "text/plain", timing )
       return
 
-         
+
+class MSOpenIDRequestHandler(GAEOpenIDRequestHandler):
+
+
+   def get(self):
+      """
+      On GET, if we're authenticated, then simply redirect to /syn/.
+      Otherwise, do OpenID authentication.
+      """
+
+      session = self.getSession()
+      if 'authenticated' in session:
+         self.setRedirect('/syn/')
+         return
+
+      super( self, MSOpenIDRequestHandler ).get()
+      return
+
+      
+   def begin_openid_auth(self):
+      """
+      When setting up OpenID authentication, remember the OpenID username as our login e-mail.
+      """
+
+      request, rc = super( self, MSOpenIDRequestHandler ).begin_openid_auth()
+
+      if rc == 0:
+         session = self.getSession()
+         session['login_email'] = self.query.get('openid_username')
+      
+      return request, rc
+      
+      
+   def doProcess(self):
+      info, _, _ = self.complete_openid_auth()
+
+      if info.status == consumer.SUCCESS:
+         self.setRedirect('/syn/')
+
+      return
+
          

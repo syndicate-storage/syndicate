@@ -354,14 +354,13 @@ struct md_syndicate_conf {
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
 
    // RG/AG servers
-   bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers
    unsigned int num_http_threads;                     // how many HTTP threads to create
    int http_authentication_mode;                      // for which operations do we authenticate?
    char* md_pidfile_path;                             // where to store the PID file for the gateway server
    char* gateway_metadata_root;                       // location on disk (if desired) to record metadata
    bool replica_overwrite;                            // overwrite replica file at the client's request
-   char* server_key;                                  // path to PEM-encoded SSL private key for this gateway server
-   char* server_cert;                                 // path to PEM-encoded SSL certificate for this gateway server
+   char* server_key;                                  // path to PEM-encoded TLS-supported private key for this gateway server
+   char* server_cert;                                 // path to PEM-encoded TLS-supported certificate for this gateway server
 
    // debug
    int debug_read;                                    // print verbose information for reads
@@ -369,14 +368,18 @@ struct md_syndicate_conf {
 
    // common
    char* volume_name;                                 // name of the volume
+   char* gateway_name;
    int metadata_connect_timeout;                      // number of seconds to wait to connect on the control plane
    int portnum;                                       // Syndicate-side port number
    int transfer_timeout;                              // how long a transfer is allowed to take
+   bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers
+   bool trust_volume_pubkey;                          // when we receive a public key from a Volume, trust it implicitly.  Otherwise, one must be given in advance
+   char* volume_public_key;                           // if trust_volume_pubkey is false, then this contains a PEM-encoded RSA public key for the Volume
    
    // runtime fields
    char* metadata_url;                                // URL (or path on disk) where to get the metadata
-   char* metadata_username;                           // metadata authentication username
-   char* metadata_password;                           // metadata authentication password
+   char* ms_username;                                 // MS username for this SyndicateUser
+   char* ms_password;                                 // MS password for this SyndicateUser
    uint64_t blocking_factor;                          // how many bytes blocks will be
    uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
    mode_t usermask;                                   // umask of the user running this program
@@ -451,6 +454,7 @@ struct md_syndicate_conf {
 #define AUTH_OPERATIONS_KEY         "AUTH_OPERATIONS"
 #define PIDFILE_KEY                 "PIDFILE"
 #define VOLUME_NAME_KEY             "VOLUME_NAME"
+#define GATEWAY_NAME_KEY            "GATEWAY_NAME"
 
 // gateway config
 #define GATEWAY_METADATA_KEY        "GATEWAY_METADATA"
@@ -589,6 +593,7 @@ ssize_t md_download_file5( CURL* curl_h, char** buf );
 ssize_t md_download_file_proxied( char const* url, char** buf, char const* proxy, int* status_code );
 char** md_parse_cgi_args( char* query_string );
 char* md_url_hostname( char const* url );
+char* md_url_scheme( char const* url );
 char* md_path_from_url( char const* url );
 char* md_fs_path_from_url( char const* url );
 char* md_url_strip_path( char const* url );
@@ -658,6 +663,7 @@ int md_init( int gateway_type,
              int portnum,
              char const* ms_url,
              char const* volume_name,
+             char const* gateway_name,
              char const* md_username,
              char const* md_password
            );

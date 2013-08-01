@@ -7,11 +7,14 @@
 
 import storage.storagetypes as storagetypes
 
-from Crypto.Hash import SHA256
-
 import os
 import base64
+import urllib
 import uuid
+from Crypto.Hash import SHA256, SHA
+from Crypto.PublicKey import RSA
+from Crypto import Random
+from Crypto.Signature import PKCS1_v1_5
 
 #import protobufs.ms_pb2 as ms_pb2
 
@@ -21,9 +24,14 @@ import time
 import datetime
 import random
 import logging
+import string
+import traceback
 
 USERNAME_LENGTH = 256
 PASSWORD_LENGTH = 256
+GATEWAY_SALT_LENGTH = 256
+SESSION_PASSWORD_LENGTH = 16
+GATEWAY_RSA_KEYSIZE = 4096
 
 class IDCounter( storagetypes.Object ):
    value = storagetypes.Integer()
@@ -74,9 +82,15 @@ class Gateway( storagetypes.Object ):
    host = storagetypes.Text()
    port = storagetypes.Integer()
    ms_username = storagetypes.String()
-   ms_password_hash = storagetypes.String()
+   ms_password_hash = storagetypes.Text()
+   ms_password_salt = storagetypes.Text()
    g_id = storagetypes.Integer()
 
+   public_key = storagetypes.Text()    # PEM-encoded RSA public key
+
+   session_password = storagetypes.Text()
+   session_expires = storagetypes.Integer(default=-1, indexed=False)     # -1 means "never expires"
+   
    required_attrs = [
       "owner_id",
       "host",
@@ -87,22 +101,59 @@ class Gateway( storagetypes.Object ):
 
    validators = {
       "ms_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
+      "session_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
       "ms_username": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-. ")) ) == 0 and not is_int(value) )
+   }
+
+   # TODO: session expires in 3600 seconds
+   default_values = {
+      "session_expires": (lambda cls, attrs: -1),
+      "session_password": (lambda cls, attrs: Gateway.generate_session_credentials())
    }
 
    key_attrs = [
       "g_id"
    ]
 
+   @classmethod
+   def is_valid_pubkey( self, pubkey_str ):
+      try:
+         key = RSA.importKey( pubkey_str )
+      except Exception, e:
+         logging.error("RSA.importKey %s", traceback.format_exc() )
+         return False
+
+      # must be 4096 bits
+      if key.size() != GATEWAY_RSA_KEYSIZE - 1:
+         logging.error("invalid key size = %s" % key.size() )
+         return False
+
+      return True
+
    def authenticate( self, password ):
       """
-      Authenticate this Gateway
+      Verify that a password is correct
       """
       h = SHA256.new()
+      h.update( self.ms_password_salt )
       h.update( password )
       pw_hash = h.hexdigest()
 
       return pw_hash == self.ms_password_hash
+
+
+   def authenticate_session( self, password ):
+      """
+      Verify that the session password is correct
+      """
+      return self.session_password == password
+
+      
+   def verify_signature( self, data, sig ):
+      key = RSA.importKey( self.public_key )
+      h = SHA256.new( data )
+      verifier = PKCS1_v1_5.new(key)
+      return verifier.verify( h, sig )
 
    @classmethod
    def generate_password_hash( cls, pw ):
@@ -113,6 +164,71 @@ class Gateway( storagetypes.Object ):
       pw_hash = h.hexdigest()
 
       return unicode(pw_hash)
+
+
+   @classmethod
+   def generate_password( cls, length ):
+      password = "".join( [random.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") for i in xrange(length)] )
+      return password
+
+
+   @classmethod
+   def generate_session_credentials( cls ):
+      return cls.generate_password( SESSION_PASSWORD_LENGTH )
+      
+   def get_current_session_credentials( self ):
+      """
+      Get the session credentials, returning None if they are too old
+      """
+      now = int( time.time() )
+      if self.session_password == None or (now > self.session_expires and self.session_expires > 0):
+         return None
+
+      return self.session_password
+
+   def regenerate_session_credentials( self, volume ):
+      """
+      Regenerate a session password, given the Volume it's bound to.
+      """
+      self.session_password = Gateway.generate_session_credentials()
+      if volume.session_timeout > 0:
+         self.session_expires = now + volume.session_timeout
+      else:
+         self.session_expires = -1
+         
+
+   @classmethod
+   def generate_credentials( cls ):
+      """
+      Generate (password, SHA256(password), salt) for this gateway
+      """
+      password = cls.generate_password( PASSWORD_LENGTH )
+      pw_hash = Gateway.generate_password_hash( password )
+      salt = "".join( [random.choice(string.printable) for i in xrange(GATEWAY_SALT_LENGTH)] )
+
+      return ( password, pw_hash, salt )  
+
+
+   def load_pubkey( self, pubkey_str ):
+      # pubkey_str is base64 encoded
+      pubkey_str_unencoded = base64.b64decode( pubkey_str )
+      if not Gateway.is_valid_pubkey( pubkey_str_unencoded ):
+         return False
+
+      self.public_key = RSA.importKey( pubkey_str_unencoded ).exportKey()
+      return True
+      
+   def protobuf_cred( self, cred_pb ):
+      """
+      Populate an ms_volume_gateway_cred structure
+      """
+      cred_pb.owner_id = self.owner_id
+      cred_pb.gateway_id = self.g_id
+      cred_pb.name = self.ms_username
+      cred_pb.host = self.host
+      cred_pb.port = self.port
+      cred_pb.public_key = self.public_key
+      
    
 
 class UserGateway( Gateway ):
@@ -122,63 +238,59 @@ class UserGateway( Gateway ):
 
 
    required_attrs = Gateway.required_attrs + [
+      "volume_id",
       "read_write"
    ]
 
-   default_values = {
+   default_values = dict( Gateway.default_values.items() + {
       "read_write": (lambda cls, attrs: False), # Default is only read
-      "port": (lambda cls, attrs:80)
-   }
-
+      "port": (lambda cls, attrs:32780)
+   }.items() )
    
-   def get_credential_entry(self):
-      """
-      Generate a serialized user record
-      """
-      return "%s:%s:%s" % (self.owner_id, self.ms_username, self.ms_password_hash)
-      
-
-   @classmethod
-   def generate_credentials( cls ):
-      """
-      Generate (username, password, SHA256(password)) for this gateway
-      """
-      password = os.urandom( PASSWORD_LENGTH )
-
-      username = base64.encodestring( uuid.uuid4().urn )
-      pw_hash = Gateway.generate_password_hash( password )
-      
-      return (username, password, pw_hash)
-      
-   def new_credentials( self ):
-      """
-      Generate new credentials for this UG and save them.
-      Return the (username, password) combo
-      """
-      username, password, pw_hash = UserGateway.generate_credentials()
-
-      self.ms_username = username
-      self.ms_password_hash = pw_hash
-      self.put()
-
-      return (username, password)
-      
-
-   def protobuf_cred( self, cred_pb ):
-      """
-      Populate an ms_volume_gateway_cred structure
-      """
-      cred_pb.owner_id = self.owner_id
-      cred_pb.username = self.ms_username
-      cred_pb.password_hash = self.ms_password_hash
-      cred_pb.host = self.host
-      cred_pb.port = self.port
 
    @classmethod
    def cache_listing_key( cls, **kwargs ):
       assert 'volume_id' in kwargs, "Required attributes: volume_id"
       return "UGs: volume=%s" % kwargs['volume_id']
 
+
+   def verify_ms_update( self, ms_update ):
+      """
+      Verify the authenticity of a received ms_update message
+      """
+
+      sig = ms_update.signature
+      sig_bin = base64.b64decode( sig )
+      
+      ms_update.signature = ""
+      ms_update_str = ms_update.SerializeToString()
+
+      ret = self.verify_signature( ms_update_str, sig )
+
+      ms_update.signature = sig
+
+      return ret
+
+
+   def is_valid_cred( self, cred_pb ):
+      """
+      Is a given ms_volume_gateway_cred valid?
+      """
+      
+      if self.owner_id != cred_pb.owner_id:
+         return False
+
+      if self.ms_username != cred_pb.name:
+         return False
+
+      if self.host != cred_pb.host:
+         return False
+
+      if self.port != cred_pb.port:
+         return False
+
+      return True
+      
 
    @classmethod
    def Create( cls, user, volume=None, **kwargs ):
@@ -224,10 +336,11 @@ class UserGateway( Gateway ):
 
       if kwargs.get("ms_username") == None or kwargs.get("ms_password_hash") == None:
          # generate new credentials
-         username, password, password_hash = UserGateway.generate_credentials()
-         kwargs["ms_username"] = username
+         password, password_hash, password_salt = UserGateway.generate_credentials()
+         kwargs["ms_username"] = base64.encodestring( uuid.uuid4().urn )
          kwargs["ms_password"] = password
          kwargs["ms_password_hash"] = password_hash
+         kwargs["ms_password_salt"] = password_salt
 
       missing = UserGateway.find_missing_attrs( kwargs )
       if len(missing) != 0:
@@ -256,7 +369,7 @@ class UserGateway( Gateway ):
 
       ug = storagetypes.memcache.get( ug_key_name )
       if ug == None:
-         logging.info("UG with ID of {} not found in cache".format(g_id))
+         #logging.info("UG with ID of {} not found in cache".format(g_id))
          ug_key = storagetypes.make_key( UserGateway, UserGateway.make_key_name( g_id=g_id ) )
          ug = ug_key.get( use_memcache=False )
          if not ug:
@@ -264,6 +377,12 @@ class UserGateway( Gateway ):
          storagetypes.memcache.set( ug_key_name, ug )
       return ug
 
+   @classmethod
+   def FlushCache( cls, g_id ):
+      gateway_key_name = UserGateway.make_key_name( g_id=g_id )
+      storagetypes.memcache.delete(gateway_key_name)
+
+      
    @classmethod
    def Update( cls, g_id, **fields ):
       '''
@@ -330,33 +449,9 @@ class AcquisitionGateway( Gateway ):
       "json_config"
    ]
 
-   default_values = {
+   default_values = dict( Gateway.default_values.items() + {
       "json_config": (lambda cls, attrs: {}) # Default is only read
-   }
-
-   def get_credential_entry(self):
-      """
-      Generate a serialized user record
-      """
-      return "AG:%s:%s" % (self.ms_username, self.ms_password_hash)
-
-   def protobuf_cred( self, cred_pb ):
-      """
-      Populate an ms_volume_gateway_cred structure
-      """
-      cred_pb.username = self.ms_username
-      cred_pb.password_hash = self.ms_password_hash
-      
-
-   @classmethod
-   def generate_credentials( cls ):
-      """
-      Generate (password, SHA256(password)) for this gateway
-      """
-      password = os.urandom( PASSWORD_LENGTH )
-      pw_hash = Gateway.generate_password_hash( password )
-      
-      return ( password, pw_hash)  
+   }.items() )
 
 
    @classmethod
@@ -510,34 +605,10 @@ class ReplicaGateway( Gateway ):
       "json_config"
    ]
 
-   default_values = {
+   default_values = dict( Gateway.default_values.items() + {
       "json_config": (lambda cls, attrs: {}), # Default is only read
       "private": (lambda cls, attrs: False) # Default is public
-   }
-
-   def get_credential_entry(self):
-      """
-      Generate a serialized user record
-      """
-      return "RG:%s:%s" % (self.ms_username, self.ms_password_hash)
-
-   def protobuf_cred( self, cred_pb ):
-      """
-      Populate an ms_volume_gateway_cred structure
-      """
-      cred_pb.username = self.ms_username
-      cred_pb.password_hash = self.ms_password_hash
-   
-
-   @classmethod
-   def generate_credentials( cls ):
-      """
-      Generate (password, SHA256(password)) for this gateway
-      """
-      password = os.urandom( PASSWORD_LENGTH )
-      pw_hash = Gateway.generate_password_hash( password )
-      
-      return ( password, pw_hash)  
+   }.items() )
 
    @classmethod
    def cache_listing_key( cls, **kwargs ):
