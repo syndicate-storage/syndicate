@@ -90,6 +90,10 @@ public class SyndicateConfigUtil {
     
     public static final String TEXT_INPUT_MAX_LENGTH = "mapred.linerecordreader.maxlength";
     
+    public static final String TEXT_RECORD_DELIMITER = "textinputformat.record.delimiter";
+    
+    public static final String TEXT_LINES_PER_MAP = "mapreduce.input.lineinputformat.linespermap";
+    
     public static final long MEGABYTE = 1024 * 1024;
     
     public synchronized static JSFSConfiguration getJSFSConfigurationInstance(Configuration conf) throws InstantiationException {
@@ -400,5 +404,21 @@ public class SyndicateConfigUtil {
     
     public static int getTextInputMaxLength(Configuration conf) {
         return conf.getInt(TEXT_INPUT_MAX_LENGTH, Integer.MAX_VALUE);
+    }
+    
+    public static void setTextRecordDelimiter(Configuration conf, String delimiter) {
+        conf.set(TEXT_RECORD_DELIMITER, delimiter);
+    }
+    
+    public static String getTextRecordDelimiter(Configuration conf) {
+        return conf.get(TEXT_RECORD_DELIMITER, null);
+    }
+    
+    public static void setTextLinesPerMap(Configuration conf, int lines) {
+        conf.setInt(TEXT_LINES_PER_MAP, lines);
+    }
+    
+    public static int getTextLinesPerMap(Configuration conf) {
+        return conf.getInt(TEXT_LINES_PER_MAP, 1);
     }
 }
