@@ -30,6 +30,7 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
     private static final Log LOG = LogFactory.getLog(SyndicateInputFormat.class);
     
     private static final double SPLIT_SLOP = 1.1;   // 10% slop
+    private static final long MEGABYTE = 1024 * 1024;
 
     private static final JSFSFilenameFilter hiddenFileFilter = new JSFSFilenameFilter() {
 
@@ -59,7 +60,7 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
     }
 
     private long getFormatMinSplitSize() {
-        return 1;
+        return MEGABYTE;
     }
 
     private JSFSFilenameFilter getInputPathFilter(JobContext context) {

@@ -90,6 +90,8 @@ public class SyndicateConfigUtil {
     
     public static final String TEXT_INPUT_MAX_LENGTH = "mapred.linerecordreader.maxlength";
     
+    public static final long MEGABYTE = 1024 * 1024;
+    
     public synchronized static JSFSConfiguration getJSFSConfigurationInstance(Configuration conf) throws InstantiationException {
         if(instance == null) {
             Backend backend = getBackend(conf);
@@ -101,6 +103,8 @@ public class SyndicateConfigUtil {
                 IPCConfiguration ipc_conf = new IPCConfiguration();
                 try {
                     ipc_conf.setUGName(getIPC_UGName(conf));
+                    ipc_conf.setMaxMetadataCacheSize(getMaxMetadataCacheNum(conf));
+                    ipc_conf.setCacheTimeoutSecond(getMetadataCacheTimeout(conf));
                 } catch (IllegalAccessException ex) {
                     LOG.error(ex);
                     throw new InstantiationException(ex.getMessage());
@@ -138,20 +142,6 @@ public class SyndicateConfigUtil {
     }
     
     private synchronized static void initJSFSConfiguration(Configuration conf, JSFSConfiguration jsfs_config) throws InstantiationException {
-        int maxMetadataCacheSize = getMaxMetadataCacheNum(conf);
-        try {
-            jsfs_config.setMaxMetadataCacheSize(maxMetadataCacheSize);
-        } catch (IllegalAccessException ex) {
-            LOG.error(ex);
-        }
-        
-        int metadataCacheTimeout = getMetadataCacheTimeout(conf);
-        try {
-            jsfs_config.setCacheTimeoutSecond(metadataCacheTimeout);
-        } catch (IllegalAccessException ex) {
-            LOG.error(ex);
-        }
-        
         int readBufferSize = getFileReadBufferSize(conf);
         try {
             jsfs_config.setReadBufferSize(readBufferSize);
@@ -325,7 +315,7 @@ public class SyndicateConfigUtil {
     }
     
     public static long getMinInputSplitSize(Configuration conf) {
-        return conf.getLong(MIN_INPUT_SPLIT_SIZE, 1);
+        return conf.getLong(MIN_INPUT_SPLIT_SIZE, MEGABYTE);
     }
     
     public static void setMaxInputSplitSize(Configuration conf, long maxSize) {
