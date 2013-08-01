@@ -281,4 +281,12 @@ public class SyndicateConfig {
     public int getTextLinesPerMap() {
         return SyndicateConfigUtil.getTextLinesPerMap(this.config);
     }
+    
+    public void setTextKeyValueSeparator(byte separator) {
+        SyndicateConfigUtil.setTextKeyValueSeparator(this.config, separator);
+    }
+    
+    public byte getTextKeyValueSeparator() {
+        return SyndicateConfigUtil.getTextKeyValueSeparator(this.config);
+    }
 }

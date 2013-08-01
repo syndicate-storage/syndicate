@@ -91,8 +91,9 @@ public class SyndicateConfigUtil {
     public static final String TEXT_INPUT_MAX_LENGTH = "mapred.linerecordreader.maxlength";
     
     public static final String TEXT_RECORD_DELIMITER = "textinputformat.record.delimiter";
-    
     public static final String TEXT_LINES_PER_MAP = "mapreduce.input.lineinputformat.linespermap";
+    public static final String TEXT_KEY_VALUE_SEPARATOR = "key.value.separator.in.input.line";
+    
     
     public static final long MEGABYTE = 1024 * 1024;
     
@@ -420,5 +421,15 @@ public class SyndicateConfigUtil {
     
     public static int getTextLinesPerMap(Configuration conf) {
         return conf.getInt(TEXT_LINES_PER_MAP, 1);
+    }
+    
+    public static void setTextKeyValueSeparator(Configuration conf, byte separator) {
+        String separatorString = new String(new byte[]{separator});
+        conf.set(TEXT_KEY_VALUE_SEPARATOR, separatorString);
+    }
+    
+    public static byte getTextKeyValueSeparator(Configuration conf) {
+        String separatorString = conf.get(TEXT_KEY_VALUE_SEPARATOR, "\t");
+        return (byte)separatorString.charAt(0);
     }
 }
