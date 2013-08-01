@@ -1,3 +1,10 @@
+/*
+   Copyright 2013 The Trustees of Princeton University
+   All Rights Reserved
+   
+   Wathsala Vithanage (wathsala@princeton.edu)
+*/
+
 #ifndef _REVERSION_DAEMON_H_
 #define _REVERSION_DAEMON_H_
 

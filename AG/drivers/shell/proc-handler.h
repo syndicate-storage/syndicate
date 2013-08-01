@@ -1,3 +1,10 @@
+/*
+   Copyright 2013 The Trustees of Princeton University
+   All Rights Reserved
+   
+   Wathsala Vithanage (wathsala@princeton.edu)
+*/
+
 #ifndef _EXEC_HANDLER_H_
 #define _EXEC_HANDLER_H_
 

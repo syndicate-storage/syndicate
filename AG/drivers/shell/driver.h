@@ -1,3 +1,10 @@
+/*
+   Copyright 2013 The Trustees of Princeton University
+   All Rights Reserved
+   
+   Wathsala Vithanage (wathsala@princeton.edu)
+*/
+
 #ifndef _SQL_DRIVER_H_
 #define _SQL_DRIVER_H_
 
