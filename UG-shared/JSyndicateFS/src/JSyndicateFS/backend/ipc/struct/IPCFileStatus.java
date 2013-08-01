@@ -15,7 +15,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public class IPCFileStatus {
 
-    public static final Log LOG = LogFactory.getLog(IPCFileStatus.class);
+    private static final Log LOG = LogFactory.getLog(IPCFileStatus.class);
     
     private IPCFileSystem filesystem;
     private JSFSPath path;

@@ -26,7 +26,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public class SharedFSFileSystem extends JSFSFileSystem {
 
-    public static final Log LOG = LogFactory.getLog(SharedFSFileSystem.class);
+    private static final Log LOG = LogFactory.getLog(SharedFSFileSystem.class);
     
     private SharedFSConfiguration configuration;
     private File mountPoint;

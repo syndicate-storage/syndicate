@@ -15,7 +15,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public class IPCRandomAccess implements JSFSRandomAccess {
     
-    public static final Log LOG = LogFactory.getLog(IPCRandomAccess.class);
+    private static final Log LOG = LogFactory.getLog(IPCRandomAccess.class);
     
     private IPCFileSystem filesystem;
     private IPCFileHandle handle;

@@ -17,7 +17,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public class ErrorUtils {
     
-    public static final Log LOG = LogFactory.getLog(ErrorUtils.class);
+    private static final Log LOG = LogFactory.getLog(ErrorUtils.class);
     
     private static class ErrorDetail {
         private int no;

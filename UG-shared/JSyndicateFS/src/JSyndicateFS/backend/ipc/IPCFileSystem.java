@@ -30,7 +30,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public class IPCFileSystem extends JSFSFileSystem {
 
-    public static final Log LOG = LogFactory.getLog(IPCFileSystem.class);
+    private static final Log LOG = LogFactory.getLog(IPCFileSystem.class);
 
     private IPCConfiguration configuration;
     private String UGName;

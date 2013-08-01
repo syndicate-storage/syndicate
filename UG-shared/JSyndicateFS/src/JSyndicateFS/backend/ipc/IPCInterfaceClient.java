@@ -21,7 +21,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public class IPCInterfaceClient implements Closeable {
     
-    public static final Log LOG = LogFactory.getLog(IPCInterfaceClient.class);
+    private static final Log LOG = LogFactory.getLog(IPCInterfaceClient.class);
     
     private String UGName;
     private int port;

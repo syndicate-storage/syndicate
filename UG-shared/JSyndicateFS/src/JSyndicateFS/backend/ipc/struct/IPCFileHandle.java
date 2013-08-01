@@ -17,7 +17,7 @@ import org.apache.commons.logging.LogFactory;
  * @author iychoi
  */
 public class IPCFileHandle implements Closeable {
-    public static final Log LOG = LogFactory.getLog(IPCFileHandle.class);
+    private static final Log LOG = LogFactory.getLog(IPCFileHandle.class);
 
     private IPCFileSystem filesystem;
     private IPCInterfaceClient client;
