@@ -184,18 +184,21 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         
     def getSession(self):
         """Return the existing session or a new session"""
-        session = gaesession.get_current_session()
-            
-        if not session.has_key( 'id' ):
-           # load from datastore 
-           session = gaesession.Session( cookie_key = gaesession.SESSION_COOKIE_KEY )
+        if not hasattr(self, "session"):
+            session = gaesession.get_current_session()
 
-           if not session.has_key( 'id' ):
-               # new session
-               sid = randomString(16, '0123456789abcdef')
-               session['id'] = sid
-        
-        return session
+            if not session.has_key( 'id' ):
+               # load from datastore
+               session = gaesession.Session( cookie_key = gaesession.SESSION_COOKIE_KEY )
+
+               if not session.has_key( 'id' ):
+                     # new session
+                     session.start( ssl_only=True )
+                     sid = randomString(16, '0123456789abcdef')
+                     session['id'] = sid
+
+            self.session = session
+        return self.session
 
         
     def setSessionCookie(self, session):
@@ -228,7 +231,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
                 self.query[k] = v
 
 
-       logging.info("query = %s" % str(self.query) )
+          logging.info("query = %s" % str(self.query) )
        
         
     def get(self):
@@ -325,6 +328,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         self.load_query()
       
         openid_url = urlparse.urljoin( self.OPENID_PROVIDER_URL, self.query.get('openid_username') )
+        rc = 0
         
         try:
             request, rc = self.begin_openid_auth()
@@ -336,18 +340,18 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
                         css_class='error',
                         form_contents=openid_url)
 
-            return
+            return rc
             
         if rc == -errno.EINVAL:
            # bad input
            self.render('Enter your OpenID Identifier', css_class='error')
-           return
+           return rc
 
         elif rc == -errno.ENOTCONN:
            # no service
            msg = 'No OpenID services found for <code>%s</code>' % (cgi.escape(openid_url),)
            self.render(msg, css_class='error', form_contents=openid_url)
-           return
+           return rc
 
         else:
            # success!
@@ -363,10 +367,9 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
               self.setRedirect(redirect_url)   
               
            else:
-              #self.response.write("go back to %s" % (self.request.host_url + "/process") )
               self.render_redirect( request, trust_root, return_to, immediate )
 
-           return  
+           return rc
 
                    
     def requestRegistrationData(self, request):
@@ -416,6 +419,8 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
           # failure message. The library should supply debug
           # information in a log.
           self.render_error( info, sreg_resp, pape_resp )
+
+       return info, sreg_resp, pape_resp
           
        
     def complete_openid_auth(self):

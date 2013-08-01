@@ -137,22 +137,30 @@ def response_server_error( request_handler, status, msg=None ):
    return
    
 
-def response_UG_error( request_handler, status ):
+def response_UG_error( request_handler, status, message=None ):
 
    request_handler.response.status = status
    request_handler.response.headers['Content-Type'] = "text/plain"
 
    if status == 400:
-      request_handler.response.write("Invalid request\n")
+      if message == None:
+         messsage = "Invalid Request\n"
+      request_handler.response.write(message)
       
    elif status == 404:
-      request_handler.response.write("No such gateway\n")
+      if message == None:
+         messsage = "No such gateway\n"
+      request_handler.response.write(message)
       
    elif status == 401:
-      request_handler.response.write("Authentication Required\n")
+      if message == None:
+         message = "Authentication required\n"
+      request_handler.response.write(message)
 
    elif status == 403:
-      request_handler.response.write("Authorization Failed\n")
+      if message == None:
+         message = "Authorization Failed\n"
+      request_handler.response.write(message)
 
    return
 
@@ -613,36 +621,74 @@ class MSOpenIDRequestHandler(GAEOpenIDRequestHandler):
       On GET, if we're authenticated, then simply redirect to /syn/.
       Otherwise, do OpenID authentication.
       """
-
+      self.load_query()
       session = self.getSession()
+
+      logging.info("request URL:       %s" % self.request.url )
+      logging.info("request headers: \n%s" % self.request.headers)
+      logging.info("session = %s"  % session )
+      
       if 'authenticated' in session:
+         self.setSessionCookie( session )
          self.setRedirect('/syn/')
          return
 
-      super( self, MSOpenIDRequestHandler ).get()
-      return
+      super( MSOpenIDRequestHandler, self ).get()
 
+      logging.info("response headers: \n%s" % self.response.headers)
+      return
       
-   def begin_openid_auth(self):
+      
+   def doVerify(self):
       """
       When setting up OpenID authentication, remember the OpenID username as our login e-mail.
       """
-
-      request, rc = super( self, MSOpenIDRequestHandler ).begin_openid_auth()
+      self.load_query()
+      
+      rc = super( MSOpenIDRequestHandler, self ).doVerify()
 
       if rc == 0:
          session = self.getSession()
          session['login_email'] = self.query.get('openid_username')
+
+         self.setSessionCookie( session )
+         #session.save( True )
       
-      return request, rc
+      return rc
       
       
    def doProcess(self):
-      info, _, _ = self.complete_openid_auth()
+      self.load_query()
 
-      if info.status == consumer.SUCCESS:
+      info, sreg_resp, pape_resp  = self.complete_openid_auth()
+
+      if info.status == consumer.FAILURE:
+         self.render_failure( info, sreg_resp, pape_resp )
+
+      elif info.status == consumer.SUCCESS:
+         session = self.getSession()
+
+         if 'login_email' not in session:
+            # invalid session
+            response_user_error( self, 400, "Invalid or missing session cookie" )
+            return None, None, None
+            
+         session['authenticated'] = True
+
+         self.setSessionCookie( session )
+         #session.save( True )
+         
          self.setRedirect('/syn/')
 
-      return
+      elif info.status == consumer.CANCEL:
+         self.render_cancel( info, sreg_resp, pape_resp )
+
+      elif info.status == consumer.SETUP_NEEDED:
+         self.render_setup_needed( info, sreg_resp, pape_resp )
+
+      else:
+         self.render_error( info, sreg_resp, pape_resp )
+
+      return info, sreg_resp, pape_resp
 
          
