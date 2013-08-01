@@ -1,3 +1,10 @@
+/*
+   Copyright 2013 The Trustees of Princeton University
+   All Rights Reserved
+   
+   Wathsala Vithanage (wathsala@princeton.edu)
+*/
+
 #ifndef _SQL_DRIVER_H_
 #define _SQL_DRIVER_H_
 
@@ -65,8 +72,8 @@ struct path_comp {
 };   
 
 typedef map<string, struct md_entry*> content_map;
-typedef map<string, struct map_info> query_map;
-static int publish(const char *fpath, int type, struct map_info mi);
+typedef map<string, struct map_info*> query_map;
+static int publish(const char *fpath, int type, struct map_info *mi);
 char**	str2array(char *str);
 void	init(unsigned char* dsn);
 

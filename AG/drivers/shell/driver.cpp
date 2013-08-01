@@ -1,6 +1,8 @@
 /*
    Copyright 2013 The Trustees of Princeton University
    All Rights Reserved
+   
+   Wathsala Vithanage (wathsala@princeton.edu)
 */
 
 #include <driver.h>
@@ -94,11 +96,11 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	//This is the first request for this file.
 	ret = 0;
 	ctx->complete = true;
-	prch.execute_command(ctx, NULL, 0, global_conf->blocking_factor);
+	prch.execute_command(ctx, NULL, 0);
     }
     else if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
 	if (!ctx->complete) {
-	    ret = prch.execute_command(ctx, buf, len, global_conf->blocking_factor);
+	    ret = prch.execute_command(ctx, buf, len);
 	    if (ctx->data_offset == (ssize_t)global_conf->blocking_factor)
 		ctx->complete = true;
 	    if (ret < 0) {
@@ -237,11 +239,11 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        replica_ctx->size = ctx->data_len;
    }
    else {
-       struct map_info mi; 
+       struct map_info* mi; 
        query_map::iterator itr = FS2CMD->find(string(file_path));
        if (itr != FS2CMD->end()) {
 	   mi = itr->second;
-	   char** cmd_array = str2array((char*)mi.shell_command);
+	   char** cmd_array = str2array((char*)mi->shell_command);
 	   ctx->proc_name = cmd_array[0];
 	   ctx->argv = cmd_array;
 	   ctx->envp = NULL;
@@ -250,7 +252,8 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	   ctx->fd = -1;
 	   ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
 	   ctx->file_path = file_path;
-	   ctx->id = mi.id;
+	   ctx->id = mi->id;
+	   ctx->mi = mi;
 	   // Negative size switches libmicrohttpd to chunk transfer mode
 	   replica_ctx->size = -1;
 	   // Check the block status and set the http response appropriately
@@ -305,7 +308,7 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 	char* dataset ) {
     mc = client;
     MapParser mp = MapParser(dataset);
-    map<string, struct map_info>::iterator iter;
+    map<string, struct map_info*>::iterator iter;
     set<char*, path_comp> dir_hierachy;
     mp.parse();
     unsigned char* cp = mp.get_dsn();
@@ -324,17 +327,18 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     set<char*, path_comp>::iterator it;
     for( it = dir_hierachy.begin(); it != dir_hierachy.end(); it++ ) {
 	struct map_info mi;
-	publish (*it, MD_ENTRY_DIR, mi);
+	publish (*it, MD_ENTRY_DIR, &mi);
     }
 
     for (iter = FS2CMD->begin(); iter != FS2CMD->end(); iter++) {
 	publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second);
+	revd->add_map_info(iter->second);
     }
     ms_client_destroy(mc);
     return 0;
 }
 
-static int publish(const char *fpath, int type, struct map_info mi)
+static int publish(const char *fpath, int type, struct map_info* mi)
 {
     int i = 0;
     struct md_entry* ment = new struct md_entry;
@@ -372,7 +376,7 @@ static int publish(const char *fpath, int type, struct map_info mi)
     ment->ctime_nsec = rtime.tv_nsec;
     ment->mtime_sec = rtime.tv_sec;
     ment->mtime_nsec = rtime.tv_nsec;
-    ment->mode = mi.file_perm;
+    ment->mode = mi->file_perm;
     ment->version = 1;
     ment->max_read_freshness = 1000;
     ment->max_write_freshness = 1;

@@ -79,6 +79,9 @@ struct map_info {
     uint64_t id;
     uint16_t file_perm;
     uint64_t reval_sec;
+    uint64_t mi_time;
+    void* entry;
+    void (*invalidate_entry)(void*);
 };
 
 class MapParserHandler : public DefaultHandler {
@@ -96,12 +99,12 @@ class MapParserHandler : public DefaultHandler {
 	unsigned char* dsn_str;
 	bool open_dsn;
 	uint64_t current_id;
-	map<string, struct map_info>* xmlmap;
+	map<string, struct map_info*>* xmlmap;
 
 	void set_time(char *tm_str);
 
     public:
-	MapParserHandler(map<string, struct map_info> *xmlmap);
+	MapParserHandler(map<string, struct map_info*> *xmlmap);
 	void startElement(
 		const   XMLCh* const    uri,
 		const   XMLCh* const    localname,
@@ -123,13 +126,13 @@ class MapParserHandler : public DefaultHandler {
 
 class MapParser {
     private:
-	map<string, struct map_info> *FS2SQLMap;
+	map<string, struct map_info*> *FS2SQLMap;
 	char *mapfile;
 	unsigned char* dsn_str;
 	uint64_t reval_secs;
     public:
 	MapParser( char* mapfile );
-	map<string, struct map_info>* get_map( );
+	map<string, struct map_info*>* get_map( );
 	int parse();
 	unsigned char* get_dsn();
 };
