@@ -3,10 +3,23 @@
 
 #define BLK_SIZE (global_conf->blocking_factor)
 
-//Self pipe to singla inotify_even_receiver's select() to retrun immediately...
+//Self pipe to signal inotify_even_receiver's select() to retrun immediately...
 int self_pipe[2];
 set<proc_table_entry*, proc_table_entry_comp> running_proc_set;
 map<pid_t, proc_table_entry*> pid_map;
+
+void invalidate_entry(void* cls) {
+    proc_table_entry *entry = (proc_table_entry*)cls;
+    if (entry == NULL)
+	return;
+    if (!(entry->is_read_complete)) {
+	if (kill(entry->proc_id, 9) < 0)
+	    perror("kill(9)");
+    }
+    if (unlink(entry->block_file) < 0)
+	perror("unlink(block_file)");
+    entry->valid = false;
+}
 
 static void sigchld_handler(int signum) {
     pid_t pid = 0;
@@ -77,18 +90,6 @@ void* inotify_event_receiver(void *cls) {
 		    pte->block_file_wd = wd;
 		    running_proc_set.insert(pte);
 		    pid_map[pte->proc_id] = pte;
-		    /*if (!ProcHandler::is_proc_alive(pte->proc_id)) {
-			struct stat buf;
-			if (stat(pte->block_file, &buf) < 0) {
-			    perror("stat");
-			}
-			else {
-			    //Update pte.
-			    pte->current_max_block = buf.st_size/BLK_SIZE; 
-			    pte->block_byte_offset = buf.st_size - pte->current_max_block * BLK_SIZE;
-			    pte->is_read_complete = true;
-			}
-		    }*/
 		}
 		else {
 		    perror("inotify_add_watch");
@@ -119,7 +120,7 @@ void* inotify_event_receiver(void *cls) {
 		    //File found in set, update block info...
 		    struct stat stat_buff;
 		    proc_table_entry *pte = *itr;
-		    if (stat(pte->block_file, &stat_buff) < 0) {
+		    if (stat(pte->block_file, &stat_buff) < 0 || !(pte->valid)) {
 			perror("stat");
 			if (inotify_rm_watch(ifd, ievent->wd) < 0)
 			    perror("inotify_rm_watch");
@@ -129,17 +130,10 @@ void* inotify_event_receiver(void *cls) {
 		    pte->current_max_block = stat_buff.st_size/BLK_SIZE;
 		    pte->block_byte_offset = stat_buff.st_size - 
 				    (pte->current_max_block * BLK_SIZE);
-		    /*if (!ProcHandler::is_proc_alive(pte->proc_id)) {
-			pte->is_read_complete = true;
-			if (inotify_rm_watch(ifd, ievent->wd) < 0)
-			    perror("inotify_rm_watch");
-			running_proc_set.erase(itr);
-			break;
-		    }*/
 		    byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
 		}
 		else {
-		    //File not found in set, remove warch
+		    //File not found in set, remove watch
 		    if (inotify_rm_watch(ifd, ievent->wd) < 0)
 			perror("inotify_rm_watch");
 		    break;
@@ -171,7 +165,8 @@ ProcHandler::ProcHandler(char *cache_dir_str)
     proc_table.resize(DEFAULT_INIT_PROC_TBL_LEN);
     if (pipe(self_pipe) < 0) 
 	perror("pipe");
-    int rc = pthread_create(&inotify_event_thread, NULL, inotify_event_receiver, NULL/*running_proc_set*/);
+    int rc = pthread_create(&inotify_event_thread, NULL, inotify_event_receiver, 
+			    NULL/*running_proc_set*/);
     if (rc < 0)
 	perror("pthreda_create");
 }
@@ -184,7 +179,8 @@ ProcHandler&  ProcHandler::get_handle(char *cache_dir_str)
 
 
 
-int ProcHandler::execute_command(const char* proc_name, char *argv[], char *envp[], ssize_t block_size, uint id)
+int ProcHandler::execute_command(const char* proc_name, char *argv[], 
+				    char *envp[], uint id, proc_table_entry *pte)
 {
     if (argv)
 	argv[0] = (char*)proc_name;
@@ -225,12 +221,18 @@ int ProcHandler::execute_command(const char* proc_name, char *argv[], char *envp
 	if (dup2(old_fd, STDOUT_FILENO) < 0) {
 	    perror("dup2");
 	}
-	proc_table_entry *pte = alloc_proc_table_entry();
+	if (pte == NULL)
+	    pte = alloc_proc_table_entry();
+	else {
+	    free(pte->block_file);
+	    pte->block_file = NULL;
+	}
 	pte->block_file = file_path;
 	pte->block_file_wd = -1;
 	pte->current_max_block = 0;
 	pte->proc_id = pid;
 	pte->is_read_complete = false;
+	pte->valid = true;
 	proc_table[id] = pte;
 	ulong pte_addr = (ulong)pte;
 	if (write(self_pipe[1], &pte_addr, sizeof(ulong)) < 0) {
@@ -248,8 +250,7 @@ int ProcHandler::execute_command(const char* proc_name, char *argv[], char *envp
 }
 
 int ProcHandler::execute_command(struct gateway_ctx *ctx, 
-				char *buffer, ssize_t read_size, 
-				ssize_t block_size) 
+				char *buffer, ssize_t read_size) 
 {
     char const *proc_name = ctx->proc_name;
     char **argv  = ctx->argv;
@@ -260,12 +261,14 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
     if (ctx->id >= DEFAULT_INIT_PROC_TBL_LEN)
 	return -EIO;
     proc_table_entry *pte = proc_table[ctx->id];
-    if (pte == NULL) {
+    if (pte == NULL || (pte != NULL && !(pte->valid))) {
 	int rc = execute_command(proc_name, argv, 
-				envp, block_size, ctx->id);
+				envp, ctx->id, pte);
 	if (rc < 0)
 	    return rc;
 	pte = proc_table[ctx->id];
+	ctx->mi->entry = pte;
+	ctx->mi->invalidate_entry = invalidate_entry;
 	int fd = open(pte->block_file, O_RDONLY);
 	if (fd < 0) {
 	    perror("open");
@@ -301,12 +304,12 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
     else {
 	//If data_offset is equal to block_size then we have read an 
 	//entire block. Therefore return 0.
-	if (ctx->data_offset >= block_size)
+	if (ctx->data_offset >= (ssize_t)BLK_SIZE)
 	    return 0;
 	//get proc_table_entry by id and return the block... 
 	//proc_table_entry *pte = proc_table[ctx->id];
 	if (pte->current_max_block >= ctx->block_id) {
-	    off_t current_offset = (ctx->block_id * block_size) + 
+	    off_t current_offset = (ctx->block_id * BLK_SIZE) + 
 			    ctx->data_offset;
 	    if (ctx->fd < 0) {
 		int fd = open(pte->block_file, O_RDONLY);
@@ -406,7 +409,10 @@ block_status ProcHandler::get_block_status(struct gateway_ctx *ctx)
 	blk_stat.in_progress = true;
     }
     else {
-	if (ctx->block_id > pte->current_max_block) {
+	if (!(pte->valid)) {
+	    blk_stat.in_progress = true;
+	}
+	else if (ctx->block_id > pte->current_max_block) {
 	    if (pte->is_read_complete) {
 		blk_stat.no_block = true;
 	    }

@@ -21,7 +21,7 @@
 
 
 
-MapParserHandler::MapParserHandler(map<string, struct map_info>* xmlmap)
+MapParserHandler::MapParserHandler(map<string, struct map_info*>* xmlmap)
 {
     this->xmlmap = xmlmap;
     open_key = false;
@@ -123,37 +123,40 @@ void MapParserHandler::endElement (
     }
     if (!strncmp(tag, PAIR_TAG, strlen(PAIR_TAG))) {
 	if (current_key) {
-	    struct map_info mi;
-	    mi.query = NULL;
-	    mi.unbounded_query = NULL;
-	    mi.file_perm = current_perm;
+	    struct map_info* mi = (struct map_info*)malloc(sizeof(struct map_info));
+	    mi->query = NULL;
+	    mi->unbounded_query = NULL;
+	    mi->file_perm = current_perm;
 	    if (bounded_query != NULL) {
 		size_t bounded_query_len = strlen(bounded_query);
-		mi.query = (unsigned char*)malloc(bounded_query_len + 1);
-		strncpy((char*)mi.query, bounded_query, bounded_query_len);
-		mi.query[bounded_query_len] = 0;
+		mi->query = (unsigned char*)malloc(bounded_query_len + 1);
+		strncpy((char*)mi->query, bounded_query, bounded_query_len);
+		mi->query[bounded_query_len] = 0;
 		free(bounded_query);
 		bounded_query = NULL;
 	    }
 	    if (unbounded_query != NULL) {
 		size_t unbounded_query_len = strlen(unbounded_query);
-		mi.unbounded_query = (unsigned char*)malloc(unbounded_query_len + 1);
-		strncpy((char*)mi.unbounded_query, unbounded_query, unbounded_query_len);
-		mi.unbounded_query[unbounded_query_len] = 0;
+		mi->unbounded_query = (unsigned char*)malloc(unbounded_query_len + 1);
+		strncpy((char*)mi->unbounded_query, unbounded_query, unbounded_query_len);
+		mi->unbounded_query[unbounded_query_len] = 0;
 		free(unbounded_query);
 		unbounded_query = NULL;
 	    }
 	    if (shell_cmd != NULL) {
 		size_t shell_cmd_len = strlen(shell_cmd);
-		mi.shell_command = (unsigned char*)malloc(shell_cmd_len + 1);
-		strncpy((char*)mi.shell_command, shell_cmd, shell_cmd_len);
-		mi.shell_command[shell_cmd_len] = 0;
+		mi->shell_command = (unsigned char*)malloc(shell_cmd_len + 1);
+		strncpy((char*)mi->shell_command, shell_cmd, shell_cmd_len);
+		mi->shell_command[shell_cmd_len] = 0;
 		free(shell_cmd);
 		shell_cmd = NULL;
 	    }
-	    mi.reval_sec = reval_secs;
+	    mi->reval_sec = reval_secs;
 	    reval_secs = 0;
-	    mi.id = current_id;
+	    mi->mi_time = 0;
+	    mi->id = current_id;
+	    mi->entry = NULL;
+	    mi->invalidate_entry = NULL;
 	    current_id++;
 	    (*xmlmap)[string(current_key)] =mi;
 	    free(current_key);
@@ -271,7 +274,7 @@ void MapParserHandler::set_time(char *tm_str) {
 MapParser::MapParser( char* mapfile)
 {
     this->mapfile = mapfile;
-    FS2SQLMap = new map<string, struct map_info>;
+    FS2SQLMap = new map<string, struct map_info*>;
 }
 
 int MapParser::parse()
@@ -312,7 +315,7 @@ int MapParser::parse()
     return 0;
 }
 	
-map<string, struct map_info>* MapParser::get_map()
+map<string, struct map_info*>* MapParser::get_map()
 {
     return FS2SQLMap;
 }

@@ -24,6 +24,7 @@
 #include <set>
 
 #include <gateway-ctx.h>
+#include <map-parser.h>
 
 #define DEFAULT_INIT_PROC_TBL_LEN   1024
 #define MAX_FILE_NAME_LEN	    32
@@ -41,6 +42,7 @@ struct _proc_table_entry {
     pid_t   proc_id;
     off_t   current_max_block;
     off_t   block_byte_offset;
+    bool    valid;
 }; 
 
 struct _block_status { 
@@ -59,6 +61,7 @@ struct proc_table_entry_comp {
     }
 };
 
+void invalidate_entry(void* entry);
 void* inotify_event_receiver(void *cls);
 void update_death(pid_t pid);
 static void sigchld_handler(int signum); 
@@ -78,8 +81,8 @@ class ProcHandler
 
     public:
 	static  ProcHandler&  get_handle(char* cache_dir_str);
-	int    execute_command(struct gateway_ctx *ctx, char *buffer, ssize_t read_size, ssize_t block_size); 
-	int  execute_command(const char* proc_name, char *argv[], char *evp[], ssize_t block_size, uint id); 
+	int    execute_command(struct gateway_ctx *ctx, char *buffer, ssize_t read_size); 
+	int  execute_command(const char* proc_name, char *argv[], char *evp[], uint id, proc_table_entry *pte); 
 	ssize_t	encode_results();
 	static proc_table_entry* alloc_proc_table_entry();
 	static bool is_proc_alive(pid_t);

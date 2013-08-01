@@ -3,6 +3,7 @@
 
 #include <sys/types.h>
 #include <unistd.h>
+#include <map-parser.h>
 
 struct gateway_ctx {
     int request_type;
@@ -27,6 +28,8 @@ struct gateway_ctx {
     off_t block_id;
     // are we done?
     bool complete;
+    // map_info
+    struct map_info *mi;
 };
 
 #endif //_GATEWAY_CTX_H_
