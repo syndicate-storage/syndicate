@@ -57,7 +57,7 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
         }
     };
 
-    private static class MultiPathFilter implements JSFSFilenameFilter {
+    protected static class MultiPathFilter implements JSFSFilenameFilter {
 
         private List<JSFSFilenameFilter> filters;
 
@@ -76,11 +76,11 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
         }
     }
 
-    private long getFormatMinSplitSize() {
+    protected long getFormatMinSplitSize() {
         return MEGABYTE;
     }
 
-    private JSFSFilenameFilter getInputPathFilter(JobContext context) {
+    protected JSFSFilenameFilter getInputPathFilter(JobContext context) {
         Configuration conf = context.getConfiguration();
         Class<? extends JSFSFilenameFilter> filterClass = SyndicateConfigUtil.getInputPathFilter(conf);
         if(filterClass != null)
@@ -89,8 +89,8 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
             return null;
     }
 
-    protected ArrayList<JSFSPath> listFiles(JobContext context) throws IOException {
-        ArrayList<JSFSPath> result = new ArrayList<JSFSPath>();
+    protected List<JSFSPath> listFiles(JobContext context) throws IOException {
+        List<JSFSPath> result = new ArrayList<JSFSPath>();
         JSFSPath[] dirs = SyndicateConfigUtil.getInputPaths(context.getConfiguration());
         if(dirs == null || dirs.length == 0) {
             throw new IOException("No input paths specified in job");
@@ -101,7 +101,7 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
             LOG.info("input path : " + dir.getPath());
         }
         
-        ArrayList<JSFSFilenameFilter> filters = new ArrayList<JSFSFilenameFilter>();
+        List<JSFSFilenameFilter> filters = new ArrayList<JSFSFilenameFilter>();
         
         // add hidden file filter by default
         filters.add(hiddenFileFilter);
@@ -150,7 +150,7 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
             throw new IOException(ex);
         }
         
-        ArrayList<InputSplit> splits = new ArrayList<InputSplit>();
+        List<InputSplit> splits = new ArrayList<InputSplit>();
         for(JSFSPath path : listFiles(context)) {
             long length = syndicateFS.getSize(path);
             long blockSize = syndicateFS.getBlockSize();
@@ -176,7 +176,7 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
         return splits;
     }
     
-    private long computeSplitSize(long blockSize, long minSize, long maxSize) {
+    protected long computeSplitSize(long blockSize, long minSize, long maxSize) {
         return Math.max(minSize, Math.min(maxSize, blockSize));
     }
 }
