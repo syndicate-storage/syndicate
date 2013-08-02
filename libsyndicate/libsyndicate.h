@@ -359,8 +359,8 @@ struct md_syndicate_conf {
    char* md_pidfile_path;                             // where to store the PID file for the gateway server
    char* gateway_metadata_root;                       // location on disk (if desired) to record metadata
    bool replica_overwrite;                            // overwrite replica file at the client's request
-   char* server_key;                                  // path to PEM-encoded TLS-supported private key for this gateway server
-   char* server_cert;                                 // path to PEM-encoded TLS-supported certificate for this gateway server
+   char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
+   char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
 
    // debug
    int debug_read;                                    // print verbose information for reads
@@ -373,8 +373,8 @@ struct md_syndicate_conf {
    int portnum;                                       // Syndicate-side port number
    int transfer_timeout;                              // how long a transfer is allowed to take
    bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers
-   bool trust_volume_pubkey;                          // when we receive a public key from a Volume, trust it implicitly.  Otherwise, one must be given in advance
-   char* volume_public_key;                           // if trust_volume_pubkey is false, then this contains a PEM-encoded RSA public key for the Volume
+   char* volume_public_key_path;                      // if trust_volume_pubkey is false, then this contains  the path to the PEM-encoded public key for the Volume
+   char* gateway_key_path;                            // path to PEM-encoded user-given public/private key for this gateway
    
    // runtime fields
    char* metadata_url;                                // URL (or path on disk) where to get the metadata
@@ -388,6 +388,10 @@ struct md_syndicate_conf {
    char* mountpoint;                                  // absolute path to the place where the metadata server is mounted
    char* hostname;                                    // what's our hostname?
    char* ag_driver;				      // AG gatway driver that encompasses gateway callbacks
+   char* volume_public_key;
+   char* gateway_key;
+   char* server_key;
+   char* server_cert;
 };
 
 
@@ -449,8 +453,10 @@ struct md_syndicate_conf {
 
 #define PORTNUM_KEY                 "PORTNUM"
 #define HTTPD_PORTNUM_KEY           "HTTPD_PORTNUM"
-#define SSL_PKEY_KEY                "SSL_PKEY"
-#define SSL_CERT_KEY                "SSL_CERT"
+#define SSL_PKEY_KEY                "TLS_PKEY"
+#define SSL_CERT_KEY                "TLS_CERT"
+#define GATEWAY_KEY_KEY             "GATEWAY_KEY"
+#define VOLUME_PUBKEY_KEY           "VOLUME_PUBKEY"
 #define AUTH_OPERATIONS_KEY         "AUTH_OPERATIONS"
 #define PIDFILE_KEY                 "PIDFILE"
 #define VOLUME_NAME_KEY             "VOLUME_NAME"
@@ -665,7 +671,11 @@ int md_init( int gateway_type,
              char const* volume_name,
              char const* gateway_name,
              char const* md_username,
-             char const* md_password
+             char const* md_password,
+             char const* volume_key_file,
+             char const* my_key_file,
+             char const* tls_key_file,
+             char const* tls_cert_file
            );
 
 int md_shutdown(void);

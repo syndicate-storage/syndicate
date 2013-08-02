@@ -752,21 +752,29 @@ int main(int argc, char** argv) {
    char* ms_url = NULL;
    char* gateway_name = NULL;
    int portnum = -1;
+   char* volume_pubkey_path = NULL;
+   char* gateway_pkey_path = NULL;
+   char* tls_pkey_path = NULL;
+   char* tls_cert_path = NULL;
    
    static struct option syndicate_options[] = {
       {"config-file",     required_argument,   0, 'c'},
       {"volume-name",     required_argument,   0, 'v'},
       {"username",        required_argument,   0, 'u'},
       {"password",        required_argument,   0, 'p'},
-      {"gateway",         required_argument,   0, 'G'},
+      {"gateway",         required_argument,   0, 'g'},
       {"port",            required_argument,   0, 'P'},
       {"MS",              required_argument,   0, 'm'},
+      {"volume-pubkey",   required_argument,   0, 'V'},
+      {"gateway-pkey",    required_argument,   0, 'G'},
+      {"tls-pkey",        required_argument,   0, 'S'},
+      {"tls-cert",        required_argument,   0, 'C'},
       {0, 0, 0, 0}
    };
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:o:m:fsG:", syndicate_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:o:m:fsg:V:G:S:C:", syndicate_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -792,7 +800,7 @@ int main(int argc, char** argv) {
             ms_url = optarg;
             break;
          }
-         case 'G': {
+         case 'g': {
             gateway_name = optarg;
             break;
          }
@@ -814,6 +822,22 @@ int main(int argc, char** argv) {
             fuse_opt_add_arg( &args, "-s" );
             break;
          }
+         case 'V': {
+            volume_pubkey_path = optarg;
+            break;
+         }
+         case 'G': {
+            gateway_pkey_path = optarg;
+            break;
+         }
+         case 'S': {
+            tls_pkey_path = optarg;
+            break;
+         }
+         case 'C': {
+            tls_cert_path = optarg;
+            break;
+         }
             
          default: {
             break;
@@ -828,7 +852,7 @@ int main(int argc, char** argv) {
 
    // we need a mountpoint, and possibly other options
    if( argv[argc-1][0] == '-' ) {
-      errorf("Usage: %s [-n] [-c CONF_FILE] [-m MS_URL] [-u USERNAME] [-p PASSWORD] [-v VOLUME] [-G GATEWAY] [-P PORTNUM] [FUSE OPTS] <mountpoint>\n", argv[0]);
+      errorf("Usage: %s [-n] [-c CONF_FILE] [-m MS_URL] [-u USERNAME] [-p PASSWORD] [-v VOLUME] [-g GATEWAY_NAME] [-P PORTNUM] [-G GATEWAY_PKEY] [-V VOLUME_PUBKEY] [-S TLS_PKEY] [-C TLS_CERT] [FUSE OPTS] <mountpoint>\n", argv[0]);
       exit(1);
    }
 
@@ -838,7 +862,7 @@ int main(int argc, char** argv) {
 
    struct md_HTTP syndicate_http;
    
-   rc = syndicate_init( config_file, &syndicate_http, portnum, ms_url, volume_name, gateway_name, username, password );
+   rc = syndicate_init( config_file, &syndicate_http, portnum, ms_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path );
    if( rc != 0 )
       exit(1);
 

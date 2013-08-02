@@ -38,19 +38,29 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
     USE_PAPE = "use_pape"
     IMMEDIATE_MODE = "immediate"
     USE_STATELESS = "use_stateless"
+    SESSION_SSL_ONLY=True
 
     if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
       TRUST_ROOT_HOST = "localhost:8080"
       HOST_URL = "http://" + TRUST_ROOT_HOST
+      SESSION_SSL_ONLY=False
     else:
       TRUST_ROOT_HOST = "syndicate-metadata.appspot.com"
       HOST_URL = "https://" + TRUST_ROOT_HOST
+      SESSION_SSL_ONLY=True
 
     OPENID_PROVIDER_NAME = "VICCI"
 
     OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
 
     OPENID_PROVIDER_AUTH_HANDLER = "https://www.vicci.org/id-allow"
+
+
+    def auth_redirect( self, **kwargs ):
+       """
+       Called on a GET request when the requester has already been authenticated.
+       """
+       return
 
 
     def render_redirect( self, request, trust_root, return_to, immediate ):
@@ -183,22 +193,17 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
 
         
     def getSession(self):
-        """Return the existing session or a new session"""
-        if not hasattr(self, "session"):
-            session = gaesession.get_current_session()
+      """Return the existing session or a new session"""
+      session = gaesession.get_current_session()
 
-            if not session.has_key( 'id' ):
-               # load from datastore
-               session = gaesession.Session( cookie_key = gaesession.SESSION_COOKIE_KEY )
-
-               if not session.has_key( 'id' ):
-                     # new session
-                     session.start( ssl_only=True )
-                     sid = randomString(16, '0123456789abcdef')
-                     session['id'] = sid
-
-            self.session = session
-        return self.session
+      if not session.has_key( 'id' ):
+         # load from datastore
+         #session = gaesession.Session( cookie_key = gaesession.SESSION_COOKIE_KEY )
+         session.start( ssl_only=self.SESSION_SSL_ONLY )
+         sid = randomString(16, '0123456789abcdef')
+         session['id'] = sid
+      
+      return session
 
         
     def setSessionCookie(self, session):
@@ -217,6 +222,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         self.response.status = 302
         self.response.headers['Location'] = url
 
+        
     def load_query( self ):
        if not hasattr(self, "query"):
           self.query = {}
@@ -230,8 +236,6 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
             for k, v in cgi.parse_qsl(post_data):
                 self.query[k] = v
 
-
-          logging.info("query = %s" % str(self.query) )
        
         
     def get(self):
@@ -249,7 +253,14 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         written to the requesting browser.
         """
         try:
+
             self.load_query()
+            session = self.getSession()
+            self.setSessionCookie( session )
+            
+            if "authenticated" in session:
+               self.auth_redirect()
+               return
             
             path = self.parsed_uri[2]
             if path == '/':
@@ -263,6 +274,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
             else:
                self.notFound()
 
+
         except Exception, e:
             logging.info("exception: %s" % traceback.format_exc() )
             self.response.status = 500
@@ -273,7 +285,6 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
             
 
     def begin_openid_auth( self ):
-      
       """
       Begin OpenID authentication.
       Return:
@@ -282,8 +293,6 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
          (None, -EINVAL) for no openid identifier
          (None, -ENOTCONN) for no services
       """
-
-      self.load_query()
 
       # First, make sure that the user entered something
       openid_url = urlparse.urljoin( self.OPENID_PROVIDER_URL, self.query.get('openid_username') )
@@ -319,55 +328,62 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
                self.requestPAPEDetails(request)
 
             return (request, 0)
-            
-            
+
+    def verify_success( self, request, openid_url ):
+       return 0
+
+    def verify_failure( self, openid_url, msg ):
+       self.render(msg,
+                   css_class='error',
+                   form_contents=openid_url)
+       return 0
+       
     def doVerify(self):
         """
         Initiating OpenID verification.
         """
-        self.load_query()
-      
         openid_url = urlparse.urljoin( self.OPENID_PROVIDER_URL, self.query.get('openid_username') )
         rc = 0
         
         try:
             request, rc = self.begin_openid_auth()
         except consumer.DiscoveryFailure, exc:
-           
-            fetch_error_string = 'Error in discovery: %s' % (cgi.escape(str(exc[0])))
             
-            self.render(fetch_error_string,
-                        css_class='error',
-                        form_contents=openid_url)
+            fetch_error_string = 'Error in discovery: %s' % (cgi.escape(str(exc[0])))
 
+            self.verify_failure( None, openid_url, fetch_error_string )
+            
             return rc
             
         if rc == -errno.EINVAL:
            # bad input
-           self.render('Enter your OpenID Identifier', css_class='error')
+           self.verify_failure( openid_url, "Enter your OpenID Identifier" )
            return rc
 
         elif rc == -errno.ENOTCONN:
            # no service
            msg = 'No OpenID services found for <code>%s</code>' % (cgi.escape(openid_url),)
-           self.render(msg, css_class='error', form_contents=openid_url)
+           self.verify_failure( openid_url, msg )
            return rc
 
         else:
-           # success!
-           trust_root = "http://" + self.TRUST_ROOT_HOST
-           return_to = self.buildURL( "process" )
-           immediate = self.IMMEDIATE_MODE in self.query
+           rc = self.verify_success( request, openid_url )
 
-           redirect_url = request.redirectURL( trust_root, return_to, immediate=immediate )
+           if rc == 0:
+               # success!
+               trust_root = "http://" + self.TRUST_ROOT_HOST
+               return_to = self.buildURL( "process" )
+               immediate = self.IMMEDIATE_MODE in self.query
 
-           logging.info("redirect to %s" % redirect_url )
-           
-           if request.shouldSendRedirect():
-              self.setRedirect(redirect_url)   
-              
-           else:
-              self.render_redirect( request, trust_root, return_to, immediate )
+               redirect_url = request.redirectURL( trust_root, return_to, immediate=immediate )
+
+               logging.info("redirect to %s" % redirect_url )
+
+               if request.shouldSendRedirect():
+                  self.setRedirect(redirect_url)
+
+               else:
+                  self.render_redirect( request, trust_root, return_to, immediate )
 
            return rc
 
@@ -383,18 +399,50 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         request.addExtension(pape_request)
 
 
+
+    def process_success( info, sreg_resp, pape_resp ):
+       """
+       Called when we successfully process an authentication response from the OP
+       """
+       self.render_success( info, sreg_resp, pape_resp )
+       return 0
+
+    def process_failure( info, sreg_resp, pape_resp ):
+      """
+      Called when we fail to process an authentication response from the OP
+      """
+      if info.status == consumer.FAILURE:
+         # In the case of failure, if info is non-None, it is the
+         # URL that we were verifying. We include it in the error
+         # message to help the user figure out what happened.
+         self.render_failure( info, sreg_resp, pape_resp )
+
+      elif info.status == consumer.CANCEL:
+         # canceled
+         self.render_cancel( info, sreg_resp, pape_resp )
+
+      elif info.status == consumer.SETUP_NEEDED:
+         # This means auth didn't succeed, but you're welcome to try
+         # non-immediate mode.
+         self.render_setup_needed( info, sreg_resp, pape_resp )
+
+      else:
+         # Either we don't understand the code or there is no
+         # openid_url included with the error. Give a generic
+         # failure message. The library should supply debug
+         # information in a log.
+         self.render_error( info, sreg_resp, pape_resp )
+
+      return 0
+       
+
     def doProcess(self):
-       self.load_query()
-      
        info, sreg_resp, pape_resp  = self.complete_openid_auth()
 
-       if info.status == consumer.FAILURE:
-          # In the case of failure, if info is non-None, it is the
-          # URL that we were verifying. We include it in the error
-          # message to help the user figure out what happened.
-          self.render_failure( info, sreg_resp, pape_resp )
+       if info.status != consumer.SUCCESS:
+          self.process_failure( info, sreg_resp, pape_resp )
 
-       elif info.status == consumer.SUCCESS:
+       else:
           # Success means that the transaction completed without
           # error. If info is None, it means that the user cancelled
           # the verification.
@@ -402,30 +450,16 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
           # This is a successful verification attempt. If this
           # was a real application, we would do our login,
           # comment posting, etc. here.
-          self.render_success( info, sreg_resp, pape_resp )
-
-       elif info.status == consumer.CANCEL:
-          # canceled
-          self.render_cancel( info, sreg_resp, pape_resp )
-
-       elif info.status == consumer.SETUP_NEEDED:
-          # This means auth didn't succeed, but you're welcome to try
-          # non-immediate mode.
-          self.render_setup_needed( info, sreg_resp, pape_resp )
-
-       else:
-          # Either we don't understand the code or there is no
-          # openid_url included with the error. Give a generic
-          # failure message. The library should supply debug
-          # information in a log.
-          self.render_error( info, sreg_resp, pape_resp )
+          rc = self.process_success( info, sreg_resp, pape_resp )
+          if rc != 0:
+             info = None
+             sreg_resp = None
+             pape_resp = None
 
        return info, sreg_resp, pape_resp
           
        
     def complete_openid_auth(self):
-        self.load_query()
-      
         """
         Handle the redirect from the OpenID server.
         return (consumer info, sreg response, pape response)
@@ -480,8 +514,6 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         return appendArgs(base, query)
 
     def notFound(self):
-        self.load_query()
-      
         """Render a page with a 404 return code and a message."""
         fmt = 'The path <q>%s</q> was not understood by this server.'
         msg = fmt % (self.path,)
@@ -551,7 +583,6 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
 
     def pageHeader(self, title):
         """Render the page header"""
-        self.setSessionCookie( self.getSession() )
         self.response.headers['Content-type'] = 'text/html; charset=UTF-8'
         self.response.write('''\
 <html>

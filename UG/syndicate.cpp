@@ -492,7 +492,19 @@ void syndicate_HTTP_cleanup(struct MHD_Connection *connection, void *con_cls, en
 
 
 // initialize
-int syndicate_init( char const* config_file, struct md_HTTP* http_server, int portnum, char const* ms_url, char const* volume_name, char const* gateway_name, char const* md_username, char const* md_password ) {
+int syndicate_init( char const* config_file,
+                    struct md_HTTP* http_server,
+                    int portnum,
+                    char const* ms_url,
+                    char const* volume_name,
+                    char const* gateway_name,
+                    char const* md_username,
+                    char const* md_password,
+                    char const* volume_pubkey_file,
+                    char const* my_key_file,
+                    char const* tls_key_file,
+                    char const* tls_cert_file
+                  ) {
 
 
    // initialize Syndicate state
@@ -502,7 +514,7 @@ int syndicate_init( char const* config_file, struct md_HTTP* http_server, int po
    state->ms = CALLOC_LIST( struct ms_client, 1 );
 
 
-   int rc = md_init( SYNDICATE_UG, config_file, &state->conf, state->ms, portnum, ms_url, volume_name, gateway_name, md_username, md_password );
+   int rc = md_init( SYNDICATE_UG, config_file, &state->conf, state->ms, portnum, ms_url, volume_name, gateway_name, md_username, md_password, volume_pubkey_file, my_key_file, tls_key_file, tls_cert_file );
    if( rc != 0 ) {
       errorf("md_init rc = %d\n", rc );
       return rc;

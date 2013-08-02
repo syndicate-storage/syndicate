@@ -615,7 +615,7 @@ int rmdir_sane( char* dirpath );
 int dir_exists( char* dirpath );
 char* dirname( char* path, char* dest );
 int make_lockfiles( char* path, char* lnk );
-char* load_file( char* path, size_t* size );
+char* load_file( char const* path, size_t* size );
 char* url_encode( char const* str, size_t len );
 char* url_decode( char const* str, size_t* len );
 int reg_match(const char *string, char const *pattern);

@@ -312,7 +312,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    Generate a session certificate from a SyndicateUser account for a UG.
    """
 
-   """
    OPENID_PROVIDER_NAME = "VICCI"
    OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
    OPENID_PROVIDER_AUTH_HANDLER = "https://www.vicci.org/id-allow"
@@ -321,8 +320,8 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    OPENID_PROVIDER_PASSWORD_FIELD = "password"
    OPENID_PROVIDER_CHALLENGE_METHOD = "GET"
    OPENID_PROVIDER_RESPONSE_METHOD = "POST"
+   
    """
-
    OPENID_PROVIDER_NAME = "localhost"
    OPENID_PROVIDER_URL = "http://localhost:8081/id/"
    OPENID_PROVIDER_AUTH_HANDLER = "http://localhost:8081/allow"
@@ -331,6 +330,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    OPENID_PROVIDER_PASSWORD_FIELD = "password"
    OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
    OPENID_PROVIDER_RESPONSE_METHOD = "POST"
+   """
 
    
    OPENID_RP_REDIRECT_METHOD = "POST"     # POST to us for authentication, since we need to send the public key (which doesn't fit into a GET)
@@ -362,6 +362,11 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    get = None
    
    def post( self, volume_name, ug_name, username, operation ):
+      self.load_query()
+      session = self.getSession()
+      self.setSessionCookie(session)
+
+      print self.query
 
       volume, UG, user = self.load_objects( volume_name, ug_name, username )
 
@@ -409,7 +414,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
             return
 
          # preserve the public key
-         session = self.getSession()
          session['syndicatepubkey'] = pubkey
 
          logging.info("session = %s" % str(session))
@@ -433,8 +437,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
 
          data = openid_reply.SerializeToString()
 
-         self.setSessionCookie( session )
-         session.save( True )
+         session.save()
          
          response_end( self, 200, data, "application/octet-stream", None )
          return
@@ -442,7 +445,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
       elif operation == "complete":
 
          # get our saved pubkey
-         session = self.getSession()
          logging.info("session = %s" % str(session))
          
          pubkey = session.get('syndicatepubkey')
@@ -616,79 +618,29 @@ class MSFileRequestHandler(webapp2.RequestHandler):
 class MSOpenIDRequestHandler(GAEOpenIDRequestHandler):
 
 
-   def get(self):
+
+   def auth_redirect( self, **kwargs ):
       """
-      On GET, if we're authenticated, then simply redirect to /syn/.
-      Otherwise, do OpenID authentication.
+      What to do if the user is already authenticated
       """
-      self.load_query()
       session = self.getSession()
+      if 'login_email' not in session:
+         # invalid session
+         response_user_error( self, 400, "Invalid or missing session cookie" )
+         return 
 
-      logging.info("request URL:       %s" % self.request.url )
-      logging.info("request headers: \n%s" % self.request.headers)
-      logging.info("session = %s"  % session )
+      self.setRedirect('/syn/')
+      return 0
       
-      if 'authenticated' in session:
-         self.setSessionCookie( session )
-         self.setRedirect('/syn/')
-         return
 
-      super( MSOpenIDRequestHandler, self ).get()
+   def verify_success( self, request, openid_url ):
+      session = self.getSession()
+      session['login_email'] = self.query.get('openid_username')
+      return 0
 
-      logging.info("response headers: \n%s" % self.response.headers)
-      return
+
+   def process_success( self, info, sreg_resp, pape_resp ):
+      self.auth_redirect()
+      return 0
       
-      
-   def doVerify(self):
-      """
-      When setting up OpenID authentication, remember the OpenID username as our login e-mail.
-      """
-      self.load_query()
-      
-      rc = super( MSOpenIDRequestHandler, self ).doVerify()
-
-      if rc == 0:
-         session = self.getSession()
-         session['login_email'] = self.query.get('openid_username')
-
-         self.setSessionCookie( session )
-         #session.save( True )
-      
-      return rc
-      
-      
-   def doProcess(self):
-      self.load_query()
-
-      info, sreg_resp, pape_resp  = self.complete_openid_auth()
-
-      if info.status == consumer.FAILURE:
-         self.render_failure( info, sreg_resp, pape_resp )
-
-      elif info.status == consumer.SUCCESS:
-         session = self.getSession()
-
-         if 'login_email' not in session:
-            # invalid session
-            response_user_error( self, 400, "Invalid or missing session cookie" )
-            return None, None, None
-            
-         session['authenticated'] = True
-
-         self.setSessionCookie( session )
-         #session.save( True )
-         
-         self.setRedirect('/syn/')
-
-      elif info.status == consumer.CANCEL:
-         self.render_cancel( info, sreg_resp, pape_resp )
-
-      elif info.status == consumer.SETUP_NEEDED:
-         self.render_setup_needed( info, sreg_resp, pape_resp )
-
-      else:
-         self.render_error( info, sreg_resp, pape_resp )
-
-      return info, sreg_resp, pape_resp
-
-         
+     

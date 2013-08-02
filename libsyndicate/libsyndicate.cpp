@@ -34,6 +34,24 @@ char const* MD_HTTP_504_MSG = "Remote Server Timeout\n";
 
 char const* MD_HTTP_DEFAULT_MSG = "RESPONSE\n";
 
+static char* md_load_file_as_string( char const* path ) {
+   size_t size = 0;
+   char* ret = load_file( path, &size );
+
+   if( ret == NULL ) {
+      errorf("failed to load %s\n", path );
+      return NULL;
+   }
+
+   ret = (char*)realloc( ret, size + 1 );
+
+   ret[ size ] = 0;
+
+   return ret;
+}
+   
+   
+
 // initialize all global data structures
 static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char const* mountpoint ) {
 
@@ -163,6 +181,39 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
       }
    }
 
+
+   // load TLS credentials
+   if( c->server_key_path && c->server_cert_path ) {
+      
+      c->server_key = md_load_file_as_string( c->server_key_path );
+      c->server_cert = md_load_file_as_string( c->server_cert_path );
+
+      if( c->server_key == NULL ) {
+         errorf( "Could not read TLS private key %s\n", c->server_key_path );
+      }
+      if( c->server_cert == NULL ) {
+         errorf( "Could not read TLS certificate %s\n", c->server_cert_path );
+      }
+   }
+
+   // load Volume public key
+   if( c->volume_public_key_path ) {
+      c->volume_public_key = md_load_file_as_string( c->volume_public_key_path );
+
+      if( c->volume_public_key == NULL ) {
+         errorf( "Could not read Volume public key %s\n", c->volume_public_key_path );
+      }
+   }
+
+   // load gateway public/private key
+   if( c->gateway_key_path ) {
+      c->gateway_key = md_load_file_as_string( c->gateway_key_path );
+
+      if( c->gateway_key == NULL ) {
+         errorf("Could not read Gateway key %s\n", c->gateway_key_path );
+      }
+   }
+   
    memcpy( &SYNDICATE_CONF, c, sizeof(SYNDICATE_CONF) );
 
    return rc;
@@ -505,12 +556,22 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       
       else if( strcmp( key, SSL_PKEY_KEY ) == 0 ) {
          // server private key
-         conf->server_key = strdup( values[0] );
+         conf->server_key_path = strdup( values[0] );
       }
       
       else if( strcmp( key, SSL_CERT_KEY ) == 0 ) {
          // server certificate
-         conf->server_cert = strdup( values[0] );
+         conf->server_cert_path = strdup( values[0] );
+      }
+
+      else if( strcmp( key, GATEWAY_KEY_KEY ) == 0 ) {
+         // user-given public/private key
+         conf->gateway_key_path = strdup( values[0] );
+      }
+
+      else if( strcmp( key, VOLUME_PUBKEY_KEY ) == 0 ) {
+         // Volume public key
+         conf->volume_public_key_path = strdup( values[0] );
       }
       
       else if( strcmp( key, PORTNUM_KEY ) == 0 ) {
@@ -626,62 +687,34 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
 
 // free all memory associated with a server configuration
 int md_free_conf( struct md_syndicate_conf* conf ) {
-   if( conf->metadata_url ) {
-      free( conf->metadata_url );
-      conf->metadata_url = NULL;
+   void* to_free[] = {
+      (void*)conf->metadata_url,
+      (void*)conf->logfile_path,
+      (void*)conf->content_url,
+      (void*)conf->data_root,
+      (void*)conf->staging_root,
+      (void*)conf->cdn_prefix,
+      (void*)conf->proxy_url,
+      (void*)conf->ms_username,
+      (void*)conf->ms_password,
+      (void*)conf->server_key,
+      (void*)conf->server_cert,
+      (void*)conf->server_key_path,
+      (void*)conf->server_cert_path,
+      (void*)conf->volume_public_key,
+      (void*)conf->gateway_key,
+      (void*)conf->gateway_key_path,
+      (void*)conf->replica_logfile,
+      (void*)conf->md_pidfile_path,
+      (void*)conf->gateway_metadata_root,
+      (void*)conf
+   };
+
+   for( int i = 0; to_free[i] != conf; i++ ) {
+      free( to_free[i] );
    }
-   if( conf->logfile_path ) {
-      free( conf->logfile_path );
-      conf->logfile_path = NULL;
-   }
-   if( conf->content_url ) {
-      free( conf->content_url );
-      conf->content_url = NULL;
-   }
-   if( conf->data_root ) {
-      free( conf->data_root );
-      conf->data_root = NULL;
-   }
-   if( conf->staging_root ) {
-      free( conf->staging_root );
-      conf->staging_root = NULL;
-   }
-   if( conf->cdn_prefix ) {
-      free( conf->cdn_prefix );
-      conf->cdn_prefix = NULL;
-   }
-   if( conf->proxy_url ) {
-      free( conf->proxy_url );
-      conf->proxy_url = NULL;
-   }
-   if( conf->ms_username ) {
-      free( conf->ms_username );
-      conf->ms_username = NULL;
-   }
-   if( conf->ms_password ) {
-      free( conf->ms_password );
-      conf->ms_password = NULL;
-   }
-   if( conf->server_key ) {
-      free( conf->server_key );
-      conf->server_key = NULL;
-   }
-   if( conf->server_cert ) {
-      free( conf->server_cert );
-      conf->server_cert = NULL;
-   }
-   if( conf->replica_logfile ) {
-      free( conf->replica_logfile );
-      conf->replica_logfile = NULL;
-   }
-   if( conf->md_pidfile_path ) {
-      free( conf->md_pidfile_path );
-      conf->md_pidfile_path = NULL;
-   }
-   if( conf->gateway_metadata_root ) {
-      free( conf->gateway_metadata_root );
-      conf->gateway_metadata_root = NULL;
-   }
+   
+   memset( conf, 0, sizeof(struct md_syndicate_conf) );
       
    return 0;
 }
@@ -3090,51 +3123,29 @@ int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_con
 
 // start the HTTP thread
 int md_start_HTTP( struct md_HTTP* http, int portnum ) {
-   char* server_key = NULL;
-   char* server_cert = NULL;
    
-   size_t server_key_len = 0;
-   size_t server_cert_len = 0;
    struct md_syndicate_conf* conf = http->conf;
    
-   if( conf->server_key && conf->server_cert ) {
-      server_key = load_file( conf->server_key, &server_key_len );
-      server_cert = load_file( conf->server_cert, &server_cert_len );
-      
-      if( !server_key ) {
-         errorf( "Could not read server private key %s\n", conf->server_key );
-      }
-      if( !server_cert ) {
-         errorf( "Could not read server certificate %s\n", conf->server_cert );
-      }
-
-      server_key = (char*)realloc( server_key, server_key_len+1 );
-      server_cert = (char*)realloc( server_cert, server_cert_len+1 );
-
-      server_key[server_key_len] = 0;
-      server_cert[server_cert_len] = 0;
-   }
-
    pthread_rwlock_init( &http->lock, NULL );
    
-   if( server_cert && server_key ) {
+   if( conf->server_cert && conf->server_key ) {
 
-      http->server_pkey = server_key;
-      http->server_cert = server_cert;
+      http->server_pkey = conf->server_key;
+      http->server_cert = conf->server_cert;
       
       // SSL enabled
       if( http->server_type == MHD_USE_THREAD_PER_CONNECTION ) {
          http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SSL, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_HTTPS_MEM_KEY, server_key, 
-                                                MHD_OPTION_HTTPS_MEM_CERT, server_cert,
+                                                MHD_OPTION_HTTPS_MEM_KEY, conf->server_key, 
+                                                MHD_OPTION_HTTPS_MEM_CERT, conf->server_cert,
                                                 MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
                                                 MHD_OPTION_HTTPS_PRIORITIES, "NORMAL",
                                                 MHD_OPTION_END );
       }
       else {
          http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SSL, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_HTTPS_MEM_KEY, server_key, 
-                                                MHD_OPTION_HTTPS_MEM_CERT, server_cert, 
+                                                MHD_OPTION_HTTPS_MEM_KEY, conf->server_key, 
+                                                MHD_OPTION_HTTPS_MEM_CERT, conf->server_cert, 
                                                 MHD_OPTION_THREAD_POOL_SIZE, conf->num_http_threads,
                                                 MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
                                                 MHD_OPTION_HTTPS_PRIORITIES, "NORMAL",
@@ -3142,7 +3153,7 @@ int md_start_HTTP( struct md_HTTP* http, int portnum ) {
       }
    
       if( http->http_daemon )
-         dbprintf( "Started HTTP server with SSL enabled (cert = %s, pkey = %s) on port %d\n", conf->server_cert, conf->server_key, portnum);
+         dbprintf( "Started HTTP server with SSL enabled (cert = %s, pkey = %s) on port %d\n", conf->server_cert_path, conf->server_key_path, portnum);
    }
    else {
       // SSL disabled
@@ -3174,17 +3185,6 @@ int md_start_HTTP( struct md_HTTP* http, int portnum ) {
 int md_stop_HTTP( struct md_HTTP* http ) {
    MHD_stop_daemon( http->http_daemon );
    http->http_daemon = NULL;
-
-   if( http->server_cert ) {
-      free( http->server_cert );
-      http->server_cert = NULL;
-   }
-
-   if( http->server_pkey ) {
-      free( http->server_pkey );
-      http->server_pkey = NULL;
-   }
-   
    return 0;
 }
 
@@ -3534,7 +3534,12 @@ int md_init( int gateway_type,
              char const* volume_name,
              char const* gateway_name,
              char const* md_username,
-             char const* md_password ) {
+             char const* md_password,
+             char const* volume_key_file,
+             char const* my_key_file,
+             char const* tls_pkey_file,
+             char const* tls_cert_file
+           ) {
 
 
    util_init();
@@ -3550,9 +3555,6 @@ int md_init( int gateway_type,
       }  
    }
    
-   // set up libsyndicate runtime information
-   md_runtime_init( gateway_type, conf, NULL );
-
    // merge command-line options with the config....
    if( ms_url ) {
       if( conf->metadata_url )
@@ -3584,6 +3586,34 @@ int md_init( int gateway_type,
 
       conf->gateway_name = strdup( gateway_name );
    }
+   if( my_key_file ) {
+      if( conf->gateway_key_path )
+         free( conf->gateway_key_path );
+
+      if( conf->gateway_key )
+         free( conf->gateway_key );
+
+      conf->gateway_key_path = strdup( my_key_file );
+      conf->gateway_key = NULL;
+   }
+   if( tls_cert_file ) {
+      if( conf->server_cert_path )
+         free( conf->server_cert_path );
+
+      conf->server_cert_path = strdup( tls_cert_file );
+   }
+   if( tls_pkey_file ) {
+      if( conf->server_key_path )
+         free( conf->server_key_path );
+
+      conf->server_key_path = strdup( tls_pkey_file );
+   }
+   if( volume_key_file ) {
+      if( conf->volume_public_key_path )
+         free( conf->volume_public_key_path );
+
+      conf->volume_public_key_path = strdup( volume_key_file );
+   }
    
    if( portnum > 0 ) {
       conf->portnum = portnum;
@@ -3593,6 +3623,9 @@ int md_init( int gateway_type,
       errorf("invalid port number: conf's is %d, caller's is %d\n", conf->portnum, portnum);
       return -EINVAL;
    }
+
+   // set up libsyndicate runtime information
+   md_runtime_init( gateway_type, conf, NULL );
 
    // validate the config
    rc = md_check_conf( gateway_type, conf );
@@ -3627,29 +3660,20 @@ int md_init( int gateway_type,
 
 // default configuration
 int md_default_conf( struct md_syndicate_conf* conf ) {
+
+   memset( conf, 0, sizeof(struct md_syndicate_conf) );
    
    conf->default_read_freshness = 5000;
    conf->default_write_freshness = 5000;
-   conf->logfile_path = NULL;       // filled by md_runtime_init
-   conf->cdn_prefix = NULL;
-   conf->proxy_url = NULL;
    conf->gather_stats = false;
    conf->use_checksums = false;
-   conf->content_url = NULL;        // filled by md_runtime_init
-   conf->data_root = NULL;          // filled by md_runtime_init
-   conf->staging_root = NULL;       // filled by md_runtime_init
    conf->num_replica_threads = 1;
-   conf->replica_logfile = NULL;    // filled by md_runtime_init
    conf->httpd_portnum = 44444;
 
    conf->verify_peer = true;
    conf->num_http_threads = 1;
    conf->http_authentication_mode = HTTP_AUTHENTICATE_READWRITE;
-   conf->md_pidfile_path = NULL;
-   conf->gateway_metadata_root = NULL;
    conf->replica_overwrite = false;
-   conf->server_key = NULL;
-   conf->server_cert = NULL;
 
    conf->debug_read = false;
    conf->debug_lock = false;
@@ -3659,19 +3683,8 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->portnum = 32780;
    conf->transfer_timeout = 60;
 
-   conf->metadata_url = NULL;
-   conf->ms_username = NULL;
-   conf->ms_password = NULL;
-   conf->blocking_factor = 0;
    conf->owner = getuid();
    conf->usermask = 0377;
-   conf->volume = 0;
-   conf->volume_owner = 0;
-   conf->mountpoint = NULL;      // filled by md_runtime_init
-   conf->hostname = NULL;        // filled by md_runtime_init
-
-   conf->trust_volume_pubkey = true;
-   conf->volume_public_key = NULL;
 
    return 0;
 }

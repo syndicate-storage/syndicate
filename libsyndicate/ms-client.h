@@ -101,7 +101,7 @@ struct ms_client {
    pthread_rwlock_t view_lock;
 
    // session information
-   struct UG_cred* session_cred;             // who am I?
+   struct UG_cred* session_cred;            // who am I?
    int64_t session_timeout;                 // how long the session is valid
    char* session_password;
 
@@ -110,6 +110,7 @@ struct ms_client {
 
    // volume public key
    EVP_PKEY* volume_public_key;
+   bool reload_volume_key;       // if False, then don't reload the Volume key from the MS (i.e. we gave the key ourselves)
 
    // reference to syndicate config 
    struct md_syndicate_conf* conf;
@@ -136,6 +137,7 @@ int ms_client_verify_UGs( struct ms_client* client, ms::ms_volume_UGs* ugs );
 int ms_client_verify_RGs( struct ms_client* client, ms::ms_volume_RGs* rgs );
 
 int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str );
+int ms_client_load_privkey( EVP_PKEY** key, char const* privkey_str );
 int ms_client_load_volume_pubkey( struct ms_client* client, char const* volume_pubkey_str );
 
 int ms_client_rlock( struct ms_client* client );

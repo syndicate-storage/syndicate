@@ -36,6 +36,25 @@ static void UG_cred_free( struct UG_cred* cred ) {
    }
 }
 
+static int ms_client_verify_key( EVP_PKEY* key ) {
+   RSA* ref_rsa = EVP_PKEY_get1_RSA( key );
+   if( ref_rsa == NULL ) {
+      // not an RSA key
+      errorf("%s", "Not an RSA key\n");
+      return -EINVAL;
+   }
+
+   int size = RSA_size( ref_rsa );
+   if( size * 8 != RSA_KEY_SIZE ) {
+      // not the right size
+      errorf("Invalid RSA size %d\n", size * 8 );
+      return -EINVAL;
+   }
+
+   return 0;
+}
+      
+
 // create an MS client context
 int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf ) {
 
@@ -102,14 +121,38 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf ) {
          errorf("ms_client_load_volume_pubkey rc = %d\n", rc );
          return rc;
       }
+
+      rc = ms_client_verify_key( client->volume_public_key );
+      if( rc != 0 ) {
+         errorf("ms_client_verify_key rc = %d\n", rc );
+         return rc;
+      }
+      
+      client->reload_volume_key = false;
    }
 
-   // generate our public/private key pairs
-   rc = ms_client_generate_key( &client->my_key );
-   if( rc != 0 ) {
-      errorf("ms_client_generate_key rc = %d\n", rc );
-      ms_client_unlock( client );
-      return rc;
+   if( conf->gateway_key != NULL ) {
+      // we were given Gateway keys.  Load them
+      rc = ms_client_load_privkey( &client->my_key, conf->gateway_key );
+      if( rc != 0 ) {
+         errorf("ms_client_load_privkey rc = %d\n", rc );
+         return rc;
+      }
+
+      rc = ms_client_verify_key( client->my_key );
+      if( rc != 0 ) {
+         errorf("ms_client_verify_key rc = %d\n", rc );
+         return rc;
+      }
+   }
+   else {
+      // generate our public/private key pairs
+      rc = ms_client_generate_key( &client->my_key );
+      if( rc != 0 ) {
+         errorf("ms_client_generate_key rc = %d\n", rc );
+         ms_client_unlock( client );
+         return rc;
+      }
    }
 
 
@@ -975,9 +1018,8 @@ int ms_client_verify_RGs( struct ms_client* client, ms::ms_volume_RGs* rgs ) {
    return rc;
 }
 
-// load a PEM-encoded RSA public key into an EVP key
+// load a PEM-encoded (RSA) public key into an EVP key
 int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
-   dbprintf("read: \n%s\n", pubkey_str );
    BIO* buf_io = BIO_new_mem_buf( (void*)pubkey_str, strlen(pubkey_str) );
 
    EVP_PKEY* public_key = PEM_read_bio_PUBKEY( buf_io, NULL, NULL, NULL );
@@ -993,6 +1035,27 @@ int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
 
    *key = public_key;
    
+   return 0;
+}
+
+
+// load a PEM-encoded (RSA) private key into an EVP key
+int ms_client_load_privkey( EVP_PKEY** key, char const* privkey_str ) {
+   BIO* buf_io = BIO_new_mem_buf( (void*)privkey_str, strlen(privkey_str) );
+
+   EVP_PKEY* privkey = PEM_read_bio_PrivateKey( buf_io, NULL, NULL, NULL );
+
+   BIO_free_all( buf_io );
+
+   if( privkey == NULL ) {
+      // invalid public key
+      errorf("%s", "ERR: failed to read private key\n");
+      ms_client_crypto_error();
+      return -EINVAL;
+   }
+
+   *key = privkey;
+
    return 0;
 }
 
@@ -1093,7 +1156,7 @@ int ms_client_load_volume_metadata( struct ms_client* client, ms::ms_volume_meta
 
    // get the new public key, if desired
 
-   if( client->conf->trust_volume_pubkey || client->conf->volume_public_key == NULL ) {
+   if( client->reload_volume_key || client->conf->volume_public_key == NULL ) {
       // trust new public keys
       rc = ms_client_load_volume_pubkey( client, volume_md->volume_public_key().c_str() );
       if( rc != 0 ) {
@@ -1470,7 +1533,9 @@ int ms_client_auth_op( struct ms_client* client, CURL* curl, ms::ms_openid_provi
    curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, ms_client_dummy_write );
    curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
    curl_easy_setopt( curl, CURLOPT_READDATA, NULL );
-
+   curl_easy_setopt( curl, CURLOPT_SSL_VERIFYPEER, 0L );
+   curl_easy_setopt( curl, CURLOPT_SSL_VERIFYHOST, 0L );
+   
    char* url_buf = strdup( openid_redirect_url );
    
    int rc = ms_client_set_method( curl, challenge_method, url_buf );

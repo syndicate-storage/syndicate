@@ -306,7 +306,7 @@ char* dirname( char* path, char* dest ) {
 // load a file into RAM
 // return a pointer to the bytes.
 // set the size.
-char* load_file( char* path, size_t* size ) {
+char* load_file( char const* path, size_t* size ) {
    struct stat statbuf;
    int rc = stat( path, &statbuf );
    if( rc != 0 )

@@ -319,13 +319,12 @@ class Session(object):
         Normally this method does not need to be called directly - a session is
         automatically saved at the end of the request if any changes were made.
         """
-        logging.info("save session %s" % self.sid)
+        
         if not self.sid:
-            logging.info("no sid")
             return  # no session is active
         if not self.dirty:
-            logging.info("not dirty")
             return  # nothing has changed
+            
         dirty = self.dirty
         self.dirty = False  # saving, so it won't be dirty anymore
 
@@ -336,7 +335,6 @@ class Session(object):
         if len(pdump) * 4 / 3 <= self.cookie_only_thresh:  # 4/3 b/c base64 is ~33% bigger
             self.cookie_data = pdump
             if not persist_even_if_using_cookie:
-                logging.info("not persistent")
                 return
         elif self.cookie_keys:
             # latest data will only be in the backend, so expire data cookies we set
@@ -346,11 +344,9 @@ class Session(object):
 
         # persist the session to the datastore
         if dirty is Session.DIRTY_BUT_DONT_PERSIST_TO_DB or self.no_datastore:
-            logging.info( "dirty but don't persist to DB or no datasture" )
             return
         try:
             SessionModel(key_name=self.sid, pdump=pdump).put()
-            logging.info("wrote session %s %s" % (self.sid, str(self)))
         except Exception, e:
             logging.warning("unable to persist session to datastore for sid=%s (%s)" % (self.sid, e))
 

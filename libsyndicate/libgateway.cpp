@@ -854,6 +854,10 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    char* gw_driver = NULL;
    char* gateway_name = NULL;
    bool pub_mode = false;
+   char* volume_pubkey_path = NULL;
+   char* gateway_pkey_path = NULL;
+   char* tls_pkey_path = NULL;
+   char* tls_cert_path = NULL;
    
    static struct option gateway_options[] = {
       {"config-file\0Gateway configuration file path",      required_argument,   0, 'c'},
@@ -867,15 +871,19 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
       {"logfile\0Path to the log file",                     required_argument,   0, 'l'},
       {"pidfile\0Path to the PID file",                     required_argument,   0, 'i'},
       {"dataset\0Path to dataset",                     	    required_argument,   0, 'd'},
-      {"gw-driver\0Gateway driver",                         required_argument,   0, 'g'},
-      {"gateway-name\0Name of this gateway",                required_argument,   0, 'G'},
+      {"gw-driver\0Gateway driver",                         required_argument,   0, 'D'},
+      {"gateway-name\0Name of this gateway",                required_argument,   0, 'g'},
+      {"volume-pubkey\0Volume public key path (PEM)",       required_argument,   0, 'V'},
+      {"gateway-pkey\0Gateway private key path (PEM)",      required_argument,   0, 'G'},
+      {"tls-pkey\0Server TLS private key path (PEM)",       required_argument,   0, 'S'},
+      {"tls-cert\0Server TLS certificate path (PEM)",       required_argument,   0, 'C'},
       {"help\0Print this message",                          no_argument,         0, 'h'},
       {0, 0, 0, 0}
    };
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:g:hG:", gateway_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:D:hg:V:G:S:C:", gateway_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -922,7 +930,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
 	    pub_mode = true;
             break;
          }
-         case 'g': {
+         case 'D': {
             gw_driver = optarg;
             break;
          }
@@ -930,8 +938,24 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
             gateway_usage( argv[0], gateway_options, 0 );
             break;
          }
-         case 'G': {
+         case 'g': {
             gateway_name = optarg;
+            break;
+         }
+         case 'V': {
+            volume_pubkey_path = optarg;
+            break;
+         }
+         case 'G': {
+            gateway_pkey_path = optarg;
+            break;
+         }
+         case 'S': {
+            tls_pkey_path = optarg;
+            break;
+         }
+         case 'C': {
+            tls_cert_path = optarg;
             break;
          }
          default: {
@@ -954,7 +978,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    struct ms_client client;
    struct md_syndicate_conf conf;
    
-   rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, gateway_name, username, password );
+   rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path );
    if( rc != 0 ) {
       exit(1);
    }
