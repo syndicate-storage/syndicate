@@ -26,11 +26,14 @@ typedef struct {
 typedef map<string, vector<block_index_entry*>*> BlockMap;
 typedef map<string, pthread_mutex_t> MutexMap;
 
+void invalidate_entry(void* cls);
+
 class BlockIndex {
     private:
 	BlockMap	    blk_map;
 	MutexMap	    mutex_map;
 	pthread_mutex_t	    *map_mutex;
+	void free_block_index(vector<block_index_entry*> *);
     public:
 	BlockIndex();
 	block_index_entry* alloc_block_index_entry();
@@ -39,6 +42,7 @@ class BlockIndex {
 	const block_index_entry* get_block(string file_name,
 					   off_t block_id);
 	const block_index_entry* get_last_block(string file_name, off_t *block_id);
+	void invalidate_entry(string file_name);
 };
 
 #endif //_BLOCK_INDEX_H_

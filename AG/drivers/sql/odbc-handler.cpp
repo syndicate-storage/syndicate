@@ -1,4 +1,19 @@
+#include <libgateway.h>
 #include <odbc-handler.h>
+
+#define BLK_SIZE (global_conf->blocking_factor)
+
+void invalidate_entry(void *cls)
+{    
+    struct invalidation_info *inval = (struct invalidation_info*)cls;
+    if (inval == NULL)
+	return;
+    if (inval->file_path != NULL) { 
+	string file_path(inval->file_path);
+	if (inval->blk_index != NULL)
+	    inval->blk_index->invalidate_entry(file_path);
+    }
+}
 
 ODBCHandler::ODBCHandler()
 {
@@ -153,7 +168,7 @@ string ODBCHandler::execute_query(unsigned char* query, ssize_t threashold,
     return result_str.str();
 }
 
-void ODBCHandler::execute_query(struct gateway_ctx *ctx, ssize_t read_size, ssize_t block_size) 
+void ODBCHandler::execute_query(struct gateway_ctx *ctx, struct map_info* mi, ssize_t read_size) 
 {
     stringstream	result_str;
     stringstream	shadow_result_str;
@@ -198,6 +213,13 @@ void ODBCHandler::execute_query(struct gateway_ctx *ctx, ssize_t read_size, ssiz
 	query = (unsigned char*)malloc(query_len);
     }
 
+    //Invalidation info...
+    struct invalidation_info *inval = new struct invalidation_info;
+    inval->file_path = strdup(ctx->file_path);
+    inval->blk_index = &blk_index;
+    mi->entry = inval;
+    mi->invalidate_entry = invalidate_entry;
+    
     if (query_unbound) {
 	off_t blk_count = (blkie != NULL)?last_blk_id+1:0;
 	off_t start_row = (blkie != NULL)?blkie->end_row:0;
@@ -208,7 +230,7 @@ void ODBCHandler::execute_query(struct gateway_ctx *ctx, ssize_t read_size, ssiz
 	    last_row_len = 0;
 	    memset(query, 0, query_len);
 	    snprintf((char*)query, query_len, (const char*)ctx->sql_query_unbounded, start_row);
-	    db_read_size = block_size + start_byte_offset;
+	    db_read_size = BLK_SIZE + start_byte_offset;
 	    results = execute_query(query, db_read_size, &row_count, &len, &last_row_len);
 
 	    //If there is no data do not proceed...
@@ -224,7 +246,7 @@ void ODBCHandler::execute_query(struct gateway_ctx *ctx, ssize_t read_size, ssiz
 	    new_blkie->end_row = start_row + row_count;
 	    new_blkie->end_byte_offset = db_read_size - len;
 	    len += last_row_len;
-	    len = (block_size > len - start_byte_offset)?len - start_byte_offset:block_size;
+	    len = (BLK_SIZE > len - start_byte_offset)?len - start_byte_offset:BLK_SIZE;
 	    blk_index.update_block_index(ctx->file_path, blk_count, new_blkie);
 
 	    //Update start_row and start_byte_offset for the next block
@@ -233,10 +255,10 @@ void ODBCHandler::execute_query(struct gateway_ctx *ctx, ssize_t read_size, ssiz
 	}
     }
     else {
-	db_read_size = block_size + blkie->start_byte_offset;
+	db_read_size = BLK_SIZE + blkie->start_byte_offset;
 	results = execute_query(query, db_read_size, &row_count, &len, &last_row_len);
 	len += last_row_len;
-	len = (block_size > len - blkie->start_byte_offset)?len - blkie->start_byte_offset:block_size;
+	len = (BLK_SIZE > len - blkie->start_byte_offset)?len - blkie->start_byte_offset:BLK_SIZE;
 	block_start_byte_offset = blkie->start_byte_offset;
     }
     if (len) {

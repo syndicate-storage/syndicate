@@ -12,6 +12,7 @@
 #include <odbc-handler.h>
 #include <block-index.h>
 #include <gateway-ctx.h>
+#include <reversion-daemon.h>
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -63,9 +64,10 @@ struct path_comp {
 };   
 
 typedef map<string, struct md_entry*> content_map;
-typedef map<string, struct map_info> query_map;
-static int publish(const char *fpath, int type, struct map_info mi);
+typedef map<string, struct map_info*> query_map;
+static int publish(const char *fpath, int type, struct map_info* mi);
 void	init(unsigned char* dsn);
+void reversion(void *cls);
 
 #endif //_SQL_DRIVER_H_
 

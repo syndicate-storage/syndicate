@@ -13,8 +13,16 @@
 
 #include <block-index.h>
 #include <gateway-ctx.h>
+#include <map-parser.h>
 
 using namespace std;
+
+struct invalidation_info {
+	BlockIndex  *blk_index; 
+	char	    *file_path;
+};
+
+void invalidate_entry(void *cls);
 
 class ODBCHandler 
 {
@@ -31,7 +39,7 @@ class ODBCHandler
 
     public:
 	static  ODBCHandler&  get_handle(unsigned char* con_str);
-	void    execute_query(struct gateway_ctx *ctx, ssize_t read_size, ssize_t block_size); 
+	void    execute_query(struct gateway_ctx *ctx, struct map_info *mi, ssize_t read_size); 
 	string  get_tables();
 	string  execute_query(unsigned char* query, ssize_t threashold, off_t *row_count, ssize_t *len, ssize_t *last_row_len); 
 	string  get_db_info();
