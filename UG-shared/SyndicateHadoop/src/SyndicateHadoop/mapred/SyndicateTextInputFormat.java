@@ -20,14 +20,19 @@
  */
 package SyndicateHadoop.mapred;
 
+import JSyndicateFS.JSFSPath;
 import SyndicateHadoop.input.SyndicateInputSplit;
 import SyndicateHadoop.mapred.input.SyndicateTextRecordReader;
+import SyndicateHadoop.util.CompressionCodecUtil;
 import SyndicateHadoop.util.SyndicateConfigUtil;
 import java.io.IOException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.compress.CompressionCodec;
+import org.apache.hadoop.io.compress.CompressionCodecFactory;
 import org.apache.hadoop.mapreduce.InputSplit;
+import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 
@@ -49,5 +54,12 @@ public class SyndicateTextInputFormat extends SyndicateInputFormat<LongWritable,
             delimiter_bytes = delimiter.getBytes();
         }
         return new SyndicateTextRecordReader(delimiter_bytes);
+    }
+    
+    @Override
+    protected boolean isSplitable(JobContext context, JSFSPath filename) {
+        Configuration conf = context.getConfiguration();
+        CompressionCodec codec = CompressionCodecUtil.getCompressionCodec(conf, filename);
+        return codec == null;
     }
 }

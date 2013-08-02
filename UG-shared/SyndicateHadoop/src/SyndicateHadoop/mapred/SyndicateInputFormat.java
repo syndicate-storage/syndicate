@@ -49,6 +49,8 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
     private static final double SPLIT_SLOP = 1.1;   // 10% slop
     private static final long MEGABYTE = 1024 * 1024;
 
+    private static final String NUM_INPUT_FILES = "mapreduce.input.num.files";
+    
     private static final JSFSFilenameFilter hiddenFileFilter = new JSFSFilenameFilter() {
 
         @Override
@@ -78,6 +80,10 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
 
     protected long getFormatMinSplitSize() {
         return MEGABYTE;
+    }
+    
+    protected boolean isSplitable(JobContext context, JSFSPath filename) {
+        return true;
     }
 
     protected JSFSFilenameFilter getInputPathFilter(JobContext context) {
@@ -151,12 +157,13 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
         }
         
         List<InputSplit> splits = new ArrayList<InputSplit>();
-        for(JSFSPath path : listFiles(context)) {
+        List<JSFSPath> files = listFiles(context);
+        for(JSFSPath path : files) {
             long length = syndicateFS.getSize(path);
-            long blockSize = syndicateFS.getBlockSize();
-            long splitSize = computeSplitSize(blockSize, minSize, maxSize);
             
-            if (length != 0) {
+            if ((length != 0) && isSplitable(context, path)) {
+                long blockSize = syndicateFS.getBlockSize();
+                long splitSize = computeSplitSize(blockSize, minSize, maxSize);
                 long bytesLeft = length;
                 while (((double) bytesLeft) / splitSize > SPLIT_SLOP) {
                     SyndicateInputSplit inputSplit = new SyndicateInputSplit(syndicateFS, path, length - bytesLeft, splitSize);
@@ -169,9 +176,15 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
                     SyndicateInputSplit inputSplit = new SyndicateInputSplit(syndicateFS, path, length - bytesLeft, bytesLeft);
                     splits.add(inputSplit);
                 }
+            } else if (length != 0) {
+                SyndicateInputSplit inputSplit = new SyndicateInputSplit(syndicateFS, path, 0, length);
+                splits.add(inputSplit);
             }
         }
         
+        // Save the number of input files in the job-conf
+        config.setLong(NUM_INPUT_FILES, files.size());
+    
         LOG.info("Total # of splits: " + splits.size());
         return splits;
     }

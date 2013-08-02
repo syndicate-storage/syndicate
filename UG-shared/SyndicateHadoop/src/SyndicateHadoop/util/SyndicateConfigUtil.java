@@ -60,7 +60,7 @@ public class SyndicateConfigUtil {
     
     public static final String MAX_METADATA_CACHE = "syndicate.conf.max_metadata_cache";
     public static final String TIMEOUT_METADATA_CACHE = "syndicate.conf.timeout_metadata_cache";
-    public static final String FILE_READ_BUFFER_SIZE = "syndicate.conf.file_read_buffer_size";
+    public static final String FILE_READ_BUFFER_SIZE = "io.file.buffer.size";
     public static final String FILE_WRITE_BUFFER_SIZE = "syndicate.conf.file_write_buffer_size";
     
     public static final String JOB_MAPPER = "mapreduce.map.class";

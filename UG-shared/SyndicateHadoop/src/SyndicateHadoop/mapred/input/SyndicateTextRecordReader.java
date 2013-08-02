@@ -23,6 +23,7 @@ package SyndicateHadoop.mapred.input;
 import JSyndicateFS.JSFSFileSystem;
 import JSyndicateFS.JSFSPath;
 import SyndicateHadoop.input.SyndicateInputSplit;
+import SyndicateHadoop.util.CompressionCodecUtil;
 import SyndicateHadoop.util.FileSystemUtil;
 import SyndicateHadoop.util.SyndicateConfigUtil;
 import java.io.IOException;
@@ -32,6 +33,8 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.compress.CompressionCodec;
+import org.apache.hadoop.io.compress.CompressionCodecFactory;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
@@ -45,6 +48,7 @@ public class SyndicateTextRecordReader extends RecordReader<LongWritable, Text> 
 
     private static final Log LOG = LogFactory.getLog(SyndicateTextRecordReader.class);
     
+    private CompressionCodecFactory compressionCodecs = null;
     private long start;
     private long pos;
     private long end;
@@ -83,29 +87,36 @@ public class SyndicateTextRecordReader extends RecordReader<LongWritable, Text> 
             throw new IOException(ex);
         }
 
+        this.compressionCodecs = new CompressionCodecFactory(conf);
+        final CompressionCodec codec = CompressionCodecUtil.getCompressionCodec(this.compressionCodecs, path);
+        
         InputStream is = syndicateFS.getFileInputStream(path);
-
+        
         boolean skipFirstLine = false;
-        if (this.start != 0) {
-            skipFirstLine = true;
-            --this.start;
-            is.skip(this.start);
-            //is.seek(this.start);
-        }
-
-        int bufferSize = (int) syndicateFS.getBlockSize();
-        if (SyndicateConfigUtil.getFileReadBufferSize(conf) != 0) {
-            bufferSize = SyndicateConfigUtil.getFileReadBufferSize(conf);
-        }
-
-        if (this.recordDelimiterBytes == null) {
-            this.reader = new LineReader(is, conf);
+        
+        if (codec != null) {
+            if (this.recordDelimiterBytes == null) {
+                this.reader = new LineReader(codec.createInputStream(is), conf);
+            } else {
+                this.reader = new LineReader(codec.createInputStream(is), conf, this.recordDelimiterBytes);
+            }
+            
+            this.end = Long.MAX_VALUE;
         } else {
-            this.reader = new LineReader(is, conf, this.recordDelimiterBytes);
+            if (this.start != 0) {
+                skipFirstLine = true;
+                --this.start;
+                is.skip(this.start);
+                //is.seek(this.start);
+            }
+            
+            if (this.recordDelimiterBytes == null) {
+                this.reader = new LineReader(is, conf);
+            } else {
+                this.reader = new LineReader(is, conf, this.recordDelimiterBytes);
+            }
         }
         
-        this.reader = new LineReader(is, bufferSize);
-
         if (skipFirstLine) {
             // skip first line and re-establish "start".
             this.start += this.reader.readLine(new Text(), 0, (int) Math.min((long) Integer.MAX_VALUE, this.end - this.start));
