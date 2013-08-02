@@ -108,10 +108,6 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf ) {
       return client->uploader_thread;
    }
 
-   // set up OpenSSL
-   OpenSSL_add_all_digests();
-   ERR_load_crypto_strings();
-
    int rc = 0;
 
    // if we were given a Volume public key in advance, load it
@@ -257,7 +253,7 @@ static off_t ms_client_find_header_value( char* header_buf, size_t header_len, c
    if( strlen(header_name) >= header_len )
       return -1;      // header is too short
 
-   if( strncasecmp(header_buf, header_name, strlen(header_name) ) != 0 )
+   if( strncasecmp(header_buf, header_name, MIN( header_len, strlen(header_name) ) ) != 0 )
       return -1;      // not found
 
    size_t off = strlen(header_name);
@@ -295,7 +291,6 @@ static uint64_t ms_client_read_one_value( char* hdr, off_t offset, size_t size )
    size_t value_len = size - offset;
 
    char* value_str = CALLOC_LIST( char, value_len + 1 );
-   dbprintf("value_str = %p\n", value_str);
    
    strncpy( value_str, value, value_len );
 
@@ -350,50 +345,63 @@ static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void 
    size_t len = size * nmemb;
    char* data = (char*)ptr;
 
+   char* data_str = CALLOC_LIST( char, len + 1 );
+   strncpy( data_str, data, len );
+
+   //dbprintf("header: %s\n", data_str );
+
    // is this one of our headers?  Find each of them
    
-   off_t off = ms_client_find_header_value( data, len, HTTP_VOLUME_TIME );
+   off_t off = ms_client_find_header_value( data_str, len, HTTP_VOLUME_TIME );
    if( off > 0 ) {
-      times->volume_time = ms_client_read_one_value( data, off, len );
+      times->volume_time = ms_client_read_one_value( data_str, off, len );
+      free( data_str );
       return len;
    }
    
-   off = ms_client_find_header_value( data, len, HTTP_UG_TIME );
+   off = ms_client_find_header_value( data_str, len, HTTP_UG_TIME );
    if( off > 0 ) {
-      times->ug_time = ms_client_read_one_value( data, off, len );
+      times->ug_time = ms_client_read_one_value( data_str, off, len );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_TOTAL_TIME );
+   off = ms_client_find_header_value( data_str, len, HTTP_TOTAL_TIME );
    if( off > 0 ) {
-      times->total_time = ms_client_read_one_value( data, off, len );
+      times->total_time = ms_client_read_one_value( data_str, off, len );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_RESOLVE_TIME );
+   off = ms_client_find_header_value( data_str, len, HTTP_RESOLVE_TIME );
    if( off > 0 ) {
-      times->resolve_time = ms_client_read_one_value( data, off, len );
+      times->resolve_time = ms_client_read_one_value( data_str, off, len );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_CREATE_TIMES );
+   off = ms_client_find_header_value( data_str, len, HTTP_CREATE_TIMES );
    if( off > 0 ) {
-      times->create_times = ms_client_read_multi_values( data, off, len, &times->num_create_times );
+      times->create_times = ms_client_read_multi_values( data_str, off, len, &times->num_create_times );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_UPDATE_TIMES );
+   off = ms_client_find_header_value( data_str, len, HTTP_UPDATE_TIMES );
    if( off > 0 ) {
-      times->update_times = ms_client_read_multi_values( data, off, len, &times->num_update_times );
+      times->update_times = ms_client_read_multi_values( data_str, off, len, &times->num_update_times );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_DELETE_TIMES );
+   off = ms_client_find_header_value( data_str, len, HTTP_DELETE_TIMES );
    if( off > 0 ) {
-      times->delete_times = ms_client_read_multi_values( data, off, len, &times->num_delete_times );
+      times->delete_times = ms_client_read_multi_values( data_str, off, len, &times->num_delete_times );
+      free( data_str );
       return len;
    }
 
+   free( data_str );
    return len;
 }
 
@@ -410,12 +418,13 @@ static size_t ms_client_redirect_header_func( void *ptr, size_t size, size_t nme
    if( rb->size() > 0 )
       return len;
 
-   dbprintf("header: %s", data);
+   char* data_str = CALLOC_LIST( char, len + 1 );
+   strncpy( data_str, data, len );
 
-   off_t off = ms_client_find_header_value( data, len, "Location" );
+   off_t off = ms_client_find_header_value( data_str, len, "Location" );
    if( off > 0 ) {
 
-      char* value = data + off;
+      char* value = data_str + off;
       size_t value_len = len - off;
       
       char* value_str = CALLOC_LIST(char, value_len );
@@ -423,6 +432,8 @@ static size_t ms_client_redirect_header_func( void *ptr, size_t size, size_t nme
 
       rb->push_back( buffer_segment_t( value_str, value_len ) );
    }
+
+   free( data_str );
    
    return len;
 }
@@ -1476,24 +1487,33 @@ int ms_client_begin_register( struct ms_client* client, CURL* curl, char const* 
 }
 
 
-int ms_client_set_method( CURL* curl, char const* method, char* url ) {
+int ms_client_split_url_qs( char const* url, char** url_and_path, char** qs ) {
+   if( strstr( url, "?" ) != NULL ) {
+      char* url2 = strdup( url );
+      char* qs_start = strstr( url2, "?" );
+      *qs_start = '\0';
 
+      *qs = strdup( qs_start + 1 );
+      *url_and_path = url2;
+      return 0;
+   }
+   else {
+      return -EINVAL;
+   }
+}
+
+int ms_client_set_method( CURL* curl, char const* method, char const* url, char const* qs ) {
+
+   curl_easy_setopt( curl, CURLOPT_URL, url );
+   
    if( strcmp(method, "POST") == 0 ) {
       curl_easy_setopt( curl, CURLOPT_POST, 1L );
 
-      // separate the query string from the URL
-      if( strstr(url, "?") != NULL ) {
-         char* qs_start = strstr( url, "?" );
-         *qs_start = 0;
-         qs_start++;
-
-         curl_easy_setopt( curl, CURLOPT_URL, url );
-         curl_easy_setopt( curl, CURLOPT_POSTFIELDS, qs_start );
-      }
+      if( qs )
+         curl_easy_setopt( curl, CURLOPT_POSTFIELDS, qs );
    }
    else if( strcmp(method, "GET") == 0 ) {
       curl_easy_setopt( curl, CURLOPT_HTTPGET, 1L );
-      curl_easy_setopt( curl, CURLOPT_URL, url );
    }
    else {
       errorf("Invalid HTTP method '%s'\n", method );
@@ -1533,12 +1553,17 @@ int ms_client_auth_op( struct ms_client* client, CURL* curl, ms::ms_openid_provi
    curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, ms_client_dummy_write );
    curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
    curl_easy_setopt( curl, CURLOPT_READDATA, NULL );
-   curl_easy_setopt( curl, CURLOPT_SSL_VERIFYPEER, 0L );
-   curl_easy_setopt( curl, CURLOPT_SSL_VERIFYHOST, 0L );
+   //curl_easy_setopt( curl, CURLOPT_VERBOSE, 1L );
+
+   char* url_and_path = NULL;
+   char* url_qs = NULL;
+   int rc = ms_client_split_url_qs( openid_redirect_url, &url_and_path, &url_qs );
+   if( rc != 0 ) {
+      // no query string
+      url_and_path = strdup( openid_redirect_url );
+   }
    
-   char* url_buf = strdup( openid_redirect_url );
-   
-   int rc = ms_client_set_method( curl, challenge_method, url_buf );
+   rc = ms_client_set_method( curl, challenge_method, url_and_path, url_qs );
    if( rc != 0 ) {
       errorf("ms_client_set_method(%s) rc = %d\n", challenge_method, rc );
       return rc;
@@ -1552,7 +1577,9 @@ int ms_client_auth_op( struct ms_client* client, CURL* curl, ms::ms_openid_provi
    curl_easy_setopt( curl, CURLOPT_WRITEHEADER, NULL );
    curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, NULL );
 
-   free( url_buf );
+   free( url_and_path );
+   if( url_qs )
+      free( url_qs );
 
    if( rc != 0 ) {
       errorf("curl_easy_perform rc = %d\n", rc );
@@ -1574,7 +1601,7 @@ int ms_client_auth_op( struct ms_client* client, CURL* curl, ms::ms_openid_provi
       
       *return_to = url;
       response_buffer_free( &header_rb );
-      
+
       return http_response;
    }
 
@@ -1597,17 +1624,11 @@ int ms_client_auth_op( struct ms_client* client, CURL* curl, ms::ms_openid_provi
    free( username_urlencoded );
    free( password_urlencoded );
 
-   char* url_full = CALLOC_LIST( char, strlen(auth_handler) + 1 + strlen(post) + 1 );
-   sprintf(url_full, "%s?%s", auth_handler, post );
+   dbprintf("%s authenticate to %s?%s\n", response_method, auth_handler, post );
 
-   free( post );
-   
-   dbprintf("%s authenticate to %s\n", response_method, url_full );
-
-   rc = ms_client_set_method( curl, response_method, url_full );
+   rc = ms_client_set_method( curl, response_method, auth_handler, post );
    if( rc != 0 ) {
       errorf("ms_client_set_method(%s) rc = %d\n", response_method, rc );
-      free( url_full );
       return rc;
    }
 
@@ -1626,8 +1647,9 @@ int ms_client_auth_op( struct ms_client* client, CURL* curl, ms::ms_openid_provi
    curl_easy_setopt( curl, CURLOPT_URL, NULL );
    curl_easy_setopt( curl, CURLOPT_WRITEHEADER, NULL );
    curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, NULL );
+   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, NULL );
 
-   free( url_full );
+   free( post );
 
    if( rc != 0 ) {
       errorf("curl_easy_perform rc = %d\n", rc );
@@ -1654,19 +1676,32 @@ int ms_client_auth_op( struct ms_client* client, CURL* curl, ms::ms_openid_provi
 // client must not be locked
 int ms_client_complete_register( struct ms_client* client, CURL* curl, char const* return_to_method, char const* return_to ) {
 
-   dbprintf("%s return to %s\n", return_to, return_to_method );
+   dbprintf("%s return to %s\n", return_to_method, return_to );
 
-   char* return_to_mutable = strdup( return_to );
-   int rc = ms_client_set_method( curl, return_to_method, return_to_mutable );
+   char* return_to_url_and_path = NULL;
+   char* return_to_qs = NULL;
+
+   int rc = ms_client_split_url_qs( return_to, &return_to_url_and_path, &return_to_qs );
+   if( rc != 0 ) {
+      // no qs
+      return_to_url_and_path = strdup( return_to );
+   }
+   
+   rc = ms_client_set_method( curl, return_to_method, return_to_url_and_path, return_to_qs );
    if( rc != 0 ) {
       errorf("ms_client_set_method(%s) rc = %d\n", return_to_method, rc );
-      free( return_to_mutable );
+      free( return_to_url_and_path );
+      if( return_to_qs )
+         free( return_to_qs );
+      
       return rc;
    }
    
    rc = ms_client_get_volume_metadata_curl( client, curl );
 
-   free( return_to_mutable );
+   free( return_to_url_and_path );
+   if( return_to_qs )
+      free( return_to_qs );
    
    if( rc != 0 ) {
       errorf("ms_client_get_volume_metadata_curl rc = %d\n", rc );
@@ -1734,6 +1769,7 @@ int ms_client_register( struct ms_client* client, char const* gateway_name, char
 
    curl_easy_cleanup( curl );
    free( return_to );
+   free( return_to_method );
    
    return rc;
 }

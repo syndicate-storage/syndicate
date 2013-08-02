@@ -57,6 +57,8 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
 
    GOOGLE_PROTOBUF_VERIFY_VERSION;
 
+   md_init_OpenSSL();
+
    md_path_locks_create( &md_locks );
    
    md_guest_user.uid = MD_GUEST_UID;
@@ -239,6 +241,10 @@ int md_shutdown() {
 
    // shut down protobufs
    google::protobuf::ShutdownProtobufLibrary();
+
+   // shut down OpenSSL
+   ERR_free_strings();
+   md_openssl_thread_cleanup();
 
    return 0;
 }
@@ -3764,3 +3770,68 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
 
    return rc;
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+// derived from http://www.cs.odu.edu/~cs772/sourcecode/NSwO/compiled/common.c
+
+void md_init_OpenSSL(void) {
+    if (!md_openssl_thread_setup() || !SSL_library_init())
+    {
+        errorf("%s", "OpenSSL initialization failed!\n");
+        exit(-1);
+    }
+    
+    OpenSSL_add_all_digests();
+    ERR_load_crypto_strings();
+}
+
+
+/* This array will store all of the mutexes available to OpenSSL. */
+static MD_MUTEX_TYPE *md_openssl_mutex_buf = NULL ;
+
+static void locking_function(int mode, int n, const char * file, int line)
+{
+  if (mode & CRYPTO_LOCK)
+    MD_MUTEX_LOCK(md_openssl_mutex_buf[n]);
+  else
+    MD_MUTEX_UNLOCK(md_openssl_mutex_buf[n]);
+}
+
+static unsigned long id_function(void)
+{
+  return ((unsigned long)MD_THREAD_ID);
+}
+
+int md_openssl_thread_setup(void)
+{
+  if( md_openssl_mutex_buf != NULL )
+     // already initialized
+     return 1;
+     
+  int i;
+  md_openssl_mutex_buf = (MD_MUTEX_TYPE *) malloc(CRYPTO_num_locks( ) * sizeof(MD_MUTEX_TYPE));
+  if(!md_openssl_mutex_buf)
+    return 0;
+  for (i = 0; i < CRYPTO_num_locks( ); i++)
+    MD_MUTEX_SETUP(md_openssl_mutex_buf[i]);
+  CRYPTO_set_id_callback(id_function);
+  CRYPTO_set_locking_callback(locking_function);
+  return 1;
+}
+
+int md_openssl_thread_cleanup(void)
+{
+  int i;
+  if (!md_openssl_mutex_buf)
+    return 0;
+  CRYPTO_set_id_callback(NULL);
+  CRYPTO_set_locking_callback(NULL);
+  for (i = 0; i < CRYPTO_num_locks( ); i++)
+    MD_MUTEX_CLEANUP(md_openssl_mutex_buf[i]);
+  free(md_openssl_mutex_buf);
+  md_openssl_mutex_buf = NULL;
+  return 1;
+}
+
+////////////////////////////////////////////////////////////////////////////////
