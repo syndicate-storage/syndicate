@@ -28,7 +28,7 @@ void invalidate_entry(void* cls) {
     entry->valid = false;
 }
 
-static void sigchld_handler(int signum) {
+void sigchld_handler(int signum) {
     pid_t pid = 0;
     while ((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
 	update_death(pid);

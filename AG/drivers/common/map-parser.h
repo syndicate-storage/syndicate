@@ -8,10 +8,6 @@
  * All Rights Reserved
  * Copyright 2013 The Trustees of Princeton University
  * <copyright>
- * <copyright>
- * Copyright 2013 The Trustees of Princeton University
- * All Rights Reserved
- * </copyright>
  * <author>Wathsala Vithanage</author>
  * <email>wathsala@princeton.edy</email>
  * <date>06/24/2013</date>
@@ -82,6 +78,8 @@ struct map_info {
     uint64_t mi_time;
     void* entry;
     void (*invalidate_entry)(void*);
+    void* mentry;
+    void (*reversion_entry)(void*);
 };
 
 class MapParserHandler : public DefaultHandler {

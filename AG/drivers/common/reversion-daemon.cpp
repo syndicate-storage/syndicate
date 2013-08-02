@@ -8,7 +8,7 @@
 #include <reversion-daemon.h>
 
 void* run_daemon(void *argc) {
-    time_t last_ts;
+    //time_t last_ts;
     struct timespec request;
     struct timespec remain;
     timer_spec* revd_ts = (timer_spec*)argc;
@@ -27,7 +27,7 @@ void* run_daemon(void *argc) {
 	}
 	time_t current_time = ts.tv_sec;
 	time_t slept_time = request.tv_sec - remain.tv_sec;
-	last_ts = current_time;
+	//last_ts = current_time;
 	ReversionDaemon::invalidate_map_info(revd_ts->map_set, slept_time);
     }
     return NULL;
@@ -72,6 +72,11 @@ void ReversionDaemon::invalidate_map_info(set<struct map_info*,
 	    }
 	    else 
 		cerr<<"No invalidation callback!"<<endl;
+	    if (mi->reversion_entry) { 
+		mi->reversion_entry(mi->mentry);
+	    }
+	    else 
+		cerr<<"No reversion callback!"<<endl;
 	}
 	else {
 	    //No point in going beyond this point

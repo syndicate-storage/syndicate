@@ -76,6 +76,7 @@ typedef map<string, struct map_info*> query_map;
 static int publish(const char *fpath, int type, struct map_info *mi);
 char**	str2array(char *str);
 void	init(unsigned char* dsn);
+void reversion(void *cls);
 
 #endif //_SQL_DRIVER_H_
 

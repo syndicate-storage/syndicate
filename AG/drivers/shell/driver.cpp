@@ -7,9 +7,6 @@
 
 #include <driver.h>
 #include <fs/fs_entry.h>
-
-// server config 
-struct md_syndicate_conf CONF;
  
 // set of files we're exposing
 content_map DATA;
@@ -371,7 +368,6 @@ static int publish(const char *fpath, int type, struct map_info* mi)
 	return -1;
     }
 
-
     ment->ctime_sec = rtime.tv_sec;
     ment->ctime_nsec = rtime.tv_nsec;
     ment->mtime_sec = rtime.tv_sec;
@@ -400,6 +396,8 @@ static int publish(const char *fpath, int type, struct map_info* mi)
 	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
 		cerr<<"ms client create "<<i<<endl;
 	    }
+	    mi->mentry = ment;
+	    mi->reversion_entry = reversion;
 	    break;
 	default:
 	    break;
@@ -438,5 +436,13 @@ char** str2array(char *str) {
     array = (char**)realloc(array, sizeof(char*) * array_size);
     array[array_size - 1] = NULL;
     return array;
+}
+
+void reversion(void *cls) {
+    struct md_entry *ment = (struct md_entry*)cls;
+    if (ment == NULL)
+	return;
+    ment->version++;
+    ms_client_update(mc, ment);
 }
 

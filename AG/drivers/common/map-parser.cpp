@@ -156,7 +156,9 @@ void MapParserHandler::endElement (
 	    mi->mi_time = 0;
 	    mi->id = current_id;
 	    mi->entry = NULL;
+	    mi->mentry = NULL;
 	    mi->invalidate_entry = NULL;
+	    mi->reversion_entry = NULL;
 	    current_id++;
 	    (*xmlmap)[string(current_key)] =mi;
 	    free(current_key);
