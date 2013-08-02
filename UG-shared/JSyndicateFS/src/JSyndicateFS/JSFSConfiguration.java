@@ -14,9 +14,9 @@ public abstract class JSFSConfiguration {
     protected boolean lock = false;
     
     // read buffer size
-    public static final int READ_BUFFER_SIZE = 4096;
+    public static final int READ_BUFFER_SIZE = 64 * 1024;
     // write buffer size
-    public static final int WRITE_BUFFER_SIZE = 4096;
+    public static final int WRITE_BUFFER_SIZE = 64 * 1024;
     
     protected int readBufferSize;
     protected int writeBufferSize;
