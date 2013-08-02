@@ -23,6 +23,7 @@ LIBS = """
    curl
    protobuf
    pthread
+   ssl
    crypto
    uriparser
    microhttpd
