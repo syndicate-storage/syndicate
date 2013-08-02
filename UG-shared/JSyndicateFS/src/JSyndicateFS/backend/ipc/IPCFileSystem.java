@@ -20,7 +20,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -31,7 +30,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public class IPCFileSystem extends JSFSFileSystem {
 
-    public static final Log LOG = LogFactory.getLog(IPCFileSystem.class);
+    private static final Log LOG = LogFactory.getLog(IPCFileSystem.class);
 
     private IPCConfiguration configuration;
     private String UGName;
@@ -42,7 +41,7 @@ public class IPCFileSystem extends JSFSFileSystem {
     private ArrayList<IPCOutputStream> openOutputStream = new ArrayList<IPCOutputStream>();
     private ArrayList<IPCRandomAccess> openRandomAccess = new ArrayList<IPCRandomAccess>();
     
-    private ICache<JSFSPath, IPCFileStatus> filestatus_cache = new TimeoutCache<JSFSPath, IPCFileStatus>(0, 60);
+    private ICache<JSFSPath, IPCFileStatus> filestatus_cache;
     
     public IPCFileSystem(IPCConfiguration conf) throws InstantiationException {
         initialize(conf);
@@ -66,6 +65,7 @@ public class IPCFileSystem extends JSFSFileSystem {
         this.UGName = this.configuration.getUGName();
         this.UGPort = this.configuration.getPort();
         this.client = new IPCInterfaceClient(this.UGName, this.UGPort);
+        this.filestatus_cache = new TimeoutCache<JSFSPath, IPCFileStatus>(conf.getMaxMetadataCacheSize(), conf.getCacheTimeoutSecond());
         
         super.initialize(conf);
         

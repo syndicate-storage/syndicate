@@ -16,7 +16,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public class TimeoutCache<tk, tv> implements ICache<tk, tv> {
     
-    public static final Log LOG = LogFactory.getLog(TimeoutCache.class);
+    private static final Log LOG = LogFactory.getLog(TimeoutCache.class);
     
     private int maxCacheSize;
     private int timeoutSeconds;

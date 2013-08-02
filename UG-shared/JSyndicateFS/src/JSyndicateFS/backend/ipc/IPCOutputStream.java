@@ -15,7 +15,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public class IPCOutputStream extends OutputStream {
 
-    public static final Log LOG = LogFactory.getLog(IPCOutputStream.class);
+    private static final Log LOG = LogFactory.getLog(IPCOutputStream.class);
     
     private IPCFileSystem filesystem;
     private IPCFileHandle handle;

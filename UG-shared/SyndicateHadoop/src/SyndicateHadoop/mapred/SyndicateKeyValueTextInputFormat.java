@@ -1,5 +1,5 @@
 /*
- * Text Input Format for Syndicate
+ * Key-Value Text Input Format for Syndicate
  */
 /**
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -22,12 +22,10 @@ package SyndicateHadoop.mapred;
 
 import JSyndicateFS.JSFSPath;
 import SyndicateHadoop.input.SyndicateInputSplit;
-import SyndicateHadoop.mapred.input.SyndicateTextRecordReader;
+import SyndicateHadoop.mapred.input.SyndicateKeyValueLineRecordReader;
 import SyndicateHadoop.util.CompressionCodecUtil;
-import SyndicateHadoop.util.SyndicateConfigUtil;
 import java.io.IOException;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.compress.CompressionCodec;
 import org.apache.hadoop.mapreduce.InputSplit;
@@ -39,20 +37,15 @@ import org.apache.hadoop.mapreduce.TaskAttemptContext;
  *
  * @author iychoi
  */
-public class SyndicateTextInputFormat extends SyndicateInputFormat<LongWritable, Text> {
+public class SyndicateKeyValueTextInputFormat extends SyndicateInputFormat<Text, Text> {
 
     @Override
-    public RecordReader<LongWritable, Text> createRecordReader(InputSplit split, TaskAttemptContext context) throws IOException, InterruptedException {
+    public RecordReader<Text, Text> createRecordReader(InputSplit split, TaskAttemptContext context) throws IOException, InterruptedException {
         if (!(split instanceof SyndicateInputSplit))
             throw new IllegalStateException("Creation of a new RecordReader requires a SyndicateInputSplit instance.");
         
         Configuration conf = context.getConfiguration();
-        String delimiter = SyndicateConfigUtil.getTextRecordDelimiter(conf);
-        byte[] delimiter_bytes = null;
-        if(delimiter != null) {
-            delimiter_bytes = delimiter.getBytes();
-        }
-        return new SyndicateTextRecordReader(delimiter_bytes);
+        return new SyndicateKeyValueLineRecordReader(conf);
     }
     
     @Override

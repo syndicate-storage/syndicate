@@ -20,7 +20,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public abstract class JSFSFileSystem implements Closeable {
     
-    public static final Log LOG = LogFactory.getLog(JSFSFileSystem.class);
+    private static final Log LOG = LogFactory.getLog(JSFSFileSystem.class);
     
     protected static final String FS_ROOT_PATH_STRING = "file:///";
     protected static final JSFSPath FS_ROOT_PATH = new JSFSPath(FS_ROOT_PATH_STRING);
