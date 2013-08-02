@@ -318,7 +318,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
    OPENID_PROVIDER_USERNAME_FIELD = "login_as"
    OPENID_PROVIDER_PASSWORD_FIELD = "password"
-   OPENID_PROVIDER_CHALLENGE_METHOD = "GET"
+   OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
    OPENID_PROVIDER_RESPONSE_METHOD = "POST"
    
    """
@@ -366,8 +366,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
       session = self.getSession()
       self.setSessionCookie(session)
 
-      print self.query
-
       volume, UG, user = self.load_objects( volume_name, ug_name, username )
 
       if volume == None or UG == None or user == None:
@@ -385,8 +383,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          return
       """
 
-      logging.info("Headers = %s" % str(self.request.headers) )
-      
       if operation == "begin":
 
          # load the public key
@@ -416,8 +412,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          # preserve the public key
          session['syndicatepubkey'] = pubkey
 
-         logging.info("session = %s" % str(session))
-         
          # reply with the redirect URL
          trust_root = self.HOST_URL
          return_to = self.buildURL( "/REGISTER/%s/%s/%s/complete" % (volume_name, ug_name, username) )
@@ -445,8 +439,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
       elif operation == "complete":
 
          # get our saved pubkey
-         logging.info("session = %s" % str(session))
-         
          pubkey = session.get('syndicatepubkey')
          if pubkey == None:
             logging.error("could not load public key")

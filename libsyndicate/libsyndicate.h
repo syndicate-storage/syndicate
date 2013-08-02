@@ -41,6 +41,10 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <inttypes.h>
+#include <openssl/pem.h>
+#include <openssl/ssl.h>
+#include <openssl/rand.h>
+#include <openssl/err.h>
 
 using namespace std;
 
@@ -506,6 +510,28 @@ typedef struct map<string, struct md_entry*> md_entmap;
 // list of path hashes is a set of path locks
 typedef vector<long> md_pathlist;
 
+
+// Lock types
+#if defined(WIN32)
+    #define MD_MUTEX_TYPE HANDLE
+    #define MD_MUTEX_SETUP(x) (x) = CreateMutex(NULL, FALSE, NULL)
+    #define MD_MUTEX_CLEANUP(x) CloseHandle(x)
+    #define MD_MUTEX_LOCK(x) WaitForSingleObject((x), INFINITE)
+    #define MD_MUTEX_UNLOCK(x) ReleaseMutex(x)
+    #define MD_THREAD_ID GetCurrentThreadId( )
+#elif defined (_POSIX_THREADS)
+    /* _POSIX_THREADS is normally defined in unistd.h if pthreads are available
+       on your platform. */
+    #define MD_MUTEX_TYPE pthread_mutex_t
+    #define MD_MUTEX_SETUP(x) pthread_mutex_init(&(x), NULL)
+    #define MD_MUTEX_CLEANUP(x) pthread_mutex_destroy(&(x))
+    #define MD_MUTEX_LOCK(x) pthread_mutex_lock(&(x))
+    #define MD_MUTEX_UNLOCK(x) pthread_mutex_unlock(&(x))
+    #define MD_THREAD_ID pthread_self( )
+#else
+    #error You must define mutex operations appropriate for your platform!
+#endif
+
 BEGIN_EXTERN_C
    
 // library config 
@@ -681,6 +707,11 @@ int md_init( int gateway_type,
 int md_shutdown(void);
 int md_default_conf( struct md_syndicate_conf* conf );
 int md_check_conf( int gateway_type, struct md_syndicate_conf* conf );
+
+// OpenSSL
+int md_openssl_thread_setup(void);
+int md_openssl_thread_cleanup(void);
+void md_init_OpenSSL(void);
 
 END_EXTERN_C
    

@@ -9,10 +9,7 @@
 
 #include <sstream>
 #include <queue>
-#include <openssl/pem.h>
-#include <openssl/ssl.h>
-#include <openssl/rand.h>
-#include <openssl/err.h>
+
 #include "libsyndicate.h"
 
 #define HTTP_VOLUME_SECRET "Syndicate-VolumeSecret"
