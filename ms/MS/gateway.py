@@ -102,7 +102,7 @@ class Gateway( storagetypes.Object ):
    validators = {
       "ms_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
       "session_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
-      "ms_username": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-. ")) ) == 0 and not is_int(value) )
+      "ms_username": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.: ")) ) == 0 and not is_int(value) )
    }
 
    # TODO: session expires in 3600 seconds
@@ -156,9 +156,10 @@ class Gateway( storagetypes.Object ):
       return verifier.verify( h, sig )
 
    @classmethod
-   def generate_password_hash( cls, pw ):
+   def generate_password_hash( cls, pw, salt ):
 
       h = SHA256.new()
+      h.update( salt )
       h.update( pw )
 
       pw_hash = h.hexdigest()
@@ -203,8 +204,8 @@ class Gateway( storagetypes.Object ):
       Generate (password, SHA256(password), salt) for this gateway
       """
       password = cls.generate_password( PASSWORD_LENGTH )
-      pw_hash = Gateway.generate_password_hash( password )
       salt = "".join( [random.choice(string.printable) for i in xrange(GATEWAY_SALT_LENGTH)] )
+      pw_hash = Gateway.generate_password_hash( password, salt )
 
       return ( password, pw_hash, salt )  
 
@@ -227,7 +228,32 @@ class Gateway( storagetypes.Object ):
       cred_pb.name = self.ms_username
       cred_pb.host = self.host
       cred_pb.port = self.port
-      cred_pb.public_key = self.public_key
+
+      if self.public_key != None:
+         cred_pb.public_key = self.public_key
+      else:
+         cred_pb.public_key = "NONE"
+
+
+   @classmethod
+   def create_credentials( cls, user, volume, kwargs ):
+
+      password, password_hash, password_salt = UserGateway.generate_credentials()
+      
+      if kwargs.get("ms_username") == None:
+         # generate new credentials
+         kwargs["ms_username"] = uuid.uuid4().urn
+
+      if kwargs.get("ms_password") != None:
+         # use user-given password if provided
+         kwargs["ms_password_salt"] = password_salt
+         kwargs["ms_password_hash"] = Gateway.generate_password_hash( kwargs.get("ms_password"), password_salt )
+      
+      if kwargs.get("ms_password_hash") == None:
+         kwargs["ms_password"] = password
+         kwargs["ms_password_salt"] = password_salt
+         kwargs["ms_password_hash"] = password_hash
+      
       
    
 
@@ -290,8 +316,9 @@ class UserGateway( Gateway ):
          return False
 
       return True
-      
 
+         
+   
    @classmethod
    def Create( cls, user, volume=None, **kwargs ):
       """
@@ -331,16 +358,7 @@ class UserGateway( Gateway ):
 
       UserGateway.fill_defaults( kwargs )
 
-      if kwargs.get("ms_password") != None:
-         kwargs[ "ms_password_hash" ] = Gateway.generate_password_hash( kwargs.get("ms_password") )
-
-      if kwargs.get("ms_username") == None or kwargs.get("ms_password_hash") == None:
-         # generate new credentials
-         password, password_hash, password_salt = UserGateway.generate_credentials()
-         kwargs["ms_username"] = base64.encodestring( uuid.uuid4().urn )
-         kwargs["ms_password"] = password
-         kwargs["ms_password_hash"] = password_hash
-         kwargs["ms_password_salt"] = password_salt
+      UserGateway.create_credentials( user, volume, kwargs )
 
       missing = UserGateway.find_missing_attrs( kwargs )
       if len(missing) != 0:
@@ -492,15 +510,7 @@ class AcquisitionGateway( Gateway ):
 
       AcquisitionGateway.fill_defaults( kwargs )
 
-      if kwargs.get("ms_password") != None:
-         kwargs[ "ms_password_hash" ] = Gateway.generate_password_hash( kwargs.get("ms_password") )
-
-      if kwargs.get("ms_password_hash") == None:
-         # generate new credentials
-         password, password_hash = AcquisitionGateway.generate_credentials()
-         kwargs["ms_password"] = password
-         kwargs["ms_password_hash"] = password_hash
-
+      AcquisitionGateway.create_credentials( user, None, kwargs )
 
       missing = AcquisitionGateway.find_missing_attrs( kwargs )
       if len(missing) != 0:
@@ -647,16 +657,8 @@ class ReplicaGateway( Gateway ):
 
       ReplicaGateway.fill_defaults( kwargs )
 
-      if kwargs.get("ms_password") != None:
-         kwargs[ "ms_password_hash" ] = Gateway.generate_password_hash( kwargs.get("ms_password") )
-
-      if kwargs.get("ms_password_hash") == None:
-         # generate new credentials
-         password, password_hash = ReplicaGateway.generate_credentials()
-         kwargs["ms_password"] = password
-         kwargs["ms_password_hash"] = password_hash
-
-
+      ReplicaGateway.create_credentials( user, None, kwargs )
+      
       missing = ReplicaGateway.find_missing_attrs( kwargs )
       if len(missing) != 0:
          raise Exception( "Missing attributes: %s" % (", ".join( missing )))
