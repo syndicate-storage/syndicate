@@ -712,6 +712,9 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf );
 int md_openssl_thread_setup(void);
 int md_openssl_thread_cleanup(void);
 void md_init_OpenSSL(void);
+int md_openssl_error(void);
+int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len );
+int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len );
 
 END_EXTERN_C
    

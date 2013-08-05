@@ -56,35 +56,24 @@ ssize_t fs_entry_do_read_block( struct fs_core* core, char const* fs_path, struc
       // this is a remotely-hosted block--get its bits
       ssize_t nr = fs_entry_download_block( core, block_url, block_bits );
       if( nr <= 0 && !IS_STREAM_FILE( *fent ) ) {
-         char** RG_urls_save = NULL;
+         char** RG_urls = ms_client_RG_urls_copy( core->ms );
          
          // try a replica
-         ms_client_view_rlock( core->ms );
-         if( core->ms->RG_urls != NULL ) {
-            for( int i = 0; core->ms->RG_urls[i] != NULL; i++ ) {
+         if( RG_urls != NULL ) {
+            for( int i = 0; RG_urls[i] != NULL; i++ ) {
                uint64_t block_id = fs_entry_block_id( offset, core->conf );
-               char* replica_block_url = fs_entry_replica_block_url( core->ms->RG_urls[i], fent->version, block_id, fent->manifest->get_block_version( block_id ) );
-
-               // check after download to see if the RG set changed...
-               RG_urls_save = core->ms->RG_urls;
-               ms_client_view_unlock( core->ms );
+               char* replica_block_url = fs_entry_replica_block_url( RG_urls[i], fent->version, block_id, fent->manifest->get_block_version( block_id ) );
                
                nr = fs_entry_download_block( core, replica_block_url, block_bits );
                free( replica_block_url );
 
-               ms_client_view_rlock( core->ms );
-
                if( nr > 0 )
                   break;
-
-               if( core->ms->RG_urls != RG_urls_save ) {
-                  // RG set changed under us
-                  nr = -EAGAIN;
-                  break;
-               }
             }
+
+
+            FREE_LIST( RG_urls );
          }
-         ms_client_view_unlock( core->ms );
       }
       if( nr <= 0 ) {
          nr = -ENODATA;

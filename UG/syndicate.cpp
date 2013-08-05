@@ -132,7 +132,12 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
    }
 
    // check authorization
-   //rc = fs_entry_access( 
+   if( !(sb.st_mode & 0044) ) {
+      // not volume-readable or world readable
+      md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
+      free( fs_path );
+      return resp;
+   }
 
    // if this is a request for a directory, then bail
    if( S_ISDIR( sb.st_mode ) ) {
@@ -285,20 +290,46 @@ bool extract_file_info( Serialization::WriteMsg* msg, char const** fs_path, int6
 
 
 // make an HTTP response from a protobuf ack
-void make_msg_ack( struct md_HTTP_connection_data* md_con_data, Serialization::WriteMsg* ack ) {
+void syndicate_make_msg_ack( struct md_HTTP_connection_data* md_con_data, Serialization::WriteMsg* ack ) {
    string ack_str;
    char const* ack_txt = NULL;
    size_t ack_txt_len = 0;
+
+   struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
+   struct syndicate_state *state = syncon->state;
+   struct ms_client* client = state->ms;
+
+   ack->set_signature( string("") );
+
+   ack->SerializeToString( &ack_str );
+
+   md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+
+   // sign this message
+   ack_txt = ack_str.data();
+   ack_txt_len = ack_str.size();
+
+   char* sigb64 = NULL;
+   size_t sigb64_len = 0;
+
+   int rc = md_sign_message( client->my_key, ack_txt, ack_txt_len, &sigb64, &sigb64_len );
+   if( rc != 0 ) {
+      errorf("md_sign_message rc = %d\n", rc );
+      md_create_HTTP_response_ram_static( md_con_data->resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
+      return;
+   }
+
+   ack->set_signature( string(sigb64, sigb64_len) );
 
    ack->SerializeToString( &ack_str );
 
    ack_txt = ack_str.data();
    ack_txt_len = ack_str.size();
 
-   md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
-
    dbprintf( "ack message of length %zu\n", ack_txt_len );
    md_create_HTTP_response_ram( md_con_data->resp, "application/octet-stream", 200, ack_txt, ack_txt_len );
+
+   free( sigb64 );
 }
 
 
@@ -308,49 +339,84 @@ void make_promise_msg( Serialization::WriteMsg* writeMsg ) {
 }
 
 
-// POST finish--extract the pending message and handle it
-void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
-
-   struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
-   struct syndicate_state *state = syncon->state;
-   response_buffer_t* rb = md_con_data->rb;
-
-   char* msg_buf = response_buffer_to_string( rb );
-   size_t msg_sz = response_buffer_size( rb );
-
-   dbprintf("received message of length %zu\n", msg_sz);
-
+// extract and verify a write message
+int syndicate_parse_write_message( struct syndicate_state* state, Serialization::WriteMsg* msg, char* msg_buf, size_t msg_sz ) {
    // extract the actual message
-   Serialization::WriteMsg *msg = new Serialization::WriteMsg();
    bool valid = false;
 
    try {
       valid = msg->ParseFromString( string(msg_buf, msg_sz) );
    }
    catch( exception e ) {
-      errorf("%p: failed to parse message, caught exception\n", md_con_data );
+      errorf("%s", "failed to parse message, caught exception\n" );
+      return -EINVAL;
    }
-
-   free( msg_buf );
 
    if( !valid ) {
-      // can't handle this
-      errorf( "%p: invalid message\n", md_con_data );
-
-      md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
-      md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 400, "INVALID REQUEST", strlen("INVALID REQUEST") + 1 );
-      delete msg;
-
-      return;
+      errorf("%s", "Invalid message\n");
+      return -EINVAL;
    }
-   
+
+   // verify message
+
+   struct ms_client* client = state->ms;
+   char* sigb64 = strdup( msg->signature().c_str() );
+   size_t sigb64_len = msg->signature().size();
+
+   msg->set_signature( string("") );
+
+   string msg_data;
+   valid = msg->SerializeToString( &msg_data );
+   if( !valid ) {
+      // something's seriously wrong
+      errorf("%s", "failed to serialize message\n");
+      return -EINVAL;
+   }
+
+   // which gateway sent this?  Find its public key
+   int rc = ms_client_verify_gateway_message( client, msg->user_id(), msg->gateway_id(), msg_data.c_str(), msg_data.size(), sigb64, sigb64_len );
+   if( rc != 0 ) {
+      // not valid
+      errorf("ms_client_verify_gateway_message rc = %d\n", rc );
+      return rc;
+   }
+
+   return 0;
+}
+
+
+// POST finish--extract the pending message and handle it
+void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
+
+   struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
+   struct syndicate_state *state = syncon->state;
+   response_buffer_t* rb = md_con_data->rb;
+   Serialization::WriteMsg ack;
+
    // prepare an ACK
    char const* fs_path = NULL;
    int64_t file_version = -1;
    int rc = 0;
    bool no_ack = false;
 
-   Serialization::WriteMsg ack;
+   char* msg_buf = response_buffer_to_string( rb );
+   size_t msg_sz = response_buffer_size( rb );
+   Serialization::WriteMsg *msg = new Serialization::WriteMsg();
+
+   dbprintf("received message of length %zu\n", msg_sz);
+
+   rc = syndicate_parse_write_message( state, msg, msg_buf, msg_sz );
+
+   if( rc != 0 ) {
+      // can't handle this
+      errorf( "%p: invalid message\n", md_con_data );
+
+      md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+      md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 400, "INVALID REQUEST", strlen("INVALID REQUEST") + 1 );
+
+      return;
+   }
+   
    fs_entry_init_write_message( &ack, state->core, Serialization::WriteMsg::ERROR );
 
    if( !extract_file_info( msg, &fs_path, &file_version ) ) {
@@ -359,7 +425,7 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
       ack.set_errortxt( string("Missing message data") );
 
       errorf( "%s", "extract_file_info failed\n" );
-      make_msg_ack( md_con_data, &ack );
+      syndicate_make_msg_ack( md_con_data, &ack );
 
       delete msg;
       return;
@@ -372,7 +438,7 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
       ack.set_errortxt( string("Could not determine version") );
 
       errorf( "fs_entry_get_version(%s) rc = %" PRId64 "\n", fs_path, current_version);
-      make_msg_ack( md_con_data, &ack );
+      syndicate_make_msg_ack( md_con_data, &ack );
 
       delete msg;
       return;
@@ -472,7 +538,7 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
    }
 
    if( !no_ack ) {
-      make_msg_ack( md_con_data, &ack );
+      syndicate_make_msg_ack( md_con_data, &ack );
    }
    else {
       md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );

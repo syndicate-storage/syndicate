@@ -427,7 +427,7 @@ int Base64Decode(char* b64message, size_t b64message_len, char** buffer, size_t*
 }
 
 
-int Base64Encode(const char* message, size_t msglen, char** buffer) { //Encodes a string to base64
+int Base64Encode(char const* message, size_t msglen, char** buffer) { //Encodes a string to base64
   BIO *bio, *b64;
   FILE* stream;
   int encodedSize = 4*ceil((double)msglen/3);

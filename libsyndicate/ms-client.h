@@ -98,7 +98,7 @@ struct ms_client {
    pthread_rwlock_t view_lock;
 
    // session information
-   struct UG_cred* session_cred;            // who am I?
+   struct UG_cred* session_cred;            // who am I?  NOTE: the pubkey field in this structure is ignored in favor of my_key below
    int64_t session_timeout;                 // how long the session is valid
    char* session_password;
 
@@ -132,6 +132,7 @@ int ms_client_reload_UGs( struct ms_client* client );
 int ms_client_verify_volume_metadata( struct ms_client* client, ms::ms_volume_metadata* volume_md );
 int ms_client_verify_UGs( struct ms_client* client, ms::ms_volume_UGs* ugs );
 int ms_client_verify_RGs( struct ms_client* client, ms::ms_volume_RGs* rgs );
+int ms_client_verify_gateway_message( struct ms_client* client, uint64_t user_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len );
 
 int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str );
 int ms_client_load_privkey( EVP_PKEY** key, char const* privkey_str );
@@ -165,6 +166,8 @@ uint64_t ms_client_authenticate( struct ms_client* client, struct md_HTTP_connec
 char** ms_client_RG_urls_copy( struct ms_client* client );
 
 uint64_t ms_client_volume_version( struct ms_client* client );
+uint64_t ms_client_UG_version( struct ms_client* client );
+uint64_t ms_client_RG_version( struct ms_client* client );
 
 }
 

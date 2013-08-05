@@ -882,71 +882,12 @@ int ms_client_reload_RGs( struct ms_client* client ) {
 }
 
 
-// print a crypto error message
-int ms_client_crypto_error() {
-   unsigned long err = ERR_get_error();
-   char buf[4096];
-
-   ERR_error_string_n( err, buf, 4096 );
-   errorf("OpenSSL error %ld: %s\n", err, buf );
-   return 0;
-}
-
-
-// verify a message signature.
-// given signature is base64-encoded
-// client must be at least read-locked
-int ms_client_verify_signature( struct ms_client* client, char const* data, size_t len, unsigned char* sig, size_t siglen ) {
-   char* sig_bin = NULL;
-   size_t sig_bin_len = 0;
-   
-   int rc = Base64Decode( (char*)sig, siglen, &sig_bin, &sig_bin_len );
-   if( rc != 0 ) {
-      errorf("Base64Decode rc = %d\n", rc );
-      return -EINVAL;
-   }
-   
-   const EVP_MD* sha256 = EVP_sha256();
-
-   EVP_MD_CTX *mdctx = EVP_MD_CTX_create();
-
-   rc = EVP_DigestVerifyInit( mdctx, NULL, sha256, NULL, client->volume_public_key );
-   if( rc <= 0 ) {
-      errorf("EVP_DigestVerifyInit_ex rc = %d\n", rc);
-      ms_client_crypto_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-
-   rc = EVP_DigestVerifyUpdate( mdctx, (void*)data, len );
-   if( rc <= 0 ) {
-      errorf("EVP_DigestVerifyUpdate rc = %d\n", rc );
-      ms_client_crypto_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-
-   rc = EVP_DigestVerifyFinal( mdctx, (unsigned char*)sig_bin, sig_bin_len );
-   if( rc <= 0 ) {
-      errorf("EVP_DigestVerifyFinal rc = %d\n", rc );
-      ms_client_crypto_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-
-   EVP_MD_CTX_destroy( mdctx );
-   free( sig_bin );
-
-   return 0;
-}
-
-
 // verify the signature of the Volume metadata.
 // client must be read-locked
 int ms_client_verify_volume_metadata( struct ms_client* client, ms::ms_volume_metadata* volume_md ) {
    // get the signature
    size_t sigb64_len = volume_md->signature().size();
-   unsigned char* sigb64 = CALLOC_LIST( unsigned char, sigb64_len + 1 );
+   char* sigb64 = CALLOC_LIST( char, sigb64_len + 1 );
    memcpy( sigb64, volume_md->signature().data(), sigb64_len );
    
    volume_md->set_signature( "" );
@@ -960,11 +901,11 @@ int ms_client_verify_volume_metadata( struct ms_client* client, ms::ms_volume_me
    }
 
    // verify the signature
-   int rc = ms_client_verify_signature( client, volume_md_data.data(), volume_md_data.size(), sigb64, sigb64_len );
+   int rc = md_verify_signature( client->volume_public_key, volume_md_data.data(), volume_md_data.size(), sigb64, sigb64_len );
    free( sigb64 );
 
    if( rc != 0 ) {
-      errorf("ms_client_verify_signature rc = %d\n", rc );
+      errorf("md_verify_signature rc = %d\n", rc );
    }
 
    return rc;
@@ -975,7 +916,7 @@ int ms_client_verify_volume_metadata( struct ms_client* client, ms::ms_volume_me
 int ms_client_verify_UGs( struct ms_client* client, ms::ms_volume_UGs* ugs ) {
    // get the signature
    size_t sig_len = ugs->signature().size();
-   unsigned char* sig = CALLOC_LIST( unsigned char, sig_len );
+   char* sig = CALLOC_LIST( char, sig_len );
    memcpy( sig, ugs->signature().data(), sig_len );
 
    ugs->set_signature( "" );
@@ -990,11 +931,11 @@ int ms_client_verify_UGs( struct ms_client* client, ms::ms_volume_UGs* ugs ) {
    }
 
    // verify the signature
-   int rc = ms_client_verify_signature( client, ug_md_data.data(), ug_md_data.size(), sig, sig_len );
+   int rc = md_verify_signature( client->volume_public_key, ug_md_data.data(), ug_md_data.size(), sig, sig_len );
    free( sig );
 
    if( rc != 0 ) {
-      errorf("ms_client_verify_signature rc = %d\n", rc );
+      errorf("md_verify_signature rc = %d\n", rc );
    }
 
    return rc;
@@ -1005,7 +946,7 @@ int ms_client_verify_UGs( struct ms_client* client, ms::ms_volume_UGs* ugs ) {
 int ms_client_verify_RGs( struct ms_client* client, ms::ms_volume_RGs* rgs ) {
    // get the signature
    size_t sig_len = rgs->signature().size();
-   unsigned char* sig = CALLOC_LIST( unsigned char, sig_len );
+   char* sig = CALLOC_LIST( char, sig_len );
    memcpy( sig, rgs->signature().data(), sig_len );
 
    rgs->set_signature( "" );
@@ -1019,15 +960,38 @@ int ms_client_verify_RGs( struct ms_client* client, ms::ms_volume_RGs* rgs ) {
    }
 
    // verify the signature
-   int rc = ms_client_verify_signature( client, rg_md_data.data(), rg_md_data.size(), sig, sig_len );
+   int rc = md_verify_signature( client->volume_public_key, rg_md_data.data(), rg_md_data.size(), sig, sig_len );
    free( sig );
 
    if( rc != 0 ) {
-      errorf("ms_client_verify_signature rc = %d\n", rc );
+      errorf("md_verify_signature rc = %d\n", rc );
    }
 
    return rc;
 }
+
+
+// verify that a message came from a gateway with the given ID.
+// This WILL read-lock the client
+int ms_client_verify_gateway_message( struct ms_client* client, uint64_t user_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len ) {
+   ms_client_view_rlock( client );
+
+   // find the gateway
+   for( int i = 0; client->UG_creds[i] != NULL; i++ ) {
+      if( client->UG_creds[i]->gateway_id == gateway_id && client->UG_creds[i]->user_id == user_id ) {
+         
+         int rc = md_verify_signature( client->UG_creds[i]->pubkey, msg, msg_len, sigb64, sigb64_len );
+
+         ms_client_view_unlock( client );
+
+         return rc;
+      }
+   }
+
+   ms_client_view_unlock( client );
+   return -ENOENT;
+}
+
 
 // load a PEM-encoded (RSA) public key into an EVP key
 int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
@@ -1040,7 +1004,7 @@ int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
    if( public_key == NULL ) {
       // invalid public key
       errorf("%s", "ERR: failed to read public key\n");
-      ms_client_crypto_error();
+      md_openssl_error();
       return -EINVAL;
    }
 
@@ -1061,7 +1025,7 @@ int ms_client_load_privkey( EVP_PKEY** key, char const* privkey_str ) {
    if( privkey == NULL ) {
       // invalid public key
       errorf("%s", "ERR: failed to read private key\n");
-      ms_client_crypto_error();
+      md_openssl_error();
       return -EINVAL;
    }
 
@@ -1079,25 +1043,25 @@ int ms_client_generate_key( EVP_PKEY** key ) {
    EVP_PKEY *pkey = NULL;
    ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
    if (!ctx) {
-      ms_client_crypto_error();
+      md_openssl_error();
       return -1;
    }
 
    int rc = EVP_PKEY_keygen_init( ctx );
    if( rc <= 0 ) {
-      ms_client_crypto_error();
+      md_openssl_error();
       return rc;
    }
 
    rc = EVP_PKEY_CTX_set_rsa_keygen_bits( ctx, RSA_KEY_SIZE );
    if( rc <= 0 ) {
-      ms_client_crypto_error();
+      md_openssl_error();
       return rc;
    }
 
    rc = EVP_PKEY_keygen( ctx, &pkey );
    if( rc <= 0 ) {
-      ms_client_crypto_error();
+      md_openssl_error();
       return rc;
    }
 
@@ -1113,7 +1077,7 @@ long ms_client_dump_pubkey( EVP_PKEY* pkey, char** buf ) {
    int rc = PEM_write_bio_PUBKEY( mbuf, pkey );
    if( rc <= 0 ) {
       errorf("PEM_write_bio_PUBKEY rc = %d\n", rc );
-      ms_client_crypto_error();
+      md_openssl_error();
       return -EINVAL;
    }
 
@@ -1412,7 +1376,7 @@ int ms_client_begin_register( struct ms_client* client, CURL* curl, char const* 
    long keylen = ms_client_dump_pubkey( client->my_key, &key_bits );
    if( keylen <= 0 ) {
       errorf("ms_client_load_pubkey rc = %ld\n", keylen );
-      ms_client_crypto_error();
+      md_openssl_error();
       return (int)keylen;
    }
 
@@ -2435,4 +2399,21 @@ uint64_t ms_client_volume_version( struct ms_client* client ) {
    ms_client_view_unlock( client );
    return ret;
 }
+
+// get the current UG version
+uint64_t ms_client_UG_version( struct ms_client* client ) {
+   ms_client_view_rlock( client );
+   uint64_t ret = client->UG_version;
+   ms_client_view_unlock( client );
+   return ret;
+}
+
+// get the current RG version
+uint64_t ms_client_RG_version( struct ms_client* client ) {
+   ms_client_view_rlock( client );
+   uint64_t ret = client->RG_version;
+   ms_client_view_unlock( client );
+   return ret;
+}
+
 

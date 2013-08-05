@@ -3835,3 +3835,120 @@ int md_openssl_thread_cleanup(void)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+
+// print a crypto error message
+int md_openssl_error() {
+   unsigned long err = ERR_get_error();
+   char buf[4096];
+
+   ERR_error_string_n( err, buf, 4096 );
+   errorf("OpenSSL error %ld: %s\n", err, buf );
+   return 0;
+}
+
+
+// verify a message, given a base64-encoded signature
+int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len ) {
+   char* sig_bin = NULL;
+   size_t sig_bin_len = 0;
+
+   int rc = Base64Decode( sigb64, sigb64len, &sig_bin, &sig_bin_len );
+   if( rc != 0 ) {
+      errorf("Base64Decode rc = %d\n", rc );
+      return -EINVAL;
+   }
+
+   const EVP_MD* sha256 = EVP_sha256();
+
+   EVP_MD_CTX *mdctx = EVP_MD_CTX_create();
+
+   rc = EVP_DigestVerifyInit( mdctx, NULL, sha256, NULL, public_key );
+   if( rc <= 0 ) {
+      errorf("EVP_DigestVerifyInit_ex rc = %d\n", rc);
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+
+   rc = EVP_DigestVerifyUpdate( mdctx, (void*)data, len );
+   if( rc <= 0 ) {
+      errorf("EVP_DigestVerifyUpdate rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+
+   rc = EVP_DigestVerifyFinal( mdctx, (unsigned char*)sig_bin, sig_bin_len );
+   if( rc <= 0 ) {
+      errorf("EVP_DigestVerifyFinal rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EBADMSG;
+   }
+
+   EVP_MD_CTX_destroy( mdctx );
+   free( sig_bin );
+
+   return 0;
+}
+
+
+// sign a message
+// on success, populate sigb64 and sigb64len with the base64-encoded signature and length, respectively
+int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len ) {
+   
+   // sign this with SHA256
+   const EVP_MD* sha256 = EVP_sha256();
+
+   EVP_MD_CTX *mdctx = EVP_MD_CTX_create();
+
+   int rc = EVP_SignInit( mdctx, sha256 );
+   if( rc <= 0 ) {
+      errorf("EVP_SignInit rc = %d\n", rc);
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+
+   rc = EVP_SignUpdate( mdctx, (void*)data, len );
+   if( rc <= 0 ) {
+      errorf("EVP_SignUpdate rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+
+   // allocate the signature
+   unsigned char* sig_bin = CALLOC_LIST( unsigned char, EVP_PKEY_size( pkey ) );
+   unsigned int sig_bin_len;
+   
+   rc = EVP_SignFinal( mdctx, sig_bin, &sig_bin_len, pkey );
+   if( rc <= 0 ) {
+      errorf("EVP_SignFinal rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+
+   // convert to base64
+   char* b64 = NULL;
+   rc = Base64Encode( (char*)sig_bin, sig_bin_len, &b64 );
+   if( rc != 0 ) {
+      errorf("Base64Encode rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      free( sig_bin );
+      return rc;
+   }
+
+   EVP_MD_CTX_destroy( mdctx );
+   free( sig_bin );
+
+   *sigb64 = b64;
+   *sigb64len = strlen(b64);
+
+   return 0;
+}
+
+

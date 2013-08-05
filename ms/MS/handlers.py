@@ -320,7 +320,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    OPENID_PROVIDER_PASSWORD_FIELD = "password"
    OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
    OPENID_PROVIDER_RESPONSE_METHOD = "POST"
-   
+
    """
    OPENID_PROVIDER_NAME = "localhost"
    OPENID_PROVIDER_URL = "http://localhost:8081/id/"
@@ -331,7 +331,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
    OPENID_PROVIDER_RESPONSE_METHOD = "POST"
    """
-
    
    OPENID_RP_REDIRECT_METHOD = "POST"     # POST to us for authentication, since we need to send the public key (which doesn't fit into a GET)
 

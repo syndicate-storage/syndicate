@@ -39,15 +39,18 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
     IMMEDIATE_MODE = "immediate"
     USE_STATELESS = "use_stateless"
     SESSION_SSL_ONLY=True
+    LOCAL_TEST=True
 
     if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
       TRUST_ROOT_HOST = "localhost:8080"
       HOST_URL = "http://" + TRUST_ROOT_HOST
       SESSION_SSL_ONLY=False
+      LOCAL_TEST=True
     else:
       TRUST_ROOT_HOST = "syndicate-metadata.appspot.com"
       HOST_URL = "https://" + TRUST_ROOT_HOST
       SESSION_SSL_ONLY=True
+      LOCAL_TEST=False
 
     OPENID_PROVIDER_NAME = "VICCI"
 

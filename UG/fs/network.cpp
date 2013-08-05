@@ -188,12 +188,39 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, ch
 
 // set up a write message
 int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core, Serialization::WriteMsg_MsgType type ) {
+   struct ms_client* client = core->ms;
+   
    writeMsg->set_type( type );
-   writeMsg->set_write_id( 0 );
-   writeMsg->set_session_id( 0 );
+   writeMsg->set_volume_version( ms_client_volume_version( client ) );
+   writeMsg->set_ug_version( ms_client_UG_version( client ) );
    writeMsg->set_user_id( core->conf->owner );
    writeMsg->set_volume_id( core->conf->volume );
 
+   return 0;
+}
+
+
+// sign a write message
+int fs_entry_sign_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core ) {
+   writeMsg->set_signature( string("") );
+
+   string data;
+   bool valid = writeMsg->SerializeToString( &data );
+   if( !valid )
+      return -EINVAL;
+
+   struct ms_client* client = core->ms;
+
+   char* sigb64 = NULL;
+   size_t sigb64len = 0;
+   
+   int rc = md_sign_message( client->my_key, data.data(), data.size(), &sigb64, &sigb64len );
+   if( rc != 0 ) {
+      errorf("md_sign_message rc = %d\n", rc );
+      return rc;
+   }
+
+   writeMsg->set_signature( string(sigb64, sigb64len) );
    return 0;
 }
 
@@ -258,6 +285,12 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    curl_easy_setopt( curl_h, CURLOPT_WRITEDATA, &buf );
    curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, (core->conf->verify_peer ? 1L : 0L) );
 
+   int rc = fs_entry_sign_write_message( sendMsg, core );
+   if( rc != 0 ) {
+      errorf("fs_entry_sign_write_message rc = %d\n", rc );
+      return rc;
+   }
+   
    string msg_data_str;
    sendMsg->SerializeToString( &msg_data_str );
 
@@ -271,7 +304,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    BEGIN_TIMING_DATA( ts );
    
    dbprintf( "send WriteMsg type %d length %zu\n", sendMsg->type(), msg_data_str.size() );
-   int rc = curl_easy_perform( curl_h );
+   rc = curl_easy_perform( curl_h );
 
    END_TIMING_DATA( ts, ts2, "Remote write" );
    
