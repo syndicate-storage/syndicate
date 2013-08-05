@@ -265,4 +265,28 @@ public class SyndicateConfig {
     public int getTextInputMaxLength() {
         return SyndicateConfigUtil.getTextInputMaxLength(this.config);
     }
+    
+    public void setTextRecordDelimiter(String delimiter) {
+        SyndicateConfigUtil.setTextRecordDelimiter(this.config, delimiter);
+    }
+    
+    public String getTextRecordDelimiter() {
+        return SyndicateConfigUtil.getTextRecordDelimiter(this.config);
+    }
+    
+    public void setTextLinesPerMap(int lines) {
+        SyndicateConfigUtil.setTextLinesPerMap(this.config, lines);
+    }
+    
+    public int getTextLinesPerMap() {
+        return SyndicateConfigUtil.getTextLinesPerMap(this.config);
+    }
+    
+    public void setTextKeyValueSeparator(byte separator) {
+        SyndicateConfigUtil.setTextKeyValueSeparator(this.config, separator);
+    }
+    
+    public byte getTextKeyValueSeparator() {
+        return SyndicateConfigUtil.getTextKeyValueSeparator(this.config);
+    }
 }

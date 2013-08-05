@@ -373,7 +373,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
       else {
          // send a truncate request to the owner
          Serialization::WriteMsg *truncate_msg = new Serialization::WriteMsg();
-         truncate_msg->set_type( Serialization::WriteMsg::TRUNCATE );
+         fs_entry_init_write_message( truncate_msg, core, Serialization::WriteMsg::TRUNCATE );
 
          Serialization::TruncateRequest* truncate_req = truncate_msg->mutable_truncate();
          truncate_req->set_fs_path( path );
@@ -386,9 +386,6 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
          blocks->add_version( child->manifest->get_block_version( 0 ) );
 
          Serialization::WriteMsg *withdraw_ack = new Serialization::WriteMsg();
-
-         truncate_msg->set_write_id( 0 );
-         truncate_msg->set_session_id( 0 );
 
          *err = fs_entry_post_write( withdraw_ack, core, child->url, truncate_msg );
          if( *err < 0 ) {

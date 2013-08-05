@@ -57,7 +57,19 @@ struct syndicate_connection {
    struct syndicate_state* state;
 };
 
-int syndicate_init( char const* config_file, struct md_HTTP* http_server, int portnum, char const* ms_url, char const* volume_name, char const* md_username, char const* md_password );
+int syndicate_init( char const* config_file,
+                    struct md_HTTP* http_server,
+                    int portnum,
+                    char const* ms_url,
+                    char const* volume_name,
+                    char const* gateway_name,
+                    char const* md_username,
+                    char const* md_password,
+                    char const* volume_pubkey_file,
+                    char const* my_key_file,
+                    char const* tls_key_file,
+                    char const* tls_cert_file );
+
 struct syndicate_state* syndicate_get_state();
 struct md_syndicate_conf* syndicate_get_conf();
 int syndicate_destroy();

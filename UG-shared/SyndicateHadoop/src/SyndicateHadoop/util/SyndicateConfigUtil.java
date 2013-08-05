@@ -31,8 +31,26 @@ public class SyndicateConfigUtil {
     private static JSFSConfiguration instance;
     
     public static enum Backend {
-        IPC,
-        SHARED_FS
+        IPC(0), SHARED_FS(1);
+        
+        private int code = -1;
+        
+        private Backend(int c) {
+            this.code = c;
+        }
+
+        public int getCode() {
+            return this.code;
+        }
+
+        public static Backend getFrom(int code) {
+            Backend[] backends = Backend.values();
+            for(Backend backend : backends) {
+                if(backend.getCode() == code)
+                    return backend;
+            }
+            return null;
+        }
     }
 
     public static final String BACKEND = "syndicate.conf.backend";
@@ -42,7 +60,7 @@ public class SyndicateConfigUtil {
     
     public static final String MAX_METADATA_CACHE = "syndicate.conf.max_metadata_cache";
     public static final String TIMEOUT_METADATA_CACHE = "syndicate.conf.timeout_metadata_cache";
-    public static final String FILE_READ_BUFFER_SIZE = "syndicate.conf.file_read_buffer_size";
+    public static final String FILE_READ_BUFFER_SIZE = "io.file.buffer.size";
     public static final String FILE_WRITE_BUFFER_SIZE = "syndicate.conf.file_write_buffer_size";
     
     public static final String JOB_MAPPER = "mapreduce.map.class";
@@ -72,13 +90,26 @@ public class SyndicateConfigUtil {
     
     public static final String TEXT_INPUT_MAX_LENGTH = "mapred.linerecordreader.maxlength";
     
+    public static final String TEXT_RECORD_DELIMITER = "textinputformat.record.delimiter";
+    public static final String TEXT_LINES_PER_MAP = "mapreduce.input.lineinputformat.linespermap";
+    public static final String TEXT_KEY_VALUE_SEPARATOR = "key.value.separator.in.input.line";
+    
+    
+    public static final long MEGABYTE = 1024 * 1024;
+    
     public synchronized static JSFSConfiguration getJSFSConfigurationInstance(Configuration conf) throws InstantiationException {
         if(instance == null) {
             Backend backend = getBackend(conf);
+            if(backend == null) {
+                LOG.error("null backend");
+                throw new InstantiationException("null backend");
+            }
             if(backend.equals(Backend.IPC)) {
                 IPCConfiguration ipc_conf = new IPCConfiguration();
                 try {
                     ipc_conf.setUGName(getIPC_UGName(conf));
+                    ipc_conf.setMaxMetadataCacheSize(getMaxMetadataCacheNum(conf));
+                    ipc_conf.setCacheTimeoutSecond(getMetadataCacheTimeout(conf));
                 } catch (IllegalAccessException ex) {
                     LOG.error(ex);
                     throw new InstantiationException(ex.getMessage());
@@ -116,20 +147,6 @@ public class SyndicateConfigUtil {
     }
     
     private synchronized static void initJSFSConfiguration(Configuration conf, JSFSConfiguration jsfs_config) throws InstantiationException {
-        int maxMetadataCacheSize = getMaxMetadataCacheNum(conf);
-        try {
-            jsfs_config.setMaxMetadataCacheSize(maxMetadataCacheSize);
-        } catch (IllegalAccessException ex) {
-            LOG.error(ex);
-        }
-        
-        int metadataCacheTimeout = getMetadataCacheTimeout(conf);
-        try {
-            jsfs_config.setCacheTimeoutSecond(metadataCacheTimeout);
-        } catch (IllegalAccessException ex) {
-            LOG.error(ex);
-        }
-        
         int readBufferSize = getFileReadBufferSize(conf);
         try {
             jsfs_config.setReadBufferSize(readBufferSize);
@@ -146,11 +163,12 @@ public class SyndicateConfigUtil {
     }
     
     public static void setBackend(Configuration conf, Backend backend) {
-        conf.setEnum(BACKEND, backend);
+        conf.setInt(BACKEND, backend.getCode());
     }
     
     public static Backend getBackend(Configuration conf) {
-        return conf.getEnum(BACKEND, null);
+        int code = conf.getInt(BACKEND, 0);
+        return Backend.getFrom(code);
     }
     
     public static void setIPC_Port(Configuration conf, int port) {
@@ -302,7 +320,7 @@ public class SyndicateConfigUtil {
     }
     
     public static long getMinInputSplitSize(Configuration conf) {
-        return conf.getLong(MIN_INPUT_SPLIT_SIZE, 1);
+        return conf.getLong(MIN_INPUT_SPLIT_SIZE, MEGABYTE);
     }
     
     public static void setMaxInputSplitSize(Configuration conf, long maxSize) {
@@ -387,5 +405,31 @@ public class SyndicateConfigUtil {
     
     public static int getTextInputMaxLength(Configuration conf) {
         return conf.getInt(TEXT_INPUT_MAX_LENGTH, Integer.MAX_VALUE);
+    }
+    
+    public static void setTextRecordDelimiter(Configuration conf, String delimiter) {
+        conf.set(TEXT_RECORD_DELIMITER, delimiter);
+    }
+    
+    public static String getTextRecordDelimiter(Configuration conf) {
+        return conf.get(TEXT_RECORD_DELIMITER, null);
+    }
+    
+    public static void setTextLinesPerMap(Configuration conf, int lines) {
+        conf.setInt(TEXT_LINES_PER_MAP, lines);
+    }
+    
+    public static int getTextLinesPerMap(Configuration conf) {
+        return conf.getInt(TEXT_LINES_PER_MAP, 1);
+    }
+    
+    public static void setTextKeyValueSeparator(Configuration conf, byte separator) {
+        String separatorString = new String(new byte[]{separator});
+        conf.set(TEXT_KEY_VALUE_SEPARATOR, separatorString);
+    }
+    
+    public static byte getTextKeyValueSeparator(Configuration conf) {
+        String separatorString = conf.get(TEXT_KEY_VALUE_SEPARATOR, "\t");
+        return (byte)separatorString.charAt(0);
     }
 }

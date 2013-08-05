@@ -18,19 +18,57 @@ static void print_timings( uint64_t* timings, size_t num_timings, char const* hd
    }
 }
 
+
+static void UG_cred_free( struct UG_cred* cred ) {
+   if( cred->hostname ) {
+      free( cred->hostname );
+      cred->hostname = NULL;
+   }
+
+   if( cred->name ) {
+      free( cred->name );
+      cred->name = NULL;
+   }
+
+   if( cred->pubkey ) {
+      EVP_PKEY_free( cred->pubkey );
+      cred->pubkey = NULL;
+   }
+}
+
+static int ms_client_verify_key( EVP_PKEY* key ) {
+   RSA* ref_rsa = EVP_PKEY_get1_RSA( key );
+   if( ref_rsa == NULL ) {
+      // not an RSA key
+      errorf("%s", "Not an RSA key\n");
+      return -EINVAL;
+   }
+
+   int size = RSA_size( ref_rsa );
+   if( size * 8 != RSA_KEY_SIZE ) {
+      // not the right size
+      errorf("Invalid RSA size %d\n", size * 8 );
+      return -EINVAL;
+   }
+
+   return 0;
+}
+      
+
 // create an MS client context
-int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, char const* username, char const* passwd ) {
+int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf ) {
 
    memset( client, 0, sizeof(struct ms_client) );
    
-   // configure the HTTP(s) streams to the MS
+   // configure the HTTPS streams to the MS
    client->ms_read = curl_easy_init();
    client->ms_write = curl_easy_init();
 
    client->url = strdup( conf->metadata_url );
 
-   md_init_curl_handle( client->ms_read, "http://localhost", conf->metadata_connect_timeout);
-   md_init_curl_handle( client->ms_write, "http://localhost", conf->metadata_connect_timeout);
+   // will change URL once we know the Volume ID
+   md_init_curl_handle( client->ms_read, "https://localhost", conf->metadata_connect_timeout);
+   md_init_curl_handle( client->ms_write, "https://localhost", conf->metadata_connect_timeout);
 
    curl_easy_setopt( client->ms_write, CURLOPT_POST, 1L);
    curl_easy_setopt( client->ms_write, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );
@@ -47,19 +85,10 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, ch
    curl_easy_setopt( client->ms_read, CURLOPT_NOSIGNAL, 1L );
    curl_easy_setopt( client->ms_write, CURLOPT_NOSIGNAL, 1L );
 
-   client->userpass = NULL;
-   
-   if( username && passwd ) {
-      // we have authentication tokens!
-      curl_easy_setopt( client->ms_read, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
-      curl_easy_setopt( client->ms_write, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
-      
-      client->userpass = CALLOC_LIST( char, strlen(username) + 1 + strlen(passwd) + 1 );
-      sprintf( client->userpass, "%s:%s", username, passwd );
+   curl_easy_setopt( client->ms_read, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
+   curl_easy_setopt( client->ms_write, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
 
-      curl_easy_setopt( client->ms_read, CURLOPT_USERPWD, client->userpass );
-      curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, client->userpass );
-   }
+   client->userpass = NULL;
 
    pthread_rwlock_init( &client->lock, NULL );
    pthread_rwlock_init( &client->view_lock, NULL );
@@ -67,6 +96,7 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, ch
    client->updates = new update_set();
    client->conf = conf;
    client->deadlines = new deadline_queue();
+   client->session_cred = NULL;
 
    // uploader thread
    client->running = true;
@@ -78,7 +108,51 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, ch
       return client->uploader_thread;
    }
 
-   return 0;
+   int rc = 0;
+
+   // if we were given a Volume public key in advance, load it
+   if( conf->volume_public_key != NULL ) {
+      rc = ms_client_load_volume_pubkey( client, conf->volume_public_key );
+      if( rc != 0 ) {
+         errorf("ms_client_load_volume_pubkey rc = %d\n", rc );
+         return rc;
+      }
+
+      rc = ms_client_verify_key( client->volume_public_key );
+      if( rc != 0 ) {
+         errorf("ms_client_verify_key rc = %d\n", rc );
+         return rc;
+      }
+      
+      client->reload_volume_key = false;
+   }
+
+   if( conf->gateway_key != NULL ) {
+      // we were given Gateway keys.  Load them
+      rc = ms_client_load_privkey( &client->my_key, conf->gateway_key );
+      if( rc != 0 ) {
+         errorf("ms_client_load_privkey rc = %d\n", rc );
+         return rc;
+      }
+
+      rc = ms_client_verify_key( client->my_key );
+      if( rc != 0 ) {
+         errorf("ms_client_verify_key rc = %d\n", rc );
+         return rc;
+      }
+   }
+   else {
+      // generate our public/private key pairs
+      rc = ms_client_generate_key( &client->my_key );
+      if( rc != 0 ) {
+         errorf("ms_client_generate_key rc = %d\n", rc );
+         ms_client_unlock( client );
+         return rc;
+      }
+   }
+
+
+   return rc;
 }
 
 
@@ -121,7 +195,7 @@ int ms_client_destroy( struct ms_client* client ) {
 
    if( client->UG_creds != NULL ) {
       for( int i = 0; client->UG_creds[i] != NULL; i++ ) {
-         md_free_user_entry( client->UG_creds[i] );
+         UG_cred_free( client->UG_creds[i] );
       }
       free( client->UG_creds );
    }
@@ -147,12 +221,29 @@ int ms_client_destroy( struct ms_client* client ) {
    if( client->file_url )
       free( client->file_url );
 
+   if( client->session_password )
+      free( client->session_password );
+
+   if( client->volume_public_key )
+      EVP_PKEY_free( client->volume_public_key );
+
+   if( client->my_key )
+      EVP_PKEY_free( client->my_key );
+
+   if( client->session_cred ) {
+      UG_cred_free( client->session_cred );
+      free( client->session_cred );
+   }
+      
    delete client->updates;
    delete client->deadlines;
    
    ms_client_unlock( client );
    pthread_rwlock_destroy( &client->lock );
 
+   // free OpenSSL memory
+   ERR_free_strings();
+   
    return 0;
 }
 
@@ -162,7 +253,7 @@ static off_t ms_client_find_header_value( char* header_buf, size_t header_len, c
    if( strlen(header_name) >= header_len )
       return -1;      // header is too short
 
-   if( strncmp(header_buf, header_name, strlen(header_name) ) != 0 )
+   if( strncasecmp(header_buf, header_name, MIN( header_len, strlen(header_name) ) ) != 0 )
       return -1;      // not found
 
    size_t off = strlen(header_name);
@@ -199,10 +290,14 @@ static uint64_t ms_client_read_one_value( char* hdr, off_t offset, size_t size )
    char* value = hdr + offset;
    size_t value_len = size - offset;
 
-   char* value_str = (char*)alloca( value_len + 1 );
-   strcpy( value_str, value );
+   char* value_str = CALLOC_LIST( char, value_len + 1 );
+   
+   strncpy( value_str, value, value_len );
 
    uint64_t data = (uint64_t)strtoll( value_str, NULL, 10 );
+
+   free( value_str );
+   
    return data;
 }
 
@@ -250,50 +345,96 @@ static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void 
    size_t len = size * nmemb;
    char* data = (char*)ptr;
 
+   char* data_str = CALLOC_LIST( char, len + 1 );
+   strncpy( data_str, data, len );
+
+   //dbprintf("header: %s\n", data_str );
+
    // is this one of our headers?  Find each of them
    
-   off_t off = ms_client_find_header_value( data, len, HTTP_VOLUME_TIME );
+   off_t off = ms_client_find_header_value( data_str, len, HTTP_VOLUME_TIME );
    if( off > 0 ) {
-      times->volume_time = ms_client_read_one_value( data, off, size );
+      times->volume_time = ms_client_read_one_value( data_str, off, len );
+      free( data_str );
       return len;
    }
    
-   off = ms_client_find_header_value( data, len, HTTP_UG_TIME );
+   off = ms_client_find_header_value( data_str, len, HTTP_UG_TIME );
    if( off > 0 ) {
-      times->ug_time = ms_client_read_one_value( data, off, size );
+      times->ug_time = ms_client_read_one_value( data_str, off, len );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_TOTAL_TIME );
+   off = ms_client_find_header_value( data_str, len, HTTP_TOTAL_TIME );
    if( off > 0 ) {
-      times->total_time = ms_client_read_one_value( data, off, size );
+      times->total_time = ms_client_read_one_value( data_str, off, len );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_RESOLVE_TIME );
+   off = ms_client_find_header_value( data_str, len, HTTP_RESOLVE_TIME );
    if( off > 0 ) {
-      times->resolve_time = ms_client_read_one_value( data, off, size );
+      times->resolve_time = ms_client_read_one_value( data_str, off, len );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_CREATE_TIMES );
+   off = ms_client_find_header_value( data_str, len, HTTP_CREATE_TIMES );
    if( off > 0 ) {
-      times->create_times = ms_client_read_multi_values( data, off, size, &times->num_create_times );
+      times->create_times = ms_client_read_multi_values( data_str, off, len, &times->num_create_times );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_UPDATE_TIMES );
+   off = ms_client_find_header_value( data_str, len, HTTP_UPDATE_TIMES );
    if( off > 0 ) {
-      times->update_times = ms_client_read_multi_values( data, off, size, &times->num_update_times );
+      times->update_times = ms_client_read_multi_values( data_str, off, len, &times->num_update_times );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_DELETE_TIMES );
+   off = ms_client_find_header_value( data_str, len, HTTP_DELETE_TIMES );
    if( off > 0 ) {
-      times->delete_times = ms_client_read_multi_values( data, off, size, &times->num_delete_times );
+      times->delete_times = ms_client_read_multi_values( data_str, off, len, &times->num_delete_times );
+      free( data_str );
       return len;
    }
 
+   free( data_str );
+   return len;
+}
+
+
+// redirect parser
+static size_t ms_client_redirect_header_func( void *ptr, size_t size, size_t nmemb, void *userdata) {
+   response_buffer_t* rb = (response_buffer_t*)userdata;
+
+   size_t len = size * nmemb;
+
+   char* data = (char*)ptr;
+
+   // only get one Location header
+   if( rb->size() > 0 )
+      return len;
+
+   char* data_str = CALLOC_LIST( char, len + 1 );
+   strncpy( data_str, data, len );
+
+   off_t off = ms_client_find_header_value( data_str, len, "Location" );
+   if( off > 0 ) {
+
+      char* value = data_str + off;
+      size_t value_len = len - off;
+      
+      char* value_str = CALLOC_LIST(char, value_len );
+      strncpy( value_str, value, value_len - 2 );     // strip off '\n\r'
+
+      rb->push_back( buffer_segment_t( value_str, value_len ) );
+   }
+
+   free( data_str );
+   
    return len;
 }
 
@@ -525,6 +666,27 @@ char* ms_client_volume_url( struct ms_client* client, char const* volume_name ) 
    return url;
 }
 
+
+char* ms_client_register_url( struct ms_client* client ) {
+   // build the /REGISTER/ url
+
+   ms_client_rlock( client );
+
+   char* url = CALLOC_LIST( char, strlen(client->url) + 1 +
+                                  strlen("/REGISTER/") + 1 +
+                                  strlen(client->conf->volume_name) + 1 +
+                                  strlen(client->conf->gateway_name) + 1 +
+                                  strlen(client->conf->ms_username) + 1 +
+                                  strlen("/begin") + 1);
+
+   sprintf(url, "%s/REGISTER/%s/%s/%s/begin", client->url, client->conf->volume_name, client->conf->gateway_name, client->conf->ms_username );
+   
+   ms_client_unlock( client );
+
+   return url;
+}
+
+
 // download metadata from the MS for a Volume.
 // metadata_path should be an absolute directory path (like /VOLUME/, or /UG/, or /RG/)
 // returns the HTTP response on success, or negative on error
@@ -593,32 +755,39 @@ int ms_client_reload_UGs( struct ms_client* client ) {
       return -EINVAL;
    }
 
-   struct md_user_entry** users = CALLOC_LIST( struct md_user_entry*, volume_ugs.ug_creds_size() + 1 );
+   // verify the data
+   rc = ms_client_verify_UGs( client, &volume_ugs );
+   if( rc != 0 ) {
+      errorf("ms_client_verify_UGs rc = %d\n", rc );
+      return rc;
+   }
+
+   struct UG_cred** ugs = CALLOC_LIST( struct UG_cred*, volume_ugs.ug_creds_size() + 1 );
    for( int i = 0; i < volume_ugs.ug_creds_size(); i++ ) {
-      struct md_user_entry* uent = CALLOC_LIST( struct md_user_entry, 1 );
+      struct UG_cred* uent = CALLOC_LIST( struct UG_cred, 1 );
 
-      uent->uid = volume_ugs.ug_creds(i).owner_id();
-      uent->username = strdup( volume_ugs.ug_creds(i).username().c_str() );
-      uent->password_hash = strdup( volume_ugs.ug_creds(i).password_hash().c_str() );
+      const ms::ms_volume_gateway_cred& ug_cred = volume_ugs.ug_creds(i);
+      
+      ms_client_load_cred( uent, &ug_cred );
+      
+      ugs[i] = uent;
 
-      users[i] = uent;
-
-      dbprintf("UG: %" PRIu64 " : %s\n", uent->uid, uent->username );
+      dbprintf("UG: id = %" PRIu64 ", owner = %" PRIu64 ", name = %s\n", uent->gateway_id, uent->user_id, uent->name );
    }
 
    uint64_t UG_version = volume_ugs.ug_version();
    
    ms_client_view_wlock( client );
 
-   struct md_user_entry** old_users = client->UG_creds;
-   client->UG_creds = users;
+   struct UG_cred** old_users = client->UG_creds;
+   client->UG_creds = ugs;
    client->UG_version = UG_version;
 
    ms_client_view_unlock( client );
 
    if( old_users ) {
       for( int i = 0; old_users[i] != NULL; i++ ) {
-         md_free_user_entry( old_users[i] );
+         UG_cred_free( old_users[i] );
          free( old_users[i] );
       }
       free( old_users );
@@ -651,6 +820,14 @@ int ms_client_reload_RGs( struct ms_client* client ) {
    free( bits );
 
    if( valid ) {
+
+      // verify the data
+      rc = ms_client_verify_RGs( client, &volume_rgs );
+      if( rc != 0 ) {
+         errorf("ms_client_verify_RGs rc = %d\n", rc );
+         return rc;
+      }
+
       // sanity check--the number of hosts and ports must be the same
       if( volume_rgs.rg_hosts_size() != volume_rgs.rg_ports_size() )
          valid = false;
@@ -704,16 +881,445 @@ int ms_client_reload_RGs( struct ms_client* client ) {
    return 0;
 }
 
+
+// verify the signature of the Volume metadata.
+// client must be read-locked
+int ms_client_verify_volume_metadata( struct ms_client* client, ms::ms_volume_metadata* volume_md ) {
+   // get the signature
+   size_t sigb64_len = volume_md->signature().size();
+   char* sigb64 = CALLOC_LIST( char, sigb64_len + 1 );
+   memcpy( sigb64, volume_md->signature().data(), sigb64_len );
+   
+   volume_md->set_signature( "" );
+
+   string volume_md_data;
+   try {
+      volume_md->SerializeToString( &volume_md_data );
+   }
+   catch( exception e ) {
+      return -EINVAL;
+   }
+
+   // verify the signature
+   int rc = md_verify_signature( client->volume_public_key, volume_md_data.data(), volume_md_data.size(), sigb64, sigb64_len );
+   free( sigb64 );
+
+   if( rc != 0 ) {
+      errorf("md_verify_signature rc = %d\n", rc );
+   }
+
+   return rc;
+}
+
+// verify the signature of the UG metadata
+// client must be read-locked
+int ms_client_verify_UGs( struct ms_client* client, ms::ms_volume_UGs* ugs ) {
+   // get the signature
+   size_t sig_len = ugs->signature().size();
+   char* sig = CALLOC_LIST( char, sig_len );
+   memcpy( sig, ugs->signature().data(), sig_len );
+
+   ugs->set_signature( "" );
+
+   string ug_md_data;
+   try {
+      ugs->SerializeToString( &ug_md_data );
+   }
+   catch( exception e ) {
+      free( sig );
+      return -EINVAL;
+   }
+
+   // verify the signature
+   int rc = md_verify_signature( client->volume_public_key, ug_md_data.data(), ug_md_data.size(), sig, sig_len );
+   free( sig );
+
+   if( rc != 0 ) {
+      errorf("md_verify_signature rc = %d\n", rc );
+   }
+
+   return rc;
+}
+
+// verify the signature of RG metadata
+// client must be read-locked
+int ms_client_verify_RGs( struct ms_client* client, ms::ms_volume_RGs* rgs ) {
+   // get the signature
+   size_t sig_len = rgs->signature().size();
+   char* sig = CALLOC_LIST( char, sig_len );
+   memcpy( sig, rgs->signature().data(), sig_len );
+
+   rgs->set_signature( "" );
+
+   string rg_md_data;
+   try {
+      rgs->SerializeToString( &rg_md_data );
+   }
+   catch( exception e ) {
+      return -EINVAL;
+   }
+
+   // verify the signature
+   int rc = md_verify_signature( client->volume_public_key, rg_md_data.data(), rg_md_data.size(), sig, sig_len );
+   free( sig );
+
+   if( rc != 0 ) {
+      errorf("md_verify_signature rc = %d\n", rc );
+   }
+
+   return rc;
+}
+
+
+// verify that a message came from a gateway with the given ID.
+// This WILL read-lock the client
+int ms_client_verify_gateway_message( struct ms_client* client, uint64_t user_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len ) {
+   ms_client_view_rlock( client );
+
+   // find the gateway
+   for( int i = 0; client->UG_creds[i] != NULL; i++ ) {
+      if( client->UG_creds[i]->gateway_id == gateway_id && client->UG_creds[i]->user_id == user_id ) {
+         
+         int rc = md_verify_signature( client->UG_creds[i]->pubkey, msg, msg_len, sigb64, sigb64_len );
+
+         ms_client_view_unlock( client );
+
+         return rc;
+      }
+   }
+
+   ms_client_view_unlock( client );
+   return -ENOENT;
+}
+
+
+// load a PEM-encoded (RSA) public key into an EVP key
+int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
+   BIO* buf_io = BIO_new_mem_buf( (void*)pubkey_str, strlen(pubkey_str) );
+
+   EVP_PKEY* public_key = PEM_read_bio_PUBKEY( buf_io, NULL, NULL, NULL );
+
+   BIO_free_all( buf_io );
+
+   if( public_key == NULL ) {
+      // invalid public key
+      errorf("%s", "ERR: failed to read public key\n");
+      md_openssl_error();
+      return -EINVAL;
+   }
+
+   *key = public_key;
+   
+   return 0;
+}
+
+
+// load a PEM-encoded (RSA) private key into an EVP key
+int ms_client_load_privkey( EVP_PKEY** key, char const* privkey_str ) {
+   BIO* buf_io = BIO_new_mem_buf( (void*)privkey_str, strlen(privkey_str) );
+
+   EVP_PKEY* privkey = PEM_read_bio_PrivateKey( buf_io, NULL, NULL, NULL );
+
+   BIO_free_all( buf_io );
+
+   if( privkey == NULL ) {
+      // invalid public key
+      errorf("%s", "ERR: failed to read private key\n");
+      md_openssl_error();
+      return -EINVAL;
+   }
+
+   *key = privkey;
+
+   return 0;
+}
+
+// generate RSA public/private key pair
+int ms_client_generate_key( EVP_PKEY** key ) {
+
+   dbprintf("%s", "Generating public/private key...\n");
+   
+   EVP_PKEY_CTX *ctx;
+   EVP_PKEY *pkey = NULL;
+   ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+   if (!ctx) {
+      md_openssl_error();
+      return -1;
+   }
+
+   int rc = EVP_PKEY_keygen_init( ctx );
+   if( rc <= 0 ) {
+      md_openssl_error();
+      return rc;
+   }
+
+   rc = EVP_PKEY_CTX_set_rsa_keygen_bits( ctx, RSA_KEY_SIZE );
+   if( rc <= 0 ) {
+      md_openssl_error();
+      return rc;
+   }
+
+   rc = EVP_PKEY_keygen( ctx, &pkey );
+   if( rc <= 0 ) {
+      md_openssl_error();
+      return rc;
+   }
+
+   *key = pkey;
+   return 0;
+}
+
+
+// dump a key to memory
+long ms_client_dump_pubkey( EVP_PKEY* pkey, char** buf ) {
+   BIO* mbuf = BIO_new( BIO_s_mem() );
+   
+   int rc = PEM_write_bio_PUBKEY( mbuf, pkey );
+   if( rc <= 0 ) {
+      errorf("PEM_write_bio_PUBKEY rc = %d\n", rc );
+      md_openssl_error();
+      return -EINVAL;
+   }
+
+   (void) BIO_flush( mbuf );
+   
+   char* tmp = NULL;
+   long sz = BIO_get_mem_data( mbuf, &tmp );
+
+   *buf = CALLOC_LIST( char, sz );
+   memcpy( *buf, tmp, sz );
+
+   BIO_free( mbuf );
+   
+   return sz;
+}
+
+// (re)load the Volume public key.
+// client must be write-locked
+int ms_client_load_volume_pubkey( struct ms_client* client, char const* volume_pubkey_str ) {
+   if( client->volume_public_key ) {
+      EVP_PKEY_free( client->volume_public_key );
+      client->volume_public_key = NULL;
+   }
+
+   return ms_client_load_pubkey( &client->volume_public_key, volume_pubkey_str );
+}
+
+
+// (re)load a credential
+int ms_client_load_cred( struct UG_cred* cred, const ms::ms_volume_gateway_cred* ms_cred ) {
+   cred->user_id = ms_cred->owner_id();
+   cred->gateway_id = ms_cred->gateway_id();
+   cred->name = strdup( ms_cred->name().c_str() );
+   cred->hostname = strdup( ms_cred->host().c_str() );
+   cred->portnum = ms_cred->port();
+   return ms_client_load_pubkey( &cred->pubkey, ms_cred->public_key().c_str() );
+}
+
+
+// register with the MS
+int ms_client_load_volume_metadata( struct ms_client* client, ms::ms_volume_metadata* volume_md ) {
+
+   int rc = 0;
+
+   struct UG_cred cred;
+   memset( &cred, 0, sizeof(cred) );
+
+
+   // lock client while NOT downloading
+   ms_client_wlock_backoff( client, &client->downloading );
+
+   // get the new public key, if desired
+
+   if( client->reload_volume_key || client->conf->volume_public_key == NULL ) {
+      // trust new public keys
+      rc = ms_client_load_volume_pubkey( client, volume_md->volume_public_key().c_str() );
+      if( rc != 0 ) {
+         errorf("ms_client_load_volume_pubkey rc = %d\n", rc );
+
+         ms_client_unlock( client );
+         return -ENOTCONN;
+      }
+   }
+
+   // verify metadata
+   rc = ms_client_verify_volume_metadata( client, volume_md );
+   if( rc != 0 ) {
+      errorf("ms_client_verify_volume_metadata rc = %d\n", rc );
+      ms_client_unlock( client );
+      return rc;
+   }
+
+   const ms::ms_volume_gateway_cred& my_cred = volume_md->cred();
+   rc = ms_client_load_cred( &cred, &my_cred );
+   if( rc != 0 ) {
+      errorf("ms_client_load_cred rc = %d\n", rc );
+      ms_client_unlock( client );
+      return rc;
+   }
+   
+   // verify that our host and port match the MS's record
+   if( strcmp( cred.hostname, client->conf->hostname ) != 0 || cred.portnum != client->conf->portnum ) {
+      // wrong host
+      errorf("ERR: This UG is running on %s:%d, but the MS says it should be running on %s:%d.  Please log into the MS and update the UG record.\n", client->conf->hostname, client->conf->portnum, cred.hostname, cred.portnum );
+      ms_client_unlock( client );
+
+      return -ENOTCONN;
+   }
+
+   // new session password
+   curl_easy_setopt( client->ms_read, CURLOPT_USERPWD, NULL );
+   curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, NULL );
+
+   if( client->userpass ) {
+      free( client->userpass );
+   }
+
+   char gateway_id_str[50];
+   client->session_password = strdup( volume_md->session_password().c_str() );
+   
+   sprintf(gateway_id_str, "%" PRIu64, cred.gateway_id );
+
+   client->userpass = CALLOC_LIST( char, strlen(gateway_id_str) + 1 + strlen(client->session_password) + 1 );
+   sprintf( client->userpass, "%s:%s", gateway_id_str, client->session_password );
+
+   curl_easy_setopt( client->ms_read, CURLOPT_USERPWD, client->userpass );
+   curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, client->userpass );
+
+   client->owner_id = volume_md->cred().owner_id();
+   client->volume_owner_id = volume_md->owner_id();
+   client->volume_id = volume_md->volume_id();
+   client->blocksize = volume_md->blocksize();
+
+   if( client->file_url == NULL ) {
+      // build the /FILE/ url
+      char* tmp = md_fullpath( client->url, "/FILE/", NULL );
+      char buf[50];
+      sprintf(buf, "%" PRIu64 "/", client->volume_id );
+
+      client->file_url = md_fullpath( tmp, buf, NULL );
+      free( tmp );
+   }
+
+
+   ms_client_unlock( client );
+
+   uint64_t version = volume_md->volume_version();
+   uint64_t UG_version = volume_md->ug_version();
+   uint64_t RG_version = volume_md->rg_version();
+
+   ms_client_view_wlock( client );
+   
+   client->volume_version = version;
+   client->UG_version = UG_version;
+   client->RG_version = RG_version;
+   client->session_timeout = volume_md->session_timeout();
+
+   if( client->session_cred ) {
+      UG_cred_free( client->session_cred );
+   }
+   else {
+      client->session_cred = CALLOC_LIST( struct UG_cred, 1 );
+   }
+
+   memcpy( client->session_cred, &cred, sizeof(cred) );
+
+   ms_client_view_unlock( client );
+
+   return rc;
+}
+
+
+// process volume metadata--load it into the client, and also reload the RGs and UGs if needed.
+int ms_client_process_volume_metadata( struct ms_client* client, ms::ms_volume_metadata* volume_md ) {
+
+   int rc = 0;
+   
+   ms_client_view_rlock( client );
+
+   // preserve session information
+   uint64_t prev_volume_version = client->volume_version;
+   uint64_t prev_UG_version = client->UG_version;
+   uint64_t prev_RG_version = client->RG_version;
+
+   ms_client_view_unlock( client );
+
+   rc = ms_client_load_volume_metadata( client, volume_md );
+   if( rc != 0 ) {
+      errorf("ms_client_load_volume_metadata rc = %d\n", rc );
+      return rc;
+   }
+
+   // reload UGs and RGs if needed
+   if( client->volume_version != prev_volume_version ) {
+      dbprintf("Volume version %" PRIu64 " --> %" PRIu64 "\n", prev_volume_version, client->volume_version );
+   }
+
+   if( client->UG_version != prev_UG_version ) {
+      rc = ms_client_reload_UGs( client );
+      if( rc != 0 ) {
+         errorf("ms_client_reload_UGs rc = %d\n", rc );
+         return rc;
+      }
+   }
+
+   if( client->RG_version != prev_RG_version ) {
+      rc = ms_client_reload_RGs( client );
+      if( rc != 0 ) {
+         errorf("ms_client_reload_RGs rc = %d\n", rc );
+         return rc;
+      }
+   }
+
+   return 0;
+}
+
+
+// get volume metadata, given a Volume anem
+int ms_client_get_volume_metadata_curl( struct ms_client* client, CURL* curl ) {
+   
+   char* bits = NULL;
+   ssize_t len = 0;
+   long http_response = 0;
+   ms::ms_volume_metadata volume_md;
+   
+   len = md_download_file5( curl, &bits );
+
+   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
+
+   if( len < 0 ) {
+      errorf("md_download_file5 rc = %zd\n", len );
+      return (int)len;
+   }
+
+   if( http_response != 200 ) {
+      errorf("md_download_file5 HTTP status = %ld\n", http_response );
+      return -abs( (int)http_response );
+   }
+
+   // got the data
+   bool valid = volume_md.ParseFromString( string(bits, len) );
+   free( bits );
+
+   if( !valid ) {
+      errorf( "%s", "invalid volume metadata\n" );
+      return -EINVAL;
+   }
+
+   // process the metadata
+   return ms_client_process_volume_metadata( client, &volume_md );
+}
+
 // get volume metadata
 int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name ) {
+
+   char* volume_url = ms_client_volume_url( client, volume_name );
 
    ms::ms_volume_metadata volume_md;
 
    char* bits = NULL;
    ssize_t len = 0;
 
-   char* volume_url = ms_client_volume_url( client, volume_name );
-   
    int rc = ms_client_download_volume_metadata( client, volume_url, &bits, &len );
 
    free( volume_url );
@@ -732,66 +1338,405 @@ int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_
       return -EINVAL;
    }
 
-   struct md_user_entry cred;
-   memset( &cred, 0, sizeof(cred) );
+   return ms_client_process_volume_metadata( client, &volume_md );
+}
 
-   cred.uid = volume_md.cred().owner_id();
-   cred.username = strdup( volume_md.cred().username().c_str() );
-   cred.password_hash = strdup( volume_md.cred().password_hash().c_str() );
 
-   ms_client_wlock( client );
+// dummy CURL read
+size_t ms_client_dummy_read( void *ptr, size_t size, size_t nmemb, void *userdata ) {
+   return size * nmemb;
+}
 
-   client->owner_id = volume_md.cred().owner_id();
-   client->volume_owner_id = volume_md.owner_id();
-   client->volume_id = volume_md.volume_id();
-   client->blocksize = volume_md.blocksize();
+// dummy CURL write
+size_t ms_client_dummy_write( char *ptr, size_t size, size_t nmemb, void *userdata) {
+   return size * nmemb;
+}
 
-   if( client->file_url == NULL ) {
-      // build the /FILE/ url 
-      char* tmp = md_fullpath( client->url, "/FILE/", NULL );
-      char buf[50];
-      sprintf(buf, "%" PRIu64 "/", client->volume_id );
+// read an OpenID reply from the MS
+int ms_client_load_openid_reply( ms::ms_openid_provider_reply* oid_reply, char* openid_redirect_reply_bits, size_t openid_redirect_reply_bits_len ) {
+   // get back the OpenID provider reply
+   string openid_redirect_reply_bits_str = string( openid_redirect_reply_bits, openid_redirect_reply_bits_len );
 
-      client->file_url = md_fullpath( tmp, buf, NULL );
-      free( tmp );
-   }
-
-   ms_client_unlock( client );
-   
-   uint64_t version = volume_md.volume_version();
-   uint64_t UG_version = volume_md.ug_version();
-   uint64_t RG_version = volume_md.rg_version();
-
-   ms_client_view_wlock( client );
-
-   // preserve session information
-   uint64_t prev_UG_version = client->UG_version;
-   uint64_t prev_RG_version = client->RG_version;
-   
-   client->volume_version = version;
-   client->UG_version = UG_version;
-   client->RG_version = RG_version;
-   client->session_timeout = volume_md.session_timeout();
-   if( client->session_token ) {
-      md_free_user_entry( client->session_token );
-      memcpy( client->session_token, &cred, sizeof(cred) );
-   }
-   
-   ms_client_view_unlock( client );
-
-   if( prev_UG_version != UG_version ) {
-      rc = ms_client_reload_UGs( client );
-      dbprintf("ms_client_reload_UGs(%s) rc = %d\n", volume_name, rc );
-   }
-
-   if( prev_RG_version != RG_version ) {
-      rc = ms_client_reload_RGs( client );
-      dbprintf("ms_client_reload_RGs(%s) rc = %d\n", volume_name, rc );
+   bool valid = oid_reply->ParseFromString( openid_redirect_reply_bits_str );
+   if( !valid ) {
+      errorf("%s", "Invalid MS OpenID provider reply\n");
+      return -EINVAL;
    }
 
    return 0;
 }
 
+
+// begin the registration process.  Ask to be securely redirected from the MS to the OpenID provider
+// client must be read-locked
+int ms_client_begin_register( struct ms_client* client, CURL* curl, char const* username, char const* register_url, ms::ms_openid_provider_reply* oid_reply ) {
+
+   // extract our public key bits
+   char* key_bits = NULL;
+   long keylen = ms_client_dump_pubkey( client->my_key, &key_bits );
+   if( keylen <= 0 ) {
+      errorf("ms_client_load_pubkey rc = %ld\n", keylen );
+      md_openssl_error();
+      return (int)keylen;
+   }
+
+   // Base64 encode the key (which will also be url-encoded)
+   char* key_bits_encoded = NULL;
+   int rc = Base64Encode( key_bits, keylen, &key_bits_encoded );
+   if( rc != 0 ) {
+      errorf("Base64Encode rc = %d\n", rc );
+      free( key_bits );
+      return -EINVAL;
+   }
+
+   // url-encode the username
+   char* username_encoded = url_encode( username, strlen(username) );
+   
+   free( key_bits );
+
+   // post arguments
+   char* post = CALLOC_LIST( char, strlen("syndicatepubkey=") + strlen(key_bits_encoded) + 1 + strlen("openid_username") + 1 + strlen(username_encoded) + 1 );
+   sprintf( post, "openid_username=%s&syndicatepubkey=%s", username_encoded, key_bits_encoded );
+   
+   free( key_bits_encoded );
+   free( username_encoded );
+
+   response_buffer_t rb;      // will hold the OpenID provider reply
+   response_buffer_t header_rb;
+   
+   curl_easy_setopt( curl, CURLOPT_URL, register_url );
+   curl_easy_setopt( curl, CURLOPT_POST, 1L );
+   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, post );
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, (void*)&rb );
+   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );
+   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_redirect_header_func );
+   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, (void*)&header_rb );
+
+   rc = curl_easy_perform( curl );
+
+   long http_response = 0;
+   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
+   curl_easy_setopt( curl, CURLOPT_URL, NULL );
+   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, NULL );
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
+   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, NULL );
+
+   free( post );
+
+   if( rc != 0 ) {
+      errorf("curl_easy_perform rc = %d\n", rc );
+      return -abs(rc);
+   }
+
+   if( http_response != 200 ) {
+      errorf("curl_easy_perform HTTP status = %ld\n", http_response );
+      return -http_response;
+   }
+
+   if( rb.size() == 0 ) {
+      errorf("%s", "no response\n");
+      response_buffer_free( &rb );
+      return -ENODATA;
+   }
+
+   char* response = response_buffer_to_string( &rb );
+   size_t len = response_buffer_size( &rb );
+
+   rc = ms_client_load_openid_reply( oid_reply, response, len );
+
+   free( response );
+   response_buffer_free( &rb );
+
+   return rc;
+}
+
+
+int ms_client_split_url_qs( char const* url, char** url_and_path, char** qs ) {
+   if( strstr( url, "?" ) != NULL ) {
+      char* url2 = strdup( url );
+      char* qs_start = strstr( url2, "?" );
+      *qs_start = '\0';
+
+      *qs = strdup( qs_start + 1 );
+      *url_and_path = url2;
+      return 0;
+   }
+   else {
+      return -EINVAL;
+   }
+}
+
+int ms_client_set_method( CURL* curl, char const* method, char const* url, char const* qs ) {
+
+   curl_easy_setopt( curl, CURLOPT_URL, url );
+   
+   if( strcmp(method, "POST") == 0 ) {
+      curl_easy_setopt( curl, CURLOPT_POST, 1L );
+
+      if( qs )
+         curl_easy_setopt( curl, CURLOPT_POSTFIELDS, qs );
+   }
+   else if( strcmp(method, "GET") == 0 ) {
+      curl_easy_setopt( curl, CURLOPT_HTTPGET, 1L );
+   }
+   else {
+      errorf("Invalid HTTP method '%s'\n", method );
+      return -EINVAL;
+   }
+   return 0;
+}
+
+// authenticate to the OpenID provider.
+// populate the return_to URL
+// client must be read-locked
+int ms_client_auth_op( struct ms_client* client, CURL* curl, ms::ms_openid_provider_reply* oid_reply, char** return_to_method, char** return_to ) {
+
+   char* post = NULL;
+   char const* openid_redirect_url = oid_reply->redirect_url().c_str();
+   long http_response = 0;
+
+   // how we ask the OID provider to challenge us
+   char const* challenge_method = oid_reply->challenge_method().c_str();
+
+   // how we respond to the OID provider challenge
+   char const* response_method = oid_reply->response_method().c_str();
+
+   // how we redirect to the OID RP
+   char const* redirect_method = oid_reply->redirect_method().c_str();
+
+   dbprintf("%s challenge to %s\n", challenge_method, openid_redirect_url );
+
+   response_buffer_t header_rb;
+   
+   // inform the OpenID provider that we have been redirected by the RP by fetching the authentication page.
+   // The OpenID provider may then redirect us back.
+   curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 0L );     // catch 302
+   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_redirect_header_func );
+   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, (void*)&header_rb );
+   curl_easy_setopt( curl, CURLOPT_READFUNCTION, ms_client_dummy_read );
+   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, ms_client_dummy_write );
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
+   curl_easy_setopt( curl, CURLOPT_READDATA, NULL );
+   //curl_easy_setopt( curl, CURLOPT_VERBOSE, 1L );
+
+   char* url_and_path = NULL;
+   char* url_qs = NULL;
+   int rc = ms_client_split_url_qs( openid_redirect_url, &url_and_path, &url_qs );
+   if( rc != 0 ) {
+      // no query string
+      url_and_path = strdup( openid_redirect_url );
+   }
+   
+   rc = ms_client_set_method( curl, challenge_method, url_and_path, url_qs );
+   if( rc != 0 ) {
+      errorf("ms_client_set_method(%s) rc = %d\n", challenge_method, rc );
+      return rc;
+   }
+
+   rc = curl_easy_perform( curl );
+
+   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
+   curl_easy_setopt( curl, CURLOPT_URL, NULL );
+   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, NULL );
+   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, NULL );
+   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, NULL );
+
+   free( url_and_path );
+   if( url_qs )
+      free( url_qs );
+
+   if( rc != 0 ) {
+      errorf("curl_easy_perform rc = %d\n", rc );
+      response_buffer_free( &header_rb );
+      return -abs(rc);
+   }
+
+   if( http_response != 200 && http_response != 302 ) {
+      errorf("curl_easy_perform HTTP status = %ld\n", http_response );
+      response_buffer_free( &header_rb );
+      return -http_response;
+   }
+
+   if( http_response == 302 ) {
+      // authenticated already; we're being sent back
+      char* url = response_buffer_to_string( &header_rb );
+
+      dbprintf("return to %s", url );
+      
+      *return_to = url;
+      response_buffer_free( &header_rb );
+
+      return http_response;
+   }
+
+   response_buffer_free( &header_rb );
+
+   // authenticate to the OpenID provider
+   char const* extra_args = oid_reply->extra_args().c_str();
+   char const* username_field = oid_reply->username_field().c_str();
+   char const* password_field = oid_reply->password_field().c_str();
+   char const* auth_handler = oid_reply->auth_handler().c_str();
+
+   char* username_urlencoded = url_encode( client->conf->ms_username, strlen(client->conf->ms_username) );
+   char* password_urlencoded = url_encode( client->conf->ms_password, strlen(client->conf->ms_password) );
+   post = CALLOC_LIST( char, strlen(username_field) + 1 + strlen(username_urlencoded) + 1 +
+                             strlen(password_field) + 1 + strlen(password_urlencoded) + 1 +
+                             strlen(extra_args) + 1);
+
+   sprintf(post, "%s=%s&%s=%s&%s", username_field, username_urlencoded, password_field, password_urlencoded, extra_args );
+
+   free( username_urlencoded );
+   free( password_urlencoded );
+
+   dbprintf("%s authenticate to %s?%s\n", response_method, auth_handler, post );
+
+   rc = ms_client_set_method( curl, response_method, auth_handler, post );
+   if( rc != 0 ) {
+      errorf("ms_client_set_method(%s) rc = %d\n", response_method, rc );
+      return rc;
+   }
+
+   // send the authentication request
+   curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 0L );
+   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_redirect_header_func );
+   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, (void*)&header_rb );
+   curl_easy_setopt( curl, CURLOPT_READFUNCTION, ms_client_dummy_read );
+   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, ms_client_dummy_write );
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
+   curl_easy_setopt( curl, CURLOPT_READDATA, NULL );
+
+   rc = curl_easy_perform( curl );
+
+   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
+   curl_easy_setopt( curl, CURLOPT_URL, NULL );
+   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, NULL );
+   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, NULL );
+   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, NULL );
+
+   free( post );
+
+   if( rc != 0 ) {
+      errorf("curl_easy_perform rc = %d\n", rc );
+      response_buffer_free( &header_rb );
+      return -abs(rc);
+   }
+
+   if( http_response != 302 ) {
+      errorf("curl_easy_perform HTTP status = %ld\n", http_response );
+      response_buffer_free( &header_rb );
+      return -http_response;
+   }
+
+   // authenticated! we're being sent back
+   char* url = response_buffer_to_string( &header_rb );
+   response_buffer_free( &header_rb );
+   
+   *return_to = url;
+   *return_to_method = strdup( redirect_method );
+   return 0;
+}
+
+// complete the registration
+// client must not be locked
+int ms_client_complete_register( struct ms_client* client, CURL* curl, char const* return_to_method, char const* return_to ) {
+
+   dbprintf("%s return to %s\n", return_to_method, return_to );
+
+   char* return_to_url_and_path = NULL;
+   char* return_to_qs = NULL;
+
+   int rc = ms_client_split_url_qs( return_to, &return_to_url_and_path, &return_to_qs );
+   if( rc != 0 ) {
+      // no qs
+      return_to_url_and_path = strdup( return_to );
+   }
+   
+   rc = ms_client_set_method( curl, return_to_method, return_to_url_and_path, return_to_qs );
+   if( rc != 0 ) {
+      errorf("ms_client_set_method(%s) rc = %d\n", return_to_method, rc );
+      free( return_to_url_and_path );
+      if( return_to_qs )
+         free( return_to_qs );
+      
+      return rc;
+   }
+   
+   rc = ms_client_get_volume_metadata_curl( client, curl );
+
+   free( return_to_url_and_path );
+   if( return_to_qs )
+      free( return_to_qs );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_get_volume_metadata_curl rc = %d\n", rc );
+      return rc;
+   }
+
+   return 0;
+}
+   
+   
+
+// register this gateway with the MS, using the SyndicateUser's OpenID username and password
+int ms_client_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password ) {
+
+   int rc = 0;
+   char* register_url = ms_client_register_url( client );
+
+   dbprintf("register at %s\n", register_url );
+
+   CURL* curl = curl_easy_init();
+
+   // enable the cookie parser
+   curl_easy_setopt( curl, CURLOPT_COOKIEFILE, "/COOKIE" );
+   
+   ms_client_rlock( client );
+   
+   md_init_curl_handle( curl, NULL, client->conf->metadata_connect_timeout );
+
+   // load the response
+   ms::ms_openid_provider_reply oid_reply;
+
+   // get info for the OpenID provider
+   rc = ms_client_begin_register( client, curl, username, register_url, &oid_reply );
+
+   free( register_url );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_begin_register rc = %d\n", rc);
+      ms_client_unlock( client );
+      curl_easy_cleanup( curl );
+      return rc;
+   }
+
+   // authenticate to the OpenID provider
+   char* return_to = NULL;
+   char* return_to_method = NULL;
+   rc = ms_client_auth_op( client, curl, &oid_reply, &return_to_method, &return_to );
+   if( rc != 0 ) {
+      errorf("ms_client_auth_op rc = %d\n", rc);
+      ms_client_unlock( client );
+      curl_easy_cleanup( curl );
+      return rc;
+   }
+
+   ms_client_unlock( client );
+   
+   // complete the registration 
+   rc = ms_client_complete_register( client, curl, return_to_method, return_to );
+   if( rc != 0 ) {
+      errorf("ms_client_complete_register rc = %d\n", rc);
+      ms_client_unlock( client );
+      curl_easy_cleanup( curl );
+      return rc;
+   }
+
+   curl_easy_cleanup( curl );
+   free( return_to );
+   free( return_to_method );
+   
+   return rc;
+}
 
 // read-lock a client context 
 int ms_client_rlock( struct ms_client* client ) {
@@ -1315,6 +2260,8 @@ int ms_client_resolve_path( struct ms_client* client, char const* path, vector<s
 
    int http_response = ms_client_end_downloading( client );
 
+   curl_slist_free_all( lastmod_header );
+
    // print out timing information
    ms_client_rlock( client );
    DATA( HTTP_RESOLVE_TIME, (double)client->read_times.resolve_time / 1e9 );
@@ -1417,7 +2364,7 @@ uint64_t ms_client_authenticate( struct ms_client* client, struct md_HTTP_connec
    if( password == NULL )
       return MD_GUEST_UID;
    
-   char* password_hash = sha256_hash_printable( password, strlen(password) );
+   char* signature = sha256_hash_printable( password, strlen(password) );
    
    ms_client_view_rlock( client );
 
@@ -1452,4 +2399,21 @@ uint64_t ms_client_volume_version( struct ms_client* client ) {
    ms_client_view_unlock( client );
    return ret;
 }
+
+// get the current UG version
+uint64_t ms_client_UG_version( struct ms_client* client ) {
+   ms_client_view_rlock( client );
+   uint64_t ret = client->UG_version;
+   ms_client_view_unlock( client );
+   return ret;
+}
+
+// get the current RG version
+uint64_t ms_client_RG_version( struct ms_client* client ) {
+   ms_client_view_rlock( client );
+   uint64_t ret = client->RG_version;
+   ms_client_view_unlock( client );
+   return ret;
+}
+
 

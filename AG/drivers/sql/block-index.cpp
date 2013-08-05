@@ -91,3 +91,29 @@ const block_index_entry* BlockIndex::get_last_block(string file_name, off_t *blo
 	return NULL;
 }
 
+
+void BlockIndex::invalidate_entry(string file_name) {
+    vector<block_index_entry*> *blk_list = NULL;
+    BlockMap::iterator itr = blk_map.find(file_name);
+    MutexMap::iterator mitr = mutex_map.find(file_name);
+    if (itr != blk_map.end() && mitr != mutex_map.end()) {
+	pthread_mutex_lock(map_mutex);
+	//Acquire lock for this file's block index
+	pthread_mutex_lock(&(mitr->second));
+	blk_list = itr->second;
+	free_block_index(blk_list);
+	blk_list->resize(blk_list->size() - 1);
+	//Release block index lock
+	pthread_mutex_unlock(&(mitr->second));
+	pthread_mutex_unlock(map_mutex);
+    }
+}
+
+void BlockIndex::free_block_index(vector<block_index_entry*> *blk_list) {
+    vector<block_index_entry*>::iterator itr;
+    for (itr=blk_list->begin(); itr!=blk_list->end(); itr++) {
+	delete *itr;
+    }
+    delete blk_list;
+}
+

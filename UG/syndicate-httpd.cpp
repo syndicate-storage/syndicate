@@ -705,7 +705,7 @@ void httpd_HTTP_cleanup(struct MHD_Connection *connection, void *con_cls, enum M
 
 
 void usage( char const* name ) {
-   errorf("Usage: %s [-c CONFIG] [-P PORTNUM] [-f]\n", name );
+   errorf("Usage: %s [-c CONF_FILE] [-m MS_URL] [-u USERNAME] [-p PASSWORD] [-v VOLUME] [-g GATEWAY_NAME] [-P PORTNUM] [-G GATEWAY_PKEY] [-V VOLUME_PUBKEY] [-S TLS_PKEY] [-C TLS_CERT] [-f]\n", name );
    exit(1);
 }
 
@@ -740,23 +740,32 @@ int main( int argc, char** argv ) {
    char* username = NULL;
    char* password = NULL;
    char* volume_name = NULL;
-   char* volume_secret = NULL;
    char* ms_url = NULL;
-   
+   char* gateway_name = NULL;
+   char* volume_pubkey_path = NULL;
+   char* gateway_pkey_path = NULL;
+   char* tls_pkey_path = NULL;
+   char* tls_cert_path = NULL;
+  
    static struct option syndicate_options[] = {
       {"config-file",     required_argument,   0, 'c'},
       {"volume-name",     required_argument,   0, 'v'},
+      {"gateway",         required_argument,   0, 'g'},
       {"username",        required_argument,   0, 'u'},
       {"password",        required_argument,   0, 'p'},
       {"port",            required_argument,   0, 'P'},
       {"foreground",      no_argument,         0, 'f'},
       {"MS",              required_argument,   0, 'm'},
+      {"volume-pubkey",   required_argument,   0, 'V'},
+      {"gateway-pkey",    required_argument,   0, 'G'},
+      {"tls-pkey",        required_argument,   0, 'S'},
+      {"tls-cert",        required_argument,   0, 'C'},
       {0, 0, 0, 0}
    };
 
    int opt_index = 0;
    
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:fm:", syndicate_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:fm:V:G:S:C:", syndicate_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -764,6 +773,10 @@ int main( int argc, char** argv ) {
          }
          case 'c': {
             config_file = optarg;
+            break;
+         }
+         case 'g': {
+            gateway_name = optarg;
             break;
          }
          case 'u': {
@@ -786,13 +799,29 @@ int main( int argc, char** argv ) {
             foreground = true;
             break;
          }
+         case 'V': {
+            volume_pubkey_path = optarg;
+            break;
+         }
+         case 'G': {
+            gateway_pkey_path = optarg;
+            break;
+         }
+         case 'S': {
+            tls_pkey_path = optarg;
+            break;
+         }
+         case 'C': {
+            tls_cert_path = optarg;
+            break;
+         }
          default: {
             break;
          }
       }
    }
 
-   int rc = syndicate_init( config_file, &syndicate_http, portnum, ms_url, volume_name, username, password );
+   int rc = syndicate_init( config_file, &syndicate_http, portnum, ms_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path );
    if( rc != 0 )
       exit(1);
    

@@ -319,10 +319,12 @@ class Session(object):
         Normally this method does not need to be called directly - a session is
         automatically saved at the end of the request if any changes were made.
         """
+        
         if not self.sid:
             return  # no session is active
         if not self.dirty:
             return  # nothing has changed
+            
         dirty = self.dirty
         self.dirty = False  # saving, so it won't be dirty anymore
 

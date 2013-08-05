@@ -21,7 +21,7 @@
 
 
 
-MapParserHandler::MapParserHandler(map<string, struct map_info>* xmlmap)
+MapParserHandler::MapParserHandler(map<string, struct map_info*>* xmlmap)
 {
     this->xmlmap = xmlmap;
     open_key = false;
@@ -33,6 +33,7 @@ MapParserHandler::MapParserHandler(map<string, struct map_info>* xmlmap)
     unbounded_query = NULL;
     type = QUERY_TYPE_DEFAULT;
     current_id = 0;
+    reval_secs = 0;
 }
 
 void MapParserHandler::startElement(const   XMLCh* const    uri,
@@ -79,6 +80,10 @@ void MapParserHandler::startElement(const   XMLCh* const    uri,
 		XMLString::release(&type_str);
 	    }
 	}
+	if (!strncmp(attr, MAP_REVALIDATE_ATTR, strlen(MAP_REVALIDATE_ATTR))) {
+	    char* rt_str = XMLString::transcode(attrs.getValue(i));
+	    set_time(rt_str);
+	}
 	XMLString::release(&attr);
     }
     XMLString::release(&tag);
@@ -118,35 +123,42 @@ void MapParserHandler::endElement (
     }
     if (!strncmp(tag, PAIR_TAG, strlen(PAIR_TAG))) {
 	if (current_key) {
-	    struct map_info mi;
-	    mi.query = NULL;
-	    mi.unbounded_query = NULL;
-	    mi.file_perm = current_perm;
+	    struct map_info* mi = (struct map_info*)malloc(sizeof(struct map_info));
+	    mi->query = NULL;
+	    mi->unbounded_query = NULL;
+	    mi->file_perm = current_perm;
 	    if (bounded_query != NULL) {
 		size_t bounded_query_len = strlen(bounded_query);
-		mi.query = (unsigned char*)malloc(bounded_query_len + 1);
-		strncpy((char*)mi.query, bounded_query, bounded_query_len);
-		mi.query[bounded_query_len] = 0;
+		mi->query = (unsigned char*)malloc(bounded_query_len + 1);
+		strncpy((char*)mi->query, bounded_query, bounded_query_len);
+		mi->query[bounded_query_len] = 0;
 		free(bounded_query);
 		bounded_query = NULL;
 	    }
 	    if (unbounded_query != NULL) {
 		size_t unbounded_query_len = strlen(unbounded_query);
-		mi.unbounded_query = (unsigned char*)malloc(unbounded_query_len + 1);
-		strncpy((char*)mi.unbounded_query, unbounded_query, unbounded_query_len);
-		mi.unbounded_query[unbounded_query_len] = 0;
+		mi->unbounded_query = (unsigned char*)malloc(unbounded_query_len + 1);
+		strncpy((char*)mi->unbounded_query, unbounded_query, unbounded_query_len);
+		mi->unbounded_query[unbounded_query_len] = 0;
 		free(unbounded_query);
 		unbounded_query = NULL;
 	    }
 	    if (shell_cmd != NULL) {
 		size_t shell_cmd_len = strlen(shell_cmd);
-		mi.shell_command = (unsigned char*)malloc(shell_cmd_len + 1);
-		strncpy((char*)mi.shell_command, shell_cmd, shell_cmd_len);
-		mi.shell_command[shell_cmd_len] = 0;
+		mi->shell_command = (unsigned char*)malloc(shell_cmd_len + 1);
+		strncpy((char*)mi->shell_command, shell_cmd, shell_cmd_len);
+		mi->shell_command[shell_cmd_len] = 0;
 		free(shell_cmd);
 		shell_cmd = NULL;
 	    }
-	    mi.id = current_id;
+	    mi->reval_sec = reval_secs;
+	    reval_secs = 0;
+	    mi->mi_time = 0;
+	    mi->id = current_id;
+	    mi->entry = NULL;
+	    mi->mentry = NULL;
+	    mi->invalidate_entry = NULL;
+	    mi->reversion_entry = NULL;
 	    current_id++;
 	    (*xmlmap)[string(current_key)] =mi;
 	    free(current_key);
@@ -214,10 +226,57 @@ unsigned char* MapParserHandler::get_dsn()
     return dsn_str;
 }
 
+void MapParserHandler::set_time(char *tm_str) {
+    //Parse the string, any character can be in between different time units.
+    stringstream strstream;
+    int tm_str_len = strlen(tm_str);
+    int count = 0;
+    uint64_t secs = 0;
+    for (; count < tm_str_len; count++) {
+	if (tm_str[count] < 58 && tm_str[count] > 47) {
+	    strstream << tm_str[count];
+	}
+	else if (tm_str[count] == MAP_REVAL_WEEK) {
+	    string week_str = strstream.str();
+	    secs += (uint64_t)atol(week_str.c_str()) * WEEK_SECS;
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else if (tm_str[count] == MAP_REVAL_DAY) {
+	    string day_str = strstream.str();
+	    secs += (uint64_t)atol(day_str.c_str()) * DAY_SECS;
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else if (tm_str[count] == MAP_REVAL_HOUR) {
+	    string hour_str = strstream.str();
+	    secs += (uint64_t)atol(hour_str.c_str()) * HOUR_SECS;
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else if (tm_str[count] == MAP_REVAL_MIN) {
+	    string min_str = strstream.str();
+	    secs += (uint64_t)atol(min_str.c_str()) * MIN_SECS;
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else if (tm_str[count] == MAP_REVAL_SEC) {
+	    string sec_str = strstream.str();
+	    secs += (uint64_t)atol(sec_str.c_str());
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else {
+	    //Ignore...
+	}
+    }
+    reval_secs = secs;
+}
+
 MapParser::MapParser( char* mapfile)
 {
     this->mapfile = mapfile;
-    FS2SQLMap = new map<string, struct map_info>;
+    FS2SQLMap = new map<string, struct map_info*>;
 }
 
 int MapParser::parse()
@@ -258,7 +317,7 @@ int MapParser::parse()
     return 0;
 }
 	
-map<string, struct map_info>* MapParser::get_map()
+map<string, struct map_info*>* MapParser::get_map()
 {
     return FS2SQLMap;
 }

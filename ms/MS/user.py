@@ -63,6 +63,8 @@ class SyndicateUIDCounter( storagetypes.Object ):
    def make_key_name( cls, **args ):
       return "SyndicateUIDCounter"
 
+      
+
 class SyndicateUser( storagetypes.Object ):
    email = storagetypes.String()         # used as the username
    owner_id = storagetypes.Integer()     # UID field in Syndicate

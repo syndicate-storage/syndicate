@@ -8,7 +8,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.RandomAccessFile;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
@@ -21,7 +20,7 @@ import org.apache.commons.logging.LogFactory;
  */
 public abstract class JSFSFileSystem implements Closeable {
     
-    public static final Log LOG = LogFactory.getLog(JSFSFileSystem.class);
+    private static final Log LOG = LogFactory.getLog(JSFSFileSystem.class);
     
     protected static final String FS_ROOT_PATH_STRING = "file:///";
     protected static final JSFSPath FS_ROOT_PATH = new JSFSPath(FS_ROOT_PATH_STRING);
@@ -224,7 +223,7 @@ public abstract class JSFSFileSystem implements Closeable {
     
     public abstract OutputStream getFileOutputStream(JSFSPath path) throws IOException;
     
-    public abstract RandomAccessFile getRandomAccessFile(JSFSPath path) throws IOException;
+    public abstract JSFSRandomAccess getRandomAccess(JSFSPath path) throws IOException;
     
     public synchronized String[] readDirectoryEntryNames(JSFSPath path) throws FileNotFoundException, IOException {
         return readDirectoryEntryNames(path, (JSFSFilenameFilter)null);

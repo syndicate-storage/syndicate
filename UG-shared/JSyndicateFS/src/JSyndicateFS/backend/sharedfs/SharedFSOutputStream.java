@@ -1,6 +1,5 @@
 /*
- * To change this template, choose Tools | Templates
- * and open the template in the editor.
+ * OutputStream class for JSyndicateFS with Shared FileSystem backend
  */
 package JSyndicateFS.backend.sharedfs;
 

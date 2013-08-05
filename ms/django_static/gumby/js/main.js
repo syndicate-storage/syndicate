@@ -19,6 +19,8 @@ Gumby.touch(function() {
 });
 
 // Document ready
+// This handles the strip bar changing with the tabs.
+// Should I make a non-JS friendly version?
 $(function() {
    //$(".strip .row .home").toggle();
     $(".strip .row .myvolumes").toggle();

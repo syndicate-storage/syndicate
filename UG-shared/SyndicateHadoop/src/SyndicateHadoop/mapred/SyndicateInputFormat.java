@@ -1,6 +1,23 @@
 /*
  * Input Format for Syndicate
  */
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package SyndicateHadoop.mapred;
 
 import JSyndicateFS.JSFSFileSystem;
@@ -30,7 +47,10 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
     private static final Log LOG = LogFactory.getLog(SyndicateInputFormat.class);
     
     private static final double SPLIT_SLOP = 1.1;   // 10% slop
+    private static final long MEGABYTE = 1024 * 1024;
 
+    private static final String NUM_INPUT_FILES = "mapreduce.input.num.files";
+    
     private static final JSFSFilenameFilter hiddenFileFilter = new JSFSFilenameFilter() {
 
         @Override
@@ -39,7 +59,7 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
         }
     };
 
-    private static class MultiPathFilter implements JSFSFilenameFilter {
+    protected static class MultiPathFilter implements JSFSFilenameFilter {
 
         private List<JSFSFilenameFilter> filters;
 
@@ -58,11 +78,15 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
         }
     }
 
-    private long getFormatMinSplitSize() {
-        return 1;
+    protected long getFormatMinSplitSize() {
+        return MEGABYTE;
+    }
+    
+    protected boolean isSplitable(JobContext context, JSFSPath filename) {
+        return true;
     }
 
-    private JSFSFilenameFilter getInputPathFilter(JobContext context) {
+    protected JSFSFilenameFilter getInputPathFilter(JobContext context) {
         Configuration conf = context.getConfiguration();
         Class<? extends JSFSFilenameFilter> filterClass = SyndicateConfigUtil.getInputPathFilter(conf);
         if(filterClass != null)
@@ -71,8 +95,8 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
             return null;
     }
 
-    private ArrayList<JSFSPath> listFiles(JobContext context) throws IOException {
-        ArrayList<JSFSPath> result = new ArrayList<JSFSPath>();
+    protected List<JSFSPath> listFiles(JobContext context) throws IOException {
+        List<JSFSPath> result = new ArrayList<JSFSPath>();
         JSFSPath[] dirs = SyndicateConfigUtil.getInputPaths(context.getConfiguration());
         if(dirs == null || dirs.length == 0) {
             throw new IOException("No input paths specified in job");
@@ -83,7 +107,7 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
             LOG.info("input path : " + dir.getPath());
         }
         
-        ArrayList<JSFSFilenameFilter> filters = new ArrayList<JSFSFilenameFilter>();
+        List<JSFSFilenameFilter> filters = new ArrayList<JSFSFilenameFilter>();
         
         // add hidden file filter by default
         filters.add(hiddenFileFilter);
@@ -132,13 +156,14 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
             throw new IOException(ex);
         }
         
-        ArrayList<InputSplit> splits = new ArrayList<InputSplit>();
-        for(JSFSPath path : listFiles(context)) {
+        List<InputSplit> splits = new ArrayList<InputSplit>();
+        List<JSFSPath> files = listFiles(context);
+        for(JSFSPath path : files) {
             long length = syndicateFS.getSize(path);
-            long blockSize = syndicateFS.getBlockSize();
-            long splitSize = computeSplitSize(blockSize, minSize, maxSize);
             
-            if (length != 0) {
+            if ((length != 0) && isSplitable(context, path)) {
+                long blockSize = syndicateFS.getBlockSize();
+                long splitSize = computeSplitSize(blockSize, minSize, maxSize);
                 long bytesLeft = length;
                 while (((double) bytesLeft) / splitSize > SPLIT_SLOP) {
                     SyndicateInputSplit inputSplit = new SyndicateInputSplit(syndicateFS, path, length - bytesLeft, splitSize);
@@ -151,14 +176,20 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
                     SyndicateInputSplit inputSplit = new SyndicateInputSplit(syndicateFS, path, length - bytesLeft, bytesLeft);
                     splits.add(inputSplit);
                 }
+            } else if (length != 0) {
+                SyndicateInputSplit inputSplit = new SyndicateInputSplit(syndicateFS, path, 0, length);
+                splits.add(inputSplit);
             }
         }
         
-        LOG.debug("Total # of splits: " + splits.size());
+        // Save the number of input files in the job-conf
+        config.setLong(NUM_INPUT_FILES, files.size());
+    
+        LOG.info("Total # of splits: " + splits.size());
         return splits;
     }
     
-    private long computeSplitSize(long blockSize, long minSize, long maxSize) {
+    protected long computeSplitSize(long blockSize, long minSize, long maxSize) {
         return Math.max(minSize, Math.min(maxSize, blockSize));
     }
 }

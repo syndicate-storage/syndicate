@@ -13,47 +13,17 @@ public abstract class JSFSConfiguration {
      */
     protected boolean lock = false;
     
-    // unlimited size
-    public static final int MAX_METADATA_CACHE_SIZE = 0;
-    // no timeout
-    public static final int CACHE_TIMEOUT_SECOND = 0;
     // read buffer size
-    public static final int READ_BUFFER_SIZE = 4096;
+    public static final int READ_BUFFER_SIZE = 64 * 1024;
     // write buffer size
-    public static final int WRITE_BUFFER_SIZE = 4096;
+    public static final int WRITE_BUFFER_SIZE = 64 * 1024;
     
-    protected int maxMetadataCacheSize;
-    protected int cacheTimeoutSecond;
     protected int readBufferSize;
     protected int writeBufferSize;
     
     public JSFSConfiguration() {
-        this.maxMetadataCacheSize = MAX_METADATA_CACHE_SIZE;
-        this.cacheTimeoutSecond = CACHE_TIMEOUT_SECOND;
         this.readBufferSize = READ_BUFFER_SIZE;
         this.writeBufferSize = WRITE_BUFFER_SIZE;
-    }
-    
-    public int getMaxMetadataCacheSize() {
-        return this.maxMetadataCacheSize;
-    }
-    
-    public void setMaxMetadataCacheSize(int max) throws IllegalAccessException {
-        if(this.lock)
-            throw new IllegalAccessException("Can not modify the locked object");
-        
-        this.maxMetadataCacheSize = max;
-    }
-    
-    public int getCacheTimeoutSecond() {
-        return this.cacheTimeoutSecond;
-    }
-    
-    public void setCacheTimeoutSecond(int timeoutSecond) throws IllegalAccessException {
-        if(this.lock)
-            throw new IllegalAccessException("Can not modify the locked object");
-        
-        this.cacheTimeoutSecond = timeoutSecond;
     }
     
     public int getReadBufferSize() {
@@ -97,10 +67,6 @@ public abstract class JSFSConfiguration {
         
         JSFSConfiguration other = (JSFSConfiguration) o;
         
-        if(this.maxMetadataCacheSize != other.maxMetadataCacheSize)
-            return false;
-        if(this.cacheTimeoutSecond != other.cacheTimeoutSecond)
-            return false;
         if(this.readBufferSize != other.readBufferSize)
             return false;
         if(this.writeBufferSize != other.writeBufferSize)
@@ -111,6 +77,6 @@ public abstract class JSFSConfiguration {
     
     @Override
     public int hashCode() {
-        return this.maxMetadataCacheSize ^ this.cacheTimeoutSecond ^ this.readBufferSize ^ this.writeBufferSize ^ getBackendName().hashCode();
+        return this.readBufferSize ^ this.writeBufferSize ^ getBackendName().hashCode();
     }
 }

@@ -43,6 +43,9 @@
 #include <stdint.h>
 #include <pthread.h>
 #include <signal.h>
+#include <openssl/bio.h>
+#include <openssl/evp.h>
+#include <math.h>
 
 #include "libsyndicate.h"
 
@@ -612,12 +615,15 @@ int rmdir_sane( char* dirpath );
 int dir_exists( char* dirpath );
 char* dirname( char* path, char* dest );
 int make_lockfiles( char* path, char* lnk );
-char* load_file( char* path, size_t* size );
+char* load_file( char const* path, size_t* size );
 char* url_encode( char const* str, size_t len );
 char* url_decode( char const* str, size_t* len );
 int reg_match(const char *string, char const *pattern);
 int timespec_cmp( struct timespec* t1, struct timespec* t2 );
 uint32_t CMWC4096(void);
+
+int Base64Decode(char* b64message, size_t len, char** buffer, size_t* buffer_len);
+int Base64Encode(const char* message, size_t len, char** buffer);
 
 int util_init(void);
 #endif

@@ -3,12 +3,12 @@
    All Rights Reserved
 */
 
-#include "driver.h"
-#include "libgateway.h"
-#include "fs/fs_entry.h"
+#include <driver.h>
+#include <libgateway.h>
+#include <fs/fs_entry.h>
 
 // server config 
-struct md_syndicate_conf CONF;
+//struct md_syndicate_conf CONF;
  
 // set of files we're exposing
 content_map DATA;
@@ -28,6 +28,8 @@ size_t  datapath_len = 0;
 // ODBC DSN string
 unsigned char* dsn_string = NULL;
 
+// Reversion daemon
+ReversionDaemon* revd = NULL;
 
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, 
@@ -252,9 +254,9 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        replica_ctx->size = ctx->data_len;
    }
    else {
-       struct map_info mi = (*FS2SQL)[string(file_path)];
-       ctx->sql_query_bounded = mi.query; 
-       ctx->sql_query_unbounded = mi.unbounded_query; 
+       struct map_info *mi = (*FS2SQL)[string(file_path)];
+       ctx->sql_query_bounded = mi->query; 
+       ctx->sql_query_unbounded = mi->unbounded_query; 
        if( !ctx->sql_query_bounded ) {
 	   free( ctx );
 	   free( file_path );
@@ -295,7 +297,7 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 	char* dataset ) {
     mc = client;
     MapParser mp = MapParser(dataset);
-    map<string, struct map_info>::iterator iter;
+    map<string, struct map_info*>::iterator iter;
     set<char*, path_comp> dir_hierachy;
     mp.parse();
     unsigned char* dsn = mp.get_dsn();
@@ -314,17 +316,18 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     set<char*, path_comp>::iterator it;
     for( it = dir_hierachy.begin(); it != dir_hierachy.end(); it++ ) {
 	struct map_info mi;
-	publish (*it, MD_ENTRY_DIR, mi);
+	publish (*it, MD_ENTRY_DIR, &mi);
     }
 
     for (iter = FS2SQL->begin(); iter != FS2SQL->end(); iter++) {
 	publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second);
+	revd->add_map_info(iter->second);
     }
     ms_client_destroy(mc);
     return 0;
 }
 
-static int publish(const char *fpath, int type, struct map_info mi)
+static int publish(const char *fpath, int type, struct map_info* mi)
 {
     int i = 0;
     struct md_entry* ment = new struct md_entry;
@@ -360,7 +363,7 @@ static int publish(const char *fpath, int type, struct map_info mi)
     ment->ctime_nsec = rtime.tv_nsec;
     ment->mtime_sec = rtime.tv_sec;
     ment->mtime_nsec = rtime.tv_nsec;
-    ment->mode = mi.file_perm;
+    ment->mode = mi->file_perm;
     ment->version = 1;
     ment->max_read_freshness = 1000;
     ment->max_write_freshness = 1;
@@ -384,6 +387,8 @@ static int publish(const char *fpath, int type, struct map_info mi)
 	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
 		cout<<"ms client create "<<i<<endl;
 	    }
+	    mi->mentry = ment;
+	    mi->reversion_entry = reversion;
 	    break;
 	default:
 	    break;
@@ -402,5 +407,17 @@ void init(unsigned char* dsn) {
 	memcpy(dsn_string, ODBC_DSN_PREFIX, strlen((const char*)ODBC_DSN_PREFIX));
 	memcpy(dsn_string + strlen((const char*)ODBC_DSN_PREFIX), dsn, strlen((const char*)dsn));
     }
+    if (revd == NULL) {
+	revd = new ReversionDaemon();
+	revd->run();
+    }
+}
+
+void reversion(void *cls) {
+    struct md_entry *ment = (struct md_entry*)cls;
+    if (ment == NULL)
+	return;
+    ment->version++;
+    ms_client_update(mc, ment);
 }
 

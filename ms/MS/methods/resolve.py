@@ -117,5 +117,13 @@ def Resolve( owner_id, volume, fs_path ):
          ent_base_msg = reply.entries_base.add()
          ent_base.protobuf( ent_base_msg )
 
+
+   reply.signature = ""
+
+   reply_str = reply.SerializeToString()
+   sig = volume.sign_message( reply_str )
+
+   reply.signature = sig
+
    return reply
    
