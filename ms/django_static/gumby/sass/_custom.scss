@@ -1,0 +1,152 @@
+// Syndicate custom .scss
+// John Whelchel
+
+@import "mixins";
+
+html, body {height:100%;}
+
+  /* Nav bar
+*****************************************************/
+.navbar {
+    
+    // Top big bar calibration! Important
+    margin: {
+        top:-1em;
+        bottom:0;
+    }
+    // I really really don't like this fix. Try taking it out
+    // and fixing it differently.
+    padding: {
+        bottom:1px;
+    }
+
+    @include lighten-edges($darkblue, 20%); // or navbar coor?
+
+    .btn {
+        background:$navbar-button-color;
+    }
+
+    .logospacer {
+        min-width:10%; // How far off from the left is the logo.
+        max-width:200px;
+    }
+
+    a.syn {
+        font-size:2em; // How large is the logo.
+        font-weight:300;
+        &:hover{
+            text-shadow: 0 1px 2px lighten($navbar-strip-color, 20%),
+                         0px 0px 10px lighten($navbar-link-color, 20%);
+            color:$navbar-link-color;
+        }
+    }
+
+
+    .spacer {
+        width: 80%; // The space between logo and logout
+    }
+    .logout {
+
+
+        a {
+            background:darken($navbar-button-color, 5%);
+            height: 100%;
+            vertical-align: middle;
+            text-shadow: 0px 0px 10px lighten($navbar-link-color, 20%);
+            &:hover {
+                text-shadow: 0px 0px 4px lighten($navbar-link-color, 20%);
+                color:$navbar-link-color;
+            }
+        }
+        margin: {
+            right:4em; // How far off from the right is the logout.
+        }
+    }
+    .row {
+        width:100%;
+    }
+
+
+      /* Strip beneath bar.
+    *****************************************************/
+    .strip {
+        background:$navbar-strip-color;
+        @include lighten-edges($darkblue, 20%); // or navbar coor?
+        height:25px;
+        color:white;
+        ul, li {
+            height:100%;
+            display:inline;
+            line-height: 0;
+            padding-bottom:8px; // pushes username up to be in middle.
+            margin-left:.3em; // seperates elements/arrows/labels
+        }
+        .arrow {
+            padding: {
+                bottom:3px;
+            }
+        }
+        li.top-label {
+            font-size:.8em;
+
+        }
+        .username {
+            margin-left:1em;
+            text-shadow: 0px 0px 10px lighten($navbar-link-color, 20%);
+        }
+    }
+}
+  /* Hander
+*****************************************************/
+
+.hander {
+
+    .subnavbar {
+        display:block;
+        background:$global-bg-color;
+        font-weight:$font-weight-light;
+        @include lighten-edges($darkblue, 20%); // or navbar coor?
+        .twelve.columns {height:100%;background:$darkblue}
+
+          /* Sidebar,  should be fixed(?).
+        *****************************************************/
+
+        .tab-nav {
+            li {
+                margin:0;
+                margin-left:1em;
+            }
+            li.top-tab {
+                margin-top:10px; // How far the top tap is off from strip on top.
+            }
+            i {
+                margin: {
+                    left:-.4em;
+                }
+            }
+        }
+
+          /* Console
+        *****************************************************/
+        .tab-content {
+            background:$center-console-color;
+            .manual-gutter {
+
+            }
+        }
+
+
+    }
+
+}
+
+  /* Footer, sticky.
+*****************************************************/
+@include sticky-footer;
+.footer {
+    @include lighten-edges($darkblue, 20%); // or navbar coor?
+
+    .row {
+        background-color:$navbar-strip-color
+    }
+}

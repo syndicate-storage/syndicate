@@ -43,7 +43,7 @@ def home(request):
 #   Uncomment this line to test security via @authenticate on any page
 #    session.clear()
 
-    t = loader.get_template('home_templates/home.html')
+    t = loader.get_template('gumby_templates/home.html')
     c = Context({'username':username})
     return HttpResponse(t.render(c))
 

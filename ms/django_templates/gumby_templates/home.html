@@ -1,0 +1,33 @@
+{% extends "gumby_templates/base.html" %}
+{% block head %}
+    <h1>Syndicate Home</h1>
+{% endblock %}
+{% block mainbody %}
+    <div class="wrapper">
+      <div class="box leftbox">
+    <ul>
+      <li><a href='{% url "django_volume.views.myvolumes" %}'>My Volumes</a></li>
+      <li><a href='{% url "django_volume.views.allvolumes" %}'>All Public Volumes</a></li>
+      <br/>
+      <li><a href='{% url "django_ug.views.mygateways" %}'>My User Gateways</a></li>
+      <li><a href='{% url "django_ug.views.allgateways" %}'>All User Gateways</a></li>
+      <br/>
+      <li><a href='{% url "django_rg.views.allgateways" %}'>All Replica Gateways</a></li>
+      <br/>
+      <li><a href='{% url "django_ag.views.allgateways" %}'>All Acquisition Gateways</a></li>
+      <br/>
+      <li><a href='{% url "django_home.views.logout" %}'>Logout</a></li>
+    </ul>
+      </div>
+      <div class="box rightbox">
+    <br>
+    <p>Cloud storage, network caches, and local storage are complentary mechanisms for hosting and sharing data in the wide-area, but they are difficult to use together. This is because coordination is needed to meet data consistency, durability and scalability requirements. To address this challenge, this paper describes Syndicate, a wide-area read/write storage system that leverages existing services. Syndicate employs a novel data consistency protocol that lets wide-area users share consistent data through independently-operated caches, regardless of where their data is hosted or archived. Syndicate decouples data durability and scalable performance while providing consistency in the face of writes, allowing users to choose whatever underlying caching and storage implementations meet their needs.</p>
+    <br>
+    <p>This application presents Syndicate, a wide-area storage service that is unique in how it leverages existing cloud storage for durability and existing network caching for scalable performance, providing the consistency protocol needed to transform those building block services into a coherent service. A prototype implementation validates the design, and demonstrates that Syndicate is able to deliver the performance and scalability of the underlying caching substrate to end users while preserving data consistency in the presense of writes.</p>
+    <br>
+    <p>By interpositioning Syndicate gateways between the key participants and manipulating the underlying transport protocol (HTTP) and naming scheme (URLs), Syndicate is able to transparently leverage those existing services without modification, and in doing so, gives users the opportunity to select among alternatives, based on their own criteria, including cost.</p>
+    <br>
+    <p>Beyond the specifics of wide-area storage, we believe Syndicate represents an emerging style of building net work system services through the composition of existing cloud services, and in doing so, has the potential to encourage a more efficient marketplace for cloud services. For example, one could imagine an instance of Syndicate that includes an RG for each of several different cloud storage providers (e.g., one for S3, one for Rackspace, and so on). In this case, Syndicate’s value to the user would be to maintain a consistent copy of data across multiple cloud storage providers, giving users the security of not being locked into (dependent upon) a single provider.</p>
+      </div>
+    </div>
+{% endblock %}

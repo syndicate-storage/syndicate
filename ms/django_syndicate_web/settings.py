@@ -102,7 +102,6 @@ WSGI_APPLICATION = 'django_syndicate_web.wsgi.application'
 
 TEMPLATE_DIRS = (
     os.path.join(os.path.dirname(__file__), '../django_templates').replace('\\','/'),
-    os.path.join(os.path.dirname(__file__), '../skeleton_templates').replace('\\','/'),
 )
 
 INSTALLED_APPS = (
