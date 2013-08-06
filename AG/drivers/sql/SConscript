@@ -7,6 +7,8 @@ source_files = """
    odbc-handler.cpp
    driver.cpp
    ../common/map-parser.cpp
+   ../common/AG-util.cpp
+   ../common/reversion-daemon.cpp
    block-index.cpp
 """
 

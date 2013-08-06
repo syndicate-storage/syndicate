@@ -1,7 +1,7 @@
-#include <util.h>
+#include <AG-util.h>
 
 //Global sighand set
-sighands sghs;
+struct _sighand_struct sghs;
 
 void clean_dir(const char *dirname) {
     if (dirname == NULL)

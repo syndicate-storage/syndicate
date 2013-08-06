@@ -22,7 +22,6 @@ struct _sighand_struct{
     _sighand_struct():term_handler(NULL), init_handler(NULL){}
 };
 
-typedef _sighand_struct sighands;
 
 //Delete all the files in a given directory
 void clean_dir(const char *dir_name);

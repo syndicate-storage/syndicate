@@ -8,6 +8,7 @@ source_files = """
     proc-handler.cpp
     ../common/map-parser.cpp
     ../common/reversion-daemon.cpp
+    ../common/AG-util.cpp
 """
 
 # add source file search paths here
