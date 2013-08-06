@@ -155,6 +155,7 @@ class Gateway( storagetypes.Object ):
       verifier = PKCS1_v1_5.new(key)
       return verifier.verify( h, sig )
 
+      
    @classmethod
    def generate_password_hash( cls, pw, salt ):
 
@@ -291,7 +292,7 @@ class UserGateway( Gateway ):
       ms_update.signature = ""
       ms_update_str = ms_update.SerializeToString()
 
-      ret = self.verify_signature( ms_update_str, sig )
+      ret = self.verify_signature( ms_update_str, sig_bin )
 
       ms_update.signature = sig
 

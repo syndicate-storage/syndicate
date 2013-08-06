@@ -68,9 +68,9 @@ struct fs_entry {
    int64_t version;           // version of this file
    file_manifest* manifest;   // current file manifest
 
-   uint64_t owner;               // Syndicate UID of the file's owner (should NOT match any local system entries)
-   uint64_t acting_owner;        // acting owner of this file (should match owner if this UG created the file)
-   uint64_t volume;              // volume ID on which this file resides (analogous to the group ID)
+   uint64_t owner;               // User ID of the user that created this file.
+   uint64_t coordinator;         // Gateway ID of the gateway that will coordinate writes on this file
+   uint64_t volume;              // volume ID on which this file resides
    mode_t mode;               // access permissions
    off_t size;                // how big is this file's content?
    int link_count;            // how many other fs_entry structures refer to this file
@@ -159,9 +159,9 @@ int fs_core_wlock( struct fs_core* core );
 int fs_core_unlock( struct fs_core* core );
 
 // fs_entry initialization
-int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
-int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
-int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
+int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
+int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
+int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
 int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_entry* ent );
 
 int64_t fs_entry_next_file_version(void);

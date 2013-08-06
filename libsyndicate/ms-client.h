@@ -73,8 +73,9 @@ struct ms_client {
    char* url;           // MS URL
    char* userpass;      // HTTP username:password string.  Username is the gateway ID; password is the session password
    char* file_url;      // URL to the MS's /FILE handler
-   uint64_t owner_id;   // ID of the account running this ms_client
+   uint64_t owner_id;   // ID of the User account running this ms_client
    uint64_t volume_id;  // which volume are we attached to
+   uint64_t gateway_id; // ID of the Gateway running this ms_client
    uint64_t volume_owner_id;  // ID of the owner of this volume
    uint64_t blocksize;        // size of blocks for this Volume
 
@@ -98,11 +99,12 @@ struct ms_client {
    pthread_rwlock_t view_lock;
 
    // session information
-   struct UG_cred* session_cred;            // who am I?  NOTE: the pubkey field in this structure is ignored in favor of my_key below
    int64_t session_timeout;                 // how long the session is valid
    char* session_password;
 
    // key information
+   // NOTE: this field does not change over the course of the ms_client structure's lifetime.
+   // you can use it without locking, as long as you don't destroy it.
    EVP_PKEY* my_key;
 
    // volume public key

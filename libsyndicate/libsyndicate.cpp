@@ -2377,7 +2377,7 @@ ssize_t md_metadata_update_text2( struct md_syndicate_conf* conf, char** buf, ve
 }
 
 // convert an md_entry to an ms_entry
-int md_entry_to_ms_entry( struct md_syndicate_conf* conf, ms::ms_entry* msent, struct md_entry* ent ) {
+int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
 
    if( ent->url == NULL ) {
       errorf("%s", "ent->url == NULL\n");
@@ -2397,7 +2397,7 @@ int md_entry_to_ms_entry( struct md_syndicate_conf* conf, ms::ms_entry* msent, s
    msent->set_type( ent->type == MD_ENTRY_FILE ? ms::ms_entry::MS_ENTRY_TYPE_FILE : ms::ms_entry::MS_ENTRY_TYPE_DIR );
    msent->set_path( string(path_sane) );
    msent->set_owner( ent->owner );
-   msent->set_acting_owner( ent->acting_owner );
+   msent->set_coordinator( ent->coordinator );
    msent->set_volume( ent->volume );
    msent->set_mode( ent->mode );
    msent->set_ctime_sec( ent->ctime_sec );
@@ -2416,7 +2416,7 @@ int md_entry_to_ms_entry( struct md_syndicate_conf* conf, ms::ms_entry* msent, s
 
 
 // convert ms_entry to md_entry
-int ms_entry_to_md_entry( struct md_syndicate_conf* conf, const ms::ms_entry& msent, struct md_entry* ent ) {
+int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent ) {
    memset( ent, 0, sizeof(struct md_entry) );
 
    ent->url = strdup( msent.url().c_str() );
@@ -2426,7 +2426,7 @@ int ms_entry_to_md_entry( struct md_syndicate_conf* conf, const ms::ms_entry& ms
    md_sanitize_path( ent->path );
    
    ent->owner = msent.owner();
-   ent->acting_owner = msent.acting_owner();
+   ent->coordinator = msent.coordinator();
    ent->volume = msent.volume();
    ent->mode = msent.mode();
    ent->mtime_sec = msent.mtime_sec();
@@ -2459,7 +2459,7 @@ ssize_t md_metadata_update_text3( struct md_syndicate_conf* conf, char** buf, st
 
       ms::ms_entry* ms_ent = ms_up->mutable_entry();
 
-      md_entry_to_ms_entry( conf, ms_ent, &update->ent );
+      md_entry_to_ms_entry( ms_ent, &update->ent );
    }
 
    string text;
@@ -3242,6 +3242,7 @@ int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_ver
       bool has_block = true;
       bool has_file_version = true;
       bool is_manifest = false;
+      bool valid = true;
 
       // is the leaf a manifest?
       if( strncmp( leaf + 1, "manifest", strlen("manifest") ) == 0 ) {
@@ -3265,10 +3266,36 @@ int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_ver
                   manifest_timestamp->tv_sec = mts_sec;
                   manifest_timestamp->tv_nsec = mts_nsec;
 
+                  *block_id = INVALID_BLOCK_ID;
+                  *block_version = -1;
+                  
                   *leaf = 0;
                }
+               else {
+                  // invalid
+                  valid = false;
+               }
+            }
+            else {
+               // invalid
+               valid = false;
             }
          }
+         else {
+            // invalid
+            valid = false;
+         }
+      }
+      if( !valid ) {
+         // bad formatting
+         *file_path = NULL;
+         *file_version = -1;
+         *block_id = INVALID_BLOCK_ID;
+         *block_version = -1;
+         manifest_timestamp->tv_sec = -1;
+         manifest_timestamp->tv_nsec = -1;
+         free( url_path );
+         return -EINVAL;
       }
 
       // is the leaf a block (or versioned block)?
@@ -3373,6 +3400,8 @@ int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_ver
       *file_version = -1;
       *block_id = INVALID_BLOCK_ID;
       *block_version = -1;
+      manifest_timestamp->tv_sec = -1;
+      manifest_timestamp->tv_nsec = -1;
       free( url_path );
       return -EINVAL;
    }
@@ -3656,6 +3685,7 @@ int md_init( int gateway_type,
 
    ms_client_wlock( client );
    conf->owner = client->owner_id;
+   conf->gateway = client->gateway_id;
    conf->volume_owner = client->volume_owner_id;
    conf->volume = client->volume_id;
    conf->blocking_factor = client->blocksize;
@@ -3847,7 +3877,6 @@ int md_openssl_error() {
    return 0;
 }
 
-
 // verify a message, given a base64-encoded signature
 int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len ) {
    char* sig_bin = NULL;
@@ -3897,7 +3926,7 @@ int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, cha
 // sign a message
 // on success, populate sigb64 and sigb64len with the base64-encoded signature and length, respectively
 int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len ) {
-   
+
    // sign this with SHA256
    const EVP_MD* sha256 = EVP_sha256();
 
@@ -3922,7 +3951,7 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
    // allocate the signature
    unsigned char* sig_bin = CALLOC_LIST( unsigned char, EVP_PKEY_size( pkey ) );
    unsigned int sig_bin_len;
-   
+
    rc = EVP_SignFinal( mdctx, sig_bin, &sig_bin_len, pkey );
    if( rc <= 0 ) {
       errorf("EVP_SignFinal rc = %d\n", rc );
@@ -3950,5 +3979,3 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
 
    return 0;
 }
-
-

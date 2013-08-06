@@ -312,6 +312,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    Generate a session certificate from a SyndicateUser account for a UG.
    """
 
+   
    OPENID_PROVIDER_NAME = "VICCI"
    OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
    OPENID_PROVIDER_AUTH_HANDLER = "https://www.vicci.org/id-allow"
@@ -320,7 +321,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    OPENID_PROVIDER_PASSWORD_FIELD = "password"
    OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
    OPENID_PROVIDER_RESPONSE_METHOD = "POST"
-
+   
    """
    OPENID_PROVIDER_NAME = "localhost"
    OPENID_PROVIDER_URL = "http://localhost:8081/id/"

@@ -197,6 +197,8 @@ int fs_entry_set_mod_time( struct fs_core* core, char const* fs_path, struct tim
 static int fs_entry_do_stat( struct fs_core* core, struct fs_entry* fent, struct stat* sb ) {
    int rc = 0;
 
+   memset( sb, 0, sizeof(sb) );
+   
    sb->st_dev = 0;
    //sb->st_ino = (ino_t)fent;
 
@@ -239,13 +241,17 @@ static int fs_entry_do_stat( struct fs_core* core, struct fs_entry* fent, struct
 
 
 // stat
-int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uint64_t user, uint64_t volume ) {
+int fs_entry_stat_extended( struct fs_core* core, char const* path, struct stat* sb, bool* is_local, uint64_t user, uint64_t volume, bool revalidate ) {
 
-   // revalidate
-   int rc = fs_entry_revalidate_path( core, path );
-   if( rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
-      return -EREMOTEIO;
+   int rc = 0;
+   
+   if( revalidate ) {
+      // revalidate
+      rc = fs_entry_revalidate_path( core, path );
+      if( rc != 0 ) {
+         errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
+         return -EREMOTEIO;
+      }
    }
    
    int err = 0;
@@ -261,9 +267,19 @@ int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uint
 
    // have entry read-locked
    fs_entry_do_stat( core, fent, sb );
+
+   if( is_local ) {
+      *is_local = URL_LOCAL( fent->url );
+   }
+   
    fs_entry_unlock( fent );
 
    return 0;
+}
+
+// stat
+int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uint64_t user, uint64_t volume ) {
+   return fs_entry_stat_extended( core, path, sb, NULL, user, volume, true );
 }
 
 

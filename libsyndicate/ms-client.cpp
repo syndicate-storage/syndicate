@@ -96,7 +96,6 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf ) {
    client->updates = new update_set();
    client->conf = conf;
    client->deadlines = new deadline_queue();
-   client->session_cred = NULL;
 
    // uploader thread
    client->running = true;
@@ -196,6 +195,7 @@ int ms_client_destroy( struct ms_client* client ) {
    if( client->UG_creds != NULL ) {
       for( int i = 0; client->UG_creds[i] != NULL; i++ ) {
          UG_cred_free( client->UG_creds[i] );
+         free( client->UG_creds[i] );
       }
       free( client->UG_creds );
    }
@@ -229,11 +229,6 @@ int ms_client_destroy( struct ms_client* client ) {
 
    if( client->my_key )
       EVP_PKEY_free( client->my_key );
-
-   if( client->session_cred ) {
-      UG_cred_free( client->session_cred );
-      free( client->session_cred );
-   }
       
    delete client->updates;
    delete client->deadlines;
@@ -979,6 +974,10 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t user_id
    // find the gateway
    for( int i = 0; client->UG_creds[i] != NULL; i++ ) {
       if( client->UG_creds[i]->gateway_id == gateway_id && client->UG_creds[i]->user_id == user_id ) {
+         if( client->UG_creds[i]->pubkey == NULL ) {
+            dbprintf("WARN: No public key for Gateway %s\n", client->UG_creds[i]->name );
+            continue;
+         }
          
          int rc = md_verify_signature( client->UG_creds[i]->pubkey, msg, msg_len, sigb64, sigb64_len );
 
@@ -1113,7 +1112,20 @@ int ms_client_load_cred( struct UG_cred* cred, const ms::ms_volume_gateway_cred*
    cred->name = strdup( ms_cred->name().c_str() );
    cred->hostname = strdup( ms_cred->host().c_str() );
    cred->portnum = ms_cred->port();
-   return ms_client_load_pubkey( &cred->pubkey, ms_cred->public_key().c_str() );
+
+   if( strcmp( ms_cred->public_key().c_str(), "NONE" ) == 0 ) {
+      // no public key for this gateway on the MS
+      dbprintf("WARN: No public key for Gateway %s\n", cred->name );
+      cred->pubkey = NULL;
+      return 0;
+   }
+   else {
+      int rc = ms_client_load_pubkey( &cred->pubkey, ms_cred->public_key().c_str() );
+      if( rc != 0 ) {
+         errorf("ms_client_load_pubkey(Gateway %s) rc = %d\n", cred->name, rc );
+      }
+      return rc;
+   }
 }
 
 
@@ -1187,6 +1199,7 @@ int ms_client_load_volume_metadata( struct ms_client* client, ms::ms_volume_meta
    curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, client->userpass );
 
    client->owner_id = volume_md->cred().owner_id();
+   client->gateway_id = volume_md->cred().gateway_id();
    client->volume_owner_id = volume_md->owner_id();
    client->volume_id = volume_md->volume_id();
    client->blocksize = volume_md->blocksize();
@@ -1215,16 +1228,8 @@ int ms_client_load_volume_metadata( struct ms_client* client, ms::ms_volume_meta
    client->RG_version = RG_version;
    client->session_timeout = volume_md->session_timeout();
 
-   if( client->session_cred ) {
-      UG_cred_free( client->session_cred );
-   }
-   else {
-      client->session_cred = CALLOC_LIST( struct UG_cred, 1 );
-   }
-
-   memcpy( client->session_cred, &cred, sizeof(cred) );
-
    ms_client_view_unlock( client );
+   UG_cred_free( &cred );
 
    return rc;
 }
@@ -1963,27 +1968,117 @@ static int ms_client_send( struct ms_client* client, char const* data, size_t le
 }
 
 
+// convert an update_set into a protobuf
+static int ms_client_serialize_update_set( update_set* updates, ms::ms_updates* ms_updates ) {
+   // populate the protobuf
+   for( update_set::iterator itr = updates->begin(); itr != updates->end(); itr++ ) {
+
+      struct md_update* update = &itr->second;
+      
+      ms::ms_update* ms_up = ms_updates->add_updates();
+
+      ms_up->set_type( update->op );
+
+      ms::ms_entry* ms_ent = ms_up->mutable_entry();
+
+      md_entry_to_ms_entry( ms_ent, &update->ent );
+   }
+
+   ms_updates->set_signature( string("") );
+   return 0;
+}
+
+
+// convert an update set to a string
+ssize_t ms_client_update_set_to_string( ms::ms_updates* ms_updates, char** update_text ) {
+   string update_bits;
+   bool valid;
+
+   try {
+      valid = ms_updates->SerializeToString( &update_bits );
+   }
+   catch( exception e ) {
+      errorf("%s", "failed to serialize update set\n");
+      return -EINVAL;
+   }
+
+   if( !valid ) {
+      errorf("%s", "failed ot serialize update set\n");
+      return -EINVAL;
+   }
+
+   *update_text = CALLOC_LIST( char, update_bits.size() + 1 );
+   memcpy( *update_text, update_bits.data(), update_bits.size() );
+   return (ssize_t)update_bits.size();
+}
+
+
+// sign an update set
+static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) {
+   ms_updates->set_signature( string("") );
+
+   string update_bits;
+   bool valid;
+   
+   try {
+      valid = ms_updates->SerializeToString( &update_bits );
+   }
+   catch( exception e ) {
+      errorf("%s", "failed to serialize update set\n");
+      return -EINVAL;
+   }
+
+   if( !valid ) {
+      errorf("%s", "failed to serialize update set\n");
+      return -EINVAL;
+   }
+
+   // sign this message
+   char* sigb64 = NULL;
+   size_t sigb64_len = 0;
+
+   int rc = md_sign_message( pkey, update_bits.data(), update_bits.size(), &sigb64, &sigb64_len );
+   if( rc != 0 ) {
+      errorf("md_sign_message rc = %d\n", rc );
+      return rc;
+   }
+
+   ms_updates->set_signature( string(sigb64, sigb64_len) );
+   free( sigb64 );
+   return 0;
+}
+
+
 // post a record on the MS, synchronously
 static int ms_client_post( struct ms_client* client, int op, struct md_entry* ent ) {
    struct md_update up;
    up.op = op;
    memcpy( &up.ent, ent, sizeof(struct md_entry) );
-   
-   // send the update
-   struct md_update* update_list[] = {
-      &up,
-      NULL
-   };
 
+   update_set updates;
+   updates[ md_hash( ent->path ) ] = up;
+
+   ms::ms_updates ms_updates;
+   ms_client_serialize_update_set( &updates, &ms_updates );
+
+   // sign it
+   int rc = ms_client_sign_updates( client->my_key, &ms_updates );
+   if( rc != 0 ) {
+      errorf("ms_client_sign_updates rc = %d\n", rc );
+      return rc;
+   }
+
+   // make it a string
    char* update_text = NULL;
-   ssize_t update_text_len = md_metadata_update_text( client->conf, &update_text, update_list );
+   ssize_t update_text_len = ms_client_update_set_to_string( &ms_updates, &update_text );
 
    if( update_text_len < 0 ) {
-      errorf("md_metadata_update_text rc = %zd\n", update_text_len );
+      errorf("ms_client_update_set_to_string rc = %zd\n", update_text_len );
       return (int)update_text_len;
    }
 
-   int rc = ms_client_send( client, update_text, update_text_len );
+   // send it off
+   rc = ms_client_send( client, update_text, update_text_len );
    
    free( update_text );
    
@@ -2042,7 +2137,8 @@ static ssize_t serialize_update_set( struct md_syndicate_conf* conf, update_set*
 
 
 
-// NOTE: client must be write-locked before calling this!
+// send a batch of updates.
+// client must NOT be locked in any way.
 static int ms_client_send_updates( struct ms_client* client, update_set* updates ) {
 
    int rc = 0;
@@ -2053,15 +2149,27 @@ static int ms_client_send_updates( struct ms_client* client, update_set* updates
       return 0;
    }
 
-   // otherwise, upload the updates.
+   // pack the updates into a protobuf
+   ms::ms_updates ms_updates;
+   ms_client_serialize_update_set( updates, &ms_updates );
+
+   // sign it
+   rc = ms_client_sign_updates( client->my_key, &ms_updates );
+   if( rc != 0 ) {
+      errorf("ms_client_sign_updates rc = %d\n", rc );
+      return rc;
+   }
+
+   // make it a string
    char* update_text = NULL;
-   ssize_t update_text_len = serialize_update_set( client->conf, updates, &update_text );
+   ssize_t update_text_len = ms_client_update_set_to_string( &ms_updates, &update_text );
 
    if( update_text_len < 0 ) {
-      errorf("serialize_update_set rc = %zd\n", update_text_len );
+      errorf("ms_client_update_set_to_string rc = %zd\n", update_text_len );
       return (int)update_text_len;
    }
 
+   // send it off
    rc = ms_client_send( client, update_text, update_text_len );
 
    free( update_text );
@@ -2289,7 +2397,7 @@ int ms_client_resolve_path( struct ms_client* client, char const* path, vector<s
             struct md_entry ent;
             memset( &ent, 0, sizeof(ent));
             
-            int rc = ms_entry_to_md_entry( conf, entry, &ent );
+            int rc = ms_entry_to_md_entry( entry, &ent );
             if( rc != 0 ) {
                errorf("ms_entry_to_md_entry(%s) rc = %d\n", entry.path().c_str(), rc );
                break;
@@ -2310,7 +2418,7 @@ int ms_client_resolve_path( struct ms_client* client, char const* path, vector<s
             struct md_entry ent;
             memset( &ent, 0, sizeof(ent));
             
-            int rc = ms_entry_to_md_entry( conf, entry, &ent );
+            int rc = ms_entry_to_md_entry( entry, &ent );
             if( rc != 0 ) {
                errorf("ms_entry_to_md_entry(%s) rc = %d\n", entry.path().c_str(), rc );
                break;
