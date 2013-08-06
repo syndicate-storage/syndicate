@@ -54,6 +54,8 @@ public class IPCInterfaceClient implements Closeable {
     }
 
     public synchronized IPCStat getStat(String path) throws IOException {
+        LOG.info("getStat : " + path);
+        
         // send
         IPCMessageBuilder.sendStringsMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_GET_STAT, path);
         // recv
@@ -61,6 +63,8 @@ public class IPCInterfaceClient implements Closeable {
     }
 
     public synchronized void delete(String path) throws IOException {
+        LOG.info("delete : " + path);
+        
         // send
         IPCMessageBuilder.sendStringsMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_DELETE, path);
         // recv
@@ -68,6 +72,8 @@ public class IPCInterfaceClient implements Closeable {
     }
 
     public synchronized void removeDirectory(String path) throws IOException {
+        LOG.info("removeDirectory : " + path);
+        
         // send
         IPCMessageBuilder.sendStringsMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_REMOVE_DIRECTORY, path);
         // recv
@@ -75,6 +81,8 @@ public class IPCInterfaceClient implements Closeable {
     }
 
     public synchronized void rename(String path, String newPath) throws IOException {
+        LOG.info("rename : " + path + ", " + newPath);
+        
         // send
         IPCMessageBuilder.sendStringsMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_RENAME, path, newPath);
         // recv
@@ -82,6 +90,8 @@ public class IPCInterfaceClient implements Closeable {
     }
 
     public synchronized void mkdir(String path) throws IOException {
+        LOG.info("mkdir : " + path);
+        
         // send
         IPCMessageBuilder.sendStringsMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_MKDIR, path);
         // recv
@@ -89,6 +99,8 @@ public class IPCInterfaceClient implements Closeable {
     }
 
     public synchronized String[] readDirectoryEntries(String path) throws IOException {
+        LOG.info("readDirectoryEntries : " + path);
+        
         // send
         IPCMessageBuilder.sendStringsMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_READ_DIRECTORY, path);
         // recv
@@ -96,6 +108,8 @@ public class IPCInterfaceClient implements Closeable {
     }
 
     public synchronized IPCFileInfo getFileHandle(String path) throws IOException {
+        LOG.info("getFileHandle : " + path);
+        
         // send
         IPCMessageBuilder.sendStringsMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_GET_FILE_HANDLE, path);
         // recv
@@ -103,6 +117,8 @@ public class IPCInterfaceClient implements Closeable {
     }
 
     public synchronized IPCStat createNewFile(String path) throws IOException {
+        LOG.info("createNewFile : " + path);
+        
         // send
         IPCMessageBuilder.sendStringsMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_CREATE_NEW_FILE, path);
         // recv
@@ -110,6 +126,8 @@ public class IPCInterfaceClient implements Closeable {
     }
 
     public synchronized int readFileData(IPCFileInfo fileinfo, long fileoffset, byte[] buffer, int offset, int size) throws IOException {
+        LOG.info("readFileData : " + fileoffset + ", " + offset + ", " + size);
+        
         // send
         IPCMessageBuilder.sendFileReadMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_READ_FILEDATA, fileinfo, fileoffset, size);
         // recv
@@ -117,6 +135,8 @@ public class IPCInterfaceClient implements Closeable {
     }
 
     public synchronized void writeFileData(IPCFileInfo fileinfo, long fileoffset, byte[] buffer, int offset, int size) throws IOException {
+        LOG.info("writeFileData : " + fileoffset + ", " + offset + ", " + size);
+        
         // send
         IPCMessageBuilder.sendFileWriteMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_WRITE_FILE_DATA, fileinfo, fileoffset, buffer, offset, size);
         // recv
@@ -124,6 +144,8 @@ public class IPCInterfaceClient implements Closeable {
     }
 
     public synchronized void flush(IPCFileInfo fileinfo) throws IOException {
+        LOG.info("flush");
+        
         // send
         IPCMessageBuilder.sendFileInfoMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_FLUSH, fileinfo);
         // recv
@@ -131,6 +153,8 @@ public class IPCInterfaceClient implements Closeable {
     }
 
     public synchronized void closeFileHandle(IPCFileInfo fileinfo) throws IOException {
+        LOG.info("closeFileHandle");
+        
         // send
         IPCMessageBuilder.sendFileInfoMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_CLOSE_FILE_HANDLE, fileinfo);
         // recv

@@ -59,6 +59,7 @@ public class IPCMessageBuilder {
     }
     
     private static void sendBytesMessage(DataOutputStream dos, IPCMessageOperations op, List<byte[]> messages) throws IOException {
+        // use big endian
         dos.writeInt(op.getCode());
         
         int sum = 0;
@@ -67,6 +68,7 @@ public class IPCMessageBuilder {
         }
         
         // total message size
+        // use big endian
         dos.writeInt(sum + (messages.size() * 4));
         // number of messages
         dos.writeInt(messages.size());
