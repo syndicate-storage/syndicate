@@ -116,14 +116,9 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
 
    // parse the url_path into its constituent components
-   char* fs_path = NULL;
-   int64_t file_version = -1;
-   uint64_t block_id = INVALID_BLOCK_ID;
-   int64_t block_version = -1;
-   struct timespec manifest_timestamp;
-   bool staging = false;
-
-   int rc = http_GET_preliminaries( resp, url, md_con_data->http, &fs_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
+   struct http_request_data reqdat;
+   
+   int rc = http_parse_request( md_con_data->http, resp, &reqdat, url );
    if( rc < 0 ) {
       // error!
       return resp;
@@ -135,12 +130,12 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
    memset(&sb, 0, sizeof(sb));
 
    char* redirect_url = NULL;
-   rc = http_get_redirect_url( &redirect_url, state, fs_path, file_version, block_id, block_version, &manifest_timestamp, &sb, staging );
+   rc = http_process_redirect( state, &redirect_url, &sb, &reqdat );
 
    // error?
    if( rc < 0 ) {
       char buf[100];
-      snprintf(buf, 100, "HEAD http_get_redirect_url rc = %d\n", rc );
+      snprintf(buf, 100, "HEAD http_process_redirect rc = %d\n", rc );
       http_io_error_resp( resp, rc, buf );
       return resp;
    }
@@ -152,9 +147,9 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
       char* url_path = md_path_from_url( redirect_url );
 
       free( redirect_url );
-      free( fs_path );
+      http_request_data_free( &reqdat );
 
-      rc = http_GET_preliminaries( resp, url_path, md_con_data->http, &fs_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
+      rc = http_parse_request( md_con_data->http, resp, &reqdat, url_path );
 
       free( url_path );
 
@@ -184,15 +179,82 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
       char const* md_str = "NOT YET IMPLEMENTED\n";
       md_create_HTTP_response_ram_nocopy( resp, "text/plain", 200, md_str, strlen(md_str) + 1 );
    }
+   
+   http_request_data_free( &reqdat );
 
    return resp;
 }
 
 
-// HTTP GET handler
-struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data* md_con_data ) {
+// GET a directory
+static int httpd_GET_dir( struct md_HTTP_response* resp, struct md_HTTP_connection_data* md_con_data, struct http_request_data* reqdat ) {
 
-   char* url = md_con_data->url_path;
+   struct syndicate_state* state = syndicate_get_state();
+
+   uint64_t owner = 0;
+   if( md_con_data->user )
+      owner = md_con_data->user->uid;
+   else
+      owner = state->conf.owner;
+
+   int rc = 0;
+   struct fs_dir_handle* fdh = fs_entry_opendir( state->core, reqdat->fs_path, owner, state->conf.volume, &rc );
+   if( fdh != NULL && rc == 0 ) {
+      struct fs_dir_entry** dirents = fs_entry_readdir( state->core, fdh, &rc );
+
+      fs_entry_closedir( state->core, fdh );
+      free( fdh );
+
+      if( rc == 0 && dirents ) {
+         stringstream sts;
+
+         for( int i = 0; dirents[i] != NULL; i++ ) {
+            // convert to public URL
+            if( dirents[i]->ftype == FTYPE_FILE && URL_LOCAL( dirents[i]->data.url ) ) {
+               // convert to public file URL
+               free( dirents[i]->data.url );
+               dirents[i]->data.url = fs_entry_public_file_url( state->core, dirents[i]->data.path, dirents[i]->data.version );
+            }
+            else if( URL_LOCAL( dirents[i]->data.url ) ) {
+               // convert to public data URL...on the metadata server
+               free( dirents[i]->data.url );
+               dirents[i]->data.url = fs_entry_public_dir_url( state->core, dirents[i]->data.path );
+            }
+
+            //char* tmp = md_serialize_entry( &dirents[i]->data, NULL );
+            char const* tmp = "USE PROTOBUFS";
+            sts << tmp << "\n";
+            //free( tmp );
+         }
+
+         string ret = sts.str();
+         md_create_HTTP_response_ram( resp, "text/plain", 200, ret.c_str(), ret.size() + 1 );
+      }
+      else {
+         char buf[100];
+         snprintf( buf, 100, "GET fs_entry_readdir rc = %d\n", rc );
+         http_io_error_resp( resp, rc, buf );
+      }
+
+      if( dirents ) {
+         fs_dir_entry_destroy_all( dirents );
+         free( dirents );
+      }
+   }
+   else {
+      char buf[100];
+      snprintf(buf, 100, "GET fs_entry_opendir rc = %d\n", rc );
+      http_io_error_resp( resp, rc, buf );
+   }
+
+   // handled!
+   return 0;
+}
+
+
+// GET a file block
+static int httpd_GET_file_blocks( struct md_HTTP_response* resp, struct md_HTTP_connection_data* md_con_data, struct http_request_data* reqdat, struct stat* sb ) {
+
    struct syndicate_state* state = syndicate_get_state();
    struct md_HTTP_header** client_headers = md_con_data->headers;
 
@@ -202,127 +264,19 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
    else
       owner = state->conf.owner;
 
-   dbprintf( "client_HTTP_GET_handler on %s\n", url);
-
-   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
-
-   // parse the url_path into its constituent components
-   char* fs_path = NULL;
-   int64_t file_version = -1;
-   uint64_t block_id = INVALID_BLOCK_ID;
-   int64_t block_version = -1;
-   struct timespec manifest_timestamp;
-   bool staging = false;
-   
-   int rc = http_GET_preliminaries( resp, url, md_con_data->http, &fs_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
-   if( rc < 0 ) {
-      // error!
-      return resp;
-   }
-
-   // status of requested object
-   struct stat sb;
-   memset(&sb, 0, sizeof(sb));
-
-   char* redirect_url = NULL;
-   int redirect_rc = http_get_redirect_url( &redirect_url, state, fs_path, file_version, block_id, block_version, &manifest_timestamp, &sb, staging );
-
-   // error?
-   if( redirect_rc < 0 ) {
-      errorf( "http_get_redirect_url rc = %d\n", redirect_rc );
-      free( fs_path );
-
-      char buf[100];
-      snprintf(buf, 100, "GET http_get_redirect_url rc = %d\n", redirect_rc );
-      http_io_error_resp( resp, redirect_rc, buf );
-      return resp;
-   }
-
-   if( S_ISDIR( sb.st_mode ) ) {
-      // request for directory listing
-      int rc = 0;
-      struct fs_dir_handle* fdh = fs_entry_opendir( state->core, fs_path, owner, state->conf.volume, &rc );
-      if( fdh != NULL && rc == 0 ) {
-         struct fs_dir_entry** dirents = fs_entry_readdir( state->core, fdh, &rc );
-         
-         fs_entry_closedir( state->core, fdh );
-         free( fdh );
-
-         if( rc == 0 && dirents ) {
-            stringstream sts;
-
-            for( int i = 0; dirents[i] != NULL; i++ ) {
-               // convert to public URL
-               if( dirents[i]->ftype == FTYPE_FILE && URL_LOCAL( dirents[i]->data.url ) ) {
-                  // convert to public file URL
-                  free( dirents[i]->data.url );
-                  dirents[i]->data.url = fs_entry_public_file_url( state->core, dirents[i]->data.path, dirents[i]->data.version );
-               }
-               else if( URL_LOCAL( dirents[i]->data.url ) ) {
-                  // convert to public data URL...on the metadata server
-                  free( dirents[i]->data.url );
-                  dirents[i]->data.url = fs_entry_public_dir_url( state->core, dirents[i]->data.path );
-               }
-                  
-               //char* tmp = md_serialize_entry( &dirents[i]->data, NULL );
-               char const* tmp = "USE PROTOBUFS";
-               sts << tmp << "\n";
-               //free( tmp );
-            }
-
-            string ret = sts.str();
-            md_create_HTTP_response_ram( resp, "text/plain", 200, ret.c_str(), ret.size() + 1 );
-         }
-         else {
-            char buf[100];
-            snprintf( buf, 100, "GET fs_entry_readdir rc = %d\n", rc );
-            http_io_error_resp( resp, rc, buf );
-         }
-
-         if( dirents ) {
-            fs_dir_entry_destroy_all( dirents );
-            free( dirents );
-         }
-      }
-      else {
-         char buf[100];
-         snprintf(buf, 100, "GET fs_entry_opendir rc = %d\n", rc );
-         http_io_error_resp( resp, rc, buf );
-      }
-      free( fs_path );
-      return resp;
-   }
-   
-   // got a new URL? re-extract the information
-   if( redirect_rc == 0 ) {
-      // we would need to redirect; re-extract the information
-      
-      char* url_path = md_path_from_url( redirect_url );
-
-      free( redirect_url );
-      free( fs_path );
-      
-      rc = http_GET_preliminaries( resp, url_path, md_con_data->http, &fs_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
-      
-      free( url_path );
-      
-      if( rc < 0 ) {
-         return resp;
-      }
-   }
-
    // request for a file
    // begin streaming the data back
    int err = 0;
-   struct fs_file_handle* fh = fs_entry_open( state->core, fs_path, NULL, owner, state->conf.volume, O_RDONLY, ~state->conf.usermask, &err );
+   struct fs_file_handle* fh = fs_entry_open( state->core, reqdat->fs_path, NULL, owner, state->conf.volume, O_RDONLY, ~state->conf.usermask, &err );
    if( fh == NULL ) {
-      errorf( "could not open %s, rc = %d\n", fs_path, err );
+      errorf( "could not open %s, rc = %d\n", reqdat->fs_path, err );
 
       char buf[100];
       snprintf(buf, 100, "GET fs_entry_open rc = %d\n", err );
       http_io_error_resp( resp, err, buf );
-      free( fs_path );
-      return resp;
+
+      // handled!
+      return 0;
    }
 
    // stream it back
@@ -334,21 +288,21 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
    uint64_t start_range = 0;
    uint64_t end_range = 0;
    int status = 200;
-   off_t size = sb.st_size;
+   off_t size = sb->st_size;
 
    // was this a byte-range request?
    for( int i = 0; client_headers[i] != NULL; i++ ) {
       if( strcasecmp( client_headers[i]->header, "Content-Range" ) == 0 ) {
          if( parse_byterange( client_headers[i]->value, &start_range, &end_range ) ) {
-            if( start_range < (unsigned)sb.st_size ) {
-               end_range = MIN( (unsigned)sb.st_size, end_range );
+            if( start_range < (unsigned)sb->st_size ) {
+               end_range = MIN( (unsigned)sb->st_size, end_range );
                status = 206;
                get_data->offset = start_range;
                size = end_range - start_range + 1;
             }
             else {
                char buf[200];
-               snprintf(buf, 200, "GET out of range (%" PRIu64 " >= %" PRId64 ")\n", start_range, sb.st_size );
+               snprintf(buf, 200, "GET out of range (%" PRIu64 " >= %" PRId64 ")\n", start_range, sb->st_size );
                md_create_HTTP_response_ram_static( resp, "text/plain", 416, buf, strlen(buf) + 1 );
                status = 416;
             }
@@ -358,10 +312,87 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
    }
 
    if( status < 400 ) {
+      // success! (otherwise, already handled)
       dbprintf( "opened %s, will read\n", fh->path );
       md_create_HTTP_response_stream( resp, "application/octet-stream", status, size, state->conf.blocking_factor, httpd_GET_stream, get_data, http_GET_cleanup );
    }
-   free( fs_path );
+
+   // handled!
+   return 0;
+}
+
+
+// HTTP GET handler
+struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data* md_con_data ) {
+
+   char* url = md_con_data->url_path;
+   struct syndicate_state* state = syndicate_get_state();
+
+   dbprintf( "client_HTTP_GET_handler on %s\n", url);
+
+   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
+
+   // parse the url_path into its constituent components
+   struct http_request_data reqdat;
+   
+   int rc = http_parse_request( md_con_data->http, resp, &reqdat, url );
+   if( rc < 0 ) {
+      // error!
+      return resp;
+   }
+
+   // status of requested object
+   struct stat sb;
+   memset(&sb, 0, sizeof(sb));
+
+   char* redirect_url = NULL;
+
+   int redirect_rc = http_process_redirect( state, &redirect_url, &sb, &reqdat );
+
+   // error?
+   if( redirect_rc < 0 ) {
+      errorf( "http_process_redirect rc = %d\n", redirect_rc );
+
+      http_request_data_free( &reqdat );
+
+      char buf[100];
+      snprintf(buf, 100, "GET http_process_redirect rc = %d\n", redirect_rc );
+      http_io_error_resp( resp, redirect_rc, buf );
+      return resp;
+   }
+
+   if( S_ISDIR( sb.st_mode ) ) {
+      // request for directory listing
+      httpd_GET_dir( resp, md_con_data, &reqdat );
+
+      http_request_data_free( &reqdat );
+      return resp;
+   }
+   
+   // got a new URL? re-extract the information
+   if( redirect_rc == 0 ) {
+      // we would need to redirect; re-extract the information
+      
+      char* url_path = md_path_from_url( redirect_url );
+
+      free( redirect_url );
+      http_request_data_free( &reqdat );
+      
+      rc = http_parse_request( md_con_data->http, resp, &reqdat, url_path );
+      
+      free( url_path );
+      
+      if( rc < 0 ) {
+         http_request_data_free( &reqdat );
+         return resp;
+      }
+   }
+
+   // handle a file
+   httpd_GET_file_blocks( resp, md_con_data, &reqdat, &sb );
+
+   http_request_data_free( &reqdat );
+   
    return resp;
 }
 

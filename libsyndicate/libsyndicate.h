@@ -126,7 +126,7 @@ struct md_entry {
    int32_t max_read_freshness;      // how long is this entry fresh until it needs revalidation?
    int32_t max_write_freshness;     // how long can we delay publishing this entry?
    uint64_t owner;         // uid of the owner
-   uint64_t acting_owner;  // uid of the acting owner
+   uint64_t coordinator;  // gateway id of the write coordinator
    uint64_t volume;        // id of the volume
    mode_t mode;         // file permission bits
    off_t size;          // size of the file
@@ -342,7 +342,7 @@ extern char const* MD_HTTP_DEFAULT_MSG;
 
 // server configuration
 struct md_syndicate_conf {
-   // client fields
+   // UG fields
    int64_t default_read_freshness;                    // default number of milliseconds a file can age before needing refresh for reads
    int64_t default_write_freshness;                   // default number of milliseconds a file can age before needing refresh for writes
    char* logfile_path;                                // path to the logfile
@@ -380,22 +380,28 @@ struct md_syndicate_conf {
    char* volume_public_key_path;                      // if trust_volume_pubkey is false, then this contains  the path to the PEM-encoded public key for the Volume
    char* gateway_key_path;                            // path to PEM-encoded user-given public/private key for this gateway
    
-   // runtime fields
+   // MS-related fields
    char* metadata_url;                                // URL (or path on disk) where to get the metadata
    char* ms_username;                                 // MS username for this SyndicateUser
    char* ms_password;                                 // MS password for this SyndicateUser
    uint64_t blocking_factor;                          // how many bytes blocks will be
    uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
-   mode_t usermask;                                   // umask of the user running this program
+   uint64_t gateway;                                  // what is the gateway ID in Syndicate?
    uint64_t volume;                                   // volume ID
    uint64_t volume_owner;                             // user ID of the volume owner
-   char* mountpoint;                                  // absolute path to the place where the metadata server is mounted
-   char* hostname;                                    // what's our hostname?
-   char* ag_driver;				      // AG gatway driver that encompasses gateway callbacks
+
+   // security fields
    char* volume_public_key;
    char* gateway_key;
    char* server_key;
    char* server_cert;
+
+   // misc
+   mode_t usermask;                                   // umask of the user running this program
+   char* mountpoint;                                  // absolute path to the place where the metadata server is mounted
+   char* hostname;                                    // what's our hostname?
+   char* ag_driver;				      // AG gatway driver that encompasses gateway callbacks
+
 };
 
 
@@ -596,8 +602,8 @@ void md_sanitize_path( char* path );
 bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url );
 
 // serialization
-int md_entry_to_ms_entry( struct md_syndicate_conf* conf, ms::ms_entry* msent, struct md_entry* ent );
-int ms_entry_to_md_entry( struct md_syndicate_conf* conf, const ms::ms_entry& msent, struct md_entry* ent );
+int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent );
+int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent );
 int md_write_metadata( int fd, struct md_entry** ents );
 size_t md_metadata_line_len( struct md_entry* ent );
 char* md_to_string( struct md_entry* ent, char* buf );

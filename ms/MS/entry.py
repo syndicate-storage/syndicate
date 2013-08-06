@@ -143,7 +143,7 @@ class MSEntry( storagetypes.Object ):
    ctime_nsec = storagetypes.Integer( indexed=False )
 
    owner_id = storagetypes.Integer()
-   acting_owner_id = storagetypes.Integer()
+   coordinator_id = storagetypes.Integer()
    volume_id = storagetypes.Integer()
    mode = storagetypes.Integer( indexed=False )
 
@@ -167,7 +167,7 @@ class MSEntry( storagetypes.Object ):
       "url",
       "version",
       "owner_id",
-      "acting_owner_id",
+      "coordinator_id",
       "volume_id",
       "mtime_sec",
       "mtime_nsec",
@@ -202,7 +202,7 @@ class MSEntry( storagetypes.Object ):
       "mtime_sec",
       "mtime_nsec",
       "owner_id",
-      "acting_owner_id",
+      "coordinator_id",
       "volume_id",
       "mode",
       "size",
@@ -220,7 +220,7 @@ class MSEntry( storagetypes.Object ):
       "mtime_nsec",
       "max_read_freshness",
       "max_write_freshness",
-      "acting_owner_id"
+      "coordinator_id"
    ]
 
    # shard class
@@ -260,7 +260,7 @@ class MSEntry( storagetypes.Object ):
       pbent.mtime_sec = kwargs.get( 'mtime_sec', self.mtime_sec )
       pbent.mtime_nsec = kwargs.get( 'mtime_nsec', self.mtime_nsec )
       pbent.owner = kwargs.get( 'owner_id', self.owner_id )
-      pbent.acting_owner = kwargs.get( 'acting_owner_id', self.acting_owner_id )
+      pbent.coordinator = kwargs.get( 'coordinator_id', self.coordinator_id )
       pbent.volume = kwargs.get( 'volume_id', self.volume_id )
       pbent.mode = kwargs.get( 'mode', self.mode )
       pbent.size = kwargs.get( 'size', self.size )
@@ -291,7 +291,7 @@ class MSEntry( storagetypes.Object ):
       ret.mtime_sec = ent.mtime_sec
       ret.mtime_nsec = ent.mtime_nsec
       ret.owner_id = ent.owner
-      ret.acting_owner_id = ent.acting_owner
+      ret.coordinator_id = ent.coordinator
       ret.volume_id = ent.volume
       ret.mode = ent.mode
       ret.size = ent.size

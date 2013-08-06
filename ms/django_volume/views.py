@@ -901,7 +901,7 @@ def createvolume(request):
                               mtime_sec=now_sec,
                               mtime_nsec=now_nsec,
                               owner_id=volume.owner_id,
-                              acting_owner_id=volume.owner_id,
+                              coordinator_id=0,
                               volume_id=volume.volume_id,
                               mode=0755,
                               size=4096,

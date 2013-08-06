@@ -49,12 +49,12 @@ public class IPCFileHandle implements Closeable {
         return this.status;
     }
     
-    public int readFileData(byte[] buffer, int size, int offset, long fileoffset) throws IOException {
-        return this.client.readFileData(this.fileinfo, buffer, size, offset, fileoffset);
+    public int readFileData(long fileoffset, byte[] buffer, int offset, int size) throws IOException {
+        return this.client.readFileData(this.fileinfo, fileoffset, buffer, offset, size);
     }
     
-    public void writeFileData(byte[] buffer, int size, int offset, long fileoffset) throws IOException {
-        this.client.writeFileData(this.fileinfo, buffer, size, offset, fileoffset);
+    public void writeFileData(long fileoffset, byte[] buffer, int offset, int size) throws IOException {
+        this.client.writeFileData(this.fileinfo, fileoffset, buffer, offset, size);
     }
     
     public boolean isOpen() {
