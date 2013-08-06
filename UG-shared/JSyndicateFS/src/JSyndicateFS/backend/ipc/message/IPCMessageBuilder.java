@@ -6,7 +6,10 @@ package JSyndicateFS.backend.ipc.message;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  *
@@ -39,33 +42,23 @@ public class IPCMessageBuilder {
         }
     }
     
-    public static void sendMessage(DataOutputStream dos, IPCMessageOperations op, byte[] message) throws IOException {
-        dos.writeInt(op.getCode()); // op
-        dos.writeInt(message.length + 8); // message body (4*2 int)
-        dos.writeInt(1); // num of message
-        dos.writeInt(message.length); // message 1 length
-        dos.write(message);
-        dos.flush();
+    private static byte[] getBytesOf(int value) {
+        ByteBuffer buffer = ByteBuffer.allocate(4);
+        buffer.order(ByteOrder.BIG_ENDIAN);
+        
+        buffer.putInt(value);
+        return buffer.array();
     }
     
-    public static void sendMessage(DataOutputStream dos, IPCMessageOperations op, byte[] message, int message2, long message3) throws IOException {
-        dos.writeInt(op.getCode()); // op
-        dos.writeInt(message.length + 8 + 20); // message body (4*2 int)
-        dos.writeInt(3); // num of message
-        dos.writeInt(message.length); // message 1 length
-        dos.write(message);
-        dos.writeInt(4); // int
-        dos.writeInt(message2);
-        dos.writeInt(8); // long
-        dos.writeLong(message3);
-        dos.flush();
+    private static byte[] getBytesOf(long value) {
+        ByteBuffer buffer = ByteBuffer.allocate(8);
+        buffer.order(ByteOrder.BIG_ENDIAN);
+        
+        buffer.putLong(value);
+        return buffer.array();
     }
     
-    public static void sendMessage(DataOutputStream dos, IPCMessageOperations op, String message) throws IOException {
-        sendMessage(dos, op, message.getBytes());
-    }
-    
-    public static void sendMessage(DataOutputStream dos, IPCMessageOperations op, ArrayList<byte[]> messages) throws IOException {
+    private static void sendBytesMessage(DataOutputStream dos, IPCMessageOperations op, List<byte[]> messages) throws IOException {
         dos.writeInt(op.getCode());
         
         int sum = 0;
@@ -73,7 +66,9 @@ public class IPCMessageBuilder {
             sum += msg.length;
         }
         
-        dos.writeInt(sum + 4 + (messages.size() * 4));
+        // total message size
+        dos.writeInt(sum + (messages.size() * 4));
+        // number of messages
         dos.writeInt(messages.size());
         
         for(byte[] msg : messages) {
@@ -84,142 +79,143 @@ public class IPCMessageBuilder {
         dos.flush();
     }
     
-    public static void sendMessage(DataOutputStream dos, IPCMessageOperations op, byte[] message, byte[] message2, int size, int offset, long message3) throws IOException {
-        dos.writeInt(op.getCode()); // op
-        dos.writeInt(message.length + 8 + 4 + size + 4 + 8); // message body (4*2 int)
-        dos.writeInt(3); // num of message
-        dos.writeInt(message.length); // message 1 length
-        dos.write(message);
-        dos.writeInt(size); // size
-        dos.write(message2, offset, size);
-        dos.writeInt(8); // long
-        dos.writeLong(message3);
-        dos.flush();
+    private static List<byte[]> recvBytesMessage(DataInputStream dis, IPCMessageOperations op) throws IOException {
+        int opcode = dis.readInt();
+        if(opcode != op.getCode()) {
+            throw new IOException("OPCode is not matching : request (" + op.getCode() + "), found (" + opcode + ")");
+        }
+        
+        // must have 3 fields
+        int returncode = dis.readInt();
+        int totalMessageSize = dis.readInt();
+        int totalNumberOfMessages = dis.readInt();
+        
+        if(returncode != 0) {
+            throw new IOException(ErrorUtils.generateErrorMessage(returncode));
+        }
+        
+        int readSum = 0;
+        
+        List<byte[]> arr = new ArrayList<byte[]>();
+        
+        for(int i=0;i<totalNumberOfMessages;i++) {
+            int size = dis.readInt();
+            readSum += size;
+            byte[] message = new byte[size];
+            dis.readFully(message);
+            arr.add(message);
+        }
+        
+        if(readSum != totalMessageSize) {
+            throw new IOException("read message size is not matching with totalMessageSize in header");
+        }
+        
+        return arr;
     }
     
-    public static void sendMessage(DataOutputStream dos, IPCMessageOperations op, String... messages) throws IOException {
-        ArrayList<byte[]> arr = new ArrayList<byte[]>();
+    public static void sendStringsMessage(DataOutputStream dos, IPCMessageOperations op, String... messages) throws IOException {
+        List<byte[]> arr = new ArrayList<byte[]>();
         
         for(String str : messages) {
             arr.add(str.getBytes());
         }
-        sendMessage(dos, op, arr);
+        sendBytesMessage(dos, op, arr);
         
         arr.clear();
     }
     
-    public static void sendMessage(DataOutputStream dos, IPCMessageOperations op, IPCFileInfo fi) throws IOException {
-        sendMessage(dos, op, fi.toBytes());
-    }
-    
-    public static void sendMessage(DataOutputStream dos, IPCMessageOperations op, IPCFileInfo fi, int size, long fileoffset) throws IOException {
-        sendMessage(dos, op, fi.toBytes(), size, fileoffset);
-    }
-    
-    public static void sendMessage(DataOutputStream dos, IPCMessageOperations op, IPCFileInfo fi, byte[] buffer, int size, int bufferoffset, long fileoffset) throws IOException {
-        sendMessage(dos, op, fi.toBytes(), buffer, size, bufferoffset, fileoffset);
-    }
-    
-    private static void checkOpCode(DataInputStream dis, IPCMessageOperations op) throws IOException {
-        int opcode = dis.readInt();
+    public static void sendFileReadMessage(DataOutputStream dos, IPCMessageOperations op, IPCFileInfo fi, long fileoffset, int size) throws IOException {
+        List<byte[]> arr = new ArrayList<byte[]>();
         
-        if(opcode != op.getCode()) {
-            throw new IOException("OPCode is not matching : request (" + op.getCode() + "), found (" + opcode + ")");
-        }
+        arr.add(fi.toBytes());
+        arr.add(getBytesOf(fileoffset));
+        arr.add(getBytesOf(size));
+        
+        sendBytesMessage(dos, op, arr);
+        
+        arr.clear();
+    }
+    
+    public static void sendFileWriteMessage(DataOutputStream dos, IPCMessageOperations op, IPCFileInfo fi, long fileoffset, byte[] buffer, int bufferoffset, int size) throws IOException {
+        byte[] newarr = new byte[size];
+        System.arraycopy(buffer, bufferoffset, newarr, 0, size);
+        
+        List<byte[]> arr = new ArrayList<byte[]>();
+        
+        arr.add(fi.toBytes());
+        arr.add(getBytesOf(fileoffset));
+        arr.add(newarr);
+        
+        sendBytesMessage(dos, op, arr);
+        
+        arr.clear();
+    }
+    
+    public static void sendFileInfoMessage(DataOutputStream dos, IPCMessageOperations op, IPCFileInfo fi) throws IOException {
+        List<byte[]> arr = new ArrayList<byte[]>();
+        
+        arr.add(fi.toBytes());
+        
+        sendBytesMessage(dos, op, arr);
+        
+        arr.clear();
     }
     
     public static IPCStat readStatMessage(DataInputStream dis, IPCMessageOperations op) throws IOException {
-        checkOpCode(dis, op);
-        int returncode = dis.readInt();
-        int messageCount = dis.readInt(); // 1
-        int messageLen = dis.readInt();
+        List<byte[]> arr = recvBytesMessage(dis, op);
         
-        if(returncode != 0) {
-            throw new IOException(ErrorUtils.generateErrorMessage(returncode));
+        if(arr.size() != 1) {
+            throw new IOException("The number of message is not 1");
         }
         
-        byte[] message = new byte[messageLen];
-        int read = dis.read(message, 0, messageLen);
-        if(read != messageLen) {
-            throw new IOException("read message size is different with message len");
-        }
+        byte[] msg = arr.get(0);
         
         IPCStat stat = new IPCStat();
-        stat.fromBytes(message, 0, messageLen);
+        stat.fromBytes(msg, 0, msg.length);
         return stat;
     }
     
     public static void readResultMessage(DataInputStream dis, IPCMessageOperations op) throws IOException {
-        checkOpCode(dis, op);
-        int returncode = dis.readInt();
-        int messageCount = dis.readInt(); // 0
+        List<byte[]> arr = recvBytesMessage(dis, op);
         
-        if(returncode != 0) {
-            throw new IOException(ErrorUtils.generateErrorMessage(returncode));
+        if(arr.size() != 0) {
+            throw new IOException("The number of message is not 0");
         }
     }
     
     public static String[] readDirectoryMessage(DataInputStream dis, IPCMessageOperations op) throws IOException {
-        checkOpCode(dis, op);
-        int returncode = dis.readInt();
-        int messageCount = dis.readInt();
+        List<byte[]> arr = recvBytesMessage(dis, op);
         
-        if(returncode != 0) {
-            throw new IOException(ErrorUtils.generateErrorMessage(returncode));
-        }
-        
-        ArrayList<String> arr_entries = new ArrayList<String>();
-        
-        for(int i=0;i<messageCount;i++) {
-            int messageLen = dis.readInt();
-            byte[] message = new byte[messageLen];
-            
-            int read = dis.read(message, 0, messageLen);
-            if (read != messageLen) {
-                throw new IOException("read message size is different with message len");
-            }
-            
-            arr_entries.add(new String(message));
-        }
-        
-        String[] entries = new String[arr_entries.size()];
-        entries = arr_entries.toArray(entries);
+        String[] entries = new String[arr.size()];
+        entries = arr.toArray(entries);
         return entries;
     }
     
     public static IPCFileInfo readFileInfoMessage(DataInputStream dis, IPCMessageOperations op) throws IOException {
-        checkOpCode(dis, op);
-        int returncode = dis.readInt();
-        int messageCount = dis.readInt(); // 1
-        int messageLen = dis.readInt();
+        List<byte[]> arr = recvBytesMessage(dis, op);
         
-        if(returncode != 0) {
-            throw new IOException(ErrorUtils.generateErrorMessage(returncode));
+        if(arr.size() != 1) {
+            throw new IOException("The number of message is not 1");
         }
         
-        byte[] message = new byte[messageLen];
-        int read = dis.read(message, 0, messageLen);
-        if(read != messageLen) {
-            throw new IOException("read message size is different with message len");
-        }
+        byte[] msg = arr.get(0);
         
         IPCFileInfo fileinfo = new IPCFileInfo();
-        fileinfo.fromBytes(message, 0, messageLen);
+        fileinfo.fromBytes(msg, 0, msg.length);
         return fileinfo;
     }
     
     public static int readFileData(DataInputStream dis, IPCMessageOperations op, byte[] buffer, int offset) throws IOException {
-        checkOpCode(dis, op);
-        int returncode = dis.readInt();
-        int messageCount = dis.readInt(); // 1
-        int messageLen = dis.readInt();
+        List<byte[]> arr = recvBytesMessage(dis, op);
         
-        if(returncode != 0) {
-            throw new IOException(ErrorUtils.generateErrorMessage(returncode));
+        if(arr.size() != 1) {
+            throw new IOException("The number of message is not 1");
         }
         
-        dis.readFully(buffer, offset, messageLen);
+        byte[] msg = arr.get(0);
         
-        return messageLen;
+        System.arraycopy(msg, 0, buffer, offset, msg.length);
+        
+        return msg.length;
     }
 }

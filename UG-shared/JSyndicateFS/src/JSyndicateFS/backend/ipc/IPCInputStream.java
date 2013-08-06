@@ -38,7 +38,7 @@ public class IPCInputStream extends InputStream {
         }
         
         byte[] buffer = new byte[1];
-        int read = this.handle.readFileData(buffer, 1, 0, this.offset);
+        int read = this.handle.readFileData(this.offset, buffer, 0, 1);
         if(read != 1) {
             LOG.error("Read failed");
             throw new IOException("Read failed");
@@ -54,7 +54,7 @@ public class IPCInputStream extends InputStream {
             throw new IOException("InputStream is already closed");
         }
         
-        int read = this.handle.readFileData(bytes, bytes.length, 0, this.offset);
+        int read = this.handle.readFileData(this.offset, bytes, 0, bytes.length);
         this.offset += read;
         return read;
     }
@@ -66,7 +66,7 @@ public class IPCInputStream extends InputStream {
             throw new IOException("InputStream is already closed");
         }
         
-        int read = this.handle.readFileData(bytes, len, off, this.offset);
+        int read = this.handle.readFileData(this.offset, bytes, off, len);
         this.offset += read;
         return read;
     }

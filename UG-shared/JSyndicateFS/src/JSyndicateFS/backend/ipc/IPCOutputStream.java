@@ -40,7 +40,7 @@ public class IPCOutputStream extends OutputStream {
         byte[] buffer = new byte[1];
         buffer[0] = (byte)i;
         
-        this.handle.writeFileData(buffer, 1, 0, this.offset);
+        this.handle.writeFileData(this.offset, buffer, 0, 1);
         this.offset++;
     }
     
@@ -51,7 +51,7 @@ public class IPCOutputStream extends OutputStream {
             throw new IOException("OutputStream is already closed");
         }
         
-        this.handle.writeFileData(bytes, bytes.length, 0, this.offset);
+        this.handle.writeFileData(this.offset, bytes, 0, bytes.length);
         this.offset += bytes.length;
     }
     
@@ -62,7 +62,7 @@ public class IPCOutputStream extends OutputStream {
             throw new IOException("OutputStream is already closed");
         }
         
-        this.handle.writeFileData(bytes, len, offset, this.offset);
+        this.handle.writeFileData(this.offset, bytes, offset, len);
         this.offset += len;
     }
     
