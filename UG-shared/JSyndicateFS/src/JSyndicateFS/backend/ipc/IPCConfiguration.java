@@ -21,26 +21,13 @@ public class IPCConfiguration extends JSFSConfiguration {
     public static final int CACHE_TIMEOUT_SECOND = 0;
     
     private int ipcPort;
-    private String UGName;
     private int maxMetadataCacheSize;
     private int cacheTimeoutSecond;
     
     public IPCConfiguration() {
         this.ipcPort = DEFAULT_IPC_PORT;
-        this.UGName = null;
         this.maxMetadataCacheSize = MAX_METADATA_CACHE_SIZE;
         this.cacheTimeoutSecond = CACHE_TIMEOUT_SECOND;
-    }
-    
-    public String getUGName() {
-        return this.UGName;
-    }
-    
-    public void setUGName(String ug_name) throws IllegalAccessException {
-        if(this.lock)
-            throw new IllegalAccessException("Can not modify the locked object");
-        
-        this.UGName = ug_name;
     }
     
     public int getPort() {
@@ -85,8 +72,6 @@ public class IPCConfiguration extends JSFSConfiguration {
             return false;
         
         IPCConfiguration other = (IPCConfiguration) o;
-        if(!this.UGName.equals(other.UGName))
-            return false;
         if(this.ipcPort != other.ipcPort)
             return false;
         if(this.maxMetadataCacheSize != other.maxMetadataCacheSize)
@@ -99,7 +84,7 @@ public class IPCConfiguration extends JSFSConfiguration {
     
     @Override
     public int hashCode() {
-        return super.hashCode() ^ this.UGName.hashCode() ^ this.ipcPort ^ this.maxMetadataCacheSize ^ this.cacheTimeoutSecond ^ BACKEND_NAME.hashCode();
+        return super.hashCode() ^ this.ipcPort ^ this.maxMetadataCacheSize ^ this.cacheTimeoutSecond ^ BACKEND_NAME.hashCode();
     }
 
     @Override

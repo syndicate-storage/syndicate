@@ -54,7 +54,6 @@ public class SyndicateConfigUtil {
     }
 
     public static final String BACKEND = "syndicate.conf.backend";
-    public static final String IPC_UG_NAME = "syndicate.conf.ipc.ug.name";
     public static final String IPC_PORT = "syndicate.conf.ipc.port";
     public static final String SFS_MOUNT_PATH = "syndicate.conf.sfs.mountpath";
     
@@ -107,7 +106,7 @@ public class SyndicateConfigUtil {
             if(backend.equals(Backend.IPC)) {
                 IPCConfiguration ipc_conf = new IPCConfiguration();
                 try {
-                    ipc_conf.setUGName(getIPC_UGName(conf));
+                    ipc_conf.setPort(getIPC_Port(conf));
                     ipc_conf.setMaxMetadataCacheSize(getMaxMetadataCacheNum(conf));
                     ipc_conf.setCacheTimeoutSecond(getMetadataCacheTimeout(conf));
                 } catch (IllegalAccessException ex) {
@@ -177,14 +176,6 @@ public class SyndicateConfigUtil {
     
     public static int getIPC_Port(Configuration conf) {
         return conf.getInt(IPC_PORT, IPCConfiguration.DEFAULT_IPC_PORT);
-    }
-    
-    public static void setIPC_UGName(Configuration conf, String ug_name) {
-        conf.set(IPC_UG_NAME, ug_name);
-    }
-    
-    public static String getIPC_UGName(Configuration conf) {
-        return conf.get(IPC_UG_NAME);
     }
     
     public static void setSFS_MountPath(Configuration conf, String path) {

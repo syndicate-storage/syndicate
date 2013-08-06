@@ -33,7 +33,6 @@ public class IPCFileSystem extends JSFSFileSystem {
     private static final Log LOG = LogFactory.getLog(IPCFileSystem.class);
 
     private IPCConfiguration configuration;
-    private String UGName;
     private int UGPort;
     private IPCInterfaceClient client;
     
@@ -62,9 +61,8 @@ public class IPCFileSystem extends JSFSFileSystem {
         super.raiseOnBeforeCreateEvent(conf);
         
         this.configuration = conf;
-        this.UGName = this.configuration.getUGName();
         this.UGPort = this.configuration.getPort();
-        this.client = new IPCInterfaceClient(this.UGName, this.UGPort);
+        this.client = new IPCInterfaceClient(this.UGPort);
         this.filestatus_cache = new TimeoutCache<JSFSPath, IPCFileStatus>(conf.getMaxMetadataCacheSize(), conf.getCacheTimeoutSecond());
         
         super.initialize(conf);

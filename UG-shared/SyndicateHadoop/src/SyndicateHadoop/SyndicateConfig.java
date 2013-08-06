@@ -54,14 +54,6 @@ public class SyndicateConfig {
         SyndicateConfigUtil.setIPC_Port(this.config, port);
     }
     
-    public String getIPC_UGName() {
-        return SyndicateConfigUtil.getIPC_UGName(this.config);
-    }
-    
-    public void setIPC_UGName(String ug_name) {
-        SyndicateConfigUtil.setIPC_UGName(this.config, ug_name);
-    }
-    
     public String getSFS_MountPath() {
         return SyndicateConfigUtil.getSFS_MountPath(this.config);
     }

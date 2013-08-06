@@ -23,7 +23,6 @@ public class IPCInterfaceClient implements Closeable {
     
     private static final Log LOG = LogFactory.getLog(IPCInterfaceClient.class);
     
-    private String UGName;
     private int port;
     private Socket clientSocket;
     //private InputStream socketInputStream;
@@ -31,8 +30,7 @@ public class IPCInterfaceClient implements Closeable {
     //private OutputStream socketOutputStream;
     private DataOutputStream socketDataOutputStream;
     
-    public IPCInterfaceClient(String UGName, int port) throws InstantiationException {
-        this.UGName = UGName;
+    public IPCInterfaceClient(int port) throws InstantiationException {
         this.port = port;
         
         try {
