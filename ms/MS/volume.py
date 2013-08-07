@@ -242,7 +242,8 @@ class Volume( storagetypes.Object ):
       h = SHA256.new( data )
       signer = PKCS1_v1_5.new(key)
       signature = signer.sign( h )
-      return base64.b64encode( signature )
+      sigb64 = base64.b64encode( signature )
+      return sigb64
       
       
    @classmethod

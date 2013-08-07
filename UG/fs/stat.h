@@ -11,6 +11,7 @@
 
 // read metadata
 int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uint64_t user, uint64_t volume );
+int fs_entry_stat_extended( struct fs_core* core, char const* path, struct stat* sb, bool* is_local, uint64_t user, uint64_t volume, bool revalidate );
 int fs_entry_block_stat( struct fs_core* core, char const* path, uint64_t block_id, struct stat* sb );         // system use only
 bool fs_entry_is_local( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, int* err );
 bool fs_entry_is_block_local( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, uint64_t block_id );

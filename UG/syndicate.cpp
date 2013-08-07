@@ -30,59 +30,81 @@ uint64_t syndicate_HTTP_authenticate( struct md_HTTP_connection_data* md_con_dat
    return 0;
 }
 
-// HTTP HEAD handler
-struct md_HTTP_response* syndicate_HTTP_HEAD_handler( struct md_HTTP_connection_data* md_con_data ) {
+// process the beginning of a HEAD or POST
+static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_data, struct md_HTTP_response* resp, struct http_request_data* reqdat, struct stat* sb ) {
 
    char* url = md_con_data->url_path;
    struct md_HTTP* http = md_con_data->http;
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state* state = syncon->state;
 
-   dbprintf( "on %s\n", url);
+   dbprintf( "read on %s\n", url);
+   
+   int rc = http_parse_request( http, resp, reqdat, url );
+   if( rc < 0 ) {
+      // error, but handled
+      return 0;
+   }
+
+   // handle 302, 400, and 404
+   rc = http_handle_redirect( state, resp, sb, reqdat );
+   if( rc <= 0 ) {
+      // handled!
+      http_request_data_free( reqdat );
+      return 0;
+   }
+
+   if( rc == HTTP_REDIRECT_REMOTE ) {
+      // requested object is not here.
+      // will not redirect; that can lead to loops.
+      errorf("ERR: Requested object %s is not local.  Will not redirect to avoid loops.\n", reqdat->fs_path );
+      md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
+      http_request_data_free( reqdat );
+      return 0;
+   }
+
+   // check authorization
+   if( !(sb->st_mode & 0044) ) {
+      // not volume-readable or world readable
+      errorf("ERR: Object %s is not volume-readable or world-readable (mode %o)\n", reqdat->fs_path, sb->st_mode );
+      md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
+      http_request_data_free( reqdat );
+      return 0;
+   }
+
+   // if this is a request for a directory, then bail
+   if( S_ISDIR( sb->st_mode ) ) {
+      errorf("ERR: Object %s is a directory\n", reqdat->fs_path );
+      md_create_HTTP_response_ram_static( resp, "text/plain", 400, MD_HTTP_400_MSG, strlen(MD_HTTP_400_MSG) + 1 );
+      http_request_data_free( reqdat );
+      return 0;
+   }
+
+   // not handled
+   return 1;
+}
+
+
+// HTTP HEAD handler
+struct md_HTTP_response* syndicate_HTTP_HEAD_handler( struct md_HTTP_connection_data* md_con_data ) {
 
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
 
-   char* url_path = http_validate_url_path( http, url, resp );
-   if( !url_path ) {
-      md_create_HTTP_response_ram_static( resp, "text/plain", 400, MD_HTTP_400_MSG, strlen(MD_HTTP_400_MSG) + 1 );
-      return resp;
-   }
-
-   char* fs_path = NULL;
-   int64_t file_version = -1;
-   uint64_t block_id = INVALID_BLOCK_ID;
-   int64_t block_version = -1;
-   struct timespec manifest_timestamp;
-   bool staging = false;
-   memset( &manifest_timestamp, 0, sizeof(manifest_timestamp) );
-
-   int rc = md_HTTP_parse_url_path( url_path, &fs_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
-   if( rc != 0 ) {
-      md_create_HTTP_response_ram_static( resp, "text/plain", 400, MD_HTTP_400_MSG, strlen(MD_HTTP_400_MSG) + 1 );
-      return resp;
-   }
-
-   // status of requsted object
+   struct http_request_data reqdat;
    struct stat sb;
-
-   // handle not-founds and redirects
-   rc = http_handle_redirect( resp, state, fs_path, file_version, block_id, block_version, &manifest_timestamp, &sb, staging );
-   if( rc > 0 ) {
-      if( rc == HTTP_REDIRECT_NOT_HANDLED ) {
-         // not handled, meaning the request was valid.
-         // fill in our request structure.
-         md_create_HTTP_response_ram_static( resp, "text/plain", 200, MD_HTTP_200_MSG, strlen(MD_HTTP_200_MSG) + 1 );
-         http_make_default_headers( resp, sb.st_mtime, sb.st_size, true );
-      }
-      else if( rc == HTTP_REDIRECT_REMOTE ) {
-         // HEAD on remote ojbect
-         md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
-      }
+   
+   int rc = syndicate_begin_read_request( md_con_data, resp, &reqdat, &sb );
+   if( rc == 0 ) {
+      // handled
+      return 0;
    }
 
-   if( fs_path )
-      free( fs_path );
+   // this object is local and is a file
+   md_create_HTTP_response_ram_static( resp, "text/plain", 200, MD_HTTP_200_MSG, strlen(MD_HTTP_200_MSG) + 1 );
+   http_make_default_headers( resp, sb.st_mtime, sb.st_size, true );
 
+   http_request_data_free( &reqdat );
+   
    return resp;
 }
 
@@ -90,125 +112,88 @@ struct md_HTTP_response* syndicate_HTTP_HEAD_handler( struct md_HTTP_connection_
 // HTTP GET handler
 struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_data* md_con_data ) {
 
-   char* url = md_con_data->url_path;
    struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
    struct syndicate_state* state = syncon->state;
 
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
 
    // parse the url_path into its constituent components
-   char* fs_path = NULL;
-   int64_t file_version = -1;
-   uint64_t block_id = INVALID_BLOCK_ID;
-   int64_t block_version = -1;
-   struct timespec manifest_timestamp;
-   bool staging = false;
-   time_t file_mtime;
-
-   int rc = http_GET_preliminaries( resp, url, md_con_data->http, &fs_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
-   if( rc < 0 ) {
-      // error!
-      return resp;
-   }
-
-   // status of requested object
+   struct http_request_data reqdat;
    struct stat sb;
-   memset(&sb, 0, sizeof(sb));
 
-   // handle 302, 400, and 404
-   rc = http_handle_redirect( resp, state, fs_path, file_version, block_id, block_version, &manifest_timestamp, &sb, staging );
-   if( rc <= 0 ) {
-      // handled!
-      free( fs_path );
-      return resp;
-   }
-   
-   if( rc == HTTP_REDIRECT_REMOTE ) {
-      // requested object is not here.
-      // will not redirect; that can lead to loops.
-      md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
-      free( fs_path );
+   int rc = syndicate_begin_read_request( md_con_data, resp, &reqdat, &sb );
+   if( rc == 0 ) {
+      // handled already
       return resp;
    }
 
-   // check authorization
-   if( !(sb.st_mode & 0044) ) {
-      // not volume-readable or world readable
-      md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
-      free( fs_path );
-      return resp;
-   }
-
-   // if this is a request for a directory, then bail
-   if( S_ISDIR( sb.st_mode ) ) {
-      md_create_HTTP_response_ram_static( resp, "text/plain", 400, MD_HTTP_400_MSG, strlen(MD_HTTP_400_MSG) + 1 );
-      free( fs_path );
-      return resp;
-   }
-   file_mtime = sb.st_mtime;
-   
+   // not handled
    // what is this a request for?
    // a block?
-   if( block_id != INVALID_BLOCK_ID ) {
+   if( reqdat.block_id != INVALID_BLOCK_ID ) {
       // serve back the block
       char* block = CALLOC_LIST( char, state->conf.blocking_factor );
 
-      ssize_t size = fs_entry_read_block( state->core, fs_path, block_id, block );
+      ssize_t size = fs_entry_read_block( state->core, reqdat.fs_path, reqdat.block_id, block );
       if( size < 0 ) {
-         errorf( "fs_entry_read_block(%s.%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %zd\n", fs_path, file_version, block_id, block_version, size );
+         errorf( "fs_entry_read_block(%s.%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %zd\n", reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version, size );
          md_create_HTTP_response_ram( resp, "text/plain", 500, "INTERNAL SERVER ERROR\n", strlen("INTERNAL SERVER ERROR\n") + 1 );
 
-         free( fs_path );
+         http_request_data_free( &reqdat );
          free( block );
          return resp;
       }
       else {
-         dbprintf( "served %zd bytes from %s.%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", size, fs_path, file_version, block_id, block_version );
+         dbprintf( "served %zd bytes from %s.%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", size, reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version );
       }
 
       md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, block, size );
-      http_make_default_headers( resp, file_mtime, size, true );
+      http_make_default_headers( resp, sb.st_mtime, size, true );
 
-      free( fs_path );
+      http_request_data_free( &reqdat );
       return resp;
    }
 
    // request for a file or file manifest?
    else {
-      if( manifest_timestamp.tv_sec > 0 && manifest_timestamp.tv_nsec > 0 ) {
+      if( reqdat.manifest_timestamp.tv_sec > 0 && reqdat.manifest_timestamp.tv_nsec > 0 ) {
          // request for a manifest
          // get the manifest and reply it
          char* manifest_txt = NULL;
-         ssize_t manifest_txt_len = fs_entry_serialize_manifest( state->core, fs_path, &manifest_txt );
+         ssize_t manifest_txt_len = fs_entry_serialize_manifest( state->core, reqdat.fs_path, &manifest_txt );
          
          if( manifest_txt_len > 0 ) {
             md_create_HTTP_response_ram_nocopy( resp, "text/plain", 200, manifest_txt, manifest_txt_len );
-            http_make_default_headers( resp, file_mtime, manifest_txt_len, true );
+            http_make_default_headers( resp, sb.st_mtime, manifest_txt_len, true );
 
-            dbprintf( "served manifest %s.%" PRId64 "/manifest.%ld.%ld, %zd bytes\n", fs_path, file_version, manifest_timestamp.tv_sec, manifest_timestamp.tv_nsec, manifest_txt_len );
-            free( fs_path );
+            dbprintf( "served manifest %s.%" PRId64 "/manifest.%ld.%ld, %zd bytes\n", reqdat.fs_path, reqdat.file_version, reqdat.manifest_timestamp.tv_sec, reqdat.manifest_timestamp.tv_nsec, manifest_txt_len );
          }
          else {
             char buf[100];
             snprintf(buf, 100, "fs_entry_serialize_manifest rc = %zd\n", manifest_txt_len );
             http_io_error_resp( resp, 500, buf );
          }
+
+         http_request_data_free( &reqdat );
          
          return resp;
       }
       else {
          // TODO: request for a file
          // redirect to its manifest for now
-         char* txt = fs_entry_public_manifest_url( state->core, fs_path, file_version, &manifest_timestamp );
+         char* txt = fs_entry_public_manifest_url( state->core, reqdat.fs_path, reqdat.file_version, &reqdat.manifest_timestamp );
 
          http_make_redirect_response( resp, txt );
 
          free( txt );
-         free( fs_path );
+         http_request_data_free( &reqdat );
 
          return resp;
       }
    }
+
+   // unreachable
+   return NULL;
 }
 
 
@@ -370,6 +355,7 @@ int syndicate_parse_write_message( struct syndicate_state* state, Serialization:
    if( !valid ) {
       // something's seriously wrong
       errorf("%s", "failed to serialize message\n");
+      free( sigb64 );
       return -EINVAL;
    }
 
@@ -378,8 +364,11 @@ int syndicate_parse_write_message( struct syndicate_state* state, Serialization:
    if( rc != 0 ) {
       // not valid
       errorf("ms_client_verify_gateway_message rc = %d\n", rc );
+      free( sigb64 );
       return rc;
    }
+
+   free( sigb64 );
 
    return 0;
 }
@@ -406,6 +395,8 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
    dbprintf("received message of length %zu\n", msg_sz);
 
    rc = syndicate_parse_write_message( state, msg, msg_buf, msg_sz );
+
+   free( msg_buf );
 
    if( rc != 0 ) {
       // can't handle this

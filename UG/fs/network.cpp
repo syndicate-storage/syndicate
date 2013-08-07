@@ -46,7 +46,7 @@ int fs_entry_download_cached( struct fs_core* core, char const* url, char** bits
       if( len < 0 ) {
          errorf("md_download_file(%s) rc = %zd\n", cdn_url, len );
       }
-      if( status_code != 200 ) {
+      else if( status_code != 200 ) {
          errorf("md_download_file(%s) HTTP status %d\n", cdn_url, status_code );
          len = -status_code;
 
@@ -134,10 +134,10 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, ch
    
    int ret = fs_entry_download_cached( core, block_url, &tmpbuf, &nr );
    
-   if( ret >= 0 && nr <= (signed)core->conf->blocking_factor ) {
+   if( ret > 0 && nr <= (signed)core->conf->blocking_factor ) {
       memcpy( block_bits, tmpbuf, nr );
    }
-   else if( ret < 0 && ret > -200 ) {
+   else if( ret <= 0 && ret > -200 ) {
       // it is possible that this block was just collated back to the origin.
       // attempt to download from there
       errorf( "fs_entry_download_cached(%s) rc = %zd\n", block_url, nr );
@@ -195,7 +195,7 @@ int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_co
    writeMsg->set_ug_version( ms_client_UG_version( client ) );
    writeMsg->set_user_id( core->conf->owner );
    writeMsg->set_volume_id( core->conf->volume );
-
+   writeMsg->set_gateway_id( core->conf->gateway );
    return 0;
 }
 
@@ -221,6 +221,8 @@ int fs_entry_sign_write_message( Serialization::WriteMsg* writeMsg, struct fs_co
    }
 
    writeMsg->set_signature( string(sigb64, sigb64len) );
+
+   free( sigb64 );
    return 0;
 }
 
@@ -318,14 +320,16 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       return rc;
    }
    else {
-      curl_easy_getinfo( curl_h, CURLINFO_RESPONSE_CODE, &rc );
-      curl_easy_cleanup( curl_h );
+      long http_status = 0;
+      curl_easy_getinfo( curl_h, CURLINFO_RESPONSE_CODE, &http_status );
 
-      if( rc != 200 ) {
+      if( http_status != 200 ) {
          errorf( "remote HTTP response %d\n", rc );
          rc = -EREMOTEIO;
 
          response_buffer_free( &buf );
+         curl_easy_cleanup( curl_h );
+
          return rc;
       }
 
@@ -347,6 +351,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
 
       free( msg_buf );
       response_buffer_free( &buf );
+      curl_easy_cleanup( curl_h );
 
       if( !valid ) {
          // not a valid message

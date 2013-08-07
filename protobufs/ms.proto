@@ -19,7 +19,7 @@ message ms_entry {
    required int64 mtime_sec = 4;
    required int32 mtime_nsec = 5;
    required int32 owner = 6;
-   required int32 acting_owner = 7;
+   required int32 coordinator = 7;
    required int32 volume = 8;
    required int32 mode = 9;
    required uint64 size = 10;

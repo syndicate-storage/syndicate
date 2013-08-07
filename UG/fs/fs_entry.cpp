@@ -291,7 +291,7 @@ int fs_destroy( struct fs_core* core ) {
 
 
 
-static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int type, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int type, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
    struct timespec ts;
    clock_gettime( CLOCK_REALTIME, &ts );
    
@@ -306,8 +306,8 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    fent->url = strdup( url );
    fent->version = version;
    fent->owner = owner;
-   fent->acting_owner = acting_owner;
-   fent->acting_owner = owner;
+   fent->coordinator = coordinator;
+   fent->coordinator = owner;
    fent->volume = volume;
    fent->mode = mode;
    fent->size = size;
@@ -333,18 +333,18 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
 
 // common fs_entry initializion code
 // a version of <= 0 will cause the FS to look at the underlying data to deduce the correct version
-static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, int type, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec) {
+static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, int type, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec) {
 
    memset( fent, 0, sizeof(struct fs_entry) );
-   fs_entry_init_data( core, fent, type, name, url, version, owner, acting_owner, volume, mode, size, mtime_sec, mtime_nsec );
+   fs_entry_init_data( core, fent, type, name, url, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
    pthread_rwlock_init( &fent->lock, NULL );
    
    return 0;
 }
 
 // create an FS entry that is a file
-int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
-   fs_entry_init_common( core, fent, FTYPE_FILE, name, url, version, owner, acting_owner, volume, mode, size, mtime_sec, mtime_nsec );
+int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+   fs_entry_init_common( core, fent, FTYPE_FILE, name, url, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
    fent->ftype = FTYPE_FILE;
 
    if( URL_LOCAL( url ) )
@@ -355,8 +355,8 @@ int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const*
 
 
 // create an FS entry that is a file
-int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
-   fs_entry_init_common( core, fent, FTYPE_FILE, name, url, version, owner, acting_owner, volume, mode, size, mtime_sec, mtime_nsec );
+int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+   fs_entry_init_common( core, fent, FTYPE_FILE, name, url, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
    fent->ftype = FTYPE_FIFO;
 
    if( URL_LOCAL( url ) )
@@ -366,8 +366,8 @@ int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const*
 }
 
 // create an FS entry that is a directory
-int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t acting_owner, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
-   fs_entry_init_common( core, fent, FTYPE_DIR, name, url, version, owner, acting_owner, volume, mode, size, mtime_sec, mtime_nsec );
+int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+   fs_entry_init_common( core, fent, FTYPE_DIR, name, url, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
    fent->ftype = FTYPE_DIR;
    fent->children = new fs_entry_set();
    return 0;
@@ -390,7 +390,7 @@ int64_t fs_entry_next_block_version(void) {
 
 // duplicate an FS entry
 int fs_entry_dup( struct fs_core* core, struct fs_entry* fent, struct fs_entry* src ) {
-   fs_entry_init_common( core, fent, src->ftype, src->name, src->url, src->version, src->owner, src->acting_owner, src->volume, src->mode, src->size, src->mtime_sec, src->mtime_nsec );
+   fs_entry_init_common( core, fent, src->ftype, src->name, src->url, src->version, src->owner, src->coordinator, src->volume, src->mode, src->size, src->mtime_sec, src->mtime_nsec );
    fent->ftype = src->ftype;
 
    if( src->children ) {
@@ -412,14 +412,14 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
    char* basename = md_basename( ent->path, NULL );
    if( ent->type == MD_ENTRY_DIR ) {
       // this is a directory
-      fs_entry_init_dir( core, fent, basename, ent->url, ent->version, ent->owner, ent->acting_owner, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
+      fs_entry_init_dir( core, fent, basename, ent->url, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
    }
    else if (S_ISREG(ent->mode)){
       // this is a file
-      fs_entry_init_file( core, fent, basename, ent->url, ent->version, ent->owner, ent->acting_owner, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
+      fs_entry_init_file( core, fent, basename, ent->url, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
    }
    else if (S_ISFIFO(ent->mode)){
-      fs_entry_init_fifo( core, fent, basename, ent->url, ent->version, ent->owner, ent->acting_owner, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
+      fs_entry_init_fifo( core, fent, basename, ent->url, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
    }
    free( basename );
    return 0;
@@ -747,7 +747,7 @@ int fs_entry_to_md_entry( struct fs_core* core, char const* fs_path, struct fs_e
    dest->mtime_sec = fent->mtime_sec;
    dest->mtime_nsec = fent->mtime_nsec;
    dest->owner = fent->owner;
-   dest->acting_owner = fent->acting_owner;
+   dest->coordinator = fent->coordinator;
    dest->volume = fent->volume;
    dest->mode = fent->mode;
    dest->size = fent->size;

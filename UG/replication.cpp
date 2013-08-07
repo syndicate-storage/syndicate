@@ -245,6 +245,8 @@ ReplicaUploader::ReplicaUploader( struct ms_client* ms ) :
          
          this->add_curl_easy_handle( 0, this->RGs[i].curl_h );
       }
+
+      FREE_LIST( replica_urls );
    }
 }
 
