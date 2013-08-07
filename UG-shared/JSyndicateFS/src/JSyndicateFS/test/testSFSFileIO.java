@@ -16,7 +16,7 @@ import java.io.OutputStream;
  *
  * @author iychoi
  */
-public class testFileIO {
+public class testSFSFileIO {
     
     private static JSFSFileSystem filesystem;
     
