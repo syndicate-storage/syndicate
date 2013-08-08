@@ -389,6 +389,7 @@ struct md_syndicate_conf {
    uint64_t gateway;                                  // what is the gateway ID in Syndicate?
    uint64_t volume;                                   // volume ID
    uint64_t volume_owner;                             // user ID of the volume owner
+   uint64_t view_reload_freq;                         // how often do we check for new Volume/UG/RG metadata?
 
    // security fields
    char* volume_public_key;
@@ -481,6 +482,7 @@ struct md_syndicate_conf {
 #define VERIFY_PEER_KEY             "SSL_VERIFY_PEER"
 #define CONTENT_URL_KEY             "PUBLIC_URL"
 #define METADATA_UID_KEY            "METADATA_UID"
+#define VIEW_RELOAD_FREQ_KEY        "VIEW_RELOAD_FREQ"
 
 #define SYNDICATEFS_XATTR_URL          "user.syndicate_url"
 #define CLIENT_DEFAULT_CONFIG          "/usr/etc/syndicate/syndicate-UG.conf"

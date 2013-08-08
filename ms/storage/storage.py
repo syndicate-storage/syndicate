@@ -147,7 +147,7 @@ def list_user_gateways_by_volume( volume_id ):
 def get_user_gateway_by_name( name ):
    ugs = list_user_gateways( {"ms_username ==" : name} )
    if len(ugs) > 1:
-      raise Exception("More than UG named %s" % name)
+      raise Exception("%s UGs named %s" % (len(ugs), name))
 
    if len(ugs) == 0:
       return None
@@ -173,7 +173,17 @@ def list_acquisition_gateways_by_volume( volume_id ):
 
 def list_acquisition_gateways( attrs=None, limit=None ):
    return AcquisitionGateway.ListAll( attrs, limit=limit )
-   
+
+def get_acquisition_gateway_by_name( name ):
+   ags = list_acquisition_gateways( {"ms_username ==" : name} )
+   if len(ags) > 1:
+      raise Exception("%s AGs named %s" % (len(ags), name))
+
+   if len(ags) == 0:
+      return None
+
+   return ags[0]
+
 def delete_acquisition_gateway( g_id ):
    return AcquisitionGateway.Delete( g_id )
 
@@ -192,9 +202,18 @@ def update_replica_gateway( g_id, **fields ):
 def list_replica_gateways_by_volume( volume_id ):
    return ReplicaGateway.ListAll_ByVolume( volume_id )
 
-
 def list_replica_gateways( attrs=None, limit=None ):
    return ReplicaGateway.ListAll( attrs, limit=limit )
+
+def get_replica_gateway_by_name( name ):
+   rgs = list_replica_gateways( {"ms_username ==" : name} )
+   if len(rgs) > 1:
+      raise Exception("%s RGs named %s" % (len(rgs), name))
+
+   if len(rgs) == 0:
+      return None
+
+   return rgs[0]
    
 def delete_replica_gateway( g_id ):
    return ReplicaGateway.Delete( g_id )

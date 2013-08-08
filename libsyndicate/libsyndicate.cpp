@@ -461,6 +461,18 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
             conf->owner = v;
          }
       }
+
+      else if( strcmp( key, VIEW_RELOAD_FREQ_KEY ) == 0 ) {
+         // view reload frequency
+         char* end;
+         long v = strtol( values[0], &end, 10 );
+         if( values[0] != '\0' ) {
+            errorf("WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
+         }
+         else {
+            conf->view_reload_freq = v;
+         }
+      }
       
       else if( strcmp( key, AUTH_OPERATIONS_KEY ) == 0 ) {
          // what's the policy for authentication?
@@ -3670,7 +3682,7 @@ int md_init( int gateway_type,
    }
 
    // setup the client
-   rc = ms_client_init( client, conf );
+   rc = ms_client_init( client, gateway_type, conf );
    if( rc != 0 ) {
       errorf("ms_client_init rc = %d\n", rc );
       return rc;
@@ -3700,7 +3712,7 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    memset( conf, 0, sizeof(struct md_syndicate_conf) );
    
    conf->default_read_freshness = 5000;
-   conf->default_write_freshness = 5000;
+   conf->default_write_freshness = 0;
    conf->gather_stats = false;
    conf->use_checksums = false;
    conf->num_replica_threads = 1;
@@ -3721,6 +3733,8 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
 
    conf->owner = getuid();
    conf->usermask = 0377;
+
+   conf->view_reload_freq = 3600000;  // once an hour
 
    return 0;
 }

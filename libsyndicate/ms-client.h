@@ -15,7 +15,7 @@
 #define HTTP_VOLUME_SECRET "Syndicate-VolumeSecret"
 
 #define HTTP_VOLUME_TIME   "X-Volume-Time"
-#define HTTP_UG_TIME       "X-UG-Time"
+#define HTTP_GATEWAY_TIME  "X-Gateway-Time"
 #define HTTP_TOTAL_TIME    "X-Total-Time"
 #define HTTP_RESOLVE_TIME  "X-Resolve-Time"
 #define HTTP_CREATE_TIMES  "X-Create-Times"
@@ -59,13 +59,18 @@ struct UG_cred {
 };
 
 struct ms_client {
+   int gateway_type;
+   
    pthread_rwlock_t lock;
    
    CURL* ms_read;
    CURL* ms_write;
+   CURL* ms_view;
 
    struct ms_client_timing read_times;
    struct ms_client_timing write_times;
+
+   bool registered;
    
    update_set* updates;
    deadline_queue* deadlines;
@@ -90,6 +95,8 @@ struct ms_client {
 
    // gateway view-change structures
    pthread_t view_thread;
+   bool view_thread_running;        // set to true if the view thread is running
+   char* view_url;
    struct UG_cred** UG_creds;
    char** RG_urls;
    int num_RG_urls;
@@ -118,12 +125,12 @@ struct ms_client {
 extern "C" {
 
 int ms_client_generate_key( EVP_PKEY** key );
-int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf );
+int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndicate_conf* conf );
 int ms_client_destroy( struct ms_client* client );
 
 int ms_client_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password );
 
-int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name );
+int ms_client_get_volume_metadata_curl( struct ms_client* client, CURL* curl );
 int ms_client_load_volume_metadata( struct ms_client* client, ms::ms_volume_metadata* volume_md );
 
 int ms_client_load_cred( struct UG_cred* cred, const ms::ms_volume_gateway_cred* ms_cred );
