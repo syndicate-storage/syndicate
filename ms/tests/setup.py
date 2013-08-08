@@ -718,7 +718,7 @@ nodes = [
 users = [
    "jcnelson@cs.princeton.edu",
    "muneeb@cs.princeton.edu",
-   "wathsala@cs.princeton.edu",
+   "wathsala@princeton.edu",
    "jlwhelch@princeton.edu",
    "iychoi@email.arizona.edu"
 ]

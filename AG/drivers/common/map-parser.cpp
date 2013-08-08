@@ -31,6 +31,8 @@ MapParserHandler::MapParserHandler(map<string, struct map_info*>* xmlmap)
     current_key = NULL;
     bounded_query = NULL;
     unbounded_query = NULL;
+    shell_cmd = NULL;
+    dsn_str = NULL;
     type = QUERY_TYPE_DEFAULT;
     current_id = 0;
     reval_secs = 0;
