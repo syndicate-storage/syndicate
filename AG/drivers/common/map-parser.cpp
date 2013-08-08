@@ -67,11 +67,12 @@ void update_fs_map(map<string, struct map_info*> *new_map,
 	    umi->file_perm = itr->second->file_perm;
 	    umi->reval_sec = itr->second->reval_sec;
 	}
-	// Delte everything in diff0 from old_map
+	// Delte everything in diff0 from old_map and invalidate those map_infos
 	for (itr = diff0.begin(); itr != diff0.end(); itr++) {
 	    struct map_info* emi = (*old_map)[itr->first];
 	    //cout<<"Deleting "<<itr->second->shell_command<<endl;
 	    old_map->erase(itr->first);
+	    emi->invalidate_entry(emi);
 	    delete_map_info(emi);
 	}
 	// Add everything in diff1 to old_map

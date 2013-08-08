@@ -81,5 +81,7 @@ void	init(unsigned char* dsn);
 void reversion(void *cls);
 void sigusr1_handler(int signo);
 void sigterm_handler(int signo);
+void driver_special_inval_handler(string file_path);
+
 #endif //_SQL_DRIVER_H_
 

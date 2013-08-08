@@ -350,7 +350,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    Generate a session certificate from a SyndicateUser account for a gateway.
    """
 
-   """
    OPENID_PROVIDER_NAME = "VICCI"
    OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
    OPENID_PROVIDER_AUTH_HANDLER = "https://www.vicci.org/id-allow"
@@ -359,16 +358,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    OPENID_PROVIDER_PASSWORD_FIELD = "password"
    OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
    OPENID_PROVIDER_RESPONSE_METHOD = "POST"
-   """
    
-   OPENID_PROVIDER_NAME = "localhost"
-   OPENID_PROVIDER_URL = "http://localhost:8081/id/"
-   OPENID_PROVIDER_AUTH_HANDLER = "http://localhost:8081/allow"
-   OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
-   OPENID_PROVIDER_USERNAME_FIELD = "login_as"
-   OPENID_PROVIDER_PASSWORD_FIELD = "password"
-   OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
-   OPENID_PROVIDER_RESPONSE_METHOD = "POST"
    
    
    OPENID_RP_REDIRECT_METHOD = "POST"     # POST to us for authentication, since we need to send the public key (which doesn't fit into a GET)

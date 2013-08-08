@@ -184,7 +184,8 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    manifest_timestamp.tv_nsec = 0;
    bool staging = false;
 
-   int rc = md_HTTP_parse_url_path( (char*)replica_ctx->url_path, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
+   int rc = md_HTTP_parse_url_path( (char*)replica_ctx->url_path, &file_path, 
+	   &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
    if( rc != 0 ) {
        errorf( "failed to parse '%s', rc = %d\n", replica_ctx->url_path, rc );
        free( file_path );
@@ -324,7 +325,7 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     }
     else {
 	update_fs_map(fs_map, FS2CMD);
-	delete_map_info_map(fs_map);
+	//delete_map_info_map(fs_map);
     }
     for (iter = FS2CMD->begin(); iter != FS2CMD->end(); iter++) {
 	const char* full_path = iter->first.c_str();
@@ -353,9 +354,8 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 
 static int publish(const char *fpath, int type, struct map_info* mi)
 {
-    int i = 0, rc = 0;
+    int i = 0;
     struct md_entry* ment = new struct md_entry;
-    struct ms_client msc;
     size_t len = strlen(fpath);
     //size_t local_proto_len = strlen( SYNDICATEFS_AG_DB_PROTO ); 
     //size_t url_len = local_proto_len + len;
@@ -477,4 +477,7 @@ void sigusr1_handler(int signo) {
     publish_dataset (NULL, NULL, NULL );
 }
 
-
+void driver_special_inval_handler(string file_path) {
+    ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
+    prch.remove_proc_table_entry(file_path);
+}
