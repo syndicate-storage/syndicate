@@ -35,7 +35,8 @@ void delete_map_info_map(map<string, struct map_info*> *mi_map) {
 }
 
 void update_fs_map(map<string, struct map_info*> *new_map,
-		   map<string, struct map_info*> *old_map) {
+		   map<string, struct map_info*> *old_map,
+		   void (*driver_inval_handler)(string)) {
 	map<string, struct map_info*> diff0, diff1, minter;
 	map<string, struct map_info*>::iterator itr;
 	// minter = (old_map ^ new_map)
@@ -73,6 +74,7 @@ void update_fs_map(map<string, struct map_info*> *new_map,
 	    //cout<<"Deleting "<<itr->second->shell_command<<endl;
 	    old_map->erase(itr->first);
 	    emi->invalidate_entry(emi);
+	    driver_inval_handler(ite->first);
 	    delete_map_info(emi);
 	}
 	// Add everything in diff1 to old_map

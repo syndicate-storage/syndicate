@@ -88,7 +88,8 @@ struct map_info {
 void delete_map_info(struct map_info *mi);
 void delete_map_info_map(map<string, struct map_info*> *mi_map);
 void update_fs_map(map<string, struct map_info*> *new_map,
-		   map<string, struct map_info*> *old_map);
+		   map<string, struct map_info*> *old_map,
+		   void (*driver_inval_handler)(string));
 
 class MapParserHandler : public DefaultHandler {
     private:

@@ -14,9 +14,13 @@
 int self_pipe[2];
 set<proc_table_entry*, proc_table_entry_comp> running_proc_set;
 map<pid_t, proc_table_entry*> pid_map;
+//Lock for pid_map and running_proc_set
+pthread_mutex_t pid_map_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void invalidate_entry(void* cls) {
     proc_table_entry *entry = (proc_table_entry*)cls;
+    //Acquire the pte lock
+    pthread_mutex_lock(&entry->pte_lock);
     if (entry == NULL)
 	return;
     if (!(entry->is_read_complete)) {
@@ -27,6 +31,7 @@ void invalidate_entry(void* cls) {
 	perror("unlink(block_file)");
     entry->valid = false;
     clean_invalid_proc_entry(entry);
+    pthread_mutex_unlock(&entry->pte_lock);
 }
 
 void clean_invalid_proc_entry(proc_table_entry *pte) {
@@ -63,12 +68,24 @@ int  set_sigchld_handler(struct sigaction *action) {
     return err;
 }
 
+void lock_pid_map() {
+    pthread_mutex_lock(&pid_map_lock);
+}
+
+void unlock_pid_map() {
+    pthread_mutex_unlock(&pid_map_lock);
+}
+
 void update_death(pid_t pid) {
     map<pid_t, proc_table_entry*>::iterator it;
     it = pid_map.find(pid);
     proc_table_entry *pte = NULL;
     if (it != pid_map.end()) {
 	pte = it->second;
+	//Lock pid_map lock
+	lock_pid_map();
+	//Acquire pte lock
+	pthread_mutex_lock(&pte->pte_lock);
 	pte->is_read_complete = true;
 	set<proc_table_entry*, proc_table_entry_comp>::iterator sit;
 	sit = running_proc_set.find(pte);
@@ -76,9 +93,12 @@ void update_death(pid_t pid) {
 	    running_proc_set.erase(sit);
 	}
 	pid_map.erase(it);
+	pthread_mutex_unlock(&pte->pte_lock);
+	unlock_pid_map();
     }
-    else 
+    else {
 	return;
+    }
 }
 
 void* inotify_event_receiver(void *cls) {
@@ -109,9 +129,15 @@ void* inotify_event_receiver(void *cls) {
 		int wd = inotify_add_watch(ifd, pte->block_file, 
 				IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE);
 		if (wd > 0) {
+		    //Acquire the pte lock
+		    pthread_mutex_lock(&pte->pte_lock);
 		    pte->block_file_wd = wd;
+		    //Lock pid_map lock
+		    lock_pid_map();
 		    running_proc_set.insert(pte);
 		    pid_map[pte->proc_id] = pte;
+		    unlock_pid_map();
+		    pthread_mutex_unlock(&pte->pte_lock);
 		}
 		else {
 		    perror("inotify_add_watch");
@@ -137,6 +163,7 @@ void* inotify_event_receiver(void *cls) {
 						    (&ievents[byte_count]);
 		proc_table_entry pte; 		
 		pte.block_file_wd = ievent->wd;
+		lock_pid_map();
 		set<proc_table_entry*, bool(*)(proc_table_entry*, 
 						proc_table_entry*)>::iterator 
 		    itr = running_proc_set.find(&pte);
@@ -150,19 +177,26 @@ void* inotify_event_receiver(void *cls) {
 			    perror("inotify_rm_watch");
 			running_proc_set.erase(itr);
 			clean_invalid_proc_entry(pte);
+			unlock_pid_map();
 			break;
 		    }
+		    //Acquire the pte lock
+		    pthread_mutex_lock(&pte->pte_lock);
 		    pte->current_max_block = stat_buff.st_size/BLK_SIZE;
 		    pte->block_byte_offset = stat_buff.st_size - 
 				    (pte->current_max_block * BLK_SIZE);
 		    byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
+		    pthread_mutex_unlock(&pte->pte_lock);
+		    unlock_pid_map();
 		}
 		else {
 		    //File not found in set, remove watch
 		    if (inotify_rm_watch(ifd, ievent->wd) < 0)
 			perror("inotify_rm_watch");
+		    unlock_pid_map();
 		    break;
 		}
+		unlock_pid_map();
 	    }
 
 	}
@@ -188,6 +222,7 @@ ProcHandler::ProcHandler(char *cache_dir_str)
     cache_dir_path = cache_dir_str;
     //set_sigchld_handler();
     //proc_table.resize(DEFAULT_INIT_PROC_TBL_LEN);
+    pthread_mutex_init(&proc_table_lock, NULL);
     if (pipe(self_pipe) < 0) 
 	perror("pipe");
     int rc = pthread_create(&inotify_event_thread, NULL, inotify_event_receiver, 
@@ -260,7 +295,11 @@ int ProcHandler::execute_command(const char* proc_name, char *argv[],
 	pte->is_read_complete = false;
 	pte->valid = true;
 	//proc_table[id] = pte;
+	//Lock proc_table
+	lock_proc_table();
 	proc_table[string(ctx->file_path)] = pte;
+	//Unlock proc_table
+	unlock_proc_table();
 	ulong pte_addr = (ulong)pte;
 	if (write(self_pipe[1], &pte_addr, sizeof(ulong)) < 0) {
 	    perror("write");
@@ -466,7 +505,10 @@ block_status ProcHandler::get_block_status(struct gateway_ctx *ctx)
 }
 
 void ProcHandler::remove_proc_table_entry(string file_path) {
+    //Lock proc_table
+    lock_proc_table();
     proc_table.erase(file_path);
+    unlock_proc_table();
 }
 
 /*

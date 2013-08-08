@@ -324,7 +324,7 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 	FS2CMD = new map<string, struct map_info*>(*fs_map);
     }
     else {
-	update_fs_map(fs_map, FS2CMD);
+	update_fs_map(fs_map, FS2CMD, driver_special_inval_handler);
 	//delete_map_info_map(fs_map);
     }
     for (iter = FS2CMD->begin(); iter != FS2CMD->end(); iter++) {
@@ -481,3 +481,4 @@ void driver_special_inval_handler(string file_path) {
     ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
     prch.remove_proc_table_entry(file_path);
 }
+

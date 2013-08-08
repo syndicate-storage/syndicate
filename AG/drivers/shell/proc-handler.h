@@ -50,6 +50,7 @@ struct _proc_table_entry {
     off_t   current_max_block;
     off_t   block_byte_offset;
     bool    valid;
+    pthread_mutex_t pte_lock;
 }; 
 
 struct _block_status { 
@@ -75,6 +76,8 @@ void sigchld_handler(int signum);
 int  set_sigchld_handler(struct sigaction *action);
 void clean_invalid_proc_entry(proc_table_entry *pte);
 void delete_proc_entry(proc_table_entry *pte);
+void lock_pid_map();
+void unlock_pid_map();
     
 class ProcHandler 
 {
@@ -83,10 +86,14 @@ class ProcHandler
 	map<string, proc_table_entry*> proc_table;
 	char* get_random_string();
 	pthread_t   inotify_event_thread;
+	//Mutex lock to synchronize operations on proc_tbale
+	pthread_mutex_t proc_table_lock;
 
 	ProcHandler();
 	ProcHandler(char* cache_dir_str);
 	ProcHandler(ProcHandler const&);
+	void lock_proc_table() {pthread_mutex_lock(&proc_table_lock);}
+	void unlock_proc_table() {pthread_mutex_unlock(&proc_table_lock);}
 
     public:
 	static  ProcHandler&  get_handle(char* cache_dir_str);
