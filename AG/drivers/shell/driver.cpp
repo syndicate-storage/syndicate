@@ -7,12 +7,15 @@
 
 #include <driver.h>
 #include <fs/fs_entry.h>
- 
+
 // set of files we're exposing
 content_map DATA;
 
 // set of files we map to command
 query_map* FS2CMD = NULL;
+
+// MapParser object...
+MapParser* mp = NULL;
 
 // Metadata service client of the AG
 ms_client *mc = NULL;
@@ -29,6 +32,9 @@ unsigned char* cache_path = NULL;
 //extern struct md_syndicate_conf *global_conf;
 // Reversion daemon
 ReversionDaemon* revd = NULL;
+
+// true is init() is called
+bool initialized = false;
 
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, 
@@ -178,7 +184,8 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    manifest_timestamp.tv_nsec = 0;
    bool staging = false;
 
-   int rc = md_HTTP_parse_url_path( (char*)replica_ctx->url_path, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
+   int rc = md_HTTP_parse_url_path( (char*)replica_ctx->url_path, &file_path, 
+	   &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
    if( rc != 0 ) {
        errorf( "failed to parse '%s', rc = %d\n", replica_ctx->url_path, rc );
        free( file_path );
@@ -303,15 +310,23 @@ extern "C" void cleanup_dataset( void* cls ) {
 
 extern "C" int publish_dataset (struct gateway_context*, ms_client *client, 
 	char* dataset ) {
-    mc = client;
-    MapParser mp = MapParser(dataset);
+    if (mc == NULL)
+	mc = client;
+    if (mp == NULL)
+	mp = new MapParser(dataset);
     map<string, struct map_info*>::iterator iter;
     set<char*, path_comp> dir_hierachy;
-    mp.parse();
-    unsigned char* cp = mp.get_dsn();
+    mp->parse();
+    unsigned char* cp = mp->get_dsn();
     init(cp);
-
-    FS2CMD = mp.get_map();
+    map<string, struct map_info*> *fs_map = mp->get_map();
+    if (FS2CMD == NULL) {
+	FS2CMD = new map<string, struct map_info*>(*fs_map);
+    }
+    else {
+	update_fs_map(fs_map, FS2CMD);
+	//delete_map_info_map(fs_map);
+    }
     for (iter = FS2CMD->begin(); iter != FS2CMD->end(); iter++) {
 	const char* full_path = iter->first.c_str();
 	char* path = strrchr((char*)full_path, '/');
@@ -329,11 +344,13 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 
     for (iter = FS2CMD->begin(); iter != FS2CMD->end(); iter++) {
 	publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second);
-	revd->add_map_info(iter->second);
+	if (revd)
+	    revd->add_map_info(iter->second);
     }
-    ms_client_destroy(mc);
+    //ms_client_destroy(mc);
     return 0;
 }
+
 
 static int publish(const char *fpath, int type, struct map_info* mi)
 {
@@ -409,16 +426,25 @@ static int publish(const char *fpath, int type, struct map_info* mi)
 
 
 void init(unsigned char* dsn) {
+    if (!initialized)
+	initialized = true;
+    else
+	return;
     if (cache_path == NULL) {
 	size_t dsn_len = strlen((const char*)dsn);
 	cache_path = (unsigned char*)malloc(dsn_len + 1);
 	memset(cache_path, 0, dsn_len + 1);
 	memcpy(cache_path, dsn, strlen((const char*)dsn));
+	clean_dir((char*)cache_path);
     }
     if (revd == NULL) {
 	revd = new ReversionDaemon();
 	revd->run();
     }
+    struct sigaction action;
+    //block_all_signals();
+    install_signal_handler(SIGUSR1, &action, sigusr1_handler);
+    install_signal_handler(SIGINT, &action, SIG_IGN);
 }
 
 char** str2array(char *str) {
@@ -446,3 +472,12 @@ void reversion(void *cls) {
     ms_client_update(mc, ment);
 }
 
+void sigusr1_handler(int signo) {
+    cout<<"calling publish_dataset"<<endl;
+    publish_dataset (NULL, NULL, NULL );
+}
+
+void driver_special_inval_handler(string file_path) {
+    ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
+    prch.remove_proc_table_entry(file_path);
+}

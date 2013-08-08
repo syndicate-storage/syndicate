@@ -8,6 +8,7 @@
 #include <reversion-daemon.h>
 
 void* run_daemon(void *argc) {
+    block_all_signals();
     //time_t last_ts;
     struct timespec request;
     struct timespec remain;
@@ -25,7 +26,7 @@ void* run_daemon(void *argc) {
 	if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0) {
 	    perror("clock_gettime: CLOCK_MONOTONIC");
 	}
-	time_t current_time = ts.tv_sec;
+	//time_t current_time = ts.tv_sec;
 	time_t slept_time = request.tv_sec - remain.tv_sec;
 	//last_ts = current_time;
 	ReversionDaemon::invalidate_map_info(revd_ts->map_set, slept_time);

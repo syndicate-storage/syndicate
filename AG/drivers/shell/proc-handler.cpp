@@ -26,6 +26,28 @@ void invalidate_entry(void* cls) {
     if (unlink(entry->block_file) < 0)
 	perror("unlink(block_file)");
     entry->valid = false;
+    clean_invalid_proc_entry(entry);
+}
+
+void clean_invalid_proc_entry(proc_table_entry *pte) {
+    if (pte) {
+	if (pte->block_file)
+	    free(pte->block_file);
+	pte->block_file_wd = -1;
+	pte->is_read_complete = false;
+	pte->proc_id = -1;
+	pte->current_max_block = 0;
+	pte->block_byte_offset = 0;
+    }
+}
+
+void delete_proc_entry(proc_table_entry *pte) {
+    if (pte) {
+	if (pte->block_file)
+	    free(pte->block_file);
+	free (pte);
+	pte = NULL;
+    }
 }
 
 void sigchld_handler(int signum) {
@@ -35,18 +57,9 @@ void sigchld_handler(int signum) {
     }
 }
 
-int  set_sigchld_handler() {
-    struct sigaction action;
+int  set_sigchld_handler(struct sigaction *action) {
     int err = 0;
-
-    memset (&action, 0, sizeof(struct sigaction));
-    action.sa_handler = sigchld_handler;
-
-    if ((err = sigaction(SIGCHLD, &action, 0)) < 0) {
-	perror ("sigaction");
-	return err;
-    }
-
+    err = install_signal_handler(SIGCHLD, action, sigchld_handler);
     return err;
 }
 
@@ -69,13 +82,15 @@ void update_death(pid_t pid) {
 }
 
 void* inotify_event_receiver(void *cls) {
+    struct sigaction act;
+    block_all_signals();
+    set_sigchld_handler(&act);
     //Initialize and start process monitoring thread using inotify...
     int ifd = inotify_init(); 
     if (ifd < 0)
 	return NULL;
     //Select...
     fd_set read_fds;
-    set_sigchld_handler();
     int max_fd = (ifd > self_pipe[0])?ifd:self_pipe[0];
     while(true) {
 	FD_ZERO(&read_fds);
@@ -118,10 +133,12 @@ void* inotify_event_receiver(void *cls) {
 	    }
 	    ssize_t byte_count = 0;
 	    while (byte_count < read_size) {
-		struct inotify_event *ievent = (struct inotify_event*)(&ievents[byte_count]);
+		struct inotify_event *ievent = (struct inotify_event*)
+						    (&ievents[byte_count]);
 		proc_table_entry pte; 		
 		pte.block_file_wd = ievent->wd;
-		set<proc_table_entry*, bool(*)(proc_table_entry*, proc_table_entry*)>::iterator 
+		set<proc_table_entry*, bool(*)(proc_table_entry*, 
+						proc_table_entry*)>::iterator 
 		    itr = running_proc_set.find(&pte);
 		if (itr != running_proc_set.end()) {
 		    //File found in set, update block info...
@@ -132,6 +149,7 @@ void* inotify_event_receiver(void *cls) {
 			if (inotify_rm_watch(ifd, ievent->wd) < 0)
 			    perror("inotify_rm_watch");
 			running_proc_set.erase(itr);
+			clean_invalid_proc_entry(pte);
 			break;
 		    }
 		    pte->current_max_block = stat_buff.st_size/BLK_SIZE;
@@ -168,14 +186,14 @@ ProcHandler::ProcHandler()
 ProcHandler::ProcHandler(char *cache_dir_str) 
 {
     cache_dir_path = cache_dir_str;
-    set_sigchld_handler();
-    proc_table.resize(DEFAULT_INIT_PROC_TBL_LEN);
+    //set_sigchld_handler();
+    //proc_table.resize(DEFAULT_INIT_PROC_TBL_LEN);
     if (pipe(self_pipe) < 0) 
 	perror("pipe");
     int rc = pthread_create(&inotify_event_thread, NULL, inotify_event_receiver, 
 			    NULL/*running_proc_set*/);
     if (rc < 0)
-	perror("pthreda_create");
+	perror("pthread_create");
 }
 
 ProcHandler&  ProcHandler::get_handle(char *cache_dir_str)
@@ -187,7 +205,8 @@ ProcHandler&  ProcHandler::get_handle(char *cache_dir_str)
 
 
 int ProcHandler::execute_command(const char* proc_name, char *argv[], 
-				    char *envp[], uint id, proc_table_entry *pte)
+				char *envp[], /*uint id,*/ 
+				struct gateway_ctx *ctx, proc_table_entry *pte)
 {
     if (argv)
 	argv[0] = (char*)proc_name;
@@ -240,7 +259,8 @@ int ProcHandler::execute_command(const char* proc_name, char *argv[],
 	pte->proc_id = pid;
 	pte->is_read_complete = false;
 	pte->valid = true;
-	proc_table[id] = pte;
+	//proc_table[id] = pte;
+	proc_table[string(ctx->file_path)] = pte;
 	ulong pte_addr = (ulong)pte;
 	if (write(self_pipe[1], &pte_addr, sizeof(ulong)) < 0) {
 	    perror("write");
@@ -265,15 +285,17 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
     ssize_t len = 0;
     struct stat st_buf;
 
-    if (ctx->id >= DEFAULT_INIT_PROC_TBL_LEN)
-	return -EIO;
-    proc_table_entry *pte = proc_table[ctx->id];
+    //if (ctx->id >= DEFAULT_INIT_PROC_TBL_LEN)
+	//return -EIO;
+    //proc_table_entry *pte = proc_table[ctx->id];
+    proc_table_entry *pte = proc_table[string(ctx->file_path)];
     if (pte == NULL || (pte != NULL && !(pte->valid))) {
 	int rc = execute_command(proc_name, argv, 
-				envp, ctx->id, pte);
+				envp, /*ctx->id,*/ctx, pte);
 	if (rc < 0)
 	    return rc;
-	pte = proc_table[ctx->id];
+	//pte = proc_table[ctx->id];
+	pte = proc_table[string(ctx->file_path)];
 	ctx->mi->entry = pte;
 	ctx->mi->invalidate_entry = invalidate_entry;
 	int fd = open(pte->block_file, O_RDONLY);
@@ -405,10 +427,11 @@ block_status ProcHandler::get_block_status(struct gateway_ctx *ctx)
     blk_stat.no_file = false;
     blk_stat.block_available = false;
 
-    if (ctx->id >= DEFAULT_INIT_PROC_TBL_LEN) {
+    /*if (ctx->id >= DEFAULT_INIT_PROC_TBL_LEN) {
 	blk_stat.no_block = true;
-    }
-    proc_table_entry *pte = proc_table[ctx->id];
+    }*/
+    //proc_table_entry *pte = proc_table[ctx->id];
+    proc_table_entry *pte = proc_table[string(ctx->file_path)];
     if (pte == NULL && ctx->file_path == NULL) {
 	blk_stat.no_file = true;
     }
@@ -440,6 +463,10 @@ block_status ProcHandler::get_block_status(struct gateway_ctx *ctx)
 	}
     }
     return blk_stat;
+}
+
+void ProcHandler::remove_proc_table_entry(string file_path) {
+    proc_table.erase(file_path);
 }
 
 /*
