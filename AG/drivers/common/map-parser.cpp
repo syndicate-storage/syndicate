@@ -74,7 +74,7 @@ void update_fs_map(map<string, struct map_info*> *new_map,
 	    //cout<<"Deleting "<<itr->second->shell_command<<endl;
 	    old_map->erase(itr->first);
 	    emi->invalidate_entry(emi);
-	    driver_inval_handler(ite->first);
+	    driver_inval_handler(itr->first);
 	    delete_map_info(emi);
 	}
 	// Add everything in diff1 to old_map
