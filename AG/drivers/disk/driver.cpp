@@ -7,7 +7,7 @@
 #include "libgateway.h"
 
 // server config 
-struct md_syndicate_conf CONF;
+struct md_syndicate_conf DRIVER_CONF;
  
 // set of files we're exposing
 content_map DATA;

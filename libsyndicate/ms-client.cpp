@@ -343,14 +343,14 @@ static void* ms_client_view_thread( void* arg ) {
    while( client->running ) {
 
       uint64_t now_ms = currentTimeMillis();
-      uint64_t wakeup_ms = now_ms + view_reload_freq;
-      uint64_t sleep_ms = view_reload_freq;
-
-      sleep_time.tv_sec = sleep_ms / 1000;
-      sleep_time.tv_nsec = (sleep_ms % 1000) * 1000;
-
+      uint64_t wakeup_ms = now_ms + view_reload_freq * 1000;
+      
       // wait for next reload
       while( now_ms < wakeup_ms ) {
+
+         sleep_time.tv_sec = 1;
+         sleep_time.tv_nsec = 0;
+
          int rc = nanosleep( &sleep_time, &remaining );
          int errsv = errno;
          
@@ -359,17 +359,22 @@ static void* ms_client_view_thread( void* arg ) {
          if( rc < 0 ) {
             if( errsv == EINTR ) {
                errorf("errsv = %d\n", errsv);
-               // try again      
-               sleep_ms = wakeup_ms - now_ms;
-
-               sleep_time.tv_sec = sleep_ms / 1000;
-               sleep_time.tv_nsec = (sleep_ms % 1000) * 1000;
             }
             else {
                errorf("nanosleep errno = %d\n", errsv );
                client->view_thread_running = false;
                return NULL;
             }
+         }
+
+         // hint to reload now?
+         ms_client_view_wlock( client );
+         bool early_reload = client->early_reload;
+         client->early_reload = false;
+         ms_client_view_unlock( client );
+
+         if( early_reload ) {
+            break;
          }
       }
 
@@ -1143,11 +1148,16 @@ int ms_client_verify_RGs( struct ms_client* client, ms::ms_volume_RGs* rgs ) {
 int ms_client_verify_gateway_message( struct ms_client* client, uint64_t user_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len ) {
    ms_client_view_rlock( client );
 
+   bool early_reload = false;
+   
    // find the gateway
    for( int i = 0; client->UG_creds[i] != NULL; i++ ) {
       if( client->UG_creds[i]->gateway_id == gateway_id && client->UG_creds[i]->user_id == user_id ) {
          if( client->UG_creds[i]->pubkey == NULL ) {
             dbprintf("WARN: No public key for Gateway %s\n", client->UG_creds[i]->name );
+
+            // do an early reload--see if there is new volume metadata
+            early_reload = true;
             continue;
          }
          
@@ -1155,11 +1165,24 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t user_id
 
          ms_client_view_unlock( client );
 
+         if( early_reload ) {
+            ms_client_view_wlock( client );
+            client->early_reload = true;
+            ms_client_view_unlock( client );
+         }
+
          return rc;
       }
    }
 
    ms_client_view_unlock( client );
+
+   if( early_reload ) {
+      ms_client_view_wlock( client );
+      client->early_reload = true;
+      ms_client_view_unlock( client );
+   }
+
    return -ENOENT;
 }
 
