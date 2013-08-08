@@ -648,3 +648,26 @@ int util_init(void) {
    return 0;
 }
 
+void block_all_signals() {
+    sigset_t sigs;
+    sigfillset(&sigs);
+    pthread_sigmask(SIG_SETMASK, &sigs, NULL);
+}
+
+int install_signal_handler(int signo, struct sigaction *act, sighandler_t handler) {
+    int rc = 0;
+    sigset_t sigs;
+    sigemptyset(&sigs);
+    sigaddset(&sigs, signo);
+    act->sa_handler = handler;
+    rc = sigaction(signo, act, NULL);
+    if (rc < 0)
+	return rc;
+    rc = pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
+    return rc;
+}
+
+int uninstall_signal_handler(int signo) {
+    return 0;
+}
+

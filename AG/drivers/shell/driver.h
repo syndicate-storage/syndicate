@@ -12,6 +12,7 @@
 #include <string>
 #include <set>
 #include <sstream>
+#include <algorithm>
 
 #include <libgateway.h>
 #include <libsyndicate.h>
@@ -19,6 +20,7 @@
 #include <proc-handler.h>
 #include <gateway-ctx.h>
 #include <reversion-daemon.h>
+#include <AG-util.h>
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -77,6 +79,7 @@ static int publish(const char *fpath, int type, struct map_info *mi);
 char**	str2array(char *str);
 void	init(unsigned char* dsn);
 void reversion(void *cls);
-
+void sigusr1_handler(int signo);
+void sigterm_handler(int signo);
 #endif //_SQL_DRIVER_H_
 

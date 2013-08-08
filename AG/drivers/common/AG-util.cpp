@@ -1,8 +1,5 @@
 #include <AG-util.h>
 
-//Global sighand set
-struct _sighand_struct sghs;
-
 void clean_dir(const char *dirname) {
     if (dirname == NULL)
 	return;
@@ -41,38 +38,5 @@ void clean_dir(const char *dirname) {
     }    
     closedir(dirp);
     return;
-}
-
-
-//Register signal handler with sighands
-sighandler_t add_signal_handler(int signum, sighandler_t hndl) {
-    sighandler_t rc = 0;
-    switch (signum) {
-	case SIGTERM:
-	    sghs.term_handler = hndl;
-	    rc = signal(signum, hndl);
-	    break;
-	case SIGINT:
-	    sghs.init_handler = hndl;
-	    rc = signal(signum, hndl);
-	    break;
-    }	
-    return rc;
-}
-
-//Remove signal handler sighands
-sighandler_t remove_signal_handler(int signum) {
-    sighandler_t rc = 0;
-    switch (signum) {
-	case SIGTERM:
-	    sghs.term_handler = NULL;
-	    rc = signal(signum, NULL);
-	    break;
-	case SIGINT:
-	    sghs.init_handler = NULL;
-	    rc = signal(signum, NULL);
-	    break;
-    }	
-    return rc;
 }
 

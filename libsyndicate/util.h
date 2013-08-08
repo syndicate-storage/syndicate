@@ -31,9 +31,11 @@
 #include <sys/un.h>
 #include <attr/xattr.h>
 #include <semaphore.h>
+#include <signal.h>
 #include <typeinfo>
 #include <openssl/sha.h>
 #include <regex.h>
+#include <iostream>
 #include <list>
 #include <map>
 #include <vector>
@@ -58,7 +60,12 @@ using namespace std;
 struct thread_args {
    void* context;
    int thread_no;
+   struct sigaction act;
 };
+
+void block_all_signals();
+int install_signal_handler(int signo, struct sigaction *action, sighandler_t handler);
+int uninstall_signal_handler(int signo);
 
 // class that defines how work gets distributed to a thread.
 // A thread is indexed from 0 to N-1 for N threads.
@@ -82,7 +89,6 @@ public:
    
    int next_thread( int N, T* work ) { return rand() % N; }
 };
-
 
 // NOTE: implementation of this class is in the header file since g++ does not support 'export'
 template <class T>
@@ -363,6 +369,9 @@ protected:
    static void* thread_main_helper( void* arg ) {
       struct thread_args* args = (struct thread_args*)arg;
       
+      //Block all the signals
+      block_all_signals(); 
+
       Threadpool<T> *context = (Threadpool<T> *)args->context; 
       
       context->thread_main( args->thread_no );

@@ -72,7 +72,7 @@ void invalidate_entry(void* entry);
 void* inotify_event_receiver(void *cls);
 void update_death(pid_t pid);
 void sigchld_handler(int signum); 
-int  set_sigchld_handler();
+int  set_sigchld_handler(struct sigaction *action);
 
 class ProcHandler 
 {

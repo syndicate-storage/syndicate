@@ -467,6 +467,7 @@ static void ms_client_uploader_signal( struct ms_client* client ) {
 
 // uploader thread body
 static void* ms_client_uploader_thread( void* arg ) {
+   block_all_signals();
    struct ms_client* client = (struct ms_client*)arg;
 
    client->uploader_running = true;

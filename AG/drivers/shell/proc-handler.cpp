@@ -35,18 +35,9 @@ void sigchld_handler(int signum) {
     }
 }
 
-int  set_sigchld_handler() {
-    struct sigaction action;
+int  set_sigchld_handler(struct sigaction *action) {
     int err = 0;
-
-    memset (&action, 0, sizeof(struct sigaction));
-    action.sa_handler = sigchld_handler;
-
-    if ((err = sigaction(SIGCHLD, &action, 0)) < 0) {
-	perror ("sigaction");
-	return err;
-    }
-
+    err = install_signal_handler(SIGCHLD, action, sigchld_handler);
     return err;
 }
 
@@ -69,13 +60,15 @@ void update_death(pid_t pid) {
 }
 
 void* inotify_event_receiver(void *cls) {
+    struct sigaction act;
+    block_all_signals();
+    set_sigchld_handler(&act);
     //Initialize and start process monitoring thread using inotify...
     int ifd = inotify_init(); 
     if (ifd < 0)
 	return NULL;
     //Select...
     fd_set read_fds;
-    set_sigchld_handler();
     int max_fd = (ifd > self_pipe[0])?ifd:self_pipe[0];
     while(true) {
 	FD_ZERO(&read_fds);
@@ -168,7 +161,7 @@ ProcHandler::ProcHandler()
 ProcHandler::ProcHandler(char *cache_dir_str) 
 {
     cache_dir_path = cache_dir_str;
-    set_sigchld_handler();
+    //set_sigchld_handler();
     proc_table.resize(DEFAULT_INIT_PROC_TBL_LEN);
     if (pipe(self_pipe) < 0) 
 	perror("pipe");

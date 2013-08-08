@@ -18,6 +18,7 @@
 #include <set>
 
 #include <map-parser.h>
+#include <util.h>
 
 using namespace std;
 
