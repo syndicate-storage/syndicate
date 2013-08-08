@@ -573,6 +573,11 @@ class AcquisitionGateway( Gateway ):
       storagetypes.wait_futures([AG_future])
       return gateway.key
 
+   @classmethod
+   def FlushCache( cls, g_id ):
+      gateway_key_name = AcquisitionGateway.make_key_name( g_id=g_id )
+      storagetypes.memcache.delete(gateway_key_name)
+
    
    @classmethod
    def ListAll_ByVolume( cls, volume_id ):
@@ -723,6 +728,11 @@ class ReplicaGateway( Gateway ):
       RG_future = gateway.put_async()
       storagetypes.wait_futures([RG_future])
       return gateway.key
+
+   @classmethod
+   def FlushCache( cls, g_id ):
+      gateway_key_name = ReplicaGateway.make_key_name( g_id=g_id )
+      storagetypes.memcache.delete(gateway_key_name)
 
       
    @classmethod

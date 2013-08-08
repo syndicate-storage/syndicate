@@ -97,6 +97,7 @@ struct ms_client {
    pthread_t view_thread;
    bool view_thread_running;        // set to true if the view thread is running
    char* view_url;
+   bool early_reload;                  // set to true to force an early reload
    struct UG_cred** UG_creds;
    char** RG_urls;
    int num_RG_urls;

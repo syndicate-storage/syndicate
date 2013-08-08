@@ -3734,7 +3734,7 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->owner = getuid();
    conf->usermask = 0377;
 
-   conf->view_reload_freq = 3600000;  // once an hour
+   conf->view_reload_freq = 3600;  // once an hour
 
    return 0;
 }
