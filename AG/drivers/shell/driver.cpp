@@ -323,14 +323,6 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     unsigned char* cp = mp->get_dsn();
     init(cp);
     set<string> *volset = mp->get_volume_set();
-    if (VOLUMES == NULL){
-	VOLUMES = new set<string>(*volset);
-    }
-    else {
-	//Delete set only, objects in the set are kept intact
-	update_volume_set(volset, VOLUMES, NULL);
-	delete volset;
-    }
     map<string, struct map_info*> *fs_map = mp->get_map();
     if (FS2CMD == NULL) {
 	FS2CMD = new map<string, struct map_info*>(*fs_map);
@@ -339,6 +331,14 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 	update_fs_map(fs_map, FS2CMD, driver_special_inval_handler);
 	//Delete map only, objects in the map are kept intact
 	delete fs_map;
+    }
+    if (VOLUMES == NULL){
+	VOLUMES = new set<string>(*volset);
+    }
+    else {
+	//Delete set only, objects in the set are kept intact
+	update_volume_set(volset, VOLUMES, NULL);
+	delete volset;
     }
     for (iter = FS2CMD->begin(); iter != FS2CMD->end(); iter++) {
 	const char* full_path = iter->first.c_str();
@@ -414,18 +414,18 @@ static int publish(const char *fpath, int type, struct map_info* mi)
 	    ment->type = MD_ENTRY_DIR;
 	    ment->mode = DIR_PERMISSIONS_MASK;
 	    ment->mode |= S_IFDIR;
-	    /*if ( (i = ms_client_mkdir(mc, ment)) < 0 ) {
+	    if ( (i = ms_client_mkdir(mc, ment)) < 0 ) {
 		cerr<<"ms client mkdir "<<i<<endl;
-	    }*/
+	    }
 	    break;
 	case MD_ENTRY_FILE:
 	    ment->size = -1;
 	    ment->type = MD_ENTRY_FILE;
 	    ment->mode &= FILE_PERMISSIONS_MASK;
 	    ment->mode |= S_IFREG;
-	    /*if ( (i = ms_client_create(mc, ment)) < 0 ) {
+	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
 		cerr<<"ms client create "<<i<<endl;
-	    }*/
+	    }
 	    mi->mentry = ment;
 	    mi->reversion_entry = reversion;
 	    break;
@@ -493,6 +493,15 @@ void sigusr1_handler(int signo) {
 void driver_special_inval_handler(string file_path) {
     ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
     prch.remove_proc_table_entry(file_path);
-    DATA.erase(file_path);
+    struct md_entry *mde = DATA[file_path];
+    if (mde != NULL) {
+	//Delete this file from all the volumes we are attached to.
+	DATA.erase(file_path);
+	if (mde->url)
+	    free(mde->url);
+	if (mde->path)
+	    free(mde->path);
+	free(mde);
+    }
 }
 

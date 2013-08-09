@@ -33,7 +33,6 @@
 #include <gateway-ctx.h>
 #include <map-parser.h>
 
-#define DEFAULT_INIT_PROC_TBL_LEN   1024
 #define MAX_FILE_NAME_LEN	    32
 #define INOTIFY_EVENT_SIZE	    sizeof(struct inotify_event)
 #define INOTIFY_READ_BUFFER_LEN	    ((INOTIFY_EVENT_SIZE + \
@@ -78,6 +77,8 @@ void clean_invalid_proc_entry(proc_table_entry *pte);
 void delete_proc_entry(proc_table_entry *pte);
 void lock_pid_map();
 void unlock_pid_map();
+void lock_pte(proc_table_entry *pte);
+void unlock_pte(proc_table_entry *pte);
     
 class ProcHandler 
 {
@@ -98,7 +99,8 @@ class ProcHandler
     public:
 	static  ProcHandler&  get_handle(char* cache_dir_str);
 	int    execute_command(struct gateway_ctx *ctx, char *buffer, ssize_t read_size); 
-	int  execute_command(const char* proc_name, char *argv[], char *evp[], /*uint id,*/ struct gateway_ctx *ctx,  proc_table_entry *pte); 
+	int  execute_command(const char* proc_name, char *argv[], char *evp[], 
+			     struct gateway_ctx *ctx,  proc_table_entry *pte); 
 	ssize_t	encode_results();
 	static proc_table_entry* alloc_proc_table_entry();
 	static bool is_proc_alive(pid_t);

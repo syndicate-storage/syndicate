@@ -19,10 +19,10 @@ pthread_mutex_t pid_map_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void invalidate_entry(void* cls) {
     proc_table_entry *entry = (proc_table_entry*)cls;
-    //Acquire the pte lock
-    pthread_mutex_lock(&entry->pte_lock);
     if (entry == NULL)
 	return;
+    //Acquire the pte lock
+    pthread_mutex_lock(&entry->pte_lock);
     if (!(entry->is_read_complete)) {
 	if (kill(entry->proc_id, 9) < 0)
 	    perror("kill(9)");
@@ -69,11 +69,23 @@ int  set_sigchld_handler(struct sigaction *action) {
 }
 
 void lock_pid_map() {
+    //cout<<"Locking PID_MAP"<<endl;
     pthread_mutex_lock(&pid_map_lock);
 }
 
 void unlock_pid_map() {
+    //cout<<"Unlocking PID_MAP"<<endl;
     pthread_mutex_unlock(&pid_map_lock);
+}
+
+void lock_pte(proc_table_entry *pte) {
+    //cout<<"Locking PTE"<<endl;
+    pthread_mutex_lock(&pte->pte_lock);
+}
+
+void unlock_pte(proc_table_entry *pte) {
+    //cout<<"Unlocking PTE"<<endl;
+    pthread_mutex_unlock(&pte->pte_lock);
 }
 
 void update_death(pid_t pid) {
@@ -85,7 +97,7 @@ void update_death(pid_t pid) {
 	//Lock pid_map lock
 	lock_pid_map();
 	//Acquire pte lock
-	pthread_mutex_lock(&pte->pte_lock);
+	lock_pte(pte);
 	pte->is_read_complete = true;
 	set<proc_table_entry*, proc_table_entry_comp>::iterator sit;
 	sit = running_proc_set.find(pte);
@@ -93,7 +105,7 @@ void update_death(pid_t pid) {
 	    running_proc_set.erase(sit);
 	}
 	pid_map.erase(it);
-	pthread_mutex_unlock(&pte->pte_lock);
+	unlock_pte(pte);
 	unlock_pid_map();
     }
     else {
@@ -116,8 +128,14 @@ void* inotify_event_receiver(void *cls) {
 	FD_ZERO(&read_fds);
 	FD_SET(ifd, &read_fds);
 	FD_SET(self_pipe[0], &read_fds);
-	if ( select(max_fd + 1, &read_fds, NULL, NULL, NULL) < 0 )
-	    break;
+	if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) < 0 ) {
+	    if (errno == EINTR)
+		continue;
+	    else { 
+		perror("select");
+		exit(-1);
+	    }
+	}
 	//Data is avaialble on an fd...
 	if (FD_ISSET(self_pipe[0], &read_fds)) {
 	    //We have a new file in file set, watch it in inotify
@@ -127,17 +145,17 @@ void* inotify_event_receiver(void *cls) {
 		    (pte_addr != 0)) {
 		proc_table_entry *pte = (proc_table_entry*)(pte_addr);
 		int wd = inotify_add_watch(ifd, pte->block_file, 
-				IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE);
+				IN_MODIFY | IN_CLOSE_WRITE);
 		if (wd > 0) {
 		    //Acquire the pte lock
-		    pthread_mutex_lock(&pte->pte_lock);
+		    lock_pte(pte);
 		    pte->block_file_wd = wd;
 		    //Lock pid_map lock
 		    lock_pid_map();
 		    running_proc_set.insert(pte);
 		    pid_map[pte->proc_id] = pte;
 		    unlock_pid_map();
-		    pthread_mutex_unlock(&pte->pte_lock);
+		    unlock_pte(pte);
 		}
 		else {
 		    perror("inotify_add_watch");
@@ -163,6 +181,14 @@ void* inotify_event_receiver(void *cls) {
 						    (&ievents[byte_count]);
 		proc_table_entry pte; 		
 		pte.block_file_wd = ievent->wd;
+		if (ievent->mask & IN_IGNORED) {
+		    byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
+		    continue;
+		}
+		if ((ievent->mask & (IN_MODIFY | IN_CLOSE_WRITE)) == 0) {
+		    byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
+		    continue;
+		}
 		lock_pid_map();
 		set<proc_table_entry*, bool(*)(proc_table_entry*, 
 						proc_table_entry*)>::iterator 
@@ -178,30 +204,33 @@ void* inotify_event_receiver(void *cls) {
 			running_proc_set.erase(itr);
 			clean_invalid_proc_entry(pte);
 			unlock_pid_map();
-			break;
+			//Update the byte_count before we leave
+			byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
+			continue;
 		    }
 		    //Acquire the pte lock
-		    pthread_mutex_lock(&pte->pte_lock);
+		    lock_pte(pte);
 		    pte->current_max_block = stat_buff.st_size/BLK_SIZE;
 		    pte->block_byte_offset = stat_buff.st_size - 
 				    (pte->current_max_block * BLK_SIZE);
-		    byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
-		    pthread_mutex_unlock(&pte->pte_lock);
-		    unlock_pid_map();
+		    unlock_pte(pte);
 		}
 		else {
 		    //File not found in set, remove watch
 		    if (inotify_rm_watch(ifd, ievent->wd) < 0)
 			perror("inotify_rm_watch");
 		    unlock_pid_map();
-		    break;
+		    //Update the byte_count before leave
+		    byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
+		    continue;
 		}
+		//Update the byte_count before leave
+		byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
 		unlock_pid_map();
 	    }
 
 	}
     }
-    perror("select");
     return NULL;
 }
 
@@ -220,13 +249,11 @@ ProcHandler::ProcHandler()
 ProcHandler::ProcHandler(char *cache_dir_str) 
 {
     cache_dir_path = cache_dir_str;
-    //set_sigchld_handler();
-    //proc_table.resize(DEFAULT_INIT_PROC_TBL_LEN);
     pthread_mutex_init(&proc_table_lock, NULL);
     if (pipe(self_pipe) < 0) 
 	perror("pipe");
     int rc = pthread_create(&inotify_event_thread, NULL, inotify_event_receiver, 
-			    NULL/*running_proc_set*/);
+			    NULL);
     if (rc < 0)
 	perror("pthread_create");
 }
@@ -240,8 +267,8 @@ ProcHandler&  ProcHandler::get_handle(char *cache_dir_str)
 
 
 int ProcHandler::execute_command(const char* proc_name, char *argv[], 
-				char *envp[], /*uint id,*/ 
-				struct gateway_ctx *ctx, proc_table_entry *pte)
+				char *envp[], struct gateway_ctx *ctx, 
+				proc_table_entry *pte)
 {
     if (argv)
 	argv[0] = (char*)proc_name;
@@ -282,12 +309,6 @@ int ProcHandler::execute_command(const char* proc_name, char *argv[],
 	if (dup2(old_fd, STDOUT_FILENO) < 0) {
 	    perror("dup2");
 	}
-	if (pte == NULL)
-	    pte = alloc_proc_table_entry();
-	else {
-	    free(pte->block_file);
-	    pte->block_file = NULL;
-	}
 	pte->block_file = file_path;
 	pte->block_file_wd = -1;
 	pte->current_max_block = 0;
@@ -324,31 +345,40 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
     ssize_t len = 0;
     struct stat st_buf;
 
-    //if (ctx->id >= DEFAULT_INIT_PROC_TBL_LEN)
-	//return -EIO;
-    //proc_table_entry *pte = proc_table[ctx->id];
     proc_table_entry *pte = proc_table[string(ctx->file_path)];
     if (pte == NULL || (pte != NULL && !(pte->valid))) {
+	if (pte == NULL)
+	    pte = alloc_proc_table_entry();
 	int rc = execute_command(proc_name, argv, 
 				envp, /*ctx->id,*/ctx, pte);
 	if (rc < 0)
 	    return rc;
 	//pte = proc_table[ctx->id];
 	pte = proc_table[string(ctx->file_path)];
+	//Lock pte
+	lock_pte(pte);
+	//check whether this pte is valid
+	if (!pte->valid) {
+	    unlock_pte(pte);
+	    return -EAGAIN;
+	}
 	ctx->mi->entry = pte;
 	ctx->mi->invalidate_entry = invalidate_entry;
 	int fd = open(pte->block_file, O_RDONLY);
 	if (fd < 0) {
 	    perror("open");
+	    unlock_pte(pte);
 	    return -EIO;
 	}
 	ctx->fd = fd;
 
 	if (fstat(fd, &st_buf) < 0) {
 	    perror("stat");
+	    unlock_pte(pte);
 	    return -EIO;
 	}
 	if (st_buf.st_size < (off_t)(ctx->block_id * BLK_SIZE)) {
+	    unlock_pte(pte);
 	    if (!pte->is_read_complete)
 		return -EAGAIN;
 	    else
@@ -357,6 +387,7 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	off_t seek_len = ctx->block_id  * BLK_SIZE;
 	if (lseek(fd, seek_len, SEEK_SET) < 0) {
 	    perror("lseek");
+	    unlock_pte(pte);
 	    return -EIO;
 	}
 	uint bk_off_count = 0, bk_off = 0;
@@ -367,6 +398,7 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	    bk_off_count++;
 	}
 	ctx->data_offset += len;
+	unlock_pte(pte);
 	return len;
     }
     else {
@@ -376,6 +408,12 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	    return 0;
 	//get proc_table_entry by id and return the block... 
 	//proc_table_entry *pte = proc_table[ctx->id];
+	lock_pte(pte);
+	//check whether this pte is valid
+	if (!pte->valid) {
+	    unlock_pte(pte);
+	    return -EAGAIN;
+	}
 	if (pte->current_max_block >= ctx->block_id) {
 	    off_t current_offset = (ctx->block_id * BLK_SIZE) + 
 			    ctx->data_offset;
@@ -383,6 +421,7 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 		int fd = open(pte->block_file, O_RDONLY);
 		if (fd < 0) {
 		    perror("open");
+		    unlock_pte(pte);
 		    return -EIO;
 		}
 		ctx->fd = fd;
@@ -392,29 +431,35 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 		    pte->current_max_block > ctx->block_id) {
 		if (lseek(ctx->fd, current_offset, SEEK_SET) < 0) {
 		    perror("lseek");
+		    unlock_pte(pte);
 		    return -EIO;
 		}
 		len = read(ctx->fd, buffer, read_size);
 		if (len < 0) {
 		    perror("read");
+		    unlock_pte(pte);
 		    return -EIO;
 		}
 		else {
 		    ctx->data_offset += len;
+		    unlock_pte(pte);
 		    return len;
 		}
 	    } 
 	    else {
+		unlock_pte(pte);
 		return -EAGAIN;
 	    }
 	}
 	else { 
+	    unlock_pte(pte);
 	    if (pte->is_read_complete) {
 		return 0;
 	    }
 	    else
 		return -EAGAIN;
 	}
+	unlock_pte(pte);
     }
 }
 
@@ -427,6 +472,7 @@ proc_table_entry* ProcHandler::alloc_proc_table_entry()
 {
     proc_table_entry *pte = 
 		(proc_table_entry*)malloc(sizeof(proc_table_entry));
+    pthread_mutex_init(&pte->pte_lock, NULL);
     return pte;
 }
 
