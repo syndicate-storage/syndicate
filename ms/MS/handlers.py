@@ -53,7 +53,7 @@ def read_basic_auth( headers ):
    basic_auth = headers.get("Authorization")
    if basic_auth == None:
       logging.info("no authorization header")
-      return (None, None)
+      return (None, None, None)
 
    # basic auth format:
    # ${gateway_type}_${gateway_id}:${password}
@@ -68,7 +68,7 @@ def read_basic_auth( headers ):
       gateway_id = int(gateway_id)
    except:
       logging.info("incomprehensible Authorization header: '%s'" % basic_auth )
-      return (None, None)
+      return (None, None, None)
 
    return gateway_type, gateway_id, password
 
