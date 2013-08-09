@@ -34,9 +34,52 @@ void delete_map_info_map(map<string, struct map_info*> *mi_map) {
     delete mi_map;
 }
 
+void update_volume_set(set<string> *new_set,
+		   set<string> *old_set,
+		   void (*driver_disconnect_volume)(string)) {
+	set<string> diff0, diff1, minter;
+	set<string>::iterator itr;
+	// minter = (old_set ^ new_set)
+	// diff0 = (old_set - minter)
+	// Delte everything in diff0 from old_set
+	// diff1 = (new_set - minter)
+	// Add everything in diff1 to old_set
+
+	set_intersection(new_set->begin(), new_set->end(), 
+			 old_set->begin(), old_set->end(),
+			 inserter(minter, minter.begin()), 
+			 new_set->value_comp());
+
+	set_difference( old_set->begin(), old_set->end(), 
+			minter.begin(), minter.end(),
+			inserter(diff0, diff0.begin()),
+			old_set->value_comp());
+
+	set_difference(new_set->begin(), new_set->end(), 
+			minter.begin(), minter.end(),
+			inserter(diff1, diff1.begin()),
+			new_set->value_comp());	
+	
+	// minter, the intersecion of old_set and new_set will remain in old_set.
+	// Delte everything in diff0 from old_set and disconnect the AG from those volumes.
+	for (itr = diff0.begin(); itr != diff0.end(); itr++) {
+	    string del_vol_str= *itr;
+	    cout<<"Deleting Volume: "<<del_vol_str<<endl;
+	    old_set->erase(del_vol_str);
+	    //Disconnect the AG from volume del_vol_str...
+	    if (driver_disconnect_volume != NULL)
+		driver_disconnect_volume(del_vol_str);
+	}
+	// Add everything in diff1 to old_set
+	for (itr = diff1.begin(); itr != diff1.end(); itr++) {
+	    cout<<"Adding Volume: "<<*itr<<endl;
+	    old_set->insert(*itr);
+	}
+}
+
 void update_fs_map(map<string, struct map_info*> *new_map,
 		   map<string, struct map_info*> *old_map,
-		   void (*driver_inval_handler)(string)) {
+		   void (*driver_inval_mi)(string)) {
 	map<string, struct map_info*> diff0, diff1, minter;
 	map<string, struct map_info*>::iterator itr;
 	// minter = (old_map ^ new_map)
@@ -63,7 +106,7 @@ void update_fs_map(map<string, struct map_info*> *new_map,
 	
 	// Update values of every map_info in old_map that are also in minter
 	for (itr = minter.begin(); itr != minter.end(); itr++) {
-	    //cout<<"Updating "<<itr->second->shell_command<<endl;
+	    cout<<"Updating "<<itr->second->shell_command<<endl;
 	    struct map_info* umi = (*old_map)[itr->first];
 	    umi->file_perm = itr->second->file_perm;
 	    umi->reval_sec = itr->second->reval_sec;
@@ -71,15 +114,16 @@ void update_fs_map(map<string, struct map_info*> *new_map,
 	// Delte everything in diff0 from old_map and invalidate those map_infos
 	for (itr = diff0.begin(); itr != diff0.end(); itr++) {
 	    struct map_info* emi = (*old_map)[itr->first];
-	    //cout<<"Deleting "<<itr->second->shell_command<<endl;
+	    cout<<"Deleting "<<itr->second->shell_command<<endl;
 	    old_map->erase(itr->first);
 	    emi->invalidate_entry(emi);
-	    driver_inval_handler(itr->first);
+	    if (driver_inval_mi)
+		driver_inval_mi(itr->first);
 	    delete_map_info(emi);
 	}
 	// Add everything in diff1 to old_map
 	for (itr = diff1.begin(); itr != diff1.end(); itr++) {
-	    //cout<<"Adding "<<itr->second->shell_command<<endl;
+	    cout<<"Adding "<<itr->second->shell_command<<endl;
 	    old_map->insert(pair<string, struct map_info*>(itr->first, itr->second));
 	}
 }
@@ -403,7 +447,7 @@ unsigned char* MapParser::get_dsn()
 }
 
 
-set<string>* MapParser::get_volumes_set() 
+set<string>* MapParser::get_volume_set() 
 {
     return volumes;
 }
