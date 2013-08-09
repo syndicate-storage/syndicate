@@ -26,7 +26,7 @@ from django.template import Context, loader, RequestContext
 from django.shortcuts import redirect
 from django.views.decorators.csrf import csrf_exempt
 
-from storage.storagetypes import transactional
+from storage.storagetypes import transactional, transaction
 import storage.storage as db
 
 from MS.volume import Volume
@@ -343,7 +343,13 @@ def create(request):
                     return give_create_form(username, session)
                 # Force update of UG version
                 attrs = {"UG_version":1}
-                db.update_volume(vol.volume_id, **attrs)
+
+                try:
+                   transaction( lambda: db.update_volume(vol.volume_id, **attrs) )
+                except Exception as E:
+                   session['message'] = "UG creation error: %s" % E
+                   return give_create_form( username, session )
+
             try:
                 # Prep kwargs
                 kwargs = {}
@@ -356,8 +362,8 @@ def create(request):
                 # Create
                 new_ug = db.create_user_gateway(user, vol, **kwargs)
             except Exception as E:
-                 session['message'] = "UG creation error: %s" % E
-                 return give_create_form(username, session)
+                session['message'] = "UG creation error: %s" % E
+                return give_create_form(username, session)
 
             session['new_change'] = "Your new gateway is ready."
             session['next_url'] = '/syn/UG/mygateways'

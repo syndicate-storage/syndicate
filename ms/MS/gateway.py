@@ -77,16 +77,15 @@ def is_int( x ):
 
 class Gateway( storagetypes.Object ):
 
-   # owner ID of all files created by this gateway
-   owner_id = storagetypes.Integer()
-   host = storagetypes.Text()
+   owner_id = storagetypes.Integer()         # ID of the SyndicateUser that owns this gateway
+   host = storagetypes.String()
    port = storagetypes.Integer()
    ms_username = storagetypes.String()
    ms_password_hash = storagetypes.Text()
    ms_password_salt = storagetypes.Text()
    g_id = storagetypes.Integer()
 
-   public_key = storagetypes.Text()    # PEM-encoded RSA public key
+   public_key = storagetypes.Text()          # PEM-encoded RSA public key
 
    session_password = storagetypes.Text()
    session_expires = storagetypes.Integer(default=-1, indexed=False)     # -1 means "never expires"
@@ -96,7 +95,7 @@ class Gateway( storagetypes.Object ):
       "host",
       "port",
       "ms_username",
-      "ms_password",
+      "ms_password"
    ]
 
    validators = {
@@ -237,7 +236,7 @@ class Gateway( storagetypes.Object ):
 
 
    @classmethod
-   def create_credentials( cls, user, volume, kwargs ):
+   def create_credentials( cls, user, kwargs ):
 
       password, password_hash, password_salt = UserGateway.generate_credentials()
       
@@ -255,7 +254,49 @@ class Gateway( storagetypes.Object ):
          kwargs["ms_password_salt"] = password_salt
          kwargs["ms_password_hash"] = password_hash
       
-      
+
+   # override this in subclasses
+   def is_in_volume( self, volume ):
+      return False
+
+
+   def verify_ms_update( self, ms_update ):
+      """
+      Verify the authenticity of a received ms_update message
+      """
+
+      sig = ms_update.signature
+      sig_bin = base64.b64decode( sig )
+
+      ms_update.signature = ""
+      ms_update_str = ms_update.SerializeToString()
+
+      ret = self.verify_signature( ms_update_str, sig_bin )
+
+      ms_update.signature = sig
+
+      return ret
+
+
+   def is_valid_cred( self, cred_pb ):
+      """
+      Is a given ms_volume_gateway_cred valid?
+      """
+
+      if self.owner_id != cred_pb.owner_id:
+         return False
+
+      if self.ms_username != cred_pb.name:
+         return False
+
+      if self.host != cred_pb.host:
+         return False
+
+      if self.port != cred_pb.port:
+         return False
+
+      return True
+
    
 
 class UserGateway( Gateway ):
@@ -279,44 +320,6 @@ class UserGateway( Gateway ):
    def cache_listing_key( cls, **kwargs ):
       assert 'volume_id' in kwargs, "Required attributes: volume_id"
       return "UGs: volume=%s" % kwargs['volume_id']
-
-
-   def verify_ms_update( self, ms_update ):
-      """
-      Verify the authenticity of a received ms_update message
-      """
-
-      sig = ms_update.signature
-      sig_bin = base64.b64decode( sig )
-      
-      ms_update.signature = ""
-      ms_update_str = ms_update.SerializeToString()
-
-      ret = self.verify_signature( ms_update_str, sig_bin )
-
-      ms_update.signature = sig
-
-      return ret
-
-
-   def is_valid_cred( self, cred_pb ):
-      """
-      Is a given ms_volume_gateway_cred valid?
-      """
-      
-      if self.owner_id != cred_pb.owner_id:
-         return False
-
-      if self.ms_username != cred_pb.name:
-         return False
-
-      if self.host != cred_pb.host:
-         return False
-
-      if self.port != cred_pb.port:
-         return False
-
-      return True
 
          
    
@@ -359,7 +362,7 @@ class UserGateway( Gateway ):
 
       UserGateway.fill_defaults( kwargs )
 
-      UserGateway.create_credentials( user, volume, kwargs )
+      UserGateway.create_credentials( user, kwargs )
 
       missing = UserGateway.find_missing_attrs( kwargs )
       if len(missing) != 0:
@@ -416,6 +419,7 @@ class UserGateway( Gateway ):
             setattr(gateway, key, value)
          except:
             raise Exception("UserGatewayUpdate: Unable to set attribute: %s, %s." % (key, value))
+
       UG_future = gateway.put_async()
       storagetypes.wait_futures([UG_future])
       return gateway.key
@@ -457,6 +461,9 @@ class UserGateway( Gateway ):
 
       return results
 
+   def is_in_volume( self, volume ):
+      return volume.volume_id == self.volume_id
+      
    
 class AcquisitionGateway( Gateway ):
 
@@ -511,7 +518,7 @@ class AcquisitionGateway( Gateway ):
 
       AcquisitionGateway.fill_defaults( kwargs )
 
-      AcquisitionGateway.create_credentials( user, None, kwargs )
+      AcquisitionGateway.create_credentials( user, kwargs )
 
       missing = AcquisitionGateway.find_missing_attrs( kwargs )
       if len(missing) != 0:
@@ -566,6 +573,11 @@ class AcquisitionGateway( Gateway ):
       storagetypes.wait_futures([AG_future])
       return gateway.key
 
+   @classmethod
+   def FlushCache( cls, g_id ):
+      gateway_key_name = AcquisitionGateway.make_key_name( g_id=g_id )
+      storagetypes.memcache.delete(gateway_key_name)
+
    
    @classmethod
    def ListAll_ByVolume( cls, volume_id ):
@@ -603,6 +615,9 @@ class AcquisitionGateway( Gateway ):
       storagetypes.memcache.delete(ag_key_name)
 
       return True
+
+   def is_in_volume( self, volume ):
+      return volume.volume_id in self.volume_ids
       
 
 class ReplicaGateway( Gateway ):
@@ -658,7 +673,7 @@ class ReplicaGateway( Gateway ):
 
       ReplicaGateway.fill_defaults( kwargs )
 
-      ReplicaGateway.create_credentials( user, None, kwargs )
+      ReplicaGateway.create_credentials( user, kwargs )
       
       missing = ReplicaGateway.find_missing_attrs( kwargs )
       if len(missing) != 0:
@@ -714,6 +729,11 @@ class ReplicaGateway( Gateway ):
       storagetypes.wait_futures([RG_future])
       return gateway.key
 
+   @classmethod
+   def FlushCache( cls, g_id ):
+      gateway_key_name = ReplicaGateway.make_key_name( g_id=g_id )
+      storagetypes.memcache.delete(gateway_key_name)
+
       
    @classmethod
    def Delete( cls, g_id ):
@@ -750,3 +770,7 @@ class ReplicaGateway( Gateway ):
          #storagetypes.memcache.add( cache_key, results )
 
       return results
+
+
+   def is_in_volume( self, volume ):
+      return volume.volume_id in self.volume_ids

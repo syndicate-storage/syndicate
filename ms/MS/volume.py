@@ -156,12 +156,12 @@ class Volume( storagetypes.Object ):
    }
 
       
-   def protobuf( self, volume_metadata, caller_UG, **kwargs ):
+   def protobuf( self, volume_metadata, caller_gateway, **kwargs ):
       """
       Convert to a protobuf (ms_volume_metadata).
       """
 
-      caller_UG.protobuf_cred( volume_metadata.cred )
+      caller_gateway.protobuf_cred( volume_metadata.cred )
       
       volume_metadata.owner_id = kwargs.get( 'owner_id', self.owner_id )
       volume_metadata.blocksize = kwargs.get( 'blocksize', self.blocksize )
@@ -173,7 +173,7 @@ class Volume( storagetypes.Object ):
       volume_metadata.RG_version = kwargs.get('RG_version', self.RG_version )
       volume_metadata.session_timeout = kwargs.get( 'session_timeout', self.session_timeout )
       volume_metadata.volume_public_key = kwargs.get( 'public_key', self.public_key )
-      volume_metadata.session_password = caller_UG.get_current_session_credentials()
+      volume_metadata.session_password = caller_gateway.get_current_session_credentials()
 
       if volume_metadata.session_password == None:
          raise Exception("Regenerate gateway session credentials and try again")
@@ -223,14 +223,11 @@ class Volume( storagetypes.Object ):
       return
 
 
-   def is_UG_allowed( self, UG ):
+   def is_gateway_in_volume( self, gateway ):
       if not self.private:
          return True
-         
-      if UG.volume_id != self.volume_id:
-         return False
 
-      return True
+      return gateway.is_in_volume( self )
 
 
    def sign_message( self, data ):

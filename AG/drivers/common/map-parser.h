@@ -18,6 +18,7 @@
 #ifndef _MAP_PARSER_H_
 #define _MAP_PARSER_H_
 #include <map>
+#include <set>
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -40,6 +41,8 @@ using namespace xercesc;
 #define DSN_TAG			    "DSN"
 #define KEY_TAG			    "File"
 #define VALUE_TAG		    "Query"
+#define VOLUME_SET_TAG		    "Volumes"
+#define VOLUME_TAG		    "Volume"
 #define PERM_ATTR		    "perm"
 #define QUERY_TYPE_ATTR		    "type"
 #define MAP_REVALIDATE_ATTR	    "reval"
@@ -82,10 +85,17 @@ struct map_info {
     void (*reversion_entry)(void*);
 };
 
+void delete_map_info(struct map_info *mi);
+void delete_map_info_map(map<string, struct map_info*> *mi_map);
+void update_fs_map(map<string, struct map_info*> *new_map,
+		   map<string, struct map_info*> *old_map,
+		   void (*driver_inval_handler)(string));
+
 class MapParserHandler : public DefaultHandler {
     private:
 	bool open_key;
 	bool open_val;
+	bool open_volume;
 	char* element_buff;
 	char* current_key;
 	char* bounded_query;
@@ -98,11 +108,12 @@ class MapParserHandler : public DefaultHandler {
 	bool open_dsn;
 	uint64_t current_id;
 	map<string, struct map_info*>* xmlmap;
-
+	set<string>* volumes;
 	void set_time(char *tm_str);
 
     public:
-	MapParserHandler(map<string, struct map_info*> *xmlmap);
+	MapParserHandler(map<string, struct map_info*> *xmlmap,
+			 set<string>* volumes);
 	void startElement(
 		const   XMLCh* const    uri,
 		const   XMLCh* const    localname,
@@ -125,12 +136,14 @@ class MapParserHandler : public DefaultHandler {
 class MapParser {
     private:
 	map<string, struct map_info*> *FS2SQLMap;
+	set<string> *volumes;
 	char *mapfile;
 	unsigned char* dsn_str;
 	uint64_t reval_secs;
     public:
 	MapParser( char* mapfile );
 	map<string, struct map_info*>* get_map( );
+	set<string>* get_volumes_set();
 	int parse();
 	unsigned char* get_dsn();
 };
