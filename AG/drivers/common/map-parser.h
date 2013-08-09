@@ -89,7 +89,10 @@ void delete_map_info(struct map_info *mi);
 void delete_map_info_map(map<string, struct map_info*> *mi_map);
 void update_fs_map(map<string, struct map_info*> *new_map,
 		   map<string, struct map_info*> *old_map,
-		   void (*driver_inval_handler)(string));
+		   void (*driver_disconnect_volume)(string));
+void update_volume_set(set<string> *new_map,
+		   set<string> *old_map,
+		   void (*driver_inval_mi)(string));
 
 class MapParserHandler : public DefaultHandler {
     private:
@@ -143,7 +146,7 @@ class MapParser {
     public:
 	MapParser( char* mapfile );
 	map<string, struct map_info*>* get_map( );
-	set<string>* get_volumes_set();
+	set<string>* get_volume_set();
 	int parse();
 	unsigned char* get_dsn();
 };
