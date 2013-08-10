@@ -5,6 +5,9 @@
 	<Volumes>
 	    <Volume>testvolume-wathsala-princeton.edu</Volume>
 	</Volumes>
+	<!--<Volumes>
+	    <Volume>testvolume-wathsala2-princeton.edu</Volume>
+	</Volumes>-->
     </Config>
     <Pair reval="10s 5m">
 	<File perm="740">/foo/bar</File>
@@ -22,8 +25,8 @@
 	<File perm="440">/pqrff/ixj</File>
 	<Query type="shell">COMMAND 4</Query>
     </Pair>
-    <!--<Pair reval="5d 2h">
+    <Pair reval="5d 2h">
 	<File perm="440">/foo/hello</File>
 	<Query type="shell">COMMAND 5</Query>
-    </Pair>-->
+    </Pair>
 </Map>

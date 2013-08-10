@@ -1953,13 +1953,13 @@ int ms_client_view_rlock( struct ms_client* client ) {
 
 // write-lock a client context's view
 int ms_client_view_wlock( struct ms_client* client ) {
-   dbprintf("ms_client_view_wlock %p\n", client);
+   //dbprintf("ms_client_view_wlock %p\n", client);
    return pthread_rwlock_wrlock( &client->view_lock );
 }
 
 // unlock a client context's view
 int ms_client_view_unlock( struct ms_client* client ) {
-   dbprintf("ms_client_view_unlock %p\n", client);
+   //dbprintf("ms_client_view_unlock %p\n", client);
    return pthread_rwlock_unlock( &client->view_lock );
 }
 
