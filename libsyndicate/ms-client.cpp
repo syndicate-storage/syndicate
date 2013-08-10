@@ -1376,6 +1376,7 @@ int ms_client_load_volume_metadata( struct ms_client* client, ms::ms_volume_meta
 
    // new session password
    curl_easy_setopt( client->ms_read, CURLOPT_USERPWD, NULL );
+   curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, NULL );
    curl_easy_setopt( client->ms_view, CURLOPT_USERPWD, NULL );
 
    if( client->userpass ) {
@@ -1399,6 +1400,7 @@ int ms_client_load_volume_metadata( struct ms_client* client, ms::ms_volume_meta
    sprintf( client->userpass, "%s_%s:%s", gateway_type_str, gateway_id_str, client->session_password );
 
    curl_easy_setopt( client->ms_read, CURLOPT_USERPWD, client->userpass );
+   curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, client->userpass );
    curl_easy_setopt( client->ms_view, CURLOPT_USERPWD, client->userpass );
 
    client->owner_id = volume_md->cred().owner_id();
@@ -2287,37 +2289,6 @@ int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
 int ms_client_update( struct ms_client* client, struct md_entry* ent ) {
    return ms_client_post( client, ms::ms_update::UPDATE, ent );
 }
-
-
-/*
-// iterator data and method for serializing an update_set's worth of updates
-struct update_set_iterator_data {
-   update_set* updates;
-   update_set::iterator itr;
-};
-
-static struct md_update* update_set_iterator( void* arg ) {
-   struct update_set_iterator_data* itrdata = (struct update_set_iterator_data*)arg;
-
-   if( itrdata->itr == itrdata->updates->end() )
-      return NULL;
-
-   struct md_update* ret = &itrdata->itr->second;
-
-   dbprintf("update(path=%s, url=%s)\n", ret->ent.path, ret->ent.url);
-   
-   itrdata->itr++;
-   return ret;
-}
-
-static ssize_t serialize_update_set( struct md_syndicate_conf* conf, update_set* updates, char** buf ) {
-   struct update_set_iterator_data itrdata;
-   itrdata.updates = updates;
-   itrdata.itr = updates->begin();
-
-   return md_metadata_update_text3( conf, buf, update_set_iterator, &itrdata );
-}
-*/
 
 
 // send a batch of updates.
