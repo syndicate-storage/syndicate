@@ -1,5 +1,7 @@
 #include <AG-util.h>
 
+struct _driver_events de;
+
 void clean_dir(const char *dirname) {
     if (dirname == NULL)
 	return;
@@ -38,5 +40,56 @@ void clean_dir(const char *dirname) {
     }    
     closedir(dirp);
     return;
+}
+
+
+void add_driver_event_handler(int event, driver_event_handler deh) {
+    if (deh == NULL)
+	return;
+    switch(event) {
+	case DRIVER_TERMINATE:
+	    de.term_deh = deh;
+	    break;
+	case DRIVER_RECONF:
+	    de.reconf_deh = deh;
+	    break;
+	default:
+	    break;
+    }
+}
+
+void remove_driver_event_handler(int event) {
+    switch(event) {
+	case DRIVER_TERMINATE:
+	    de.term_deh = NULL;
+	    break;
+	case DRIVER_RECONF:
+	    de.reconf_deh = NULL;
+	    break;
+	default:
+	    break;
+    }
+}
+
+void* driver_event_loop(void *) {
+    block_all_singals();
+    return NULL;
+}
+
+void driver_event_start() {
+    //Create fifo and update de.fifo_fd.
+    pid_t pid = getpid();
+    stringstream sstr;
+    sstr<<FIFO_PREFIX<<pid;
+    char* fifo_path = strdup(sstr.str().c_str());
+    int rc = mkfifo(fifo_path, S_IRUSR | S_IWUSR | S_IRGRP);
+    if (rc < 0) {
+	perror("mkfifo");
+	return;
+    }
+    //de.fifo_fd = 
+    rc = pthread_create(NULL, driver_event_loop, NULL);
+    if (rc < 0)
+	perror("pthread_create");
 }
 

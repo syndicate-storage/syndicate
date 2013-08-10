@@ -248,12 +248,13 @@ ProcHandler::ProcHandler()
 
 ProcHandler::ProcHandler(char *cache_dir_str) 
 {
+    int rc = 0;
     cache_dir_path = cache_dir_str;
     pthread_mutex_init(&proc_table_lock, NULL);
     if (pipe(self_pipe) < 0) 
 	perror("pipe");
-    int rc = pthread_create(&inotify_event_thread, NULL, inotify_event_receiver, 
-			    NULL);
+    rc = pthread_create(&inotify_event_thread, NULL, inotify_event_receiver, 
+		        NULL);
     if (rc < 0)
 	perror("pthread_create");
 }
