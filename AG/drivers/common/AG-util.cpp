@@ -43,15 +43,18 @@ void clean_dir(const char *dirname) {
 }
 
 
-void add_driver_event_handler(int event, driver_event_handler deh) {
+void add_driver_event_handler(int event, driver_event_handler deh,
+			      void *args) {
     if (deh == NULL)
 	return;
     switch(event) {
 	case DRIVER_TERMINATE:
-	    de.term_deh = deh;
+	    de.deh[DRIVER_TERMINATE] = deh;
+	    de.deh_arg[DRIVER_TERMINATE] = args;
 	    break;
 	case DRIVER_RECONF:
-	    de.reconf_deh = deh;
+	    de.deh[DRIVER_RECONF] = deh;
+	    de.deh_arg[DRIVER_RECONF] = args;
 	    break;
 	default:
 	    break;
@@ -61,10 +64,10 @@ void add_driver_event_handler(int event, driver_event_handler deh) {
 void remove_driver_event_handler(int event) {
     switch(event) {
 	case DRIVER_TERMINATE:
-	    de.term_deh = NULL;
+	    de.deh[DRIVER_TERMINATE] = NULL;
 	    break;
 	case DRIVER_RECONF:
-	    de.reconf_deh = NULL;
+	    de.deh[DRIVER_RECONF] = NULL;
 	    break;
 	default:
 	    break;
@@ -72,7 +75,40 @@ void remove_driver_event_handler(int event) {
 }
 
 void* driver_event_loop(void *) {
-    block_all_singals();
+    block_all_signals();
+    fd_set read_fds;
+    int rc = 0;
+    char* cmd = (char*)malloc(DRIVER_CMD_LEN);
+    memset(cmd, 0, DRIVER_CMD_LEN);
+    int read_count = 0;
+    while(true) {
+	FD_ZERO(&read_fds);
+	FD_SET(de.fifo_fd, &read_fds);
+	rc = 0;
+	read_count = 0;
+	memset(cmd, 0, DRIVER_CMD_LEN);
+	if (select(de.fifo_fd + 1, &read_fds, NULL, NULL, NULL) < 0 ) {
+	    if (errno == EINTR)
+		continue;
+	    else {
+		perror("select");
+	    }
+	}
+	if (FD_ISSET(de.fifo_fd, &read_fds)) {
+	    rc = read(de.fifo_fd, cmd + read_count, DRIVER_CMD_LEN);
+	    if (rc > 0) {
+		read_count += rc;
+		if (read_count == DRIVER_CMD_LEN) {
+		    //This could be valid command take an action.
+		    handle_command(cmd);
+		}
+	    }
+	    else {
+		if (errno == EAGAIN || rc == 0)
+		    break;
+	    }
+	}
+    }
     return NULL;
 }
 
@@ -87,9 +123,30 @@ void driver_event_start() {
 	perror("mkfifo");
 	return;
     }
-    //de.fifo_fd = 
-    rc = pthread_create(NULL, driver_event_loop, NULL);
+    de.fifo_fd = open(fifo_path, O_RDWR | O_NONBLOCK);
+    if (de.fifo_fd < 0) {
+	perror("open");
+	return;
+    }
+    rc = pthread_create(&de.tid, NULL, driver_event_loop, NULL);
     if (rc < 0)
 	perror("pthread_create");
+}
+
+void* handle_command (char *cmd) {
+    if (cmd == NULL)
+	return NULL;
+    if (strncmp(cmd, DRIVER_TERMINATE_STR, DRIVER_CMD_LEN) == 0) {
+	if (de.deh[DRIVER_TERMINATE] != NULL)
+	    return de.deh[DRIVER_TERMINATE](de.deh_arg[DRIVER_TERMINATE]);
+    }
+    else if (strncmp(cmd, DRIVER_RECONF_STR, DRIVER_CMD_LEN) == 0) {
+	if (de.deh[DRIVER_RECONF] != NULL)
+	    return de.deh[DRIVER_RECONF](de.deh_arg[DRIVER_RECONF]);
+    }
+    else {
+	return NULL;
+    }
+    return NULL;
 }
 

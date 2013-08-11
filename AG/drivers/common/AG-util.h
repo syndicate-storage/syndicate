@@ -21,29 +21,34 @@
     strlen(FIFO_PREFIX)
 
 #define DRIVER_TERMINATE_STR "TERM"
-#define DRIVER_TERMINATE     1
-#define DRIVER_RECONF_STR    "RECONF"
-#define DRIVER_RECONF	     2
+#define DRIVER_TERMINATE     0
+#define DRIVER_RECONF_STR    "RCON"
+#define DRIVER_RECONF	     1
+
+#define NR_CMDS		     3
+#define DRIVER_CMD_LEN	     4
 
 using namespace std;
 
 typedef void* (*driver_event_handler)(void*);
 
 struct _driver_events {
-    driver_event_handler term_deh;
-    driver_event_handler reconf_deh;
+    driver_event_handler deh[NR_CMDS];
+    void* deh_arg[NR_CMDS];
     int fifo_fd;
-    _driver_events():term_deh(NULL), 
-		    reconf_deh(NULL), 
-		    fifo_fd(-1){}
+    pthread_t tid;
+    _driver_events(): fifo_fd(-1){}
 };
 
 //Delete all the files in a given directory
 void clean_dir(const char *dir_name);
 
-void add_driver_event_handler(int event, driver_event_handler deh);
+void add_driver_event_handler(int event, driver_event_handler deh,
+			      void *args);
 
 void remove_driver_event_handler(int event);
+
+void* handle_command (char *cmd);
 
 void* driver_event_loop(void *);
 

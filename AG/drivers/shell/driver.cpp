@@ -448,15 +448,17 @@ void init(unsigned char* dsn) {
 	cache_path = (unsigned char*)malloc(dsn_len + 1);
 	memset(cache_path, 0, dsn_len + 1);
 	memcpy(cache_path, dsn, strlen((const char*)dsn));
-	clean_dir((char*)cache_path);
     }
     if (revd == NULL) {
 	revd = new ReversionDaemon();
 	revd->run();
     }
     struct sigaction action;
+    add_driver_event_handler(DRIVER_RECONF, reconf_handler, NULL);
+    add_driver_event_handler(DRIVER_TERMINATE, term_handler, NULL);
+    driver_event_start();
     //block_all_signals();
-    install_signal_handler(SIGUSR1, &action, sigusr1_handler);
+    //install_signal_handler(SIGUSR1, &action, sigusr1_handler);
     install_signal_handler(SIGINT, &action, SIG_IGN);
 }
 
@@ -485,9 +487,16 @@ void reversion(void *cls) {
     ms_client_update(mc, ment);
 }
 
-void sigusr1_handler(int signo) {
+void* reconf_handler(void *cls) {
     cout<<"calling publish_dataset"<<endl;
     publish_dataset (NULL, NULL, NULL );
+    return NULL;
+}
+
+void* term_handler(void *cls) {
+    clean_dir((char*)cache_path);
+    exit(0);
+    return NULL;
 }
 
 void driver_special_inval_handler(string file_path) {
