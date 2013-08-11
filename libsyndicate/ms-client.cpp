@@ -327,9 +327,6 @@ static void* ms_client_view_thread( void* arg ) {
    // how often do we reload?
    uint64_t view_reload_freq = client->conf->view_reload_freq;
    struct timespec sleep_time;
-   
-   sleep_time.tv_sec = view_reload_freq / 1000;
-   sleep_time.tv_nsec = (view_reload_freq % 1000) * 1000;
 
    struct timespec remaining;
 
@@ -374,6 +371,10 @@ static void* ms_client_view_thread( void* arg ) {
          ms_client_view_unlock( client );
 
          if( early_reload ) {
+            break;
+         }
+
+         if( !client->running ) {
             break;
          }
       }
