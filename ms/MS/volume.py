@@ -163,7 +163,6 @@ class Volume( storagetypes.Object ):
       volume_metadata.blocksize = kwargs.get( 'blocksize', self.blocksize )
       volume_metadata.name = kwargs.get( 'name', self.name )
       volume_metadata.description = kwargs.get( 'description', self.description )
-      volume_metadata.volume_id = kwargs.get( 'volume_id', self.volume_id )
       volume_metadata.volume_version = kwargs.get('volume_version', self.version )
       volume_metadata.UG_version = kwargs.get('UG_version', self.UG_version )
       volume_metadata.RG_version = kwargs.get('RG_version', self.RG_version )
@@ -173,6 +172,10 @@ class Volume( storagetypes.Object ):
 
       if volume_metadata.session_password == None:
          raise Exception("Regenerate gateway session credentials and try again")
+
+      volume_ids = caller_gateway.volumes()
+      for vid in volume_ids:
+         volume_metadata.volume_ids.append( vid )
       
       volume_metadata.signature = ""
 

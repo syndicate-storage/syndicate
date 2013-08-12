@@ -96,16 +96,16 @@ message ms_volume_metadata {
    required ms_volume_gateway_cred cred = 1;   // session credentials for the requester
    required uint64 blocksize = 2;
    required uint64 owner_id = 3;               // UID of the volume owner
-   required uint64 volume_id = 4;
-   required uint64 volume_version = 5;
-   required uint64 UG_version = 6;
-   required uint64 RG_version = 7;
-   required int64 session_timeout = 8;       // how long is the sesion password good for (negative for "forever")
-   required string name = 9;
-   required string description = 10;
-   required string volume_public_key = 11;
-   required string signature = 12;              // base64-encoded Volume signature of this message (NOTE: it is self-signed)
-   required string session_password = 13;       // temporary password the caller should use in the future to authenticate to the MS
+   required uint64 volume_version = 4;
+   required uint64 UG_version = 5;
+   required uint64 RG_version = 6;
+   required int64 session_timeout = 7;       // how long is the sesion password good for (negative for "forever")
+   required string name = 8;
+   required string description = 9;
+   required string volume_public_key = 10;
+   required string signature = 11;              // base64-encoded Volume signature of this message (NOTE: it is self-signed)
+   required string session_password = 12;       // temporary password the caller should use in the future to authenticate to the MS
+   repeated uint64 volume_ids = 13;              // volumes we're bound to
 }
 
 // UGs
