@@ -388,7 +388,7 @@ static int publish(const char *fpath, int type, struct map_info* mi)
 
     if ((ment = DATA[path]) == NULL) {
 	ment = new struct md_entry;
-	ment->version = 0;
+	ment->version = 1;
 	ment->path = path;
 	DATA[ment->path] = ment;
 
@@ -416,7 +416,6 @@ static int publish(const char *fpath, int type, struct map_info* mi)
     ment->mtime_sec = rtime.tv_sec;
     ment->mtime_nsec = rtime.tv_nsec;
     ment->mode = mi->file_perm;
-    ment->version++;
     ment->max_read_freshness = 1000;
     ment->max_write_freshness = 1;
     ment->volume = mc->conf->volume;
@@ -517,12 +516,18 @@ void driver_special_inval_handler(string file_path) {
     struct md_entry *mde = DATA[file_path];
     if (mde != NULL) {
 	//Delete this file from all the volumes we are attached to.
+	ms_client_delete(mc, mde);
 	DATA.erase(file_path);
 	if (mde->url)
 	    free(mde->url);
 	if (mde->path)
 	    free(mde->path);
 	free(mde);
+    }
+    //Remove from reversion daemon
+    struct map_info* mi = (*FS2CMD)[file_path];
+    if (mi != NULL) {
+	revd->remove_map_info(mi);
     }
 }
 
