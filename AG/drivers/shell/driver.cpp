@@ -368,8 +368,10 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 static int publish(const char *fpath, int type, struct map_info* mi)
 {
     int i = 0;
-    struct md_entry* ment = new struct md_entry;
+    struct md_entry* ment = NULL;
     size_t len = strlen(fpath);
+    char *path = NULL;
+    size_t content_url_len = 0;
     //size_t local_proto_len = strlen( SYNDICATEFS_AG_DB_PROTO ); 
     //size_t url_len = local_proto_len + len;
     if ( len < datapath_len ) { 
@@ -380,17 +382,28 @@ static int publish(const char *fpath, int type, struct map_info* mi)
     }
     //Set volume path
     size_t path_len = ( len - datapath_len ) + 1; 
-    ment->path = (char*)malloc( path_len );
-    memset( ment->path, 0, path_len );
-    strncpy( ment->path, fpath + datapath_len, path_len );
+    path = (char*)malloc( path_len );
+    memset( path, 0, path_len );
+    strncpy(path, fpath + datapath_len, path_len );
 
-    //Set primary replica 
-    size_t content_url_len = strlen(global_conf->content_url);
-    ment->url = ( char* )malloc( content_url_len + 1);
-    memset( ment->url, 0, content_url_len + 1 );
-    strncpy( ment->url, global_conf->content_url, content_url_len ); 
+    if ((ment = DATA[path]) == NULL) {
+	ment = new struct md_entry;
+	ment->version = 0;
+	ment->path = path;
+	DATA[ment->path] = ment;
 
-    ment->local_path = NULL;
+	//Set primary replica 
+	content_url_len = strlen(global_conf->content_url);
+	ment->url = ( char* )malloc( content_url_len + 1);
+	memset( ment->url, 0, content_url_len + 1 );
+	strncpy( ment->url, global_conf->content_url, content_url_len ); 
+
+	ment->local_path = NULL;
+    }
+    else { 
+	free(path); 
+    }
+
     //Set time from the real time clock
     struct timespec rtime; 
     if ((i = clock_gettime(CLOCK_REALTIME, &rtime)) < 0) {
@@ -403,7 +416,7 @@ static int publish(const char *fpath, int type, struct map_info* mi)
     ment->mtime_sec = rtime.tv_sec;
     ment->mtime_nsec = rtime.tv_nsec;
     ment->mode = mi->file_perm;
-    ment->version = 1;
+    ment->version++;
     ment->max_read_freshness = 1000;
     ment->max_write_freshness = 1;
     ment->volume = mc->conf->volume;
@@ -432,7 +445,6 @@ static int publish(const char *fpath, int type, struct map_info* mi)
 	default:
 	    break;
     }
-    DATA[ment->path] = ment;
     //pfunc_exit_code = 0;
     return 0;  
 }
