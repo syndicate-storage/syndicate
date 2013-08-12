@@ -18,11 +18,13 @@ map<pid_t, proc_table_entry*> pid_map;
 pthread_mutex_t pid_map_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void invalidate_entry(void* cls) {
+    cout<<"ENTR >>>>>>>>>>>>>>>>>>>>>>>>>. INVALIDATING ENTRY"<<endl;
     proc_table_entry *entry = (proc_table_entry*)cls;
     if (entry == NULL)
 	return;
     //Acquire the pte lock
     pthread_mutex_lock(&entry->pte_lock);
+    cout<<">>>>>>>>>>>>>>>>>>>>>>>>>. INVALIDATING ENTRY"<<endl;
     if (!(entry->is_read_complete)) {
 	if (kill(entry->proc_id, 9) < 0)
 	    perror("kill(9)");
@@ -50,6 +52,7 @@ void delete_proc_entry(proc_table_entry *pte) {
     if (pte) {
 	if (pte->block_file)
 	    free(pte->block_file);
+	pthread_mutex_destroy(&pte->pte_lock);
 	free (pte);
 	pte = NULL;
     }
