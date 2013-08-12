@@ -8,7 +8,7 @@ package Serialization;
 message FileMetadata {
    required string fs_path = 6;
    required int64 file_version = 1;
-   required uint64 size = 2;
+   required int64 size = 2;
    required int64 mtime_sec = 3;
    required int32 mtime_nsec = 4;
    required string content_url = 5;
@@ -33,7 +33,7 @@ message BlockData {
 message TruncateRequest {
    required string fs_path = 1;
    required int64 file_version = 2;
-   required uint64 size = 3;
+   required int64 size = 3;
 }
 
 // detach a file or directory
@@ -52,7 +52,7 @@ message BlockURLSetMsg {
 
 // manifest
 message ManifestMsg {
-   required uint64 size = 1;
+   required int64 size = 1;
    required int64 file_version = 2;
    required int64 mtime_sec = 3;
    required int32 mtime_nsec = 4;

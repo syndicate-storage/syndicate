@@ -22,7 +22,7 @@ message ms_entry {
    required int32 coordinator = 7;
    required int32 volume = 8;
    required int32 mode = 9;
-   required uint64 size = 10;
+   required int64 size = 10;
    required int64 version = 11;
    required int32 max_read_freshness = 12;
    required int32 max_write_freshness = 13;
