@@ -39,6 +39,7 @@ ReversionDaemon::ReversionDaemon() {
     revd_ts.min_timeout = TICK_RATE;
     revd_ts.run = &runnable;
     revd_ts.map_set = &map_set;
+    pthread_mutex_init(&set_lock, NULL);
 }
 
 void ReversionDaemon::run() {
@@ -51,16 +52,30 @@ void ReversionDaemon::stop() {
 }
 
 void ReversionDaemon::add_map_info(struct map_info* mi) {
+    pthread_mutex_lock(&set_lock);
     map_set.insert(mi);
     set<struct map_info*, mi_time_stamp_comp>::iterator itr = map_set.begin();
     struct map_info* xmi = *itr;
     revd_ts.min_timeout = xmi->reval_sec;
+    pthread_mutex_unlock(&set_lock);
+}
+
+void ReversionDaemon::remove_map_info(struct map_info* mi) {
+    if (mi == NULL)
+	return;
+    pthread_mutex_lock(&set_lock);
+    map_set.erase(mi);
+    set<struct map_info*, mi_time_stamp_comp>::iterator itr = map_set.begin();
+    struct map_info* xmi = *itr;
+    revd_ts.min_timeout = xmi->reval_sec;
+    pthread_mutex_unlock(&set_lock);
 }
 
 void ReversionDaemon::invalidate_map_info(set<struct map_info*, 
 					mi_time_stamp_comp>* map_set,
 					time_t sleep_time) {
     set<struct map_info*, mi_time_stamp_comp>::iterator itr;
+    pthread_mutex_lock(&set_lock);
     for (itr = map_set->begin(); itr != map_set->end(); itr++) {
 	struct map_info* mi = *itr;
 	mi->mi_time += sleep_time;
@@ -84,6 +99,7 @@ void ReversionDaemon::invalidate_map_info(set<struct map_info*,
 	    break;
 	}
     }
+    pthread_mutex_unlock(&set_lock);
     return;
 }
 

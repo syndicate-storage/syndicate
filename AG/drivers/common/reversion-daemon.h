@@ -34,6 +34,7 @@ typedef struct {
     set<struct map_info*, mi_time_stamp_comp>* map_set;
 } timer_spec;
 
+pthread_mutex_t set_lock;
 
 void* run_daemon(void *argc);
 
@@ -49,6 +50,7 @@ class ReversionDaemon {
 	void run();
 	void stop();
 	void add_map_info(struct map_info* mi);
+	void remove_map_info(struct map_info* mi);
 	static void invalidate_map_info(set<struct map_info*, 
 					mi_time_stamp_comp>* map_set,
 					time_t sleep_time);
