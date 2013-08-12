@@ -294,6 +294,10 @@ class Gateway( storagetypes.Object ):
       return True
 
    
+   def volumes( self ):
+      # which volumes are we bound to?
+      return None
+   
 
 class UserGateway( Gateway ):
 
@@ -459,6 +463,9 @@ class UserGateway( Gateway ):
 
    def is_in_volume( self, volume ):
       return volume.volume_id == self.volume_id
+
+   def volumes( self ):
+      return [self.volume_id]
       
    
 class AcquisitionGateway( Gateway ):
@@ -614,6 +621,9 @@ class AcquisitionGateway( Gateway ):
 
    def is_in_volume( self, volume ):
       return volume.volume_id in self.volume_ids
+
+   def volumes( self ):
+      return self.volume_ids
       
 
 class ReplicaGateway( Gateway ):
@@ -770,3 +780,6 @@ class ReplicaGateway( Gateway ):
 
    def is_in_volume( self, volume ):
       return volume.volume_id in self.volume_ids
+
+   def volumes( self ):
+      return self.volume_ids

@@ -436,7 +436,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          session['syndicatepubkey'] = pubkey
 
          # reply with the redirect URL
-         trust_root = self.HOST_URL
+         trust_root = OPENID_HOST_URL
          return_to = self.buildURL( "/REGISTER/%s/%s/%s/%s/complete" % (volume_name, gateway_type_str, gateway_name, username) )
          immediate = self.IMMEDIATE_MODE in self.query
 
@@ -450,7 +450,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          openid_reply.extra_args = urllib.urlencode( OPENID_PROVIDER_EXTRA_ARGS )
          openid_reply.challenge_method = OPENID_PROVIDER_CHALLENGE_METHOD
          openid_reply.response_method = OPENID_PROVIDER_RESPONSE_METHOD
-         openid_reply.redirect_method = OPENID_RP_REDIRECT_METHOD
+         openid_reply.redirect_method = self.OPENID_RP_REDIRECT_METHOD
 
          data = openid_reply.SerializeToString()
 
