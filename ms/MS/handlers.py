@@ -91,6 +91,7 @@ def get_gateway( gateway_type, gateway_id ):
       gateway = AcquisitionGateway.Read( gateway_id )
    else:
       return (None, 401, None)
+
       
    gateway_read_time = storagetypes.get_time() - gateway_read_start
    return (gateway, 200, gateway_read_time)
@@ -588,7 +589,7 @@ class MSFileRequestHandler(webapp2.RequestHandler):
          return
 
       # this must be a User Gateway or an Acquisition Gateway
-      if not isinstance( gateway, UserGateway ) or not isinstance( gateway, AcquisitionGateway ):
+      if not isinstance( gateway, UserGateway ) and not isinstance( gateway, AcquisitionGateway ):
          response_user_error( self, 403 )
          return
 
