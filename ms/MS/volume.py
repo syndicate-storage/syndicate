@@ -27,11 +27,7 @@ import string
 import logging
 
 from user import SyndicateUser
-
-VOLUME_SECRET_LENGTH = 256
-VOLUME_SECRET_SALT_LENGTH = 256
-
-VOLUME_RSA_KEYSIZE = 4096
+from msconfig import *
 
 class VolumeIDCounter( storagetypes.Object ):
    value = storagetypes.Integer()

@@ -100,6 +100,7 @@ struct fs_entry {
 // Syndicate file handle
 struct fs_file_handle {
    struct fs_entry* fent;     // reference to the fs_entry this handle represents
+   uint64_t volume;           // which Volume this fent belongs to
    int open_count;            // how many processes have opened this handle
    int flags;                 // open flags
    char* path;                // the path that was opened
@@ -113,6 +114,7 @@ struct fs_dir_handle {
    struct fs_entry* dent;     // reference to the fs_entry this handle represents
    char* path;                // the path that was opened
    int open_count;            // how many processes have opened this handle
+   uint64_t volume;           // which Volume dent is in
 
    pthread_rwlock_t lock;     // lock to control access to this structure
 };

@@ -20,6 +20,7 @@ struct fs_file_handle* fs_file_handle_create( struct fs_entry* ent, char const* 
    fh->fent = ent;
    fh->path = strdup(opened_path);
    fh->dirty = false;
+   fh->volume = ent->volume;
    pthread_rwlock_init( &fh->lock, NULL );
    return fh;
 }
@@ -31,6 +32,7 @@ int fs_file_handle_open( struct fs_file_handle* fh, int flags, mode_t mode ) {
    // is this a local file?
    fh->flags = flags;
    fh->open_count++;
+   fh->volume = fh->fent->volume;
    return 0;
 }
 
@@ -49,7 +51,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    }
 
    // revalidate this path
-   int rc = fs_entry_revalidate_path( core, path );
+   int rc = fs_entry_revalidate_path( core, vol, path );
    if( rc != 0 ) {
       // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
@@ -169,7 +171,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
    md_sanitize_path( path );
 
    // revalidate this path
-   int rc = fs_entry_revalidate_path( core, path );
+   int rc = fs_entry_revalidate_path( core, vol, path );
    if( rc != 0 ) {
       // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );

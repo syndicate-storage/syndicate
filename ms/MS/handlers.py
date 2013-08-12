@@ -19,6 +19,7 @@ import storage.storagetypes as storagetypes
 from entry import MSEntry
 from volume import Volume
 from gateway import UserGateway, ReplicaGateway, AcquisitionGateway
+from msconfig import *
 
 import errno
 import logging
@@ -351,27 +352,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    Generate a session certificate from a SyndicateUser account for a gateway.
    """
 
-   
-   OPENID_PROVIDER_NAME = "VICCI"
-   OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
-   OPENID_PROVIDER_AUTH_HANDLER = "https://www.vicci.org/id-allow"
-   OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
-   OPENID_PROVIDER_USERNAME_FIELD = "login_as"
-   OPENID_PROVIDER_PASSWORD_FIELD = "password"
-   OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
-   OPENID_PROVIDER_RESPONSE_METHOD = "POST"
-   
-   """
-   OPENID_PROVIDER_NAME = "localhost"
-   OPENID_PROVIDER_URL = "http://localhost:8081/id/"
-   OPENID_PROVIDER_AUTH_HANDLER = "http://localhost:8081/allow"
-   OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
-   OPENID_PROVIDER_USERNAME_FIELD = "login_as"
-   OPENID_PROVIDER_PASSWORD_FIELD = "password"
-   OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
-   OPENID_PROVIDER_RESPONSE_METHOD = "POST"
-   """
-   
    OPENID_RP_REDIRECT_METHOD = "POST"     # POST to us for authentication, since we need to send the public key (which doesn't fit into a GET)
 
    def load_objects( self, volume_name, gateway_type_str, gateway_name, username ):
@@ -464,13 +444,13 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
 
          openid_reply = ms_pb2.ms_openid_provider_reply()
          openid_reply.redirect_url = redirect_url
-         openid_reply.auth_handler = self.OPENID_PROVIDER_AUTH_HANDLER
-         openid_reply.username_field = self.OPENID_PROVIDER_USERNAME_FIELD
-         openid_reply.password_field = self.OPENID_PROVIDER_PASSWORD_FIELD
-         openid_reply.extra_args = urllib.urlencode( self.OPENID_PROVIDER_EXTRA_ARGS )
-         openid_reply.challenge_method = self.OPENID_PROVIDER_CHALLENGE_METHOD
-         openid_reply.response_method = self.OPENID_PROVIDER_RESPONSE_METHOD
-         openid_reply.redirect_method = self.OPENID_RP_REDIRECT_METHOD
+         openid_reply.auth_handler = OPENID_PROVIDER_AUTH_HANDLER
+         openid_reply.username_field = OPENID_PROVIDER_USERNAME_FIELD
+         openid_reply.password_field = OPENID_PROVIDER_PASSWORD_FIELD
+         openid_reply.extra_args = urllib.urlencode( OPENID_PROVIDER_EXTRA_ARGS )
+         openid_reply.challenge_method = OPENID_PROVIDER_CHALLENGE_METHOD
+         openid_reply.response_method = OPENID_PROVIDER_RESPONSE_METHOD
+         openid_reply.redirect_method = OPENID_RP_REDIRECT_METHOD
 
          data = openid_reply.SerializeToString()
 

@@ -129,7 +129,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
    BEGIN_TIMING_DATA( ts );
    
    // refresh the path metadata
-   int rc = fs_entry_revalidate_path( core, fh->path );
+   int rc = fs_entry_revalidate_path( core, fh->volume, fh->path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );

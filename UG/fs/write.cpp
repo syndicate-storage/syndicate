@@ -146,7 +146,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
 
    BEGIN_TIMING_DATA( ts );
    
-   int rc = fs_entry_revalidate_path( core, fh->path );
+   int rc = fs_entry_revalidate_path( core, fh->volume, fh->path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );

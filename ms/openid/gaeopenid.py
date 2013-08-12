@@ -29,6 +29,8 @@ from openid.extensions import pape, sreg
 
 import gaesession
 
+import MS
+from MS.msconfig import *
 
 class GAEOpenIDRequestHandler(webapp2.RequestHandler):
     """Request handler that knows how to verify an OpenID identity."""
@@ -38,26 +40,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
     USE_PAPE = "use_pape"
     IMMEDIATE_MODE = "immediate"
     USE_STATELESS = "use_stateless"
-    SESSION_SSL_ONLY=True
-    LOCAL_TEST=True
-
-    if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
-      TRUST_ROOT_HOST = "localhost:8080"
-      HOST_URL = "http://" + TRUST_ROOT_HOST
-      SESSION_SSL_ONLY=False
-      LOCAL_TEST=True
-    else:
-      TRUST_ROOT_HOST = "syndicate-metadata.appspot.com"
-      HOST_URL = "https://" + TRUST_ROOT_HOST
-      SESSION_SSL_ONLY=True
-      LOCAL_TEST=False
-
-    OPENID_PROVIDER_NAME = "VICCI"
-
-    OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
-
-    OPENID_PROVIDER_AUTH_HANDLER = "https://www.vicci.org/id-allow"
-
+    
 
     def auth_redirect( self, **kwargs ):
        """
@@ -202,7 +185,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
       if not session.has_key( 'id' ):
          # load from datastore
          #session = gaesession.Session( cookie_key = gaesession.SESSION_COOKIE_KEY )
-         session.start( ssl_only=self.SESSION_SSL_ONLY )
+         session.start( ssl_only=OPENID_SESSION_SSL_ONLY )
          sid = randomString(16, '0123456789abcdef')
          session['id'] = sid
       
@@ -298,7 +281,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
       """
 
       # First, make sure that the user entered something
-      openid_url = urlparse.urljoin( self.OPENID_PROVIDER_URL, self.query.get('openid_username') )
+      openid_url = urlparse.urljoin( OPENID_PROVIDER_URL, self.query.get('openid_username') )
       if not openid_url:
          logging.error("No OpenID URL given")
          return (None, -errno.EINVAL)
@@ -345,7 +328,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         """
         Initiating OpenID verification.
         """
-        openid_url = urlparse.urljoin( self.OPENID_PROVIDER_URL, self.query.get('openid_username') )
+        openid_url = urlparse.urljoin( OPENID_PROVIDER_URL, self.query.get('openid_username') )
         rc = 0
         
         try:
@@ -374,7 +357,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
 
            if rc == 0:
                # success!
-               trust_root = "http://" + self.TRUST_ROOT_HOST
+               trust_root = "http://" + OPENID_TRUST_ROOT_HOST
                return_to = self.buildURL( "process" )
                immediate = self.IMMEDIATE_MODE in self.query
 
@@ -503,24 +486,24 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
     def doAffiliate(self):
         """Direct the user sign up with an affiliate OpenID provider."""
         sreg_req = sreg.SRegRequest(['nickname'], ['fullname', 'email'])
-        href = sreg_req.toMessage().toURL(self.OPENID_PROVIDER_URL)
+        href = sreg_req.toMessage().toURL(OPENID_PROVIDER_URL)
 
         message = """Get an OpenID at <a href=%s>%s</a>""" % (
-            quoteattr(href), self.OPENID_PROVIDER_NAME)
+            quoteattr(href), OPENID_PROVIDER_NAME)
         self.render(message)
 
 
     def buildURL(self, action, **query):
         """Build a URL relative to the server base url, with the given
         query parameters added."""
-        base = urlparse.urljoin(self.HOST_URL, action)
+        base = urlparse.urljoin(OPENID_HOST_URL, action)
         return appendArgs(base, query)
 
     def notFound(self):
         """Render a page with a 404 return code and a message."""
         fmt = 'The path <q>%s</q> was not understood by this server.'
         msg = fmt % (self.path,)
-        openid_url = urlparse.urljoin( self.OPENID_PROVIDER_URL, self.query.get('openid_username') )
+        openid_url = urlparse.urljoin( OPENID_PROVIDER_URL, self.query.get('openid_username') )
         self.render(msg, 'error', openid_url, status=404)
 
     def renderSREG(self, sreg_data):
@@ -646,8 +629,8 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         if not form_contents:
             form_contents = ''
 
-        if form_contents.startswith( self.OPENID_PROVIDER_URL ):
-           form_contents = form_contents[ len(self.OPENID_PROVIDER_URL): ]
+        if form_contents.startswith( OPENID_PROVIDER_URL ):
+           form_contents = form_contents[ len(OPENID_PROVIDER_URL): ]
 
         self.response.write('''\
     <div id="verify-form">

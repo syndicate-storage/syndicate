@@ -333,7 +333,7 @@ static bool can_reload( struct fs_entry* fent, struct md_entry* next_ent, struct
 // return -EINVAL if the path is not absolute or not normalized
 // return -EREMOTEIO if the MS returned invalid data
 // return -EUCLEAN if we could not make the FS consistent with the MS
-int fs_entry_revalidate_path( struct fs_core* core, char const* _path ) {
+int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const* _path ) {
    if( _path[0] != '/' )
       return -EINVAL;
 
@@ -358,7 +358,7 @@ int fs_entry_revalidate_path( struct fs_core* core, char const* _path ) {
    // if this entry exists locally, and it is not read stale, then don't refresh
    dbprintf("check '%s'\n", path );
 
-   struct fs_entry* child = fs_entry_resolve_path( core, path, SYS_USER, core->conf->volume, false, &rc );
+   struct fs_entry* child = fs_entry_resolve_path( core, path, SYS_USER, volume, false, &rc );
    if( child != NULL ) {
       needs_refresh = fs_entry_is_read_stale( child );
       fs_entry_unlock( child );

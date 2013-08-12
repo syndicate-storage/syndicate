@@ -195,6 +195,7 @@ int ms_client_destroy( struct ms_client* client ) {
    client->running = false;
 
    ms_client_uploader_signal( client );
+   pthread_cancel( client->view_thread);
 
    dbprintf("%s", "wait for write uploads to finish...\n");
    
@@ -203,8 +204,6 @@ int ms_client_destroy( struct ms_client* client ) {
    }
 
    dbprintf("%s", "wait for view change thread to finish...\n");
-
-   pthread_cancel( client->view_thread);
 
    while( client->view_thread_running ) {
       sleep(1);
@@ -394,7 +393,7 @@ static void* ms_client_view_thread( void* arg ) {
       
       dbprintf("End reload Volume metadata, rc = %d\n", rc);
 
-      pthread_setcancelstate( PTHREAD_CANCEL_DISABLE, NULL );
+      pthread_setcancelstate( PTHREAD_CANCEL_ENABLE, NULL );
    }
 
    dbprintf("%s", "View thread shutting down\n");
@@ -1930,25 +1929,25 @@ int ms_client_register( struct ms_client* client, char const* gateway_name, char
 
 // read-lock a client context 
 int ms_client_rlock( struct ms_client* client ) {
-   dbprintf("ms_client_rlock %p\n", client);
+   //dbprintf("ms_client_rlock %p\n", client);
    return pthread_rwlock_rdlock( &client->lock );
 }
 
 // write-lock a client context 
 int ms_client_wlock( struct ms_client* client ) {
-   dbprintf("ms_client_wlock %p\n", client);
+   //dbprintf("ms_client_wlock %p\n", client);
    return pthread_rwlock_wrlock( &client->lock );
 }
 
 // unlock a client context 
 int ms_client_unlock( struct ms_client* client ) {
-   dbprintf("ms_client_unlock %p\n", client);
+   //dbprintf("ms_client_unlock %p\n", client);
    return pthread_rwlock_unlock( &client->lock );
 }
 
 // read-lock a client context's view
 int ms_client_view_rlock( struct ms_client* client ) {
-   dbprintf("ms_client_view_rlock %p\n", client);
+   //dbprintf("ms_client_view_rlock %p\n", client);
    return pthread_rwlock_rdlock( &client->view_lock );
 }
 

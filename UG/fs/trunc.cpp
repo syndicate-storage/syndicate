@@ -196,7 +196,7 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 // truncate, only if the version is correct (or ignore it if it's -1)
 int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t newsize, int64_t known_version, uint64_t user, uint64_t volume ) {
 
-   int err = fs_entry_revalidate_path( core, fs_path );
+   int err = fs_entry_revalidate_path( core, volume, fs_path );
    if( err != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fs_path, err );
       return -EREMOTEIO;
@@ -233,7 +233,7 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t
 // truncate an file
 int fs_entry_truncate( struct fs_core* core, char const* fs_path, off_t size, uint64_t user, uint64_t volume ) {
    
-   int err = fs_entry_revalidate_path( core, fs_path );
+   int err = fs_entry_revalidate_path( core, volume, fs_path );
    if( err != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fs_path, err );
       return -EREMOTEIO;

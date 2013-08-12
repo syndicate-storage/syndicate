@@ -8,13 +8,15 @@ Django settings for Syndicate project.
 '''
 
 import os
+from MS.msconfig import * 
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__)) + os.sep
 DEBUG = True
 TEMPLATE_DEBUG = DEBUG
 
 DATABASES = {'default':{}}
 
-ALLOWED_HOSTS = ['.syndicate-metadata.appspot.com']
+ALLOWED_HOSTS = ['.' + MS_HOST]
 
 # Local time zone for this installation. Choices can be found here:
 # http://en.wikipedia.org/wiki/List_of_tz_zones_by_name

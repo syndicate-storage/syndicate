@@ -19,6 +19,8 @@ import errno
 import time
 import datetime
 
+from msconfig import *
+
 MSENTRY_TYPE_FILE = ms_pb2.ms_entry.MS_ENTRY_TYPE_FILE
 MSENTRY_TYPE_DIR = ms_pb2.ms_entry.MS_ENTRY_TYPE_DIR
 

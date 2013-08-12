@@ -27,11 +27,7 @@ import logging
 import string
 import traceback
 
-USERNAME_LENGTH = 256
-PASSWORD_LENGTH = 256
-GATEWAY_SALT_LENGTH = 256
-SESSION_PASSWORD_LENGTH = 16
-GATEWAY_RSA_KEYSIZE = 4096
+from msconfig import *
 
 class IDCounter( storagetypes.Object ):
    value = storagetypes.Integer()
@@ -175,7 +171,7 @@ class Gateway( storagetypes.Object ):
 
    @classmethod
    def generate_session_credentials( cls ):
-      return cls.generate_password( SESSION_PASSWORD_LENGTH )
+      return cls.generate_password( GATEWAY_SESSION_PASSWORD_LENGTH )
       
    def get_current_session_credentials( self ):
       """
@@ -203,7 +199,7 @@ class Gateway( storagetypes.Object ):
       """
       Generate (password, SHA256(password), salt) for this gateway
       """
-      password = cls.generate_password( PASSWORD_LENGTH )
+      password = cls.generate_password( GATEWAY_PASSWORD_LENGTH )
       salt = "".join( [random.choice(string.printable) for i in xrange(GATEWAY_SALT_LENGTH)] )
       pw_hash = Gateway.generate_password_hash( password, salt )
 

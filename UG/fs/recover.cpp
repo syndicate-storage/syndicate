@@ -185,7 +185,7 @@ int fs_entry_restore_files( struct fs_core* core ) {
 
       // get MS records
       fs_entry_mark_read_stale( dir );    // force a reload
-      int rc = fs_entry_revalidate_path( core, cur_path.c_str() );
+      int rc = fs_entry_revalidate_path( core, dir->volume, cur_path.c_str() );
       if( rc != 0 ) {
          errorf("fs_entry_revalidate_path(%s) rc = %d\n", cur_path.c_str(), rc );
          break;
