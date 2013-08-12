@@ -106,7 +106,7 @@ void update_fs_map(map<string, struct map_info*> *new_map,
 	
 	// Update values of every map_info in old_map that are also in minter
 	for (itr = minter.begin(); itr != minter.end(); itr++) {
-	    cout<<"Updating "<<itr->second->shell_command<<endl;
+	    cout<<"Updating "<<itr->first<<endl;
 	    struct map_info* umi = (*old_map)[itr->first];
 	    umi->file_perm = itr->second->file_perm;
 	    umi->reval_sec = itr->second->reval_sec;
@@ -114,16 +114,20 @@ void update_fs_map(map<string, struct map_info*> *new_map,
 	// Delte everything in diff0 from old_map and invalidate those map_infos
 	for (itr = diff0.begin(); itr != diff0.end(); itr++) {
 	    struct map_info* emi = (*old_map)[itr->first];
-	    cout<<"Deleting "<<itr->second->shell_command<<endl;
-	    old_map->erase(itr->first);
-	    emi->invalidate_entry(emi);
-	    if (driver_inval_mi)
-		driver_inval_mi(itr->first);
-	    delete_map_info(emi);
+	    if (emi != NULL) {
+		cout<<"Deleting "<<itr->first<<endl;
+		if (emi->invalidate_entry)
+		    emi->invalidate_entry(emi->entry);
+		if (driver_inval_mi)
+		    driver_inval_mi(itr->first);
+		old_map->erase(itr->first);
+		delete_map_info(emi);
+		cout<<"DELETE MAP:::: "<<emi<<endl;
+	    }
 	}
 	// Add everything in diff1 to old_map
 	for (itr = diff1.begin(); itr != diff1.end(); itr++) {
-	    cout<<"Adding "<<itr->second->shell_command<<endl;
+	    cout<<"Adding "<<itr->first<<endl;
 	    old_map->insert(pair<string, struct map_info*>(itr->first, itr->second));
 	}
 }
