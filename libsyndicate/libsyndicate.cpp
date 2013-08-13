@@ -3689,7 +3689,7 @@ int md_init( int gateway_type,
    }
 
    // register the gateway
-   rc = ms_client_register( client, gateway_name, conf->ms_username, conf->ms_password );
+   rc = ms_client_register( client, volume_name, gateway_name, conf->ms_username, conf->ms_password );
    if( rc != 0 ) {
       errorf("ms_client_register rc = %d\n", rc );
       return rc;
@@ -3699,7 +3699,7 @@ int md_init( int gateway_type,
    conf->owner = client->owner_id;
    conf->gateway = client->gateway_id;
    conf->volume_owner = client->volume_owner_id;
-   conf->volume = client->volume_id;
+   conf->volume = client->volume_ids[0];
    conf->blocking_factor = client->blocksize;
    ms_client_unlock( client );
 

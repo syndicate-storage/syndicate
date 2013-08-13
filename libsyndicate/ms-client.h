@@ -9,6 +9,7 @@
 
 #include <sstream>
 #include <queue>
+#include <locale>
 
 #include "libsyndicate.h"
 
@@ -52,6 +53,7 @@ struct ms_client_timing {
 struct UG_cred {
    uint64_t user_id;
    uint64_t gateway_id;
+   uint64_t volume_id;
    char* name;
    char* hostname;
    int portnum;
@@ -75,12 +77,10 @@ struct ms_client {
    update_set* updates;
    deadline_queue* deadlines;
 
-   char* url;           // MS URL
-   char* userpass;      // HTTP username:password string.  Username is the gateway ID; password is the session password
-   char* file_url;      // URL to the MS's /FILE handler
-   uint64_t owner_id;   // ID of the User account running this ms_client
-   uint64_t volume_id;  // which volume are we attached to
-   uint64_t gateway_id; // ID of the Gateway running this ms_client
+   char* url;                 // MS URL
+   char* userpass;            // HTTP username:password string.  Username is the gateway ID; password is the session password
+   uint64_t owner_id;         // ID of the User account running this ms_client
+   uint64_t gateway_id;       // ID of the Gateway running this ms_client
    uint64_t volume_owner_id;  // ID of the owner of this volume
    uint64_t blocksize;        // size of blocks for this Volume
 
@@ -96,14 +96,15 @@ struct ms_client {
    // gateway view-change structures
    pthread_t view_thread;
    bool view_thread_running;        // set to true if the view thread is running
-   char* view_url;
-   bool early_reload;                  // set to true to force an early reload
    struct UG_cred** UG_creds;
    char** RG_urls;
    int num_RG_urls;
    uint64_t volume_version;      // version of the volume's metadata
    uint64_t UG_version;          // version of the volume's UGs listing
    uint64_t RG_version;          // version of the volume's RGs listing
+   uint64_t* volume_ids;      // which volumes are we attached to?
+   bool* volume_early_reload;                  // set to true to force an early reload for a particular Volume
+   int num_volumes;           // how many volumes are we attached to?
    pthread_rwlock_t view_lock;
 
    // session information
@@ -129,7 +130,7 @@ int ms_client_generate_key( EVP_PKEY** key );
 int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndicate_conf* conf );
 int ms_client_destroy( struct ms_client* client );
 
-int ms_client_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password );
+int ms_client_register( struct ms_client* client, char const* volume_name, char const* gateway_name, char const* username, char const* password );
 
 int ms_client_get_volume_metadata_curl( struct ms_client* client, CURL* curl );
 int ms_client_load_volume_metadata( struct ms_client* client, ms::ms_volume_metadata* volume_md );
@@ -142,7 +143,7 @@ int ms_client_reload_UGs( struct ms_client* client );
 int ms_client_verify_volume_metadata( struct ms_client* client, ms::ms_volume_metadata* volume_md );
 int ms_client_verify_UGs( struct ms_client* client, ms::ms_volume_UGs* ugs );
 int ms_client_verify_RGs( struct ms_client* client, ms::ms_volume_RGs* rgs );
-int ms_client_verify_gateway_message( struct ms_client* client, uint64_t user_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len );
+int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t user_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len );
 
 int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str );
 int ms_client_load_privkey( EVP_PKEY** key, char const* privkey_str );
@@ -157,17 +158,17 @@ int ms_client_view_wlock( struct ms_client* client );
 int ms_client_view_unlock( struct ms_client* client );
 
 int ms_client_queue_update( struct ms_client* client, char const* path, struct md_entry* update, uint64_t deadline_ms, uint64_t deadline_delta_ms );
-int ms_client_clear_update( struct ms_client* client, char const* path );
+int ms_client_clear_update( struct ms_client* client, uint64_t volume_id, char const* path );
 
 int ms_client_create( struct ms_client* client, struct md_entry* ent );
 int ms_client_mkdir( struct ms_client* client, struct md_entry* ent );
 int ms_client_delete( struct ms_client* client, struct md_entry* ent );
 int ms_client_update( struct ms_client* client, struct md_entry* ent );
 
-int ms_client_sync_update( struct ms_client* client, char const* path );
+int ms_client_sync_update( struct ms_client* client, uint64_t volume_id, char const* path );
 int ms_client_sync_updates( struct ms_client* client, uint64_t freshness_ms );
 
-int ms_client_resolve_path( struct ms_client* client, char const* path, vector<struct md_entry>* result_dirs, vector<struct md_entry>* result_base, struct timespec* lastmod, int* md_rc );
+int ms_client_resolve_path( struct ms_client* client, uint64_t volume_id, char const* path, vector<struct md_entry>* result_dirs, vector<struct md_entry>* result_base, struct timespec* lastmod, int* md_rc );
 
 int ms_client_claim( struct ms_client* client, char const* path );
 

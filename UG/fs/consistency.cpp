@@ -29,7 +29,7 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
 
    END_TIMING_DATA( ts, ts2, "replication" );
    
-   int rc = ms_client_sync_update( core->ms, fh->path );
+   int rc = ms_client_sync_update( core->ms, fh->volume, fh->path );
    if( rc != 0 ) {
       errorf("ms_client_sync_update(%s) rc = %d\n", fh->path, rc );
 
@@ -445,7 +445,7 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
 
       // perform the query
       int ms_error = 0;
-      rc = ms_client_resolve_path( core->ms, path, &path_dirs, &path_ents, &lastmod, &ms_error );
+      rc = ms_client_resolve_path( core->ms, volume, path, &path_dirs, &path_ents, &lastmod, &ms_error );
 
       if( rc != 0 ) {
          // failed to read

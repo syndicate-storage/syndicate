@@ -132,6 +132,7 @@ struct fs_core {
    unsigned long int num_files;        // how many files exist
    struct ms_client* ms;               // link to the MS
    Collator* col;                   // Collator interface
+   uint64_t volume;                 // Volume we're bound to
 
    pthread_rwlock_t lock;     // lock to control access to this structure
    pthread_rwlock_t fs_lock;  // lock to create/remove entries in the filesystem

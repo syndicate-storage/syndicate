@@ -387,7 +387,7 @@ struct md_syndicate_conf {
    uint64_t blocking_factor;                          // how many bytes blocks will be
    uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
    uint64_t gateway;                                  // what is the gateway ID in Syndicate?
-   uint64_t volume;                                   // volume ID
+   uint64_t volume;                                   // volume ID (UG only)
    uint64_t volume_owner;                             // user ID of the volume owner
    uint64_t view_reload_freq;                         // how often do we check for new Volume/UG/RG metadata?
 

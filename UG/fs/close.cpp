@@ -60,7 +60,7 @@ int fs_entry_close( struct fs_core* core, struct fs_file_handle* fh ) {
             fs_file_handle_unlock( fh );
 
          // synchronize outstanding updates
-         ms_client_sync_update( core->ms, fh->path );
+         ms_client_sync_update( core->ms, fh->volume, fh->path );
 
          free( path );
       }

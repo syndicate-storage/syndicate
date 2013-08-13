@@ -164,7 +164,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
    }
 
    bool local = false;
-   rc = fs_entry_stat_extended( state->core, fs_path, sb, &local, SYS_USER, state->core->conf->volume, false );
+   rc = fs_entry_stat_extended( state->core, fs_path, sb, &local, SYS_USER, 0, false );
 
    if( rc < 0 ) {
       // could not be found
@@ -176,7 +176,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
    // was this a request for a block?
    if( block_id != INVALID_BLOCK_ID ) {
 
-      bool block_local = fs_entry_is_block_local( state->core, fs_path, SYS_USER, state->core->conf->volume, reqdat->block_id );
+      bool block_local = fs_entry_is_block_local( state->core, fs_path, SYS_USER, 0, reqdat->block_id );
       if( !block_local ) {
          // block exists, and is remote
          char* block_url = fs_entry_get_block_url( state->core, fs_path, block_id );

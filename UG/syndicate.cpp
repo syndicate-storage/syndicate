@@ -360,7 +360,7 @@ int syndicate_parse_write_message( struct syndicate_state* state, Serialization:
    }
 
    // which gateway sent this?  Find its public key
-   int rc = ms_client_verify_gateway_message( client, msg->user_id(), msg->gateway_id(), msg_data.c_str(), msg_data.size(), sigb64, sigb64_len );
+   int rc = ms_client_verify_gateway_message( client, state->core->conf->volume, msg->user_id(), msg->gateway_id(), msg_data.c_str(), msg_data.size(), sigb64, sigb64_len );
    if( rc != 0 ) {
       // not valid
       errorf("ms_client_verify_gateway_message rc = %d\n", rc );
