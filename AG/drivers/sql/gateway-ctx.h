@@ -29,6 +29,8 @@ struct gateway_ctx {
     bool is_db_info;
     // are we done?
     bool complete;
+    // map_info
+    struct map_info *mi;
 };
 
 #endif //_GATEWAY_CTX_H_

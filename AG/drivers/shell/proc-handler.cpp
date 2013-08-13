@@ -410,6 +410,7 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	    return 0;
 	//get proc_table_entry by id and return the block... 
 	//proc_table_entry *pte = proc_table[ctx->id];
+	//pte is only read here, pte_lock should ideally be an rw lock.
 	lock_pte(pte);
 	//check whether this pte is valid
 	if (!pte->valid) {
@@ -461,7 +462,7 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	    else
 		return -EAGAIN;
 	}
-	unlock_pte(pte);
+	//unlock_pte(pte);
     }
 }
 

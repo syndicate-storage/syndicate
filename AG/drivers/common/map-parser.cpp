@@ -122,7 +122,6 @@ void update_fs_map(map<string, struct map_info*> *new_map,
 		    driver_inval_mi(itr->first);
 		old_map->erase(itr->first);
 		delete_map_info(emi);
-		cout<<"DELETE MAP:::: "<<emi<<endl;
 	    }
 	}
 	// Add everything in diff1 to old_map

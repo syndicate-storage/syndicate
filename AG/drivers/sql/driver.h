@@ -8,11 +8,13 @@
 
 #include <libgateway.h>
 #include <libsyndicate.h>
+#include <fs/fs_entry.h>
 #include <map-parser.h>
 #include <odbc-handler.h>
 #include <block-index.h>
 #include <gateway-ctx.h>
 #include <reversion-daemon.h>
+#include <AG-util.h>
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -65,9 +67,13 @@ struct path_comp {
 
 typedef map<string, struct md_entry*> content_map;
 typedef map<string, struct map_info*> query_map;
+typedef set<string> volume_set;
+
 static int publish(const char *fpath, int type, struct map_info* mi);
 void	init(unsigned char* dsn);
 void reversion(void *cls);
+void* reconf_handler(void *cls);
+void driver_special_inval_handler(string file_path);
 
 #endif //_SQL_DRIVER_H_
 

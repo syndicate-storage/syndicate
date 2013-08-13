@@ -7,6 +7,8 @@
 
 #include <reversion-daemon.h>
 
+pthread_mutex_t set_lock;
+
 void* run_daemon(void *argc) {
     block_all_signals();
     //time_t last_ts;
