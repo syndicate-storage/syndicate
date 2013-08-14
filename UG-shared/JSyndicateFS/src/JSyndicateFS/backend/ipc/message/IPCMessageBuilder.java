@@ -199,7 +199,9 @@ public class IPCMessageBuilder {
         List<byte[]> arr = recvBytesMessage(dis, op);
         
         String[] entries = new String[arr.size()];
-        entries = arr.toArray(entries);
+        for(int i=0;i<arr.size();i++) {
+            entries[i] = new String(arr.get(i));
+        }
         return entries;
     }
     
