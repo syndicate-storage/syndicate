@@ -110,6 +110,7 @@ public class IPCMessageBuilder {
         
         for(int i=0;i<totalNumberOfMessages;i++) {
             int size = dis.readInt();
+            readSum += 4;
             LOG.debug("message " + i + " size : " + size);
             readSum += size;
             byte[] message = new byte[size];
