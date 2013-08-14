@@ -1298,6 +1298,9 @@ int main(int argc, char* argv[]) {
     rc = syndicate_init(config_file, &syndicate_http, portnum, ms_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path);
     if (rc != 0)
         exit(1);
+    
+    syndicateipc_get_context()->syndicate_state_data = syndicate_get_state;
+    syndicateipc_get_context()->syndicate_http = syndicate_http;
 
     printf("\n\nSyndicateIPC starting up\n\n");
 
