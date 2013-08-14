@@ -337,15 +337,13 @@ public class IPCFileSystem extends JSFSFileSystem {
         
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath);
-        
-        IPCFileHandle handle = null;
-        if(status == null) {
-            // create new file
-            handle = createNewFile(absPath);
-        } else {
-            handle = getFileHandle(status);
+        if(status != null) {
+            // delete old file
+            delete(absPath);
         }
         
+        // create new file
+        IPCFileHandle handle = createNewFile(absPath);
         if(handle == null) {
             throw new IOException("Can not open the file to write");
         }
