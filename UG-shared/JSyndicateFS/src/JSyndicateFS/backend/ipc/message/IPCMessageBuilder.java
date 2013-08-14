@@ -10,6 +10,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  *
@@ -17,6 +19,8 @@ import java.util.List;
  */
 public class IPCMessageBuilder {
 
+    private static final Log LOG = LogFactory.getLog(IPCMessageBuilder.class);
+    
     public enum IPCMessageOperations {
         OP_GET_STAT(0), OP_DELETE(1), OP_REMOVE_DIRECTORY(2), OP_RENAME(3), OP_MKDIR(4), 
         OP_READ_DIRECTORY(5), OP_GET_FILE_HANDLE(6), OP_CREATE_NEW_FILE(7), OP_READ_FILEDATA(8), 
@@ -92,6 +96,10 @@ public class IPCMessageBuilder {
         int totalMessageSize = dis.readInt();
         int totalNumberOfMessages = dis.readInt();
         
+        LOG.debug("returncode : " + returncode);
+        LOG.debug("totalMessageSize : " + totalMessageSize);
+        LOG.debug("totalNumberOfMessages : " + totalNumberOfMessages);
+        
         if(returncode != 0) {
             throw new IOException(ErrorUtils.generateErrorMessage(returncode));
         }
@@ -102,6 +110,7 @@ public class IPCMessageBuilder {
         
         for(int i=0;i<totalNumberOfMessages;i++) {
             int size = dis.readInt();
+            LOG.debug("message " + i + " size : " + size);
             readSum += size;
             byte[] message = new byte[size];
             dis.readFully(message);
