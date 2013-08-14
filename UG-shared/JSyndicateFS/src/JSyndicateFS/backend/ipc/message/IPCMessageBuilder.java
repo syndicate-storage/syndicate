@@ -24,7 +24,7 @@ public class IPCMessageBuilder {
     public enum IPCMessageOperations {
         OP_GET_STAT(0), OP_DELETE(1), OP_REMOVE_DIRECTORY(2), OP_RENAME(3), OP_MKDIR(4), 
         OP_READ_DIRECTORY(5), OP_GET_FILE_HANDLE(6), OP_CREATE_NEW_FILE(7), OP_READ_FILEDATA(8), 
-        OP_WRITE_FILE_DATA(9), OP_FLUSH(10), OP_CLOSE_FILE_HANDLE(11);
+        OP_WRITE_FILEDATA(9), OP_FLUSH(10), OP_CLOSE_FILE_HANDLE(11);
         
         private int code = -1;
         
@@ -100,8 +100,16 @@ public class IPCMessageBuilder {
         LOG.debug("totalMessageSize : " + totalMessageSize);
         LOG.debug("totalNumberOfMessages : " + totalNumberOfMessages);
         
-        if(returncode != 0) {
-            throw new IOException(ErrorUtils.generateErrorMessage(returncode));
+        if(opcode == IPCMessageOperations.OP_READ_FILEDATA.getCode() ||
+                opcode == IPCMessageOperations.OP_WRITE_FILEDATA.getCode()) {
+            // returncode can be positive
+            if(returncode < 0) {
+                throw new IOException(ErrorUtils.generateErrorMessage(returncode));
+            }
+        } else {
+            if(returncode != 0) {
+                throw new IOException(ErrorUtils.generateErrorMessage(returncode));
+            }    
         }
         
         int readSum = 0;
