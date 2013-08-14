@@ -12,6 +12,8 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -104,7 +106,17 @@ public class IPCInterfaceClient implements Closeable {
         // send
         IPCMessageBuilder.sendStringsMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_READ_DIRECTORY, path);
         // recv
-        return IPCMessageBuilder.readDirectoryMessage(this.socketDataInputStream, IPCMessageBuilder.IPCMessageOperations.OP_READ_DIRECTORY);
+        String[] entries = IPCMessageBuilder.readDirectoryMessage(this.socketDataInputStream, IPCMessageBuilder.IPCMessageOperations.OP_READ_DIRECTORY);
+        List<String> entry_arr = new ArrayList<String>();
+        for(String entry : entries) {
+            if(!entry.equals(".") && !entry.equals("..")) {
+                entry_arr.add(entry);    
+            }
+        }
+        
+        String[] new_entries = new String[entry_arr.size()];
+        new_entries = entry_arr.toArray(new_entries);
+        return new_entries;
     }
 
     public synchronized IPCFileInfo getFileHandle(String path) throws IOException {
