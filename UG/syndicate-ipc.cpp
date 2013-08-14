@@ -498,7 +498,9 @@ public:
         char* outBuffer = *data_out;
         char* bufferNext;
 
-        writeHeader(outBuffer, OP_CLOSE_FILE_HANDLE, returncode, 0, 0, &bufferNext);        
+        writeHeader(outBuffer, OP_CLOSE_FILE_HANDLE, returncode, 0, 0, &bufferNext);
+        
+        *data_out_size = toWriteSize;
     }    
 
 private:
