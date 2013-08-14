@@ -82,7 +82,14 @@ public:
 
     static int getIntFromBytes(const char* buf) {
         // big endian
-        return (buf[3] | (buf[2] << 8) | (buf[1] << 16) | (buf[0] << 24));
+        int value;
+        char* bytePtr = (char*) &value;
+        bytePtr[0] = buf[3];
+        bytePtr[1] = buf[2];
+        bytePtr[2] = buf[1];
+        bytePtr[3] = buf[0];
+        
+        return value;
     }
 
     static void writeIntToBuffer(char* bytes_ptr, int value) {
@@ -94,9 +101,18 @@ public:
     }
 
     static long long int getLongFromBytes(const char* buf) {
-        return (long long int) (buf[7] | (buf[6] << 8) | (buf[5] << 16) | (buf[4] << 24) |
-                ((long long int) buf[3] << 32) | ((long long int) buf[2] << 40) | ((long long int) buf[1] << 48) | ((long long int) buf[0] << 56)
-                );
+        long long int value;
+        char* bytePtr = (char*) &value;
+        bytePtr[0] = buf[7];
+        bytePtr[1] = buf[6];
+        bytePtr[2] = buf[5];
+        bytePtr[3] = buf[4];
+        bytePtr[4] = buf[3];
+        bytePtr[5] = buf[2];
+        bytePtr[6] = buf[1];
+        bytePtr[7] = buf[0];
+        
+        return value;
     }
 
     static void writeLongToBuffer(char* bytes_ptr, long long int value) {
@@ -315,6 +331,8 @@ public:
         // call
         IPCFileInfo fi;
         int returncode = syndicatefs_open(path, &fi);
+        
+        dbprintf("filehandle : %lld\n", fi.handle);
 
         int toWriteSize = 16;
         if (returncode == 0) {
@@ -382,6 +400,8 @@ public:
         char* bytes_ptr4;
         IPCFileInfo fi;
         readFileInfo(bytes_ptr1, &fi, &bytes_ptr2);
+        
+        dbprintf("filehandle : %lld\n", fi.handle);
 
         long long int fileoffset;
         readLong(bytes_ptr2, &fileoffset, &bytes_ptr3);
@@ -389,7 +409,7 @@ public:
         int size;
         readInt(bytes_ptr3, &size, &bytes_ptr4);
 
-        printf("offset : %lld, size : %d\n", fileoffset, size);
+        dbprintf("offset : %lld, size : %d\n", fileoffset, size);
 
         // call
         char* buffer = new char[size];
@@ -424,6 +444,8 @@ public:
         IPCFileInfo fi;
         readFileInfo(bytes_ptr1, &fi, &bytes_ptr2);
 
+        dbprintf("filehandle : %lld\n", fi.handle);
+        
         long long int fileoffset;
         readLong(bytes_ptr2, &fileoffset, &bytes_ptr3);
 
