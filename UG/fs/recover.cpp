@@ -64,8 +64,8 @@ int fs_entry_restore_file_from_disk( struct fs_core* core, struct fs_entry* fent
    char name_buf[NAME_MAX+1];
 
    int rc = 0;
-   uint64_t num_blocks = fent->size / core->conf->blocking_factor;
-   if( fent->size % core->conf->blocking_factor != 0 )
+   uint64_t num_blocks = fent->size / core->blocking_factor;
+   if( fent->size % core->blocking_factor != 0 )
       num_blocks++;
 
    int64_t* block_versions = CALLOC_LIST( int64_t, num_blocks + 1 );

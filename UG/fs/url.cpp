@@ -161,14 +161,14 @@ char* fs_entry_staging_block_path( struct fs_core* core, char const* fs_path, in
 }
 
 // staging block URL on a remoete host
-char* fs_entry_public_staging_block_url( char const* host_url, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
+char* fs_entry_public_staging_block_url( struct fs_core* core, char const* host_url, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    char* staging_url = CALLOC_LIST( char, strlen(host_url) + 1 + strlen(SYNDICATE_STAGING_PREFIX) + 1 + strlen(fs_path) + 1 + 47 );
    sprintf( staging_url, "%s%s%s.%" PRId64 "/%" PRIu64 ".%" PRId64, host_url, SYNDICATE_STAGING_PREFIX, fs_path, file_version, block_id, block_version );
    return staging_url;
 }
 
 // given a content url, file path, and version, make a public URL for a file
-char* fs_entry_public_file_url( char const* content_url, char const* fs_path, int64_t version ) {
+char* fs_entry_public_file_url( struct fs_core* core, char const* content_url, char const* fs_path, int64_t version ) {
 
    size_t len = strlen( content_url ) + strlen( SYNDICATE_DATA_PREFIX ) + strlen(fs_path) + 1;
    if( version >= 0 )
@@ -187,15 +187,15 @@ char* fs_entry_public_file_url( char const* content_url, char const* fs_path, in
 
 // given a file path, calculate the public URL for a file (including its version)
 char* fs_entry_public_file_url( struct fs_core* core, char const* fs_path, int64_t version ) {
-   return fs_entry_public_file_url( core->conf->content_url, fs_path, version );
+   return fs_entry_public_file_url( core, core->conf->content_url, fs_path, version );
 }
 
 char* fs_entry_public_file_url( struct fs_core* core, char const* fs_path ) {
-   return fs_entry_public_file_url( core->conf->content_url, fs_path, -1 );
+   return fs_entry_public_file_url( core, core->conf->content_url, fs_path, -1 );
 }
 
-char* fs_entry_public_file_url( char const* content_url, char const* fs_path ) {
-   return fs_entry_public_file_url( content_url, fs_path, -1 );
+char* fs_entry_public_file_url( struct fs_core* core, char const* content_url, char const* fs_path ) {
+   return fs_entry_public_file_url( core, content_url, fs_path, -1 );
 }
 
 // given a dir path, calculate the public directory URL on the metadata server
@@ -280,7 +280,7 @@ char* fs_entry_manifest_path( char const* fs_path, char const* file_url, int64_t
 
 
 // calculate the remote manifest URL
-char* fs_entry_remote_manifest_url( char const* fs_path, char const* file_url, int64_t version, struct timespec* ts ) {
+char* fs_entry_remote_manifest_url( struct fs_core* core, char const* fs_path, char const* file_url, int64_t version, struct timespec* ts ) {
    char* hostname = md_url_hostname( file_url );
    int portnum = md_portnum_from_url( file_url );
 
@@ -305,7 +305,7 @@ char* fs_entry_remote_manifest_url( char const* fs_path, char const* file_url, i
 // fent must be read-locked at least
 static char* fs_entry_calculate_block_url( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t offset ) {
 
-   uint64_t block_id = fs_entry_block_id( offset, core->conf );
+   uint64_t block_id = fs_entry_block_id( core, offset );
    
    if( URL_LOCAL( fent->url ) ) {
       // this file is locally-hosted
@@ -340,7 +340,7 @@ char* fs_entry_get_block_url( struct fs_core* core, char const* fs_path, uint64_
       return NULL;
    }
 
-   off_t offset = block_id * core->conf->blocking_factor + 1;
+   off_t offset = block_id * core->blocking_factor + 1;
    char* block_url = fent->manifest->get_block_url( fent->version, block_id );
 
    char* ret = NULL;
@@ -362,7 +362,7 @@ char* fs_entry_get_block_url( struct fs_core* core, char const* fs_path, uint64_
 char* fs_entry_get_block_url( struct fs_core* core, struct fs_file_handle* fh, off_t offset ) {
 
    // block number
-   uint64_t block_id = fs_entry_block_id( offset, core->conf );
+   uint64_t block_id = fs_entry_block_id( core, offset );
    char* block_url = fh->fent->manifest->get_block_url( fh->fent->version, block_id );
 
    if( block_url == NULL ) {
@@ -379,7 +379,7 @@ char* fs_entry_get_block_url( struct fs_core* core, struct fs_file_handle* fh, o
 char* fs_entry_get_block_url( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t offset ) {
 
    // block number
-   uint64_t block_id = fs_entry_block_id( offset, core->conf );
+   uint64_t block_id = fs_entry_block_id( core, offset );
    char* block_url = fent->manifest->get_block_url( fent->version, block_id );
 
    if( block_url == NULL ) {
@@ -391,13 +391,13 @@ char* fs_entry_get_block_url( struct fs_core* core, char const* fs_path, struct 
    }
 }
 
-char* fs_entry_replica_block_url( char const* url, int64_t version, uint64_t block_id, int64_t block_version ) {
+char* fs_entry_replica_block_url( struct fs_core* core, char const* url, int64_t version, uint64_t block_id, int64_t block_version ) {
    char* ret = CALLOC_LIST( char, strlen(url) + 70 );
    sprintf( ret, "%s.%" PRId64 "/%" PRIu64 ".%" PRId64, url, version, block_id, block_version );
    return ret;
 }
 
-char* fs_entry_replica_manifest_url( char const* url, int64_t version, struct timespec* ts ) {
+char* fs_entry_replica_manifest_url( struct fs_core* core, char const* url, int64_t version, struct timespec* ts ) {
    char* ret = CALLOC_LIST( char, strlen(url) + 80 );
    sprintf( ret, "%s.%" PRId64 "/manifest.%ld.%ld", url, version, ts->tv_sec, ts->tv_nsec );
    return ret;

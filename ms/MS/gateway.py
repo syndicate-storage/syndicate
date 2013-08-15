@@ -84,6 +84,7 @@ class Gateway( storagetypes.Object ):
    public_key = storagetypes.Text()          # PEM-encoded RSA public key
 
    session_password = storagetypes.Text()
+   session_timeout = storagetypes.Integer(default=-1, indexed=False)
    session_expires = storagetypes.Integer(default=-1, indexed=False)     # -1 means "never expires"
    
    required_attrs = [
@@ -183,15 +184,17 @@ class Gateway( storagetypes.Object ):
 
       return self.session_password
 
-   def regenerate_session_credentials( self, volume ):
+   def regenerate_session_credentials( self ):
       """
       Regenerate a session password, given the Volume it's bound to.
       """
       self.session_password = Gateway.generate_session_credentials()
-      if volume.session_timeout > 0:
-         self.session_expires = now + volume.session_timeout
+      if self.session_timeout > 0:
+         self.session_expires = now + self.session_timeout
       else:
          self.session_expires = -1
+
+      return self.session_password
          
 
    @classmethod

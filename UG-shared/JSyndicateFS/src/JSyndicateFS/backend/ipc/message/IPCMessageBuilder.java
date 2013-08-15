@@ -10,6 +10,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  *
@@ -17,10 +19,12 @@ import java.util.List;
  */
 public class IPCMessageBuilder {
 
+    private static final Log LOG = LogFactory.getLog(IPCMessageBuilder.class);
+    
     public enum IPCMessageOperations {
         OP_GET_STAT(0), OP_DELETE(1), OP_REMOVE_DIRECTORY(2), OP_RENAME(3), OP_MKDIR(4), 
         OP_READ_DIRECTORY(5), OP_GET_FILE_HANDLE(6), OP_CREATE_NEW_FILE(7), OP_READ_FILEDATA(8), 
-        OP_WRITE_FILE_DATA(9), OP_FLUSH(10), OP_CLOSE_FILE_HANDLE(11);
+        OP_WRITE_FILEDATA(9), OP_FLUSH(10), OP_CLOSE_FILE_HANDLE(11);
         
         private int code = -1;
         
@@ -92,8 +96,20 @@ public class IPCMessageBuilder {
         int totalMessageSize = dis.readInt();
         int totalNumberOfMessages = dis.readInt();
         
-        if(returncode != 0) {
-            throw new IOException(ErrorUtils.generateErrorMessage(returncode));
+        LOG.debug("returncode : " + returncode);
+        LOG.debug("totalMessageSize : " + totalMessageSize);
+        LOG.debug("totalNumberOfMessages : " + totalNumberOfMessages);
+        
+        if(opcode == IPCMessageOperations.OP_READ_FILEDATA.getCode() ||
+                opcode == IPCMessageOperations.OP_WRITE_FILEDATA.getCode()) {
+            // returncode can be positive
+            if(returncode < 0) {
+                throw new IOException(ErrorUtils.generateErrorMessage(returncode));
+            }
+        } else {
+            if(returncode != 0) {
+                throw new IOException(ErrorUtils.generateErrorMessage(returncode));
+            }    
         }
         
         int readSum = 0;
@@ -102,6 +118,8 @@ public class IPCMessageBuilder {
         
         for(int i=0;i<totalNumberOfMessages;i++) {
             int size = dis.readInt();
+            readSum += 4;
+            LOG.debug("message " + i + " size : " + size);
             readSum += size;
             byte[] message = new byte[size];
             dis.readFully(message);
@@ -189,7 +207,9 @@ public class IPCMessageBuilder {
         List<byte[]> arr = recvBytesMessage(dis, op);
         
         String[] entries = new String[arr.size()];
-        entries = arr.toArray(entries);
+        for(int i=0;i<arr.size();i++) {
+            entries[i] = new String(arr.get(i));
+        }
         return entries;
     }
     

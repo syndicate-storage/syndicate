@@ -15,18 +15,8 @@ void* syndicate_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    return syncon;
 }
 
-// HTTP authentication callback
+// HTTP authentication callback (does nothing, since we verify the message signature)
 uint64_t syndicate_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
-
-   struct syndicate_connection* syncon = (struct syndicate_connection*)md_con_data->cls;
-   struct syndicate_state* state = syncon->state;
-   struct ms_client* client = state->ms;
-
-   uint64_t ug = ms_client_authenticate( client, md_con_data, username, password );
-   if( ug == MD_GUEST_UID ) {
-      // someone we don't know
-      return -EACCES;
-   }
    return 0;
 }
 
@@ -132,7 +122,7 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
    // a block?
    if( reqdat.block_id != INVALID_BLOCK_ID ) {
       // serve back the block
-      char* block = CALLOC_LIST( char, state->conf.blocking_factor );
+      char* block = CALLOC_LIST( char, state->core->blocking_factor );
 
       ssize_t size = fs_entry_read_block( state->core, reqdat.fs_path, reqdat.block_id, block );
       if( size < 0 ) {
@@ -360,7 +350,7 @@ int syndicate_parse_write_message( struct syndicate_state* state, Serialization:
    }
 
    // which gateway sent this?  Find its public key
-   int rc = ms_client_verify_gateway_message( client, state->core->conf->volume, msg->user_id(), msg->gateway_id(), msg_data.c_str(), msg_data.size(), sigb64, sigb64_len );
+   int rc = ms_client_verify_gateway_message( client, state->core->volume, msg->user_id(), msg->gateway_id(), msg_data.c_str(), msg_data.size(), sigb64, sigb64_len );
    if( rc != 0 ) {
       // not valid
       errorf("ms_client_verify_gateway_message rc = %d\n", rc );
@@ -400,11 +390,24 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
    if( rc != 0 ) {
       // can't handle this
-      errorf( "%p: invalid message\n", md_con_data );
+      errorf( "syndicate_parse_write_message rc = %d\n", rc );
 
       md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
-      md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 400, "INVALID REQUEST", strlen("INVALID REQUEST") + 1 );
+      
+      if( rc == -EAGAIN ) {
+         // tell the remote gateway to try again, while we refresh our UG listing with the MS
+         char buf[10];
+         sprintf(buf, "%d", rc);
+         md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 202, buf, strlen(buf) + 1);
 
+         ms_client_sched_volume_reload( state->ms, state->core->volume );
+      }
+      else {
+         md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 400, "INVALID REQUEST", strlen("INVALID REQUEST") + 1 );
+      }
+
+      delete msg;
+      
       return;
    }
    
@@ -577,6 +580,15 @@ int syndicate_init( char const* config_file,
       return rc;
    }
 
+   // get the volume
+   uint64_t volume_id = ms_client_get_volume_id( state->ms, 0 );
+   uint64_t blocking_factor = ms_client_get_volume_blocksize( state->ms, volume_id );
+
+   if( volume_id == 0 ) {
+      errorf("Volume '%s' not found\n", volume_name);
+      return -ENOENT;
+   }
+   
    // make the logfile
    state->logfile = log_init( state->conf.logfile_path );
    if( state->logfile == NULL ) {
@@ -589,7 +601,7 @@ int syndicate_init( char const* config_file,
    
    // initialize the filesystem core
    struct fs_core* core = CALLOC_LIST( struct fs_core, 1 );
-   fs_core_init( core, &state->conf );
+   fs_core_init( core, &state->conf, volume_id, blocking_factor );
 
    fs_entry_set_config( &state->conf );
 
@@ -614,11 +626,11 @@ int syndicate_init( char const* config_file,
    state->mounttime = currentTimeSeconds();
 
    // start up replication
-   replication_init( state->ms );
+   replication_init( state->ms, volume_id );
 
    // start HTTP server
    memset( http_server, 0, sizeof( struct md_HTTP ) );
-   md_HTTP_init( http_server, MD_HTTP_TYPE_STATEMACHINE, &state->conf );
+   md_HTTP_init( http_server, MD_HTTP_TYPE_STATEMACHINE, &state->conf, state->ms );
    
    http_server->HTTP_connect = syndicate_HTTP_connect;
    http_server->HTTP_GET_handler = syndicate_HTTP_GET_handler;

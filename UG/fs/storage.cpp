@@ -172,8 +172,8 @@ int fs_entry_reversion_local_file( struct fs_core* core, char const* fs_path, st
 // write a block's worth of content
 ssize_t fs_entry_write_block( struct fs_core* core, int fd, char* buf ) {
    ssize_t ret = 0;
-   while( ret < (signed)core->conf->blocking_factor ) {
-      ssize_t nw = write( fd, buf + ret, core->conf->blocking_factor - ret );
+   while( ret < (signed)core->blocking_factor ) {
+      ssize_t nw = write( fd, buf + ret, core->blocking_factor - ret );
       if( nw < 0 ) {
          ret = -errno;
          break;
@@ -189,8 +189,8 @@ ssize_t fs_entry_write_block( struct fs_core* core, int fd, char* buf ) {
 // read a block's worth of content
 ssize_t fs_entry_get_block_local( struct fs_core* core, int fd, char* block ) {
    ssize_t nr = 0;
-   while( nr < (signed)core->conf->blocking_factor ) {
-      ssize_t tmp = read( fd, block + nr, core->conf->blocking_factor - nr );
+   while( nr < (signed)core->blocking_factor ) {
+      ssize_t tmp = read( fd, block + nr, core->blocking_factor - nr );
       if( tmp < 0 ) {
          ssize_t rc = -errno;
          return rc;
@@ -433,7 +433,7 @@ int fs_entry_collate( struct fs_core* core, char const* fs_path, struct fs_entry
    struct md_entry data;
    fs_entry_to_md_entry( core, fs_path, fent, &data );
 
-   ms_client_queue_update( core->ms, fs_path, &data, fent->max_write_freshness, 0 );
+   ms_client_queue_update( core->ms, &data, fent->max_write_freshness, 0 );
 
    md_entry_free( &data );
    

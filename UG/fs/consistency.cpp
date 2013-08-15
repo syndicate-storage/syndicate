@@ -923,13 +923,13 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    fent->manifest->get_lastmod( &manifest_mtime );
    
    // otherwise, we need to refresh.  GoGoGo!
-   char* manifest_url = fs_entry_remote_manifest_url( fs_path, fent->url, fent->version, &manifest_mtime );
+   char* manifest_url = fs_entry_remote_manifest_url( core, fs_path, fent->url, fent->version, &manifest_mtime );
    
    // try the primary, then the replicas
    Serialization::ManifestMsg manifest_msg;
    int rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
    if( rc < 0 ) {
-      char** RG_urls = ms_client_RG_urls_copy( core->ms );
+      char** RG_urls = ms_client_RG_urls_copy( core->ms, core->volume );
       
       // try each replica
       if( RG_urls ) {
@@ -938,7 +938,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
             free( manifest_url );
 
             // next replica
-            manifest_url = fs_entry_remote_manifest_url( fs_path, RG_urls[i], fent->version, &manifest_mtime );
+            manifest_url = fs_entry_remote_manifest_url( core, fs_path, RG_urls[i], fent->version, &manifest_mtime );
             
             rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
 

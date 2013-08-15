@@ -111,12 +111,12 @@ long fs_entry_set_get_name_hash( fs_entry_set::iterator* itr ) {
 }
 
 // calculate the block ID from an offset
-uint64_t fs_entry_block_id( off_t offset, struct md_syndicate_conf* conf ) {
-   return ((uint64_t)offset) / conf->blocking_factor;
+uint64_t fs_entry_block_id( struct fs_core* core, off_t offset ) {
+   return ((uint64_t)offset) / core->blocking_factor;
 }
 
 // set up the core of the FS
-int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf ) {
+int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t volume, uint64_t blocking_factor ) {
    if( core == NULL ) {
       return -EINVAL;
    }
@@ -124,14 +124,16 @@ int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf ) {
    memset( core, 0, sizeof(struct fs_core) );
    core->conf = conf;
    core->num_files = 0;
-
+   core->volume = volume;
+   core->blocking_factor = blocking_factor;
+   
    pthread_rwlock_init( &core->lock, NULL );
    pthread_rwlock_init( &core->fs_lock, NULL );
 
    // initialize the root, but make it searchable and mark it as stale 
    core->root = CALLOC_LIST( struct fs_entry, 1 );
 
-   int rc = fs_entry_init_dir( core, core->root, "/", conf->metadata_url, 1, SYS_USER, SYS_USER, conf->volume, 0755, 4096, 0, 0 );
+   int rc = fs_entry_init_dir( core, core->root, "/", conf->metadata_url, 1, SYS_USER, SYS_USER, volume, 0755, 4096, 0, 0 );
    if( rc != 0 ) {
       errorf("fs_entry_init_dir rc = %d\n", rc );
       return rc;

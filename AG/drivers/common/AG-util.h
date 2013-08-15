@@ -28,6 +28,23 @@
 #define NR_CMDS		     3
 #define DRIVER_CMD_LEN	     4
 
+#define DRIVER_RDONLY(lock)\
+    pthread_rwlock_rdlock(lock);\
+    cout<<"driver_rdonly_lock"<<endl;
+
+#define DRIVER_RDWR(lock)\
+    pthread_rwlock_wrlock(lock);\
+    cout<<"driver_wronly_lock"<<endl;
+
+#define DRIVER_UNLOCK(lock)\
+    pthread_rwlock_unlock(lock);\
+    cout<<"driver_unlock"<<endl;
+
+#define DRIVER_RETURN(val,lock)\
+    pthread_rwlock_unlock(lock);\
+    cout<<"driver_unlock"<<endl;\
+    return val;
+
 using namespace std;
 
 typedef void* (*driver_event_handler)(void*);

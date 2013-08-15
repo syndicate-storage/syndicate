@@ -134,7 +134,7 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, ch
    
    int ret = fs_entry_download_cached( core, block_url, &tmpbuf, &nr );
    
-   if( ret > 0 && nr <= (signed)core->conf->blocking_factor ) {
+   if( ret > 0 && nr <= (signed)core->blocking_factor ) {
       memcpy( block_bits, tmpbuf, nr );
    }
    else if( ret <= 0 && ret > -200 ) {
@@ -162,7 +162,7 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, ch
          }
          
       }
-      else if( nr >= 0 && nr <= (signed)core->conf->blocking_factor ) {
+      else if( nr >= 0 && nr <= (signed)core->blocking_factor ) {
          memcpy( block_bits, tmpbuf, nr );
       }
       else {
@@ -191,10 +191,10 @@ int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_co
    struct ms_client* client = core->ms;
    
    writeMsg->set_type( type );
-   writeMsg->set_volume_version( ms_client_volume_version( client ) );
-   writeMsg->set_ug_version( ms_client_UG_version( client ) );
+   writeMsg->set_volume_version( ms_client_volume_version( client, core->volume ) );
+   writeMsg->set_ug_version( ms_client_UG_version( client, core->volume ) );
    writeMsg->set_user_id( core->conf->owner );
-   writeMsg->set_volume_id( core->conf->volume );
+   writeMsg->set_volume_id( core->volume );
    writeMsg->set_gateway_id( core->conf->gateway );
    return 0;
 }
@@ -324,8 +324,24 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       curl_easy_getinfo( curl_h, CURLINFO_RESPONSE_CODE, &http_status );
 
       if( http_status != 200 ) {
-         errorf( "remote HTTP response %d\n", rc );
-         rc = -EREMOTEIO;
+         errorf( "remote HTTP response %ld\n", http_status );
+
+         if( http_status == 202 ) {
+            // got back an error code
+            char* resp = response_buffer_to_string( &buf );
+            char* tmp = NULL;
+            long ret = strtol( resp, &tmp, 10 );
+            if( tmp != NULL ) {
+               rc = ret;
+            }
+            else {
+               errorf("Incoherent error message '%s'\n", resp);
+               rc = -EREMOTEIO;
+            }
+         }
+         else {
+            rc = -EREMOTEIO;
+         }
 
          response_buffer_free( &buf );
          curl_easy_cleanup( curl_h );
