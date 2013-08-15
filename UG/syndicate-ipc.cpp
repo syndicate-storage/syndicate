@@ -277,7 +277,7 @@ private:
     		logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_getattr( %s, %p )\n", path, &statbuf);
 
 		SYNDICATEFS_DATA->stats->enter(STAT_GETATTR);
-		int rc = fs_entry_stat(SYNDICATEFS_DATA->core, path, &statbuf, conf->owner, conf->volume);
+		int rc = fs_entry_stat(SYNDICATEFS_DATA->core, path, &statbuf, conf->owner, SYNDICATEFS_DATA->core->volume);
 		logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_getattr rc = %d\n", rc);
 
 		SYNDICATEFS_DATA->stats->leave(STAT_GETATTR, rc);
@@ -320,7 +320,7 @@ private:
 
 		SYNDICATEFS_DATA->stats->enter(STAT_UNLINK);
 
-		int rc = fs_entry_versioned_unlink(SYNDICATEFS_DATA->core, path, -1, SYNDICATEFS_DATA->conf.owner, SYNDICATEFS_DATA->conf.volume);
+		int rc = fs_entry_versioned_unlink(SYNDICATEFS_DATA->core, path, -1, SYNDICATEFS_DATA->conf.owner, SYNDICATEFS_DATA->core->volume);
 
 		SYNDICATEFS_DATA->stats->leave(STAT_UNLINK, rc);
 
@@ -355,7 +355,7 @@ private:
 
 		SYNDICATEFS_DATA->stats->enter(STAT_RMDIR);
 
-		int rc = fs_entry_rmdir(SYNDICATEFS_DATA->core, path, conf->owner, conf->volume);
+		int rc = fs_entry_rmdir(SYNDICATEFS_DATA->core, path, conf->owner, SYNDICATEFS_DATA->core->volume);
 
 		SYNDICATEFS_DATA->stats->leave(STAT_RMDIR, rc);
 
@@ -394,7 +394,7 @@ private:
    
 		SYNDICATEFS_DATA->stats->enter( STAT_RENAME );
 
-		int rc = fs_entry_rename( SYNDICATEFS_DATA->core, path1, path2, conf->owner, conf->volume );
+		int rc = fs_entry_rename( SYNDICATEFS_DATA->core, path1, path2, conf->owner, SYNDICATEFS_DATA->core->volume );
 
 		SYNDICATEFS_DATA->stats->leave( STAT_RENAME, rc );
 		///////////
@@ -429,7 +429,7 @@ private:
    
 		SYNDICATEFS_DATA->stats->enter( STAT_MKDIR );
    
-		int rc = fs_entry_mkdir( SYNDICATEFS_DATA->core, path, mode, conf->owner, conf->volume );
+		int rc = fs_entry_mkdir( SYNDICATEFS_DATA->core, path, mode, conf->owner, SYNDICATEFS_DATA->core->volume );
    
 		SYNDICATEFS_DATA->stats->leave( STAT_MKDIR, rc );
 		///////////
@@ -468,7 +468,7 @@ private:
 		SYNDICATEFS_DATA->stats->enter( STAT_OPENDIR );
 
 		int rc = 0;
-		struct fs_dir_handle* fdh = fs_entry_opendir( SYNDICATEFS_DATA->core, path, conf->owner, conf->volume, &rc );
+		struct fs_dir_handle* fdh = fs_entry_opendir( SYNDICATEFS_DATA->core, path, conf->owner, SYNDICATEFS_DATA->core->volume, &rc );
    
 		//if( rc == 0 )
 		//	fi->fh = (uint64_t)fdh;
@@ -568,8 +568,8 @@ private:
 		SYNDICATEFS_DATA->stats->enter( STAT_OPEN );
    
 		int rc = 0;
-		//struct fs_file_handle* fh = fs_entry_open( SYNDICATEFS_DATA->core, path, NULL, conf->owner, conf->volume, fi->flags, ~conf->usermask, &rc );
-		struct fs_file_handle* fh = fs_entry_open( SYNDICATEFS_DATA->core, path, NULL, conf->owner, conf->volume, 0, ~conf->usermask, &rc );
+		//struct fs_file_handle* fh = fs_entry_open( SYNDICATEFS_DATA->core, path, NULL, conf->owner, SYNDICATEFS_DATA->core->volume, fi->flags, ~conf->usermask, &rc );
+		struct fs_file_handle* fh = fs_entry_open( SYNDICATEFS_DATA->core, path, NULL, conf->owner, SYNDICATEFS_DATA->core->volume, 0, ~conf->usermask, &rc );
    
 		// store the read handle
 		//fi->fh = (uint64_t)fh;
@@ -624,7 +624,7 @@ private:
 		SYNDICATEFS_DATA->stats->enter( STAT_CREATE );
    
 		int rc = 0;
-		struct fs_file_handle* fh = fs_entry_create( SYNDICATEFS_DATA->core, path, NULL, conf->owner, conf->volume, mode, &rc );
+		struct fs_file_handle* fh = fs_entry_create( SYNDICATEFS_DATA->core, path, NULL, conf->owner, SYNDICATEFS_DATA->core->volume, mode, &rc );
    
 		if( rc == 0 && fh != NULL ) {
 		    //fi->fh = (uint64_t)( fh );
