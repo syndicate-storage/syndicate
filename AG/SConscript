@@ -24,7 +24,6 @@ LIBS = """
    crypto
    microhttpd
    syndicate
-   AGcommon
    protobuf
 """
 

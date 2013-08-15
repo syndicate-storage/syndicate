@@ -64,6 +64,7 @@ using namespace xercesc;
 #define DAY_SECS	86400
 #define HOUR_SECS	3600
 #define MIN_SECS	60
+#define YEAR		48 * WEEK_SECS	
 
 #define QUERY_TYPE_DEFAULT	QUERY_TYPE_BOUNDED_SQL
 

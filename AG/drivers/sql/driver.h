@@ -73,6 +73,7 @@ static int publish(const char *fpath, int type, struct map_info* mi);
 void	init(unsigned char* dsn);
 void reversion(void *cls);
 void* reconf_handler(void *cls);
+void* term_handler(void *cls);
 void driver_special_inval_handler(string file_path);
 
 #endif //_SQL_DRIVER_H_

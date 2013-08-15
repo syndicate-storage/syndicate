@@ -367,7 +367,6 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 	if (revd)
 	    revd->add_map_info(iter->second);
     }
-    ms_client_destroy(mc);
     DRIVER_RETURN(0, &driver_lock);
 }
 
@@ -475,6 +474,7 @@ void init(unsigned char* dsn) {
 	revd->run();
     }
     add_driver_event_handler(DRIVER_RECONF, reconf_handler, NULL);
+    add_driver_event_handler(DRIVER_TERMINATE, term_handler, NULL);
     driver_event_start();
     if (pthread_rwlock_init(&driver_lock, NULL) < 0) {
 	perror("pthread_rwlock_init");
@@ -490,17 +490,20 @@ void reversion(void *cls) {
     ms_client_update(mc, ment);
 }
 
-
 void* reconf_handler(void *cls) {
     cout<<"calling publish_dataset"<<endl;
     publish_dataset (NULL, NULL, NULL );
     return NULL;
 }
 
+void* term_handler(void *cls) {
+    //Nothing to do...
+    exit(0);
+}
+
 void driver_special_inval_handler(string file_path) {
     struct md_entry *mde = DATA[file_path];
     if (mde != NULL) {
-	cout<<">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>... "<<mde->path<<endl;
 	//Delete this file from all the volumes we are attached to.
 	ms_client_delete(mc, mde);
 	DATA.erase(file_path);
