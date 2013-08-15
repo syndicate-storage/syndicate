@@ -50,8 +50,8 @@ struct RG_upload {
 };
 
 
-int RG_upload_init_block( struct RG_upload* rup, struct ms_client* ms, char const* data_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, int64_t mtime_sec, int32_t mtime_nsec, bool sync );
-int RG_upload_init_manifest( struct RG_upload* rup, struct ms_client* ms, char* manifest_data, size_t manifest_data_len, char const* fs_path, int64_t file_version, int64_t mtime_sec, int32_t mtime_nsec, bool sync );
+int RG_upload_init_block( struct fs_core* core, struct RG_upload* rup, char const* data_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, int64_t mtime_sec, int32_t mtime_nsec, bool sync );
+int RG_upload_init_manifest( struct fs_core* core, struct RG_upload* rup, char* manifest_data, size_t manifest_data_len, char const* fs_path, int64_t file_version, int64_t mtime_sec, int32_t mtime_nsec, bool sync );
 void RG_upload_destroy( struct RG_upload* rup );
 
 typedef vector<struct RG_upload*> upload_list;
@@ -67,7 +67,7 @@ struct RG_channel {
 class ReplicaUploader : public CURLTransfer {
 public:
    
-   ReplicaUploader( struct ms_client* ms );
+   ReplicaUploader( struct ms_client* ms, uint64_t volume_id );
    ~ReplicaUploader();
 
    void add_replica( struct RG_upload* rup );
@@ -109,12 +109,13 @@ private:
    uint64_t volume_version;
    struct RG_channel* RGs;
    int num_RGs;
+   uint64_t volume_id;
 
    struct curl_slist** headers;
 };
 
 
-int replication_init( struct ms_client* ms );
+int replication_init( struct ms_client* ms, uint64_t volume_id );
 int replication_shutdown();
 
 int fs_entry_replicate_write( struct fs_core* core, struct fs_file_handle* fh, modification_map* modified_blocks, bool sync );

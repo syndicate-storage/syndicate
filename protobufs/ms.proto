@@ -90,24 +90,6 @@ message ms_volume_gateway_cred {
    required string public_key = 6;        // public key of this gateway
 }
 
-
-// volume metadata 
-message ms_volume_metadata {
-   required ms_volume_gateway_cred cred = 1;   // session credentials for the requester
-   required uint64 blocksize = 2;
-   required uint64 owner_id = 3;               // UID of the volume owner
-   required uint64 volume_version = 4;
-   required uint64 UG_version = 5;
-   required uint64 RG_version = 6;
-   required int64 session_timeout = 7;       // how long is the sesion password good for (negative for "forever")
-   required string name = 8;
-   required string description = 9;
-   required string volume_public_key = 10;
-   required string signature = 11;              // base64-encoded Volume signature of this message (NOTE: it is self-signed)
-   required string session_password = 12;       // temporary password the caller should use in the future to authenticate to the MS
-   repeated uint64 volume_ids = 13;              // volumes we're bound to
-}
-
 // UGs
 message ms_volume_UGs {
    required uint64 ug_version = 1;
@@ -122,6 +104,34 @@ message ms_volume_RGs {
    repeated string rg_hosts = 3;
    repeated int32 rg_ports = 4;
 }
+
+// Volume metadata
+message ms_volume_metadata {
+   required uint64 blocksize = 1;
+   required uint64 owner_id = 2;               // UID of the volume owner
+   required uint64 volume_id = 3;             // volume ID
+   required uint64 volume_version = 4;
+   required uint64 UG_version = 5;
+   required uint64 RG_version = 6;
+   required string name = 7;
+   required string description = 8;
+   required string volume_public_key = 9;
+   required string signature = 10;              // base64-encoded Volume signature of this message
+
+   optional ms_volume_UGs ugs = 11;         // ug information (included only on registration)
+   optional ms_volume_RGs rgs = 12;         // rg information (included only on registration)
+}
+
+
+// Registration metadata
+message ms_registration_metadata {
+   required ms_volume_gateway_cred cred = 1;   // session credentials for the requester
+   required string session_password = 2;       // temporary password the gateway should use in the future to authenticate to the MS
+   required int64 session_timeout = 3;       // how long is the above information good for?
+   
+   repeated ms_volume_metadata volumes = 4;     // the Volumes we're subscribed to
+}
+
 
 // OpenID authentication response
 message ms_openid_provider_reply {

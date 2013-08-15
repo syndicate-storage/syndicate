@@ -301,7 +301,7 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
    
    con_data->ctx.hostname = md_con_data->remote_host;
    con_data->ctx.method = md_con_data->method;
-   con_data->ctx.size = md_con_data->conf->blocking_factor;
+   con_data->ctx.size = 0;    // TODO figure out which Volume
    con_data->ctx.err = 0;
    con_data->ctx.http_status = 0;
    
@@ -739,11 +739,11 @@ static void cleanup_stale_transactions( struct md_syndicate_conf* conf ) {
 
 
 // start up server
-static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf ) {
+static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf, struct ms_client* ms ) {
    
    md_path_locks_create( &gateway_md_locks );
 
-   md_HTTP_init( http, MHD_USE_SELECT_INTERNALLY | MHD_USE_POLL | MHD_USE_DEBUG, conf );
+   md_HTTP_init( http, MHD_USE_SELECT_INTERNALLY | MHD_USE_POLL | MHD_USE_DEBUG, conf, ms );
    md_HTTP_auth_mode( *http, conf->http_authentication_mode );
    md_HTTP_connect( *http, gateway_HTTP_connect );
    md_HTTP_GET( *http, gateway_GET_handler );
@@ -1034,7 +1034,7 @@ int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *cli
    // start gateway server
    struct md_HTTP http;
 
-   rc = gateway_init( &http, conf );
+   rc = gateway_init( &http, conf, client );
    if( rc != 0 ) {
       return rc;
    }

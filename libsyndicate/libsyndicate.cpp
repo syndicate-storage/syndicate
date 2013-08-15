@@ -198,6 +198,7 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
       }
    }
 
+   /*
    // load Volume public key
    if( c->volume_public_key_path ) {
       c->volume_public_key = md_load_file_as_string( c->volume_public_key_path );
@@ -206,7 +207,7 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
          errorf( "Could not read Volume public key %s\n", c->volume_public_key_path );
       }
    }
-
+   */
    // load gateway public/private key
    if( c->gateway_key_path ) {
       c->gateway_key = md_load_file_as_string( c->gateway_key_path );
@@ -587,11 +588,12 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->gateway_key_path = strdup( values[0] );
       }
 
+      /*
       else if( strcmp( key, VOLUME_PUBKEY_KEY ) == 0 ) {
          // Volume public key
          conf->volume_public_key_path = strdup( values[0] );
       }
-      
+      */
       else if( strcmp( key, PORTNUM_KEY ) == 0 ) {
          char *end;
          long val = strtol( values[0], &end, 10 );
@@ -612,11 +614,13 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
             conf->content_url = tmp;
          }
       }
-            
+
+      /*
       else if( strcmp( key, VOLUME_NAME_KEY ) == 0 ) {
          // volume name
          conf->volume_name = strdup( values[0] );
       }
+      */
 
       else if( strcmp( key, GATEWAY_NAME_KEY ) == 0 ) {
          // gateway name
@@ -663,9 +667,11 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->replica_logfile = strdup(values[0]);
       }
 
+      /*
       else if( strcmp( key, BLOCKING_FACTOR_KEY ) == 0 ) {
          conf->blocking_factor = (unsigned long)strtol( values[0], NULL, 10 );
       }
+      */
 
       else if( strcmp( key, REPLICA_OVERWRITE_KEY ) == 0 ) {
          conf->replica_overwrite = (strtol(values[0], NULL, 10) != 0 ? true : false);
@@ -719,7 +725,7 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->server_cert,
       (void*)conf->server_key_path,
       (void*)conf->server_cert_path,
-      (void*)conf->volume_public_key,
+      //(void*)conf->volume_public_key,
       (void*)conf->gateway_key,
       (void*)conf->gateway_key_path,
       (void*)conf->replica_logfile,
@@ -748,10 +754,6 @@ void md_entry_free( struct md_entry* ent ) {
    if( ent->path ) {
       free( ent->path );
       ent->path = NULL;
-   }
-   if( ent->local_path ) {
-      free( ent->local_path );
-      ent->local_path = NULL;
    }
    if( ent->checksum ) {
       free( ent->checksum );
@@ -784,9 +786,6 @@ void md_entry_dup2( struct md_entry* src, struct md_entry* ret ) {
    ret->path = strdup( src->path );
    ret->url = strdup( src->url );
 
-   if( src->local_path )
-      ret->local_path = strdup( src->local_path );
-   
    if( src->checksum ) {
       ret->checksum = (unsigned char*)calloc( SHA_DIGEST_LENGTH * sizeof(unsigned char), 1 );
       memcpy( ret->checksum, src->checksum, SHA_DIGEST_LENGTH );
@@ -2886,6 +2885,7 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       con_data->cls = NULL;
       con_data->status = 200;
       con_data->pp = pp;
+      con_data->ms = http_ctx->ms;
 
       char const* content_length_str = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_LENGTH );
       if( content_length_str != NULL )
@@ -3131,10 +3131,11 @@ void md_HTTP_cleanup( void *cls, struct MHD_Connection *connection, void **con_c
 }
 
 // set fields in an HTTP structure
-int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf ) {
+int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf, struct ms_client* client ) {
    memset( http, 0, sizeof(struct md_HTTP) );
    http->conf = conf;
    http->server_type = server_type;
+   http->ms = client;
    return 0;
 }
 
@@ -3588,6 +3589,11 @@ int md_init( int gateway_type,
              char const* tls_cert_file
            ) {
 
+   // need a Volume name with UG
+   if( gateway_type == SYNDICATE_UG && volume_name == NULL ) {
+      errorf("%s", "ERR: missing Volume name for UG\n");
+      return -EINVAL;
+   }
 
    util_init();
    md_default_conf( conf );
@@ -3621,12 +3627,14 @@ int md_init( int gateway_type,
 
       conf->ms_password = strdup( md_password );
    }
+   /*
    if( volume_name ) {
       if( conf->volume_name )
          free( conf->volume_name );
 
       conf->volume_name = strdup( volume_name );
    }
+   */
    if( gateway_name ) {
       if( conf->gateway_name )
          free( conf->gateway_name );
@@ -3655,12 +3663,14 @@ int md_init( int gateway_type,
 
       conf->server_key_path = strdup( tls_pkey_file );
    }
+   /*
    if( volume_key_file ) {
       if( conf->volume_public_key_path )
          free( conf->volume_public_key_path );
 
       conf->volume_public_key_path = strdup( volume_key_file );
    }
+   */
    
    if( portnum > 0 ) {
       conf->portnum = portnum;
@@ -3689,18 +3699,36 @@ int md_init( int gateway_type,
    }
 
    // register the gateway
-   rc = ms_client_register( client, volume_name, gateway_name, conf->ms_username, conf->ms_password );
+   rc = ms_client_gateway_register( client, gateway_name, conf->ms_username, conf->ms_password );
    if( rc != 0 ) {
       errorf("ms_client_register rc = %d\n", rc );
       return rc;
    }
 
+   // if this is a UG, verify that we bound to the right volume
+   if( gateway_type == SYNDICATE_UG ) {
+      uint64_t volume_id = ms_client_get_volume_id( client, 0 );
+      char* volname = ms_client_get_volume_name( client, volume_id );
+
+      if( volname == NULL ) {
+         errorf("%s", "This gateway does not appear to be bound to any volumes!\n");
+         return -EINVAL;
+      }
+      
+      if( strcmp(volname, volume_name) != 0 ) {
+         errorf("ERR: This UG is not registered to Volume '%s'\n", volume_name );
+         free( volname );
+         return rc;
+      }
+      free( volname );
+   }
+
    ms_client_wlock( client );
    conf->owner = client->owner_id;
    conf->gateway = client->gateway_id;
-   conf->volume_owner = client->volume_owner_id;
-   conf->volume = client->volume_ids[0];
-   conf->blocking_factor = client->blocksize;
+   //conf->volume_owner = client->volume_owner_id;
+   //conf->volume = client->volume_ids[0];
+   //conf->blocking_factor = client->blocksize;
    ms_client_unlock( client );
 
    return 0;
@@ -3726,7 +3754,7 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->debug_read = false;
    conf->debug_lock = false;
 
-   conf->volume_name = NULL;
+   //conf->volume_name = NULL;
    conf->metadata_connect_timeout = 60;
    conf->portnum = 32780;
    conf->transfer_timeout = 60;
@@ -3777,10 +3805,12 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, METADATA_PASSWORD_KEY );
    }
+   /*
    if( conf->volume_name == NULL ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, VOLUME_NAME_KEY );
    }
+   */
    if( conf->gateway_name == NULL ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, GATEWAY_NAME_KEY );

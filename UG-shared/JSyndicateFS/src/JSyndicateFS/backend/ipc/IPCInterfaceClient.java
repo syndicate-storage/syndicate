@@ -12,6 +12,8 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -104,7 +106,17 @@ public class IPCInterfaceClient implements Closeable {
         // send
         IPCMessageBuilder.sendStringsMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_READ_DIRECTORY, path);
         // recv
-        return IPCMessageBuilder.readDirectoryMessage(this.socketDataInputStream, IPCMessageBuilder.IPCMessageOperations.OP_READ_DIRECTORY);
+        String[] entries = IPCMessageBuilder.readDirectoryMessage(this.socketDataInputStream, IPCMessageBuilder.IPCMessageOperations.OP_READ_DIRECTORY);
+        List<String> entry_arr = new ArrayList<String>();
+        for(String entry : entries) {
+            if(!entry.equals(".") && !entry.equals("..")) {
+                entry_arr.add(entry);    
+            }
+        }
+        
+        String[] new_entries = new String[entry_arr.size()];
+        new_entries = entry_arr.toArray(new_entries);
+        return new_entries;
     }
 
     public synchronized IPCFileInfo getFileHandle(String path) throws IOException {
@@ -113,7 +125,9 @@ public class IPCInterfaceClient implements Closeable {
         // send
         IPCMessageBuilder.sendStringsMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_GET_FILE_HANDLE, path);
         // recv
-        return IPCMessageBuilder.readFileInfoMessage(this.socketDataInputStream, IPCMessageBuilder.IPCMessageOperations.OP_GET_FILE_HANDLE);
+        IPCFileInfo fi = IPCMessageBuilder.readFileInfoMessage(this.socketDataInputStream, IPCMessageBuilder.IPCMessageOperations.OP_GET_FILE_HANDLE);
+        LOG.debug("filehandle : " + fi.getFileHandle());
+        return fi;
     }
 
     public synchronized IPCStat createNewFile(String path) throws IOException {
@@ -138,9 +152,9 @@ public class IPCInterfaceClient implements Closeable {
         LOG.info("writeFileData : " + fileoffset + ", " + offset + ", " + size);
         
         // send
-        IPCMessageBuilder.sendFileWriteMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_WRITE_FILE_DATA, fileinfo, fileoffset, buffer, offset, size);
+        IPCMessageBuilder.sendFileWriteMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_WRITE_FILEDATA, fileinfo, fileoffset, buffer, offset, size);
         // recv
-        IPCMessageBuilder.readResultMessage(this.socketDataInputStream, IPCMessageBuilder.IPCMessageOperations.OP_WRITE_FILE_DATA);
+        IPCMessageBuilder.readResultMessage(this.socketDataInputStream, IPCMessageBuilder.IPCMessageOperations.OP_WRITE_FILEDATA);
     }
 
     public synchronized void flush(IPCFileInfo fileinfo) throws IOException {

@@ -216,9 +216,9 @@ static int fs_entry_do_stat( struct fs_core* core, struct fs_entry* fent, struct
    sb->st_gid = fent->volume;
    sb->st_rdev = 0;
 
-   sb->st_blksize = core->conf->blocking_factor;
-   sb->st_blocks = (fent->size / core->conf->blocking_factor);
-   if( fent->size % core->conf->blocking_factor != 0 )
+   sb->st_blksize = core->blocking_factor;
+   sb->st_blocks = (fent->size / core->blocking_factor);
+   if( fent->size % core->blocking_factor != 0 )
       sb->st_blocks++;
 
    sb->st_atime = fent->atime;
@@ -445,7 +445,7 @@ int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *sta
    fs_core_unlock( core );
 
    // populate the statv struct
-   statv->f_bsize = core->conf->blocking_factor;
+   statv->f_bsize = core->blocking_factor;
    statv->f_blocks = 0;
    statv->f_bfree = 0;
    statv->f_bavail = 0;

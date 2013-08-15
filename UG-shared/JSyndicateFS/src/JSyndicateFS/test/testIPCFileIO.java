@@ -76,7 +76,7 @@ public class testIPCFileIO {
             
             listRootFiles();
             
-            //createNewFile();
+            createNewFile();
             
             Thread.sleep(3000);
             uninitFS();
