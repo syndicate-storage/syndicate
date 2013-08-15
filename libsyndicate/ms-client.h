@@ -187,6 +187,7 @@ uint64_t ms_client_UG_version( struct ms_client* client, uint64_t volume_id );
 uint64_t ms_client_RG_version( struct ms_client* client, uint64_t volume_id );
 uint64_t ms_client_get_volume_id( struct ms_client* client, int i );
 uint64_t ms_client_get_volume_blocksize( struct ms_client* client, uint64_t volume_id );
+int ms_client_get_num_volumes( struct ms_client* client );
 char* ms_client_get_volume_name( struct ms_client* client, uint64_t volume_id );
 
 int ms_client_sched_volume_reload( struct ms_client* client, uint64_t volume_id );

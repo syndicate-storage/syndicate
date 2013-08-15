@@ -3152,6 +3152,13 @@ uint64_t ms_client_get_volume_blocksize( struct ms_client* client, uint64_t volu
    return ret;
 }
 
+// get the number of Volumes
+int ms_client_get_num_volumes( struct ms_client* client ) {
+   ms_client_view_rlock( client );
+   int ret = client->num_volumes;
+   ms_client_view_unlock( client );
+   return ret;
+}
 
 // schedule a Volume reload
 int ms_client_sched_volume_reload( struct ms_client* client, uint64_t volume_id ) {

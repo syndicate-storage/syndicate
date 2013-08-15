@@ -19,6 +19,7 @@ struct gateway_context {
    char const* hostname;
    char const* username;
    char const* method;
+   uint64_t volume_id;  // ID of the Volume
    size_t size;         // for PUT, this is the length of the uploaded data.  for GET, this is the expected length of the data to be fetched
    time_t last_mod;     // for GET, this is the last-mod time of the file to be served
    char** args;
