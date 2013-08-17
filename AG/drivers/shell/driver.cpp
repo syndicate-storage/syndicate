@@ -366,16 +366,14 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     //Publish to all the volumes
     for (vol_counter=0; vol_counter<nr_volumes; vol_counter++) {
 	uint64_t volume_id = ms_client_get_volume_id(mc, vol_counter);
-	//uint64_t volume_owner = ms_client_get_volume_owner(ms, vol_counter);
 	for( it = dir_hierachy.begin(); it != dir_hierachy.end(); it++ ) {
 	    struct map_info mi;
 	    publish (*it, MD_ENTRY_DIR, &mi, volume_id);
 	}
 
 	for (iter = FS2CMD->begin(); iter != FS2CMD->end(); iter++) {
-	    publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second, volume_id);
-	    if (revd)
-		revd->add_map_info(iter->second);
+	    publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second, 
+			volume_id);
 	}
     }
     //Add map_info objects to reversion daemon
