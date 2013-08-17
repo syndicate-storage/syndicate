@@ -77,7 +77,8 @@ typedef map<string, struct md_entry*> content_map;
 typedef map<string, struct map_info*> query_map;
 typedef set<string> volume_set;
 
-static int publish(const char *fpath, int type, struct map_info *mi);
+static int publish(const char *fpath, int type, struct map_info *mi,
+		    uint64_t volume_id);
 char**	str2array(char *str);
 void	init(unsigned char* dsn);
 void reversion(void *cls);

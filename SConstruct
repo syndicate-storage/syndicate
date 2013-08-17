@@ -82,10 +82,10 @@ ags = SConscript( "AG/SConscript", variant_dir=ag_out )
 env.Depends( ags, libsyndicate )
 
 # AG driver build
-if "AG/drivers/common" in COMMAND_LINE_TARGETS:
-    libAGcommon_out = "build/out/AG/drivers/common"
-    libAGcommon = SConscript( "AG/drivers/common/SConscript", variant_dir=libAGcommon_out )
-    env.Depends( libAGcommon, libsyndicate )
+#if "AG/drivers/common" in COMMAND_LINE_TARGETS:
+libAGcommon_out = "build/out/AG/drivers/common"
+libAGcommon = SConscript( "AG/drivers/common/SConscript", variant_dir=libAGcommon_out )
+env.Depends( libAGcommon, libsyndicate )
 
 # disk driver
 if "AG/drivers/disk" in COMMAND_LINE_TARGETS:
@@ -142,11 +142,11 @@ if "AG-shell-driver-install" in COMMAND_LINE_TARGETS:
     ag_driver_shell_install = env.InstallLibrary( lib_install_dir, libAGshelldriver )
     env.Alias( 'AG-shell-driver-install', [ag_driver_shell_install] )
 
-if "AG-common-install" in COMMAND_LINE_TARGETS:
-    libAGcommon_out = "build/out/AG/drivers/common"
-    libAGcommon = SConscript( "AG/drivers/common/SConscript", variant_dir=libAGcommon_out )
-    ag_common_install = env.InstallLibrary( lib_install_dir, libAGcommon )
-    env.Alias( 'AG-common-install', [ag_common_install] )
+#if "AG-common-install" in COMMAND_LINE_TARGETS:
+libAGcommon_out = "build/out/AG/drivers/common"
+libAGcommon = SConscript( "AG/drivers/common/SConscript", variant_dir=libAGcommon_out )
+ag_common_install = env.InstallLibrary( lib_install_dir, libAGcommon )
+env.Alias( 'AG-common-install', [ag_common_install] )
 # initialization
 
 # set umask correctly

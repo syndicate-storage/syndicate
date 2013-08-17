@@ -9,14 +9,14 @@
 	    <Volume>testvolume-wathsala2-princeton.edu</Volume>
 	</Volumes>-->
     </Config>
-    <!--<Pair reval="10s 5m">
+    <Pair reval="10s 5m">
 	<File perm="740">/foo/bar</File>
 	<Query type="shell">/usr/bin/wget -q -O - http://www.google.com</Query>
     </Pair>
     <Pair reval="2m">
 	<File perm="444">/foo/mlab</File>
 	<Query type="shell">/usr/bin/mlab-test</Query>
-    </Pair>-->
+    </Pair>
     <Pair reval="2m 5s">
 	<File perm="540">/foo/xyz/bar1</File>
 	<Query type="shell">COMMAND 3</Query>

@@ -41,8 +41,8 @@ void clean_invalid_proc_entry(proc_table_entry *pte) {
 	pte->block_file_wd = -1;
 	pte->is_read_complete = false;
 	pte->proc_id = -1;
-	pte->current_max_block = 0;
-	pte->block_byte_offset = 0;
+	pte->current_offset = 0;
+	//pte->block_byte_offset = 0;
     }
 }
 
@@ -211,9 +211,10 @@ void* inotify_event_receiver(void *cls) {
 		    }
 		    //Acquire the pte lock
 		    lock_pte(pte);
-		    pte->current_max_block = stat_buff.st_size/BLK_SIZE;
-		    pte->block_byte_offset = stat_buff.st_size - 
-				    (pte->current_max_block * BLK_SIZE);
+		    //pte->current_max_block = stat_buff.st_size/BLK_SIZE;
+		    //pte->block_byte_offset = stat_buff.st_size - 
+		    //		    (pte->current_max_block * BLK_SIZE);
+		    pte->current_offset = stat_buff.st_size;
 		    unlock_pte(pte);
 		}
 		else {
@@ -313,7 +314,7 @@ int ProcHandler::execute_command(const char* proc_name, char *argv[],
 	}
 	pte->block_file = file_path;
 	pte->block_file_wd = -1;
-	pte->current_max_block = 0;
+	//pte->current_max_block = 0;
 	pte->proc_id = pid;
 	pte->is_read_complete = false;
 	pte->valid = true;
@@ -352,7 +353,7 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	if (pte == NULL)
 	    pte = alloc_proc_table_entry();
 	int rc = execute_command(proc_name, argv, 
-				envp, /*ctx->id,*/ctx, pte);
+				envp, ctx, pte);
 	if (rc < 0)
 	    return rc;
 	//pte = proc_table[ctx->id];
@@ -379,14 +380,14 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	    unlock_pte(pte);
 	    return -EIO;
 	}
-	if (st_buf.st_size < (off_t)(ctx->block_id * BLK_SIZE)) {
+	if (st_buf.st_size < (off_t)(ctx->block_id * ctx->blocking_factor)) {
 	    unlock_pte(pte);
 	    if (!pte->is_read_complete)
 		return -EAGAIN;
 	    else
 		return 0;
 	}
-	off_t seek_len = ctx->block_id  * BLK_SIZE;
+	off_t seek_len = ctx->block_id  * ctx->blocking_factor;
 	if (lseek(fd, seek_len, SEEK_SET) < 0) {
 	    perror("lseek");
 	    unlock_pte(pte);
@@ -406,7 +407,7 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
     else {
 	//If data_offset is equal to block_size then we have read an 
 	//entire block. Therefore return 0.
-	if (ctx->data_offset >= (ssize_t)BLK_SIZE)
+	if (ctx->data_offset >= (ssize_t)ctx->blocking_factor)
 	    return 0;
 	//get proc_table_entry by id and return the block... 
 	//proc_table_entry *pte = proc_table[ctx->id];
@@ -417,9 +418,10 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	    unlock_pte(pte);
 	    return -EAGAIN;
 	}
-	if (pte->current_max_block >= ctx->block_id) {
-	    off_t current_offset = (ctx->block_id * BLK_SIZE) + 
-			    ctx->data_offset;
+	if (pte->current_offset > (ctx->block_id * ctx->blocking_factor) + 
+				    ctx->data_offset) {
+	    off_t current_read_offset = (ctx->block_id * ctx->blocking_factor) + 
+					ctx->data_offset;
 	    if (ctx->fd < 0) {
 		int fd = open(pte->block_file, O_RDONLY);
 		if (fd < 0) {
@@ -429,30 +431,30 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 		}
 		ctx->fd = fd;
 	    }
-	    if (((pte->current_max_block == ctx->block_id) && 
+	    /*if (((pte->current_max_block == ctx->block_id) && 
 		    pte->block_byte_offset > ctx->data_offset) ||
-		    pte->current_max_block > ctx->block_id) {
-		if (lseek(ctx->fd, current_offset, SEEK_SET) < 0) {
-		    perror("lseek");
-		    unlock_pte(pte);
-		    return -EIO;
-		}
-		len = read(ctx->fd, buffer, read_size);
-		if (len < 0) {
-		    perror("read");
-		    unlock_pte(pte);
-		    return -EIO;
-		}
-		else {
-		    ctx->data_offset += len;
-		    unlock_pte(pte);
-		    return len;
-		}
-	    } 
-	    else {
+		    pte->current_max_block > ctx->block_id) {*/
+	    if (lseek(ctx->fd, current_read_offset, SEEK_SET) < 0) {
+		perror("lseek");
 		unlock_pte(pte);
-		return -EAGAIN;
+		return -EIO;
 	    }
+	    len = read(ctx->fd, buffer, read_size);
+	    if (len < 0) {
+		perror("read");
+		unlock_pte(pte);
+		return -EIO;
+	    }
+	    else {
+		ctx->data_offset += len;
+		unlock_pte(pte);
+		return len;
+	    }
+	    /*} 
+	      else {
+	      unlock_pte(pte);
+	      return -EAGAIN;
+	    }*/
 	}
 	else { 
 	    unlock_pte(pte);
@@ -530,7 +532,7 @@ block_status ProcHandler::get_block_status(struct gateway_ctx *ctx)
 	if (!(pte->valid)) {
 	    blk_stat.in_progress = true;
 	}
-	else if (ctx->block_id > pte->current_max_block) {
+	else if (((ctx->block_id + 1) * ctx->blocking_factor) > pte->current_offset) {
 	    if (pte->is_read_complete) {
 		blk_stat.no_block = true;
 	    }
@@ -538,7 +540,7 @@ block_status ProcHandler::get_block_status(struct gateway_ctx *ctx)
 		blk_stat.in_progress = true;
 	    }
 	}
-	else if (ctx->block_id == pte->current_max_block) {
+	else if (((ctx->block_id + 1) * ctx->blocking_factor) == pte->current_offset) {
 	    if (pte->is_read_complete) {
 		blk_stat.block_available = true;
 	    }

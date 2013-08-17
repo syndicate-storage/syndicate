@@ -37,6 +37,8 @@ struct gateway_ctx {
     bool complete;
     // map_info
     struct map_info *mi;
+    // blocking factor
+    ssize_t blocking_factor;
 };
 
 #endif //_GATEWAY_CTX_H_
