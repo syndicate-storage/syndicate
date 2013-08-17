@@ -97,13 +97,15 @@ if "AG/drivers/disk" in COMMAND_LINE_TARGETS:
 if "AG/drivers/sql" in COMMAND_LINE_TARGETS:
     libAGSQLdriver_out = "build/out/AG/drivers/sql"
     libAGSQLdriver = SConscript( "AG/drivers/sql/SConscript", variant_dir=libAGSQLdriver_out )
-    env.Depends( libAGSQLdriver, libsyndicate, libAGcommon )
+    env.Depends( libAGSQLdriver, libsyndicate)
+    env.Depends( libAGSQLdriver, libAGcommon )
 
 # Shell driver
 if "AG/drivers/shell" in COMMAND_LINE_TARGETS:
     libAGshelldriver_out = "build/out/AG/drivers/shell"
     libAGshelldriver = SConscript( "AG/drivers/shell/SConscript", variant_dir=libAGshelldriver_out )
-    env.Depends( libAGshelldriver, libsyndicate, libAGcommon )
+    env.Depends( libAGshelldriver, libsyndicate  )
+    env.Depends( libAGshelldriver, libAGcommon  )
 
 # ms build
 ms_out = "build/out/ms"
@@ -143,8 +145,6 @@ if "AG-shell-driver-install" in COMMAND_LINE_TARGETS:
     env.Alias( 'AG-shell-driver-install', [ag_driver_shell_install] )
 
 #if "AG-common-install" in COMMAND_LINE_TARGETS:
-libAGcommon_out = "build/out/AG/drivers/common"
-libAGcommon = SConscript( "AG/drivers/common/SConscript", variant_dir=libAGcommon_out )
 ag_common_install = env.InstallLibrary( lib_install_dir, libAGcommon )
 env.Alias( 'AG-common-install', [ag_common_install] )
 # initialization
