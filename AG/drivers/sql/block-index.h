@@ -13,7 +13,8 @@
 #include <gateway-ctx.h>
 
 #define MAX_INDEX_SIZE 1024
-#define AG_BLOCK_SIZE  1024 * 1024
+#define AG_BLOCK_SIZE()\
+    (sysconf(_SC_PAGESIZE) * 10)
 
 using namespace std;
 

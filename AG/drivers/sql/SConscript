@@ -24,6 +24,7 @@ LIBPATH = """
 
 # add libraries here
 LIBS = """
+   AGcommon
    syndicate
    xerces-c
    odbc

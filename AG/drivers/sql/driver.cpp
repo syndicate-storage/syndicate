@@ -41,6 +41,9 @@ ReversionDaemon* revd = NULL;
 // true if init() is called
 bool initialized = false;
 
+// AG's block size
+ssize_t ag_block_size = AG_BLOCK_SIZE();
+
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, 
 					    struct gateway_ctx* ctx, struct md_entry* ent ) {
@@ -101,7 +104,9 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
     off_t volume_block_id = 0;
     char* volume_block_buffer = NULL;
     ssize_t buffer_size = 0; 
-    block_translation_info bti = volume_block_to_ag_block(ctx);
+    block_translation_info bti;
+    if (ctx->data == NULL)
+	bti = volume_block_to_ag_block(ctx);
 
     if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
 	// read from database using ctx->sql_query...
@@ -124,7 +129,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 		//Loop through all the mapped AG blocks...
 		for (int i = bti.start_block_id; i <= bti.end_block_id; i++) {
 		    ctx->block_id = i;
-		    odh.execute_query(ctx, ctx->mi, AG_BLOCK_SIZE);
+		    odh.execute_query(ctx, ctx->mi, ag_block_size);
 		    if (ctx->data == NULL) {
 			break;
 		    }
@@ -155,8 +160,8 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 		    else if (bti.end_block_id == i) {
 			//Copy data to volume_block_buffer upto bti.end_block_offset.
 			ssize_t chunk_size = 0; 
-			if (ctx->data_len >= bti.start_block_offset)
-			    chunk_size = bti.start_block_offset;
+			if (ctx->data_len >= bti.end_block_offset)
+			    chunk_size = bti.end_block_offset;
 			else
 			    chunk_size = ctx->data_len;
 			volume_block_buffer = (char*)realloc(volume_block_buffer, buffer_size + chunk_size);
@@ -170,12 +175,13 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 			memcpy(volume_block_buffer + buffer_size, ctx->data, ctx->data_len);
 			buffer_size += ctx->data_len;
 		    }
+		    if (ctx->data != NULL)
+			free(ctx->data);
+		    ctx->data_len = 0;
 		}
 		//Restore volume block id.
 		ctx->block_id = volume_block_id;
 		//Update ctx->data and ctx->data_len...
-		if (ctx->data != NULL)
-		    free(ctx->data);
 		ctx->data = volume_block_buffer;
 		ctx->data_len = buffer_size;
 	    }
@@ -352,7 +358,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	       // Negative size switches libmicrohttpd to chunk transfer mode
 	       replica_ctx->size = -1;
 	       // Set blocking factor for this volume from replica_ctx
-	       ctx->blocking_factor = ms_client_get_volume_blocksize(mc, replica_ctx->volume_id);
+	       ctx->blocking_factor = ms_client_get_volume_blocksize(mc, 3/*replica_ctx->volume_id*/);
 	       //TODO: Check the block status and set the http response appropriately
 
 	       replica_ctx->http_status = 200;
