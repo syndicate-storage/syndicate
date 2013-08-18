@@ -98,6 +98,10 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
     ssize_t ret = 0;
     ODBCHandler& odh = ODBCHandler::get_handle(dsn_string);
     struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
+    off_t volume_block_id = 0;
+    char* volume_block_buffer = NULL;
+    ssize_t buffer_size = 0; 
+    block_translation_info bti = volume_block_to_ag_block(ctx);
 
     if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
 	// read from database using ctx->sql_query...
@@ -115,8 +119,66 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	    ctx->complete = true;
 	}
 	else if (!ctx->complete) {
-	    if (ctx->data == NULL)
-		odh.execute_query(ctx, ctx->mi, ctx->blocking_factor);
+	    if (ctx->data == NULL) {
+		volume_block_id = ctx->block_id;
+		//Loop through all the mapped AG blocks...
+		for (int i = bti.start_block_id; i <= bti.end_block_id; i++) {
+		    ctx->block_id = i;
+		    odh.execute_query(ctx, ctx->mi, AG_BLOCK_SIZE);
+		    if (ctx->data == NULL) {
+			break;
+		    }
+
+		    if (bti.start_block_id == bti.end_block_id) {
+			//Volume block is mapped to a single AG SQL block.
+			if (ctx->data_len > bti.start_block_offset) {
+			    ssize_t chunk_size = (bti.end_block_offset - bti.start_block_offset);
+			    if (chunk_size <= (ctx->data_len - bti.start_block_offset))
+				buffer_size += chunk_size;
+			    else
+				buffer_size = ctx->data_len - bti.start_block_offset;
+			    volume_block_buffer = (char*)realloc(volume_block_buffer, buffer_size);
+			    memcpy(volume_block_buffer, ctx->data + bti.start_block_offset, 
+				    buffer_size);
+			}
+		    }
+		    else if (bti.start_block_id == i) {
+			//Copy data to volume_block_buffer from bti.start_block_offset.
+			if (ctx->data_len > bti.start_block_offset) {
+			    volume_block_buffer = (char*)realloc(volume_block_buffer, buffer_size 
+				    + (ctx->data_len - bti.start_block_offset));
+			    memcpy(volume_block_buffer + buffer_size, ctx->data + bti.start_block_offset,
+				    ctx->data_len - bti.start_block_offset);
+			    buffer_size += (ctx->data_len - bti.start_block_offset);
+			}
+		    }
+		    else if (bti.end_block_id == i) {
+			//Copy data to volume_block_buffer upto bti.end_block_offset.
+			ssize_t chunk_size = 0; 
+			if (ctx->data_len >= bti.start_block_offset)
+			    chunk_size = bti.start_block_offset;
+			else
+			    chunk_size = ctx->data_len;
+			volume_block_buffer = (char*)realloc(volume_block_buffer, buffer_size + chunk_size);
+			memcpy(volume_block_buffer + buffer_size, ctx->data, chunk_size);
+			buffer_size += chunk_size;
+		    }
+		    else {
+			//Copy entire block to volume_block_buffer.
+			volume_block_buffer = (char*)realloc(volume_block_buffer, buffer_size 
+				+ ctx->data_len);
+			memcpy(volume_block_buffer + buffer_size, ctx->data, ctx->data_len);
+			buffer_size += ctx->data_len;
+		    }
+		}
+		//Restore volume block id.
+		ctx->block_id = volume_block_id;
+		//Update ctx->data and ctx->data_len...
+		if (ctx->data != NULL)
+		    free(ctx->data);
+		ctx->data = volume_block_buffer;
+		ctx->data_len = buffer_size;
+	    }
 	    if (ctx->data_len) {
 		size_t rem_len = ctx->data_len - ctx->data_offset;
 		size_t read_len = (rem_len > len)?len:rem_len;
@@ -136,7 +198,8 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
     }
     else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
 	// read from RAM
-	memcpy( buf, ctx->data + ctx->data_offset, MIN( (ssize_t)len, ctx->data_len - ctx->data_offset ) );
+	memcpy( buf, ctx->data + ctx->data_offset, MIN( (ssize_t)len, 
+				    ctx->data_len - ctx->data_offset ) );
 	ctx->data_offset += len;
 	ret = (ssize_t)len;
     }

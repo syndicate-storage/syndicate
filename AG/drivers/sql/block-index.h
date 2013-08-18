@@ -10,6 +10,7 @@
 #include <string>
 #include <iostream>
 
+#include <gateway-ctx.h>
 
 #define MAX_INDEX_SIZE 1024
 #define AG_BLOCK_SIZE  1024 * 1024
@@ -36,7 +37,7 @@ typedef map<string, pthread_mutex_t> MutexMap;
 
 void invalidate_entry(void* cls);
 
-block_translation_info volume_block_to_ag_block(off_t block_id);
+block_translation_info volume_block_to_ag_block(struct gateway_ctx *ctx);
 
 class BlockIndex {
     private:
