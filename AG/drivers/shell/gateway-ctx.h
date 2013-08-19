@@ -1,8 +1,16 @@
+/*
+   Copyright 2013 The Trustees of Princeton University
+   All Rights Reserved
+   
+   Wathsala Vithanage (wathsala@princeton.edu)
+*/
+
 #ifndef _GATEWAY_CTX_H_
 #define _GATEWAY_CTX_H_
 
 #include <sys/types.h>
 #include <unistd.h>
+#include <map-parser.h>
 
 struct gateway_ctx {
     int request_type;
@@ -27,6 +35,10 @@ struct gateway_ctx {
     off_t block_id;
     // are we done?
     bool complete;
+    // map_info
+    struct map_info *mi;
+    // blocking factor
+    ssize_t blocking_factor;
 };
 
 #endif //_GATEWAY_CTX_H_

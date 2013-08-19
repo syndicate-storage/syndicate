@@ -64,8 +64,8 @@ int fs_entry_restore_file_from_disk( struct fs_core* core, struct fs_entry* fent
    char name_buf[NAME_MAX+1];
 
    int rc = 0;
-   uint64_t num_blocks = fent->size / core->conf->blocking_factor;
-   if( fent->size % core->conf->blocking_factor != 0 )
+   uint64_t num_blocks = fent->size / core->blocking_factor;
+   if( fent->size % core->blocking_factor != 0 )
       num_blocks++;
 
    int64_t* block_versions = CALLOC_LIST( int64_t, num_blocks + 1 );
@@ -185,7 +185,7 @@ int fs_entry_restore_files( struct fs_core* core ) {
 
       // get MS records
       fs_entry_mark_read_stale( dir );    // force a reload
-      int rc = fs_entry_revalidate_path( core, cur_path.c_str() );
+      int rc = fs_entry_revalidate_path( core, dir->volume, cur_path.c_str() );
       if( rc != 0 ) {
          errorf("fs_entry_revalidate_path(%s) rc = %d\n", cur_path.c_str(), rc );
          break;

@@ -48,13 +48,13 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
    uint64_t trunc_block_id = 0;
    
    // which blocks need to be withdrawn?
-   uint64_t max_block = fent->size / core->conf->blocking_factor;
-   if( fent->size % core->conf->blocking_factor > 0 ) {
+   uint64_t max_block = fent->size / core->blocking_factor;
+   if( fent->size % core->blocking_factor > 0 ) {
       max_block++;      // preserve the remainder of the last block
    }
 
-   uint64_t new_max_block = size / core->conf->blocking_factor;
-   if( size % core->conf->blocking_factor > 0 ) {
+   uint64_t new_max_block = size / core->blocking_factor;
+   if( size % core->blocking_factor > 0 ) {
       trunc_block_id = new_max_block;      // need to truncate the last block
       new_max_block++;
    }
@@ -70,16 +70,16 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 
       if( trunc_block_id > 0 ) {
          // truncate the last block
-         char* block = CALLOC_LIST( char, core->conf->blocking_factor );
+         char* block = CALLOC_LIST( char, core->blocking_factor );
 
-         ssize_t nr = fs_entry_do_read_block( core, fs_path, fent, trunc_block_id * core->conf->blocking_factor, block );
+         ssize_t nr = fs_entry_do_read_block( core, fs_path, fent, trunc_block_id * core->blocking_factor, block );
          if( nr < 0 ) {
             errorf( "fs_entry_do_read_block(%s[%" PRIu64 "]) rc = %zd\n", fs_path, trunc_block_id, nr );
             err = nr;
          }
          else {
             // truncate this block
-            memset( block + (size % core->conf->blocking_factor), 0, core->conf->blocking_factor - (size % core->conf->blocking_factor) );
+            memset( block + (size % core->blocking_factor), 0, core->blocking_factor - (size % core->blocking_factor) );
 
             int rc = fs_entry_put_block( core, fs_path, fent, trunc_block_id, block );
             if( rc != 0 ) {
@@ -196,7 +196,7 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 // truncate, only if the version is correct (or ignore it if it's -1)
 int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t newsize, int64_t known_version, uint64_t user, uint64_t volume ) {
 
-   int err = fs_entry_revalidate_path( core, fs_path );
+   int err = fs_entry_revalidate_path( core, volume, fs_path );
    if( err != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fs_path, err );
       return -EREMOTEIO;
@@ -233,7 +233,7 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t
 // truncate an file
 int fs_entry_truncate( struct fs_core* core, char const* fs_path, off_t size, uint64_t user, uint64_t volume ) {
    
-   int err = fs_entry_revalidate_path( core, fs_path );
+   int err = fs_entry_revalidate_path( core, volume, fs_path );
    if( err != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fs_path, err );
       return -EREMOTEIO;

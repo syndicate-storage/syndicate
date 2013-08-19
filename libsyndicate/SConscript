@@ -23,11 +23,13 @@ LIBS = """
    curl
    protobuf
    pthread
+   ssl
    crypto
    uriparser
    microhttpd
    rt
    dl
+   m
 """
 
 # add headers here (will be returned by SCons)

@@ -58,7 +58,7 @@ size_t replica_curl_read( void* ptr, size_t size, size_t nmemb, void* userdata )
 
 
 // replicate a manifest
-int RG_upload_init_manifest( struct RG_upload* rup, struct ms_client* ms, char* manifest_data, size_t manifest_data_len, char const* fs_path, int64_t file_version, int64_t mtime_sec, int32_t mtime_nsec, bool sync ) {
+int RG_upload_init_manifest( struct fs_core* core, struct RG_upload* rup, char* manifest_data, size_t manifest_data_len, char const* fs_path, int64_t file_version, int64_t mtime_sec, int32_t mtime_nsec, bool sync ) {
    memset( rup, 0, sizeof(struct RG_upload) );
    
    // build an update
@@ -67,7 +67,7 @@ int RG_upload_init_manifest( struct RG_upload* rup, struct ms_client* ms, char* 
    replica_info.set_file_version( file_version );
    replica_info.set_block_id( 0 );
    replica_info.set_block_version( 0 );
-   replica_info.set_blocking_factor( ms->conf->blocking_factor );
+   replica_info.set_blocking_factor( core->blocking_factor );
    replica_info.set_file_mtime_sec( mtime_sec );
    replica_info.set_file_mtime_nsec( mtime_nsec );
 
@@ -108,7 +108,7 @@ int RG_upload_init_manifest( struct RG_upload* rup, struct ms_client* ms, char* 
 }
                                    
 // replicate a block
-int RG_upload_init_block( struct RG_upload* rup, struct ms_client* ms, char const* data_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, int64_t mtime_sec, int32_t mtime_nsec, bool sync ) {
+int RG_upload_init_block( struct fs_core* core, struct RG_upload* rup, char const* data_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, int64_t mtime_sec, int32_t mtime_nsec, bool sync ) {
 
    memset( rup, 0, sizeof(struct RG_upload) );
 
@@ -143,7 +143,7 @@ int RG_upload_init_block( struct RG_upload* rup, struct ms_client* ms, char cons
       replica_info.set_file_version( file_version );
       replica_info.set_block_id( block_id );
       replica_info.set_block_version( block_version );
-      replica_info.set_blocking_factor( ms->conf->blocking_factor );
+      replica_info.set_blocking_factor( core->blocking_factor );
       replica_info.set_file_mtime_sec( mtime_sec );
       replica_info.set_file_mtime_nsec( mtime_nsec );
 
@@ -200,17 +200,18 @@ int RG_upload_unref( struct RG_upload* rup ) {
 }
 
 // make an uploader
-ReplicaUploader::ReplicaUploader( struct ms_client* ms ) :
+ReplicaUploader::ReplicaUploader( struct ms_client* ms, uint64_t volume_id ) :
    CURLTransfer( 1 ) {
 
    this->ms = ms;
    this->num_RGs = 0;
    this->RGs = NULL;
    this->headers = NULL;
+   this->volume_id = volume_id;
    pthread_mutex_init( &this->download_lock, NULL );
 
    // get the set of replica_urls
-   char** replica_urls = ms_client_RG_urls_copy( ms );
+   char** replica_urls = ms_client_RG_urls_copy( ms, volume_id );
    
    if( replica_urls != NULL ) {
       
@@ -245,6 +246,8 @@ ReplicaUploader::ReplicaUploader( struct ms_client* ms ) :
          
          this->add_curl_easy_handle( 0, this->RGs[i].curl_h );
       }
+
+      FREE_LIST( replica_urls );
    }
 }
 
@@ -387,7 +390,7 @@ int ReplicaUploader::start_next_replica( struct RG_channel* rsc ) {
 // add a replica for downloading
 void ReplicaUploader::add_replica( struct RG_upload* rup ) {
    // verify that the volume version has not changed
-   uint64_t curr_version = ms_client_volume_version( this->ms );
+   uint64_t curr_version = ms_client_volume_version( this->ms, this->volume_id );
    if( curr_version != this->volume_version ) {
       // view change occurred.  Regenerate the set of RG channels
       // TODO...
@@ -461,8 +464,8 @@ int ReplicaUploader::cancel() {
 
 
 // start up replication
-int replication_init( struct ms_client* ms ) {
-   rutp = new ReplicaUploader( ms );
+int replication_init( struct ms_client* ms, uint64_t volume_id ) {
+   rutp = new ReplicaUploader( ms, volume_id );
    rutp->start();
    return 0;
 }
@@ -496,7 +499,7 @@ int fs_entry_replicate_write( struct fs_core* core, struct fs_file_handle* fh, m
 
    if( manifest_len > 0 ) {
       struct RG_upload* manifest_rup = CALLOC_LIST( struct RG_upload, 1 );
-      RG_upload_init_manifest( manifest_rup, core->ms, manifest_data, manifest_len, fs_path, fent->version, fent->mtime_sec, fent->mtime_nsec, sync );
+      RG_upload_init_manifest( core, manifest_rup, manifest_data, manifest_len, fs_path, fent->version, fent->mtime_sec, fent->mtime_nsec, sync );
       
       replicas.push_back( manifest_rup );
    }
@@ -514,7 +517,7 @@ int fs_entry_replicate_write( struct fs_core* core, struct fs_file_handle* fh, m
       }
 
       struct RG_upload* block_rup = CALLOC_LIST( struct RG_upload, 1 );
-      RG_upload_init_block( block_rup, core->ms, data_root, fs_path, fent->version, itr->first, itr->second, fent->mtime_sec, fent->mtime_nsec, sync );
+      RG_upload_init_block( core, block_rup, data_root, fs_path, fent->version, itr->first, itr->second, fent->mtime_sec, fent->mtime_nsec, sync );
       
       replicas.push_back( block_rup );
    }

@@ -19,20 +19,135 @@
 
 #include "map-parser.h"
 
+void delete_map_info(struct map_info *mi) {
+    if (mi != NULL) {
+	free(mi);
+	mi = NULL;
+    }
+}
 
+void delete_map_info_map(map<string, struct map_info*> *mi_map) {
+    map<string, struct map_info*>::iterator itr;
+    for (itr = mi_map->begin(); itr != mi_map->end(); itr++) {
+	delete_map_info(itr->second);
+    }
+    delete mi_map;
+}
 
-MapParserHandler::MapParserHandler(map<string, struct map_info>* xmlmap)
+void update_volume_set(set<string> *new_set,
+		   set<string> *old_set,
+		   void (*driver_disconnect_volume)(string)) {
+	set<string> diff0, diff1, minter;
+	set<string>::iterator itr;
+	// minter = (old_set ^ new_set)
+	// diff0 = (old_set - minter)
+	// Delte everything in diff0 from old_set
+	// diff1 = (new_set - minter)
+	// Add everything in diff1 to old_set
+
+	set_intersection(new_set->begin(), new_set->end(), 
+			 old_set->begin(), old_set->end(),
+			 inserter(minter, minter.begin()), 
+			 new_set->value_comp());
+
+	set_difference( old_set->begin(), old_set->end(), 
+			minter.begin(), minter.end(),
+			inserter(diff0, diff0.begin()),
+			old_set->value_comp());
+
+	set_difference(new_set->begin(), new_set->end(), 
+			minter.begin(), minter.end(),
+			inserter(diff1, diff1.begin()),
+			new_set->value_comp());	
+	
+	// minter, the intersecion of old_set and new_set will remain in old_set.
+	// Delte everything in diff0 from old_set and disconnect the AG from those volumes.
+	for (itr = diff0.begin(); itr != diff0.end(); itr++) {
+	    string del_vol_str= *itr;
+	    cout<<"Deleting Volume: "<<del_vol_str<<endl;
+	    old_set->erase(del_vol_str);
+	    //Disconnect the AG from volume del_vol_str...
+	    if (driver_disconnect_volume != NULL)
+		driver_disconnect_volume(del_vol_str);
+	}
+	// Add everything in diff1 to old_set
+	for (itr = diff1.begin(); itr != diff1.end(); itr++) {
+	    cout<<"Adding Volume: "<<*itr<<endl;
+	    old_set->insert(*itr);
+	}
+}
+
+void update_fs_map(map<string, struct map_info*> *new_map,
+		   map<string, struct map_info*> *old_map,
+		   void (*driver_inval_mi)(string)) {
+	map<string, struct map_info*> diff0, diff1, minter;
+	map<string, struct map_info*>::iterator itr;
+	// minter = (old_map ^ new_map)
+	// diff0 = (old_map - minter)
+	// Delte everything in diff0 from old_map
+	// diff1 = (new_map - minter)
+	// Add everything in diff1 to old_map
+	// Update values of every map_info in old_map that are also in minter
+
+	set_intersection(new_map->begin(), new_map->end(), 
+			 old_map->begin(), old_map->end(),
+			 inserter(minter, minter.begin()), 
+			 new_map->value_comp());
+
+	set_difference( old_map->begin(), old_map->end(), 
+			minter.begin(), minter.end(),
+			inserter(diff0, diff0.begin()),
+			old_map->value_comp());
+
+	set_difference(new_map->begin(), new_map->end(), 
+			minter.begin(), minter.end(),
+			inserter(diff1, diff1.begin()),
+			new_map->value_comp());	
+	
+	// Update values of every map_info in old_map that are also in minter
+	for (itr = minter.begin(); itr != minter.end(); itr++) {
+	    cout<<"Updating "<<itr->first<<endl;
+	    struct map_info* umi = (*old_map)[itr->first];
+	    umi->file_perm = itr->second->file_perm;
+	    umi->reval_sec = itr->second->reval_sec;
+	}
+	// Delte everything in diff0 from old_map and invalidate those map_infos
+	for (itr = diff0.begin(); itr != diff0.end(); itr++) {
+	    struct map_info* emi = (*old_map)[itr->first];
+	    if (emi != NULL) {
+		cout<<"Deleting "<<itr->first<<endl;
+		if (emi->invalidate_entry)
+		    emi->invalidate_entry(emi->entry);
+		if (driver_inval_mi)
+		    driver_inval_mi(itr->first);
+		old_map->erase(itr->first);
+		delete_map_info(emi);
+	    }
+	}
+	// Add everything in diff1 to old_map
+	for (itr = diff1.begin(); itr != diff1.end(); itr++) {
+	    cout<<"Adding "<<itr->first<<endl;
+	    old_map->insert(pair<string, struct map_info*>(itr->first, itr->second));
+	}
+}
+
+MapParserHandler::MapParserHandler(map<string, struct map_info*>* xmlmap, set<string>* volumes)
 {
     this->xmlmap = xmlmap;
+    this->volumes = volumes;
     open_key = false;
     open_val = false;
+    open_volume = false;
     open_dsn = false;
     element_buff = NULL;
     current_key = NULL;
     bounded_query = NULL;
     unbounded_query = NULL;
+    shell_cmd = NULL;
+    dsn_str = NULL;
     type = QUERY_TYPE_DEFAULT;
     current_id = 0;
+    reval_secs = 0;
 }
 
 void MapParserHandler::startElement(const   XMLCh* const    uri,
@@ -41,14 +156,17 @@ void MapParserHandler::startElement(const   XMLCh* const    uri,
 	const   Attributes&     attrs)
 {
     char* tag = XMLString::transcode(localname);
-    if (!strncmp(tag, KEY_TAG, strlen(KEY_TAG))) {
+    if (!strncmp(tag, KEY_TAG, strlen(tag))) {
 	open_key = true;
     }
-    if (!strncmp(tag, VALUE_TAG, strlen(VALUE_TAG))) {
+    if (!strncmp(tag, VALUE_TAG, strlen(tag))) {
 	open_key = true;
     }
-    if (!strncmp(tag, DSN_TAG, strlen(DSN_TAG))) {
+    if (!strncmp(tag, DSN_TAG, strlen(tag))) {
 	open_dsn = true;
+    }
+    if (!strncmp(tag, VOLUME_TAG, strlen(tag))) {
+	open_volume = true;
     }
     for (XMLSize_t i=0; i < attrs.getLength(); i++) {
 	char* attr = XMLString::transcode(attrs.getLocalName(i));
@@ -79,6 +197,10 @@ void MapParserHandler::startElement(const   XMLCh* const    uri,
 		XMLString::release(&type_str);
 	    }
 	}
+	if (!strncmp(attr, MAP_REVALIDATE_ATTR, strlen(MAP_REVALIDATE_ATTR))) {
+	    char* rt_str = XMLString::transcode(attrs.getValue(i));
+	    set_time(rt_str);
+	}
 	XMLString::release(&attr);
     }
     XMLString::release(&tag);
@@ -90,63 +212,77 @@ void MapParserHandler::endElement (
 	const   XMLCh *const    qname) 
 {
     char* tag = XMLString::transcode(localname);
-    if (!strncmp(tag, DSN_TAG, strlen(DSN_TAG)) && open_dsn) {
+    if (!strncmp(tag, DSN_TAG, strlen(tag)) && open_dsn) {
 	open_dsn = false;
 	dsn_str = (unsigned char*)strdup(element_buff);
     }
-    if (!strncmp(tag, KEY_TAG, strlen(KEY_TAG)) && open_key) {
+    if (!strncmp(tag, KEY_TAG, strlen(tag)) && open_key) {
 	open_key = false;
 	current_key = strdup(element_buff);
     }
-    if (!strncmp(tag, VALUE_TAG, strlen(VALUE_TAG)) && open_key 
+    if (!strncmp(tag, VALUE_TAG, strlen(tag)) && open_key 
 	    && (type == QUERY_TYPE_BOUNDED_SQL)) {
 	open_key = false;
 	bounded_query = strdup(element_buff);
 	type = QUERY_TYPE_DEFAULT;
     }
-    if (!strncmp(tag, VALUE_TAG, strlen(VALUE_TAG)) && open_key 
+    if (!strncmp(tag, VALUE_TAG, strlen(tag)) && open_key 
 	    && (type == QUERY_TYPE_UNBOUNDED_SQL)) {
 	open_key = false;
 	unbounded_query = strdup(element_buff);
 	type = QUERY_TYPE_DEFAULT;
     }
-    if (!strncmp(tag, VALUE_TAG, strlen(VALUE_TAG)) && open_key 
+    if (!strncmp(tag, VALUE_TAG, strlen(tag)) && open_key 
 	    && (type == QUERY_TYPE_SHELL)) {
 	open_key = false;
 	shell_cmd = strdup(element_buff);
 	type = QUERY_TYPE_DEFAULT;
     }
-    if (!strncmp(tag, PAIR_TAG, strlen(PAIR_TAG))) {
+    if (!strncmp(tag, VOLUME_TAG, strlen(tag)) && open_volume) {
+	open_volume = false;
+	volumes->insert(string(element_buff));
+    }
+    if (!strncmp(tag, PAIR_TAG, strlen(tag))) {
 	if (current_key) {
-	    struct map_info mi;
-	    mi.query = NULL;
-	    mi.unbounded_query = NULL;
-	    mi.file_perm = current_perm;
+	    struct map_info* mi = (struct map_info*)malloc(sizeof(struct map_info));
+	    mi->query = NULL;
+	    mi->unbounded_query = NULL;
+	    mi->file_perm = current_perm;
 	    if (bounded_query != NULL) {
 		size_t bounded_query_len = strlen(bounded_query);
-		mi.query = (unsigned char*)malloc(bounded_query_len + 1);
-		strncpy((char*)mi.query, bounded_query, bounded_query_len);
-		mi.query[bounded_query_len] = 0;
+		mi->query = (unsigned char*)malloc(bounded_query_len + 1);
+		strncpy((char*)mi->query, bounded_query, bounded_query_len);
+		mi->query[bounded_query_len] = 0;
 		free(bounded_query);
 		bounded_query = NULL;
 	    }
 	    if (unbounded_query != NULL) {
 		size_t unbounded_query_len = strlen(unbounded_query);
-		mi.unbounded_query = (unsigned char*)malloc(unbounded_query_len + 1);
-		strncpy((char*)mi.unbounded_query, unbounded_query, unbounded_query_len);
-		mi.unbounded_query[unbounded_query_len] = 0;
+		mi->unbounded_query = (unsigned char*)malloc(unbounded_query_len + 1);
+		strncpy((char*)mi->unbounded_query, unbounded_query, unbounded_query_len);
+		mi->unbounded_query[unbounded_query_len] = 0;
 		free(unbounded_query);
 		unbounded_query = NULL;
 	    }
 	    if (shell_cmd != NULL) {
 		size_t shell_cmd_len = strlen(shell_cmd);
-		mi.shell_command = (unsigned char*)malloc(shell_cmd_len + 1);
-		strncpy((char*)mi.shell_command, shell_cmd, shell_cmd_len);
-		mi.shell_command[shell_cmd_len] = 0;
+		mi->shell_command = (unsigned char*)malloc(shell_cmd_len + 1);
+		strncpy((char*)mi->shell_command, shell_cmd, shell_cmd_len);
+		mi->shell_command[shell_cmd_len] = 0;
 		free(shell_cmd);
 		shell_cmd = NULL;
 	    }
-	    mi.id = current_id;
+	    if (reval_secs > 0)
+		mi->reval_sec = reval_secs;
+	    else
+		mi->reval_sec = YEAR; 
+	    reval_secs = 0;
+	    mi->mi_time = 0;
+	    mi->id = current_id;
+	    mi->entry = NULL;
+	    mi->mentry = NULL;
+	    mi->invalidate_entry = NULL;
+	    mi->reversion_entry = NULL;
 	    current_id++;
 	    (*xmlmap)[string(current_key)] =mi;
 	    free(current_key);
@@ -171,7 +307,7 @@ void MapParserHandler::characters (
     char* element = XMLString::transcode(chars);
     if (!element)
 	return;
-    if (open_key) {
+    if (open_key || open_dsn || open_volume) {
 	if (!element_buff) { 
 	    element_buff = (char*)malloc(length+1);
 	    element_buff[length] = 0;
@@ -186,7 +322,7 @@ void MapParserHandler::characters (
 	}
 	XMLString::release(&element);
     }
-    if (open_dsn) {
+    /*if (open_dsn) {
 	if (!element_buff) { 
 	    element_buff = (char*)malloc(length+1);
 	    element_buff[length] = 0;
@@ -200,7 +336,7 @@ void MapParserHandler::characters (
 	    strncat(element_buff + current_len, element, length);
 	}
 	XMLString::release(&element);
-    }
+    }*/
 }
 
 void MapParserHandler::fatalError(const SAXParseException& exception)
@@ -214,10 +350,56 @@ unsigned char* MapParserHandler::get_dsn()
     return dsn_str;
 }
 
+void MapParserHandler::set_time(char *tm_str) {
+    //Parse the string, any character can be in between different time units.
+    stringstream strstream;
+    int tm_str_len = strlen(tm_str);
+    int count = 0;
+    uint64_t secs = 0;
+    for (; count < tm_str_len; count++) {
+	if (tm_str[count] < 58 && tm_str[count] > 47) {
+	    strstream << tm_str[count];
+	}
+	else if (tm_str[count] == MAP_REVAL_WEEK) {
+	    string week_str = strstream.str();
+	    secs += (uint64_t)atol(week_str.c_str()) * WEEK_SECS;
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else if (tm_str[count] == MAP_REVAL_DAY) {
+	    string day_str = strstream.str();
+	    secs += (uint64_t)atol(day_str.c_str()) * DAY_SECS;
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else if (tm_str[count] == MAP_REVAL_HOUR) {
+	    string hour_str = strstream.str();
+	    secs += (uint64_t)atol(hour_str.c_str()) * HOUR_SECS;
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else if (tm_str[count] == MAP_REVAL_MIN) {
+	    string min_str = strstream.str();
+	    secs += (uint64_t)atol(min_str.c_str()) * MIN_SECS;
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else if (tm_str[count] == MAP_REVAL_SEC) {
+	    string sec_str = strstream.str();
+	    secs += (uint64_t)atol(sec_str.c_str());
+	    strstream.clear();
+	    strstream.str(string());
+	}
+	else {
+	    //Ignore...
+	}
+    }
+    reval_secs = secs;
+}
+
 MapParser::MapParser( char* mapfile)
 {
     this->mapfile = mapfile;
-    FS2SQLMap = new map<string, struct map_info>;
 }
 
 int MapParser::parse()
@@ -233,7 +415,9 @@ int MapParser::parse()
     SAX2XMLReader* parser = XMLReaderFactory::createXMLReader();
     parser->setFeature(XMLUni::fgSAX2CoreValidation, true);
     parser->setFeature(XMLUni::fgSAX2CoreNameSpaces, true);   // optional
-    MapParserHandler* mph = new MapParserHandler(this->FS2SQLMap);
+    FS2SQLMap = new map<string, struct map_info*>;
+    volumes = new set<string>; 
+    MapParserHandler* mph = new MapParserHandler(this->FS2SQLMap, this->volumes);
     parser->setContentHandler(mph);
     parser->setErrorHandler(mph);
     try {
@@ -258,7 +442,7 @@ int MapParser::parse()
     return 0;
 }
 	
-map<string, struct map_info>* MapParser::get_map()
+map<string, struct map_info*>* MapParser::get_map()
 {
     return FS2SQLMap;
 }
@@ -268,4 +452,9 @@ unsigned char* MapParser::get_dsn()
     return dsn_str;
 }
 
+
+set<string>* MapParser::get_volume_set() 
+{
+    return volumes;
+}
 

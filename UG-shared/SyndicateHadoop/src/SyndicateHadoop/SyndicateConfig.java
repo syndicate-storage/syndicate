@@ -54,14 +54,6 @@ public class SyndicateConfig {
         SyndicateConfigUtil.setIPC_Port(this.config, port);
     }
     
-    public String getIPC_UGName() {
-        return SyndicateConfigUtil.getIPC_UGName(this.config);
-    }
-    
-    public void setIPC_UGName(String ug_name) {
-        SyndicateConfigUtil.setIPC_UGName(this.config, ug_name);
-    }
-    
     public String getSFS_MountPath() {
         return SyndicateConfigUtil.getSFS_MountPath(this.config);
     }
@@ -264,5 +256,29 @@ public class SyndicateConfig {
     
     public int getTextInputMaxLength() {
         return SyndicateConfigUtil.getTextInputMaxLength(this.config);
+    }
+    
+    public void setTextRecordDelimiter(String delimiter) {
+        SyndicateConfigUtil.setTextRecordDelimiter(this.config, delimiter);
+    }
+    
+    public String getTextRecordDelimiter() {
+        return SyndicateConfigUtil.getTextRecordDelimiter(this.config);
+    }
+    
+    public void setTextLinesPerMap(int lines) {
+        SyndicateConfigUtil.setTextLinesPerMap(this.config, lines);
+    }
+    
+    public int getTextLinesPerMap() {
+        return SyndicateConfigUtil.getTextLinesPerMap(this.config);
+    }
+    
+    public void setTextKeyValueSeparator(byte separator) {
+        SyndicateConfigUtil.setTextKeyValueSeparator(this.config, separator);
+    }
+    
+    public byte getTextKeyValueSeparator() {
+        return SyndicateConfigUtil.getTextKeyValueSeparator(this.config);
     }
 }

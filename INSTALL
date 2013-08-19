@@ -27,6 +27,8 @@ Following packages are for Ubuntu(Debian):
    libprotobuf-c0
    libprotobuf-dev
    protobuf-compiler
+   libboost-thread-dev 
+   libboost-system-dev
 
 You will also need a recent version of libmicrohttpd.  The one in Fedora 12 and Ubuntu 12's repositories is too old.  Version 0.9.27 should work.
 

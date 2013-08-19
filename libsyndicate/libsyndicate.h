@@ -41,6 +41,10 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <inttypes.h>
+#include <openssl/pem.h>
+#include <openssl/ssl.h>
+#include <openssl/rand.h>
+#include <openssl/err.h>
 
 using namespace std;
 
@@ -113,7 +117,6 @@ struct md_entry {
    int type;            // file or directory?
    char* path;          // path
    char* url;           // URL to the UG that hosts its data
-   char* local_path;    // only valid for local content--if set, it's the absolute local path on disk where the content can be found
    int64_t ctime_sec;   // creation time (seconds)
    int32_t ctime_nsec;  // creation time (nanoseconds)
    int64_t mtime_sec;   // last-modified time (seconds)
@@ -122,7 +125,7 @@ struct md_entry {
    int32_t max_read_freshness;      // how long is this entry fresh until it needs revalidation?
    int32_t max_write_freshness;     // how long can we delay publishing this entry?
    uint64_t owner;         // uid of the owner
-   uint64_t acting_owner;  // uid of the acting owner
+   uint64_t coordinator;  // gateway id of the write coordinator
    uint64_t volume;        // id of the volume
    mode_t mode;         // file permission bits
    off_t size;          // size of the file
@@ -138,6 +141,7 @@ typedef list<struct md_entry*> md_entry_list;
 struct md_update {
    char op;               // update operation
    struct md_entry ent;
+   int error;             // error information
 };
 
 // metadata update operations
@@ -251,6 +255,7 @@ struct md_HTTP;
 struct md_HTTP_connection_data {
    struct md_HTTP* http;
    struct md_syndicate_conf* conf;
+   struct ms_client* ms;
    struct MHD_PostProcessor* pp;
    struct md_user_entry* user;
    struct md_HTTP_response* resp;
@@ -276,6 +281,7 @@ struct md_HTTP {
    pthread_rwlock_t lock;
    
    struct md_syndicate_conf* conf;
+   struct ms_client* ms;
    int authentication_mode;
    struct MHD_Daemon* http_daemon;
    int server_type;   // one of the MHD options
@@ -338,12 +344,10 @@ extern char const* MD_HTTP_DEFAULT_MSG;
 
 // server configuration
 struct md_syndicate_conf {
-   // client fields
+   // UG fields
    int64_t default_read_freshness;                    // default number of milliseconds a file can age before needing refresh for reads
    int64_t default_write_freshness;                   // default number of milliseconds a file can age before needing refresh for writes
    char* logfile_path;                                // path to the logfile
-   char* cdn_prefix;                                  // CDN prefix
-   char* proxy_url;                                   // URL to a proxy to use (instead of a CDN)
    bool gather_stats;                                 // gather statistics or not?
    bool use_checksums;                                // if set, send checksums of our local files in the metadata, and validate checksums (if possible) from remote files
    char* content_url;                                 // what is the URL under which published files can be accessed?
@@ -352,39 +356,57 @@ struct md_syndicate_conf {
    int num_replica_threads;                           // how many replica threads?
    char* replica_logfile;                             // path on disk to replica log
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
+   /*
+   char* volume_name;                                 // name of the volume (UG only)
+   uint64_t volume;                                   // volume ID (UG only)
+   uint64_t volume_owner;                             // user ID of the volume owner (UG only)
+   char* volume_public_key_path;                      // if trust_volume_pubkey is false, then this contains  the path to the PEM-encoded public key for the Volume
+   */
 
    // RG/AG servers
-   bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers
    unsigned int num_http_threads;                     // how many HTTP threads to create
    int http_authentication_mode;                      // for which operations do we authenticate?
    char* md_pidfile_path;                             // where to store the PID file for the gateway server
    char* gateway_metadata_root;                       // location on disk (if desired) to record metadata
    bool replica_overwrite;                            // overwrite replica file at the client's request
-   char* server_key;                                  // path to PEM-encoded SSL private key for this gateway server
-   char* server_cert;                                 // path to PEM-encoded SSL certificate for this gateway server
+   char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
+   char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
 
    // debug
    int debug_read;                                    // print verbose information for reads
    int debug_lock;                                    // print verbose information on locks
 
    // common
-   char* volume_name;                                 // name of the volume
+   char* gateway_name;
    int metadata_connect_timeout;                      // number of seconds to wait to connect on the control plane
    int portnum;                                       // Syndicate-side port number
    int transfer_timeout;                              // how long a transfer is allowed to take
+   bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers
+   char* gateway_key_path;                            // path to PEM-encoded user-given public/private key for this gateway
+   char* cdn_prefix;                                  // CDN prefix
+   char* proxy_url;                                   // URL to a proxy to use (instead of a CDN)
    
-   // runtime fields
+   // MS-related fields
    char* metadata_url;                                // URL (or path on disk) where to get the metadata
-   char* metadata_username;                           // metadata authentication username
-   char* metadata_password;                           // metadata authentication password
-   uint64_t blocking_factor;                          // how many bytes blocks will be
+   char* ms_username;                                 // MS username for this SyndicateUser
+   char* ms_password;                                 // MS password for this SyndicateUser
+   //uint64_t blocking_factor;                          // how many bytes blocks will be
    uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
+   uint64_t gateway;                                  // what is the gateway ID in Syndicate?
+   uint64_t view_reload_freq;                         // how often do we check for new Volume/UG/RG metadata?
+
+   // security fields
+   //char* volume_public_key;                           // UG only
+   char* gateway_key;
+   char* server_key;
+   char* server_cert;
+
+   // misc
    mode_t usermask;                                   // umask of the user running this program
-   uint64_t volume;                                   // volume ID
-   uint64_t volume_owner;                             // user ID of the volume owner
    char* mountpoint;                                  // absolute path to the place where the metadata server is mounted
    char* hostname;                                    // what's our hostname?
-   char* ag_driver;				      // AG gatway driver that encompasses gateway callbacks
+   char* ag_driver;                                   // AG gatway driver that encompasses gateway callbacks
+
 };
 
 
@@ -446,11 +468,14 @@ struct md_syndicate_conf {
 
 #define PORTNUM_KEY                 "PORTNUM"
 #define HTTPD_PORTNUM_KEY           "HTTPD_PORTNUM"
-#define SSL_PKEY_KEY                "SSL_PKEY"
-#define SSL_CERT_KEY                "SSL_CERT"
+#define SSL_PKEY_KEY                "TLS_PKEY"
+#define SSL_CERT_KEY                "TLS_CERT"
+#define GATEWAY_KEY_KEY             "GATEWAY_KEY"
+#define VOLUME_PUBKEY_KEY           "VOLUME_PUBKEY"
 #define AUTH_OPERATIONS_KEY         "AUTH_OPERATIONS"
 #define PIDFILE_KEY                 "PIDFILE"
 #define VOLUME_NAME_KEY             "VOLUME_NAME"
+#define GATEWAY_NAME_KEY            "GATEWAY_NAME"
 
 // gateway config
 #define GATEWAY_METADATA_KEY        "GATEWAY_METADATA"
@@ -461,6 +486,7 @@ struct md_syndicate_conf {
 #define VERIFY_PEER_KEY             "SSL_VERIFY_PEER"
 #define CONTENT_URL_KEY             "PUBLIC_URL"
 #define METADATA_UID_KEY            "METADATA_UID"
+#define VIEW_RELOAD_FREQ_KEY        "VIEW_RELOAD_FREQ"
 
 #define SYNDICATEFS_XATTR_URL          "user.syndicate_url"
 #define CLIENT_DEFAULT_CONFIG          "/usr/etc/syndicate/syndicate-UG.conf"
@@ -495,6 +521,28 @@ typedef struct map<string, struct md_entry*> md_entmap;
 
 // list of path hashes is a set of path locks
 typedef vector<long> md_pathlist;
+
+
+// Lock types
+#if defined(WIN32)
+    #define MD_MUTEX_TYPE HANDLE
+    #define MD_MUTEX_SETUP(x) (x) = CreateMutex(NULL, FALSE, NULL)
+    #define MD_MUTEX_CLEANUP(x) CloseHandle(x)
+    #define MD_MUTEX_LOCK(x) WaitForSingleObject((x), INFINITE)
+    #define MD_MUTEX_UNLOCK(x) ReleaseMutex(x)
+    #define MD_THREAD_ID GetCurrentThreadId( )
+#elif defined (_POSIX_THREADS)
+    /* _POSIX_THREADS is normally defined in unistd.h if pthreads are available
+       on your platform. */
+    #define MD_MUTEX_TYPE pthread_mutex_t
+    #define MD_MUTEX_SETUP(x) pthread_mutex_init(&(x), NULL)
+    #define MD_MUTEX_CLEANUP(x) pthread_mutex_destroy(&(x))
+    #define MD_MUTEX_LOCK(x) pthread_mutex_lock(&(x))
+    #define MD_MUTEX_UNLOCK(x) pthread_mutex_unlock(&(x))
+    #define MD_THREAD_ID pthread_self( )
+#else
+    #error You must define mutex operations appropriate for your platform!
+#endif
 
 BEGIN_EXTERN_C
    
@@ -560,8 +608,8 @@ void md_sanitize_path( char* path );
 bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url );
 
 // serialization
-int md_entry_to_ms_entry( struct md_syndicate_conf* conf, ms::ms_entry* msent, struct md_entry* ent );
-int ms_entry_to_md_entry( struct md_syndicate_conf* conf, const ms::ms_entry& msent, struct md_entry* ent );
+int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent );
+int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent );
 int md_write_metadata( int fd, struct md_entry** ents );
 size_t md_metadata_line_len( struct md_entry* ent );
 char* md_to_string( struct md_entry* ent, char* buf );
@@ -589,6 +637,7 @@ ssize_t md_download_file5( CURL* curl_h, char** buf );
 ssize_t md_download_file_proxied( char const* url, char** buf, char const* proxy, int* status_code );
 char** md_parse_cgi_args( char* query_string );
 char* md_url_hostname( char const* url );
+char* md_url_scheme( char const* url );
 char* md_path_from_url( char const* url );
 char* md_fs_path_from_url( char const* url );
 char* md_url_strip_path( char const* url );
@@ -623,7 +672,7 @@ void md_free_HTTP_response( struct md_HTTP_response* resp );
 void* md_cls_get( void* cls );
 void md_cls_set_status( void* cls, int status );
 struct md_HTTP_response* md_cls_set_response( void* cls, struct md_HTTP_response* resp );
-int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf );
+int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf, struct ms_client* client );
 int md_start_HTTP( struct md_HTTP* http, int portnum );
 int md_stop_HTTP( struct md_HTTP* http );
 int md_free_HTTP( struct md_HTTP* http );
@@ -658,13 +707,26 @@ int md_init( int gateway_type,
              int portnum,
              char const* ms_url,
              char const* volume_name,
+             char const* gateway_name,
              char const* md_username,
-             char const* md_password
+             char const* md_password,
+             char const* volume_key_file,
+             char const* my_key_file,
+             char const* tls_key_file,
+             char const* tls_cert_file
            );
 
 int md_shutdown(void);
 int md_default_conf( struct md_syndicate_conf* conf );
 int md_check_conf( int gateway_type, struct md_syndicate_conf* conf );
+
+// OpenSSL
+int md_openssl_thread_setup(void);
+int md_openssl_thread_cleanup(void);
+void md_init_OpenSSL(void);
+int md_openssl_error(void);
+int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len );
+int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len );
 
 END_EXTERN_C
    

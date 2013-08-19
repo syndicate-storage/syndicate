@@ -306,7 +306,7 @@ char* dirname( char* path, char* dest ) {
 // load a file into RAM
 // return a pointer to the bytes.
 // set the size.
-char* load_file( char* path, size_t* size ) {
+char* load_file( char const* path, size_t* size ) {
    struct stat statbuf;
    int rc = stat( path, &statbuf );
    if( rc != 0 )
@@ -336,7 +336,8 @@ char *url_encode(char const *str, size_t len) {
   char *pstr = (char*)str;
   char *buf = (char*)calloc(len * 3 + 1, 1);
   char *pbuf = buf;
-  while (*pstr) {
+  size_t cnt = 0;
+  while (cnt < len) {
     if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~') {
       *pbuf++ = *pstr;
     }
@@ -349,6 +350,7 @@ char *url_encode(char const *str, size_t len) {
       *pbuf++ = to_hex(*pstr & 15);
     }
     pstr++;
+    cnt++;
   }
   *pbuf = '\0';
   return buf;
@@ -388,6 +390,63 @@ char *url_decode(char const *str, size_t* len) {
 
 //////////////////////////////////////////////////////////////////////////
 
+// Base64 decode and encode, from https://gist.github.com/barrysteyn/4409525#file-base64decode-c
+
+int calcDecodeLength(const char* b64input, size_t len) { //Calculates the length of a decoded base64 string
+  int padding = 0;
+
+  if (b64input[len-1] == '=' && b64input[len-2] == '=') //last two chars are =
+    padding = 2;
+  else if (b64input[len-1] == '=') //last char is =
+    padding = 1;
+
+  return (int)len*0.75 - padding;
+}
+
+int Base64Decode(char* b64message, size_t b64message_len, char** buffer, size_t* buffer_len) { //Decodes a base64 encoded string
+  BIO *bio, *b64;
+  int decodeLen = calcDecodeLength(b64message, b64message_len);
+  long len = 0;
+  *buffer = (char*)malloc(decodeLen+1);
+  FILE* stream = fmemopen(b64message, b64message_len, "r");
+
+  b64 = BIO_new(BIO_f_base64());
+  bio = BIO_new_fp(stream, BIO_NOCLOSE);
+  bio = BIO_push(b64, bio);
+  BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); //Do not use newlines to flush buffer
+  len = BIO_read(bio, *buffer, b64message_len);
+    //Can test here if len == decodeLen - if not, then return an error
+  (*buffer)[len] = '\0';
+
+  BIO_free_all(bio);
+  fclose(stream);
+
+  *buffer_len = (size_t)len;
+
+  return (0); //success
+}
+
+
+int Base64Encode(char const* message, size_t msglen, char** buffer) { //Encodes a string to base64
+  BIO *bio, *b64;
+  FILE* stream;
+  int encodedSize = 4*ceil((double)msglen/3);
+  *buffer = (char *)malloc(encodedSize+1);
+
+  stream = fmemopen(*buffer, encodedSize+1, "w");
+  b64 = BIO_new(BIO_f_base64());
+  bio = BIO_new_fp(stream, BIO_NOCLOSE);
+  bio = BIO_push(b64, bio);
+  BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); //Ignore newlines - write everything in one line
+  BIO_write(bio, message, msglen);
+  (void)BIO_flush(bio);
+  BIO_free_all(bio);
+  fclose(stream);
+
+  return (0); //success
+}
+
+//////////////////////////////////////////////////////////////////////////
 
 // does a string match a pattern?
 int reg_match(const char *string, char const *pattern) {
@@ -587,5 +646,28 @@ int util_init(void) {
 
    close( rfd );
    return 0;
+}
+
+void block_all_signals() {
+    sigset_t sigs;
+    sigfillset(&sigs);
+    pthread_sigmask(SIG_SETMASK, &sigs, NULL);
+}
+
+int install_signal_handler(int signo, struct sigaction *act, sighandler_t handler) {
+    int rc = 0;
+    sigset_t sigs;
+    sigemptyset(&sigs);
+    sigaddset(&sigs, signo);
+    act->sa_handler = handler;
+    rc = sigaction(signo, act, NULL);
+    if (rc < 0)
+	return rc;
+    rc = pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
+    return rc;
+}
+
+int uninstall_signal_handler(int signo) {
+    return 0;
 }
 

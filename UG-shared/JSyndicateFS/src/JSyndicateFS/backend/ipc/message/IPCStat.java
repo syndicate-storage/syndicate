@@ -3,6 +3,9 @@
  */
 package JSyndicateFS.backend.ipc.message;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
 /**
  *
  * @author iychoi
@@ -129,5 +132,45 @@ public class IPCStat {
 
     public void setMtim(long mtim) {
         this.st_mtim = mtim;
+    }
+    
+    public byte[] toBytes() {
+        ByteBuffer buffer = ByteBuffer.allocate(getFieldSize());
+        buffer.order(ByteOrder.BIG_ENDIAN);
+        
+        buffer.putInt(this.st_mode);
+        buffer.putInt(this.st_uid);
+        buffer.putInt(this.st_gid);
+        
+        buffer.putLong(this.st_size);
+        buffer.putLong(this.st_blksize);
+        buffer.putLong(this.st_blocks);
+        buffer.putLong(this.st_atim);
+        buffer.putLong(this.st_mtim);
+
+        return buffer.array();
+    }
+    
+    public void fromBytes(byte[] bytes, int offset, int len) {
+        ByteBuffer buffer = ByteBuffer.allocate(getFieldSize());
+        buffer.order(ByteOrder.BIG_ENDIAN);
+        
+        buffer.put(bytes, offset, len);
+        
+        buffer.flip();
+        
+        this.st_mode = buffer.getInt();
+        this.st_uid = buffer.getInt();
+        this.st_gid = buffer.getInt();
+        
+        this.st_size = buffer.getLong();
+        this.st_blksize = buffer.getLong();
+        this.st_blocks = buffer.getLong();
+        this.st_atim = buffer.getLong();
+        this.st_mtim = buffer.getLong();
+    }
+    
+    public int getFieldSize() {
+        return (5*8) + (3*4);
     }
 }

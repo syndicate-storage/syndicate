@@ -8,6 +8,7 @@ source_files = """
 # add source file search paths here
 CPPPATH = """
    #libsyndicate/
+   #AG/drivers/common
    #build/out/protobufs
 """
 

@@ -20,21 +20,21 @@ int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_e
    }
 
    int err = 0;
-   uint64_t start_id = fs_entry_block_id( old_size, core->conf );
-   uint64_t end_id = fs_entry_block_id( new_size, core->conf );
+   uint64_t start_id = fs_entry_block_id( core, old_size );
+   uint64_t end_id = fs_entry_block_id( core, new_size );
    
    if( start_id == end_id ) {
       // nothing to do here
       return 0;
    }
    
-   char* block = CALLOC_LIST( char, core->conf->blocking_factor );
+   char* block = CALLOC_LIST( char, core->blocking_factor );
 
    // preserve the last block, if there is one
    if( fent->size > 0 ) {
       rc = fs_entry_prepare_write_block( core, fs_path, fent, block, 0, fent->size, 0 );
       if( rc != 0 ) {
-         errorf("fs_entry_prepare_write_block(%s[%" PRId64 "]) rc = %d\n", fs_path, fs_entry_block_id( fent->size, core->conf ), rc );
+         errorf("fs_entry_prepare_write_block(%s[%" PRId64 "]) rc = %d\n", fs_path, fs_entry_block_id( core, fent->size ), rc );
          return rc;
       }
    }
@@ -54,7 +54,7 @@ int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_e
       (*modified_blocks)[ id ] = fent->manifest->get_block_version( id );
 
       if( !cleared )
-         memset( block, 0, core->conf->blocking_factor );
+         memset( block, 0, core->blocking_factor );
       
       cleared = true;
    }
@@ -68,15 +68,15 @@ int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_e
 // fent must be write-locked
 int fs_entry_prepare_write_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, char* block, size_t count, off_t offset, ssize_t num_written ) {
    int rc = 0;
-   uint64_t block_id = fs_entry_block_id( offset + num_written, core->conf );
+   uint64_t block_id = fs_entry_block_id( core, offset + num_written );
    
-   ssize_t block_write_offset = (offset + num_written) % core->conf->blocking_factor;
+   ssize_t block_write_offset = (offset + num_written) % core->blocking_factor;
    
-   if( fent->size > 0 && (block_write_offset != 0 || (offset + num_written < fent->size && count - (size_t)num_written < core->conf->blocking_factor ))) {
+   if( fent->size > 0 && (block_write_offset != 0 || (offset + num_written < fent->size && count - (size_t)num_written < core->blocking_factor ))) {
 
       // get the block data, since we'll need to preserve part of it
       // NOTE: use the offset at the block boundary; otherwise we can get EOF
-      ssize_t blk_size = fs_entry_do_read_block( core, fs_path, fent, block_id * core->conf->blocking_factor, block );
+      ssize_t blk_size = fs_entry_do_read_block( core, fs_path, fent, block_id * core->blocking_factor, block );
 
       if( blk_size < 0 ) {
          errorf( "fs_entry_read_block(%s[%" PRId64 "]) rc = %zd\n", fs_path, block_id, blk_size );
@@ -93,10 +93,10 @@ int fs_entry_prepare_write_block( struct fs_core* core, char const* fs_path, str
 
 // fill in a block of data (used by fs_entry_write_real)
 ssize_t fs_entry_fill_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, char* block, char const* buf, int source_fd, size_t count, off_t offset, ssize_t num_written ) {
-   ssize_t block_write_offset = (offset + num_written) % core->conf->blocking_factor;
+   ssize_t block_write_offset = (offset + num_written) % core->blocking_factor;
    
    // fill in the block
-   ssize_t write_size = MIN( (uint64_t)(count - num_written), core->conf->blocking_factor - block_write_offset );
+   ssize_t write_size = MIN( (uint64_t)(count - num_written), core->blocking_factor - block_write_offset );
 
    if( buf != NULL ) {
       // source is the buffer
@@ -104,13 +104,13 @@ ssize_t fs_entry_fill_block( struct fs_core* core, char const* fs_path, struct f
    }
    else if( source_fd > 0 ) {
       // source is the fd.  Read the block
-      char* fd_buf = CALLOC_LIST( char, core->conf->blocking_factor );
+      char* fd_buf = CALLOC_LIST( char, core->blocking_factor );
 
-      memset( fd_buf, 0, core->conf->blocking_factor );
+      memset( fd_buf, 0, core->blocking_factor );
 
       ssize_t fd_read = 0;
-      while( (unsigned)fd_read < core->conf->blocking_factor - block_write_offset ) {
-         ssize_t fd_nr = read( source_fd, fd_buf + fd_read, core->conf->blocking_factor - block_write_offset - fd_read );
+      while( (unsigned)fd_read < core->blocking_factor - block_write_offset ) {
+         ssize_t fd_nr = read( source_fd, fd_buf + fd_read, core->blocking_factor - block_write_offset - fd_read );
          if( fd_nr < 0 ) {
             fd_nr = -errno;
             errorf( "read(%s) errno = %zd\n", fs_path, fd_nr );
@@ -146,7 +146,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
 
    BEGIN_TIMING_DATA( ts );
    
-   int rc = fs_entry_revalidate_path( core, fh->path );
+   int rc = fs_entry_revalidate_path( core, fh->volume, fh->path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
@@ -193,11 +193,11 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
 
    fs_entry_unlock( fh->fent );
    
-   char* block = CALLOC_LIST( char, core->conf->blocking_factor );
+   char* block = CALLOC_LIST( char, core->blocking_factor );
 
    while( (size_t)num_written < count ) {
 
-      uint64_t block_id = fs_entry_block_id( offset + num_written, core->conf );
+      uint64_t block_id = fs_entry_block_id( core, offset + num_written );
       
       // we only need to read the block first if we're merging changes;
       // no need to do so if we're overwriting entirely.
@@ -232,7 +232,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       fs_entry_unlock( fh->fent );
 
       // next block
-      memset( block, 0, core->conf->blocking_factor );
+      memset( block, 0, core->blocking_factor );
    }
 
    free( block );
@@ -335,7 +335,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       char const* errstr = NULL;
       
       if( fh->fent->max_write_freshness > 0 || !(fh->flags & O_SYNC) ) {
-         up_rc = ms_client_queue_update( core->ms, fh->path, &ent, currentTimeMillis() + fh->fent->max_write_freshness, 0 );
+         up_rc = ms_client_queue_update( core->ms, &ent, currentTimeMillis() + fh->fent->max_write_freshness, 0 );
          errstr = "ms_client_queue_update";
       }
       else {
@@ -411,7 +411,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, Serializat
       int64_t new_version = write_msg->blocks().version(i);
 
       // put the new block version
-      char* file_url = fs_entry_public_file_url( write_msg->metadata().content_url().c_str(), fs_path );
+      char* file_url = fs_entry_public_file_url( core, write_msg->metadata().content_url().c_str(), fs_path );
 
       fs_entry_put_block_url( fent, file_url, fent->version, block_id, new_version );
 
@@ -432,9 +432,15 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, Serializat
    // no need to hold this any longer
    fs_entry_unlock( fent );
 
-   int rc = ms_client_queue_update( core->ms, fs_path, &data, currentTimeMillis() + max_write_freshness, 0 );
+   int rc = ms_client_queue_update( core->ms, &data, currentTimeMillis() + max_write_freshness, 0 );
    if( rc != 0 ) {
       errorf("ms_client_queue_update(%s) rc = %d\n", fs_path, rc );
+      err = -EREMOTEIO;
+   }
+
+   rc = ms_client_sync_update( core->ms, core->volume, fs_path );
+   if( rc != 0 ) {
+      errorf("ms_client_sync_update(%s) rc = %d\n", fs_path, rc );
       err = -EREMOTEIO;
    }
 

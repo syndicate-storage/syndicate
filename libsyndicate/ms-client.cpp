@@ -7,7 +7,9 @@
 #include "ms-client.h"
 
 static void* ms_client_uploader_thread( void* arg );
+static void* ms_client_view_thread( void* arg );
 static void ms_client_uploader_signal( struct ms_client* client );
+int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadata* volume_md );
 static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void *userdata);
 
 static void print_timings( uint64_t* timings, size_t num_timings, char const* hdr ) {
@@ -18,25 +20,129 @@ static void print_timings( uint64_t* timings, size_t num_timings, char const* hd
    }
 }
 
+
+static void UG_cred_free( struct UG_cred* cred ) {
+   if( cred->hostname ) {
+      free( cred->hostname );
+      cred->hostname = NULL;
+   }
+
+   if( cred->name ) {
+      free( cred->name );
+      cred->name = NULL;
+   }
+
+   if( cred->pubkey ) {
+      EVP_PKEY_free( cred->pubkey );
+      cred->pubkey = NULL;
+   }
+}
+
+static void ms_volume_free( struct ms_volume* vol ) {
+   if( vol->volume_public_key ) {
+      EVP_PKEY_free( vol->volume_public_key );
+      vol->volume_public_key = NULL;
+   }
+
+   if( vol->UG_creds ) {
+      for( int i = 0; vol->UG_creds[i] != NULL; i++ ) {
+         UG_cred_free( vol->UG_creds[i] );
+         free( vol->UG_creds[i] );
+      }
+      free( vol->UG_creds );
+      vol->UG_creds = NULL;
+   }
+
+   if( vol->RG_urls ) {
+      for( int i = 0; i < vol->num_RG_urls; i++ ) {
+         free( vol->RG_urls[i] );
+      }
+      free( vol->RG_urls );
+   }
+
+   if( vol->name ) {
+      free( vol->name );
+      vol->name = NULL;
+   }
+
+   memset( vol, 0, sizeof(struct ms_volume) );
+}
+
+static int ms_client_verify_key( EVP_PKEY* key ) {
+   RSA* ref_rsa = EVP_PKEY_get1_RSA( key );
+   if( ref_rsa == NULL ) {
+      // not an RSA key
+      errorf("%s", "Not an RSA key\n");
+      return -EINVAL;
+   }
+
+   int size = RSA_size( ref_rsa );
+   if( size * 8 != RSA_KEY_SIZE ) {
+      // not the right size
+      errorf("Invalid RSA size %d\n", size * 8 );
+      return -EINVAL;
+   }
+
+   return 0;
+}
+
+
+static long ms_client_hash( uint64_t volume_id, char const* fs_path ) {
+   locale loc;
+   const collate<char>& coll = use_facet<collate<char> >(loc);
+
+   char* volume_path = CALLOC_LIST( char, 50 + strlen(fs_path) );
+   sprintf( volume_path, "%" PRIu64 "%s", volume_id, fs_path );
+
+   long ret = coll.hash( volume_path, volume_path + strlen(volume_path) );
+
+   free( volume_path );
+   return ret;
+}
+
+
+static int ms_client_gateway_type_str( int gateway_type, char* gateway_type_str ) {
+   if( gateway_type == SYNDICATE_UG )
+      sprintf( gateway_type_str, "UG" );
+
+   else if( gateway_type == SYNDICATE_RG )
+      sprintf( gateway_type_str, "RG" );
+
+   else if( gateway_type == SYNDICATE_AG )
+      sprintf( gateway_type_str, "AG" );
+
+   else
+      return -EINVAL;
+
+   return 0;
+}
+      
+
 // create an MS client context
-int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, char const* username, char const* passwd ) {
+int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndicate_conf* conf ) {
 
    memset( client, 0, sizeof(struct ms_client) );
+
+   client->gateway_type = gateway_type;
    
-   // configure the HTTP(s) streams to the MS
+   // configure the HTTPS streams to the MS
    client->ms_read = curl_easy_init();
    client->ms_write = curl_easy_init();
+   client->ms_view = curl_easy_init();
 
    client->url = strdup( conf->metadata_url );
 
-   md_init_curl_handle( client->ms_read, "http://localhost", conf->metadata_connect_timeout);
-   md_init_curl_handle( client->ms_write, "http://localhost", conf->metadata_connect_timeout);
+   // will change URL once we know the Volume ID
+   md_init_curl_handle( client->ms_read, "https://localhost", conf->metadata_connect_timeout);
+   md_init_curl_handle( client->ms_write, "https://localhost", conf->metadata_connect_timeout);
+   md_init_curl_handle( client->ms_view, "https://localhost", conf->metadata_connect_timeout);
 
    curl_easy_setopt( client->ms_write, CURLOPT_POST, 1L);
    curl_easy_setopt( client->ms_write, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );
 
    curl_easy_setopt( client->ms_read, CURLOPT_SSL_VERIFYPEER, (conf->verify_peer ? 1L : 0L) );
    curl_easy_setopt( client->ms_write, CURLOPT_SSL_VERIFYPEER, (conf->verify_peer ? 1L : 0L) );
+   curl_easy_setopt( client->ms_view, CURLOPT_SSL_VERIFYPEER, (conf->verify_peer ? 1L : 0L) );
 
    curl_easy_setopt( client->ms_read, CURLOPT_HEADERFUNCTION, ms_client_header_func );
    curl_easy_setopt( client->ms_write, CURLOPT_HEADERFUNCTION, ms_client_header_func );
@@ -46,20 +152,13 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, ch
    
    curl_easy_setopt( client->ms_read, CURLOPT_NOSIGNAL, 1L );
    curl_easy_setopt( client->ms_write, CURLOPT_NOSIGNAL, 1L );
+   curl_easy_setopt( client->ms_view, CURLOPT_NOSIGNAL, 1L );
+
+   curl_easy_setopt( client->ms_read, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
+   curl_easy_setopt( client->ms_write, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
+   curl_easy_setopt( client->ms_view, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
 
    client->userpass = NULL;
-   
-   if( username && passwd ) {
-      // we have authentication tokens!
-      curl_easy_setopt( client->ms_read, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
-      curl_easy_setopt( client->ms_write, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
-      
-      client->userpass = CALLOC_LIST( char, strlen(username) + 1 + strlen(passwd) + 1 );
-      sprintf( client->userpass, "%s:%s", username, passwd );
-
-      curl_easy_setopt( client->ms_read, CURLOPT_USERPWD, client->userpass );
-      curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, client->userpass );
-   }
 
    pthread_rwlock_init( &client->lock, NULL );
    pthread_rwlock_init( &client->view_lock, NULL );
@@ -69,16 +168,49 @@ int ms_client_init( struct ms_client* client, struct md_syndicate_conf* conf, ch
    client->deadlines = new deadline_queue();
 
    // uploader thread
-   client->running = true;
    pthread_mutex_init( &client->uploader_lock, NULL );
    pthread_cond_init( &client->uploader_cv, NULL );
 
-   client->uploader_thread = md_start_thread( ms_client_uploader_thread, client, false );
-   if( client->uploader_thread < 0 ) {
-      return client->uploader_thread;
+   int rc = 0;
+
+   if( conf->gateway_key != NULL ) {
+      // we were given Gateway keys.  Load them
+      rc = ms_client_load_privkey( &client->my_key, conf->gateway_key );
+      if( rc != 0 ) {
+         errorf("ms_client_load_privkey rc = %d\n", rc );
+         return rc;
+      }
+
+      rc = ms_client_verify_key( client->my_key );
+      if( rc != 0 ) {
+         errorf("ms_client_verify_key rc = %d\n", rc );
+         return rc;
+      }
+   }
+   else {
+      // generate our public/private key pairs
+      rc = ms_client_generate_key( &client->my_key );
+      if( rc != 0 ) {
+         errorf("ms_client_generate_key rc = %d\n", rc );
+         ms_client_unlock( client );
+         return rc;
+      }
    }
 
-   return 0;
+
+   client->running = true;
+   
+   client->uploader_thread = md_start_thread( ms_client_uploader_thread, client, false );
+   if( client->uploader_thread < 0 ) {
+      return -errno;
+   }
+
+   client->view_thread = md_start_thread( ms_client_view_thread, client, false );
+   if( client->view_thread < 0 ) {
+      return -errno;  
+   }
+
+   return rc;
 }
 
 
@@ -89,14 +221,15 @@ int ms_client_destroy( struct ms_client* client ) {
    client->running = false;
 
    ms_client_uploader_signal( client );
+   pthread_cancel( client->view_thread );
 
    dbprintf("%s", "wait for write uploads to finish...\n");
-   
-   while( client->uploader_running ) {
-      sleep(1);
-   }
 
    pthread_join( client->uploader_thread, NULL );
+
+   dbprintf("%s", "wait for view change thread to finish...\n");
+   
+   pthread_join( client->view_thread, NULL );
 
    ms_client_wlock( client );
 
@@ -107,24 +240,16 @@ int ms_client_destroy( struct ms_client* client ) {
    // clean up CURL
    curl_easy_cleanup( client->ms_read );
    curl_easy_cleanup( client->ms_write );
+   curl_easy_cleanup( client->ms_view );
 
    // clean up view
    pthread_rwlock_wrlock( &client->view_lock );
 
-   if( client->RG_urls != NULL ) {
-      for( int i = 0; client->RG_urls[i] != NULL; i++ ) {
-         free( client->RG_urls[i] );
-         client->RG_urls[i] = NULL;
-      }
-      free( client->RG_urls );
+   for( int i = 0; i < client->num_volumes; i++ ) {
+      ms_volume_free( client->volumes[i] );
+      free( client->volumes[i] );
    }
-
-   if( client->UG_creds != NULL ) {
-      for( int i = 0; client->UG_creds[i] != NULL; i++ ) {
-         md_free_user_entry( client->UG_creds[i] );
-      }
-      free( client->UG_creds );
-   }
+   free( client->volumes );
    
    pthread_rwlock_unlock( &client->view_lock );
    pthread_rwlock_destroy( &client->view_lock );
@@ -144,8 +269,11 @@ int ms_client_destroy( struct ms_client* client ) {
    if( client->url )
       free( client->url );
 
-   if( client->file_url )
-      free( client->file_url );
+   if( client->session_password )
+      free( client->session_password );
+
+   if( client->my_key )
+      EVP_PKEY_free( client->my_key );
 
    delete client->updates;
    delete client->deadlines;
@@ -153,8 +281,213 @@ int ms_client_destroy( struct ms_client* client ) {
    ms_client_unlock( client );
    pthread_rwlock_destroy( &client->lock );
 
+   // free OpenSSL memory
+   ERR_free_strings();
+   
    return 0;
 }
+
+
+char* ms_client_url( struct ms_client* client, uint64_t volume_id, char const* metadata_path ) {
+   char volume_id_str[50];
+   sprintf(volume_id_str, "%" PRIu64, volume_id);
+
+   char* volume_md_path = md_fullpath( metadata_path, volume_id_str, NULL );
+
+   ms_client_rlock( client );
+   char* url = md_fullpath( client->url, volume_md_path, NULL );
+   ms_client_unlock( client );
+
+   free( volume_md_path );
+
+   return url;
+}
+
+char* ms_client_file_url( struct ms_client* client, uint64_t volume_id, char const* fs_path ) {
+   char volume_id_str[50];
+   sprintf( volume_id_str, "%" PRIu64, volume_id );
+
+   char* volume_file_path = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/FILE/") + 1 + strlen(volume_id_str) + 1 + strlen(fs_path) + 1 );
+
+   ms_client_rlock( client );
+   sprintf( volume_file_path, "%s/FILE/%s%s", client->url, volume_id_str, fs_path );
+   ms_client_unlock( client );
+   
+   return volume_file_path;
+}
+
+char* ms_client_volume_url( struct ms_client* client, uint64_t volume_id ) {
+   char buf[50];
+   sprintf(buf, "%" PRIu64, volume_id );
+
+   char* volume_md_path = md_fullpath( "/VOLUME/", buf, NULL );
+
+   ms_client_rlock( client );
+   char* url = md_fullpath( client->url, volume_md_path, NULL );
+   ms_client_unlock( client );
+
+   free( volume_md_path );
+
+   return url;
+}
+
+
+char* ms_client_register_url( struct ms_client* client ) {
+   // build the /REGISTER/ url
+
+   char gateway_type_str[10];
+   ms_client_gateway_type_str( client->gateway_type, gateway_type_str );
+
+   ms_client_rlock( client );
+
+   char* url = CALLOC_LIST( char, strlen(client->url) + 1 +
+                                  strlen("/REGISTER/") + 1 +
+                                  strlen(client->conf->gateway_name) + 1 +
+                                  strlen(client->conf->ms_username) + 1 +
+                                  strlen(gateway_type_str) + 1 +
+                                  strlen("/begin") + 1);
+
+   sprintf(url, "%s/REGISTER/%s/%s/%s/begin", client->url, gateway_type_str, client->conf->gateway_name, client->conf->ms_username );
+
+   ms_client_unlock( client );
+
+   return url;
+}
+
+
+// view thread body, for synchronizing Volume metadata (including UG and RG lists)
+static void* ms_client_view_thread( void* arg ) {
+   struct ms_client* client = (struct ms_client*)arg;
+   
+   // how often do we reload?
+   uint64_t view_reload_freq = client->conf->view_reload_freq;
+   struct timespec sleep_time;
+
+   struct timespec remaining;
+
+   client->view_thread_running = true;
+
+   // since we don't hold any resources between downloads, simply cancel immediately
+   pthread_setcanceltype( PTHREAD_CANCEL_ASYNCHRONOUS, NULL );
+   
+   dbprintf("%s", "View thread starting up\n");
+
+   bool* early_reload = NULL;
+   uint64_t* volumes = NULL;
+   int num_volumes = 0;
+   
+   while( client->running ) {
+
+      uint64_t now_ms = currentTimeMillis();
+      uint64_t wakeup_ms = now_ms + view_reload_freq * 1000;
+      
+      // wait for next reload
+      while( now_ms < wakeup_ms ) {
+
+         sleep_time.tv_sec = 1;
+         sleep_time.tv_nsec = 0;
+
+         int rc = nanosleep( &sleep_time, &remaining );
+         int errsv = errno;
+         
+         now_ms = currentTimeMillis();
+         
+         if( rc < 0 ) {
+            if( errsv == EINTR ) {
+               errorf("errsv = %d\n", errsv);
+            }
+            else {
+               errorf("nanosleep errno = %d\n", errsv );
+               client->view_thread_running = false;
+               return NULL;
+            }
+         }
+
+         bool do_early_reload = false;
+         
+         // hint to reload now?
+         ms_client_view_wlock( client );
+
+         if( client->num_volumes > 0 ) {
+            num_volumes = client->num_volumes;
+            early_reload = CALLOC_LIST( bool, client->num_volumes );
+            volumes = CALLOC_LIST( uint64_t, client->num_volumes );
+
+            for( int i = 0; i < client->num_volumes; i++ ) {
+
+               volumes[i] = client->volumes[i]->volume_id;
+               
+               if( client->volumes[i]->early_reload ) {
+                  early_reload[i] = true;
+                  client->volumes[i]->early_reload = false;
+                  do_early_reload = true;
+               }
+            }
+         }
+
+         ms_client_view_unlock( client );
+
+         if( do_early_reload )
+            break;
+         
+         if( !client->running )
+            break;
+      }
+
+      if( !client->running ) {
+         if( early_reload )
+            free( early_reload );
+
+         if( volumes )
+            free( volumes );
+         
+         break;
+      }
+
+      if( num_volumes == 0 ) {
+         if( early_reload ) {
+            free( early_reload );
+            early_reload = NULL;
+         }
+
+         if( volumes ) {
+            free( volumes );
+            volumes = NULL;
+         }
+         
+         continue;      // nothing we can do
+      }
+
+      pthread_setcancelstate( PTHREAD_CANCEL_DISABLE, NULL );
+
+      for( int i = 0; i < num_volumes; i++ ) {
+         if( !early_reload[i] )
+            continue;
+
+         // reload Volume metadata
+         dbprintf("Begin reload Volume %" PRIu64 " metadata\n", volumes[i] );
+
+         int rc = ms_client_reload_volume( client, NULL, volumes[i] );
+
+         dbprintf("End reload Volume %" PRIu64 " metadata, rc = %d\n", volumes[i], rc);
+      }
+
+      pthread_setcancelstate( PTHREAD_CANCEL_ENABLE, NULL );
+
+      free( early_reload );
+      free( volumes );
+
+      early_reload = NULL;
+      volumes = NULL;
+   }
+
+   dbprintf("%s", "View thread shutting down\n");
+   
+   client->view_thread_running = false;
+   return NULL;
+}
+
+
 
 // get the offset at which the value starts
 static off_t ms_client_find_header_value( char* header_buf, size_t header_len, char const* header_name ) {
@@ -162,7 +495,7 @@ static off_t ms_client_find_header_value( char* header_buf, size_t header_len, c
    if( strlen(header_name) >= header_len )
       return -1;      // header is too short
 
-   if( strncmp(header_buf, header_name, strlen(header_name) ) != 0 )
+   if( strncasecmp(header_buf, header_name, MIN( header_len, strlen(header_name) ) ) != 0 )
       return -1;      // not found
 
    size_t off = strlen(header_name);
@@ -199,10 +532,14 @@ static uint64_t ms_client_read_one_value( char* hdr, off_t offset, size_t size )
    char* value = hdr + offset;
    size_t value_len = size - offset;
 
-   char* value_str = (char*)alloca( value_len + 1 );
-   strcpy( value_str, value );
+   char* value_str = CALLOC_LIST( char, value_len + 1 );
+   
+   strncpy( value_str, value, value_len );
 
    uint64_t data = (uint64_t)strtoll( value_str, NULL, 10 );
+
+   free( value_str );
+   
    return data;
 }
 
@@ -250,50 +587,96 @@ static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void 
    size_t len = size * nmemb;
    char* data = (char*)ptr;
 
+   char* data_str = CALLOC_LIST( char, len + 1 );
+   strncpy( data_str, data, len );
+
+   //dbprintf("header: %s\n", data_str );
+
    // is this one of our headers?  Find each of them
    
-   off_t off = ms_client_find_header_value( data, len, HTTP_VOLUME_TIME );
+   off_t off = ms_client_find_header_value( data_str, len, HTTP_VOLUME_TIME );
    if( off > 0 ) {
-      times->volume_time = ms_client_read_one_value( data, off, size );
+      times->volume_time = ms_client_read_one_value( data_str, off, len );
+      free( data_str );
       return len;
    }
    
-   off = ms_client_find_header_value( data, len, HTTP_UG_TIME );
+   off = ms_client_find_header_value( data_str, len, HTTP_GATEWAY_TIME );
    if( off > 0 ) {
-      times->ug_time = ms_client_read_one_value( data, off, size );
+      times->ug_time = ms_client_read_one_value( data_str, off, len );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_TOTAL_TIME );
+   off = ms_client_find_header_value( data_str, len, HTTP_TOTAL_TIME );
    if( off > 0 ) {
-      times->total_time = ms_client_read_one_value( data, off, size );
+      times->total_time = ms_client_read_one_value( data_str, off, len );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_RESOLVE_TIME );
+   off = ms_client_find_header_value( data_str, len, HTTP_RESOLVE_TIME );
    if( off > 0 ) {
-      times->resolve_time = ms_client_read_one_value( data, off, size );
+      times->resolve_time = ms_client_read_one_value( data_str, off, len );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_CREATE_TIMES );
+   off = ms_client_find_header_value( data_str, len, HTTP_CREATE_TIMES );
    if( off > 0 ) {
-      times->create_times = ms_client_read_multi_values( data, off, size, &times->num_create_times );
+      times->create_times = ms_client_read_multi_values( data_str, off, len, &times->num_create_times );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_UPDATE_TIMES );
+   off = ms_client_find_header_value( data_str, len, HTTP_UPDATE_TIMES );
    if( off > 0 ) {
-      times->update_times = ms_client_read_multi_values( data, off, size, &times->num_update_times );
+      times->update_times = ms_client_read_multi_values( data_str, off, len, &times->num_update_times );
+      free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data, len, HTTP_DELETE_TIMES );
+   off = ms_client_find_header_value( data_str, len, HTTP_DELETE_TIMES );
    if( off > 0 ) {
-      times->delete_times = ms_client_read_multi_values( data, off, size, &times->num_delete_times );
+      times->delete_times = ms_client_read_multi_values( data_str, off, len, &times->num_delete_times );
+      free( data_str );
       return len;
    }
 
+   free( data_str );
+   return len;
+}
+
+
+// redirect parser
+static size_t ms_client_redirect_header_func( void *ptr, size_t size, size_t nmemb, void *userdata) {
+   response_buffer_t* rb = (response_buffer_t*)userdata;
+
+   size_t len = size * nmemb;
+
+   char* data = (char*)ptr;
+
+   // only get one Location header
+   if( rb->size() > 0 )
+      return len;
+
+   char* data_str = CALLOC_LIST( char, len + 1 );
+   strncpy( data_str, data, len );
+
+   off_t off = ms_client_find_header_value( data_str, len, "Location" );
+   if( off > 0 ) {
+
+      char* value = data_str + off;
+      size_t value_len = len - off;
+      
+      char* value_str = CALLOC_LIST(char, value_len );
+      strncpy( value_str, value, value_len - 2 );     // strip off '\n\r'
+
+      rb->push_back( buffer_segment_t( value_str, value_len ) );
+   }
+
+   free( data_str );
+   
    return len;
 }
 
@@ -331,10 +714,26 @@ static void ms_client_uploader_signal( struct ms_client* client ) {
 
 // uploader thread body
 static void* ms_client_uploader_thread( void* arg ) {
+   block_all_signals();
    struct ms_client* client = (struct ms_client*)arg;
 
    client->uploader_running = true;
    while( client->running ) {
+
+      ms_client_rlock( client );
+      int num_volumes = client->num_volumes;
+      ms_client_unlock( client );
+
+      if( num_volumes == 0 ) {
+         // nothing to do
+         struct timespec ts;
+         ts.tv_sec = 1;
+         ts.tv_nsec = 0;
+
+         struct timespec rem;
+         nanosleep( &ts, &rem );
+         continue;
+      }
       
       ms_client_rlock( client );
 
@@ -422,7 +821,7 @@ int ms_client_end_downloading( struct ms_client* client ) {
    ms_client_wlock( client );
    
    DATA( HTTP_VOLUME_TIME, (double)client->read_times.volume_time / 1e9 );
-   DATA( HTTP_UG_TIME, (double)client->read_times.ug_time / 1e9 );
+   DATA( HTTP_GATEWAY_TIME, (double)client->read_times.ug_time / 1e9 );
    DATA( HTTP_TOTAL_TIME, (double)client->read_times.total_time / 1e9 );
 
    // not downloading anymore
@@ -438,13 +837,51 @@ int ms_client_end_downloading( struct ms_client* client ) {
 }
 
 
-int ms_client_begin_uploading( struct ms_client* client, response_buffer_t* rb, struct curl_httppost* forms ) {
+int ms_client_begin_downloading_view( struct ms_client* client, char const* url, struct curl_slist* headers ) {
+   ms_client_wlock_backoff( client, &client->downloading );
+
+   client->downloading = true;
+
+   curl_easy_setopt( client->ms_view, CURLOPT_URL, url );
+   curl_easy_setopt( client->ms_view, CURLOPT_HTTPHEADER, headers );
+
+   ms_client_unlock( client );
+
+   return 0;
+}
+
+
+int ms_client_end_downloading_view( struct ms_client* client ) {
+   long http_response = 0;
+
+   ms_client_wlock( client );
+
+   DATA( HTTP_VOLUME_TIME, (double)client->read_times.volume_time / 1e9 );
+   DATA( HTTP_GATEWAY_TIME, (double)client->read_times.ug_time / 1e9 );
+   DATA( HTTP_TOTAL_TIME, (double)client->read_times.total_time / 1e9 );
+
+   // not downloading anymore
+   client->downloading = false;
+
+   curl_easy_setopt( client->ms_view, CURLOPT_URL, NULL );
+   curl_easy_setopt( client->ms_view, CURLOPT_HTTPHEADER, NULL );
+   curl_easy_getinfo( client->ms_view, CURLINFO_RESPONSE_CODE, &http_response );
+
+   ms_client_unlock( client );
+
+   return (int)(http_response);
+}
+
+
+
+
+int ms_client_begin_uploading( struct ms_client* client, char const* url, response_buffer_t* rb, struct curl_httppost* forms ) {
    // lock, but back off if someone else is uploading
    ms_client_wlock_backoff( client, &client->uploading );
 
    client->uploading = true;
 
-   curl_easy_setopt( client->ms_write, CURLOPT_URL, client->file_url );
+   curl_easy_setopt( client->ms_write, CURLOPT_URL, url );
    curl_easy_setopt( client->ms_write, CURLOPT_WRITEDATA, (void*)rb );
    curl_easy_setopt( client->ms_write, CURLOPT_HTTPPOST, forms );
 
@@ -480,7 +917,7 @@ int ms_client_end_uploading( struct ms_client* client ) {
    }
 
    DATA( HTTP_VOLUME_TIME, (double)client->write_times.volume_time / 1e9 );
-   DATA( HTTP_UG_TIME, (double)client->write_times.ug_time / 1e9 );
+   DATA( HTTP_GATEWAY_TIME, (double)client->write_times.ug_time / 1e9 );
    DATA( HTTP_TOTAL_TIME, (double)client->write_times.total_time / 1e9 );
 
    client->uploading = false;
@@ -498,32 +935,88 @@ int ms_client_end_uploading( struct ms_client* client ) {
 }
 
 
-char* ms_client_url( struct ms_client* client, char const* metadata_path ) {
-   char volume_id[50];
-   sprintf(volume_id, "%" PRIu64, client->volume_id);
+// look up a Volume
+// return a pointer (reference)
+// client must be at least read-locked
+struct ms_volume* ms_client_find_volume( struct ms_client* client, uint64_t volume ) {
+   struct ms_volume* vol = NULL;
 
-   char* volume_md_path = md_fullpath( metadata_path, volume_id, NULL );
+   for( int i = 0; i < client->num_volumes; i++ ) {
+      if( client->volumes[i]->volume_id == volume ) {
+         vol = client->volumes[i];
+         break;
+      }
+   }
 
-   ms_client_rlock( client );
-   char* url = md_fullpath( client->url, volume_md_path, NULL );
-   ms_client_unlock( client );
+   return vol;
+}
 
-   free( volume_md_path );
+// look up a Volume by name
+// return a pointer (reference)
+// client must be read-locked
+struct ms_volume* ms_client_find_volume( struct ms_client* client, char const* name ) {
+   struct ms_volume* vol = NULL;
+
+   for( int i = 0; i < client->num_volumes; i++ ) {
+      if( strcmp( client->volumes[i]->name, name ) == 0 ) {
+         vol = client->volumes[i];
+         break;
+      }
+   }
+
+   return vol;
+}
+
+
+// replace a Volume's UGs
+// return -ENOENT if it doesn't exist
+// free the old Volume
+// client must be view-write-locked
+int ms_client_replace_volume( struct ms_client* client, struct ms_volume* vol ) {
+   for( int i = 0; i < client->num_volumes; i++ ) {
+      if( client->volumes[i]->volume_id == vol->volume_id ) {
+
+         struct ms_volume* old = client->volumes[i];
+         client->volumes[i] = vol;
+
+         ms_volume_free( old );
+         free( old );
+         return 0;
+      }
+   }
+   return -ENOENT;
+}
+
+// add a Volume
+// return a pointer (reference) to it
+// NOT THREAD SAFE--client must be read-locked first
+struct ms_volume* ms_client_add_volume( struct ms_client* client ) {
+   struct ms_volume* vol = NULL;
+
+   for( int i = 0; i < client->num_volumes; i++ ) {
+      if( client->volumes[i]->volume_id == 0 ) {
+         vol = client->volumes[i];
+         break;
+      }
+   }
+
+   if( vol )
+      return vol;
+
+   // allocate a new one
+   struct ms_volume** new_vols = CALLOC_LIST( struct ms_volume*, 2 * client->num_volumes );
+   memcpy( new_vols, client->volumes, sizeof(struct ms_volume*) * client->num_volumes );
+
+   free( client->volumes );
+   client->volumes = new_vols;
    
-   return url;
+   vol = client->volumes[ client->num_volumes ];
+
+   client->num_volumes *= 2;
+
+   return vol;
 }
 
-char* ms_client_volume_url( struct ms_client* client, char const* volume_name ) {
-   char* volume_md_path = md_fullpath( "/VOLUME/", volume_name, NULL );
-
-   ms_client_rlock( client );
-   char* url = md_fullpath( client->url, volume_md_path, NULL );
-   ms_client_unlock( client );
-
-   free( volume_md_path );
-
-   return url;
-}
 
 // download metadata from the MS for a Volume.
 // metadata_path should be an absolute directory path (like /VOLUME/, or /UG/, or /RG/)
@@ -534,13 +1027,13 @@ int ms_client_download_volume_metadata( struct ms_client* client, char const* ur
    ssize_t len = 0;
    int http_response = 0;
 
-   ms_client_begin_downloading( client, url, NULL );
+   ms_client_begin_downloading_view( client, url, NULL );
 
    // do the download
    memset( &client->read_times, 0, sizeof(client->read_times) );
-   len = md_download_file5( client->ms_read, &bits );
+   len = md_download_file5( client->ms_view, &bits );
 
-   http_response = ms_client_end_downloading( client );
+   http_response = ms_client_end_downloading_view( client );
 
    if( len < 0 ) {
       errorf("md_download_file5(%s) rc = %zd\n", url, len );
@@ -566,23 +1059,111 @@ int ms_client_download_volume_metadata( struct ms_client* client, char const* ur
 }
 
 
-// get UG metadata
-int ms_client_reload_UGs( struct ms_client* client ) {
+// load a Volume's UGs from data
+int ms_client_load_volume_UGs( struct ms_volume* vol, const ms::ms_volume_UGs* volume_ugs ) {
+   
+   struct UG_cred** ugs = CALLOC_LIST( struct UG_cred*, volume_ugs->ug_creds_size() + 1 );
+   for( int i = 0; i < volume_ugs->ug_creds_size(); i++ ) {
+      struct UG_cred* uent = CALLOC_LIST( struct UG_cred, 1 );
+
+      const ms::ms_volume_gateway_cred& ug_cred = volume_ugs->ug_creds(i);
+
+      ms_client_load_cred( uent, &ug_cred );
+
+      ugs[i] = uent;
+
+      dbprintf("UG: Volume = %" PRIu64 ", id = %" PRIu64 ", owner = %" PRIu64 ", name = %s\n", vol->volume_id, uent->gateway_id, uent->user_id, uent->name );
+   }
+
+   struct UG_cred** old_ugs = vol->UG_creds;
+   int old_ug_len = vol->num_UG_creds;
+   
+   vol->UG_creds = ugs;
+   vol->UG_version = volume_ugs->ug_version();
+   vol->num_UG_creds = volume_ugs->ug_creds_size();
+
+   for( int i = 0; i < old_ug_len; i++ ) {
+      UG_cred_free( old_ugs[i] );
+      free( old_ugs[i] );
+   }
+   free( old_ugs );
+
+   return 0;
+}
+
+
+// load a Volume's RGs from data
+int ms_client_load_volume_RGs( struct ms_volume* volume, const ms::ms_volume_RGs* volume_rgs ) {
+
+   char** rg_urls = CALLOC_LIST( char*, volume_rgs->rg_hosts_size() + 1 );
+   for( int i = 0; i < volume_rgs->rg_hosts_size(); i++ ) {
+      char* tmp = md_prepend( "https://", volume_rgs->rg_hosts(i).c_str(), NULL );
+
+      char portbuf[20];
+      sprintf(portbuf, ":%d", volume_rgs->rg_ports(i) );
+
+      char* url = md_prepend( tmp, portbuf, NULL );
+      rg_urls[i] = url;
+
+      dbprintf("RG: Volume = %" PRIu64 ", URL = %s\n", volume->volume_id, url );
+
+      free( tmp );
+   }
+
+   uint64_t RG_version = volume_rgs->rg_version();
+
+   char** old_urls = volume->RG_urls;
+   int num_old_urls = volume->num_RG_urls;
+
+   volume->RG_urls = rg_urls;
+   volume->num_RG_urls = volume_rgs->rg_hosts_size();
+   volume->RG_version = RG_version;
+
+   for( int i = 0; i < num_old_urls; i++ ) {
+      free( old_urls[i] );
+   }
+   free( old_urls );
+
+   return 0;
+}
+
+
+// Get the UG records from a Volume
+int ms_client_reload_UGs( struct ms_client* client, uint64_t volume_id ) {
+
    ms::ms_volume_UGs volume_ugs;
 
    char* bits = NULL;
    ssize_t len = 0;
 
-   char* UG_url = ms_client_url( client, "/UG/" );
+   ms_client_view_rlock( client );
    
+   // verify that the Volume exists
+   struct ms_volume* vol = ms_client_find_volume( client, volume_id );
+
+   if( vol == NULL ) {
+      // not part of this volume anymore...
+      errorf("ERR: unbound from Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return -ENOENT;
+   }
+
+   vol = NULL;
+
+   char* UG_url = ms_client_url( client, volume_id, "/UG/" );
+
+   ms_client_view_unlock( client );
+
    int rc = ms_client_download_volume_metadata( client, UG_url, &bits, &len );
-   
-   free( UG_url );
-   
+
    if( rc < 0 ) {
-      errorf("ms_client_download_volume_metadata( /UG/ ) rc = %d\n", rc );
+      errorf("ms_client_download_volume_metadata( %s ) rc = %d\n", UG_url, rc );
+      free( UG_url );
+      free( vol );
       return rc;
    }
+
+   free( UG_url );
 
    // got the data
    bool valid = volume_ugs.ParseFromString( string(bits, len) );
@@ -590,52 +1171,65 @@ int ms_client_reload_UGs( struct ms_client* client ) {
 
    if( !valid ) {
       errorf("%s", "invalid UG metadata\n" );
+      free( vol );
       return -EINVAL;
    }
 
-   struct md_user_entry** users = CALLOC_LIST( struct md_user_entry*, volume_ugs.ug_creds_size() + 1 );
-   for( int i = 0; i < volume_ugs.ug_creds_size(); i++ ) {
-      struct md_user_entry* uent = CALLOC_LIST( struct md_user_entry, 1 );
-
-      uent->uid = volume_ugs.ug_creds(i).owner_id();
-      uent->username = strdup( volume_ugs.ug_creds(i).username().c_str() );
-      uent->password_hash = strdup( volume_ugs.ug_creds(i).password_hash().c_str() );
-
-      users[i] = uent;
-
-      dbprintf("UG: %" PRIu64 " : %s\n", uent->uid, uent->username );
+   ms_client_view_wlock( client );
+   
+   vol = ms_client_find_volume( client, volume_id );
+   if( vol == NULL ) {
+      // not part of this Volume anymore
+      errorf("ERR: unbound from Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return -ENOENT;
    }
 
-   uint64_t UG_version = volume_ugs.ug_version();
-   
-   ms_client_view_wlock( client );
+   // verify the data
+   rc = ms_client_verify_UGs( vol->volume_public_key, &volume_ugs );
+   if( rc != 0 ) {
+      errorf("ms_client_verify_UGs rc = %d\n", rc );
+      ms_client_view_unlock( client );
+      return rc;
+   }
 
-   struct md_user_entry** old_users = client->UG_creds;
-   client->UG_creds = users;
-   client->UG_version = UG_version;
-
+   // load the Volume
+   rc = ms_client_load_volume_UGs( vol, &volume_ugs );
    ms_client_view_unlock( client );
-
-   if( old_users ) {
-      for( int i = 0; old_users[i] != NULL; i++ ) {
-         md_free_user_entry( old_users[i] );
-         free( old_users[i] );
-      }
-      free( old_users );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_load_volume_UGs rc = %d\n", rc );
+      free( vol );
+      return rc;
    }
 
    return 0;
 }
 
-
-// get RG metadata
-int ms_client_reload_RGs( struct ms_client* client ) {
+// get RG metadata for a Volume
+int ms_client_reload_RGs( struct ms_client* client, uint64_t volume_id ) {
    ms::ms_volume_RGs volume_rgs;
 
    char* bits = NULL;
    ssize_t len = 0;
 
-   char* RG_url = ms_client_url( client, "/RG/" );
+   ms_client_view_rlock( client );
+
+   // verify that the Volume exists
+   struct ms_volume* vol = ms_client_find_volume( client, volume_id );
+
+   if( vol == NULL ) {
+      // not part of this volume anymore...
+      errorf("ERR: unbound from Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return -ENOENT;
+   }
+
+   vol = NULL;
+   
+   char* RG_url = ms_client_url( client, volume_id, "/RG/" );
+
+   ms_client_view_unlock( client );
 
    int rc = ms_client_download_volume_metadata( client, RG_url, &bits, &len );
 
@@ -650,182 +1244,1120 @@ int ms_client_reload_RGs( struct ms_client* client ) {
    bool valid = volume_rgs.ParseFromString( string(bits, len) );
    free( bits );
 
-   if( valid ) {
-      // sanity check--the number of hosts and ports must be the same
-      if( volume_rgs.rg_hosts_size() != volume_rgs.rg_ports_size() )
-         valid = false;
-
-      // sanity check---the ports must be between 1 and 65535
-      for( int i = 0; i < volume_rgs.rg_ports_size(); i++ ) {
-         if( volume_rgs.rg_ports(i) < 1 || volume_rgs.rg_ports(i) > 65534 ) {
-            valid = false;
-            break;
-         }
-      }
-   }
-
    if( !valid ) {
-      errorf("%s", "invalid RG metadata from %s\n" );
+      errorf("%s", "Failed to load RGs\n");
       return -EINVAL;
    }
 
-   char** rg_urls = CALLOC_LIST( char*, volume_rgs.rg_hosts_size() + 1 );
-   for( int i = 0; i < volume_rgs.rg_hosts_size(); i++ ) {
-      char* tmp = md_prepend( "https://", volume_rgs.rg_hosts(i).c_str(), NULL );
-      
-      char portbuf[20];
-      sprintf(portbuf, ":%d", volume_rgs.rg_ports(i) );
-              
-      char* url = md_prepend( tmp, portbuf, NULL );
-      rg_urls[i] = url;
-
-      dbprintf("RG: %s\n", url );
-      
-      free( tmp );
-   }
-
-   uint64_t RG_version = volume_rgs.rg_version();
-   
    ms_client_view_wlock( client );
 
-   char** old_rgs = client->RG_urls;
-   client->RG_urls = rg_urls;
-   client->RG_version = RG_version;
-
-   ms_client_view_unlock( client );
-
-   if( old_rgs ) {
-      for( int i = 0; old_rgs[i] != NULL; i++ ) {
-         free( old_rgs[i] );
-      }
-      free( old_rgs );
+   vol = ms_client_find_volume( client, volume_id );
+   if( vol == NULL ) {
+      errorf("ERR: unbound from Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return -ENOENT;
    }
 
-   return 0;
-}
-
-// get volume metadata
-int ms_client_get_volume_metadata( struct ms_client* client, char const* volume_name ) {
-
-   ms::ms_volume_metadata volume_md;
-
-   char* bits = NULL;
-   ssize_t len = 0;
-
-   char* volume_url = ms_client_volume_url( client, volume_name );
-   
-   int rc = ms_client_download_volume_metadata( client, volume_url, &bits, &len );
-
-   free( volume_url );
-
-   if( rc < 0 ) {
-      errorf("ms_client_download_volume_metadata( %s ) rc = %d\n", volume_name, rc );
+   // verify the data
+   rc = ms_client_verify_RGs( vol->volume_public_key, &volume_rgs );
+   if( rc != 0 ) {
+      errorf("ms_client_verify_RGs rc = %d\n", rc );
+      ms_client_view_unlock( client );
       return rc;
    }
 
-   // got the data
-   bool valid = volume_md.ParseFromString( string(bits, len) );
-   free( bits );
+   // sanity check--the number of hosts and ports must be the same
+   if( volume_rgs.rg_hosts_size() != volume_rgs.rg_ports_size() ) {
+      errorf("%s", "RG message disagrees on number of hosts and ports\n");
+      ms_client_view_unlock( client );
+      return rc;
+   }
+
+   // sanity check---the ports must be between 1 and 65535
+   for( int i = 0; i < volume_rgs.rg_ports_size(); i++ ) {
+      if( volume_rgs.rg_ports(i) < 1 || volume_rgs.rg_ports(i) > 65534 ) {
+         errorf("RG message has invalid port number %d\n", volume_rgs.rg_ports(i));
+         ms_client_view_unlock( client );
+         return rc;
+      }
+   }
+
+   // load the Volume
+   rc = ms_client_load_volume_RGs( vol, &volume_rgs );
+   ms_client_view_unlock( client );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_load_volume_RGs rc = %d\n", rc );
+      return rc;
+   }
+   
+   return 0;
+}
+
+
+// reload a Volume, which already exists
+// give either volume_name or volume_id (volume_name preferred), but you don't need both.
+// client must NOT be locked
+int ms_client_reload_volume( struct ms_client* client, char const* volume_name, uint64_t volume_id ) {
+   int rc = 0;
+   ms::ms_volume_metadata volume_md;
+   char* buf = NULL;
+   ssize_t len = 0;
+   struct ms_volume* vol = NULL;
+
+   ms_client_view_rlock( client );
+ 
+   if( volume_name != NULL ) {
+      // look up by name
+      vol = ms_client_find_volume( client, volume_name );
+   }
+   else if( volume_id > 0 ) {
+      // look up by ID
+      vol = ms_client_find_volume( client, volume_id );
+   }
+
+   if( vol == NULL ) {
+      errorf("No such volume '%s' or %" PRIu64 "\n", volume_name, volume_id );
+      ms_client_view_unlock( client );
+      return -ENOENT;
+   }
+
+   // get the Volume ID for later
+   volume_id = vol->volume_id;
+   
+   char* volume_url = ms_client_volume_url( client, vol->volume_id );
+
+   ms_client_view_unlock( client );
+
+   rc = ms_client_download_volume_metadata( client, volume_url, &buf, &len );
+
+   free( volume_url );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_download_volume_metadata rc = %d\n", rc );
+
+      return rc;
+   }
+
+   // extract the message
+   bool valid = volume_md.ParseFromString( string(buf, len) );
+   free( buf );
    
    if( !valid ) {
-      errorf( "invalid volume metadata from %s\n", volume_name );
+      errorf("Invalid data for Volume '%s' or %" PRIu64 "\n", volume_name, volume_id );
+      return -EINVAL;
+   }
+   
+   ms_client_view_wlock( client );
+
+   // re-find the Volume
+   vol = ms_client_find_volume( client, volume_id );
+   if( vol == NULL ) {
+      errorf("ERR: unbound from Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return -ENOENT;
+   }
+
+   uint64_t old_version = vol->volume_version;
+   uint64_t old_UG_version = vol->UG_version;
+   uint64_t old_RG_version = vol->RG_version;
+   
+   rc = ms_client_load_volume_metadata( vol, &volume_md );
+
+   uint64_t new_version = vol->volume_version;
+   uint64_t new_UG_version = vol->UG_version;
+   uint64_t new_RG_version = vol->RG_version;
+   
+   ms_client_view_unlock( client );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_load_volume_metadata('%s' or %" PRIu64 ") rc = %d\n", volume_name, volume_id, rc );
+      return rc;
+   }
+   
+   // do we need to download the UGs and/or RGs as well?
+   dbprintf("Volume version %" PRIu64 " --> %" PRIu64 "\n", old_version, new_version );
+   dbprintf("UG     version %" PRIu64 " --> %" PRIu64 "\n", old_UG_version, new_UG_version );
+   dbprintf("RG     version %" PRIu64 " --> %" PRIu64 "\n", old_RG_version, new_RG_version );
+
+   if( new_UG_version != old_UG_version && !volume_md.has_ugs() ) {
+      // version change, and no UG information given 
+      rc = ms_client_reload_UGs( client, volume_id );
+      if( rc != 0 ) {
+         errorf("ms_client_reload_UGs rc = %d\n", rc );
+
+         return rc;
+      }
+   }
+
+   if( new_RG_version != old_RG_version && !volume_md.has_rgs() ) {
+      // version change, and no RG information given
+      rc = ms_client_reload_RGs( client, volume_id );
+      if( rc != 0 ) {
+         errorf("ms_client_reload_RGs rc = %d\n", rc );
+
+         return rc;
+      }
+   }
+   
+   return 0;
+}
+
+
+// verify the signature of the Volume metadata.
+// client must be read-locked
+int ms_client_verify_volume_metadata( EVP_PKEY* volume_public_key, ms::ms_volume_metadata* volume_md ) {
+   // get the signature
+   size_t sigb64_len = volume_md->signature().size();
+   char* sigb64 = CALLOC_LIST( char, sigb64_len + 1 );
+   memcpy( sigb64, volume_md->signature().data(), sigb64_len );
+   
+   volume_md->set_signature( "" );
+
+   string volume_md_data;
+   try {
+      volume_md->SerializeToString( &volume_md_data );
+   }
+   catch( exception e ) {
       return -EINVAL;
    }
 
-   struct md_user_entry cred;
+   // verify the signature
+   int rc = md_verify_signature( volume_public_key, volume_md_data.data(), volume_md_data.size(), sigb64, sigb64_len );
+   free( sigb64 );
+
+   if( rc != 0 ) {
+      errorf("md_verify_signature rc = %d\n", rc );
+   }
+
+   return rc;
+}
+
+// verify the signature of the UG metadata
+// client must be read-locked
+int ms_client_verify_UGs( EVP_PKEY* public_key, ms::ms_volume_UGs* ugs ) {
+   // get the signature
+   size_t sig_len = ugs->signature().size();
+   char* sig = CALLOC_LIST( char, sig_len );
+   memcpy( sig, ugs->signature().data(), sig_len );
+
+   ugs->set_signature( "" );
+
+   string ug_md_data;
+   try {
+      ugs->SerializeToString( &ug_md_data );
+   }
+   catch( exception e ) {
+      free( sig );
+      return -EINVAL;
+   }
+
+   // verify the signature
+   int rc = md_verify_signature( public_key, ug_md_data.data(), ug_md_data.size(), sig, sig_len );
+   free( sig );
+
+   if( rc != 0 ) {
+      errorf("md_verify_signature rc = %d\n", rc );
+   }
+
+   return rc;
+}
+
+// verify the signature of RG metadata
+// client must be read-locked
+int ms_client_verify_RGs( EVP_PKEY* public_key, ms::ms_volume_RGs* rgs ) {
+   // get the signature
+   size_t sig_len = rgs->signature().size();
+   char* sig = CALLOC_LIST( char, sig_len );
+   memcpy( sig, rgs->signature().data(), sig_len );
+
+   rgs->set_signature( "" );
+
+   string rg_md_data;
+   try {
+      rgs->SerializeToString( &rg_md_data );
+   }
+   catch( exception e ) {
+      return -EINVAL;
+   }
+
+   // verify the signature
+   int rc = md_verify_signature( public_key, rg_md_data.data(), rg_md_data.size(), sig, sig_len );
+   free( sig );
+
+   if( rc != 0 ) {
+      errorf("md_verify_signature rc = %d\n", rc );
+   }
+
+   return rc;
+}
+
+
+// verify that a message came from a gateway with the given ID.
+// this will write-lock the client view
+int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t user_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len ) {
+   ms_client_view_wlock( client );
+
+   struct ms_volume* vol = ms_client_find_volume( client, volume_id );
+   if( vol == NULL ) {
+      dbprintf("WARN: No such volume %" PRIu64 "\n", volume_id );
+      client->early_reload = true;
+      ms_client_view_unlock( client );
+      return -ENOENT;
+   }
+   
+   // find the gateway
+   for( int i = 0; vol->UG_creds[i] != NULL; i++ ) {
+      if( vol->UG_creds[i]->gateway_id == gateway_id && vol->UG_creds[i]->user_id == user_id ) {
+         if( vol->UG_creds[i]->pubkey == NULL ) {
+            dbprintf("WARN: No public key for Gateway %s\n", vol->UG_creds[i]->name );
+
+            // ask the MS for the public key
+            vol->early_reload = true;
+               
+            ms_client_view_unlock( client );
+            return -EAGAIN;
+         }
+         
+         int rc = md_verify_signature( vol->UG_creds[i]->pubkey, msg, msg_len, sigb64, sigb64_len );
+
+         ms_client_view_unlock( client );
+
+         return rc;
+      }
+   }
+
+   ms_client_view_unlock( client );
+
+   return -ENOENT;
+}
+
+
+// load a PEM-encoded (RSA) public key into an EVP key
+int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
+   BIO* buf_io = BIO_new_mem_buf( (void*)pubkey_str, strlen(pubkey_str) );
+
+   EVP_PKEY* public_key = PEM_read_bio_PUBKEY( buf_io, NULL, NULL, NULL );
+
+   BIO_free_all( buf_io );
+
+   if( public_key == NULL ) {
+      // invalid public key
+      errorf("%s", "ERR: failed to read public key\n");
+      md_openssl_error();
+      return -EINVAL;
+   }
+
+   *key = public_key;
+   
+   return 0;
+}
+
+
+// load a PEM-encoded (RSA) private key into an EVP key
+int ms_client_load_privkey( EVP_PKEY** key, char const* privkey_str ) {
+   BIO* buf_io = BIO_new_mem_buf( (void*)privkey_str, strlen(privkey_str) );
+
+   EVP_PKEY* privkey = PEM_read_bio_PrivateKey( buf_io, NULL, NULL, NULL );
+
+   BIO_free_all( buf_io );
+
+   if( privkey == NULL ) {
+      // invalid public key
+      errorf("%s", "ERR: failed to read private key\n");
+      md_openssl_error();
+      return -EINVAL;
+   }
+
+   *key = privkey;
+
+   return 0;
+}
+
+// generate RSA public/private key pair
+int ms_client_generate_key( EVP_PKEY** key ) {
+
+   dbprintf("%s", "Generating public/private key...\n");
+   
+   EVP_PKEY_CTX *ctx;
+   EVP_PKEY *pkey = NULL;
+   ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+   if (!ctx) {
+      md_openssl_error();
+      return -1;
+   }
+
+   int rc = EVP_PKEY_keygen_init( ctx );
+   if( rc <= 0 ) {
+      md_openssl_error();
+      return rc;
+   }
+
+   rc = EVP_PKEY_CTX_set_rsa_keygen_bits( ctx, RSA_KEY_SIZE );
+   if( rc <= 0 ) {
+      md_openssl_error();
+      return rc;
+   }
+
+   rc = EVP_PKEY_keygen( ctx, &pkey );
+   if( rc <= 0 ) {
+      md_openssl_error();
+      return rc;
+   }
+
+   *key = pkey;
+   return 0;
+}
+
+
+// dump a key to memory
+long ms_client_dump_pubkey( EVP_PKEY* pkey, char** buf ) {
+   BIO* mbuf = BIO_new( BIO_s_mem() );
+   
+   int rc = PEM_write_bio_PUBKEY( mbuf, pkey );
+   if( rc <= 0 ) {
+      errorf("PEM_write_bio_PUBKEY rc = %d\n", rc );
+      md_openssl_error();
+      return -EINVAL;
+   }
+
+   (void) BIO_flush( mbuf );
+   
+   char* tmp = NULL;
+   long sz = BIO_get_mem_data( mbuf, &tmp );
+
+   *buf = CALLOC_LIST( char, sz );
+   memcpy( *buf, tmp, sz );
+
+   BIO_free( mbuf );
+   
+   return sz;
+}
+
+
+// (re)load a credential
+int ms_client_load_cred( struct UG_cred* cred, const ms::ms_volume_gateway_cred* ms_cred ) {
+   cred->user_id = ms_cred->owner_id();
+   cred->gateway_id = ms_cred->gateway_id();
+   cred->name = strdup( ms_cred->name().c_str() );
+   cred->hostname = strdup( ms_cred->host().c_str() );
+   cred->portnum = ms_cred->port();
+
+   if( strcmp( ms_cred->public_key().c_str(), "NONE" ) == 0 ) {
+      // no public key for this gateway on the MS
+      dbprintf("WARN: No public key for Gateway %s\n", cred->name );
+      cred->pubkey = NULL;
+      return 0;
+   }
+   else {
+      int rc = ms_client_load_pubkey( &cred->pubkey, ms_cred->public_key().c_str() );
+      if( rc != 0 ) {
+         errorf("ms_client_load_pubkey(Gateway %s) rc = %d\n", cred->name, rc );
+      }
+      return rc;
+   }
+}
+
+
+// populate a Volume structure with the volume metadata
+int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadata* volume_md ) {
+
+   int rc = 0;
+   
+   // get the new public key
+   if( vol->reload_volume_key || vol->volume_public_key == NULL ) {
+      vol->reload_volume_key = false;
+      
+      // trust it this time, but not in the future
+      rc = ms_client_load_pubkey( &vol->volume_public_key, volume_md->volume_public_key().c_str() );
+      if( rc != 0 ) {
+         errorf("ms_client_load_pubkey rc = %d\n", rc );
+         return -ENOTCONN;
+      }
+   }
+
+   if( vol->volume_public_key == NULL ) {
+      errorf("%s", "unable to verify integrity of metadata for Volume!  No public key given!\n");
+      return -ENOTCONN;
+   }
+
+   // verify metadata
+   rc = ms_client_verify_volume_metadata( vol->volume_public_key, volume_md );
+   if( rc != 0 ) {
+      errorf("ms_client_verify_volume_metadata rc = %d\n", rc );
+      return rc;
+   }
+
+   // sanity check 
+   if( vol->name ) {
+      char* new_name = strdup( volume_md->name().c_str() );
+      if( strcmp( new_name, vol->name ) != 0 ) {
+         errorf("Invalid Volume metadata: tried to change name from '%s' to '%s'\n", vol->name, new_name );
+         free( new_name );
+         return -EINVAL;
+      }
+      free( new_name );
+   }
+
+   // load UG and RG information, if needed, but don't add it to the Volume until successfully given
+   // NOTE: since the whole volume_md structure is signed, there's no need to check the signatures of the UGs or RGs
+   struct ms_volume vol_UGs;
+   struct ms_volume vol_RGs;
+
+   memset( &vol_UGs, 0, sizeof(struct ms_volume) );
+   memset( &vol_RGs, 0, sizeof(struct ms_volume) );
+
+   bool loaded_ugs = false;
+   bool loaded_rgs = false;
+
+   // if UG information is given, then load it
+   if( volume_md->has_ugs() ) {
+      const ms::ms_volume_UGs& ugs = volume_md->ugs();
+
+      rc = ms_client_load_volume_UGs( &vol_UGs, &ugs );
+      if( rc != 0 ) {
+         errorf("ms_client_load_volume_UGs rc = %d\n", rc );
+         return rc;
+      }
+
+      loaded_ugs = true;
+   }
+
+   // if RG information is given, then load it
+   if( volume_md->has_rgs() ) {
+      const ms::ms_volume_RGs& rgs = volume_md->rgs();
+
+      rc = ms_client_load_volume_RGs( &vol_RGs, &rgs );
+      if( rc != 0 ) {
+         errorf("ms_client_load_volume_RGs rc = %d\n", rc );
+
+         if( loaded_ugs ) {
+            ms_volume_free( &vol_UGs );
+         }
+         
+         return rc;
+      }
+
+      loaded_rgs = true;
+   }
+
+   if( loaded_ugs ) {
+      // got UG information
+      vol->num_UG_creds = vol_UGs.num_UG_creds;
+      vol->UG_creds = vol_UGs.UG_creds;
+      vol->UG_version = vol_UGs.UG_version;
+   }
+   else {
+      vol->UG_version = volume_md->ug_version();
+   }
+
+   if( loaded_rgs ) {
+      // got RG information
+      vol->num_RG_urls = vol_RGs.num_RG_urls;
+      vol->RG_urls = vol_RGs.RG_urls;
+      vol->RG_version = vol_RGs.RG_version;
+   }
+   else {
+      vol->RG_version = volume_md->rg_version();
+   }
+
+   vol->volume_id = volume_md->volume_id();
+   vol->volume_owner_id = volume_md->owner_id();
+   vol->blocksize = volume_md->blocksize();
+   vol->volume_version = volume_md->volume_version();
+
+   if( vol->name == NULL )
+      vol->name = strdup( volume_md->name().c_str() );
+
+   return 0;
+}
+
+
+static void ms_client_free_volumes( struct ms_volume** volumes, int num_volumes ) {
+   for( int i = 0; i < num_volumes; i++ ) {
+      ms_volume_free( volumes[i] );
+      free( volumes[i] );
+   }
+}
+
+// load a registration message
+int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_registration_metadata* registration_md ) {
+
+   int rc = 0;
+
+   struct UG_cred cred;
    memset( &cred, 0, sizeof(cred) );
 
-   cred.uid = volume_md.cred().owner_id();
-   cred.username = strdup( volume_md.cred().username().c_str() );
-   cred.password_hash = strdup( volume_md.cred().password_hash().c_str() );
+   // load cred
+   const ms::ms_volume_gateway_cred& my_cred = registration_md->cred();
+   rc = ms_client_load_cred( &cred, &my_cred );
+   if( rc != 0 ) {
+      errorf("ms_client_load_cred rc = %d\n", rc );
+      return rc;
+   }
 
-   ms_client_wlock( client );
+   ms_client_rlock( client );
 
-   client->owner_id = volume_md.cred().owner_id();
-   client->volume_owner_id = volume_md.owner_id();
-   client->volume_id = volume_md.volume_id();
-   client->blocksize = volume_md.blocksize();
+   // verify that our host and port match the MS's record
+   if( strcmp( cred.hostname, client->conf->hostname ) != 0 || cred.portnum != client->conf->portnum ) {
+      // wrong host
+      errorf("ERR: This UG is running on %s:%d, but the MS says it should be running on %s:%d.  Please log into the MS and update the UG record.\n", client->conf->hostname, client->conf->portnum, cred.hostname, cred.portnum );
+      ms_client_unlock( client );
 
-   if( client->file_url == NULL ) {
-      // build the /FILE/ url 
-      char* tmp = md_fullpath( client->url, "/FILE/", NULL );
-      char buf[50];
-      sprintf(buf, "%" PRIu64 "/", client->volume_id );
-
-      client->file_url = md_fullpath( tmp, buf, NULL );
-      free( tmp );
+      UG_cred_free( &cred );
+      return -ENOTCONN;
    }
 
    ms_client_unlock( client );
+
+   // allocate volumes
+   struct ms_volume** volumes = CALLOC_LIST( struct ms_volume*, registration_md->volumes_size() );
+   int num_volumes = registration_md->volumes_size();
+
+   if( num_volumes == 1 ) {
+      dbprintf("Bound to %d volume\n", num_volumes);
+   }
+   else {
+      dbprintf("Bound to %d volume\n", num_volumes);
+   }
+
    
-   uint64_t version = volume_md.volume_version();
-   uint64_t UG_version = volume_md.ug_version();
-   uint64_t RG_version = volume_md.rg_version();
+   for( int i = 0; i < num_volumes; i++ ) {
+      struct ms_volume* vol = CALLOC_LIST( struct ms_volume, 1 );
+      vol->reload_volume_key = true;         // get the public key
+
+      ms::ms_volume_metadata* vol_md = registration_md->mutable_volumes(i);
+
+      // load the Volume information
+      rc = ms_client_load_volume_metadata( vol, vol_md );
+      if( rc != 0 ) {
+         errorf("ms_client_load_volume_metadata(%s) rc = %d\n", vol_md->name().c_str(), rc );
+         
+         ms_client_free_volumes( volumes, i );
+         free( volumes );
+         UG_cred_free( &cred );
+         return rc;
+      }
+
+      volumes[i] = vol;
+
+      dbprintf("Volume %" PRIu64 ": '%s', version: %" PRIu64 ", UGs: %" PRIu64 ", RGs: %" PRIu64 "\n", vol->volume_id, vol->name, vol->volume_version, vol->UG_version, vol->RG_version );
+   }
 
    ms_client_view_wlock( client );
-
-   // preserve session information
-   uint64_t prev_UG_version = client->UG_version;
-   uint64_t prev_RG_version = client->RG_version;
-   
-   client->volume_version = version;
-   client->UG_version = UG_version;
-   client->RG_version = RG_version;
-   client->session_timeout = volume_md.session_timeout();
-   if( client->session_token ) {
-      md_free_user_entry( client->session_token );
-      memcpy( client->session_token, &cred, sizeof(cred) );
-   }
-   
+   client->volumes = volumes;
+   client->num_volumes = num_volumes;
    ms_client_view_unlock( client );
+   
 
-   if( prev_UG_version != UG_version ) {
-      rc = ms_client_reload_UGs( client );
-      dbprintf("ms_client_reload_UGs(%s) rc = %d\n", volume_name, rc );
+   ms_client_wlock( client );
+   
+   // new session password
+   curl_easy_setopt( client->ms_read, CURLOPT_USERPWD, NULL );
+   curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, NULL );
+   curl_easy_setopt( client->ms_view, CURLOPT_USERPWD, NULL );
+
+   if( client->userpass ) {
+      free( client->userpass );
    }
 
-   if( prev_RG_version != RG_version ) {
-      rc = ms_client_reload_RGs( client );
-      dbprintf("ms_client_reload_RGs(%s) rc = %d\n", volume_name, rc );
+   // userpass format:
+   // ${gateway_type}_${gateway_id}:${password}
+   char gateway_type_str[5];
+   char gateway_id_str[50];
+
+   if( client->session_password )
+      free( client->session_password );
+   
+   client->session_password = strdup( registration_md->session_password().c_str() );
+   client->session_timeout = registration_md->session_timeout();
+   
+   sprintf(gateway_id_str, "%" PRIu64, cred.gateway_id );
+   ms_client_gateway_type_str( client->gateway_type, gateway_type_str );
+
+   client->userpass = CALLOC_LIST( char, strlen(gateway_id_str) + 1 + strlen(gateway_type_str) + 1 + strlen(client->session_password) + 1 );
+   sprintf( client->userpass, "%s_%s:%s", gateway_type_str, gateway_id_str, client->session_password );
+
+   curl_easy_setopt( client->ms_read, CURLOPT_USERPWD, client->userpass );
+   curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, client->userpass );
+   curl_easy_setopt( client->ms_view, CURLOPT_USERPWD, client->userpass );
+
+   client->owner_id = registration_md->cred().owner_id();
+   client->gateway_id = registration_md->cred().gateway_id();
+
+   ms_client_unlock( client );
+
+   UG_cred_free( &cred );
+
+   return rc;
+}
+
+// dummy CURL read
+size_t ms_client_dummy_read( void *ptr, size_t size, size_t nmemb, void *userdata ) {
+   return size * nmemb;
+}
+
+// dummy CURL write
+size_t ms_client_dummy_write( char *ptr, size_t size, size_t nmemb, void *userdata) {
+   return size * nmemb;
+}
+
+// read an OpenID reply from the MS
+int ms_client_load_openid_reply( ms::ms_openid_provider_reply* oid_reply, char* openid_redirect_reply_bits, size_t openid_redirect_reply_bits_len ) {
+   // get back the OpenID provider reply
+   string openid_redirect_reply_bits_str = string( openid_redirect_reply_bits, openid_redirect_reply_bits_len );
+
+   bool valid = oid_reply->ParseFromString( openid_redirect_reply_bits_str );
+   if( !valid ) {
+      errorf("%s", "Invalid MS OpenID provider reply\n");
+      return -EINVAL;
    }
 
    return 0;
 }
 
 
+// begin the registration process.  Ask to be securely redirected from the MS to the OpenID provider
+// client must be read-locked
+int ms_client_begin_register( EVP_PKEY* my_key, CURL* curl, char const* username, char const* register_url, ms::ms_openid_provider_reply* oid_reply ) {
+
+   // extract our public key bits
+   char* key_bits = NULL;
+   long keylen = ms_client_dump_pubkey( my_key, &key_bits );
+   if( keylen <= 0 ) {
+      errorf("ms_client_load_pubkey rc = %ld\n", keylen );
+      md_openssl_error();
+      return (int)keylen;
+   }
+
+   // Base64 encode the key (which will also be url-encoded)
+   char* key_bits_encoded = NULL;
+   int rc = Base64Encode( key_bits, keylen, &key_bits_encoded );
+   if( rc != 0 ) {
+      errorf("Base64Encode rc = %d\n", rc );
+      free( key_bits );
+      return -EINVAL;
+   }
+
+   // url-encode the username
+   char* username_encoded = url_encode( username, strlen(username) );
+   
+   free( key_bits );
+
+   // post arguments
+   char* post = CALLOC_LIST( char, strlen("syndicatepubkey=") + strlen(key_bits_encoded) + 1 + strlen("openid_username") + 1 + strlen(username_encoded) + 1 );
+   sprintf( post, "openid_username=%s&syndicatepubkey=%s", username_encoded, key_bits_encoded );
+   
+   free( key_bits_encoded );
+   free( username_encoded );
+
+   response_buffer_t rb;      // will hold the OpenID provider reply
+   response_buffer_t header_rb;
+   
+   curl_easy_setopt( curl, CURLOPT_URL, register_url );
+   curl_easy_setopt( curl, CURLOPT_POST, 1L );
+   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, post );
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, (void*)&rb );
+   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );
+   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_redirect_header_func );
+   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, (void*)&header_rb );
+
+   rc = curl_easy_perform( curl );
+
+   long http_response = 0;
+   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
+   curl_easy_setopt( curl, CURLOPT_URL, NULL );
+   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, NULL );
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
+   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, NULL );
+
+   free( post );
+
+   if( rc != 0 ) {
+      errorf("curl_easy_perform rc = %d\n", rc );
+      return -abs(rc);
+   }
+
+   if( http_response != 200 ) {
+      errorf("curl_easy_perform HTTP status = %ld\n", http_response );
+      return -http_response;
+   }
+
+   if( rb.size() == 0 ) {
+      errorf("%s", "no response\n");
+      response_buffer_free( &rb );
+      return -ENODATA;
+   }
+
+   char* response = response_buffer_to_string( &rb );
+   size_t len = response_buffer_size( &rb );
+
+   rc = ms_client_load_openid_reply( oid_reply, response, len );
+
+   free( response );
+   response_buffer_free( &rb );
+
+   return rc;
+}
+
+
+int ms_client_split_url_qs( char const* url, char** url_and_path, char** qs ) {
+   if( strstr( url, "?" ) != NULL ) {
+      char* url2 = strdup( url );
+      char* qs_start = strstr( url2, "?" );
+      *qs_start = '\0';
+
+      *qs = strdup( qs_start + 1 );
+      *url_and_path = url2;
+      return 0;
+   }
+   else {
+      return -EINVAL;
+   }
+}
+
+int ms_client_set_method( CURL* curl, char const* method, char const* url, char const* qs ) {
+
+   curl_easy_setopt( curl, CURLOPT_URL, url );
+   
+   if( strcmp(method, "POST") == 0 ) {
+      curl_easy_setopt( curl, CURLOPT_POST, 1L );
+
+      if( qs )
+         curl_easy_setopt( curl, CURLOPT_POSTFIELDS, qs );
+   }
+   else if( strcmp(method, "GET") == 0 ) {
+      curl_easy_setopt( curl, CURLOPT_HTTPGET, 1L );
+   }
+   else {
+      errorf("Invalid HTTP method '%s'\n", method );
+      return -EINVAL;
+   }
+   return 0;
+}
+
+// authenticate to the OpenID provider.
+// populate the return_to URL
+// client must be read-locked
+int ms_client_auth_op( char const* ms_username, char const* ms_password, CURL* curl, ms::ms_openid_provider_reply* oid_reply, char** return_to_method, char** return_to ) {
+
+   char* post = NULL;
+   char const* openid_redirect_url = oid_reply->redirect_url().c_str();
+   long http_response = 0;
+
+   // how we ask the OID provider to challenge us
+   char const* challenge_method = oid_reply->challenge_method().c_str();
+
+   // how we respond to the OID provider challenge
+   char const* response_method = oid_reply->response_method().c_str();
+
+   // how we redirect to the OID RP
+   char const* redirect_method = oid_reply->redirect_method().c_str();
+
+   dbprintf("%s challenge to %s\n", challenge_method, openid_redirect_url );
+
+   response_buffer_t header_rb;
+   
+   // inform the OpenID provider that we have been redirected by the RP by fetching the authentication page.
+   // The OpenID provider may then redirect us back.
+   curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 0L );     // catch 302
+   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_redirect_header_func );
+   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, (void*)&header_rb );
+   curl_easy_setopt( curl, CURLOPT_READFUNCTION, ms_client_dummy_read );
+   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, ms_client_dummy_write );
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
+   curl_easy_setopt( curl, CURLOPT_READDATA, NULL );
+   //curl_easy_setopt( curl, CURLOPT_VERBOSE, 1L );
+
+   char* url_and_path = NULL;
+   char* url_qs = NULL;
+   int rc = ms_client_split_url_qs( openid_redirect_url, &url_and_path, &url_qs );
+   if( rc != 0 ) {
+      // no query string
+      url_and_path = strdup( openid_redirect_url );
+   }
+   
+   rc = ms_client_set_method( curl, challenge_method, url_and_path, url_qs );
+   if( rc != 0 ) {
+      errorf("ms_client_set_method(%s) rc = %d\n", challenge_method, rc );
+      return rc;
+   }
+
+   rc = curl_easy_perform( curl );
+
+   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
+   curl_easy_setopt( curl, CURLOPT_URL, NULL );
+   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, NULL );
+   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, NULL );
+   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, NULL );
+
+   free( url_and_path );
+   if( url_qs )
+      free( url_qs );
+
+   if( rc != 0 ) {
+      errorf("curl_easy_perform rc = %d\n", rc );
+      response_buffer_free( &header_rb );
+      return -abs(rc);
+   }
+
+   if( http_response != 200 && http_response != 302 ) {
+      errorf("curl_easy_perform HTTP status = %ld\n", http_response );
+      response_buffer_free( &header_rb );
+      return -http_response;
+   }
+
+   if( http_response == 302 ) {
+      // authenticated already; we're being sent back
+      char* url = response_buffer_to_string( &header_rb );
+
+      dbprintf("return to %s", url );
+      
+      *return_to = url;
+      *return_to_method = strdup( redirect_method );
+      
+      response_buffer_free( &header_rb );
+
+      return 0;
+   }
+
+   response_buffer_free( &header_rb );
+
+   // authenticate to the OpenID provider
+   char const* extra_args = oid_reply->extra_args().c_str();
+   char const* username_field = oid_reply->username_field().c_str();
+   char const* password_field = oid_reply->password_field().c_str();
+   char const* auth_handler = oid_reply->auth_handler().c_str();
+
+   char* username_urlencoded = url_encode( ms_username, strlen(ms_username) );
+   char* password_urlencoded = url_encode( ms_password, strlen(ms_password) );
+   post = CALLOC_LIST( char, strlen(username_field) + 1 + strlen(username_urlencoded) + 1 +
+                             strlen(password_field) + 1 + strlen(password_urlencoded) + 1 +
+                             strlen(extra_args) + 1);
+
+   sprintf(post, "%s=%s&%s=%s&%s", username_field, username_urlencoded, password_field, password_urlencoded, extra_args );
+
+   free( username_urlencoded );
+   free( password_urlencoded );
+
+   dbprintf("%s authenticate to %s?%s\n", response_method, auth_handler, post );
+
+   rc = ms_client_set_method( curl, response_method, auth_handler, post );
+   if( rc != 0 ) {
+      errorf("ms_client_set_method(%s) rc = %d\n", response_method, rc );
+      return rc;
+   }
+
+   // send the authentication request
+   curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 0L );
+   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_redirect_header_func );
+   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, (void*)&header_rb );
+   curl_easy_setopt( curl, CURLOPT_READFUNCTION, ms_client_dummy_read );
+   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, ms_client_dummy_write );
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
+   curl_easy_setopt( curl, CURLOPT_READDATA, NULL );
+
+   rc = curl_easy_perform( curl );
+
+   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
+   curl_easy_setopt( curl, CURLOPT_URL, NULL );
+   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, NULL );
+   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, NULL );
+   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, NULL );
+
+   free( post );
+
+   if( rc != 0 ) {
+      errorf("curl_easy_perform rc = %d\n", rc );
+      response_buffer_free( &header_rb );
+      return -abs(rc);
+   }
+
+   if( http_response != 302 ) {
+      errorf("curl_easy_perform HTTP status = %ld\n", http_response );
+      response_buffer_free( &header_rb );
+      return -http_response;
+   }
+
+   // authenticated! we're being sent back
+   char* url = response_buffer_to_string( &header_rb );
+   response_buffer_free( &header_rb );
+   
+   *return_to = url;
+   *return_to_method = strdup( redirect_method );
+   return 0;
+}
+
+// complete the registration
+// client must not be locked
+int ms_client_complete_register( CURL* curl, char const* return_to_method, char const* return_to, ms::ms_registration_metadata* registration_md ) {
+
+   dbprintf("%s return to %s\n", return_to_method, return_to );
+
+   char* return_to_url_and_path = NULL;
+   char* return_to_qs = NULL;
+
+   char* bits = NULL;
+   ssize_t len = 0;
+   long http_response = 0;
+
+   int rc = ms_client_split_url_qs( return_to, &return_to_url_and_path, &return_to_qs );
+   if( rc != 0 ) {
+      // no qs
+      return_to_url_and_path = strdup( return_to );
+   }
+   
+   rc = ms_client_set_method( curl, return_to_method, return_to_url_and_path, return_to_qs );
+   if( rc != 0 ) {
+      errorf("ms_client_set_method(%s) rc = %d\n", return_to_method, rc );
+      free( return_to_url_and_path );
+      if( return_to_qs )
+         free( return_to_qs );
+      
+      return rc;
+   }
+
+   // get the registration data
+   len = md_download_file5( curl, &bits );
+
+   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
+
+   if( len < 0 ) {
+      errorf("md_download_file5 rc = %zd\n", len );
+      free( return_to_url_and_path );
+      if( return_to_qs )
+         free( return_to_qs );
+      return (int)len;
+   }
+
+   if( http_response != 200 ) {
+      errorf("md_download_file5 HTTP status = %ld\n", http_response );
+      free( return_to_url_and_path );
+      if( return_to_qs )
+         free( return_to_qs );
+      return -abs( (int)http_response );
+   }
+
+   // got the data
+   bool valid = registration_md->ParseFromString( string(bits, len) );
+   free( bits );
+
+   free( return_to_url_and_path );
+   if( return_to_qs )
+      free( return_to_qs );
+
+   if( !valid ) {
+      errorf( "%s", "invalid registration metadata\n" );
+      return -EINVAL;
+   }
+
+   return 0;
+}
+   
+   
+
+// register this gateway with the MS, using the SyndicateUser's OpenID username and password
+int ms_client_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password ) {
+
+   int rc = 0;
+   char* register_url = ms_client_register_url( client );
+
+   CURL* curl = curl_easy_init();
+   
+   ms::ms_openid_provider_reply oid_reply;
+   ms::ms_registration_metadata registration_md;
+
+   dbprintf("register at %s\n", register_url );
+
+   // enable the cookie parser
+   curl_easy_setopt( curl, CURLOPT_COOKIEFILE, "/COOKIE" );
+   
+   ms_client_rlock( client );
+   
+   md_init_curl_handle( curl, NULL, client->conf->metadata_connect_timeout );
+
+   // get info for the OpenID provider
+   rc = ms_client_begin_register( client->my_key, curl, username, register_url, &oid_reply );
+
+   free( register_url );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_begin_register rc = %d\n", rc);
+      ms_client_unlock( client );
+      curl_easy_cleanup( curl );
+      return rc;
+   }
+
+   // authenticate to the OpenID provider
+   char* return_to = NULL;
+   char* return_to_method = NULL;
+   rc = ms_client_auth_op( client->conf->ms_username, client->conf->ms_password, curl, &oid_reply, &return_to_method, &return_to );
+   if( rc != 0 ) {
+      errorf("ms_client_auth_op rc = %d\n", rc);
+      ms_client_unlock( client );
+      curl_easy_cleanup( curl );
+      return rc;
+   }
+
+   // complete the registration 
+   rc = ms_client_complete_register( curl, return_to_method, return_to, &registration_md );
+   if( rc != 0 ) {
+      errorf("ms_client_complete_register rc = %d\n", rc);
+      ms_client_unlock( client );
+      curl_easy_cleanup( curl );
+      return rc;
+   }
+
+   ms_client_unlock( client );
+
+   free( return_to );
+   free( return_to_method );
+
+   curl_easy_cleanup( curl );
+   
+   // load up the registration information, including our set of Volumes
+   rc = ms_client_load_registration_metadata( client, &registration_md );
+   if( rc != 0 ) {
+      errorf("ms_client_load_registration_metadata rc = %d\n", rc );
+      return rc;
+   }
+   
+   return rc;
+}
+
 // read-lock a client context 
 int ms_client_rlock( struct ms_client* client ) {
-   dbprintf("ms_client_rlock %p\n", client);
+   //dbprintf("ms_client_rlock %p\n", client);
    return pthread_rwlock_rdlock( &client->lock );
 }
 
 // write-lock a client context 
 int ms_client_wlock( struct ms_client* client ) {
-   dbprintf("ms_client_wlock %p\n", client);
+   //dbprintf("ms_client_wlock %p\n", client);
    return pthread_rwlock_wrlock( &client->lock );
 }
 
 // unlock a client context 
 int ms_client_unlock( struct ms_client* client ) {
-   dbprintf("ms_client_unlock %p\n", client);
+   //dbprintf("ms_client_unlock %p\n", client);
    return pthread_rwlock_unlock( &client->lock );
 }
 
 // read-lock a client context's view
 int ms_client_view_rlock( struct ms_client* client ) {
-   dbprintf("ms_client_view_rlock %p\n", client);
+   //dbprintf("ms_client_view_rlock %p\n", client);
    return pthread_rwlock_rdlock( &client->view_lock );
 }
 
 // write-lock a client context's view
 int ms_client_view_wlock( struct ms_client* client ) {
-   dbprintf("ms_client_view_wlock %p\n", client);
+   //dbprintf("ms_client_view_wlock %p\n", client);
    return pthread_rwlock_wrlock( &client->view_lock );
 }
 
 // unlock a client context's view
 int ms_client_view_unlock( struct ms_client* client ) {
-   dbprintf("ms_client_view_unlock %p\n", client);
+   //dbprintf("ms_client_view_unlock %p\n", client);
    return pthread_rwlock_unlock( &client->view_lock );
 }
 
@@ -864,13 +2396,13 @@ static inline int ms_client_put_update( update_set* updates, deadline_queue* dea
 
 // add or replace an existing update in the client context
 // return 0 on success 
-int ms_client_queue_update( struct ms_client* client, char const* path, struct md_entry* update, uint64_t deadline_ms, uint64_t deadline_delta ) {
+int ms_client_queue_update( struct ms_client* client, struct md_entry* update, uint64_t deadline_ms, uint64_t deadline_delta ) {
 
    int rc = 0;
 
    ms_client_wlock( client );
 
-   long path_hash = md_hash( path );
+   long path_hash = ms_client_hash( update->volume, update->path );
 
    if( client->updates->count( path_hash ) == 0 ) {
       // not yet added
@@ -950,19 +2482,19 @@ int ms_client_remove_update( struct ms_client* client, long path_hash, struct md
 // clear an existing udate
 // return 0 on success
 // return -ENOENT on failure 
-int ms_client_clear_update( struct ms_client* client, char const* path ) {
+int ms_client_clear_update( struct ms_client* client, uint64_t volume_id, char const* path ) {
    int rc = 0;
 
    ms_client_wlock( client );
 
-   rc = ms_client_remove_update( client, md_hash( path ), NULL, NULL );
+   rc = ms_client_remove_update( client, ms_client_hash( volume_id, path ), NULL, NULL );
 
    ms_client_unlock( client );
    return rc;
 }
 
 // post data
-static int ms_client_send( struct ms_client* client, char const* data, size_t len ) {
+static int ms_client_send( struct ms_client* client, char const* url, char const* data, size_t len ) {
    struct curl_httppost *post = NULL, *last = NULL;
    int rc = 0;
    response_buffer_t* rb = new response_buffer_t();
@@ -970,7 +2502,7 @@ static int ms_client_send( struct ms_client* client, char const* data, size_t le
    // send as multipart/form-data file
    curl_formadd( &post, &last, CURLFORM_COPYNAME, "ms-metadata-updates", CURLFORM_BUFFER, "data", CURLFORM_BUFFERPTR, data, CURLFORM_BUFFERLENGTH, len, CURLFORM_END );
 
-   ms_client_begin_uploading( client, rb, post );
+   ms_client_begin_uploading( client, url, rb, post );
    
    // do the upload
    struct timespec ts, ts2;
@@ -1018,29 +2550,123 @@ static int ms_client_send( struct ms_client* client, char const* data, size_t le
 }
 
 
+// convert an update_set into a protobuf
+static int ms_client_serialize_update_set( update_set* updates, ms::ms_updates* ms_updates ) {
+   // populate the protobuf
+   for( update_set::iterator itr = updates->begin(); itr != updates->end(); itr++ ) {
+
+      struct md_update* update = &itr->second;
+      
+      ms::ms_update* ms_up = ms_updates->add_updates();
+
+      ms_up->set_type( update->op );
+
+      ms::ms_entry* ms_ent = ms_up->mutable_entry();
+
+      md_entry_to_ms_entry( ms_ent, &update->ent );
+   }
+
+   ms_updates->set_signature( string("") );
+   return 0;
+}
+
+
+// convert an update set to a string
+ssize_t ms_client_update_set_to_string( ms::ms_updates* ms_updates, char** update_text ) {
+   string update_bits;
+   bool valid;
+
+   try {
+      valid = ms_updates->SerializeToString( &update_bits );
+   }
+   catch( exception e ) {
+      errorf("%s", "failed to serialize update set\n");
+      return -EINVAL;
+   }
+
+   if( !valid ) {
+      errorf("%s", "failed ot serialize update set\n");
+      return -EINVAL;
+   }
+
+   *update_text = CALLOC_LIST( char, update_bits.size() + 1 );
+   memcpy( *update_text, update_bits.data(), update_bits.size() );
+   return (ssize_t)update_bits.size();
+}
+
+
+// sign an update set
+static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) {
+   ms_updates->set_signature( string("") );
+
+   string update_bits;
+   bool valid;
+   
+   try {
+      valid = ms_updates->SerializeToString( &update_bits );
+   }
+   catch( exception e ) {
+      errorf("%s", "failed to serialize update set\n");
+      return -EINVAL;
+   }
+
+   if( !valid ) {
+      errorf("%s", "failed to serialize update set\n");
+      return -EINVAL;
+   }
+
+   // sign this message
+   char* sigb64 = NULL;
+   size_t sigb64_len = 0;
+
+   int rc = md_sign_message( pkey, update_bits.data(), update_bits.size(), &sigb64, &sigb64_len );
+   if( rc != 0 ) {
+      errorf("md_sign_message rc = %d\n", rc );
+      return rc;
+   }
+
+   ms_updates->set_signature( string(sigb64, sigb64_len) );
+   free( sigb64 );
+   return 0;
+}
+
+
 // post a record on the MS, synchronously
-static int ms_client_post( struct ms_client* client, int op, struct md_entry* ent ) {
+static int ms_client_post( struct ms_client* client, uint64_t volume_id, int op, struct md_entry* ent ) {
    struct md_update up;
    up.op = op;
    memcpy( &up.ent, ent, sizeof(struct md_entry) );
-   
-   // send the update
-   struct md_update* update_list[] = {
-      &up,
-      NULL
-   };
 
+   update_set updates;
+   updates[ ms_client_hash( ent->volume, ent->path ) ] = up;
+
+   ms::ms_updates ms_updates;
+   ms_client_serialize_update_set( &updates, &ms_updates );
+
+   // sign it
+   int rc = ms_client_sign_updates( client->my_key, &ms_updates );
+   if( rc != 0 ) {
+      errorf("ms_client_sign_updates rc = %d\n", rc );
+      return rc;
+   }
+
+   // make it a string
    char* update_text = NULL;
-   ssize_t update_text_len = md_metadata_update_text( client->conf, &update_text, update_list );
+   ssize_t update_text_len = ms_client_update_set_to_string( &ms_updates, &update_text );
 
    if( update_text_len < 0 ) {
-      errorf("md_metadata_update_text rc = %zd\n", update_text_len );
+      errorf("ms_client_update_set_to_string rc = %zd\n", update_text_len );
       return (int)update_text_len;
    }
 
-   int rc = ms_client_send( client, update_text, update_text_len );
+   char* file_url = ms_client_file_url( client, volume_id, "/" );
+
+   // send it off
+   rc = ms_client_send( client, file_url, update_text, update_text_len );
    
    free( update_text );
+
+   free( file_url );
    
    return rc;
 }
@@ -1048,80 +2674,89 @@ static int ms_client_post( struct ms_client* client, int op, struct md_entry* en
 // create a file record on the MS, synchronously
 int ms_client_create( struct ms_client* client, struct md_entry* ent ) {
    ent->type = MD_ENTRY_FILE;
-   return ms_client_post( client, ms::ms_update::CREATE, ent );
+   return ms_client_post( client, ent->volume, ms::ms_update::CREATE, ent );
 }
 
 int ms_client_mkdir( struct ms_client* client, struct md_entry* ent ) {
    ent->type = MD_ENTRY_DIR;
-   return ms_client_post( client, ms::ms_update::CREATE, ent );
+   return ms_client_post( client, ent->volume, ms::ms_update::CREATE, ent );
 }
 
 // delete a record on the MS, synchronously
 int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
-   return ms_client_post( client, ms::ms_update::DELETE, ent );
+   return ms_client_post( client, ent->volume, ms::ms_update::DELETE, ent );
 }
 
 // update a record on the MS, synchronously
 int ms_client_update( struct ms_client* client, struct md_entry* ent ) {
-   return ms_client_post( client, ms::ms_update::UPDATE, ent );
+   return ms_client_post( client, ent->volume, ms::ms_update::UPDATE, ent );
 }
 
 
-// iterator data and method for serializing an update_set's worth of updates
-struct update_set_iterator_data {
-   update_set* updates;
-   update_set::iterator itr;
-};
-
-static struct md_update* update_set_iterator( void* arg ) {
-   struct update_set_iterator_data* itrdata = (struct update_set_iterator_data*)arg;
-
-   if( itrdata->itr == itrdata->updates->end() )
-      return NULL;
-
-   struct md_update* ret = &itrdata->itr->second;
-
-   dbprintf("update(path=%s, url=%s)\n", ret->ent.path, ret->ent.url);
-   
-   itrdata->itr++;
-   return ret;
-}
-
-static ssize_t serialize_update_set( struct md_syndicate_conf* conf, update_set* updates, char** buf ) {
-   struct update_set_iterator_data itrdata;
-   itrdata.updates = updates;
-   itrdata.itr = updates->begin();
-
-   return md_metadata_update_text3( conf, buf, update_set_iterator, &itrdata );
-}
-
-
-
-// NOTE: client must be write-locked before calling this!
-static int ms_client_send_updates( struct ms_client* client, update_set* updates ) {
+// send a batch of updates.
+// client must NOT be locked in any way.
+static int ms_client_send_updates( struct ms_client* client, update_set* all_updates ) {
 
    int rc = 0;
    
    // don't do anything if we have nothing to do
-   if( updates->size() == 0 ) {
+   if( all_updates->size() == 0 ) {
       // nothing to do
       return 0;
    }
 
-   // otherwise, upload the updates.
-   char* update_text = NULL;
-   ssize_t update_text_len = serialize_update_set( client->conf, updates, &update_text );
+   // group updates by volume
+   map< uint64_t, update_set > updates_by_volume;
 
-   if( update_text_len < 0 ) {
-      errorf("serialize_update_set rc = %zd\n", update_text_len );
-      return (int)update_text_len;
+   for( update_set::iterator itr = all_updates->begin(); itr != all_updates->end(); itr++ ) {
+      updates_by_volume[ itr->second.ent.volume ][ itr->first ] = itr->second;
    }
 
-   rc = ms_client_send( client, update_text, update_text_len );
+   // send by Volume
+   // TODO: do this in parallel?
+   for( map< uint64_t, update_set >::iterator itr = updates_by_volume.begin(); itr != updates_by_volume.end(); itr++ ) {
+      update_set* updates = &itr->second;
+      
+      // pack the updates into a protobuf
+      ms::ms_updates ms_updates;
+      ms_client_serialize_update_set( updates, &ms_updates );
 
-   free( update_text );
+      // sign it
+      rc = ms_client_sign_updates( client->my_key, &ms_updates );
+      if( rc != 0 ) {
+         errorf("ms_client_sign_updates rc = %d\n", rc );
+         return rc;
+      }
+
+      // make it a string
+      char* update_text = NULL;
+      ssize_t update_text_len = ms_client_update_set_to_string( &ms_updates, &update_text );
+
+      if( update_text_len < 0 ) {
+         errorf("ms_client_update_set_to_string rc = %zd\n", update_text_len );
+         return (int)update_text_len;
+      }
+
+      // which Volumes are we sending off to?
+      char* file_url = ms_client_file_url( client, itr->first, "/" );
+
+      // send it off
+      rc = ms_client_send( client, file_url, update_text, update_text_len );
+
+      free( update_text );
+
+      if( rc != 0 ) {
+         errorf("ms_client_send(%s) rc = %d\n", file_url, rc );
+         free( file_url );
+         return rc;
+      }
+
+      free( file_url );
+   }
+   
    return rc;
 }
+
 
 // post a pending update to the MS for a specific file, removing it from the update queue
 // return 0 on success
@@ -1129,12 +2764,12 @@ static int ms_client_send_updates( struct ms_client* client, update_set* updates
 // return -EREMOTEIO if the MS's response could not be interpreted
 // return <-100 if there was an unexpected HTTP status code
 // return -ENOENT if there is no pending update 
-int ms_client_sync_update( struct ms_client* client, char const* path ) {
+int ms_client_sync_update( struct ms_client* client, uint64_t volume_id, char const* path ) {
 
    struct md_update update;
    int rc = 0;
    
-   long path_hash = md_hash( path );
+   long path_hash = ms_client_hash( volume_id, path );
    uint64_t old_deadline = 0;
 
    ms_client_wlock( client );
@@ -1163,22 +2798,10 @@ int ms_client_sync_update( struct ms_client* client, char const* path ) {
    // if we failed, then put the updates back and try again later
    if( rc != 0 ) {
       errorf("ms_client_send_updates(%s) rc = %d\n", path, rc);
-
-      ms_client_wlock( client );
-      int replace_rc = ms_client_put_update( client->updates, client->deadlines, path_hash, &update, old_deadline );
-      ms_client_unlock( client );
-
-      if( replace_rc == -EEXIST ) {
-         // this update can be freed
-         md_update_free( &update );
-      }
    }
 
-   // free memory if it is no longer needed
-   else {
-      md_update_free( &update );
-   }
-
+   md_update_free( &update );
+   
    return rc;
 }
 
@@ -1240,7 +2863,7 @@ int ms_client_sync_updates( struct ms_client* client, uint64_t freshness_ms ) {
       for( update_set::iterator itr = updates.begin(); itr != updates.end(); itr++ ) {
          int put_rc = ms_client_put_update( client->updates, client->deadlines, itr->first, &itr->second, old_deadlines[itr->first] );
          if( put_rc == -EEXIST ) {
-            // this update can be freed, since we didn't put it back
+            // this update can be freed, since a later write overtook it
             md_update_free( &itr->second );
          }
       }
@@ -1285,9 +2908,9 @@ static char* ms_client_convert_url( struct md_syndicate_conf* conf, char const* 
 
 // get a set of metadata entries.
 // on success, populate result with the list of filesystem i-node metadatas on the path from / to the last entry
-int ms_client_resolve_path( struct ms_client* client, char const* path, vector<struct md_entry>* result_dirs, vector<struct md_entry>* result_base, struct timespec* lastmod, int* md_rc ) {
+int ms_client_resolve_path( struct ms_client* client, uint64_t volume_id, char const* path, vector<struct md_entry>* result_dirs, vector<struct md_entry>* result_base, struct timespec* lastmod, int* md_rc ) {
    // calculate the URL of the entry
-   char* md_url = md_fullpath( client->file_url, path, NULL );
+   char* md_url = ms_client_file_url( client, volume_id, path );
 
    ssize_t len = 0;
    char* md_bits = NULL;
@@ -1314,6 +2937,8 @@ int ms_client_resolve_path( struct ms_client* client, char const* path, vector<s
    END_TIMING_DATA( ts, ts2, "MS recv" );
 
    int http_response = ms_client_end_downloading( client );
+
+   curl_slist_free_all( lastmod_header );
 
    // print out timing information
    ms_client_rlock( client );
@@ -1342,7 +2967,7 @@ int ms_client_resolve_path( struct ms_client* client, char const* path, vector<s
             struct md_entry ent;
             memset( &ent, 0, sizeof(ent));
             
-            int rc = ms_entry_to_md_entry( conf, entry, &ent );
+            int rc = ms_entry_to_md_entry( entry, &ent );
             if( rc != 0 ) {
                errorf("ms_entry_to_md_entry(%s) rc = %d\n", entry.path().c_str(), rc );
                break;
@@ -1363,7 +2988,7 @@ int ms_client_resolve_path( struct ms_client* client, char const* path, vector<s
             struct md_entry ent;
             memset( &ent, 0, sizeof(ent));
             
-            int rc = ms_entry_to_md_entry( conf, entry, &ent );
+            int rc = ms_entry_to_md_entry( entry, &ent );
             if( rc != 0 ) {
                errorf("ms_entry_to_md_entry(%s) rc = %d\n", entry.path().c_str(), rc );
                break;
@@ -1409,35 +3034,20 @@ int ms_client_claim( struct ms_client* client, char const* path ) {
    return -EACCES;
 }
 
-// authenticate a remote UG
-uint64_t ms_client_authenticate( struct ms_client* client, struct md_HTTP_connection_data* data, char* username, char* password ) {
-   uint64_t uid = MD_INVALID_UID;
-
-   // there must be a password, otherwise this is a guest (and can only access world-readable stuff)
-   if( password == NULL )
-      return MD_GUEST_UID;
-   
-   char* password_hash = sha256_hash_printable( password, strlen(password) );
-   
+// get a copy of the RG URLs
+char** ms_client_RG_urls_copy( struct ms_client* client, uint64_t volume_id ) {
    ms_client_view_rlock( client );
 
-   for( int i = 0; client->UG_creds[i] != NULL; i++ ) {
-      
+   struct ms_volume* vol = ms_client_find_volume( client, volume_id );
+   if( vol == NULL ) {
+      errorf("No such Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return NULL;
    }
    
-   ms_client_view_unlock( client );
-   
-   return uid;
-}
-
-
-// get a copy of the RG URLs
-char** ms_client_RG_urls_copy( struct ms_client* client ) {
-   ms_client_view_rlock( client );
-   
-   char** urls = CALLOC_LIST( char*, client->num_RG_urls + 1 );
-   for( int i = 0; i < client->num_RG_urls; i++ ) {
-      urls[i] = strdup( client->RG_urls[i] );
+   char** urls = CALLOC_LIST( char*, vol->num_RG_urls + 1 );
+   for( int i = 0; i < vol->num_RG_urls; i++ ) {
+      urls[i] = strdup( vol->RG_urls[i] );
    }
 
    ms_client_view_unlock( client );
@@ -1446,10 +3056,125 @@ char** ms_client_RG_urls_copy( struct ms_client* client ) {
 }
 
 // get the current view version
-uint64_t ms_client_volume_version( struct ms_client* client ) {
+uint64_t ms_client_volume_version( struct ms_client* client, uint64_t volume_id ) {
    ms_client_view_rlock( client );
-   uint64_t ret = client->volume_version;
+
+   struct ms_volume* vol = ms_client_find_volume( client, volume_id );
+   if( vol == NULL ) {
+      errorf("No such Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return 0;
+   }
+   
+   uint64_t ret = vol->volume_version;
    ms_client_view_unlock( client );
    return ret;
 }
 
+// get the current UG version
+uint64_t ms_client_UG_version( struct ms_client* client, uint64_t volume_id ) {
+   ms_client_view_rlock( client );
+
+   struct ms_volume* vol = ms_client_find_volume( client, volume_id );
+   if( vol == NULL ) {
+      errorf("No such Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return 0;
+   }
+   
+   uint64_t ret = vol->UG_version;
+   ms_client_view_unlock( client );
+   return ret;
+}
+
+// get the current RG version
+uint64_t ms_client_RG_version( struct ms_client* client, uint64_t volume_id ) {
+   ms_client_view_rlock( client );
+
+   struct ms_volume* vol = ms_client_find_volume( client, volume_id );
+   if( vol == NULL ) {
+      errorf("No such Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return 0;
+   }
+   
+   uint64_t ret = vol->RG_version;
+   ms_client_view_unlock( client );
+   return ret;
+}
+
+// get the Volume ID
+uint64_t ms_client_get_volume_id( struct ms_client* client, int i ) {
+   ms_client_view_rlock( client );
+
+   if( i < 0 || i >= client->num_volumes ) {
+      ms_client_view_unlock( client );
+      return -EINVAL;
+   }
+   
+   uint64_t ret = client->volumes[i]->volume_id;
+
+   ms_client_view_unlock( client );
+   return ret;
+}
+
+// get the Volume name
+char* ms_client_get_volume_name( struct ms_client* client, uint64_t volume_id ) {
+   ms_client_view_rlock( client );
+
+   struct ms_volume* vol = ms_client_find_volume( client, volume_id );
+   if( vol == NULL ) {
+      errorf("No such Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return NULL;
+   }
+
+   char* ret = strdup( vol->name );
+   
+   ms_client_view_unlock( client );
+   return ret;
+}
+
+// get the blocking factor
+uint64_t ms_client_get_volume_blocksize( struct ms_client* client, uint64_t volume_id ) {
+   ms_client_view_rlock( client );
+
+   struct ms_volume* vol = ms_client_find_volume( client, volume_id );
+   if( vol == NULL ) {
+      errorf("No such Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return 0;
+   }
+
+   uint64_t ret = vol->blocksize;
+
+   ms_client_view_unlock( client );
+   return ret;
+}
+
+// get the number of Volumes
+int ms_client_get_num_volumes( struct ms_client* client ) {
+   ms_client_view_rlock( client );
+   int ret = client->num_volumes;
+   ms_client_view_unlock( client );
+   return ret;
+}
+
+// schedule a Volume reload
+int ms_client_sched_volume_reload( struct ms_client* client, uint64_t volume_id ) {
+   int rc = 0;
+   
+   ms_client_view_wlock( client );
+
+   struct ms_volume* vol = ms_client_find_volume( client, volume_id );
+   if( vol == NULL ) {
+      errorf("No such Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return -ENOENT;
+   }
+
+   vol->early_reload = true;
+   
+   ms_client_view_unlock( client );
+   return rc;
+}

@@ -9,7 +9,7 @@
 int _DEBUG_SYNDICATE = 1;
 int _ERROR_SYNDICATE = 1;
 
-static struct md_syndicate_conf CONF;
+static struct md_syndicate_conf SYNDICATE_CONF;
 
 static unsigned long _connect_timeout = 30L;
 static unsigned long _transfer_timeout = 60L;     // 1 minute
@@ -34,10 +34,30 @@ char const* MD_HTTP_504_MSG = "Remote Server Timeout\n";
 
 char const* MD_HTTP_DEFAULT_MSG = "RESPONSE\n";
 
+static char* md_load_file_as_string( char const* path ) {
+   size_t size = 0;
+   char* ret = load_file( path, &size );
+
+   if( ret == NULL ) {
+      errorf("failed to load %s\n", path );
+      return NULL;
+   }
+
+   ret = (char*)realloc( ret, size + 1 );
+
+   ret[ size ] = 0;
+
+   return ret;
+}
+   
+   
+
 // initialize all global data structures
 static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char const* mountpoint ) {
 
    GOOGLE_PROTOBUF_VERIFY_VERSION;
+
+   md_init_OpenSSL();
 
    md_path_locks_create( &md_locks );
    
@@ -163,7 +183,41 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
       }
    }
 
-   memcpy( &CONF, c, sizeof(CONF) );
+
+   // load TLS credentials
+   if( c->server_key_path && c->server_cert_path ) {
+      
+      c->server_key = md_load_file_as_string( c->server_key_path );
+      c->server_cert = md_load_file_as_string( c->server_cert_path );
+
+      if( c->server_key == NULL ) {
+         errorf( "Could not read TLS private key %s\n", c->server_key_path );
+      }
+      if( c->server_cert == NULL ) {
+         errorf( "Could not read TLS certificate %s\n", c->server_cert_path );
+      }
+   }
+
+   /*
+   // load Volume public key
+   if( c->volume_public_key_path ) {
+      c->volume_public_key = md_load_file_as_string( c->volume_public_key_path );
+
+      if( c->volume_public_key == NULL ) {
+         errorf( "Could not read Volume public key %s\n", c->volume_public_key_path );
+      }
+   }
+   */
+   // load gateway public/private key
+   if( c->gateway_key_path ) {
+      c->gateway_key = md_load_file_as_string( c->gateway_key_path );
+
+      if( c->gateway_key == NULL ) {
+         errorf("Could not read Gateway key %s\n", c->gateway_key_path );
+      }
+   }
+   
+   memcpy( &SYNDICATE_CONF, c, sizeof(SYNDICATE_CONF) );
 
    return rc;
 }
@@ -188,6 +242,10 @@ int md_shutdown() {
 
    // shut down protobufs
    google::protobuf::ShutdownProtobufLibrary();
+
+   // shut down OpenSSL
+   ERR_free_strings();
+   md_openssl_thread_cleanup();
 
    return 0;
 }
@@ -386,12 +444,12 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       
       else if( strcmp( key, METADATA_USERNAME_KEY ) == 0 ) {
          // metadata server username
-         conf->metadata_username = strdup( values[0] );
+         conf->ms_username = strdup( values[0] );
       }
       
       else if( strcmp( key, METADATA_PASSWORD_KEY ) == 0 ) {
          // metadata server password
-         conf->metadata_password = strdup( values[0] );
+         conf->ms_password = strdup( values[0] );
       }
       else if( strcmp( key, METADATA_UID_KEY ) == 0 ) {
          // metadata server UID
@@ -402,6 +460,18 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          }
          else {
             conf->owner = v;
+         }
+      }
+
+      else if( strcmp( key, VIEW_RELOAD_FREQ_KEY ) == 0 ) {
+         // view reload frequency
+         char* end;
+         long v = strtol( values[0], &end, 10 );
+         if( values[0] != '\0' ) {
+            errorf("WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
+         }
+         else {
+            conf->view_reload_freq = v;
          }
       }
       
@@ -505,14 +575,25 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       
       else if( strcmp( key, SSL_PKEY_KEY ) == 0 ) {
          // server private key
-         conf->server_key = strdup( values[0] );
+         conf->server_key_path = strdup( values[0] );
       }
       
       else if( strcmp( key, SSL_CERT_KEY ) == 0 ) {
          // server certificate
-         conf->server_cert = strdup( values[0] );
+         conf->server_cert_path = strdup( values[0] );
       }
-      
+
+      else if( strcmp( key, GATEWAY_KEY_KEY ) == 0 ) {
+         // user-given public/private key
+         conf->gateway_key_path = strdup( values[0] );
+      }
+
+      /*
+      else if( strcmp( key, VOLUME_PUBKEY_KEY ) == 0 ) {
+         // Volume public key
+         conf->volume_public_key_path = strdup( values[0] );
+      }
+      */
       else if( strcmp( key, PORTNUM_KEY ) == 0 ) {
          char *end;
          long val = strtol( values[0], &end, 10 );
@@ -533,10 +614,17 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
             conf->content_url = tmp;
          }
       }
-            
+
+      /*
       else if( strcmp( key, VOLUME_NAME_KEY ) == 0 ) {
-         // volume ID
+         // volume name
          conf->volume_name = strdup( values[0] );
+      }
+      */
+
+      else if( strcmp( key, GATEWAY_NAME_KEY ) == 0 ) {
+         // gateway name
+         conf->gateway_name = strdup( values[0] );
       }
       
       else if( strcmp( key, GATEWAY_METADATA_KEY ) == 0 ) {
@@ -579,9 +667,11 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->replica_logfile = strdup(values[0]);
       }
 
+      /*
       else if( strcmp( key, BLOCKING_FACTOR_KEY ) == 0 ) {
          conf->blocking_factor = (unsigned long)strtol( values[0], NULL, 10 );
       }
+      */
 
       else if( strcmp( key, REPLICA_OVERWRITE_KEY ) == 0 ) {
          conf->replica_overwrite = (strtol(values[0], NULL, 10) != 0 ? true : false);
@@ -621,62 +711,34 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
 
 // free all memory associated with a server configuration
 int md_free_conf( struct md_syndicate_conf* conf ) {
-   if( conf->metadata_url ) {
-      free( conf->metadata_url );
-      conf->metadata_url = NULL;
+   void* to_free[] = {
+      (void*)conf->metadata_url,
+      (void*)conf->logfile_path,
+      (void*)conf->content_url,
+      (void*)conf->data_root,
+      (void*)conf->staging_root,
+      (void*)conf->cdn_prefix,
+      (void*)conf->proxy_url,
+      (void*)conf->ms_username,
+      (void*)conf->ms_password,
+      (void*)conf->server_key,
+      (void*)conf->server_cert,
+      (void*)conf->server_key_path,
+      (void*)conf->server_cert_path,
+      //(void*)conf->volume_public_key,
+      (void*)conf->gateway_key,
+      (void*)conf->gateway_key_path,
+      (void*)conf->replica_logfile,
+      (void*)conf->md_pidfile_path,
+      (void*)conf->gateway_metadata_root,
+      (void*)conf
+   };
+
+   for( int i = 0; to_free[i] != conf; i++ ) {
+      free( to_free[i] );
    }
-   if( conf->logfile_path ) {
-      free( conf->logfile_path );
-      conf->logfile_path = NULL;
-   }
-   if( conf->content_url ) {
-      free( conf->content_url );
-      conf->content_url = NULL;
-   }
-   if( conf->data_root ) {
-      free( conf->data_root );
-      conf->data_root = NULL;
-   }
-   if( conf->staging_root ) {
-      free( conf->staging_root );
-      conf->staging_root = NULL;
-   }
-   if( conf->cdn_prefix ) {
-      free( conf->cdn_prefix );
-      conf->cdn_prefix = NULL;
-   }
-   if( conf->proxy_url ) {
-      free( conf->proxy_url );
-      conf->proxy_url = NULL;
-   }
-   if( conf->metadata_username ) {
-      free( conf->metadata_username );
-      conf->metadata_username = NULL;
-   }
-   if( conf->metadata_password ) {
-      free( conf->metadata_password );
-      conf->metadata_password = NULL;
-   }
-   if( conf->server_key ) {
-      free( conf->server_key );
-      conf->server_key = NULL;
-   }
-   if( conf->server_cert ) {
-      free( conf->server_cert );
-      conf->server_cert = NULL;
-   }
-   if( conf->replica_logfile ) {
-      free( conf->replica_logfile );
-      conf->replica_logfile = NULL;
-   }
-   if( conf->md_pidfile_path ) {
-      free( conf->md_pidfile_path );
-      conf->md_pidfile_path = NULL;
-   }
-   if( conf->gateway_metadata_root ) {
-      free( conf->gateway_metadata_root );
-      conf->gateway_metadata_root = NULL;
-   }
+   
+   memset( conf, 0, sizeof(struct md_syndicate_conf) );
       
    return 0;
 }
@@ -692,10 +754,6 @@ void md_entry_free( struct md_entry* ent ) {
    if( ent->path ) {
       free( ent->path );
       ent->path = NULL;
-   }
-   if( ent->local_path ) {
-      free( ent->local_path );
-      ent->local_path = NULL;
    }
    if( ent->checksum ) {
       free( ent->checksum );
@@ -728,9 +786,6 @@ void md_entry_dup2( struct md_entry* src, struct md_entry* ret ) {
    ret->path = strdup( src->path );
    ret->url = strdup( src->url );
 
-   if( src->local_path )
-      ret->local_path = strdup( src->local_path );
-   
    if( src->checksum ) {
       ret->checksum = (unsigned char*)calloc( SHA_DIGEST_LENGTH * sizeof(unsigned char), 1 );
       memcpy( ret->checksum, src->checksum, SHA_DIGEST_LENGTH );
@@ -1404,7 +1459,7 @@ ssize_t md_download_file3( char const* url, int fd, char const* username, char c
    curl_easy_setopt( curl_h, CURLOPT_URL, url );
    curl_easy_setopt( curl_h, CURLOPT_FOLLOWLOCATION, 1L );
    curl_easy_setopt( curl_h, CURLOPT_FILETIME, 1L );
-   curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, CONF.verify_peer ? 1L : 0L );
+   curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, SYNDICATE_CONF.verify_peer ? 1L : 0L );
    
    char* userpass = NULL;
    if( username && password ) {
@@ -1502,6 +1557,33 @@ int md_release_privileges() {
    return ret;
 }
 
+// get the scheme out of a URL
+char* md_url_scheme( char const* _url ) {
+   char* url = strdup( _url );
+
+   // find ://
+   char* host_port = strstr(url, "://" );
+   if( host_port == NULL ) {
+      free( url );
+      return NULL;
+   }
+   else {
+      // careful...pointer arithmetic 
+      int len = 0;
+      char* tmp = url;
+      while( tmp != host_port ) {
+         tmp++;
+         len++;
+      }
+
+      char* scheme = CALLOC_LIST( char, len + 1 );
+      strncpy( scheme, _url, len );
+
+      free( url );
+      return scheme;
+   }
+      
+}
 
 // get the hostname out of a URL
 char* md_url_hostname( char const* _url ) {
@@ -1782,7 +1864,7 @@ char* md_flatten_path( char const* path ) {
 // convert the URL into the CDN-ified form
 char* md_cdn_url( char const* url ) {
    // fix the URL so it is prefixed by the hostname and CDN, instead of being file://path or http://hostname/path
-   char* cdn_prefix = CONF.cdn_prefix;
+   char* cdn_prefix = SYNDICATE_CONF.cdn_prefix;
    char* host_path = md_strip_protocol( url );
    if( cdn_prefix == NULL || strlen(cdn_prefix) == 0 ) {
       // no prefix given
@@ -2306,7 +2388,7 @@ ssize_t md_metadata_update_text2( struct md_syndicate_conf* conf, char** buf, ve
 }
 
 // convert an md_entry to an ms_entry
-int md_entry_to_ms_entry( struct md_syndicate_conf* conf, ms::ms_entry* msent, struct md_entry* ent ) {
+int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
 
    if( ent->url == NULL ) {
       errorf("%s", "ent->url == NULL\n");
@@ -2326,7 +2408,7 @@ int md_entry_to_ms_entry( struct md_syndicate_conf* conf, ms::ms_entry* msent, s
    msent->set_type( ent->type == MD_ENTRY_FILE ? ms::ms_entry::MS_ENTRY_TYPE_FILE : ms::ms_entry::MS_ENTRY_TYPE_DIR );
    msent->set_path( string(path_sane) );
    msent->set_owner( ent->owner );
-   msent->set_acting_owner( ent->acting_owner );
+   msent->set_coordinator( ent->coordinator );
    msent->set_volume( ent->volume );
    msent->set_mode( ent->mode );
    msent->set_ctime_sec( ent->ctime_sec );
@@ -2345,7 +2427,7 @@ int md_entry_to_ms_entry( struct md_syndicate_conf* conf, ms::ms_entry* msent, s
 
 
 // convert ms_entry to md_entry
-int ms_entry_to_md_entry( struct md_syndicate_conf* conf, const ms::ms_entry& msent, struct md_entry* ent ) {
+int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent ) {
    memset( ent, 0, sizeof(struct md_entry) );
 
    ent->url = strdup( msent.url().c_str() );
@@ -2355,7 +2437,7 @@ int ms_entry_to_md_entry( struct md_syndicate_conf* conf, const ms::ms_entry& ms
    md_sanitize_path( ent->path );
    
    ent->owner = msent.owner();
-   ent->acting_owner = msent.acting_owner();
+   ent->coordinator = msent.coordinator();
    ent->volume = msent.volume();
    ent->mode = msent.mode();
    ent->mtime_sec = msent.mtime_sec();
@@ -2388,7 +2470,7 @@ ssize_t md_metadata_update_text3( struct md_syndicate_conf* conf, char** buf, st
 
       ms::ms_entry* ms_ent = ms_up->mutable_entry();
 
-      md_entry_to_ms_entry( conf, ms_ent, &update->ent );
+      md_entry_to_ms_entry( ms_ent, &update->ent );
    }
 
    string text;
@@ -2803,6 +2885,7 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       con_data->cls = NULL;
       con_data->status = 200;
       con_data->pp = pp;
+      con_data->ms = http_ctx->ms;
 
       char const* content_length_str = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_LENGTH );
       if( content_length_str != NULL )
@@ -3048,61 +3131,40 @@ void md_HTTP_cleanup( void *cls, struct MHD_Connection *connection, void **con_c
 }
 
 // set fields in an HTTP structure
-int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf ) {
+int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf, struct ms_client* client ) {
    memset( http, 0, sizeof(struct md_HTTP) );
    http->conf = conf;
    http->server_type = server_type;
+   http->ms = client;
    return 0;
 }
 
 
 // start the HTTP thread
 int md_start_HTTP( struct md_HTTP* http, int portnum ) {
-   char* server_key = NULL;
-   char* server_cert = NULL;
    
-   size_t server_key_len = 0;
-   size_t server_cert_len = 0;
    struct md_syndicate_conf* conf = http->conf;
    
-   if( conf->server_key && conf->server_cert ) {
-      server_key = load_file( conf->server_key, &server_key_len );
-      server_cert = load_file( conf->server_cert, &server_cert_len );
-      
-      if( !server_key ) {
-         errorf( "Could not read server private key %s\n", conf->server_key );
-      }
-      if( !server_cert ) {
-         errorf( "Could not read server certificate %s\n", conf->server_cert );
-      }
-
-      server_key = (char*)realloc( server_key, server_key_len+1 );
-      server_cert = (char*)realloc( server_cert, server_cert_len+1 );
-
-      server_key[server_key_len] = 0;
-      server_cert[server_cert_len] = 0;
-   }
-
    pthread_rwlock_init( &http->lock, NULL );
    
-   if( server_cert && server_key ) {
+   if( conf->server_cert && conf->server_key ) {
 
-      http->server_pkey = server_key;
-      http->server_cert = server_cert;
+      http->server_pkey = conf->server_key;
+      http->server_cert = conf->server_cert;
       
       // SSL enabled
       if( http->server_type == MHD_USE_THREAD_PER_CONNECTION ) {
          http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SSL, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_HTTPS_MEM_KEY, server_key, 
-                                                MHD_OPTION_HTTPS_MEM_CERT, server_cert,
+                                                MHD_OPTION_HTTPS_MEM_KEY, conf->server_key, 
+                                                MHD_OPTION_HTTPS_MEM_CERT, conf->server_cert,
                                                 MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
                                                 MHD_OPTION_HTTPS_PRIORITIES, "NORMAL",
                                                 MHD_OPTION_END );
       }
       else {
          http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SSL, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_HTTPS_MEM_KEY, server_key, 
-                                                MHD_OPTION_HTTPS_MEM_CERT, server_cert, 
+                                                MHD_OPTION_HTTPS_MEM_KEY, conf->server_key, 
+                                                MHD_OPTION_HTTPS_MEM_CERT, conf->server_cert, 
                                                 MHD_OPTION_THREAD_POOL_SIZE, conf->num_http_threads,
                                                 MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
                                                 MHD_OPTION_HTTPS_PRIORITIES, "NORMAL",
@@ -3110,7 +3172,7 @@ int md_start_HTTP( struct md_HTTP* http, int portnum ) {
       }
    
       if( http->http_daemon )
-         dbprintf( "Started HTTP server with SSL enabled (cert = %s, pkey = %s) on port %d\n", conf->server_cert, conf->server_key, portnum);
+         dbprintf( "Started HTTP server with SSL enabled (cert = %s, pkey = %s) on port %d\n", conf->server_cert_path, conf->server_key_path, portnum);
    }
    else {
       // SSL disabled
@@ -3142,17 +3204,6 @@ int md_start_HTTP( struct md_HTTP* http, int portnum ) {
 int md_stop_HTTP( struct md_HTTP* http ) {
    MHD_stop_daemon( http->http_daemon );
    http->http_daemon = NULL;
-
-   if( http->server_cert ) {
-      free( http->server_cert );
-      http->server_cert = NULL;
-   }
-
-   if( http->server_pkey ) {
-      free( http->server_pkey );
-      http->server_pkey = NULL;
-   }
-   
    return 0;
 }
 
@@ -3204,6 +3255,7 @@ int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_ver
       bool has_block = true;
       bool has_file_version = true;
       bool is_manifest = false;
+      bool valid = true;
 
       // is the leaf a manifest?
       if( strncmp( leaf + 1, "manifest", strlen("manifest") ) == 0 ) {
@@ -3227,10 +3279,36 @@ int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_ver
                   manifest_timestamp->tv_sec = mts_sec;
                   manifest_timestamp->tv_nsec = mts_nsec;
 
+                  *block_id = INVALID_BLOCK_ID;
+                  *block_version = -1;
+                  
                   *leaf = 0;
                }
+               else {
+                  // invalid
+                  valid = false;
+               }
+            }
+            else {
+               // invalid
+               valid = false;
             }
          }
+         else {
+            // invalid
+            valid = false;
+         }
+      }
+      if( !valid ) {
+         // bad formatting
+         *file_path = NULL;
+         *file_version = -1;
+         *block_id = INVALID_BLOCK_ID;
+         *block_version = -1;
+         manifest_timestamp->tv_sec = -1;
+         manifest_timestamp->tv_nsec = -1;
+         free( url_path );
+         return -EINVAL;
       }
 
       // is the leaf a block (or versioned block)?
@@ -3335,6 +3413,8 @@ int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_ver
       *file_version = -1;
       *block_id = INVALID_BLOCK_ID;
       *block_version = -1;
+      manifest_timestamp->tv_sec = -1;
+      manifest_timestamp->tv_nsec = -1;
       free( url_path );
       return -EINVAL;
    }
@@ -3500,9 +3580,20 @@ int md_init( int gateway_type,
              int portnum,
              char const* ms_url,
              char const* volume_name,
+             char const* gateway_name,
              char const* md_username,
-             char const* md_password ) {
+             char const* md_password,
+             char const* volume_key_file,
+             char const* my_key_file,
+             char const* tls_pkey_file,
+             char const* tls_cert_file
+           ) {
 
+   // need a Volume name with UG
+   if( gateway_type == SYNDICATE_UG && volume_name == NULL ) {
+      errorf("%s", "ERR: missing Volume name for UG\n");
+      return -EINVAL;
+   }
 
    util_init();
    md_default_conf( conf );
@@ -3517,9 +3608,6 @@ int md_init( int gateway_type,
       }  
    }
    
-   // set up libsyndicate runtime information
-   md_runtime_init( gateway_type, conf, NULL );
-
    // merge command-line options with the config....
    if( ms_url ) {
       if( conf->metadata_url )
@@ -3528,23 +3616,62 @@ int md_init( int gateway_type,
       conf->metadata_url = strdup( ms_url );
    }
    if( md_username ) {
-      if( conf->metadata_username )
-         free( conf->metadata_username );
+      if( conf->ms_username )
+         free( conf->ms_username );
 
-      conf->metadata_username = strdup( md_username );
+      conf->ms_username = strdup( md_username );
    }
    if( md_password ) {
-      if( conf->metadata_password )
-         free( conf->metadata_password );
+      if( conf->ms_password )
+         free( conf->ms_password );
 
-      conf->metadata_password = strdup( md_password );
+      conf->ms_password = strdup( md_password );
    }
+   /*
    if( volume_name ) {
       if( conf->volume_name )
          free( conf->volume_name );
 
       conf->volume_name = strdup( volume_name );
    }
+   */
+   if( gateway_name ) {
+      if( conf->gateway_name )
+         free( conf->gateway_name );
+
+      conf->gateway_name = strdup( gateway_name );
+   }
+   if( my_key_file ) {
+      if( conf->gateway_key_path )
+         free( conf->gateway_key_path );
+
+      if( conf->gateway_key )
+         free( conf->gateway_key );
+
+      conf->gateway_key_path = strdup( my_key_file );
+      conf->gateway_key = NULL;
+   }
+   if( tls_cert_file ) {
+      if( conf->server_cert_path )
+         free( conf->server_cert_path );
+
+      conf->server_cert_path = strdup( tls_cert_file );
+   }
+   if( tls_pkey_file ) {
+      if( conf->server_key_path )
+         free( conf->server_key_path );
+
+      conf->server_key_path = strdup( tls_pkey_file );
+   }
+   /*
+   if( volume_key_file ) {
+      if( conf->volume_public_key_path )
+         free( conf->volume_public_key_path );
+
+      conf->volume_public_key_path = strdup( volume_key_file );
+   }
+   */
+   
    if( portnum > 0 ) {
       conf->portnum = portnum;
    }
@@ -3554,6 +3681,9 @@ int md_init( int gateway_type,
       return -EINVAL;
    }
 
+   // set up libsyndicate runtime information
+   md_runtime_init( gateway_type, conf, NULL );
+
    // validate the config
    rc = md_check_conf( gateway_type, conf );
    if( rc != 0 ) {
@@ -3561,25 +3691,44 @@ int md_init( int gateway_type,
       return rc;
    }
 
-   // connect to the MS
-   rc = ms_client_init( client, conf, conf->metadata_username, conf->metadata_password );
+   // setup the client
+   rc = ms_client_init( client, gateway_type, conf );
    if( rc != 0 ) {
       errorf("ms_client_init rc = %d\n", rc );
       return rc;
    }
 
-   // get the volume metadata
-   rc = ms_client_get_volume_metadata( client, conf->volume_name );
+   // register the gateway
+   rc = ms_client_gateway_register( client, gateway_name, conf->ms_username, conf->ms_password );
    if( rc != 0 ) {
-      errorf("ms_client_get_volume_metadata rc = %d\n", rc );
+      errorf("ms_client_register rc = %d\n", rc );
       return rc;
    }
 
-   ms_client_rlock( client );
+   // if this is a UG, verify that we bound to the right volume
+   if( gateway_type == SYNDICATE_UG ) {
+      uint64_t volume_id = ms_client_get_volume_id( client, 0 );
+      char* volname = ms_client_get_volume_name( client, volume_id );
+
+      if( volname == NULL ) {
+         errorf("%s", "This gateway does not appear to be bound to any volumes!\n");
+         return -EINVAL;
+      }
+      
+      if( strcmp(volname, volume_name) != 0 ) {
+         errorf("ERR: This UG is not registered to Volume '%s'\n", volume_name );
+         free( volname );
+         return rc;
+      }
+      free( volname );
+   }
+
+   ms_client_wlock( client );
    conf->owner = client->owner_id;
-   conf->volume_owner = client->volume_owner_id;
-   conf->volume = client->volume_id;
-   conf->blocking_factor = client->blocksize;
+   conf->gateway = client->gateway_id;
+   //conf->volume_owner = client->volume_owner_id;
+   //conf->volume = client->volume_ids[0];
+   //conf->blocking_factor = client->blocksize;
    ms_client_unlock( client );
 
    return 0;
@@ -3587,48 +3736,33 @@ int md_init( int gateway_type,
 
 // default configuration
 int md_default_conf( struct md_syndicate_conf* conf ) {
+
+   memset( conf, 0, sizeof(struct md_syndicate_conf) );
    
    conf->default_read_freshness = 5000;
-   conf->default_write_freshness = 5000;
-   conf->logfile_path = NULL;       // filled by md_runtime_init
-   conf->cdn_prefix = NULL;
-   conf->proxy_url = NULL;
+   conf->default_write_freshness = 0;
    conf->gather_stats = false;
    conf->use_checksums = false;
-   conf->content_url = NULL;        // filled by md_runtime_init
-   conf->data_root = NULL;          // filled by md_runtime_init
-   conf->staging_root = NULL;       // filled by md_runtime_init
    conf->num_replica_threads = 1;
-   conf->replica_logfile = NULL;    // filled by md_runtime_init
    conf->httpd_portnum = 44444;
 
    conf->verify_peer = true;
    conf->num_http_threads = 1;
    conf->http_authentication_mode = HTTP_AUTHENTICATE_READWRITE;
-   conf->md_pidfile_path = NULL;
-   conf->gateway_metadata_root = NULL;
    conf->replica_overwrite = false;
-   conf->server_key = NULL;
-   conf->server_cert = NULL;
 
    conf->debug_read = false;
    conf->debug_lock = false;
 
-   conf->volume_name = NULL;
+   //conf->volume_name = NULL;
    conf->metadata_connect_timeout = 60;
    conf->portnum = 32780;
    conf->transfer_timeout = 60;
 
-   conf->metadata_url = NULL;
-   conf->metadata_username = NULL;
-   conf->metadata_password = NULL;
-   conf->blocking_factor = 0;
    conf->owner = getuid();
    conf->usermask = 0377;
-   conf->volume = 0;
-   conf->volume_owner = 0;
-   conf->mountpoint = NULL;      // filled by md_runtime_init
-   conf->hostname = NULL;        // filled by md_runtime_init
+
+   conf->view_reload_freq = 3600;  // once an hour
 
    return 0;
 }
@@ -3663,17 +3797,23 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, METADATA_URL_KEY );
    }
-   if( conf->metadata_username == NULL ) {
+   if( conf->ms_username == NULL ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, METADATA_USERNAME_KEY );
    }
-   if( conf->metadata_password == NULL ) {
+   if( conf->ms_password == NULL ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, METADATA_PASSWORD_KEY );
    }
+   /*
    if( conf->volume_name == NULL ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, VOLUME_NAME_KEY );
+   }
+   */
+   if( conf->gateway_name == NULL ) {
+      rc = -EINVAL;
+      fprintf(stderr, err_fmt, GATEWAY_NAME_KEY );
    }
    
    if( gateway_type == SYNDICATE_UG ) {
@@ -3704,3 +3844,183 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
 
    return rc;
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+// derived from http://www.cs.odu.edu/~cs772/sourcecode/NSwO/compiled/common.c
+
+void md_init_OpenSSL(void) {
+    if (!md_openssl_thread_setup() || !SSL_library_init())
+    {
+        errorf("%s", "OpenSSL initialization failed!\n");
+        exit(-1);
+    }
+    
+    OpenSSL_add_all_digests();
+    ERR_load_crypto_strings();
+}
+
+
+/* This array will store all of the mutexes available to OpenSSL. */
+static MD_MUTEX_TYPE *md_openssl_mutex_buf = NULL ;
+
+static void locking_function(int mode, int n, const char * file, int line)
+{
+  if (mode & CRYPTO_LOCK)
+    MD_MUTEX_LOCK(md_openssl_mutex_buf[n]);
+  else
+    MD_MUTEX_UNLOCK(md_openssl_mutex_buf[n]);
+}
+
+static unsigned long id_function(void)
+{
+  return ((unsigned long)MD_THREAD_ID);
+}
+
+int md_openssl_thread_setup(void)
+{
+  if( md_openssl_mutex_buf != NULL )
+     // already initialized
+     return 1;
+     
+  int i;
+  md_openssl_mutex_buf = (MD_MUTEX_TYPE *) malloc(CRYPTO_num_locks( ) * sizeof(MD_MUTEX_TYPE));
+  if(!md_openssl_mutex_buf)
+    return 0;
+  for (i = 0; i < CRYPTO_num_locks( ); i++)
+    MD_MUTEX_SETUP(md_openssl_mutex_buf[i]);
+  CRYPTO_set_id_callback(id_function);
+  CRYPTO_set_locking_callback(locking_function);
+  return 1;
+}
+
+int md_openssl_thread_cleanup(void)
+{
+  int i;
+  if (!md_openssl_mutex_buf)
+    return 0;
+  CRYPTO_set_id_callback(NULL);
+  CRYPTO_set_locking_callback(NULL);
+  for (i = 0; i < CRYPTO_num_locks( ); i++)
+    MD_MUTEX_CLEANUP(md_openssl_mutex_buf[i]);
+  free(md_openssl_mutex_buf);
+  md_openssl_mutex_buf = NULL;
+  return 1;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+
+// print a crypto error message
+int md_openssl_error() {
+   unsigned long err = ERR_get_error();
+   char buf[4096];
+
+   ERR_error_string_n( err, buf, 4096 );
+   errorf("OpenSSL error %ld: %s\n", err, buf );
+   return 0;
+}
+
+// verify a message, given a base64-encoded signature
+int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len ) {
+   char* sig_bin = NULL;
+   size_t sig_bin_len = 0;
+
+   int rc = Base64Decode( sigb64, sigb64len, &sig_bin, &sig_bin_len );
+   if( rc != 0 ) {
+      errorf("Base64Decode rc = %d\n", rc );
+      return -EINVAL;
+   }
+
+   const EVP_MD* sha256 = EVP_sha256();
+
+   EVP_MD_CTX *mdctx = EVP_MD_CTX_create();
+
+   rc = EVP_DigestVerifyInit( mdctx, NULL, sha256, NULL, public_key );
+   if( rc <= 0 ) {
+      errorf("EVP_DigestVerifyInit_ex rc = %d\n", rc);
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+
+   rc = EVP_DigestVerifyUpdate( mdctx, (void*)data, len );
+   if( rc <= 0 ) {
+      errorf("EVP_DigestVerifyUpdate rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+
+   rc = EVP_DigestVerifyFinal( mdctx, (unsigned char*)sig_bin, sig_bin_len );
+   if( rc <= 0 ) {
+      errorf("EVP_DigestVerifyFinal rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EBADMSG;
+   }
+
+   EVP_MD_CTX_destroy( mdctx );
+   free( sig_bin );
+
+   return 0;
+}
+
+
+// sign a message
+// on success, populate sigb64 and sigb64len with the base64-encoded signature and length, respectively
+int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len ) {
+
+   // sign this with SHA256
+   const EVP_MD* sha256 = EVP_sha256();
+
+   EVP_MD_CTX *mdctx = EVP_MD_CTX_create();
+
+   int rc = EVP_SignInit( mdctx, sha256 );
+   if( rc <= 0 ) {
+      errorf("EVP_SignInit rc = %d\n", rc);
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+
+   rc = EVP_SignUpdate( mdctx, (void*)data, len );
+   if( rc <= 0 ) {
+      errorf("EVP_SignUpdate rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+
+   // allocate the signature
+   unsigned char* sig_bin = CALLOC_LIST( unsigned char, EVP_PKEY_size( pkey ) );
+   unsigned int sig_bin_len;
+
+   rc = EVP_SignFinal( mdctx, sig_bin, &sig_bin_len, pkey );
+   if( rc <= 0 ) {
+      errorf("EVP_SignFinal rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+
+   // convert to base64
+   char* b64 = NULL;
+   rc = Base64Encode( (char*)sig_bin, sig_bin_len, &b64 );
+   if( rc != 0 ) {
+      errorf("Base64Encode rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      free( sig_bin );
+      return rc;
+   }
+
+   EVP_MD_CTX_destroy( mdctx );
+   free( sig_bin );
+
+   *sigb64 = b64;
+   *sigb64len = strlen(b64);
+
+   return 0;
+}
+

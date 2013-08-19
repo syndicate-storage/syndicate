@@ -6,7 +6,6 @@ import os
 source_files = """
     driver.cpp
     proc-handler.cpp
-    ../common/map-parser.cpp
 """
 
 # add source file search paths here
@@ -24,11 +23,12 @@ LIBPATH = """
 
 # add libraries here
 LIBS = """
-   syndicate
-   pthread
-   rt
-   xerces-c
-   m
+    AGcommon
+    syndicate
+    pthread
+    rt
+    xerces-c
+    m
 """
 
 # add additional CPPFLAGS here

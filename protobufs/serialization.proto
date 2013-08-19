@@ -8,7 +8,7 @@ package Serialization;
 message FileMetadata {
    required string fs_path = 6;
    required int64 file_version = 1;
-   required uint64 size = 2;
+   required int64 size = 2;
    required int64 mtime_sec = 3;
    required int32 mtime_nsec = 4;
    required string content_url = 5;
@@ -33,7 +33,7 @@ message BlockData {
 message TruncateRequest {
    required string fs_path = 1;
    required int64 file_version = 2;
-   required uint64 size = 3;
+   required int64 size = 3;
 }
 
 // detach a file or directory
@@ -52,7 +52,7 @@ message BlockURLSetMsg {
 
 // manifest
 message ManifestMsg {
-   required uint64 size = 1;
+   required int64 size = 1;
    required int64 file_version = 2;
    required int64 mtime_sec = 3;
    required int32 mtime_nsec = 4;
@@ -89,20 +89,23 @@ message WriteMsg {
       ERROR = 8;
    }
 
-   required uint64 write_id = 1;
-   required uint64 session_id = 2;
+   required uint64 volume_version = 1;
+   required uint64 UG_version = 2;
    required MsgType type = 3;
-   required uint32 user_id = 4;
-   required uint32 volume_id = 5;
+   required uint64 user_id = 4;
+   required uint64 volume_id = 5;
+   required uint64 gateway_id = 6;
 
-   optional FileMetadata metadata = 6;
-   optional BlockList blocks = 7;
-   optional BlockData blockdata = 8;
-   optional TruncateRequest truncate = 9;
-   optional DetachRequest detach = 10;
-   optional AcceptMsg accepted = 11;
+   optional FileMetadata metadata = 7;
+   optional BlockList blocks = 8;
+   optional BlockData blockdata = 9;
+   optional TruncateRequest truncate = 10;
+   optional DetachRequest detach = 11;
+   optional AcceptMsg accepted = 12;
 
-   optional int32 errorcode = 12;
-   optional string errortxt = 13;
+   optional int32 errorcode = 13;
+   optional string errortxt = 14;
+
+   required string signature = 15;     // cryptographic signature with the gateway's private key
 }
 

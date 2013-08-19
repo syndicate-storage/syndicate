@@ -6,6 +6,7 @@
 #include "readdir.h"
 
 // low-level read directory
+// dent must be read-locked
 struct fs_dir_entry** fs_entry_readdir_lowlevel( struct fs_core* core, char const* fs_path, struct fs_entry* dent ) {
    unsigned int num_ents = fs_entry_set_count( dent->children );
 
@@ -34,7 +35,7 @@ struct fs_dir_entry** fs_entry_readdir_lowlevel( struct fs_core* core, char cons
          char* parent_path = md_dirname( fs_path, NULL );
 
          if( fent != dent )
-            fs_entry_to_md_entry( core, parent_path, SYS_USER, 0, &d_ent->data );
+            fs_entry_to_md_entry( core, parent_path, SYS_USER, dent->volume, &d_ent->data );
          else
             fs_entry_to_md_entry( core, "..", dent, &d_ent->data );     // this is /
 

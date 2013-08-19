@@ -30,6 +30,7 @@ from storage.storagetypes import transactional, clock_gettime, get_time
 from MS.volume import Volume
 from MS.user import SyndicateUser as User
 from MS.entry import MSENTRY_TYPE_DIR
+from MS.msconfig import *
 
 @authenticate
 def myvolumes(request):
@@ -894,14 +895,14 @@ def createvolume(request):
             rc = db.make_root(volume,
                               ftype=MSENTRY_TYPE_DIR,
                               fs_path="/",
-                              url="http://syndicate-metadata.appspot.com",
+                              url=MS_URL,
                               version=1,
                               ctime_sec=now_sec,
                               ctime_nsec=now_nsec,
                               mtime_sec=now_sec,
                               mtime_nsec=now_nsec,
                               owner_id=volume.owner_id,
-                              acting_owner_id=volume.owner_id,
+                              coordinator_id=0,
                               volume_id=volume.volume_id,
                               mode=0755,
                               size=4096,

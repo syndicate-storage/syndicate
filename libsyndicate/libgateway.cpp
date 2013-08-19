@@ -301,7 +301,7 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
    
    con_data->ctx.hostname = md_con_data->remote_host;
    con_data->ctx.method = md_con_data->method;
-   con_data->ctx.size = md_con_data->conf->blocking_factor;
+   con_data->ctx.size = 0;    // TODO figure out which Volume
    con_data->ctx.err = 0;
    con_data->ctx.http_status = 0;
    
@@ -739,11 +739,11 @@ static void cleanup_stale_transactions( struct md_syndicate_conf* conf ) {
 
 
 // start up server
-static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf ) {
+static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf, struct ms_client* ms ) {
    
    md_path_locks_create( &gateway_md_locks );
 
-   md_HTTP_init( http, MHD_USE_SELECT_INTERNALLY | MHD_USE_POLL | MHD_USE_DEBUG, conf );
+   md_HTTP_init( http, MHD_USE_SELECT_INTERNALLY | MHD_USE_POLL | MHD_USE_DEBUG, conf, ms );
    md_HTTP_auth_mode( *http, conf->http_authentication_mode );
    md_HTTP_connect( *http, gateway_HTTP_connect );
    md_HTTP_GET( *http, gateway_GET_handler );
@@ -852,13 +852,18 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    char* volume_name = NULL;
    char* dataset = NULL;
    char* gw_driver = NULL;
+   char* gateway_name = NULL;
    bool pub_mode = false;
+   char* volume_pubkey_path = NULL;
+   char* gateway_pkey_path = NULL;
+   char* tls_pkey_path = NULL;
+   char* tls_cert_path = NULL;
    
    static struct option gateway_options[] = {
       {"config-file\0Gateway configuration file path",      required_argument,   0, 'c'},
       {"volume-name\0Name of the volume to join",           required_argument,   0, 'v'},
-      {"username\0Gateway authentication identity",         required_argument,   0, 'u'},
-      {"password\0Gateway authentication secret",           required_argument,   0, 'p'},
+      {"username\0User authentication identity",             required_argument,   0, 'u'},
+      {"password\0User authentication secret",               required_argument,   0, 'p'},
       {"port\0Syndicate port number",                       required_argument,   0, 'P'},
       {"MS\0Metadata Service URL",                          required_argument,   0, 'm'},
       {"foreground\0Run in the foreground",                 no_argument,         0, 'f'},
@@ -866,14 +871,19 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
       {"logfile\0Path to the log file",                     required_argument,   0, 'l'},
       {"pidfile\0Path to the PID file",                     required_argument,   0, 'i'},
       {"dataset\0Path to dataset",                     	    required_argument,   0, 'd'},
-      {"gw-driver\0Gateway driver",                         required_argument,   0, 'g'},
+      {"gw-driver\0Gateway driver",                         required_argument,   0, 'D'},
+      {"gateway-name\0Name of this gateway",                required_argument,   0, 'g'},
+      {"volume-pubkey\0Volume public key path (PEM)",       required_argument,   0, 'V'},
+      {"gateway-pkey\0Gateway private key path (PEM)",      required_argument,   0, 'G'},
+      {"tls-pkey\0Server TLS private key path (PEM)",       required_argument,   0, 'S'},
+      {"tls-cert\0Server TLS certificate path (PEM)",       required_argument,   0, 'C'},
       {"help\0Print this message",                          no_argument,         0, 'h'},
       {0, 0, 0, 0}
    };
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:g:h", gateway_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:D:hg:V:G:S:C:", gateway_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -920,12 +930,32 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
 	    pub_mode = true;
             break;
          }
-         case 'g': {
+         case 'D': {
             gw_driver = optarg;
             break;
          }
          case 'h': {
             gateway_usage( argv[0], gateway_options, 0 );
+            break;
+         }
+         case 'g': {
+            gateway_name = optarg;
+            break;
+         }
+         case 'V': {
+            volume_pubkey_path = optarg;
+            break;
+         }
+         case 'G': {
+            gateway_pkey_path = optarg;
+            break;
+         }
+         case 'S': {
+            tls_pkey_path = optarg;
+            break;
+         }
+         case 'C': {
+            tls_cert_path = optarg;
             break;
          }
          default: {
@@ -948,7 +978,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    struct ms_client client;
    struct md_syndicate_conf conf;
    
-   rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, username, password );
+   rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path );
    if( rc != 0 ) {
       exit(1);
    }
@@ -1004,7 +1034,7 @@ int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *cli
    // start gateway server
    struct md_HTTP http;
 
-   rc = gateway_init( &http, conf );
+   rc = gateway_init( &http, conf, client );
    if( rc != 0 ) {
       return rc;
    }
@@ -1036,7 +1066,7 @@ int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *cli
 int load_AG_driver( char *lib ) 
 {
    // open library
-   driver = dlopen( lib, RTLD_NOW );
+   driver = dlopen( lib, RTLD_LAZY );
    if ( driver == NULL ) {
       errorf( "load_AG_gateway_driver = %s\n", dlerror() );
       return -EINVAL;

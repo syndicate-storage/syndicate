@@ -197,6 +197,8 @@ int fs_entry_set_mod_time( struct fs_core* core, char const* fs_path, struct tim
 static int fs_entry_do_stat( struct fs_core* core, struct fs_entry* fent, struct stat* sb ) {
    int rc = 0;
 
+   memset( sb, 0, sizeof(sb) );
+   
    sb->st_dev = 0;
    //sb->st_ino = (ino_t)fent;
 
@@ -214,9 +216,9 @@ static int fs_entry_do_stat( struct fs_core* core, struct fs_entry* fent, struct
    sb->st_gid = fent->volume;
    sb->st_rdev = 0;
 
-   sb->st_blksize = core->conf->blocking_factor;
-   sb->st_blocks = (fent->size / core->conf->blocking_factor);
-   if( fent->size % core->conf->blocking_factor != 0 )
+   sb->st_blksize = core->blocking_factor;
+   sb->st_blocks = (fent->size / core->blocking_factor);
+   if( fent->size % core->blocking_factor != 0 )
       sb->st_blocks++;
 
    sb->st_atime = fent->atime;
@@ -239,13 +241,17 @@ static int fs_entry_do_stat( struct fs_core* core, struct fs_entry* fent, struct
 
 
 // stat
-int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uint64_t user, uint64_t volume ) {
+int fs_entry_stat_extended( struct fs_core* core, char const* path, struct stat* sb, bool* is_local, uint64_t user, uint64_t volume, bool revalidate ) {
 
-   // revalidate
-   int rc = fs_entry_revalidate_path( core, path );
-   if( rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
-      return -EREMOTEIO;
+   int rc = 0;
+   
+   if( revalidate ) {
+      // revalidate
+      rc = fs_entry_revalidate_path( core, volume, path );
+      if( rc != 0 ) {
+         errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
+         return -EREMOTEIO;
+      }
    }
    
    int err = 0;
@@ -261,9 +267,19 @@ int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uint
 
    // have entry read-locked
    fs_entry_do_stat( core, fent, sb );
+
+   if( is_local ) {
+      *is_local = URL_LOCAL( fent->url );
+   }
+   
    fs_entry_unlock( fent );
 
    return 0;
+}
+
+// stat
+int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uint64_t user, uint64_t volume ) {
+   return fs_entry_stat_extended( core, path, sb, NULL, user, volume, true );
 }
 
 
@@ -365,7 +381,7 @@ int fs_entry_fstat( struct fs_core* core, struct fs_file_handle* fh, struct stat
    }
 
    // revalidate
-   int rc = fs_entry_revalidate_path( core, fh->path );
+   int rc = fs_entry_revalidate_path( core, fh->volume, fh->path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
@@ -391,7 +407,7 @@ int fs_entry_fstat_dir( struct fs_core* core, struct fs_dir_handle* dh, struct s
    }
 
    // revalidate
-   int rc = fs_entry_revalidate_path( core, dh->path );
+   int rc = fs_entry_revalidate_path( core, dh->volume, dh->path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", dh->path, rc );
       fs_dir_handle_unlock( dh );
@@ -429,7 +445,7 @@ int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *sta
    fs_core_unlock( core );
 
    // populate the statv struct
-   statv->f_bsize = core->conf->blocking_factor;
+   statv->f_bsize = core->blocking_factor;
    statv->f_blocks = 0;
    statv->f_bfree = 0;
    statv->f_bavail = 0;

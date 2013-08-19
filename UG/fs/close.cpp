@@ -60,9 +60,14 @@ int fs_entry_close( struct fs_core* core, struct fs_file_handle* fh ) {
             fs_file_handle_unlock( fh );
 
          // synchronize outstanding updates
-         ms_client_sync_update( core->ms, fh->path );
+         rc = ms_client_sync_update( core->ms, fh->volume, fh->path );
 
          free( path );
+
+         if( rc != 0 && rc != -ENOENT ) {
+            errorf("ms_client_sync_update rc = %d\n", rc );
+            rc = -EIO;
+         }
       }
       else {
          fs_entry_unlock( fh->fent );

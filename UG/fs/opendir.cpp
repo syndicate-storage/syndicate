@@ -16,6 +16,7 @@ struct fs_dir_handle* fs_dir_handle_create( struct fs_entry* dir, char const* pa
    dirh->dent = dir;
    dirh->path = strdup(path);
    dirh->open_count = 0;
+   dirh->volume = dir->volume;
    pthread_rwlock_init( &dirh->lock, NULL );
    return dirh;
 }
@@ -40,7 +41,7 @@ struct fs_dir_handle* fs_entry_opendir( struct fs_core* core, char const* _path,
 
    md_sanitize_path( path );
    
-   int rc = fs_entry_revalidate_path( core, path );
+   int rc = fs_entry_revalidate_path( core, vol, path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
       *err = -EREMOTEIO;

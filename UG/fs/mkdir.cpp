@@ -59,7 +59,7 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_
    md_sanitize_path( fpath );
    
    // revalidate this path
-   int rc = fs_entry_revalidate_path( core, fpath );
+   int rc = fs_entry_revalidate_path( core, vol, fpath );
    if( rc != 0 ) {
       // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fpath, rc );

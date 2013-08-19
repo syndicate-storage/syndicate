@@ -1,0 +1,51 @@
+# build libAGshelldriver.so
+
+import os
+
+# add additional source files here
+source_files = """
+    map-parser.cpp
+    AG-util.cpp
+    reversion-daemon.cpp
+"""
+
+# add source file search paths here
+CPPPATH = """
+   #libsyndicate/
+   #UG
+   #build/out/protobufs
+"""
+
+# add library paths here
+LIBPATH = """
+   #build/out/libsyndicate
+"""
+
+# add libraries here
+LIBS = """
+   syndicate
+   pthread
+   rt
+   xerces-c
+   m
+"""
+
+# add additional CPPFLAGS here
+CPPFLAGS = "-g"
+
+
+# get our environment
+Import('env')
+env = env.Clone()
+
+env.Append(LIBS = Split(LIBS))
+env.Append(CPPPATH = Split(CPPPATH))
+env.Append(CPPFLAGS = CPPFLAGS)
+env.Append(LIBPATH = Split(LIBPATH))
+env.Append(LINKFLAGS = ['-Wl,--export-dynamic'])
+
+# generate the shared library
+libAGcommon = env.SharedLibrary( target="libAGcommon.so", source=[Split(source_files)] )
+
+Return( 'libAGcommon' )
+

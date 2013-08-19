@@ -26,10 +26,12 @@ char* http_validate_url_path( struct md_HTTP* http, char* url, struct md_HTTP_re
    return path;
 }
 
-// given an unversioned url_path to a block, verify that it exists locally
-bool http_block_exists( struct syndicate_state* state, char* file_path, uint64_t block_id, struct stat* sb ) {
-   int rc = fs_entry_block_stat( state->core, file_path, (uint64_t)block_id, sb );
-   return rc;
+// free an http_GET_request_data structure
+void http_request_data_free( struct http_request_data* reqdat ) {
+   if( reqdat->fs_path )
+      free( reqdat->fs_path );
+
+   memset( reqdat, 0, sizeof(struct http_request_data) );
 }
 
 
@@ -135,36 +137,22 @@ int http_make_default_headers( struct md_HTTP_response* resp, time_t last_modifi
 }
 
 
-
-// handle redirect requests
-// return 0 for handled
-// return 1 for not handled
-int http_handle_redirect( struct md_HTTP_response* resp, struct syndicate_state* state, char* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, struct timespec* manifest_timestamp, struct stat* sb, bool staging ) {
-   char* redirect_url = NULL;
-   int rc = http_get_redirect_url( &redirect_url, state, fs_path, file_version, block_id, block_version, manifest_timestamp, sb, staging );
-   if( rc < 0 ) {
-      char buf[200];
-      snprintf( buf, 200, "http_handle_redirect: http_get_redirect_url rc = %d\n", rc );
-      http_io_error_resp( resp, rc, buf );
-      return 0;
-   }
-   if( rc == 0 ) {
-      http_make_redirect_response( resp, redirect_url );
-      free( redirect_url );
-      return 0;
-   }
-   free( redirect_url );
-   return rc;
-}
-
 // generate the correct URL to be redirected to, if needed
 // return 0 if a new URL was generated
-// return 1 if a new URL was not generated, but there were no errors
-// return 2 if the requested data is not locally hosted
+// return HTTP_REDIRECT_NOT_HANDLED if a new URL was not generated, but there were no errors
+// return HTTP_REDIRECT_REMOTE if the requested data is not locally hosted
 // return negative if a new URL could not be generated
-int http_get_redirect_url( char** redirect_url, struct syndicate_state* state, char* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, struct timespec* manifest_timestamp, struct stat* sb, bool staging ) {
+int http_process_redirect( struct syndicate_state* state, char** redirect_url, struct stat* sb, struct http_request_data* reqdat ) {
 
+   memset( sb, 0, sizeof(struct stat) );
+   
    int rc = 0;
+
+   char* fs_path = reqdat->fs_path;
+   int64_t file_version = reqdat->file_version;
+   uint64_t block_id = reqdat->block_id;
+   int64_t block_version = reqdat->block_version;
+   struct timespec* manifest_timestamp = &reqdat->manifest_timestamp;
 
    // look up the file version
    int64_t latest_file_version = fs_entry_get_version( state->core, fs_path );
@@ -175,13 +163,21 @@ int http_get_redirect_url( char** redirect_url, struct syndicate_state* state, c
       return (int)latest_file_version;
    }
 
+   bool local = false;
+   rc = fs_entry_stat_extended( state->core, fs_path, sb, &local, SYS_USER, 0, false );
+
+   if( rc < 0 ) {
+      // could not be found
+      errorf("fs_entry_stat_extended(%s) rc = %d\n", fs_path, rc );
+      return rc;
+   }
+   
    // what is this a request for?
    // was this a request for a block?
    if( block_id != INVALID_BLOCK_ID ) {
 
-      // get the status of this block
-      rc = http_block_exists( state, fs_path, block_id, sb );
-      if( rc == -EXDEV ) {
+      bool block_local = fs_entry_is_block_local( state->core, fs_path, SYS_USER, 0, reqdat->block_id );
+      if( !block_local ) {
          // block exists, and is remote
          char* block_url = fs_entry_get_block_url( state->core, fs_path, block_id );
 
@@ -189,11 +185,6 @@ int http_get_redirect_url( char** redirect_url, struct syndicate_state* state, c
          *redirect_url = block_url;
 
          return HTTP_REDIRECT_HANDLED;
-      }
-      else if( rc < 0 ) {
-         // block could not be found
-         dbprintf(" block %s[%" PRId64 "] does not exist", fs_path, block_id );
-         return rc;
       }
       else {
          // otherwise, block exists and is local.
@@ -223,112 +214,129 @@ int http_get_redirect_url( char** redirect_url, struct syndicate_state* state, c
 
    // request for a file or directory or file manifest?
    else {
-
-      bool local = fs_entry_is_local( state->core, fs_path, SYS_USER, 0, &rc );
-
+      
       if( !local ) {
          // remote
          dbprintf("redirect to remote owner of '%s'\n", fs_path );
          return HTTP_REDIRECT_REMOTE;
       }
 
-      else if( local ) {
-         // request for file information 
-         if( S_ISREG( sb->st_mode ) ) {
-            if( manifest_timestamp->tv_sec >= 0 && manifest_timestamp->tv_nsec >= 0 ) {
-               // request for a manifest
+      // regular local file?
+      else if( S_ISREG( sb->st_mode ) ) {
+         if( manifest_timestamp->tv_sec >= 0 && manifest_timestamp->tv_nsec >= 0 ) {
+            // request for a manifest
 
-               // correct manifest timestamp?
-               struct timespec manifest_lastmod;
-               rc = fs_entry_manifest_lastmod( state->core, fs_path, &manifest_lastmod );
-               if( rc != 0 ) {
-                  // deleted!
-                  dbprintf("fs_entry_manifest_lastmod rc = %d\n", rc );
-                  return rc;
-               }
-
-               if( latest_file_version != file_version || (manifest_timestamp->tv_sec != manifest_lastmod.tv_sec || manifest_timestamp->tv_nsec != manifest_lastmod.tv_nsec) ) {
-                  // wrong file version; redirect to latest manifest
-                  struct timespec lastmod;
-                  memset( &lastmod, 0, sizeof(lastmod) );
-                  fs_entry_manifest_lastmod( state->core, fs_path, &lastmod );
-
-                  // redirect to the appropriate manifest URL
-                  char* txt = fs_entry_public_manifest_url( state->core, fs_path, latest_file_version, &lastmod );
-
-                  dbprintf("redirect to '%s'\n", txt );
-                  *redirect_url = txt;
-                  
-                  return HTTP_REDIRECT_HANDLED;
-               }
-               else {
-                  dbprintf("caller must serve manifest for '%s'\n", fs_path );
-                  return HTTP_REDIRECT_NOT_HANDLED;      // need to serve the manifest
-               }
+            // correct manifest timestamp?
+            struct timespec manifest_lastmod;
+            rc = fs_entry_manifest_lastmod( state->core, fs_path, &manifest_lastmod );
+            if( rc != 0 ) {
+               // deleted!
+               dbprintf("fs_entry_manifest_lastmod rc = %d\n", rc );
+               return rc;
             }
-            if( latest_file_version != file_version && manifest_timestamp->tv_sec <= 0 && manifest_timestamp->tv_nsec <= 0 ) {
-               // request for an older version of a local file
-               char* txt = fs_entry_public_file_url( state->core, fs_path, latest_file_version );
+
+            if( latest_file_version != file_version || (manifest_timestamp->tv_sec != manifest_lastmod.tv_sec || manifest_timestamp->tv_nsec != manifest_lastmod.tv_nsec) ) {
+               // wrong file version; redirect to latest manifest
+               struct timespec lastmod;
+               memset( &lastmod, 0, sizeof(lastmod) );
+               fs_entry_manifest_lastmod( state->core, fs_path, &lastmod );
+
+               // redirect to the appropriate manifest URL
+               char* txt = fs_entry_public_manifest_url( state->core, fs_path, latest_file_version, &lastmod );
 
                dbprintf("redirect to '%s'\n", txt );
-
                *redirect_url = txt;
+
                return HTTP_REDIRECT_HANDLED;
             }
+            else {
+               dbprintf("caller must serve manifest for '%s'\n", fs_path );
+               return HTTP_REDIRECT_NOT_HANDLED;      // need to serve the manifest
+            }
          }
-         dbprintf(" caller must handle request for '%s'\n", fs_path);
-         return HTTP_REDIRECT_NOT_HANDLED;         // no error, but not handled, meaning the remote host requested the latest version of a valid file or a directory
+         if( latest_file_version != file_version && manifest_timestamp->tv_sec <= 0 && manifest_timestamp->tv_nsec <= 0 ) {
+            // request for an older version of a local file
+            char* txt = fs_entry_public_file_url( state->core, fs_path, latest_file_version );
+
+            dbprintf("redirect to '%s'\n", txt );
+
+            *redirect_url = txt;
+            return HTTP_REDIRECT_HANDLED;
+         }
       }
+         
+      dbprintf(" caller must handle request for '%s'\n", fs_path);
+      return HTTP_REDIRECT_NOT_HANDLED;         // no error, but not handled, meaning the remote host requested the latest version of a valid file or a directory
    }
 
    return rc;
 }
 
 
-// extract useful information on a GET request
+
+// handle redirect requests
+// return HTTP_REDIRECT_HANDLED for handled
+// return (HTTP_REDIRECT_NOT_HANDLED, HTTP_REDIRECT_REMOTE) otherwise
+int http_handle_redirect( struct syndicate_state* state, struct md_HTTP_response* resp, struct stat* sb, struct http_request_data* reqdat ) {
+   char* redirect_url = NULL;
+   
+   int rc = http_process_redirect( state, &redirect_url, sb, reqdat );
+   if( rc < 0 ) {
+      char buf[200];
+      snprintf( buf, 200, "http_handle_redirect: http_get_redirect_url rc = %d\n", rc );
+      http_io_error_resp( resp, rc, buf );
+      return HTTP_REDIRECT_HANDLED;
+   }
+   if( rc == HTTP_REDIRECT_HANDLED ) {
+      http_make_redirect_response( resp, redirect_url );
+      free( redirect_url );
+      return HTTP_REDIRECT_HANDLED;
+   }
+   free( redirect_url );
+   return rc;
+}
+
+
+
+// extract useful information on a request
 // and handle redirect requests.
 // populate the given arguments and return 0 or 1 on success (0 means that no redirect occurred; 1 means a redirect occurred)
 // return negative on error
-int http_GET_preliminaries( struct md_HTTP_response* resp,
-                            char* url,
-                            struct md_HTTP* http_ctx,
-                            char** fs_path,
-                            int64_t* file_version,
-                            uint64_t* block_id,
-                            int64_t* block_version,
-                            struct timespec* manifest_timestamp,
-                            bool* staging ) {
+int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp, struct http_request_data* reqdat, char* url ) {
 
+   memset( reqdat, 0, sizeof(struct http_request_data) );
+   
    char* url_path = http_validate_url_path( http_ctx, url, resp );
    if( !url_path ) {
       char buf[200];
-      snprintf(buf, 200, "http_GET_preliminaries: http_validate_url_path returned NULL\n");
+      snprintf(buf, 200, "http_GET_parse_request: http_validate_url_path returned NULL\n");
       md_create_HTTP_response_ram( resp, "text/plain", 400, buf, strlen(buf) + 1 );
       free( url_path );
       return -400;
    }
 
    // parse the url_path into its constituent components
-   memset( manifest_timestamp, 0, sizeof(*manifest_timestamp) );
+   memset( &reqdat->manifest_timestamp, 0, sizeof(reqdat->manifest_timestamp) );
 
-   int rc = md_HTTP_parse_url_path( url_path, fs_path, file_version, block_id, block_version, manifest_timestamp, staging );
+   int rc = md_HTTP_parse_url_path( url_path, &reqdat->fs_path, &reqdat->file_version, &reqdat->block_id, &reqdat->block_version, &reqdat->manifest_timestamp, &reqdat->staging );
    if( rc != 0 && rc != -EISDIR ) {
       char buf[200];
-      snprintf(buf, 200, "http_GET_preliminaries: md_HTTP_parse_url_path rc = %d\n", rc );
+      snprintf(buf, 200, "http_GET_parse_request: md_HTTP_parse_url_path rc = %d\n", rc );
       md_create_HTTP_response_ram( resp, "text/plain", 400, buf, strlen(buf) + 1 );
       free( url_path );
       return -400;
    }
    else if( rc == -EISDIR ) {
-      *fs_path = strdup( url_path );
+      reqdat->fs_path = strdup( url_path );
    }
 
-   dbprintf(" fs_path = '%s', file_version = %" PRId64 ", block_id = %" PRId64 ", block_version = %" PRId64 ", manifest_timestamp = %ld.%ld, staging = %d\n", *fs_path, *file_version, *block_id, (int64_t)*block_version, manifest_timestamp->tv_sec, manifest_timestamp->tv_nsec, *staging );
+   dbprintf(" fs_path = '%s', file_version = %" PRId64 ", block_id = %" PRIu64 ", block_version = %" PRId64 ", manifest_timestamp = %ld.%ld, staging = %d\n",
+             reqdat->fs_path, reqdat->file_version, reqdat->block_id, reqdat->block_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, reqdat->staging );
 
-   if( *fs_path == NULL) {
+   if( reqdat->fs_path == NULL) {
       // nothing to do
       char buf[200];
-      snprintf(buf, 200, "http_GET_preliminaries: fs_path == NULL\n");
+      snprintf(buf, 200, "http_GET_parse_request: fs_path == NULL\n");
       md_create_HTTP_response_ram( resp, "text/plain", 400, buf, strlen(buf) + 1 );
       return -400;
    }

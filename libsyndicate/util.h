@@ -31,9 +31,11 @@
 #include <sys/un.h>
 #include <attr/xattr.h>
 #include <semaphore.h>
+#include <signal.h>
 #include <typeinfo>
 #include <openssl/sha.h>
 #include <regex.h>
+#include <iostream>
 #include <list>
 #include <map>
 #include <vector>
@@ -43,6 +45,9 @@
 #include <stdint.h>
 #include <pthread.h>
 #include <signal.h>
+#include <openssl/bio.h>
+#include <openssl/evp.h>
+#include <math.h>
 
 #include "libsyndicate.h"
 
@@ -55,7 +60,12 @@ using namespace std;
 struct thread_args {
    void* context;
    int thread_no;
+   struct sigaction act;
 };
+
+void block_all_signals();
+int install_signal_handler(int signo, struct sigaction *action, sighandler_t handler);
+int uninstall_signal_handler(int signo);
 
 // class that defines how work gets distributed to a thread.
 // A thread is indexed from 0 to N-1 for N threads.
@@ -79,7 +89,6 @@ public:
    
    int next_thread( int N, T* work ) { return rand() % N; }
 };
-
 
 // NOTE: implementation of this class is in the header file since g++ does not support 'export'
 template <class T>
@@ -360,6 +369,9 @@ protected:
    static void* thread_main_helper( void* arg ) {
       struct thread_args* args = (struct thread_args*)arg;
       
+      //Block all the signals
+      block_all_signals(); 
+
       Threadpool<T> *context = (Threadpool<T> *)args->context; 
       
       context->thread_main( args->thread_no );
@@ -391,7 +403,8 @@ private:
 };
 
 
-// HTTP transfer system
+// HTTP transfer system.
+// can be mixed into a Threadpool
 class CURLTransfer {
 public:
    
@@ -420,172 +433,6 @@ private:
 };
 
 
-/*
-class TransactionProcessor;
-
-// 2-phase transaction
-class Transaction {
-public:
-   Transaction() { }
-   virtual ~Transaction();
-   
-   // REQUESTOR ONLY
-   // prepare phase--get a request number
-   virtual int64_t prepare() = 0;
-   
-   // RESPONDER ONLY
-   // promise a request, giving back a REFERENCE to the data for this particular request (can be NULL)
-   virtual ssize_t promise( int64_t request, int64_t* chosen_id, char** buf ) = 0;
-   
-   // REQUESTOR ONLY
-   // submit data to be committed
-   virtual int accept( int64_t request, char* data, ssize_t len ) = 0;
-  
-   // RESPONDER ONLY
-   // acknowledge a commit, giving back a REFERENCE to the data that was committed
-   virtual ssize_t accepted( int64_t request, char** buf ) = 0;
-
-private:
-   
-   friend class TransactionProcessor;
-};
-
-
-typedef map< int64_t, Transaction* > transaction_set;
-
-// transaction processor--listens for transaction requests
-class TransactionProcessor {
-public:
-   TransactionProcessor() {
-      pthread_mutex_init( &this->client_lock, NULL );
-      pthread_mutex_init( &this->server_lock, NULL );
-      pthread_mutex_init( &this->next_lock, NULL );
-      pthread_mutex_init( &this->session_lock, NULL );
-      this->next_txn_id = 1;
-      this->next_ssn_id = 1;
-   }
-   
-   virtual ~TransactionProcessor() {
-      pthread_mutex_destroy( &this->client_lock );
-      pthread_mutex_destroy( &this->server_lock );
-      pthread_mutex_destroy( &this->next_lock );
-      pthread_mutex_destroy( &this->session_lock );
-   }
-   
-   // add a requestor (client) transaction
-   int add_request_transaction( int64_t id, Transaction* xn ) {
-      return this->add_transaction( id, xn, &this->client, &this->client_lock );
-   }
-   
-   // remove a requestor (client) transaction
-   Transaction* remove_request_transaction( int64_t id ) {
-      return this->remove_transaction( id, &this->client, &this->client_lock );
-   }
-   
-   // add a response (server) transaction
-   int add_response_transaction( int64_t id, Transaction* xn ) {
-      return this->add_transaction( id, xn, &this->server, &this->server_lock );
-   }
-   
-   // remove a response (server) transaction
-   Transaction* remove_response_transaction( int64_t id ) {
-      return this->remove_transaction( id, &this->server, &this->server_lock );
-   }
-   
-   // get the next transaction number
-   uint64_t next_transaction_id() {
-      pthread_mutex_lock( &this->next_lock );
-      uint64_t ret = this->next_txn_id;
-      this->next_txn_id++;
-      pthread_mutex_unlock( &this->next_lock );
-      return ret;
-   }
-   
-   // get the next session number
-   uint64_t next_session_id() {
-      pthread_mutex_lock( &this->session_lock );
-      uint64_t ret = this->next_ssn_id;
-      this->next_ssn_id++;
-      pthread_mutex_unlock( &this->session_lock );
-      return ret;
-   }
-   
-   // get the current session number
-   uint64_t get_session_id() {
-      pthread_mutex_lock( &this->session_lock );
-      uint64_t ret = this->next_ssn_id;
-      pthread_mutex_unlock( &this->session_lock );
-      return ret;
-   }
-   
-   // advance the transaction number to a new value.
-   // return the smaller value
-   uint64_t advance_transaction_id( uint64_t new_value ) {
-      pthread_mutex_lock( &this->next_lock );
-      uint64_t ret = min( new_value, this->next_txn_id );
-      this->next_txn_id = max( this->next_txn_id, new_value );
-      pthread_mutex_unlock( &this->next_lock );
-      return ret;
-   }
-   
-   // advance the session number to a new value.
-   // return the smaller value
-   uint64_t advance_session_id( uint64_t new_value ) {
-      pthread_mutex_lock( &this->session_lock );
-      uint64_t ret = min( new_value, this->next_ssn_id );
-      this->next_ssn_id = max( new_value, this->next_ssn_id );
-      pthread_mutex_unlock( &this->session_lock );
-      return ret;
-   }
-   
-private:
-   
-   // add a transaction
-   int add_transaction( int64_t id, Transaction* xn, transaction_set* xn_set, pthread_mutex_t* lock ) {
-      int rc = 0;
-      
-      pthread_mutex_lock( lock );
-      
-      transaction_set::iterator itr = xn_set->find( id );
-      if( itr == xn_set->end() )
-         (*xn_set)[ id ] = xn;
-      else
-         rc = -EEXIST;
-      
-      pthread_mutex_unlock( lock );
-      return rc;
-   }
-   
-   // remove a transaction
-   Transaction* remove_transaction( int64_t id, transaction_set* xn_set, pthread_mutex_t* lock ) {
-      Transaction* ret = NULL;
-      
-      pthread_mutex_lock( lock );
-      
-      transaction_set::iterator itr = xn_set->find( id );
-      if( itr != xn_set->end() ) {
-         ret = itr->second;
-         xn_set->erase( itr );
-      }
-      
-      pthread_mutex_unlock( lock );
-      return ret;
-   }
-   
-   
-   uint64_t next_txn_id;         // ID of my next transaction
-   uint64_t next_ssn_id;         // ID of the next session
-   
-   transaction_set client;       // outgoing (locally-started) transactions
-   transaction_set server;       // incoming (remotely-started) transactions
-   
-   pthread_mutex_t client_lock;
-   pthread_mutex_t server_lock;
-   pthread_mutex_t next_lock;
-   pthread_mutex_t session_lock;
-};
-*/
-
 // file functions
 char* dir_path( const char* path );
 char* fullpath( char* root, const char* path );
@@ -612,12 +459,15 @@ int rmdir_sane( char* dirpath );
 int dir_exists( char* dirpath );
 char* dirname( char* path, char* dest );
 int make_lockfiles( char* path, char* lnk );
-char* load_file( char* path, size_t* size );
+char* load_file( char const* path, size_t* size );
 char* url_encode( char const* str, size_t len );
 char* url_decode( char const* str, size_t* len );
 int reg_match(const char *string, char const *pattern);
 int timespec_cmp( struct timespec* t1, struct timespec* t2 );
 uint32_t CMWC4096(void);
+
+int Base64Decode(char* b64message, size_t len, char** buffer, size_t* buffer_len);
+int Base64Encode(const char* message, size_t len, char** buffer);
 
 int util_init(void);
 #endif

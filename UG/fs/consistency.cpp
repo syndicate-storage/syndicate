@@ -29,7 +29,7 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
 
    END_TIMING_DATA( ts, ts2, "replication" );
    
-   int rc = ms_client_sync_update( core->ms, fh->path );
+   int rc = ms_client_sync_update( core->ms, fh->volume, fh->path );
    if( rc != 0 ) {
       errorf("ms_client_sync_update(%s) rc = %d\n", fh->path, rc );
 
@@ -333,7 +333,7 @@ static bool can_reload( struct fs_entry* fent, struct md_entry* next_ent, struct
 // return -EINVAL if the path is not absolute or not normalized
 // return -EREMOTEIO if the MS returned invalid data
 // return -EUCLEAN if we could not make the FS consistent with the MS
-int fs_entry_revalidate_path( struct fs_core* core, char const* _path ) {
+int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const* _path ) {
    if( _path[0] != '/' )
       return -EINVAL;
 
@@ -358,7 +358,7 @@ int fs_entry_revalidate_path( struct fs_core* core, char const* _path ) {
    // if this entry exists locally, and it is not read stale, then don't refresh
    dbprintf("check '%s'\n", path );
 
-   struct fs_entry* child = fs_entry_resolve_path( core, path, SYS_USER, core->conf->volume, false, &rc );
+   struct fs_entry* child = fs_entry_resolve_path( core, path, SYS_USER, volume, false, &rc );
    if( child != NULL ) {
       needs_refresh = fs_entry_is_read_stale( child );
       fs_entry_unlock( child );
@@ -445,7 +445,7 @@ int fs_entry_revalidate_path( struct fs_core* core, char const* _path ) {
 
       // perform the query
       int ms_error = 0;
-      rc = ms_client_resolve_path( core->ms, path, &path_dirs, &path_ents, &lastmod, &ms_error );
+      rc = ms_client_resolve_path( core->ms, volume, path, &path_dirs, &path_ents, &lastmod, &ms_error );
 
       if( rc != 0 ) {
          // failed to read
@@ -923,44 +923,33 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    fent->manifest->get_lastmod( &manifest_mtime );
    
    // otherwise, we need to refresh.  GoGoGo!
-   char* manifest_url = fs_entry_remote_manifest_url( fs_path, fent->url, fent->version, &manifest_mtime );
+   char* manifest_url = fs_entry_remote_manifest_url( core, fs_path, fent->url, fent->version, &manifest_mtime );
    
    // try the primary, then the replicas
    Serialization::ManifestMsg manifest_msg;
    int rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
    if( rc < 0 ) {
-      char** RG_urls_save = NULL;
+      char** RG_urls = ms_client_RG_urls_copy( core->ms, core->volume );
       
       // try each replica
-      ms_client_view_rlock( core->ms );
-      if( core->ms->RG_urls ) {
+      if( RG_urls ) {
 
-         for( int i = 0; core->ms->RG_urls[i] != NULL; i++ ) {
+         for( int i = 0; RG_urls[i] != NULL; i++ ) {
             free( manifest_url );
 
             // next replica
-            manifest_url = fs_entry_remote_manifest_url( fs_path, core->ms->RG_urls[i], fent->version, &manifest_mtime );
-
-            // release MS, but check later to see if we got reloaded in the mean time
-            RG_urls_save = core->ms->RG_urls;
-            ms_client_view_unlock( core->ms );
+            manifest_url = fs_entry_remote_manifest_url( core, fs_path, RG_urls[i], fent->version, &manifest_mtime );
             
             rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
-
-            ms_client_view_rlock( core->ms );
 
             // success?
             if( rc == 0 )
                break;
-
-            // new RGs?
-            if( RG_urls_save != core->ms->RG_urls ) {
-               rc = -EAGAIN;
-               break;
-            }
          }
+
+         FREE_LIST( RG_urls );
       }
-      ms_client_view_unlock( core->ms );
+      
       if( rc < 0 ) {
          errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
       }

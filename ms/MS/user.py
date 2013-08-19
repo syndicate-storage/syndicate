@@ -63,6 +63,8 @@ class SyndicateUIDCounter( storagetypes.Object ):
    def make_key_name( cls, **args ):
       return "SyndicateUIDCounter"
 
+      
+
 class SyndicateUser( storagetypes.Object ):
    email = storagetypes.String()         # used as the username
    owner_id = storagetypes.Integer()     # UID field in Syndicate
@@ -214,16 +216,5 @@ class SyndicateUser( storagetypes.Object ):
       user_key = make_key( SyndicateUser, user_key_name )
       return user_key.delete()
 
-   """
-   @classmethod
-   def ListAll( cls, attrs ):
-      '''
-      Attributes must be in dictionary, using format "SyndicateUser.PROPERTY [operator]: [value]"
-      '''
-      qry = SyndicateUser.query()
-      ret = cls.ListAll_runQuery( qry, attrs )
-
-      return ret
-   """
    
    

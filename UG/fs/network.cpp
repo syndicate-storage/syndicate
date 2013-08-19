@@ -46,7 +46,7 @@ int fs_entry_download_cached( struct fs_core* core, char const* url, char** bits
       if( len < 0 ) {
          errorf("md_download_file(%s) rc = %zd\n", cdn_url, len );
       }
-      if( status_code != 200 ) {
+      else if( status_code != 200 ) {
          errorf("md_download_file(%s) HTTP status %d\n", cdn_url, status_code );
          len = -status_code;
 
@@ -134,18 +134,24 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, ch
    
    int ret = fs_entry_download_cached( core, block_url, &tmpbuf, &nr );
    
-   if( ret >= 0 && nr <= (signed)core->conf->blocking_factor ) {
+   if( ret > 0 && nr <= (signed)core->blocking_factor ) {
       memcpy( block_bits, tmpbuf, nr );
    }
-   else if( ret < 0 && ret > -200 ) {
+   else if( ret <= 0 && ret > -200 ) {
       // it is possible that this block was just collated back to the origin.
       // attempt to download from there
       errorf( "fs_entry_download_cached(%s) rc = %zd\n", block_url, nr );
 
       int status_code = 0;
       nr = md_download_file( block_url, &tmpbuf, &status_code );
-      
-      if( nr < 0 || status_code != 200 ) {
+
+      if( status_code == 204 ) {
+         // EAGAIN
+         errorf( "md_download_file(%s) not ready yet\n", block_url );
+         nr = -EAGAIN;
+      }
+
+      else if( nr < 0 || status_code != 200 ) {
 
          if( nr < 0 ) {
             errorf( "md_download_file(%s) rc = %zd\n", block_url, nr );
@@ -156,7 +162,7 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, ch
          }
          
       }
-      else if( nr >= 0 && nr <= (signed)core->conf->blocking_factor ) {
+      else if( nr >= 0 && nr <= (signed)core->blocking_factor ) {
          memcpy( block_bits, tmpbuf, nr );
       }
       else {
@@ -182,12 +188,41 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, ch
 
 // set up a write message
 int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core, Serialization::WriteMsg_MsgType type ) {
+   struct ms_client* client = core->ms;
+   
    writeMsg->set_type( type );
-   writeMsg->set_write_id( 0 );
-   writeMsg->set_session_id( 0 );
+   writeMsg->set_volume_version( ms_client_volume_version( client, core->volume ) );
+   writeMsg->set_ug_version( ms_client_UG_version( client, core->volume ) );
    writeMsg->set_user_id( core->conf->owner );
-   writeMsg->set_volume_id( core->conf->volume );
+   writeMsg->set_volume_id( core->volume );
+   writeMsg->set_gateway_id( core->conf->gateway );
+   return 0;
+}
 
+
+// sign a write message
+int fs_entry_sign_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core ) {
+   writeMsg->set_signature( string("") );
+
+   string data;
+   bool valid = writeMsg->SerializeToString( &data );
+   if( !valid )
+      return -EINVAL;
+
+   struct ms_client* client = core->ms;
+
+   char* sigb64 = NULL;
+   size_t sigb64len = 0;
+   
+   int rc = md_sign_message( client->my_key, data.data(), data.size(), &sigb64, &sigb64len );
+   if( rc != 0 ) {
+      errorf("md_sign_message rc = %d\n", rc );
+      return rc;
+   }
+
+   writeMsg->set_signature( string(sigb64, sigb64len) );
+
+   free( sigb64 );
    return 0;
 }
 
@@ -252,6 +287,12 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    curl_easy_setopt( curl_h, CURLOPT_WRITEDATA, &buf );
    curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, (core->conf->verify_peer ? 1L : 0L) );
 
+   int rc = fs_entry_sign_write_message( sendMsg, core );
+   if( rc != 0 ) {
+      errorf("fs_entry_sign_write_message rc = %d\n", rc );
+      return rc;
+   }
+   
    string msg_data_str;
    sendMsg->SerializeToString( &msg_data_str );
 
@@ -265,7 +306,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    BEGIN_TIMING_DATA( ts );
    
    dbprintf( "send WriteMsg type %d length %zu\n", sendMsg->type(), msg_data_str.size() );
-   int rc = curl_easy_perform( curl_h );
+   rc = curl_easy_perform( curl_h );
 
    END_TIMING_DATA( ts, ts2, "Remote write" );
    
@@ -279,14 +320,32 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       return rc;
    }
    else {
-      curl_easy_getinfo( curl_h, CURLINFO_RESPONSE_CODE, &rc );
-      curl_easy_cleanup( curl_h );
+      long http_status = 0;
+      curl_easy_getinfo( curl_h, CURLINFO_RESPONSE_CODE, &http_status );
 
-      if( rc != 200 ) {
-         errorf( "remote HTTP response %d\n", rc );
-         rc = -EREMOTEIO;
+      if( http_status != 200 ) {
+         errorf( "remote HTTP response %ld\n", http_status );
+
+         if( http_status == 202 ) {
+            // got back an error code
+            char* resp = response_buffer_to_string( &buf );
+            char* tmp = NULL;
+            long ret = strtol( resp, &tmp, 10 );
+            if( tmp != NULL ) {
+               rc = ret;
+            }
+            else {
+               errorf("Incoherent error message '%s'\n", resp);
+               rc = -EREMOTEIO;
+            }
+         }
+         else {
+            rc = -EREMOTEIO;
+         }
 
          response_buffer_free( &buf );
+         curl_easy_cleanup( curl_h );
+
          return rc;
       }
 
@@ -308,6 +367,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
 
       free( msg_buf );
       response_buffer_free( &buf );
+      curl_easy_cleanup( curl_h );
 
       if( !valid ) {
          // not a valid message

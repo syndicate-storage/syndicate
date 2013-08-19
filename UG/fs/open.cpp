@@ -20,6 +20,7 @@ struct fs_file_handle* fs_file_handle_create( struct fs_entry* ent, char const* 
    fh->fent = ent;
    fh->path = strdup(opened_path);
    fh->dirty = false;
+   fh->volume = ent->volume;
    pthread_rwlock_init( &fh->lock, NULL );
    return fh;
 }
@@ -31,6 +32,7 @@ int fs_file_handle_open( struct fs_file_handle* fh, int flags, mode_t mode ) {
    // is this a local file?
    fh->flags = flags;
    fh->open_count++;
+   fh->volume = fh->fent->volume;
    return 0;
 }
 
@@ -49,7 +51,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    }
 
    // revalidate this path
-   int rc = fs_entry_revalidate_path( core, path );
+   int rc = fs_entry_revalidate_path( core, vol, path );
    if( rc != 0 ) {
       // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
@@ -113,9 +115,6 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
 
       fs_entry_set_insert( parent->children, path_basename, child );
 
-      // get the parent's write ttl before unlocking
-      uint64_t write_ttl = parent->max_write_freshness;
-      
       fs_entry_unlock( parent );
       fs_core_fs_unlock( core );
 
@@ -126,33 +125,24 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
       struct md_entry data;
       fs_entry_to_md_entry( core, path, child, &data );
 
-      // create on the MS, if the parent directory's write time is 0.  Otherwise, queue it
-      if( write_ttl == 0 ) {
-         
-         err = ms_client_create( core->ms, &data );
-         
-         if( err != 0 ) {
-            errorf( "ms_client_create(%s) rc = %d\n", path, err );
-            err = -EREMOTEIO;
+      err = ms_client_create( core->ms, &data );
 
-            child->open_count = 0;
-            fs_entry_unlock( child );
-            fs_entry_detach_lowlevel( core, parent, child, true );
+      if( err != 0 ) {
+         errorf( "ms_client_create(%s) rc = %d\n", path, err );
+         err = -EREMOTEIO;
 
-            fs_core_wlock( core );
-            core->num_files--;
-            fs_core_unlock( core );
-         }
-         else {
-            fs_entry_unlock( child );
-         }
+         child->open_count = 0;
+         fs_entry_unlock( child );
+         fs_entry_detach_lowlevel( core, parent, child, true );
 
+         fs_core_wlock( core );
+         core->num_files--;
+         fs_core_unlock( core );
       }
       else {
-         // queue the update.  If it fails, the file will get unlinked later on 
-         err = ms_client_queue_update( core->ms, path, &data, currentTimeMillis() + write_ttl, 0 );
+         fs_entry_unlock( child );
       }
-
+      
       md_entry_free( &data );
    }
 
@@ -169,7 +159,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
    md_sanitize_path( path );
 
    // revalidate this path
-   int rc = fs_entry_revalidate_path( core, path );
+   int rc = fs_entry_revalidate_path( core, vol, path );
    if( rc != 0 ) {
       // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
@@ -373,7 +363,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
       else {
          // send a truncate request to the owner
          Serialization::WriteMsg *truncate_msg = new Serialization::WriteMsg();
-         truncate_msg->set_type( Serialization::WriteMsg::TRUNCATE );
+         fs_entry_init_write_message( truncate_msg, core, Serialization::WriteMsg::TRUNCATE );
 
          Serialization::TruncateRequest* truncate_req = truncate_msg->mutable_truncate();
          truncate_req->set_fs_path( path );
@@ -386,9 +376,6 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
          blocks->add_version( child->manifest->get_block_version( 0 ) );
 
          Serialization::WriteMsg *withdraw_ack = new Serialization::WriteMsg();
-
-         truncate_msg->set_write_id( 0 );
-         truncate_msg->set_session_id( 0 );
 
          *err = fs_entry_post_write( withdraw_ack, core, child->url, truncate_msg );
          if( *err < 0 ) {
