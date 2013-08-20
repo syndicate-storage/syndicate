@@ -34,6 +34,71 @@ Invalidation of Mappings:
 
 Mapping XML:
 
+    Given below is a file to shell command mapping XML.
+    
+    <?xml version="1.0"?>
+    <Map>
+        <Config>
+            <DSN>/tmp/shell-driver-cache</DSN>
+        </Config>
+        <Pair reval="10s 5m">
+            <File perm="740">/foo/bar</File>
+            <Query type="shell">/usr/bin/wget -q -O - http://www.google.com</Query>
+        </Pair>
+    </Map>
+    
+    <Map> Tag
+    ---------
+    Everything should be enclosed with <Map> tags. Within <Map> tags there can be any number of <Pair> tags but only
+    one <Config> tag.
+
+    <Config> Tag
+    ------------
+    <Config> tag contains configuration information for this mapping. At the moment only <DSN> tag is meaningful to
+    shell driver.
+    
+    <DSN> Tag
+    ---------
+    <DSN> tag encloses the absolute path to the directory where shell drivers caches output from programs it executes. 
+
+    <Pair> Tag
+    ----------
+    <Pair> glues a file name enclosed in <File> tag to shell command it's mapped to which is enclosed in <Query> tags.
+    
+
+    "reval" attribute can specify a timeout value for the mapping. After this amount of time the driver will revalidate 
+    this mapping as mentioned in Ivalidations of Mappings section.
+
+    Time can be specified in weeks(w), days(d), hours(h), minutes(m) and seconds(s). Given below are some examples on
+    specifying time.
+
+        - Timeout in 30 seconds
+            reval="30s"
+
+        - Timeout in 90 seconds
+            reval="90s"
+            reval="1m 30s"
+
+        - Timeout in 48 weeks and two days
+            reval="48w 2d"
+
+    Default value for "reval" attribute is 48 weeks.
+    
+    <File> Tag
+    ----------
+    <File> tag encloses the name of the file the command is mapped to. File name should be followed by an absolute 
+    path starting from the root (/). It is under this name we publish this mapping to MS.
+
+    "perm" attribute can be associated with <File> tag to specify file permission bits (POSIX). However AGs only support
+    read only files, therefore values assigned to "perm" will be overidden by the driver to read only.
+    
+    <Query> Tag
+    -----------
+    <Query> tag encloses the command the file is mapped to.
+    
+    "type" attribute is associated with <Query> tag and it is mandatory to specify "type" as 'shell' when using shell
+    driver as in the above example. Behaviour is undefined if "type" is not set to 'shell'.
+
 Build Instructions:
     - scons AG/drivers/sql
     - scons AG-SQL-driver-install
