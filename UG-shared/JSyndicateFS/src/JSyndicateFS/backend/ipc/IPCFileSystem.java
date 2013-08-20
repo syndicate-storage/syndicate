@@ -111,7 +111,7 @@ public class IPCFileSystem extends JSFSFileSystem {
         return status;
     }
     
-    private IPCFileHandle getFileHandle(IPCFileStatus status) throws IOException {
+    private IPCFileHandle getFileHandle(IPCFileStatus status, boolean readonly) throws IOException {
         if(status == null) {
             LOG.error("Can not get FileHandle from null status");
             throw new IllegalArgumentException("Can not get FileHandle from null status");
@@ -127,7 +127,7 @@ public class IPCFileSystem extends JSFSFileSystem {
             throw new IOException("Can not get file handle from status");
         }
         
-        return new IPCFileHandle(this, this.client, status, fi);
+        return new IPCFileHandle(this, this.client, status, fi, readonly);
     }
     
     private IPCFileHandle createNewFile(JSFSPath abspath) throws IOException {
@@ -158,7 +158,7 @@ public class IPCFileSystem extends JSFSFileSystem {
         IPCFileStatus status = new IPCFileStatus(this, abspath, stat);
         this.filestatus_cache.insert(abspath, status);
         
-        return getFileHandle(status);
+        return getFileHandle(status, false);
     }
     
     @Override
@@ -320,7 +320,7 @@ public class IPCFileSystem extends JSFSFileSystem {
             throw new IOException("Can not open the file to read");
         }
         
-        IPCFileHandle handle = getFileHandle(status);
+        IPCFileHandle handle = getFileHandle(status, true);
         if(handle == null) {
             throw new IOException("Can not open the file to read");
         }
@@ -338,17 +338,27 @@ public class IPCFileSystem extends JSFSFileSystem {
         JSFSPath absPath = getAbsolutePath(path);
         IPCFileStatus status = getFileStatus(absPath);
         if(status != null) {
-            // delete old file
-            delete(absPath);
+            if(!status.isFile()) {
+                throw new IOException("Can not overwrite data to non-file");
+            }
+            
+            IPCFileHandle handle = getFileHandle(status, false);
+            if(handle == null) {
+                throw new IOException("Can not open the file");
+            }
+            
+            handle.truncate(0);
+            
+            return new IPCOutputStream(this, handle);
+        } else {
+            // create new file
+            IPCFileHandle handle = createNewFile(absPath);
+            if(handle == null) {
+                throw new IOException("Can not create a file");
+            }
+
+            return new IPCOutputStream(this, handle);
         }
-        
-        // create new file
-        IPCFileHandle handle = createNewFile(absPath);
-        if(handle == null) {
-            throw new IOException("Can not open the file to write");
-        }
-        
-        return new IPCOutputStream(this, handle);
     }
 
     @Override
@@ -364,7 +374,7 @@ public class IPCFileSystem extends JSFSFileSystem {
             throw new IOException("Can not open the file to read");
         }
         
-        IPCFileHandle handle = getFileHandle(status);
+        IPCFileHandle handle = getFileHandle(status, true);
         if(handle == null) {
             throw new IOException("Can not open the file to read");
         }
