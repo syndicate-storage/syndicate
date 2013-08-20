@@ -1,7 +1,44 @@
 #include <libgateway.h>
 #include <odbc-handler.h>
 
-#define BLK_SIZE (global_conf->blocking_factor)
+ssize_t ag_blk_size = AG_BLOCK_SIZE();    
+
+//Blocking factor varies from volume to volume, therefore they
+//can be different from the blocking factor used by the SQL AG.
+//Thus we should translate a block requested by a UG to a valid,
+//AG block or a range of blocks...
+//SQL AG's block size is defined in ag_blk_size (block-index.h)
+block_translation_info volume_block_to_ag_block(gateway_ctx *ctx) {
+    //We use folowing equation to translate a volume block_id to
+    //a range of SQL AG block_id.
+
+    //cout<<"AG BLOCK SIZE: "<<ag_blk_size<<endl;
+    //cout<<"VOLUME BLOCK SIZE: "<<ctx->blocking_factor<<endl;
+    //cout<<"VOLUME BLOCK ID: "<<ctx->block_id<<endl;
+
+    block_translation_info bti;
+    bti.start_block_id = ((ctx->block_id * ctx->blocking_factor) / ag_blk_size);
+    //cout<<"START BLOCK: "<<bti.start_block_id<<endl;
+    
+    off_t end = ((ctx->block_id + 1) * ctx->blocking_factor) / ag_blk_size;
+    if ((((ctx->block_id + 1) * ctx->blocking_factor) % ag_blk_size) == 0) {
+	bti.end_block_id = end - 1; 
+    }
+    else {
+	bti.end_block_id = end; 
+    }
+    //cout<<"LAST BLOCK: "<<bti.end_block_id<<endl;
+
+    bti.start_block_offset = ag_blk_size - (((bti.start_block_id + 1) * ag_blk_size) 
+			    - (ctx->block_id * ctx->blocking_factor));
+    //cout<<"START_BLOCK_OFFSET: "<<bti.start_block_offset<<endl;
+
+    bti.end_block_offset = ((ctx->block_id + 1) * ctx->blocking_factor) 
+			    - (bti.end_block_id * ag_blk_size);
+    //cout<<"END_BLOCK_OFFSET: "<<bti.end_block_offset<<endl;
+
+    return bti;
+}
 
 void invalidate_entry(void *cls)
 {    
@@ -230,7 +267,7 @@ void ODBCHandler::execute_query(struct gateway_ctx *ctx, struct map_info* mi, ss
 	    last_row_len = 0;
 	    memset(query, 0, query_len);
 	    snprintf((char*)query, query_len, (const char*)ctx->sql_query_unbounded, start_row);
-	    db_read_size = BLK_SIZE + start_byte_offset;
+	    db_read_size = ag_blk_size + start_byte_offset;
 	    results = execute_query(query, db_read_size, &row_count, &len, &last_row_len);
 
 	    //If there is no data do not proceed...
@@ -246,7 +283,8 @@ void ODBCHandler::execute_query(struct gateway_ctx *ctx, struct map_info* mi, ss
 	    new_blkie->end_row = start_row + row_count;
 	    new_blkie->end_byte_offset = db_read_size - len;
 	    len += last_row_len;
-	    len = (BLK_SIZE > len - start_byte_offset)?len - start_byte_offset:BLK_SIZE;
+	    len = (ag_blk_size > len - start_byte_offset)?
+		    len - start_byte_offset:ag_blk_size;
 	    blk_index.update_block_index(ctx->file_path, blk_count, new_blkie);
 
 	    //Update start_row and start_byte_offset for the next block
@@ -255,10 +293,11 @@ void ODBCHandler::execute_query(struct gateway_ctx *ctx, struct map_info* mi, ss
 	}
     }
     else {
-	db_read_size = BLK_SIZE + blkie->start_byte_offset;
+	db_read_size = ag_blk_size + blkie->start_byte_offset;
 	results = execute_query(query, db_read_size, &row_count, &len, &last_row_len);
 	len += last_row_len;
-	len = (BLK_SIZE > len - blkie->start_byte_offset)?len - blkie->start_byte_offset:BLK_SIZE;
+	len = (ag_blk_size > len - blkie->start_byte_offset)?
+		len - blkie->start_byte_offset:ag_blk_size;
 	block_start_byte_offset = blkie->start_byte_offset;
     }
     if (len) {

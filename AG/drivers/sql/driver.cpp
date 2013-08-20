@@ -41,6 +41,9 @@ ReversionDaemon* revd = NULL;
 // true if init() is called
 bool initialized = false;
 
+// AG's block size
+ssize_t ag_block_size = AG_BLOCK_SIZE();
+
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, 
 					    struct gateway_ctx* ctx, struct md_entry* ent ) {
@@ -55,8 +58,8 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx,
     mmsg->set_manifest_mtime_sec( ent->mtime_sec );
     mmsg->set_manifest_mtime_nsec( 0 );
 
-    uint64_t num_blocks = ent->size / global_conf->blocking_factor;
-    if( ent->size % global_conf->blocking_factor != 0 )
+    uint64_t num_blocks = ent->size / ctx->blocking_factor;
+    if( ent->size % ctx->blocking_factor != 0 )
 	num_blocks++;
 
     Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
@@ -98,6 +101,12 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
     ssize_t ret = 0;
     ODBCHandler& odh = ODBCHandler::get_handle(dsn_string);
     struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
+    off_t volume_block_id = 0;
+    char* volume_block_buffer = NULL;
+    ssize_t buffer_size = 0; 
+    block_translation_info bti;
+    if (ctx->data == NULL)
+	bti = volume_block_to_ag_block(ctx);
 
     if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
 	// read from database using ctx->sql_query...
@@ -115,8 +124,67 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 	    ctx->complete = true;
 	}
 	else if (!ctx->complete) {
-	    if (ctx->data == NULL)
-		odh.execute_query(ctx, ctx->mi, global_conf->blocking_factor);
+	    if (ctx->data == NULL) {
+		volume_block_id = ctx->block_id;
+		//Loop through all the mapped AG blocks...
+		for (int i = bti.start_block_id; i <= bti.end_block_id; i++) {
+		    ctx->block_id = i;
+		    odh.execute_query(ctx, ctx->mi, ag_block_size);
+		    if (ctx->data == NULL) {
+			break;
+		    }
+
+		    if (bti.start_block_id == bti.end_block_id) {
+			//Volume block is mapped to a single AG SQL block.
+			if (ctx->data_len > bti.start_block_offset) {
+			    ssize_t chunk_size = (bti.end_block_offset - bti.start_block_offset);
+			    if (chunk_size <= (ctx->data_len - bti.start_block_offset))
+				buffer_size += chunk_size;
+			    else
+				buffer_size = ctx->data_len - bti.start_block_offset;
+			    volume_block_buffer = (char*)realloc(volume_block_buffer, buffer_size);
+			    memcpy(volume_block_buffer, ctx->data + bti.start_block_offset, 
+				    buffer_size);
+			}
+		    }
+		    else if (bti.start_block_id == i) {
+			//Copy data to volume_block_buffer from bti.start_block_offset.
+			if (ctx->data_len > bti.start_block_offset) {
+			    volume_block_buffer = (char*)realloc(volume_block_buffer, buffer_size 
+				    + (ctx->data_len - bti.start_block_offset));
+			    memcpy(volume_block_buffer + buffer_size, ctx->data + bti.start_block_offset,
+				    ctx->data_len - bti.start_block_offset);
+			    buffer_size += (ctx->data_len - bti.start_block_offset);
+			}
+		    }
+		    else if (bti.end_block_id == i) {
+			//Copy data to volume_block_buffer upto bti.end_block_offset.
+			ssize_t chunk_size = 0; 
+			if (ctx->data_len >= bti.end_block_offset)
+			    chunk_size = bti.end_block_offset;
+			else
+			    chunk_size = ctx->data_len;
+			volume_block_buffer = (char*)realloc(volume_block_buffer, buffer_size + chunk_size);
+			memcpy(volume_block_buffer + buffer_size, ctx->data, chunk_size);
+			buffer_size += chunk_size;
+		    }
+		    else {
+			//Copy entire block to volume_block_buffer.
+			volume_block_buffer = (char*)realloc(volume_block_buffer, buffer_size 
+				+ ctx->data_len);
+			memcpy(volume_block_buffer + buffer_size, ctx->data, ctx->data_len);
+			buffer_size += ctx->data_len;
+		    }
+		    if (ctx->data != NULL)
+			free(ctx->data);
+		    ctx->data_len = 0;
+		}
+		//Restore volume block id.
+		ctx->block_id = volume_block_id;
+		//Update ctx->data and ctx->data_len...
+		ctx->data = volume_block_buffer;
+		ctx->data_len = buffer_size;
+	    }
 	    if (ctx->data_len) {
 		size_t rem_len = ctx->data_len - ctx->data_offset;
 		size_t read_len = (rem_len > len)?len:rem_len;
@@ -136,7 +204,8 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
     }
     else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
 	// read from RAM
-	memcpy( buf, ctx->data + ctx->data_offset, MIN( (ssize_t)len, ctx->data_len - ctx->data_offset ) );
+	memcpy( buf, ctx->data + ctx->data_offset, MIN( (ssize_t)len, 
+				    ctx->data_len - ctx->data_offset ) );
 	ctx->data_offset += len;
 	ret = (ssize_t)len;
     }
@@ -178,7 +247,7 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
     struct md_entry* ent = itr->second;
 
     info->set_progress( ms::ms_gateway_blockinfo::COMMITTED );     // ignored, but needs to be filled in
-    info->set_blocking_factor( global_conf->blocking_factor );
+    info->set_blocking_factor( ctx->blocking_factor );
 
     info->set_file_version( file_version );
     info->set_block_id( ctx->block_id );
@@ -288,6 +357,8 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	       ctx->mi = mi;
 	       // Negative size switches libmicrohttpd to chunk transfer mode
 	       replica_ctx->size = -1;
+	       // Set blocking factor for this volume from replica_ctx
+	       ctx->blocking_factor = ms_client_get_volume_blocksize(mc, replica_ctx->volume_id);
 	       //TODO: Check the block status and set the http response appropriately
 
 	       replica_ctx->http_status = 200;
@@ -326,6 +397,8 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     set<char*, path_comp> dir_hierachy;
     mp->parse();
     unsigned char* dsn = mp->get_dsn();
+    int nr_volumes = ms_client_get_num_volumes(mc);
+    int vol_counter=0;
     init(dsn);
     //DRIVER_RDWR should strictly be called after init.
     DRIVER_RDWR(&driver_lock);
@@ -357,21 +430,29 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 	dir_hierachy.insert(dir_path);
     }
     set<char*, path_comp>::iterator it;
-    for( it = dir_hierachy.begin(); it != dir_hierachy.end(); it++ ) {
-	struct map_info mi;
-	publish (*it, MD_ENTRY_DIR, &mi);
-    }
+    //Publish to all the volumes
+    for (vol_counter=0; vol_counter<nr_volumes; vol_counter++) {
+	uint64_t volume_id = ms_client_get_volume_id(mc, vol_counter);
+	for( it = dir_hierachy.begin(); it != dir_hierachy.end(); it++ ) {
+	    struct map_info mi;
+	    publish (*it, MD_ENTRY_DIR, &mi, volume_id);
+	}
 
+	for (iter = FS2SQL->begin(); iter != FS2SQL->end(); iter++) {
+	    publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second, 
+			volume_id);
+	}
+    }
+    //Add map_info objects to reversion daemon
     for (iter = FS2SQL->begin(); iter != FS2SQL->end(); iter++) {
-	publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second);
 	if (revd)
 	    revd->add_map_info(iter->second);
     }
-    ms_client_destroy(mc);
     DRIVER_RETURN(0, &driver_lock);
 }
 
-static int publish(const char *fpath, int type, struct map_info* mi)
+static int publish(const char *fpath, int type, struct map_info* mi, 
+		    uint64_t volume_id)
 {
     //Called by publish_dataset, therefore locking neede.
     int i = 0;
@@ -406,7 +487,6 @@ static int publish(const char *fpath, int type, struct map_info* mi)
 	strncpy( ment->url, global_conf->content_url, content_url_len ); 
 
 	ment->checksum = NULL;
-	ment->local_path = NULL;
     }
     else { 
 	free(path); 
@@ -426,8 +506,7 @@ static int publish(const char *fpath, int type, struct map_info* mi)
     ment->mode = mi->file_perm;
     ment->max_read_freshness = 1000;
     ment->max_write_freshness = 1;
-    ment->volume = mc->conf->volume;
-    ment->owner = mc->conf->volume_owner;
+    ment->volume = volume_id;
     switch (type) {
 	case MD_ENTRY_DIR:
 	    ment->size = 4096;
@@ -475,6 +554,7 @@ void init(unsigned char* dsn) {
 	revd->run();
     }
     add_driver_event_handler(DRIVER_RECONF, reconf_handler, NULL);
+    add_driver_event_handler(DRIVER_TERMINATE, term_handler, NULL);
     driver_event_start();
     if (pthread_rwlock_init(&driver_lock, NULL) < 0) {
 	perror("pthread_rwlock_init");
@@ -490,17 +570,20 @@ void reversion(void *cls) {
     ms_client_update(mc, ment);
 }
 
-
 void* reconf_handler(void *cls) {
     cout<<"calling publish_dataset"<<endl;
     publish_dataset (NULL, NULL, NULL );
     return NULL;
 }
 
+void* term_handler(void *cls) {
+    //Nothing to do...
+    exit(0);
+}
+
 void driver_special_inval_handler(string file_path) {
     struct md_entry *mde = DATA[file_path];
     if (mde != NULL) {
-	cout<<">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>... "<<mde->path<<endl;
 	//Delete this file from all the volumes we are attached to.
 	ms_client_delete(mc, mde);
 	DATA.erase(file_path);
@@ -518,4 +601,9 @@ void driver_special_inval_handler(string file_path) {
     //NOTE: Do not delete mi, it will be deleted by map-parser.c::
     //update_fs_map.
 }
+
+extern "C" int controller(pid_t pid, int ctrl_flag) {
+    return controller_signal_handler(pid, ctrl_flag);
+}
+
 

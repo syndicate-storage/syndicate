@@ -133,6 +133,7 @@ struct fs_core {
    struct ms_client* ms;               // link to the MS
    Collator* col;                   // Collator interface
    uint64_t volume;                 // Volume we're bound to
+   uint64_t blocking_factor;        // block size
 
    pthread_rwlock_t lock;     // lock to control access to this structure
    pthread_rwlock_t fs_lock;  // lock to create/remove entries in the filesystem
@@ -142,7 +143,7 @@ struct fs_core {
 int fs_entry_set_config( struct md_syndicate_conf* conf );
 
 // fs_core operations
-int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf );
+int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t volume, uint64_t blocking_factor );
 int fs_core_destroy(struct fs_core* core);
 int fs_core_use_ms( struct fs_core* core, struct ms_client* ms );
 int fs_core_use_collator( struct fs_core* core, Collator* iop );
@@ -206,7 +207,7 @@ long fs_entry_name_hash( char const* name );
 struct fs_entry* fs_entry_resolve_path( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err );
 struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err, int (*ent_eval)( struct fs_entry*, void* ), void* cls );
 char* fs_entry_resolve_block( struct fs_core* core, struct fs_file_handle* fh, off_t offset );
-uint64_t fs_entry_block_id( off_t offset, struct md_syndicate_conf* conf );
+uint64_t fs_entry_block_id( struct fs_core* core, off_t offset );
 
 // operations on directory sets
 void fs_entry_set_insert( fs_entry_set* set, char const* name, struct fs_entry* child );

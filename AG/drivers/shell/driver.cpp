@@ -56,8 +56,9 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx,
     mmsg->set_manifest_mtime_sec( ent->mtime_sec );
     mmsg->set_manifest_mtime_nsec( 0 );
 
-    uint64_t num_blocks = ent->size / global_conf->blocking_factor;
-    if( ent->size % global_conf->blocking_factor != 0 )
+    //uint64_t num_blocks = ent->size / global_conf->blocking_factor;
+    uint64_t num_blocks = ent->size / ctx->blocking_factor;
+    if( ent->size % ctx->blocking_factor != 0 )
 	num_blocks++;
 
     Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
@@ -112,7 +113,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
     else if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
 	if (!ctx->complete) {
 	    ret = prch.execute_command(ctx, buf, len);
-	    if (ctx->data_offset == (ssize_t)global_conf->blocking_factor)
+	    if (ctx->data_offset == (ssize_t)ctx->blocking_factor)
 		ctx->complete = true;
 	    if (ret < 0) {
 		ret = 0;
@@ -167,7 +168,7 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
     struct md_entry* ent = itr->second;
 
     info->set_progress( ms::ms_gateway_blockinfo::COMMITTED );     // ignored, but needs to be filled in
-    info->set_blocking_factor( global_conf->blocking_factor );
+    info->set_blocking_factor( ctx->blocking_factor );
 
     info->set_file_version( file_version );
     info->set_block_id( ctx->block_id );
@@ -269,8 +270,9 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	   ctx->mi = mi;
 	   // Negative size switches libmicrohttpd to chunk transfer mode
 	   replica_ctx->size = -1;
+	   // Set blocking factor for this volume from replica_ctx
+	   ctx->blocking_factor = ms_client_get_volume_blocksize(mc, replica_ctx->volume_id);
 	   // Check the block status and set the http response appropriately
-
 	   ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
 	   block_status blk_stat = prch.get_block_status(ctx);
 	   if (blk_stat.in_progress) {
@@ -328,6 +330,8 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     set<char*, path_comp> dir_hierachy;
     mp->parse();
     unsigned char* cp = mp->get_dsn();
+    int nr_volumes = ms_client_get_num_volumes(mc);
+    int vol_counter=0;
     init(cp);
     //DRIVER_RDWR should strictly be called after init.
     DRIVER_RDWR(&driver_lock);
@@ -359,13 +363,21 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 	dir_hierachy.insert(dir_path);
     }
     set<char*, path_comp>::iterator it;
-    for( it = dir_hierachy.begin(); it != dir_hierachy.end(); it++ ) {
-	struct map_info mi;
-	publish (*it, MD_ENTRY_DIR, &mi);
-    }
+    //Publish to all the volumes
+    for (vol_counter=0; vol_counter<nr_volumes; vol_counter++) {
+	uint64_t volume_id = ms_client_get_volume_id(mc, vol_counter);
+	for( it = dir_hierachy.begin(); it != dir_hierachy.end(); it++ ) {
+	    struct map_info mi;
+	    publish (*it, MD_ENTRY_DIR, &mi, volume_id);
+	}
 
+	for (iter = FS2CMD->begin(); iter != FS2CMD->end(); iter++) {
+	    publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second, 
+			volume_id);
+	}
+    }
+    //Add map_info objects to reversion daemon
     for (iter = FS2CMD->begin(); iter != FS2CMD->end(); iter++) {
-	publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second);
 	if (revd)
 	    revd->add_map_info(iter->second);
     }
@@ -373,7 +385,8 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 }
 
 
-static int publish(const char *fpath, int type, struct map_info* mi)
+static int publish(const char *fpath, int type, struct map_info* mi, 
+		    uint64_t volume_id)
 {
     //Called by publish_dataset, therefore locking not needed.
     int i = 0;
@@ -408,7 +421,7 @@ static int publish(const char *fpath, int type, struct map_info* mi)
 	strncpy( ment->url, global_conf->content_url, content_url_len ); 
 
 	ment->checksum = NULL;
-	ment->local_path = NULL;
+	//ment->local_path = NULL;
     }
     else { 
 	free(path); 
@@ -428,8 +441,8 @@ static int publish(const char *fpath, int type, struct map_info* mi)
     ment->mode = mi->file_perm;
     ment->max_read_freshness = 1000;
     ment->max_write_freshness = 1;
-    ment->volume = mc->conf->volume;
-    ment->owner = mc->conf->volume_owner;
+    ment->volume = volume_id;
+    //ment->owner = volume_owner;
     switch (type) {
 	case MD_ENTRY_DIR:
 	    ment->size = 4096;
@@ -541,5 +554,9 @@ void driver_special_inval_handler(string file_path) {
     if (mi != NULL) {
 	revd->remove_map_info(mi);
     }
+}
+
+extern "C" int controller(pid_t pid, int ctrl_flag) {
+    return controller_signal_handler(pid, ctrl_flag);
 }
 

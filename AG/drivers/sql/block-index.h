@@ -10,10 +10,20 @@
 #include <string>
 #include <iostream>
 
+#include <gateway-ctx.h>
 
 #define MAX_INDEX_SIZE 1024
+#define AG_BLOCK_SIZE()\
+    (sysconf(_SC_PAGESIZE) * 10)
 
 using namespace std;
+
+typedef struct {
+    off_t   start_block_id;
+    off_t   start_block_offset;
+    off_t   end_block_id;
+    off_t   end_block_offset;
+} block_translation_info;
 
 typedef struct {
     off_t   start_row;
@@ -27,6 +37,8 @@ typedef map<string, vector<block_index_entry*>*> BlockMap;
 typedef map<string, pthread_mutex_t> MutexMap;
 
 void invalidate_entry(void* cls);
+
+block_translation_info volume_block_to_ag_block(struct gateway_ctx *ctx);
 
 class BlockIndex {
     private:
@@ -46,3 +58,4 @@ class BlockIndex {
 };
 
 #endif //_BLOCK_INDEX_H_
+

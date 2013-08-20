@@ -90,7 +90,7 @@ public:
         bytePtr[1] = buf[2];
         bytePtr[2] = buf[1];
         bytePtr[3] = buf[0];
-        
+
         return value;
     }
 
@@ -113,7 +113,7 @@ public:
         bytePtr[5] = buf[2];
         bytePtr[6] = buf[1];
         bytePtr[7] = buf[0];
-        
+
         return value;
     }
 
@@ -183,7 +183,7 @@ public:
         if (returncode == 0) {
             toWriteSize += 4 + SIZE_IPCSTAT;
         }
-        
+
         *data_out = new char[toWriteSize];
         char *outBuffer = *data_out;
         char *bufferNext;
@@ -193,10 +193,10 @@ public:
             outBuffer = bufferNext;
             writeStat(outBuffer, &stat, &bufferNext);
         }
-        
+
         *data_out_size = toWriteSize;
     }
-    
+
     void process_delete(const char *message, char **data_out, int *data_out_size) {
         dbprintf("%s", "process - delete\n");
         char* bytes_ptr;
@@ -212,10 +212,10 @@ public:
         char* bufferNext;
 
         writeHeader(outBuffer, OP_DELETE, returncode, 0, 0, &bufferNext);
-        
+
         *data_out_size = toWriteSize;
     }
-    
+
     void process_removeDir(const char *message, char **data_out, int *data_out_size) {
         dbprintf("%s", "process - remove directory\n");
         char* bytes_ptr;
@@ -231,10 +231,10 @@ public:
         char* bufferNext;
 
         writeHeader(outBuffer, OP_REMOVE_DIRECTORY, returncode, 0, 0, &bufferNext);
-        
+
         *data_out_size = toWriteSize;
     }
-    
+
     void process_rename(const char *message, char **data_out, int *data_out_size) {
         dbprintf("%s", "process - rename\n");
         char* bytes_ptr1 = (char*)message;
@@ -254,10 +254,10 @@ public:
         char* bufferNext;
 
         writeHeader(outBuffer, OP_RENAME, returncode, 0, 0, &bufferNext);
-        
+
         *data_out_size = toWriteSize;
     }
-    
+
     void process_makeDir(const char *message, char **data_out, int *data_out_size) {
         dbprintf("%s", "process - make directory\n");
         char* bytes_ptr;
@@ -274,10 +274,10 @@ public:
         char* bufferNext;
 
         writeHeader(outBuffer, OP_MKDIR, returncode, 0, 0, &bufferNext);
-        
+
         *data_out_size = toWriteSize;
     }
-    
+
     void process_readDir(const char *message, char **data_out, int *data_out_size) {
         dbprintf("%s", "process - read directory\n");
         char* bytes_ptr;
@@ -319,11 +319,11 @@ public:
             delete entryVector[j];
         }
 
-        entryVector.clear();      
-        
+        entryVector.clear();
+
         *data_out_size = toWriteSize;
     }
-    
+
     void process_getFileHandle(const char *message, char **data_out, int *data_out_size) {
         dbprintf("%s", "process - get file handle\n");
         char* bytes_ptr;
@@ -333,14 +333,14 @@ public:
         // call
         IPCFileInfo fi;
         int returncode = syndicatefs_open(path, &fi);
-        
+
         dbprintf("filehandle : %lld\n", fi.handle);
 
         int toWriteSize = 16;
         if (returncode == 0) {
             toWriteSize += 4 + SIZE_IPCFILEINFO;
         }
-        
+
         *data_out = new char[toWriteSize];
         char* outBuffer = *data_out;
         char* bufferNext;
@@ -349,11 +349,11 @@ public:
         if (returncode == 0) {
             outBuffer = bufferNext;
             writeFileInfo(outBuffer, &fi, &bufferNext);
-        }        
-        
+        }
+
         *data_out_size = toWriteSize;
     }
-    
+
     void process_createNewFile(const char *message, char **data_out, int *data_out_size) {
         dbprintf("%s", "process - create new file\n");
         char* bytes_ptr;
@@ -389,11 +389,11 @@ public:
         if (returncode == 0) {
             outBuffer = bufferNext;
             writeStat(outBuffer, &stat, &bufferNext);
-        }     
-        
+        }
+
         *data_out_size = toWriteSize;
     }
-    
+
     void process_readFileData(const char *message, char **data_out, int *data_out_size) {
         dbprintf("%s", "process - read file data\n");
         char* bytes_ptr1 = (char*)message;
@@ -402,7 +402,7 @@ public:
         char* bytes_ptr4;
         IPCFileInfo fi;
         readFileInfo(bytes_ptr1, &fi, &bytes_ptr2);
-        
+
         dbprintf("filehandle : %lld\n", fi.handle);
 
         long long int fileoffset;
@@ -421,7 +421,7 @@ public:
         if (returncode > 0) {
             toWriteSize += 4 + (int) returncode;
         }
-        
+
         *data_out = new char[toWriteSize];
         char* outBuffer = *data_out;
         char* bufferNext;
@@ -433,7 +433,7 @@ public:
         }
 
         delete buffer;
-        
+
         *data_out_size = toWriteSize;
     }
 
@@ -447,7 +447,7 @@ public:
         readFileInfo(bytes_ptr1, &fi, &bytes_ptr2);
 
         dbprintf("filehandle : %lld\n", fi.handle);
-        
+
         long long int fileoffset;
         readLong(bytes_ptr2, &fileoffset, &bytes_ptr3);
 
@@ -462,8 +462,8 @@ public:
         char* outBuffer = *data_out;
         char* bufferNext;
 
-        writeHeader(outBuffer, OP_WRITE_FILE_DATA, returncode, 0, 0, &bufferNext);        
-        
+        writeHeader(outBuffer, OP_WRITE_FILE_DATA, returncode, 0, 0, &bufferNext);
+
         *data_out_size = toWriteSize;
     }
 
@@ -482,7 +482,7 @@ public:
         char* bufferNext;
 
         writeHeader(outBuffer, OP_FLUSH, returncode, 0, 0, &bufferNext);
-        
+
         *data_out_size = toWriteSize;
     }
 
@@ -501,7 +501,7 @@ public:
         char* bufferNext;
 
         writeHeader(outBuffer, OP_CLOSE_FILE_HANDLE, returncode, 0, 0, &bufferNext);
-        
+
         *data_out_size = toWriteSize;
     }
     
@@ -536,34 +536,34 @@ private:
 
         SYNDICATEFS_DATA->stats->enter(STAT_GETATTR);
 
-        int rc = fs_entry_stat(SYNDICATEFS_DATA->core, path, statbuf, conf->owner, conf->volume);
+        int rc = fs_entry_stat(SYNDICATEFS_DATA->core, path, statbuf, conf->owner, SYNDICATEFS_DATA->core->volume);
         logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_getattr rc = %d\n", rc);
 
         SYNDICATEFS_DATA->stats->leave(STAT_GETATTR, rc);
 
         return rc;
     }
-    
+
     int syndicatefs_unlink(const char *path) {
         logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_unlink( %s )\n", path);
 
         SYNDICATEFS_DATA->stats->enter(STAT_UNLINK);
 
-        int rc = fs_entry_versioned_unlink(SYNDICATEFS_DATA->core, path, -1, SYNDICATEFS_DATA->conf.owner, SYNDICATEFS_DATA->conf.volume);
+        int rc = fs_entry_versioned_unlink(SYNDICATEFS_DATA->core, path, -1, SYNDICATEFS_DATA->conf.owner, SYNDICATEFS_DATA->core->volume);
 
         SYNDICATEFS_DATA->stats->leave(STAT_UNLINK, rc);
 
         logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_unlink rc = %d\n", rc);
         return rc;
     }
-    
+
     int syndicatefs_rmdir(const char *path) {
         struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
         logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_rmdir( %s )\n", path);
 
         SYNDICATEFS_DATA->stats->enter(STAT_RMDIR);
 
-        int rc = fs_entry_rmdir(SYNDICATEFS_DATA->core, path, conf->owner, conf->volume);
+        int rc = fs_entry_rmdir(SYNDICATEFS_DATA->core, path, conf->owner, SYNDICATEFS_DATA->core->volume);
 
         SYNDICATEFS_DATA->stats->leave(STAT_RMDIR, rc);
 
@@ -577,24 +577,24 @@ private:
 
         SYNDICATEFS_DATA->stats->enter(STAT_RENAME);
 
-        int rc = fs_entry_rename(SYNDICATEFS_DATA->core, path, newpath, conf->owner, conf->volume);
+        int rc = fs_entry_rename(SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume);
 
         SYNDICATEFS_DATA->stats->leave(STAT_RENAME, rc);
         return rc;
     }
-    
+
     int syndicatefs_mkdir(const char *path, mode_t mode) {
         struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
         logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_mkdir( %s, %o )\n", path, mode);
 
         SYNDICATEFS_DATA->stats->enter(STAT_MKDIR);
 
-        int rc = fs_entry_mkdir(SYNDICATEFS_DATA->core, path, mode, conf->owner, conf->volume);
+        int rc = fs_entry_mkdir(SYNDICATEFS_DATA->core, path, mode, conf->owner, SYNDICATEFS_DATA->core->volume);
 
         SYNDICATEFS_DATA->stats->leave(STAT_MKDIR, rc);
         return rc;
     }
-    
+
     //int syndicatefs_opendir(const char *path, struct fuse_file_info *fi) {
     int syndicatefs_opendir(const char *path, struct IPCFileInfo *fi) {
         struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
@@ -604,7 +604,7 @@ private:
         SYNDICATEFS_DATA->stats->enter(STAT_OPENDIR);
 
         int rc = 0;
-        struct fs_dir_handle* fdh = fs_entry_opendir(SYNDICATEFS_DATA->core, path, conf->owner, conf->volume, &rc);
+        struct fs_dir_handle* fdh = fs_entry_opendir(SYNDICATEFS_DATA->core, path, conf->owner, SYNDICATEFS_DATA->core->volume, &rc);
 
         if (rc == 0) {
             //fi->fh = (uint64_t) fdh;
@@ -617,7 +617,7 @@ private:
 
         return rc;
     }
-    
+
     //int syndicatefs_releasedir(const char *path, struct fuse_file_info *fi) {
     int syndicatefs_releasedir(struct IPCFileInfo *fi) {
         logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_releasedir\n");
@@ -636,7 +636,7 @@ private:
         logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_releasedir rc = %d\n", rc);
         return rc;
     }
-    
+
     //int syndicatefs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
     int syndicatefs_readdir(std::vector<char*> &entryVector, struct IPCFileInfo *fi) {
         logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_readdir\n");
@@ -676,7 +676,7 @@ private:
         SYNDICATEFS_DATA->stats->leave(STAT_READDIR, rc);
         return rc;
     }
-    
+
     int syndicatefs_open(const char *path, struct IPCFileInfo *fi) {
         struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
         logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_open( %s )\n", path);
@@ -684,8 +684,8 @@ private:
         SYNDICATEFS_DATA->stats->enter(STAT_OPEN);
 
         int err = 0;
-        //struct fs_file_handle* fh = fs_entry_open(SYNDICATEFS_DATA->core, path, NULL, conf->owner, conf->volume, fi->flags, ~conf->usermask, &err);
-        struct fs_file_handle* fh = fs_entry_open(SYNDICATEFS_DATA->core, path, NULL, conf->owner, conf->volume, 0, ~conf->usermask, &err);
+        //struct fs_file_handle* fh = fs_entry_open(SYNDICATEFS_DATA->core, path, NULL, conf->owner, SYNDICATEFS_DATA->core->volume, fi->flags, ~conf->usermask, &err);
+        struct fs_file_handle* fh = fs_entry_open(SYNDICATEFS_DATA->core, path, NULL, conf->owner, SYNDICATEFS_DATA->core->volume, 0, ~conf->usermask, &err);
 
         // store the read handle
         //fi->fh = (uint64_t) fh;
@@ -709,7 +709,7 @@ private:
         SYNDICATEFS_DATA->stats->enter(STAT_CREATE);
 
         int rc = 0;
-        struct fs_file_handle* fh = fs_entry_create(SYNDICATEFS_DATA->core, path, NULL, conf->owner, conf->volume, mode, &rc);
+        struct fs_file_handle* fh = fs_entry_create(SYNDICATEFS_DATA->core, path, NULL, conf->owner, SYNDICATEFS_DATA->core->volume, mode, &rc);
 
         if (rc == 0 && fh != NULL) {
             //fi->fh = (uint64_t) (fh);
@@ -721,7 +721,7 @@ private:
         logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_create rc = %d\n", rc);
         return rc;
     }
-    
+
     //int syndicatefs_fgetattr(const char *path, struct stat *statbuf, struct fuse_file_info *fi) {
     int syndicatefs_fgetattr(struct stat *statbuf, struct IPCFileInfo *fi) {
 
@@ -739,7 +739,7 @@ private:
 
         return rc;
     }
-    
+
     //int syndicatefs_release(const char *path, struct fuse_file_info *fi) {
     int syndicatefs_release(struct IPCFileInfo *fi) {
 
@@ -762,7 +762,7 @@ private:
         SYNDICATEFS_DATA->stats->leave(STAT_RELEASE, rc);
         return rc;
     }
-    
+
     //int syndicatefs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
     int syndicatefs_read(char *buf, size_t size, off_t offset, struct IPCFileInfo *fi) {
 
@@ -809,8 +809,8 @@ private:
 
         logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_write rc = %d\n", rc);
         return (int) rc;
-    }    
-    
+    }
+
     //int syndicatefs_flush(const char *path, struct fuse_file_info *fi) {
     int syndicatefs_flush(struct IPCFileInfo *fi) {
 
@@ -840,7 +840,7 @@ private:
 
         //struct fs_file_handle* fh = (struct fs_file_handle*) fi->fh;
         struct fs_file_handle* fh = (struct fs_file_handle*) fi->handle;
-        int rc = fs_entry_ftruncate(SYNDICATEFS_DATA->core, fh, length, conf->owner, conf->volume);
+        int rc = fs_entry_ftruncate(SYNDICATEFS_DATA->core, fh, length, conf->owner, SYNDICATEFS_DATA->core->volume);
         if (rc != 0) {
             errorf("fs_entry_ftruncate rc = %d\n", rc);
         }
@@ -1138,7 +1138,7 @@ private:
 
         protocol protocolHandler;
         int data_out_size = 0;
-        
+
         switch (op_code_) {
             case OP_GET_STAT:
                 protocolHandler.process_getStat(message_, &data_out_, &data_out_size);
@@ -1180,7 +1180,7 @@ private:
                 protocolHandler.process_truncateFile(message_, &data_out_, &data_out_size);
                 break;
         }
-        
+
         if(data_out_size > 0) {
             boost::asio::async_write(socket_,
                 boost::asio::buffer(data_out_, data_out_size),
@@ -1205,7 +1205,7 @@ private:
     enum {
         // int * 3
         PACKET_HEADER_LENGTH = 12,
-    }; 
+    };
     char header_[PACKET_HEADER_LENGTH];
     int header_offset_;
 
@@ -1374,7 +1374,7 @@ int main(int argc, char* argv[]) {
     rc = syndicate_init(config_file, &syndicate_http, portnum, ms_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path);
     if (rc != 0)
         exit(1);
-    
+
     syndicateipc_get_context()->syndicate_state_data = syndicate_get_state();
     syndicateipc_get_context()->syndicate_http = syndicate_http;
 

@@ -28,6 +28,7 @@ static void* (*connect_callback)( struct gateway_context* ) = NULL;
 static void (*cleanup_callback)( void* usercls ) = NULL;
 static int (*metadata_callback)( struct gateway_context*, ms::ms_gateway_blockinfo*, void* ) = NULL;
 static int (*publish_callback)( struct gateway_context*, ms_client*, char* ) = NULL;
+int (*controller_callback)(pid_t pid, int ctrl_flag);
 
 // set the PUT callback
 void gateway_put_func( ssize_t (*put_func)(struct gateway_context*, char const* data, size_t len, void* usercls) ) {
@@ -63,6 +64,11 @@ void gateway_metadata_func( int (*metadata_func)(struct gateway_context* ctx, ms
 // set the publish callback
 void gateway_publish_func( int (*publish_func)(struct gateway_context*, ms_client*, char*) ){
    publish_callback = publish_func;
+}
+
+// set controller callback
+void gateway_controller_func( int (*controller_func)(pid_t pid, int ctrl_flag)) {
+    controller_callback = controller_func;
 }
 
 // get the HTTP status
@@ -301,7 +307,7 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
    
    con_data->ctx.hostname = md_con_data->remote_host;
    con_data->ctx.method = md_con_data->method;
-   con_data->ctx.size = md_con_data->conf->blocking_factor;
+   con_data->ctx.size = 0;    // TODO figure out which Volume
    con_data->ctx.err = 0;
    con_data->ctx.http_status = 0;
    
@@ -739,11 +745,11 @@ static void cleanup_stale_transactions( struct md_syndicate_conf* conf ) {
 
 
 // start up server
-static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf ) {
+static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf, struct ms_client* ms ) {
    
    md_path_locks_create( &gateway_md_locks );
 
-   md_HTTP_init( http, MHD_USE_SELECT_INTERNALLY | MHD_USE_POLL | MHD_USE_DEBUG, conf );
+   md_HTTP_init( http, MHD_USE_SELECT_INTERNALLY | MHD_USE_POLL | MHD_USE_DEBUG, conf, ms );
    md_HTTP_auth_mode( *http, conf->http_authentication_mode );
    md_HTTP_connect( *http, gateway_HTTP_connect );
    md_HTTP_GET( *http, gateway_GET_handler );
@@ -858,6 +864,9 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    char* gateway_pkey_path = NULL;
    char* tls_pkey_path = NULL;
    char* tls_cert_path = NULL;
+   pid_t gateway_daemon_pid = 0;
+   bool rmap = false;
+   bool stop = false;
    
    static struct option gateway_options[] = {
       {"config-file\0Gateway configuration file path",      required_argument,   0, 'c'},
@@ -877,13 +886,15 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
       {"gateway-pkey\0Gateway private key path (PEM)",      required_argument,   0, 'G'},
       {"tls-pkey\0Server TLS private key path (PEM)",       required_argument,   0, 'S'},
       {"tls-cert\0Server TLS certificate path (PEM)",       required_argument,   0, 'C'},
+      {"stop\0Stop the gateway daemon",                     required_argument,   0, 't'},
+      {"remap\0Remap file mapping",			    required_argument,   0, 'r'},
       {"help\0Print this message",                          no_argument,         0, 'h'},
       {0, 0, 0, 0}
    };
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:D:hg:V:G:S:C:", gateway_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:D:hg:V:G:S:C:t:r:", gateway_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -958,12 +969,54 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
             tls_cert_path = optarg;
             break;
          }
+         case 't': {
+            gateway_daemon_pid = strtol(optarg, NULL, 10);
+	    stop = true;
+            break;
+         }
+         case 'r': {
+            gateway_daemon_pid = strtol(optarg, NULL, 10);
+	    rmap = true;
+            break;
+         }
          default: {
             break;
          }
       }
    }
 
+   if (gateway_daemon_pid) {
+       int flag = 0;
+       struct md_syndicate_conf controller_conf;
+       if (config_file != NULL) {
+	   md_read_conf(config_file, &controller_conf); 
+       }
+
+       // load AG driver
+       if ( controller_conf.ag_driver && gateway_type == SYNDICATE_AG) {
+	   if (gw_driver != NULL)
+	       controller_conf.ag_driver = gw_driver;
+	   if (controller_conf.ag_driver == NULL) {
+	       cerr<<"AG controller is unable to load the AG driver."<<endl;
+	       exit(1);
+	   }
+	   if ( load_AG_driver( controller_conf.ag_driver ) < 0) {
+	       cerr<<"AG controller is unable to load the AG driver."<<endl;
+	       exit(1);
+	   }
+       }
+       if (stop) {
+	   flag |= STOP_CTRL_FLAG;
+       }
+       if (rmap) {
+	   flag |= RMAP_CTRL_FLAG;
+       }
+       if ( controller_callback(gateway_daemon_pid, flag) < 0) {
+	   cerr<<"Controller Failed"<<endl;
+	   exit(1);
+       }
+       exit(0);
+   }
    
    if( portnum_str != NULL ) {
       portnum = strtol( portnum_str, NULL, 10 );
@@ -977,7 +1030,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    // set up Syndicate
    struct ms_client client;
    struct md_syndicate_conf conf;
-   
+ 
    rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path );
    if( rc != 0 ) {
       exit(1);
@@ -1034,7 +1087,7 @@ int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *cli
    // start gateway server
    struct md_HTTP http;
 
-   rc = gateway_init( &http, conf );
+   rc = gateway_init( &http, conf, client );
    if( rc != 0 ) {
       return rc;
    }
@@ -1095,6 +1148,11 @@ int load_AG_driver( char *lib )
    }
    *(void **) (&publish_callback) = dlsym( driver, "publish_dataset" );
    if ( publish_callback == NULL ) {
+      errorf( "load_AG_gateway_driver = %s\n", dlerror() );
+      return -ENXIO;
+   }
+   *(void **) (&controller_callback) = dlsym( driver, "controller" );
+   if ( controller_callback == NULL ) {
       errorf( "load_AG_gateway_driver = %s\n", dlerror() );
       return -ENXIO;
    }

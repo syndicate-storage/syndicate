@@ -81,7 +81,6 @@ class Volume( storagetypes.Object ):
    UG_version = storagetypes.Integer( indexed=False )              # version of the UG listing in this Volume
    RG_version = storagetypes.Integer( indexed=False )              # version of the RG listing in this Volume
    private = storagetypes.Boolean()
-   session_timeout = storagetypes.Integer( default=-1, indexed=False )  # how long a gateway session on this Volume lasts (-1 means "never expires")
    ag_ids = storagetypes.Integer( repeated=True )                  # AG's publishing data to this volume
    rg_ids = storagetypes.Integer( repeated=True )                  # RG's replicating data for this volume.
 
@@ -159,23 +158,9 @@ class Volume( storagetypes.Object ):
 
       caller_gateway.protobuf_cred( volume_metadata.cred )
       
-      volume_metadata.owner_id = kwargs.get( 'owner_id', self.owner_id )
-      volume_metadata.blocksize = kwargs.get( 'blocksize', self.blocksize )
-      volume_metadata.name = kwargs.get( 'name', self.name )
-      volume_metadata.description = kwargs.get( 'description', self.description )
-      volume_metadata.volume_version = kwargs.get('volume_version', self.version )
-      volume_metadata.UG_version = kwargs.get('UG_version', self.UG_version )
-      volume_metadata.RG_version = kwargs.get('RG_version', self.RG_version )
-      volume_metadata.session_timeout = kwargs.get( 'session_timeout', self.session_timeout )
-      volume_metadata.volume_public_key = kwargs.get( 'public_key', self.public_key )
-      volume_metadata.session_password = caller_gateway.get_current_session_credentials()
 
       if volume_metadata.session_password == None:
          raise Exception("Regenerate gateway session credentials and try again")
-
-      volume_ids = caller_gateway.volumes()
-      for vid in volume_ids:
-         volume_metadata.volume_ids.append( vid )
       
       volume_metadata.signature = ""
 
@@ -186,7 +171,33 @@ class Volume( storagetypes.Object ):
       volume_metadata.signature = sig
       
       return
+      
 
+   def protobuf( self, volume_metadata, **kwargs ):
+      """
+      Convert to a protobuf (ms_volume_metadata)
+      """
+
+      volume_metadata.owner_id = kwargs.get( 'owner_id', self.owner_id )
+      volume_metadata.blocksize = kwargs.get( 'blocksize', self.blocksize )
+      volume_metadata.volume_id = kwargs.get( 'volume_id', self.volume_id )
+      volume_metadata.name = kwargs.get( 'name', self.name )
+      volume_metadata.description = kwargs.get( 'description', self.description )
+      volume_metadata.volume_version = kwargs.get('volume_version', self.version )
+      volume_metadata.UG_version = kwargs.get('UG_version', self.UG_version )
+      volume_metadata.RG_version = kwargs.get('RG_version', self.RG_version )
+      volume_metadata.volume_public_key = kwargs.get( 'public_key', self.public_key )
+      
+      # sign it
+      volume_metadata.signature = ""
+
+      data = volume_metadata.SerializeToString()
+      sig = self.sign_message( data )
+
+      volume_metadata.signature = sig
+
+      return
+      
 
    def protobuf_UGs( self, ug_metadata, user_gateways ):
       
@@ -356,6 +367,33 @@ class Volume( storagetypes.Object ):
 
       return volume
 
+   @classmethod
+   def ReadAll( cls, volume_ids ):
+      """
+      Given a set of Volume IDs, get all of the Volumes.
+      """
+      volume_key_names = map( lambda x: Volume.make_key_name( volume_id=x ), volume_ids )
+
+      volumes_dict = storagetypes.memcache.get_multi( volume_key_names )
+
+      ret = [None] * len(volume_key_names)
+
+      for i in xrange(0, len(volume_key_names)):
+         volume_key_name = volume_key_names[i]
+         volume = volumes_dict.get( volume_key_name )
+         if volume == None:
+            volume_key = storagetypes.make_key( Volume, volume_key_name )
+            volume = volume_key.get( use_memcache=False )
+            if not volume:
+               ret[i] = None
+            else:
+               storagetypes.memcache.set( volume_key_name, volume )
+
+         ret[i] = volume
+
+      return ret
+            
+
 
    @classmethod
    def __update_shard_count( cls, volume_key, num_shards ):
@@ -381,6 +419,13 @@ class Volume( storagetypes.Object ):
       return num_shards
 
    @classmethod
+   def FlushCache( cls, volume_id ):
+      volume_key_name = Volume.make_key_name( volume_id=volume_id )
+
+      storagetypes.memcache.delete(volume_key_name)
+      
+      
+   @classmethod
    def Update( cls, volume_id, **fields ):
       '''
       Update volume identified by name with fields specified as a dictionary.
@@ -388,9 +433,8 @@ class Volume( storagetypes.Object ):
       volume = Volume.Read(volume_id)
       if not volume:
          raise Exception("No volume with the ID %d exists.", volume_id)
-      volume_key_name = Volume.make_key_name( volume_id=volume_id )
 
-      storagetypes.memcache.delete(volume_key_name)
+      Volume.FlushCache( volume_id )
 
       old_version = volume.version
       old_rg_version = volume.RG_version

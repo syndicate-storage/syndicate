@@ -115,9 +115,6 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
 
       fs_entry_set_insert( parent->children, path_basename, child );
 
-      // get the parent's write ttl before unlocking
-      uint64_t write_ttl = parent->max_write_freshness;
-      
       fs_entry_unlock( parent );
       fs_core_fs_unlock( core );
 
@@ -128,33 +125,24 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
       struct md_entry data;
       fs_entry_to_md_entry( core, path, child, &data );
 
-      // create on the MS, if the parent directory's write time is 0.  Otherwise, queue it
-      if( write_ttl == 0 ) {
-         
-         err = ms_client_create( core->ms, &data );
-         
-         if( err != 0 ) {
-            errorf( "ms_client_create(%s) rc = %d\n", path, err );
-            err = -EREMOTEIO;
+      err = ms_client_create( core->ms, &data );
 
-            child->open_count = 0;
-            fs_entry_unlock( child );
-            fs_entry_detach_lowlevel( core, parent, child, true );
+      if( err != 0 ) {
+         errorf( "ms_client_create(%s) rc = %d\n", path, err );
+         err = -EREMOTEIO;
 
-            fs_core_wlock( core );
-            core->num_files--;
-            fs_core_unlock( core );
-         }
-         else {
-            fs_entry_unlock( child );
-         }
+         child->open_count = 0;
+         fs_entry_unlock( child );
+         fs_entry_detach_lowlevel( core, parent, child, true );
 
+         fs_core_wlock( core );
+         core->num_files--;
+         fs_core_unlock( core );
       }
       else {
-         // queue the update.  If it fails, the file will get unlinked later on 
-         err = ms_client_queue_update( core->ms, path, &data, currentTimeMillis() + write_ttl, 0 );
+         fs_entry_unlock( child );
       }
-
+      
       md_entry_free( &data );
    }
 

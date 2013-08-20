@@ -46,8 +46,9 @@ struct _proc_table_entry {
     int	    block_file_wd;
     bool    is_read_complete;
     pid_t   proc_id;
-    off_t   current_max_block;
-    off_t   block_byte_offset;
+    //off_t   current_max_block;
+    //off_t   block_byte_offset;
+    off_t   current_offset;
     bool    valid;
     pthread_mutex_t pte_lock;
 }; 

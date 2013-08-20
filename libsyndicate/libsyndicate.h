@@ -117,7 +117,6 @@ struct md_entry {
    int type;            // file or directory?
    char* path;          // path
    char* url;           // URL to the UG that hosts its data
-   char* local_path;    // only valid for local content--if set, it's the absolute local path on disk where the content can be found
    int64_t ctime_sec;   // creation time (seconds)
    int32_t ctime_nsec;  // creation time (nanoseconds)
    int64_t mtime_sec;   // last-modified time (seconds)
@@ -142,6 +141,7 @@ typedef list<struct md_entry*> md_entry_list;
 struct md_update {
    char op;               // update operation
    struct md_entry ent;
+   int error;             // error information
 };
 
 // metadata update operations
@@ -255,6 +255,7 @@ struct md_HTTP;
 struct md_HTTP_connection_data {
    struct md_HTTP* http;
    struct md_syndicate_conf* conf;
+   struct ms_client* ms;
    struct MHD_PostProcessor* pp;
    struct md_user_entry* user;
    struct md_HTTP_response* resp;
@@ -280,6 +281,7 @@ struct md_HTTP {
    pthread_rwlock_t lock;
    
    struct md_syndicate_conf* conf;
+   struct ms_client* ms;
    int authentication_mode;
    struct MHD_Daemon* http_daemon;
    int server_type;   // one of the MHD options
@@ -346,8 +348,6 @@ struct md_syndicate_conf {
    int64_t default_read_freshness;                    // default number of milliseconds a file can age before needing refresh for reads
    int64_t default_write_freshness;                   // default number of milliseconds a file can age before needing refresh for writes
    char* logfile_path;                                // path to the logfile
-   char* cdn_prefix;                                  // CDN prefix
-   char* proxy_url;                                   // URL to a proxy to use (instead of a CDN)
    bool gather_stats;                                 // gather statistics or not?
    bool use_checksums;                                // if set, send checksums of our local files in the metadata, and validate checksums (if possible) from remote files
    char* content_url;                                 // what is the URL under which published files can be accessed?
@@ -356,6 +356,12 @@ struct md_syndicate_conf {
    int num_replica_threads;                           // how many replica threads?
    char* replica_logfile;                             // path on disk to replica log
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
+   /*
+   char* volume_name;                                 // name of the volume (UG only)
+   uint64_t volume;                                   // volume ID (UG only)
+   uint64_t volume_owner;                             // user ID of the volume owner (UG only)
+   char* volume_public_key_path;                      // if trust_volume_pubkey is false, then this contains  the path to the PEM-encoded public key for the Volume
+   */
 
    // RG/AG servers
    unsigned int num_http_threads;                     // how many HTTP threads to create
@@ -371,28 +377,26 @@ struct md_syndicate_conf {
    int debug_lock;                                    // print verbose information on locks
 
    // common
-   char* volume_name;                                 // name of the volume
    char* gateway_name;
    int metadata_connect_timeout;                      // number of seconds to wait to connect on the control plane
    int portnum;                                       // Syndicate-side port number
    int transfer_timeout;                              // how long a transfer is allowed to take
    bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers
-   char* volume_public_key_path;                      // if trust_volume_pubkey is false, then this contains  the path to the PEM-encoded public key for the Volume
    char* gateway_key_path;                            // path to PEM-encoded user-given public/private key for this gateway
+   char* cdn_prefix;                                  // CDN prefix
+   char* proxy_url;                                   // URL to a proxy to use (instead of a CDN)
    
    // MS-related fields
    char* metadata_url;                                // URL (or path on disk) where to get the metadata
    char* ms_username;                                 // MS username for this SyndicateUser
    char* ms_password;                                 // MS password for this SyndicateUser
-   uint64_t blocking_factor;                          // how many bytes blocks will be
+   //uint64_t blocking_factor;                          // how many bytes blocks will be
    uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
    uint64_t gateway;                                  // what is the gateway ID in Syndicate?
-   uint64_t volume;                                   // volume ID (UG only)
-   uint64_t volume_owner;                             // user ID of the volume owner
    uint64_t view_reload_freq;                         // how often do we check for new Volume/UG/RG metadata?
 
    // security fields
-   char* volume_public_key;
+   //char* volume_public_key;                           // UG only
    char* gateway_key;
    char* server_key;
    char* server_cert;
@@ -401,7 +405,7 @@ struct md_syndicate_conf {
    mode_t usermask;                                   // umask of the user running this program
    char* mountpoint;                                  // absolute path to the place where the metadata server is mounted
    char* hostname;                                    // what's our hostname?
-   char* ag_driver;				      // AG gatway driver that encompasses gateway callbacks
+   char* ag_driver;                                   // AG gatway driver that encompasses gateway callbacks
 
 };
 
@@ -668,7 +672,7 @@ void md_free_HTTP_response( struct md_HTTP_response* resp );
 void* md_cls_get( void* cls );
 void md_cls_set_status( void* cls, int status );
 struct md_HTTP_response* md_cls_set_response( void* cls, struct md_HTTP_response* resp );
-int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf );
+int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf, struct ms_client* client );
 int md_start_HTTP( struct md_HTTP* http, int portnum );
 int md_stop_HTTP( struct md_HTTP* http );
 int md_free_HTTP( struct md_HTTP* http );
