@@ -99,6 +99,7 @@ Mapping XML:
     "type" attribute is associated with <Query> tag and it is mandatory to specify "type" as 'shell' when using shell
     driver as in the above example. Behaviour is undefined if "type" is not set to 'shell'.
 
+
 Build Instructions:
     - scons AG/drivers/sql
     - scons AG-SQL-driver-install
