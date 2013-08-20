@@ -1,5 +1,4 @@
 AG - SQL Driver
-
 =============
 
 This is a driver for AG that maps file names to SQL queries and publishes them to volumes attached to it.
