@@ -100,8 +100,23 @@ Mapping XML:
     <Query> tags together withing a one <Pair> tag. This is due to block - indexing algorithm of the SQL driver. See
     the section on "type" attribute for more information.
     
-    "type" attribute specifies the type of query the <Query> tag encloses. SQL driver has two SQL queries of two types 
-    that needs to be mapped to a file. The first type is 'bounded-sql'
+    "type" attribute specifies the type of query the <Query> tag encloses. SQL driver has SQL queries of two types 
+    that needs to be mapped to a file. The first type is 'bounded-sql', which has the following format.
+    
+    	- "SELECT * FROM mytable WHERE id > 100 LIMIT %i OFFSET %i"
+    
+    	This type of qurey will limit the result set to a pre-specified number of raws using keywords such as "LIMIT"
+    	as shown in the example. Please refer to your database manuel to find out how such queries should be composed.
+    
+	The other query type is 'unbounded-sql', which has the following format.
+    
+    	- "SELECT * FROM mytable WHERE id > 100 LIMIT -1 OFFSET %i"
+    
+    	This query does not limit the result set as in the previous query due to "LIMIT -1" used in the query. Also 
+    	note that two queries in the two <Query> tags in the <Pair> tag should be  'bounded-sql' and 'unbouded-sql' 
+    	versions of the same query if 'LIMIT's are disregarded.  
+    
+    The default value used for "type" is "bounded-sql".
 
 Build Instructions:
 
