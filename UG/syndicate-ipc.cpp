@@ -838,7 +838,8 @@ private:
 
         SYNDICATEFS_DATA->stats->enter(STAT_FTRUNCATE);
 
-        struct fs_file_handle* fh = (struct fs_file_handle*) fi->fh;
+        //struct fs_file_handle* fh = (struct fs_file_handle*) fi->fh;
+        struct fs_file_handle* fh = (struct fs_file_handle*) fi->handle;
         int rc = fs_entry_ftruncate(SYNDICATEFS_DATA->core, fh, length, conf->owner, conf->volume);
         if (rc != 0) {
             errorf("fs_entry_ftruncate rc = %d\n", rc);
