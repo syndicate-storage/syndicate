@@ -358,7 +358,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	       // Negative size switches libmicrohttpd to chunk transfer mode
 	       replica_ctx->size = -1;
 	       // Set blocking factor for this volume from replica_ctx
-	       ctx->blocking_factor = ms_client_get_volume_blocksize(mc, 3/*replica_ctx->volume_id*/);
+	       ctx->blocking_factor = ms_client_get_volume_blocksize(mc, replica_ctx->volume_id);
 	       //TODO: Check the block status and set the http response appropriately
 
 	       replica_ctx->http_status = 200;
@@ -601,4 +601,9 @@ void driver_special_inval_handler(string file_path) {
     //NOTE: Do not delete mi, it will be deleted by map-parser.c::
     //update_fs_map.
 }
+
+extern "C" int controller(pid_t pid, int ctrl_flag) {
+    return controller_signal_handler(pid, ctrl_flag);
+}
+
 

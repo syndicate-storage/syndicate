@@ -556,3 +556,7 @@ void driver_special_inval_handler(string file_path) {
     }
 }
 
+extern "C" int controller(pid_t pid, int ctrl_flag) {
+    return controller_signal_handler(pid, ctrl_flag);
+}
+
