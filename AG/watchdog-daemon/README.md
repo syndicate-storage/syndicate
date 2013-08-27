@@ -3,7 +3,7 @@ AG Watchdog Daemon
 
 Comprises of two sub systems, the AG daemons and a watchdog daemon.
 
-- AG daemon will execute a set of AGs and send heartbeat signals over HTTP to the watchdog daemon until it receives SIGCHLDs. 
+- AG daemon will execute a set of AGs and send heartbeat signals over Apache thrift to the watchdog daemon until it receives SIGCHLDs. 
 - Upon reception of a SIGCHLD AG daemon will notify the event to the watchdog daemon.
 - When watchdog daemon is notified about the death of an AG or loses pulses from an AG it will notify the administrator and act as specified in its configuration file (informing AG daemon to start the AG or requesting for human intervention via notification to the administrator).
 
