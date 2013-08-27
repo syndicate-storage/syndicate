@@ -21,8 +21,9 @@ void invalidate_entry(void* cls) {
     proc_table_entry *entry = (proc_table_entry*)cls;
     if (entry == NULL)
 	return;
-    //Acquire the pte lock
-    pthread_mutex_lock(&entry->pte_lock);
+    //Acquire write lock on pte
+    //pthread_mutex_lock(&entry->pte_lock);
+    wrlock_pte(entry);
     if (!(entry->is_read_complete)) {
 	if (kill(entry->proc_id, 9) < 0)
 	    perror("kill(9)");
@@ -31,7 +32,8 @@ void invalidate_entry(void* cls) {
 	perror("unlink(block_file)");
     entry->valid = false;
     clean_invalid_proc_entry(entry);
-    pthread_mutex_unlock(&entry->pte_lock);
+    //pthread_mutex_unlock(&entry->pte_lock);
+    unlock_pte(entry);
 }
 
 void clean_invalid_proc_entry(proc_table_entry *pte) {
@@ -50,7 +52,8 @@ void delete_proc_entry(proc_table_entry *pte) {
     if (pte) {
 	if (pte->block_file)
 	    free(pte->block_file);
-	pthread_mutex_destroy(&pte->pte_lock);
+	//pthread_mutex_destroy(&pte->pte_lock);
+	pthread_rwlock_destroy(&pte->pte_lock);
 	free (pte);
 	pte = NULL;
     }
@@ -79,14 +82,19 @@ void unlock_pid_map() {
     pthread_mutex_unlock(&pid_map_lock);
 }
 
-void lock_pte(proc_table_entry *pte) {
+void wrlock_pte(proc_table_entry *pte) {
     //cout<<"Locking PTE"<<endl;
-    pthread_mutex_lock(&pte->pte_lock);
+    pthread_rwlock_wrlock(&pte->pte_lock);
+}
+
+void rdlock_pte(proc_table_entry *pte) {
+    //cout<<"Locking PTE"<<endl;
+    pthread_rwlock_rdlock(&pte->pte_lock);
 }
 
 void unlock_pte(proc_table_entry *pte) {
     //cout<<"Unlocking PTE"<<endl;
-    pthread_mutex_unlock(&pte->pte_lock);
+    pthread_rwlock_unlock(&pte->pte_lock);
 }
 
 void update_death(pid_t pid) {
@@ -98,7 +106,7 @@ void update_death(pid_t pid) {
 	//Lock pid_map lock
 	lock_pid_map();
 	//Acquire pte lock
-	lock_pte(pte);
+	wrlock_pte(pte);
 	pte->is_read_complete = true;
 	set<proc_table_entry*, proc_table_entry_comp>::iterator sit;
 	sit = running_proc_set.find(pte);
@@ -149,7 +157,7 @@ void* inotify_event_receiver(void *cls) {
 				IN_MODIFY | IN_CLOSE_WRITE);
 		if (wd > 0) {
 		    //Acquire the pte lock
-		    lock_pte(pte);
+		    wrlock_pte(pte);
 		    pte->block_file_wd = wd;
 		    //Lock pid_map lock
 		    lock_pid_map();
@@ -210,7 +218,7 @@ void* inotify_event_receiver(void *cls) {
 			continue;
 		    }
 		    //Acquire the pte lock
-		    lock_pte(pte);
+		    wrlock_pte(pte);
 		    //pte->current_max_block = stat_buff.st_size/BLK_SIZE;
 		    //pte->block_byte_offset = stat_buff.st_size - 
 		    //		    (pte->current_max_block * BLK_SIZE);
@@ -352,14 +360,16 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
     if (pte == NULL || (pte != NULL && !(pte->valid))) {
 	if (pte == NULL)
 	    pte = alloc_proc_table_entry();
+	//Lock pte
+	wrlock_pte(pte);
 	int rc = execute_command(proc_name, argv, 
 				envp, ctx, pte);
-	if (rc < 0)
+	if (rc < 0) {
+	    unlock_pte(pte);
 	    return rc;
+	}
 	//pte = proc_table[ctx->id];
 	pte = proc_table[string(ctx->file_path)];
-	//Lock pte
-	lock_pte(pte);
 	//check whether this pte is valid
 	if (!pte->valid) {
 	    unlock_pte(pte);
@@ -411,8 +421,8 @@ int ProcHandler::execute_command(struct gateway_ctx *ctx,
 	    return 0;
 	//get proc_table_entry by id and return the block... 
 	//proc_table_entry *pte = proc_table[ctx->id];
-	//pte is only read here, pte_lock should ideally be an rw lock.
-	lock_pte(pte);
+	//pte is only read here.
+	rdlock_pte(pte);
 	//check whether this pte is valid
 	if (!pte->valid) {
 	    unlock_pte(pte);
@@ -477,7 +487,7 @@ proc_table_entry* ProcHandler::alloc_proc_table_entry()
 {
     proc_table_entry *pte = 
 		(proc_table_entry*)malloc(sizeof(proc_table_entry));
-    pthread_mutex_init(&pte->pte_lock, NULL);
+    pthread_rwlock_init(&pte->pte_lock, NULL);
     return pte;
 }
 
