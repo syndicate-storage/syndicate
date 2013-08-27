@@ -531,7 +531,6 @@ void* reconf_handler(void *cls) {
 void* term_handler(void *cls) {
     clean_dir((char*)cache_path);
     exit(0);
-    return NULL;
 }
 
 void driver_special_inval_handler(string file_path) {

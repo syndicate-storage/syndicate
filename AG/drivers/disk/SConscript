@@ -11,6 +11,7 @@ source_files = """
 CPPPATH = """
    #libsyndicate/
    #build/out/protobufs
+   #AG/drivers/common
 """
 
 # add library paths here
@@ -20,6 +21,7 @@ LIBPATH = """
 
 # add libraries here
 LIBS = """
+   AGcommon
    syndicate
 """
 

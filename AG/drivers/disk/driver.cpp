@@ -3,8 +3,8 @@
    All Rights Reserved
 */
 
-#include "driver.h"
-#include "libgateway.h"
+#include <driver.h>
+#include <libgateway.h>
 
 // server config 
 struct md_syndicate_conf DRIVER_CONF;
@@ -24,6 +24,9 @@ size_t  datapath_len = 0;
 // publish_func exit code
 int pfunc_exit_code = 0;
 
+// Is false if the driver is not initialized
+bool initialized = false;
+
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
    errorf("%s", "INFO: gateway_generate_manifest\n"); 
@@ -36,8 +39,8 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
    mmsg->set_manifest_mtime_sec( ent->mtime_sec );
    mmsg->set_manifest_mtime_nsec( 0 );
 
-   uint64_t num_blocks = ent->size / global_conf->blocking_factor;
-   if( ent->size % global_conf->blocking_factor != 0 )
+   uint64_t num_blocks = ent->size / ctx->blocking_factor;
+   if( ent->size % ctx->blocking_factor != 0 )
       num_blocks++;
 
    Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
@@ -144,7 +147,7 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
    struct md_entry* ent = itr->second;
    
    info->set_progress( ms::ms_gateway_blockinfo::COMMITTED );     // ignored, but needs to be filled in
-   info->set_blocking_factor( global_conf->blocking_factor );
+   info->set_blocking_factor( ctx->blocking_factor );
    
    info->set_file_version( file_version );
    info->set_block_id( ctx->block_id );
@@ -244,14 +247,14 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
       }
       else {
          free( fp );
-
+	 // Set blocking factor for this volume from replica_ctx
+	 ctx->blocking_factor = ms_client_get_volume_blocksize(mc, replica_ctx->volume_id);
          // set up for reading
-         off_t offset = global_conf->blocking_factor * block_id;
+         off_t offset = ctx->blocking_factor * block_id;
          rc = lseek( ctx->fd, offset, SEEK_SET );
          if( rc != 0 ) {
             rc = -errno;
             errorf( "lseek errno = %d\n", rc );
-
             free( ctx );
             free( file_path );
             return NULL;
@@ -288,21 +291,34 @@ extern "C" void cleanup_dataset( void* cls ) {
 
 extern "C" int publish_dataset (struct gateway_context*, ms_client *client, 
 	char* dataset ) {
+    if (!initialized)
+	init();
     int flags = FTW_PHYS;
     mc = client;
     datapath = dataset;
     datapath_len = strlen(datapath); 
     if ( datapath[datapath_len - 1] == '/')
 	   datapath_len--;	
-    if (nftw(dataset, publish, 20, flags) == -1) {
+    if (nftw(dataset, publish_to_volumes, 20, flags) == -1) {
 	return pfunc_exit_code;
     }
-    ms_client_destroy(mc);
+    return 0;
+}
+
+
+static int publish_to_volumes(const char *fpath, const struct stat *sb,
+	int tflag, struct FTW *ftwbuf) {
+    int nr_volumes = ms_client_get_num_volumes(mc);
+    int vol_counter=0;
+    for (vol_counter=0; vol_counter<nr_volumes; vol_counter++) {
+	uint64_t volume_id = ms_client_get_volume_id(mc, vol_counter);
+	publish(fpath, sb, tflag, ftwbuf, volume_id);
+    }
     return 0;
 }
 
 static int publish(const char *fpath, const struct stat *sb,
-	int tflag, struct FTW *ftwbuf)
+	int tflag, struct FTW *ftwbuf, uint64_t volume_id)
 {
     int i = 0;
     struct md_entry* ment = new struct md_entry;
@@ -327,7 +343,6 @@ static int publish(const char *fpath, const struct stat *sb,
     memset( ment->url, 0, content_url_len + 1 );
     strncpy( ment->url, global_conf->content_url, content_url_len );
 
-    ment->local_path = NULL;
     ment->ctime_sec = sb->st_ctime;
     ment->ctime_nsec = 0;
     ment->mtime_sec = sb->st_mtime;
@@ -336,9 +351,8 @@ static int publish(const char *fpath, const struct stat *sb,
     ment->version = 1;
     ment->max_read_freshness = 360000;
     ment->max_write_freshness = 1;
-    ment->volume = mc->conf->volume;
+    ment->volume = volume_id;
     ment->size = sb->st_size;
-    ment->owner = mc->conf->volume_owner;
     switch (tflag) {
 	case FTW_D:
 	    ment->type = MD_ENTRY_DIR;
@@ -365,5 +379,24 @@ static int publish(const char *fpath, const struct stat *sb,
     //delete ment;
     pfunc_exit_code = 0;
     return 0;  
+}
+
+extern "C" int controller(pid_t pid, int ctrl_flag) {
+    return controller_signal_handler(pid, ctrl_flag);
+}
+
+void init() {
+    if (!initialized)
+	initialized = true;
+    else
+	return;
+    add_driver_event_handler(DRIVER_TERMINATE, term_handler, NULL);
+    driver_event_start();
+}
+
+
+void* term_handler(void *cls) {
+    //Nothing to do here.
+    exit(0);
 }
 

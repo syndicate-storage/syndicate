@@ -127,6 +127,8 @@ env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_i
 
 # alias installation targets for AG disk driver
 if "AG-disk-driver-install" in COMMAND_LINE_TARGETS:
+    libAGdiskdriver_out = "build/out/AG/drivers/disk"
+    libAGdiskdriver = SConscript( "AG/drivers/disk/SConscript", variant_dir=libAGdiskdriver_out )
     ag_driver_disk_install = env.InstallLibrary( lib_install_dir, libAGdiskdriver )
     env.Alias( 'AG-disk-driver-install', [ag_driver_disk_install] )
 
