@@ -10,15 +10,15 @@ Comprises of two sub systems, the AG daemons and a watchdog daemon.
 
 Cardinality between watchdog daemon and the AG daemon is 1 to n.
 
-	+-----------+ (n)      Apache Thrift (binary)	(1) +-----------------+
-	| AG Daemon |<------------------------------------->| Watchdog Daemon |
-	+-----------+                                       +-----------------+
-	/           \
-       /             \
-      /               \
-+----------+     +------------+
-| AG - SQL |     | AG - shell |
-+----------+     +------------+
+			+-----------+ (n)      Apache Thrift (binary)	(1) +-----------------+
+			| AG Daemon |<------------------------------------->| Watchdog Daemon |
+			+-----------+                                       +-----------------+
+			/           \
+	       /             \
+	      /               \
+	+----------+     +------------+
+	| AG - SQL |     | AG - shell |
+	+----------+     +------------+
 
 NOTE: Both AG and Watchdog daemons should adhere to correct daemon behaviour according to W. Richard Stevens.
 
