@@ -21,12 +21,14 @@ public class IPCOutputStream extends OutputStream {
     private IPCFileHandle handle;
     private long offset;
     private boolean closed;
+    private long prevFlushedOffset;
     
     public IPCOutputStream(IPCFileSystem fs, IPCFileHandle handle) {
         this.filesystem = fs;
         this.handle = handle;
         
         this.offset = 0;
+        this.prevFlushedOffset = 0;
         this.closed = false;
     }
     
@@ -73,13 +75,19 @@ public class IPCOutputStream extends OutputStream {
             throw new IOException("OutputStream is already closed");
         }
         
-        this.handle.flush();
+        if(this.prevFlushedOffset != this.offset) {
+            // flush stale data
+            this.handle.flush();
+            this.prevFlushedOffset = this.offset;
+        }
     }
     
     @Override
     public void close() throws IOException {
+        flush();
+        
         this.handle.close();
-        this.filesystem.notifyClosed(this);  
+        this.filesystem.notifyClosed(this);
         this.closed = true;
     }
 }

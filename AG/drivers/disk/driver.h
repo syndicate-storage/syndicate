@@ -10,9 +10,10 @@
 #include <errno.h>
 #include <ftw.h>
 
-#include "libgateway.h"
-#include "ms-client.h"
-#include "libsyndicate.h"
+#include <libgateway.h>
+#include <ms-client.h>
+#include <libsyndicate.h>
+#include <AG-util.h>
 
 using namespace std;
 
@@ -37,11 +38,17 @@ struct gateway_ctx {
 
    // input descriptor
    int fd;
+   // blocking factor
+   ssize_t blocking_factor;
 };
 
 typedef map<string, struct md_entry*> content_map;
+static int publish_to_volumes(const char *fpath, const struct stat *sb,
+	int tflag, struct FTW *ftwbuf); 
 static int publish(const char *fpath, const struct stat *sb,
-	int tflag, struct FTW *ftwbuf);
+	int tflag, struct FTW *ftwbuf, uint64_t volume_id);
+void init();
+void* term_handler(void *cls);
 
 #endif //_DISK_DRIVER_H_
 

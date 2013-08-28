@@ -1,3 +1,5 @@
+#include <libgateway.h>
+
 #include <AG-util.h>
 
 struct _driver_events de;
@@ -137,8 +139,16 @@ void* handle_command (char *cmd) {
     if (cmd == NULL)
 	return NULL;
     if (strncmp(cmd, DRIVER_TERMINATE_STR, DRIVER_CMD_LEN) == 0) {
-	if (de.deh[DRIVER_TERMINATE] != NULL)
+	if (de.deh[DRIVER_TERMINATE] != NULL) {
+	    //Close the fifo and delte the fifo.
+	    close(de.fifo_fd);
+	    pid_t pid = getpid();
+	    stringstream sstr;
+	    sstr<<FIFO_PREFIX<<pid;
+	    char* fifo_path = strdup(sstr.str().c_str());
+	    unlink(fifo_path);
 	    return de.deh[DRIVER_TERMINATE](de.deh_arg[DRIVER_TERMINATE]);
+	}
     }
     else if (strncmp(cmd, DRIVER_RECONF_STR, DRIVER_CMD_LEN) == 0) {
 	if (de.deh[DRIVER_RECONF] != NULL)
@@ -148,5 +158,39 @@ void* handle_command (char *cmd) {
 	return NULL;
     }
     return NULL;
+}
+
+int controller_signal_handler(pid_t pid, int flags) {
+    //Make sure to handle STOP_CTRL_FLAG after handling all the signal.
+    int fifo_fd = 0;
+    stringstream sstr;
+    sstr<<FIFO_PREFIX<<pid;
+    char* fifo_path = strdup(sstr.str().c_str());
+    int rc = mkfifo(fifo_path, S_IRUSR | S_IWUSR | S_IRGRP);
+    if (rc < 0) {
+	if (errno != EEXIST) {
+	    perror("mkfifo");
+	    return -1;
+	}
+    }
+    fifo_fd = open(fifo_path, O_RDWR | O_NONBLOCK);
+    if (fifo_fd < 0) {
+	perror("open");
+	return -1;
+    }
+
+    if ((flags & RMAP_CTRL_FLAG) == RMAP_CTRL_FLAG) {
+	if (write(fifo_fd, "RCON", 4) < 0) {
+	    perror("write");
+	    return -1;
+	}
+    }
+    if ((flags & STOP_CTRL_FLAG) == STOP_CTRL_FLAG) {
+	if (write(fifo_fd, "TERM", 4) < 0) {
+	    perror("write");
+	    return -1;
+	}
+    }
+    return  0;
 }
 

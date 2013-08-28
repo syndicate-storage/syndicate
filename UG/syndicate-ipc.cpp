@@ -65,7 +65,9 @@ enum IPCMessageOperations {
     OP_READ_FILEDATA = 8,
     OP_WRITE_FILE_DATA = 9,
     OP_FLUSH = 10,
-    OP_CLOSE_FILE_HANDLE = 11
+    OP_CLOSE_FILE_HANDLE = 11,
+    OP_TRUNCATE_FILE = 12,
+          
 };
 
 /*
@@ -502,6 +504,30 @@ public:
 
         *data_out_size = toWriteSize;
     }
+    
+    void process_truncateFile(const char *message, char **data_out, int *data_out_size) {
+        dbprintf("%s", "process - truncate file\n");
+        char* bytes_ptr1 = (char*)message;
+        char* bytes_ptr2;
+        char* bytes_ptr3;
+        IPCFileInfo fi;
+        readFileInfo(bytes_ptr1, &fi, &bytes_ptr2);
+
+        long long int fileoffset;
+        readLong(bytes_ptr2, &fileoffset, &bytes_ptr3);
+        
+        // call
+        int returncode = syndicatefs_ftruncate(fileoffset, &fi);
+
+        int toWriteSize = 16;
+        *data_out = new char[toWriteSize];
+        char* outBuffer = *data_out;
+        char* bufferNext;
+
+        writeHeader(outBuffer, OP_TRUNCATE_FILE, returncode, 0, 0, &bufferNext);
+        
+        *data_out_size = toWriteSize;
+    }
 
 private:
     int syndicatefs_getattr(const char *path, struct stat *statbuf) {
@@ -802,7 +828,30 @@ private:
         logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_flush rc = %d\n", rc);
         return rc;
     }
+    
+    //int syndicatefs_ftruncate(const char *path, off_t length, struct fuse_file_info *fi) {
+    int syndicatefs_ftruncate(off_t length, struct IPCFileInfo *fi) {
+        
+        struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
 
+        logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_ftruncate( %ld, %p )\n", length, fi);
+
+        SYNDICATEFS_DATA->stats->enter(STAT_FTRUNCATE);
+
+        //struct fs_file_handle* fh = (struct fs_file_handle*) fi->fh;
+        struct fs_file_handle* fh = (struct fs_file_handle*) fi->handle;
+        int rc = fs_entry_ftruncate(SYNDICATEFS_DATA->core, fh, length, conf->owner, SYNDICATEFS_DATA->core->volume);
+        if (rc != 0) {
+            errorf("fs_entry_ftruncate rc = %d\n", rc);
+        }
+
+        SYNDICATEFS_DATA->stats->leave(STAT_FTRUNCATE, rc);
+
+        logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_ftrunctate rc = %d\n", rc);
+
+        return rc;
+    }
+    
 private:
 
     int writeHeader(const char* buffer, int opcode, int returncode, int totalMsgSize, int totalNumOfMsg, char** bufferNext) {
@@ -1126,6 +1175,9 @@ private:
                 break;
             case OP_CLOSE_FILE_HANDLE:
                 protocolHandler.process_closeFileHandle(message_, &data_out_, &data_out_size);
+                break;
+            case OP_TRUNCATE_FILE:
+                protocolHandler.process_truncateFile(message_, &data_out_, &data_out_size);
                 break;
         }
 

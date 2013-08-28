@@ -46,10 +46,11 @@ struct _proc_table_entry {
     int	    block_file_wd;
     bool    is_read_complete;
     pid_t   proc_id;
-    off_t   current_max_block;
-    off_t   block_byte_offset;
+    //off_t   current_max_block;
+    //off_t   block_byte_offset;
+    off_t   current_offset;
     bool    valid;
-    pthread_mutex_t pte_lock;
+    pthread_rwlock_t pte_lock;
 }; 
 
 struct _block_status { 
@@ -77,7 +78,8 @@ void clean_invalid_proc_entry(proc_table_entry *pte);
 void delete_proc_entry(proc_table_entry *pte);
 void lock_pid_map();
 void unlock_pid_map();
-void lock_pte(proc_table_entry *pte);
+void wrlock_pte(proc_table_entry *pte);
+void rdlock_pte(proc_table_entry *pte);
 void unlock_pte(proc_table_entry *pte);
     
 class ProcHandler 

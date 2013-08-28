@@ -71,5 +71,7 @@ void* driver_event_loop(void *);
 
 void driver_event_start();
 
+int controller_signal_handler(pid_t pid, int flags);
+
 #endif //_AG_UTIL_H_
 

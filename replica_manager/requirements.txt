@@ -1,0 +1,5 @@
+dropbox==1.6
+lockfile==0.9.1
+python-daemon==1.6
+urllib3==1.7
+wsgiref==0.1.2

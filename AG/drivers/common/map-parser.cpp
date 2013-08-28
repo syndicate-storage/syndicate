@@ -272,7 +272,10 @@ void MapParserHandler::endElement (
 		free(shell_cmd);
 		shell_cmd = NULL;
 	    }
-	    mi->reval_sec = reval_secs;
+	    if (reval_secs > 0)
+		mi->reval_sec = reval_secs;
+	    else
+		mi->reval_sec = YEAR; 
 	    reval_secs = 0;
 	    mi->mi_time = 0;
 	    mi->id = current_id;

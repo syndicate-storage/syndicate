@@ -174,4 +174,13 @@ public class IPCInterfaceClient implements Closeable {
         // recv
         IPCMessageBuilder.readResultMessage(this.socketDataInputStream, IPCMessageBuilder.IPCMessageOperations.OP_CLOSE_FILE_HANDLE);
     }
+    
+    public synchronized void truncateFile(IPCFileInfo fileinfo, long fileoffset) throws IOException {
+        LOG.info("truncateFile : " + fileoffset);
+
+        // send
+        IPCMessageBuilder.sendFileTruncateMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_TRUNCATE_FILE, fileinfo, fileoffset);
+        // recv
+        IPCMessageBuilder.readResultMessage(this.socketDataInputStream, IPCMessageBuilder.IPCMessageOperations.OP_TRUNCATE_FILE);
+    }
 }
