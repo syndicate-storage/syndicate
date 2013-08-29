@@ -1,0 +1,44 @@
+# build libAGshelldriver.so
+
+import os
+
+# add additional source files here
+watchdog_daemon_source = """
+   daemon-config.cpp
+   main.cpp
+"""
+
+# add source file search paths here
+CPPPATH = """
+   #AG/watchdog-daemon
+"""
+
+# add library paths here
+LIBPATH = """
+"""
+
+# add libraries here
+LIBS = """
+    config++
+"""
+
+# add additional CPPFLAGS here
+CPPFLAGS = "-g"
+
+
+# get our environment
+Import('env')
+env = env.Clone()
+
+env.Append(LIBS = Split(LIBS))
+env.Append(CPPPATH = Split(CPPPATH))
+env.Append(CPPFLAGS = CPPFLAGS)
+env.Append(LIBPATH = Split(LIBPATH))
+
+watchdog_daemon_obj = env.Object( source=Split(watchdog_daemon_source) )
+
+# generate the shared library
+watchdog_daemon = env.Program("watchdog-daemon", source=[watchdog_daemon_obj]);
+
+Return( 'watchdog_daemon' )
+

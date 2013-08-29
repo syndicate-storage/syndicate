@@ -107,6 +107,11 @@ if "AG/drivers/shell" in COMMAND_LINE_TARGETS:
     env.Depends( libAGshelldriver, libsyndicate  )
     env.Depends( libAGshelldriver, libAGcommon  )
 
+#Watchdog daemon
+if "AG/watchdog-daemon" in COMMAND_LINE_TARGETS:
+    watchdog_daemon_out = "build/out/AG/watchdog-daemon"
+    watchdog_daemon = SConscript( "AG/watchdog-daemon/SConscript", variant_dir=watchdog_daemon_out )
+
 # ms build
 ms_out = "build/out/ms"
 ms = SConscript( "ms/SConscript", variant_dir=ms_out )
@@ -145,6 +150,13 @@ if "AG-shell-driver-install" in COMMAND_LINE_TARGETS:
     libAGshelldriver = SConscript( "AG/drivers/shell/SConscript", variant_dir=libAGshelldriver_out )
     ag_driver_shell_install = env.InstallLibrary( lib_install_dir, libAGshelldriver )
     env.Alias( 'AG-shell-driver-install', [ag_driver_shell_install] )
+
+# alias installation targets for AG watchdog daemon
+if "watchdog-daemon-install" in COMMAND_LINE_TARGETS:
+    watchdog_daemon_out = "build/out/AG/watchdog-daemon"
+    watchdog_daemon = SConscript( "AG/watchdog-daemon/SConscript", variant_dir=watchdog_daemon_out )
+
+common.install_targets( env, 'watchdog-daemon-install', bin_install_dir, ags )
 
 #if "AG-common-install" in COMMAND_LINE_TARGETS:
 ag_common_install = env.InstallLibrary( lib_install_dir, libAGcommon )
