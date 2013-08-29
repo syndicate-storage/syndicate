@@ -3,14 +3,33 @@
 import os
 
 # add additional source files here
-watchdog_daemon_source = """
+wd_daemon_source = """
    daemon-config.cpp
-   main.cpp
+   wdd-main.cpp
+   thrift/cpp/WDDaemon.cpp
+   thrift/cpp/WDDaemon_server.cpp
+   thrift/cpp/wd_daemon_constants.cpp
+   thrift/cpp/wd_daemon_types.cpp
+   thrift/cpp/common_types.cpp
+   thrift/cpp/common_constants.cpp
+"""
+
+ag_daemon_source = """
+   daemon-config.cpp
+   agd-main.cpp
+   thrift/cpp/AGDaemon.cpp
+   thrift/cpp/AGDaemon_server.cpp
+   thrift/cpp/ag_daemon_constants.cpp
+   thrift/cpp/ag_daemon_types.cpp
+   thrift/cpp/common_types.cpp
+   thrift/cpp/common_constants.cpp
 """
 
 # add source file search paths here
 CPPPATH = """
+   /usr/include/thrift
    #AG/watchdog-daemon
+   #AG/watchdog-daemon/thrift/cpp
 """
 
 # add library paths here
@@ -19,11 +38,16 @@ LIBPATH = """
 
 # add libraries here
 LIBS = """
+    libthrift
     config++
 """
 
 # add additional CPPFLAGS here
-CPPFLAGS = "-g"
+CPPFLAGS = """
+    -g 
+    -DHAVE_NETINET_IN_H 
+    -DHAVE_INTTYPES_H
+"""
 
 
 # get our environment
@@ -32,13 +56,15 @@ env = env.Clone()
 
 env.Append(LIBS = Split(LIBS))
 env.Append(CPPPATH = Split(CPPPATH))
-env.Append(CPPFLAGS = CPPFLAGS)
+env.Append(CPPFLAGS = Split(CPPFLAGS))
 env.Append(LIBPATH = Split(LIBPATH))
 
-watchdog_daemon_obj = env.Object( source=Split(watchdog_daemon_source) )
+wd_daemon_obj = env.Object( source=Split(wd_daemon_source) )
+ag_daemon_obj = env.Object( source=Split(ag_daemon_source) )
 
 # generate the shared library
-watchdog_daemon = env.Program("watchdog-daemon", source=[watchdog_daemon_obj]);
+wd_daemon = env.Program("wd-daemon", source=[wd_daemon_obj])
+ag_daemon = env.Program("ag-daemon", source=[ag_daemon_obj])
 
-Return( 'watchdog_daemon' )
+Return( 'ag_daemon wd_daemon' )
 
