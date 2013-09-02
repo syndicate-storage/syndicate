@@ -26,16 +26,16 @@ typedef struct _AGDaemonID__isset {
 class AGDaemonID {
  public:
 
-  static const char* ascii_fingerprint; // = "52F7D5E8217C4B8FC14F1F30BF2EB41C";
-  static const uint8_t binary_fingerprint[16]; // = {0x52,0xF7,0xD5,0xE8,0x21,0x7C,0x4B,0x8F,0xC1,0x4F,0x1F,0x30,0xBF,0x2E,0xB4,0x1C};
+  static const char* ascii_fingerprint; // = "F3540C99C9016F618854ABDC57D34F96";
+  static const uint8_t binary_fingerprint[16]; // = {0xF3,0x54,0x0C,0x99,0xC9,0x01,0x6F,0x61,0x88,0x54,0xAB,0xDC,0x57,0xD3,0x4F,0x96};
 
-  AGDaemonID() : addr(""), port(""), frequency(0) {
+  AGDaemonID() : addr(""), port(0), frequency(0) {
   }
 
   virtual ~AGDaemonID() throw() {}
 
   std::string addr;
-  std::string port;
+  int32_t port;
   int16_t frequency;
 
   _AGDaemonID__isset __isset;
@@ -44,7 +44,7 @@ class AGDaemonID {
     addr = val;
   }
 
-  void __set_port(const std::string& val) {
+  void __set_port(const int32_t val) {
     port = val;
   }
 

@@ -8,8 +8,8 @@
 
 namespace watchdog {
 
-const char* AGDaemonID::ascii_fingerprint = "52F7D5E8217C4B8FC14F1F30BF2EB41C";
-const uint8_t AGDaemonID::binary_fingerprint[16] = {0x52,0xF7,0xD5,0xE8,0x21,0x7C,0x4B,0x8F,0xC1,0x4F,0x1F,0x30,0xBF,0x2E,0xB4,0x1C};
+const char* AGDaemonID::ascii_fingerprint = "F3540C99C9016F618854ABDC57D34F96";
+const uint8_t AGDaemonID::binary_fingerprint[16] = {0xF3,0x54,0x0C,0x99,0xC9,0x01,0x6F,0x61,0x88,0x54,0xAB,0xDC,0x57,0xD3,0x4F,0x96};
 
 uint32_t AGDaemonID::read(::apache::thrift::protocol::TProtocol* iprot) {
 
@@ -40,8 +40,8 @@ uint32_t AGDaemonID::read(::apache::thrift::protocol::TProtocol* iprot) {
         }
         break;
       case 2:
-        if (ftype == ::apache::thrift::protocol::T_STRING) {
-          xfer += iprot->readString(this->port);
+        if (ftype == ::apache::thrift::protocol::T_I32) {
+          xfer += iprot->readI32(this->port);
           this->__isset.port = true;
         } else {
           xfer += iprot->skip(ftype);
@@ -73,8 +73,8 @@ uint32_t AGDaemonID::write(::apache::thrift::protocol::TProtocol* oprot) const {
   xfer += oprot->writeFieldBegin("addr", ::apache::thrift::protocol::T_STRING, 1);
   xfer += oprot->writeString(this->addr);
   xfer += oprot->writeFieldEnd();
-  xfer += oprot->writeFieldBegin("port", ::apache::thrift::protocol::T_STRING, 2);
-  xfer += oprot->writeString(this->port);
+  xfer += oprot->writeFieldBegin("port", ::apache::thrift::protocol::T_I32, 2);
+  xfer += oprot->writeI32(this->port);
   xfer += oprot->writeFieldEnd();
   xfer += oprot->writeFieldBegin("frequency", ::apache::thrift::protocol::T_I16, 3);
   xfer += oprot->writeI16(this->frequency);

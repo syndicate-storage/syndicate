@@ -29,6 +29,14 @@ uint32_t WDDaemon_pulse_args::read(::apache::thrift::protocol::TProtocol* iprot)
     switch (fid)
     {
       case 1:
+        if (ftype == ::apache::thrift::protocol::T_I32) {
+          xfer += iprot->readI32(this->id);
+          this->__isset.id = true;
+        } else {
+          xfer += iprot->skip(ftype);
+        }
+        break;
+      case 2:
         if (ftype == ::apache::thrift::protocol::T_SET) {
           {
             this->live_set.clear();
@@ -49,7 +57,7 @@ uint32_t WDDaemon_pulse_args::read(::apache::thrift::protocol::TProtocol* iprot)
           xfer += iprot->skip(ftype);
         }
         break;
-      case 2:
+      case 3:
         if (ftype == ::apache::thrift::protocol::T_SET) {
           {
             this->dead_set.clear();
@@ -85,7 +93,10 @@ uint32_t WDDaemon_pulse_args::read(::apache::thrift::protocol::TProtocol* iprot)
 uint32_t WDDaemon_pulse_args::write(::apache::thrift::protocol::TProtocol* oprot) const {
   uint32_t xfer = 0;
   xfer += oprot->writeStructBegin("WDDaemon_pulse_args");
-  xfer += oprot->writeFieldBegin("live_set", ::apache::thrift::protocol::T_SET, 1);
+  xfer += oprot->writeFieldBegin("id", ::apache::thrift::protocol::T_I32, 1);
+  xfer += oprot->writeI32(this->id);
+  xfer += oprot->writeFieldEnd();
+  xfer += oprot->writeFieldBegin("live_set", ::apache::thrift::protocol::T_SET, 2);
   {
     xfer += oprot->writeSetBegin(::apache::thrift::protocol::T_I32, static_cast<uint32_t>(this->live_set.size()));
     std::set<int32_t> ::const_iterator _iter12;
@@ -96,7 +107,7 @@ uint32_t WDDaemon_pulse_args::write(::apache::thrift::protocol::TProtocol* oprot
     xfer += oprot->writeSetEnd();
   }
   xfer += oprot->writeFieldEnd();
-  xfer += oprot->writeFieldBegin("dead_set", ::apache::thrift::protocol::T_SET, 2);
+  xfer += oprot->writeFieldBegin("dead_set", ::apache::thrift::protocol::T_SET, 3);
   {
     xfer += oprot->writeSetBegin(::apache::thrift::protocol::T_I32, static_cast<uint32_t>(this->dead_set.size()));
     std::set<int32_t> ::const_iterator _iter13;
@@ -115,7 +126,10 @@ uint32_t WDDaemon_pulse_args::write(::apache::thrift::protocol::TProtocol* oprot
 uint32_t WDDaemon_pulse_pargs::write(::apache::thrift::protocol::TProtocol* oprot) const {
   uint32_t xfer = 0;
   xfer += oprot->writeStructBegin("WDDaemon_pulse_pargs");
-  xfer += oprot->writeFieldBegin("live_set", ::apache::thrift::protocol::T_SET, 1);
+  xfer += oprot->writeFieldBegin("id", ::apache::thrift::protocol::T_I32, 1);
+  xfer += oprot->writeI32((*(this->id)));
+  xfer += oprot->writeFieldEnd();
+  xfer += oprot->writeFieldBegin("live_set", ::apache::thrift::protocol::T_SET, 2);
   {
     xfer += oprot->writeSetBegin(::apache::thrift::protocol::T_I32, static_cast<uint32_t>((*(this->live_set)).size()));
     std::set<int32_t> ::const_iterator _iter14;
@@ -126,7 +140,7 @@ uint32_t WDDaemon_pulse_pargs::write(::apache::thrift::protocol::TProtocol* opro
     xfer += oprot->writeSetEnd();
   }
   xfer += oprot->writeFieldEnd();
-  xfer += oprot->writeFieldBegin("dead_set", ::apache::thrift::protocol::T_SET, 2);
+  xfer += oprot->writeFieldBegin("dead_set", ::apache::thrift::protocol::T_SET, 3);
   {
     xfer += oprot->writeSetBegin(::apache::thrift::protocol::T_I32, static_cast<uint32_t>((*(this->dead_set)).size()));
     std::set<int32_t> ::const_iterator _iter15;
@@ -375,18 +389,177 @@ uint32_t WDDaemon_register_agd_presult::read(::apache::thrift::protocol::TProtoc
   return xfer;
 }
 
-void WDDaemonClient::pulse(const std::set<int32_t> & live_set, const std::set<int32_t> & dead_set)
+uint32_t WDDaemon_unregister_agd_args::read(::apache::thrift::protocol::TProtocol* iprot) {
+
+  uint32_t xfer = 0;
+  std::string fname;
+  ::apache::thrift::protocol::TType ftype;
+  int16_t fid;
+
+  xfer += iprot->readStructBegin(fname);
+
+  using ::apache::thrift::protocol::TProtocolException;
+
+
+  while (true)
+  {
+    xfer += iprot->readFieldBegin(fname, ftype, fid);
+    if (ftype == ::apache::thrift::protocol::T_STOP) {
+      break;
+    }
+    switch (fid)
+    {
+      case 1:
+        if (ftype == ::apache::thrift::protocol::T_I32) {
+          xfer += iprot->readI32(this->id);
+          this->__isset.id = true;
+        } else {
+          xfer += iprot->skip(ftype);
+        }
+        break;
+      default:
+        xfer += iprot->skip(ftype);
+        break;
+    }
+    xfer += iprot->readFieldEnd();
+  }
+
+  xfer += iprot->readStructEnd();
+
+  return xfer;
+}
+
+uint32_t WDDaemon_unregister_agd_args::write(::apache::thrift::protocol::TProtocol* oprot) const {
+  uint32_t xfer = 0;
+  xfer += oprot->writeStructBegin("WDDaemon_unregister_agd_args");
+  xfer += oprot->writeFieldBegin("id", ::apache::thrift::protocol::T_I32, 1);
+  xfer += oprot->writeI32(this->id);
+  xfer += oprot->writeFieldEnd();
+  xfer += oprot->writeFieldStop();
+  xfer += oprot->writeStructEnd();
+  return xfer;
+}
+
+uint32_t WDDaemon_unregister_agd_pargs::write(::apache::thrift::protocol::TProtocol* oprot) const {
+  uint32_t xfer = 0;
+  xfer += oprot->writeStructBegin("WDDaemon_unregister_agd_pargs");
+  xfer += oprot->writeFieldBegin("id", ::apache::thrift::protocol::T_I32, 1);
+  xfer += oprot->writeI32((*(this->id)));
+  xfer += oprot->writeFieldEnd();
+  xfer += oprot->writeFieldStop();
+  xfer += oprot->writeStructEnd();
+  return xfer;
+}
+
+uint32_t WDDaemon_unregister_agd_result::read(::apache::thrift::protocol::TProtocol* iprot) {
+
+  uint32_t xfer = 0;
+  std::string fname;
+  ::apache::thrift::protocol::TType ftype;
+  int16_t fid;
+
+  xfer += iprot->readStructBegin(fname);
+
+  using ::apache::thrift::protocol::TProtocolException;
+
+
+  while (true)
+  {
+    xfer += iprot->readFieldBegin(fname, ftype, fid);
+    if (ftype == ::apache::thrift::protocol::T_STOP) {
+      break;
+    }
+    switch (fid)
+    {
+      case 0:
+        if (ftype == ::apache::thrift::protocol::T_I32) {
+          xfer += iprot->readI32(this->success);
+          this->__isset.success = true;
+        } else {
+          xfer += iprot->skip(ftype);
+        }
+        break;
+      default:
+        xfer += iprot->skip(ftype);
+        break;
+    }
+    xfer += iprot->readFieldEnd();
+  }
+
+  xfer += iprot->readStructEnd();
+
+  return xfer;
+}
+
+uint32_t WDDaemon_unregister_agd_result::write(::apache::thrift::protocol::TProtocol* oprot) const {
+
+  uint32_t xfer = 0;
+
+  xfer += oprot->writeStructBegin("WDDaemon_unregister_agd_result");
+
+  if (this->__isset.success) {
+    xfer += oprot->writeFieldBegin("success", ::apache::thrift::protocol::T_I32, 0);
+    xfer += oprot->writeI32(this->success);
+    xfer += oprot->writeFieldEnd();
+  }
+  xfer += oprot->writeFieldStop();
+  xfer += oprot->writeStructEnd();
+  return xfer;
+}
+
+uint32_t WDDaemon_unregister_agd_presult::read(::apache::thrift::protocol::TProtocol* iprot) {
+
+  uint32_t xfer = 0;
+  std::string fname;
+  ::apache::thrift::protocol::TType ftype;
+  int16_t fid;
+
+  xfer += iprot->readStructBegin(fname);
+
+  using ::apache::thrift::protocol::TProtocolException;
+
+
+  while (true)
+  {
+    xfer += iprot->readFieldBegin(fname, ftype, fid);
+    if (ftype == ::apache::thrift::protocol::T_STOP) {
+      break;
+    }
+    switch (fid)
+    {
+      case 0:
+        if (ftype == ::apache::thrift::protocol::T_I32) {
+          xfer += iprot->readI32((*(this->success)));
+          this->__isset.success = true;
+        } else {
+          xfer += iprot->skip(ftype);
+        }
+        break;
+      default:
+        xfer += iprot->skip(ftype);
+        break;
+    }
+    xfer += iprot->readFieldEnd();
+  }
+
+  xfer += iprot->readStructEnd();
+
+  return xfer;
+}
+
+void WDDaemonClient::pulse(const int32_t id, const std::set<int32_t> & live_set, const std::set<int32_t> & dead_set)
 {
-  send_pulse(live_set, dead_set);
+  send_pulse(id, live_set, dead_set);
   recv_pulse();
 }
 
-void WDDaemonClient::send_pulse(const std::set<int32_t> & live_set, const std::set<int32_t> & dead_set)
+void WDDaemonClient::send_pulse(const int32_t id, const std::set<int32_t> & live_set, const std::set<int32_t> & dead_set)
 {
   int32_t cseqid = 0;
   oprot_->writeMessageBegin("pulse", ::apache::thrift::protocol::T_CALL, cseqid);
 
   WDDaemon_pulse_pargs args;
+  args.id = &id;
   args.live_set = &live_set;
   args.dead_set = &dead_set;
   args.write(oprot_);
@@ -487,6 +660,64 @@ int32_t WDDaemonClient::recv_register_agd()
   throw ::apache::thrift::TApplicationException(::apache::thrift::TApplicationException::MISSING_RESULT, "register_agd failed: unknown result");
 }
 
+int32_t WDDaemonClient::unregister_agd(const int32_t id)
+{
+  send_unregister_agd(id);
+  return recv_unregister_agd();
+}
+
+void WDDaemonClient::send_unregister_agd(const int32_t id)
+{
+  int32_t cseqid = 0;
+  oprot_->writeMessageBegin("unregister_agd", ::apache::thrift::protocol::T_CALL, cseqid);
+
+  WDDaemon_unregister_agd_pargs args;
+  args.id = &id;
+  args.write(oprot_);
+
+  oprot_->writeMessageEnd();
+  oprot_->getTransport()->writeEnd();
+  oprot_->getTransport()->flush();
+}
+
+int32_t WDDaemonClient::recv_unregister_agd()
+{
+
+  int32_t rseqid = 0;
+  std::string fname;
+  ::apache::thrift::protocol::TMessageType mtype;
+
+  iprot_->readMessageBegin(fname, mtype, rseqid);
+  if (mtype == ::apache::thrift::protocol::T_EXCEPTION) {
+    ::apache::thrift::TApplicationException x;
+    x.read(iprot_);
+    iprot_->readMessageEnd();
+    iprot_->getTransport()->readEnd();
+    throw x;
+  }
+  if (mtype != ::apache::thrift::protocol::T_REPLY) {
+    iprot_->skip(::apache::thrift::protocol::T_STRUCT);
+    iprot_->readMessageEnd();
+    iprot_->getTransport()->readEnd();
+  }
+  if (fname.compare("unregister_agd") != 0) {
+    iprot_->skip(::apache::thrift::protocol::T_STRUCT);
+    iprot_->readMessageEnd();
+    iprot_->getTransport()->readEnd();
+  }
+  int32_t _return;
+  WDDaemon_unregister_agd_presult result;
+  result.success = &_return;
+  result.read(iprot_);
+  iprot_->readMessageEnd();
+  iprot_->getTransport()->readEnd();
+
+  if (result.__isset.success) {
+    return _return;
+  }
+  throw ::apache::thrift::TApplicationException(::apache::thrift::TApplicationException::MISSING_RESULT, "unregister_agd failed: unknown result");
+}
+
 bool WDDaemonProcessor::process(boost::shared_ptr<apache::thrift::protocol::TProtocol> piprot, boost::shared_ptr<apache::thrift::protocol::TProtocol> poprot, void* callContext) {
 
   ::apache::thrift::protocol::TProtocol* iprot = piprot.get();
@@ -555,7 +786,7 @@ void WDDaemonProcessor::process_pulse(int32_t seqid, ::apache::thrift::protocol:
 
   WDDaemon_pulse_result result;
   try {
-    iface_->pulse(args.live_set, args.dead_set);
+    iface_->pulse(args.id, args.live_set, args.dead_set);
   } catch (const std::exception& e) {
     if (this->eventHandler_.get() != NULL) {
       this->eventHandler_->handlerError(ctx, "WDDaemon.pulse");
@@ -636,6 +867,60 @@ void WDDaemonProcessor::process_register_agd(int32_t seqid, ::apache::thrift::pr
 
   if (this->eventHandler_.get() != NULL) {
     this->eventHandler_->postWrite(ctx, "WDDaemon.register_agd", bytes);
+  }
+}
+
+void WDDaemonProcessor::process_unregister_agd(int32_t seqid, ::apache::thrift::protocol::TProtocol* iprot, ::apache::thrift::protocol::TProtocol* oprot, void* callContext)
+{
+  void* ctx = NULL;
+  if (this->eventHandler_.get() != NULL) {
+    ctx = this->eventHandler_->getContext("WDDaemon.unregister_agd", callContext);
+  }
+  apache::thrift::TProcessorContextFreer freer(this->eventHandler_.get(), ctx, "WDDaemon.unregister_agd");
+
+  if (this->eventHandler_.get() != NULL) {
+    this->eventHandler_->preRead(ctx, "WDDaemon.unregister_agd");
+  }
+
+  WDDaemon_unregister_agd_args args;
+  args.read(iprot);
+  iprot->readMessageEnd();
+  uint32_t bytes = iprot->getTransport()->readEnd();
+
+  if (this->eventHandler_.get() != NULL) {
+    this->eventHandler_->postRead(ctx, "WDDaemon.unregister_agd", bytes);
+  }
+
+  WDDaemon_unregister_agd_result result;
+  try {
+    result.success = iface_->unregister_agd(args.id);
+    result.__isset.success = true;
+  } catch (const std::exception& e) {
+    if (this->eventHandler_.get() != NULL) {
+      this->eventHandler_->handlerError(ctx, "WDDaemon.unregister_agd");
+    }
+
+    apache::thrift::TApplicationException x(e.what());
+    oprot->writeMessageBegin("unregister_agd", apache::thrift::protocol::T_EXCEPTION, seqid);
+    x.write(oprot);
+    oprot->writeMessageEnd();
+    oprot->getTransport()->writeEnd();
+    oprot->getTransport()->flush();
+    return;
+  }
+
+  if (this->eventHandler_.get() != NULL) {
+    this->eventHandler_->preWrite(ctx, "WDDaemon.unregister_agd");
+  }
+
+  oprot->writeMessageBegin("unregister_agd", apache::thrift::protocol::T_REPLY, seqid);
+  result.write(oprot);
+  oprot->writeMessageEnd();
+  bytes = oprot->getTransport()->writeEnd();
+  oprot->getTransport()->flush();
+
+  if (this->eventHandler_.get() != NULL) {
+    this->eventHandler_->postWrite(ctx, "WDDaemon.unregister_agd", bytes);
   }
 }
 

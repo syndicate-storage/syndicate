@@ -15,8 +15,9 @@ namespace watchdog {
 class WDDaemonIf {
  public:
   virtual ~WDDaemonIf() {}
-  virtual void pulse(const std::set<int32_t> & live_set, const std::set<int32_t> & dead_set) = 0;
+  virtual void pulse(const int32_t id, const std::set<int32_t> & live_set, const std::set<int32_t> & dead_set) = 0;
   virtual int32_t register_agd(const  ::watchdog::AGDaemonID& agdid) = 0;
+  virtual int32_t unregister_agd(const int32_t id) = 0;
 };
 
 class WDDaemonIfFactory {
@@ -46,17 +47,22 @@ class WDDaemonIfSingletonFactory : virtual public WDDaemonIfFactory {
 class WDDaemonNull : virtual public WDDaemonIf {
  public:
   virtual ~WDDaemonNull() {}
-  void pulse(const std::set<int32_t> & /* live_set */, const std::set<int32_t> & /* dead_set */) {
+  void pulse(const int32_t /* id */, const std::set<int32_t> & /* live_set */, const std::set<int32_t> & /* dead_set */) {
     return;
   }
   int32_t register_agd(const  ::watchdog::AGDaemonID& /* agdid */) {
     int32_t _return = 0;
     return _return;
   }
+  int32_t unregister_agd(const int32_t /* id */) {
+    int32_t _return = 0;
+    return _return;
+  }
 };
 
 typedef struct _WDDaemon_pulse_args__isset {
-  _WDDaemon_pulse_args__isset() : live_set(false), dead_set(false) {}
+  _WDDaemon_pulse_args__isset() : id(false), live_set(false), dead_set(false) {}
+  bool id;
   bool live_set;
   bool dead_set;
 } _WDDaemon_pulse_args__isset;
@@ -64,15 +70,20 @@ typedef struct _WDDaemon_pulse_args__isset {
 class WDDaemon_pulse_args {
  public:
 
-  WDDaemon_pulse_args() {
+  WDDaemon_pulse_args() : id(0) {
   }
 
   virtual ~WDDaemon_pulse_args() throw() {}
 
+  int32_t id;
   std::set<int32_t>  live_set;
   std::set<int32_t>  dead_set;
 
   _WDDaemon_pulse_args__isset __isset;
+
+  void __set_id(const int32_t val) {
+    id = val;
+  }
 
   void __set_live_set(const std::set<int32_t> & val) {
     live_set = val;
@@ -84,6 +95,8 @@ class WDDaemon_pulse_args {
 
   bool operator == (const WDDaemon_pulse_args & rhs) const
   {
+    if (!(id == rhs.id))
+      return false;
     if (!(live_set == rhs.live_set))
       return false;
     if (!(dead_set == rhs.dead_set))
@@ -108,6 +121,7 @@ class WDDaemon_pulse_pargs {
 
   virtual ~WDDaemon_pulse_pargs() throw() {}
 
+  const int32_t* id;
   const std::set<int32_t> * live_set;
   const std::set<int32_t> * dead_set;
 
@@ -260,6 +274,114 @@ class WDDaemon_register_agd_presult {
 
 };
 
+typedef struct _WDDaemon_unregister_agd_args__isset {
+  _WDDaemon_unregister_agd_args__isset() : id(false) {}
+  bool id;
+} _WDDaemon_unregister_agd_args__isset;
+
+class WDDaemon_unregister_agd_args {
+ public:
+
+  WDDaemon_unregister_agd_args() : id(0) {
+  }
+
+  virtual ~WDDaemon_unregister_agd_args() throw() {}
+
+  int32_t id;
+
+  _WDDaemon_unregister_agd_args__isset __isset;
+
+  void __set_id(const int32_t val) {
+    id = val;
+  }
+
+  bool operator == (const WDDaemon_unregister_agd_args & rhs) const
+  {
+    if (!(id == rhs.id))
+      return false;
+    return true;
+  }
+  bool operator != (const WDDaemon_unregister_agd_args &rhs) const {
+    return !(*this == rhs);
+  }
+
+  bool operator < (const WDDaemon_unregister_agd_args & ) const;
+
+  uint32_t read(::apache::thrift::protocol::TProtocol* iprot);
+  uint32_t write(::apache::thrift::protocol::TProtocol* oprot) const;
+
+};
+
+
+class WDDaemon_unregister_agd_pargs {
+ public:
+
+
+  virtual ~WDDaemon_unregister_agd_pargs() throw() {}
+
+  const int32_t* id;
+
+  uint32_t write(::apache::thrift::protocol::TProtocol* oprot) const;
+
+};
+
+typedef struct _WDDaemon_unregister_agd_result__isset {
+  _WDDaemon_unregister_agd_result__isset() : success(false) {}
+  bool success;
+} _WDDaemon_unregister_agd_result__isset;
+
+class WDDaemon_unregister_agd_result {
+ public:
+
+  WDDaemon_unregister_agd_result() : success(0) {
+  }
+
+  virtual ~WDDaemon_unregister_agd_result() throw() {}
+
+  int32_t success;
+
+  _WDDaemon_unregister_agd_result__isset __isset;
+
+  void __set_success(const int32_t val) {
+    success = val;
+  }
+
+  bool operator == (const WDDaemon_unregister_agd_result & rhs) const
+  {
+    if (!(success == rhs.success))
+      return false;
+    return true;
+  }
+  bool operator != (const WDDaemon_unregister_agd_result &rhs) const {
+    return !(*this == rhs);
+  }
+
+  bool operator < (const WDDaemon_unregister_agd_result & ) const;
+
+  uint32_t read(::apache::thrift::protocol::TProtocol* iprot);
+  uint32_t write(::apache::thrift::protocol::TProtocol* oprot) const;
+
+};
+
+typedef struct _WDDaemon_unregister_agd_presult__isset {
+  _WDDaemon_unregister_agd_presult__isset() : success(false) {}
+  bool success;
+} _WDDaemon_unregister_agd_presult__isset;
+
+class WDDaemon_unregister_agd_presult {
+ public:
+
+
+  virtual ~WDDaemon_unregister_agd_presult() throw() {}
+
+  int32_t* success;
+
+  _WDDaemon_unregister_agd_presult__isset __isset;
+
+  uint32_t read(::apache::thrift::protocol::TProtocol* iprot);
+
+};
+
 class WDDaemonClient : virtual public WDDaemonIf {
  public:
   WDDaemonClient(boost::shared_ptr< ::apache::thrift::protocol::TProtocol> prot) :
@@ -280,12 +402,15 @@ class WDDaemonClient : virtual public WDDaemonIf {
   boost::shared_ptr< ::apache::thrift::protocol::TProtocol> getOutputProtocol() {
     return poprot_;
   }
-  void pulse(const std::set<int32_t> & live_set, const std::set<int32_t> & dead_set);
-  void send_pulse(const std::set<int32_t> & live_set, const std::set<int32_t> & dead_set);
+  void pulse(const int32_t id, const std::set<int32_t> & live_set, const std::set<int32_t> & dead_set);
+  void send_pulse(const int32_t id, const std::set<int32_t> & live_set, const std::set<int32_t> & dead_set);
   void recv_pulse();
   int32_t register_agd(const  ::watchdog::AGDaemonID& agdid);
   void send_register_agd(const  ::watchdog::AGDaemonID& agdid);
   int32_t recv_register_agd();
+  int32_t unregister_agd(const int32_t id);
+  void send_unregister_agd(const int32_t id);
+  int32_t recv_unregister_agd();
  protected:
   boost::shared_ptr< ::apache::thrift::protocol::TProtocol> piprot_;
   boost::shared_ptr< ::apache::thrift::protocol::TProtocol> poprot_;
@@ -301,11 +426,13 @@ class WDDaemonProcessor : public ::apache::thrift::TProcessor {
   std::map<std::string, void (WDDaemonProcessor::*)(int32_t, apache::thrift::protocol::TProtocol*, apache::thrift::protocol::TProtocol*, void*)> processMap_;
   void process_pulse(int32_t seqid, apache::thrift::protocol::TProtocol* iprot, apache::thrift::protocol::TProtocol* oprot, void* callContext);
   void process_register_agd(int32_t seqid, apache::thrift::protocol::TProtocol* iprot, apache::thrift::protocol::TProtocol* oprot, void* callContext);
+  void process_unregister_agd(int32_t seqid, apache::thrift::protocol::TProtocol* iprot, apache::thrift::protocol::TProtocol* oprot, void* callContext);
  public:
   WDDaemonProcessor(boost::shared_ptr<WDDaemonIf> iface) :
     iface_(iface) {
     processMap_["pulse"] = &WDDaemonProcessor::process_pulse;
     processMap_["register_agd"] = &WDDaemonProcessor::process_register_agd;
+    processMap_["unregister_agd"] = &WDDaemonProcessor::process_unregister_agd;
   }
 
   virtual bool process(boost::shared_ptr<apache::thrift::protocol::TProtocol> piprot, boost::shared_ptr<apache::thrift::protocol::TProtocol> poprot, void* callContext);
@@ -335,10 +462,10 @@ class WDDaemonMultiface : virtual public WDDaemonIf {
     ifaces_.push_back(iface);
   }
  public:
-  void pulse(const std::set<int32_t> & live_set, const std::set<int32_t> & dead_set) {
+  void pulse(const int32_t id, const std::set<int32_t> & live_set, const std::set<int32_t> & dead_set) {
     size_t sz = ifaces_.size();
     for (size_t i = 0; i < sz; ++i) {
-      ifaces_[i]->pulse(live_set, dead_set);
+      ifaces_[i]->pulse(id, live_set, dead_set);
     }
   }
 
@@ -349,6 +476,17 @@ class WDDaemonMultiface : virtual public WDDaemonIf {
         return ifaces_[i]->register_agd(agdid);
       } else {
         ifaces_[i]->register_agd(agdid);
+      }
+    }
+  }
+
+  int32_t unregister_agd(const int32_t id) {
+    size_t sz = ifaces_.size();
+    for (size_t i = 0; i < sz; ++i) {
+      if (i == sz - 1) {
+        return ifaces_[i]->unregister_agd(id);
+      } else {
+        ifaces_[i]->unregister_agd(id);
       }
     }
   }

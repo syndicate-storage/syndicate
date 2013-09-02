@@ -7,7 +7,7 @@ namespace cpp watchdog
 
 struct AGDaemonID {
     1: string addr,
-    2: string port,
+    2: i32     port,
     3: i16    frequency;
 }
 
