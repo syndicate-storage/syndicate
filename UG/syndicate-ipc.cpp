@@ -32,6 +32,9 @@ syndicateipc_context native_context;
  * Structures
  */
 const int MAX_PATH_SIZE = 1024;
+const int MAX_XATTR_NAME_SIZE = 1024;
+const int MAX_XATTR_VALUE_SIZE = 1024;
+const int MAX_XATTR_LIST_INITIAL_SIZE = 1024;
 
 struct IPCFileInfo {
     long long int handle;
@@ -67,7 +70,8 @@ enum IPCMessageOperations {
     OP_FLUSH = 10,
     OP_CLOSE_FILE_HANDLE = 11,
     OP_TRUNCATE_FILE = 12,
-          
+    OP_GET_EXTENDED_ATTR = 13,
+    OP_LIST_EXTENDED_ATTR = 14,
 };
 
 /*
@@ -528,6 +532,91 @@ public:
         
         *data_out_size = toWriteSize;
     }
+    
+    void process_getXAttr(const char *message, char **data_out, int *data_out_size) {
+        dbprintf("%s", "process - getxattr\n");
+        char* bytes_ptr1 = (char*)message;
+        char* bytes_ptr2;
+        char* bytes_ptr3;
+        char path[MAX_PATH_SIZE];
+        readPath(bytes_ptr1, path, &bytes_ptr2);
+        
+        char name[MAX_XATTR_NAME_SIZE];
+        readString(bytes_ptr2, name, &bytes_ptr3);
+        
+        char value[MAX_XATTR_VALUE_SIZE];
+
+        // call
+        int returncode = syndicatefs_getxattr(path, name, value, MAX_XATTR_VALUE_SIZE);
+        
+        int attrLen = strlen(value);
+
+        int toWriteSize = 16;
+        if (returncode >= 0) {
+            toWriteSize += 4 + attrLen;
+        }
+
+        *data_out = new char[toWriteSize];
+        char *outBuffer = *data_out;
+        char *bufferNext;
+
+        writeHeader(outBuffer, OP_GET_EXTENDED_ATTR, returncode, 4 + attrLen, 1, &bufferNext);
+        if (returncode >= 0) {
+            outBuffer = bufferNext;
+            writeString(outBuffer, value, attrLen, &bufferNext);
+        }
+
+        *data_out_size = toWriteSize;
+    }
+    
+    void process_listXAttr(const char *message, char **data_out, int *data_out_size) {
+        dbprintf("%s", "process - listxattr\n");
+        char* bytes_ptr1 = (char*)message;
+        char* bytes_ptr2;
+        char path[MAX_PATH_SIZE];
+        readPath(bytes_ptr1, path, &bytes_ptr2);
+        
+        char* list = new char[MAX_XATTR_LIST_INITIAL_SIZE];
+        
+        // call
+        int returncode = syndicatefs_listxattr(path, list, MAX_XATTR_LIST_INITIAL_SIZE);
+        
+        std::vector<char*> entryVector;
+        char* listptr = list;
+        for(int i=0;i<returncode;i++) {
+            int entryLen = strlen(listptr);
+            if(entryLen > 0) {
+                entryVector.push_back(listptr);
+            }
+            listptr += entryLen + 1;
+        }
+        
+        int totalMessageSize = 0;
+        int numOfEntries = entryVector.size();
+
+        for (int i = 0; i < numOfEntries; i++) {
+            totalMessageSize += strlen(entryVector[i]);
+        }
+
+        totalMessageSize += 4 * numOfEntries;
+
+        int toWriteSize = 16 + totalMessageSize;
+        *data_out = new char[toWriteSize];
+        char *outBuffer = *data_out;
+        char *bufferNext;
+
+        writeHeader(outBuffer, OP_LIST_EXTENDED_ATTR, returncode, totalMessageSize, numOfEntries, &bufferNext);
+        
+        for (int j = 0; j < numOfEntries; j++) {
+            outBuffer = bufferNext;
+            writeString(outBuffer, entryVector[j], strlen(entryVector[j]), &bufferNext);
+        }
+        
+        entryVector.clear();
+        delete list;
+
+        *data_out_size = toWriteSize;
+    }
 
 private:
     int syndicatefs_getattr(const char *path, struct stat *statbuf) {
@@ -852,6 +941,39 @@ private:
         return rc;
     }
     
+    int syndicatefs_getxattr(const char *path, const char *name, char *value, size_t size) {
+
+        struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
+
+        logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_getxattr( %s, %s, %p, %d )\n", path, name, value, size);
+
+        SYNDICATEFS_DATA->stats->enter(STAT_GETXATTR);
+
+        int rc = fs_entry_getxattr(SYNDICATEFS_DATA->core, path, name, value, size, conf->owner, SYNDICATEFS_DATA->core->volume);
+
+        SYNDICATEFS_DATA->stats->leave(STAT_GETXATTR, rc);
+
+        logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_getxattr rc = %d\n", rc);
+        return rc;
+    }
+    
+    int syndicatefs_listxattr(const char *path, char *list, size_t size) {
+
+        struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
+
+        logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_listxattr( %s, %p, %d )\n", path, list, size);
+
+        SYNDICATEFS_DATA->stats->enter(STAT_LISTXATTR);
+
+        int rc = fs_entry_listxattr(SYNDICATEFS_DATA->core, path, list, size, conf->owner, SYNDICATEFS_DATA->core->volume);
+
+        SYNDICATEFS_DATA->stats->leave(STAT_LISTXATTR, rc);
+
+        logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_listxattr rc = %d\n", rc);
+
+        return rc;
+    }
+    
 private:
 
     int writeHeader(const char* buffer, int opcode, int returncode, int totalMsgSize, int totalNumOfMsg, char** bufferNext) {
@@ -872,6 +994,19 @@ private:
         return 16;
     }
 
+    int readString(const char* msgFrom, char* outString, char** msgNext) {
+        char* bytes_ptr = (char*) msgFrom;
+        int msgLen = packetUtil::getIntFromBytes(bytes_ptr);
+        bytes_ptr += 4;
+
+        strncpy(outString, bytes_ptr, msgLen);
+        outString[msgLen] = 0;
+        bytes_ptr += msgLen;
+
+        *msgNext = bytes_ptr;
+        return msgLen;
+    }
+    
     int readPath(const char* msgFrom, char* outPath, char** msgNext) {
         char* bytes_ptr = (char*) msgFrom;
         int msgLen = packetUtil::getIntFromBytes(bytes_ptr);
@@ -885,6 +1020,18 @@ private:
         return msgLen;
     }
 
+    int writeString(char* buffer, const char* inString, int strLen, char** bufferNext) {
+        char* bytes_ptr = buffer;
+        packetUtil::writeIntToBuffer(bytes_ptr, strLen);
+        bytes_ptr += 4;
+
+        memcpy(bytes_ptr, inString, strLen);
+        bytes_ptr += strLen;
+
+        *bufferNext = bytes_ptr;
+        return strLen + 4;
+    }
+    
     int writePath(char* buffer, const char* path, int pathLen, char** bufferNext) {
         char* bytes_ptr = buffer;
         packetUtil::writeIntToBuffer(bytes_ptr, pathLen);
@@ -1178,6 +1325,12 @@ private:
                 break;
             case OP_TRUNCATE_FILE:
                 protocolHandler.process_truncateFile(message_, &data_out_, &data_out_size);
+                break;
+            case OP_GET_EXTENDED_ATTR:
+                protocolHandler.process_getXAttr(message_, &data_out_, &data_out_size);
+                break;
+            case OP_LIST_EXTENDED_ATTR:
+                protocolHandler.process_listXAttr(message_, &data_out_, &data_out_size);
                 break;
         }
 

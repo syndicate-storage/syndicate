@@ -24,7 +24,8 @@ public class IPCMessageBuilder {
     public enum IPCMessageOperations {
         OP_GET_STAT(0), OP_DELETE(1), OP_REMOVE_DIRECTORY(2), OP_RENAME(3), OP_MKDIR(4), 
         OP_READ_DIRECTORY(5), OP_GET_FILE_HANDLE(6), OP_CREATE_NEW_FILE(7), OP_READ_FILEDATA(8), 
-        OP_WRITE_FILEDATA(9), OP_FLUSH(10), OP_CLOSE_FILE_HANDLE(11), OP_TRUNCATE_FILE(12);
+        OP_WRITE_FILEDATA(9), OP_FLUSH(10), OP_CLOSE_FILE_HANDLE(11), OP_TRUNCATE_FILE(12),
+        OP_GET_EXTENDED_ATTR(13), OP_LIST_EXTENDED_ATTR(14);
         
         private int code = -1;
         
@@ -250,5 +251,15 @@ public class IPCMessageBuilder {
         System.arraycopy(msg, 0, buffer, offset, msg.length);
         
         return msg.length;
+    }
+    
+    public static byte[] readBytesMessage(DataInputStream dis, IPCMessageOperations op) throws IOException {
+        List<byte[]> arr = recvBytesMessage(dis, op);
+        
+        if(arr.size() != 1) {
+            throw new IOException("The number of message is not 1");
+        }
+        
+        return arr.get(0);
     }
 }

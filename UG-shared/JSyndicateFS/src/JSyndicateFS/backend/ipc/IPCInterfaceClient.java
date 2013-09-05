@@ -183,4 +183,13 @@ public class IPCInterfaceClient implements Closeable {
         // recv
         IPCMessageBuilder.readResultMessage(this.socketDataInputStream, IPCMessageBuilder.IPCMessageOperations.OP_TRUNCATE_FILE);
     }
+
+    public synchronized byte[] getExtendedAttr(String path) throws IOException {
+        LOG.info("getExtendedAttr : " + path);
+
+        // send
+        IPCMessageBuilder.sendStringsMessage(this.socketDataOutputStream, IPCMessageBuilder.IPCMessageOperations.OP_GET_EXTENDED_ATTR, path);
+        // recv
+        return IPCMessageBuilder.readBytesMessage(this.socketDataInputStream, IPCMessageBuilder.IPCMessageOperations.OP_GET_EXTENDED_ATTR);
+    }
 }
