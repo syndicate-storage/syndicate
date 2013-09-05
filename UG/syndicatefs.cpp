@@ -116,6 +116,8 @@ int syndicatefs_mkdir(const char *path, mode_t mode) {
    int rc = fs_entry_mkdir( SYNDICATEFS_DATA->core, path, mode, conf->owner, SYNDICATEFS_DATA->core->volume );
    
    SYNDICATEFS_DATA->stats->leave( STAT_MKDIR, rc );
+   
+   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_mkdir rc = %d\n", rc );
    return rc;
 }
 
@@ -268,7 +270,7 @@ int syndicatefs_open(const char *path, struct fuse_file_info *fi) {
    SYNDICATEFS_DATA->stats->enter( STAT_OPEN );
    
    int err = 0;
-   struct fs_file_handle* fh = fs_entry_open( SYNDICATEFS_DATA->core, path, NULL, conf->owner, SYNDICATEFS_DATA->core->volume, fi->flags, ~conf->usermask, &err );
+   struct fs_file_handle* fh = fs_entry_open( SYNDICATEFS_DATA->core, path, conf->owner, SYNDICATEFS_DATA->core->volume, fi->flags, ~conf->usermask, &err );
    
    // store the read handle
    fi->fh = (uint64_t)fh;
@@ -285,11 +287,8 @@ int syndicatefs_open(const char *path, struct fuse_file_info *fi) {
 
 /** Read data from an open file.  Return number of bytes read. */
 int syndicatefs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
-
-   struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
    
-   if( conf->debug_read )
-      logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_read( %s, %p, %ld, %ld, %p )\n", path, buf, size, offset, fi );
+   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_read( %s, %p, %ld, %ld, %p )\n", path, buf, size, offset, fi );
    
    SYNDICATEFS_DATA->stats->enter( STAT_READ );
    
@@ -307,8 +306,7 @@ int syndicatefs_read(const char *path, char *buf, size_t size, off_t offset, str
       memset( buf + rc, 0, size - rc );
    }
    
-   if( conf->debug_read )
-      logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_read rc = %ld\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_read rc = %ld\n", rc );
    
    SYNDICATEFS_DATA->stats->leave( STAT_READ, (rc >= 0 ? 0 : rc) );
    return rc;
@@ -554,7 +552,7 @@ int syndicatefs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off
       // fill in the directory data
       int i = 0;
       while( dirents[i] != NULL ) {
-         if( filler(buf, dirents[i]->data.path, NULL, 0) != 0 ) {
+         if( filler(buf, dirents[i]->data.name, NULL, 0) != 0 ) {
             logerr( SYNDICATEFS_DATA->logfile, "ERR: syndicatefs_readdir filler: buffer full\n");
             rc = -ENOMEM;
             break;
@@ -636,7 +634,7 @@ int syndicatefs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
    SYNDICATEFS_DATA->stats->enter( STAT_CREATE );
    
    int rc = 0;
-   struct fs_file_handle* fh = fs_entry_create( SYNDICATEFS_DATA->core, path, NULL, conf->owner, SYNDICATEFS_DATA->core->volume, mode, &rc );
+   struct fs_file_handle* fh = fs_entry_create( SYNDICATEFS_DATA->core, path, conf->owner, SYNDICATEFS_DATA->core->volume, mode, &rc );
    
    if( rc == 0 && fh != NULL ) {
       fi->fh = (uint64_t)( fh );

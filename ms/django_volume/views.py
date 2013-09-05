@@ -892,23 +892,7 @@ def createvolume(request):
 
             now_sec, now_nsec = clock_gettime()
 
-            rc = db.make_root(volume,
-                              ftype=MSENTRY_TYPE_DIR,
-                              fs_path="/",
-                              url=MS_URL,
-                              version=1,
-                              ctime_sec=now_sec,
-                              ctime_nsec=now_nsec,
-                              mtime_sec=now_sec,
-                              mtime_nsec=now_nsec,
-                              owner_id=volume.owner_id,
-                              coordinator_id=0,
-                              volume_id=volume.volume_id,
-                              mode=0755,
-                              size=4096,
-                              max_read_freshness=5000,
-                              max_write_freshness=0
-                            )
+            rc = db.make_root(volume, volume.owner_id )
 
             session['new_change'] = "Your new volume is ready."
             session['next_url'] = '/syn/volume/myvolumes/'

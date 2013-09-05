@@ -41,3 +41,7 @@ memcache = google_memcache
 # aliases for transaction
 transaction = ndb.transaction
 transactional = ndb.transactional
+
+# alises for query predicates
+opAND = ndb.AND
+opOR = ndb.OR

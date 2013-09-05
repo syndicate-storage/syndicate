@@ -6,12 +6,14 @@
 package Serialization;
 
 message FileMetadata {
-   required string fs_path = 6;
-   required int64 file_version = 1;
-   required int64 size = 2;
-   required int64 mtime_sec = 3;
-   required int32 mtime_nsec = 4;
-   required string content_url = 5;
+   required string fs_path = 8;
+   required uint64 volume_id = 1;
+   required uint64 gateway_id = 2;
+   required uint64 file_id = 3;
+   required int64 file_version = 4;
+   required int64 size = 5;
+   required int64 mtime_sec = 6;
+   required int32 mtime_nsec = 7;
 }
 
 message BlockList {
@@ -22,43 +24,55 @@ message BlockList {
 
 // a block of data to write
 message BlockData {
-   required string fs_path = 1;
-   required int64 file_version = 2;
-   required uint64 block_id = 3;
-   required int64 block_version = 4;
-   required string data = 5;
+   required uint64 volume_id = 1;
+   required uint64 gateway_id = 2;
+   required uint64 file_id = 3;
+   required int64 file_version = 4;
+   required uint64 block_id = 5;
+   required int64 block_version = 6;
+   required string data = 7;
+   required string fs_path = 8;
 }
 
 // truncate a file
 message TruncateRequest {
-   required string fs_path = 1;
-   required int64 file_version = 2;
-   required int64 size = 3;
+   required uint64 volume_id = 1;
+   required uint64 gateway_id = 2;
+   required uint64 file_id = 3;
+   required int64 file_version = 4;
+   required int64 size = 5;
+   required string fs_path = 6;
 }
 
 // detach a file or directory
 message DetachRequest {
-   required string fs_path = 1;
-   required int64 file_version = 2;
+   required uint64 volume_id = 1;
+   required uint64 gateway_id = 2;
+   required uint64 file_id = 3;
+   required int64 file_version = 4;
+   required string fs_path = 5;
 }
 
 // block url set (for manifests)
 message BlockURLSetMsg {
-   required uint64 start_id = 1;
-   required uint64 end_id = 2;
-   repeated int64 block_versions = 3;
-   required string file_url = 4;
+   required uint64 volume_id = 1;
+   required uint64 gateway_id = 2;
+   required uint64 file_id = 3;
+   required uint64 start_id = 4;
+   required uint64 end_id = 5;
+   repeated int64 block_versions = 6;
 }
 
 // manifest
 message ManifestMsg {
-   required int64 size = 1;
-   required int64 file_version = 2;
-   required int64 mtime_sec = 3;
-   required int32 mtime_nsec = 4;
-   required int64 manifest_mtime_sec = 5;
-   required int32 manifest_mtime_nsec = 6;
-   repeated BlockURLSetMsg block_url_set = 7;
+   required uint64 volume_id = 1;
+   required uint64 gateway_id = 2;
+   required uint64 file_id = 3;
+   required int64 file_version = 4;
+   required int64 size = 5;
+   required int64 mtime_sec = 6;
+   required int32 mtime_nsec = 7;
+   repeated BlockURLSetMsg block_url_set = 8;
 }
 
 // accepted message
@@ -89,23 +103,26 @@ message WriteMsg {
       ERROR = 8;
    }
 
-   required uint64 volume_version = 1;
-   required uint64 UG_version = 2;
-   required MsgType type = 3;
-   required uint64 user_id = 4;
-   required uint64 volume_id = 5;
-   required uint64 gateway_id = 6;
+   required uint64 volume_version = 1;    // what is the known volume metadata version on the sender
+   required uint64 UG_version = 2;        // what is the known UG metadata version on the sender
+   required uint64 RG_version = 3;        // what is the known RG metadata version on the sender
+   required uint64 AG_version = 4;        // what is the known AG metadata version on the sender
+   
+   required MsgType type = 5;             // what type of message
+   required uint64 user_id = 6;           // what user is running this gateway
+   required uint64 volume_id = 7;         // what volume is the sender in
+   required uint64 gateway_id = 8;        // who's sending this message
 
-   optional FileMetadata metadata = 7;
-   optional BlockList blocks = 8;
-   optional BlockData blockdata = 9;
-   optional TruncateRequest truncate = 10;
-   optional DetachRequest detach = 11;
-   optional AcceptMsg accepted = 12;
+   optional FileMetadata metadata = 9;
+   optional BlockList blocks = 10;
+   optional BlockData blockdata = 11;
+   optional TruncateRequest truncate = 12;
+   optional DetachRequest detach = 13;
+   optional AcceptMsg accepted = 14;
 
-   optional int32 errorcode = 13;
-   optional string errortxt = 14;
+   optional int32 errorcode = 15;
+   optional string errortxt = 16;
 
-   required string signature = 15;     // cryptographic signature with the gateway's private key
+   required string signature = 17;     // cryptographic signature with the gateway's private key
 }
 

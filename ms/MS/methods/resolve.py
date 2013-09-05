@@ -16,108 +16,106 @@ import errno
 import logging
 
 
-
-def __read_path_metadata( owner_id, volume, fs_path ):
-   """
-   Read a path's worth of metadata from the volume.
-   Return a list of path entries, and a list of children path entries (or None of the path refers to a file)
-   """
-
-   ent_metadata = MSEntry.Read( volume, fs_path )
-
-   valid = True
-   error = 0
-
-   # validate consistency and permissions on the directories leading to the base
-   # (avoid querying children if we can)
-   for i in xrange(0,len(ent_metadata) - 1):
-      ent = ent_metadata[i]
-
-      if ent == None:
-         # path refers to some nonexistant data
-         ent_metadata = ent_metadata[:i]
-         error = -errno.ENOENT;
-         break
-
-      # this must be a directory
-      if ent.ftype != MSENTRY_TYPE_DIR:
-         # not consistent
-         valid = False
-         ent_metadata = ent_metadata[:i]
-         error = -errno.ENOTDIR;
-         break
-
-      # this must be searchable
-      if ent.owner_id != owner_id and (ent.mode & 0011) == 0:
-         # not searchable
-         valid = False
-         ent_metadata = ent_metadata[:i]
-         error = -errno.EACCES;
-         break
-
-   children_metadata = []
-
-   if valid:
-      # got back valid, readable metadata.
-      # did we get back the entry at the base?
-      parts = fs_path.split("/")
-      if parts[-1] == "":
-         parts.pop()
-      
-      path_len = len( parts )
-      if len( ent_metadata ) == path_len:
-         # yup
-         base_ent = ent_metadata.pop()
-
-         # did we read the base?
-         if base_ent != None:
-            
-            # if it's a directory, and we can read it, read its children.
-            if base_ent.ftype == MSENTRY_TYPE_DIR and (base_ent.owner_id == owner_id or (base_ent.mode & 0044) != 0):
-               children_metadata = MSEntry.ListAll( volume, fs_path )
-
-            # force base_ent to be called "." if it's a directory
-            if base_ent.ftype == MSENTRY_TYPE_DIR:
-               base_ent.fs_path = "."
-               
-            children_metadata = [base_ent] + children_metadata
-         else:
-            error = -errno.ENOENT
-
-   if ent_metadata == None:
-      ent_metadata = []
-
-   return (ent_metadata, children_metadata, error)
-
-
-def Resolve( owner_id, volume, fs_path ):
-   """
-   Given an owner_id, volume, and an absolute filesystem path, resolve the path into an ms_reply message.
-   Return a serialized response
-   """
-
-   # get the metadata
-   path_metadata, children_metadata, error = __read_path_metadata( owner_id, volume, fs_path )
-
-   # serialize
-   reply = common.make_ms_reply( volume, error );
+def prettyprint( ent ):
+   ret = ""
    
-   found = True
 
-   for ent_dir in path_metadata:
-      if ent_dir != None:
-         ent_dir_msg = reply.entries_dir.add()
-         ent_dir.protobuf( ent_dir_msg )
+
+def Resolve( owner_id, volume, file_id, file_version, mtime_sec, mtime_nsec ):
+   """
+   Read file and listing of the given file_id
+   """
+
+   file_memcache = MSEntry.Read( volume, file_id, memcache_keys_only=True )
+   file_data = storagetypes.memcache.get( file_memcache )
+   listing = MSEntry.ListAll2( volume, file_id )
+
+   all_ents = None
+   file_fut = None
+   error = 0
+   need_refresh = True
+   file_data_fut = None
+   
+   # do we need to consult the datastore?
+   if file_data == None:
+      logging.info( "file %s not cached" % file_id )
+      file_data_fut = MSEntry.Read( volume, file_id, futs_only=True )
+   
+   if file_data_fut != None:
+      all_futs = []
+      
+      if file_data_fut != None:
+         all_futs += MSEntry.FlattenFuture( file_data_fut )
+         
+      storagetypes.wait_futures( all_futs )
+      
+      cacheable = {}
+      if file_data_fut != None:
+         file_data = MSEntry.FromFuture( file_data_fut )
+         cacheable[ file_memcache ] = file_data
+         logging.info( "cache file %s (%s)" % (file_id, file_data) )
+      
+      if len(cacheable) > 0:
+         storagetypes.memcache.set_multi( cacheable )
+
+   if file_data != None:
+      # do we need to actually send this?
+      if file_data.version == file_version and file_data.mtime_sec == mtime_sec and file_data.mtime_nsec == mtime_nsec:
+         need_refresh = False
+
       else:
-         found = False
-         break
+         if file_data.ftype == MSENTRY_TYPE_DIR:
+            if listing != None:
+               all_ents = [file_data] + listing
+            else:
+               all_ents = [file_data]
+         
+         else:
+            all_ents = [file_data]
 
-   if found:
-      for ent_base in children_metadata:
-         ent_base_msg = reply.entries_base.add()
-         ent_base.protobuf( ent_base_msg )
+   # check security
+   error = -errno.EACCES
+   
+   # error evaluation
+   if file_data == None:
+      error = -errno.ENOENT
+      
+   elif file_data.ftype == MSENTRY_TYPE_DIR:
+      # directory. check permissions
+      if file_data.owner_id == owner_id or (file_data.mode & 0055) != 0:
+         # readable
+         error = 0
 
+   elif file_data.ftype == MSENTRY_TYPE_FILE:
+      # file.  check permissions
+      if file_data.owner_id == owner_id or (file_data.mode & 0044) != 0:
+         # readable
+         error = 0
 
+   reply = common.make_ms_reply( volume, error )
+   
+   if error == 0:
+      # all is well.
+      
+      reply.listing.ftype = file_data.ftype
+      
+      # modified?
+      if not need_refresh:
+         reply.listing.status = ms_pb2.ms_listing.NOT_MODIFIED
+      else:
+         reply.listing.status = ms_pb2.ms_listing.NEW
+
+         for ent in all_ents:
+            ent_pb = reply.listing.entries.add()
+            ent.protobuf( ent_pb )
+         
+         #logging.info("Resolve %s: Serve back: %s" % (file_id, all_ents))
+   
+   else:
+      reply.listing.ftype = 0
+      reply.listing.status = ms_pb2.ms_listing.NONE
+      
+   # sign and deliver
    reply.signature = ""
 
    reply_str = reply.SerializeToString()
@@ -127,3 +125,5 @@ def Resolve( owner_id, volume, fs_path ):
 
    return reply
    
+            
+      

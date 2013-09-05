@@ -22,4 +22,22 @@ bool fs_entry_is_manifest_stale( struct fs_entry* fent );
 int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const* fs_path );
 int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent );
 
+struct fs_entry_listing_cls {
+   // extra information to be stored in path entries
+   bool stale;
+   char* fs_path;
+   bool exists;
+   struct ms_listing listing;
+};
+
+struct fs_entry_consistency_cls {
+   struct fs_core* core;
+   path_t* path;
+   uint64_t volume;
+   struct timespec query_time;
+   int err;
+   
+   vector<uint64_t> reloaded;     // files/directories reloaded as part of a revalidation
+};
+
 #endif

@@ -11,6 +11,26 @@
 
 int _DEBUG = 1;
 
+int _DEBUG_MESSAGES = 1;
+int _ERROR_MESSAGES = 1;
+
+
+void set_debug_level( int d ) {
+   _DEBUG_MESSAGES = d;
+}
+
+void set_error_level( int e ) {
+   _ERROR_MESSAGES = e;
+}
+
+int get_debug_level() {
+   return _DEBUG_MESSAGES;
+}
+
+int get_error_level() {
+   return _ERROR_MESSAGES;
+}
+
 /* Converts a hex character to its integer value */
 char from_hex(char ch) {
   return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10;
@@ -120,9 +140,12 @@ mode_t get_umask() {
 // caller must free the hash buffer.
 unsigned char* sha256_hash_data( char const* input, size_t len ) {
    unsigned char* obuf = (unsigned char*)calloc( SHA256_DIGEST_LENGTH, 1 );
-   NULLCHECK( obuf, 0 );
-   SHA256( (unsigned char*)input, strlen(input), obuf );
+   SHA256( (unsigned char*)input, len, obuf );
    return obuf;
+}
+
+size_t sha256_len(void) {
+   return SHA256_DIGEST_LENGTH;
 }
 
 // calculate the sha-256 hash of a string
@@ -133,7 +156,6 @@ unsigned char* sha256_hash( char const* input ) {
 // duplicate a sha1
 unsigned char* sha256_dup( unsigned char const* sha256 ) {
    unsigned char* ret = (unsigned char*)calloc( SHA256_DIGEST_LENGTH, 1 );
-   NULLCHECK( ret, 0 );
    memcpy( ret, sha256, SHA_DIGEST_LENGTH );
    return ret;
 }
@@ -152,8 +174,6 @@ int sha256_cmp( unsigned char const* sha256_1, unsigned char const* sha256_2 ) {
 // make a sha-256 hash printable
 char* sha256_printable( unsigned char const* sha256 ) {
    char* ret = (char*)calloc( sizeof(char) * (2 * SHA256_DIGEST_LENGTH + 1), 1 );
-   NULLCHECK( ret, 0 );
-
    char buf[3];
    for( int i = 0; i < SHA256_DIGEST_LENGTH; i++ ) {
       sprintf(buf, "%02x", sha256[i] );
@@ -610,7 +630,12 @@ int timespec_cmp( struct timespec* t1, struct timespec* t2 ) {
 // random number generator
 static uint32_t Q[4096], c=362436; /* choose random initial c<809430660 and */
                                          /* 4096 random 32-bit integers for Q[]   */
+                                         
+pthread_mutex_t CMWC4096_lock = PTHREAD_MUTEX_INITIALIZER;
+
 uint32_t CMWC4096(void) {
+   pthread_mutex_lock( &CMWC4096_lock );
+   
    uint64_t t, a=18782LL;
    static uint32_t i=4095;
    uint32_t x,r=0xfffffffe;
@@ -625,7 +650,12 @@ uint32_t CMWC4096(void) {
       c++;
    }
    
-   return(Q[i]=r-x);
+   Q[i]=r-x;
+   
+   uint32_t ret = Q[i];
+   
+   pthread_mutex_unlock( &CMWC4096_lock );
+   return ret;
 }
 
 
@@ -640,10 +670,11 @@ int util_init(void) {
    if( nr < 0 ) {
       return -errno;
    }
-   if( nr != 4096 ) {
+   if( nr != 4096 * sizeof(uint32_t) ) {
+      close( rfd );
       return -ENODATA;
    }
-
+   
    close( rfd );
    return 0;
 }

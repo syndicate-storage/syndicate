@@ -50,22 +50,9 @@ int fs_entry_detach_lowlevel( struct fs_core* core, struct fs_entry* parent, str
 
    if( child->open_count == 0 ) {
       if( remove_data ) {
-         char* url = child->url;
-
-         // do the removal if the file is stored locally
-         if( child->ftype == FTYPE_FILE && URL_LOCAL( url ) ) {
-            rc = fs_entry_remove_local_data( core, GET_FS_PATH( core->conf->data_root, child->url ), child->version );
-         }
-         // remove the directory, but no worries if it doesn't exist locally
-         else if( child->ftype == FTYPE_DIR ) {
-            // convert to path, since directory URLs refer to their MS url
-            char* fs_path = fs_entry_dir_path_from_public_url( core, url );
-            
-            rc = fs_entry_remove_local_directory( core, fs_path );
-            if( rc == -ENOENT )
-               rc = 0;
-
-            free( fs_path );
+         // do the removal if the file is coordinated locally
+         if( child->ftype == FTYPE_FILE && FS_ENTRY_LOCAL( core, child ) ) {
+            rc = fs_entry_remove_local_file( core, child->file_id, child->version );
          }
       }
       
@@ -139,12 +126,6 @@ int fs_entry_detach( struct fs_core* core, char const* path, uint64_t user, uint
 
    int rc = fs_entry_detach_lowlevel( core, parent, child, true );
 
-   if( rc == 0 ) {
-      fs_core_wlock( core );
-      core->num_files--;
-      fs_core_unlock( core );
-   }
-
    fs_entry_unlock( parent );
 
    return 0;
@@ -159,30 +140,19 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, int64_t k
    int rc = 0;
 
    int err = 0;
+   
    struct fs_entry* fent = fs_entry_resolve_path( core, path, owner, volume, false, &err );
    if( !fent || err ) {
       return err;
    }
 
-   bool local = URL_LOCAL( fent->url );
+   bool local = FS_ENTRY_LOCAL( core, fent );
    int64_t version = fent->version;
-
-
-   // preserve the entry information so we can issue a withdraw
-   struct md_entry ent;
-   if( local ) {
-      fs_entry_to_md_entry( core, path, fent, &ent );
-   }
 
    if( known_version > 0 && fent->version > 0 && known_version != fent->version ) {
       // wrong file
       errorf( "version mismatch on %s (current = %" PRId64 ", given = %" PRId64 ")\n", path, fent->version, known_version );
       fs_entry_unlock( fent );
-
-      if( local ) {
-         md_entry_free( &ent );
-      }
-
       rc = -EINVAL;
       return rc;
    }
@@ -196,23 +166,17 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, int64_t k
    if( !parent || err ) {
       fs_entry_unlock( fent );
 
-      if( local ) {
-         md_entry_free( &ent );
-      }
-
       return err;
    }
-
-   /*
-   // remove local data
-   if( local ) {
-      fs_entry_withdraw_file( core, path );
-   }
-   */
+   
    rc = 0;
 
    if( local ) {
       // we're responsible for this file; tell the metadata server we just unlinked
+      // preserve the entry information so we can issue a withdraw
+      struct md_entry ent;
+      fs_entry_to_md_entry( core, &ent, fent, parent->file_id, parent->name );
+
       rc = ms_client_delete( core->ms, &ent );
       md_entry_free( &ent );
       
@@ -237,7 +201,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, int64_t k
 
       Serialization::WriteMsg* detach_ack = new Serialization::WriteMsg();
 
-      rc = fs_entry_post_write( detach_ack, core, fent->url, detach_request );
+      rc = fs_entry_post_write( detach_ack, core, fent->coordinator, detach_request );
       if( rc != 0 ) {
          errorf( "fs_entry_post_write(%s) rc = %d\n", path, rc );
 
@@ -284,9 +248,6 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, int64_t k
    }
 
    fs_entry_unlock( parent );
-
-   // cancel any collations
-   //fs_entry_cancel_file_collation( core, path, fent_version );
 
    return rc;
 }

@@ -10,7 +10,7 @@ struct md_HTTP g_http;
 
 // HTTP authentication callback
 uint64_t httpd_HTTP_authenticate( struct md_HTTP_connection_data* md_con_data, char* username, char* password ) {
-   // we verify it ourselves
+   // TODO: user authorization???  syndicate.cpp already verifies message validity, but does a syndicate-httpd allow multiple "sub-users"?
    return 0;
 }
 
@@ -152,7 +152,7 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
    struct md_entry ent;
    memset( &ent, 0, sizeof(ent) );
 
-   rc = fs_entry_to_md_entry( state->core, md_con_data->url_path, owner, state->core->volume, &ent );
+   rc = fs_entry_to_md_entry( state->core, &ent, md_con_data->url_path, owner, state->core->volume );
    if( rc < 0 ) {
       errorf( "fs_entry_to_md_entry rc = %d\n", rc );
       char buf[100];
@@ -200,22 +200,10 @@ static int httpd_GET_dir( struct md_HTTP_response* resp, struct md_HTTP_connecti
          stringstream sts;
 
          for( int i = 0; dirents[i] != NULL; i++ ) {
-            // convert to public URL
-            if( dirents[i]->ftype == FTYPE_FILE && URL_LOCAL( dirents[i]->data.url ) ) {
-               // convert to public file URL
-               free( dirents[i]->data.url );
-               dirents[i]->data.url = fs_entry_public_file_url( state->core, dirents[i]->data.path, dirents[i]->data.version );
-            }
-            else if( URL_LOCAL( dirents[i]->data.url ) ) {
-               // convert to public data URL...on the metadata server
-               free( dirents[i]->data.url );
-               dirents[i]->data.url = fs_entry_public_dir_url( state->core, dirents[i]->data.path );
-            }
 
-            //char* tmp = md_serialize_entry( &dirents[i]->data, NULL );
+            // TODO: protobuf
             char const* tmp = "USE PROTOBUFS";
             sts << tmp << "\n";
-            //free( tmp );
          }
 
          string ret = sts.str();
@@ -248,17 +236,11 @@ static int httpd_GET_file_blocks( struct md_HTTP_response* resp, struct md_HTTP_
 
    struct syndicate_state* state = syndicate_get_state();
    struct md_HTTP_header** client_headers = md_con_data->headers;
-
-   uint64_t owner = 0;
-   if( md_con_data->user )
-      owner = md_con_data->user->uid;
-   else
-      owner = state->conf.owner;
-
+   
    // request for a file
    // begin streaming the data back
    int err = 0;
-   struct fs_file_handle* fh = fs_entry_open( state->core, reqdat->fs_path, NULL, owner, state->core->volume, O_RDONLY, ~state->conf.usermask, &err );
+   struct fs_file_handle* fh = fs_entry_open( state->core, reqdat->fs_path, state->conf.owner, state->core->volume, O_RDONLY, ~state->conf.usermask, &err );
    if( fh == NULL ) {
       errorf( "could not open %s, rc = %d\n", reqdat->fs_path, err );
 
@@ -395,7 +377,6 @@ int httpd_upload_iterator( void *coninfo_cls, enum MHD_ValueKind kind,
                            const char *transfer_encoding, const char *data,
                            uint64_t off, size_t size) {
 
-
    dbprintf( "POST/PUT %zu bytes\n", size );
 
    struct md_HTTP_connection_data *md_con_data = (struct md_HTTP_connection_data*)coninfo_cls;
@@ -414,13 +395,21 @@ int httpd_upload_iterator( void *coninfo_cls, enum MHD_ValueKind kind,
 
          unlink( tmppath );
          free( tmppath );
+
+         dat->written = 0;
       }
 
-      ssize_t rc = write( dat->fd, data, size );
-      if( rc < 0 ) {
-         rc = -errno;
-         errorf( "could not write, rc = %zd\n", rc );
-         return MHD_NO;
+      ssize_t nw = 0;
+      while( (unsigned)nw < size ) {
+         ssize_t rc = write( dat->fd, data + nw, size - nw );
+         if( rc < 0 ) {
+            rc = -errno;
+            errorf( "could not write, rc = %zd\n", rc );
+            return MHD_NO;
+         }
+
+         nw += rc;
+         dat->written += rc;
       }
    }
    
@@ -486,12 +475,6 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
    struct md_HTTP_header** client_headers = md_con_data->headers;
    struct httpd_connection_data* dat = (struct httpd_connection_data*)md_con_data->cls;
 
-   uint64_t owner = 0;
-   if( md_con_data->user != NULL )
-      owner = md_con_data->user->uid;
-   else
-      owner = state->conf.owner;
-
    int fd = dat->fd;
    
    md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
@@ -512,7 +495,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
             char* dir_url = md_fullpath( tmp, md_con_data->url_path, NULL );
             free( tmp );
 
-            int rc = fs_entry_mkdir( state->core, md_con_data->url_path, mode, owner, state->core->volume );
+            int rc = fs_entry_mkdir( state->core, md_con_data->url_path, mode, state->conf.owner, state->core->volume );
             if( rc < 0 ) {
                // didn't work
                errorf( "fs_entry_mkdir rc = %d\n", rc );
@@ -529,7 +512,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
             return;
          }
          else {
-            int rc = fs_entry_truncate( state->core, md_con_data->url_path, 0, owner, state->core->volume );
+            int rc = fs_entry_truncate( state->core, md_con_data->url_path, 0, state->conf.owner, state->core->volume );
             if( rc < 0 ) {
                char buf[100];;
                snprintf(buf, 100, "UPLOAD fs_entry_truncate rc = %d\n", rc );
@@ -544,7 +527,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
       }
       else if( md_con_data->mode == MD_HTTP_POST ) {
          // no data; just apply headers
-         int rc = httpd_upload_apply_headers( md_con_data, owner, state->core->volume, true );
+         int rc = httpd_upload_apply_headers( md_con_data, state->conf.owner, state->core->volume, true );
          if( rc < 0 ) {
             char buf[100];
             snprintf(buf, 100, "UPLOAD httpd_upload_apply_headers rc = %d\n", rc );
@@ -592,17 +575,11 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
 
    // if this is a post, then open for writing
    if( md_con_data->mode == MD_HTTP_POST ) {
-      fh = fs_entry_open( state->core, md_con_data->url_path, NULL, owner, state->core->volume, O_WRONLY, mode, &err );
+      fh = fs_entry_open( state->core, md_con_data->url_path, state->conf.owner, state->core->volume, O_WRONLY, mode, &err );
    }
    // if this is a put, then create
    else if( md_con_data->mode == MD_HTTP_PUT ) {
-      char* proto_prefix = md_prepend( SYNDICATEFS_LOCAL_PROTO, state->conf.data_root, NULL );
-      char* local_url = md_fullpath( proto_prefix, md_con_data->url_path, NULL );
-      free( proto_prefix );
-
-      fh = fs_entry_create( state->core, md_con_data->url_path, local_url, owner, state->core->volume, mode, &err );
-
-      free( local_url );
+      fh = fs_entry_create( state->core, md_con_data->url_path, state->conf.owner, state->core->volume, mode, &err );
    }
    
    if( fh == NULL ) {
@@ -618,7 +595,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
    }
 
    // apply the mode (but not utime) headers
-   rc = httpd_upload_apply_headers( md_con_data, owner, state->core->volume, false );
+   rc = httpd_upload_apply_headers( md_con_data, state->conf.owner, state->core->volume, false );
    if( rc < 0 ) {
       errorf( "http_upload_apply_headers rc = %d\n", rc );
 
@@ -670,16 +647,10 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
 struct md_HTTP_response* httpd_HTTP_DELETE_handler( struct md_HTTP_connection_data* md_con_data, int depth ) {
    struct syndicate_state *state = syndicate_get_state();
 
-   uint64_t owner = 0;
-   if( md_con_data->user != NULL )
-      owner = md_con_data->user->uid;
-   else
-      owner = state->conf.owner;
-
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
    
    struct stat sb;
-   int rc = fs_entry_stat( state->core, md_con_data->url_path, &sb, owner, state->core->volume );
+   int rc = fs_entry_stat( state->core, md_con_data->url_path, &sb, state->conf.owner, state->core->volume );
    if( rc < 0 ) {
       // can't read
       char buf[100];
@@ -690,7 +661,7 @@ struct md_HTTP_response* httpd_HTTP_DELETE_handler( struct md_HTTP_connection_da
 
    // file? just unlink
    if( S_ISREG( sb.st_mode ) ) {
-      rc = fs_entry_versioned_unlink( state->core, md_con_data->url_path, -1, owner, state->core->volume );
+      rc = fs_entry_versioned_unlink( state->core, md_con_data->url_path, -1, state->conf.owner, state->core->volume );
       if( rc < 0 ) {
          // failed
          char buf[100];
@@ -705,7 +676,7 @@ struct md_HTTP_response* httpd_HTTP_DELETE_handler( struct md_HTTP_connection_da
    }
    // directory? rmdir
    else {
-      rc = fs_entry_rmdir( state->core, md_con_data->url_path, owner, state->core->volume );
+      rc = fs_entry_rmdir( state->core, md_con_data->url_path, state->conf.owner, state->core->volume );
       if( rc < 0 ) {
          // failed
          char buf[100];

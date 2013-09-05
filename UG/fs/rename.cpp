@@ -8,8 +8,13 @@
 #include "storage.h"
 
 // rename a file
-// TODO: make atomic
+// NOTE: this is NOT atomic!
+// NOTE: error recovery on conflicting updates?
 int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new_path, uint64_t user, uint64_t volume ) {
+   // TODO: need to rewrite
+   return -ENOSYS;
+   
+   /*
    int err_old = 0, err_new = 0, err = 0;
 
    int rc = 0;
@@ -150,12 +155,12 @@ int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new
    }
 
    // don't rename local to remote
-   if( URL_LOCAL( fent_old->url ) && fent_new != NULL && !URL_LOCAL( fent_new->url ) ) {
+   if( FS_ENTRY_LOCAL( core, fent_old ) && fent_new != NULL && !FS_ENTRY_LOCAL( core, fent_new )) {
       err = -EINVAL;
    }
 
    // TODO: for now, rename remote to local will fail
-   if( !URL_LOCAL( fent_old->url ) && (fent_new == NULL || URL_LOCAL( fent_new->url ) ) ) {
+   if( !FS_ENTRY_LOCAL( core, fent_old) && (fent_new == NULL || FS_ENTRY_LOCAL( core, fent_new ) ) ) {
       err = -EINVAL;
    }
 
@@ -181,14 +186,15 @@ int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new
 
    // create the old entry into the new path
    struct md_entry new_ent;
-   fs_entry_to_md_entry( core, new_path, fent_old, &new_ent );
+   fs_entry_to_md_entry( core, fent_old, &new_ent );
 
    struct md_entry old_ent;
-   fs_entry_to_md_entry( core, old_path, fent_old, &old_ent );
+   fs_entry_to_md_entry( core, fent_old, &old_ent );
 
    // do the rename
    // create the new entry
-   rc = ms_client_create( core->ms, &new_ent );
+   uint64_t new_file_id = 0;
+   rc = ms_client_create( core->ms, &new_file_id, &new_ent );
 
    md_entry_free( &new_ent );
    
@@ -196,7 +202,13 @@ int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new
       errorf( "ms_entry_create(%s) rc = %d\n", new_path, rc );
       rc = -EREMOTEIO;
    }
-
+   else {
+      // temporarily increase...
+      fs_core_fs_wlock( core );
+      core->num_files--;
+      fs_core_fs_unlock( core );
+   }
+   
    err = rc;
 
    // success?
@@ -241,7 +253,7 @@ int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new
       }
 
       // if this file was local, then we'll need to rename the local data
-      if( URL_LOCAL( fent_old->url ) ) {
+      if( FS_ENTRY_LOCAL( core, fent_old ) ) {
          char* old_path_localdata = md_fullpath( core->conf->data_root, old_path, NULL );
          char* new_path_localdata = md_fullpath( core->conf->data_root, new_path, NULL );
 
@@ -298,4 +310,5 @@ int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new
    md_entry_free( &new_ent );
 
    return err;
+   */
 }

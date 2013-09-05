@@ -29,6 +29,7 @@
 #include <sys/select.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <math.h>
 
 #include "libsyndicate.h"
 #include "ms-client.h"
@@ -53,7 +54,13 @@ using namespace std;
 typedef pair<long, struct fs_entry*> fs_dirent;
 typedef vector<fs_dirent> fs_entry_set;
 
-typedef map<uint64_t, int64_t> modification_map;
+struct fs_entry_block_info {
+   int64_t version;
+   unsigned char* hash;
+   size_t hash_len;
+};
+
+typedef map<uint64_t, struct fs_entry_block_info> modification_map;
 
 // pre-declare these
 class Collator;
@@ -64,7 +71,7 @@ struct RG_channel;
 struct fs_entry {
    char ftype;                // what type of file this is
    char* name;                // name of this file
-   char* url;                 // Base URL of this file (scheme://owner.hostname/path/to/file/name).  Does NOT include the version
+   uint64_t file_id;          // Volume-wide unique ID for this file
    int64_t version;           // version of this file
    file_manifest* manifest;   // current file manifest
 
@@ -80,7 +87,7 @@ struct fs_entry {
    int32_t mtime_nsec;        // modification time (nanoseconds)
    int64_t ctime_sec;         // creation time (seconds)
    int32_t ctime_nsec;        // creation time (nanoseconds)
-   int64_t atime;             // access time
+   int64_t atime;             // access time (seconds)
    
    struct timespec refresh_time;    // time of last refresh from the ms
    uint32_t max_read_freshness;     // how long since last refresh, in ms, this fs_entry is to be considered fresh for reading (negative means always fresh)
@@ -100,11 +107,18 @@ struct fs_entry {
 // Syndicate file handle
 struct fs_file_handle {
    struct fs_entry* fent;     // reference to the fs_entry this handle represents
+   char* path;                // path that was opened (used for revalidation purposes)
+   uint64_t file_id;          // ID of the file opened
    uint64_t volume;           // which Volume this fent belongs to
    int open_count;            // how many processes have opened this handle
    int flags;                 // open flags
-   char* path;                // the path that was opened
    bool dirty;                // set to true if a write has occurred on this file handle (but it wasn't flushed)
+
+   char* parent_name;         // name of parent directory
+   uint64_t parent_id;        // ID of parent directory
+
+   bool is_AG;                // whether or not this file is hosted by an AG
+   uint64_t AG_blocksize;     // blocksize of this AG
 
    pthread_rwlock_t lock;     // lock to control access to this structure
 };
@@ -112,9 +126,13 @@ struct fs_file_handle {
 // Syndicate directory handle
 struct fs_dir_handle {
    struct fs_entry* dent;     // reference to the fs_entry this handle represents
-   char* path;                // the path that was opened
+   char* path;                // path that was opened
+   uint64_t file_id;          // ID of this dir
    int open_count;            // how many processes have opened this handle
    uint64_t volume;           // which Volume dent is in
+
+   char* parent_name;         // name of parent directory
+   uint64_t parent_id;        // ID of parent directory
 
    pthread_rwlock_t lock;     // lock to control access to this structure
 };
@@ -129,21 +147,23 @@ struct fs_dir_entry {
 struct fs_core {
    struct fs_entry* root;              // root FS entry
    struct md_syndicate_conf* conf;     // Syndicate configuration structure
-   unsigned long int num_files;        // how many files exist
    struct ms_client* ms;               // link to the MS
    Collator* col;                   // Collator interface
    uint64_t volume;                 // Volume we're bound to
+   uint64_t gateway;                // gateway ID
    uint64_t blocking_factor;        // block size
 
    pthread_rwlock_t lock;     // lock to control access to this structure
    pthread_rwlock_t fs_lock;  // lock to create/remove entries in the filesystem
 };
 
+#define FS_ENTRY_LOCAL( core, fent ) (fent->coordinator == core->gateway)
+
 // configuration
 int fs_entry_set_config( struct md_syndicate_conf* conf );
 
 // fs_core operations
-int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t volume, uint64_t blocking_factor );
+int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t owner_id, uint64_t gateway_id, uint64_t volume, mode_t mode, uint64_t blocking_factor );
 int fs_core_destroy(struct fs_core* core);
 int fs_core_use_ms( struct fs_core* core, struct ms_client* ms );
 int fs_core_use_collator( struct fs_core* core, Collator* iop );
@@ -163,9 +183,9 @@ int fs_core_wlock( struct fs_core* core );
 int fs_core_unlock( struct fs_core* core );
 
 // fs_entry initialization
-int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
-int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
-int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
+int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
+int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, int64_t mtime_sec, int32_t mtime_nsec );
+int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec, bool local);
 int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_entry* ent );
 
 int64_t fs_entry_next_file_version(void);
@@ -206,8 +226,10 @@ long fs_entry_name_hash( char const* name );
 // resolution
 struct fs_entry* fs_entry_resolve_path( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err );
 struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err, int (*ent_eval)( struct fs_entry*, void* ), void* cls );
+struct fs_entry* fs_entry_resolve_path_and_parent_info( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err, uint64_t* parent_id, char** parent_name );
 char* fs_entry_resolve_block( struct fs_core* core, struct fs_file_handle* fh, off_t offset );
 uint64_t fs_entry_block_id( struct fs_core* core, off_t offset );
+uint64_t fs_entry_block_id( size_t blocksize, off_t offset );
 
 // operations on directory sets
 void fs_entry_set_insert( fs_entry_set* set, char const* name, struct fs_entry* child );
@@ -215,17 +237,18 @@ void fs_entry_set_insert_hash( fs_entry_set* set, long hash, struct fs_entry* ch
 struct fs_entry* fs_entry_set_find_name( fs_entry_set* set, char const* name );
 struct fs_entry* fs_entry_set_find_hash( fs_entry_set* set, long hash );
 bool fs_entry_set_remove( fs_entry_set* set, char const* name );
+bool fs_entry_set_remove_hash( fs_entry_set* set, long nh );
 bool fs_entry_set_replace( fs_entry_set* set, char const* name, struct fs_entry* replacement );
 unsigned int fs_entry_set_count( fs_entry_set* set );
 struct fs_entry* fs_entry_set_get( fs_entry_set::iterator* itr );
 long fs_entry_set_get_name_hash( fs_entry_set::iterator* itr );
 
 // conversion
-int fs_entry_to_md_entry( struct fs_core* core, char const* fs_path, uint64_t owner, uint64_t volume, struct md_entry* dest);
-int fs_entry_to_md_entry( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct md_entry* dest );
+int fs_entry_to_md_entry( struct fs_core* core, struct md_entry* dest, char const* fs_path, uint64_t owner, uint64_t volume );
+int fs_entry_to_md_entry( struct fs_core* core, struct md_entry* dest, struct fs_entry* fent, uint64_t parent_id, char const* parent_name );
 
 // versioning
 int64_t fs_entry_next_version_number(void);
-int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t new_version );
+int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t new_version, uint64_t parent_id, char const* parent_name );
 
 #endif

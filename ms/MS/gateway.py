@@ -55,14 +55,6 @@ class IDCounter( storagetypes.Object ):
    def next_value(cls):
       return cls.__next_value()
 
-class AG_IDCounter( IDCounter ):
-   gateway_type = "AG"
-
-class RG_IDCounter( IDCounter ):
-   gateway_type = "RG"
-
-class UG_IDCounter( IDCounter ):
-   gateway_type = "UG"
 
 def is_int( x ):
    try:
@@ -81,7 +73,7 @@ class Gateway( storagetypes.Object ):
    ms_password_salt = storagetypes.Text()
    g_id = storagetypes.Integer()
 
-   public_key = storagetypes.Text()          # PEM-encoded RSA public key
+   public_key = storagetypes.Text()          # PEM-encoded RSA public key, given by the SyndicateUser
 
    session_password = storagetypes.Text()
    session_timeout = storagetypes.Integer(default=-1, indexed=False)
@@ -320,7 +312,7 @@ class UserGateway( Gateway ):
    
 
    @classmethod
-   def cache_listing_key( cls, **kwargs ):
+   def cache_listing_key_name( cls, **kwargs ):
       assert 'volume_id' in kwargs, "Required attributes: volume_id"
       return "UGs: volume=%s" % kwargs['volume_id']
 
@@ -341,7 +333,7 @@ class UserGateway( Gateway ):
       # Isolates the DB elements in a transactioned call
       @storagetypes.transactional(xg=True)
       def transactional_create(**kwargs):
-         ug_id = UG_IDCounter.next_value()
+         ug_id = IDCounter.next_value()
          kwargs['g_id'] = ug_id
 
          ug_key_name = UserGateway.make_key_name( g_id=ug_id )
@@ -353,7 +345,7 @@ class UserGateway( Gateway ):
          ug = UserGateway( key=ug_key, **kwargs )
 
          # clear cached UG listings
-         storagetypes.memcache.delete( UserGateway.cache_listing_key( volume_id=kwargs['volume_id'] ) )
+         storagetypes.memcache.delete( UserGateway.cache_listing_key_name( volume_id=kwargs['volume_id'] ) )
          return ug.put()
 
 
@@ -448,9 +440,9 @@ class UserGateway( Gateway ):
       """
       Given a volume id, find all UserGateway records bound to it.  Cache the results
       """
-      #cache_key = UserGateway.cache_listing_key( volume_id=volume_id )
+      #cache_key_name = UserGateway.cache_listing_key_name( volume_id=volume_id )
 
-      #results = storagetypes.memcache.get( cache_key )
+      #results = storagetypes.memcache.get( cache_key_name )
       results = None
       if results == None:
          qry = UserGateway.query( UserGateway.volume_id == volume_id )
@@ -460,7 +452,7 @@ class UserGateway( Gateway ):
          for rr in results_qry:
             results.append( rr )
 
-         #storagetypes.memcache.add( cache_key, results )
+         #storagetypes.memcache.add( cache_key_name, results )
 
       return results
 
@@ -476,6 +468,7 @@ class AcquisitionGateway( Gateway ):
    # This is temporary; we should know what is really needed.   
    json_config = storagetypes.Json()
    volume_ids = storagetypes.Integer(repeated=True)           # which volumes are we attached to?
+   block_size = storagetypes.Integer( default=61140 )         # block size
 
    required_attrs = Gateway.required_attrs + [
       "json_config"
@@ -487,7 +480,7 @@ class AcquisitionGateway( Gateway ):
 
 
    @classmethod
-   def cache_listing_key( cls, **kwargs ):
+   def cache_listing_key_name( cls, **kwargs ):
       assert 'volume_id' in kwargs, "Required attributes: volume_id"
       return "AGs: volume=%s" % kwargs['volume_id']
 
@@ -503,7 +496,7 @@ class AcquisitionGateway( Gateway ):
       # Isolates the DB elements in a transactioned call
       @storagetypes.transactional(xg=True)
       def transactional_create(**kwargs):
-         ag_id = AG_IDCounter.next_value()
+         ag_id = IDCounter.next_value()
          kwargs['g_id'] = ag_id
 
          ag_key_name = AcquisitionGateway.make_key_name( g_id=ag_id ) 
@@ -543,7 +536,14 @@ class AcquisitionGateway( Gateway ):
          # gateway already exists
          raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
       else:
-         return transactional_create(**kwargs)
+         ag_key = transactional_create(**kwargs)
+         existing_gateways = AcquisitionGateway.ListAll( {"AcquisitionGateway.ms_username ==" : kwargs['ms_username']} )
+         if len(existing_gateways) > 1:
+            # concurrently created the same gateway
+            ag_key.delete()
+            return None
+         else:
+            return ag_key
 
 
    @classmethod
@@ -590,9 +590,9 @@ class AcquisitionGateway( Gateway ):
       """
       Given a volume id, find all AcquisitionGateway records bound to it.  Cache the results
       """
-      #cache_key = AcquisitionGateway.cache_listing_key( volume_id=volume_id )
+      #cache_key_name = AcquisitionGateway.cache_listing_key_name( volume_id=volume_id )
 
-      #results = storagetypes.memcache.get( cache_key )
+      #results = storagetypes.memcache.get( cache_key_name )
       results = None
       if results == None:
          qry = AcquisitionGateway.query( AcquisitionGateway.volume_ids == volume_id )
@@ -602,7 +602,7 @@ class AcquisitionGateway( Gateway ):
          for rr in results_qry:
             results.append( rr )
 
-         #storagetypes.memcache.add( cache_key, results )
+         #storagetypes.memcache.add( cache_key_name, results )
 
       return results
 
@@ -646,7 +646,7 @@ class ReplicaGateway( Gateway ):
    }.items() )
 
    @classmethod
-   def cache_listing_key( cls, **kwargs ):
+   def cache_listing_key_name( cls, **kwargs ):
       assert 'volume_id' in kwargs, "Required attributes: volume_id"
       return "RGs: volume=%s" % kwargs['volume_id']
 
@@ -663,7 +663,7 @@ class ReplicaGateway( Gateway ):
       # Isolates the DB elements in a transactioned call
       @storagetypes.transactional(xg=True)
       def transactional_create(**kwargs):
-         rg_id = RG_IDCounter.next_value()
+         rg_id = IDCounter.next_value()
          kwargs['g_id'] = rg_id
 
          rg_key_name = ReplicaGateway.make_key_name( g_id=rg_id ) 
@@ -764,9 +764,9 @@ class ReplicaGateway( Gateway ):
       """
       Given a volume id, find all ReplicaGateway records bound to it.  Cache the results
       """
-      #cache_key = ReplicaGateway.cache_listing_key( volume_id=volume_id )
+      #cache_key_name = ReplicaGateway.cache_listing_key_name( volume_id=volume_id )
 
-      #results = storagetypes.memcache.get( cache_key )
+      #results = storagetypes.memcache.get( cache_key_name )
       results = None 
       if results == None:
          qry = ReplicaGateway.query( ReplicaGateway.volume_ids == volume_id )
@@ -776,7 +776,7 @@ class ReplicaGateway( Gateway ):
          for rr in results_qry:
             results.append( rr )
 
-         #storagetypes.memcache.add( cache_key, results )
+         #storagetypes.memcache.add( cache_key_name, results )
 
       return results
 

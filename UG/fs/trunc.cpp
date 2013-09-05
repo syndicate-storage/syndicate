@@ -35,7 +35,7 @@ static void fs_entry_prepare_truncate_message( Serialization::WriteMsg* truncate
 // truncate an open file.
 // fent must be write locked.
 // NOTE: we must reversion the file on truncate, since size can't decrease on the MS for the same version of the entry!
-int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size, uint64_t user, uint64_t volume ) {
+int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size, uint64_t user, uint64_t volume, uint64_t parent_id, char const* parent_name ) {
 
    // make sure we have the latest manifest 
    int err = fs_entry_revalidate_manifest( core, fs_path, fent );
@@ -63,7 +63,7 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
    modification_map modified_blocks;
 
    // are we going to lose any remote blocks?
-   bool local = URL_LOCAL( fent->url );
+   bool local = FS_ENTRY_LOCAL( core, fent );
 
    // if we're removing blocks, then we'll need to withdraw them.
    if( size < fent->size ) {
@@ -72,7 +72,7 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
          // truncate the last block
          char* block = CALLOC_LIST( char, core->blocking_factor );
 
-         ssize_t nr = fs_entry_do_read_block( core, fs_path, fent, trunc_block_id * core->blocking_factor, block );
+         ssize_t nr = fs_entry_do_read_block( core, fs_path, fent, trunc_block_id, block, core->blocking_factor );
          if( nr < 0 ) {
             errorf( "fs_entry_do_read_block(%s[%" PRIu64 "]) rc = %zd\n", fs_path, trunc_block_id, nr );
             err = nr;
@@ -81,14 +81,21 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
             // truncate this block
             memset( block + (size % core->blocking_factor), 0, core->blocking_factor - (size % core->blocking_factor) );
 
-            int rc = fs_entry_put_block( core, fs_path, fent, trunc_block_id, block );
+            int rc = fs_entry_put_block( core, fent, trunc_block_id, block, !local );
             if( rc != 0 ) {
                errorf("fs_entry_put_block(%s[%" PRId64 "]) rc = %d\n", fs_path, trunc_block_id, rc );
                err = rc;
             }
             else {
                // record that we've written this block
-               modified_blocks[ trunc_block_id ] = fent->manifest->get_block_version( trunc_block_id );
+               struct fs_entry_block_info binfo;
+               memset( &binfo, 0, sizeof(binfo) );
+
+               binfo.version = fent->manifest->get_block_version( trunc_block_id );
+               binfo.hash = sha256_hash_data( block, core->blocking_factor );
+               binfo.hash_len = sha256_len();
+               
+               modified_blocks[ trunc_block_id ] = binfo;
             }
          }
 
@@ -98,7 +105,7 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
       if( local ) {
          // unlink the blocks that would have been cut off
          for( uint64_t i = new_max_block; i < max_block; i++ ) {
-            int rc = fs_entry_remove_block( core, fs_path, fent, i );
+            int rc = fs_entry_remove_block( core, fent, i, fent->manifest->is_block_staging( i ) );
             if( rc != 0 && rc != -ENOENT ) {
                errorf("fs_entry_remove_block(%s.%" PRId64 "[%" PRIu64 "]) rc = %d\n", fs_path, fent->version, i, rc );
             }
@@ -130,9 +137,10 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 
       Serialization::WriteMsg *withdraw_ack = new Serialization::WriteMsg();
       
-      err = fs_entry_post_write( withdraw_ack, core, fent->url, truncate_msg );
+      err = fs_entry_post_write( withdraw_ack, core, fent->coordinator, truncate_msg );
 
       if( err != 0 ) {
+         // TODO: ms_client_claim
          errorf( "fs_entry_post_write(%" PRIu64 "-%" PRIu64 ") rc = %d\n", new_max_block, max_block, err );
          err = -EIO;
       }
@@ -166,11 +174,7 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
       uint64_t cancel_block_start = modified_blocks.begin()->first;
       uint64_t cancel_block_end = modified_blocks.rbegin()->first + 1;     // exclusive
       
-      // TODO: less hackish way of doing this?  Only works because fs_entry_replicate_write returns after fh gets cleared from the replication thread
-      struct fs_file_handle fh;
-      fh.fent = fent;
-      fh.path = (char*)fs_path;
-      int rc = fs_entry_replicate_write( core, &fh, &modified_blocks, true );
+      int rc = fs_entry_replicate_write( core, fs_path, fent, &modified_blocks, true );
       if( rc != 0 ) {
          errorf("fs_entry_replicate_write(%s[%" PRId64 "-%" PRId64 "]) rc = %d\n", fs_path, cancel_block_start, cancel_block_end, rc );
       }
@@ -181,12 +185,21 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 
       int64_t new_version = fs_entry_next_file_version();
 
-      err = fs_entry_reversion_file( core, fs_path, fent, new_version );
+      err = fs_entry_reversion_file( core, fs_path, fent, new_version, parent_id, parent_name );
 
       if( err != 0 ) {
          errorf("fs_entry_reversion_file(%s.%" PRId64 " --> %" PRId64 ") rc = %d\n", fs_path, fent->version, new_version, err );
       }
    }
+
+   if( modified_blocks.size() > 0 ) {
+      // free memory
+      for( modification_map::iterator itr = modified_blocks.begin(); itr != modified_blocks.end(); itr++ ) {
+         free( itr->second.hash );
+      }  
+   }
+   
+   dbprintf("file size is now %" PRId64 "\n", (int64_t)fent->size );
 
    return err;
 }
@@ -204,7 +217,10 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t
 
    // entry exists
    // write-lock the fs entry
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, user, volume, true, &err );
+   char* parent_name = NULL;
+   uint64_t parent_id = 0;
+   
+   struct fs_entry* fent = fs_entry_resolve_path_and_parent_info( core, fs_path, user, volume, true, &err, &parent_id, &parent_name );
    if( fent == NULL || err ) {
       errorf( "fs_entry_resolve_path(%s), rc = %d\n", fs_path, err );
       return err;
@@ -213,10 +229,11 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t
    if( known_version > 0 && fent->version != known_version ) {
       errorf( "fs_entry_get_version(%s): version mismatch (current = %" PRId64 ", known = %" PRId64 ")\n", fs_path, fent->version, known_version );
       fs_entry_unlock( fent );
+      free( parent_name );
       return -EINVAL;
    }
 
-   int rc = fs_entry_truncate_impl( core, fs_path, fent, newsize, user, volume );
+   int rc = fs_entry_truncate_impl( core, fs_path, fent, newsize, user, volume, parent_id, parent_name );
    if( rc != 0 ) {
       errorf( "fs_entry_truncate(%s) rc = %d\n", fs_path, rc );
 
@@ -241,15 +258,19 @@ int fs_entry_truncate( struct fs_core* core, char const* fs_path, off_t size, ui
 
    // entry exists
    // write-lock the fs entry
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, user, volume, true, &err );
+   uint64_t parent_id = 0;
+   char* parent_name = NULL;
+   
+   struct fs_entry* fent = fs_entry_resolve_path_and_parent_info( core, fs_path, user, volume, true, &err, &parent_id, &parent_name );
    if( fent == NULL || err ) {
       errorf( "fs_entry_resolve_path(%s), rc = %d\n", fs_path, err );
       return err;
    }
    
-   err = fs_entry_truncate_impl( core, fs_path, fent, size, user, volume );
+   err = fs_entry_truncate_impl( core, fs_path, fent, size, user, volume, parent_id, parent_name );
 
    fs_entry_unlock( fent );
+   free( parent_name );
 
    return err;
 }
@@ -259,7 +280,7 @@ int fs_entry_ftruncate( struct fs_core* core, struct fs_file_handle* fh, off_t s
    fs_file_handle_rlock( fh );
    fs_entry_wlock( fh->fent );
 
-   int rc = fs_entry_truncate_impl( core, fh->path, fh->fent, size, user, volume );
+   int rc = fs_entry_truncate_impl( core, fh->path, fh->fent, size, user, volume, fh->parent_id, fh->parent_name );
    
    fs_entry_unlock( fh->fent );
    fs_file_handle_unlock( fh );

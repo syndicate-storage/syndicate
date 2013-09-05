@@ -48,6 +48,10 @@ memcache = backend.memcache
 transaction = backend.transaction
 transactional = backend.transactional
 
+# alises for query predicates
+opAND = backend.opAND
+opOR = backend.opOR
+
 
 def clock_gettime():
    now = datetime.datetime.utcnow()
@@ -110,13 +114,12 @@ class Object( Model ):
       return SHARD_KEY_TEMPLATE.format( name, idx )
 
    @classmethod
-   def get_shard_keys(cls, num_shards, **attrs ):
+   def get_shard_keys(cls, num_shards, key_name ):
       """
       Get keys for all shards, given the number of shards.
       The base name will be generated from the make_key_name() method, to which the given **attrs dict will be passed.
       """
-      name = cls.make_key_name( **attrs )
-      shard_key_strings = [cls.shard_key_name( name, index ) for index in range(num_shards)]
+      shard_key_strings = [cls.shard_key_name( key_name, index ) for index in range(num_shards)]
       return [make_key(cls.shard_class, shard_key_string) for shard_key_string in shard_key_strings]
 
 
@@ -126,6 +129,9 @@ class Object( Model ):
       This will use the methods to fill the fields indicated by the base instance's shard_readers dict.
       This method throws an exception when passed a list of Nones
       """
+      if shards == None or len(shards) == 0:
+         return
+      
       good = False
       for s in shards:
          if s != None:
@@ -200,7 +206,11 @@ class Object( Model ):
       shard_attrs = self.get_shard_attrs( self, **attrs )
       
       if self.write_shard == None:
-         shard_name = self.shard_key_name( self.make_key_name( **attrs ), random.randint(0, num_shards-1) )
+         key_kwargs = {}
+         for k in self.key_attrs:
+            key_kwargs[k] = attrs.get(k)
+            
+         shard_name = self.shard_key_name( self.make_key_name( **key_kwargs ), random.randint(0, num_shards-1) )
          shard_key = make_key( self.shard_class, shard_name )
 
          self.write_shard = self.shard_class( key=shard_key, **shard_attrs )
@@ -242,15 +252,15 @@ class Object( Model ):
       return kf
 
    @classmethod
-   def cache_key( cls, **attrs ):
+   def cache_key_name( cls, **attrs ):
       return "cache: " + cls.make_key_name( **attrs )
 
    @classmethod
-   def cache_shard_key( cls, **attrs ):
+   def cache_shard_key_name( cls, **attrs ):
       return "shard: " + cls.make_key_name( **attrs )
 
    @classmethod
-   def cache_listing_key( cls, **attrs ):
+   def cache_listing_key_name( cls, **attrs ):
       return "listing: " + cls.make_key_name( **attrs )
 
    @classmethod
@@ -447,4 +457,3 @@ class Object( Model ):
 
       qry_ret = qry.fetch( limit )
       return qry_ret
-      

@@ -11,7 +11,6 @@
 #include "collator.h"
 #include "consistency.h"
 
-
 int _debug_locks = 0;
 
 int fs_entry_set_config( struct md_syndicate_conf* conf ) {
@@ -60,6 +59,12 @@ struct fs_entry* fs_entry_set_find_hash( fs_entry_set* set, long nh ) {
 // remove a child entry from an fs_entry_set
 bool fs_entry_set_remove( fs_entry_set* set, char const* name ) {
    long nh = fs_entry_name_hash( name );
+   return fs_entry_set_remove_hash( set, nh );
+}
+
+
+// remove a child entry from an fs_entry_set
+bool fs_entry_set_remove_hash( fs_entry_set* set, long nh ) {
    bool removed = false;
    for( unsigned int i = 0; i < set->size(); i++ ) {
       if( set->at(i).first == nh ) {
@@ -75,6 +80,7 @@ bool fs_entry_set_remove( fs_entry_set* set, char const* name ) {
 
    return removed;
 }
+
 
 
 // replace an entry
@@ -115,16 +121,20 @@ uint64_t fs_entry_block_id( struct fs_core* core, off_t offset ) {
    return ((uint64_t)offset) / core->blocking_factor;
 }
 
+uint64_t fs_entry_block_id( uint64_t blocksize, off_t offset ) {
+   return ((uint64_t)offset) / blocksize;
+}
+
 // set up the core of the FS
-int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t volume, uint64_t blocking_factor ) {
+int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t owner_id, uint64_t gateway_id, uint64_t volume, mode_t mode, uint64_t blocking_factor ) {
    if( core == NULL ) {
       return -EINVAL;
    }
 
    memset( core, 0, sizeof(struct fs_core) );
    core->conf = conf;
-   core->num_files = 0;
    core->volume = volume;
+   core->gateway = conf->gateway;
    core->blocking_factor = blocking_factor;
    
    pthread_rwlock_init( &core->lock, NULL );
@@ -133,7 +143,7 @@ int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t
    // initialize the root, but make it searchable and mark it as stale 
    core->root = CALLOC_LIST( struct fs_entry, 1 );
 
-   int rc = fs_entry_init_dir( core, core->root, "/", conf->metadata_url, 1, SYS_USER, SYS_USER, volume, 0755, 4096, 0, 0 );
+   int rc = fs_entry_init_dir( core, core->root, "/", 1, owner_id, gateway_id, volume, 0755, 0, 0 );
    if( rc != 0 ) {
       errorf("fs_entry_init_dir rc = %d\n", rc );
       return rc;
@@ -229,11 +239,10 @@ int fs_unlink_children( struct fs_core* core, fs_entry_set* dir_children, bool r
       fent->ftype = FTYPE_DEAD;
       fent->link_count = 0;
 
-      if( old_type == FTYPE_FILE ||
-	      old_type == FTYPE_FIFO ) {
+      if( old_type == FTYPE_FILE || old_type == FTYPE_FIFO ) {
          if( fent->open_count == 0 ) {
-            if( URL_LOCAL( fent->url ) && remove_data ) {
-               fs_entry_remove_local_data( core, GET_FS_PATH( core->conf->data_root, fent->url ), fent->version );
+            if( FS_ENTRY_LOCAL( core, fent ) && remove_data ) {
+               fs_entry_remove_local_file( core, fent->file_id, fent->version );
             }
             
             fs_entry_destroy( fent, false );
@@ -293,7 +302,7 @@ int fs_destroy( struct fs_core* core ) {
 
 
 
-static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int type, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int type, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
    struct timespec ts;
    clock_gettime( CLOCK_REALTIME, &ts );
    
@@ -303,9 +312,8 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    }
 
    fent->name = strdup( name );
-   md_sanitize_path( fent->name );
-   
-   fent->url = strdup( url );
+
+   fent->file_id = 0;
    fent->version = version;
    fent->owner = owner;
    fent->coordinator = coordinator;
@@ -319,7 +327,7 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    fent->mtime_sec = mtime_sec;
    fent->mtime_nsec = mtime_nsec;
    fent->link_count = 0;
-   fent->manifest = new file_manifest( core, fent->version );
+   fent->manifest = new file_manifest( fent->version );
    fent->max_read_freshness = core->conf->default_read_freshness;
    fent->max_write_freshness = core->conf->default_write_freshness;
    fent->read_stale = false;
@@ -328,61 +336,46 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    
    ts.tv_sec = mtime_sec;
    ts.tv_nsec = mtime_nsec;
-   fent->manifest->set_lastmod( &ts );
-
+   
    return 0;
 }
 
 // common fs_entry initializion code
 // a version of <= 0 will cause the FS to look at the underlying data to deduce the correct version
-static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, int type, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec) {
+static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, int type, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec) {
 
    memset( fent, 0, sizeof(struct fs_entry) );
-   fs_entry_init_data( core, fent, type, name, url, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
+   fs_entry_init_data( core, fent, type, name, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
    pthread_rwlock_init( &fent->lock, NULL );
    
    return 0;
 }
 
 // create an FS entry that is a file
-int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
-   fs_entry_init_common( core, fent, FTYPE_FILE, name, url, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
+int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+   fs_entry_init_common( core, fent, FTYPE_FILE, name, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
    fent->ftype = FTYPE_FILE;
-
-   if( URL_LOCAL( url ) )
-      return fs_entry_publish_file( core, GET_FS_PATH( core->conf->data_root, fent->url ), version, mode );
-   else
-      return 0;
+   return 0;
 }
 
 
 // create an FS entry that is a file
-int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
-   fs_entry_init_common( core, fent, FTYPE_FILE, name, url, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
+int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec, bool local ) {
+   fs_entry_init_common( core, fent, FTYPE_FILE, name, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
    fent->ftype = FTYPE_FIFO;
-
-   if( URL_LOCAL( url ) )
-      return fs_entry_publish_file( core, GET_FS_PATH( core->conf->data_root, fent->url ), version, mode );
-   else
-      return 0;
+   return 0;
 }
 
 // create an FS entry that is a directory
-int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, char const* url, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
-   fs_entry_init_common( core, fent, FTYPE_DIR, name, url, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
+int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, int64_t mtime_sec, int32_t mtime_nsec ) {
+   fs_entry_init_common( core, fent, FTYPE_DIR, name, version, owner, coordinator, volume, mode, 4096, mtime_sec, mtime_nsec );
    fent->ftype = FTYPE_DIR;
    fent->children = new fs_entry_set();
    return 0;
 }
 
-// get the next file version number
-// TODO: make sure this never goes backwards in time
-int64_t fs_entry_next_file_version(void) {
-   return abs((int64_t)currentTimeMillis());
-}
-
 // get the next block version number (unique with high probability)
-int64_t fs_entry_next_block_version(void) {
+int64_t fs_entry_next_random_version(void) {
    int64_t upper = CMWC4096() & 0x7fffffff;
    int64_t lower = CMWC4096();
 
@@ -390,11 +383,22 @@ int64_t fs_entry_next_block_version(void) {
    return ret;
 }
 
+
+// get the next file version number, as the milliseconds since the epoch
+int64_t fs_entry_next_file_version(void) {
+   return fs_entry_next_random_version();
+}
+
+int64_t fs_entry_next_block_version(void) {
+   return fs_entry_next_random_version();
+}
+
 // duplicate an FS entry
 int fs_entry_dup( struct fs_core* core, struct fs_entry* fent, struct fs_entry* src ) {
-   fs_entry_init_common( core, fent, src->ftype, src->name, src->url, src->version, src->owner, src->coordinator, src->volume, src->mode, src->size, src->mtime_sec, src->mtime_nsec );
+   fs_entry_init_common( core, fent, src->ftype, src->name, src->version, src->owner, src->coordinator, src->volume, src->mode, src->size, src->mtime_sec, src->mtime_nsec );
    fent->ftype = src->ftype;
-
+   fent->file_id = src->file_id;
+   
    if( src->children ) {
       fent->children = new fs_entry_set();
       for( fs_entry_set::iterator itr = src->children->begin(); itr != src->children->end(); itr++ ) {
@@ -411,19 +415,22 @@ int fs_entry_dup( struct fs_core* core, struct fs_entry* fent, struct fs_entry* 
 
 // create an FS entry from an md_entry.
 int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_entry* ent ) {
-   char* basename = md_basename( ent->path, NULL );
+   
    if( ent->type == MD_ENTRY_DIR ) {
       // this is a directory
-      fs_entry_init_dir( core, fent, basename, ent->url, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
+      fs_entry_init_dir( core, fent, ent->name, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->mtime_sec, ent->mtime_nsec );
    }
    else if (S_ISREG(ent->mode)){
       // this is a file
-      fs_entry_init_file( core, fent, basename, ent->url, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
+      fs_entry_init_file( core, fent, ent->name, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
    }
    else if (S_ISFIFO(ent->mode)){
-      fs_entry_init_fifo( core, fent, basename, ent->url, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
+      // this is a FIFO 
+      fs_entry_init_fifo( core, fent, ent->name, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec, fent->coordinator == core->gateway );
    }
-   free( basename );
+
+   fent->file_id = ent->file_id;
+   
    return 0;
 }
 
@@ -431,6 +438,8 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
 // destroy an FS entry
 int fs_entry_destroy( struct fs_entry* fent, bool needlock ) {
 
+   dbprintf("destroy %" PRIX64 " (%s)\n", fent->file_id, fent->name );
+   
    // free common fields
    if( needlock )
       fs_entry_wlock( fent );
@@ -438,11 +447,6 @@ int fs_entry_destroy( struct fs_entry* fent, bool needlock ) {
    if( fent->name ) {
       free( fent->name );
       fent->name = NULL;
-   }
-
-   if( fent->url ) {
-      free( fent->url );
-      fent->url = NULL;
    }
 
    if( fent->manifest ) {
@@ -485,7 +489,7 @@ long fs_entry_name_hash( char const* name ) {
 // lock a file for reading
 int fs_entry_rlock( struct fs_entry* fent ) {
    if( _debug_locks ) {
-      dbprintf( "%s\n", fent->name );
+      dbprintf( "%p: %s\n", fent, fent->name );
    }
 
    int rc = pthread_rwlock_rdlock( &fent->lock );
@@ -495,7 +499,7 @@ int fs_entry_rlock( struct fs_entry* fent ) {
 // lock a file for writing
 int fs_entry_wlock( struct fs_entry* fent ) {
    if( _debug_locks ) {
-      dbprintf( "%s\n", fent->name);
+      dbprintf( "%p: %s\n", fent, fent->name);
    }
 
    int rc = pthread_rwlock_wrlock( &fent->lock );
@@ -511,7 +515,7 @@ int fs_entry_wlock( struct fs_entry* fent ) {
 // unlock a file
 int fs_entry_unlock( struct fs_entry* fent ) {
    if( _debug_locks ) {
-      dbprintf( "%s\n", fent->name );
+      dbprintf( "%p: %s\n", fent, fent->name );
    }
 
    fent->write_locked = false;
@@ -563,10 +567,17 @@ int fs_core_unlock( struct fs_core* core ) {
    return pthread_rwlock_unlock( &core->lock );
 }
 
+
 // resolve an absolute path, running a given function on each entry as the path is walked
 // returns the locked fs_entry at the end of the path on success
 struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err, int (*ent_eval)( struct fs_entry*, void* ), void* cls ) {
 
+   if( vol != core->volume && user != SYS_USER ) {
+      // wrong volume
+      *err = -EXDEV;
+      return NULL;
+   }
+   
    // if this path ends in '/', then append a '.'
    char* fpath = NULL;
    if( strlen(path) == 0 ) {
@@ -604,24 +615,25 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
    struct fs_entry* cur_ent = core->root;
    struct fs_entry* prev_ent = NULL;
 
-   while( name != NULL ) {
+   do {
+       
        // if this isn't a directory, then invalid path
-       if( cur_ent->ftype != FTYPE_DIR ) {
-	   if( cur_ent->ftype == FTYPE_FILE )
-	       *err = -ENOTDIR;
-	   else
-	       *err = -ENOENT;
+       if( name != NULL && cur_ent->ftype != FTYPE_DIR ) {
+         if( cur_ent->ftype == FTYPE_FILE )
+            *err = -ENOTDIR;
+         else
+            *err = -ENOENT;
 
-	   free( fpath );
-	   fs_entry_unlock( cur_ent );
-	   if( prev_ent )
+         free( fpath );
+         fs_entry_unlock( cur_ent );
+         if( prev_ent )
             fs_entry_unlock( prev_ent );
 
          return NULL;
       }
 
-      // do we have permission to resolve this name?
-      if( !IS_DIR_READABLE( cur_ent->mode, cur_ent->owner, cur_ent->volume, user, vol ) ) {
+      // do we have permission to search this directory?
+      if( cur_ent->ftype == FTYPE_DIR && !IS_DIR_READABLE( cur_ent->mode, cur_ent->owner, cur_ent->volume, user, vol ) ) {
 
          // the appropriate read flag is not set
          *err = -EACCES;
@@ -630,29 +642,41 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
 
          return NULL;
       }
-
-      if( cur_ent == core->root && strcmp(name, "..") == 0 ) {
-         // this is the root directory, and we tried to access /..
-         name = strtok_r( NULL, "/", &tmp );
-         continue;
-      }
-
+      
       // run our evaluator on this entry, if it exists
       if( ent_eval ) {
+         long name_hash = md_hash( cur_ent->name );
          int eval_rc = (*ent_eval)( cur_ent, cls );
          if( eval_rc != 0 ) {
             *err = eval_rc;
             free( fpath );
-            fs_entry_unlock( cur_ent );
+
+            // cur_ent might not even exist anymore....
+            if( cur_ent->ftype != FTYPE_DEAD ) {
+               fs_entry_unlock( cur_ent );
+            }
+            else {
+               free( cur_ent );
+               fs_entry_set_remove_hash( prev_ent->children, name_hash );
+            }
 
             return NULL;  
          }
       }
+      
+      if( name == NULL )
+         break;
 
       // resolve next name
       prev_ent = cur_ent;
-      cur_ent = fs_entry_set_find_name( prev_ent->children, name );
-
+      if( name != NULL ) {
+         cur_ent = fs_entry_set_find_name( prev_ent->children, name );
+      }
+      else {
+         // out of path
+         break;
+      }
+      
       if( cur_ent == NULL ) {
          // not found
          *err = -ENOENT;
@@ -686,11 +710,20 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
            return NULL;
          }
       }
-   }
+   } while( true );
+   
    free( fpath );
    if( name == NULL ) {
       // ran out of path
       *err = 0;
+      
+      // check readability
+      if( !IS_READABLE( cur_ent->mode, cur_ent->owner, cur_ent->volume, user, vol ) ) {
+         *err = -EACCES;
+         fs_entry_unlock( cur_ent );
+         return NULL;
+      }
+      
       return cur_ent;
    }
    else {
@@ -710,11 +743,77 @@ struct fs_entry* fs_entry_resolve_path( struct fs_core* core, char const* path, 
 }
 
 
+struct fs_entry_resolve_parent_cls {
+   uint64_t parent_id;
+   char* parent_name;
+   uint64_t file_id;
+   char* file_name;
+};
+
+static int fs_entry_resolve_parent( struct fs_entry* fent, void* cls ) {
+   struct fs_entry_resolve_parent_cls* parent_cls = (struct fs_entry_resolve_parent_cls*)cls;
+
+   parent_cls->parent_id = parent_cls->file_id;
+   parent_cls->file_id = fent->file_id;
+
+   if( parent_cls->parent_name ) {
+      free( parent_cls->parent_name );
+   }
+   parent_cls->parent_name = parent_cls->file_name;
+   parent_cls->file_name = strdup( fent->name );
+
+   return 0;
+}
+
+// resolve an absolute path, AND get the parent's file_id
+// returns the locked fs_entry at the end of the path on success, and the file_id of the parent
+struct fs_entry* fs_entry_resolve_path_and_parent_info( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err, uint64_t* parent_id, char** parent_name ) {
+   struct fs_entry_resolve_parent_cls parent_cls;
+
+   memset( &parent_cls, 0, sizeof(parent_cls) );
+   
+   struct fs_entry* fent = fs_entry_resolve_path_cls( core, path, user, vol, writelock, err, fs_entry_resolve_parent, (void*)&parent_cls );
+
+   if( fent != NULL ) {
+      // did we resolve a top-level file/directory?
+      if( parent_cls.file_name != NULL && parent_cls.parent_name == NULL ) {
+         parent_cls.parent_name = parent_cls.file_name;
+         parent_cls.file_name = NULL;
+      }
+
+      if( parent_cls.parent_name == NULL ) {
+         // got root
+         parent_cls.parent_name = strdup("/");
+      }
+
+      if( parent_id != NULL ) {
+         *parent_id = parent_cls.parent_id;
+      }
+      if( parent_name != NULL ) {
+         *parent_name = parent_cls.parent_name;
+      }
+      else {
+         free( parent_cls.parent_name );
+      }
+   }
+   else {
+      free( parent_cls.parent_name );
+   }
+   
+   if( parent_cls.file_name )
+      free( parent_cls.file_name );
+
+   return fent;
+}
+
+
 // convert an fs_entry to an md_entry.
 // the URLs will all be public.
-int fs_entry_to_md_entry( struct fs_core* core, char const* fs_path, uint64_t owner, uint64_t volume, struct md_entry* dest ) {
+int fs_entry_to_md_entry( struct fs_core* core, struct md_entry* dest, char const* fs_path, uint64_t owner, uint64_t volume ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, owner, volume, false, &err );
+   char* parent_name = NULL;
+   uint64_t parent_id = 0;
+   struct fs_entry* fent = fs_entry_resolve_path_and_parent_info( core, fs_path, owner, volume, false, &err, &parent_id, &parent_name );
    if( !fent || err ) {
       if( !err )
          err = -ENOMEM;
@@ -722,28 +821,21 @@ int fs_entry_to_md_entry( struct fs_core* core, char const* fs_path, uint64_t ow
       return err;
    }
 
-   err = fs_entry_to_md_entry( core, fs_path, fent, dest );
+   err = fs_entry_to_md_entry( core, dest, fent, parent_id, parent_name );
+   free( parent_name );
 
    fs_entry_unlock( fent );
    return err;
 }
 
 // convert an fs_entry to an md_entry.
-// the URLs will all be public.
-int fs_entry_to_md_entry( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct md_entry* dest ) {
+int fs_entry_to_md_entry( struct fs_core* core, struct md_entry* dest, struct fs_entry* fent, uint64_t parent_id, char const* parent_name ) {
 
    memset( dest, 0, sizeof(struct md_entry) );
    
    dest->type = fent->ftype == FTYPE_FILE ? MD_ENTRY_FILE : MD_ENTRY_DIR;
-   dest->path = strdup( fs_path );
-
-   if( URL_LOCAL( fent->url ) ) {
-      dest->url = fs_entry_local_to_public( core, fent->url, fent->version );
-      dbprintf("local to public: %s to %s\n", fent->url, dest->url );
-   }
-   else
-      dest->url = strdup( fent->url );
-
+   dest->name = strdup( fent->name );
+   dest->file_id = fent->file_id;
    dest->ctime_sec = fent->ctime_sec;
    dest->ctime_nsec = fent->ctime_nsec;
    dest->mtime_sec = fent->mtime_sec;
@@ -756,7 +848,13 @@ int fs_entry_to_md_entry( struct fs_core* core, char const* fs_path, struct fs_e
    dest->version = fent->version;
    dest->max_read_freshness = fent->max_read_freshness;
    dest->max_write_freshness = fent->max_write_freshness;
-      
+   dest->parent_id = parent_id;
+
+   if( parent_name )
+      dest->parent_name = strdup( parent_name );
+   else
+      dest->parent_name = NULL;
+   
    return 0;
 }
 
@@ -769,6 +867,11 @@ void fs_dir_handle_destroy( struct fs_dir_handle* dh ) {
       free( dh->path );
       dh->path = NULL;
    }
+   if( dh->parent_name ) {
+      free( dh->parent_name );
+      dh->parent_name = NULL;
+   }
+   
    pthread_rwlock_destroy( &dh->lock );
 }
 
@@ -782,6 +885,10 @@ int fs_file_handle_destroy( struct fs_file_handle* fh ) {
       free( fh->path );
       fh->path = NULL;
    }
+   if( fh->parent_name ) {
+      free( fh->parent_name );
+      fh->parent_name = NULL;
+   }
    pthread_rwlock_unlock( &fh->lock );
    pthread_rwlock_destroy( &fh->lock );
 
@@ -791,13 +898,14 @@ int fs_file_handle_destroy( struct fs_file_handle* fh ) {
 
 // reversion a file.  Only valid for local files 
 // FENT MUST BE WRITE-LOCKED!
-int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t new_version ) {
-   if( !URL_LOCAL( fent->url ) ) {
+int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t new_version, uint64_t parent_id, char const* parent_name ) {
+
+   if( !FS_ENTRY_LOCAL( core, fent ) ) {
       return -EINVAL;
    }
-
+   
    // reversion the data locally
-   int rc = fs_entry_reversion_local_file( core, fs_path, fent, new_version );
+   int rc = fs_entry_reversion_local_file( core, fent, new_version );
    if( rc != 0 ) {
       return rc;
    }
@@ -806,9 +914,8 @@ int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct f
    fent->version = new_version;
    fent->manifest->set_file_version( core, new_version );
 
-
    struct md_entry ent;
-   fs_entry_to_md_entry( core, fs_path, fent, &ent );
+   fs_entry_to_md_entry( core, &ent, fent, parent_id, parent_name );
 
    // synchronously update
    rc = ms_client_update( core->ms, &ent );
@@ -822,7 +929,6 @@ int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct f
    
    return rc;
 }
-
 
 
 

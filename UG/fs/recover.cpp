@@ -12,8 +12,8 @@
 // fent must refer to a local file
 int fs_entry_restore_file_from_disk( struct fs_core* core, struct fs_entry* fent ) {
    return 0;
-   
-   char* fs_path = GET_FS_PATH( core->conf->data_root, fent->url );
+
+   /*
    char* publish_path = md_publish_path_file( core->conf->data_root, fent->url, 0 );
    md_clear_version( publish_path );
 
@@ -145,10 +145,10 @@ int fs_entry_restore_file_from_disk( struct fs_core* core, struct fs_entry* fent
       fent->manifest = new file_manifest( core, fent, mmsg );
       fent->manifest->mark_stale();
 
-      struct timespec ts;
-      ts.tv_sec = fent->mtime_sec;
-      ts.tv_nsec = fent->mtime_nsec;
-      fent->manifest->set_lastmod( &ts );
+      //struct timespec ts;
+      //ts.tv_sec = fent->mtime_sec;
+      //ts.tv_nsec = fent->mtime_nsec;
+      //fent->manifest->set_lastmod( &ts );
 
       rc = 0;
    }
@@ -162,12 +162,15 @@ int fs_entry_restore_file_from_disk( struct fs_core* core, struct fs_entry* fent
    free( block_versions );
 
    return rc;
+   */
 }
 
 // once the filesystem has been re-built from the metadata server,
 // recreate each fs_entry's manifest from local and remote data.
 // NOTE: no locking is done here!  Perform this operation only when no changes can occur
 int fs_entry_restore_files( struct fs_core* core ) {
+   return 0;
+   /*
    dbprintf("%s", "begin restoring\n");
    list<struct fs_entry*> dir_queue;
 
@@ -233,4 +236,5 @@ int fs_entry_restore_files( struct fs_core* core ) {
 
    dbprintf("%s", "end restoring\n");
    return worst_rc;
+   */
 }

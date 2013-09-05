@@ -7,45 +7,6 @@
 #include "manifest.h"
 #include "consistency.h"
 
-// get the lastmod of a manifest
-int fs_entry_manifest_lastmod( struct fs_core* core, char const* fs_path, struct timespec* ts ) {
-   int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
-   if( !fent || err ) {
-      if( !err )
-         err = -ENOMEM;
-
-      return err;
-   }
-
-   fent->manifest->get_lastmod( ts );
-
-   fs_entry_unlock( fent );
-   return err;
-}
-
-
-/*
-// calculate the version of a file, from disk
-int64_t fs_entry_read_version( struct fs_core* core, char const* fs_path ) {
-   char* fp = md_fullpath( core->conf->publish_dir, fs_path, NULL );
-
-   char** versioned_paths = md_versioned_paths( fp );
-   if( versioned_paths == NULL ) {
-      errorf("fs_entry_read_version: failed to read %s\n", fs_path );
-      return -1;
-   }
-
-   int64_t highest_version = md_next_version( versioned_paths ) - 1;
-
-   FREE_LIST( versioned_paths );
-   free( fp );
-
-   return highest_version;
-}
-*/
-
-
 // get the in-memory version of a file
 int64_t fs_entry_get_version( struct fs_core* core, char const* fs_path ) {
    int err = 0;
@@ -80,6 +41,28 @@ int64_t fs_entry_get_block_version( struct fs_core* core, char* fs_path, uint64_
    }
 
    int64_t ret = fent->manifest->get_block_version( block_id );
+
+   fs_entry_unlock( fent );
+   return ret;
+}
+
+// get the gateway coordinator of a file
+uint64_t fs_entry_get_block_host( struct fs_core* core, char* fs_path, uint64_t block_id ) {
+   int err = 0;
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
+   if( !fent || err ) {
+      if( !err )
+         err = -ENOMEM;
+
+      return err;
+   }
+
+   if( fent->manifest == NULL ) {
+      fs_entry_unlock( fent );
+      return -ENODATA;
+   }
+   
+   uint64_t ret = fent->manifest->get_block_host( core, block_id );
 
    fs_entry_unlock( fent );
    return ret;
@@ -200,7 +183,7 @@ static int fs_entry_do_stat( struct fs_core* core, struct fs_entry* fent, struct
    memset( sb, 0, sizeof(sb) );
    
    sb->st_dev = 0;
-   //sb->st_ino = (ino_t)fent;
+   sb->st_ino = (ino_t)fent->file_id;
 
    mode_t ftype = 0;
    if( fent->ftype == FTYPE_FILE )
@@ -250,7 +233,7 @@ int fs_entry_stat_extended( struct fs_core* core, char const* path, struct stat*
       rc = fs_entry_revalidate_path( core, volume, path );
       if( rc != 0 ) {
          errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
-         return -EREMOTEIO;
+         return rc;
       }
    }
    
@@ -269,7 +252,7 @@ int fs_entry_stat_extended( struct fs_core* core, char const* path, struct stat*
    fs_entry_do_stat( core, fent, sb );
 
    if( is_local ) {
-      *is_local = URL_LOCAL( fent->url );
+      *is_local = FS_ENTRY_LOCAL( core, fent );
    }
    
    fs_entry_unlock( fent );
@@ -295,18 +278,7 @@ bool fs_entry_is_block_local( struct fs_core* core, char const* path, uint64_t u
       return err;
    }
 
-   bool rc;
-
-   // search the entry for this block
-   char* block_url = fent->manifest->get_block_url( fent->version, block_id );
-   if( block_url == NULL ) {
-      // not here
-      rc = false;
-   }
-   else {
-      rc = URL_LOCAL( block_url );
-      free( block_url );
-   }
+   bool rc = fent->manifest->is_block_local( core, block_id );
 
    fs_entry_unlock( fent );
 
@@ -323,55 +295,9 @@ bool fs_entry_is_local( struct fs_core* core, char const* path, uint64_t user, u
       return false;
    }
 
-   bool rc = URL_LOCAL( fent->url );
+   bool rc = FS_ENTRY_LOCAL( core, fent );
    fs_entry_unlock( fent );
    return rc;
-}
-
-// get a file's url
-char* fs_entry_get_url( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, int* err ) {
-   struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, false, err );
-   if( !fent || *err ) {
-      if( !*err )
-         *err = -ENOMEM;
-
-      return NULL;
-   }
-
-   char* url = NULL;
-   if( fent->url )
-      url = strdup( fent->url );
-
-   fs_entry_unlock( fent );
-   return url;
-}
-
-// get proto://file_host:file_portnum/
-char* fs_entry_get_host_url( struct fs_core* core, char const* path, char const* proto, uint64_t user, uint64_t volume, int* err ) {
-   struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, false, err );
-   if( !fent || *err ) {
-      if( !*err )
-         *err = -ENOMEM;
-
-      return NULL;
-   }
-
-   char* hostname = md_url_hostname( fent->url );
-   int portnum = md_portnum_from_url( fent->url );
-
-   char* host_url = md_prepend( proto, hostname, NULL );
-   if( portnum > 0 ) {
-      char buf[10];
-      sprintf(buf, ":%d", portnum);
-
-      char* tmp = host_url;
-      host_url = md_prepend( host_url, buf, NULL );
-      free( tmp );
-   }
-   free( hostname );
-
-   fs_entry_unlock( fent );
-   return host_url;
 }
 
 // fstat
@@ -439,10 +365,7 @@ int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *sta
       return err;
    }
 
-   unsigned long int num_files = 0;
-   fs_core_rlock( core );
-   num_files = core->num_files;
-   fs_core_unlock( core );
+   uint64_t num_files = ms_client_get_num_files( core->ms, vol );
 
    // populate the statv struct
    statv->f_bsize = core->blocking_factor;
@@ -489,6 +412,7 @@ int fs_entry_access( struct fs_core* core, char const* path, int mode, uint64_t 
 
 // chown
 int fs_entry_chown( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, uint64_t new_user ) {
+   // TODO: ms_client_claim
    return -ENOSYS;
 }
 
@@ -496,7 +420,10 @@ int fs_entry_chown( struct fs_core* core, char const* path, uint64_t user, uint6
 // chmod
 int fs_entry_chmod( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, mode_t mode ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, true, &err );
+   uint64_t parent_id = 0;
+   char* parent_name = NULL;
+   
+   struct fs_entry* fent = fs_entry_resolve_path_and_parent_info( core, path, user, volume, true, &err, &parent_id, &parent_name );
    if( !fent || err ) {
       if( !err )
          err = -ENOMEM;
@@ -504,28 +431,38 @@ int fs_entry_chmod( struct fs_core* core, char const* path, uint64_t user, uint6
       return err;
    }
 
-   // can't chmod remote files
-   if( !URL_LOCAL( fent->url ) ) {
-      fs_entry_unlock( fent );
-      return -EINVAL;
-   }
-
    // can't chmod unless we own the file
    if( fent->owner != user ) {
       fs_entry_unlock( fent );
+      free( parent_name );
       return -EPERM;
    }
 
    fent->mode = mode;
+   
+   // post update
+   struct md_entry up;
+   fs_entry_to_md_entry( core, &up, fent, parent_id, parent_name );
 
+   int rc = ms_client_queue_update( core->ms, &up, fent->max_write_freshness, 0 );
+   if( rc != 0 ) {
+      errorf("ms_client_queue_update(%s) rc = %d\n", path, rc );
+   }
+
+   md_entry_free( &up );
    fs_entry_unlock( fent );
-   return 0;
+   free( parent_name );
+
+   return rc;
 }
 
 // utime
 int fs_entry_utime( struct fs_core* core, char const* path, struct utimbuf* tb, uint64_t user, uint64_t volume ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, true, &err );
+   uint64_t parent_id = 0;
+   char* parent_name = NULL;
+   
+   struct fs_entry* fent = fs_entry_resolve_path_and_parent_info( core, path, user, volume, true, &err, &parent_id, &parent_name );
    if( !fent || err ) {
       if( !err )
          err = -ENOMEM;
@@ -555,12 +492,22 @@ int fs_entry_utime( struct fs_core* core, char const* path, struct utimbuf* tb, 
       fent->mtime_nsec = ts.tv_nsec;
       fent->atime = fent->mtime_sec;
 
-      fent->manifest->set_lastmod( &ts );
+      //fent->manifest->set_lastmod( &ts );
    }
 
    fent->atime = currentTimeSeconds();
 
+   // post update
+   struct md_entry up;
+   fs_entry_to_md_entry( core, &up, fent, parent_id, parent_name );
+
+   int rc = ms_client_queue_update( core->ms, &up, fent->max_write_freshness, 0 );
+   if( rc != 0 ) {
+      errorf("ms_client_queue_update(%s) rc = %d\n", path, rc );
+   }
+
+   md_entry_free( &up );
    fs_entry_unlock( fent );
-   return 0;
+   return rc;
 }
 

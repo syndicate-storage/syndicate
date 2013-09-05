@@ -17,7 +17,7 @@ import logging
 
 import MS
 import MS.entry
-from MS.entry import MSEntry, MSEntryShard
+from MS.entry import MSEntry, MSEntryShard, MSENTRY_TYPE_DIR
 from MS.volume import Volume, VolumeIDCounter
 from MS.user import SyndicateUser, SyndicateUIDCounter
 from MS.gateway import UserGateway, AcquisitionGateway, ReplicaGateway
@@ -39,6 +39,49 @@ def read_volume( volume_id ):
 
 def get_volumes( volume_ids ):
    return Volume.ReadAll( volume_ids )
+
+def get_roots( volumes ):
+   # read all root directories
+   roots = [None] * len(volumes)
+   root_memcache = [None] * len(volumes)
+   for i in xrange(0, len(volumes)):
+      root_memcache[i] = MSEntry.Read( volumes[i], 0, memcache_keys_only=True )
+
+   cached_roots = storagetypes.memcache.get_multi( root_memcache )
+   for i in xrange(0, len(volumes)):
+      roots[i] = cached_roots.get( root_memcache[i], None )
+
+   if None in roots:
+      
+      ent_futs = []
+      for i in xrange(0, len(volumes)):
+         if roots[i] != None:
+            continue
+         
+         ent_futs.append( MSEntry.Read( volumes[i], 0, futs_only=True ) )
+
+      
+      results = MSEntry.WaitFutures( ent_futs )
+      k = 0
+      for i in xrange(0, len(volumes)):
+         if roots[i] != None:
+            continue
+
+         roots[i] = results[k]
+         k += 1
+
+   # cache the results
+   cache_roots = {}
+   for root in roots:
+      if root == None:
+         continue
+      
+      cache_name = MSEntry.cache_key_name( root.volume_id, root.file_id )
+      cache_roots[ cache_name ] = root
+
+   storagetypes.memcache.add_multi( cache_roots )
+   return roots
+   
 
 def volume_update_shard_count( volume_id, num_shards ):
    return Volume.update_shard_count( volume_id, num_shards )
@@ -99,14 +142,39 @@ def get_user( attr ):
 
 
    
-def make_root( volume, **root_attrs ):
-   root = MSEntry( key=make_key( MSEntry, MSEntry.make_key_name( volume_id=root_attrs['volume_id'], fs_path="/" ) ) )
-   root.populate( volume.num_shards, **root_attrs )
+def make_root( volume, owner_id, **root_attrs ):
+   now_sec, now_nsec = storagetypes.clock_gettime()
+   
+   basic_root_attrs = {
+      "file_id": "0000000000000000",
+      "parent_id": "0000000000000000",
+      "name": "/",
+      "ftype": MSENTRY_TYPE_DIR,
+      "version": 1,
+      "ctime_sec" : now_sec,
+      "ctime_nsec" : now_nsec,
+      "mtime_sec" : now_sec,
+      "mtime_nsec" : now_nsec,
+      "owner_id" : owner_id,
+      "coordinator_id": root_attrs.get("coordinator_id", 0),
+      "volume_id" : volume.volume_id,
+      "mode" : 0775,
+      "size": 4096,
+      "max_read_freshness" : 5000,
+      "max_write_freshness" : 0
+   }
 
-   root.update_dir_shard( volume.num_shards, **root_attrs )
+   basic_root_attrs.update( **root_attrs )
+   
+   root = MSEntry( key=make_key( MSEntry, MSEntry.make_key_name( volume.volume_id, basic_root_attrs['file_id'] ) ) )
+   root.populate( volume.num_shards, **basic_root_attrs )
+
+   root.update_dir_shard( volume.num_shards, volume.volume_id, basic_root_attrs['file_id'], **basic_root_attrs )
 
    root_fut = root.put_async()
-   root_fut.wait()
+   root_shard_fut = root.put_shard_async()
+   
+   storagetypes.wait_futures( [root_fut, root_shard_fut] )
 
    return 0
    
@@ -123,12 +191,12 @@ def delete_msentry( user_owner_id, volume, **ent_attrs ):
    return MSEntry.Delete( user_owner_id, volume, **ent_attrs )
 
    
-def read_msentry_children( volume, fs_path ):
-   return MSEntry.ListAll( volume, fs_path )
+def list_msentry_children( volume, file_id ):
+   return MSEntry.ListAll( volume, file_id )
 
 
-def read_msentry_path( volume, fs_path ):
-   return MSEntry.Read( volume, fs_path )
+def read_msentry( volume, file_id ):
+   return MSEntry.Read( volume, file_id )
 
    
 def create_user_gateway( user, volume=None, **kwargs ):

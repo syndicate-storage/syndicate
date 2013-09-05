@@ -58,18 +58,48 @@ size_t replica_curl_read( void* ptr, size_t size, size_t nmemb, void* userdata )
 
 
 // replicate a manifest
-int RG_upload_init_manifest( struct fs_core* core, struct RG_upload* rup, char* manifest_data, size_t manifest_data_len, char const* fs_path, int64_t file_version, int64_t mtime_sec, int32_t mtime_nsec, bool sync ) {
+int RG_upload_init_manifest( struct fs_core* core,
+                             struct RG_upload* rup,
+                             char* manifest_data,
+                             size_t manifest_data_len,
+                             char const* fs_path,
+                             uint64_t file_id,
+                             int64_t file_version,
+                             int64_t mtime_sec,
+                             int32_t mtime_nsec,
+                             uint64_t owner,
+                             uint64_t writer,
+                             bool sync ) {
+   
    memset( rup, 0, sizeof(struct RG_upload) );
    
    // build an update
    ms::ms_gateway_blockinfo replica_info;
-   replica_info.set_fs_path( string(fs_path) );
+   replica_info.set_file_id( file_id );
    replica_info.set_file_version( file_version );
    replica_info.set_block_id( 0 );
    replica_info.set_block_version( 0 );
    replica_info.set_blocking_factor( core->blocking_factor );
    replica_info.set_file_mtime_sec( mtime_sec );
    replica_info.set_file_mtime_nsec( mtime_nsec );
+   replica_info.set_owner( owner );
+   replica_info.set_writer( writer );
+   replica_info.set_signature( string("") );
+
+   // hash the manifest
+   unsigned char* hash = sha256_hash_data( manifest_data, manifest_data_len );
+   size_t hash_len = sha256_len();
+   
+   char* b64hash = NULL;
+   int rc = Base64Encode( (char*)hash, hash_len, &b64hash );
+   if( rc != 0 ) {
+      errorf("Base64Encode rc = %d\n", rc );
+      return rc;
+   }
+
+   replica_info.set_hash( string(b64hash) );
+   free( b64hash );
+   
 
    string replica_info_str;
    bool src = replica_info.SerializeToString( &replica_info_str );
@@ -78,20 +108,48 @@ int RG_upload_init_manifest( struct fs_core* core, struct RG_upload* rup, char* 
       return -EINVAL;
    }
 
-   char* fs_fullpath = fs_entry_manifest_path( "", fs_path, file_version, mtime_sec, mtime_nsec );
+
+   // sign the message
+   char* sigb64 = NULL;
+   size_t sigb64_len = 0;
+
+   rc = md_sign_message( core->ms->my_key, replica_info_str.c_str(), replica_info_str.size(), &sigb64, &sigb64_len );
+   if( rc != 0 ) {
+      errorf("md_sign_message rc = %d\n", rc );
+      fclose( rup->file );
+      rup->file = NULL;
+      return rc;
+   }
+
+   replica_info.set_signature( string( sigb64, sigb64_len ) );
+   free( sigb64 );
+
+   // re-serialize
+   src = replica_info.SerializeToString( &replica_info_str );
+   if( !src ) {
+      errorf("%s", " failed to serialize\n");
+      return -EINVAL;
+   }
+
+   struct timespec ts;
+   ts.tv_sec = mtime_sec;
+   ts.tv_nsec = mtime_nsec;
+   char* fs_fullpath = fs_entry_manifest_url_path( core, fs_path, file_version, &ts );
    
-   rup->path = fs_fullpath;
    struct curl_httppost* last = NULL;
    rup->form_data = NULL;
-
-   curl_formadd( &rup->form_data, &last, CURLFORM_COPYNAME, "metadata",
+   rup->path = fs_fullpath;
+   
+   curl_formadd( &rup->form_data, &last,  CURLFORM_COPYNAME, "metadata",
                                           CURLFORM_CONTENTSLENGTH, replica_info_str.size(),
                                           CURLFORM_COPYCONTENTS, replica_info_str.c_str(),
+                                          CURLFORM_CONTENTTYPE, "application/octet-stream",
                                           CURLFORM_END );
 
    curl_formadd( &rup->form_data, &last, CURLFORM_COPYNAME, "data",
                                           CURLFORM_PTRCONTENTS, manifest_data,
                                           CURLFORM_CONTENTSLENGTH, manifest_data_len,
+                                          CURLFORM_CONTENTTYPE, "application/octet-stream",
                                           CURLFORM_END );
 
    rup->data = manifest_data;
@@ -108,20 +166,43 @@ int RG_upload_init_manifest( struct fs_core* core, struct RG_upload* rup, char* 
 }
                                    
 // replicate a block
-int RG_upload_init_block( struct fs_core* core, struct RG_upload* rup, char const* data_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, int64_t mtime_sec, int32_t mtime_nsec, bool sync ) {
+int RG_upload_init_block( struct fs_core* core,
+                          bool staging,
+                          struct RG_upload* rup,
+                          char const* fs_path,
+                          uint64_t file_id,
+                          int64_t file_version,
+                          uint64_t block_id,
+                          int64_t block_version,
+                          unsigned char* hash,        // block hash
+                          int hash_len,
+                          int64_t mtime_sec,
+                          int32_t mtime_nsec,
+                          uint64_t owner,
+                          uint64_t writer,
+                          bool sync ) {
 
    memset( rup, 0, sizeof(struct RG_upload) );
 
    // attempt to open the file
-   char* local_path = fs_entry_local_block_path( data_root, fs_path, file_version, block_id, block_version );
+   char* local_block_url = NULL;
 
+   if( staging ) {
+      local_block_url = fs_entry_local_staging_block_url( core, file_id, file_version, block_id, block_version );
+   }
+   else {
+      local_block_url = fs_entry_local_block_url( core, file_id, file_version, block_id, block_version );
+   }
+
+   char* local_path = GET_PATH( local_block_url );
+   
    if( rup->file == NULL ) {
       // stream data from file
       rup->file = fopen( local_path, "r" );
       if( rup->file == NULL ) {
          int errsv = -errno;
          errorf( "fopen(%s) errno = %d\n", local_path, errsv );
-         free( local_path );
+         free( local_block_url );
          return errsv;
       }
 
@@ -131,7 +212,7 @@ int RG_upload_init_block( struct fs_core* core, struct RG_upload* rup, char cons
       if( rc != 0 ) {
          int errsv = -errno;
          errorf( "fstat errno = %d\n", errsv );
-         free( local_path );
+         free( local_block_url );
          fclose( rup->file );
          rup->file = NULL;
          return errsv;
@@ -139,40 +220,85 @@ int RG_upload_init_block( struct fs_core* core, struct RG_upload* rup, char cons
 
       // build an update
       ms::ms_gateway_blockinfo replica_info;
-      replica_info.set_fs_path( string(fs_path) );
       replica_info.set_file_version( file_version );
       replica_info.set_block_id( block_id );
       replica_info.set_block_version( block_version );
       replica_info.set_blocking_factor( core->blocking_factor );
       replica_info.set_file_mtime_sec( mtime_sec );
       replica_info.set_file_mtime_nsec( mtime_nsec );
+      replica_info.set_file_id( file_id );
+      replica_info.set_owner( owner );
+      replica_info.set_writer( writer );
 
+      char* b64hash = NULL;
+      rc = Base64Encode( (char*)hash, hash_len, &b64hash );
+      if( rc != 0 ) {
+         errorf("Base64Encode rc = %d\n", rc );
+         free( local_block_url );
+         fclose( rup->file );
+         rup->file = NULL;
+         return rc;
+      }
+
+      replica_info.set_hash( string(b64hash) );
+      free( b64hash );
+      
+      replica_info.set_signature( string("") );
+      
       string replica_info_str;
       bool src = replica_info.SerializeToString( &replica_info_str );
       if( !src ) {
          errorf("%s", " failed to serialize\n");
-         free( local_path );
+         free( local_block_url );
          fclose( rup->file );
          rup->file = NULL;
          return -EINVAL;
       }
 
-      char* fs_fullpath = fs_entry_local_block_path( "", fs_path, file_version, block_id, block_version );
-      rup->path = fs_fullpath;
+      // sign the message
+      char* sigb64 = NULL;
+      size_t sigb64_len = 0;
+
+      rc = md_sign_message( core->ms->my_key, replica_info_str.c_str(), replica_info_str.size(), &sigb64, &sigb64_len );
+      if( rc != 0 ) {
+         errorf("md_sign_message rc = %d\n", rc );
+         free( local_block_url );
+         fclose( rup->file );
+         rup->file = NULL;
+         return rc;
+      }
+
+      replica_info.set_signature( string( sigb64, sigb64_len ) );
+      free( sigb64 );
+
+      // re-serialize
+      src = replica_info.SerializeToString( &replica_info_str );
+      if( !src ) {
+         errorf("%s", " failed to serialize\n");
+         free( local_block_url );
+         fclose( rup->file );
+         rup->file = NULL;
+         return -EINVAL;
+      }
+
       struct curl_httppost* last = NULL;
       rup->form_data = NULL;
 
-      curl_formadd( &rup->form_data, &last, CURLFORM_COPYNAME, "metadata",
+      rup->path = fs_entry_block_url_path( core, fs_path, file_version, block_id, block_version );
+
+      curl_formadd( &rup->form_data, &last,  CURLFORM_COPYNAME, "metadata",
                                              CURLFORM_CONTENTSLENGTH, replica_info_str.size(),
                                              CURLFORM_COPYCONTENTS, replica_info_str.c_str(),
+                                             CURLFORM_CONTENTTYPE, "application/octet-stream",
                                              CURLFORM_END );
-      
+
       curl_formadd( &rup->form_data, &last, CURLFORM_COPYNAME, "data",
                                              CURLFORM_STREAM, rup->file,
                                              CURLFORM_FILENAME, rup->path,
                                              CURLFORM_CONTENTSLENGTH, (long)sb.st_size,
+                                             CURLFORM_CONTENTTYPE, "application/octet-stream",
                                              CURLFORM_END );
-      free( local_path );
+      free( local_block_url );
 
       rup->sync = sync;
 
@@ -185,7 +311,7 @@ int RG_upload_init_block( struct fs_core* core, struct RG_upload* rup, char cons
       return 0;
    }
    else {
-      free( local_path );
+      free( local_block_url );
       return -EINVAL;
    }
 }
@@ -378,6 +504,9 @@ int ReplicaUploader::start_next_replica( struct RG_channel* rsc ) {
       struct RG_upload* ru = (*rsc->pending)[0];
 
       curl_easy_setopt( rsc->curl_h, CURLOPT_HTTPPOST, ru->form_data );
+
+      // TODO: format is POST /$volume_id/$file_id.$file_version/$block_id.$block_version or
+      // POST /$volume_id/$file_id.$file_version/manifest.$file_mtime_sec.$file_mtime_nsec
    }
 
    pthread_mutex_unlock( &rsc->pending_lock );
@@ -479,12 +608,8 @@ int replication_shutdown() {
 
 
 // replicate a sequence of modified blocks, and the associated manifest
-// fh must be write-locked
-// fh->fent must be read-locked
-int fs_entry_replicate_write( struct fs_core* core, struct fs_file_handle* fh, modification_map* modified_blocks, bool sync ) {
-   
-   char* fs_path = fh->path;
-   struct fs_entry* fent = fh->fent;
+// fent must be read-locked
+int fs_entry_replicate_write( struct fs_core* core, char const* fs_path, struct fs_entry* fent, modification_map* modified_blocks, bool sync ) {
    
    // don't even bother if there are no replica servers
    if( rutp->get_num_RGs() == 0 )
@@ -499,7 +624,7 @@ int fs_entry_replicate_write( struct fs_core* core, struct fs_file_handle* fh, m
 
    if( manifest_len > 0 ) {
       struct RG_upload* manifest_rup = CALLOC_LIST( struct RG_upload, 1 );
-      RG_upload_init_manifest( core, manifest_rup, manifest_data, manifest_len, fs_path, fent->version, fent->mtime_sec, fent->mtime_nsec, sync );
+      RG_upload_init_manifest( core, manifest_rup, manifest_data, manifest_len, fs_path, fent->file_id, fent->version, fent->mtime_sec, fent->mtime_nsec, fent->owner, core->gateway, sync );
       
       replicas.push_back( manifest_rup );
    }
@@ -510,14 +635,14 @@ int fs_entry_replicate_write( struct fs_core* core, struct fs_file_handle* fh, m
    
    // start replicating all modified blocks.  They could be local or staging, so we'll need to be careful 
    for( modification_map::iterator itr = modified_blocks->begin(); itr != modified_blocks->end(); itr++ ) {
-      char* data_root = core->conf->data_root;
-
-      if( !URL_LOCAL( fent->url ) ) {
-         data_root = core->conf->staging_root;
+      bool staging = false;
+      
+      if( !FS_ENTRY_LOCAL( core, fent ) ) {
+         staging = true;
       }
 
       struct RG_upload* block_rup = CALLOC_LIST( struct RG_upload, 1 );
-      RG_upload_init_block( core, block_rup, data_root, fs_path, fent->version, itr->first, itr->second, fent->mtime_sec, fent->mtime_nsec, sync );
+      RG_upload_init_block( core, staging, block_rup, fs_path, fent->file_id, fent->version, itr->first, itr->second.version, itr->second.hash, itr->second.hash_len, fent->mtime_sec, fent->mtime_nsec, fent->owner, core->gateway, sync );
       
       replicas.push_back( block_rup );
    }
