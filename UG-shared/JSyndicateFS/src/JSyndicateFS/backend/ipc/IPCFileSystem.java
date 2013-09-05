@@ -162,6 +162,30 @@ public class IPCFileSystem extends JSFSFileSystem {
     }
     
     @Override
+    public byte[] getExtendedAttr(JSFSPath path, String name) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
+        if(name == null) {
+            LOG.error("name is null");
+            throw new IllegalArgumentException("name is null");
+        }
+        
+        JSFSPath absPath = getAbsolutePath(path);
+        IPCFileStatus status = getFileStatus(absPath);
+        if(status == null)
+            throw new IOException("file does not exist");
+        
+        if(status.isFile() || status.isDirectory()) {
+            return this.client.getExtendedAttr(absPath.getPath()); 
+        } else {
+            throw new IOException("Cannot read extended attribute from unknown status");
+        }
+    }
+    
+    @Override
     public boolean exists(JSFSPath path) {
         if(path == null) {
             LOG.error("path is null");
