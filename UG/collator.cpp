@@ -107,9 +107,9 @@ int Collator::release_blocks( struct fs_core* core, char const* fs_path, struct 
    while( k < end_block_id ) {
 
       uint64_t start = 0, end = 0;
-      char* writer_url = NULL;
+      uint64_t writer_gateway = 0;
 
-      rc = fent->manifest->get_range( k, &start, &end, &writer_url );
+      rc = fent->manifest->get_range( k, &start, &end, &writer_gateway );
       if( rc != 0 )
          break;
       
@@ -122,7 +122,7 @@ int Collator::release_blocks( struct fs_core* core, char const* fs_path, struct 
       memset( &rls, 0, sizeof(rls) );
       
       rls.acceptMsg = msg;
-      rls.content_url = writer_url;
+      rls.gateway_id = writer_gateway;
 
       released->push_back( rls );
 
@@ -143,7 +143,7 @@ int Collator::release_blocks( struct fs_core* core, char const* fs_path, struct 
 
    delete released;
 
-   return 0;
+   return rc;
 }
 
 // release main loop
@@ -170,16 +170,24 @@ void* Collator::release_loop( void* arg ) {
       
       pthread_mutex_unlock( &col->release_queue_lock );
 
-      // tell the remote host that we've accepted
-      dbprintf("send accept to %s\n", next.content_url );
-      
-      int rc = send_accepted( col->core, col->release_curl, next.content_url, next.acceptMsg );
-
-      if( rc != 0 ) {
-         errorf("send_accepted(%s) rc = %d\n", next.content_url, rc );
+      char* gateway_url = ms_client_get_UG_content_url( col->core->ms, col->core->volume, next.gateway_id );
+      if( gateway_url == NULL ) {
+         dbprintf("WARN: No such gateway %" PRIu64 "\n", next.gateway_id );
+         delete next.acceptMsg;
+         continue;
       }
       
-      free( next.content_url );
+      // tell the remote host that we've accepted
+      dbprintf("send accept to %s\n", gateway_url );
+      
+      int rc = send_accepted( col->core, col->release_curl, gateway_url, next.acceptMsg );
+
+      if( rc != 0 ) {
+         errorf("send_accepted(%s) rc = %d\n", gateway_url, rc );
+      }
+
+      free( gateway_url );
+      
       delete next.acceptMsg;
 
    }
@@ -222,6 +230,6 @@ int Collator::stop() {
 // release a range of pending collations
 // fent must be read-locked
 int fs_entry_release_remote_blocks( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t start_block_id, uint64_t end_block_id ) {
-   //dbprintf("release %s.%" PRId64 "[%" PRIu64 "-%" PRIu64 "]\n", fs_path, fent->version, start_block_id, end_block_id);
+   dbprintf("release %s.%" PRId64 "[%" PRIu64 "-%" PRIu64 "]\n", fs_path, fent->version, start_block_id, end_block_id);
    return core->col->release_blocks( core, fs_path, fent, start_block_id, end_block_id );
 }

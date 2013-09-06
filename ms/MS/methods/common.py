@@ -23,6 +23,7 @@ def make_ms_reply( volume, error ):
    reply.volume_version = volume.version
    reply.UG_version = volume.UG_version
    reply.RG_version = volume.RG_version
+   reply.AG_version = volume.AG_version
    reply.error = error
 
    return reply

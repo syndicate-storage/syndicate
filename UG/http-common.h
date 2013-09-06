@@ -14,6 +14,7 @@
 #define HTTP_REDIRECT_REMOTE 2
 
 struct http_request_data {
+   uint64_t volume_id;
    char* fs_path;
    int64_t file_version;
    uint64_t block_id;

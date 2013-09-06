@@ -18,6 +18,9 @@ import types
 import errno
 import time
 import datetime
+import collections
+
+from volume import Volume
 
 from msconfig import *
 
@@ -45,7 +48,10 @@ def latest_time( mtime_sec, mtime_nsec ):
 
    
 class MSEntryShard(storagetypes.Object):
-   # Sharded component of an MSEntry
+   # Sharded component of an MSEntry.
+   # NOTE: size doesn't change for directories, but the mtime_sec, mtime_nsec fields will.
+   # They don't have to increase monotonically for directories---all the UG needs to determine is that the directory
+   # has changed at all.  The concept of a "latest" shard is applicable only for files.
    mtime_sec = storagetypes.Integer(default=0, indexed=False)
    mtime_nsec = storagetypes.Integer(default=0, indexed=False)
    size = storagetypes.Integer(default=0, indexed=False )
@@ -135,38 +141,41 @@ class MSEntry( storagetypes.Object ):
    Each entry refers to its parent, so we can resolve a path's worth of metadata quickly.
    """
 
-   ftype = storagetypes.Integer( indexed=False )
+   ftype = storagetypes.Integer( default=-1, indexed=False )
+   file_id = storagetypes.String( default="None" )
    
-   fs_path = storagetypes.Text()     # just the filesystem path
-   url = storagetypes.Text()
-   version = storagetypes.Integer( indexed=False )
+   name = storagetypes.String( default="", indexed=False )
    
-   ctime_sec = storagetypes.Integer( indexed=False )
-   ctime_nsec = storagetypes.Integer( indexed=False )
+   version = storagetypes.Integer( default=0, indexed=False )
+   
+   ctime_sec = storagetypes.Integer( default=0, indexed=False )
+   ctime_nsec = storagetypes.Integer( default=0, indexed=False )
 
-   owner_id = storagetypes.Integer()
-   coordinator_id = storagetypes.Integer()
-   volume_id = storagetypes.Integer()
-   mode = storagetypes.Integer( indexed=False )
+   owner_id = storagetypes.Integer( default=-1 )
+   coordinator_id = storagetypes.Integer( default=1 )
+   volume_id = storagetypes.Integer( default=-1 )
+   mode = storagetypes.Integer( default=0 )
+   
+   is_readable_in_list = storagetypes.Boolean( default=False )    # used to simplify queries
 
-   max_read_freshness = storagetypes.Integer( indexed=False )
-   max_write_freshness = storagetypes.Integer( indexed=False )
+   max_read_freshness = storagetypes.Integer( default=0, indexed=False )
+   max_write_freshness = storagetypes.Integer( default=0, indexed=False )
 
-   parent_key = storagetypes.Key()
+   parent_id = storagetypes.String( default="-1" )
 
    # whether or not this directory is considered to be deleted
    deleted = storagetypes.Boolean( default=False, indexed=False )
 
    # to be filled in from shard
-   mtime_sec = 0
-   mtime_nsec = 0
-   size = 0
+   mtime_sec = storagetypes.Integer( default=-1, indexed=False )
+   mtime_nsec = storagetypes.Integer( default=-1, indexed=False )
+   size = storagetypes.Integer( default=-1, indexed=False )
 
    # attributes that must be supplied on creation
    required_attrs = [
       "ftype",
-      "fs_path",
-      "url",
+      "file_id",
+      "name",
       "version",
       "owner_id",
       "coordinator_id",
@@ -177,28 +186,35 @@ class MSEntry( storagetypes.Object ):
       "ctime_nsec",
       "mode",
       "size",
-      "parent_key",
    ]
 
    # attributes that uniquely identify this entry
    key_attrs = [
       "volume_id",
-      "fs_path"
+      "file_id",
+   ]
+
+   # required for each call
+   call_attrs = [
+      "volume_id",
+      "file_id",
+      "name",
+      "parent_id",
+      "coordinator_id"
    ]
 
    # methods for generating default values for attributes (sharded or not)
    default_values = {
-      "parent_key": (lambda cls, attrs: storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id=attrs['volume_id'], fs_path=MSEntry.get_parent_path( attrs['fs_path'] ) ) ) if attrs['fs_path'] != "/" else None),
       "max_read_freshness": (lambda cls, attrs: 0),
-      "max_write_freshness": (lambda cls, attrs: 0)
+      "max_write_freshness": (lambda cls, attrs: 0),
+      "file_id": (lambda cls, attrs: "None")
    }
 
    # publicly readable attributes, sharded or not
    read_attrs = [
       "ftype",
-      "fs_path",
-      "url",
       "version",
+      "name",
       "ctime_sec",
       "ctime_nsec",
       "mtime_sec",
@@ -214,7 +230,7 @@ class MSEntry( storagetypes.Object ):
 
    # publicly writable attributes, sharded or not
    write_attrs = [
-      "url",
+      "name",
       "version",
       "mode",
       "size",
@@ -249,7 +265,14 @@ class MSEntry( storagetypes.Object ):
       "msentry_version": (lambda ent: ent.version),
       "msentry_volume_id": (lambda ent: ent.volume_id)
    }
-
+   
+   @classmethod 
+   def unserialize_id( self, i ):
+      return '{:016X}'.format(i)
+   
+   @classmethod
+   def serialize_id( self, i_str ):
+      return int(i_str, 16)
    
    def protobuf( self, pbent, **kwargs ):
       """
@@ -267,16 +290,14 @@ class MSEntry( storagetypes.Object ):
       pbent.mode = kwargs.get( 'mode', self.mode )
       pbent.size = kwargs.get( 'size', self.size )
       pbent.version = kwargs.get( 'version', self.version )
-      pbent.url = kwargs.get( 'url', self.url )
-      pbent.path = kwargs.get( 'fs_path', self.fs_path )
+      pbent.name = kwargs.get( 'name', self.name )
       pbent.max_read_freshness = kwargs.get( 'max_read_freshness', self.max_read_freshness )
       pbent.max_write_freshness = kwargs.get( 'max_write_freshness', self.max_write_freshness )
-      
-      # make sure the path ends in / if this is a directory (and is not .)
-      if pbent.type == MSENTRY_TYPE_DIR and pbent.path != ".":
-         if pbent.path[-1] != '/':
-            pbent.path += '/'
 
+      pbent.parent_id = MSEntry.serialize_id( kwargs.get('parent_id', '0000000000000000') )
+      pbent.file_id = MSEntry.serialize_id( kwargs.get( 'file_id', self.file_id ) )
+      
+      
       return
       
 
@@ -285,9 +306,12 @@ class MSEntry( storagetypes.Object ):
       """
       Return an MSEntry instance from a protobuf.ms_pb2.ms_entry
       """
-      ret = MSEntry( key=storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id=ent.volume, fs_path=ent.path )) )
+      file_id = MSEntry.unserialize_id( ent.file_id )
+      ret = MSEntry( key=storagetypes.make_key( MSEntry, MSEntry.make_key_name( ent.volume, file_id )) )
       
       ret.ftype = ent.type
+      ret.file_id = file_id
+      ret.name = ent.name
       ret.ctime_sec = ent.ctime_sec
       ret.ctime_nsec = ent.ctime_nsec
       ret.mtime_sec = ent.mtime_sec
@@ -298,11 +322,12 @@ class MSEntry( storagetypes.Object ):
       ret.mode = ent.mode
       ret.size = ent.size
       ret.version = ent.version
-      ret.url = ent.url
-      ret.fs_path = ent.path
-      ret.parent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id=ent.volume, fs_path=MSEntry.get_parent_path( ent.path ) ) )
       ret.max_read_freshness = ent.max_read_freshness
       ret.max_write_freshness = ent.max_write_freshness
+
+      if ent.HasField('parent_id'): # and ent.HasField('parent_name'):
+         #ret.parent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( ent.volume, ent.parent_id ) )
+         ret.parent_id = MSEntry.unserialize_id( ent.parent_id )
       
       return ret
 
@@ -314,7 +339,7 @@ class MSEntry( storagetypes.Object ):
       # included sharded fields (which share the same name)
       for shard_field in cls.shard_fields:
          d[shard_field] = getattr(ent, shard_field, None)
-
+      
       return d
       
    @classmethod
@@ -347,36 +372,29 @@ class MSEntry( storagetypes.Object ):
 
 
    @classmethod
-   def make_key_name( cls, **kwargs ):
-      assert kwargs.has_key( 'fs_path' ) and kwargs.has_key( 'volume_id' ), "Required key fields: volume_id, fs_path"
-      kwargs['fs_path'] = MSEntry.sanitize_fs_path( kwargs['fs_path'] )
-      return super( MSEntry, cls ).make_key_name( volume_id=kwargs['volume_id'], fs_path=kwargs['fs_path'] )
-
+   def make_key_name( cls, volume_id=None, file_id=None ):
+      return super( MSEntry, cls ).make_key_name( volume_id=volume_id, file_id=file_id )
+   
    @classmethod
-   def cache_key( cls, **kwargs ):
-      assert kwargs.has_key( 'fs_path' ) and kwargs.has_key( 'volume_id' ), "Required key fields: volume_id, fs_path"
-      kwargs['fs_path'] = MSEntry.sanitize_fs_path( kwargs['fs_path'] )
-      return super( MSEntry, cls ).cache_key( volume_id=kwargs['volume_id'], fs_path=kwargs['fs_path'] )
+   def cache_key_name( cls, volume_id=None, file_id=None ):
+      return super( MSEntry, cls ).cache_key_name( volume_id=volume_id, file_id=file_id )
       
    @classmethod
-   def cache_listing_key( cls, **kwargs ):
-      assert kwargs.has_key( 'fs_path' ) and kwargs.has_key( 'volume_id' ), "Required key fields: volume_id, fs_path"
-      kwargs['fs_path'] = MSEntry.sanitize_fs_path( kwargs['fs_path'] )
-      return super( MSEntry, cls ).cache_listing_key( volume_id=kwargs['volume_id'], fs_path=kwargs['fs_path'] )
+   def cache_listing_key_name( cls, volume_id=None, file_id=None ):
+      return super( MSEntry, cls ).cache_listing_key_name( volume_id=volume_id, file_id=file_id )
 
    @classmethod
-   def cache_shard_key( cls, **kwargs ):
-      assert kwargs.has_key( 'fs_path' ) and kwargs.has_key( 'volume_id' ), "Required key fields: volume_id, fs_path"
-      kwargs['fs_path'] = MSEntry.sanitize_fs_path( kwargs['fs_path'] )
-      return super( MSEntry, cls ).cache_shard_key( volume_id=kwargs['volume_id'], fs_path=kwargs['fs_path'] )
+   def cache_shard_key_name( cls, volume_id=None, file_id=None ):
+      return super( MSEntry, cls ).cache_shard_key_name( volume_id=volume_id, file_id=file_id )
    
-   def update_dir_shard( self, num_shards, **parent_attrs ):
+   def update_dir_shard( self, num_shards, parent_volume_id, parent_file_id, **parent_attrs ):
       """
       NOTE: This does NOT need to run in a transaction.
-      For files, only one UG will ever send size updates, and they will be serialized and sanity-checked by the UG.
+      For files, only one UG will ever send size updates, and they will be serialized and sanity-checked both by the UG and the MS.
       For directories, size does not ever change, and mtime only has to be different across updates.
       """
-      shard_keys = self.get_shard_keys( num_shards, **parent_attrs )
+      key_name = MSEntry.make_key_name( parent_volume_id, parent_file_id )
+      shard_keys = self.get_shard_keys( num_shards, key_name )
       shard_key = shard_keys[ random.randint( 0, len(shard_keys)-1 ) ]
       
       shard = shard_key.get()
@@ -394,43 +412,37 @@ class MSEntry( storagetypes.Object ):
 
    @classmethod
    @storagetypes.concurrent
-   def __read_msentry_base( cls, volume_id, fs_path, **ctx_opts ):
-      ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id=volume_id, fs_path=fs_path ) )
+   def __read_msentry_base( cls, volume_id, file_id, **ctx_opts ):
+      ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, file_id ) )
       ent = yield ent_key.get_async( **ctx_opts )
-      #ent = storagetypes.concurrent_yield( ent_key.get_async( **ctx_opts ) )
-      #raise ndb.Return( ent )
       storagetypes.concurrent_return( ent )
 
 
    @classmethod
    @storagetypes.concurrent
-   def __read_msentry_shards( cls, volume_id, fs_path, num_shards, **ctx_opts ):
-      shard_keys = MSEntry.get_shard_keys( num_shards, volume_id=volume_id, fs_path=fs_path )
+   def __read_msentry_shards( cls, volume_id, file_id, num_shards, **ctx_opts ):
+      key_name = MSEntry.make_key_name( volume_id, file_id )
+      shard_keys = MSEntry.get_shard_keys( num_shards, key_name )
       shards = yield storagetypes.get_multi_async( shard_keys, **ctx_opts )
-      #shards = yield ndb.get_multi_async( shard_keys, **ctx_opts )
-      #shards = storagetypes.concurrent_yield( storagetypes.get_multi_async( shard_keys, **ctx_opts ) )
-      #raise ndb.Return( shards )
       storagetypes.concurrent_return( shards )
 
    @classmethod
    @storagetypes.concurrent
-   def __read_msentry( cls, volume_id, fs_path, num_shards, **ctx_opts ):
-      #ent, shards = yield __read_msentry_base( volume_id, fs_path, **ctx_opts ), __read_msentry_shards( volume_id, fs_path, num_shards, **ctx_opts )
-      ent, shards = yield __read_msentry_base( volume_id, fs_path, **ctx_opts ), __read_msentry_shards( volume_id, fs_path, num_shards, **ctx_opts )
+   def __read_msentry( cls, volume_id, file_id, num_shards, **ctx_opts ):
+      ent, shards = yield MSEntry.__read_msentry_base( volume_id, file_id, **ctx_opts ), MSEntry.__read_msentry_shards( volume_id, file_id, num_shards, **ctx_opts )
       if ent != None:
          ent.populate_from_shards( shards )
 
-      #raise ndb.Return( ent )
       storagetypes.concurrent_return( ent )
 
 
    @classmethod
-   def cache_shard( cls, volume_id, fs_path, write_shard ):
+   def cache_shard( cls, volume_id, file_id, write_shard ):
       """
       Cache the last written shard
       """
       client = storagetypes.memcache.Client()
-      shard_key = MSEntry.cache_shard_key( volume_id=volume_id, fs_path=fs_path )
+      shard_key = MSEntry.cache_shard_key_name( volume_id, file_id )
       timeout = 0.001
       while True:
 
@@ -451,29 +463,59 @@ class MSEntry( storagetypes.Object ):
 
 
    @classmethod
-   def get_cached_shard( cls, volume_id, fs_path ):
+   def get_cached_shard( cls, volume_id, file_id ):
       """
       Get the last-written shard from the cache
       """
-      shard_key = MSEntry.cache_shard_key( volume_id=volume_id, fs_path=fs_path )
+      shard_key = MSEntry.cache_shard_key_name( volume_id, file_id )
       return storagetypes.memcache.get( shard_key )
 
 
    @classmethod
-   def delete_cached_shard( cls, volume_id, fs_path ):
+   def delete_cached_shard( cls, volume_id, file_id ):
       """
       Delete the last-written shard from the cache
       """
-      shard_key = MSEntry.cache_shard_key( volume_id=volume_id, fs_path=fs_path )
+      shard_key = MSEntry.cache_shard_key_name( volume_id, file_id )
       return storagetypes.memcache.delete( shard_key )
 
+   @classmethod
+   def check_call_attrs( cls, ent_attrs ):
+
+      # verify that we have the appropriate attributes
+      needed = []
+      for key_attr in cls.call_attrs:
+         if key_attr not in ent_attrs.keys():
+            needed.append( key_attr )
+
+      if len(needed) > 0:
+         logging.error( "Missing update attrs: %s" % (",".join(needed) ) )
+         return -errno.EINVAL;
+
+      return 0
+
+   @classmethod
+   def preprocess_attrs( cls, ent_attrs ):
+      # do some preprocessing on the ent attributes...
+      if (ent_attrs['mode'] & 0444) != 0:
+         ent_attrs['is_readable_in_list'] = True
+      else:
+         ent_attrs['is_readable_in_list'] = False
+      
 
    @classmethod
    def Create( cls, user_owner_id, volume, **ent_attrs ):
-
+      # return the file_id on success
       # coerce volume_id
       ent_attrs['volume_id'] = volume.volume_id
-      
+
+      rc = MSEntry.check_call_attrs( ent_attrs )
+      if rc != 0:
+         return rc
+
+      # get parent name and ID
+      parent_id = ent_attrs['parent_id']
+
       # ensure we have every required attribute
       MSEntry.fill_defaults( ent_attrs )
 
@@ -482,11 +524,11 @@ class MSEntry( storagetypes.Object ):
       if len(missing) > 0:
          logging.error("missing: %s" % missing)
          return -errno.EINVAL
-      
-      fs_path = ent_attrs['fs_path']
-      volume_id = volume.volume_id
 
-      logging.info("create '%s'" % ent_attrs['fs_path'])
+      # get child vitals
+      child_name = ent_attrs["name"]
+      child_id = ent_attrs["file_id"]
+      volume_id = volume.volume_id
 
       # valid input
       invalid = MSEntry.validate_fields( ent_attrs )
@@ -494,8 +536,14 @@ class MSEntry( storagetypes.Object ):
          logging.error("not allowed: %s" % invalid)
          return -errno.EINVAL
 
-      # access allowed?
-      if ent_attrs['fs_path'] == '/' and user_owner_id != 0 and volume.owner_id != user_owner_id:
+      # get a Child ID
+      if child_name == '/':
+         # are we creating root?
+         child_id = 0
+         ent_attrs['file_id'] = '0000000000000000'
+
+      if child_id == 0 and user_owner_id != 0 and volume.owner_id != user_owner_id:
+         # can't create root if we don't own the Volume, or aren't admin
          return -errno.EACCES
 
       # get the parent entry outside of the transaction
@@ -504,19 +552,22 @@ class MSEntry( storagetypes.Object ):
       parent_fut = None
       futs = []
 
-      parent_path = MSEntry.get_parent_path( ent_attrs['fs_path'] )
-      parent_cache_key = MSEntry.cache_key( volume_id=volume_id, fs_path=parent_path )
+      parent_cache_key_name = MSEntry.cache_key_name( volume_id, parent_id )
 
-      parent_ent = storagetypes.memcache.get( parent_cache_key )
+      parent_ent = storagetypes.memcache.get( parent_cache_key_name )
 
       if parent_ent == None:
-         parent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id=volume_id, fs_path=parent_path ) )
+         parent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, parent_id ) )
          parent_fut = parent_key.get_async( use_memcache=False )
          futs.append( parent_fut )
-
+      
+      
+      # do some preprocessing on the ent attributes...
+      MSEntry.preprocess_attrs( ent_attrs )
+      
       # try to get child (shouldn't exist)
       base_attrs = MSEntry.base_attrs( ent_attrs )
-      child_fut = MSEntry.get_or_insert_async( MSEntry.make_key_name( volume_id=volume_id, fs_path=ent_attrs['fs_path'] ), **base_attrs )
+      child_fut = MSEntry.get_or_insert_async( MSEntry.make_key_name( volume_id, child_id ), **base_attrs )
       futs.append( child_fut )
 
       storagetypes.wait_futures( futs )
@@ -532,12 +583,16 @@ class MSEntry( storagetypes.Object ):
       if not is_writable( user_owner_id, volume_id, parent_ent.owner_id, parent_ent.mode ):
          return -errno.EACCES
 
-      if child_ent.fs_path != ent_attrs['fs_path'] or child_ent.owner_id != ent_attrs['owner_id']:
-         # already exists
-         return -errno.EEXIST
+      if child_ent.ctime_sec != ent_attrs['ctime_sec'] or child_ent.ctime_nsec != ent_attrs['ctime_nsec']:
+         if child_ent.name != ent_attrs['name']:
+            # ID collision
+            return -errno.ENAMETOOLONG
+         else:
+            # already exists
+            return -errno.EEXIST
 
       # cache parent, for the time being
-      storagetypes.memcache.add( parent_cache_key, parent_ent )
+      storagetypes.memcache.add( parent_cache_key_name, parent_ent )
 
       # commit child shard
       child_ent.populate_shard( volume.num_shards, **ent_attrs )
@@ -545,19 +600,20 @@ class MSEntry( storagetypes.Object ):
 
       # put the parent shard, updating the number of children
       parent_attrs = {}
-      parent_attrs.update( ent_attrs )
+      parent_attrs.update( parent_ent.to_dict() )
 
       now_sec, now_nsec = storagetypes.clock_gettime()
 
-      parent_attrs['fs_path'] = MSEntry.get_parent_path( ent_attrs['fs_path'] )
-
-      parent_shard = parent_ent.update_dir_shard( volume.num_shards, **parent_attrs )
+      parent_attrs['mtime_sec'] = now_sec
+      parent_attrs['mtime_nsec'] = now_nsec
+      
+      parent_shard = parent_ent.update_dir_shard( volume.num_shards, volume_id, parent_id, **parent_attrs )
 
       # make sure parent still exists
-      parent_ent = storagetypes.memcache.get( parent_cache_key )
+      parent_ent = storagetypes.memcache.get( parent_cache_key_name )
 
       if parent_ent == None:
-         parent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id=volume_id, fs_path=parent_path ) )
+         parent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, parent_id ) )
          parent_ent = parent_key.get()
 
       delete = False
@@ -575,12 +631,14 @@ class MSEntry( storagetypes.Object ):
          child_shard_key = child_shard_fut.get_result()
          child_shard_key.delete_async()
 
-      # invalidate cached listing of parent directory
-      storagetypes.memcache.delete( MSEntry.cache_listing_key( volume_id=volume.volume_id, fs_path=parent_path ) )
+      # invalidate caches
+      storagetypes.memcache.delete( MSEntry.cache_listing_key_name( volume_id, parent_id ) )
+      storagetypes.memcache.delete( MSEntry.cache_key_name( volume_id, child_id ) )
 
-      # cache the parent's last-written shard
-      MSEntry.cache_shard( volume_id, parent_path, parent_shard )
-
+      if ret == 0:
+         storagetypes.deferred.defer( Volume.increase_file_count, volume_id )
+         ret = MSEntry.serialize_id( child_id )
+         
       return ret
 
 
@@ -588,14 +646,18 @@ class MSEntry( storagetypes.Object ):
    @classmethod
    def Update( cls, user_owner_id, volume, **ent_attrs ):
 
-      logging.info("update '%s'" % ent_attrs['fs_path'] )
+      rc = MSEntry.check_call_attrs( ent_attrs )
+      if rc != 0:
+         return rc
 
       # Update an MSEntry.
       # A file will be updated by at most one UG, so we don't need a transaction.
       # A directory can be updated by anyone, but the update conflict resolution is last-write-wins.
 
-      fs_path = ent_attrs['fs_path']
       volume_id = volume.volume_id
+      file_id = ent_attrs['file_id']
+      ent_name = ent_attrs['name']
+      parent_id = ent_attrs['parent_id']
 
       # only write writable attributes
       writable_attrs = {}
@@ -608,24 +670,31 @@ class MSEntry( storagetypes.Object ):
       # get the ent
       # try from cache first
       client = storagetypes.memcache.Client()
-      cache_ent_key = MSEntry.cache_key( volume_id=volume_id, fs_path=fs_path )
+      cache_ent_key = MSEntry.cache_key_name( volume_id, file_id )
 
       ent = client.get( cache_ent_key )
       if ent == None:
          # not in the cache.  Get from the datastore
-         ent_fut = MSEntry.__read_msentry_base( volume_id, fs_path, use_memcache=False )
+         ent_fut = MSEntry.__read_msentry( volume_id, file_id, volume.num_shards, use_memcache=False )
          ent = ent_fut.get_result()
 
       if ent == None:
          return -errno.ENOENT
 
+      # does this user have permission to write?
       if not is_writable( user_owner_id, volume.owner_id, ent.owner_id, ent.mode ):
          return -errno.EACCES
 
       put_ent = False
-
+      
+      # do some preprocessing on the ent attributes...
+      MSEntry.preprocess_attrs( ent_attrs )
+      
       # necessary, since the version can change (i.e. on a truncate)
       for write_attr in writable_attrs.keys():
+         if write_attr in MSEntry.shard_fields:
+            continue
+         
          if getattr(ent, write_attr, None) != writable_attrs[write_attr]:
             put_ent = True
             ent.populate_base( **writable_attrs )
@@ -641,18 +710,13 @@ class MSEntry( storagetypes.Object ):
          ent_fut = ent.put_async()
          futs.append( ent_fut )
 
-         client.set( cache_ent_key, ent )
-
       ent_shard_fut = ent.put_shard_async()
 
       if ent_shard_fut != None:
          futs.append( ent_shard_fut )
 
-      # update our shard
-      MSEntry.cache_shard( volume_id, fs_path, ent.write_shard )
-
-      # invalidate cached listing of the directory
-      storagetypes.memcache.delete( MSEntry.cache_listing_key( volume_id=volume.volume_id, fs_path=MSEntry.get_parent_path( fs_path ) ) )
+      # invalidate cached items
+      storagetypes.memcache.delete( MSEntry.cache_key_name( volume_id, file_id ) )
 
       storagetypes.wait_futures( futs )
 
@@ -667,34 +731,37 @@ class MSEntry( storagetypes.Object ):
 
    @classmethod
    def Delete( cls, user_owner_id, volume, **ent_attrs ):
-      logging.info("delete %s" % ent_attrs['fs_path'] )
 
+      rc = MSEntry.check_call_attrs( ent_attrs )
+      if rc != 0:
+         return rc
+      
       # delete an MSEntry.
       # A file will be deleted by at most one UG
       # A directy can be deleted by anyone, and it must be empty
 
       volume_id = volume.volume_id
-      fs_path = ent_attrs['fs_path']
-      parent_path = MSEntry.get_parent_path( fs_path )
+      file_id = ent_attrs['file_id']
+      parent_id = ent_attrs['parent_id']
       futs = []
 
       # get ent, parent_ent from the cache
-      ent_cache_key = MSEntry.cache_key( volume_id=volume_id, fs_path=fs_path )
-      parent_cache_key = MSEntry.cache_key( volume_id=volume_id, fs_path=parent_path )
+      ent_cache_key_name = MSEntry.cache_key_name( volume_id, file_id )
+      parent_cache_key_name = MSEntry.cache_key_name( volume_id, parent_id )
 
-      ret = storagetypes.memcache.get_multi( [ent_cache_key, parent_cache_key] )
+      ret = storagetypes.memcache.get_multi( [ent_cache_key_name, parent_cache_key_name] )
 
-      ent = ret.get( ent_cache_key, None )
-      parent_ent = ret.get( parent_cache_key, None )
+      ent = ret.get( ent_cache_key_name, None )
+      parent_ent = ret.get( parent_cache_key_name, None )
 
       # if ent is not cached, then read from the datastore
       if ent == None:
-         ent_fut = MSEntry.__read_msentry_base( volume_id, fs_path, use_memcache=False )
+         ent_fut = MSEntry.__read_msentry( volume_id, file_id, volume.num_shards, use_memcache=False )
          futs.append( ent_fut )
 
       # if parent_ent is not cached, then read from the datastore
       if parent_ent == None:
-         parent_ent_fut = __read_msentry_base( volume_id, MSEntry.get_parent_path( fs_path ), use_memcache=False )
+         parent_ent_fut = __read_msentry( volume_id, parent_id, volume.num_shards, use_memcache=False )
          futs.append( parent_ent_fut )
 
       # wait for the datastore to get back to us...
@@ -724,7 +791,8 @@ class MSEntry( storagetypes.Object ):
 
       do_delete = False
       ret = 0
-      ent_shard_keys = MSEntry.get_shard_keys( volume.num_shards, volume_id=volume_id, fs_path=fs_path )
+      ent_key_name = MSEntry.make_key_name( volume_id, file_id )
+      ent_shard_keys = MSEntry.get_shard_keys( volume.num_shards, ent_key_name )
       ent_fut = None
 
       if ent.ftype == MSENTRY_TYPE_FILE:
@@ -733,7 +801,7 @@ class MSEntry( storagetypes.Object ):
          ret = 0
 
          # erase from the cache
-         storagetypes.memcache.delete( ent_cache_key )
+         storagetypes.memcache.delete( ent_cache_key_name )
 
       else:
 
@@ -742,10 +810,11 @@ class MSEntry( storagetypes.Object ):
          ent.put()
 
          # erase from the cache
-         storagetypes.memcache.delete( ent_cache_key )
+         storagetypes.memcache.delete( ent_cache_key_name )
 
          # make sure the ent was actually empty
-         qry_ents = MSEntry.query( MSEntry.parent_key == storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id=volume_id, fs_path=fs_path ) ) )
+         qry_ents = MSEntry.query()
+         qry_ents = qry_ents.filter( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id )
          child = qry_ents.fetch( 1, keys_only=True )
 
          if len(child) != 0:
@@ -758,7 +827,7 @@ class MSEntry( storagetypes.Object ):
                ent.put()
 
                # uncache
-               storagetypes.memcache.delete( ent_cache_key )
+               storagetypes.memcache.delete( ent_cache_key_name )
                return -errno.ENOTEMPTY
 
          # safe to delete
@@ -768,27 +837,26 @@ class MSEntry( storagetypes.Object ):
       if do_delete:
 
          # delete this entry
-         ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id=volume_id, fs_path=fs_path ) )
+         ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, file_id ) )
          ent_fut = ent_key.delete_async()
          storagetypes.deferred.defer( MSEntry.delete_msentry_shards, ent_shard_keys )
 
          # put a new parent shard
          parent_attrs = {}
-         parent_attrs.update( ent_attrs )
+         parent_attrs.update( parent_ent.to_dict() )
 
          now_sec, now_nsec = storagetypes.clock_gettime()
 
-         parent_attrs['fs_path'] = parent_path
          parent_attrs['mtime_sec'] = now_sec
          parent_attrs['mtime_nsec'] = now_nsec
 
-         parent_shard = parent_ent.update_dir_shard( volume.num_shards, **parent_attrs )
-
-         MSEntry.cache_shard( volume.volume_id, parent_attrs['fs_path'], parent_shard )
+         parent_shard = parent_ent.update_dir_shard( volume.num_shards, volume_id, parent_id, **parent_attrs )
 
          # delete any listings of this parent
-         storagetypes.memcache.delete( MSEntry.cache_listing_key( volume_id=volume.volume_id, fs_path=parent_path) )
-         storagetypes.memcache.delete( ent_cache_key )
+         storagetypes.memcache.delete( MSEntry.cache_listing_key_name( volume_id, parent_id) )
+         storagetypes.memcache.delete( ent_cache_key_name )
+         
+         storagetypes.deferred.defer( Volume.decrease_file_count, volume_id )
 
          if ent_fut != None:
             ent_fut.wait()
@@ -797,166 +865,297 @@ class MSEntry( storagetypes.Object ):
 
 
    @classmethod
-   def ListAll( cls, volume, fs_path ):
+   @storagetypes.concurrent
+   def __read_msentry_key_mapper( cls, volume_id, file_id, num_shards ):
+      # returns (memcache_key, ent), so the caller can go ahead and build a memcache dict from them
+      msentry, shards = yield MSEntry.__read_msentry_base( volume_id, file_id ), MSEntry.__read_msentry_shards( volume_id, file_id, num_shards )
+      
+      shards_existing = filter( lambda x: x != None, shards )
+      msentry.populate_from_shards( shards_existing )
+
+      cache_key = MSEntry.cache_key_name( msentry.volume_id, msentry.file_id )
+      storagetypes.concurrent_return( (cache_key, msentry) )
+
+
+   @classmethod
+   def ListAll2( cls, volume, file_id, owner_id=None, file_ids_only=False, no_check_memcache=False ):
       """
-      Given a volume id and an fs_path and the client-given lastmod time for a directory, find all entries that are immediate children
+      Find all entries that are immediate children of this one.
+      """
+      if not isinstance( file_id, types.StringType ):
+         file_id = MSEntry.unserialize_id( file_id )
+      
+      volume_id = volume.volume_id
+      listing_cache_key = MSEntry.cache_listing_key_name( volume_id, file_id )
+      
+      client = storagetypes.memcache.Client()
+      cas = False
+      
+      cas = True
+      file_ids = None
+      
+      if not no_check_memcache:
+         file_ids = storagetypes.memcache.get( listing_cache_key )
+      
+      if file_ids == None:
+         # generate ent keys
+         # put the query into disjunctive normal form...
+         qry_ents = MSEntry.query()
+
+         if owner_id != None:
+            # owner given
+            qry_ents = qry_ents.filter( storagetypes.opOR( storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.owner_id == owner_id, MSEntry.mode >= 0400 ),
+                                                           storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.is_readable_in_list == True) ) )
+
+         else:
+            # no owner given
+            qry_ents = qry_ents.filter( storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.is_readable_in_list == True) )
+            
+         
+         ent_file_ids = qry_ents.fetch(None, projection=[MSEntry.file_id])
+         
+         file_ids = [ x.file_id for x in ent_file_ids ]
+         
+         if not no_check_memcache:
+            storagetypes.memcache.set( listing_cache_key, file_ids )
+    
+         
+      if file_ids_only:
+         return file_ids
+      
+      # check memcache
+      missing = file_ids
+      ents = []
+      
+      if not no_check_memcache:
+         cache_lookup = [None] * len(file_ids)
+         for i in xrange(0,len(file_ids)):
+            cache_key = MSEntry.cache_key_name( volume_id, file_ids[i] )
+            cache_lookup[i] = cache_key
+         
+         ents_dict = storagetypes.memcache.get_multi( cache_lookup )
+         
+         # what's missing?
+         missing = []
+         for i in xrange(0,len(file_ids)):
+            ent = ents_dict.get( cache_lookup[i] )
+            if ent == None:
+               missing.append( file_ids[i] )
+            else:
+               ents.append( ent )
+         
+      
+      if len(missing) > 0:
+         # fetch the rest from the datastore
+         logging.info("Missing: %s" % missing)
+         
+         ent_tuples = tuple( [MSEntry.__read_msentry_key_mapper( volume_id, fid, volume.num_shards ) for fid in missing] )
+         
+         storagetypes.wait_futures( ent_tuples )
+         
+         all_results = [y.get_result() for y in ent_tuples] 
+         non_null_results = filter( lambda x: x != None, all_results )
+         
+         if not no_check_memcache:
+            # cache them
+            storagetypes.memcache.set_multi( dict( non_null_results ) )
+         
+         ents += [ent_tuple[1] for ent_tuple in non_null_results]
+         
+      
+      return ents
+         
+         
+      
+   @classmethod
+   def ListAll( cls, volume, file_id, owner_id=None, futs_only=False, memcache_keys_only=False, no_check_memcache=False ):
+      """
+      find all entries that are immediate children of this one.
       """
 
-      logging.info("list %s" % fs_path )
-
+      if not isinstance( file_id, types.StringType ):
+         file_id = MSEntry.unserialize_id( file_id )
+         
       volume_id = volume.volume_id
 
       @storagetypes.concurrent
       def __read_msentry_children_mapper( msentry ):
-         #shards = yield __read_msentry_shards( msentry.volume_id, msentry.fs_path, volume.num_shards )
-         shards = yield MSEntry.__read_msentry_shards( msentry.volume_id, msentry.fs_path, volume.num_shards )
+         shards = yield MSEntry.__read_msentry_shards( msentry.volume_id, msentry.file_id, volume.num_shards )
          
-         #logging.info("shards of %s: %s" % (msentry.fs_path, shards))
-         msentry.populate_from_shards( shards )
+         shards_existing = filter( lambda x: x != None, shards )
+         msentry.populate_from_shards( shards_existing )
 
-         #raise ndb.Return( msentry )
          storagetypes.concurrent_return( msentry )
          
 
-      results_key = MSEntry.cache_listing_key( volume_id=volume_id, fs_path=fs_path )
+      results_key = MSEntry.cache_listing_key_name( volume_id, file_id )
 
-      client = storagetypes.memcache.Client()
-      results = client.gets( results_key )
+      if memcache_keys_only:
+         return results_key
+
+      client = None
+      results = None
+      cas = False
+      
+      if not futs_only:
+         client = storagetypes.memcache.Client()
+
+         if no_check_memcache:
+            cas = True
+            results = client.gets( results_key )
 
       if results == None:
-         # get the entries
-         qry_ents = MSEntry.query( MSEntry.parent_key == storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id=volume_id, fs_path=fs_path ) ) )
-         results = qry_ents.map( __read_msentry_children_mapper, batch_size=1000 )
+         # get the entries 
+         
+         # put the query into disjunctive normal form...
+         qry_ents = MSEntry.query()
 
-         client.cas( results_key, results )
+         if owner_id != None:
+            # owner given
+            qry_ents = qry_ents.filter( storagetypes.opOR( storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.owner_id == owner_id, MSEntry.mode >= 0400 ),
+                                                           storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.mode >= 0004, MSEntry.mode <= 0007),
+                                                           storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.mode >= 0040, MSEntry.mode <= 0077 ),
+                                                           storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.mode >= 0440, MSEntry.mode <= 0777 ) ) )
+
+         else:
+            # no owner given
+            qry_ents = qry_ents.filter( storagetypes.opOR( storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.mode >= 0004, MSEntry.mode <= 0007),
+                                                           storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.mode >= 0040, MSEntry.mode <= 0077 ),
+                                                           storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.mode >= 0440, MSEntry.mode <= 0777 ) ) )
+
+
+         if not futs_only:
+            results = qry_ents.map( __read_msentry_children_mapper, batch_size=1000 )
+         else:
+            results = qry_ents.map_async( __read_msentry_children_mapper, batch_size=1000 )
+
+         if client != None:
+            if cas:
+               client.cas( results_key, results )
+            else:
+               client.add( results_key, results )
 
       return results
+      
+
+   @classmethod
+   def SetCache( cls, ent ):
+      ent_cache_key_name = MSEntry.cache_key_name( ent.volume_id, ent.file_id )
+      storagetypes.memcache.set( ent_cache_key_name, ent )
+      return 0
+      
+
+   @classmethod
+   def SetCacheMulti( cls, ents ):
+      ent_dict = {}
+      for i in xrange(0,len(ents)):
+         ent_cache_key_name = MSEntry.cache_key_name( ents[i].volume_id, ents[i].file_id )
+         ent_dict[ ent_cache_key_name ] = ents[i]
+         
+      storagetypes.memcache.set_multi( ent_dict )
+      return
+      
+
+   @classmethod
+   def Read( cls, volume, file_id, memcache_keys_only=False, futs_only=False, no_check_memcache=False ):
+      """
+      Given an entry's key information, get the MSEntry
+      """
+
+      if not isinstance( file_id, types.StringType ):
+         file_id = MSEntry.unserialize_id( file_id )
+         
+      ent_key_name = MSEntry.make_key_name( volume.volume_id, file_id)
+      ent_cache_key_name = MSEntry.cache_key_name( volume.volume_id, file_id )
+
+      ent_key = storagetypes.make_key( MSEntry, ent_key_name )
+      shard_keys = MSEntry.get_shard_keys( volume.num_shards, ent_key_name )
+
+      if memcache_keys_only:
+         return ent_cache_key_name
+         
+      ent = None
+      shard = None
+
+      if not futs_only:
+         # check cache?
+         if not no_check_memcache:
+            ent = storagetypes.memcache.get( ent_cache_key_name )
+
+      # get the values from the datastore, if they weren't cached 
+      futs = {}
+      all_futs = []
+
+      if ent == None or futs_only:
+         futs["base"] = ent_key.get_async()
+         all_futs.append( futs["base"] )
+
+         futs["shard"] = [None] * len(shard_keys)
+         for i in xrange(0, len(shard_keys)):
+            shard_key = shard_keys[i]
+            fut = shard_key.get_async()
+            futs["shard"][i] = fut
+            all_futs.append( fut )
+
+      if futs_only:
+         # only want futures, but if we have the entries, then just return them
+         MSEntryFutures = collections.namedtuple( 'MSEntryFutures', ['base_future', 'shard_futures'] )
+         return MSEntryFutures( base_future=futs["base"], shard_futures=futs["shard"] )
+
+      # get the values
+      if len(all_futs) > 0:
+         storagetypes.wait_futures( all_futs )
+
+         if futs.get("base", None) != None:
+            ent = futs["base"].get_result()
+
+         if ent != None and futs.get("shard", None) != None:
+            shards = filter( lambda x: x != None, [x.get_result() for x in futs["shard"]] )
+            ent.populate_from_shards( shards )
+
+      # cache result
+      if not no_check_memcache:
+         storagetypes.memcache.set( ent_cache_key_name, ent )
+
+      return ent
 
 
    @classmethod
-   def Read( cls, volume, fs_path ):
-      """
-      Given a volume id and an fs_path and lastmod time, find all MSEntrys in the path
-      """
-
-      logging.info("read %s" % fs_path )
-
-      result_futs = []
-      results = []
-
-      volume_id = volume.volume_id
-
-      client = storagetypes.memcache.Client()
-
-      path_parts = fs_path.split("/")
-
-      # directory?
-      if path_parts[-1] == "":
-         path_parts.pop()
-
-      # list of entry paths
-      cur_path = "/"
-      msentry_paths = ["/"]
-      for i in xrange(1, len(path_parts)):
-         if cur_path != "/":
-            cur_path += "/" + path_parts[i]
-         else:
-            cur_path += path_parts[i]
-
-         msentry_paths.append( cur_path )
-
-
-      # fetch as much as possible from cache
-      cache_keys = []
-
-      for i in xrange(0, len(msentry_paths)):
-         fs_path = msentry_paths[i]
-
-         ent_key = MSEntry.cache_key( volume_id=volume_id, fs_path=fs_path )
-         shard_key = MSEntry.cache_shard_key( volume_id=volume_id, fs_path=fs_path )
-
-         cache_keys.append( ent_key )
-         cache_keys.append( shard_key )
-
-
-      # fetch from memcache
-      cached_results = client.get_multi( cache_keys )
-      results = []
-
-      for i in xrange(0, len(msentry_paths)):
-         ent_key = cache_keys[ 2*i ]
-         shard_key = cache_keys[ 2*i + 1 ]
-
-         ent = cached_results.get( ent_key, None )
-         shard = cached_results.get( shard_key, None )
-
-         if ent != None and shard != None:
-            ent.populate_from_shards( [shard] )
-            results.append( ent )
-
-         else:
-            results.append( None )
-
-      # get the rest from the datastore
-      all_keys = []
-
-      for i in xrange(0, len(msentry_paths)):
-         if results[i] != None:
-            continue
-
-         fs_path = msentry_paths[i]
-
-         ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id=volume_id, fs_path=fs_path ) )
-         shard_keys = MSEntry.get_shard_keys( volume.num_shards, volume_id=volume_id, fs_path=fs_path )
-
-         all_keys.append( ent_key )
-         all_keys += shard_keys
-
-
-      # get the remainder of stuff from the datastore
-      # cache the results
-      if len(all_keys) > 0:
-         ret = storagetypes.get_multi( all_keys, use_memcache=False )
-
-         ri = 0
-         i = 0
-         cache_dict = {}
-
-         while ri < len(results):
-            # find the next unknown result
-            if results[ri] == None:
-
-               # end of path
-               if ret[i] == None:
-                  break
-
-               # populate this entry
-               shards = []
-
-               for k in xrange(i+1, i + volume.num_shards + 1):
-                  shards.append( ret[k] )
-
-               ret[i].populate_from_shards( shards )
-               write_shard = MSEntryShard.get_latest_shard( ret[i], shards )
-
-               # store the result
-               results[ri] = ret[i]
-
-               # prepare to cache the result
-               ent_key = MSEntry.cache_key( volume_id=volume_id, fs_path=ret[i].fs_path )
-               shard_key = MSEntry.cache_shard_key( volume_id=volume_id, fs_path=ret[i].fs_path )
-
-               cache_dict[ ent_key ] = ret[i]
-               cache_dict[ shard_key ] = write_shard
-
-               # next result
-               i += volume.num_shards + 1
-
-            ri += 1
-
-         # cache everything to memcache
-         client.set_multi( cache_dict )
-
-      return results
-
+   def FlattenFuture( cls, ent_fut ):
       
+      all_futures = [None] * (len(ent_fut.shard_futures) + 1)
+      for i in xrange(0, len(ent_fut.shard_futures)):
+         all_futures[i] = ent_fut.shard_futures[i]
+      
+      all_futures[len(all_futures)-1] = ent_fut.base_future
+      
+      return all_futures
+   
+   @classmethod
+   def FromFuture( cls, ent_fut ):
+      ent = ent_fut.base_future.get_result()
+      if ent != None:
+         shards = filter( lambda x: x != None, [x.get_result() for x in ent_fut.shard_futures] )
+         ent.populate_from_shards( shards )
+         
+         logging.info("FromFuture: %s\nshards = %s" % (ent, shards))
+      
+      return ent
+
+   @classmethod
+   def WaitFutures( cls, futures ):
+      # futures is a list of MSEntryFutures namedtuple, from Read()
+      
+      all_futures = []
+      for fut in futures:
+         all_futures += cls.FlattenFuture( fut )
+         
+      storagetypes.wait_futures( all_futures )
+
+      ret = []
+      
+      for fut in futures:
+         ent = cls.FromFuture( fut )
+         ret.append( ent )
+
+      return ret

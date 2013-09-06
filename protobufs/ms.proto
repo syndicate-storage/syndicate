@@ -14,20 +14,22 @@ message ms_entry {
    }
 
    required int32 type = 1;
-   required int64 ctime_sec = 2;
-   required int64 ctime_nsec = 3;
-   required int64 mtime_sec = 4;
-   required int32 mtime_nsec = 5;
-   required int32 owner = 6;
-   required int32 coordinator = 7;
-   required int32 volume = 8;
-   required int32 mode = 9;
-   required int64 size = 10;
-   required int64 version = 11;
-   required int32 max_read_freshness = 12;
-   required int32 max_write_freshness = 13;
-   required string path = 14;
-   required string url = 15;
+   required uint64 file_id = 2;
+   required int64 ctime_sec = 3;
+   required int64 ctime_nsec = 4;
+   required int64 mtime_sec = 5;
+   required int32 mtime_nsec = 6;
+   required uint64 owner = 7;
+   required uint64 coordinator = 8;
+   required uint64 volume = 9;
+   required int32 mode = 10;
+   required int64 size = 11;
+   required int64 version = 12;
+   required int32 max_read_freshness = 13;
+   required int32 max_write_freshness = 14;
+   optional uint64 parent_id = 16;
+   required string name = 17;
+   optional string parent_name = 18;
 }
 
 // object update
@@ -48,35 +50,45 @@ message ms_updates {
    repeated ms_update updates = 2;
 }
 
+// ms directory listing
+message ms_listing {
+   enum ListingType {
+      NONE = 0;
+      NEW = 1;
+      NOT_MODIFIED = 2;
+   }
+
+   required int32 status = 1;
+   required int32 ftype = 2;
+   repeated ms_entry entries = 3;
+}
+
 // metadata information for the entries of a path
 message ms_reply {
    required uint64 volume_version = 1;           // version of this volume's metadata
    required uint64 UG_version = 2;               // version of this volume's UGs
    required uint64 RG_version = 3;               // version of this volume's RGs
-   required string signature = 4;                // Volume signature
-   repeated ms_entry entries_dir = 5;
-   repeated ms_entry entries_base = 6;
+   required uint64 AG_version = 4;               // version of this volume's AGs
+   required string signature = 5;                // Volume signature
+   required ms_listing listing = 6;
    required int32 error = 7;
    optional string errormsg = 8;
 }
 
 // metadata information on a block
 message ms_gateway_blockinfo {
-   enum ProgressType {
-      STARTED = 1;
-      COMMITTED = 2;
-   }
-   
-   required string fs_path = 10;
-   required int64 file_version = 1;
-   required uint64 block_id = 2;
-   required int64 block_version = 3;
-   required uint64 blocking_factor = 4;
-   required int64 file_mtime_sec = 5;
-   required int32 file_mtime_nsec = 6;
-   optional int32 progress = 7;
-   optional int64 write_time = 8;
-   optional int64 session_id = 9;
+   required uint64 file_id = 1;           // ID of this file
+   required int64 file_version = 2;       // version of this file 
+   required uint64 block_id = 3;          // ID of the block
+   required int64 block_version = 4;      // version of he block
+   required uint64 blocking_factor = 5;   // size of the block
+   required int64 file_mtime_sec = 6;     // time of the write on the UG that created this block (seconds)
+   required int32 file_mtime_nsec = 7;    // time of the write on the UG that created this block (nanoseconds)
+   required uint64 owner = 8;             // ID of the SyndicateUser that owns this file
+   required uint64 writer = 9;            // ID of the UG that created this message
+   required uint64 volume = 10;           // ID of the Volume that this file/UG belong to
+   required string hash = 11;             // secure hash (SHA256) of the block bits
+   required string signature = 12;        // signature of this message, from the SyndicateUser's private key (in use by the UG)
 }
 
 
@@ -105,6 +117,16 @@ message ms_volume_RGs {
    repeated int32 rg_ports = 4;
 }
 
+// AGs
+message ms_volume_AGs {
+   required uint64 ag_version = 1;
+   required string signature = 2;
+   repeated uint64 ag_ids = 3;
+   repeated uint64 ag_blocksizes = 4;
+   repeated string hostnames = 5;
+   repeated int32 portnums = 6;
+}
+
 // Volume metadata
 message ms_volume_metadata {
    required uint64 blocksize = 1;
@@ -113,13 +135,17 @@ message ms_volume_metadata {
    required uint64 volume_version = 4;
    required uint64 UG_version = 5;
    required uint64 RG_version = 6;
-   required string name = 7;
-   required string description = 8;
-   required string volume_public_key = 9;
-   required string signature = 10;              // base64-encoded Volume signature of this message
+   required uint64 AG_version = 7;
+   required uint64 num_files = 8;
+   required string name = 9;
+   required string description = 10;
+   required string volume_public_key = 11;
+   required string signature = 12;              // base64-encoded Volume signature of this message
 
-   optional ms_volume_UGs ugs = 11;         // ug information (included only on registration)
-   optional ms_volume_RGs rgs = 12;         // rg information (included only on registration)
+   optional ms_volume_UGs ugs = 13;         // ug information (included only on registration)
+   optional ms_volume_RGs rgs = 14;         // rg information (included only on registration)
+   optional ms_volume_AGs ags = 15;          // ag information (included only on registration)
+   optional ms_entry root = 16;             // root directory
 }
 
 
@@ -128,7 +154,7 @@ message ms_registration_metadata {
    required ms_volume_gateway_cred cred = 1;   // session credentials for the requester
    required string session_password = 2;       // temporary password the gateway should use in the future to authenticate to the MS
    required int64 session_timeout = 3;       // how long is the above information good for?
-   
+
    repeated ms_volume_metadata volumes = 4;     // the Volumes we're subscribed to
 }
 

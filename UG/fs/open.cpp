@@ -13,14 +13,23 @@
 #include "collator.h"
 
 // create a file handle from an fs_entry
-struct fs_file_handle* fs_file_handle_create( struct fs_entry* ent, char const* opened_path ) {
+struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_entry* ent, char const* opened_path, uint64_t parent_id, char const* parent_name ) {
    struct fs_file_handle* fh = CALLOC_LIST( struct fs_file_handle, 1 );
    fh->flags = 0;
    fh->open_count = 0;
    fh->fent = ent;
-   fh->path = strdup(opened_path);
    fh->dirty = false;
    fh->volume = ent->volume;
+   fh->file_id = ent->file_id;
+   fh->path = strdup( opened_path );
+   fh->parent_name = strdup( parent_name );
+   fh->parent_id = parent_id;
+
+   fh->is_AG = ms_client_is_AG( core->ms, core->volume, ent->coordinator );
+   if( fh->is_AG ) {
+      fh->AG_blocksize = ms_client_get_AG_blocksize( core->ms, core->volume, ent->coordinator );
+   }
+   
    pthread_rwlock_init( &fh->lock, NULL );
    return fh;
 }
@@ -32,14 +41,13 @@ int fs_file_handle_open( struct fs_file_handle* fh, int flags, mode_t mode ) {
    // is this a local file?
    fh->flags = flags;
    fh->open_count++;
-   fh->volume = fh->fent->volume;
    return 0;
 }
 
 // create an entry (equivalent to open with O_CREAT|O_WRONLY|O_TRUNC
-struct fs_file_handle* fs_entry_create( struct fs_core* core, char const* path, char const* url, uint64_t user, uint64_t vol, mode_t mode, int* err ) {
+struct fs_file_handle* fs_entry_create( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, mode_t mode, int* err ) {
    dbprintf( "create %s\n", path );
-   return fs_entry_open( core, path, url, user, vol, O_CREAT|O_WRONLY|O_TRUNC, mode, err );
+   return fs_entry_open( core, path, user, vol, O_CREAT|O_WRONLY|O_TRUNC, mode, err );
 }
 
 
@@ -52,7 +60,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
 
    // revalidate this path
    int rc = fs_entry_revalidate_path( core, vol, path );
-   if( rc != 0 ) {
+   if( rc != 0 && rc != -ENOENT ) {
       // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
       return -EREMOTEIO;
@@ -77,55 +85,42 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
       return -EACCES;
    }
 
+   uint64_t parent_id = parent->file_id;
+   char* parent_name = strdup( parent->name );
+
    char* path_basename = md_basename( path, NULL );
 
    // make sure it doesn't exist already
    if( fs_entry_set_find_name( parent->children, path_basename ) != NULL ) {
       free( path_basename );
       fs_entry_unlock( parent );
+      free( parent_name );
       return -EEXIST;
    }
 
    struct fs_entry* child = (struct fs_entry*)calloc( sizeof(struct fs_entry), 1 );
 
-   char* url = fs_entry_local_file_url( core, path );
    struct timespec ts;
    clock_gettime( CLOCK_REALTIME, &ts );
    int mmode = 0;
    if (S_ISFIFO(mode)) {
        mmode = ( mode & 0777 ) | S_IFIFO;
-       err = fs_entry_init_fifo( core, child, path_basename, url, fs_entry_next_file_version(), user, user, vol, mmode, 0, ts.tv_sec, ts.tv_nsec );
+       err = fs_entry_init_fifo( core, child, path_basename, fs_entry_next_file_version(), user, core->gateway, vol, mmode, 0, ts.tv_sec, ts.tv_nsec, true );
    }
    if (S_ISREG(mode)) {
        mmode = ( mode & 0777 );
-       err = fs_entry_init_file( core, child, path_basename, url, fs_entry_next_file_version(), user, user, vol, mmode, 0, ts.tv_sec, ts.tv_nsec );
+       err = fs_entry_init_file( core, child, path_basename, fs_entry_next_file_version(), user, core->gateway, vol, mmode, 0, ts.tv_sec, ts.tv_nsec );
    }
-   free( url );
 
    if( err == 0 ) {
       // attach the file
-      fs_core_fs_rlock( core );
       fs_entry_wlock( child );
-      child->link_count++;
-
-      struct timespec ts;
-      clock_gettime( CLOCK_REALTIME, &ts );
-      parent->mtime_sec = ts.tv_sec;
-      parent->mtime_nsec = ts.tv_nsec;
-
-      fs_entry_set_insert( parent->children, path_basename, child );
-
-      fs_entry_unlock( parent );
-      fs_core_fs_unlock( core );
-
-      fs_core_wlock( core );
-      core->num_files++;
-      fs_core_unlock( core );
+      fs_entry_attach_lowlevel( core, parent, child );
 
       struct md_entry data;
-      fs_entry_to_md_entry( core, path, child, &data );
-
-      err = ms_client_create( core->ms, &data );
+      fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
+      
+      err = ms_client_create( core->ms, &child->file_id, &data );
 
       if( err != 0 ) {
          errorf( "ms_client_create(%s) rc = %d\n", path, err );
@@ -133,19 +128,27 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
 
          child->open_count = 0;
          fs_entry_unlock( child );
-         fs_entry_detach_lowlevel( core, parent, child, true );
-
-         fs_core_wlock( core );
-         core->num_files--;
-         fs_core_unlock( core );
+         fs_entry_detach_lowlevel( core, parent, child, false );
       }
       else {
+         rc = fs_entry_create_local_file( core, child->file_id, child->version, child->mode );
+         if( rc != 0 ) {
+            // revert
+            errorf("fs_entry_create_local_file(%s /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", path, child->volume, child->coordinator, child->file_id, rc );
+            rc = ms_client_delete( core->ms, &data );
+         }
+
+         child->open_count = 0;
          fs_entry_unlock( child );
+         fs_entry_detach_lowlevel( core, parent, child, false );
       }
       
       md_entry_free( &data );
    }
+   
+   fs_entry_unlock( parent );
 
+   free( parent_name );
    free( path_basename );
 
    return err;
@@ -153,7 +156,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
 
 
 // mark an fs_entry as having been opened, and/or create a file
-struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, char const* url, uint64_t user, uint64_t vol, int flags, mode_t mode, int* err ) {
+struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, uint64_t user, uint64_t vol, int flags, mode_t mode, int* err ) {
 
    char* path = strdup(_path);
    md_sanitize_path( path );
@@ -161,12 +164,34 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
    // revalidate this path
    int rc = fs_entry_revalidate_path( core, vol, path );
    if( rc != 0 ) {
-      // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
-      free( path );
-      *err = -EREMOTEIO;
-      return NULL;
+      
+      if( rc == -ENOENT ) {
+         if( !(flags & O_CREAT) ) {
+            free( path );
+            *err = rc;
+            return NULL;
+         }
+         
+         // otherwise we're good
+      }
+      else {
+         // consistency cannot be guaranteed
+         errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
+         free( path );
+         *err = -EREMOTEIO;
+         return NULL;
+      }
    }
+   else {
+      if( flags & O_CREAT ) {
+         errorf("%s already exists\n", path );
+         free( path );
+         *err = -EEXIST;
+         return NULL;
+      }
+   }
+         
    
    // resolve the parent of this child (and write-lock it)
    char* path_dirname = md_dirname( path, NULL );
@@ -208,6 +233,9 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
       return NULL;
    }
 
+   uint64_t parent_id = parent->file_id;
+   char* parent_name = strdup( parent->name );
+
    // resolve the child
    struct fs_entry* child = fs_entry_set_find_name( parent->children, path_basename );
    bool created = false;
@@ -218,6 +246,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
          fs_entry_unlock( parent );
          free( path_basename );
          free( path );
+         free( parent_name );
          *err = -ENOENT;
          return NULL;
       }
@@ -226,6 +255,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
          fs_entry_unlock( parent );
          free( path_basename );
          free( path );
+         free( parent_name );
          *err = -EACCES;
          return NULL;
       }
@@ -236,18 +266,8 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
          // can create--initialize the child
          child = CALLOC_LIST( struct fs_entry, 1 );
 
-         char* file_url = (char*)url;
-         if( url == NULL ) {
-            file_url = fs_entry_local_file_url( core, path );
-         }
+         int rc = fs_entry_init_file( core, child, path_basename, fs_entry_next_file_version(), user, core->gateway, vol, mode, 0, ts.tv_sec, ts.tv_nsec );
 
-         int rc = fs_entry_init_file( core, child, path_basename, file_url, fs_entry_next_file_version(), user, user, vol, mode, 0, ts.tv_sec, ts.tv_nsec );
-
-         if( file_url != url ) {
-            free( file_url );
-            file_url = NULL;
-         }
-         
          if( rc != 0 ) {
             errorf("fs_entry_init_file(%s) rc = %d\n", path, rc );
             *err = rc;
@@ -255,6 +275,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
             fs_entry_unlock( parent );
             free( path_basename );
             free( path );
+            free( parent_name );
             fs_entry_destroy( child, false );
             free( child );
             
@@ -262,23 +283,15 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
          }
          else {
             // insert it into the filesystem
-            fs_core_fs_wlock( core );
+            
             fs_entry_wlock( child );
-
-            child->link_count++;
             child->open_count++;
-            core->num_files++;
+            
+            fs_entry_attach_lowlevel( core, parent, child );
             created = true;
-
-            fs_entry_set_insert( parent->children, path_basename, child );
-
-            struct timespec ts;
-            clock_gettime( CLOCK_REALTIME, &ts );
-            parent->mtime_sec = ts.tv_sec;
-            parent->mtime_nsec = ts.tv_nsec;
-
+            
             fs_entry_unlock( child );
-            fs_core_fs_unlock( core );
+            
          }
       }
    }
@@ -287,6 +300,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
       fs_entry_unlock( parent );
       free( path_basename );
       free( path );
+      free( parent_name );
       *err = -ENOENT;
       return NULL;
    }
@@ -304,6 +318,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
       fs_entry_unlock( child );
       free( path_basename );
       free( path );
+      free( parent_name );
       *err = -ENOENT;
       return NULL;
    }
@@ -315,7 +330,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
       fs_entry_unlock( child );
       free( path_basename );
       free( path );
-      
+      free( parent_name );
       *err = -EISDIR;
       return NULL;
    }
@@ -338,6 +353,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
          fs_entry_unlock( child );
          free( path_basename );
          free( path );
+         free( parent_name );
          return NULL;
       }
 
@@ -348,6 +364,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
          fs_entry_unlock( child );
          free( path_basename );
          free( path );
+         free( parent_name );
          *err = -EREMOTEIO;
          return NULL;
       }
@@ -357,8 +374,8 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
    if( flags & O_TRUNC && !created ) {
       child->size = 0;
       
-      if( URL_LOCAL( child->url ) ) {
-         fs_entry_truncate_local_data( core, GET_FS_PATH( core->conf->data_root, child->url ), child->version );
+      if( FS_ENTRY_LOCAL( core, child ) ) {
+         fs_entry_clear_local_file( core, child->file_id, child->version );
       }
       else {
          // send a truncate request to the owner
@@ -377,7 +394,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
 
          Serialization::WriteMsg *withdraw_ack = new Serialization::WriteMsg();
 
-         *err = fs_entry_post_write( withdraw_ack, core, child->url, truncate_msg );
+         *err = fs_entry_post_write( withdraw_ack, core, child->coordinator, truncate_msg );
          if( *err < 0 ) {
             errorf( "fs_entry_post_write(%s) rc = %d\n", path, *err );
 
@@ -386,6 +403,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
 
             free( path_basename );
             free( path );
+            free( parent_name );
             
             *err = -EREMOTEIO;
             return NULL;
@@ -409,6 +427,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
 
             free( path_basename );
             free( path );
+            free( parent_name );
             
             *err = -EREMOTEIO;
             return NULL;
@@ -424,13 +443,13 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
 
       // create this file in the MS
       struct md_entry data;
-      fs_entry_to_md_entry( core, path, child, &data );
-
+      fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
+      
       // create synchronously
-      *err = ms_client_create( core->ms, &data );
+      *err = ms_client_create( core->ms, &child->file_id, &data );
 
       if( *err != 0 ) {
-         errorf("ms_client_create(%s) rc = %d\n", data.path, *err );
+         errorf("ms_client_create(%s) rc = %d\n", _path, *err );
          *err = -EREMOTEIO;
 
          // revert
@@ -441,9 +460,22 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
          fs_entry_detach_lowlevel( core, parent, child, true );
          fs_entry_unlock( parent );
 
-         fs_core_wlock( core );
-         core->num_files--;
-         fs_core_unlock( core );
+      }
+      else {
+         // success on MS!  create locally
+         rc = fs_entry_create_local_file( core, child->file_id, child->version, 0600 );
+         if( rc != 0 ) {
+            errorf("fs_entry_create_local_file(%s /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", path, child->volume, child->coordinator, child->file_id, rc );
+            *err = -EIO;
+
+            // revert
+            child->open_count = 0;
+
+            // NOTE: parent will still exist--we can't remove a non-empty directory
+            fs_entry_wlock( parent );
+            fs_entry_detach_lowlevel( core, parent, child, true );
+            fs_entry_unlock( parent );
+         }
       }
       
       md_entry_free( &data );
@@ -452,15 +484,16 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, c
    if( *err == 0 ) {
       // still here--we can open the file now!
       child->atime = currentTimeSeconds();
-      ret = fs_file_handle_create( child, path );
+      ret = fs_file_handle_create( core, child, path, parent_id, parent_name );
       fs_file_handle_open( ret, flags, mode );
-
-      fs_entry_unlock( child );
    }
+   
+   fs_entry_unlock( child );
    
    free( path_basename );
    free( path );
-
+   free( parent_name );
+   
    return ret;
 }
 

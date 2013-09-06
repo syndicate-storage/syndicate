@@ -17,6 +17,6 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, Serializat
 
 int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t new_size, modification_map* modified_blocks );
 int fs_entry_prepare_write_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, char* block, size_t count, off_t offset, ssize_t num_written );
-ssize_t fs_entry_fill_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, char* block, char const* buf, int source_fd, size_t count, off_t offset, ssize_t num_written );
+ssize_t fs_entry_fill_block( struct fs_core* core, struct fs_entry* fent, char* block, char const* buf, int source_fd, size_t count, off_t offset, ssize_t num_written );
 
 #endif

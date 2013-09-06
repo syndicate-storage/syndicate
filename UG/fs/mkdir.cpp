@@ -4,6 +4,7 @@
 */
 
 #include "mkdir.h"
+#include "link.h"
 
 // low-level mkdir
 int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_entry* parent, char const* path_basename, mode_t mode, uint64_t user, uint64_t vol, int64_t mtime_sec, int32_t mtime_nsec ) {
@@ -13,33 +14,16 @@ int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_e
    int err = 0;
    if( child == NULL ) {
 
-      // success.  Make local storage
-      err = fs_entry_create_local_directory( core, path );
-      if( err != 0 ) {
-         return err;
-      }
-      else {
-         // create an fs_entry and attach it 
-         child = (struct fs_entry*)calloc( sizeof(struct fs_entry), 1 );
+      // create an fs_entry and attach it
+      child = (struct fs_entry*)calloc( sizeof(struct fs_entry), 1 );
 
-         // generate a URL
-         char* url = fs_entry_public_dir_url( core, path );
-         
-         fs_entry_init_dir( core, child, path_basename, url, fs_entry_next_file_version(), user, user, vol, mode, 4096, mtime_sec, mtime_nsec );
-         free( url );
+      fs_entry_init_dir( core, child, path_basename, fs_entry_next_file_version(), user, user, vol, mode, mtime_sec, mtime_nsec );
+      
+      // add . and ..
+      fs_entry_set_insert( child->children, ".", child );
+      fs_entry_set_insert( child->children, "..", parent );
 
-         fs_core_fs_rlock( core );
-
-         child->link_count++;
-
-         // add . and ..
-         fs_entry_set_insert( child->children, ".", child );
-         fs_entry_set_insert( child->children, "..", parent );
-
-         fs_entry_set_insert( parent->children, path_basename, child );
-
-         fs_core_fs_unlock( core );
-      }
+      fs_entry_attach_lowlevel( core, parent, child );
    }
    else {
       // already exists
@@ -60,11 +44,11 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_
    
    // revalidate this path
    int rc = fs_entry_revalidate_path( core, vol, fpath );
-   if( rc != 0 ) {
+   if( rc != 0 && rc != -ENOENT ) {
       // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fpath, rc );
       free( fpath );
-      return -EREMOTEIO;
+      return rc;
    }
    
    char* path_dirname = md_dirname( fpath, NULL );
@@ -99,6 +83,9 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_
       return -EACCES;
    }
 
+   uint64_t parent_id = parent->file_id;
+   char* parent_name = strdup( parent->name );
+   
    struct timespec ts;
    clock_gettime( CLOCK_REALTIME, &ts );
 
@@ -109,6 +96,7 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_
       fs_entry_unlock( parent );
       free( path_basename );
       free( path_dirname );
+      free( parent_name );
       return -1;
    }
 
@@ -116,39 +104,28 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_
 
       struct fs_entry* child = fs_entry_set_find_name( parent->children, path_basename );
 
-      fs_entry_rlock( child );
-
+      fs_entry_wlock( child );
+      
       // create this directory in the MS
       struct md_entry data;
-      fs_entry_to_md_entry( core, path, child, &data );
-
-      err = ms_client_mkdir( core->ms, &data );
-
+      fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
+      free( parent_name );
+      
+      err = ms_client_mkdir( core->ms, &child->file_id, &data );
+      
       if( err != 0 ) {
-         errorf("ms_client_create(%s) rc = %d\n", data.path, err );
+         errorf("ms_client_create(%s) rc = %d\n", path, err );
          err = -EREMOTEIO;
 
-         // undo this creation
-         int rc = fs_entry_remove_local_directory( core, data.path );
-         if( rc != 0 ) {
-            errorf("fs_entry_remove_local_directory(%s) rc = %d\n", data.path, rc );
-         }
-         
          rc = fs_entry_detach_lowlevel( core, parent, child, true );
          if( rc != 0 ) {
-            errorf("fs_entry_detach_lowlevel(%s) rc = %d\n", data.path, rc );
+            errorf("fs_entry_detach_lowlevel(%s) rc = %d\n", path, rc );
          }
       }
       else {
-         fs_core_wlock( core );
-         core->num_files++;
-         fs_core_unlock( core );
 
-         parent->mtime_sec = ts.tv_sec;
-         parent->mtime_nsec = ts.tv_nsec;
+         fs_entry_unlock( child );
       }
-
-      fs_entry_unlock( child );
       
       md_entry_free( &data );
    }

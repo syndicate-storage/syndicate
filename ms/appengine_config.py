@@ -9,6 +9,7 @@ from openid.gaesession import SessionMiddleware, SESSION_COOKIE_KEY, delete_expi
 # deploy, or update your app!
 import os
 
+appstats_MAX_STACK = 20
 appstats_CALC_RPC_COSTS = True
 
 def webapp_add_wsgi_middleware(app):

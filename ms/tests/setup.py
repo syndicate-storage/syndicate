@@ -870,24 +870,7 @@ def test( ignore1, args ):
       now_sec, now_nsec = storage.clock_gettime()
 
       # create a root, with some sane defaults
-      rc = storage.make_root( volume,
-                              ftype=MSENTRY_TYPE_DIR,
-                              fs_path="/",
-                              url="http://localhost:32780/",
-                              version=1,
-                              ctime_sec=now_sec,
-                              ctime_nsec=now_nsec,
-                              mtime_sec=now_sec,
-                              mtime_nsec=now_nsec,
-                              owner_id=volume.owner_id,
-                              coordinator_id=0,
-                              volume_id=volume.volume_id,
-                              mode=0755,
-                              size=4096,
-                              max_read_freshness=5000,
-                              max_write_freshness=0
-                            )
-      
+      rc = storage.make_root( volume, user.owner_id )
                               
 
    if do_init:
@@ -927,23 +910,7 @@ def test( ignore1, args ):
             user.put()
 
          # create a root MSEntry, with some sane defaults
-         rc = storage.make_root( volume,
-                                 ftype=MSENTRY_TYPE_DIR,
-                                 fs_path="/",
-                                 url="http://localhost:32780/",
-                                 version=1,
-                                 ctime_sec=1360015114,
-                                 ctime_nsec=0,
-                                 mtime_sec=1360015114,
-                                 mtime_nsec=0,
-                                 owner_id=user.owner_id,
-                                 coordinator_id=0,
-                                 volume_id=volume.volume_id,
-                                 mode=0777,
-                                 size=4096,
-                                 max_read_freshness=5000,
-                                 max_write_freshness=0,
-                              )
+         rc = storage.make_root( volume, user.owner_id )
 
 
    if do_ags:

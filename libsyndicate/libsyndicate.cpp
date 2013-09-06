@@ -6,9 +6,6 @@
 
 #include "libsyndicate.h"
 
-int _DEBUG_SYNDICATE = 1;
-int _ERROR_SYNDICATE = 1;
-
 static struct md_syndicate_conf SYNDICATE_CONF;
 
 static unsigned long _connect_timeout = 30L;
@@ -223,14 +220,14 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
 }
 
 int md_debug( int level ) {
-   int prev = _DEBUG_SYNDICATE;
-   _DEBUG_SYNDICATE = level;
+   int prev = get_debug_level();
+   set_debug_level( level );
    return prev;
 }
 
 int md_error( int level ) {
-   int prev = _ERROR_SYNDICATE;
-   _ERROR_SYNDICATE = level;
+   int prev = get_error_level();
+   set_error_level( level );
    return prev;
 }
 
@@ -747,17 +744,17 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
 
 // destroy an md entry
 void md_entry_free( struct md_entry* ent ) {
-   if( ent->url ) {
-      free( ent->url );
-      ent->url = NULL;        
-   }
-   if( ent->path ) {
-      free( ent->path );
-      ent->path = NULL;
+   if( ent->name ) {
+      free( ent->name );
+      ent->name = NULL;
    }
    if( ent->checksum ) {
       free( ent->checksum );
       ent->checksum = NULL;
+   }
+   if( ent->parent_name ) {
+      free( ent->parent_name );
+      ent->parent_name = NULL;
    }
 }
 
@@ -783,12 +780,17 @@ void md_entry_dup2( struct md_entry* src, struct md_entry* ret ) {
    // copy non-pointers
    memcpy( ret, src, sizeof(md_entry) );
 
-   ret->path = strdup( src->path );
-   ret->url = strdup( src->url );
+   if( src->name ) {
+      ret->name = strdup( src->name );
+   }
 
    if( src->checksum ) {
       ret->checksum = (unsigned char*)calloc( SHA_DIGEST_LENGTH * sizeof(unsigned char), 1 );
       memcpy( ret->checksum, src->checksum, SHA_DIGEST_LENGTH );
+   }
+
+   if( src->parent_name ) {
+      ret->parent_name = strdup( src->parent_name );
    }
 }
 
@@ -1303,18 +1305,35 @@ size_t md_default_get_callback_ram(void *stream, size_t size, size_t count, void
    
    int new_size = realsize + dlbuf->len;
    
-   char* new_buf = (char*)realloc( dlbuf->data, new_size );
-   if( new_buf == NULL ) {
-      free( dlbuf->data );
-      dlbuf->data = NULL;
-      return 0;      // out of memory
-   }
-   else {
-      dlbuf->data = new_buf;
+   if( dlbuf->data_len > 0 ) {
+      // have an upper bound on how much data to copy
+      if( dlbuf->len + realsize > (unsigned)dlbuf->data_len ) {
+         realsize = dlbuf->data_len - dlbuf->len;
+      }
+      dbprintf("receive %zu to offset %zd of %zd\n", realsize, dlbuf->len, dlbuf->data_len);
       memcpy( dlbuf->data + dlbuf->len, stream, realsize );
-      dlbuf->len = new_size;
+      dlbuf->len += realsize;
       return realsize;
    }
+   else {
+      // expand   
+      char* new_buf = (char*)realloc( dlbuf->data, new_size );
+      if( new_buf == NULL ) {
+         free( dlbuf->data );
+         dlbuf->data = NULL;
+         dbprintf("out of memory for %p\n", user_data );
+         return 0;      // out of memory
+      }
+
+      else {
+         dlbuf->data = new_buf;
+         memcpy( dlbuf->data + dlbuf->len, stream, realsize );
+         dlbuf->len = new_size;
+         return realsize;
+      }
+   }
+   
+   return 0;
 }
 
 // download data to a response buffer
@@ -1329,6 +1348,26 @@ size_t md_get_callback_response_buffer( void* stream, size_t size, size_t count,
 
    return realsize;
 }
+
+
+// download to a bound response buffer
+size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t count, void* user_data ) {
+   struct md_bound_response_buffer* brb = (struct md_bound_response_buffer*)user_data;
+   
+   size_t realsize = size * count;
+   if( brb->size + realsize > (unsigned)brb->max_size ) {
+      realsize = brb->max_size - realsize;
+   }
+   
+   char* buf = CALLOC_LIST( char, realsize );
+   memcpy( buf, stream, realsize );
+   
+   brb->rb->push_back( buffer_segment_t( buf, realsize ) );
+   brb->size += realsize;
+   
+   return realsize;
+}
+
 
 // download data to disk
 size_t md_default_get_callback_disk(void *stream, size_t size, size_t count, void* user_data) {
@@ -1486,10 +1525,19 @@ ssize_t md_download_file3( char const* url, int fd, char const* username, char c
 }
 
 // download straight from an existing curl handle
-ssize_t md_download_file5( CURL* curl_h, char** buf ) {
+ssize_t md_download_file6( CURL* curl_h, char** buf, ssize_t max_len ) {
    struct md_download_buf dlbuf;
    dlbuf.len = 0;
-   dlbuf.data = CALLOC_LIST( char, 1 );
+   
+   if( max_len > 0 ) {
+      dbprintf("Download max %zd\n", max_len );
+      dlbuf.data = CALLOC_LIST( char, max_len );
+      dlbuf.data_len = max_len;
+   }
+   else {
+      dlbuf.data = CALLOC_LIST( char, 1 );
+      dlbuf.data_len = -1;
+   }
 
    if( dlbuf.data == NULL ) {
       return -1;
@@ -1500,6 +1548,7 @@ ssize_t md_download_file5( CURL* curl_h, char** buf ) {
    int rc = curl_easy_perform( curl_h );
 
    if( rc != 0 ) {
+      dbprintf("curl_easy_perform rc = %d\n", rc);
       free( dlbuf.data );
       dlbuf.data = NULL;
       return -abs(rc);
@@ -1507,6 +1556,10 @@ ssize_t md_download_file5( CURL* curl_h, char** buf ) {
 
    *buf = dlbuf.data;
    return dlbuf.len;
+}
+
+ssize_t md_download_file5( CURL* curl_h, char** buf ) {
+   return md_download_file6( curl_h, buf, -1 );
 }
 
 // parse a query string into a list of CGI arguments
@@ -2390,23 +2443,15 @@ ssize_t md_metadata_update_text2( struct md_syndicate_conf* conf, char** buf, ve
 // convert an md_entry to an ms_entry
 int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
 
-   if( ent->url == NULL ) {
-      errorf("%s", "ent->url == NULL\n");
-      return -EINVAL;
-   }
+   if( ent->parent_id != (uint64_t)(-1) )
+      msent->set_parent_id( ent->parent_id );
 
-   if( ent->path == NULL ) {
-      errorf("%s", "ent->url == NULL\n");
-      return -EINVAL;
-   }
-   
-   msent->set_url( string(ent->url) );
-   
-   char* path_sane = strdup(ent->path);
-   md_sanitize_path( path_sane );
+   if( ent->parent_name != NULL )
+      msent->set_parent_name( string(ent->parent_name) );
 
+
+   msent->set_file_id( ent->file_id );
    msent->set_type( ent->type == MD_ENTRY_FILE ? ms::ms_entry::MS_ENTRY_TYPE_FILE : ms::ms_entry::MS_ENTRY_TYPE_DIR );
-   msent->set_path( string(path_sane) );
    msent->set_owner( ent->owner );
    msent->set_coordinator( ent->coordinator );
    msent->set_volume( ent->volume );
@@ -2419,9 +2464,8 @@ int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
    msent->set_size( ent->size );
    msent->set_max_read_freshness( ent->max_read_freshness );
    msent->set_max_write_freshness( ent->max_write_freshness );
+   msent->set_name( string( ent->name ) );
 
-   free( path_sane );
-   
    return 0;
 }
 
@@ -2430,12 +2474,8 @@ int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
 int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent ) {
    memset( ent, 0, sizeof(struct md_entry) );
 
-   ent->url = strdup( msent.url().c_str() );
    ent->type = msent.type() == ms::ms_entry::MS_ENTRY_TYPE_FILE ? MD_ENTRY_FILE : MD_ENTRY_DIR;
-
-   ent->path = strdup( msent.path().c_str() );
-   md_sanitize_path( ent->path );
-   
+   ent->file_id = msent.file_id();
    ent->owner = msent.owner();
    ent->coordinator = msent.coordinator();
    ent->volume = msent.volume();
@@ -2448,6 +2488,17 @@ int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent ) {
    ent->max_write_freshness = (uint64_t)msent.max_write_freshness();
    ent->version = msent.version();
    ent->size = msent.size();
+   ent->name = strdup( msent.name().c_str() );
+
+   if( msent.has_parent_id() )
+      ent->parent_id = msent.parent_id();
+   else
+      ent->parent_id = -1;
+
+   if( msent.has_parent_name() )
+      ent->parent_name = strdup( msent.parent_name().c_str() );
+   else
+      ent->parent_name = NULL;
    
    return 0;
 }
@@ -3024,8 +3075,6 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
 
    // DELETE
    else if( con_data->mode == MD_HTTP_DELETE ) {
-      dbprintf( "DELETE %s\n", con_data->url_path );
-
       struct md_HTTP_response* resp = (*http_ctx->HTTP_DELETE_handler)( con_data, 0 );
 
       if( resp == NULL ) {
@@ -3040,8 +3089,6 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
    // GET
    else if( con_data->mode == MD_HTTP_GET ) {
       
-      dbprintf( "GET %s\n", con_data->url_path);
-
       struct md_HTTP_response* resp = (*http_ctx->HTTP_GET_handler)( con_data );
       if( resp == NULL ) {
          resp = CALLOC_LIST(struct md_HTTP_response, 1);
@@ -3056,8 +3103,6 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
    // HEAD
    else if( con_data->mode == MD_HTTP_HEAD ) {
       
-      dbprintf( "HEAD %s\n", con_data->url_path );
-
       struct md_HTTP_response* resp = (*http_ctx->HTTP_HEAD_handler)( con_data );
       if( resp == NULL ) {
          resp = CALLOC_LIST(struct md_HTTP_response, 1);
@@ -3225,18 +3270,250 @@ int md_HTTP_unlock( struct md_HTTP* http ) {
    return pthread_rwlock_unlock( &http->lock );
 }
 
+static int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out ) {
+   uint64_t ret = 0;
+   int rc = sscanf( id_str, fmt, &ret );
+   if( rc == 0 )
+      return -EINVAL;
+   else
+      *out = ret;
+   
+   return 0;
+}
+
+static int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* manifest_timestamp ) {
+   long tv_sec = -1;
+   long tv_nsec = -1;
+   
+   int num_read = sscanf( _manifest_str, "manifest.%ld.%ld", &tv_sec, &tv_nsec );
+   if( num_read != 2 )
+      return -EINVAL;
+
+   if( tv_sec < 0 || tv_nsec < 0 )
+      return -EINVAL;
+   
+   manifest_timestamp->tv_sec = tv_sec;
+   manifest_timestamp->tv_nsec = tv_nsec;
+
+   return 0;
+}
+
+
+static int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t* _block_id, int64_t* _block_version ) {
+   uint64_t block_id = INVALID_BLOCK_ID;
+   int64_t block_version = -1;
+
+   int num_read = sscanf( _block_id_version_str, "%" PRIu64 ".%" PRId64, &block_id, &block_version );
+   if( num_read != 2 )
+      return -EINVAL;
+
+   if( block_version < 0 )
+      return -EINVAL;
+
+   *_block_id = block_id;
+   *_block_version = block_version;
+
+   return 0;
+}
+
+static int md_parse_file_version( char* _name_and_version_str, int64_t* _file_version ) {
+   char* version_ptr = rindex( _name_and_version_str, '.' );
+   if( version_ptr == NULL )
+      return -EINVAL;
+
+   int64_t file_version = -1;
+   int num_read = sscanf( version_ptr, ".%" PRId64, &file_version );
+   if( num_read != 1 )
+      return -EINVAL;
+
+   *_file_version = file_version;
+
+   return 0;
+}
+
+
+int md_HTTP_parse_url_path( char* _url_path, uint64_t* _volume_id, char** _file_path, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_timestamp, bool* _staging ) {
+   char* url_path = strdup( _url_path );
+
+   // temporary values
+   uint64_t volume_id = INVALID_VOLUME_ID;
+   char* file_path = NULL;
+   int64_t file_version = -1;
+   uint64_t block_id = INVALID_BLOCK_ID;
+   int64_t block_version = -1;
+   struct timespec manifest_timestamp;
+   bool staging = false;
+   manifest_timestamp.tv_sec = -1;
+   manifest_timestamp.tv_nsec = -1;
+   int rc = 0;
+
+
+   int num_parts = 0;
+   char* prefix = NULL;
+   char* volume_id_str = NULL;
+
+   bool is_manifest = false;
+   int file_name_and_version_part = 0;
+   size_t file_path_len = 0;
+
+   char** parts = NULL;
+   char* tmp = NULL;
+   char* cursor = NULL;
+
+   
+   // break url_path into tokens, by /
+   int num_seps = 0;
+   for( unsigned int i = 0; i < strlen(url_path); i++ ) {
+      if( url_path[i] == '/' ) {
+         num_seps++;
+         while( url_path[i] == '/' && i < strlen(url_path) ) {
+            i++;
+         }
+      }
+   }
+
+   // minimum number of parts: local/staging, volume_id, name.version, (block.version || manifest.tv_sec.tv_nsec)
+   if( num_seps < 4 ) {
+      rc = -EINVAL;
+      dbprintf("num_seps = %d\n", num_seps );
+      goto _md_HTTP_parse_url_path_finish;
+   }
+
+   num_parts = num_seps;
+   parts = CALLOC_LIST( char*, num_seps + 1 );
+   tmp = NULL;
+   cursor = url_path;
+   
+   for( int i = 0; i < num_seps; i++ ) {
+      char* tok = strtok_r( cursor, "/", &tmp );
+      cursor = NULL;
+
+      if( tok == NULL ) {
+         break;
+      }
+
+      parts[i] = tok;
+   }
+   
+   prefix = parts[0];
+   volume_id_str = parts[1];
+   file_name_and_version_part = num_parts-2;
+
+   if( strcmp(prefix, SYNDICATE_DATA_PREFIX) != 0 && strcmp(prefix, SYNDICATE_STAGING_PREFIX) != 0 ) {
+      // invalid prefix
+      free( parts );
+      rc = -EINVAL;
+      dbprintf("prefix = '%s'\n", prefix);
+      goto _md_HTTP_parse_url_path_finish;
+   }
+   else {
+      if( strcmp(prefix, SYNDICATE_DATA_PREFIX) == 0 )
+         staging = false;
+      else
+         staging = true;
+   }
+
+   // volume ID?
+   rc = md_parse_uint64( volume_id_str, "%" PRIu64, &volume_id );
+   if( rc < 0 ) {
+      free( parts );
+      rc = -EINVAL;
+      dbprintf("could not parse '%s'\n", volume_id_str);
+      goto _md_HTTP_parse_url_path_finish;
+   }
+   
+   // is this a manifest request?
+   if( strncmp( parts[num_parts-1], "manifest", strlen("manifest") ) == 0 ) {
+      rc = md_parse_manifest_timestamp( parts[num_parts-1], &manifest_timestamp );
+      if( rc == 0 ) {
+         // success!
+         is_manifest = true;
+      }
+   }
+
+   if( !is_manifest ) {
+      // not a manifest request, so we must have a block ID and block version 
+      rc = md_parse_block_id_and_version( parts[num_parts-1], &block_id, &block_version );
+      if( rc != 0 ) {
+         // invalid request--neither a manifest nor a block ID
+         dbprintf("could not parse '%s'\n", parts[num_parts-1]);
+         free( parts );
+         rc = -EINVAL;
+         goto _md_HTTP_parse_url_path_finish;
+      }
+   }
+   
+   // parse file version
+   rc = md_parse_file_version( parts[file_name_and_version_part], &file_version );
+   if( rc != 0 ) {
+      // invalid 
+      dbprintf("could not parse '%s'\n", parts[file_name_and_version_part] );
+      free( parts );
+      rc = -EINVAL;
+      goto _md_HTTP_parse_url_path_finish;
+   }
+
+   // clear file version
+   md_clear_version( parts[file_name_and_version_part] );
+
+   // assemble the path
+   for( int i = 2; i <= file_name_and_version_part; i++ ) {
+      file_path_len += strlen(parts[i]) + 2;
+   }
+
+   file_path = CALLOC_LIST( char, file_path_len + 1 );
+   for( int i = 2; i <= file_name_and_version_part; i++ ) {
+      strcat( file_path, "/" );
+      strcat( file_path, parts[i] );
+   }
+
+   *_volume_id = volume_id;
+   *_file_path = file_path;
+   *_file_version = file_version;
+   *_block_id = block_id;
+   *_block_version = block_version;
+   _manifest_timestamp->tv_sec = manifest_timestamp.tv_sec;
+   _manifest_timestamp->tv_nsec = manifest_timestamp.tv_nsec;
+   *_staging = staging;
+
+   free( parts );
+
+_md_HTTP_parse_url_path_finish:
+
+   free( url_path );
+
+   return rc;
+}
+
+/*
 // parse a url_path--extract the file path, file version, block, block version, and/or manifest timestamp
 // valid requests on file /foo/bar
-//    /SYNDICATE-DATA/foo/bar.123/manifest.12345.67890   --> (/foo/bar, 123, -1, -1, 12345.67890, false)
-//    /SYNDICATE-DATA/foo/bar/manifest.12345.67890       --> (/foo/bar, -1, -1, -1, 12345.67890, false)
-//    /SYNDICATE-DATA/foo/bar.123/45.678                 --> (/foo/bar, 123, 45, 678, (-1,-1), false)
-//    /SYNDICATE-DATA/foo/bar/45.678                     --> (/foo/bar, -1, 45, 678, (-1,-1), false)
-//    /SYNDICATE-DATA/foo/bar.123/45                     --> (/foo/bar, 123, 45, -1, (-1,-1), false)
-//    /SYNDICATE-DATA/foo/bar/45                         --> (/foo/bar, -1, 45, -1, (-1,-1), false)
-//    /SYNDICATE-STAGING/foo/bar.123/45.678              --> (/foo/bar, 123, 45, 678, (-1,-1), true)
-int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_version, uint64_t* block_id, int64_t* block_version, struct timespec* manifest_timestamp, bool* staging ) {
+//    /SYNDICATE-DATA/1/2/foo/bar.123/manifest.12345.67890   --> (1, 2, /foo/bar, 123, -1, -1, 12345.67890, false)
+//    /SYNDICATE-DATA/1/2/foo/bar/manifest.12345.67890       --> (1, 2, /foo/bar, -1, -1, -1, 12345.67890, false)
+//    /SYNDICATE-DATA/1/2/foo/bar.123/45.678                 --> (1, 2, /foo/bar, 123, 45, 678, (-1,-1), false)
+//    /SYNDICATE-DATA/1/2/foo/bar/45.678                     --> (1, 2, /foo/bar, -1, 45, 678, (-1,-1), false)
+//    /SYNDICATE-DATA/1/2/foo/bar.123/45                     --> (1, 2, /foo/bar, 123, 45, -1, (-1,-1), false)
+//    /SYNDICATE-DATA/1/2/foo/bar/45                         --> (1, 2, /foo/bar, -1, 45, -1, (-1,-1), false)
+//    /SYNDICATE-STAGING/1/2/foo/bar.123/45.678              --> (1, 2, /foo/bar, 123, 45, 678, (-1,-1), true)
+int md_HTTP_parse_url_path( char* _url_path, uint64_t* volume_id, uint64_t* gateway_id, char** file_path, int64_t* file_version, uint64_t* block_id, int64_t* block_version, struct timespec* manifest_timestamp, bool* staging ) {
    char* url_path = strdup( _url_path );
    *staging = false;
+
+   // must be data or staging
+   char* off_data = strstr( url_path, SYNDICATE_DATA_PREFIX );
+   char* off_staging = strstr( url_path, SYNDICATE_STAGING_PREFIX );
+   if( off_data == NULL && off_staging == NULL ) {
+      *file_path = NULL;
+      *file_version = -1;
+      *block_id = INVALID_BLOCK_ID;
+      *block_version = -1;
+      *volume_id = 0;
+      *gateway_id = 0;
+      manifest_timestamp->tv_sec = -1;
+      manifest_timestamp->tv_nsec = -1;
+      free( url_path );
+      return -EINVAL;
+   }
 
    char* leaf = strrchr( url_path, '/' );
    if( leaf != NULL ) {
@@ -3246,6 +3523,8 @@ int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_ver
          *file_version = -1;
          *block_id = INVALID_BLOCK_ID;
          *block_version = -1;
+         *volume_id = 0;
+         *gateway_id = 0;
          manifest_timestamp->tv_sec = -1;
          manifest_timestamp->tv_nsec = -1;
          free( url_path );
@@ -3307,6 +3586,8 @@ int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_ver
          *block_version = -1;
          manifest_timestamp->tv_sec = -1;
          manifest_timestamp->tv_nsec = -1;
+         *volume_id = 0;
+         *gateway_id = 0;
          free( url_path );
          return -EINVAL;
       }
@@ -3358,6 +3639,8 @@ int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_ver
          *block_version = -1;
          manifest_timestamp->tv_sec = -1;
          manifest_timestamp->tv_nsec = -1;
+         *volume_id = 0;
+         *gateway_id = 0;
          free( url_path );
          return -EINVAL;
       }
@@ -3402,6 +3685,8 @@ int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_ver
          *block_version = -1;
          manifest_timestamp->tv_sec = -1;
          manifest_timestamp->tv_nsec = -1;
+         *volume_id = 0;
+         *gateway_id = 0;
          free( url_path );
          return -EINVAL;
       }
@@ -3415,11 +3700,13 @@ int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_ver
       *block_version = -1;
       manifest_timestamp->tv_sec = -1;
       manifest_timestamp->tv_nsec = -1;
+      *volume_id = 0;
+      *gateway_id = 0;
       free( url_path );
       return -EINVAL;
    }
 }
-
+*/
 
 struct md_user_entry** md_parse_secrets_file( char const* path ) {
    FILE* passwd_file = fopen( path, "r" );
@@ -3595,11 +3882,16 @@ int md_init( int gateway_type,
       return -EINVAL;
    }
 
-   util_init();
+   int rc = util_init();
+   if( rc != 0 ) {
+      errorf("util_init rc = %d\n", rc );
+      return rc;
+   }
+   
    md_default_conf( conf );
    
    // read the config file
-   int rc = md_read_conf( config_file, conf );
+   rc = md_read_conf( config_file, conf );
    if( rc != 0 ) {
       dbprintf("ERR: failed to read %s, rc = %d\n", config_file, rc );
       if( !(rc == -ENOENT || rc == -EACCES || rc == -EPERM) ) {

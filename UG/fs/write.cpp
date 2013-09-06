@@ -34,24 +34,32 @@ int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_e
    if( fent->size > 0 ) {
       rc = fs_entry_prepare_write_block( core, fs_path, fent, block, 0, fent->size, 0 );
       if( rc != 0 ) {
-         errorf("fs_entry_prepare_write_block(%s[%" PRId64 "]) rc = %d\n", fs_path, fs_entry_block_id( core, fent->size ), rc );
+         errorf("fs_entry_prepare_write_block(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "[%" PRId64 "]) rc = %d\n", core->volume, core->gateway, fent->file_id, fent->version, fs_entry_block_id( core, fent->size ), rc );
          return rc;
       }
    }
 
    bool cleared = false;
+   bool local = FS_ENTRY_LOCAL( core, fent );
    
    for( uint64_t id = start_id; id <= end_id; id++ ) {
 
-      rc = fs_entry_put_block( core, fs_path, fent, id, block );
+      rc = fs_entry_put_block( core, fent, id, block, !local );
       if( rc != 0 ) {
-         errorf("fs_entry_put_block(%s.%" PRId64 "[%" PRIu64 "]) rc = %d\n", fs_path, fent->version, id, rc );
+         errorf("fs_entry_put_block(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "[%" PRIu64 "]) rc = %d\n", core->volume, core->gateway, fent->file_id, fent->version, id, rc );
          err = rc;
          break;
       }
 
       // record that we have written this
-      (*modified_blocks)[ id ] = fent->manifest->get_block_version( id );
+      struct fs_entry_block_info binfo;
+      memset( &binfo, 0, sizeof(binfo) );
+
+      binfo.version = fent->manifest->get_block_version( id );
+      binfo.hash = sha256_hash_data( block, core->blocking_factor );
+      binfo.hash_len = sha256_len();
+      
+      (*modified_blocks)[ id ] = binfo;
 
       if( !cleared )
          memset( block, 0, core->blocking_factor );
@@ -76,10 +84,10 @@ int fs_entry_prepare_write_block( struct fs_core* core, char const* fs_path, str
 
       // get the block data, since we'll need to preserve part of it
       // NOTE: use the offset at the block boundary; otherwise we can get EOF
-      ssize_t blk_size = fs_entry_do_read_block( core, fs_path, fent, block_id * core->blocking_factor, block );
+      ssize_t blk_size = fs_entry_do_read_block( core, fs_path, fent, block_id, block, core->blocking_factor );
 
       if( blk_size < 0 ) {
-         errorf( "fs_entry_read_block(%s[%" PRId64 "]) rc = %zd\n", fs_path, block_id, blk_size );
+         errorf( "fs_entry_read_block(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 "[%" PRId64 "]) rc = %zd\n", core->volume, core->gateway, fent->file_id, block_id, blk_size );
          rc = -EIO;
       }
       else {
@@ -92,7 +100,7 @@ int fs_entry_prepare_write_block( struct fs_core* core, char const* fs_path, str
 
 
 // fill in a block of data (used by fs_entry_write_real)
-ssize_t fs_entry_fill_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, char* block, char const* buf, int source_fd, size_t count, off_t offset, ssize_t num_written ) {
+ssize_t fs_entry_fill_block( struct fs_core* core, struct fs_entry* fent, char* block, char const* buf, int source_fd, size_t count, off_t offset, ssize_t num_written ) {
    ssize_t block_write_offset = (offset + num_written) % core->blocking_factor;
    
    // fill in the block
@@ -113,7 +121,7 @@ ssize_t fs_entry_fill_block( struct fs_core* core, char const* fs_path, struct f
          ssize_t fd_nr = read( source_fd, fd_buf + fd_read, core->blocking_factor - block_write_offset - fd_read );
          if( fd_nr < 0 ) {
             fd_nr = -errno;
-            errorf( "read(%s) errno = %zd\n", fs_path, fd_nr );
+            errorf( "read(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") errno = %zd\n", core->volume, core->gateway, fent->file_id, fd_nr );
             write_size = -errno;
             break;
          }
@@ -146,16 +154,16 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
 
    BEGIN_TIMING_DATA( ts );
    
-   int rc = fs_entry_revalidate_path( core, fh->volume, fh->path );
+   int rc = fs_entry_revalidate_path( core, core->volume, fh->path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
-      return rc;
+      return -EREMOTEIO;
    }
    
    fs_entry_wlock( fh->fent );
    
-   bool local = URL_LOCAL( fh->fent->url );
+   bool local = FS_ENTRY_LOCAL( core, fh->fent );
    off_t old_size = fh->fent->size;
 
    rc = fs_entry_revalidate_manifest( core, fh->path, fh->fent );
@@ -186,7 +194,15 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
          fs_entry_unlock( fh->fent );
    
          fs_file_handle_unlock( fh );
-      
+
+
+         if( modified_blocks.size() > 0 ) {
+            // free memory
+            for( modification_map::iterator itr = modified_blocks.begin(); itr != modified_blocks.end(); itr++ ) {
+               free( itr->second.hash );
+            }
+         }
+
          return rc;
       }
    }
@@ -210,14 +226,14 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
          errorf("fs_entry_prepare_write_block(%s[%" PRId64 "]) rc = %d\n", fh->path, block_id, rc );
       }
       
-      ssize_t write_size = fs_entry_fill_block( core, fh->path, fh->fent, block, buf, source_fd, count, offset, num_written );
+      ssize_t write_size = fs_entry_fill_block( core, fh->fent, block, buf, source_fd, count, offset, num_written );
       if( write_size < 0 ) {
          errorf("fs_entry_fill_block(%s[%" PRId64 "]) rc = %zd\n", fh->path, block_id, write_size );
          fs_entry_unlock( fh->fent );
          break;
       }
       
-      rc = fs_entry_put_block( core, fh->path, fh->fent, block_id, block );
+      rc = fs_entry_put_block( core, fh->fent, block_id, block, !local );
       if( rc != 0 ) {
          errorf("fs_entry_put_block(%s[%" PRId64 "]) rc = %d\n", fh->path, block_id, rc );
          fs_entry_unlock( fh->fent );
@@ -225,7 +241,14 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       }
 
       // record that we've written this block
-      modified_blocks[ block_id ] = fh->fent->manifest->get_block_version( block_id );
+      struct fs_entry_block_info binfo;
+      memset( &binfo, 0, sizeof(binfo) );
+
+      binfo.version = fh->fent->manifest->get_block_version( block_id );
+      binfo.hash = sha256_hash_data( block, core->blocking_factor );
+      binfo.hash_len = sha256_len();
+      
+      modified_blocks[ block_id ] = binfo;
 
       num_written += write_size;
 
@@ -254,7 +277,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       uint64_t start_id = modified_blocks.begin()->first;
       uint64_t end_id = modified_blocks.rbegin()->first + 1;      // exclusive
 
-      int rc = fs_entry_replicate_write( core, fh, &modified_blocks, fh->flags & O_SYNC );
+      int rc = fs_entry_replicate_write( core, fh->path, fh->fent, &modified_blocks, fh->flags & O_SYNC );
       if( rc != 0 ) {
          errorf("fs_entry_replicate_write(%s[%" PRId64 "-%" PRId64 "]) rc = %d\n", fh->path, start_id, end_id, rc );
          ret = -EIO;
@@ -284,10 +307,8 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
          fs_entry_prepare_write_message( write_msg, core, fh->path, fh->fent, start_id, end_id, versions );
          free( versions );
 
-         char* url = strdup( fh->fent->url );
-
          Serialization::WriteMsg *write_ack = new Serialization::WriteMsg();
-         int rc = fs_entry_post_write( write_ack, core, url, write_msg );
+         int rc = fs_entry_post_write( write_ack, core, fh->fent->coordinator, write_msg );
 
          // process the write message--hopefully it's a PROMISE
          if( rc != 0 ) {
@@ -315,7 +336,6 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
             }
          }
 
-         free( url );
          delete write_ack;
          delete write_msg;
       }
@@ -329,7 +349,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       
       // synchronize the new modifications with the MS
       struct md_entry ent;
-      fs_entry_to_md_entry( core, fh->path, fh->fent, &ent );
+      fs_entry_to_md_entry( core, &ent, fh->fent, fh->parent_id, fh->parent_name );
 
       int up_rc = 0;
       char const* errstr = NULL;
@@ -356,8 +376,15 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    fs_entry_unlock( fh->fent );
    fs_file_handle_unlock( fh );
 
+   if( modified_blocks.size() > 0 ) {
+      // free memory
+      for( modification_map::iterator itr = modified_blocks.begin(); itr != modified_blocks.end(); itr++ ) {
+         free( itr->second.hash );
+      }
+   }
+
    END_TIMING_DATA( ts, ts2, "write" );
-   
+
    return ret;
 }
 
@@ -371,81 +398,62 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, int sou
 }
 
 
-// handle a remote write.
-// Merge the URLs to the new blocks into the manifest.
-// fent must be write-locked 
-int fs_entry_begin_remote_write_impl( struct fs_core* core, char const* fs_path, struct fs_entry* fent, Serialization::WriteMsg* write_msg, modification_map* new_blocks ) {
-   // ensure the version matches
-   if( write_msg->metadata().file_version() != fent->version ) {
-      return -EINVAL;
-   }
-
-   // get new block versions
-   for( uint64_t i = 0; i < write_msg->blocks().end_id() - write_msg->blocks().start_id(); i++ ) {
-      uint64_t block_id = i + write_msg->blocks().start_id();
-      int64_t new_version = fent->manifest->get_block_version( block_id ) + 1;
-
-      (*new_blocks)[block_id] = new_version;
-   }
-   
-   return 0;
-}
-
 // Handle a remote write.  Update the affected blocks in the manifest, and republish.
 int fs_entry_remote_write( struct fs_core* core, char const* fs_path, Serialization::WriteMsg* write_msg ) {
    int err = 0;
-   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, write_msg->user_id(), write_msg->volume_id(), true, &err );
+   uint64_t parent_id = 0;
+   char* parent_name = NULL;
+   struct fs_entry* fent = fs_entry_resolve_path_and_parent_info( core, fs_path, write_msg->user_id(), write_msg->volume_id(), true, &err, &parent_id, &parent_name );
    if( err != 0 || fent == NULL ) {
       return err;
    }
+   
+   uint64_t gateway_id = write_msg->gateway_id();
 
    struct timespec ts, ts2;
 
    BEGIN_TIMING_DATA( ts );
-   
-   fent->size = write_msg->metadata().size();
 
    // update the blocks
    for( unsigned int i = 0; i < write_msg->blocks().end_id() - write_msg->blocks().start_id(); i++ ) {
       uint64_t block_id = i + write_msg->blocks().start_id();
       int64_t new_version = write_msg->blocks().version(i);
 
-      // put the new block version
-      char* file_url = fs_entry_public_file_url( core, write_msg->metadata().content_url().c_str(), fs_path );
-
-      fs_entry_put_block_url( fent, file_url, fent->version, block_id, new_version );
-
-      free( file_url );
+      fs_entry_manifest_put_block( core, gateway_id, fent, block_id, new_version, false );
    }
+
+   fent->size = write_msg->metadata().size();
 
    clock_gettime( CLOCK_REALTIME, &ts );
 
    fent->mtime_sec = ts.tv_sec;
    fent->mtime_nsec = ts.tv_nsec;
-   fent->manifest->set_lastmod( &ts );
 
    // propagate the update to the MS
    struct md_entry data;
-   fs_entry_to_md_entry( core, fs_path, fent, &data );
+   fs_entry_to_md_entry( core, &data, fent, parent_id, parent_name );
+   
+   char const* errstr = NULL;
+   
    uint64_t max_write_freshness = fent->max_write_freshness;
-
-   // no need to hold this any longer
    fs_entry_unlock( fent );
-
-   int rc = ms_client_queue_update( core->ms, &data, currentTimeMillis() + max_write_freshness, 0 );
-   if( rc != 0 ) {
-      errorf("ms_client_queue_update(%s) rc = %d\n", fs_path, rc );
-      err = -EREMOTEIO;
+   
+   if( max_write_freshness > 0 ) {
+      err = ms_client_queue_update( core->ms, &data, currentTimeMillis() + max_write_freshness, 0 );
+      errstr = "ms_client_queue_update";
    }
-
-   rc = ms_client_sync_update( core->ms, core->volume, fs_path );
-   if( rc != 0 ) {
-      errorf("ms_client_sync_update(%s) rc = %d\n", fs_path, rc );
+   else {
+      err = ms_client_update( core->ms, &data );
+      errstr = "ms_client_update";
+   }
+   if( err != 0 ) {
+      errorf("%s(%s) rc = %d\n", errstr, fs_path, err );
       err = -EREMOTEIO;
    }
 
    md_entry_free( &data );
-
+   free( parent_name );
+   
    END_TIMING_DATA( ts, ts2, "write, remote" );
    return err;
 }

@@ -32,6 +32,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
    
    int rc = http_parse_request( http, resp, reqdat, url );
    if( rc < 0 ) {
+      dbprintf("http_parse_request(%s) rc = %d\n", url, rc );
       // error, but handled
       return 0;
    }
@@ -40,6 +41,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
    rc = http_handle_redirect( state, resp, sb, reqdat );
    if( rc <= 0 ) {
       // handled!
+      dbprintf("http_handle_redirect(%s) rc = %d\n", url, rc );
       http_request_data_free( reqdat );
       return 0;
    }
@@ -124,9 +126,9 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
       // serve back the block
       char* block = CALLOC_LIST( char, state->core->blocking_factor );
 
-      ssize_t size = fs_entry_read_block( state->core, reqdat.fs_path, reqdat.block_id, block );
+      ssize_t size = fs_entry_read_block( state->core, reqdat.fs_path, reqdat.block_id, block, state->core->blocking_factor );
       if( size < 0 ) {
-         errorf( "fs_entry_read_block(%s.%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %zd\n", reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version, size );
+         errorf( "fs_entry_read_block(%s.%" PRId64 "/%" PRIu64 ".%" PRId64 ") rc = %zd\n", reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version, size );
          md_create_HTTP_response_ram( resp, "text/plain", 500, "INTERNAL SERVER ERROR\n", strlen("INTERNAL SERVER ERROR\n") + 1 );
 
          http_request_data_free( &reqdat );
@@ -134,9 +136,9 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
          return resp;
       }
       else {
-         dbprintf( "served %zd bytes from %s.%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", size, reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version );
+         dbprintf( "served %zd bytes from %s.%" PRId64 "/%" PRIu64 ".%" PRId64 "\n", size, reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version );
       }
-
+      
       md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, block, size );
       http_make_default_headers( resp, sb.st_mtime, size, true );
 
@@ -169,13 +171,10 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
          return resp;
       }
       else {
+
          // TODO: request for a file
          // redirect to its manifest for now
-         char* txt = fs_entry_public_manifest_url( state->core, reqdat.fs_path, reqdat.file_version, &reqdat.manifest_timestamp );
-
-         http_make_redirect_response( resp, txt );
-
-         free( txt );
+         md_create_HTTP_response_ram_static( resp, "text/plain", 400, "INVALID REQUEST", strlen("INVALID REQUEST") + 1 );
          http_request_data_free( &reqdat );
 
          return resp;
@@ -598,10 +597,29 @@ int syndicate_init( char const* config_file,
    // start up stats gathering
    state->stats = new Stats( NULL );
    state->stats->use_conf( &state->conf );
-   
+
+   // get root info
+   struct md_entry root;
+   memset( &root, 0, sizeof(root) );
+
+   rc = ms_client_get_volume_root( state->ms, volume_id, &root );
+   if( rc != 0 ) {
+      errorf("ms_client_get_volume_root rc = %d\n", rc );
+      return -ENODATA;
+   }
+
+   // sanity check
+   if( root.volume != volume_id ) {
+      errorf("Invalid root Volume %" PRIu64 "\n", root.volume );
+      md_entry_free( &root );
+      return -EINVAL;
+   }
+
    // initialize the filesystem core
    struct fs_core* core = CALLOC_LIST( struct fs_core, 1 );
-   fs_core_init( core, &state->conf, volume_id, blocking_factor );
+   fs_core_init( core, &state->conf, root.owner, root.coordinator, root.volume, root.mode, blocking_factor );
+
+   md_entry_free( &root );
 
    fs_entry_set_config( &state->conf );
 

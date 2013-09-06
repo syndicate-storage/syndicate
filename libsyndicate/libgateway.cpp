@@ -9,7 +9,7 @@
 
 static bool gateway_running = true;
 static bool allow_overwrite = false;
-static md_path_locks gateway_md_locks;
+//static md_path_locks gateway_md_locks;
 
 // gloabl config
 struct md_syndicate_conf *global_conf = NULL;
@@ -100,13 +100,16 @@ int gateway_key_value( char* arg, char* key, char* value ) {
    return eq_off;
 }
 
+/*
 // get the full path of a file chunk to gatewayte
 // NOTE: fp should be at least PATH_MAX bytes long
 static char* gateway_fullpath( char const* base, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, char* fp ) {
    snprintf(fp, PATH_MAX, "%s%s.%" PRId64 "/%" PRIu64 ".%" PRId64, base, fs_path, file_version, block_id, block_version );
    return fp;
 }
+*/
 
+/*
 // store a gateway's metadata.
 // return -EEXIST if it already exists and we can't overwrite (i.e. replace == False)
 static int gateway_store_metadata( struct md_syndicate_conf* conf, ms::ms_gateway_blockinfo* info, bool replace ) {
@@ -180,8 +183,9 @@ static int gateway_store_metadata( struct md_syndicate_conf* conf, ms::ms_gatewa
 
    return 0;
 }
+*/
 
-
+/*
 // get a gateway's metadata
 // NOTE: path should be /fs_path.file_version/block_id.block_version
 // return 0 on success
@@ -258,8 +262,10 @@ static int gateway_get_metadata( struct md_syndicate_conf* conf, char const* pat
 
    return 0;
 }
+*/
 
 
+/*
 // delete a gateway's metadata
 static int gateway_delete_metadata( struct md_syndicate_conf* conf, char const* path ) {
    char* fullpath = md_fullpath( conf->gateway_metadata_root, path, NULL );
@@ -280,6 +286,7 @@ static int gateway_delete_metadata( struct md_syndicate_conf* conf, char const* 
 
    return 0;
 }
+*/
 
 
 static char const* CONNECT_ERROR = "CONNECT ERROR";
@@ -406,6 +413,7 @@ static int gateway_POST_iterator(void *coninfo_cls, enum MHD_ValueKind kind,
                // got data that was useful!
                con_data->has_gateway_md = true;
 
+               /*
                // put metadata for this block
                con_data->block_info->set_progress( ms::ms_gateway_blockinfo::STARTED );
                int rc = gateway_store_metadata( md_con_data->conf, con_data->block_info, false );
@@ -420,6 +428,7 @@ static int gateway_POST_iterator(void *coninfo_cls, enum MHD_ValueKind kind,
                   errorf( "gateway_store_metadata rc = %d\n", rc );
                   return MHD_NO;
                }
+               */
             }
          }
 
@@ -465,15 +474,17 @@ static void gateway_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
       md_create_HTTP_response_ram( md_con_data->resp, "text/plain", abs(md_con_data->status), buf, strlen(buf) + 1 );
 
       // clean up
-      gateway_delete_metadata( md_con_data->conf, rpc->ctx.url_path );
+      //gateway_delete_metadata( md_con_data->conf, rpc->ctx.url_path );
    }
    else {
       // we're good
       md_create_HTTP_response_ram_static( md_con_data->resp, "text/plain", 200, MD_HTTP_200_MSG, strlen(MD_HTTP_200_MSG) + 1 );
 
+      /*
       // commit this
       rpc->block_info->set_progress( ms::ms_gateway_blockinfo::COMMITTED );
       gateway_store_metadata( md_con_data->conf, rpc->block_info, true );
+      */
    }
    md_HTTP_add_header( md_con_data->resp, "Connection", "keep-alive" );
    return;
@@ -494,7 +505,7 @@ static ssize_t gateway_HTTP_read_callback( void* cls, uint64_t pos, char* buf, s
    return ret;
 }
 
-
+/*
 // make a last-modified header
 static void add_last_mod_header( struct md_HTTP_response* resp, time_t date ) {
 
@@ -507,12 +518,13 @@ static void add_last_mod_header( struct md_HTTP_response* resp, time_t date ) {
 
    md_HTTP_add_header( resp, "Last-Modified", hdr_buf );
 }
+*/
 
 // gateway GET handler
 static char const* GATEWAY_GET_INVALID = "Invalid\n";
 
 static struct md_HTTP_response* gateway_GET_handler( struct md_HTTP_connection_data* md_con_data ) {
-   struct md_HTTP* http = md_con_data->http;
+   //struct md_HTTP* http = md_con_data->http;
 
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
 
@@ -526,6 +538,7 @@ static struct md_HTTP_response* gateway_GET_handler( struct md_HTTP_connection_d
 
    // first, get the metadata
    int rc = 0;
+   /*
    time_t last_mod = 0;
    ms::ms_gateway_blockinfo info;
 
@@ -536,7 +549,7 @@ static struct md_HTTP_response* gateway_GET_handler( struct md_HTTP_connection_d
    else {
       rc = (*metadata_callback)( &rpc->ctx, &info, rpc->user_cls );
    }
-
+   */
    
    if( rc != 0 ) {
       // no metadata for this entry
@@ -544,6 +557,7 @@ static struct md_HTTP_response* gateway_GET_handler( struct md_HTTP_connection_d
       char const* msg = "Unable to read metadata";
       md_create_HTTP_response_ram_static( resp, "text/plain", http_status, msg, strlen(msg) + 1 );
    }
+   /*
    else {
       if( info.progress() == ms::ms_gateway_blockinfo::COMMITTED ) {
          // we have data
@@ -555,13 +569,14 @@ static struct md_HTTP_response* gateway_GET_handler( struct md_HTTP_connection_d
          rc = -404;
       }
    }
+   */
    
    if( rc == 0 ) {
       // have entry! start reading
       if( get_callback ) {
          int http_status = get_http_status( &rpc->ctx, 200 );
          md_create_HTTP_response_stream( resp, "application/octet-stream", http_status, rpc->ctx.size, 4096, gateway_HTTP_read_callback, rpc, NULL );
-         add_last_mod_header( resp, last_mod );
+         //add_last_mod_header( resp, last_mod );
       }
       else {
          md_create_HTTP_response_ram_static( resp, "text/plain", 501, MD_HTTP_501_MSG, strlen(MD_HTTP_501_MSG) + 1 );
@@ -572,6 +587,7 @@ static struct md_HTTP_response* gateway_GET_handler( struct md_HTTP_connection_d
 }
 
 
+/*
 // gateway HEAD handler
 // HEAD to /$DRIVER_BIN/$DRIVER/$PATH.$FILE_VERSION/$BLOCK_ID.$BLOCK_VERSION?$QUERY_STRING
 static struct md_HTTP_response* gateway_HEAD_handler( struct md_HTTP_connection_data* md_con_data ) {
@@ -623,8 +639,10 @@ static struct md_HTTP_response* gateway_HEAD_handler( struct md_HTTP_connection_
    md_HTTP_add_header( md_con_data->resp, "Connection", "keep-alive" );
    return resp;
 }
+*/
 
 
+/*
 // DELETE handler
 static struct md_HTTP_response* gateway_DELETE_handler( struct md_HTTP_connection_data* md_con_data, int depth ) {
    struct md_HTTP* http = md_con_data->http;
@@ -677,6 +695,7 @@ static struct md_HTTP_response* gateway_DELETE_handler( struct md_HTTP_connectio
    md_HTTP_add_header( md_con_data->resp, "Connection", "keep-alive" );
    return resp;
 }
+*/
 
 
 // clean up
@@ -706,6 +725,7 @@ static void gateway_cleanup( struct MHD_Connection *connection, void *user_cls, 
    free( con_data );
 }
 
+/*
 // accumulate a list of regular file paths in the gateway metadata directory
 static vector<char*> __accumulate_reg_paths_buf;
 
@@ -742,21 +762,21 @@ static void cleanup_stale_transactions( struct md_syndicate_conf* conf ) {
    }
    __accumulate_reg_paths_buf.clear();
 }
-
+*/
 
 // start up server
 static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf, struct ms_client* ms ) {
    
-   md_path_locks_create( &gateway_md_locks );
+   //md_path_locks_create( &gateway_md_locks );
 
    md_HTTP_init( http, MHD_USE_SELECT_INTERNALLY | MHD_USE_POLL | MHD_USE_DEBUG, conf, ms );
    md_HTTP_auth_mode( *http, conf->http_authentication_mode );
    md_HTTP_connect( *http, gateway_HTTP_connect );
    md_HTTP_GET( *http, gateway_GET_handler );
-   md_HTTP_HEAD( *http, gateway_HEAD_handler );
+   //md_HTTP_HEAD( *http, gateway_HEAD_handler );
    md_HTTP_POST_iterator( *http, gateway_POST_iterator );
    md_HTTP_POST_finish( *http, gateway_POST_finish );
-   md_HTTP_DELETE( *http, gateway_DELETE_handler );
+   //md_HTTP_DELETE( *http, gateway_DELETE_handler );
    md_HTTP_close( *http, gateway_cleanup );
 
    md_mkdirs( conf->gateway_metadata_root );
@@ -777,7 +797,7 @@ static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf, s
 int gateway_shutdown( struct md_HTTP* http ) {
    md_stop_HTTP( http );
 
-   md_path_locks_free( &gateway_md_locks );
+   //md_path_locks_free( &gateway_md_locks );
    return 0;
 }
 
@@ -1068,7 +1088,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
 int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *client, char* logfile, char* pidfile, bool make_daemon ) {
    int rc = 0;
    // clean up stale records
-   cleanup_stale_transactions( conf );
+   //cleanup_stale_transactions( conf );
 
    // overwrite mandated by config?
    if( conf->replica_overwrite )

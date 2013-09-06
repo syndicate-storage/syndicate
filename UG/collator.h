@@ -16,7 +16,7 @@
 using namespace std;
 
 struct release_entry {
-   char* content_url;
+   uint64_t gateway_id;
    Serialization::WriteMsg* acceptMsg;
 };
 

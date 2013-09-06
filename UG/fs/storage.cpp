@@ -8,31 +8,57 @@
 #include "manifest.h"
 #include "url.h"
 
+// given a string and a version, concatenate them, preserving delimiters
+char* fs_entry_add_version( char const* fs_path, int64_t version ) {
+   size_t t = strlen(fs_path);
+   size_t v = 2 + log(abs(version) + 1);
+   char* ret = CALLOC_LIST( char, t + 1 + v );
+
+   bool delim = false;
+   if( fs_path[t-1] == '/' ) {
+      strncpy( ret, fs_path, t-1 );
+      delim = true;
+   }
+   else {
+      strncpy( ret, fs_path, t );
+   }
+
+   char buf[50];
+
+   if( delim )
+      sprintf(buf, ".%" PRId64 "/", version );
+   else
+      sprintf(buf, ".%" PRId64, version );
+
+   strcat( ret, buf );
+
+   return ret;
+}
+
+
 // create a local file's block directory on disk.
 // path must be locked somehow
-int fs_entry_create_local_file( struct fs_core* core, char const* fs_path, int64_t version, mode_t mode ) {
+int fs_entry_create_local_file( struct fs_core* core, uint64_t file_id, int64_t version, mode_t mode ) {
    // it is possible for there to be a 0-sized non-directory here, to indicate the next version to be created.
    // if so, remove it
 
-   char* path = md_publish_path_file( core->conf->data_root, fs_path, version );
-   
-   int rc = 0;
+   char* local_file_url = fs_entry_local_file_url( core, file_id, version );
+   char* local_path = GET_PATH( local_file_url );
 
-   dbprintf("create '%s.%'" PRId64 " mode %o\n", fs_path, version, mode);
+   dbprintf("create %s. mode %o\n", local_path, mode);
 
-   rc = md_mkdirs3( path, mode | 0700 );
+   int rc = md_mkdirs3( local_path, mode | 0700 );
    if( rc < 0 )
       rc = -errno;
    
-   free( path );
+   free( local_file_url );
    
    return rc;
 }
 
-
 // move a local file
 // path is the fully-qualified path
-int fs_entry_move_local_data( char* path, char* new_path ) {
+int fs_entry_move_local_file( char* path, char* new_path ) {
    int rc = rename( path, new_path );
    if( rc != 0 ) {
       rc = -errno;
@@ -40,21 +66,22 @@ int fs_entry_move_local_data( char* path, char* new_path ) {
    return rc;
 }
 
-// truncate a file on disk
-int fs_entry_truncate_local_data( struct fs_core* core, char const* fs_path, int64_t version ) {
+// remove all blocks for a file
+int fs_entry_clear_local_file( struct fs_core* core, uint64_t file_id, int64_t version ) {
    // only remove if this directory represents an actual file
 
-   char* path = md_publish_path_file( core->conf->data_root, fs_path, version );
+   char* local_file_url = fs_entry_local_file_url( core, file_id, version );
+   char* local_path = GET_PATH( local_file_url );
    
-   DIR* dir = opendir( path );
+   DIR* dir = opendir( local_path );
    if( dir == NULL ) {
       int rc = -errno;
-      errorf( "opendir(%s) errno = %d\n", path, rc );
-      free(path);
+      errorf( "opendir(%s) errno = %d\n", local_path, rc );
+      free( local_file_url );
       return rc;
    }
 
-   int dirent_sz = offsetof(struct dirent, d_name) + pathconf(path, _PC_NAME_MAX) + 1;
+   int dirent_sz = offsetof(struct dirent, d_name) + pathconf(local_path, _PC_NAME_MAX) + 1;
 
    struct dirent* dent = (struct dirent*)malloc( dirent_sz );;
    struct dirent* result = NULL;
@@ -68,7 +95,7 @@ int fs_entry_truncate_local_data( struct fs_core* core, char const* fs_path, int
          if( strcmp(result->d_name, ".") == 0 || strcmp(result->d_name, "..") == 0 )
             continue;
 
-         md_fullpath( path, result->d_name, block_path );
+         md_fullpath( local_path, result->d_name, block_path );
          rc = unlink( block_path );
          if( rc != 0 ) {
             // could not unlink
@@ -81,78 +108,43 @@ int fs_entry_truncate_local_data( struct fs_core* core, char const* fs_path, int
 
    closedir( dir );
    free( dent );
-   free( path );
+   free( local_file_url );
    return worst_rc;
 }
 
 // remove a local file from disk
 // path is the fully-qualified path
 // This path most somehow be locked first
-int fs_entry_remove_local_data( struct fs_core* core, char const* fs_path, int64_t version ) {
+int fs_entry_remove_local_file( struct fs_core* core, uint64_t file_id, int64_t version ) {
    // only remove if this directory represents an actual file
-   int worst_rc = fs_entry_truncate_local_data( core, fs_path, version );
+   int worst_rc = fs_entry_clear_local_file( core, file_id, version );
 
-   char* path = md_publish_path_file( core->conf->data_root, fs_path, version );
+   char* local_file_url = fs_entry_local_file_url( core, file_id, version );
+   char* local_path = GET_PATH( local_file_url );
    
    if( worst_rc == 0 ) {
       
-      int rc = rmdir( path );
+      int rc = rmdir( local_path );
       if( rc != 0 ) {
          worst_rc = -errno;
-         errorf( "rmdir(%s) errno = %d\n", path, rc );
+         errorf( "rmdir(%s) errno = %d\n", local_path, rc );
       }
    }
    else {
-      errorf("fs_entry_truncate_local_data(%s, %" PRId64 ") rc = %d\n", fs_path, version, worst_rc );
+      errorf("fs_entry_truncate_local_file(%s, %" PRId64 ") rc = %d\n", local_path, version, worst_rc );
    }
 
-   free( path );
+   free( local_file_url );
 
    return worst_rc;
 }
 
 
-// create a local directory
-int fs_entry_create_local_directory( struct fs_core* core, char const* fs_path ) {
-   
-   // make this directory in the data directory
-   char* data_path = md_fullpath( core->conf->data_root, fs_path, NULL );
-   int rc = md_mkdirs( data_path );
-   
-   if( rc != 0 ) {
-      errorf("md_mkdirs(%s) rc = %d\n", data_path, rc );
-   }
-
-   free( data_path );
-
-   return rc;
-}
-
-
-// remove a local directory
-int fs_entry_remove_local_directory( struct fs_core* core, char const* path ) {
-   return md_withdraw_dir( core->conf->data_root, path );
-}
-
-
-// publish a file
-int fs_entry_publish_file( struct fs_core* core, char const* fs_path, uint64_t version, mode_t mode ) {
-   
-   int rc = fs_entry_create_local_file( core, fs_path, version, mode );
-   if( rc != 0 ) {
-      errorf("fs_entry_create_local_file(%s.%" PRId64 ") rc = %d\n", fs_path, version, rc );
-      return rc;
-   }
-
-   return rc;
-}
-
-
-// reversion a file, if the current verison exists
+// reversion a local file, if the current verison exists
 // fent must be write-locked
-int fs_entry_reversion_local_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t new_version ) {
-   char* cur_local_url = fs_entry_local_file_url( core, fs_path, fent->version );
-   char* new_local_url = fs_entry_local_file_url( core, fs_path, new_version );
+int fs_entry_reversion_local_file( struct fs_core* core, struct fs_entry* fent, uint64_t new_version ) {
+   char* cur_local_url = fs_entry_local_file_url( core, fent->file_id, fent->version );
+   char* new_local_url = fs_entry_local_file_url( core, fent->file_id, new_version );
 
    char* cur_local_path = GET_PATH( cur_local_url );
    char* new_local_path = GET_PATH( new_local_url );
@@ -187,10 +179,10 @@ ssize_t fs_entry_write_block( struct fs_core* core, int fd, char* buf ) {
 
 
 // read a block's worth of content
-ssize_t fs_entry_get_block_local( struct fs_core* core, int fd, char* block ) {
+ssize_t fs_entry_get_block_local( struct fs_core* core, int fd, char* block, size_t block_len ) {
    ssize_t nr = 0;
-   while( nr < (signed)core->blocking_factor ) {
-      ssize_t tmp = read( fd, block + nr, core->blocking_factor - nr );
+   while( nr < (signed)block_len ) {
+      ssize_t tmp = read( fd, block + nr, block_len - nr );
       if( tmp < 0 ) {
          ssize_t rc = -errno;
          return rc;
@@ -207,31 +199,31 @@ ssize_t fs_entry_get_block_local( struct fs_core* core, int fd, char* block ) {
 
 
 // given a url and version, calculate either a data local URL or a staging local URL for a block, depending on the URL.
-static char* fs_entry_get_block_storage_url( struct fs_core* core, char const* url, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
+static char* fs_entry_get_block_storage_url( struct fs_core* core, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, bool staging ) {
 
    char* local_block_url = NULL;
-   if( URL_LOCAL( url ) ) {
+   if( !staging ) {
       // file is locally hosted; put into our data directory
-      local_block_url = fs_entry_local_block_url( core, fs_path, file_version, block_id, block_version );
+      local_block_url = fs_entry_local_block_url( core, file_id, file_version, block_id, block_version );
    }
    else {
       // file is remotely hosted; put into our staging directory
-      local_block_url = fs_entry_local_staging_block_url( core, fs_path, file_version, block_id, block_version );
+      local_block_url = fs_entry_local_staging_block_url( core, file_id, file_version, block_id, block_version );
    }
    return local_block_url;
 }
 
 // given a url and version, calculate either a data local URL or a staging local URL for a file, depending on the URL.
-static char* fs_entry_get_file_storage_url( struct fs_core* core, char const* url, char const* fs_path, int64_t file_version ) {
+static char* fs_entry_get_file_storage_url( struct fs_core* core, uint64_t file_id, int64_t file_version, bool staging ) {
 
    char* local_file_url = NULL;
-   if( URL_LOCAL( url ) ) {
+   if( !staging ) {
       // file is locally hosted; put into our data directory
-      local_file_url = fs_entry_local_file_url( core, fs_path, file_version );
+      local_file_url = fs_entry_local_file_url( core, file_id, file_version );
    }
    else {
       // file is remotely hosted; put into our staging directory
-      local_file_url = fs_entry_local_staging_file_url( core, fs_path, file_version );
+      local_file_url = fs_entry_local_staging_file_url( core, file_id, file_version );
    }
    return local_file_url;
 }
@@ -240,11 +232,11 @@ static char* fs_entry_get_file_storage_url( struct fs_core* core, char const* ur
 // put a block with the given version 
 // return 0 on success
 // FENT MUST BE WRITE-LOCKED, SO ANOTHER THREAD CAN'T ADD A BLOCK OF THE SAME VERSION
-int fs_entry_commit_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* buf ) {
+int fs_entry_commit_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* buf, bool staging ) {
    int rc = 0;
 
    // get the location of this block
-   char* local_block_url = fs_entry_get_block_storage_url( core, fent->url, fs_path, fent->version, block_id, block_version );
+   char* local_block_url = fs_entry_get_block_storage_url( core, fent->file_id, fent->version, block_id, block_version, staging );
    
    // make sure the directories leading to this block exist
    char* storage_dir = md_dirname( GET_PATH( local_block_url ), NULL );
@@ -287,11 +279,11 @@ int fs_entry_commit_block( struct fs_core* core, char const* fs_path, struct fs_
 // clear out old versions of a block.
 // preserve a block with current_block_version.
 // fent must be at least read_locked.
-int fs_entry_remove_old_block_versions( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t current_block_version ) {
+int fs_entry_remove_old_block_versions( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t current_block_version, bool staging ) {
    int rc = 0;
 
    // get the location of this block
-   char* local_block_url_prefix = fs_entry_get_block_storage_url( core, fent->url, fs_path, fent->version, block_id, 0 );
+   char* local_block_url_prefix = fs_entry_get_block_storage_url( core, fent->file_id, fent->version, block_id, 0, staging );
    md_clear_version( local_block_url_prefix );
 
    char* block_path = GET_PATH( local_block_url_prefix );
@@ -304,7 +296,7 @@ int fs_entry_remove_old_block_versions( struct fs_core* core, char const* fs_pat
          continue;
       }
 
-      char* block_versioned_path = fs_entry_mkpath( block_path, versions[i] );
+      char* block_versioned_path = fs_entry_add_version( block_path, versions[i] );
 
       // remove the block
       rc = unlink( block_versioned_path );
@@ -331,36 +323,42 @@ int fs_entry_remove_old_block_versions( struct fs_core* core, char const* fs_pat
 // if the URL refers to a local place on disk, then store it to the data directory.
 // If it instead refers to a remote host, then store it to the staging directory.
 // fent MUST BE WRITE LOCKED, SINCE WE MODIFY THE MANIFEST
-int fs_entry_put_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char* block_data ) {
+int fs_entry_put_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, bool staging ) {
 
    int64_t block_version = fs_entry_next_block_version();
 
-   dbprintf("put %s.%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fs_path, fent->version, block_id, block_version );
+   dbprintf("put /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 "\n", core->gateway, core->volume, fent->file_id, fent->version, block_id, block_version );
+   
+   char prefix[21];
+   memset( prefix, 0, 21 );
+   memcpy( prefix, block_data, MIN( 21, core->blocking_factor ) );
+   
+   dbprintf("data: '%s'...\n", prefix );
    
    // put the block into place
-   int rc = fs_entry_commit_block( core, fs_path, fent, block_id, block_version, block_data );
+   int rc = fs_entry_commit_block( core, fent, block_id, block_version, block_data, staging );
 
    if( rc != 0 ) {
       // failed to write
-      errorf( "fs_entry_commit_block(%s.%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n", fs_path, fent->version, block_id, block_version, rc );
+      errorf("fs_entry_commit_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 " ) rc = %d\n", core->gateway, core->volume, fent->file_id, fent->version, block_id, block_version, rc );
       return -EIO;
    }
    else {
       // clear out all older versions of this block
-      rc = fs_entry_remove_old_block_versions( core, fs_path, fent, block_id, block_version );
+      rc = fs_entry_remove_old_block_versions( core, fent, block_id, block_version, staging );
       if( rc != 0 ) {
          // failed to remove
-         errorf("WARN: fs_entry_remove_old_block_versions(%s.%" PRId64 ") rc = %d\n", fs_path, fent->version, rc );
+         errorf("WARN: fs_entry_remove_old_block_versions( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 " ) rc = %d\n", core->gateway, core->volume, fent->file_id, fent->version, block_id, rc );
          rc = 0;
       }
       
       // add this block's URL to the manifest
-      char* local_url = fs_entry_get_file_storage_url( core, fent->url, fs_path, fent->version );
+      char* local_url = fs_entry_get_file_storage_url( core, fent->file_id, fent->version, staging );
 
       // clear the version--local manifest URLs don't have versions
       md_clear_version( local_url );
 
-      fs_entry_put_block_url( fent, local_url, fent->version, block_id, block_version );
+      rc = fs_entry_manifest_put_block( core, core->gateway, fent, block_id, block_version, staging );
 
       free( local_url );
 
@@ -371,14 +369,14 @@ int fs_entry_put_block( struct fs_core* core, char const* fs_path, struct fs_ent
       fent->mtime_sec = ts.tv_sec;
       fent->mtime_nsec = ts.tv_nsec;
    }
-   return 0;
+   return rc;
 }
 
 
 // remove a locally-hosted block from a file, either from staging or local data.
 // fent must be at least read-locked
-int fs_entry_remove_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id ) {
-   return fs_entry_remove_old_block_versions( core, fs_path, fent, block_id, -1 );
+int fs_entry_remove_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, bool staging ) {
+   return fs_entry_remove_old_block_versions( core, fent, block_id, -1, staging);
 }
 
 
@@ -386,7 +384,7 @@ int fs_entry_remove_block( struct fs_core* core, char const* fs_path, struct fs_
 // return negative on error
 // return the next version of this block
 // fent must be write-locked
-int fs_entry_collate( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* bits ) {
+int fs_entry_collate( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* bits, uint64_t parent_id, char const* parent_name ) {
 
    char tmppath[PATH_MAX];
    strcpy( tmppath, SYNDICATE_COLLATE_TMPPATH );
@@ -407,35 +405,32 @@ int fs_entry_collate( struct fs_core* core, char const* fs_path, struct fs_entry
    close( fd );
    
    // put the block in place
-   char* block_path = fs_entry_local_block_path( core->conf->data_root, fs_path, fent->version, block_id, block_version );
+   char* block_url = fs_entry_local_block_url( core, fent->file_id, fent->version, block_id, block_version );
+   char* block_path = GET_PATH( block_url );
    int rc = rename( tmppath, block_path );
 
    if( rc != 0 ) {
       rc = -errno;
       errorf( "rename(%s,%s) errno = %d\n", tmppath, block_path, rc );
-      free( block_path );
+      free( block_url );
       return -EIO;
    }
    
-   free( block_path );
+   free( block_url );
 
-   // add this block's URL to the manifest
-   char* local_url = fs_entry_local_file_url( core, fs_path, fent->version );
+   // add the block 
+   fs_entry_manifest_put_block( core, core->gateway, fent, block_id, block_version, false );
 
-   // clear the version--local manifest URLs don't have versions
-   md_clear_version( local_url );
-
-   fs_entry_put_block_url( fent, local_url, fent->version, block_id, block_version );
-
-   free( local_url );
-
-   // write this back to the MS 
+   // update timestamp on the MS
    struct md_entry data;
-   fs_entry_to_md_entry( core, fs_path, fent, &data );
+   fs_entry_to_md_entry( core, &data, fent, parent_id, parent_name );
 
    ms_client_queue_update( core->ms, &data, fent->max_write_freshness, 0 );
 
    md_entry_free( &data );
+   
+   
+   dbprintf("Collated /%" PRIX64 "/%" PRId64 ".%" PRIu64 " (%s)\n", fent->file_id, block_id, block_version, fent->name );
    
    return 0;
 }
@@ -479,7 +474,7 @@ int fs_entry_release_staging( struct fs_core* core, Serialization::WriteMsg* acc
       return err;
    }
 
-   if( URL_LOCAL( fent->url ) ) {
+   if( FS_ENTRY_LOCAL( core, fent ) ) {
       // only remote files have staging information
       fs_entry_unlock( fent );
       return -EINVAL;
@@ -493,8 +488,8 @@ int fs_entry_release_staging( struct fs_core* core, Serialization::WriteMsg* acc
 
    // remove all of the blocks we're holding for this file if they're the same version
    int64_t file_version = accept_msg->accepted().file_version();
-   if( fent->version > file_version ) {
-      errorf("ERR: %s: local file is a newer version (%" PRId64 ") than accepted blocks (%" PRId64 ")\n", fs_path, fent->version, file_version );
+   if( fent->version != file_version ) {
+      errorf("ERR: %s: local file is a different version (%" PRId64 ") than accepted blocks (%" PRId64 ")\n", fs_path, fent->version, file_version );
       rc = 0;
    }
    else {
@@ -503,7 +498,7 @@ int fs_entry_release_staging( struct fs_core* core, Serialization::WriteMsg* acc
 
          uint64_t block_id = accept_msg->accepted().block_id(i);
 
-         int rc = fs_entry_remove_block( core, fs_path, fent, block_id );
+         int rc = fs_entry_remove_block( core, fent, block_id, true );
          if( rc != 0 ) {
             errorf("fs_entry_remove_block(%s[%" PRId64 "]) rc = %d\n", fs_path, block_id, rc );
          }
@@ -511,8 +506,10 @@ int fs_entry_release_staging( struct fs_core* core, Serialization::WriteMsg* acc
 
       // clean up the staging directory
       char* tmp = md_fullpath( core->conf->staging_root, fs_path, NULL );
-      char* dir_fullpath = fs_entry_mkpath( tmp, fent->version );
-      
+      char* dir_fullpath = fs_entry_add_version( tmp, fent->version );
+
+      // this will only succeed if the directory is empty, which is exactly what we want.
+      // no need to worry about it if it's not empty
       rmdir( dir_fullpath );
 
       free( dir_fullpath );
@@ -535,18 +532,15 @@ int fs_entry_block_stat( struct fs_core* core, char const* path, uint64_t block_
       return err;
    }
 
+   
    // is this block local?  if not, then nothing we can do
-   char* block_url = fent->manifest->get_block_url( fent->version, block_id );
-   if( block_url == NULL ) {
-      fs_entry_unlock( fent );
-      return -ENODATA;
-   }
-   if( !URL_LOCAL( block_url ) ) {
-      free( block_url );
+   if( !FS_ENTRY_LOCAL( core, fent ) ) {
       fs_entry_unlock( fent );
       return -EXDEV;
    }
 
+   
+   char* block_url = fent->manifest->get_block_url( core, path, fent, block_id );
    char* stat_path = GET_PATH( block_url );
    int rc = stat( stat_path, sb );
 

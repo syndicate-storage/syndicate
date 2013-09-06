@@ -38,7 +38,7 @@ struct RG_upload {
    char* path;             // path of entity we're replicating
    struct curl_httppost* form_data;    // what we're posting
    int running;            // how many RGs are we still talking to?
-   
+
    char* data;             // for the manifest
    FILE* file;             // for the block
 
@@ -48,11 +48,6 @@ struct RG_upload {
    pthread_cond_t sync_cv;
    pthread_mutex_t sync_lock;
 };
-
-
-int RG_upload_init_block( struct fs_core* core, struct RG_upload* rup, char const* data_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, int64_t mtime_sec, int32_t mtime_nsec, bool sync );
-int RG_upload_init_manifest( struct fs_core* core, struct RG_upload* rup, char* manifest_data, size_t manifest_data_len, char const* fs_path, int64_t file_version, int64_t mtime_sec, int32_t mtime_nsec, bool sync );
-void RG_upload_destroy( struct RG_upload* rup );
 
 typedef vector<struct RG_upload*> upload_list;
 
@@ -118,7 +113,7 @@ private:
 int replication_init( struct ms_client* ms, uint64_t volume_id );
 int replication_shutdown();
 
-int fs_entry_replicate_write( struct fs_core* core, struct fs_file_handle* fh, modification_map* modified_blocks, bool sync );
+int fs_entry_replicate_write( struct fs_core* core, char const* fs_path, struct fs_entry* fent, modification_map* modified_blocks, bool sync );
 int fs_entry_replicate_wait( struct fs_file_handle* fh );
 
 #endif

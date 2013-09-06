@@ -6,7 +6,7 @@ import MS.handlers
 import tests.debughandler
 import openid.gaeopenid
 
-from MS.handlers import MSFileRequestHandler, MSVolumeRequestHandler, MSUGRequestHandler, MSRGRequestHandler, MSRegisterRequestHandler, MSOpenIDRequestHandler
+from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSUGRequestHandler, MSRGRequestHandler, MSRegisterRequestHandler, MSOpenIDRequestHandler
 from tests.debughandler import MSDebugHandler
 
 app = webapp2.WSGIApplication([
@@ -15,7 +15,8 @@ app = webapp2.WSGIApplication([
     ('/process', MSOpenIDRequestHandler),
     ('/affiliate', MSOpenIDRequestHandler),
     ('/debug/([^/]+)/(.*)', MSDebugHandler),
-    ('/FILE/([0123456789]+)/(.*)', MSFileRequestHandler),
+    ('/FILE/([0123456789]+)/([0123456789ABCDEF]+)/([0123456789]+)/([0123456789]+)/([0123456789]+)', MSFileReadHandler),
+    ('/FILE/([0123456789]+)', MSFileWriteHandler ),
     ('/VOLUME/([0123456789]+)', MSVolumeRequestHandler),
     ('/UG/([0123456789]+)', MSUGRequestHandler),
     ('/RG/([0123456789]+)', MSRGRequestHandler),

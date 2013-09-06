@@ -348,4 +348,9 @@ public class SharedFSFileSystem extends JSFSFileSystem {
             throw new IOException(pe.getMessage());
         }
     }
+
+    @Override
+    public byte[] getExtendedAttr(JSFSPath path, String name) throws IOException {
+        return null;
+    }
 }

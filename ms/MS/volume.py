@@ -8,6 +8,7 @@
 
 import storage
 import storage.storagetypes as storagetypes
+import storage.shardcounter as shardcounter
 
 import os
 import base64
@@ -56,8 +57,8 @@ class VolumeIDCounter( storagetypes.Object ):
    @classmethod
    def next_value( cls ):
       return VolumeIDCounter.__next_value()
+
       
-   
 
 def is_int( x ):
    try:
@@ -78,8 +79,9 @@ class Volume( storagetypes.Object ):
    owner_id = storagetypes.Integer()
    volume_id = storagetypes.Integer()
    version = storagetypes.Integer( indexed=False )                 # version of this Volume's metadata
-   UG_version = storagetypes.Integer( indexed=False )              # version of the UG listing in this Volume
-   RG_version = storagetypes.Integer( indexed=False )              # version of the RG listing in this Volume
+   UG_version = storagetypes.Integer( default=1, indexed=False )              # version of the UG listing in this Volume
+   RG_version = storagetypes.Integer( default=1, indexed=False )              # version of the RG listing in this Volume
+   AG_version = storagetypes.Integer( default=1, indexed=False )              # version of the AG listing in this Volume
    private = storagetypes.Boolean()
    ag_ids = storagetypes.Integer( repeated=True )                  # AG's publishing data to this volume
    rg_ids = storagetypes.Integer( repeated=True )                  # RG's replicating data for this volume.
@@ -129,7 +131,7 @@ class Volume( storagetypes.Object ):
       "rg_ids",
       "private",
       "public_key",
-      "private_key"
+      "private_key",
    ]
 
    key_attrs = [
@@ -186,7 +188,9 @@ class Volume( storagetypes.Object ):
       volume_metadata.volume_version = kwargs.get('volume_version', self.version )
       volume_metadata.UG_version = kwargs.get('UG_version', self.UG_version )
       volume_metadata.RG_version = kwargs.get('RG_version', self.RG_version )
+      volume_metadata.AG_version = kwargs.get('AG_version', self.AG_version )
       volume_metadata.volume_public_key = kwargs.get( 'public_key', self.public_key )
+      volume_metadata.num_files = kwargs.get( 'num_files', Volume.get_num_files( volume_metadata.volume_id ) )
       
       # sign it
       volume_metadata.signature = ""
@@ -199,7 +203,7 @@ class Volume( storagetypes.Object ):
       return
       
 
-   def protobuf_UGs( self, ug_metadata, user_gateways ):
+   def protobuf_UGs( self, ug_metadata, user_gateways, sign=True ):
       
       ug_metadata.ug_version = self.UG_version
       for ug in user_gateways:
@@ -208,15 +212,17 @@ class Volume( storagetypes.Object ):
 
       ug_metadata.signature = ""
 
-      # sign this 
-      data = ug_metadata.SerializeToString()
-      sig = self.sign_message( data )
+      if sign:
+         # sign this
+         data = ug_metadata.SerializeToString()
+         sig = self.sign_message( data )
 
-      ug_metadata.signature = sig
+         ug_metadata.signature = sig
+         
       return
 
 
-   def protobuf_RGs( self, rg_metadata, rgs ):
+   def protobuf_RGs( self, rg_metadata, rgs, sign=True ):
 
       rg_metadata.rg_version = self.RG_version
       for rg in rgs:
@@ -224,12 +230,35 @@ class Volume( storagetypes.Object ):
          rg_metadata.rg_ports.append( rg.port )
 
       rg_metadata.signature = ""
-         
-      # sign this
-      data = rg_metadata.SerializeToString()
-      sig = self.sign_message( data )
 
-      rg_metadata.signature = sig
+      if sign:
+         # sign this
+         data = rg_metadata.SerializeToString()
+         sig = self.sign_message( data )
+
+         rg_metadata.signature = sig
+         
+      return
+
+
+   def protobuf_AGs( self, ag_metadata, ags, sign=True ):
+
+      ag_metadata.ag_version = self.AG_version
+      for ag in ags:
+         ag_metadata.ag_ids.append( ag.ag_id )
+         ag_metadata.ag_blocksizes.append( ag.block_size )
+         ag_metadata.hostnames.append( ag.host )
+         ag_metadata.portnums.append( ag.port )
+
+      ag_metadata.signature = ""
+
+      if sign:
+         # sign this
+         data = ag_metadata.SerializeToString()
+         sig = self.sign_message( data )
+
+         ag_metadata.signature = sig
+         
       return
 
 
@@ -426,6 +455,12 @@ class Volume( storagetypes.Object ):
       
       
    @classmethod
+   def SetCache( cls, volume_id, volume ):
+      volume_key_name = Volume.make_key_name( volume_id=volume_id )
+      
+      storagetypes.memcache.set( volume_key_name, volume )
+      
+   @classmethod
    def Update( cls, volume_id, **fields ):
       '''
       Update volume identified by name with fields specified as a dictionary.
@@ -439,6 +474,7 @@ class Volume( storagetypes.Object ):
       old_version = volume.version
       old_rg_version = volume.RG_version
       old_ug_version = volume.UG_version
+      old_ag_version = volume.AG_version
 
       for (k,v) in fields.items():
          setattr( volume, k, v )
@@ -448,6 +484,11 @@ class Volume( storagetypes.Object ):
          volume.RG_version = old_rg_version
       if "rg_ids" in fields:
          volume.RG_version = old_rg_version + 1
+
+      if "AG_version" in fields:
+         volume.AG_version = old_ag_version
+      if "ag_ids" in fields:
+         volume.AG_version = old_ag_version + 1
 
       # Kinda hacky, but allows deliberate updating of UG_version field when changing 
       # UG's attached volume by assuming any attempt to change UG_version is a desire to increment
@@ -465,4 +506,31 @@ class Volume( storagetypes.Object ):
       Delete volume from datastore.
       '''
       volume_key = storagetypes.make_key( Volume, Volume.make_key_name( volume_id=volume_id ) )
-      return volume_key.delete()
+      
+      ret = volume_key.delete()
+      FlushCache( volume_id )
+      
+      return ret
+   
+   @classmethod
+   def shard_counter_name( cls, volume_id, suffix ):
+      return "%s-%s" % (volume_id, suffix)
+
+   @classmethod
+   def increase_file_count( cls, volume_id ):
+      name = Volume.shard_counter_name( volume_id, "file_count" )
+      shardcounter.increment(name)
+   
+   @classmethod
+   def decrease_file_count( cls, volume_id ):
+      name = Volume.shard_counter_name( volume_id, "file_count" )
+      shardcounter.decrement(name)
+      
+   @classmethod
+   def get_num_files( cls, volume_id ):
+      name = Volume.shard_counter_name( volume_id, "file_count" )
+      ret = shardcounter.get_count( name )
+      return ret
+   
+   
+   

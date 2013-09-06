@@ -13,6 +13,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <cstring>
 #include <memory>
 #include <limits.h>
@@ -45,6 +46,7 @@
 #include <openssl/ssl.h>
 #include <openssl/rand.h>
 #include <openssl/err.h>
+#include <endian.h>
 
 using namespace std;
 
@@ -57,56 +59,6 @@ using namespace std;
 #include "serialization.pb.h"
 #include "ms-client.h"
 
-#define WHERESTR "[%16s:%04u] %s: "
-#define WHEREARG __FILE__, __LINE__, __func__
-
-extern int _DEBUG_SYNDICATE;
-extern int _ERROR_SYNDICATE;
-
-#ifdef dbprintf
-#undef dbprintf
-#endif
-
-#ifdef errorf
-#undef errorf
-#endif
-
-#define dbprintf( format, ... ) do { if( _DEBUG_SYNDICATE ) { printf( WHERESTR format, WHEREARG, __VA_ARGS__ ); fflush(stdout); } } while(0)
-#define errorf( format, ... ) do { if( _ERROR_SYNDICATE ) { fprintf(stderr, WHERESTR format, WHEREARG, __VA_ARGS__); fflush(stderr); } } while(0)
-#define QUOTE(x) #x
-
-#define dbval(var, fmt) dbprintf(WHERESTR "%s = " fmt, WHEREARG, #var, var);
-#define DIE 0xdeadbeef
-
-#define NULLCHECK( var, ret ) \
-  if( (var) == NULL ) {       \
-      errorf("%s = NULL\n", #var);      \
-      if( (ret) == DIE ) {       \
-         exit(1);              \
-      }                          \
-      return ret;             \
-  }                           
-
-#define CALLOC_LIST(type, count) (type*)calloc( sizeof(type) * (count), 1 )
-#define FREE_LIST(list) do { for(unsigned int __i = 0; (list)[__i] != NULL; ++ __i) { if( (list)[__i] != NULL ) { free( (list)[__i] ); (list)[__i] = NULL; }} free( (list) ); } while(0)
-#define SIZE_LIST(sz, list) for( *(sz) = 0; (list)[*(sz)] != NULL; ++ *(sz) );
-#define VECTOR_TO_LIST(ret, vec, type) do { ret = CALLOC_LIST(type, ((vec).size() + 1)); for( vector<type>::size_type __i = 0; __i < (vec).size(); ++ __i ) ret[__i] = (vec).at(__i); } while(0)
-#define COPY_LIST(dst, src, duper) do { for( unsigned int __i = 0; (src)[__i] != NULL; ++ __i ) { (dst)[__i] = duper((src)[__i]); } } while(0)
-#define DUP_LIST(type, dst, src, duper) do { unsigned int sz = 0; SIZE_LIST( &sz, src ); dst = CALLOC_LIST( type, sz + 1 ); COPY_LIST( dst, src, duper ); } while(0)
-
-// for testing
-#define BEGIN_TIMING_DATA(ts) clock_gettime( CLOCK_MONOTONIC, &ts )
-#define END_TIMING_DATA(ts, ts2, key) clock_gettime( CLOCK_MONOTONIC, &ts2 ); printf("DATA %s %lf\n", key, ((double)(ts2.tv_nsec - ts.tv_nsec) + (double)(1e9 * (ts2.tv_sec - ts.tv_sec))) / 1e9 )
-#define DATA(key, value) printf("DATA %s %lf\n", key, value)
-#define DATA_S(str) printf("DATA %s\n", str)
-#define DATA_BLOCK(name) printf("-------------------------------- %s\n", name)
-
-#define BEGIN_EXTERN_C        extern "C" {
-#define END_EXTERN_C          }
-
-using namespace std;
-
-
 struct md_syndicate_conf; 
 
 #define MD_ENTRY_FILE 1
@@ -115,21 +67,24 @@ struct md_syndicate_conf;
 // metadata entry (represents a file or a directory)
 struct md_entry {
    int type;            // file or directory?
-   char* path;          // path
-   char* url;           // URL to the UG that hosts its data
+   char* name;          // name of this entry
+   uint64_t file_id;    // id of this file 
    int64_t ctime_sec;   // creation time (seconds)
    int32_t ctime_nsec;  // creation time (nanoseconds)
    int64_t mtime_sec;   // last-modified time (seconds)
    int32_t mtime_nsec;  // last-modified time (nanoseconds)
-   int64_t version;     // publish version
+   int64_t version;     // file version
    int32_t max_read_freshness;      // how long is this entry fresh until it needs revalidation?
    int32_t max_write_freshness;     // how long can we delay publishing this entry?
-   uint64_t owner;         // uid of the owner
-   uint64_t coordinator;  // gateway id of the write coordinator
-   uint64_t volume;        // id of the volume
+   uint64_t owner;         // ID of the User that owns this File
+   uint64_t coordinator;  // ID of the Gateway that coordinatates writes on this File
+   uint64_t volume;        // ID of the Volume
    mode_t mode;         // file permission bits
    off_t size;          // size of the file
    unsigned char* checksum;      // SHA256 hash (NULL if not given)
+   int32_t error;       // error information with this md_entry
+   uint64_t parent_id;  // id of this file's parent directory
+   char* parent_name;   // name of htis file's parent directory
 };
 
 typedef list<struct md_entry*> md_entry_list;
@@ -158,6 +113,14 @@ struct md_download_buf {
    ssize_t len;         // amount of data
    ssize_t data_len;    // size of data (if data was preallocated)
    char* data;    // NOT null-terminated
+};
+
+
+// bounded response buffer
+struct md_bound_response_buffer {
+   ssize_t max_size;
+   ssize_t size;
+   response_buffer_t* rb;
 };
 
 // POST buffer
@@ -220,10 +183,6 @@ struct md_HTTP_file_response {
    size_t size;
 };
 
-
-// small message response buffers
-typedef pair<char*, size_t> buffer_segment_t;
-typedef vector< buffer_segment_t > response_buffer_t;
 
 // ssize_t (*)(void* cls, uint64_t pos, char* buf, size_t max)
 typedef MHD_ContentReaderCallback md_HTTP_stream_callback;
@@ -495,8 +454,8 @@ struct md_syndicate_conf {
 // URL protocol prefix for local files
 #define SYNDICATEFS_LOCAL_PROTO     "file://"
 
-#define SYNDICATE_DATA_PREFIX "/SYNDICATE-DATA/"
-#define SYNDICATE_STAGING_PREFIX "/SYNDICATE-STAGING/"
+#define SYNDICATE_DATA_PREFIX "SYNDICATE-DATA"
+#define SYNDICATE_STAGING_PREFIX "SYNDICATE-STAGING"
 
 // maximum length of a single line of metadata
 #define MD_MAX_LINE_LEN       65536
@@ -543,6 +502,7 @@ typedef vector<long> md_pathlist;
 #else
     #error You must define mutex operations appropriate for your platform!
 #endif
+
 
 BEGIN_EXTERN_C
    
@@ -634,6 +594,7 @@ ssize_t md_download_file2( char const* url, char** buf, char const* username, ch
 ssize_t md_download_file3( char const* url, int fd, char const* username, char const* password );
 ssize_t md_download_file4( char const* url, char** buf, char const* username, char const* password, char const* proxy, void (*curl_extractor)( CURL*, int, void* ), void* arg );
 ssize_t md_download_file5( CURL* curl_h, char** buf );
+ssize_t md_download_file6( CURL* curl_h, char** buf, ssize_t max_len );
 ssize_t md_download_file_proxied( char const* url, char** buf, char const* proxy, int* status_code );
 char** md_parse_cgi_args( char* query_string );
 char* md_url_hostname( char const* url );
@@ -645,6 +606,7 @@ int md_portnum_from_url( char const* url );
 char* md_strip_protocol( char const* url );
 char* md_normalize_url( char const* url, int* rc );
 int md_normalize_urls( char** urls, char** ret );
+size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t count, void* user_data );
 size_t md_default_get_callback_ram(void *stream, size_t size, size_t count, void *user_data);
 size_t md_default_get_callback_disk(void *stream, size_t size, size_t count, void *user_data);
 size_t md_get_callback_response_buffer( void* stream, size_t size, size_t count, void* user_data );
@@ -682,7 +644,7 @@ void md_free_download_buf( struct md_download_buf* buf );
 void md_init_curl_handle( CURL* curl, char const* url, time_t query_time );
 char const* md_find_HTTP_header( struct md_HTTP_header** headers, char const* header );
 int md_HTTP_add_header( struct md_HTTP_response* resp, char const* header, char const* value );
-int md_HTTP_parse_url_path( char* _url_path, char** file_path, int64_t* file_version, uint64_t* block_id, int64_t* block_version, struct timespec* manifest_timestamp, bool* staging );
+int md_HTTP_parse_url_path( char* _url_path, uint64_t* _volume_id, char** _file_path, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_timestamp, bool* _staging );
 void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data );
 
 // user manipulation
@@ -729,8 +691,6 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
 int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len );
 
 END_EXTERN_C
-   
-#define URL_MAX         3000           // maximum length of a URL
 
 // system UID
 #define SYS_USER 0
@@ -739,10 +699,17 @@ END_EXTERN_C
 #define SYNDICATEFS_MAGIC  0x01191988
 
 #define INVALID_BLOCK_ID (uint64_t)(-1)
+#define INVALID_GATEWAY_ID INVALID_BLOCK_ID
+#define INVALID_VOLUME_ID INVALID_BLOCK_ID
 
 // gateway types for md_init
 #define SYNDICATE_UG       1
 #define SYNDICATE_AG       2
 #define SYNDICATE_RG       3
+
+// limits
+#define SYNDICATE_MAX_WRITE_MESSEGE_LEN  4096
+#define URL_MAX         3000           // maximum length of a URL
+
 
 #endif

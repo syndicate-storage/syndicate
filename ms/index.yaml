@@ -10,6 +10,33 @@ indexes:
 # automatically uploaded to the admin console when you next deploy
 # your application using appcfg.py.
 
+- kind: MSEntry
+  properties:
+  - name: is_readable_in_list
+  - name: parent_id
+  - name: volume_id
+  - name: file_id
+
+- kind: MSEntry
+  properties:
+  - name: owner_id
+  - name: parent_id
+  - name: volume_id
+  - name: mode
+
+- kind: MSEntry
+  properties:
+  - name: parent_id
+  - name: volume_id
+  - name: mode
+
+- kind: MSEntry
+  properties:
+  - name: parent_id
+  - name: volume_id
+  - name: mode
+  - name: file_id
+
 - kind: OpenIDAssociation
   properties:
   - name: server_url_hash

@@ -30,6 +30,7 @@ struct httpd_GET_data {
 struct httpd_connection_data {
    int fd;
    int err;
+   ssize_t written;
 };
 
 #define HTTP_MODE "X-POSIX-Mode"

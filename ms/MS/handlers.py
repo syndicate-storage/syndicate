@@ -333,6 +333,30 @@ class MSRGRequestHandler( webapp2.RequestHandler ):
       return
 
 
+class MSAGRequestHandler( webapp2.RequestHandler ):
+   """
+   Get the list of AGs in a Volume.
+   """
+   def get( self, volume_id_str ):
+      gateway, volume, timing = response_begin( self, volume_id_str )
+      if gateway == None or volume == None:
+         return
+
+      ag_metadata = ms_pb2.ms_volume_AGs()
+
+      ags = []
+
+      if len(volume.ag_ids) > 0:
+         ags = storage.list_acquisition_gateways( {'AcquisitionGateway.ag_id IN' : volume.ag_ids} )
+
+      volume.protobuf_AGs( ag_metadata, ags )
+
+      data = ag_metadata.SerializeToString()
+
+      response_end( self, 200, data, "application/octet-stream", timing )
+      return
+
+
 class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    """
    Generate a session certificate from a SyndicateUser account for a gateway.
@@ -353,27 +377,27 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
       else:
          logging.error("Invalid gateway type '%s'" % gateway_type_str )
          response_user_error( self, 401 )
-         return (None, None, None)
+         return (None, None)
          
       if gateway == None:
          logging.error("No such %s named %s" % (gateway_type_str, gateway_name))
          response_user_error( self, 404 )
-         return (None, None, None)
+         return (None, None)
 
       user = storage.read_user( username )
       if user == None:
          logging.error("storage.read_user returned None")
          response_user_error( self, 401 )
-         return (None, None, None)
+         return (None, None)
 
       return (gateway, user)
 
       
-   def protobuf_volume( self, volume_metadata, volume ):
+   def protobuf_volume( self, volume_metadata, volume, root=None ):
       # UGs
       ug_metadata = volume_metadata.ugs
       user_gateways = storage.list_user_gateways( {'UserGateway.volume_id ==' : volume.volume_id} )
-      volume.protobuf_UGs( ug_metadata, user_gateways )
+      volume.protobuf_UGs( ug_metadata, user_gateways, sign=False )
 
       # RGs
       rg_metadata = volume_metadata.rgs
@@ -381,9 +405,20 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
       if len(volume.rg_ids) > 0:
          rgs = storage.list_replica_gateways( {'ReplicaGateway.rg_id IN' : volume.rg_ids} )
          
-      volume.protobuf_RGs( rg_metadata, rgs )
+      volume.protobuf_RGs( rg_metadata, rgs, sign=False )
+
+      # AGs
+      ag_metadata = volume_metadata.ags
+      ags = []
+      if len(volume.ag_ids) > 0:
+         ags = storage.list_acquisition_gateways( {"AcquisitionGateway.ag_id IN" : volume.ag_ids} )
+
+      volume.protobuf_AGs( ag_metadata, ags, sign=False )
 
       # Volume
+      if root != None:
+         root.protobuf( volume_metadata.root )
+         
       volume.protobuf( volume_metadata )
 
       return
@@ -498,6 +533,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          # find all Volumes
          volume_ids = gateway.volumes()
          volumes = storage.get_volumes( volume_ids )
+         roots = storage.get_roots( volumes )
 
          for i in xrange(0, len(volume_ids)):
             volume = volumes[i]
@@ -516,7 +552,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
                futs.append( vol_fut )
             
             registration_volume = registration_metadata.volumes.add()
-            self.protobuf_volume( registration_volume, volume )
+            self.protobuf_volume( registration_volume, volume, roots[i] )
 
          data = registration_metadata.SerializeToString()
 
@@ -531,23 +567,30 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          return
 
 
-class MSFileRequestHandler(webapp2.RequestHandler):
+class MSFileReadHandler(webapp2.RequestHandler):
 
    """
    Volume file request handler.
    It will read and list metadata entries via GET.
-   It will create, delete, and update metadata entries via POST.
    """
 
-   def get( self, volume_id_str, path ):
+   def get( self, volume_id_str, file_id_str, file_version_str, file_mtime_sec_str, file_mtime_nsec_str ):
+
       file_request_start = storagetypes.get_time()
+
+      file_id = -1
+      file_version = -1
+      file_mtime_sec = -1
+      file_mtime_nsec = -1
+      try:
+         file_id = MSEntry.unserialize_id( int( file_id_str, 16 ) )
+         file_version = int( file_version )
+         file_mtime_sec = int( file_mtime_sec )
+         file_mtime_nsec = int( file_mtime_nsec )
+      except:
+         response_end( self, 400, "BAD REQUEST", "text/plain", None )
+         return
       
-      if len(path) == 0:
-         path = "/"
-
-      if path[0] != '/':
-         path = "/" + path
-
       gateway, volume, timing = response_begin( self, volume_id_str )
       if gateway == None or volume == None:
          return
@@ -557,10 +600,16 @@ class MSFileRequestHandler(webapp2.RequestHandler):
          response_user_error( self, 403 )
          return
 
-      # request for a path's worth of metadata
+      logging.info("resolve /%s/%s" % (volume.volume_id, file_id) )
+      
+      # request a file or directory
       resolve_start = storagetypes.get_time()
-      reply = Resolve( gateway.owner_id, volume, path )
+
+      reply = Resolve( gateway.owner_id, volume, file_id, file_version, file_mtime_sec, file_mtime_nsec )
+      
       resolve_time = storagetypes.get_time() - resolve_start
+      
+      logging.info("resolve /%s/%s rc = %d" % (volume.volume_id, file_id, reply.error) )
 
       timing['X-Resolve-Time'] = str(resolve_time)
 
@@ -569,8 +618,15 @@ class MSFileRequestHandler(webapp2.RequestHandler):
       response_end( self, 200, data, "application/octet-stream", timing )
       return
       
-      
-   def post(self, volume_id_str, path ):
+
+class MSFileWriteHandler(webapp2.RequestHandler):
+   
+   """
+   Volume file request handler.
+   It will create, delete, and update metadata entries via POST.
+   """
+   
+   def post(self, volume_id_str ):
 
       file_post_start = storagetypes.get_time()
       
@@ -627,37 +683,51 @@ class MSFileRequestHandler(webapp2.RequestHandler):
          attrs = MSEntry.unprotobuf_dict( update.entry )
 
          rc = 0
+         file_id = -1
 
          # create?
          if update.type == ms_pb2.ms_update.CREATE:
+            logging.info("create /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
+            
             create_start = storagetypes.get_time()
-            rc = MSEntry.Create( gateway.owner_id, volume, **attrs )
+            file_id = MSEntry.Create( gateway.owner_id, volume, **attrs )
             create_time = storagetypes.get_time() - create_start
             create_times.append( create_time )
 
+            logging.info("create /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], file_id ) )
+            
+            rc = file_id
+
          # update?
          elif update.type == ms_pb2.ms_update.UPDATE:
+            logging.info("update /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
+            
             update_start = storagetypes.get_time()
             rc = MSEntry.Update( gateway.owner_id, volume, **attrs )
             update_time = storagetypes.get_time() - update_start
             update_times.append( update_time )
+            
+            logging.info("update /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
 
          # delete?
          elif update.type == ms_pb2.ms_update.DELETE:
+            logging.info("delete /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
+            
             delete_start = storagetypes.get_time()
             rc = MSEntry.Delete( gateway.owner_id, volume, **attrs )
             delete_time = storagetypes.get_time() - delete_start
             delete_times.append( delete_time )
+            
+            logging.info("delete /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
 
          else:
             # not a valid method
             response_end( self, 202, "%s\n" % -errno.ENOSYS, "text/plain", None )
             return
 
-         if rc != 0:
-            # error in creation, but not in processing.
+         if rc < 0:
             # send back the error code
-            response_end( self, 202, "%s\n" % -errno.ENOSYS, "text/plain", None )
+            response_end( self, 202, "%s\n" % rc, "text/plain", None )
             return
 
 
@@ -670,8 +740,8 @@ class MSFileRequestHandler(webapp2.RequestHandler):
       if len(delete_times) > 0:
          timing['X-Delete-Times'] = ",".join( [str(t) for t in delete_times] )
 
-
-      response_end( self, 200, "OK\n", "text/plain", timing )
+      response_end( self, 200, "%s\n" % rc, "text/plain", timing )
+         
       return
 
 

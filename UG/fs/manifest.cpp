@@ -8,57 +8,45 @@
 
 // default constructor
 block_url_set::block_url_set() {
-   this->file_url = NULL;
+   this->file_id = 0;
    this->start_id = -1;
    this->end_id = -1;
    this->block_versions = NULL;
    this->file_version = -1;
+   this->staging = false;
 }
 
 // value constructor
-block_url_set::block_url_set( char const* url, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv ) {
-   this->init( url, file_version, start, end, bv );
+block_url_set::block_url_set( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, bool staging ) {
+   this->init( volume_id, gateway_id, file_id, file_version, start, end, bv, staging );
 }
 
 
 // copy constructor
 block_url_set::block_url_set( block_url_set& bus ) {
-   this->init( bus.file_url, bus.file_version, bus.start_id, bus.end_id, bus.block_versions );
-}
-
-
-// protobuf constructor
-block_url_set::block_url_set( Serialization::BlockURLSetMsg& busmsg ) {
-   this->file_url = strdup( busmsg.file_url().c_str() );
-   this->start_id = busmsg.start_id();
-   this->end_id = busmsg.end_id();
-   this->block_versions = CALLOC_LIST( int64_t, this->end_id - this->start_id );
-   
-   for( int i = 0; i < busmsg.block_versions_size(); i++ ) {
-      this->block_versions[i] = busmsg.block_versions(i);
-   }
+   this->init( bus.volume_id, bus.gateway_id, bus.file_id, bus.file_version, bus.start_id, bus.end_id, bus.block_versions, bus.staging );
 }
 
 
 // initialization
-void block_url_set::init( char const* url, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv ) {
-   this->file_url = strdup(url);
+void block_url_set::init( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, bool staging ) {
+   this->file_id = file_id;
+   this->gateway_id = gateway_id;
+   this->volume_id = volume_id;
    this->start_id = start;
    this->end_id = end;
    this->file_version = file_version;
    this->block_versions = CALLOC_LIST( int64_t, end - start );
    memcpy( this->block_versions, bv, sizeof(int64_t) * (end - start) );
    
-   dbprintf( "%s.%" PRId64 "[%" PRIu64 "-%" PRIu64 "]\n", url, file_version, start, end );
+   this->staging = staging;
+   
+   dbprintf( "%" PRIu64 "/%" PRIu64 ": %" PRIu64 ".%" PRId64 "[%" PRIu64 "-%" PRIu64 "] (staging = %d)\n", volume_id, gateway_id, file_id, file_version, start, end, staging );
 }
 
 
 // destructor
 block_url_set::~block_url_set() {
-   if( this->file_url ) {
-      free( this->file_url );
-      this->file_url = NULL;
-   }
    if( this->block_versions ) {
       free( this->block_versions );
       this->block_versions = NULL;
@@ -77,50 +65,25 @@ int64_t block_url_set::lookup_version( uint64_t block_id ) {
 }
 
 
-// make a URL from a block ID and a few flags
-char* block_url_set::make_url( int64_t file_version, uint64_t block_id ) {
-   return fs_entry_generic_url( this->file_url, file_version, block_id, this->lookup_version( block_id ) );
-}
-
-
-// compare two urls through normalization
-bool block_url_set::url_equals( char const* other_file_url ) {
-   int rc = 0;
-   char* my_url = md_normalize_url( this->file_url, &rc );
-   if( rc != 0 )
-      return false;     // error
-
-   char* other_url = md_normalize_url( other_file_url, &rc );
-   if( rc != 0 ) {
-      free( my_url );
-      return false;     // error
-   }
-
-   //printf("'%s' =?= '%s'\n", my_url, other_url);
-   bool equ = (strcmp( my_url, other_url ) == 0);
-
-   free( my_url );
-   free( other_url );
-
-   return equ;
-}
-
-
 // is a block id in a range?
 bool block_url_set::in_range( uint64_t block_id ) { return (block_id >= this->start_id && block_id < this->end_id); }
 
 // is a block appendable?
-bool block_url_set::is_appendable( char const* url, uint64_t block_id ) { return block_id == this->end_id && this->url_equals( url ); }
+bool block_url_set::is_appendable( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, bool staging ) {
+   return this->volume_id == vid && this->gateway_id == gid && this->file_id == fid && block_id == this->end_id && this->staging == staging;
+}
 
 // is a block prependable?
-bool block_url_set::is_prependable( char const* url, uint64_t block_id ) { return block_id + 1 == this->start_id && this->url_equals( url ); }
+bool block_url_set::is_prependable( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id,  bool staging ) {
+   return this->volume_id == vid && this->gateway_id == gid && this->file_id == fid && block_id + 1 == this->start_id && this->staging == staging;
+}
 
 // size of a block range
 uint64_t block_url_set::size() { return this->end_id - this->start_id; }
 
 // append a block to a set
-bool block_url_set::append( char const* url, uint64_t block_id, int64_t block_version ) {
-   if( this->is_appendable( url, block_id ) ) {
+bool block_url_set::append( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, bool staging ) {
+   if( this->is_appendable( vid, gid, fid, block_id, staging ) ) {
       this->end_id++;
       int64_t* tmp = (int64_t*)realloc( this->block_versions, (this->end_id - this->start_id) * sizeof(int64_t) );
       tmp[ this->end_id - 1 - this->start_id ] = block_version;
@@ -135,8 +98,8 @@ bool block_url_set::append( char const* url, uint64_t block_id, int64_t block_ve
 
 
 // prepend a block to a set
-bool block_url_set::prepend( char const* url, uint64_t block_id, int64_t block_version ) {
-   if( this->is_prependable( url, block_id ) ) {
+bool block_url_set::prepend( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, bool staging ) {
+   if( this->is_prependable( vid, gid, fid, block_id, staging ) ) {
       // shift everyone down
       this->start_id--;
       int64_t* tmp = CALLOC_LIST( int64_t, this->end_id - this->start_id );
@@ -165,7 +128,7 @@ bool block_url_set::truncate( uint64_t new_end_id ) {
    }
 }
 
-
+/*
 // grow one unit to the left
 bool block_url_set::grow_left( int64_t version ) {
    if( this->start_id == 0 )
@@ -196,7 +159,7 @@ bool block_url_set::grow_right( int64_t version ) {
    free( this->block_versions );
    this->block_versions = tmp;
 
-   if( URL_LOCAL( this->file_url ) ) {
+   if( this->local ) {
       tmp = CALLOC_LIST( int64_t, this->end_id - this->start_id );
 
       memcpy( tmp, this->block_versions, sizeof(int64_t) * (this->end_id - this->start_id - 1) );
@@ -208,7 +171,7 @@ bool block_url_set::grow_right( int64_t version ) {
 
    return true;
 }
-
+*/
 
 // shrink one unit from the left
 bool block_url_set::shrink_left() {
@@ -244,7 +207,7 @@ bool block_url_set::shrink_right() {
 
 // split to the left
 block_url_set* block_url_set::split_left( uint64_t block_id ) {
-   block_url_set* ret = new block_url_set( this->file_url, this->file_version, this->start_id, block_id, this->block_versions );
+   block_url_set* ret = new block_url_set( this->volume_id, this->gateway_id, this->file_id, this->file_version, this->start_id, block_id, this->block_versions, this->staging );
    return ret;
 }
 
@@ -252,7 +215,7 @@ block_url_set* block_url_set::split_left( uint64_t block_id ) {
 // split to the right
 block_url_set* block_url_set::split_right( uint64_t block_id ) {
    int64_t off = (int64_t)(block_id) - this->start_id + 1;
-   block_url_set* ret = new block_url_set( this->file_url, this->file_version, block_id+1, this->end_id, this->block_versions + off );
+   block_url_set* ret = new block_url_set( this->volume_id, this->gateway_id, this->file_id, this->file_version, block_id+1, this->end_id, this->block_versions + off, this->staging );
    return ret;
 }
 
@@ -261,24 +224,16 @@ block_url_set* block_url_set::split_right( uint64_t block_id ) {
 void block_url_set::as_protobuf( struct fs_core* core, Serialization::BlockURLSetMsg* busmsg ) {
    busmsg->set_start_id( this->start_id );
    busmsg->set_end_id( this->end_id );
-
-   // if the URL is local, convert it to public
-   if( URL_LOCAL( this->file_url ) ) {
-      char* public_url = fs_entry_local_to_public( core, this->file_url );
-      busmsg->set_file_url( public_url );
-      free( public_url );
-   }
-   else {
-      busmsg->set_file_url( this->file_url );
-   }
-
+   busmsg->set_volume_id( this->volume_id );
+   busmsg->set_file_id( this->file_id );
+   busmsg->set_gateway_id( this->gateway_id );
    for( uint64_t id = this->start_id; id < this->end_id; id++ ) {
       busmsg->add_block_versions( this->block_versions[id - this->start_id] );
    }
 }
 
 // default constructor
-file_manifest::file_manifest( struct fs_core* core ) {
+file_manifest::file_manifest() {
    this->lastmod.tv_sec = 1;
    this->lastmod.tv_nsec = 1;
    this->file_version = -1;
@@ -287,7 +242,7 @@ file_manifest::file_manifest( struct fs_core* core ) {
 }
 
 // default constructor
-file_manifest::file_manifest( struct fs_core* core, int64_t version ) {
+file_manifest::file_manifest( int64_t version ) {
    this->file_version = version;
    this->stale = true;
    this->lastmod.tv_sec = 1;
@@ -311,7 +266,6 @@ file_manifest::file_manifest( file_manifest& fm ) {
    for( block_map::iterator itr = fm.block_urls.begin(); itr != block_urls.end(); itr++ ) {
       this->block_urls[ itr->first ] = itr->second;
    }
-   
    this->lastmod = fm.lastmod;
    this->file_version = fm.file_version;
    this->stale = fm.stale;
@@ -322,7 +276,6 @@ file_manifest::file_manifest( file_manifest* fm ) {
    for( block_map::iterator itr = fm->block_urls.begin(); itr != fm->block_urls.end(); itr++ ) {
       this->block_urls[ itr->first ] = itr->second;
    }
-   
    this->lastmod = fm->lastmod;
    this->file_version = fm->file_version;
    this->stale = fm->stale;
@@ -343,9 +296,8 @@ void file_manifest::set_file_version(struct fs_core* core, int64_t version) {
 
    for( block_map::iterator itr = this->block_urls.begin(); itr != this->block_urls.end(); itr++ ) {
       // if local and not staging...
-      if( URL_LOCAL( itr->second->file_url ) && strstr( itr->second->file_url, core->conf->staging_root ) == NULL ) {
+      if( core->gateway == itr->second->gateway_id && !itr->second->staging )
          itr->second->file_version = version;
-      }
    }
 
    this->file_version = version;
@@ -354,8 +306,8 @@ void file_manifest::set_file_version(struct fs_core* core, int64_t version) {
    return;
 }
 
-// look up a block URL, given a block number
-char* file_manifest::get_block_url( int64_t file_version, uint64_t block_id ) {
+// generate a block URL
+char* file_manifest::get_block_url( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id ) {
    pthread_rwlock_rdlock( &this->manifest_lock );
    block_map::iterator itr = this->find_block_set( block_id );
    if( itr == this->block_urls.end() ) {
@@ -364,8 +316,50 @@ char* file_manifest::get_block_url( int64_t file_version, uint64_t block_id ) {
       return NULL;
    }
    else {
+      int64_t block_version = itr->second->lookup_version( block_id );
+      bool staging = itr->second->staging;
+      bool local = itr->second->gateway_id == core->gateway;
+      
       pthread_rwlock_unlock( &this->manifest_lock );
-      return itr->second->make_url( file_version, block_id );
+
+      if( block_version == 0 ) {
+         // no such block
+         return NULL;
+      }
+
+      if( local && !staging ) {
+         return fs_entry_local_block_url( core, fent->file_id, fent->version, block_id, block_version );
+      }
+      else if( local && staging ) {
+         return fs_entry_local_staging_block_url( core, fent->file_id, fent->version, block_id, block_version );
+      }
+      else {
+         // not hosted here
+         if( fs_path != NULL )
+            return fs_entry_remote_block_url( core, itr->second->gateway_id, fs_path, fent->version, block_id, block_version );
+         else {
+            errorf("%s", "No fs_path given\n");
+            return NULL;
+         }
+      }
+   }
+   return NULL;
+}
+
+uint64_t file_manifest::get_block_host( struct fs_core* core, uint64_t block_id ) {
+   pthread_rwlock_rdlock( &this->manifest_lock );
+   block_map::iterator itr = this->find_block_set( block_id );
+   if( itr == this->block_urls.end() ) {
+      // not found
+      pthread_rwlock_unlock( &this->manifest_lock );
+      return 0;
+   }
+   else {
+      uint64_t ret = itr->second->gateway_id;
+      
+      pthread_rwlock_unlock( &this->manifest_lock );
+
+      return ret;
    }
 }
 
@@ -424,17 +418,39 @@ int64_t* file_manifest::get_block_versions( uint64_t start_id, uint64_t end_id )
 }
 
 
-// is a block local?
-bool file_manifest::is_block_local( uint64_t block_id ) {
-   bool ret = false;
+// is a block stored in local storage
+int file_manifest::is_block_local( struct fs_core* core, uint64_t block_id ) {
+   int ret = 0;
    
    pthread_rwlock_rdlock( &this->manifest_lock );
 
    block_map::iterator itr = this->find_block_set( block_id );
    if( itr != this->block_urls.end() ) {
-      ret = URL_LOCAL( itr->second->file_url );
+      ret = (core->gateway == itr->second->gateway_id || itr->second->staging ? 1 : 0);
+   }
+   else {
+      ret = -ENOENT;
    }
    
+   pthread_rwlock_unlock( &this->manifest_lock );
+   return ret;
+}
+
+
+// is a block stored in the staging directory?
+int file_manifest::is_block_staging( uint64_t block_id ) {
+   bool ret = 0;
+
+   pthread_rwlock_rdlock( &this->manifest_lock );
+
+   block_map::iterator itr = this->find_block_set( block_id );
+   if( itr != this->block_urls.end() ) {
+      ret = (itr->second->staging ? 1 : 0);
+   }
+   else {
+      ret = -ENOENT;
+   }
+
    pthread_rwlock_unlock( &this->manifest_lock );
    return ret;
 }
@@ -476,7 +492,12 @@ bool file_manifest::merge_adjacent( uint64_t block_id ) {
    block_url_set* right = itr2->second;
 
    //printf("// merge %s.%lld to %s.%lld?\n", left->file_url, left->file_version, right->file_url, right->file_version );
-   if( left->url_equals( right->file_url ) && left->file_version == right->file_version ) {
+   if( left->gateway_id == right->gateway_id &&
+       left->volume_id == right->volume_id &&
+       left->file_id == right->file_id &&
+       left->file_version == right->file_version &&
+       left->staging == right->staging ) {
+      
       // these block URL sets refer to blocks on the same host.  merge them
       int64_t *bvec = CALLOC_LIST( int64_t, right->end_id - left->start_id );
 
@@ -492,7 +513,7 @@ bool file_manifest::merge_adjacent( uint64_t block_id ) {
          i++;
       }
       
-      block_url_set* merged = new block_url_set( left->file_url, left->file_version, left->start_id, right->end_id, bvec );
+      block_url_set* merged = new block_url_set( left->volume_id, left->gateway_id, left->file_id, left->file_version, left->start_id, right->end_id, bvec, left->staging );
 
       free( bvec );
 
@@ -512,7 +533,7 @@ bool file_manifest::merge_adjacent( uint64_t block_id ) {
 }
 
 // get the range information from a block ID
-int file_manifest::get_range( uint64_t block_id, uint64_t* start_id, uint64_t* end_id, char** url ) {
+int file_manifest::get_range( uint64_t block_id, uint64_t* start_id, uint64_t* end_id, uint64_t* gateway_id ) {
    block_map::iterator itr = this->find_block_set( block_id );
    if( itr == this->block_urls.end() ) {
       return -ENOENT;
@@ -524,24 +545,26 @@ int file_manifest::get_range( uint64_t block_id, uint64_t* start_id, uint64_t* e
    if( end_id )
       *end_id = itr->second->end_id;
 
-   if( url )
-      *url = strdup( itr->second->file_url );
+   if( gateway_id )
+      *gateway_id = itr->second->gateway_id;
 
    return 0;
 }
 
 
 // insert a URL into a file manifest
-bool file_manifest::put_block_url( char const* file_url, int64_t fv, uint64_t block_id, int64_t block_version ) {
+// fent must be at least read-locked
+int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool staging ) {
    pthread_rwlock_wrlock( &this->manifest_lock );
 
-   if( fv != this->file_version ) {
-      // version mismatch
+   // sanity check
+   if( fent->version != this->file_version ) {
+      errorf("Invalid version (%" PRId64 " != %" PRId64 ")\n", this->file_version, fent->version );
       pthread_rwlock_unlock( &this->manifest_lock );
-      return false;
+      return -EINVAL;
    }
 
-   //dbprintf( "put %s.%lld/%llu.%lld\n", file_url, fv, block_id, block_version);
+   //dbprintf( "put %s.%lld/%llu.%lld\n", file_url, this->file_version, block_id, block_version);
 
    block_map::iterator itr = this->find_block_set( block_id );
    int64_t bvec[] = { block_version };
@@ -555,10 +578,10 @@ bool file_manifest::put_block_url( char const* file_url, int64_t fv, uint64_t bl
          block_map::reverse_iterator last_range_itr = this->block_urls.rbegin();
          block_url_set* last_range = last_range_itr->second;
 
-         bool rc = last_range->append( file_url, block_id, block_version );
+         bool rc = last_range->append( core->volume, gateway, fent->file_id, block_id, block_version, staging );
          if( !rc ) {
             //printf("// could not append to the last block range, so we'll need to make a new one\n");
-            this->block_urls[ block_id ] = new block_url_set( file_url, fv, block_id, block_id + 1, bvec );
+            this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
          }
          else {
             //printf("// successfully appended this block to the last range!\n");
@@ -566,7 +589,7 @@ bool file_manifest::put_block_url( char const* file_url, int64_t fv, uint64_t bl
       }
       else {
          //printf("// we don't have any blocks yet.  put the first one\n");
-         this->block_urls[ block_id ] = new block_url_set( file_url, fv, block_id, block_id + 1, bvec );
+         this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
       }
    }
 
@@ -578,7 +601,12 @@ bool file_manifest::put_block_url( char const* file_url, int64_t fv, uint64_t bl
 
       //printf("// some block set (start_id = %lld) contains this block.\n", existing_block_id);
 
-      if( existing->url_equals( file_url ) ) {
+      if( existing->volume_id == core->volume &&
+          existing->gateway_id == gateway &&
+          existing->file_id == fent->file_id &&
+          existing->file_version == fent->version &&
+          existing->staging == staging ) {
+         
          //printf("// this block URL belongs to this url set.\n");
          //printf("// insert the version\n");
          existing->block_versions[ block_id - existing->start_id ] = block_version;
@@ -598,19 +626,19 @@ bool file_manifest::put_block_url( char const* file_url, int64_t fv, uint64_t bl
                itr--;
                block_url_set* prev_existing = itr->second;
 
-               bool rc = prev_existing->append( file_url, block_id, block_version );
+               bool rc = prev_existing->append( core->volume, gateway, fent->file_id, block_id, block_version, staging );
                if( !rc ) {
                   //printf("// could not append to the previous block URL set.\n");
                   //printf("// Make a new block URL set and insert it (replacing existing)\n");
                   
-                  block_url_set* bus = new block_url_set( file_url, fv, block_id, block_id + 1, bvec );
+                  block_url_set* bus = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
                   this->block_urls[ block_id ] = bus;
                }
             }
             else {
                //printf("// need to insert this block URL set at the beginning (replacing existing)\n");
                
-               block_url_set* bus = new block_url_set( file_url, fv, block_id, block_id + 1, bvec );
+               block_url_set* bus = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
                this->block_urls[ block_id ] = bus;
                
                need_clear = false;
@@ -643,13 +671,13 @@ bool file_manifest::put_block_url( char const* file_url, int64_t fv, uint64_t bl
                block_url_set* next_existing = itr->second;
 
                if( itr != this->block_urls.end() ) {
-                  rc = next_existing->prepend( file_url, block_id, block_version );
+                  rc = next_existing->prepend( core->volume, gateway, fent->file_id, block_id, block_version, staging );
                }
 
                if( !rc ) {
                   //printf("// could not prepend to the next block URL set.\n");
                   //printf("// Make a new block URL set and insert it.\n");
-                  this->block_urls[ block_id ] = new block_url_set( file_url, fv, block_id, block_id + 1, bvec );
+                  this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
                }
                else {
                   //printf("// adjust and shift next_existing into its new place.\n");
@@ -660,7 +688,7 @@ bool file_manifest::put_block_url( char const* file_url, int64_t fv, uint64_t bl
             }
             else {
                //printf("// need to insert this block URL at the end\n");
-               this->block_urls[ block_id ] = new block_url_set( file_url, fv, block_id, block_id + 1, bvec );
+               this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
             }
 
             //printf("// will need to shrink existing\n");
@@ -679,7 +707,7 @@ bool file_manifest::put_block_url( char const* file_url, int64_t fv, uint64_t bl
             //printf("// split up this URL set\n");
             block_url_set* left = existing->split_left( block_id );
             block_url_set* right = existing->split_right( block_id );
-            block_url_set* given = new block_url_set( file_url, fv, block_id, block_id + 1, bvec );
+            block_url_set* given = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
 
             delete existing;
 
@@ -696,7 +724,7 @@ bool file_manifest::put_block_url( char const* file_url, int64_t fv, uint64_t bl
    dbprintf( "Manifest is now:\n%s\n", data);
    free( data );
 
-   return true;
+   return 0;
 }
 
 
@@ -734,13 +762,18 @@ char* file_manifest::serialize_str() {
 
    pthread_rwlock_rdlock( &this->manifest_lock );
    for( block_map::iterator itr = this->block_urls.begin(); itr != this->block_urls.end(); itr++ ) {
-      sts << "[" << (long)itr->second->start_id << "-" << (long)itr->second->end_id << "] ";
+      sts << "IDs: [" << (long)itr->second->start_id << "-" << (long)itr->second->end_id << "] versions=[";
 
-      for( uint64_t i = 0; i < itr->second->end_id - itr->second->start_id; i++ ) {
-         sts << itr->second->block_versions[i] << " ";
+      for( uint64_t i = 0; i < itr->second->end_id - itr->second->start_id - 1; i++ ) {
+         sts << itr->second->block_versions[i] << ",";
       }
+      
+      sts << itr->second->block_versions[itr->second->end_id - itr->second->start_id - 1] << "] ";
 
-      sts << string(itr->second->file_url) << "." << itr->second->file_version << "\n";
+      char buf[50];
+      sprintf(buf, "%" PRIX64, itr->second->file_id);
+      
+      sts << string("volume=") << itr->second->volume_id << " gateway=" << itr->second->gateway_id << " file_id=" << buf << " version=" << itr->second->file_version << "\n";
    }
    pthread_rwlock_unlock( &this->manifest_lock );
    return strdup( sts.str().c_str() );
@@ -756,16 +789,19 @@ void file_manifest::as_protobuf( struct fs_core* core, struct fs_entry* fent, Se
       itr->second->as_protobuf( core, busmsg );
    }
 
+   mmsg->set_volume_id( core->volume );
+   mmsg->set_gateway_id( core->gateway );
+   mmsg->set_file_id( fent->file_id );
    mmsg->set_file_version( fent->version );
    mmsg->set_size( fent->size );
    mmsg->set_mtime_sec( fent->mtime_sec );
    mmsg->set_mtime_nsec( fent->mtime_nsec );
 
-   struct timespec ts;
-   fent->manifest->get_lastmod( &ts );
+   //struct timespec ts;
+   //fent->manifest->get_lastmod( &ts );
 
-   mmsg->set_manifest_mtime_sec( ts.tv_sec );
-   mmsg->set_manifest_mtime_nsec( ts.tv_nsec );
+   //mmsg->set_manifest_mtime_sec( ts.tv_sec );
+   //mmsg->set_manifest_mtime_nsec( ts.tv_nsec );
 
    pthread_rwlock_unlock( &this->manifest_lock );
 }
@@ -792,6 +828,14 @@ void file_manifest::reload( struct fs_core* core, struct fs_entry* fent, Seriali
 // and must lock fent first
 int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, file_manifest* m, Serialization::ManifestMsg& mmsg ) {
 
+   int rc = 0;
+
+   // validate
+   if( mmsg.volume_id() != core->volume ) {
+      errorf("Invalid Manifest: manifest belongs to Volume %" PRIu64 ", but this Gateway is attached to %" PRIu64 "\n", mmsg.volume_id(), core->volume );
+      return -EINVAL;
+   }
+   
    for( int i = 0; i < mmsg.block_url_set_size(); i++ ) {
       Serialization::BlockURLSetMsg busmsg = mmsg.block_url_set( i );
 
@@ -801,48 +845,47 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
          block_versions[j] = busmsg.block_versions(j);
       }
 
-      char* file_url = (char*)busmsg.file_url().c_str();
-      bool fr = false;
+      uint64_t volume_id = busmsg.volume_id();
+      uint64_t gateway_id = busmsg.gateway_id();
+      uint64_t file_id = busmsg.file_id();
 
-      // are these blocks hosted here?
-      if( md_is_locally_hosted( core->conf, busmsg.file_url().c_str() ) ) {
-         if( URL_LOCAL( fent->url ) ) {
-            // this file is locally hosted
-            file_url = fs_entry_local_file_url( core, GET_FS_PATH( core->conf->data_root, fent->url ) );
-         }
-         else {
-            // this file is remotely-hosted, but there are blocks that are local.  They must be staging.
-            char* fs_path = md_fs_path_from_url( busmsg.file_url().c_str() );
-            file_url = fs_entry_local_staging_file_url( core, fs_path );
-            free( fs_path );
-         }
-
-         fr = true;
+      // sanity check
+      if( volume_id != core->volume ) {
+         errorf("Invalid Manifest: block range belongs to Volume %" PRIu64 ", but this Gateway is attached to %" PRIu64 "\n", mmsg.volume_id(), core->volume );
+         rc = -EINVAL;
+         free( block_versions );
+         break;
       }
 
-      m->block_urls[ busmsg.start_id() ] = new block_url_set( file_url, mmsg.file_version(), busmsg.start_id(), busmsg.end_id(), block_versions );
-      free( block_versions );
+      if( file_id != fent->file_id ) {
+         errorf("Invalid Manifest: block range belongs to File /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ", but this file is /%" PRIu64 "/%" PRIu64 "/%" PRIX64 "\n", volume_id, gateway_id, file_id, volume_id, gateway_id, file_id );
+         rc = -EINVAL;
+         free( block_versions );
+         break;
+      }
 
-      if( fr )
-         free( file_url );
+      bool staging = (core->gateway == gateway_id && !FS_ENTRY_LOCAL( core, fent ));
+
+      m->block_urls[ busmsg.start_id() ] = new block_url_set( volume_id, gateway_id, file_id, mmsg.file_version(), busmsg.start_id(), busmsg.end_id(), block_versions, staging );
+
+      free( block_versions );
    }
 
-   //m->lastmod_realtime = currentTimeSeconds();
+   if( rc == 0 )
+      m->file_version = mmsg.file_version();
 
-   m->file_version = mmsg.file_version();
-
-   return 0;
+   return rc;
 }
 
-// put a single block URL into a manifest
-int fs_entry_put_block_url( struct fs_entry* fent, char const* file_url, int64_t file_version, uint64_t block_id, int64_t block_version ) {
-   fent->manifest->put_block_url( file_url, file_version, block_id, block_version );
-   // update mtime and size
-   struct timespec ts;
-   clock_gettime( CLOCK_REALTIME, &ts );
-
-   fent->mtime_sec = ts.tv_sec;
-   fent->mtime_nsec = ts.tv_nsec;
-   fent->manifest->set_lastmod( &ts );
+// put a single block into a manifest
+// fent must be write-locked
+int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool staging ) {
+   
+   int rc = fent->manifest->put_block( core, gateway_id, fent, block_id, block_version, staging );
+   if( rc != 0 ) {
+      errorf("manifest::put_block(%" PRId64 ".%" PRIu64 ", staging=%d) rc = %d\n", block_id, block_version, staging, rc );
+      return rc;
+   }
+   
    return 0;
 }

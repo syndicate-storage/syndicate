@@ -29,9 +29,9 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
 
    END_TIMING_DATA( ts, ts2, "replication" );
    
-   int rc = ms_client_sync_update( core->ms, fh->volume, fh->path );
+   int rc = ms_client_sync_update( core->ms, fh->volume, fh->file_id );
    if( rc != 0 ) {
-      errorf("ms_client_sync_update(%s) rc = %d\n", fh->path, rc );
+      errorf("ms_client_sync_update(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", core->gateway, fh->volume, fh->file_id, rc );
 
       // ENOENT allowed because the update thread could have preempted us
       if( rc == -ENOENT )
@@ -52,7 +52,7 @@ int fs_entry_fdatasync( struct fs_core* core, struct fs_file_handle* fh ) {
 // is a fent stale for reads?
 bool fs_entry_is_read_stale( struct fs_entry* fent ) {
    if( fent->read_stale ) {
-      dbprintf("read_stale = %d\n", fent->read_stale);
+      dbprintf("%s is read stale\n", fent->name);
       return true;
    }
 
@@ -64,6 +64,43 @@ bool fs_entry_is_read_stale( struct fs_entry* fent ) {
       return true;
    else
       return false;
+}
+
+
+// determine whether or not an entry is stale, given the current entry's modtime and the time of the query
+// fent must be at least read-locked!
+static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec, struct timespec* query_time ) {
+   
+   // a directory is stale if the mtime has changed from what it was before (if the new mtime is known).
+   if( fent->ftype == FTYPE_DIR ) {
+      if(fent->mtime_sec != mtime_sec || fent->mtime_nsec != mtime_nsec) {
+         dbprintf("modtimes of directory %s have changed\n", fent->name);
+         return true;
+      }
+      else {
+         dbprintf("modtimes of directory %s have NOT changed\n", fent->name);
+         return false;
+      }
+   }
+
+   if( FS_ENTRY_LOCAL( core, fent ) ) {
+      // local means that only this UG controls its ctime and mtime (which both increase monotonically)
+      if( fent->ctime_sec > query_time->tv_sec || (fent->ctime_sec == query_time->tv_sec && fent->ctime_nsec > query_time->tv_nsec) ) {
+         // fent is local and was created after the query time.  Don't reload; we have potentially uncommitted changes.
+         return false;
+      }
+      if( fent->mtime_sec > query_time->tv_sec || (fent->mtime_sec == query_time->tv_sec && fent->mtime_nsec > query_time->tv_nsec) ) {
+         // fent is local and was modified after the query time.  Don't reload; we have potentially uncommitted changes
+         return false;
+      }
+
+      return true;
+   }
+   else {
+      // remote means that some other UG controls its mtime and ctime.
+      // trust the values on the MS over our own.
+      return true;
+   }
 }
 
 // make a fent read stale
@@ -83,15 +120,19 @@ bool fs_entry_is_manifest_stale( struct fs_entry* fent ) {
 }
 
 
-// reload a write-locked fs_entry with an md_entry's data, marking the manifest as stale if it is a file
-int fs_entry_reload( struct fs_core* core, struct fs_entry* fent, struct md_entry* ent ) {
-
-   if( fent->url ) {
-      free( fent->url );
-   }
-
-   fent->url = strdup( ent->url );
+static int fs_entry_mark_read_fresh( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* fent ) {
    
+   clock_gettime( CLOCK_REALTIME, &fent->refresh_time );
+   fent->read_stale = false;
+
+   consistency_cls->reloaded.push_back( fent->file_id );
+   
+   return 0;
+}
+
+// reload a write-locked fs_entry with an md_entry's data, marking the manifest as stale if it is a file
+int fs_entry_reload( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* fent, struct md_entry* ent ) {
+
    if( fent->manifest ) {
       // the manifest is only stale 
       if( fent->mtime_sec != ent->mtime_sec || fent->mtime_nsec != ent->mtime_nsec )
@@ -102,6 +143,7 @@ int fs_entry_reload( struct fs_core* core, struct fs_entry* fent, struct md_entr
    }
    
    fent->owner = ent->owner;
+   fent->coordinator = ent->coordinator;
    fent->mode = ent->mode;
    fent->size = ent->size;
    fent->mtime_sec = ent->mtime_sec;
@@ -111,17 +153,19 @@ int fs_entry_reload( struct fs_core* core, struct fs_entry* fent, struct md_entr
    fent->volume = ent->volume;
    fent->max_read_freshness = ent->max_read_freshness;
    fent->max_write_freshness = ent->max_write_freshness;
-
-   // TODO: this version could have changed...need to reversion data and manifest as well
+   fent->file_id = ent->file_id;
    fent->version = ent->version;
    
-   clock_gettime( CLOCK_REALTIME, &fent->refresh_time );
-   fent->read_stale = false;
-
-   dbprintf("reloaded %s\n", ent->url );
+   if( fent->name )
+      free( fent->name );
+      
+   fent->name = strdup( ent->name );
+   
+   fs_entry_mark_read_fresh( consistency_cls, fent );
+   dbprintf("reloaded %s up to (%" PRIu64 ".%d)\n", ent->name, ent->mtime_sec, ent->mtime_nsec );
    return 0;
 }
-
+   
 
 // given an MS directory record and a directory, attach it
 static struct fs_entry* fs_entry_attach_ms_directory( struct fs_core* core, struct fs_entry* parent, struct md_entry* ms_record ) {
@@ -131,7 +175,7 @@ static struct fs_entry* fs_entry_attach_ms_directory( struct fs_core* core, stru
    // Make sure this is a directory we're attaching
    if( new_dir->ftype != FTYPE_DIR ) {
       // invalid MS data
-      errorf("not a directory: %s\n", ms_record->path );
+      errorf("not a directory: /%" PRIu64 "/%" PRIu64 "/%" PRIX64 "\n", ms_record->volume, ms_record->coordinator, ms_record->file_id );
       fs_entry_destroy( new_dir, true );
       free( new_dir );
       return NULL;
@@ -160,12 +204,11 @@ static struct fs_entry* fs_entry_attach_ms_file( struct fs_core* core, struct fs
    if( ( new_file->ftype != FTYPE_FILE ) &&
 	  ( new_file->ftype != FTYPE_FIFO )) {
       // invalid MS data
-      errorf("not a file: %s\n", ms_record->path );
+      errorf("not a file: /%" PRIu64 "/%" PRIu64 "/%" PRIX64 "\n", ms_record->volume, ms_record->coordinator, ms_record->file_id );
       fs_entry_destroy( new_file, true );
       return NULL;
    }
    else {
-      // add the new directory; make a note to load up its children on the next opendir()
       fs_entry_attach_lowlevel( core, parent, new_file );
 
       clock_gettime( CLOCK_REALTIME, &new_file->refresh_time );
@@ -188,686 +231,809 @@ static struct fs_entry* fs_entry_add_ms_record( struct fs_core* core, struct fs_
    }
 }
 
-// given a parent fs_entry, a child fs_entry, and an MS record, reload it
-static int fs_entry_replace( struct fs_core* core, struct fs_entry* parent, struct fs_entry** childptr, struct md_entry* ent ) {
-   struct fs_entry* child = *childptr;
+// split up a path into its components.
+static size_t fs_entry_split_path( char const* _path, vector<char*>* ret_vec ) {
+   char* path = NULL;
 
-   // If the MS record is a directory but the existing entry is not, then remove it and replace it with one
-   if( ent->type == MD_ENTRY_DIR && child->ftype != FTYPE_DIR ) {
-      // preserve the parent's momdtimes (since unlinking the child will change them, but we want to keep them consistent with the MS since the parent was reloaded from its records).
-      uint64_t parent_mtime_sec = parent->mtime_sec;
-      uint32_t parent_mtime_nsec = parent->mtime_nsec;
-
-      fs_entry_unlock( child );     // needed for fs_entry_detach_lowlevel
-
-      int drc = fs_entry_detach_lowlevel( core, parent, child, true );
-      if( drc != 0 ) {
-         // can't proceed for some reason; we can't make the FS consistent since this entry could not be removed
-         errorf("fs_entry_detach_lowlevel(%s) rc = %d\n", ent->path, drc );
-         return -EUCLEAN;
-      }
-      else {
-         // removed; add in a directory built from the MS record
-         struct fs_entry* new_dir = fs_entry_attach_ms_directory( core, parent, ent );
-         if( new_dir == NULL ) {
-            // failed to attach
-            // invalid MS data
-            errorf("fs_entry_attach_ms_directory(%s): failed\n", ent->path );
-            return -EREMOTEIO;
-         }
-         else {
-            // successfully replaced!
-            *childptr = new_dir;
-
-            // restore the modtime
-            parent->mtime_sec = parent_mtime_sec;
-            parent->mtime_nsec = parent_mtime_nsec;
-
-            // keep this locked, since the child was locked
-            fs_entry_wlock( *childptr );
-         }
-      }
+   // if path ends in /, make it end in .
+   if( _path[strlen(_path)-1] == '/' ) {
+      path = CALLOC_LIST( char, strlen(_path) + 2 );
+      strcpy( path, _path );
+      strcat( path, "." );
    }
-   // If the MS record is a file but the existing entry is not, then remove it and its children and replace it with a file
-   else if( ent->type == MD_ENTRY_FILE &&
-	   child->ftype != FTYPE_FILE && 
-	   child->ftype != FTYPE_FIFO) {
-      int rc = fs_unlink_children( core, child->children, true );
-      if( rc != 0 ) {
-         // failed to remove children; FS will be inconsistent
-         errorf("fs_destroy_children(%s) rc = %d\n", ent->path, rc );
-         return -EUCLEAN;
-      }
-      else {
-         // preserve the parent's momdtimes (since unlinking the child will change them, but we want to keep them consistent with the MS since the parent was reloaded from its records).
-         uint64_t parent_mtime_sec = parent->mtime_sec;
-         uint32_t parent_mtime_nsec = parent->mtime_nsec;
+   else {
+      path = strdup( _path );
+   }
 
-         // removed children; detach this directory
-         rc = fs_entry_detach_lowlevel( core, parent, child, true );
-         if( rc != 0 ) {
-            // failed to detach; FS will be inconsistent
-            errorf("fs_entry_detach_lowlevel(%s) rc = %d\n", ent->path, rc );
-            return -EUCLEAN;
-         }
-         else {
-            // removed; add the new file
-            struct fs_entry* new_file = fs_entry_attach_ms_file( core, parent, ent );
-            if( new_file == NULL ) {
-               // failed to attach
-               // invalid MS data
-               errorf("fs_entry_attach_ms_file(%s): failed\n", ent->path );
-               return -EREMOTEIO;
-            }
-            else {
-               // successfully replaced!
-               *childptr = new_file;
+   // tokenize and count up
+   char* tmp = NULL;
+   char* path_tok = path;
+   char* tok = NULL;
+   
+   ret_vec->push_back( strdup("/") );
 
-               // restore the modtime
-               parent->mtime_sec = parent_mtime_sec;
-               parent->mtime_nsec = parent_mtime_nsec;
+   do {
+      tok = strtok_r( path_tok, "/", &tmp );
+      path_tok = NULL;
 
-               // keep this locked, since the child was locked
-               fs_entry_wlock( *childptr );
-            }
+      if( tok == NULL )
+         break;
+
+      ret_vec->push_back( strdup(tok) );
+   } while( tok != NULL );
+
+   free( path );
+   
+   return ret_vec->size();
+}
+
+static int fs_entry_make_listing_cls( struct fs_entry_listing_cls* cls, char const* parent_path, char const* name, bool exists, bool stale ) {
+   memset( cls, 0, sizeof(struct ms_listing) );
+   cls->fs_path = md_fullpath( parent_path, name, NULL );
+   cls->stale = stale;
+   cls->exists = exists;
+
+   return 0;
+}
+
+static void fs_entry_free_listing_cls( void* _cls ) {
+   struct fs_entry_listing_cls* cls = (struct fs_entry_listing_cls*)_cls;
+   
+   if( cls->fs_path ) {
+      free( cls->fs_path );
+   }
+   ms_client_free_listing( &cls->listing );
+   free( cls );
+}
+
+
+static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
+   // build up the ms_path as we traverse our cached path
+   path_t* ms_path = (path_t*)ms_path_cls;
+
+   struct fs_entry_listing_cls* cls = CALLOC_LIST( struct fs_entry_listing_cls, 1 );
+
+   if( ms_path->size() == 0 ) {
+      // root
+      fs_entry_make_listing_cls( cls, "/", "", true, fs_entry_is_read_stale( fent ) );
+   }
+   else {
+      // not root
+      struct fs_entry_listing_cls* parent_cls = (struct fs_entry_listing_cls*)ms_path->at( ms_path->size() - 1 ).cls;
+      
+      fs_entry_make_listing_cls( cls, parent_cls->fs_path, fent->name, true, fs_entry_is_read_stale( fent ) );
+   }
+                              
+   struct ms_path_ent path_ent;
+   ms_client_make_path_ent( &path_ent, fent->file_id, fent->version, fent->mtime_sec, fent->mtime_nsec, fent->name, cls );
+   
+   ms_path->push_back( path_ent );
+   
+   dbprintf("in path: %s.%" PRId64 " (%ld.%d) (%s)\n", fent->name, fent->version, fent->mtime_sec, fent->mtime_nsec, cls->fs_path);
+   return 0;
+}
+
+
+static int fs_entry_build_ms_path( struct fs_core* core, uint64_t volume, char const* path, path_t* ms_path ) {
+   // build up an ms_path from the actual path
+   vector<char*> path_parts;
+   size_t path_len = fs_entry_split_path( path, &path_parts );
+   int rc = 0;
+
+   // populate ms_path with our cached entries
+   struct fs_entry* fent = fs_entry_resolve_path_cls( core, path, core->ms->owner_id, volume, false, &rc, fs_entry_ms_path_append, ms_path );
+   if( fent == NULL ) {
+      if( rc == -ENOENT ) {
+         rc = 0;
+         
+         // populate the remaining path elements with empties.
+         // We're trying to read directory listings that we don't know about (yet).
+         size_t ms_path_len = ms_path->size();
+         for( unsigned int i = ms_path_len; i < path_len; i++ ) {
+
+            struct fs_entry_listing_cls* cls = CALLOC_LIST( struct fs_entry_listing_cls, 1 );
+            struct fs_entry_listing_cls* parent_cls = (struct fs_entry_listing_cls*)ms_path->at( ms_path->size() - 1 ).cls;
+
+            dbprintf("add %s to %s (%s)\n", path_parts[i], parent_cls->fs_path, ms_path->at( ms_path->size() - 1 ).name );
+            
+            fs_entry_make_listing_cls( cls, parent_cls->fs_path, path_parts[i], false, false );
+
+            struct ms_path_ent path_ent;
+
+            ms_client_make_path_ent( &path_ent, 0, -1, -1, -1, path_parts[i], cls );
+
+            ms_path->push_back( path_ent );
          }
       }
    }
    else {
-      // types match.  Reload.
-      fs_entry_reload( core, child, ent );
+      fs_entry_unlock( fent );
+   }
+
+   // free memory
+   for( unsigned int i = 0; i < path_parts.size(); i++ ) {
+      free( path_parts[i] );
+   }
+   
+   dbprintf("ms_path size = %lu\n", ms_path->size() );
+   for( unsigned int i = 0; i < ms_path->size(); i++ ) {
+      struct fs_entry_listing_cls* cls = (struct fs_entry_listing_cls*)ms_path->at(i).cls;
+      dbprintf("ms_path[%d] = %s, stale = %d, exists = %d\n", i, ms_path->at(i).name, cls->stale, cls->exists );
+   }
+
+   return rc;
+}
+
+static int fs_entry_zip_path_listing( path_t* ms_path, ms_response_t* ms_response ) {
+   // merge an ms_response's into the path, via our path cls.
+   for( unsigned int i = 0; i < ms_path->size(); i++ ) {
+
+      struct fs_entry_listing_cls* listing_cls = (struct fs_entry_listing_cls*)ms_path->at(i).cls;
+      
+      // find the response for this path entry 
+      ms_response_t::iterator itr = ms_response->find( ms_path->at(i).file_id );
+      if( itr == ms_response->end() ) {
+         // no response
+         memset( &listing_cls->listing, 0, sizeof(struct ms_listing) );
+      }
+      else {
+         listing_cls->listing = itr->second;
+      }
    }
 
    return 0;
 }
 
 
-// determine whether or not to reload an entry, given the current entry (can be NULL) and the time of the query
-// fent must be at least read-locked!
-static bool can_reload( struct fs_entry* fent, struct md_entry* next_ent, struct timespec* query_time ) {
-   // reload a directory if the mtime has changed from what it was before (if the new mtime is known).  Reload if the mtime is not known.
-   if( fent->ftype == FTYPE_DIR ) {
-      if( next_ent != NULL ) {
-         if(fent->mtime_sec != next_ent->mtime_sec || fent->mtime_nsec != next_ent->mtime_nsec) {
-            return true;
-         }
-         else {
-            return false;
-         }
-      }
-      else {
-         return true;
-      }
+static int fs_entry_reload_file( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* fent, struct ms_listing* listing ) {
+   // sanity check
+   if( fent->ftype != FTYPE_FILE )
+      return -EINVAL;
+
+   if( listing->type != ms::ms_entry::MS_ENTRY_TYPE_FILE )
+      return -EINVAL;
+
+   if( listing->entries->size() != 1 ) {
+      errorf("Got back %lu listings\n", listing->entries->size() );
+      return -EINVAL;
+   }
+
+   // reload this file's metadata?
+   struct md_entry* ent = &(*listing->entries)[0];
+   if( ent->name == NULL ) {
+      // nothing to load
+      errorf("No data for '%s'\n", fent->name );
+      return -ENODATA;
    }
    
-   if( URL_LOCAL( fent->url ) ) {
-      // local means that only this UG controls its ctime and mtime (which both increase linearly)
-      if( fent->ctime_sec > query_time->tv_sec || (fent->ctime_sec == query_time->tv_sec && fent->ctime_nsec > query_time->tv_nsec) ) {
-         // fent is local and was created after the query time.  Don't reload; we have potentially uncommitted changes.
-         return false;
-      }
-      if( fent->mtime_sec > query_time->tv_sec || (fent->mtime_sec == query_time->tv_sec && fent->mtime_nsec > query_time->tv_nsec) ) {
-         // fent is local and was modified after the query time.  Don't reload; we have potentially uncommitted changes
-         return false;
-      }
-
-      return true;
+   if( !fs_entry_should_reload( consistency_cls->core, fent, ent->mtime_sec, ent->mtime_nsec, &consistency_cls->query_time ) ) {
+      // nothing to do
+      fs_entry_mark_read_fresh( consistency_cls, fent );
+      return 0;
    }
-   else {
-      // remote means that some other UG controls its mtime and ctime.
-      // trust the values on the MS over our own.
-      return true;
-   }
+   return fs_entry_reload( consistency_cls, fent, ent );
 }
 
 
-// Refresh zero or more metadata entries in the given path.
-// If the entry at the end of the path exists and is fresh, then do nothing.
-// If the entry does not exist, or is stale, then re-synchronize every directory along the path, as well as the entry.
-// If a directory along the path does not exist on the MS, then all descendents are unlinked (including the entry).
-// If the entry exists on the MS, then its metadata is resync'ed.
-// If the entry exists on the MS and is a directory, then its children are resync'ed as well.
-//
-// path must be normalized and absolute.
-// return 0 on success
-// return -EINVAL if the path is not absolute or not normalized
-// return -EREMOTEIO if the MS returned invalid data
-// return -EUCLEAN if we could not make the FS consistent with the MS
-int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const* _path ) {
-   if( _path[0] != '/' )
+static int fs_entry_clear_child( fs_entry_set* children, unsigned int i ) {
+   if( i >= children->size() )
       return -EINVAL;
 
+   children->at(i).first = 0;
+   children->at(i).second = NULL;
+   return 0;
+}
+
+
+static struct fs_entry* fs_entry_remove_child( fs_entry_set* children, char const* name ) {
+   struct fs_entry* ret = fs_entry_set_find_name( children, name );
+   if( ret != NULL )
+      fs_entry_set_remove( children, name );
+   
+   return ret;
+}
+
+
+static int fs_entry_populate_directory( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* dent, struct md_entry** ms_ents, size_t ms_ents_size ) {
    int rc = 0;
    
-   int prc = 0;
-   char* path = md_normalize_url( _path, &prc );
+   // add the new entries (they will be the non-NULL entries)
+   for( unsigned int i = 0; i < ms_ents_size; i++ ) {
 
-   if( prc != 0 ) {
-      // could not process
-      return -EINVAL;
-   }
+      struct md_entry* ms_ent = ms_ents[i];
+      if( ms_ent == NULL ) {
+         // already processed
+         continue;
+      }
 
-   struct timespec ts, ts2, lastmod;
-
-   memset( &lastmod, 0, sizeof(lastmod) );
-
-   BEGIN_TIMING_DATA( ts );
-   
-   bool needs_refresh = true;
-   
-   // if this entry exists locally, and it is not read stale, then don't refresh
-   dbprintf("check '%s'\n", path );
-
-   struct fs_entry* child = fs_entry_resolve_path( core, path, SYS_USER, volume, false, &rc );
-   if( child != NULL ) {
-      needs_refresh = fs_entry_is_read_stale( child );
-      fs_entry_unlock( child );
-   }
-
-   if( !needs_refresh ) {
-      // good for now
-      dbprintf("fresh; no need to synchronize '%s'\n", path );
-      free( path );
-
-      END_TIMING_DATA( ts, ts2, "MS revalidate" );
-      return 0;
-   }
-
-
-   dbprintf("begin revalidate '%s'\n", path );
-   
-   // see if there are any stale entries
-   // make the strtok'ed path end in /, so we get the last token
-   char* path_strtok = CALLOC_LIST( char, strlen(path) + 2 );
-   strcpy( path_strtok, path );
-   if( strcmp( path_strtok, "/" ) != 0 )
-      strcat( path_strtok, "/" );
-   
-   char* tmp = NULL;
-   char* next = NULL;
-   char* path_ptr = path_strtok;
-
-   struct fs_entry* cur_ent = core->root;
-   struct fs_entry* next_ent = NULL;
-
-   fs_entry_rlock( cur_ent );
-
-   while( true ) {
-
-      // if this entry is stale, we'll refresh
-      if( fs_entry_is_read_stale( cur_ent ) ) {
-         needs_refresh = true;
-         dbprintf("stale: '%s'\n", cur_ent->name );
+      if( ms_ent->file_id == dent->file_id ) {
+         // skip
+         continue;
       }
       
-      next = strtok_r( path_ptr, "/", &tmp );
-      path_ptr = NULL;
-
-      if( next == NULL ) {
-         // out of path
-         fs_entry_unlock( cur_ent );
-         break;
-      }
-      
-      // find the next entry
-      next_ent = fs_entry_set_find_name( cur_ent->children, next );
-      if( next_ent == NULL ) {
-         // not found; check the MS 
-         needs_refresh = true;
-         dbprintf("not found locally: '%s'\n", next );
-         fs_entry_unlock( cur_ent );
+      dbprintf("Attach: %s --> %s\n", dent->name, ms_ent->name );
+      struct fs_entry* child = fs_entry_add_ms_record( consistency_cls->core, dent, ms_ent );
+      if( child == NULL ) {
+         errorf("fs_entry_add_ms_record(%" PRIX64 " (%s) to %" PRIX64 " (%s)) returned NULL\n", ms_ent->file_id, ms_ent->name, dent->file_id, dent->name );
+         rc = -EUCLEAN;
          break;
       }
       else {
-         if( cur_ent->mtime_sec > lastmod.tv_sec || (cur_ent->mtime_sec == lastmod.tv_sec && cur_ent->mtime_nsec > lastmod.tv_nsec) ) {
-            lastmod.tv_sec = cur_ent->mtime_sec;
-            lastmod.tv_nsec = cur_ent->mtime_nsec;
+         if( child->ftype == FTYPE_DIR ) {
+            // directories are always stale on load, since we don't know if they have children yet
+            fs_entry_mark_read_stale( child );
          }
-         
-         fs_entry_rlock( next_ent );
-         fs_entry_unlock( cur_ent );
-         cur_ent = next_ent;
+      }
+   }
+
+   return rc;
+}
+
+
+// reload a directory.
+// reload its base information, plus all of its immediate children that are stale and don't have pending updates.
+// remove children no longer present in the listing.
+// dent must be WRITE-LOCKED
+static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* dent, struct ms_listing* listing ) {
+   // sanity check
+   if( dent->ftype != FTYPE_DIR )
+      return -EINVAL;
+
+   if( listing->type != ms::ms_entry::MS_ENTRY_TYPE_DIR )
+      return -EINVAL;
+   
+   vector<struct md_entry>* ms_ents_vec = listing->entries;
+
+   // convert to list, so we don't have to modify the listing
+   size_t ms_ents_size = ms_ents_vec->size();
+   struct md_entry** ms_ents = CALLOC_LIST( struct md_entry*, ms_ents_size );
+   
+   for( unsigned int i = 0; i < ms_ents_size; i++ ) {
+      // skip freed ones
+      if( ms_ents_vec->at(i).name == NULL )
+         continue;
+      
+      ms_ents[i] = &(*ms_ents_vec)[i];
+      dbprintf("listing: %s.%" PRId64 " (%ld.%d)\n", ms_ents[i]->name, ms_ents[i]->version, ms_ents[i]->mtime_sec, ms_ents[i]->mtime_nsec);
+   }
+
+   // reload this entry
+   bool reloaded_dent = false;
+   for( unsigned int i = 0; i < ms_ents_size; i++ ) {
+      struct md_entry* ms_ent = ms_ents[i];
+      
+      if( ms_ent == NULL )
+         continue;
+
+      if( ms_ent->file_id == dent->file_id ) {
+         if( fs_entry_should_reload( consistency_cls->core, dent, ms_ent->mtime_sec, ms_ent->mtime_nsec, &consistency_cls->query_time ) ) {
+            dbprintf("reload '%s' ('%s')\n", dent->name, ms_ent->name );
+            fs_entry_reload( consistency_cls, dent, ms_ent );
+         }
+         else {
+            dbprintf("do not reload '%s', since we don't have to.\n", dent->name );
+            fs_entry_mark_read_fresh( consistency_cls, dent );
+         }
+
+         reloaded_dent = true;
+         ms_ents[i] = NULL;
+         break;
+      }
+   }
+
+   if( !reloaded_dent ) {
+      // this listing indicates that the entry does not exist.  Remove all children.
+      errorf("Directory entry /%" PRIu64 "/%" PRIX64 " not found in listing\n", dent->volume, dent->file_id );
+
+      int rc = fs_unlink_children( consistency_cls->core, dent->children, true );
+      if( rc != 0 ) {
+         errorf("fs_unlink_children(%" PRIX64 " (%s)) rc = %d\n", dent->file_id, dent->name, rc );
+         rc = -EIO;
+      }
+
+      // delete this entry
+      fs_entry_destroy( dent, false );
+
+      consistency_cls->err = -EUNATCH;    // this is guaranteed not to be returned by fs_entry_resolve_path_cls, and indicates "detachment"
+
+      free( ms_ents );
+      
+      return -ENOENT;
+   }
+
+   // build a new child list for this directory
+   fs_entry_set* children_keep = new fs_entry_set();
+   fs_entry_set* children = dent->children;
+   
+   // keep . and ..
+   struct fs_entry* dot = fs_entry_remove_child( children, "." );
+   struct fs_entry* dotdot = fs_entry_remove_child( children, ".." );
+
+   fs_entry_set_insert( children_keep, ".", dot );
+   fs_entry_set_insert( children_keep, "..", dotdot );
+   
+
+   // find the keepers listed in ms_ents
+   for( unsigned int i = 0; i < ms_ents_size; i++ ) {
+      
+      struct md_entry* ms_ent = ms_ents[i];
+      bool reloaded_child = false;
+      
+      if( ms_ent == NULL )
+         continue;
+      
+      for( unsigned int j = 0; j < children->size(); j++ ) {
+         struct fs_entry* child = children->at(j).second;
+
+         if( child == NULL )
+            continue;
+
+         if( ms_ent->file_id == child->file_id ) {
+
+            // do the reload (if we need to)
+            if( fs_entry_should_reload( consistency_cls->core, child, ms_ent->mtime_sec, ms_ent->mtime_nsec, &consistency_cls->query_time ) ) {
+               // keep directories marked as read-stale if they were before, since we want to later refresh their children if they were modified
+               bool read_stale = false;
+
+               if( child->ftype == FTYPE_DIR )
+                  read_stale = fs_entry_is_read_stale( child );
+               
+               fs_entry_reload( consistency_cls, child, ms_ent );
+
+               if( child->ftype == FTYPE_DIR )
+                  child->read_stale = read_stale;
+            }
+            
+            // keep this child
+            fs_entry_set_insert( children_keep, child->name, child );
+            fs_entry_clear_child( children, j );
+
+            reloaded_child = true;
+            break;
+         }
+      }
+
+      if( reloaded_child ) {
+         // clear this entry from ms_ents
+         ms_ents[i] = NULL;
       }
    }
    
-   free( path_strtok );
+   // new child set, filled with the keepers
+   dent->children = children_keep;
 
-   char* dir_path = NULL;
+   // add the new entries from the MS to dent
+   int rc = fs_entry_populate_directory( consistency_cls, dent, ms_ents, ms_ents_size );
+
+   if( rc != 0 ) {
+      // error processing
+      errorf("fs_entry_populate_directory(%" PRIX64 " (%s)) rc = %d\n", dent->file_id, dent->name, rc );
+   }
    
-   if( needs_refresh ) {
-      // refresh every path entry in this prefix
-      vector<struct md_entry> path_dirs;
-      vector<struct md_entry> path_ents;
+   // the old children now contains all fs_entry structures not found in the listing.
+   // delete them.
+   rc = fs_unlink_children( consistency_cls->core, children, true );
+   if( rc != 0 ) {
+      errorf("fs_unlink_children(%" PRIX64 " (%s)) rc = %d\n", dent->file_id, dent->name, rc );
+   }
 
-      // get the current time.  Any entries created after this will be said to be newer than the entries returned by the query
-      struct timespec query_time;
-      clock_gettime( CLOCK_REALTIME, &query_time );
+   delete children;
+   free( ms_ents );
+   
+   dent->read_stale = false;
 
-      // perform the query
-      int ms_error = 0;
-      rc = ms_client_resolve_path( core->ms, volume, path, &path_dirs, &path_ents, &lastmod, &ms_error );
+   return rc;
+}
 
-      if( rc != 0 ) {
-         // failed to read
-         errorf("ms_client_resolve_path(%s) rc = %d\n", path, rc );
-         dbprintf("end revalidate %s\n", path );
 
-         END_TIMING_DATA( ts, ts2, "MS revalidate failed" );
-         
-         free( path );
+static int fs_entry_path_find( path_t* ms_path, uint64_t file_id ) {
+
+   // find this directory along the path
+   unsigned int i = 0;
+   for( i = 0; i < ms_path->size(); i++ ) {
+      if( ms_path->at(i).file_id == file_id ) {
+         break;
+      }
+   }
+
+   if( i == ms_path->size() ) {
+      // not found, so nothing to do
+      return -ENOENT;
+   }
+
+   return (signed)i;
+}
+
+
+static int fs_entry_load_listing( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* fent, struct ms_listing* listing ) {
+
+   int rc = 0;
+   
+   if( listing->status == MS_LISTING_NOCHANGE ) {
+      // nothing to do
+      return 0;
+   }
+
+   else if( listing->status == MS_LISTING_NONE ) {
+      // nothing on the MS
+      consistency_cls->err = -ENOENT;
+      return -ENOENT;
+   }
+
+   else if( listing->status == MS_LISTING_NEW ) {
+      // verify the types are still the same
+      int rc = 0;
+      if( fent->ftype == FTYPE_DIR && listing->type == ms::ms_entry::MS_ENTRY_TYPE_DIR ) {
+         // reload this directory
+         rc = fs_entry_reload_directory( consistency_cls, fent, listing );
+      }
+      else if( fent->ftype == FTYPE_FILE && listing->type == ms::ms_entry::MS_ENTRY_TYPE_FILE ) {
+         // reload this file
+         rc = fs_entry_reload_file( consistency_cls, fent, listing );
+      }
+      else {
+         // something's wrong
+         errorf("Incompatible types: fs_entry is %d, but ms_entry is %d\n", fent->ftype, listing->type );
+         rc = -EINVAL;
+      }
+
+      consistency_cls->err = rc;
+   }
+   else {
+      errorf("Unknown listing status %d\n", listing->status );
+      rc = -EINVAL;
+   }
+
+   return rc;
+}
+
+
+static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
+   // reload this particular directory
+   struct fs_entry_consistency_cls* consistency_cls = (struct fs_entry_consistency_cls*)cls;
+   
+   path_t* ms_path = consistency_cls->path;
+
+   // find this directory along the path
+   int i = fs_entry_path_find( ms_path, fent->file_id );
+   
+   if( i == -ENOENT ) {
+      // not found, so nothing to do
+      return 0;
+   }
+
+   // this directory's listing from the MS....
+   struct fs_entry_listing_cls* listing_cls = (struct fs_entry_listing_cls*)ms_path->at(i).cls;
+   struct ms_listing* listing = &listing_cls->listing;
+
+   int rc = fs_entry_load_listing( consistency_cls, fent, listing );
+   if( rc != 0 ) {
+      errorf("fs_entry_load_listing(%s) rc = %d\n", fent->name, rc );
+      consistency_cls->err = rc;
+   }
+   return rc;
+}
+
+
+// get listings and merge them into a path
+static int fs_entry_download_path_listings( struct fs_core* core, uint64_t volume, path_t* to_download ) {
+
+   ms_response_t listings;
+   
+   // fetch the stale entries
+   int rc = ms_client_get_listings( core->ms, volume, to_download, &listings );
+   if( rc != 0 ) {
+      errorf("ms_client_get_listings() rc = %d\n", rc );
+      return rc;
+   }
+
+   // pair the responses with the path
+   rc = fs_entry_zip_path_listing( to_download, &listings );
+   if( rc != 0 ) {
+      errorf("fs_entry_zip_path_listing() rc = %d\n", rc );
+      ms_client_free_response( &listings );
+      return -EUCLEAN;
+   }
+
+   return 0;
+}
+
+
+// given the list of path entries that exist locally, reload them
+static int fs_entry_reload_local_path_entries( struct fs_entry_consistency_cls* cls, uint64_t volume, path_t* ms_path ) {
+
+   struct fs_core* core = cls->core;
+
+   int rc = fs_entry_download_path_listings( core, volume, ms_path );
+   if( rc != 0 ) {
+      errorf("fs_entry_download_path_listings() rc = %d\n", rc );
+      return rc;
+   }
+
+   // what is the path to the deepest entry that is present on this UG?
+   struct fs_entry_listing_cls* listing_cls = (struct fs_entry_listing_cls*)ms_path->at( ms_path->size() - 1 ).cls;
+   char* deepest_path = listing_cls->fs_path;
+
+   // re-integrate them with the FS
+   cls->path = ms_path;
+
+   struct fs_entry* fent = fs_entry_resolve_path_cls( core, deepest_path, core->ms->owner_id, core->volume, true, &rc, fs_entry_reload_entry, cls );
+   if( fent == NULL ) {
+      if( cls->err != 0 ) {
+         errorf("fs_entry_reload_entry(%s) rc = %d\n", deepest_path, rc );
+         return cls->err;
+      }
+      else {
+         // some other problem
+         errorf("fs_entry_resolve_path_cls(%s) rc = %d\n", deepest_path, rc );
          return rc;
       }
+   }
+   
+   fs_entry_unlock( fent );
 
-      // got entries
-      // refresh the directories, marking them as stale so a subsequent opendir() will cause their children to be refreshed
+   if( cls->err != 0 ) {
+      rc = cls->err;
+      errorf("fs_entry_reload_entry(%s) rc = %d\n", deepest_path, rc);
+   }
+   
 
-      bool valid = true;            // MS data is valid
-      bool consistent = true;       // We can make the FS consistent with the MS
+   return rc;
+}
 
-      
-      dir_path = md_dirname( path, NULL );
-      cur_ent = core->root;
-      next_ent = NULL;
 
-      // make the strtok'ed path end in /, so we get the last token
-      path_strtok = CALLOC_LIST( char, strlen(dir_path) + 2 );
-      strcpy( path_strtok, dir_path );
-      if( strcmp(path_strtok, "/") != 0 )
-         strcat( path_strtok, "/" );
+// callback to iteratively build up a path from non-locally-hosted entries
+// fent must be write-locked
+static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls ) {
+   
+   struct fs_entry_consistency_cls* consistency_cls = (struct fs_entry_consistency_cls*)cls;
+   struct fs_core* core = consistency_cls->core;
+   int rc = 0;
+   path_t* ms_path = consistency_cls->path;
 
-      tmp = NULL;
-      next = path_strtok + 1;
-      path_ptr = path_strtok;
+   // find this directory along the path
+   int idx = fs_entry_path_find( ms_path, fent->file_id );
 
-      // walk down the path entries and merge in changes 
-      unsigned int i = 0;
-
-      // the first entry from the MS will be the root entry.
-      // see if it needs refreshing
-      fs_entry_wlock( cur_ent );
-      
-      if( path_dirs.size() > 0 ) {
-         // NOTE: only mtime inequality is required for directories for them to be considered different!
-         if( fs_entry_is_read_stale( cur_ent ) ||
-            (cur_ent->mtime_sec != path_dirs[i].mtime_sec || cur_ent->mtime_nsec != path_dirs[i].mtime_nsec) || 
-             cur_ent->size != path_dirs[i].size ) {
-            
-            // MS's / directory is newer.  Merge in the changes
-            dbprintf("reload %s\n", cur_ent->name );
-            fs_entry_reload( core, cur_ent, &path_dirs[i] );
-         }
-         i++;
-      }
-
-      dbprintf("path_ptr = '%s'\n", path_ptr);
-      
-      // process the remaining directories in the given path
-      while( i <= path_dirs.size() ) {
-         next = strtok_r( path_ptr, "/", &tmp );
-         path_ptr = NULL;
-
-         if( next == NULL ) {
-            dbprintf("%s", "out of path\n");
-            // out of path; should only happen if i == path_dirs.size()
-            if( i != path_dirs.size() ) {
-               // MS gave invalid data
-               errorf("ms_client_get_entries: invalid MS data for %s\n", dir_path );
-               valid = false;
-            }
-
-            // leave cur_ent locked
-            break;
-         }
-
-         // make sure this MS entry is a directory
-         if( path_dirs[i].type != MD_ENTRY_DIR ) {
-            errorf("not a directory: %s\n", path_dirs[i].path );
-            valid = false;
-            break;
-         }
-         
-         dbprintf("find '%s' in %s\n", next, cur_ent->name);
-
-         // find the next (directory) entry and merge in the changes
-         next_ent = fs_entry_set_find_name( cur_ent->children, next );
-         if( next_ent == NULL ) {
-            dbprintf("attach %s to %s\n", path_dirs[i].path, cur_ent->name );
-            struct fs_entry* new_dir = fs_entry_attach_ms_directory( core, cur_ent, &path_dirs[i] );
-            if( new_dir == NULL ) {
-               // failed to attach.
-               // invalid MS data
-               errorf("ms_client_get_entries: not a directory: %s\n", path_dirs[i].path );
-               valid = false;
-
-               fs_entry_unlock( cur_ent );
-               break;
-            }
-            
-            // next directory
-            fs_entry_wlock( new_dir );
-            fs_entry_unlock( cur_ent );
-            cur_ent = new_dir;
-         }
-         else {
-            // Found locally.
-            fs_entry_wlock( next_ent );
-
-            dbprintf("fresh-check '%s'\n", next_ent->name );
-            
-            // Only reload if it existed before our query
-            if( can_reload( next_ent, &path_dirs[i], &query_time ) ) {
-               dbprintf("reload/replace '%s'\n", next_ent->name );
-               int rrc = fs_entry_replace( core, cur_ent, &next_ent, &path_dirs[i] );
-               if( rrc == -EUCLEAN ) {
-                  // could not replace and keep the FS consistent with the MS
-                  consistent = false;
-                  fs_entry_unlock( cur_ent );
-                  break;
-               }
-               else if( rrc == -EREMOTEIO ) {
-                  // MS data is unusable
-                  valid = false;
-                  fs_entry_unlock( cur_ent );
-                  break;
-               }
-            }
-
-            // move on to the next directory
-            fs_entry_unlock( cur_ent );
-            cur_ent = next_ent;
-         }
-
-         i++;     // next entry
-      }
-
-      // cur_ent refers to the deepest ancestor directory that exists in the MS on the path to the requested entry
-      dbprintf("cur_ent->name = '%s'\n", cur_ent->name );
-      
-      rc = 0;
-
-      if( valid && consistent ) {
-         // did we process every directory from / to the parent?
-         if( next != NULL && strlen(next) > 0 ) {
-            dbprintf("did not process '%s'\n", next );
-            // we did not.
-            // The FS trees beneath the last processed directory in the parent path cannot be viewed.  Remove them all locally
-            int drc = fs_unlink_children( core, cur_ent->children, true );
-            if( drc != 0 ) {
-               // problem--FS will not be consistent with the MS
-               char* dp = fs_entry_dir_path_from_public_url( core, cur_ent->url );
-               errorf("fs_unlink_children(%s) rc = %d\n", dp, drc );
-               free( dp );
-
-               consistent = false;
-            }
-         }
-      }
-
-      free( path_strtok );
-
-      if( rc == 0 && valid && consistent ) {
-         // resolve the child
-         char* child_name = md_basename( path, NULL );
-         dbprintf("child_name = '%s'\n", child_name );
-         
-         struct md_entry* child_md = NULL;
-         struct fs_entry* child_fent = NULL;
-
-         // is the child a directory?
-         bool is_dir = false;
-
-         // is this the root directory?
-         bool is_root = false;
-         if( strcmp(child_name, "/") == 0 )
-            is_root = true;
-
-         // does the child exist in the metadata?
-         if( path_ents.size() > 0 ) {
-
-            for( unsigned int i = 0; i < path_ents.size(); i++ ) {
-               if( strcmp( path_ents[i].path, "." ) == 0 ) {
-                  is_dir = true;
-                  child_md = &path_ents[i];
-                  break;
-               }
-
-               char name[NAME_MAX+1];
-               memset(name, 0, NAME_MAX+1);
-               md_basename( path_ents[i].path, name );
-               
-               if( strcmp( name, child_name ) == 0 ) {
-                  // not a directory, but it exists
-                  child_md = &path_ents[i];
-                  break;
-               }
-            }
-         }
-
-         // find the entry in the local metadata, creating/reloading it if necessary, and then lock it.
-         child_fent = fs_entry_set_find_name( cur_ent->children, child_name );
-         free( child_name );
-         
-         if( child_fent == NULL ) {
-            if( !is_root ) {
-               // the child does not exist locally.
-               if( child_md != NULL ) {
-                  // but it does exist in the metadata.  Attach it
-
-                  if( is_dir ) {
-                     // if the child is the directory, the metadata path will be ".".
-                     // change it to the actual path
-                     char* old_path = child_md->path;
-                     child_md->path = path;
-                     dbprintf("fs_entry_add_ms_record(parent=%s, child=%s)\n", cur_ent->name, child_md->path);
-                     child_fent = fs_entry_add_ms_record( core, cur_ent, child_md );
-                     child_md->path = old_path;
-                  }
-                  else {
-                     dbprintf("fs_entry_add_ms_record(parent=%s, child=%s)\n", cur_ent->name, child_md->path);
-                     child_fent = fs_entry_add_ms_record( core, cur_ent, child_md );
-                  }
-
-                  if( child_fent == NULL ) {
-                     // could not add
-                     errorf("fs_entry_add_ms_record(%s) failed\n", child_md->path );
-                     consistent = false;
-                  }
-                  else {
-                     fs_entry_wlock( child_fent );
-                  }
-               }
-               else {
-                  // child does not exist in the metadata either.
-                  rc = 0;
-               }
-            }
-            else {
-               // / is its own parent
-               child_fent = cur_ent;
-            }
-         }
-         else {
-            // the child exists locally.
-            fs_entry_wlock( child_fent );
-            
-            if( child_md != NULL ) {
-               // the child exists in the metadata as well.  Replace it.
-               int rrc = 0;
-               if( is_dir ) {
-                  // if the child is a directory, the metadata path will be "."
-                  // change it to the actual path
-                  char* old_path = child_md->path;
-                  child_md->path = path;
-
-                  dbprintf("fs_entry_replace(%s)\n", child_md->path );
-                  rrc = fs_entry_replace( core, cur_ent, &child_fent, child_md );
-
-                  child_md->path = old_path;
-               }
-               else {
-                  dbprintf("fs_entry_replace(%s)\n", child_md->path );
-                  rrc = fs_entry_replace( core, cur_ent, &child_fent, child_md );
-               }
-               
-               if( rrc != 0 ) {
-                  // failed
-                  if( rrc == -EREMOTEIO ) {
-                     valid = false;
-                     rc = rrc;
-                  }
-                  if( rrc == -EUCLEAN ) {
-                     consistent = false;
-                     rc = rrc;
-                  }
-               }
-               else {
-                  // success!
-                  rc = 0;
-               }
-            }
-            else {
-               // but no metadata on the MS.  Destroy this child and all of its children if it was created before the query
-               if( can_reload( child_fent, NULL, &query_time ) ) {
-                  
-                  // if this is a directory, remove the children first
-                  if( child_fent->ftype == FTYPE_DIR ) {
-                     dbprintf("fs_unlink_children(%s)\n", path );
-                     int drc = fs_unlink_children( core, child_fent->children, true );
-                     if( drc != 0 ) {
-                        // problem--FS will not be consistent with the MS
-                        errorf("fs_unlink_children(%s) rc = %d\n", path, drc );
-                        consistent = false;
-                     }
-                  }
-
-                  fs_entry_unlock( child_fent );
-
-                  dbprintf("fs_entry_detach_lowlevel(parent=%s, child=%s)\n", cur_ent->name, path );
-                  int drc = fs_entry_detach_lowlevel( core, cur_ent, child_fent, true );
-                  if( drc != 0 ) {
-                     // problem--FS will not be consistent with the MS
-                     errorf("fs_entry_detach_lowlevel(%s) rc = %d\n", path, drc );
-                     consistent = false;
-                  }
-
-                  child_fent = NULL;
-               }
-               else {
-                  rc = 0;
-               }
-            }
-         }
-
-         // child_fent should be NULL, or write-locked
-         
-         // if this child is a directory (and we've had no problems reloading it), reload the children
-         if( rc == 0 && consistent && valid && child_fent != NULL && path_ents.size() > 0 && is_dir ) {
-            
-            // process the child entries given back by the MS--merge them into the FS.
-            // IF this entry was a file, there will be only one entry in path_ents.
-            // Otherwise, there will be at least one.
-            for( unsigned int i = 0; i < path_ents.size(); i++ ) {
-               
-               if( is_dir && strcmp( path_ents[i].path, "." ) == 0 ) {
-                  // already reloaded
-                  continue;
-               }
-
-               char name[NAME_MAX+1];
-               memset(name, 0, NAME_MAX+1 );
-               md_basename( path_ents[i].path, name );
-               
-               // does this entry exist?
-               struct fs_entry* fent = fs_entry_set_find_name( child_fent->children, name );
-               if( fent == NULL ) {
-                  // this entry does not exist locally.  Create it.
-                  dbprintf("fs_entry_add_ms_record(parent=%s, child=%s)\n", child_fent->name, path_ents[i].path );
-                  
-                  fent = fs_entry_add_ms_record( core, child_fent, &path_ents[i] );
-                  if( fent == NULL ) {
-                     // could not add
-                     errorf("fs_entry_add_ms_record(%s) failed\n", path_ents[i].path );
-                     consistent = false;
-                     break;
-                  }
-               }
-               else {
-                  fs_entry_wlock( fent );
-                  
-                  // this entry exists locally.
-                  // Was it created before the query time?
-                  if( fent->ctime_sec < query_time.tv_sec || (fent->ctime_sec == query_time.tv_sec && fent->ctime_sec < query_time.tv_nsec) ) {
-                     // replace; the MS record is newer
-                     dbprintf("reload/replace %s\n", path_ents[i].path );
-                     int rrc = fs_entry_replace( core, child_fent, &fent, &path_ents[i] );
-                     if( rrc != 0 ) {
-                        // failed to replace
-                        if( rrc == -EREMOTEIO ) {
-                           valid = false;
-                           rc = rrc;
-                        }
-
-                        if( rrc == -EUCLEAN ) {
-                           consistent = false;
-                           rc = rrc;
-                        }
-                     }
-                     else {
-                        rc = 0;
-                     }
-                  }
-                  else {
-                     // created after query; it's fresh
-                     rc = 0;
-                  }
-                  
-                  fs_entry_unlock( fent );
-               }
-            }
-
-            // this entry is no longer stale
-            if( child_fent != NULL ) {
-               child_fent->read_stale = false;
-               clock_gettime( CLOCK_REALTIME, &child_fent->refresh_time );
-            }
-         }
-         // only unlock if this is NOT the root directory
-         // (otherwise, child_ent and cur_ent are the same)
-         if( child_fent != NULL && !is_root )
-            fs_entry_unlock( child_fent );
-
-      }
-
-      fs_entry_unlock( cur_ent );
-      
-      // free memory
-      for( unsigned int i = 0; i < path_dirs.size(); i++ ) {
-         md_entry_free( &path_dirs[i] );
-      }
-
-      for( unsigned int i = 0; i < path_ents.size(); i++ ) {
-         md_entry_free( &path_ents[i] );
-      }
-
-      if( rc == 0 && (!valid || !consistent) ) {
-         // we had some problems
-         if( !valid )
-            rc = -EREMOTEIO;
-         if( !consistent )
-            rc = -EUCLEAN;
-      }
+   if( idx == -ENOENT ) {
+      // not found, so nothing to do
+      dbprintf( "Not found: %s\n", fent->name);
+      return 0;
    }
 
-   dbprintf("end revalidate '%s'\n", path );
-   
-   free( path );
-   free( dir_path );
+   if( (unsigned)idx == ms_path->size() - 1 ) {
+      // last entry; nothing to do
+      dbprintf("End of path: %s\n", fent->name);
+      return 0;
+   }
 
-   END_TIMING_DATA( ts, ts2, "MS revalidate" );
+   // find the child along the path we're supposed to reload
+   const struct ms_path_ent& child_path_ent = ms_path->at( idx + 1 );
+   const struct ms_path_ent& fent_path_ent = ms_path->at( idx );
+   
+   struct fs_entry_listing_cls* fent_listing_cls = (struct fs_entry_listing_cls*)fent_path_ent.cls;
+   struct fs_entry_listing_cls* child_listing_cls = (struct fs_entry_listing_cls*)child_path_ent.cls;
+   
+   // do we need to download the child ent?
+   if( child_listing_cls != NULL && child_listing_cls->exists ) {
+      // nothing to do
+      dbprintf("Child %s exists\n", child_listing_cls->fs_path);
+      return 0;
+   }
+   
+   // if fent is not a directory, then we're done
+   if( fent->ftype != FTYPE_DIR ) {
+      // nothing to do
+      dbprintf("%s is not a directory\n", fent->name );
+      return 0;
+   }
+   
+   // the child should exist in fent's children
+   struct fs_entry* child_fent = fs_entry_set_find_name( fent->children, child_path_ent.name );
+   if( child_fent == NULL ) {
+      errorf("%s: no such child '%s'\n", fent->name, child_path_ent.name );
+      consistency_cls->err = -ENOENT;
+      return -ENOENT;
+   }
+   
+   fs_entry_wlock( child_fent );
+   
+   // if the child is not a directory, then we're done
+   if( child_fent->ftype != FTYPE_DIR ) {
+      dbprintf("child %s is not a directory\n", child_fent->name );
+      fs_entry_unlock( child_fent );
+      return 0;
+   }
+   
+   // get the child's children.  Populate child_path_ent with the child's data
+   // (it will be unpopulated, since before the call to fs_entry_revalidate_path
+   // it did not exist locally).
+   path_t child_path;
+   
+   struct fs_entry_listing_cls* child_listing_cls2 = CALLOC_LIST( struct fs_entry_listing_cls, 1 );
+   fs_entry_make_listing_cls( child_listing_cls2, fent_listing_cls->fs_path, child_fent->name, true, false );
+
+   struct ms_path_ent child_path_ent2;
+   ms_client_make_path_ent( &child_path_ent2, child_fent->file_id, child_fent->version, child_fent->mtime_sec, child_fent->mtime_nsec, child_fent->name, child_listing_cls2 );
+   
+   child_path.push_back( child_path_ent2 );
+
+   // download the listing for the child
+   rc = fs_entry_download_path_listings( core, core->volume, &child_path );
+   if( rc != 0 ) {
+      fs_entry_unlock( child_fent );
+      
+      errorf("fs_entry_download_path_listings(%s) rc = %d\n", fent->name, rc );
+      consistency_cls->err = -EREMOTEIO;
+      
+      ms_client_free_path_ent( &child_path_ent2, fs_entry_free_listing_cls );
+      return -EREMOTEIO;
+   }
+
+   if( child_listing_cls2->listing.status == MS_LISTING_NOCHANGE ) {
+      fs_entry_unlock( child_fent );
+      
+      // definitely shouldn't happen---this child does not exist locally
+      errorf("Entry '%s' does not exist at '%s', but MS says 'Not Modified'\n", child_path_ent2.name, child_listing_cls2->fs_path );
+      consistency_cls->err = -EUCLEAN;
+      
+      ms_client_free_path_ent( &child_path_ent2, fs_entry_free_listing_cls );
+      return -EUCLEAN;
+   }
+
+   if( child_listing_cls2->listing.status == MS_LISTING_NONE ) {
+      fs_entry_unlock( child_fent );
+      
+      // no data for this
+      errorf("Entry '%s' does not exist at '%s'\n", child_path_ent2.name, child_listing_cls2->fs_path );
+      consistency_cls->err = -ENOENT;
+      
+      ms_client_free_path_ent( &child_path_ent2, fs_entry_free_listing_cls );
+      return -ENOENT;
+   }
+   
+   rc = fs_entry_reload_directory( consistency_cls, child_fent, &child_listing_cls2->listing );
+   if( rc != 0 ) {
+      errorf("fs_entry_reload_directory(%" PRIX64 " (%s) at %s) rc = %d\n", child_fent->file_id, child_fent->name, child_listing_cls2->fs_path, rc );
+   }
+   
+   fs_entry_unlock( child_fent );
+   ms_client_free_path_ent( &child_path_ent2, fs_entry_free_listing_cls );
    
    return rc;
 }
 
+
+// make a pass through a path and download any listings that are not local.
+// Path is populated with entries that are fresh if present, and is built with fs_entry_build_ms_path
+static int fs_entry_reload_remote_path_entries( struct fs_entry_consistency_cls* consistency_cls, uint64_t volume, path_t* path ) {
+
+   // get the last path
+   struct fs_entry_listing_cls* listing_cls = (struct fs_entry_listing_cls*)path->at( path->size() - 1 ).cls;
+   char* deepest_path = listing_cls->fs_path;
+   
+   // re-integrate with the FS
+   consistency_cls->path = path;
+   
+   int rc = 0;
+   struct fs_entry* fent = fs_entry_resolve_path_cls( consistency_cls->core, deepest_path, consistency_cls->core->ms->owner_id, consistency_cls->core->volume, true, &rc, fs_entry_download_and_attach_entry, consistency_cls );
+   if( fent == NULL ) {
+      if( consistency_cls->err != 0 ) {
+         errorf("fs_entry_download_and_attach_entry(%s) rc = %d\n", deepest_path, rc );
+         return consistency_cls->err;
+      }
+      else {
+         // no network problem, so path-related
+         errorf("fs_entry_resolve_path_cls(%s) rc = %d\n", deepest_path, rc );
+         rc = 0;
+      }
+   }
+   
+   else {
+      fs_entry_unlock( fent );
+      
+      if( consistency_cls->err != 0 ) {
+         rc = consistency_cls->err;
+         errorf("fs_entry_download_and_attach_entry(%s) rc = %d\n", deepest_path, rc );
+      }
+   }
+
+   return rc;
+}
+
+
+int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const* _path ) {
+   // must be absolute
+   if( _path[0] != '/' )
+      return -EINVAL;
+   
+   // normalize the path first
+   int rc = 0;
+   char* path = md_normalize_url( _path, &rc );
+
+   if( rc != 0 ) {
+      errorf("Invalid path '%s'\n", _path );
+      return -EINVAL;
+   }
+
+   dbprintf("Revalidate %s\n", path );
+   
+   // path entires to send to the MS for resolution
+   path_t ms_path;
+   path_t ms_path_stale;            // buffer to hold parts of ms_path that are stale
+   ms_response_t stale_listings;    // listings for stale directories
+
+   // consistency closure
+   struct fs_entry_consistency_cls consistency_cls;
+   memset( &consistency_cls, 0, sizeof(consistency_cls) );
+   
+   consistency_cls.core = core;
+   consistency_cls.volume = volume;
+   clock_gettime( CLOCK_REALTIME, &consistency_cls.query_time );     // time of refresh start
+
+   rc = fs_entry_build_ms_path( core, volume, path, &ms_path );
+   if( rc != 0 ) {
+      errorf("fs_entry_build_ms_path(%s) rc = %d\n", path, rc );
+      free( path );
+      return -EINVAL;
+   }
+
+   bool missing_local = false;
+
+   // isolate the stale components
+   for( unsigned int i = 0; i < ms_path.size(); i++ ) {
+      
+      struct fs_entry_listing_cls* listing_cls = (struct fs_entry_listing_cls*)ms_path[i].cls;
+      dbprintf("listing %s\n", listing_cls->fs_path );
+      
+      if( listing_cls->stale && listing_cls->exists ) {
+         dbprintf("%s is local and stale\n", listing_cls->fs_path );
+         ms_path_stale.push_back( ms_path[i] );
+      }
+
+      if( !listing_cls->exists ) {
+         // need to download some parts
+         dbprintf("%s is not local\n", listing_cls->fs_path );
+         missing_local = true;
+         break;
+      }
+   }
+
+   if( ms_path_stale.size() == 0 && !missing_local ) {
+      // no need to contact the MS--we have everything, and it's fresh
+      dbprintf("%s is complete and fresh\n", path );
+      free( path );
+      ms_client_free_path( &ms_path, fs_entry_free_listing_cls );
+      return 0;
+   }
+
+   if( ms_path_stale.size() > 0 ) {
+      // reload the stale entries
+      dbprintf("%lu stale entries\n", ms_path_stale.size() );
+      rc = fs_entry_reload_local_path_entries( &consistency_cls, volume, &ms_path_stale );
+      
+      if( rc != 0 ) {
+         errorf("fs_entry_reload_local_path_entries(%s) rc = %d\n", path, rc );
+         free( path );
+         ms_client_free_path( &ms_path, fs_entry_free_listing_cls );
+         return rc;
+      }
+   }
+
+   if( missing_local ) {
+      // get missing path components
+      rc = fs_entry_reload_remote_path_entries( &consistency_cls, volume, &ms_path );
+      if( rc != 0 ) {
+         errorf("fs_entry_reload_remote_path_entries(%s) rc = %d\n", path, rc );
+         free( path );
+         ms_client_free_path( &ms_path, fs_entry_free_listing_cls );
+         return rc;
+      }
+   }
+
+   free( path );
+   ms_client_free_path( &ms_path, fs_entry_free_listing_cls );
+   return rc;
+}
 
 
 // reload an fs_entry's manifest-related data
@@ -880,10 +1046,12 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
    fent->mtime_nsec = mmsg.mtime_nsec();
    fent->version = mmsg.file_version();
    
+   /*
    struct timespec ts;
    ts.tv_sec = mmsg.manifest_mtime_sec();
    ts.tv_nsec = mmsg.manifest_mtime_nsec();
    fent->manifest->set_lastmod( &ts );
+   */
    
    return 0;
 }
@@ -893,7 +1061,7 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
 // FENT MUST BE WRITE-LOCKED FIRST!
 int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
    
-   if( URL_LOCAL( fent->url ) )
+   if( FS_ENTRY_LOCAL( core, fent ) )
       return 0;      // nothing to do--we automatically have the latest
 
    struct timespec ts, ts2;
@@ -903,7 +1071,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    bool need_refresh = false;
    
    if( fent->manifest == NULL ) {
-      fent->manifest = new file_manifest( core );
+      fent->manifest = new file_manifest( fent->version );
       need_refresh = true;
    }
    else {
@@ -919,16 +1087,21 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
       return 0;
    }
 
-   struct timespec manifest_mtime;
-   fent->manifest->get_lastmod( &manifest_mtime );
+   struct timespec modtime;
+   modtime.tv_sec = fent->mtime_sec;
+   modtime.tv_nsec = fent->mtime_nsec;
+   
+   //fent->manifest->get_lastmod( &manifest_mtime );
    
    // otherwise, we need to refresh.  GoGoGo!
-   char* manifest_url = fs_entry_remote_manifest_url( core, fs_path, fent->url, fent->version, &manifest_mtime );
+   char* manifest_url = fs_entry_remote_manifest_url( core, fent->coordinator, fs_path, fent->version, &modtime );
+   
+   dbprintf("Reload manifest from Gateway %" PRIu64 " at %s\n", fent->coordinator, manifest_url );
    
    // try the primary, then the replicas
    Serialization::ManifestMsg manifest_msg;
    int rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
-   if( rc < 0 ) {
+   if( rc != 0 ) {
       char** RG_urls = ms_client_RG_urls_copy( core->ms, core->volume );
       
       // try each replica
@@ -938,7 +1111,8 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
             free( manifest_url );
 
             // next replica
-            manifest_url = fs_entry_remote_manifest_url( core, fs_path, RG_urls[i], fent->version, &manifest_mtime );
+            // TODO: change to GET /SYNDICATE-DATA/$volume_id/$file_id.$file_version/manifest.$mtime_sec.$mtime_nsec
+            manifest_url = fs_entry_replica_manifest_url( core, RG_urls[i], fs_path, fent->version, &modtime );
             
             rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
 
@@ -950,14 +1124,14 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
          FREE_LIST( RG_urls );
       }
       
-      if( rc < 0 ) {
+      if( rc != 0 ) {
          errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
       }
    }
 
    free( manifest_url );
 
-   if( rc < 0 )
+   if( rc != 0 )
       return rc;
 
    
