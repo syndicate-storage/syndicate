@@ -8,8 +8,8 @@
 
 namespace watchdog {
 
-const char* AGDaemonID::ascii_fingerprint = "F3540C99C9016F618854ABDC57D34F96";
-const uint8_t AGDaemonID::binary_fingerprint[16] = {0xF3,0x54,0x0C,0x99,0xC9,0x01,0x6F,0x61,0x88,0x54,0xAB,0xDC,0x57,0xD3,0x4F,0x96};
+const char* AGDaemonID::ascii_fingerprint = "2B119B0EE8560DB9D262867AAFEB89DB";
+const uint8_t AGDaemonID::binary_fingerprint[16] = {0x2B,0x11,0x9B,0x0E,0xE8,0x56,0x0D,0xB9,0xD2,0x62,0x86,0x7A,0xAF,0xEB,0x89,0xDB};
 
 uint32_t AGDaemonID::read(::apache::thrift::protocol::TProtocol* iprot) {
 
@@ -55,6 +55,29 @@ uint32_t AGDaemonID::read(::apache::thrift::protocol::TProtocol* iprot) {
           xfer += iprot->skip(ftype);
         }
         break;
+      case 4:
+        if (ftype == ::apache::thrift::protocol::T_MAP) {
+          {
+            this->ag_map.clear();
+            uint32_t _size0;
+            ::apache::thrift::protocol::TType _ktype1;
+            ::apache::thrift::protocol::TType _vtype2;
+            iprot->readMapBegin(_ktype1, _vtype2, _size0);
+            uint32_t _i4;
+            for (_i4 = 0; _i4 < _size0; ++_i4)
+            {
+              int32_t _key5;
+              xfer += iprot->readI32(_key5);
+              std::string& _val6 = this->ag_map[_key5];
+              xfer += iprot->readString(_val6);
+            }
+            iprot->readMapEnd();
+          }
+          this->__isset.ag_map = true;
+        } else {
+          xfer += iprot->skip(ftype);
+        }
+        break;
       default:
         xfer += iprot->skip(ftype);
         break;
@@ -78,6 +101,18 @@ uint32_t AGDaemonID::write(::apache::thrift::protocol::TProtocol* oprot) const {
   xfer += oprot->writeFieldEnd();
   xfer += oprot->writeFieldBegin("frequency", ::apache::thrift::protocol::T_I16, 3);
   xfer += oprot->writeI16(this->frequency);
+  xfer += oprot->writeFieldEnd();
+  xfer += oprot->writeFieldBegin("ag_map", ::apache::thrift::protocol::T_MAP, 4);
+  {
+    xfer += oprot->writeMapBegin(::apache::thrift::protocol::T_I32, ::apache::thrift::protocol::T_STRING, static_cast<uint32_t>(this->ag_map.size()));
+    std::map<int32_t, std::string> ::const_iterator _iter7;
+    for (_iter7 = this->ag_map.begin(); _iter7 != this->ag_map.end(); ++_iter7)
+    {
+      xfer += oprot->writeI32(_iter7->first);
+      xfer += oprot->writeString(_iter7->second);
+    }
+    xfer += oprot->writeMapEnd();
+  }
   xfer += oprot->writeFieldEnd();
   xfer += oprot->writeFieldStop();
   xfer += oprot->writeStructEnd();

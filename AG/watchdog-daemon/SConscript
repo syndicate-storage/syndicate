@@ -13,6 +13,7 @@ wd_daemon_source = """
    thrift/cpp/wd_daemon_types.cpp
    thrift/cpp/common_types.cpp
    thrift/cpp/common_constants.cpp
+   thrift-common.cpp
 """
 
 ag_daemon_source = """
@@ -25,6 +26,7 @@ ag_daemon_source = """
    thrift/cpp/ag_daemon_types.cpp
    thrift/cpp/common_types.cpp
    thrift/cpp/common_constants.cpp
+   thrift-common.cpp
 """
 
 # add source file search paths here
