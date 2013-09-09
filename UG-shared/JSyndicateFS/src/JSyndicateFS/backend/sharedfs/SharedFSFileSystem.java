@@ -10,6 +10,7 @@ import JSyndicateFS.JSFSPath;
 import JSyndicateFS.JSFSPathFilter;
 import JSyndicateFS.JSFSPendingExceptions;
 import JSyndicateFS.JSFSRandomAccess;
+import JSyndicateFS.backend.ipc.struct.IPCFileStatus;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FilenameFilter;
@@ -137,6 +138,23 @@ public class SharedFSFileSystem extends JSFSFileSystem {
         String realPath = getLocalPath(path);
         File file = new File(realPath);
         return file.length();
+    }
+    
+    @Override
+    public String getFileVersion(JSFSPath path) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
+        String realPath = getLocalPath(path);
+        File file = new File(realPath);
+        if(file.exists()) {
+            long lastModifiedTime = file.lastModified();
+            return Long.toString(lastModifiedTime);
+        } else {
+            throw new IOException("path does not exist");
+        }
     }
 
     @Override

@@ -244,6 +244,23 @@ public class IPCFileSystem extends JSFSFileSystem {
         }
         return 0;
     }
+    
+    @Override
+    public String getFileVersion(JSFSPath path) throws IOException {
+        if(path == null) {
+            LOG.error("path is null");
+            throw new IllegalArgumentException("path is null");
+        }
+        
+        JSFSPath absPath = getAbsolutePath(path);
+        IPCFileStatus status = getFileStatus(absPath);
+        if(status != null) {
+            long lastModifiedTime = status.getLastModification();
+            return Long.toString(lastModifiedTime);
+        } else {
+            throw new IOException("path does not exist");
+        }
+    }
 
     @Override
     public long getBlockSize() {
