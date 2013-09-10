@@ -17,6 +17,7 @@ int32_t WDDaemonHandler::register_agd(const  ::watchdog::AGDaemonID& agdid) {
     agd_local->addr = agdid.addr;
     agd_local->port = agdid.port;
     agd_local->freq = agdid.frequency; 
+    agd_local->ag_map = agdid.ag_map;
     int32_t ret = wdsi->register_agd(agd_local);
     return ret;
 }

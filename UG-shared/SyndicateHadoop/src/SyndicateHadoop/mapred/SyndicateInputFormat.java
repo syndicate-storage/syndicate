@@ -160,24 +160,25 @@ public abstract class SyndicateInputFormat<K extends Object, V extends Object> e
         List<JSFSPath> files = listFiles(context);
         for(JSFSPath path : files) {
             long length = syndicateFS.getSize(path);
+            String fileVersion = syndicateFS.getFileVersion(path);
             
             if ((length != 0) && isSplitable(context, path)) {
                 long blockSize = syndicateFS.getBlockSize();
                 long splitSize = computeSplitSize(blockSize, minSize, maxSize);
                 long bytesLeft = length;
                 while (((double) bytesLeft) / splitSize > SPLIT_SLOP) {
-                    SyndicateInputSplit inputSplit = new SyndicateInputSplit(syndicateFS, path, length - bytesLeft, splitSize);
+                    SyndicateInputSplit inputSplit = new SyndicateInputSplit(syndicateFS, path, fileVersion, length - bytesLeft, splitSize);
                     splits.add(inputSplit);
                     
                     bytesLeft -= splitSize;
                 }
 
                 if (bytesLeft != 0) {
-                    SyndicateInputSplit inputSplit = new SyndicateInputSplit(syndicateFS, path, length - bytesLeft, bytesLeft);
+                    SyndicateInputSplit inputSplit = new SyndicateInputSplit(syndicateFS, path, fileVersion, length - bytesLeft, bytesLeft);
                     splits.add(inputSplit);
                 }
             } else if (length != 0) {
-                SyndicateInputSplit inputSplit = new SyndicateInputSplit(syndicateFS, path, 0, length);
+                SyndicateInputSplit inputSplit = new SyndicateInputSplit(syndicateFS, path, fileVersion, 0, length);
                 splits.add(inputSplit);
             }
         }

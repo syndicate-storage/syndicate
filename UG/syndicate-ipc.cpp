@@ -681,6 +681,8 @@ private:
         int rc = fs_entry_mkdir(SYNDICATEFS_DATA->core, path, mode, conf->owner, SYNDICATEFS_DATA->core->volume);
 
         SYNDICATEFS_DATA->stats->leave(STAT_MKDIR, rc);
+        
+        logmsg( SYNDICATEFS_DATA->logfile, "syndicateipc_mkdir rc = %d\n", rc );
         return rc;
     }
 
@@ -748,9 +750,9 @@ private:
                 //    rc = -ENOMEM;
                 //    break;
                 //}
-                int entryPathLen = strlen(dirents[i]->data.path);
+                int entryPathLen = strlen(dirents[i]->data.name);
                 char* entryPath = new char[entryPathLen + 1];
-                memcpy(entryPath, dirents[i]->data.path, entryPathLen);
+                memcpy(entryPath, dirents[i]->data.name, entryPathLen);
                 entryPath[entryPathLen] = 0;
                 entryVector.push_back(entryPath);
                 i++;
@@ -773,9 +775,9 @@ private:
         SYNDICATEFS_DATA->stats->enter(STAT_OPEN);
 
         int err = 0;
-        //struct fs_file_handle* fh = fs_entry_open(SYNDICATEFS_DATA->core, path, NULL, conf->owner, SYNDICATEFS_DATA->core->volume, fi->flags, ~conf->usermask, &err);
-        struct fs_file_handle* fh = fs_entry_open(SYNDICATEFS_DATA->core, path, NULL, conf->owner, SYNDICATEFS_DATA->core->volume, 0, ~conf->usermask, &err);
-
+        //struct fs_file_handle* fh = fs_entry_open(SYNDICATEFS_DATA->core, path, conf->owner, SYNDICATEFS_DATA->core->volume, fi->flags, ~conf->usermask, &err);
+        struct fs_file_handle* fh = fs_entry_open(SYNDICATEFS_DATA->core, path, conf->owner, SYNDICATEFS_DATA->core->volume, 0, ~conf->usermask, &err);
+        
         // store the read handle
         //fi->fh = (uint64_t) fh;
         fi->handle = (long long int) fh;
@@ -798,7 +800,7 @@ private:
         SYNDICATEFS_DATA->stats->enter(STAT_CREATE);
 
         int rc = 0;
-        struct fs_file_handle* fh = fs_entry_create(SYNDICATEFS_DATA->core, path, NULL, conf->owner, SYNDICATEFS_DATA->core->volume, mode, &rc);
+        struct fs_file_handle* fh = fs_entry_create(SYNDICATEFS_DATA->core, path, conf->owner, SYNDICATEFS_DATA->core->volume, mode, &rc);
 
         if (rc == 0 && fh != NULL) {
             //fi->fh = (uint64_t) (fh);
@@ -855,11 +857,8 @@ private:
     //int syndicatefs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
     int syndicatefs_read(char *buf, size_t size, off_t offset, struct IPCFileInfo *fi) {
 
-        struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-
-        if (conf->debug_read)
-            logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_read( %ld, %ld )\n", size, offset);
-
+        logmsg( SYNDICATEFS_DATA->logfile, "syndicateipc_read( %ld, %ld )\n", size, offset );
+        
         SYNDICATEFS_DATA->stats->enter(STAT_READ);
 
         //struct fs_file_handle* fh = (struct fs_file_handle*) fi->fh;
@@ -877,8 +876,7 @@ private:
         //    memset(buf + rc, 0, size - rc);
         //}
 
-        if (conf->debug_read)
-            logmsg(SYNDICATEFS_DATA->logfile, "syndicateipc_read rc = %ld\n", rc);
+        logmsg( SYNDICATEFS_DATA->logfile, "syndicateipc_read rc = %ld\n", rc );
 
         SYNDICATEFS_DATA->stats->leave(STAT_READ, (rc >= 0 ? 0 : rc));
         return rc;

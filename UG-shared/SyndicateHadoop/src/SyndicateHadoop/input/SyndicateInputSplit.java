@@ -20,6 +20,7 @@ public class SyndicateInputSplit extends InputSplit implements Writable {
 
     private JSFSFileSystem filesystem;
     private JSFSPath path;
+    private String fileVersion;
     private long start;
     private long length;
 
@@ -30,7 +31,7 @@ public class SyndicateInputSplit extends InputSplit implements Writable {
     /*
      * Constructs a split
      */
-    public SyndicateInputSplit(JSFSFileSystem fs, JSFSPath path, long start, long length) {
+    public SyndicateInputSplit(JSFSFileSystem fs, JSFSPath path, String fileVersion, long start, long length) {
         if(fs == null)
             throw new IllegalArgumentException("Can not create Input Split from null file system");
         if(path == null)
@@ -38,6 +39,7 @@ public class SyndicateInputSplit extends InputSplit implements Writable {
         
         this.filesystem = fs;
         this.path = path;
+        this.fileVersion = fileVersion;
         this.start = start;
         this.length = length;
     }
@@ -51,6 +53,13 @@ public class SyndicateInputSplit extends InputSplit implements Writable {
      */
     public JSFSPath getPath() {
         return this.path;
+    }
+    
+    /*
+     * The version information of the file
+     */
+    public String getFileVersion() {
+        return this.fileVersion;
     }
 
     /*
@@ -70,7 +79,7 @@ public class SyndicateInputSplit extends InputSplit implements Writable {
 
     @Override
     public String toString() {
-        return this.path.getPath() + ":" + start + "+" + length;
+        return this.path.getPath() + ":" + this.fileVersion + ":" + this.start + "+" + this.length;
     }
 
     @Override
@@ -82,6 +91,7 @@ public class SyndicateInputSplit extends InputSplit implements Writable {
     @Override
     public void write(DataOutput out) throws IOException {
         Text.writeString(out, this.path.getPath());
+        Text.writeString(out, this.fileVersion);
         out.writeLong(this.start);
         out.writeLong(this.length);
     }
@@ -89,6 +99,7 @@ public class SyndicateInputSplit extends InputSplit implements Writable {
     @Override
     public void readFields(DataInput in) throws IOException {
         this.path = new JSFSPath(Text.readString(in));
+        this.fileVersion = Text.readString(in);
         this.start = in.readLong();
         this.length = in.readLong();
     }

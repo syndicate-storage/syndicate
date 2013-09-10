@@ -17,17 +17,18 @@
 namespace watchdog {
 
 typedef struct _AGDaemonID__isset {
-  _AGDaemonID__isset() : addr(false), port(false), frequency(false) {}
+  _AGDaemonID__isset() : addr(false), port(false), frequency(false), ag_map(false) {}
   bool addr;
   bool port;
   bool frequency;
+  bool ag_map;
 } _AGDaemonID__isset;
 
 class AGDaemonID {
  public:
 
-  static const char* ascii_fingerprint; // = "F3540C99C9016F618854ABDC57D34F96";
-  static const uint8_t binary_fingerprint[16]; // = {0xF3,0x54,0x0C,0x99,0xC9,0x01,0x6F,0x61,0x88,0x54,0xAB,0xDC,0x57,0xD3,0x4F,0x96};
+  static const char* ascii_fingerprint; // = "2B119B0EE8560DB9D262867AAFEB89DB";
+  static const uint8_t binary_fingerprint[16]; // = {0x2B,0x11,0x9B,0x0E,0xE8,0x56,0x0D,0xB9,0xD2,0x62,0x86,0x7A,0xAF,0xEB,0x89,0xDB};
 
   AGDaemonID() : addr(""), port(0), frequency(0) {
   }
@@ -37,6 +38,7 @@ class AGDaemonID {
   std::string addr;
   int32_t port;
   int16_t frequency;
+  std::map<int32_t, std::string>  ag_map;
 
   _AGDaemonID__isset __isset;
 
@@ -52,6 +54,10 @@ class AGDaemonID {
     frequency = val;
   }
 
+  void __set_ag_map(const std::map<int32_t, std::string> & val) {
+    ag_map = val;
+  }
+
   bool operator == (const AGDaemonID & rhs) const
   {
     if (!(addr == rhs.addr))
@@ -59,6 +65,8 @@ class AGDaemonID {
     if (!(port == rhs.port))
       return false;
     if (!(frequency == rhs.frequency))
+      return false;
+    if (!(ag_map == rhs.ag_map))
       return false;
     return true;
   }

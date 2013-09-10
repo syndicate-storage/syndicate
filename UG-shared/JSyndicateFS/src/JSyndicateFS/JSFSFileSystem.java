@@ -186,6 +186,8 @@ public abstract class JSFSFileSystem implements Closeable {
     
     public abstract byte[] getExtendedAttr(JSFSPath path, String name) throws IOException;
     
+    public abstract String getFileVersion(JSFSPath path) throws IOException;
+    
     public abstract long getBlockSize();
     
     public abstract void delete(JSFSPath path) throws IOException;
