@@ -337,7 +337,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
             
             fetch_error_string = 'Error in discovery: %s' % (cgi.escape(str(exc[0])))
 
-            self.verify_failure( None, openid_url, fetch_error_string )
+            self.verify_failure( openid_url, fetch_error_string )
             
             return rc
             
