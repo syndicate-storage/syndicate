@@ -2,7 +2,9 @@
 #define _THRIFT_COMMON_H_
 
 #include <WDDaemon.h>
-#include <WDDaemon_server.h>
+#include <WDDaemon.h>
+#include <AGDaemon_server.h>
+#include <AGDaemon_server.h>
 
 #include <protocol/TBinaryProtocol.h>
 #include <transport/TBufferTransports.h>
@@ -25,10 +27,11 @@ typedef struct _thrift_connection {
     shared_ptr<TSocket>		socket;
     shared_ptr<TTransport>	transport;
     shared_ptr<TProtocol>	protocol;
-    WDDaemonClient		*client;
+    WDDaemonClient		*wd_client;
+    AGDaemonClient		*ag_client;
 } thrift_connection;
 
-thrift_connection* thrift_connect(string addr, int port);
+thrift_connection* thrift_connect(string addr, int port, bool is_wd);
 
 void thrift_disconnect(thrift_connection *tc);
 

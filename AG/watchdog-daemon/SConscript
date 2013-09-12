@@ -8,6 +8,7 @@ wd_daemon_source = """
    wdd-main.cpp
    thrift/WDDaemon_service_impl.cpp
    thrift/cpp/WDDaemon.cpp
+   thrift/cpp/AGDaemon.cpp
    thrift/cpp/WDDaemon_server.cpp
    thrift/cpp/wd_daemon_constants.cpp
    thrift/cpp/wd_daemon_types.cpp
@@ -19,6 +20,7 @@ wd_daemon_source = """
 ag_daemon_source = """
    daemon-config.cpp
    agd-main.cpp
+   thrift/AGDaemon_service_impl.cpp
    thrift/cpp/WDDaemon.cpp
    thrift/cpp/AGDaemon.cpp
    thrift/cpp/AGDaemon_server.cpp

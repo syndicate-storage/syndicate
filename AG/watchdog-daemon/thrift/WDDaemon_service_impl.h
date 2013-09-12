@@ -3,10 +3,16 @@
 
 #include <time.h>
 #include <sys/types.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include <string>
 #include <map>
 #include <set>
+#include <iostream>
+
+#include <thrift-common.h>
 
 using namespace std;
 
@@ -18,9 +24,18 @@ typedef struct _AGDaemonID_local {
     map<int32_t, string> ag_map;
 } AGDaemonID_local;
 
+typedef struct _AGDaemonID_comp {
+    bool operator() (AGDaemonID_local *lhs, AGDaemonID_local *rhs) const {
+	return (lhs->pulse_ts > rhs->pulse_ts);
+    }
+} AGDaemonID_comp;
+
+void* AGDaemonID_local_timeout_thread (void* cls);
+
 class WDDaemon_service_impl {
     private:
 	int32_t current_id;
+	int32_t base_id;
 	map<int32_t, AGDaemonID_local*> agd_map;
     public:
 	WDDaemon_service_impl();
