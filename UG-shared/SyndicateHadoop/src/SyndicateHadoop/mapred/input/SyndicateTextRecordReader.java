@@ -86,6 +86,11 @@ public class SyndicateTextRecordReader extends RecordReader<LongWritable, Text> 
         } catch (InstantiationException ex) {
             throw new IOException(ex);
         }
+        
+        // check file modification
+        if(!syndicateFS.getFileVersion(path).equals(split.getFileVersion())) {
+            throw new IOException("File has been modified while Hadoop is running");
+        }
 
         this.compressionCodecs = new CompressionCodecFactory(conf);
         final CompressionCodec codec = CompressionCodecUtil.getCompressionCodec(this.compressionCodecs, path);

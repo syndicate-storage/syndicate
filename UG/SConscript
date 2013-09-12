@@ -12,7 +12,7 @@ common_source_files = """
 
 syndicatefs_source = "syndicatefs.cpp"
 syndicate_httpd_source = "syndicate-httpd.cpp"
-#syndicate_ipc_source = "syndicate-ipc.cpp"
+syndicate_ipc_source = "syndicate-ipc.cpp"
 
 # add source file search paths here
 CPPPATH = """
@@ -67,11 +67,10 @@ fs_objs = SConscript("fs/SConscript")
 syndicate_common_objs = env.Object( source=Split(common_source_files) )
 syndicatefs_obj = env.Object( source=Split(syndicatefs_source) )
 syndicate_httpd_obj = env.Object( source=Split(syndicate_httpd_source) )
-#syndicate_ipc_obj = env.Object( source=Split(syndicate_ipc_source) )
+syndicate_ipc_obj = env.Object( source=Split(syndicate_ipc_source) )
 
 syndicatefs = env.Program("syndicatefs", source=[syndicate_common_objs, fs_objs, syndicatefs_obj] )
 syndicate_httpd = env.Program("syndicate-httpd", source=[syndicate_common_objs, fs_objs, syndicate_httpd_obj] )
-#syndicate_ipc = env.Program("syndicate-ipc", source=[syndicate_common_objs, fs_objs, syndicate_ipc_obj] )
+syndicate_ipc = env.Program("syndicate-ipc", source=[syndicate_common_objs, fs_objs, syndicate_ipc_obj] )
 
-#Return( 'syndicatefs syndicate_httpd syndicate_ipc' )
-Return( 'syndicatefs syndicate_httpd' )
+Return( 'syndicatefs syndicate_httpd syndicate_ipc' )

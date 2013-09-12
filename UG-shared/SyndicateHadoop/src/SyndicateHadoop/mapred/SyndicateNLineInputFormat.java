@@ -89,6 +89,8 @@ public class SyndicateNLineInputFormat extends SyndicateInputFormat<LongWritable
         LineReader reader = null;
         try {
             InputStream in = syndicateFS.getFileInputStream(path);
+            String fileVersion = syndicateFS.getFileVersion(path);
+            
             reader = new LineReader(in, conf, delimiter_bytes);
             Text line = new Text();
             int numLines = 0;
@@ -100,9 +102,9 @@ public class SyndicateNLineInputFormat extends SyndicateInputFormat<LongWritable
                 length += num;
                 if (numLines == numLinesPerSplit) {
                     if (begin == 0) {
-                        splits.add(new SyndicateInputSplit(syndicateFS, path, begin, length - 1));
+                        splits.add(new SyndicateInputSplit(syndicateFS, path, fileVersion, begin, length - 1));
                     } else {
-                        splits.add(new SyndicateInputSplit(syndicateFS, path, begin - 1, length));
+                        splits.add(new SyndicateInputSplit(syndicateFS, path, fileVersion, begin - 1, length));
                     }
                     begin += length;
                     length = 0;
@@ -110,7 +112,7 @@ public class SyndicateNLineInputFormat extends SyndicateInputFormat<LongWritable
                 }
             }
             if (numLines != 0) {
-                splits.add(new SyndicateInputSplit(syndicateFS, path, begin, length));
+                splits.add(new SyndicateInputSplit(syndicateFS, path, fileVersion, begin, length));
             }
         } finally {
             if (reader != null) {
