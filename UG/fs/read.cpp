@@ -74,6 +74,11 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
    else {
       block_url = fs_entry_AG_block_url( core, fent->coordinator, fs_path, fent->version, block_id, block_version );
    }
+   
+   if( block_url == NULL ) {
+      errorf("Failed to compute block URL for Gateway %" PRIu64 "\n", fent->coordinator);
+      return -ENODATA;
+   }
 
    char* block_buf = NULL;
    ssize_t nr = fs_entry_download_block( core, block_url, &block_buf, block_len );

@@ -253,6 +253,8 @@ int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_co
 
 // sign a write message
 int fs_entry_sign_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core ) {
+   return md_sign<Serialization::WriteMsg>( core->ms->my_key, writeMsg );
+   /*
    writeMsg->set_signature( string("") );
 
    string data;
@@ -283,6 +285,7 @@ int fs_entry_sign_write_message( Serialization::WriteMsg* writeMsg, struct fs_co
 
    free( sigb64 );
    return 0;
+   */
 }
 
 // set up a PREPARE message

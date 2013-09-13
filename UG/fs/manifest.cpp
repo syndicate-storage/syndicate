@@ -224,8 +224,6 @@ block_url_set* block_url_set::split_right( uint64_t block_id ) {
 void block_url_set::as_protobuf( struct fs_core* core, Serialization::BlockURLSetMsg* busmsg ) {
    busmsg->set_start_id( this->start_id );
    busmsg->set_end_id( this->end_id );
-   busmsg->set_volume_id( this->volume_id );
-   busmsg->set_file_id( this->file_id );
    busmsg->set_gateway_id( this->gateway_id );
    for( uint64_t id = this->start_id; id < this->end_id; id++ ) {
       busmsg->add_block_versions( this->block_versions[id - this->start_id] );
@@ -845,28 +843,11 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
          block_versions[j] = busmsg.block_versions(j);
       }
 
-      uint64_t volume_id = busmsg.volume_id();
       uint64_t gateway_id = busmsg.gateway_id();
-      uint64_t file_id = busmsg.file_id();
-
-      // sanity check
-      if( volume_id != core->volume ) {
-         errorf("Invalid Manifest: block range belongs to Volume %" PRIu64 ", but this Gateway is attached to %" PRIu64 "\n", mmsg.volume_id(), core->volume );
-         rc = -EINVAL;
-         free( block_versions );
-         break;
-      }
-
-      if( file_id != fent->file_id ) {
-         errorf("Invalid Manifest: block range belongs to File /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ", but this file is /%" PRIu64 "/%" PRIu64 "/%" PRIX64 "\n", volume_id, gateway_id, file_id, volume_id, gateway_id, file_id );
-         rc = -EINVAL;
-         free( block_versions );
-         break;
-      }
 
       bool staging = (core->gateway == gateway_id && !FS_ENTRY_LOCAL( core, fent ));
 
-      m->block_urls[ busmsg.start_id() ] = new block_url_set( volume_id, gateway_id, file_id, mmsg.file_version(), busmsg.start_id(), busmsg.end_id(), block_versions, staging );
+      m->block_urls[ busmsg.start_id() ] = new block_url_set( core->volume, gateway_id, fent->file_id, mmsg.file_version(), busmsg.start_id(), busmsg.end_id(), block_versions, staging );
 
       free( block_versions );
    }

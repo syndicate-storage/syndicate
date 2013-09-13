@@ -201,6 +201,9 @@ char* fs_entry_public_manifest_url( struct fs_core* core, char const* fs_path, i
 
 char* fs_entry_remote_manifest_url( struct fs_core* core, uint64_t UG_id, char const* fs_path, int64_t version, struct timespec* ts ) {
    char* content_url = ms_client_get_UG_content_url( core->ms, core->volume, UG_id );
+   if( content_url == NULL )
+      return NULL;
+   
    char* ret = fs_entry_manifest_url( core, content_url, core->volume, fs_path, version, ts );
    free( content_url );
    return ret;

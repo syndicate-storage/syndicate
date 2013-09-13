@@ -1046,13 +1046,6 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
    fent->mtime_nsec = mmsg.mtime_nsec();
    fent->version = mmsg.file_version();
    
-   /*
-   struct timespec ts;
-   ts.tv_sec = mmsg.manifest_mtime_sec();
-   ts.tv_nsec = mmsg.manifest_mtime_nsec();
-   fent->manifest->set_lastmod( &ts );
-   */
-   
    return 0;
 }
 
@@ -1091,10 +1084,12 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    modtime.tv_sec = fent->mtime_sec;
    modtime.tv_nsec = fent->mtime_nsec;
    
-   //fent->manifest->get_lastmod( &manifest_mtime );
-   
    // otherwise, we need to refresh.  GoGoGo!
    char* manifest_url = fs_entry_remote_manifest_url( core, fent->coordinator, fs_path, fent->version, &modtime );
+   if( manifest_url == NULL ) {
+      errorf("No such Gateway %" PRIu64 "\n", fent->coordinator);
+      return -ENODATA;
+   }
    
    dbprintf("Reload manifest from Gateway %" PRIu64 " at %s\n", fent->coordinator, manifest_url );
    
@@ -1134,6 +1129,8 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    if( rc != 0 )
       return rc;
 
+   // verify the manifest message
+   
    
    // repopulate the manifest and update the relevant metadata
    fs_entry_reload_manifest( core, fent, manifest_msg );

@@ -89,6 +89,13 @@ ssize_t fs_entry_serialize_manifest( struct fs_core* core, struct fs_entry* fent
    Serialization::ManifestMsg mmsg;
    fent->manifest->as_protobuf( core, fent, &mmsg );
 
+   int rc = gateway_sign_manifest( core->ms->my_key, &mmsg );
+   if( rc != 0 ) {
+      errorf("gateway_sign_manifest rc = %d\n", rc );
+      *manifest_bits = NULL;
+      return rc;
+   }
+   
    string mb;
    bool valid = mmsg.SerializeToString( &mb );
    if( !valid ) {
