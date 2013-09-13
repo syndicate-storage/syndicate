@@ -208,7 +208,7 @@ int main(int argc, char* argv[]) {
     }
     thrift_connection *tc = thrift_connect(wd_addr, wd_port, true);
     if (!tc->is_connected) {
-	syslog(LOG_ERR, "Unable to connect watchdog daemon at %s:%i\n", wd_addr.c_str(), wd_port);
+	syslog(LOG_ERR, "Failed connecting watchdog daemon at %s:%i (%s)\n", wd_addr.c_str(), wd_port, tc->err);
 	exit(-1);
     }
     agd_id = tc->wd_client->register_agd(agdid);
