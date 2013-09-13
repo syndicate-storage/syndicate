@@ -4043,6 +4043,7 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->http_authentication_mode = HTTP_AUTHENTICATE_READWRITE;
    conf->replica_overwrite = false;
 
+   conf->ag_block_size = 0;
    conf->debug_read = false;
    conf->debug_lock = false;
 

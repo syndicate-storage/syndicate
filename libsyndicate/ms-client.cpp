@@ -1110,7 +1110,7 @@ int ms_client_load_volume_UGs( struct ms_volume* vol, const ms::ms_volume_UGs* v
 
       ugs[i] = uent;
 
-      dbprintf("UG: Volume = %" PRIu64 ", id = %" PRIu64 ", owner = %" PRIu64 ", name = %s\n", vol->volume_id, uent->gateway_id, uent->user_id, uent->name );
+      dbprintf("UG: id = %" PRIu64 ", owner = %" PRIu64 ", name = %s\n", uent->gateway_id, uent->user_id, uent->name );
    }
 
    struct UG_cred** old_ugs = vol->UG_creds;
@@ -1579,6 +1579,7 @@ int ms_client_reload_volume( struct ms_client* client, char const* volume_name, 
 
 // verify the signature of the Volume metadata.
 // client must be read-locked
+/*
 int ms_client_verify_volume_metadata( EVP_PKEY* volume_public_key, ms::ms_volume_metadata* volume_md ) {
    // get the signature
    size_t sigb64_len = volume_md->signature().size();
@@ -1604,6 +1605,10 @@ int ms_client_verify_volume_metadata( EVP_PKEY* volume_public_key, ms::ms_volume
    }
 
    return rc;
+}*/
+
+int ms_client_verify_volume_metadata( EVP_PKEY* volume_public_key, ms::ms_volume_metadata* volume_md ) {
+   return md_verify<ms::ms_volume_metadata>( volume_public_key, volume_md );
 }
 
 // verify the signature of the UG metadata
@@ -2903,6 +2908,8 @@ ssize_t ms_client_update_set_to_string( ms::ms_updates* ms_updates, char** updat
 
 // sign an update set
 static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) {
+   return md_sign<ms::ms_updates>( pkey, ms_updates );
+   /*
    ms_updates->set_signature( string("") );
 
    string update_bits;
@@ -2934,6 +2941,7 @@ static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) 
    ms_updates->set_signature( string(sigb64, sigb64_len) );
    free( sigb64 );
    return 0;
+   */
 }
 
 

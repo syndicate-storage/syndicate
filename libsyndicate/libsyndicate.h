@@ -315,13 +315,7 @@ struct md_syndicate_conf {
    int num_replica_threads;                           // how many replica threads?
    char* replica_logfile;                             // path on disk to replica log
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
-   /*
-   char* volume_name;                                 // name of the volume (UG only)
-   uint64_t volume;                                   // volume ID (UG only)
-   uint64_t volume_owner;                             // user ID of the volume owner (UG only)
-   char* volume_public_key_path;                      // if trust_volume_pubkey is false, then this contains  the path to the PEM-encoded public key for the Volume
-   */
-
+   
    // RG/AG servers
    unsigned int num_http_threads;                     // how many HTTP threads to create
    int http_authentication_mode;                      // for which operations do we authenticate?
@@ -330,6 +324,7 @@ struct md_syndicate_conf {
    bool replica_overwrite;                            // overwrite replica file at the client's request
    char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
    char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
+   uint64_t ag_block_size;                            // block size for an AG
 
    // debug
    int debug_read;                                    // print verbose information for reads
@@ -349,13 +344,11 @@ struct md_syndicate_conf {
    char* metadata_url;                                // URL (or path on disk) where to get the metadata
    char* ms_username;                                 // MS username for this SyndicateUser
    char* ms_password;                                 // MS password for this SyndicateUser
-   //uint64_t blocking_factor;                          // how many bytes blocks will be
    uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
    uint64_t gateway;                                  // what is the gateway ID in Syndicate?
    uint64_t view_reload_freq;                         // how often do we check for new Volume/UG/RG metadata?
 
    // security fields
-   //char* volume_public_key;                           // UG only
    char* gateway_key;
    char* server_key;
    char* server_cert;
@@ -691,6 +684,77 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
 int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len );
 
 END_EXTERN_C
+
+
+
+// signature verifier
+// NOTE:  class T should be a protobuf, and should have a string signature field
+// TODO: verify the signature of the hash of the message, not the whole message?
+template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
+   // get the signature
+   size_t sigb64_len = protobuf->signature().size();
+   char* sigb64 = CALLOC_LIST( char, sigb64_len + 1 );
+   memcpy( sigb64, protobuf->signature().data(), sigb64_len );
+   
+   protobuf->set_signature( "" );
+
+   string bits;
+   try {
+      protobuf->SerializeToString( &bits );
+   }
+   catch( exception e ) {
+      return -EINVAL;
+   }
+
+   // verify the signature
+   int rc = md_verify_signature( pkey, bits.data(), bits.size(), sigb64, sigb64_len );
+   free( sigb64 );
+
+   if( rc != 0 ) {
+      errorf("md_verify_signature rc = %d\n", rc );
+   }
+
+   return rc;
+}
+
+
+// signature generator
+// NOTE: class T should be a protobuf, and should have a string signature field 
+// TODO: sign the hash of the message, not the whole message?
+template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
+   protobuf->set_signature( string("") );
+
+   string bits;
+   bool valid;
+   
+   try {
+      valid = protobuf->SerializeToString( &bits );
+   }
+   catch( exception e ) {
+      errorf("%s", "failed to serialize update set\n");
+      return -EINVAL;
+   }
+
+   if( !valid ) {
+      errorf("%s", "failed to serialize update set\n");
+      return -EINVAL;
+   }
+
+   // sign this message
+   char* sigb64 = NULL;
+   size_t sigb64_len = 0;
+
+   int rc = md_sign_message( pkey, bits.data(), bits.size(), &sigb64, &sigb64_len );
+   if( rc != 0 ) {
+      errorf("md_sign_message rc = %d\n", rc );
+      return rc;
+   }
+
+   protobuf->set_signature( string(sigb64, sigb64_len) );
+   free( sigb64 );
+   return 0;
+}
+
 
 // system UID
 #define SYS_USER 0
