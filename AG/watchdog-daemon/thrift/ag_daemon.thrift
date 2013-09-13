@@ -4,6 +4,6 @@ namespace cpp watchdog
 
 service AGDaemon {
     i32 restart(1:i32 ag_id),
-    void ping(),
+    common.PingResponse ping(),
 }
 

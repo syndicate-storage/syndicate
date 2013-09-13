@@ -12,3 +12,9 @@ struct AGDaemonID {
     4: map<i32,string>	ag_map,
 }
 
+struct PingResponse {
+    1: set<i32> live_set,
+    2: set<i32> dead_set,
+    3: i32	id,
+}
+

@@ -234,6 +234,14 @@ uint32_t AGDaemon_ping_result::read(::apache::thrift::protocol::TProtocol* iprot
     }
     switch (fid)
     {
+      case 0:
+        if (ftype == ::apache::thrift::protocol::T_STRUCT) {
+          xfer += this->success.read(iprot);
+          this->__isset.success = true;
+        } else {
+          xfer += iprot->skip(ftype);
+        }
+        break;
       default:
         xfer += iprot->skip(ftype);
         break;
@@ -252,6 +260,11 @@ uint32_t AGDaemon_ping_result::write(::apache::thrift::protocol::TProtocol* opro
 
   xfer += oprot->writeStructBegin("AGDaemon_ping_result");
 
+  if (this->__isset.success) {
+    xfer += oprot->writeFieldBegin("success", ::apache::thrift::protocol::T_STRUCT, 0);
+    xfer += this->success.write(oprot);
+    xfer += oprot->writeFieldEnd();
+  }
   xfer += oprot->writeFieldStop();
   xfer += oprot->writeStructEnd();
   return xfer;
@@ -277,6 +290,14 @@ uint32_t AGDaemon_ping_presult::read(::apache::thrift::protocol::TProtocol* ipro
     }
     switch (fid)
     {
+      case 0:
+        if (ftype == ::apache::thrift::protocol::T_STRUCT) {
+          xfer += (*(this->success)).read(iprot);
+          this->__isset.success = true;
+        } else {
+          xfer += iprot->skip(ftype);
+        }
+        break;
       default:
         xfer += iprot->skip(ftype);
         break;
@@ -347,10 +368,10 @@ int32_t AGDaemonClient::recv_restart()
   throw ::apache::thrift::TApplicationException(::apache::thrift::TApplicationException::MISSING_RESULT, "restart failed: unknown result");
 }
 
-void AGDaemonClient::ping()
+void AGDaemonClient::ping( ::watchdog::PingResponse& _return)
 {
   send_ping();
-  recv_ping();
+  recv_ping(_return);
 }
 
 void AGDaemonClient::send_ping()
@@ -366,7 +387,7 @@ void AGDaemonClient::send_ping()
   oprot_->getTransport()->flush();
 }
 
-void AGDaemonClient::recv_ping()
+void AGDaemonClient::recv_ping( ::watchdog::PingResponse& _return)
 {
 
   int32_t rseqid = 0;
@@ -392,11 +413,16 @@ void AGDaemonClient::recv_ping()
     iprot_->getTransport()->readEnd();
   }
   AGDaemon_ping_presult result;
+  result.success = &_return;
   result.read(iprot_);
   iprot_->readMessageEnd();
   iprot_->getTransport()->readEnd();
 
-  return;
+  if (result.__isset.success) {
+    // _return pointer has now been filled
+    return;
+  }
+  throw ::apache::thrift::TApplicationException(::apache::thrift::TApplicationException::MISSING_RESULT, "ping failed: unknown result");
 }
 
 bool AGDaemonProcessor::process(boost::shared_ptr<apache::thrift::protocol::TProtocol> piprot, boost::shared_ptr<apache::thrift::protocol::TProtocol> poprot, void* callContext) {
@@ -521,7 +547,8 @@ void AGDaemonProcessor::process_ping(int32_t seqid, ::apache::thrift::protocol::
 
   AGDaemon_ping_result result;
   try {
-    iface_->ping();
+    iface_->ping(result.success);
+    result.__isset.success = true;
   } catch (const std::exception& e) {
     if (this->eventHandler_.get() != NULL) {
       this->eventHandler_->handlerError(ctx, "AGDaemon.ping");

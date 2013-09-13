@@ -16,7 +16,7 @@ class AGDaemonIf {
  public:
   virtual ~AGDaemonIf() {}
   virtual int32_t restart(const int32_t ag_id) = 0;
-  virtual void ping() = 0;
+  virtual void ping( ::watchdog::PingResponse& _return) = 0;
 };
 
 class AGDaemonIfFactory {
@@ -50,7 +50,7 @@ class AGDaemonNull : virtual public AGDaemonIf {
     int32_t _return = 0;
     return _return;
   }
-  void ping() {
+  void ping( ::watchdog::PingResponse& /* _return */) {
     return;
   }
 };
@@ -200,6 +200,10 @@ class AGDaemon_ping_pargs {
 
 };
 
+typedef struct _AGDaemon_ping_result__isset {
+  _AGDaemon_ping_result__isset() : success(false) {}
+  bool success;
+} _AGDaemon_ping_result__isset;
 
 class AGDaemon_ping_result {
  public:
@@ -209,9 +213,18 @@ class AGDaemon_ping_result {
 
   virtual ~AGDaemon_ping_result() throw() {}
 
+   ::watchdog::PingResponse success;
 
-  bool operator == (const AGDaemon_ping_result & /* rhs */) const
+  _AGDaemon_ping_result__isset __isset;
+
+  void __set_success(const  ::watchdog::PingResponse& val) {
+    success = val;
+  }
+
+  bool operator == (const AGDaemon_ping_result & rhs) const
   {
+    if (!(success == rhs.success))
+      return false;
     return true;
   }
   bool operator != (const AGDaemon_ping_result &rhs) const {
@@ -225,6 +238,10 @@ class AGDaemon_ping_result {
 
 };
 
+typedef struct _AGDaemon_ping_presult__isset {
+  _AGDaemon_ping_presult__isset() : success(false) {}
+  bool success;
+} _AGDaemon_ping_presult__isset;
 
 class AGDaemon_ping_presult {
  public:
@@ -232,6 +249,9 @@ class AGDaemon_ping_presult {
 
   virtual ~AGDaemon_ping_presult() throw() {}
 
+   ::watchdog::PingResponse* success;
+
+  _AGDaemon_ping_presult__isset __isset;
 
   uint32_t read(::apache::thrift::protocol::TProtocol* iprot);
 
@@ -260,9 +280,9 @@ class AGDaemonClient : virtual public AGDaemonIf {
   int32_t restart(const int32_t ag_id);
   void send_restart(const int32_t ag_id);
   int32_t recv_restart();
-  void ping();
+  void ping( ::watchdog::PingResponse& _return);
   void send_ping();
-  void recv_ping();
+  void recv_ping( ::watchdog::PingResponse& _return);
  protected:
   boost::shared_ptr< ::apache::thrift::protocol::TProtocol> piprot_;
   boost::shared_ptr< ::apache::thrift::protocol::TProtocol> poprot_;
@@ -323,10 +343,15 @@ class AGDaemonMultiface : virtual public AGDaemonIf {
     }
   }
 
-  void ping() {
+  void ping( ::watchdog::PingResponse& _return) {
     size_t sz = ifaces_.size();
     for (size_t i = 0; i < sz; ++i) {
-      ifaces_[i]->ping();
+      if (i == sz - 1) {
+        ifaces_[i]->ping(_return);
+        return;
+      } else {
+        ifaces_[i]->ping(_return);
+      }
     }
   }
 

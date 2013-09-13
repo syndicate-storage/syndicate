@@ -1,6 +1,8 @@
 #include <wdd-main.h>
 #include <daemon-config.h>
 
+void  init_watchdog_daemon() {
+}
 
 void* start_watchdog_daemon(void* cls) {
     daemon_config *dc = (daemon_config*)cls;
@@ -13,13 +15,17 @@ void* start_watchdog_daemon(void* cls) {
 
     //We are running a thread pool server.
     int nr_cpus = sysconf(_SC_NPROCESSORS_ONLN);
-    int worker_count = nr_cpus - 1;
+    syslog(LOG_INFO, "Detected %i CPUs\n", nr_cpus);
+    int worker_count = nr_cpus;
+    syslog(LOG_INFO, "Thread pool size initialized to %i\n", worker_count);
     shared_ptr<ThreadManager> threadManager = ThreadManager::newSimpleThreadManager(worker_count);
     shared_ptr<ThreadFactory> threadFactory(new PosixThreadFactory());
     threadManager->threadFactory(threadFactory);
     threadManager->start();
     TThreadedServer server(processor, serverTransport, transportFactory, protocolFactory);
+    syslog(LOG_INFO, "Watchdog daemon starts on port %i\n", port);
     server.serve();
+    syslog(LOG_INFO, "Watchdog daemon stopped\n");
     return NULL;
 }
 

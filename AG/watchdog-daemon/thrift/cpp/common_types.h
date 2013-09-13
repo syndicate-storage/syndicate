@@ -81,6 +81,63 @@ class AGDaemonID {
 
 };
 
+typedef struct _PingResponse__isset {
+  _PingResponse__isset() : live_set(false), dead_set(false), id(false) {}
+  bool live_set;
+  bool dead_set;
+  bool id;
+} _PingResponse__isset;
+
+class PingResponse {
+ public:
+
+  static const char* ascii_fingerprint; // = "225D317ACC2239665D64C9293D3A64F1";
+  static const uint8_t binary_fingerprint[16]; // = {0x22,0x5D,0x31,0x7A,0xCC,0x22,0x39,0x66,0x5D,0x64,0xC9,0x29,0x3D,0x3A,0x64,0xF1};
+
+  PingResponse() : id(0) {
+  }
+
+  virtual ~PingResponse() throw() {}
+
+  std::set<int32_t>  live_set;
+  std::set<int32_t>  dead_set;
+  int32_t id;
+
+  _PingResponse__isset __isset;
+
+  void __set_live_set(const std::set<int32_t> & val) {
+    live_set = val;
+  }
+
+  void __set_dead_set(const std::set<int32_t> & val) {
+    dead_set = val;
+  }
+
+  void __set_id(const int32_t val) {
+    id = val;
+  }
+
+  bool operator == (const PingResponse & rhs) const
+  {
+    if (!(live_set == rhs.live_set))
+      return false;
+    if (!(dead_set == rhs.dead_set))
+      return false;
+    if (!(id == rhs.id))
+      return false;
+    return true;
+  }
+  bool operator != (const PingResponse &rhs) const {
+    return !(*this == rhs);
+  }
+
+  bool operator < (const PingResponse & ) const;
+
+  uint32_t read(::apache::thrift::protocol::TProtocol* iprot);
+  uint32_t write(::apache::thrift::protocol::TProtocol* oprot) const;
+
+};
+
 } // namespace
 
 #endif

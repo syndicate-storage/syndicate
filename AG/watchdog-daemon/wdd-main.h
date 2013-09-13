@@ -2,6 +2,7 @@
 #define _WDD_MAIN_H_
 
 #include <pthread.h>
+#include <syslog.h>
 
 #include <protocol/TBinaryProtocol.h>
 //#include <server/TSimpleServer.h>
@@ -14,6 +15,7 @@
 #include <WDDaemon.h>
 #include <WDDaemon_server.h>
 
+
 using namespace ::apache::thrift;
 using namespace ::apache::thrift::protocol;
 using namespace ::apache::thrift::transport;
@@ -24,6 +26,7 @@ using boost::shared_ptr;
 using namespace  ::watchdog;
 
 void* start_watchdog_daemon(void *cls);
+void  init_watchdog_daemon();
 
 #endif //_WDD_MAIN_H_
 

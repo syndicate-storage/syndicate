@@ -7,38 +7,67 @@
 #include <set>
 #include <sstream>
 
-set<int32_t> live_set;
-set<int32_t> dead_set;
-set<char**>  cmd_tok_set;
+set<int32_t>	    live_set;
+set<int32_t>	    dead_set;
+set<char**>	    cmd_tok_set;
+map<pid_t, int32_t> pid_map;
+int32_t		    agd_id;
+sigset_t	    sigmask;
+daemon_config	    *dc = NULL; 
 
-int mask_all_signals() {
-    sigset_t set;
+void* run_daemon(void* cls) {
+    daemon_config *dc = (daemon_config*)cls;
+    int port = dc->ag_daemon_port;
+    shared_ptr<AGDaemonHandler> handler(new AGDaemonHandler());
+    shared_ptr<TProcessor> processor(new AGDaemonProcessor(handler));
+    shared_ptr<TServerTransport> serverTransport(new TServerSocket(port));
+    shared_ptr<TTransportFactory> transportFactory(new TFramedTransportFactory());
+    shared_ptr<TProtocolFactory> protocolFactory(new TBinaryProtocolFactory());
+
+    int worker_count = 1;
+    shared_ptr<ThreadManager> threadManager = ThreadManager::newSimpleThreadManager(worker_count);
+    shared_ptr<ThreadFactory> threadFactory(new PosixThreadFactory());
+    threadManager->threadFactory(threadFactory);
+    threadManager->start();
+    TThreadedServer server(processor, serverTransport, transportFactory, protocolFactory);
+    server.serve();
+    return NULL;
+}
+
+int init_signal_mask() {
     int err;
-    if ((err = sigfillset(&set)) < 0)
-	return err;
-    if ((err = sigprocmask(SIG_BLOCK, &set, NULL)) < 0)
+    if ((err = sigfillset(&sigmask)) < 0)
 	return err;
     return 0;
 }
 
-int unmask_signal(int signum, sighandler_t sighand) {
+int setup_signal_handler(int signum, sighandler_t sighand) {
     int err;
     struct sigaction sa;
     sa.sa_handler = sighand;
     sa.sa_flags = SA_NOCLDSTOP;
-    if ((err = sigfillset(&(sa.sa_mask))) <  0 )
+    sa.sa_mask = sigmask;
+    if ((err = sigdelset(&(sa.sa_mask), SIGCHLD)) < 0) {
+	perror("sigdelset");
 	return err;
-    if ((err = sigdelset(&(sa.sa_mask), SIGCHLD)) < 0)
+    }
+    //sa.sa_restorer = NULL;
+    //sa.sa_sigaction = NULL;
+    if ((err = sigaction(signum, &sa, NULL)) < 0) {
+	perror("sigaction");
 	return err;
-    sa.sa_restorer = NULL;
-    sa.sa_sigaction = NULL;
-    if ((err = sigaction(signum, &sa, NULL)) < 0)
-	return err;
+    } 
     return 0;
 }
 
 void SIGCHLD_handler(int) {
-    cout<<"Child Died!"<<endl;
+    pid_t pid = 0;
+    while ((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
+	int32_t id = pid_map[pid];
+	pid_map.erase(pid);
+	live_set.erase(id);
+	dead_set.insert(id);
+    }
 }
 
 void* generate_pulses(void *cls) {
@@ -51,7 +80,7 @@ void* generate_pulses(void *cls) {
     thrift_connection *tc   = pd->tc;
     int32_t id		    = pd->id;
     while (1) {
-	request.tv_sec = 10;
+	request.tv_sec = 30;
 	request.tv_nsec = 0;
 	remain.tv_sec = 0;
 	remain.tv_nsec = 0;
@@ -59,8 +88,14 @@ void* generate_pulses(void *cls) {
 				    &request, &remain);
 	if (rc < 0)
 	    perror("clock_nanosleep");
-	//Send the pulse...
-	tc->client->pulse(id, live_set, dead_set);
+	try {
+	    //Send the pulse...
+	    tc->wd_client->pulse(id, live_set, dead_set);
+	}
+	catch (TException &te) {
+	    syslog(LOG_ERR, "Failed connecting watchdog daemon at %s:%i (%s)\n", 
+			    dc->watchdog_addr.c_str(), dc->watchdog_daemon_port, te.what());
+	}
     }
     return NULL;
 }
@@ -93,7 +128,7 @@ char** tokenize_command(char *cmd, char **port) {
     return token_array;
 }
 
-int start_ag(char **cmd) {
+int start_ag(int32_t id, char **cmd) {
     pid_t pid = fork();
     if (pid == 0) {
 	int rc = execve(cmd[0], cmd, NULL);
@@ -103,12 +138,14 @@ int start_ag(char **cmd) {
 	}
     }
     else if (pid > 0) {
+	pid_map[pid] = id;
 	return 0;
     }
     else {
 	perror("fork");
 	return -1;
     }
+    return 0;
 }
 
 string get_ag_descriptor(char *host, char* port) {
@@ -122,15 +159,21 @@ string get_ag_descriptor(char *host, char* port) {
 
 int main(int argc, char* argv[]) {
     //Mask all signals
-    mask_all_signals();
+    if (init_signal_mask() < 0) {
+	exit(-1);
+    }
+    //Unmask SIGCHLD
+    if (setup_signal_handler(SIGCHLD, SIGCHLD_handler) < 0) {
+	exit(-1);
+    }
     //Read configuration
-    daemon_config *dc = get_daemon_config("watchdog.conf", NULL);
+    dc = get_daemon_config("watchdog.conf", NULL);
     int	    ad_port = dc->ag_daemon_port;
     string  ad_addr = "127.0.0.1";
     int	    wd_port = dc->watchdog_daemon_port;
     string  wd_addr = dc->watchdog_addr;
     AGDaemonID agdid;
-    pthread_t tid;
+    pthread_t pulse_gen_tid, daemon_tid;
 
     //Find the host name...
     size_t _host_len = 1000;
@@ -141,12 +184,9 @@ int main(int argc, char* argv[]) {
 	exit(-1);
     }
 
-    //Unmask SIGCHLD
-    unmask_signal(SIGCHLD, SIGCHLD_handler);
-
-    agdid.addr = ad_addr;
+    agdid.addr = string(_host);
     agdid.port = ad_port;
-    agdid.frequency = 60;
+    agdid.frequency = 5;
     //Pack ag_list 
     int	    ag_list_len = dc->ag_list.size();
     int	    i;
@@ -159,21 +199,29 @@ int main(int argc, char* argv[]) {
 	char** cmd_toks = tokenize_command(cmd, &_port);
 	cmd_tok_set.insert(cmd_toks);
 	agdid.ag_map[i] = get_ag_descriptor(_host, _port);
-	start_ag(cmd_toks);
+	start_ag(i, cmd_toks);
+	live_set.insert(i);
 	free(_port);
 	_port = NULL;
 	free(cmd);
 	cmd = NULL;
     }
-    thrift_connection *tc = thrift_connect(wd_addr, wd_port);
-    int32_t id = tc->client->register_agd(agdid);
+    thrift_connection *tc = thrift_connect(wd_addr, wd_port, true);
+    if (!tc->is_connected) {
+	syslog(LOG_ERR, "Failed connecting watchdog daemon at %s:%i (%s)\n", wd_addr.c_str(), wd_port, tc->err);
+	exit(-1);
+    }
+    agd_id = tc->wd_client->register_agd(agdid);
+    free(_host);
     pulse_data *pd = new pulse_data;
     pd->dc = dc;
     pd->tc = tc;
-    pd->id = id;
-    if (pthread_create(&tid, NULL, generate_pulses, pd) < 0)
+    pd->id = agd_id;
+    if (pthread_create(&daemon_tid, NULL, run_daemon, dc) < 0 )
+	perror("pthread_create");	
+    if (pthread_create(&pulse_gen_tid, NULL, generate_pulses, pd) < 0)
 	perror("pthread_create");
-    pthread_join(tid, NULL);
+    pthread_join(pulse_gen_tid, NULL);
     thrift_disconnect(tc);
     exit(0);
 }
