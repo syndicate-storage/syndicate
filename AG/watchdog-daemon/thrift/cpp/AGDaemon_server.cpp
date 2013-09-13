@@ -19,5 +19,8 @@ void AGDaemonHandler::ping( ::watchdog::PingResponse& _return) {
     // Your implementation goes here
     printf("ping\n");
     PingResponse_local prl = asi->ping();
+    _return.id = prl.id;
+    _return.dead_set = prl.dead_set;
+    _return.live_set = prl.live_set;
 }
 

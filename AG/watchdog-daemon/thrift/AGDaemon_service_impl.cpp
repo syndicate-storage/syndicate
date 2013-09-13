@@ -7,6 +7,9 @@ extern set<int32_t> dead_set;
 extern int32_t	    agd_id;
 
 AGDaemon_service_impl::AGDaemon_service_impl() {
+    openlog(SYNDICATE_AG_SYSLOG_IDENT, 
+	    LOG_CONS | LOG_PID | LOG_PERROR,
+	    LOG_USER);
 }
 
 PingResponse_local AGDaemon_service_impl::ping() {

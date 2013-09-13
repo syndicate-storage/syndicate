@@ -2,9 +2,6 @@
 #include <daemon-config.h>
 
 void  init_watchdog_daemon() {
-    openlog(SYNDICATE_WD_SYSLOG_IDENT, 
-	    LOG_CONS | LOG_PID | LOG_PERROR,
-	    LOG_USER);
 }
 
 void* start_watchdog_daemon(void* cls) {

@@ -13,6 +13,7 @@ set<char**>	    cmd_tok_set;
 map<pid_t, int32_t> pid_map;
 int32_t		    agd_id;
 sigset_t	    sigmask;
+daemon_config	    *dc = NULL; 
 
 void* run_daemon(void* cls) {
     daemon_config *dc = (daemon_config*)cls;
@@ -23,19 +24,13 @@ void* run_daemon(void* cls) {
     shared_ptr<TTransportFactory> transportFactory(new TFramedTransportFactory());
     shared_ptr<TProtocolFactory> protocolFactory(new TBinaryProtocolFactory());
 
-    //We are running a thread pool server.
-    //int nr_cpus = sysconf(_SC_NPROCESSORS_ONLN);
-    //syslog(LOG_INFO, "Detected %i CPUs\n", nr_cpus);
     int worker_count = 1;
-    //syslog(LOG_INFO, "Thread pool size initialized to %i\n", worker_count);
     shared_ptr<ThreadManager> threadManager = ThreadManager::newSimpleThreadManager(worker_count);
     shared_ptr<ThreadFactory> threadFactory(new PosixThreadFactory());
     threadManager->threadFactory(threadFactory);
     threadManager->start();
     TThreadedServer server(processor, serverTransport, transportFactory, protocolFactory);
-    //syslog(LOG_INFO, "Watchdog daemon starts on port %i\n", port);
     server.serve();
-    //syslog(LOG_INFO, "Watchdog daemon stopped\n");
     return NULL;
 }
 
@@ -93,8 +88,14 @@ void* generate_pulses(void *cls) {
 				    &request, &remain);
 	if (rc < 0)
 	    perror("clock_nanosleep");
-	//Send the pulse...
-	tc->wd_client->pulse(id, live_set, dead_set);
+	try {
+	    //Send the pulse...
+	    tc->wd_client->pulse(id, live_set, dead_set);
+	}
+	catch (TException &te) {
+	    syslog(LOG_ERR, "Failed connecting watchdog daemon at %s:%i (%s)\n", 
+			    dc->watchdog_addr.c_str(), dc->watchdog_daemon_port, te.what());
+	}
     }
     return NULL;
 }
@@ -166,7 +167,7 @@ int main(int argc, char* argv[]) {
 	exit(-1);
     }
     //Read configuration
-    daemon_config *dc = get_daemon_config("watchdog.conf", NULL);
+    dc = get_daemon_config("watchdog.conf", NULL);
     int	    ad_port = dc->ag_daemon_port;
     string  ad_addr = "127.0.0.1";
     int	    wd_port = dc->watchdog_daemon_port;
@@ -206,6 +207,10 @@ int main(int argc, char* argv[]) {
 	cmd = NULL;
     }
     thrift_connection *tc = thrift_connect(wd_addr, wd_port, true);
+    if (!tc->is_connected) {
+	syslog(LOG_ERR, "Unable to connect watchdog daemon at %s:%i\n", wd_addr.c_str(), wd_port);
+	exit(-1);
+    }
     agd_id = tc->wd_client->register_agd(agdid);
     free(_host);
     pulse_data *pd = new pulse_data;

@@ -13,6 +13,12 @@
 #include <boost/make_shared.hpp>
 
 #include <string>
+#include <iostream>
+
+#include <string.h>
+
+#define  SYNDICATE_WD_SYSLOG_IDENT  "syndicate-watchdog"
+#define  SYNDICATE_AG_SYSLOG_IDENT  "syndicate-agdaemon"
 
 using namespace ::apache::thrift;
 using namespace ::apache::thrift::protocol;
@@ -29,6 +35,8 @@ typedef struct _thrift_connection {
     shared_ptr<TProtocol>	protocol;
     WDDaemonClient		*wd_client;
     AGDaemonClient		*ag_client;
+    bool			is_connected;
+    char			*err;
 } thrift_connection;
 
 thrift_connection* thrift_connect(string addr, int port, bool is_wd);

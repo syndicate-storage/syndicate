@@ -5,10 +5,12 @@
 #include <sys/types.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <syslog.h>
 
 #include <string>
 #include <map>
 #include <set>
+#include <vector>
 #include <iostream>
 
 #include <thrift-common.h>

@@ -15,7 +15,6 @@
 #include <WDDaemon.h>
 #include <WDDaemon_server.h>
 
-#define  SYNDICATE_WD_SYSLOG_IDENT  "syndicate-watchdog"
 
 using namespace ::apache::thrift;
 using namespace ::apache::thrift::protocol;
