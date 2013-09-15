@@ -125,47 +125,20 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blockinfo* info, void* usercls ) {
    errorf("%s","INFO: metadata_dataset\n"); 
    
-   uint64_t volume_id = 0;
-   uint64_t file_id = 0;
-   int64_t file_version = 0;
-   uint64_t block_id = 0;
-   int64_t block_version = 0;
-   struct timespec manifest_timestamp;
-   manifest_timestamp.tv_sec = 0;
-   manifest_timestamp.tv_nsec = 0;
-   bool staging = false;
-   
-   int rc = md_HTTP_parse_url_path( (char*)dat->url_path, &volume_id, &file_id, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
-   if( rc != 0 ) {
-      errorf( "failed to parse '%s', rc = %d\n", dat->url_path, rc );
-      free( file_path );
-      return -EINVAL;
-   }
-
-   content_map::iterator itr = DATA.find( string(file_path) );
+   content_map::iterator itr = DATA.find( string( dat->reqdat.fs_path ) );
    if( itr == DATA.end() ) {
       // not here
       return -ENOENT;
    }
-
-   struct gateway_ctx* ctx = (struct gateway_ctx*)usercls;
+   
+   // give back the file_id and last-mod, since that's all the disk has for now.
+   // TODO: give back the block hash, maybe? 
+   
    struct md_entry* ent = itr->second;
    
-   info->set_blocking_factor( ctx->blocking_factor );
-   
-   info->set_volume_id( volume_id );
-   info->set_file_id( file_id );
-   info->set_file_version( file_version );
-   info->set_block_id( ctx->block_id );
-   info->set_block_version( block_version );
+   info->set_file_id( ent->file_id );
    info->set_file_mtime_sec( ent->mtime_sec );
    info->set_file_mtime_nsec( ent->mtime_nsec );
-   
-   // no block hash...
-   info->set_hash( string("") );
-   
-   // sign this
-   // TODO: block hash and message signature
    
    return 0;
 }
@@ -175,44 +148,21 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
 extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 
    errorf("%s", "INFO: connect_dataset\n");  
-   // is this a request for a file block, or a manifest?
-   char* file_path = NULL;
-   int64_t file_version = 0;
-   uint64_t block_id = 0;
-   int64_t block_version = 0;
-   struct timespec manifest_timestamp;
-   manifest_timestamp.tv_sec = 0;
-   manifest_timestamp.tv_nsec = 0;
-   bool staging = false;
-
-   int rc = md_HTTP_parse_url_path( (char*)replica_ctx->url_path, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
-   if( rc != 0 ) {
-      errorf( "failed to parse '%s', rc = %d\n", replica_ctx->url_path, rc );
-      free( file_path );
-      return NULL;
-   }
-
-   if( staging ) {
-      errorf("invalid URL path %s\n", replica_ctx->url_path );
-      free( file_path );
-      return NULL;
-   }
    
    struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
 
    // is there metadata for this file?
-   string fs_path( file_path );
+   string fs_path( replica_ctx->reqdat.fs_path );
    content_map::iterator itr = DATA.find( fs_path );
    if( itr == DATA.end() ) {
       // no entry; nothing to do
-      free( file_path );
       return NULL;
    }
 
-   struct md_entry* ent = DATA[ file_path ];
+   struct md_entry* ent = DATA[ fs_path ];
 
    // is this a request for a manifest?
-   if( manifest_timestamp.tv_sec > 0 ) {
+   if( replica_ctx->reqdat.manifest_timestamp.tv_sec > 0 ) {
       // request for a manifest
       int rc = gateway_generate_manifest( replica_ctx, ctx, ent );
       if( rc != 0 ) {
@@ -228,7 +178,6 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
             replica_ctx->err = -500;
 
          free( ctx );
-         free( file_path );
 
          return NULL;
       }
@@ -240,19 +189,20 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
       replica_ctx->size = ctx->data_len;
    }
    else {
-      if ( !global_conf->data_root || !ent->url) {
-         errorf( "Conf's data_root = %s and URL = %s\n", global_conf->data_root, ent->url );
+      if ( !global_conf->data_root) {
+         errorf( "Conf's data_root = %s\n", global_conf->data_root );
          return NULL;
       }
+      int rc = 0;
+      
       // request for local file
-      char* fp = md_fullpath( global_conf->data_root, ent->path, NULL );
+      char* fp = md_fullpath( global_conf->data_root, fs_path.c_str(), NULL );
       ctx->fd = open( fp, O_RDONLY );
       if( ctx->fd < 0 ) {
          rc = -errno;
          errorf( "open(%s) errno = %d\n", fp, rc );
          free( fp );
          free( ctx );
-         free( file_path );
          return NULL;
       }
       else {
@@ -260,24 +210,22 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	 // Set blocking factor for this volume from replica_ctx
 	 ctx->blocking_factor = DRIVER_CONF.ag_block_size;
          // set up for reading
-         off_t offset = ctx->blocking_factor * block_id;
+         off_t offset = ctx->blocking_factor * replica_ctx->reqdat.block_id;
          rc = lseek( ctx->fd, offset, SEEK_SET );
          if( rc != 0 ) {
             rc = -errno;
             errorf( "lseek errno = %d\n", rc );
             free( ctx );
-            free( file_path );
             return NULL;
          }
       }
 
       ctx->num_read = 0;
-      ctx->block_id = block_id;
+      ctx->block_id = replica_ctx->reqdat.block_id;
       ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
-      replica_ctx->size = ent->size;
+      replica_ctx->size = ctx->blocking_factor;
    }
 
-   ctx->file_path = file_path;
    return ctx;
 }
 
@@ -293,7 +241,6 @@ extern "C" void cleanup_dataset( void* cls ) {
         free( ctx->data );
 
       ctx->data = NULL;
-      ctx->file_path = NULL;
    
       free( ctx );
    }
@@ -341,17 +288,12 @@ static int publish(const char *fpath, const struct stat *sb,
 	pfunc_exit_code = 0;
 	return 0;
     }
+    
     //Set volume path
     size_t path_len = ( len - datapath_len ) + 1; 
-    ment->path = (char*)malloc( path_len );
-    memset( ment->path, 0, path_len );
-    strncpy( ment->path, fpath + datapath_len, path_len );
-
-    //Set primary replica 
-    size_t content_url_len = strlen(global_conf->content_url);
-    ment->url = ( char* )malloc( content_url_len + 1);
-    memset( ment->url, 0, content_url_len + 1 );
-    strncpy( ment->url, global_conf->content_url, content_url_len );
+    char* path = (char*)malloc( path_len );
+    memset( path, 0, path_len );
+    strncpy( path, fpath + datapath_len, path_len );
 
     ment->ctime_sec = sb->st_ctime;
     ment->ctime_nsec = 0;
@@ -366,13 +308,13 @@ static int publish(const char *fpath, const struct stat *sb,
     switch (tflag) {
 	case FTW_D:
 	    ment->type = MD_ENTRY_DIR;
-	    if ( (i = ms_client_mkdir(mc, ment)) < 0 ) {
+	    if ( (i = ms_client_mkdir(mc, &ment->file_id, ment)) < 0 ) {
 		cout<<"ms client mkdir "<<i<<endl;
 	    }
 	    break;
 	case FTW_F:
 	    ment->type = MD_ENTRY_FILE;
-	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
+	    if ( (i = ms_client_create(mc, &ment->file_id, ment)) < 0 ) {
 		cout<<"ms client create "<<i<<endl;
 	    }
 	    break;
@@ -385,7 +327,7 @@ static int publish(const char *fpath, const struct stat *sb,
 	default:
 	    break;
     }
-    DATA[ment->path] = ment;
+    DATA[path] = ment;
     //delete ment;
     pfunc_exit_code = 0;
     return 0;  

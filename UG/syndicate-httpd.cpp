@@ -107,7 +107,7 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
 
    // parse the url_path into its constituent components
-   struct http_request_data reqdat;
+   struct gateway_request_data reqdat;
    
    int rc = http_parse_request( md_con_data->http, resp, &reqdat, url );
    if( rc < 0 ) {
@@ -138,7 +138,7 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
       char* url_path = md_path_from_url( redirect_url );
 
       free( redirect_url );
-      http_request_data_free( &reqdat );
+      gateway_request_data_free( &reqdat );
 
       rc = http_parse_request( md_con_data->http, resp, &reqdat, url_path );
 
@@ -171,14 +171,14 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
       md_create_HTTP_response_ram_nocopy( resp, "text/plain", 200, md_str, strlen(md_str) + 1 );
    }
    
-   http_request_data_free( &reqdat );
+   gateway_request_data_free( &reqdat );
 
    return resp;
 }
 
 
 // GET a directory
-static int httpd_GET_dir( struct md_HTTP_response* resp, struct md_HTTP_connection_data* md_con_data, struct http_request_data* reqdat ) {
+static int httpd_GET_dir( struct md_HTTP_response* resp, struct md_HTTP_connection_data* md_con_data, struct gateway_request_data* reqdat ) {
 
    struct syndicate_state* state = syndicate_get_state();
 
@@ -232,7 +232,7 @@ static int httpd_GET_dir( struct md_HTTP_response* resp, struct md_HTTP_connecti
 
 
 // GET a file block
-static int httpd_GET_file_blocks( struct md_HTTP_response* resp, struct md_HTTP_connection_data* md_con_data, struct http_request_data* reqdat, struct stat* sb ) {
+static int httpd_GET_file_blocks( struct md_HTTP_response* resp, struct md_HTTP_connection_data* md_con_data, struct gateway_request_data* reqdat, struct stat* sb ) {
 
    struct syndicate_state* state = syndicate_get_state();
    struct md_HTTP_header** client_headers = md_con_data->headers;
@@ -306,7 +306,7 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
 
    // parse the url_path into its constituent components
-   struct http_request_data reqdat;
+   struct gateway_request_data reqdat;
    
    int rc = http_parse_request( md_con_data->http, resp, &reqdat, url );
    if( rc < 0 ) {
@@ -326,7 +326,7 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
    if( redirect_rc < 0 ) {
       errorf( "http_process_redirect rc = %d\n", redirect_rc );
 
-      http_request_data_free( &reqdat );
+      gateway_request_data_free( &reqdat );
 
       char buf[100];
       snprintf(buf, 100, "GET http_process_redirect rc = %d\n", redirect_rc );
@@ -338,7 +338,7 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
       // request for directory listing
       httpd_GET_dir( resp, md_con_data, &reqdat );
 
-      http_request_data_free( &reqdat );
+      gateway_request_data_free( &reqdat );
       return resp;
    }
    
@@ -349,14 +349,14 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
       char* url_path = md_path_from_url( redirect_url );
 
       free( redirect_url );
-      http_request_data_free( &reqdat );
+      gateway_request_data_free( &reqdat );
       
       rc = http_parse_request( md_con_data->http, resp, &reqdat, url_path );
       
       free( url_path );
       
       if( rc < 0 ) {
-         http_request_data_free( &reqdat );
+         gateway_request_data_free( &reqdat );
          return resp;
       }
    }
@@ -364,7 +364,7 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
    // handle a file
    httpd_GET_file_blocks( resp, md_con_data, &reqdat, &sb );
 
-   http_request_data_free( &reqdat );
+   gateway_request_data_free( &reqdat );
    
    return resp;
 }

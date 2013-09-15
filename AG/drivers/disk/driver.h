@@ -24,9 +24,6 @@ using namespace std;
 struct gateway_ctx {
    int request_type;
 
-   // file info 
-   char const* file_path;
-
    // data buffer (manifest or remote block data)
    char* data;
    size_t data_len;

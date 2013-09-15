@@ -13,6 +13,9 @@ static bool allow_overwrite = false;
 // gloabl config
 struct md_syndicate_conf *global_conf = NULL;
 
+// global ms
+struct ms_client *global_ms = NULL;
+
 // gateway driver
 static void* driver = NULL;
 
@@ -67,6 +70,14 @@ void gateway_controller_func( int (*controller_func)(pid_t pid, int ctrl_flag)) 
     controller_callback = controller_func;
 }
 
+// free a gateway_request_data
+void gateway_request_data_free( struct gateway_request_data* reqdat ) {
+   if( reqdat->fs_path ) {
+      free( reqdat->fs_path );
+   }
+   memset( reqdat, 0, sizeof(struct gateway_request_data) );
+}
+
 // get the HTTP status
 int get_http_status( struct gateway_context* ctx, int default_value ) {
    int ret = default_value;
@@ -100,6 +111,24 @@ static char const* CONNECT_ERROR = "CONNECT ERROR";
 
 // connection handler
 static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
+   
+   struct gateway_request_data reqdat;
+   memset( &reqdat, 0, sizeof(reqdat) );
+   
+   int rc = md_HTTP_parse_url_path( md_con_data->url_path, &reqdat.volume_id, &reqdat.fs_path, &reqdat.file_version, &reqdat.block_id, &reqdat.block_version, &reqdat.manifest_timestamp, &reqdat.staging );
+   if( rc != 0 ) {
+      errorf( "failed to parse '%s', rc = %d\n", md_con_data->url_path, rc );
+      
+      return NULL;
+   }
+   
+   if( reqdat.staging ) {
+      errorf("Invalid request: '%s' cannot be staging\n", md_con_data->url_path );
+      gateway_request_data_free( &reqdat );
+      return NULL;
+   }
+   
+   
    struct gateway_connection_data* con_data = CALLOC_LIST( struct gateway_connection_data, 1 );
    
    con_data->user = md_con_data->user;
@@ -112,12 +141,11 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
       con_data->ctx.args = md_parse_cgi_args( args_str );
    }
    
-   con_data->ctx.url_path = md_con_data->url_path;
-
    if( md_con_data->user != NULL ) {
       con_data->ctx.username = md_con_data->user->username;
    }
    
+   memcpy( &con_data->ctx.reqdat, &reqdat, sizeof(reqdat) );
    con_data->ctx.block_info = new ms::ms_gateway_blockinfo();
    con_data->ctx.hostname = md_con_data->remote_host;
    con_data->ctx.method = md_con_data->method;
@@ -337,9 +365,52 @@ static struct md_HTTP_response* gateway_GET_handler( struct md_HTTP_connection_d
 }
 
 
+// populate an ms_block_info structure with defaults
+static int gateway_default_blockinfo( char const* url_path, struct gateway_connection_data* rpc, ms::ms_gateway_blockinfo* info ) {
+   
+   uint64_t volume_id = 0;
+   int64_t file_version = 0;
+   uint64_t block_id = 0;
+   int64_t block_version = 0;
+   char* file_path = NULL;
+   struct timespec manifest_timestamp;
+   manifest_timestamp.tv_sec = 0;
+   manifest_timestamp.tv_nsec = 0;
+   bool staging = false;
+   
+   int rc = md_HTTP_parse_url_path( url_path, &volume_id, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
+   if( rc != 0 ) {
+      errorf( "failed to parse '%s', rc = %d\n", url_path, rc );
+      free( file_path );
+      return -EINVAL;
+   }
+   
+   // populate this structure, and then ask the driver to add its stuff on top of it
+   info->set_blocking_factor( global_conf->ag_block_size );
+   
+   info->set_volume( volume_id );
+   info->set_file_id( (uint64_t)(-1) );
+   info->set_file_version( file_version );
+   info->set_block_id( block_id );
+   info->set_block_version( block_version );
+   info->set_file_mtime_sec( 0 );
+   info->set_file_mtime_nsec( 0 );
+   
+   // no block hash or signature yet...
+   info->set_hash( string("") );
+   info->set_signature( string("") );
+   
+   // block ownership info
+   info->set_owner( global_ms->owner_id );
+   info->set_writer( global_ms->gateway_id );
+   
+   return 0;
+}
+
+
 // gateway HEAD handler
 static struct md_HTTP_response* gateway_HEAD_handler( struct md_HTTP_connection_data* md_con_data ) {
-
+   
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
 
    struct gateway_connection_data* rpc = (struct gateway_connection_data*)md_con_data->cls;
@@ -352,14 +423,18 @@ static struct md_HTTP_response* gateway_HEAD_handler( struct md_HTTP_connection_
    // do we have metadata for this?
    int rc = 0;
    ms::ms_gateway_blockinfo info;
-
+   
    if( metadata_callback == NULL ) {
       md_create_HTTP_response_ram_static( resp, "text/plain", 501, MD_HTTP_501_MSG, strlen(MD_HTTP_501_MSG) + 1 );
       rc = -501;
    }
    else {
-      rc = (*metadata_callback)( &rpc->ctx, &info, rpc->user_cls );
-   
+      rc = gateway_default_blockinfo( md_con_data->url_path, rpc, &info );
+      
+      if( rc == 0 ) {   
+         rc = (*metadata_callback)( &rpc->ctx, &info, rpc->user_cls );
+      }
+      
       if( rc != 0 ) {
          int http_status = get_http_status( &rpc->ctx, 404 );
 
@@ -368,17 +443,24 @@ static struct md_HTTP_response* gateway_HEAD_handler( struct md_HTTP_connection_
          md_create_HTTP_response_ram_static( resp, "text/plain", http_status, msg, strlen(msg) + 1 );
       }
       else {
-         string info_str;
-         bool src = info.SerializeToString( &info_str );
-         if( !src ) {
-            errorf( "could not serialize metadata for %s\n", rpc->ctx.url_path );
+         // sign this...
+         rc = gateway_sign_blockinfo( global_ms->my_key, &info );
+         if( rc != 0 ) {
             md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-            rc = -500;
          }
          else {
-            int http_status = get_http_status( &rpc->ctx, 200 );
-            md_create_HTTP_response_ram( resp, "text/plain", http_status, info_str.c_str(), info_str.size() );
-            add_last_mod_header( resp );
+            // serialize and return 
+            string info_str;
+            bool src = info.SerializeToString( &info_str );
+            if( !src ) {
+               errorf( "could not serialize metadata for %s\n", md_con_data->url_path );
+               md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
+            }
+            else {
+               int http_status = get_http_status( &rpc->ctx, 200 );
+               md_create_HTTP_response_ram( resp, "text/plain", http_status, info_str.c_str(), info_str.size() );
+               add_last_mod_header( resp );
+            }
          }
       }
    }
@@ -452,73 +534,13 @@ static void gateway_cleanup( struct MHD_Connection *connection, void *user_cls, 
 
 // sign a manifest message
 int gateway_sign_manifest( EVP_PKEY* pkey, Serialization::ManifestMsg* mmsg ) {
-   mmsg->set_signature( string("") );
-
-   string bits;
-   bool valid;
-   
-   try {
-      valid = mmsg->SerializeToString( &bits );
-   }
-   catch( exception e ) {
-      errorf("%s", "failed to serialize update set\n");
-      return -EINVAL;
-   }
-
-   if( !valid ) {
-      errorf("%s", "failed to serialize update set\n");
-      return -EINVAL;
-   }
-
-   // sign this message
-   char* sigb64 = NULL;
-   size_t sigb64_len = 0;
-
-   int rc = md_sign_message( pkey, bits.data(), bits.size(), &sigb64, &sigb64_len );
-   if( rc != 0 ) {
-      errorf("md_sign_message rc = %d\n", rc );
-      return rc;
-   }
-
-   mmsg->set_signature( string(sigb64, sigb64_len) );
-   free( sigb64 );
-   return 0;
+   return md_sign< Serialization::ManifestMsg >( pkey, mmsg );
 }
 
 
 // sign a block info message
 int gateway_sign_blockinfo( EVP_PKEY* pkey, ms::ms_gateway_blockinfo* blkinfo ) {
-   blkinfo->set_signature( string("") );
-
-   string bits;
-   bool valid;
-   
-   try {
-      valid = blkinfo->SerializeToString( &bits );
-   }
-   catch( exception e ) {
-      errorf("%s", "failed to serialize update set\n");
-      return -EINVAL;
-   }
-
-   if( !valid ) {
-      errorf("%s", "failed to serialize update set\n");
-      return -EINVAL;
-   }
-
-   // sign this message
-   char* sigb64 = NULL;
-   size_t sigb64_len = 0;
-
-   int rc = md_sign_message( pkey, bits.data(), bits.size(), &sigb64, &sigb64_len );
-   if( rc != 0 ) {
-      errorf("md_sign_message rc = %d\n", rc );
-      return rc;
-   }
-
-   blkinfo->set_signature( string(sigb64, sigb64_len) );
-   free( sigb64 );
-   return 0;
+   return md_sign< ms::ms_gateway_blockinfo >( pkey, blkinfo );
 }
 
 
@@ -610,6 +632,8 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    //Initialize global config struct
    global_conf = ( struct md_syndicate_conf* )
 		malloc( sizeof ( struct md_syndicate_conf ) );
+                
+   global_ms = CALLOC_LIST( struct ms_client, 1 );
 
    // process command-line options
    bool make_daemon = true;
@@ -811,8 +835,8 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    if( conf.ag_block_size == 0 ) 
       conf.ag_block_size = AG_DEFAULT_BLOCK_SIZE;
    
-   // copy conf to global_conf
    memcpy( global_conf, &conf, sizeof( struct md_syndicate_conf ) );
+   memcpy( global_ms, &client, sizeof( struct ms_client ) );
    
    // load AG driver
    if ( conf.ag_driver && gateway_type == SYNDICATE_AG) {

@@ -21,7 +21,7 @@ uint64_t syndicate_HTTP_authenticate( struct md_HTTP_connection_data* md_con_dat
 }
 
 // process the beginning of a HEAD or POST
-static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_data, struct md_HTTP_response* resp, struct http_request_data* reqdat, struct stat* sb ) {
+static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_data, struct md_HTTP_response* resp, struct gateway_request_data* reqdat, struct stat* sb ) {
 
    char* url = md_con_data->url_path;
    struct md_HTTP* http = md_con_data->http;
@@ -42,7 +42,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
    if( rc <= 0 ) {
       // handled!
       dbprintf("http_handle_redirect(%s) rc = %d\n", url, rc );
-      http_request_data_free( reqdat );
+      gateway_request_data_free( reqdat );
       return 0;
    }
 
@@ -51,7 +51,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
       // will not redirect; that can lead to loops.
       errorf("ERR: Requested object %s is not local.  Will not redirect to avoid loops.\n", reqdat->fs_path );
       md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
-      http_request_data_free( reqdat );
+      gateway_request_data_free( reqdat );
       return 0;
    }
 
@@ -60,7 +60,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
       // not volume-readable or world readable
       errorf("ERR: Object %s is not volume-readable or world-readable (mode %o)\n", reqdat->fs_path, sb->st_mode );
       md_create_HTTP_response_ram_static( resp, "text/plain", 404, MD_HTTP_404_MSG, strlen(MD_HTTP_404_MSG) + 1 );
-      http_request_data_free( reqdat );
+      gateway_request_data_free( reqdat );
       return 0;
    }
 
@@ -68,7 +68,7 @@ static int syndicate_begin_read_request( struct md_HTTP_connection_data* md_con_
    if( S_ISDIR( sb->st_mode ) ) {
       errorf("ERR: Object %s is a directory\n", reqdat->fs_path );
       md_create_HTTP_response_ram_static( resp, "text/plain", 400, MD_HTTP_400_MSG, strlen(MD_HTTP_400_MSG) + 1 );
-      http_request_data_free( reqdat );
+      gateway_request_data_free( reqdat );
       return 0;
    }
 
@@ -82,7 +82,7 @@ struct md_HTTP_response* syndicate_HTTP_HEAD_handler( struct md_HTTP_connection_
 
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
 
-   struct http_request_data reqdat;
+   struct gateway_request_data reqdat;
    struct stat sb;
    
    int rc = syndicate_begin_read_request( md_con_data, resp, &reqdat, &sb );
@@ -95,7 +95,7 @@ struct md_HTTP_response* syndicate_HTTP_HEAD_handler( struct md_HTTP_connection_
    md_create_HTTP_response_ram_static( resp, "text/plain", 200, MD_HTTP_200_MSG, strlen(MD_HTTP_200_MSG) + 1 );
    http_make_default_headers( resp, sb.st_mtime, sb.st_size, true );
 
-   http_request_data_free( &reqdat );
+   gateway_request_data_free( &reqdat );
    
    return resp;
 }
@@ -110,7 +110,7 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
 
    // parse the url_path into its constituent components
-   struct http_request_data reqdat;
+   struct gateway_request_data reqdat;
    struct stat sb;
 
    int rc = syndicate_begin_read_request( md_con_data, resp, &reqdat, &sb );
@@ -131,7 +131,7 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
          errorf( "fs_entry_read_block(%s.%" PRId64 "/%" PRIu64 ".%" PRId64 ") rc = %zd\n", reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version, size );
          md_create_HTTP_response_ram( resp, "text/plain", 500, "INTERNAL SERVER ERROR\n", strlen("INTERNAL SERVER ERROR\n") + 1 );
 
-         http_request_data_free( &reqdat );
+         gateway_request_data_free( &reqdat );
          free( block );
          return resp;
       }
@@ -142,7 +142,7 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
       md_create_HTTP_response_ram_nocopy( resp, "application/octet-stream", 200, block, size );
       http_make_default_headers( resp, sb.st_mtime, size, true );
 
-      http_request_data_free( &reqdat );
+      gateway_request_data_free( &reqdat );
       return resp;
    }
 
@@ -166,7 +166,7 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
             http_io_error_resp( resp, 500, buf );
          }
 
-         http_request_data_free( &reqdat );
+         gateway_request_data_free( &reqdat );
          
          return resp;
       }
@@ -175,7 +175,7 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
          // TODO: request for a file
          // redirect to its manifest for now
          md_create_HTTP_response_ram_static( resp, "text/plain", 400, "INVALID REQUEST", strlen("INVALID REQUEST") + 1 );
-         http_request_data_free( &reqdat );
+         gateway_request_data_free( &reqdat );
 
          return resp;
       }

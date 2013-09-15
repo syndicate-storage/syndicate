@@ -19,11 +19,22 @@
 
 extern struct md_syndicate_conf *global_conf;
 
+struct gateway_request_data {
+   uint64_t volume_id;
+   char* fs_path;
+   int64_t file_version;
+   uint64_t block_id;
+   int64_t block_version;
+   struct timespec manifest_timestamp;
+   bool staging;
+};
+
 struct gateway_context {
-   char const* url_path;
    char const* hostname;
    char const* username;
    char const* method;
+   struct gateway_request_data reqdat;
+   
    size_t size;         // for PUT, this is the length of the uploaded data.  for GET, this is the expected length of the data to be fetched
    time_t last_mod;     // for GET, this is the last-mod time of the file to be served
    char** args;
@@ -68,6 +79,8 @@ int gateway_key_value( char* arg, char* key, char* value );
 
 int gateway_sign_manifest( EVP_PKEY* pkey, Serialization::ManifestMsg* mmsg );
 int gateway_sign_blockinfo( EVP_PKEY* pkey, ms::ms_gateway_blockinfo* blkinfo );
+
+void gateway_request_data_free( struct gateway_request_data* reqdat );
 
 int load_AG_driver( char *lib );
 int unload_AG_driver( );
