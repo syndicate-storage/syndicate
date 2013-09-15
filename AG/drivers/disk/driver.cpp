@@ -36,9 +36,7 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
    mmsg->set_file_version( 1 );
    mmsg->set_mtime_sec( ent->mtime_sec );
    mmsg->set_mtime_nsec( 0 );
-   mmsg->set_manifest_mtime_sec( ent->mtime_sec );
-   mmsg->set_manifest_mtime_nsec( 0 );
-
+   
    uint64_t num_blocks = ent->size / ctx->blocking_factor;
    if( ent->size % ctx->blocking_factor != 0 )
       num_blocks++;
@@ -46,12 +44,17 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
    Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
    bbmsg->set_start_id( 0 );
    bbmsg->set_end_id( num_blocks );
-   stringstream strstrm;
-   strstrm << ent->url << ent->path;
-   bbmsg->set_file_url( strstrm.str() );
 
    for( uint64_t i = 0; i < num_blocks; i++ ) {
       bbmsg->add_block_versions( 0 );
+   }
+   
+   // sign the message
+   int rc = gateway_sign_manifest( mc->my_key, mmsg );
+   if( rc != 0 ) {
+      errorf("gateway_sign_manifest rc = %d\n", rc );
+      delete mmsg;
+      return rc;
    }
    
    // serialize
@@ -121,7 +124,9 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 // get metadata for a dataset
 extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blockinfo* info, void* usercls ) {
    errorf("%s","INFO: metadata_dataset\n"); 
-   char* file_path = NULL;
+   
+   uint64_t volume_id = 0;
+   uint64_t file_id = 0;
    int64_t file_version = 0;
    uint64_t block_id = 0;
    int64_t block_version = 0;
@@ -129,8 +134,8 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
    manifest_timestamp.tv_sec = 0;
    manifest_timestamp.tv_nsec = 0;
    bool staging = false;
-
-   int rc = md_HTTP_parse_url_path( (char*)dat->url_path, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
+   
+   int rc = md_HTTP_parse_url_path( (char*)dat->url_path, &volume_id, &file_id, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
    if( rc != 0 ) {
       errorf( "failed to parse '%s', rc = %d\n", dat->url_path, rc );
       free( file_path );
@@ -146,16 +151,21 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
    struct gateway_ctx* ctx = (struct gateway_ctx*)usercls;
    struct md_entry* ent = itr->second;
    
-   info->set_progress( ms::ms_gateway_blockinfo::COMMITTED );     // ignored, but needs to be filled in
    info->set_blocking_factor( ctx->blocking_factor );
    
+   info->set_volume_id( volume_id );
+   info->set_file_id( file_id );
    info->set_file_version( file_version );
    info->set_block_id( ctx->block_id );
    info->set_block_version( block_version );
-   info->set_fs_path( string(ctx->file_path) );
    info->set_file_mtime_sec( ent->mtime_sec );
    info->set_file_mtime_nsec( ent->mtime_nsec );
-   info->set_write_time( ent->mtime_sec );
+   
+   // no block hash...
+   info->set_hash( string("") );
+   
+   // sign this
+   // TODO: block hash and message signature
    
    return 0;
 }
@@ -248,7 +258,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
       else {
          free( fp );
 	 // Set blocking factor for this volume from replica_ctx
-	 ctx->blocking_factor = ms_client_get_volume_blocksize(mc, replica_ctx->volume_id);
+	 ctx->blocking_factor = DRIVER_CONF.ag_block_size;
          // set up for reading
          off_t offset = ctx->blocking_factor * block_id;
          rc = lseek( ctx->fd, offset, SEEK_SET );
