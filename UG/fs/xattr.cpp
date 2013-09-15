@@ -29,11 +29,11 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
       else {
          memset( value, 0, size );
          snprintf( value, size, "%ld.%d", fent->mtime_sec, fent->mtime_nsec );
-         ret = strlen( value ) + 1
+         ret = strlen( value ) + 1;
       }
    }
 
-   else if( strcmp(name, SYNDICATEFS_XATTR_COORDINATOR) == 0 ) {
+   else if( strcmp(name, SYNDICATE_XATTR_COORDINATOR) == 0 ) {
       // get the URL for this file
       // TODO:
       return -ENOATTR;
@@ -66,7 +66,7 @@ ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, 
       return err;
    }
 
-   size_t attr_len = strlen(SYNDICATE_XATTR_MTIME) + 1
+   size_t attr_len = strlen(SYNDICATE_XATTR_MTIME) + 1 +
                      strlen(SYNDICATE_XATTR_COORDINATOR) + 1;
                      
    if( list != NULL && attr_len >= size ) {

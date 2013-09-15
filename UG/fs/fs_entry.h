@@ -32,6 +32,7 @@
 #include <math.h>
 
 #include "libsyndicate.h"
+#include "libgateway.h"
 #include "ms-client.h"
 
 using namespace std;

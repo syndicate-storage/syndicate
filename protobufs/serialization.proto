@@ -55,12 +55,10 @@ message DetachRequest {
 
 // block url set (for manifests)
 message BlockURLSetMsg {
-   required uint64 volume_id = 1;
-   required uint64 gateway_id = 2;
-   required uint64 file_id = 3;
-   required uint64 start_id = 4;
-   required uint64 end_id = 5;
-   repeated int64 block_versions = 6;
+   required uint64 gateway_id = 1;
+   required uint64 start_id = 2;
+   required uint64 end_id = 3;
+   repeated int64 block_versions = 4;
 }
 
 // manifest
@@ -73,6 +71,7 @@ message ManifestMsg {
    required int64 mtime_sec = 6;
    required int32 mtime_nsec = 7;
    repeated BlockURLSetMsg block_url_set = 8;
+   required string signature = 9;       // signature of this message using the origin gateway's private key
 }
 
 // accepted message

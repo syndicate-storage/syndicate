@@ -88,7 +88,7 @@ message ms_gateway_blockinfo {
    required uint64 writer = 9;            // ID of the UG that created this message
    required uint64 volume = 10;           // ID of the Volume that this file/UG belong to
    required string hash = 11;             // secure hash (SHA256) of the block bits
-   required string signature = 12;        // signature of this message, from the SyndicateUser's private key (in use by the UG)
+   required string signature = 12;        // signature of this message, from the sender gateway's operator's private key
 }
 
 
