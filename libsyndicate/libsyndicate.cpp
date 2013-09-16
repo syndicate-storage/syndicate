@@ -3809,7 +3809,7 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    memset( conf, 0, sizeof(struct md_syndicate_conf) );
    
    conf->default_read_freshness = 5000;
-   conf->default_write_freshness = 0;
+   conf->default_write_freshness = 5000;
    conf->gather_stats = false;
    conf->use_checksums = false;
    conf->num_replica_threads = 1;

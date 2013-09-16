@@ -847,6 +847,10 @@ int main(int argc, char** argv) {
    for( int i = optind; i < argc; i++ ) {
       fuse_opt_add_arg( &args, argv[i] );
    }
+   
+   // force direct io
+   fuse_opt_add_arg( &args, "-odirect_io" );
+   
 
    // we need a mountpoint, and possibly other options
    if( argv[argc-1][0] == '-' ) {

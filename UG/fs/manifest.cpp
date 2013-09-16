@@ -718,9 +718,11 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
 
    pthread_rwlock_unlock( &this->manifest_lock );
 
+   /*
    char* data = this->serialize_str();
    dbprintf( "Manifest is now:\n%s\n", data);
    free( data );
+   */
 
    return 0;
 }
@@ -747,9 +749,11 @@ void file_manifest::truncate( uint64_t new_end_id ) {
 
    pthread_rwlock_unlock( &this->manifest_lock );
 
+   /*
    char* data = this->serialize_str();
    dbprintf( "Manifest is now:\n%s\n", data);
    free( data );
+   */
 }
 
 

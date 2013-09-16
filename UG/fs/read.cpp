@@ -259,7 +259,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
                // if so, store it
                int64_t block_id = fs_entry_block_id( block_len, offset + total_read );
                if( FS_ENTRY_LOCAL( core, fh->fent ) && !fh->fent->manifest->is_block_local( core, block_id ) ) {
-                  int rc = fs_entry_collate( core, fh->fent, block_id, fh->fent->manifest->get_block_version( block_id ), block, fh->parent_id, fh->parent_name );
+                  int rc = fs_entry_collate( core, fh->fent, block_id, fh->fent->manifest->get_block_version( block_id ), block, block_len, fh->parent_id, fh->parent_name );
                   if( rc != 0 ) {
                      errorf("WARN: fs_entry_collate_block(%s, %" PRId64 ") rc = %d\n", fh->path, block_id, rc );
                   }

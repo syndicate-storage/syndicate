@@ -451,7 +451,7 @@ int fs_entry_chmod( struct fs_core* core, char const* path, uint64_t user, uint6
    struct md_entry up;
    fs_entry_to_md_entry( core, &up, fent, parent_id, parent_name );
 
-   int rc = ms_client_queue_update( core->ms, &up, fent->max_write_freshness, 0 );
+   int rc = ms_client_queue_update( core->ms, &up, currentTimeMillis() + fent->max_write_freshness, 0 );
    if( rc != 0 ) {
       errorf("ms_client_queue_update(%s) rc = %d\n", path, rc );
    }
@@ -508,7 +508,7 @@ int fs_entry_utime( struct fs_core* core, char const* path, struct utimbuf* tb, 
    struct md_entry up;
    fs_entry_to_md_entry( core, &up, fent, parent_id, parent_name );
 
-   int rc = ms_client_queue_update( core->ms, &up, fent->max_write_freshness, 0 );
+   int rc = ms_client_queue_update( core->ms, &up, currentTimeSeconds() + fent->max_write_freshness, 0 );
    if( rc != 0 ) {
       errorf("ms_client_queue_update(%s) rc = %d\n", path, rc );
    }

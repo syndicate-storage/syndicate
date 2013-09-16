@@ -81,7 +81,7 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
             // truncate this block
             memset( block + (size % core->blocking_factor), 0, core->blocking_factor - (size % core->blocking_factor) );
 
-            int rc = fs_entry_put_block( core, fent, trunc_block_id, block, !local );
+            int rc = fs_entry_put_block_data( core, fent, trunc_block_id, block, 0, core->blocking_factor, !local );
             if( rc != 0 ) {
                errorf("fs_entry_put_block(%s[%" PRId64 "]) rc = %d\n", fs_path, trunc_block_id, rc );
                err = rc;
@@ -234,6 +234,8 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t
    }
 
    int rc = fs_entry_truncate_impl( core, fs_path, fent, newsize, user, volume, parent_id, parent_name );
+   free( parent_name );
+   
    if( rc != 0 ) {
       errorf( "fs_entry_truncate(%s) rc = %d\n", fs_path, rc );
 

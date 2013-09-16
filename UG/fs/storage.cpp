@@ -161,11 +161,11 @@ int fs_entry_reversion_local_file( struct fs_core* core, struct fs_entry* fent, 
 }
 
 
-// write a block's worth of content
-ssize_t fs_entry_write_block( struct fs_core* core, int fd, char* buf ) {
+// write ALL the block data
+ssize_t fs_entry_write_block_data( struct fs_core* core, int fd, char* buf, size_t len ) {
    ssize_t ret = 0;
-   while( ret < (signed)core->blocking_factor ) {
-      ssize_t nw = write( fd, buf + ret, core->blocking_factor - ret );
+   while( (unsigned)ret < len ) {
+      ssize_t nw = write( fd, buf + ret, len - ret );
       if( nw < 0 ) {
          ret = -errno;
          break;
@@ -229,10 +229,10 @@ static char* fs_entry_get_file_storage_url( struct fs_core* core, uint64_t file_
 }
 
 
-// put a block with the given version 
+// put block data with the given version to the given offset
 // return 0 on success
 // FENT MUST BE WRITE-LOCKED, SO ANOTHER THREAD CAN'T ADD A BLOCK OF THE SAME VERSION
-int fs_entry_commit_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* buf, bool staging ) {
+ssize_t fs_entry_commit_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, off_t offset, char* buf, size_t len, bool staging ) {
    int rc = 0;
 
    // get the location of this block
@@ -252,7 +252,11 @@ int fs_entry_commit_block( struct fs_core* core, struct fs_entry* fent, uint64_t
    free( storage_dir );
    
    char* block_path = GET_PATH( local_block_url );
-   int fd = open( block_path, O_WRONLY | O_TRUNC | O_CREAT | O_EXCL, 0600 );
+   
+   int fd = open( block_path, O_WRONLY | O_CREAT | O_EXCL, 0600 );
+   if( fd < 0 && errno == EEXIST )
+      fd = open( block_path, O_WRONLY );
+   
    if( fd < 0 ) {
       // this block doesn't exist, or some other error
       rc = -errno;
@@ -260,10 +264,18 @@ int fs_entry_commit_block( struct fs_core* core, struct fs_entry* fent, uint64_t
       free( local_block_url );
       return rc;
    }
+   
+   off_t orc = lseek( fd, offset, SEEK_SET );
+   if( orc < 0 ) {
+      rc = -errno;
+      errorf("lseek(%d) rc = %d\n", fd, rc );
+      free( local_block_url );
+      return rc;
+   }
 
-   ssize_t num_written = fs_entry_write_block( core, fd, buf );
+   ssize_t num_written = fs_entry_write_block_data( core, fd, buf, len );
    if( num_written < 0 ) {
-      errorf("fs_entry_write_block(%s) rc = %zd\n", block_path, num_written );
+      errorf("fs_entry_write_block_data(%s) rc = %zd\n", block_path, num_written );
       close( fd );
       free( local_block_url );
       return num_written;
@@ -272,7 +284,7 @@ int fs_entry_commit_block( struct fs_core* core, struct fs_entry* fent, uint64_t
    close( fd );
    free( local_block_url );
 
-   return rc;
+   return num_written;
 }
 
 
@@ -318,56 +330,84 @@ int fs_entry_remove_old_block_versions( struct fs_core* core, struct fs_entry* f
    return rc;
 }
 
+// reversion a modified block
+// fent must be at least read_locked.
+int fs_entry_reversion_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t old_block_version, int64_t new_block_version, bool staging ) {
+   int rc = 0;
+
+   // get the location of this block
+   char* old_block_url_prefix = fs_entry_get_block_storage_url( core, fent->file_id, fent->version, block_id, old_block_version, staging );
+   char* new_block_url_prefix = fs_entry_get_block_storage_url( core, fent->file_id, fent->version, block_id, new_block_version, staging );
+
+   char* old_block_path = GET_PATH( old_block_url_prefix );
+   char* new_block_path = GET_PATH( new_block_url_prefix );
+   
+   rc = rename( old_block_path, new_block_path );
+   if( rc != 0 ) 
+      rc = -errno;
+   
+   free( old_block_url_prefix );
+   free( new_block_url_prefix );
+   
+   return rc;
+}
+
 
 // write a block to a file, hosting it on underlying storage, and updating the filesystem entry's manifest to refer to it.
 // if the URL refers to a local place on disk, then store it to the data directory.
 // If it instead refers to a remote host, then store it to the staging directory.
 // fent MUST BE WRITE LOCKED, SINCE WE MODIFY THE MANIFEST
-int fs_entry_put_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, bool staging ) {
+ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, off_t offset, size_t len, bool staging ) {
 
-   int64_t block_version = fs_entry_next_block_version();
+   // sanity check
+   if( offset + len > core->blocking_factor ) {
+      errorf("Write would expand block to %zu bytes (blocking factor is %zu)\n", offset + len, core->blocking_factor );
+      return -EINVAL;
+   }
+   
+   int64_t old_block_version = fent->manifest->get_block_version( block_id );
+   int64_t new_block_version = fs_entry_next_block_version();
 
-   dbprintf("put /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 "\n", core->gateway, core->volume, fent->file_id, fent->version, block_id, block_version );
+   dbprintf("put /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 " --> .%" PRId64 "\n", core->gateway, core->volume, fent->file_id, fent->version, block_id, old_block_version, new_block_version );
    
    char prefix[21];
    memset( prefix, 0, 21 );
    memcpy( prefix, block_data, MIN( 21, core->blocking_factor ) );
    
-   dbprintf("data: '%s'...\n", prefix );
+   dbprintf("offset = %" PRId64 ", data: '%s'...\n", offset, prefix );
    
-   // put the block into place
-   int rc = fs_entry_commit_block( core, fent, block_id, block_version, block_data, staging );
-
-   if( rc != 0 ) {
+   // put the block data into place
+   ssize_t rc = fs_entry_commit_block_data( core, fent, block_id, old_block_version, offset, block_data, len, staging );
+   if( (unsigned)rc != len ) {
       // failed to write
-      errorf("fs_entry_commit_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 " ) rc = %d\n", core->gateway, core->volume, fent->file_id, fent->version, block_id, block_version, rc );
+      errorf("fs_entry_commit_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 " ) rc = %zd\n", core->gateway, core->volume, fent->file_id, fent->version, block_id, old_block_version, rc );
       return -EIO;
    }
    else {
-      // clear out all older versions of this block
-      rc = fs_entry_remove_old_block_versions( core, fent, block_id, block_version, staging );
+      rc = fs_entry_reversion_block( core, fent, block_id, old_block_version, new_block_version, staging );
       if( rc != 0 ) {
-         // failed to remove
-         errorf("WARN: fs_entry_remove_old_block_versions( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 " ) rc = %d\n", core->gateway, core->volume, fent->file_id, fent->version, block_id, rc );
-         rc = 0;
+         // failed to reversion
+         errorf("WARN: fs_entry_reversion_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 "/%" PRId64 " --> .%" PRId64 " rc = %zd\n",
+                core->gateway, core->volume, fent->file_id, fent->version, block_id, old_block_version, new_block_version, rc );
+         
+         return rc;
+      }
+
+      rc = fs_entry_manifest_put_block( core, core->gateway, fent, block_id, new_block_version, staging );
+      if( rc != 0 ) {
+         errorf("fs_entry_manifest_put_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 "/%" PRId64 " --> .%" PRId64 " rc = %zd\n",
+                core->gateway, core->volume, fent->file_id, fent->version, block_id, old_block_version, new_block_version, rc );
+         return rc;
       }
       
-      // add this block's URL to the manifest
-      char* local_url = fs_entry_get_file_storage_url( core, fent->file_id, fent->version, staging );
-
-      // clear the version--local manifest URLs don't have versions
-      md_clear_version( local_url );
-
-      rc = fs_entry_manifest_put_block( core, core->gateway, fent, block_id, block_version, staging );
-
-      free( local_url );
-
       // update our modtime
       struct timespec ts;
       clock_gettime( CLOCK_REALTIME, &ts );
 
       fent->mtime_sec = ts.tv_sec;
       fent->mtime_nsec = ts.tv_nsec;
+      
+      rc = (ssize_t)len;
    }
    return rc;
 }
@@ -384,7 +424,7 @@ int fs_entry_remove_block( struct fs_core* core, struct fs_entry* fent, uint64_t
 // return negative on error
 // return the next version of this block
 // fent must be write-locked
-int fs_entry_collate( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* bits, uint64_t parent_id, char const* parent_name ) {
+int fs_entry_collate( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* bits, uint64_t block_len, uint64_t parent_id, char const* parent_name ) {
 
    char tmppath[PATH_MAX];
    strcpy( tmppath, SYNDICATE_COLLATE_TMPPATH );
@@ -396,7 +436,7 @@ int fs_entry_collate( struct fs_core* core, struct fs_entry* fent, uint64_t bloc
       return fd;
    }
 
-   ssize_t wrc = fs_entry_write_block( core, fd, bits );
+   ssize_t wrc = fs_entry_write_block_data( core, fd, bits, block_len );
    if( wrc < 0 ) {
       errorf("fs_entry_write_block rc = %zd\n", wrc );
       return (int)wrc;
@@ -425,7 +465,7 @@ int fs_entry_collate( struct fs_core* core, struct fs_entry* fent, uint64_t bloc
    struct md_entry data;
    fs_entry_to_md_entry( core, &data, fent, parent_id, parent_name );
 
-   ms_client_queue_update( core->ms, &data, fent->max_write_freshness, 0 );
+   ms_client_queue_update( core->ms, &data, currentTimeMillis() + fent->max_write_freshness, 0 );
 
    md_entry_free( &data );
    

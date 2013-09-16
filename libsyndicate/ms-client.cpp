@@ -2661,7 +2661,7 @@ int ms_client_queue_update( struct ms_client* client, struct md_entry* update, u
 
    int rc = 0;
 
-   if( deadline_ms == 0 ) {
+   if( deadline_ms < (uint64_t)currentTimeMillis() ) {
       rc = ms_client_update( client, update );
       return rc;
    }
@@ -2697,7 +2697,7 @@ int ms_client_queue_update( struct ms_client* client, struct md_entry* update, u
       // free up the memory of this update
       md_update_free( &((*client->updates)[ path_hash ]) );
 
-      if( new_deadline >= (uint64_t)currentTimeMillis() ) {
+      if( new_deadline <= (uint64_t)currentTimeMillis() ) {
          // deadline is now
          if( found )
             client->deadlines->erase( itr );
