@@ -245,7 +245,7 @@ class Volume( storagetypes.Object ):
 
       ag_metadata.ag_version = self.AG_version
       for ag in ags:
-         ag_metadata.ag_ids.append( ag.ag_id )
+         ag_metadata.ag_ids.append( ag.g_id )
          ag_metadata.ag_blocksizes.append( ag.block_size )
          ag_metadata.hostnames.append( ag.host )
          ag_metadata.portnums.append( ag.port )

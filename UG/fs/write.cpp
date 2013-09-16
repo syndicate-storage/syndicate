@@ -86,34 +86,6 @@ int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_e
 }
 
 
-// read a block in preparation for overwriting part of it.
-// Only reads the block if there exists the possibility that some of its data will need to be preserved
-// fent must be write-locked
-int fs_entry_prepare_write_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, char* block, size_t count, off_t offset, ssize_t num_written ) {
-   int rc = 0;
-   uint64_t block_id = fs_entry_block_id( core, offset + num_written );
-   
-   ssize_t block_write_offset = (offset + num_written) % core->blocking_factor;
-   
-   if( fent->size > 0 && (block_write_offset != 0 || (offset + num_written < fent->size && count - (size_t)num_written < core->blocking_factor ))) {
-
-      // get the block data, since we'll need to preserve part of it
-      // NOTE: use the offset at the block boundary; otherwise we can get EOF
-      ssize_t blk_size = fs_entry_do_read_block( core, fs_path, fent, block_id, block, core->blocking_factor );
-
-      if( blk_size < 0 ) {
-         errorf( "fs_entry_read_block(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 "[%" PRId64 "]) rc = %zd\n", core->volume, core->gateway, fent->file_id, block_id, blk_size );
-         rc = -EIO;
-      }
-      else {
-         dbprintf("read %zd bytes, block_write_offset = %zd\n", blk_size, block_write_offset);
-      }
-   }
-
-   return rc;
-}
-
-
 // fill in a block of data (used by fs_entry_write_real)
 ssize_t fs_entry_fill_block( struct fs_core* core, struct fs_entry* fent, char* block, char const* buf, int source_fd, size_t count ) {
    ssize_t rc = count;
@@ -238,7 +210,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       
       fs_entry_wlock( fh->fent );
       
-      // write the data..
+      // write the data...
       ssize_t write_size = fs_entry_put_block_data( core, fh->fent, block_id, block, block_write_offset, block_write_len, !local );
       
       if( (unsigned)write_size != block_write_len ) {
