@@ -870,7 +870,7 @@ class MSEntry( storagetypes.Object ):
       msentry, shards = yield MSEntry.__read_msentry_base( volume_id, file_id ), MSEntry.__read_msentry_shards( volume_id, file_id, num_shards )
       
       if msentry == None:
-         storagetypes.concurrent_return(None, None)
+         storagetypes.concurrent_return( (None, None) )
       
       shards_existing = filter( lambda x: x != None, shards )
       msentry.populate_from_shards( shards_existing )
