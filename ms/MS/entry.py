@@ -951,16 +951,14 @@ class MSEntry( storagetypes.Object ):
          # fetch the rest from the datastore
          logging.info("Missing: %s" % missing)
          
-         ent_tuples = tuple( [MSEntry.__read_msentry_key_mapper( volume_id, fid, volume.num_shards ) for fid in missing] )
+         ent_tuples = [MSEntry.__read_msentry_key_mapper( volume_id, fid, volume.num_shards ) for fid in missing]
          
-         # extract [MSEntry_future] from [(string, MSEntry_future)], dropping cases where MSEntry_future == None
-         ent_futs = filter( lambda x: x != None, [t[1] if t != None else None for t in ent_tuples] )
+         ent_futs = filter( lambda x: x != None, ent_tuples )
          
          # wait for them all
          storagetypes.wait_futures( ent_futs )
          
-         # convert from [(string, MSEntry_future)] to [(string, MSEntry)], dropping cases where MSEntry == None
-         ent_results = filter( lambda x: x[1] != None, [ (t[0], t[1].get_result()) if t[1] != None else (None, None) for t in ent_tuples ] )
+         ent_results = filter( lambda x: x[0] != None and x[1] != None, [f.get_result() if f != None else None for f in ent_tuples] )
          
          if not no_check_memcache:
             # cache them, converting from [(string, MSEntry)] to {string: MSEntry}
