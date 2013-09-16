@@ -323,7 +323,7 @@ class MSRGRequestHandler( webapp2.RequestHandler ):
       rgs = []
       
       if len(volume.rg_ids) > 0:
-         rgs = storage.list_replica_gateways( {'ReplicaGateway.rg_id IN' : volume.rg_ids} )
+         rgs = storage.list_replica_gateways( {'ReplicaGateway.g_id IN' : volume.rg_ids} )
 
       volume.protobuf_RGs( rg_metadata, rgs )
 
@@ -347,7 +347,7 @@ class MSAGRequestHandler( webapp2.RequestHandler ):
       ags = []
 
       if len(volume.ag_ids) > 0:
-         ags = storage.list_acquisition_gateways( {'AcquisitionGateway.ag_id IN' : volume.ag_ids} )
+         ags = storage.list_acquisition_gateways( {'AcquisitionGateway.g_id IN' : volume.ag_ids} )
 
       volume.protobuf_AGs( ag_metadata, ags )
 
@@ -403,7 +403,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
       rg_metadata = volume_metadata.rgs
       rgs = []
       if len(volume.rg_ids) > 0:
-         rgs = storage.list_replica_gateways( {'ReplicaGateway.rg_id IN' : volume.rg_ids} )
+         rgs = storage.list_replica_gateways( {'ReplicaGateway.g_id IN' : volume.rg_ids} )
          
       volume.protobuf_RGs( rg_metadata, rgs, sign=False )
 
@@ -411,7 +411,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
       ag_metadata = volume_metadata.ags
       ags = []
       if len(volume.ag_ids) > 0:
-         ags = storage.list_acquisition_gateways( {"AcquisitionGateway.ag_id IN" : volume.ag_ids} )
+         ags = storage.list_acquisition_gateways( {"AcquisitionGateway.g_id IN" : volume.ag_ids} )
 
       volume.protobuf_AGs( ag_metadata, ags, sign=False )
 
