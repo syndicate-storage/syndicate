@@ -13,6 +13,7 @@
 #define SYNDICATE_COLLATE_TMPPATH "/tmp/syndicate-collate-XXXXXX"
 
 // add/remove blocks
+int fs_entry_open_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool staging, bool creat );
 ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, off_t offset, size_t len, bool staging );
 int fs_entry_remove_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, bool staging );
 

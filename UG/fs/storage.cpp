@@ -229,6 +229,44 @@ static char* fs_entry_get_file_storage_url( struct fs_core* core, uint64_t file_
 }
 
 
+// "open" a block, returning a file descriptor 
+int fs_entry_open_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool staging, bool creat ) {
+   int rc = 0;
+
+   // get the location of this block
+   char* local_block_url = fs_entry_get_block_storage_url( core, fent->file_id, fent->version, block_id, block_version, staging );
+   
+   if( creat ) {
+      // make sure the directories leading to this block exist
+      char* storage_dir = md_dirname( GET_PATH( local_block_url ), NULL );
+      rc = md_mkdirs( storage_dir );
+      
+      if( rc != 0 ) {
+         errorf( "md_mkdirs(%s) rc = %d\n", storage_dir, rc );
+         md_rmdirs( storage_dir );
+         free( storage_dir );
+         free( local_block_url );
+         return rc;
+      }
+      free( storage_dir );
+   }
+   
+   char* block_path = GET_PATH( local_block_url );
+   
+   int flags = O_WRONLY;
+   if( creat )
+      flags |= (O_CREAT | O_EXCL);
+   
+   int fd = open( block_path, flags, 0600 );
+   if( fd < 0 )
+      fd = -errno;
+   
+   free( local_block_url );
+   
+   return fd;
+}
+
+
 // put block data with the given version to the given offset
 // return 0 on success
 // FENT MUST BE WRITE-LOCKED, SO ANOTHER THREAD CAN'T ADD A BLOCK OF THE SAME VERSION

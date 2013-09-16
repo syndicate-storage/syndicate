@@ -28,24 +28,39 @@ int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_e
       return 0;
    }
    
+   bool local = FS_ENTRY_LOCAL( core, fent );
    char* block = CALLOC_LIST( char, core->blocking_factor );
 
    // preserve the last block, if there is one
-   if( fent->size > 0 ) {
-      rc = fs_entry_prepare_write_block( core, fs_path, fent, block, 0, fent->size, 0 );
-      if( rc != 0 ) {
-         errorf("fs_entry_prepare_write_block(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "[%" PRId64 "]) rc = %d\n", core->volume, core->gateway, fent->file_id, fent->version, fs_entry_block_id( core, fent->size ), rc );
-         return rc;
+   if( old_size > 0 && (old_size % core->blocking_factor) > 0 ) {
+      
+      uint64_t block_version = fent->manifest->get_block_version( start_id );
+      
+      int block_fd = fs_entry_open_block( core, fent, start_id, block_version, !local, false );
+      if( block_fd < 0 ) {
+         errorf("fs_entry_open_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRId64 ".%" PRIu64 ") rc = %d\n", core->volume, core->gateway, fent->file_id, fent->version, start_id, block_version, block_fd );
+         free( block );
+         return block_fd;
+      }
+      
+      // read the tail of this block in
+      ssize_t nr = fs_entry_fill_block( core, fent, block, NULL, block_fd, old_size - start_id * core->blocking_factor );
+      
+      close( block_fd );
+      
+      if( nr < 0 ) {
+         errorf("fs_entry_fill_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRId64 ".%" PRIu64 ") rc = %zd\n", core->volume, core->gateway, fent->file_id, fent->version, start_id, block_version, nr );
+         free( block );
+         return (int)nr;
       }
    }
 
    bool cleared = false;
-   bool local = FS_ENTRY_LOCAL( core, fent );
    
    for( uint64_t id = start_id; id <= end_id; id++ ) {
 
       rc = fs_entry_put_block_data( core, fent, id, block, 0, core->blocking_factor, !local );
-      if( rc != 0 ) {
+      if( rc < 0 ) {
          errorf("fs_entry_put_block(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "[%" PRIu64 "]) rc = %d\n", core->volume, core->gateway, fent->file_id, fent->version, id, rc );
          err = rc;
          break;
@@ -427,8 +442,6 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, Serializat
    // propagate the update to the MS
    struct md_entry data;
    fs_entry_to_md_entry( core, &data, fent, parent_id, parent_name );
-   
-   char const* errstr = NULL;
    
    uint64_t max_write_freshness = fent->max_write_freshness;
    fs_entry_unlock( fent );
