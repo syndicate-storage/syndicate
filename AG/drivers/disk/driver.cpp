@@ -279,6 +279,8 @@ static int publish(const char *fpath, const struct stat *sb,
 {
     int i = 0;
     struct md_entry* ment = new struct md_entry;
+    memset( ment, 0, sizeof(struct md_entry) );
+    
     size_t len = strlen(fpath);
     if ( len < datapath_len ) { 
 	pfunc_exit_code = -EINVAL;
@@ -295,6 +297,12 @@ static int publish(const char *fpath, const struct stat *sb,
     memset( path, 0, path_len );
     strncpy( path, fpath + datapath_len, path_len );
 
+    char* parent_name_tmp = md_dirname( path, NULL );
+    ment->parent_name = md_basename( parent_name_tmp, NULL );
+    free( parent_name_tmp );
+    
+    ment->name = md_basename( path, NULL );
+    
     ment->ctime_sec = sb->st_ctime;
     ment->ctime_nsec = 0;
     ment->mtime_sec = sb->st_mtime;
