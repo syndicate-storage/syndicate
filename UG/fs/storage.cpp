@@ -253,7 +253,7 @@ int fs_entry_open_block( struct fs_core* core, struct fs_entry* fent, uint64_t b
    
    char* block_path = GET_PATH( local_block_url );
    
-   int flags = O_WRONLY;
+   int flags = O_RDWR;
    if( creat )
       flags |= (O_CREAT | O_EXCL);
    
