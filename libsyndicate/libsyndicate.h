@@ -444,6 +444,8 @@ struct md_syndicate_conf {
 #define CLIENT_DEFAULT_CONFIG          "/usr/etc/syndicate/syndicate-UG.conf"
 #define AG_GATEWAY_DRIVER_KEY	    "AG_GATEWAY_DRIVER"
 
+#define AG_BLOCK_SIZE_KEY           "AG_BLOCK_SIZE"
+
 // URL protocol prefix for local files
 #define SYNDICATEFS_LOCAL_PROTO     "file://"
 

@@ -686,6 +686,17 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       else if( strcmp( key, AG_GATEWAY_DRIVER_KEY ) == 0 ) {
          conf->ag_driver = strdup(values[0]);
       }
+      
+      else if( strcmp( key, AG_BLOCK_SIZE_KEY ) == 0 ) {
+         char *end;
+         long val = strtol( values[0], &end, 10 );
+         if( end[0] != '\0' ) {
+            errorf( "WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
+         }
+         else {
+            conf->ag_block_size = val;
+         }
+      }
 
       else {
          errorf( "WARN: unrecognized key '%s'\n", key );
