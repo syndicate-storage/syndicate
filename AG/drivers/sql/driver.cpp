@@ -6,7 +6,7 @@
 #include <driver.h>
 
 // server config 
-//struct md_syndicate_conf CONF;
+struct md_syndicate_conf DRIVER_CONF;
  
 // set of files we're exposing
 content_map DATA;
@@ -55,8 +55,6 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx,
     mmsg->set_file_version( 1 );
     mmsg->set_mtime_sec( ent->mtime_sec );
     mmsg->set_mtime_nsec( 0 );
-    //mmsg->set_manifest_mtime_sec( ent->mtime_sec );
-    //mmsg->set_manifest_mtime_nsec( 0 );
 
     uint64_t num_blocks = ent->size / ctx->blocking_factor;
     if( ent->size % ctx->blocking_factor != 0 )
@@ -65,9 +63,6 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx,
     Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
     bbmsg->set_start_id( 0 );
     bbmsg->set_end_id( num_blocks );
-    //stringstream strstrm;
-    //strstrm << ent->url << ent->path;
-    //bbmsg->set_file_url( strstrm.str() );
 
     for( uint64_t i = 0; i < num_blocks; i++ ) {
 	bbmsg->add_block_versions( 0 );
@@ -129,7 +124,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 		//Loop through all the mapped AG blocks...
 		for (int i = bti.start_block_id; i <= bti.end_block_id; i++) {
 		    ctx->block_id = i;
-		    odh.execute_query(ctx, ctx->mi, ag_block_size);
+		    odh.execute_query(ctx, ctx->mi, DRIVER_CONF.ag_block_size);
 		    if (ctx->data == NULL) {
 			break;
 		    }
@@ -341,9 +336,8 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	       // Negative size switches libmicrohttpd to chunk transfer mode
 	       replica_ctx->size = -1;
 	       // Set blocking factor for this volume from replica_ctx
-	       ctx->blocking_factor = ag_block_size;//ms_client_get_volume_blocksize(mc, replica_ctx->volume_id);
+	       ctx->blocking_factor = DRIVER_CONF.ag_block_size;
 	       //TODO: Check the block status and set the http response appropriately
-
 	       replica_ctx->http_status = 200;
 	   }
        }
@@ -466,8 +460,6 @@ static int publish(const char *fpath, int type, struct map_info* mi,
 	free( parent_name_tmp );
 	ment->name = md_basename( path, NULL );
 
-	//Set primary replica 
-	//content_url_len = strlen(global_conf->content_url);
 	ment->checksum = NULL;
 	DATA[path] = ment;
     }
