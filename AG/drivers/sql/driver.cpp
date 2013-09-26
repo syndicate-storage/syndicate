@@ -55,8 +55,8 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx,
     mmsg->set_file_version( 1 );
     mmsg->set_mtime_sec( ent->mtime_sec );
     mmsg->set_mtime_nsec( 0 );
-    mmsg->set_manifest_mtime_sec( ent->mtime_sec );
-    mmsg->set_manifest_mtime_nsec( 0 );
+    //mmsg->set_manifest_mtime_sec( ent->mtime_sec );
+    //mmsg->set_manifest_mtime_nsec( 0 );
 
     uint64_t num_blocks = ent->size / ctx->blocking_factor;
     if( ent->size % ctx->blocking_factor != 0 )
@@ -65,9 +65,9 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx,
     Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
     bbmsg->set_start_id( 0 );
     bbmsg->set_end_id( num_blocks );
-    stringstream strstrm;
-    strstrm << ent->url << ent->path;
-    bbmsg->set_file_url( strstrm.str() );
+    //stringstream strstrm;
+    //strstrm << ent->url << ent->path;
+    //bbmsg->set_file_url( strstrm.str() );
 
     for( uint64_t i = 0; i < num_blocks; i++ ) {
 	bbmsg->add_block_versions( 0 );
@@ -223,19 +223,7 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
     errorf("%s", "INFO: metadata_dataset\n"); 
     char* file_path = NULL;
     int64_t file_version = 0;
-    uint64_t block_id = 0;
     int64_t block_version = 0;
-    struct timespec manifest_timestamp;
-    manifest_timestamp.tv_sec = 0;
-    manifest_timestamp.tv_nsec = 0;
-    bool staging = false;
-
-    int rc = md_HTTP_parse_url_path( (char*)dat->url_path, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
-    if( rc != 0 ) {
-	errorf( "failed to parse '%s', rc = %d\n", dat->url_path, rc );
-	free( file_path );
-	DRIVER_RETURN(-EINVAL, &driver_lock);
-    }
 
     content_map::iterator itr = DATA.find( string(file_path) );
     if( itr == DATA.end() ) {
@@ -246,16 +234,13 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
     struct gateway_ctx* ctx = (struct gateway_ctx*)usercls;
     struct md_entry* ent = itr->second;
 
-    info->set_progress( ms::ms_gateway_blockinfo::COMMITTED );     // ignored, but needs to be filled in
     info->set_blocking_factor( ctx->blocking_factor );
 
     info->set_file_version( file_version );
     info->set_block_id( ctx->block_id );
     info->set_block_version( block_version );
-    info->set_fs_path( string(ctx->file_path) );
     info->set_file_mtime_sec( ent->mtime_sec );
     info->set_file_mtime_nsec( ent->mtime_nsec );
-    info->set_write_time( ent->mtime_sec );
 
     DRIVER_RETURN(0, &driver_lock);
 }
@@ -266,23 +251,21 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    DRIVER_RDONLY(&driver_lock);
    errorf("%s", "INFO: connect_dataset\n"); 
    char* file_path = NULL;
-   int64_t file_version = 0;
    uint64_t block_id = 0;
-   int64_t block_version = 0;
    struct timespec manifest_timestamp;
    manifest_timestamp.tv_sec = 0;
    manifest_timestamp.tv_nsec = 0;
    bool staging = false;
 
-   int rc = md_HTTP_parse_url_path( (char*)replica_ctx->url_path, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
-   if( rc != 0 ) {
+   //int rc = md_HTTP_parse_url_path( (char*)replica_ctx->url_path, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
+   /*if( rc != 0 ) {
        errorf( "failed to parse '%s', rc = %d\n", replica_ctx->url_path, rc );
        free( file_path );
        DRIVER_RETURN(NULL, &driver_lock);
-   }
+   }*/
 
    if( staging ) {
-       errorf("invalid URL path %s\n", replica_ctx->url_path );
+       //errorf("invalid URL path %s\n", replica_ctx->url_path );
        free( file_path );
        DRIVER_RETURN(NULL, &driver_lock);
    }
@@ -358,7 +341,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	       // Negative size switches libmicrohttpd to chunk transfer mode
 	       replica_ctx->size = -1;
 	       // Set blocking factor for this volume from replica_ctx
-	       ctx->blocking_factor = ms_client_get_volume_blocksize(mc, replica_ctx->volume_id);
+	       ctx->blocking_factor = ag_block_size;//ms_client_get_volume_blocksize(mc, replica_ctx->volume_id);
 	       //TODO: Check the block status and set the http response appropriately
 
 	       replica_ctx->http_status = 200;
@@ -459,7 +442,8 @@ static int publish(const char *fpath, int type, struct map_info* mi,
     struct md_entry* ment = NULL;
     size_t len = strlen(fpath);
     char *path = NULL;
-    size_t content_url_len = 0;
+    //size_t content_url_len = 0;
+    uint64_t file_id = 0;
     //size_t local_proto_len = strlen( SYNDICATEFS_AG_DB_PROTO ); 
     //size_t url_len = local_proto_len + len;
     if ( len < datapath_len ) { 
@@ -477,19 +461,15 @@ static int publish(const char *fpath, int type, struct map_info* mi,
     if ((ment = DATA[path]) == NULL) {
 	ment = new struct md_entry;
 	ment->version = 1;
-	ment->path = path;
-	DATA[ment->path] = ment;
+	char* parent_name_tmp = md_dirname( path, NULL );
+	ment->parent_name = md_basename( parent_name_tmp, NULL );
+	free( parent_name_tmp );
+	ment->name = md_basename( path, NULL );
 
 	//Set primary replica 
-	content_url_len = strlen(global_conf->content_url);
-	ment->url = ( char* )malloc( content_url_len + 1);
-	memset( ment->url, 0, content_url_len + 1 );
-	strncpy( ment->url, global_conf->content_url, content_url_len ); 
-
+	//content_url_len = strlen(global_conf->content_url);
 	ment->checksum = NULL;
-    }
-    else { 
-	free(path); 
+	DATA[path] = ment;
     }
 
     //Set time from the real time clock
@@ -513,7 +493,7 @@ static int publish(const char *fpath, int type, struct map_info* mi,
 	    ment->type = MD_ENTRY_DIR;
 	    ment->mode = DIR_PERMISSIONS_MASK;
 	    ment->mode |= S_IFDIR;
-	    if ( (i = ms_client_mkdir(mc, ment)) < 0 ) {
+	    if ( (i = ms_client_mkdir(mc, &file_id, ment)) < 0 ) {
 		cout<<"ms client mkdir "<<i<<endl;
 	    }
 	    break;
@@ -522,7 +502,7 @@ static int publish(const char *fpath, int type, struct map_info* mi,
 	    ment->type = MD_ENTRY_FILE;
 	    ment->mode &= FILE_PERMISSIONS_MASK;
 	    ment->mode |= S_IFREG;
-	    if ( (i = ms_client_create(mc, ment)) < 0 ) {
+	    if ( (i = ms_client_create(mc, &file_id, ment)) < 0 ) {
 		cout<<"ms client create "<<i<<endl;
 	    }
 	    mi->mentry = ment;
@@ -531,7 +511,9 @@ static int publish(const char *fpath, int type, struct map_info* mi,
 	default:
 	    break;
     }
-    DATA[ment->path] = ment;
+    DATA[path] = ment;
+    if (path)
+	free(path);
     //pfunc_exit_code = 0;
     return 0;  
 }
@@ -587,10 +569,12 @@ void driver_special_inval_handler(string file_path) {
 	//Delete this file from all the volumes we are attached to.
 	ms_client_delete(mc, mde);
 	DATA.erase(file_path);
-	if (mde->url)
-	    free(mde->url);
-	if (mde->path)
-	    free(mde->path);
+	if (mde->name)
+	    free(mde->name);
+	if (mde->parent_name)
+	    free(mde->parent_name);
+	if (mde->checksum)
+	    free(mde->checksum);
 	free(mde);
     }
     //Remove from reversion daemon
