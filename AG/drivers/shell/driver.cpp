@@ -169,28 +169,12 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
 extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    DRIVER_RDONLY(&driver_lock);
    errorf("%s", "INFO: connect_dataset\n"); 
-   char* file_path = NULL;
+   char* file_path = replica_ctx->reqdat.fs_path;
    uint64_t block_id = 0;
    struct timespec manifest_timestamp;
    manifest_timestamp.tv_sec = 0;
    manifest_timestamp.tv_nsec = 0;
-   bool staging = false;
 
-   /*int rc = md_HTTP_parse_url_path( (char*)replica_ctx->url_path, &file_path, 
-	   &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
-   if( rc != 0 ) {
-       errorf( "failed to parse '%s', rc = %d\n", replica_ctx->url_path, rc );
-       free( file_path );
-       DRIVER_RETURN(NULL, &driver_lock);
-   }*/
-
-   if( staging ) {
-       //errorf("invalid URL path %s\n", replica_ctx->url_path );
-       free( file_path );
-       DRIVER_RETURN(NULL, &driver_lock);
-   }
-
-   struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
 
    // is there metadata for this file?
    string fs_path( file_path );
@@ -198,8 +182,12 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    if( itr == DATA.end() ) {
        // no entry; nothing to do
        free( file_path );
+       replica_ctx->err = -404;
+       replica_ctx->http_status = 404;
        DRIVER_RETURN(NULL, &driver_lock);
    }
+
+   struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
 
    // complete is initially false
    ctx->complete = false;
