@@ -7,7 +7,7 @@
 #include <libgateway.h>
 
 // server config 
-struct md_syndicate_conf DRIVER_CONF;
+extern struct md_syndicate_conf *global_conf;
  
 // set of files we're exposing
 content_map DATA;
@@ -26,6 +26,9 @@ int pfunc_exit_code = 0;
 
 // Is false if the driver is not initialized
 bool initialized = false;
+
+// Disk driver's data_root
+char* data_root = NULL;
 
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
@@ -83,6 +86,11 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
    errorf("%s", "INFO: get_dataset\n"); 
    ssize_t ret = 0;
    struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
+
+   if (ctx == NULL && dat->size == 0)
+       return 0;
+   else
+       return -EINVAL;
 
    if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
       // read from disk
@@ -148,7 +156,7 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
 extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 
    errorf("%s", "INFO: connect_dataset\n");  
-   
+   struct stat stat_buff;
    struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
 
    // is there metadata for this file?
@@ -156,7 +164,9 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    content_map::iterator itr = DATA.find( fs_path );
    if( itr == DATA.end() ) {
       // no entry; nothing to do
-      return NULL;
+       replica_ctx->err = -404;
+       replica_ctx->http_status = 404;
+       return NULL;
    }
 
    struct md_entry* ent = DATA[ fs_path ];
@@ -189,41 +199,64 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
       replica_ctx->size = ctx->data_len;
    }
    else {
-      if ( !global_conf->data_root) {
-         errorf( "Conf's data_root = %s\n", global_conf->data_root );
+      if ( !datapath) {
+         errorf( "Driver datapath = %s\n", datapath );
          return NULL;
       }
       int rc = 0;
       
       // request for local file
-      char* fp = md_fullpath( global_conf->data_root, fs_path.c_str(), NULL );
+      char* fp = md_fullpath( datapath, fs_path.c_str(), NULL );
       ctx->fd = open( fp, O_RDONLY );
       if( ctx->fd < 0 ) {
          rc = -errno;
          errorf( "open(%s) errno = %d\n", fp, rc );
          free( fp );
          free( ctx );
+	 replica_ctx->err = -404;
+	 replica_ctx->http_status = 404;
          return NULL;
       }
       else {
-         free( fp );
 	 // Set blocking factor for this volume from replica_ctx
-	 ctx->blocking_factor = DRIVER_CONF.ag_block_size;
+	 ctx->blocking_factor = global_conf->ag_block_size;
+	  if ((rc = stat(fp, &stat_buff)) < 0) {
+	      errorf( "stat errno = %d\n", rc );
+	      perror("stat");
+	      free( fp );
+	      free( ctx );
+	      replica_ctx->err = -404;
+	      replica_ctx->http_status = 404;
+	      return NULL;
+	 }
+         free( fp );
+	 if ((size_t)stat_buff.st_size < ctx->blocking_factor * replica_ctx->reqdat.block_id) {
+	     free( ctx );
+	     replica_ctx->size = 0;
+	     return NULL;
+	 }
+	 else if ((stat_buff.st_size - (ctx->blocking_factor * replica_ctx->reqdat.block_id))
+		 <= (size_t)ctx->blocking_factor) {
+	     replica_ctx->size = stat_buff.st_size - (ctx->blocking_factor * replica_ctx->reqdat.block_id);
+	 }
+	 else {
+	     replica_ctx->size = ctx->blocking_factor;
+	 }
          // set up for reading
          off_t offset = ctx->blocking_factor * replica_ctx->reqdat.block_id;
          rc = lseek( ctx->fd, offset, SEEK_SET );
-         if( rc != 0 ) {
+	 if( rc < 0 ) {
             rc = -errno;
             errorf( "lseek errno = %d\n", rc );
             free( ctx );
+	    replica_ctx->err = -404;
+	    replica_ctx->http_status = 404;
             return NULL;
          }
       }
-
       ctx->num_read = 0;
       ctx->block_id = replica_ctx->reqdat.block_id;
       ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
-      replica_ctx->size = ctx->blocking_factor;
    }
 
    return ctx;
