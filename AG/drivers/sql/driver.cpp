@@ -6,7 +6,7 @@
 #include <driver.h>
 
 // server config 
-struct md_syndicate_conf DRIVER_CONF;
+extern struct md_syndicate_conf* global_conf;
  
 // set of files we're exposing
 content_map DATA;
@@ -100,6 +100,10 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
     char* volume_block_buffer = NULL;
     ssize_t buffer_size = 0; 
     block_translation_info bti;
+
+    if (!ctx) {
+	DRIVER_RETURN(-ENOENT, &driver_lock);
+    }	
     if (ctx->data == NULL)
 	bti = volume_block_to_ag_block(ctx);
 
@@ -124,7 +128,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 		//Loop through all the mapped AG blocks...
 		for (int i = bti.start_block_id; i <= bti.end_block_id; i++) {
 		    ctx->block_id = i;
-		    odh.execute_query(ctx, ctx->mi, DRIVER_CONF.ag_block_size);
+		    odh.execute_query(ctx, ctx->mi, global_conf->ag_block_size);
 		    if (ctx->data == NULL) {
 			break;
 		    }
@@ -245,27 +249,11 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
 extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    DRIVER_RDONLY(&driver_lock);
    errorf("%s", "INFO: connect_dataset\n"); 
-   char* file_path = NULL;
+   char* file_path = replica_ctx->reqdat.fs_path;
    uint64_t block_id = 0;
    struct timespec manifest_timestamp;
    manifest_timestamp.tv_sec = 0;
    manifest_timestamp.tv_nsec = 0;
-   bool staging = false;
-
-   //int rc = md_HTTP_parse_url_path( (char*)replica_ctx->url_path, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
-   /*if( rc != 0 ) {
-       errorf( "failed to parse '%s', rc = %d\n", replica_ctx->url_path, rc );
-       free( file_path );
-       DRIVER_RETURN(NULL, &driver_lock);
-   }*/
-
-   if( staging ) {
-       //errorf("invalid URL path %s\n", replica_ctx->url_path );
-       free( file_path );
-       DRIVER_RETURN(NULL, &driver_lock);
-   }
-
-   struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
 
    // is there metadata for this file?
    string fs_path( file_path );
@@ -273,8 +261,12 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    if( itr == DATA.end() ) {
        // no entry; nothing to do
        free( file_path );
+       replica_ctx->err = -404;
+       replica_ctx->http_status = 404;
        DRIVER_RETURN(NULL, &driver_lock);
    }
+   
+   struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
 
    // default fo is_db_info is false
    ctx->is_db_info = false;
@@ -336,7 +328,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	       // Negative size switches libmicrohttpd to chunk transfer mode
 	       replica_ctx->size = -1;
 	       // Set blocking factor for this volume from replica_ctx
-	       ctx->blocking_factor = DRIVER_CONF.ag_block_size;
+	       ctx->blocking_factor = global_conf->ag_block_size;
 	       //TODO: Check the block status and set the http response appropriately
 	       replica_ctx->http_status = 200;
 	   }
@@ -437,7 +429,6 @@ static int publish(const char *fpath, int type, struct map_info* mi,
     size_t len = strlen(fpath);
     char *path = NULL;
     //size_t content_url_len = 0;
-    uint64_t file_id = 0;
     //size_t local_proto_len = strlen( SYNDICATEFS_AG_DB_PROTO ); 
     //size_t url_len = local_proto_len + len;
     if ( len < datapath_len ) { 
@@ -453,7 +444,8 @@ static int publish(const char *fpath, int type, struct map_info* mi,
     strncpy( path, fpath + datapath_len, path_len );
 
     if ((ment = DATA[path]) == NULL) {
-	ment = new struct md_entry;
+	ment = (struct md_entry*)malloc(sizeof(struct md_entry));
+	memset(ment, 0, sizeof(struct md_entry));
 	ment->version = 1;
 	char* parent_name_tmp = md_dirname( path, NULL );
 	ment->parent_name = md_basename( parent_name_tmp, NULL );
@@ -485,7 +477,8 @@ static int publish(const char *fpath, int type, struct map_info* mi,
 	    ment->type = MD_ENTRY_DIR;
 	    ment->mode = DIR_PERMISSIONS_MASK;
 	    ment->mode |= S_IFDIR;
-	    if ( (i = ms_client_mkdir(mc, &file_id, ment)) < 0 ) {
+
+	    if ( (i = ms_client_mkdir(mc, &ment->file_id, ment)) < 0 ) {
 		cout<<"ms client mkdir "<<i<<endl;
 	    }
 	    break;
@@ -494,7 +487,8 @@ static int publish(const char *fpath, int type, struct map_info* mi,
 	    ment->type = MD_ENTRY_FILE;
 	    ment->mode &= FILE_PERMISSIONS_MASK;
 	    ment->mode |= S_IFREG;
-	    if ( (i = ms_client_create(mc, &file_id, ment)) < 0 ) {
+
+	    if ( (i = ms_client_create(mc, &ment->file_id, ment)) < 0 ) {
 		cout<<"ms client create "<<i<<endl;
 	    }
 	    mi->mentry = ment;

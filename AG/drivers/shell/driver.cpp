@@ -9,7 +9,7 @@
 #include <fs/fs_entry.h>
 
 // server config 
-struct md_syndicate_conf DRIVER_CONF;
+extern struct md_syndicate_conf *global_conf;
 
 // set of files we're exposing
 content_map DATA;
@@ -252,7 +252,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	   // Negative size switches libmicrohttpd to chunk transfer mode
 	   replica_ctx->size = -1;
 	   // Set blocking factor for this volume from replica_ctx
-	   ctx->blocking_factor = DRIVER_CONF.ag_block_size;
+	   ctx->blocking_factor = global_conf->ag_block_size;
 	   // Check the block status and set the http response appropriately
 	   ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
 	   block_status blk_stat = prch.get_block_status(ctx);
