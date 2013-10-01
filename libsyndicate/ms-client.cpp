@@ -2816,9 +2816,9 @@ static int ms_client_send( struct ms_client* client, uint64_t* file_id, char con
          size_t ret_len = response_buffer_size( rb );
          
          // force null-termination and length
-         char buf[21];
-         memset( buf, 0, 21 );
-         strncpy( buf, ret, 20 );
+         char buf[ret_len + 1];
+         memset( buf, 0, ret_len + 1 );
+         strncpy( buf, ret, ret_len );
          
          uint64_t fid = 0;
          int cnt = sscanf( buf, "%" PRIu64, &fid );
