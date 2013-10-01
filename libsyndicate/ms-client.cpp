@@ -142,6 +142,10 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    client->ms_view = curl_easy_init();
    
    client->url = strdup( conf->metadata_url );
+   
+   // clear the / at the end...
+   if( client->url[ strlen(client->url)-1 ] == '/' )
+      client->url[ strlen(client->url)-1 ] = 0;
 
    // will change URL once we know the Volume ID
    md_init_curl_handle( client->ms_read, "https://localhost", conf->metadata_connect_timeout);

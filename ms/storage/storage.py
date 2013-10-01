@@ -79,7 +79,7 @@ def get_roots( volumes ):
       cache_name = MSEntry.cache_key_name( root.volume_id, root.file_id )
       cache_roots[ cache_name ] = root
 
-   storagetypes.memcache.add_multi( cache_roots )
+   storagetypes.memcache.set_multi( cache_roots )
    return roots
    
 
@@ -167,6 +167,7 @@ def make_root( volume, owner_id, **root_attrs ):
    basic_root_attrs.update( **root_attrs )
    
    root = MSEntry( key=make_key( MSEntry, MSEntry.make_key_name( volume.volume_id, basic_root_attrs['file_id'] ) ) )
+   
    root.populate( volume.num_shards, **basic_root_attrs )
 
    root.update_dir_shard( volume.num_shards, volume.volume_id, basic_root_attrs['file_id'], **basic_root_attrs )

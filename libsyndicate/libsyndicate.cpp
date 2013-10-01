@@ -585,12 +585,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->gateway_key_path = strdup( values[0] );
       }
 
-      /*
-      else if( strcmp( key, VOLUME_PUBKEY_KEY ) == 0 ) {
-         // Volume public key
-         conf->volume_public_key_path = strdup( values[0] );
-      }
-      */
       else if( strcmp( key, PORTNUM_KEY ) == 0 ) {
          char *end;
          long val = strtol( values[0], &end, 10 );
@@ -611,14 +605,7 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
             conf->content_url = tmp;
          }
       }
-
-      /*
-      else if( strcmp( key, VOLUME_NAME_KEY ) == 0 ) {
-         // volume name
-         conf->volume_name = strdup( values[0] );
-      }
-      */
-
+      
       else if( strcmp( key, GATEWAY_NAME_KEY ) == 0 ) {
          // gateway name
          conf->gateway_name = strdup( values[0] );
@@ -3743,14 +3730,6 @@ int md_init( int gateway_type,
 
       conf->server_key_path = strdup( tls_pkey_file );
    }
-   /*
-   if( volume_key_file ) {
-      if( conf->volume_public_key_path )
-         free( conf->volume_public_key_path );
-
-      conf->volume_public_key_path = strdup( volume_key_file );
-   }
-   */
    
    if( portnum > 0 ) {
       conf->portnum = portnum;
@@ -3806,9 +3785,6 @@ int md_init( int gateway_type,
    ms_client_wlock( client );
    conf->owner = client->owner_id;
    conf->gateway = client->gateway_id;
-   //conf->volume_owner = client->volume_owner_id;
-   //conf->volume = client->volume_ids[0];
-   //conf->blocking_factor = client->blocksize;
    ms_client_unlock( client );
 
    return 0;
@@ -3835,7 +3811,6 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->debug_read = false;
    conf->debug_lock = false;
 
-   //conf->volume_name = NULL;
    conf->metadata_connect_timeout = 60;
    conf->portnum = 32780;
    conf->transfer_timeout = 60;
@@ -3886,12 +3861,6 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, METADATA_PASSWORD_KEY );
    }
-   /*
-   if( conf->volume_name == NULL ) {
-      rc = -EINVAL;
-      fprintf(stderr, err_fmt, VOLUME_NAME_KEY );
-   }
-   */
    if( conf->gateway_name == NULL ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, GATEWAY_NAME_KEY );

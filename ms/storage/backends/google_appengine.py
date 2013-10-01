@@ -29,10 +29,13 @@ deferred = google_deferred
 concurrent = ndb.tasklet
 concurrent_return = (lambda x: (raise_(ndb.Return( x ))))
 
+# asynchronous operations
 get_multi_async = ndb.get_multi_async
+put_multi_async = ndb.put_multi_async
 
 # synchronous operations
 get_multi = ndb.get_multi
+put_multi = ndb.put_multi
 delete_multi = ndb.delete_multi
 
 # aliases for memcache
@@ -45,3 +48,6 @@ transactional = ndb.transactional
 # alises for query predicates
 opAND = ndb.AND
 opOR = ndb.OR
+
+# aliases for top-level asynchronous loop
+toplevel = ndb.toplevel

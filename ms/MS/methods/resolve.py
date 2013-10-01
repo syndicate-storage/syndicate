@@ -28,7 +28,7 @@ def Resolve( owner_id, volume, file_id, file_version, mtime_sec, mtime_nsec ):
 
    file_memcache = MSEntry.Read( volume, file_id, memcache_keys_only=True )
    file_data = storagetypes.memcache.get( file_memcache )
-   listing = MSEntry.ListAll2( volume, file_id )
+   listing = MSEntry.ListAll( volume, file_id )
 
    all_ents = None
    file_fut = None

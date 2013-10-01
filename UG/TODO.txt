@@ -36,12 +36,6 @@ READING:
 --- billions of IP addresses, but trillions of content names
 
 
-BUGS:
-// what is the interaction between writing and truncate, when we nano a file remotely?  Why does it misbehave so badly?
-// --reversioning doesn't seem to happen...? get an invalid (old) version on writing after
-
-// reversion a file's staging blocks on reload, if needed (in fs/consistency.cpp)
-
 CDN:
 // CoRedirect needs to talk to CoBlitz to do zoned redirection...unless we can do it ourselves
 // get dnsdemux and coredirect running on vcoblitz-cmi.cs.princeton.edu; coblitz on VICCI and some high-powered PLC nodes
@@ -65,7 +59,6 @@ CDN:
       * update default values in /etc/onevantages XSLT files, since we can't bind on low-numbered or conflicting ports
 
 FEATURES:
-// Index into Volume lists of UGs and RGs in fs_entry structure
 // implement acting ownership and ownership change
 --- reversion file on ownership change
 --- NOTE: need to reversion staging blocks when version changes (modify fs/consistency.cpp)
@@ -74,7 +67,6 @@ FEATURES:
 // implement reconfiguration
 // append-only
 --- Easy: acting owner UG assigns offset
-// Use base 64 version numbers (get the length in the URL down)
 // Syndicate MS website for:
 --- adding/removing Volumes
 --- adding/removing users

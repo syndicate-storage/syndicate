@@ -36,9 +36,11 @@ concurrent = backend.concurrent
 concurrent_return = backend.concurrent_return
 
 get_multi_async = backend.get_multi_async
+put_multi_async = backend.put_multi_async
 
 # synchronous operations
 get_multi = backend.get_multi
+put_multi = backend.put_multi
 delete_multi = backend.delete_multi
 
 # aliases for memcache
@@ -51,6 +53,9 @@ transactional = backend.transactional
 # alises for query predicates
 opAND = backend.opAND
 opOR = backend.opOR
+
+# toplevel decorator
+toplevel = backend.toplevel
 
 
 def clock_gettime():
@@ -113,6 +118,11 @@ class Object( Model ):
       """
       return SHARD_KEY_TEMPLATE.format( name, idx )
 
+   @classmethod
+   def get_shard_key( cls, name, idx ):
+      key_str = cls.shard_key_name( name, idx )
+      return make_key( cls.shard_class, key_str )
+      
    @classmethod
    def get_shard_keys(cls, num_shards, key_name ):
       """

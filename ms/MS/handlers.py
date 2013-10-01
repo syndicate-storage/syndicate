@@ -626,6 +626,7 @@ class MSFileWriteHandler(webapp2.RequestHandler):
    It will create, delete, and update metadata entries via POST.
    """
    
+   @storagetypes.toplevel
    def post(self, volume_id_str ):
 
       file_post_start = storagetypes.get_time()
