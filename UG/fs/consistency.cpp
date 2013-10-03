@@ -69,16 +69,16 @@ bool fs_entry_is_read_stale( struct fs_entry* fent ) {
 
 // determine whether or not an entry is stale, given the current entry's modtime and the time of the query
 // fent must be at least read-locked!
-static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec, struct timespec* query_time ) {
+static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent, uint64_t mtime_sec, uint32_t mtime_nsec, uint64_t write_nonce, struct timespec* query_time ) {
    
-   // a directory is stale if the mtime has changed from what it was before (if the new mtime is known).
+   // a directory is stale if the write nonce has changed
    if( fent->ftype == FTYPE_DIR ) {
-      if(fent->mtime_sec != mtime_sec || fent->mtime_nsec != mtime_nsec) {
-         dbprintf("modtimes of directory %s have changed\n", fent->name);
+      if( fent->write_nonce != write_nonce ) {
+         dbprintf("write nonce of directory %s have changed\n", fent->name);
          return true;
       }
       else {
-         dbprintf("modtimes of directory %s have NOT changed\n", fent->name);
+         dbprintf("write nonce of directory %s have NOT changed\n", fent->name);
          return false;
       }
    }
@@ -93,13 +93,21 @@ static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent,
          // fent is local and was modified after the query time.  Don't reload; we have potentially uncommitted changes
          return false;
       }
-
+      if( (unsigned)fent->mtime_sec == mtime_sec && (unsigned)fent->mtime_nsec == mtime_nsec ) {
+         // not modified
+         return false;
+      }
+      if( fent->write_nonce == write_nonce ) {
+         // not modified, but mtime was tweaked in utime
+         return false;
+      }
+      
+      // remotely modified
       return true;
    }
    else {
-      // remote means that some other UG controls its mtime and ctime.
-      // trust the values on the MS over our own.
-      return true;
+      // remote object--check write nonce only 
+      return (fent->write_nonce != write_nonce);
    }
 }
 
@@ -155,6 +163,7 @@ int fs_entry_reload( struct fs_entry_consistency_cls* consistency_cls, struct fs
    fent->max_write_freshness = ent->max_write_freshness;
    fent->file_id = ent->file_id;
    fent->version = ent->version;
+   fent->write_nonce = ent->write_nonce;
    
    if( fent->name )
       free( fent->name );
@@ -406,7 +415,7 @@ static int fs_entry_reload_file( struct fs_entry_consistency_cls* consistency_cl
       return -ENODATA;
    }
    
-   if( !fs_entry_should_reload( consistency_cls->core, fent, ent->mtime_sec, ent->mtime_nsec, &consistency_cls->query_time ) ) {
+   if( !fs_entry_should_reload( consistency_cls->core, fent, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, &consistency_cls->query_time ) ) {
       // nothing to do
       fs_entry_mark_read_fresh( consistency_cls, fent );
       return 0;
@@ -506,7 +515,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
          continue;
 
       if( ms_ent->file_id == dent->file_id ) {
-         if( fs_entry_should_reload( consistency_cls->core, dent, ms_ent->mtime_sec, ms_ent->mtime_nsec, &consistency_cls->query_time ) ) {
+         if( fs_entry_should_reload( consistency_cls->core, dent, ms_ent->mtime_sec, ms_ent->mtime_nsec, ms_ent->write_nonce, &consistency_cls->query_time ) ) {
             dbprintf("reload '%s' ('%s')\n", dent->name, ms_ent->name );
             fs_entry_reload( consistency_cls, dent, ms_ent );
          }
@@ -554,6 +563,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
    
 
    // find the keepers listed in ms_ents
+   // TODO: preserve locally-coordinated files!
    for( unsigned int i = 0; i < ms_ents_size; i++ ) {
       
       struct md_entry* ms_ent = ms_ents[i];
@@ -571,7 +581,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
          if( ms_ent->file_id == child->file_id ) {
 
             // do the reload (if we need to)
-            if( fs_entry_should_reload( consistency_cls->core, child, ms_ent->mtime_sec, ms_ent->mtime_nsec, &consistency_cls->query_time ) ) {
+            if( fs_entry_should_reload( consistency_cls->core, child, ms_ent->mtime_sec, ms_ent->mtime_nsec, ms_ent->write_nonce, &consistency_cls->query_time ) ) {
                // keep directories marked as read-stale if they were before, since we want to later refresh their children if they were modified
                bool read_stale = false;
 
@@ -598,6 +608,21 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
          ms_ents[i] = NULL;
       }
    }
+   
+   // keep all locally-coordinated files
+   for( unsigned int i = 0; i < children->size(); i++ ) {
+      struct fs_entry* child = children->at(i).second;
+      
+      if( child == NULL )
+         continue;
+      
+      if( child->coordinator == consistency_cls->core->gateway ) {
+         // we own this, and would have unlinked it via some other process
+         fs_entry_set_insert( children_keep, child->name, child );
+         fs_entry_clear_child( children, i );
+      }
+   }
+         
    
    // new child set, filled with the keepers
    dent->children = children_keep;

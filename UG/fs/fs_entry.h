@@ -89,6 +89,7 @@ struct fs_entry {
    int64_t ctime_sec;         // creation time (seconds)
    int32_t ctime_nsec;        // creation time (nanoseconds)
    int64_t atime;             // access time (seconds)
+   uint64_t write_nonce;      // nonce generated at last write
    
    struct timespec refresh_time;    // time of last refresh from the ms
    uint32_t max_read_freshness;     // how long since last refresh, in ms, this fs_entry is to be considered fresh for reading (negative means always fresh)
@@ -207,9 +208,13 @@ int fs_dir_entry_destroy_all( struct fs_dir_entry** dents );
 
 
 // fs_entry locking
-int fs_entry_rlock( struct fs_entry* fent );
-int fs_entry_wlock( struct fs_entry* fent );
-int fs_entry_unlock( struct fs_entry* fent );
+int fs_entry_rlock2( struct fs_entry* fent, char const* from_str, int lineno );
+int fs_entry_wlock2( struct fs_entry* fent, char const* from_str, int lineno );
+int fs_entry_unlock2( struct fs_entry* fent, char const* from_str, int lineno );
+
+#define fs_entry_rlock( fent ) fs_entry_rlock2( fent, __FILE__, __LINE__ )
+#define fs_entry_wlock( fent ) fs_entry_wlock2( fent, __FILE__, __LINE__ )
+#define fs_entry_unlock( fent ) fs_entry_unlock2( fent, __FILE__, __LINE__ )
 
 // fs_file_handle locking
 int fs_file_handle_rlock( struct fs_file_handle* fh );

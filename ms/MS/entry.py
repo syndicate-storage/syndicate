@@ -55,7 +55,7 @@ class MSEntryShard(storagetypes.Object):
    mtime_sec = storagetypes.Integer(default=0, indexed=False)
    mtime_nsec = storagetypes.Integer(default=0, indexed=False)
    size = storagetypes.Integer(default=0, indexed=False )
-   last_write = storagetypes.Integer( default=0, indexed=False )
+   write_nonce = storagetypes.Integer( default=0, indexed=False )
    
    # version of the MSEntry we're associated with
    msentry_version = storagetypes.Integer(default=0, indexed=False )
@@ -193,7 +193,7 @@ class MSEntry( storagetypes.Object ):
    mtime_sec = storagetypes.Integer( default=-1, indexed=False )
    mtime_nsec = storagetypes.Integer( default=-1, indexed=False )
    size = storagetypes.Integer( default=0, indexed=False )
-   last_write = storagetypes.Integer( default=0, indexed=False )
+   write_nonce = storagetypes.Integer( default=0, indexed=False )
 
    # attributes that must be supplied on creation
    required_attrs = [
@@ -250,7 +250,7 @@ class MSEntry( storagetypes.Object ):
       "size",
       "max_read_freshness",
       "max_write_freshness",
-      "last_write"
+      "write_nonce"
    ]
 
    # publicly writable attributes, sharded or not
@@ -261,7 +261,6 @@ class MSEntry( storagetypes.Object ):
       "size",
       "mtime_sec",
       "mtime_nsec",
-      "last_write",
       "max_read_freshness",
       "max_write_freshness",
       "coordinator_id"
@@ -277,7 +276,7 @@ class MSEntry( storagetypes.Object ):
       "size",
       "msentry_version",
       "msentry_volume_id",
-      "last_write"
+      "write_nonce"
    ]
 
    # functions that read a sharded value from shards for an instance of this ent
@@ -285,7 +284,7 @@ class MSEntry( storagetypes.Object ):
       "mtime_sec": (lambda ent, shards: MSEntryShard.get_mtime_from_shards( ent, shards )[0]),
       "mtime_nsec": (lambda ent, shards: MSEntryShard.get_mtime_from_shards( ent, shards )[1]),
       "size": (lambda ent, shards: MSEntryShard.get_size_from_shards( ent, shards )),
-      "last_write": (lambda ent, shards: MSEntryShard.get_latest_attr( ent, shards, "last_write" ))
+      "write_nonce": (lambda ent, shards: MSEntryShard.get_latest_attr( ent, shards, "write_nonce" ))
    }
 
    # functions that write a sharded value, given this ent
@@ -293,7 +292,7 @@ class MSEntry( storagetypes.Object ):
       "msentry_version": (lambda ent: ent.version),
       "msentry_volume_id": (lambda ent: ent.volume_id),
       "size": (lambda ent: ent.size),
-      "last_write": (lambda ent: ent.last_write)
+      "write_nonce": (lambda ent: ent.write_nonce)
    }
    
    @classmethod 
@@ -323,7 +322,7 @@ class MSEntry( storagetypes.Object ):
       pbent.name = kwargs.get( 'name', self.name )
       pbent.max_read_freshness = kwargs.get( 'max_read_freshness', self.max_read_freshness )
       pbent.max_write_freshness = kwargs.get( 'max_write_freshness', self.max_write_freshness )
-      pbent.write_nonce = kwargs.get( 'last_write', self.last_write )
+      pbent.write_nonce = kwargs.get( 'write_nonce', self.write_nonce )
 
       pbent.parent_id = MSEntry.serialize_id( kwargs.get('parent_id', '0000000000000000') )
       pbent.file_id = MSEntry.serialize_id( kwargs.get( 'file_id', self.file_id ) )
@@ -355,7 +354,7 @@ class MSEntry( storagetypes.Object ):
       ret.version = ent.version
       ret.max_read_freshness = ent.max_read_freshness
       ret.max_write_freshness = ent.max_write_freshness
-      ret.last_write = ent.write_nonce
+      ret.write_nonce = ent.write_nonce
 
       if ent.HasField('parent_id'): # and ent.HasField('parent_name'):
          #ret.parent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( ent.volume, ent.parent_id ) )
@@ -460,7 +459,7 @@ class MSEntry( storagetypes.Object ):
    def __read_msentry( cls, volume_id, file_id, num_shards, **ctx_opts ):
       ent, shards = yield MSEntry.__read_msentry_base( volume_id, file_id, **ctx_opts ), MSEntry.__read_msentry_shards( volume_id, file_id, num_shards, **ctx_opts )
       if ent != None:
-         ent.populate_from_shards( shards )
+         ent.populate_from_shards( shards_existing )
 
       storagetypes.concurrent_return( ent )
 
@@ -509,7 +508,7 @@ class MSEntry( storagetypes.Object ):
          
       parent_attrs['mtime_sec'] = now_sec
       parent_attrs['mtime_nsec'] = now_nsec
-      parent_attrs['last_write'] = random.randint( -2**63, 2**63 - 1 )
+      parent_attrs['write_nonce'] = random.randint( -2**63, 2**63 - 1 )
       
       key_name = MSEntry.make_key_name( parent_ent.volume_id, parent_ent.file_id )
       shard_key = MSEntry.get_shard_key( key_name, random.randint( 0, num_shards-1 ) )
@@ -644,11 +643,11 @@ class MSEntry( storagetypes.Object ):
       if parent_ent == None:
          parent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, parent_id ) )
          parent_ent = parent_key.get()
-         
-         if parent_ent == None or parent_ent.deleted:
-            # roll back...
-            delete = True 
-            ret = -errno.ENOENT
+      
+      if parent_ent == None or parent_ent.deleted:
+         # roll back...
+         delete = True 
+         ret = -errno.ENOENT
          
       # wait for operations to finish...
       storagetypes.wait_futures( futs )
@@ -675,10 +674,6 @@ class MSEntry( storagetypes.Object ):
       if rc != 0:
          return rc
       
-      # also require a last_write value
-      if not ent_attrs.has_key( "last_write" ):
-         return -errno.EINVAL
-
       # Update an MSEntry.
       # A file will be updated by at most one UG, so we don't need a transaction.
       # A directory can be updated by anyone, but the update conflict resolution is last-write-wins.
@@ -698,10 +693,9 @@ class MSEntry( storagetypes.Object ):
 
       # get the ent
       # try from cache first
-      client = storagetypes.memcache.Client()
       cache_ent_key = MSEntry.cache_key_name( volume_id, file_id )
 
-      ent = client.get( cache_ent_key )
+      ent = storagetypes.memcache.get( cache_ent_key )
       if ent == None:
          # not in the cache.  Get from the datastore
          ent_fut = MSEntry.__read_msentry( volume_id, file_id, volume.num_shards, use_memcache=False )
@@ -729,7 +723,11 @@ class MSEntry( storagetypes.Object ):
             ent.populate_base( **writable_attrs )
             break
          
-      # make a new shard with the mtime, last_write, and size
+      
+      # last write...
+      ent_attrs['write_nonce'] = random.randint( -2**63, 2**63 - 1 )
+      
+      # make a new shard with the mtime, write_nonce, and size
       ent.populate_shard( volume.num_shards, **ent_attrs )
 
       if put_ent:
@@ -738,7 +736,7 @@ class MSEntry( storagetypes.Object ):
          futs = [ent.put_shard_async()]
       
       # invalidate cached items
-      storagetypes.memcache.delete( MSEntry.cache_key_name( volume_id, file_id ) )
+      storagetypes.memcache.set( cache_ent_key, ent )
 
       storagetypes.wait_futures( futs )
 
@@ -867,9 +865,10 @@ class MSEntry( storagetypes.Object ):
          # delete any listings of this parent
          storagetypes.memcache.delete_multi( [MSEntry.cache_listing_key_name( volume_id, parent_id), ent_cache_key_name] )
 
-         # delete this entry
+         # delete this entry, its shards, and its nameholder
          ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, file_id ) )
-         storagetypes.deferred.defer( MSEntry.delete_all, [ent_key] + ent_shard_keys )
+         nh_key = storagetypes.make_key( MSEntryNameHolder, MSEntryNameHolder.make_key_name( volume_id, parent_id, file_id, ent.name ) )
+         storagetypes.deferred.defer( MSEntry.delete_all, [nh_key, ent_key] + ent_shard_keys )
          
          # decrease number of files
          storagetypes.deferred.defer( Volume.decrease_file_count, volume_id )
@@ -888,8 +887,7 @@ class MSEntry( storagetypes.Object ):
       if msentry == None:
          storagetypes.concurrent_return( (None, None) )
       
-      shards_existing = filter( lambda x: x != None, shards )
-      msentry.populate_from_shards( shards_existing )
+      msentry.populate_from_shards( shards )
 
       cache_key = MSEntry.cache_key_name( msentry.volume_id, msentry.file_id )
       storagetypes.concurrent_return( (cache_key, msentry) )

@@ -430,6 +430,7 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
    }
 
    fent->file_id = ent->file_id;
+   fent->write_nonce = ent->write_nonce;
    
    return 0;
 }
@@ -487,39 +488,54 @@ long fs_entry_name_hash( char const* name ) {
 }
 
 // lock a file for reading
-int fs_entry_rlock( struct fs_entry* fent ) {
-   if( _debug_locks ) {
-      dbprintf( "%p: %s\n", fent, fent->name );
+int fs_entry_rlock2( struct fs_entry* fent, char const* from_str, int line_no ) {
+   int rc = pthread_rwlock_rdlock( &fent->lock );
+   if( rc == 0 ) {
+      if( _debug_locks ) {
+         dbprintf( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
+      }
+   }
+   else {
+      errorf("pthread_rwlock_rdlock(%p) rc = %d\n", fent, rc );
    }
 
-   int rc = pthread_rwlock_rdlock( &fent->lock );
    return rc;
 }
 
 // lock a file for writing
-int fs_entry_wlock( struct fs_entry* fent ) {
-   if( _debug_locks ) {
-      dbprintf( "%p: %s\n", fent, fent->name);
-   }
-
+int fs_entry_wlock2( struct fs_entry* fent, char const* from_str, int line_no ) {
    int rc = pthread_rwlock_wrlock( &fent->lock );
    if( fent->ftype == FTYPE_DEAD )
       return -ENOENT;
    
-   if( rc == 0 )
+   if( rc == 0 ) {
       fent->write_locked = true;
    
+      if( _debug_locks ) {
+         dbprintf( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
+      }
+   }
+   else {
+      errorf("pthread_rwlock_wrlock(%p) rc = %d\n", fent, rc );
+   }
+
    return rc;
 }
 
 // unlock a file
-int fs_entry_unlock( struct fs_entry* fent ) {
-   if( _debug_locks ) {
-      dbprintf( "%p: %s\n", fent, fent->name );
+int fs_entry_unlock2( struct fs_entry* fent, char const* from_str, int line_no ) {
+   fent->write_locked = false;
+   int rc = pthread_rwlock_unlock( &fent->lock );
+   if( rc == 0 ) {
+      if( _debug_locks ) {
+         dbprintf( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
+      }
+   }
+   else {
+      errorf("pthread_rwlock_unlock nlock(%p) rc = %d\n", fent, rc );
    }
 
-   fent->write_locked = false;
-   return pthread_rwlock_unlock( &fent->lock );
+   return rc;
 }
 
 // lock a file handle for reading

@@ -279,7 +279,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
 
       // NOTE: size may have changed due to expansion, but it shouldn't affect this computation
       fh->fent->size = MAX( fh->fent->size, (unsigned)(offset + count) );
-
+      
       if( !local ) {
          // tell the remote owner about our write
          Serialization::WriteMsg *write_msg = new Serialization::WriteMsg();
@@ -323,6 +323,15 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       }
 
       END_TIMING_DATA( remote_write_ts, ts2, "send remote write" );
+   }
+   
+   if( ret > 0 ) {
+      // update mtime
+      struct timespec new_mtime;
+      clock_gettime( CLOCK_REALTIME, &new_mtime );
+      
+      fh->fent->mtime_sec = new_mtime.tv_sec;
+      fh->fent->mtime_nsec = new_mtime.tv_nsec;
    }
 
    if( ret > 0 && local ) {

@@ -2463,7 +2463,7 @@ int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
    msent->set_max_read_freshness( ent->max_read_freshness );
    msent->set_max_write_freshness( ent->max_write_freshness );
    msent->set_name( string( ent->name ) );
-
+   msent->set_write_nonce( (int64_t)(ent->write_nonce) );
    return 0;
 }
 
@@ -2487,6 +2487,7 @@ int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent ) {
    ent->version = msent.version();
    ent->size = msent.size();
    ent->name = strdup( msent.name().c_str() );
+   ent->write_nonce = (uint64_t)msent.write_nonce();
 
    if( msent.has_parent_id() )
       ent->parent_id = msent.parent_id();
@@ -3809,7 +3810,7 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
 
    conf->ag_block_size = 0;
    conf->debug_read = false;
-   conf->debug_lock = false;
+   conf->debug_lock = true;
 
    conf->metadata_connect_timeout = 60;
    conf->portnum = 32780;

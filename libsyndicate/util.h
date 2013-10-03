@@ -50,8 +50,8 @@
 #include <math.h>
 #include <endian.h>
 
-#define WHERESTR "[%16s:%04u] %s: "
-#define WHEREARG __FILE__, __LINE__, __func__
+#define WHERESTR "%16lx: [%16s:%04u] %s: "
+#define WHEREARG pthread_self(), __FILE__, __LINE__, __func__
 
 extern int _DEBUG_MESSAGES;
 extern int _ERROR_MESSAGES;

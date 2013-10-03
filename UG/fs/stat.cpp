@@ -309,19 +309,29 @@ bool fs_entry_is_local( struct fs_core* core, char const* path, uint64_t user, u
 
 // fstat
 int fs_entry_fstat( struct fs_core* core, struct fs_file_handle* fh, struct stat* sb ) {
-   if( fs_file_handle_rlock( fh ) != 0 ) {
+   int rc = fs_file_handle_rlock( fh );
+   if( rc != 0 ) {
+      errorf("fs_file_handle_rlock rc = %d\n", rc );
       return -EBADF;
    }
 
    // revalidate
-   int rc = fs_entry_revalidate_path( core, fh->volume, fh->path );
+   rc = fs_entry_revalidate_path( core, fh->volume, fh->path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
+      
+      if( rc == -ENOENT ) {
+         // file no longer exists
+         return -EBADF;
+      }
+      
       return -EREMOTEIO;
    }
    
-   if( fs_entry_rlock( fh->fent ) != 0 ) {
+   rc = fs_entry_rlock( fh->fent );
+   if( rc != 0 ) {
+      errorf("fs_entry_rlock rc = %d\n", rc );
       fs_file_handle_unlock( fh );
       return -EBADF;
    }
