@@ -25,13 +25,20 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
 
    BEGIN_TIMING_DATA( ts );
    
-   fs_entry_replicate_wait( fh );
+   int rc = fs_entry_replicate_wait( fh );
 
    END_TIMING_DATA( ts, ts2, "replication" );
    
-   int rc = ms_client_sync_update( core->ms, fh->volume, fh->file_id );
    if( rc != 0 ) {
-      errorf("ms_client_sync_update(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", core->gateway, fh->volume, fh->file_id, rc );
+      errorf("ms_client_replicate_wait(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", fh->volume, core->gateway, fh->file_id, rc );
+      fs_file_handle_unlock( fh );
+      
+      return rc;
+   }
+   
+   rc = ms_client_sync_update( core->ms, fh->volume, fh->file_id );
+   if( rc != 0 ) {
+      errorf("ms_client_sync_update(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", fh->volume, core->gateway, fh->file_id, rc );
 
       // ENOENT allowed because the update thread could have preempted us
       if( rc == -ENOENT )
@@ -190,6 +197,7 @@ static struct fs_entry* fs_entry_attach_ms_directory( struct fs_core* core, stru
       return NULL;
    }
    else {
+      dbprintf("add dir %p\n", new_dir );
       // add the new directory; make a note to load up its children on the next opendir()
       fs_entry_set_insert( new_dir->children, ".", new_dir );
       fs_entry_set_insert( new_dir->children, "..", parent );
@@ -218,6 +226,8 @@ static struct fs_entry* fs_entry_attach_ms_file( struct fs_core* core, struct fs
       return NULL;
    }
    else {
+      dbprintf("add file %p\n", new_file );
+      
       fs_entry_attach_lowlevel( core, parent, new_file );
 
       clock_gettime( CLOCK_REALTIME, &new_file->refresh_time );

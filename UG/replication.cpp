@@ -63,15 +63,11 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    char* manifest_data = NULL;
    ssize_t manifest_data_len = 0;
    
-   struct timespec ts1, ts2;
-   
-   BEGIN_TIMING_DATA( ts1 );
    manifest_data_len = fs_entry_serialize_manifest( core, fent, &manifest_data, false );
    if( manifest_data_len < 0 ) {
       errorf("fs_entry_serialize_manifest(%" PRIX64 ") rc = %zd\n", fent->file_id, manifest_data_len);
       return -EINVAL;
    }
-   END_TIMING_DATA( ts1, ts2, "fs_entry_serialize_manifest" );
    
    // build an update
    ms::ms_gateway_blockinfo replica_info;
@@ -87,14 +83,9 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    replica_info.set_volume( fent->volume );
 
    
-   BEGIN_TIMING_DATA( ts1 );
    // hash the manifest
    unsigned char* hash = sha256_hash_data( manifest_data, manifest_data_len );
    size_t hash_len = sha256_len();
-   
-   END_TIMING_DATA( ts1, ts2, "hashing manifest" );
-   
-   BEGIN_TIMING_DATA( ts1 );
    
    char* b64hash = NULL;
    int rc = Base64Encode( (char*)hash, hash_len, &b64hash );
@@ -109,10 +100,6 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    free( b64hash );
    free( hash );
    
-   END_TIMING_DATA( ts1, ts2, "encoding manifest hash" );
-   
-   BEGIN_TIMING_DATA( ts1 );
-   
    rc = md_sign< ms::ms_gateway_blockinfo >( core->ms->my_key, &replica_info );
    if( rc != 0 ) {
       errorf("md_sign rc = %d\n", rc );
@@ -120,9 +107,6 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
       return -EINVAL;
    }
    
-   END_TIMING_DATA( ts1, ts2, "signing manifest" );
-   
-   BEGIN_TIMING_DATA( ts1 );
    // serialize to string
    string replica_info_str;
    
@@ -133,9 +117,6 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
       return -EINVAL;
    }
    
-   END_TIMING_DATA( ts1, ts2, "serializing manifest" );
-   
-   BEGIN_TIMING_DATA( ts1 );
    // build up the form to submit to the RG
    struct curl_httppost* form_data = NULL;
    struct curl_httppost* last = NULL;
@@ -162,8 +143,6 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
       
       return -EINVAL;
    }
-   
-   END_TIMING_DATA( ts1, ts2, "replica_context_init and form processing" );
    
    return 0;
 }
@@ -601,18 +580,12 @@ int replication_shutdown() {
 int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bool sync, struct fs_file_handle* fh ) {
    struct replica_context* manifest_rctx = CALLOC_LIST( struct replica_context, 1 );
    
-   struct timespec ts1, ts2;
-   
-   BEGIN_TIMING_DATA( ts1 );
    int rc = replica_context_manifest( core, manifest_rctx, fent, sync );
    if( rc != 0 ) {
       errorf("replica_context_manifest rc = %d\n", rc );
       free( manifest_rctx );
       return rc;
    }
-   END_TIMING_DATA( ts1, ts2, "replica_context_manifest" );
-   
-   BEGIN_TIMING_DATA( ts1 );
    
    // proceed to replicate
    rc = replica_begin( &global_replication, manifest_rctx );
@@ -622,10 +595,6 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
       replica_context_free( manifest_rctx );
       return rc;
    }
-   
-   END_TIMING_DATA( ts1, ts2, "replica_begin" );
-   
-   BEGIN_TIMING_DATA( ts1 );
    
    // wait for this to finish?
    if( sync ) {
@@ -642,8 +611,6 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
       fh->rctxs->push_back( manifest_rctx );
    }
    
-   END_TIMING_DATA( ts1, ts2, "replica manifest processing" );
-   
    return rc;
 }
 
@@ -652,10 +619,6 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
 int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh ) {
    vector<struct replica_context*> block_rctxs;
    int rc = 0;
-   
-   struct timespec ts1, ts2;
-   
-   BEGIN_TIMING_DATA( ts1 );
    
    for( modification_map::iterator itr = modified_blocks->begin(); itr != modified_blocks->end(); itr++ ) {
       uint64_t block_id = itr->first;
@@ -677,10 +640,6 @@ int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modi
       }
    }
    
-   END_TIMING_DATA( ts1, ts2, "replica_begin all blocks" );
-   
-   BEGIN_TIMING_DATA( ts1 );
-   
    // wait for them all to finish?
    if( sync ) {
       rc = fs_entry_replicate_wait( &block_rctxs );
@@ -697,8 +656,6 @@ int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modi
          }
       }
    }
-   
-   END_TIMING_DATA( ts1, ts2, "replica block processing" );
    
    return rc;
 }

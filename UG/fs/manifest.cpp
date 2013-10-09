@@ -128,51 +128,6 @@ bool block_url_set::truncate( uint64_t new_end_id ) {
    }
 }
 
-/*
-// grow one unit to the left
-bool block_url_set::grow_left( int64_t version ) {
-   if( this->start_id == 0 )
-      return false;
-
-   this->start_id--;
-   int64_t* tmp = CALLOC_LIST( int64_t, this->end_id - this->start_id );
-
-   tmp[0] = version;
-   memcpy( tmp + 1, this->block_versions, sizeof(int64_t) * (this->end_id - this->start_id - 1) );
-
-   free( this->block_versions );
-   this->block_versions = tmp;
-
-   return true;
-}
-
-
-// grow one unit to the right
-bool block_url_set::grow_right( int64_t version ) {
-   this->end_id++;
-
-   int64_t* tmp = CALLOC_LIST( int64_t, this->end_id - this->start_id );
-
-   memcpy( tmp, this->block_versions, sizeof(int64_t) * (this->end_id - this->start_id - 1) );
-   tmp[ this->end_id - 1 ] = version;
-
-   free( this->block_versions );
-   this->block_versions = tmp;
-
-   if( this->local ) {
-      tmp = CALLOC_LIST( int64_t, this->end_id - this->start_id );
-
-      memcpy( tmp, this->block_versions, sizeof(int64_t) * (this->end_id - this->start_id - 1) );
-      tmp[ this->end_id - 1 ] = version;
-
-      free( this->block_versions );
-      this->block_versions = tmp;
-   }
-
-   return true;
-}
-*/
-
 // shrink one unit from the left
 bool block_url_set::shrink_left() {
    if( this->start_id + 1 >= this->end_id )
@@ -586,7 +541,7 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
          }
       }
       else {
-         //printf("// we don't have any blocks yet.  put the first one\n");
+         printf("// we don't have any blocks yet.  put the first one\n");
          this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
       }
    }
@@ -743,6 +698,10 @@ void file_manifest::truncate( uint64_t new_end_id ) {
          itr++;      // preserve this blocK-url-set
 
       if( itr != this->block_urls.end() ) {
+         for( block_map::iterator itr2 = itr; itr2 != this->block_urls.end(); itr2++ ) {
+            delete itr2->second;
+            itr2->second = NULL;
+         }
          this->block_urls.erase( itr, this->block_urls.end() );
       }
    }

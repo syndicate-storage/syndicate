@@ -14,7 +14,7 @@ static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void 
 
 static void ms_client_cert_bundles( struct ms_volume* volume, ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1] ) {
    // NOTE: this is indexed to SYNDICATE_UG, SYNDICATE_AG, SYNDICATE_RG
-   memset( cert_bundles, 0, sizeof(cert_bundles[0]) * 4 );
+   memset( cert_bundles, 0, sizeof(cert_bundles[0]) * (MS_NUM_CERT_BUNDLES + 1) );
    cert_bundles[SYNDICATE_UG] = volume->UG_certs;
    cert_bundles[SYNDICATE_AG] = volume->AG_certs;
    cert_bundles[SYNDICATE_RG] = volume->RG_certs;
@@ -58,11 +58,10 @@ static void ms_volume_free( struct ms_volume* vol ) {
    ms_cert_bundle* all_certs[MS_NUM_CERT_BUNDLES+1];
    ms_client_cert_bundles( vol, all_certs );
 
-   for( int i = 0; all_certs[i] != NULL; i++ ) {
+   for( int i = 1; all_certs[i] != NULL; i++ ) {
       ms_cert_bundle* certs = all_certs[i];
       
       for( ms_cert_bundle::iterator itr = certs->begin(); itr != certs->end(); itr++ ) {
-         dbprintf("destroy cert %p\n", itr->second );
          ms_client_gateway_cert_free( itr->second );
          free( itr->second );
       }
@@ -311,6 +310,8 @@ int ms_client_destroy( struct ms_client* client ) {
 
    // free OpenSSL memory
    ERR_free_strings();
+   
+   dbprintf("%s", "MS client shutdown\n");
    
    return 0;
 }

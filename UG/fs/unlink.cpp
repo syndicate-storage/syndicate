@@ -56,7 +56,8 @@ int fs_entry_detach_lowlevel( struct fs_core* core, struct fs_entry* parent, str
          }
       }
       
-      if( rc == 0 ) {
+      if( rc == 0 || rc == -ENOENT ) {
+         // ENOENT allowed--it just means there's not local data
          fs_entry_destroy( child, false );
          free( child );
          child = NULL;

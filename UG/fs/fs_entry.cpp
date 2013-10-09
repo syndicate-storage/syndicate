@@ -439,7 +439,7 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
 // destroy an FS entry
 int fs_entry_destroy( struct fs_entry* fent, bool needlock ) {
 
-   dbprintf("destroy %" PRIX64 " (%s)\n", fent->file_id, fent->name );
+   dbprintf("destroy %" PRIX64 " (%s) (%p)\n", fent->file_id, fent->name, fent );
    
    // free common fields
    if( needlock )

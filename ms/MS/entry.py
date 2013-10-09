@@ -781,7 +781,7 @@ class MSEntry( storagetypes.Object ):
 
       # if parent_ent is not cached, then read from the datastore
       if parent_ent == None:
-         parent_ent_fut = __read_msentry( volume_id, parent_id, volume.num_shards, use_memcache=False )
+         parent_ent_fut = MSEntry.__read_msentry( volume_id, parent_id, volume.num_shards, use_memcache=False )
          futs.append( parent_ent_fut )
 
       # wait for the datastore to get back to us...

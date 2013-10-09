@@ -37,7 +37,7 @@ typedef map<uint64_t, long> deadline_queue;
 #define MS_LISTING_NEW          1         // new entry
 #define MS_LISTING_NOCHANGE     2         // entry/listing not modified
 
-#define MS_NUM_CERT_BUNDLES 3
+#define MS_NUM_CERT_BUNDLES 4
 
 
 // directory listing
