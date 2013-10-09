@@ -47,11 +47,11 @@ def parse_block_request(data):
     data = data.rsplit(' ')
 
     action = data[0]
-    data = data[1].rsplit('/')
-    path = data[2]
+    data = data[1].rsplit('/', 2)
+    path = data[0]
     path = '/' + path + '/'
-    file_info = data[3]
-    block_info = data[4]
+    file_info = data[1]
+    block_info = data[2]
 
     file_info = file_info.rsplit('.')
     file_name = file_info[0]

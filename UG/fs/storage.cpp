@@ -213,22 +213,6 @@ static char* fs_entry_get_block_storage_url( struct fs_core* core, uint64_t file
    return local_block_url;
 }
 
-// given a url and version, calculate either a data local URL or a staging local URL for a file, depending on the URL.
-static char* fs_entry_get_file_storage_url( struct fs_core* core, uint64_t file_id, int64_t file_version, bool staging ) {
-
-   char* local_file_url = NULL;
-   if( !staging ) {
-      // file is locally hosted; put into our data directory
-      local_file_url = fs_entry_local_file_url( core, file_id, file_version );
-   }
-   else {
-      // file is remotely hosted; put into our staging directory
-      local_file_url = fs_entry_local_staging_file_url( core, file_id, file_version );
-   }
-   return local_file_url;
-}
-
-
 // "open" a block, returning a file descriptor 
 int fs_entry_open_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool staging, bool creat ) {
    int rc = 0;

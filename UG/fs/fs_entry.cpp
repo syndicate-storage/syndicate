@@ -10,6 +10,7 @@
 #include "ms-client.h"
 #include "collator.h"
 #include "consistency.h"
+#include "replication.h"
 
 int _debug_locks = 0;
 
@@ -317,7 +318,6 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    fent->version = version;
    fent->owner = owner;
    fent->coordinator = coordinator;
-   fent->coordinator = owner;
    fent->volume = volume;
    fent->mode = mode;
    fent->size = size;
@@ -904,6 +904,16 @@ int fs_file_handle_destroy( struct fs_file_handle* fh ) {
    if( fh->parent_name ) {
       free( fh->parent_name );
       fh->parent_name = NULL;
+   }
+   if( fh->rctxs ) {
+      for( unsigned int i = 0; i < fh->rctxs->size(); i++ ) {
+         if( fh->rctxs->at(i) == NULL )
+            continue;
+         
+         replica_context_free( fh->rctxs->at(i) );
+         free( fh->rctxs->at(i) );
+      }
+      delete fh->rctxs;
    }
    pthread_rwlock_unlock( &fh->lock );
    pthread_rwlock_destroy( &fh->lock );

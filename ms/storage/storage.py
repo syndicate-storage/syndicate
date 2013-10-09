@@ -215,6 +215,12 @@ def list_user_gateways(attrs=None, limit=None):
 def list_user_gateways_by_volume( volume_id ):
    return UserGateway.ListAll_ByVolume( volume_id )
 
+def bind_user_gateway_to_volume( g_id, volume_id ):
+   return UserGateway.BindVolume( g_id, volume_id )
+
+def unbind_user_gateway_from_volume( g_id, volume_id ):
+   return UserGateway.UnbindVolume( g_id, volume_id )
+
 def get_user_gateway_by_name( name ):
    ugs = list_user_gateways( {"ms_username ==" : name} )
    if len(ugs) > 1:
@@ -244,6 +250,12 @@ def list_acquisition_gateways_by_volume( volume_id ):
 
 def list_acquisition_gateways( attrs=None, limit=None ):
    return AcquisitionGateway.ListAll( attrs, limit=limit )
+
+def bind_acquisition_gateway_to_volume( g_id, volume_id ):
+   return AcquisitionGateway.BindVolume( g_id, volume_id )
+
+def unbind_acquisition_gateway_from_volume( g_id, volume_id ):
+   return AcquisitionGateway.UnbindVolume( g_id, volume_id )
 
 def get_acquisition_gateway_by_name( name ):
    ags = list_acquisition_gateways( {"ms_username ==" : name} )
@@ -275,6 +287,12 @@ def list_replica_gateways_by_volume( volume_id ):
 
 def list_replica_gateways( attrs=None, limit=None ):
    return ReplicaGateway.ListAll( attrs, limit=limit )
+
+def bind_replica_gateway_to_volume( g_id, volume_id ):
+   return ReplicaGateway.BindVolume( g_id, volume_id )
+
+def unbind_replica_gateway_from_volume( g_id, volume_id ):
+   return ReplicaGateway.UnbindVolume( g_id, volume_id )
 
 def get_replica_gateway_by_name( name ):
    rgs = list_replica_gateways( {"ms_username ==" : name} )

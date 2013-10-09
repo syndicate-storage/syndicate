@@ -83,7 +83,7 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
    char* block_buf = NULL;
    ssize_t nr = fs_entry_download_block( core, block_url, &block_buf, block_len );
    if( nr <= 0 && !IS_STREAM_FILE( *fent ) && !is_on_AG ) {
-      char** RG_urls = ms_client_RG_urls_copy( core->ms, core->volume );
+      char** RG_urls = ms_client_RG_urls( core->ms, core->volume );
 
       // try a replica
       if( RG_urls != NULL ) {

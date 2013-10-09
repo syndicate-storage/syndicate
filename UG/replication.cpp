@@ -6,659 +6,743 @@
 
 #include "replication.h"
 
-static ReplicaUploader* rutp;
+static struct syndicate_replication global_replication;
 
-
-// free an upload state machine
-void RG_upload_destroy( struct RG_upload* rup ) {
-   if( rup->file ) {
-      fclose( rup->file );
+// set up a replica context
+int replica_context_init( struct replica_context* rctx, int type, FILE* block_data, char* manifest_data, off_t data_len, struct curl_httppost* form_data, uint64_t file_id, bool sync ) {
+   memset( rctx, 0, sizeof(struct replica_context) );
+   
+   if( type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
+      rctx->data = manifest_data;
    }
-   if( rup->path ) {
-      free( rup->path );
-   }
-   if( rup->form_data ) {
-      curl_formfree( rup->form_data );
-   }
-   if( rup->data ) {
-      free( rup->data );
-   }
-   if( rup->sync ) {
-      pthread_cond_destroy( &rup->sync_cv );
-      pthread_mutex_destroy( &rup->sync_lock );
-   }
-}
-
-
-/*
-// debugging purposes
-static int replica_trace( CURL* curl_h, curl_infotype type, char* data, size_t size, void* user ) {
-   if( type != CURLINFO_TEXT ) {
-      FILE* f = (FILE*)user;
-      fwrite( data, 1, size, f );
-      fflush( f );
-   }
-   return 0;
-}
-*/
-
-
-// curl read function for uploading
-size_t replica_curl_read( void* ptr, size_t size, size_t nmemb, void* userdata ) {
-   FILE* file = (FILE*)userdata;
-   if( file ) {
-      size_t sz = fread( ptr, size, nmemb, file );
-      return sz * size;
+   else if( type == REPLICA_CONTEXT_TYPE_BLOCK ) {
+      rctx->file = block_data;
    }
    else {
-      errorf("%s", " no userdata\n");
-      return CURL_READFUNC_ABORT;
+      return -EINVAL;
    }
+   
+   rctx->type = type;
+   rctx->size = data_len;
+   rctx->form_data = form_data;
+   rctx->refcount = 0;
+   rctx->sync = sync;
+   rctx->file_id = file_id;
+   
+   sem_init( &rctx->processing_lock, 0, 1 );
+   
+   return 0;
 }
 
 
-// replicate a manifest
-int RG_upload_init_manifest( struct fs_core* core,
-                             struct RG_upload* rup,
-                             char* manifest_data,
-                             size_t manifest_data_len,
-                             char const* fs_path,
-                             uint64_t file_id,
-                             int64_t file_version,
-                             int64_t mtime_sec,
-                             int32_t mtime_nsec,
-                             uint64_t owner,
-                             uint64_t writer,
-                             bool sync ) {
+// free a replica context
+int replica_context_free( struct replica_context* rctx ) {
+   if( rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ) {
+      fclose( rctx->file );
+   }
+   else if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
+      free( rctx->data );
+   }
    
-   memset( rup, 0, sizeof(struct RG_upload) );
+   curl_easy_cleanup( rctx->curl );
+   
+   curl_formfree( rctx->form_data );
+   sem_destroy( &rctx->processing_lock );
+   
+   memset( rctx, 0, sizeof( struct replica_context ) );
+   
+   return 0;
+}
+
+
+// create a manifest replica context
+// fent must be at least read-locked
+int replica_context_manifest( struct fs_core* core, struct replica_context* rctx, struct fs_entry* fent, bool sync ) {
+   
+   // get the manifest data
+   char* manifest_data = NULL;
+   ssize_t manifest_data_len = 0;
+   
+   struct timespec ts1, ts2;
+   
+   BEGIN_TIMING_DATA( ts1 );
+   manifest_data_len = fs_entry_serialize_manifest( core, fent, &manifest_data, false );
+   if( manifest_data_len < 0 ) {
+      errorf("fs_entry_serialize_manifest(%" PRIX64 ") rc = %zd\n", fent->file_id, manifest_data_len);
+      return -EINVAL;
+   }
+   END_TIMING_DATA( ts1, ts2, "fs_entry_serialize_manifest" );
    
    // build an update
    ms::ms_gateway_blockinfo replica_info;
-   replica_info.set_file_id( file_id );
-   replica_info.set_file_version( file_version );
+   replica_info.set_file_id( fent->file_id );
+   replica_info.set_file_version( fent->version );
    replica_info.set_block_id( 0 );
    replica_info.set_block_version( 0 );
    replica_info.set_blocking_factor( core->blocking_factor );
-   replica_info.set_file_mtime_sec( mtime_sec );
-   replica_info.set_file_mtime_nsec( mtime_nsec );
-   replica_info.set_owner( owner );
-   replica_info.set_writer( writer );
-   replica_info.set_signature( string("") );
+   replica_info.set_file_mtime_sec( fent->mtime_sec );
+   replica_info.set_file_mtime_nsec( fent->mtime_nsec );
+   replica_info.set_owner( fent->owner );
+   replica_info.set_writer( core->gateway );
+   replica_info.set_volume( fent->volume );
 
+   
+   BEGIN_TIMING_DATA( ts1 );
    // hash the manifest
    unsigned char* hash = sha256_hash_data( manifest_data, manifest_data_len );
    size_t hash_len = sha256_len();
+   
+   END_TIMING_DATA( ts1, ts2, "hashing manifest" );
+   
+   BEGIN_TIMING_DATA( ts1 );
    
    char* b64hash = NULL;
    int rc = Base64Encode( (char*)hash, hash_len, &b64hash );
    if( rc != 0 ) {
       errorf("Base64Encode rc = %d\n", rc );
-      return rc;
+      free( hash );
+      free( manifest_data );
+      return -EINVAL;
+   }
+
+   replica_info.set_hash( string(b64hash) );
+   free( b64hash );
+   free( hash );
+   
+   END_TIMING_DATA( ts1, ts2, "encoding manifest hash" );
+   
+   BEGIN_TIMING_DATA( ts1 );
+   
+   rc = md_sign< ms::ms_gateway_blockinfo >( core->ms->my_key, &replica_info );
+   if( rc != 0 ) {
+      errorf("md_sign rc = %d\n", rc );
+      free( manifest_data );
+      return -EINVAL;
+   }
+   
+   END_TIMING_DATA( ts1, ts2, "signing manifest" );
+   
+   BEGIN_TIMING_DATA( ts1 );
+   // serialize to string
+   string replica_info_str;
+   
+   bool src = replica_info.SerializeToString( &replica_info_str );
+   if( !src ) {
+      errorf("Failed to serialize data for %" PRIX64 "\n", fent->file_id );
+      free( manifest_data );
+      return -EINVAL;
+   }
+   
+   END_TIMING_DATA( ts1, ts2, "serializing manifest" );
+   
+   BEGIN_TIMING_DATA( ts1 );
+   // build up the form to submit to the RG
+   struct curl_httppost* form_data = NULL;
+   struct curl_httppost* last = NULL;
+   
+   curl_formadd( &form_data, &last,  CURLFORM_COPYNAME, "metadata",
+                                     CURLFORM_CONTENTSLENGTH, replica_info_str.size(),
+                                     CURLFORM_COPYCONTENTS, replica_info_str.c_str(),
+                                     CURLFORM_CONTENTTYPE, "application/octet-stream",
+                                     CURLFORM_END );
+
+   curl_formadd( &form_data, &last, CURLFORM_COPYNAME, "data",
+                                    CURLFORM_PTRCONTENTS, manifest_data,
+                                    CURLFORM_CONTENTSLENGTH, manifest_data_len,
+                                    CURLFORM_CONTENTTYPE, "application/octet-stream",
+                                    CURLFORM_END );
+   
+   // set up the replica context
+   rc = replica_context_init( rctx, REPLICA_CONTEXT_TYPE_MANIFEST, NULL, manifest_data, manifest_data_len, form_data, fent->file_id, sync );
+   if( rc != 0 ) {
+      errorf("fs_entry_init_replica_context(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
+      
+      curl_formfree( form_data );
+      free( manifest_data );
+      
+      return -EINVAL;
+   }
+   
+   END_TIMING_DATA( ts1, ts2, "replica_context_init and form processing" );
+   
+   return 0;
+}
+
+
+// create a block replica context
+// fent must be read-locked
+int replica_context_block( struct fs_core* core, struct replica_context* rctx, struct fs_entry* fent, uint64_t block_id, struct fs_entry_block_info* block_info, bool sync ) {
+   
+   // attempt to open the file
+   char* local_block_url = NULL;
+   bool staging = !FS_ENTRY_LOCAL( core, fent );
+
+   if( staging ) {
+      local_block_url = fs_entry_local_staging_block_url( core, fent->file_id, fent->version, block_id, block_info->version );
+   }
+   else {
+      local_block_url = fs_entry_local_block_url( core, fent->file_id, fent->version, block_id, block_info->version );
+   }
+
+   char* local_path = GET_PATH( local_block_url );
+   
+   FILE* f = fopen( local_path, "r" );
+   if( f == NULL ) {
+      int errsv = -errno;
+      errorf( "fopen(%s) errno = %d\n", local_path, errsv );
+      free( local_block_url );
+      return errsv;
+   }
+   
+   free( local_block_url );
+
+   // stat this to get its size
+   struct stat sb;
+   int rc = fstat( fileno(f), &sb );
+   if( rc != 0 ) {
+      int errsv = -errno;
+      errorf( "fstat errno = %d\n", errsv );
+      
+      fclose( f );
+      return errsv;
+   }
+
+   // build an update
+   ms::ms_gateway_blockinfo replica_info;
+   replica_info.set_file_version( fent->version );
+   replica_info.set_block_id( block_id );
+   replica_info.set_block_version( block_info->version );
+   replica_info.set_blocking_factor( core->blocking_factor );
+   replica_info.set_file_mtime_sec( fent->mtime_sec );
+   replica_info.set_file_mtime_nsec( fent->mtime_nsec );
+   replica_info.set_file_id( fent->file_id );
+   replica_info.set_owner( fent->owner );
+   replica_info.set_writer( core->gateway );
+   replica_info.set_volume( fent->volume );
+
+   char* b64hash = NULL;
+   rc = Base64Encode( (char*)block_info->hash, block_info->hash_len, &b64hash );
+   if( rc != 0 ) {
+      errorf("Base64Encode rc = %d\n", rc );
+      fclose( f );
+      return -EINVAL;
    }
 
    replica_info.set_hash( string(b64hash) );
    free( b64hash );
    
+   rc = md_sign< ms::ms_gateway_blockinfo >( core->ms->my_key, &replica_info );
+   if( rc != 0 ) {
+      errorf("md_sign rc = %d\n", rc );
+      fclose( f );
+      return -EINVAL;
+   }
 
+   // serialize
    string replica_info_str;
    bool src = replica_info.SerializeToString( &replica_info_str );
    if( !src ) {
       errorf("%s", " failed to serialize\n");
+      fclose( f );
       return -EINVAL;
    }
 
-
-   // sign the message
-   char* sigb64 = NULL;
-   size_t sigb64_len = 0;
-
-   rc = md_sign_message( core->ms->my_key, replica_info_str.c_str(), replica_info_str.size(), &sigb64, &sigb64_len );
-   if( rc != 0 ) {
-      errorf("md_sign_message rc = %d\n", rc );
-      fclose( rup->file );
-      rup->file = NULL;
-      return rc;
-   }
-
-   replica_info.set_signature( string( sigb64, sigb64_len ) );
-   free( sigb64 );
-
-   // re-serialize
-   src = replica_info.SerializeToString( &replica_info_str );
-   if( !src ) {
-      errorf("%s", " failed to serialize\n");
-      return -EINVAL;
-   }
-
-   struct timespec ts;
-   ts.tv_sec = mtime_sec;
-   ts.tv_nsec = mtime_nsec;
-   char* fs_fullpath = fs_entry_manifest_url_path( core, fs_path, file_version, &ts );
-   
+   // build request
    struct curl_httppost* last = NULL;
-   rup->form_data = NULL;
-   rup->path = fs_fullpath;
+   struct curl_httppost* form_data = NULL;
+
+
+   curl_formadd( &form_data, &last, CURLFORM_COPYNAME, "metadata",
+                                    CURLFORM_CONTENTSLENGTH, replica_info_str.size(),
+                                    CURLFORM_COPYCONTENTS, replica_info_str.c_str(),
+                                    CURLFORM_CONTENTTYPE, "application/octet-stream",
+                                    CURLFORM_END );
+
+   curl_formadd( &form_data, &last, CURLFORM_COPYNAME, "data",
+                                    CURLFORM_STREAM, f,
+                                    CURLFORM_CONTENTSLENGTH, (long)sb.st_size,
+                                    CURLFORM_CONTENTTYPE, "application/octet-stream",
+                                    CURLFORM_END );
    
-   curl_formadd( &rup->form_data, &last,  CURLFORM_COPYNAME, "metadata",
-                                          CURLFORM_CONTENTSLENGTH, replica_info_str.size(),
-                                          CURLFORM_COPYCONTENTS, replica_info_str.c_str(),
-                                          CURLFORM_CONTENTTYPE, "application/octet-stream",
-                                          CURLFORM_END );
-
-   curl_formadd( &rup->form_data, &last, CURLFORM_COPYNAME, "data",
-                                          CURLFORM_PTRCONTENTS, manifest_data,
-                                          CURLFORM_CONTENTSLENGTH, manifest_data_len,
-                                          CURLFORM_CONTENTTYPE, "application/octet-stream",
-                                          CURLFORM_END );
-
-   rup->data = manifest_data;
-
-   rup->sync = sync;
-   
-   if( sync ) {
-      pthread_cond_init( &rup->sync_cv, NULL );
-      pthread_mutex_init( &rup->sync_lock, NULL );
+   // set up the replica context
+   rc = replica_context_init( rctx, REPLICA_CONTEXT_TYPE_BLOCK, f, NULL, sb.st_size, form_data, fent->file_id, sync );
+   if( rc != 0 ) {
+      errorf("fs_entry_init_replica_context(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
+      
+      curl_formfree( form_data );
+      fclose( f );
+      
+      return -EINVAL;
    }
    
    return 0;
-   
 }
-                                   
-// replicate a block
-int RG_upload_init_block( struct fs_core* core,
-                          bool staging,
-                          struct RG_upload* rup,
-                          char const* fs_path,
-                          uint64_t file_id,
-                          int64_t file_version,
-                          uint64_t block_id,
-                          int64_t block_version,
-                          unsigned char* hash,        // block hash
-                          int hash_len,
-                          int64_t mtime_sec,
-                          int32_t mtime_nsec,
-                          uint64_t owner,
-                          uint64_t writer,
-                          bool sync ) {
 
-   memset( rup, 0, sizeof(struct RG_upload) );
+// process curl
+// synrp must be locked
+int replica_multi_upload( struct syndicate_replication* synrp ) {
+   int rc = 0;
+   int still_running = 0;
+   
+   // process downloads
+   struct timeval timeout;
+   memset( &timeout, 0, sizeof(timeout) );
+   
+   fd_set fdread;
+   fd_set fdwrite;
+   fd_set fdexcep;
+   int maxfd = -1;
 
-   // attempt to open the file
-   char* local_block_url = NULL;
+   long curl_timeout = -1;
 
-   if( staging ) {
-      local_block_url = fs_entry_local_staging_block_url( core, file_id, file_version, block_id, block_version );
+   FD_ZERO(&fdread);
+   FD_ZERO(&fdwrite);
+   FD_ZERO(&fdexcep);
+   
+   // how long until we should call curl_multi_perform?
+   rc = curl_multi_timeout( synrp->running, &curl_timeout);
+   if( rc != 0 ) {
+      errorf("curl_multi_timeout rc = %d\n", rc );
+      return -1;
+   }
+   
+   if( curl_timeout < 0 ) {
+      // no timeout given; wait a default amount
+      timeout.tv_sec = 0;
+      timeout.tv_usec = 10000;
    }
    else {
-      local_block_url = fs_entry_local_block_url( core, file_id, file_version, block_id, block_version );
-   }
-
-   char* local_path = GET_PATH( local_block_url );
-   
-   if( rup->file == NULL ) {
-      // stream data from file
-      rup->file = fopen( local_path, "r" );
-      if( rup->file == NULL ) {
-         int errsv = -errno;
-         errorf( "fopen(%s) errno = %d\n", local_path, errsv );
-         free( local_block_url );
-         return errsv;
-      }
-
-      // stat this to get its size
-      struct stat sb;
-      int rc = fstat( fileno(rup->file), &sb );
-      if( rc != 0 ) {
-         int errsv = -errno;
-         errorf( "fstat errno = %d\n", errsv );
-         free( local_block_url );
-         fclose( rup->file );
-         rup->file = NULL;
-         return errsv;
-      }
-
-      // build an update
-      ms::ms_gateway_blockinfo replica_info;
-      replica_info.set_file_version( file_version );
-      replica_info.set_block_id( block_id );
-      replica_info.set_block_version( block_version );
-      replica_info.set_blocking_factor( core->blocking_factor );
-      replica_info.set_file_mtime_sec( mtime_sec );
-      replica_info.set_file_mtime_nsec( mtime_nsec );
-      replica_info.set_file_id( file_id );
-      replica_info.set_owner( owner );
-      replica_info.set_writer( writer );
-
-      char* b64hash = NULL;
-      rc = Base64Encode( (char*)hash, hash_len, &b64hash );
-      if( rc != 0 ) {
-         errorf("Base64Encode rc = %d\n", rc );
-         free( local_block_url );
-         fclose( rup->file );
-         rup->file = NULL;
-         return rc;
-      }
-
-      replica_info.set_hash( string(b64hash) );
-      free( b64hash );
-      
-      replica_info.set_signature( string("") );
-      
-      string replica_info_str;
-      bool src = replica_info.SerializeToString( &replica_info_str );
-      if( !src ) {
-         errorf("%s", " failed to serialize\n");
-         free( local_block_url );
-         fclose( rup->file );
-         rup->file = NULL;
-         return -EINVAL;
-      }
-
-      // sign the message
-      char* sigb64 = NULL;
-      size_t sigb64_len = 0;
-
-      rc = md_sign_message( core->ms->my_key, replica_info_str.c_str(), replica_info_str.size(), &sigb64, &sigb64_len );
-      if( rc != 0 ) {
-         errorf("md_sign_message rc = %d\n", rc );
-         free( local_block_url );
-         fclose( rup->file );
-         rup->file = NULL;
-         return rc;
-      }
-
-      replica_info.set_signature( string( sigb64, sigb64_len ) );
-      free( sigb64 );
-
-      // re-serialize
-      src = replica_info.SerializeToString( &replica_info_str );
-      if( !src ) {
-         errorf("%s", " failed to serialize\n");
-         free( local_block_url );
-         fclose( rup->file );
-         rup->file = NULL;
-         return -EINVAL;
-      }
-
-      struct curl_httppost* last = NULL;
-      rup->form_data = NULL;
-
-      rup->path = fs_entry_block_url_path( core, fs_path, file_version, block_id, block_version );
-
-      curl_formadd( &rup->form_data, &last,  CURLFORM_COPYNAME, "metadata",
-                                             CURLFORM_CONTENTSLENGTH, replica_info_str.size(),
-                                             CURLFORM_COPYCONTENTS, replica_info_str.c_str(),
-                                             CURLFORM_CONTENTTYPE, "application/octet-stream",
-                                             CURLFORM_END );
-
-      curl_formadd( &rup->form_data, &last, CURLFORM_COPYNAME, "data",
-                                             CURLFORM_STREAM, rup->file,
-                                             CURLFORM_FILENAME, rup->path,
-                                             CURLFORM_CONTENTSLENGTH, (long)sb.st_size,
-                                             CURLFORM_CONTENTTYPE, "application/octet-stream",
-                                             CURLFORM_END );
-      free( local_block_url );
-
-      rup->sync = sync;
-
-      if( sync ) {
-         pthread_cond_init( &rup->sync_cv, NULL );
-         pthread_mutex_init( &rup->sync_lock, NULL );
-      }
-
-   
-      return 0;
-   }
-   else {
-      free( local_block_url );
-      return -EINVAL;
-   }
-}
-
-// reference an upload
-int RG_upload_ref( struct RG_upload* rup ) {
-   return __sync_fetch_and_add( &rup->running, 1 );
-}
-
-int RG_upload_unref( struct RG_upload* rup ) {
-   return __sync_fetch_and_sub( &rup->running, 1 );
-}
-
-// make an uploader
-ReplicaUploader::ReplicaUploader( struct ms_client* ms, uint64_t volume_id ) :
-   CURLTransfer( 1 ) {
-
-   this->ms = ms;
-   this->num_RGs = 0;
-   this->RGs = NULL;
-   this->headers = NULL;
-   this->volume_id = volume_id;
-   pthread_mutex_init( &this->download_lock, NULL );
-
-   // get the set of replica_urls
-   char** replica_urls = ms_client_RG_urls_copy( ms, volume_id );
-   
-   if( replica_urls != NULL ) {
-      
-      SIZE_LIST( &this->num_RGs, replica_urls );
-
-      this->RGs = CALLOC_LIST( struct RG_channel, num_RGs );
-      this->headers = CALLOC_LIST( struct curl_slist*, num_RGs );
-      
-      for( int i = 0; replica_urls[i] != NULL; i++ ) {
-
-         this->RGs[i].curl_h = curl_easy_init();
-         this->RGs[i].pending = new upload_list();
-         this->RGs[i].url = strdup( replica_urls[i] );
-         
-         pthread_mutex_init( &this->RGs[i].pending_lock, NULL );
-         
-         md_init_curl_handle( this->RGs[i].curl_h, replica_urls[i], ms->conf->metadata_connect_timeout );
-         curl_easy_setopt( this->RGs[i].curl_h, CURLOPT_POST, 1L );
-         curl_easy_setopt( this->RGs[i].curl_h, CURLOPT_SSL_VERIFYPEER, (ms->conf->verify_peer ? 1L : 0L) );
-         curl_easy_setopt( this->RGs[i].curl_h, CURLOPT_READFUNCTION, replica_curl_read );
-
-         // disable Expect: 100-continue
-         this->headers[i] = curl_slist_append(this->headers[i], "Expect");
-         curl_easy_setopt( this->RGs[i].curl_h, CURLOPT_HTTPHEADER, this->headers[i] );
-         
-         /*
-         FILE* f = fopen( "/tmp/replica.trace", "w" );
-         curl_easy_setopt( this->RGs[i].curl_h, CURLOPT_DEBUGFUNCTION, replica_trace );
-         curl_easy_setopt( this->RGs[i].curl_h, CURLOPT_DEBUGDATA, f );
-         curl_easy_setopt( this->RGs[i].curl_h, CURLOPT_VERBOSE, 1L );
-         */
-         
-         this->add_curl_easy_handle( 0, this->RGs[i].curl_h );
-      }
-
-      FREE_LIST( replica_urls );
-   }
-}
-
-// free memory 
-ReplicaUploader::~ReplicaUploader() {
-   this->running = false;
-
-   if( !this->stopped ) {
-      dbprintf("%s", "Waiting for threads to die...\n");
-      while( !this->stopped ) {
-         sleep(1);
-      }
+      timeout.tv_sec = 0;
+      timeout.tv_usec = (curl_timeout % 1000) * 1000;
    }
    
-   pthread_join( this->thread, NULL );
-
-   // no need to hold downloading lock, since the thread has just joined
-
-   for( int i = 0; i < this->num_RGs; i++ ) {
-      this->remove_curl_easy_handle( 0, this->RGs[i].curl_h );
-      curl_easy_cleanup( this->RGs[i].curl_h );
-
-      for( unsigned int j = 0; j < this->RGs[i].pending->size(); j++ ) {
-         struct RG_upload* rup = (*this->RGs[i].pending)[j];
-         int refs = RG_upload_unref( rup );
-         if( refs == 0 ) {
-            RG_upload_destroy( rup );
-            free( rup );
-            (*this->RGs[i].pending)[j] = NULL;
-         }
-      }
-      
-      delete this->RGs[i].pending;
-      pthread_mutex_destroy( &this->RGs[i].pending_lock );
+   // get FDs
+   rc = curl_multi_fdset( synrp->running, &fdread, &fdwrite, &fdexcep, &maxfd);
+   
+   if( rc != 0 ) {
+      errorf("curl_multi_fdset rc = %d\n", rc );
+      return -1;
    }
 
-   if( this->RGs )
-      free( this->RGs );
-
-   for( int i = 0; i < this->num_RGs; i++ ) {
-      curl_slist_free_all( this->headers[i] );
+   // relinquish
+   pthread_mutex_unlock( &synrp->running_lock );
+   
+   // find out which FDs are ready
+   rc = select(maxfd+1, &fdread, &fdwrite, &fdexcep, &timeout);
+   
+   // reacquire
+   pthread_mutex_lock( &synrp->running_lock );
+   
+   if( rc < 0 ) {
+      // we have a problem
+      errorf("select rc = %d, errno = %d\n", rc, -errno );
+      return -1;
    }
-   free( this->headers );
-
-   pthread_mutex_destroy( &this->download_lock );
+   
+   // let CURL do its thing
+   
+   do {
+      rc = curl_multi_perform( synrp->running, &still_running );
+      if( rc == CURLM_OK )
+         break;
+   } while( rc != CURLM_CALL_MULTI_PERFORM );
+   
+   // process messages
+   return 0;
 }
 
-// get the next ready handle
-// NOTE: must have locks first!
-struct RG_channel* ReplicaUploader::next_ready_RG( int* err ) {
 
+// how did the transfers go?
+// NOTE: synrp must be locked
+int replica_process_responses( struct syndicate_replication* synrp ) {
    CURLMsg* msg = NULL;
-   *err = 0;
-   struct RG_channel* rsc = NULL;
+   int msgs_left = 0;
+   int rc = 0;
 
    do {
-      msg = this->get_next_curl_msg( 0 );
-      if( msg ) {
-         if( msg->msg == CURLMSG_DONE ) {
-            for( int i = 0; i < this->num_RGs; i++ ) {
+      msg = curl_multi_info_read( synrp->running, &msgs_left );
 
-               if( msg->easy_handle == this->RGs[i].curl_h ) {
-                  rsc = &this->RGs[i];
-                  break;
+      if( msg == NULL )
+         break;
+
+      if( msg->msg == CURLMSG_DONE ) {
+         // status of this handle...
+         
+         replica_upload_set::iterator itr = synrp->uploads->find( msg->easy_handle );
+         if( itr != synrp->uploads->end() ) {
+            
+            struct replica_context* rctx = itr->second;
+            
+            // check status
+            if( msg->data.result != 0 ) {
+               // curl error
+               rctx->error = -ENODATA;
+            }
+            
+            // check HTTP code
+            long http_status = 0;
+            int crc = curl_easy_getinfo( msg->easy_handle, CURLINFO_RESPONSE_CODE, &http_status );
+            if( crc != 0 ) {
+               rctx->error = -ENODATA;
+            }
+            else if( http_status != 200 ) {
+               errorf("RG HTTP response code %ld\n", http_status );
+               if( http_status == 404 ) {
+                  rctx->error = -ENOENT;
+               }
+               else if( http_status == 403 ) {
+                  rctx->error = -EACCES;
+               }
+               else {
+                  rctx->error = -EREMOTEIO;
+               }
+            }
+            
+            dbprintf("Finished replicating %p (%s of %" PRIX64 ")\n", rctx, (rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ? "manifest" : "block"), rctx->file_id );
+                     
+            rctx->refcount--;
+            if( rctx->error != 0 )
+               rctx->refcount = 0;
+            
+            if( rctx->refcount <= 0 ) {
+               
+               // processed!
+               synrp->uploads->erase( itr );
+               curl_multi_remove_handle( synrp->running, msg->easy_handle );
+               
+               if( rctx->refcount <= 0 ) {
+                  dbprintf("Finished %p\n", rctx );
+                  sem_post( &rctx->processing_lock );
                }
             }
          }
       }
-   } while( msg != NULL && rsc == NULL );
+   } while( msg != NULL );
+   
+   return rc;
+}
 
-   if( rsc != NULL ) {
-      // ensure that the download finished successfully
-      if( msg->data.result != 0 ) {
-         *err = msg->data.result;
+
+// main Replica SG upload thread
+void* replica_main( void* arg ) {
+   struct syndicate_replication* synrp = (struct syndicate_replication*)arg;
+   
+   int rc = 0;
+   
+   while( synrp->active ) {
+      // run CURL for a bit
+      pthread_mutex_lock( &synrp->running_lock );
+      
+      // do we have pending?
+      if( synrp->has_pending ) {
+         pthread_mutex_lock( &synrp->pending_lock );
+         
+         for( replica_upload_set::iterator itr = synrp->pending_uploads->begin(); itr != synrp->pending_uploads->end(); itr++ ) {
+            (*synrp->uploads)[ itr->first ] = itr->second;
+            curl_multi_add_handle( synrp->running, itr->first );
+         }
+         
+         synrp->pending_uploads->clear();
+         
+         synrp->has_pending = false;
+         pthread_mutex_unlock( &synrp->pending_lock );
+      }
+      
+      rc = replica_multi_upload( synrp );
+      
+      if( rc != 0 ) {
+         errorf("replica_multi_upload rc = %d\n", rc );
+         pthread_mutex_unlock( &synrp->running_lock );
+         break;
+      }
+      
+      // find out what finished uploading
+      rc = replica_process_responses( synrp );
+      
+      pthread_mutex_unlock( &synrp->running_lock );
+      
+      if( rc != 0 ) {
+         errorf("replica_process_responses rc = %d\n", rc );
+         break;
       }
    }
-   return rsc;
+   
+   return NULL;
 }
 
-// start replicating on a channel
-void ReplicaUploader::enqueue_replica( struct RG_channel* rsc, struct RG_upload* ru ) {
-   RG_upload_ref( ru );
+
+// begin downloading
+int replica_begin( struct syndicate_replication* rp, struct replica_context* rctx ) {
    
-   pthread_mutex_lock( &rsc->pending_lock );
-   rsc->pending->push_back( ru );
-   pthread_mutex_unlock( &rsc->pending_lock );
-}
-
-// finish a replica
-void ReplicaUploader::finish_replica( struct RG_channel* rsc, int status ) {
-   pthread_mutex_lock( &this->download_lock );
+   // acquire this lock, since we're processing it now...
+   sem_wait( &rctx->processing_lock );
    
-   pthread_mutex_lock( &rsc->pending_lock );
-   curl_easy_setopt( rsc->curl_h, CURLOPT_HTTPPOST, NULL );
-
-   // remove the head
-   struct RG_upload* ru = (*rsc->pending)[0];
-   rsc->pending->erase( rsc->pending->begin() );
-
-   pthread_mutex_unlock( &rsc->pending_lock );
-   pthread_mutex_unlock( &this->download_lock );
-
-   int num_running = 0;
-   if( status != 0 ) {
-      ru->error = status;
-      ru->running = 0;
-   }
-   else {
-      num_running = RG_upload_unref( ru );
+   // find all RG urls
+   char** rg_urls = ms_client_RG_urls( rp->ms, rp->volume_id );
+   
+   pthread_mutex_lock( &rp->pending_lock );
+   
+   for( int i = 0; rg_urls[i] != NULL; i++ ) {
+      
+      CURL* curl = curl_easy_init();
+      rctx->curl = curl;
+      
+      dbprintf("replicate %p (%s) to %s\n", rctx, (rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ? "block" : "manifest"), rg_urls[i] );
+      md_init_curl_handle( curl, rg_urls[i], rp->ms->conf->replica_connect_timeout );
+      
+      (*rp->pending_uploads)[ rctx->curl ] = rctx;
+      
+      rctx->refcount++;
    }
    
-   if( num_running == 0 ) {
-      // done replicating...signal waiting threads 
-      if( ru->sync ) {
-         pthread_cond_signal( &ru->sync_cv );
-      }
-
-      dbprintf("Replicated %s, status = %d\n", ru->path, ru->error );
+   rp->has_pending = true;
+   pthread_mutex_unlock( &rp->pending_lock );
+   
+   for( int i = 0; rg_urls[i] != NULL; i++ ) {
+      free( rg_urls[i] );
    }
-}
-
-// start the next replica
-int ReplicaUploader::start_next_replica( struct RG_channel* rsc ) {
-   pthread_mutex_lock( &this->download_lock );
-   pthread_mutex_lock( &rsc->pending_lock );
-
-   if( rsc->pending->size() > 0 ) {
-      struct RG_upload* ru = (*rsc->pending)[0];
-
-      curl_easy_setopt( rsc->curl_h, CURLOPT_HTTPPOST, ru->form_data );
-
-      // TODO: format is POST /$volume_id/$file_id.$file_version/$block_id.$block_version or
-      // POST /$volume_id/$file_id.$file_version/manifest.$file_mtime_sec.$file_mtime_nsec
-   }
-
-   pthread_mutex_unlock( &rsc->pending_lock );
-   pthread_mutex_unlock( &this->download_lock );
+   free( rg_urls );
    
    return 0;
 }
 
 
-// add a replica for downloading
-void ReplicaUploader::add_replica( struct RG_upload* rup ) {
-   // verify that the volume version has not changed
-   uint64_t curr_version = ms_client_volume_version( this->ms, this->volume_id );
-   if( curr_version != this->volume_version ) {
-      // view change occurred.  Regenerate the set of RG channels
-      // TODO...
+// wait for a (synchronous) replica context to finish
+int replica_wait( struct syndicate_replication* rp, struct replica_context* rctx ) {
+   sem_wait( &rctx->processing_lock );
+   return 0;
+}
+
+
+// initalize a syndicate replication instance
+int replica_init_replication( struct syndicate_replication* rp, struct ms_client* client, uint64_t volume_id ) {
+   pthread_mutex_init( &rp->running_lock, NULL );
+   pthread_mutex_init( &rp->pending_lock, NULL );
+   
+   rp->running = curl_multi_init();
+   
+   rp->uploads = new replica_upload_set();
+   rp->pending_uploads = new replica_upload_set();
+   
+   rp->active = true;
+   
+   rp->upload_thread = md_start_thread( replica_main, rp, false );
+   if( rp->upload_thread < 0 ) {
+      errorf("md_start_thread rc = %lu\n", rp->upload_thread );
+      return rp->upload_thread;
    }
    
-   for( int i = 0; i < this->num_RGs; i++ ) {
-      this->enqueue_replica( &this->RGs[i], rup );
-   }
-}
-
-
-// main loop for our replicator
-void* ReplicaUploader::thread_main( void* arg ) {
-   ReplicaUploader* ctx = (ReplicaUploader*)arg;
-
-   ctx->stopped = false;
+   rp->ms = client;
+   rp->volume_id = volume_id;
    
-   dbprintf("%s", " started\n");
-   while( ctx->running ) {
-      int rc = 0;
+   return 0;
+}
 
-      pthread_mutex_lock( &ctx->download_lock );
-      
-      // do download/upload
-      rc = ctx->process_curl( 0 );
-      if( rc != 0 ) {
-         errorf( "process_curl rc = %d\n", rc );
-         rc = 0;
-      }
 
-      pthread_mutex_unlock( &ctx->download_lock );
+// shut down a syndicate replication instance
+int replica_shutdown_replication( struct syndicate_replication* rp ) {
+   rp->active = false;
+   
+   pthread_cancel( rp->upload_thread );
+   pthread_join( rp->upload_thread, NULL );
+   
+   for( replica_upload_set::iterator itr = rp->uploads->begin(); itr != rp->uploads->end(); itr++ ) {
+      curl_multi_remove_handle( rp->running, itr->first );
       
-      // accumulate finished replicas 
-      vector<struct RG_channel*> rscs;
-      struct RG_channel* rsc = NULL;
+      replica_context_free( itr->second );
       
-      do {
-         rsc = ctx->next_ready_RG( &rc );
-
-         if( rsc ) {
-            ctx->finish_replica( rsc, rc );
-            rscs.push_back( rsc );
-         }
-      } while( rsc != NULL );
-      
-      // start up the next replicas
-      for( vector<struct RG_channel*>::iterator itr = rscs.begin(); itr != rscs.end(); itr++ ) {
-         ctx->start_next_replica( *itr );
-      }
+      free( itr->second );
    }
-
-   dbprintf("%s", " exited\n");
-   ctx->stopped = true;
-   return NULL;
-}
-
-
-int ReplicaUploader::start() {
-   this->running = true;
-   this->thread = md_start_thread( ReplicaUploader::thread_main, this, false );
-   if( this->thread < 0 )
-      return this->thread;
-   else
-      return 0;
-}
-
-int ReplicaUploader::cancel() {
-   this->running = false;
+   
+   for( replica_upload_set::iterator itr = rp->pending_uploads->begin(); itr != rp->pending_uploads->end(); itr++ ) {
+      
+      replica_context_free( itr->second );
+      
+      free( itr->second );
+   }
+   
+   delete rp->uploads;
+   delete rp->pending_uploads;
+   
+   pthread_mutex_destroy( &rp->running_lock );
+   pthread_mutex_destroy( &rp->pending_lock );
+   
+   curl_multi_cleanup( rp->running );
+   
    return 0;
 }
 
 
 // start up replication
-int replication_init( struct ms_client* ms, uint64_t volume_id ) {
-   rutp = new ReplicaUploader( ms, volume_id );
-   rutp->start();
+int replication_init(struct ms_client* client, uint64_t volume_id) {
+   int rc = replica_init_replication( &global_replication, client, volume_id );
+   if( rc != 0 ) {
+      errorf("replica_init_replication rc = %d\n", rc );
+      return -ENOSYS;
+   }
+   
    return 0;
 }
+
 
 // shut down replication
 int replication_shutdown() {
-   rutp->cancel();
-   delete rutp;
+   int rc = replica_shutdown_replication( &global_replication );
+   if( rc != 0 ) {
+      errorf("replica_shutdown_replication rc = %d\n", rc );
+      return -ENOSYS;
+   }
    return 0;
 }
 
 
-// replicate a sequence of modified blocks, and the associated manifest
+// replicate a manifest
 // fent must be read-locked
-int fs_entry_replicate_write( struct fs_core* core, char const* fs_path, struct fs_entry* fent, modification_map* modified_blocks, bool sync ) {
+int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bool sync, struct fs_file_handle* fh ) {
+   struct replica_context* manifest_rctx = CALLOC_LIST( struct replica_context, 1 );
    
-   // don't even bother if there are no replica servers
-   if( rutp->get_num_RGs() == 0 )
-      return 0;
+   struct timespec ts1, ts2;
    
-   // replicate the manifest
-   char* manifest_data = NULL;
-   int rc = 0;
-   ssize_t manifest_len = fs_entry_serialize_manifest( core, fent, &manifest_data );
-
-   vector<struct RG_upload*> replicas;
-
-   if( manifest_len > 0 ) {
-      struct RG_upload* manifest_rup = CALLOC_LIST( struct RG_upload, 1 );
-      RG_upload_init_manifest( core, manifest_rup, manifest_data, manifest_len, fs_path, fent->file_id, fent->version, fent->mtime_sec, fent->mtime_nsec, fent->owner, core->gateway, sync );
-      
-      replicas.push_back( manifest_rup );
+   BEGIN_TIMING_DATA( ts1 );
+   int rc = replica_context_manifest( core, manifest_rctx, fent, sync );
+   if( rc != 0 ) {
+      errorf("replica_context_manifest rc = %d\n", rc );
+      free( manifest_rctx );
+      return rc;
    }
-   else {
-      errorf( "fs_entry_serialize_manifest(%s) rc = %zd\n", fs_path, manifest_len );
+   END_TIMING_DATA( ts1, ts2, "replica_context_manifest" );
+   
+   BEGIN_TIMING_DATA( ts1 );
+   
+   // proceed to replicate
+   rc = replica_begin( &global_replication, manifest_rctx );
+   
+   if( rc != 0 ) {
+      errorf("replica_begin rc = %d\n", rc );
+      replica_context_free( manifest_rctx );
       return rc;
    }
    
-   // start replicating all modified blocks.  They could be local or staging, so we'll need to be careful 
-   for( modification_map::iterator itr = modified_blocks->begin(); itr != modified_blocks->end(); itr++ ) {
-      bool staging = false;
-      
-      if( !FS_ENTRY_LOCAL( core, fent ) ) {
-         staging = true;
-      }
-
-      struct RG_upload* block_rup = CALLOC_LIST( struct RG_upload, 1 );
-      RG_upload_init_block( core, staging, block_rup, fs_path, fent->file_id, fent->version, itr->first, itr->second.version, itr->second.hash, itr->second.hash_len, fent->mtime_sec, fent->mtime_nsec, fent->owner, core->gateway, sync );
-      
-      replicas.push_back( block_rup );
-   }
-
-   // if we're supposed to wait, then wait
+   END_TIMING_DATA( ts1, ts2, "replica_begin" );
+   
+   BEGIN_TIMING_DATA( ts1 );
+   
+   // wait for this to finish?
    if( sync ) {
-      // TODO
+      rc = replica_wait( &global_replication, manifest_rctx );
+      if( rc != 0 ) {
+         errorf("replica_wait rc = %d\n", rc );
+      }
+      
+      replica_context_free( manifest_rctx );
+      return rc;
    }
-   else {
-      // TODO
+   else if( fh ) {
+      // wait for a call to fs_entry_replicate_wait
+      fh->rctxs->push_back( manifest_rctx );
    }
-
+   
+   END_TIMING_DATA( ts1, ts2, "replica manifest processing" );
+   
    return rc;
 }
 
-int fs_entry_replicate_wait( struct fs_file_handle* fh ) {
-   // TODO
-   return 0;
+// replicate a sequence of modified blocks
+// fent must be read-locked
+int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh ) {
+   vector<struct replica_context*> block_rctxs;
+   int rc = 0;
+   
+   struct timespec ts1, ts2;
+   
+   BEGIN_TIMING_DATA( ts1 );
+   
+   for( modification_map::iterator itr = modified_blocks->begin(); itr != modified_blocks->end(); itr++ ) {
+      uint64_t block_id = itr->first;
+      struct fs_entry_block_info* block_info = &itr->second;
+      
+      struct replica_context* block_rctx = CALLOC_LIST( struct replica_context, 1 );
+      
+      rc = replica_context_block( core, block_rctx, fent, block_id, block_info, sync );
+      if( rc != 0 ) {
+         errorf("replica_context_block rc = %d\n", rc );
+         free( block_rctx );
+      }
+      
+      block_rctxs.push_back( block_rctx );
+      
+      rc = replica_begin( &global_replication, block_rctx );
+      if( rc != 0 ) {
+         errorf("replica_begin rc = %d\n", rc );
+      }
+   }
+   
+   END_TIMING_DATA( ts1, ts2, "replica_begin all blocks" );
+   
+   BEGIN_TIMING_DATA( ts1 );
+   
+   // wait for them all to finish?
+   if( sync ) {
+      rc = fs_entry_replicate_wait( &block_rctxs );
+      if( rc != 0 ) {
+         errorf("fs_entry_replicate_wait rc = %d\n", rc );
+      }
+   }
+   
+   else {
+      if( fh ) {
+         // wait for a later call to fs_entry_replicate_wait
+         for( unsigned int i = 0; i < block_rctxs.size(); i++ ) {
+            fh->rctxs->push_back( block_rctxs[i] );
+         }
+      }
+   }
+   
+   END_TIMING_DATA( ts1, ts2, "replica block processing" );
+   
+   return rc;
 }
+
+
+// wait for all replication to finish
+int fs_entry_replicate_wait( vector<struct replica_context*>* rctxs ) {
+   int rc = 0;
+   int worst_rc = 0;
+   
+   for( unsigned int i = 0; i < rctxs->size(); i++ ) {
+      
+      if( rctxs->at(i) == NULL )
+         continue;
+      
+      dbprintf("wait for replica %p\n", rctxs->at(i) );
+      
+      // wait for this replica to finish...
+      rc = replica_wait( &global_replication, rctxs->at(i) );
+      if( rc != 0 ) {
+         errorf("replica_wait rc = %d\n", rc );
+         worst_rc = -EIO;
+      }
+      
+      dbprintf("replica %p finished\n", rctxs->at(i) );
+      
+      rc = rctxs->at(i)->error;
+      if( rc != 0 ) {
+         errorf("replica error %d\n", rc );
+         worst_rc = rc;
+      }
+      
+      replica_context_free( rctxs->at(i) );
+      free( rctxs->at(i) );
+      
+      (*rctxs)[i] = NULL;
+   }
+   return worst_rc;
+}
+
+// wait for all replications to finish
+int fs_entry_replicate_wait( struct fs_file_handle* fh ) {
+   int rc = fs_entry_replicate_wait( fh->rctxs );
+   fh->rctxs->clear();
+   return rc;
+}
+

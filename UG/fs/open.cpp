@@ -31,6 +31,9 @@ struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_en
    }
    
    pthread_rwlock_init( &fh->lock, NULL );
+   
+   fh->rctxs = new vector<struct replica_context*>();
+   
    return fh;
 }
 
@@ -454,12 +457,14 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
 
          // revert
          child->open_count = 0;
+         fs_entry_unlock( child );
 
          // NOTE: parent will still exist--we can't remove a non-empty directory
          fs_entry_wlock( parent );
          fs_entry_detach_lowlevel( core, parent, child, true );
          fs_entry_unlock( parent );
 
+         child = NULL;
       }
       else {
          // success on MS!  create locally
@@ -488,7 +493,8 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
       fs_file_handle_open( ret, flags, mode );
    }
    
-   fs_entry_unlock( child );
+   if( child ) 
+      fs_entry_unlock( child );
    
    free( path_basename );
    free( path );

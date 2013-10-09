@@ -6,7 +6,7 @@ import MS.handlers
 import tests.debughandler
 import openid.gaeopenid
 
-from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSUGRequestHandler, MSRGRequestHandler, MSRegisterRequestHandler, MSOpenIDRequestHandler
+from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSCertRequestHandler, MSCertManifestRequestHandler, MSRegisterRequestHandler, MSOpenIDRequestHandler
 from tests.debughandler import MSDebugHandler
 
 app = webapp2.WSGIApplication([
@@ -18,8 +18,8 @@ app = webapp2.WSGIApplication([
     ('/FILE/([0123456789]+)/([0123456789ABCDEF]+)/([0123456789]+)/([0123456789]+)/([0123456789]+)', MSFileReadHandler),
     ('/FILE/([0123456789]+)', MSFileWriteHandler ),
     ('/VOLUME/([0123456789]+)', MSVolumeRequestHandler),
-    ('/UG/([0123456789]+)', MSUGRequestHandler),
-    ('/RG/([0123456789]+)', MSRGRequestHandler),
-    ('/REGISTER/([^/]+)/([^/]+)/([^/]+)/([^/]+)', MSRegisterRequestHandler)
+    ('/REGISTER/([^/]+)/([^/]+)/([^/]+)/([^/]+)', MSRegisterRequestHandler),
+    ('/CERT/([0123456789]+)/manifest.([0123456789]+)', MSCertManifestRequestHandler),
+    ('/CERT/([0123456789]+)/([0123456789]+)/(UG|RG|AG)/([0123456789]+)/([0123456789]+)', MSCertRequestHandler)
 ], debug=True)
 

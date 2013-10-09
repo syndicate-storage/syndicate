@@ -50,7 +50,7 @@
 #include <math.h>
 #include <endian.h>
 
-#define WHERESTR "%16lx: [%16s:%04u] %s: "
+#define WHERESTR "%10lx: [%16s:%04u] %s: "
 #define WHEREARG pthread_self(), __FILE__, __LINE__, __func__
 
 extern int _DEBUG_MESSAGES;

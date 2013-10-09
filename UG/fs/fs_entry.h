@@ -66,7 +66,7 @@ typedef map<uint64_t, struct fs_entry_block_info> modification_map;
 // pre-declare these
 class Collator;
 class file_manifest;
-struct RG_channel;
+struct replica_context;
 
 // Syndicate filesystem entry
 struct fs_entry {
@@ -123,6 +123,8 @@ struct fs_file_handle {
    uint64_t AG_blocksize;     // blocksize of this AG
 
    pthread_rwlock_t lock;     // lock to control access to this structure
+   
+   vector<struct replica_context*>* rctxs;        // used for write replication
 };
 
 // Syndicate directory handle

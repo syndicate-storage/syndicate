@@ -873,6 +873,9 @@ def test( ignore1, args ):
       rc = storage.make_root( volume, user.owner_id )
                               
 
+   
+   volume_ids = []
+         
    if do_init:
       # create users and make them all volumes
       for i, user_email in enumerate(users):
@@ -893,6 +896,7 @@ def test( ignore1, args ):
             # volume name: testvolume-$name
             volume_key = storage.create_volume( user.email, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, active=True, private=False, owner_id=i+1, volume_secret="abcdef" )
             volume = volume_key.get()
+            volume_ids.append( volume.volume_id )
          except:
             logging.info( "traceback: " + traceback.format_exc() )
             try:
@@ -912,6 +916,8 @@ def test( ignore1, args ):
          # create a root MSEntry, with some sane defaults
          rc = storage.make_root( volume, user.owner_id )
 
+      logging.info("created Volumes %s" % volume_ids )
+         
 
    if do_ags:
       user = get_user( username )
@@ -921,8 +927,15 @@ def test( ignore1, args ):
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          try:
-            storage.create_acquisition_gateway(user, ms_username=G_name("AG", node), ms_password="sniff", host=node, port=32780 )
+            gw_key = storage.create_acquisition_gateway(user, ms_username=G_name("AG", node), ms_password="sniff", host=node, port=32778 )
             logging.info("Created AG %s" % G_name("AG", node))
+            
+            if len(volume_ids) > 0:
+               gw = gw_key.get()
+               
+               for volume_id in volume_ids:
+                  storage.bind_acquisition_gateway_to_volume( gw.g_id, volume_id )
+               
          except:
             logging.info("traceback: %s" % traceback.format_exc())
             # possibly already exists
@@ -936,7 +949,14 @@ def test( ignore1, args ):
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          try:
-            storage.create_replica_gateway( user, ms_username=G_name("RG", node), ms_password="sniff", host=node, port=32780, private=False )
+            gw_key = storage.create_replica_gateway( user, ms_username=G_name("RG", node), ms_password="sniff", host=node, port=32779, private=False )
+            
+            if len(volume_ids) > 0:
+               gw = gw_key.get()
+               
+               for volume_id in volume_ids:
+                  storage.bind_replica_gateway_to_volume( gw.g_id, volume_id )
+               
             logging.info("Created RG %s" % G_name("RG", node))
          except:
             logging.info("traceback: %s" % traceback.format_exc())
@@ -955,7 +975,13 @@ def test( ignore1, args ):
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          try:
-            storage.create_user_gateway( user, volume, ms_username=G_name("UG", node), ms_password="sniff", host=node, port=32780, read_write=True )
+            gw_key = storage.create_user_gateway( user, volume, ms_username=G_name("UG", node), ms_password="sniff", host=node, port=32780, read_write=True )
+            
+            if volume:
+               gw = gw_key.get()
+               
+               storage.bind_user_gateway_to_volume( gw.g_id, volume.volume_id )
+               
             logging.info("Created UG %s" % G_name("UG", node))
          except:
             logging.info("traceback: %s" % traceback.format_exc())

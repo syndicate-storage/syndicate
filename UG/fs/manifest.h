@@ -53,14 +53,6 @@ public:
    // remove blocks from the end of this URL set.  return true if blocks were removed
    bool truncate( uint64_t new_end_id );
 
-   /*
-   // grow left by one, and put a version in
-   bool grow_left( int64_t block_version );
-
-   // grow right by one, and put a version in
-   bool grow_right( int64_t block_version );
-   */
-   
    // shrink left by one
    bool shrink_left();
 

@@ -152,7 +152,7 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
          // request for a manifest
          // get the manifest and reply it
          char* manifest_txt = NULL;
-         ssize_t manifest_txt_len = fs_entry_serialize_manifest( state->core, reqdat.fs_path, &manifest_txt );
+         ssize_t manifest_txt_len = fs_entry_serialize_manifest( state->core, reqdat.fs_path, &manifest_txt, true );
          
          if( manifest_txt_len > 0 ) {
             md_create_HTTP_response_ram_nocopy( resp, "text/plain", 200, manifest_txt, manifest_txt_len );

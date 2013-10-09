@@ -153,12 +153,12 @@ class MSEntryNameHolder( storagetypes.Object ):
    name = storagetypes.String( default="", indexed=False )
    
    @classmethod
-   def make_key_name( cls, volume_id, parent_id, file_id, name ):
-      return "MSEntryNameHolder: volume_id=%s,parent_id=%s,file_id=%s,name=%s" % (volume_id, parent_id, file_id, name)
+   def make_key_name( cls, volume_id, parent_id, name ):
+      return "MSEntryNameHolder: volume_id=%s,parent_id=%s,name=%s" % (volume_id, parent_id, name)
    
    @classmethod
-   def create_async( cls, volume_id, parent_id, file_id, name ):
-      return MSEntryNameHolder.get_or_insert_async( MSEntryNameHolder.make_key_name( volume_id, parent_id, file_id, name ), volume_id=volume_id, parent_id=parent_id, file_id=file_id, name=name )
+   def create_async( cls, _volume_id, _parent_id, _file_id, _name ):
+      return MSEntryNameHolder.get_or_insert_async( MSEntryNameHolder.make_key_name( _volume_id, _parent_id, _name ), volume_id=_volume_id, parent_id=_parent_id, file_id=_file_id, name=_name )
    
    
          
@@ -459,7 +459,7 @@ class MSEntry( storagetypes.Object ):
    def __read_msentry( cls, volume_id, file_id, num_shards, **ctx_opts ):
       ent, shards = yield MSEntry.__read_msentry_base( volume_id, file_id, **ctx_opts ), MSEntry.__read_msentry_shards( volume_id, file_id, num_shards, **ctx_opts )
       if ent != None:
-         ent.populate_from_shards( shards_existing )
+         ent.populate_from_shards( shards )
 
       storagetypes.concurrent_return( ent )
 
@@ -867,7 +867,7 @@ class MSEntry( storagetypes.Object ):
 
          # delete this entry, its shards, and its nameholder
          ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, file_id ) )
-         nh_key = storagetypes.make_key( MSEntryNameHolder, MSEntryNameHolder.make_key_name( volume_id, parent_id, file_id, ent.name ) )
+         nh_key = storagetypes.make_key( MSEntryNameHolder, MSEntryNameHolder.make_key_name( volume_id, parent_id, ent.name ) )
          storagetypes.deferred.defer( MSEntry.delete_all, [nh_key, ent_key] + ent_shard_keys )
          
          # decrease number of files

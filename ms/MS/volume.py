@@ -78,15 +78,13 @@ class Volume( storagetypes.Object ):
    description = storagetypes.Text()
    owner_id = storagetypes.Integer()
    volume_id = storagetypes.Integer()
-   version = storagetypes.Integer( indexed=False )                 # version of this Volume's metadata
-   UG_version = storagetypes.Integer( default=1, indexed=False )              # version of the UG listing in this Volume
-   RG_version = storagetypes.Integer( default=1, indexed=False )              # version of the RG listing in this Volume
-   AG_version = storagetypes.Integer( default=1, indexed=False )              # version of the AG listing in this Volume
+   
+   version = storagetypes.Integer( default=1, indexed=False )                 # version of this Volume's metadata
+   cert_version = storagetypes.Integer( default=1, indexed=False )            # certificate bundle version
+   closure_version = storagetypes.Integer( default=1, indexed=False )         # closure version 
+   
    private = storagetypes.Boolean()
-   ag_ids = storagetypes.Integer( repeated=True )                  # AG's publishing data to this volume
-   rg_ids = storagetypes.Integer( repeated=True )                  # RG's replicating data for this volume.
-
-
+   
    num_shards = storagetypes.Integer(default=20, indexed=False)    # number of shards per entry in this volume
 
    public_key = storagetypes.Text()          # Volume public key, in PEM format
@@ -127,8 +125,6 @@ class Volume( storagetypes.Object ):
       "owner_id",
       "volume_secret_salt",
       "volume_secret_salted_hash",
-      "ag_ids",
-      "rg_ids",
       "private",
       "public_key",
       "private_key",
@@ -145,34 +141,12 @@ class Volume( storagetypes.Object ):
    }
 
    default_values = {
-      "ag_ids": (lambda cls, attrs: []),
-      "rg_ids": (lambda cls, attrs: []),
       "blocksize": (lambda cls, attrs: 61440), # 60 KB
       "version": (lambda cls, attrs: 1),
+      "cert_version": (lambda cls, attrs: 1),
+      "closure_version": (lambda cls, attrs: 1),
       "private": (lambda cls, attrs: True)
    }
-
-      
-   def protobuf( self, volume_metadata, caller_gateway, **kwargs ):
-      """
-      Convert to a protobuf (ms_volume_metadata).
-      """
-
-      caller_gateway.protobuf_cred( volume_metadata.cred )
-      
-
-      if volume_metadata.session_password == None:
-         raise Exception("Regenerate gateway session credentials and try again")
-      
-      volume_metadata.signature = ""
-
-      # serialize, then sign, then insert the signature
-      volume_metadata_str = volume_metadata.SerializeToString()
-      sig = self.sign_message( volume_metadata_str )
-
-      volume_metadata.signature = sig
-      
-      return
       
 
    def protobuf( self, volume_metadata, **kwargs ):
@@ -186,9 +160,8 @@ class Volume( storagetypes.Object ):
       volume_metadata.name = kwargs.get( 'name', self.name )
       volume_metadata.description = kwargs.get( 'description', self.description )
       volume_metadata.volume_version = kwargs.get('volume_version', self.version )
-      volume_metadata.UG_version = kwargs.get('UG_version', self.UG_version )
-      volume_metadata.RG_version = kwargs.get('RG_version', self.RG_version )
-      volume_metadata.AG_version = kwargs.get('AG_version', self.AG_version )
+      volume_metadata.cert_version = kwargs.get('cert_version', self.cert_version )
+      volume_metadata.closure_version = kwargs.get( 'closure_version', self.closure_version )
       volume_metadata.volume_public_key = kwargs.get( 'public_key', self.public_key )
       volume_metadata.num_files = kwargs.get( 'num_files', Volume.get_num_files( volume_metadata.volume_id ) )
       
@@ -202,65 +175,83 @@ class Volume( storagetypes.Object ):
 
       return
       
-
-   def protobuf_UGs( self, ug_metadata, user_gateways, sign=True ):
+   
+   def protobuf_gateway_cert( self, gateway_cert, gateway, sign=True ):
+      gateway.protobuf_cert( gateway_cert )
       
-      ug_metadata.ug_version = self.UG_version
-      for ug in user_gateways:
-         ug_pb = ug_metadata.ug_creds.add()
-         ug.protobuf_cred( ug_pb )
-
-      ug_metadata.signature = ""
-
+      gateway_cert.signature = ""
+      
       if sign:
-         # sign this
-         data = ug_metadata.SerializeToString()
+         # sign the cert
+         data = gateway_cert.SerializeToString()
          sig = self.sign_message( data )
-
-         ug_metadata.signature = sig
          
-      return
-
-
-   def protobuf_RGs( self, rg_metadata, rgs, sign=True ):
-
-      rg_metadata.rg_version = self.RG_version
-      for rg in rgs:
-         rg_metadata.rg_hosts.append( rg.host )
-         rg_metadata.rg_ports.append( rg.port )
-
-      rg_metadata.signature = ""
-
+         gateway_cert.signature = sig
+      
+      return 
+   
+   
+   def protobuf_gateway_cert_manifest( self, manifest, gateway_classes, sign=True ):
+      manifest.volume_id = self.volume_id
+      manifest.gateway_id = 0
+      manifest.file_id = 0
+      manifest.file_version = self.cert_version
+      manifest.mtime_sec = 0
+      manifest.mtime_nsec = 0
+      
+      sz = 0
+      
+      # query certificate versions of all gateways
+      futs = []
+      for gwcls in gateway_classes:
+         qry_fut = gwcls.ListAll_ByVolume( self.volume_id, async=True )
+         futs.append( qry_fut )
+      
+      storagetypes.wait_futures( futs )
+      
+      # each query is a list of Gateway futures...
+      gateway_futs = []
+      gateway_fut_lists = []
+      for qry_fut in futs:
+         gw_futs = qry_fut.get_result()
+         gateway_fut_lists.append( gw_futs )
+         gateway_futs += gw_futs
+      
+      storagetypes.wait_futures( gateway_futs )
+      
+      gateway_lists = []
+      for gateway_fut_list in gateway_fut_lists:
+         gateway_lists.append( [g.get_result() for g in gateway_fut_list] )
+      
+      results = zip( gateway_classes, gateway_lists )
+      
+      for r in results:
+         cls = r[0]
+         listing = r[1]
+         
+         for cert_metadata in listing:
+            cert_block = manifest.block_url_set.add()
+         
+            cert_block.gateway_id = cert_metadata.g_id
+            cert_block.start_id = cls.GATEWAY_TYPE
+            cert_block.end_id = 0
+            cert_block.block_versions.append( cert_metadata.cert_version )
+         
+            logging.info("cert block: (%s, %s, %s)" % (cls.GATEWAY_TYPE, cert_metadata.g_id, cert_metadata.cert_version) )
+            sz += 1
+      
+      manifest.size = sz
+      manifest.signature = ""
+      
       if sign:
-         # sign this
-         data = rg_metadata.SerializeToString()
+         data = manifest.SerializeToString()
          sig = self.sign_message( data )
-
-         rg_metadata.signature = sig
          
+         manifest.signature = sig
+      
       return
-
-
-   def protobuf_AGs( self, ag_metadata, ags, sign=True ):
-
-      ag_metadata.ag_version = self.AG_version
-      for ag in ags:
-         ag_metadata.ag_ids.append( ag.g_id )
-         ag_metadata.ag_blocksizes.append( ag.block_size )
-         ag_metadata.hostnames.append( ag.host )
-         ag_metadata.portnums.append( ag.port )
-
-      ag_metadata.signature = ""
-
-      if sign:
-         # sign this
-         data = ag_metadata.SerializeToString()
-         sig = self.sign_message( data )
-
-         ag_metadata.signature = sig
-         
-      return
-
+      
+      
 
    def is_gateway_in_volume( self, gateway ):
       if not self.private:
@@ -314,11 +305,9 @@ class Volume( storagetypes.Object ):
                         volume_id=volume_id,
                         active=kwargs.get('active',False),
                         version=1,
-                        UG_version=1,
-                        RG_version=1,
+                        cert_version=1,
+                        closure_version=1,
                         private=kwargs['private'],
-                        rg_ids=kwargs['rg_ids'],
-                        ag_ids=kwargs['ag_ids'],
                         volume_secret_salt = kwargs['volume_secret_salt'],
                         volume_secret_salted_hash = kwargs['volume_secret_salted_hash'],
                         public_key = kwargs['public_key'],
@@ -379,7 +368,7 @@ class Volume( storagetypes.Object ):
          
 
    @classmethod
-   def Read( cls, volume_id ):
+   def Read( cls, volume_id, set_memcache=True ):
       """
       Given a volume ID, get the volume entity. Returns None on miss.
       """
@@ -391,7 +380,7 @@ class Volume( storagetypes.Object ):
          volume = volume_key.get( use_memcache=False )
          if not volume:
             return None
-         else:
+         elif set_memcache:
             storagetypes.memcache.set( volume_key_name, volume )
 
       return volume
@@ -465,6 +454,10 @@ class Volume( storagetypes.Object ):
       '''
       Update volume identified by name with fields specified as a dictionary.
       '''
+      invalid = Volume.validate_fields( fields )
+      if len(invalid) != 0:
+         raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
+      
       volume = Volume.Read(volume_id)
       if not volume:
          raise Exception("No volume with the ID %d exists.", volume_id)
@@ -472,31 +465,21 @@ class Volume( storagetypes.Object ):
       Volume.FlushCache( volume_id )
 
       old_version = volume.version
-      old_rg_version = volume.RG_version
-      old_ug_version = volume.UG_version
-      old_ag_version = volume.AG_version
-
+      old_cert_version = volume.cert_version
+      old_closure_version = volume.closure_version
+      
+      # apply update
       for (k,v) in fields.items():
          setattr( volume, k, v )
-
-      # If rg_ids change update, RG_version, but don't allow manual changing.
-      if "RG_version" in fields:
-         volume.RG_version = old_rg_version
-      if "rg_ids" in fields:
-         volume.RG_version = old_rg_version + 1
-
-      if "AG_version" in fields:
-         volume.AG_version = old_ag_version
-      if "ag_ids" in fields:
-         volume.AG_version = old_ag_version + 1
-
-      # Kinda hacky, but allows deliberate updating of UG_version field when changing 
-      # UG's attached volume by assuming any attempt to change UG_version is a desire to increment
-      if "UG_version" in fields:
-         logging.info("SDKJFLDJF")
-         setattr( volume, "UG_version", old_ug_version + 1)
-
+         
       volume.version = old_version + 1
+      
+      if "cert_version" in fields:
+         volume.cert_version = old_cert_version + 1
+      
+      if "closure_version" in fields:
+         volume.closure_version = old_closure_version + 1
+         
       return volume.put()
          
 

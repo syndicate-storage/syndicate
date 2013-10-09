@@ -96,9 +96,10 @@ char* dir_path( const char* path ) {
  * Get the current time in seconds since the epoch, local time
  */
 int64_t currentTimeSeconds() {
-   struct timeval tp;
-   gettimeofday(&tp, NULL);
-   return tp.tv_sec;
+   struct timespec ts;
+   clock_gettime( CLOCK_REALTIME, &ts );
+   int64_t ts_sec = (int64_t)ts.tv_sec;
+   return ts_sec;
 }
 
 

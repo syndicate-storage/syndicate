@@ -129,7 +129,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    }
 
    struct timespec ts, ts2;
-   struct timespec latency_ts, write_ts, replicate_ts, remote_write_ts, update_ts;
+   struct timespec latency_ts, write_ts, replicate_ts, replicate_ts_total, remote_write_ts, update_ts;
 
    BEGIN_TIMING_DATA( ts );
    
@@ -251,27 +251,50 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
 
    fs_entry_wlock( fh->fent );
 
-   BEGIN_TIMING_DATA( replicate_ts );
+   BEGIN_TIMING_DATA( replicate_ts_total );
    
    // if we wrote data, replicate the manifest and blocks.
    if( modified_blocks.size() > 0 ) {
+      
+      if( local ) {
+         BEGIN_TIMING_DATA( replicate_ts );
+   
+         // replicate manifest
+         int rc = fs_entry_replicate_manifest( core, fh->fent, false, fh );
+         if( rc != 0 ) {
+            errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fh->path, rc );
+            ret = -EIO;
+         }
+         
+         END_TIMING_DATA( replicate_ts, ts2, "replicate manifest" );
+      }
 
-      uint64_t start_id = modified_blocks.begin()->first;
-      uint64_t end_id = modified_blocks.rbegin()->first + 1;      // exclusive
+      if( ret >= 0 ) {
+         // replicate written blocks
+         BEGIN_TIMING_DATA( replicate_ts );
+         
+         uint64_t start_id = modified_blocks.begin()->first;
+         uint64_t end_id = modified_blocks.rbegin()->first + 1;      // exclusive
 
-      int rc = fs_entry_replicate_write( core, fh->path, fh->fent, &modified_blocks, fh->flags & O_SYNC );
-      if( rc != 0 ) {
-         errorf("fs_entry_replicate_write(%s[%" PRId64 "-%" PRId64 "]) rc = %d\n", fh->path, start_id, end_id, rc );
-         ret = -EIO;
+         int rc = fs_entry_replicate_blocks( core, fh->fent, &modified_blocks, false, fh );
+         if( rc != 0 ) {
+            errorf("fs_entry_replicate_write(%s[%" PRId64 "-%" PRId64 "]) rc = %d\n", fh->path, start_id, end_id, rc );
+            ret = -EIO;
+         }
+         
+         END_TIMING_DATA( replicate_ts, ts2, "replicate block data" );
+      }
+      
+      if( fh->flags & O_SYNC ) {
+         // wait for all replicas to finish
+         fs_entry_replicate_wait( fh );
       }
    }
 
-   END_TIMING_DATA( replicate_ts, ts2, "replicate data" );
+   END_TIMING_DATA( replicate_ts_total, ts2, "replicate data" );
 
    if( ret > 0 && count > 0 ) {
 
-      BEGIN_TIMING_DATA( remote_write_ts );
-      
       // SUCCESS!
 
       uint64_t start_id = modified_blocks.begin()->first;
@@ -281,6 +304,8 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       fh->fent->size = MAX( fh->fent->size, (unsigned)(offset + count) );
       
       if( !local ) {
+         BEGIN_TIMING_DATA( remote_write_ts );
+      
          // tell the remote owner about our write
          Serialization::WriteMsg *write_msg = new Serialization::WriteMsg();
 
@@ -320,9 +345,10 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
 
          delete write_ack;
          delete write_msg;
+         
+         
+         END_TIMING_DATA( remote_write_ts, ts2, "send remote write" );
       }
-
-      END_TIMING_DATA( remote_write_ts, ts2, "send remote write" );
    }
    
    if( ret > 0 ) {

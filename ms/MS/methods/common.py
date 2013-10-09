@@ -21,9 +21,8 @@ def make_ms_reply( volume, error ):
    reply = ms_pb2.ms_reply()
 
    reply.volume_version = volume.version
-   reply.UG_version = volume.UG_version
-   reply.RG_version = volume.RG_version
-   reply.AG_version = volume.AG_version
+   reply.cert_version = volume.cert_version
+   reply.closure_version = volume.closure_version
    reply.error = error
 
    return reply

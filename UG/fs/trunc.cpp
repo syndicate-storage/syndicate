@@ -174,9 +174,18 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
       uint64_t cancel_block_start = modified_blocks.begin()->first;
       uint64_t cancel_block_end = modified_blocks.rbegin()->first + 1;     // exclusive
       
-      int rc = fs_entry_replicate_write( core, fs_path, fent, &modified_blocks, true );
+      int rc = fs_entry_replicate_manifest( core, fent, true, NULL );
       if( rc != 0 ) {
-         errorf("fs_entry_replicate_write(%s[%" PRId64 "-%" PRId64 "]) rc = %d\n", fs_path, cancel_block_start, cancel_block_end, rc );
+         errorf("fs_entry_replicate_manifest(%s[%" PRId64 "-%" PRId64 "]) rc = %d\n", fs_path, cancel_block_start, cancel_block_end, rc );
+         err = -EIO;
+      }
+      
+      else {
+         rc = fs_entry_replicate_blocks( core, fent, &modified_blocks, true, NULL );
+         if( rc != 0 ) {
+            errorf("fs_entry_replicate_write(%s[%" PRId64 "-%" PRId64 "]) rc = %d\n", fs_path, cancel_block_start, cancel_block_end, rc );
+            err = -EIO;
+         }
       }
    }
 

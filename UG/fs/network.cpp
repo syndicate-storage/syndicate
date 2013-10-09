@@ -14,82 +14,7 @@
 // return negative on irrecoverable error
 // return positive HTTP status code if the problem is with the proxy
 int fs_entry_download( struct fs_core* core, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len ) {
-   
-   ssize_t len = 0;
-   long status_code = 0;
-   int rc = 0;
-
-   md_init_curl_handle( curl, url, core->conf->metadata_connect_timeout );
-
-   if( proxy ) {
-      curl_easy_setopt( curl, CURLOPT_PROXY, proxy );
-   }
-
-   struct md_bound_response_buffer brb;
-   brb.max_size = max_len;
-   brb.size = 0;
-   brb.rb = new response_buffer_t();
-   
-   char* tmpbuf = NULL;
-   
-   curl_easy_setopt( curl, CURLOPT_WRITEDATA, (void*)&brb );
-   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, md_get_callback_bound_response_buffer );
-   
-   rc = curl_easy_perform( curl );
-   
-   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &status_code );
-
-   if( rc < 0 ) {
-      errorf("md_download_file6(%s, proxy=%s) rc = %d\n", url, proxy, rc );
-      rc = -EIO;
-   }
-   else {
-      tmpbuf = response_buffer_to_string( brb.rb );
-      len = response_buffer_size( brb.rb );
-      
-      if( status_code != 200 ) {
-         if( status_code == 202 ) {
-            // error code from remote host
-            char* tmp = NULL;
-            long errcode = strtol( tmpbuf, &tmp, 10 );
-            if( tmp == tmpbuf ) {
-               // failed to parse
-               char errbuf[101];
-               strncpy( errbuf, tmpbuf, 100 );
-               
-               errorf("md_download_file5(%s, proxy=%s): Invalid error response (truncated): '%s'...\n", url, proxy, errbuf );
-
-               rc = -EREMOTEIO;
-            }
-            else {
-               errorf("md_download_file5(%s, proxy=%s): remote gateway error: %d\n", url, proxy, (int)errcode );
-               rc = -abs((int)errcode);
-            }
-         }
-         else {
-            errorf("md_download_file5(%s, proxy=%s): HTTP status code %d\n", url, proxy, (int)status_code );
-            rc = status_code;
-         }
-      }
-   }
-   
-   response_buffer_free( brb.rb );
-   delete brb.rb;
-
-   if( rc == 0 ) {
-      *bits = tmpbuf;
-      *ret_len = len;
-   }
-   else {
-      *bits = NULL;
-      *ret_len = -1;
-      
-      if( tmpbuf ) {
-         free( tmpbuf );
-      }
-   }
-
-   return rc;
+   return md_download( core->conf, curl, proxy, url, bits, ret_len, max_len );
 }
 
 
@@ -100,137 +25,34 @@ int fs_entry_download( struct fs_core* core, CURL* curl, char const* proxy, char
 // * from gateway
 int fs_entry_download_cached( struct fs_core* core, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len ) {
    CURL* curl = curl_easy_init();
-
-   int rc = 0;
-
-   char* cdn_url = md_cdn_url( url );
-   char* proxy_url = core->conf->proxy_url;
    
-   char const* proxy_urls[10];
-   memset( proxy_urls, 0, sizeof(char const*) * 10 );
-
-   if( core->conf->proxy_url ) {
-      // try CDN and Proxy
-      proxy_urls[0] = cdn_url;
-      proxy_urls[1] = proxy_url;
-
-      // try proxy only
-      proxy_urls[2] = url;
-      proxy_urls[3] = proxy_url;
-
-      // try CDN only
-      proxy_urls[4] = cdn_url;
-      proxy_urls[5] = NULL;
-
-      // try direct
-      proxy_urls[6] = url;
-      proxy_urls[7] = NULL;
-   }
-   else {
-      // try CDN only
-      proxy_urls[0] = cdn_url;
-      proxy_urls[1] = NULL;
-
-      // try direct
-      proxy_urls[2] = url;
-      proxy_urls[3] = NULL;
-   }
-
-   for( int i = 0; true; i++ ) {
-      char const* target_url = proxy_urls[2*i];
-      char const* target_proxy = proxy_urls[2*i + 1];
-
-      if( target_url == NULL && target_proxy == NULL )
-         break;
-
-      rc = fs_entry_download( core, curl, target_proxy, target_url, bits, ret_len, max_len );
-      if( rc == 0 ) {
-         // success!
-         break;
-      }
-      if( rc < 0 ) {
-         // irrecoverable error
-         errorf("fs_entry_download(%s, CDN_url=%s, proxy=%s) rc = %d\n", url, target_url, target_proxy, rc );
-         break;
-      }
-
-      // try again--got an HTTP status code we didn't understand
-      dbprintf("fs_entry_download(%s, CDN_url=%s, proxy=%s) HTTP status code = %d\n", url, target_url, target_proxy, rc );
-   }
-
-   free( cdn_url );
+   int rc = md_download_cached( core->conf, curl, url, bits, ret_len, max_len );
+   
    curl_easy_cleanup( curl );
-   
    return rc;
 }
 
 
 // download a manifest
 int fs_entry_download_manifest( struct fs_core* core, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
-
-   char* manifest_data = NULL;
-   ssize_t manifest_data_len = 0;
-   int rc = 0;
-
-   rc = fs_entry_download_cached( core, manifest_url, &manifest_data, &manifest_data_len, 100000 );     // maximum manifest size is ~100KB
+   CURL* curl = curl_easy_init();
    
-   if( rc != 0 ) {
-      errorf( "fs_entry_download_cached(%s) rc = %d\n", manifest_url, rc );
-      return rc;
-   }
-
-   else {
-      // got data!  parse it
-      bool valid = false;
-      try {
-         valid = mmsg->ParseFromString( string(manifest_data, manifest_data_len) );
-      }
-      catch( exception e ) {
-         errorf("failed to parse manifest %s, caught exception\n", manifest_url);
-         rc = -EIO;
-      }
-      
-      if( !valid ) {
-         errorf( "invalid manifest (%zd bytes)\n", manifest_data_len );
-         rc = -EIO;
-      }
-   }
-
-   if( manifest_data )
-      free( manifest_data );
-
+   int rc = md_download_manifest( core->conf, curl, manifest_url, mmsg );
+   
+   curl_easy_cleanup( curl );
    return rc;
 }
 
 
-// repeatedly try to download a file's block, starting with its primary URL, and trying replicas subsequently
+// download a block 
 ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, char** block_bits, size_t block_len ) {
 
-   ssize_t nr = 0;
-   char* block_buf = NULL;
+   CURL* curl = curl_easy_init();
    
-   dbprintf("fetch '%s'\n", block_url );
+   int rc = md_download_block( core->conf, curl, block_url, block_bits, block_len );
    
-   int ret = fs_entry_download_cached( core, block_url, &block_buf, &nr, block_len );
-   if( ret == 0 ) {
-      // success
-      *block_bits = block_buf;
-      return nr;
-   }
-   
-   if( ret == 204 ) {
-      // signal from AG that it's not ready yet
-      errorf("fs_entry_download_cached(%s) rc = %d\n", block_url, ret );
-      *block_bits = NULL;
-      return -EAGAIN;
-   }
-
-   if( ret > 0 ) {
-      // bad HTTP code
-      errorf("fs_entry_download_cached(%s) HTTP status code %d\n", block_url, ret );
-      *block_bits = NULL;
-   }
-   return nr;
+   curl_easy_cleanup( curl );
+   return rc;
 }
 
 
@@ -241,9 +63,8 @@ int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_co
    
    writeMsg->set_type( type );
    writeMsg->set_volume_version( ms_client_volume_version( client, core->volume ) );
-   writeMsg->set_ug_version( ms_client_UG_version( client, core->volume ) );
-   writeMsg->set_rg_version( ms_client_RG_version( client, core->volume ) );
-   writeMsg->set_ag_version( ms_client_AG_version( client, core->volume ) );
+   writeMsg->set_cert_version( ms_client_cert_version( client, core->volume ) );
+   writeMsg->set_closure_version( ms_client_closure_version( client, core->volume ) );
    writeMsg->set_user_id( core->conf->owner );
    writeMsg->set_volume_id( core->volume );
    writeMsg->set_gateway_id( core->conf->gateway );
@@ -254,38 +75,6 @@ int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_co
 // sign a write message
 int fs_entry_sign_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core ) {
    return md_sign<Serialization::WriteMsg>( core->ms->my_key, writeMsg );
-   /*
-   writeMsg->set_signature( string("") );
-
-   string data;
-   bool valid = false;
-   
-   try {
-      valid = writeMsg->SerializeToString( &data );
-   }
-   catch( exception e ) {
-      valid = false;
-   }
-   
-   if( !valid )
-      return -EINVAL;
-
-   struct ms_client* client = core->ms;
-
-   char* sigb64 = NULL;
-   size_t sigb64len = 0;
-   
-   int rc = md_sign_message( client->my_key, data.data(), data.size(), &sigb64, &sigb64len );
-   if( rc != 0 ) {
-      errorf("md_sign_message rc = %d\n", rc );
-      return rc;
-   }
-
-   writeMsg->set_signature( string(sigb64, sigb64len) );
-
-   free( sigb64 );
-   return 0;
-   */
 }
 
 // set up a PREPARE message
@@ -340,6 +129,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    char* content_url = ms_client_get_UG_content_url( core->ms, core->volume, gateway_id );
    if( content_url == NULL ) {
       errorf("No such Gateway %" PRIu64 "\n", gateway_id );
+      curl_easy_cleanup( curl_h );
       return -EINVAL;
    }
 
@@ -352,6 +142,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    int rc = fs_entry_sign_write_message( sendMsg, core );
    if( rc != 0 ) {
       errorf("fs_entry_sign_write_message rc = %d\n", rc );
+      curl_easy_cleanup( curl_h );
       return rc;
    }
    
@@ -455,7 +246,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
          dbprintf( "recv WriteMsg type %d\n", recvMsg->type() );
          
          // send the MS-related header to our client
-         ms_client_process_header( core->ms, core->volume, recvMsg->volume_version(), recvMsg->ug_version(), recvMsg->rg_version(), recvMsg->ag_version() );
+         ms_client_process_header( core->ms, core->volume, recvMsg->volume_version(), recvMsg->cert_version(), recvMsg->closure_version() );
       }
    }
 

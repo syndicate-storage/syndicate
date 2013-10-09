@@ -563,7 +563,6 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
    
 
    // find the keepers listed in ms_ents
-   // TODO: preserve locally-coordinated files!
    for( unsigned int i = 0; i < ms_ents_size; i++ ) {
       
       struct md_entry* ms_ent = ms_ents[i];
@@ -1122,7 +1121,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    Serialization::ManifestMsg manifest_msg;
    int rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
    if( rc != 0 ) {
-      char** RG_urls = ms_client_RG_urls_copy( core->ms, core->volume );
+      char** RG_urls = ms_client_RG_urls( core->ms, core->volume );
       
       // try each replica
       if( RG_urls ) {

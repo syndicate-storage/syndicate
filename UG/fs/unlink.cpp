@@ -128,7 +128,7 @@ int fs_entry_detach( struct fs_core* core, char const* path, uint64_t user, uint
 
    fs_entry_unlock( parent );
 
-   return 0;
+   return rc;
 }
 
 

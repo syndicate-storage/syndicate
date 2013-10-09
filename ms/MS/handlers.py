@@ -12,6 +12,7 @@ import MS
 from MS.methods.resolve import Resolve
 
 import protobufs.ms_pb2 as ms_pb2
+import protobufs.serialization_pb2 as serialization_pb2
 
 from storage import storage
 import storage.storagetypes as storagetypes
@@ -288,75 +289,106 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
       return
 
 
-class MSUGRequestHandler( webapp2.RequestHandler ):
+class MSCertManifestRequestHandler( webapp2.RequestHandler ):
    """
-   Get the list of (writeable) UGs in a Volume.
+   Certificate bundle manifest request handler
    """
-   def get( self, volume_id_str ):
-      gateway, volume, timing = response_begin( self, volume_id_str )
-      if gateway == None or volume == None:
+   
+   def get( self, volume_id_str, volume_cert_version_str ):
+      volume_cert_version = 0
+      try:
+         volume_cert_version = int( volume_cert_version_str )
+      except:
+         response_end( self, 400, "Invalid Request", "text/plain" )
+         return
+      
+      # get the Volume
+      volume, status, _ = get_volume( volume_id_str )
+
+      if status != 200:
+         response_volume_error( self, status )
+         return
+      
+      # check version
+      if volume_cert_version != volume.cert_version:
+         self.response.headers['Location'] = "%s/CERT/%s/manifest.%s" % (MS_SECURE_URL, volume_id_str, volume.cert_version)
+         response_end( self, 302, "", "text/plain" )
          return
 
-      ug_metadata = ms_pb2.ms_volume_UGs()
+      # build the manifest
+      manifest = serialization_pb2.ManifestMsg()
       
-      user_gateways = storage.list_user_gateways( {'UserGateway.volume_id ==' : volume.volume_id} )
-
-      volume.protobuf_UGs( ug_metadata, user_gateways )
+      volume.protobuf_gateway_cert_manifest( manifest, [UserGateway, ReplicaGateway, AcquisitionGateway] )
       
-      data = ug_metadata.SerializeToString()
-
-      response_end( self, 200, data, "application/octet-stream", timing )
+      data = manifest.SerializeToString()
+      
+      response_end( self, 200, data, "application/octet-stream" )
       return
+      
+      
 
+class MSCertRequestHandler( webapp2.RequestHandler ):
+   """
+   Certificate bundle request handler.
+   """
+   
+   def get( self, volume_id_str, volume_cert_version_str, gateway_type_str, gateway_id_str, gateway_cert_version_str ):
+      gateway_id = 0
+      volume_cert_version = 0
+      gateway_cert_version = 0
+      
+      try:
+         gateway_id = int( gateway_id_str )
+         gateway_cert_version = int( gateway_cert_version_str )
+         volume_cert_version = int( volume_cert_version_str )
+      except:
+         response_end( self, 400, "Invalid Request", "text/plain" )
+         return
+      
+      
+      # get the Volume
+      volume, status, _ = get_volume( volume_id_str )
 
-class MSRGRequestHandler( webapp2.RequestHandler ):
-   """
-   Get the list of RGs in a Volume.
-   """
-   def get( self, volume_id_str ):
-      gateway, volume, timing = response_begin( self, volume_id_str )
-      if gateway == None or volume == None:
+      if status != 200:
+         response_volume_error( self, status )
          return
 
-      rg_metadata = ms_pb2.ms_volume_RGs()
-
-      rgs = []
-      
-      if len(volume.rg_ids) > 0:
-         rgs = storage.list_replica_gateways( {'ReplicaGateway.g_id IN' : volume.rg_ids} )
-
-      volume.protobuf_RGs( rg_metadata, rgs )
-
-      data = rg_metadata.SerializeToString()
-
-      response_end( self, 200, data, "application/octet-stream", timing )
-      return
-
-
-class MSAGRequestHandler( webapp2.RequestHandler ):
-   """
-   Get the list of AGs in a Volume.
-   """
-   def get( self, volume_id_str ):
-      gateway, volume, timing = response_begin( self, volume_id_str )
-      if gateway == None or volume == None:
+      # request the gateway
+      gateway = None
+      if gateway_type_str == "UG":
+         gateway = storage.read_user_gateway( gateway_id )
+      elif gateway_type_str == "RG":
+         gateway = storage.read_replica_gateway( gateway_id )
+      elif gateway_type_str == "AG":
+         gateway = storage.read_acquisition_gateway( gateway_id )
+      else:
+         logging.error("Invalid gateway type '%s'" % gateway_type_str )
+         response_user_error( self, 401 )
          return
-
-      ag_metadata = ms_pb2.ms_volume_AGs()
-
-      ags = []
-
-      if len(volume.ag_ids) > 0:
-         ags = storage.list_acquisition_gateways( {'AcquisitionGateway.g_id IN' : volume.ag_ids} )
-
-      volume.protobuf_AGs( ag_metadata, ags )
-
-      data = ag_metadata.SerializeToString()
-
-      response_end( self, 200, data, "application/octet-stream", timing )
+         
+      if gateway == None:
+         logging.error("No such %s named %s" % (gateway_type_str, gateway_name))
+         response_user_error( self, 404 )
+         return
+     
+      # request only the right version
+      if volume_cert_version != volume.cert_version or gateway_cert_version != gateway.cert_version:
+         self.response.headers['Location'] = "%s/CERT/%s/%s/%s/%s/%s" % (MS_SECURE_URL, volume_id_str, volume.cert_version, gateway_type_str, gateway_id_str, gateway.cert_version)
+         response_end( self, 302, "", "text/plain" )
+         return
+      
+      # generate the certificate
+      gateway_cert = ms_pb2.ms_gateway_cert()
+      
+      volume.protobuf_gateway_cert( gateway_cert, gateway )
+      
+      data = gateway_cert.SerializeToString()
+      
+      response_end( self, 200, data, "application/octet-stream" )
       return
-
-
+   
+      
+      
 class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    """
    Generate a session certificate from a SyndicateUser account for a gateway.
@@ -394,28 +426,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
 
       
    def protobuf_volume( self, volume_metadata, volume, root=None ):
-      # UGs
-      ug_metadata = volume_metadata.ugs
-      user_gateways = storage.list_user_gateways( {'UserGateway.volume_id ==' : volume.volume_id} )
-      volume.protobuf_UGs( ug_metadata, user_gateways, sign=False )
-
-      # RGs
-      rg_metadata = volume_metadata.rgs
-      rgs = []
-      if len(volume.rg_ids) > 0:
-         rgs = storage.list_replica_gateways( {'ReplicaGateway.g_id IN' : volume.rg_ids} )
-         
-      volume.protobuf_RGs( rg_metadata, rgs, sign=False )
-
-      # AGs
-      ag_metadata = volume_metadata.ags
-      ags = []
-      if len(volume.ag_ids) > 0:
-         ags = storage.list_acquisition_gateways( {"AcquisitionGateway.g_id IN" : volume.ag_ids} )
-
-      volume.protobuf_AGs( ag_metadata, ags, sign=False )
-
-      # Volume
       if root != None:
          root.protobuf( volume_metadata.root )
          
@@ -511,25 +521,31 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
             response_user_error( self, 401 )
             return
          
+         new_cert = True
+         
          # attempt to load it into the gateway
-         if not gateway.load_pubkey( pubkey ):
-            logging.error("invalid public key")
+         rc = gateway.load_pubkey( pubkey )
+         if rc != 0 and rc != -errno.EEXIST:
+            logging.error("invalid public key (rc = %d)" % rc)
             response_user_error( self, 400 )
             return
          
+         if rc == -errno.EEXIST:
+            # no need to update the certificate
+            new_cert = False
+            
          # generate a session password
-         session_password = gateway.regenerate_session_credentials()
+         gateway.regenerate_session_password()
          gateway_fut = gateway.put_async()
          futs = [gateway_fut]
-         
 
          registration_metadata = ms_pb2.ms_registration_metadata()
 
          # registration information
-         registration_metadata.session_password = session_password
-         registration_metadata.session_timeout = gateway.session_timeout
-         gateway.protobuf_cred( registration_metadata.cred )
-        
+         registration_metadata.session_password = gateway.session_password 
+         registration_metadata.session_expires = gateway.session_expires
+         gateway.protobuf_cert( registration_metadata.cert )
+         
          # find all Volumes
          volume_ids = gateway.volumes()
          volumes = storage.get_volumes( volume_ids )
@@ -541,16 +557,13 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
                logging.error("No volume %s" % volume_ids[i])
                continue
 
-            # next version of the Volume, since this gateway has now registered
-            if isinstance( gateway, UserGateway ) or isinstance( gateway, ReplicaGateway ):
-               if isinstance( gateway, UserGateway ):
-                  volume.UG_version += 1
-               else:
-                  volume.RG_version += 1
-
+            if new_cert:
+               # next cert version (NOTE: this version increment does not need to be atomic; the version just needs to increase)
+               volume.cert_version += 1
+               
                vol_fut = volume.put_async()
                futs.append( vol_fut )
-            
+               
             registration_volume = registration_metadata.volumes.add()
             self.protobuf_volume( registration_volume, volume, roots[i] )
 

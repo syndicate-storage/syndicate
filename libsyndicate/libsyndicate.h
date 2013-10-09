@@ -326,7 +326,7 @@ struct md_syndicate_conf {
    char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
    char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
    uint64_t ag_block_size;                            // block size for an AG
-
+   
    // debug
    int debug_read;                                    // print verbose information for reads
    int debug_lock;                                    // print verbose information on locks
@@ -340,6 +340,7 @@ struct md_syndicate_conf {
    char* gateway_key_path;                            // path to PEM-encoded user-given public/private key for this gateway
    char* cdn_prefix;                                  // CDN prefix
    char* proxy_url;                                   // URL to a proxy to use (instead of a CDN)
+   int replica_connect_timeout;                       // number of seconds to wait to connect to an RG
    
    // MS-related fields
    char* metadata_url;                                // URL (or path on disk) where to get the metadata
@@ -583,8 +584,7 @@ int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile );
 // daemonization
 int md_release_privileges();
 
-// HTTP and URL processing
-int md_connect_timeout( unsigned long timeout );
+// downloads
 ssize_t md_download_file( char const* url, char** buf, int* status_code );
 ssize_t md_download_file2( char const* url, char** buf, char const* username, char const* password );
 ssize_t md_download_file3( char const* url, int fd, char const* username, char const* password );
@@ -592,6 +592,13 @@ ssize_t md_download_file4( char const* url, char** buf, char const* username, ch
 ssize_t md_download_file5( CURL* curl_h, char** buf );
 ssize_t md_download_file6( CURL* curl_h, char** buf, ssize_t max_len );
 ssize_t md_download_file_proxied( char const* url, char** buf, char const* proxy, int* status_code );
+int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len );
+int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len );
+int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg );
+ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char const* block_url, char** block_bits, size_t block_len );
+
+// HTTP and URL control
+int md_connect_timeout( unsigned long timeout );
 char** md_parse_cgi_args( char* query_string );
 char* md_url_hostname( char const* url );
 char* md_url_scheme( char const* url );
@@ -770,9 +777,11 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
 #define INVALID_VOLUME_ID INVALID_BLOCK_ID
 
 // gateway types for md_init
+// TODO: sync up with ms.proto?
 #define SYNDICATE_UG       1
 #define SYNDICATE_AG       2
 #define SYNDICATE_RG       3
+#define VALID_GATEWAY_TYPE( type ) ((type) > 0 && (type) <= SYNDICATE_RG)
 
 // limits
 #define SYNDICATE_MAX_WRITE_MESSEGE_LEN  4096
