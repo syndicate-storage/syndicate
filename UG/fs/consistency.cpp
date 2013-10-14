@@ -1141,7 +1141,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
 
             // next replica
             // TODO: change to GET /SYNDICATE-DATA/$volume_id/$file_id.$file_version/manifest.$mtime_sec.$mtime_nsec
-            manifest_url = fs_entry_replica_manifest_url( core, RG_urls[i], fs_path, fent->version, &modtime );
+            manifest_url = fs_entry_replica_manifest_url( core, RG_urls[i], fent->file_id, fent->version, &modtime );
             
             rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
 

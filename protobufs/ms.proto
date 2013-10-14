@@ -77,20 +77,26 @@ message ms_reply {
    optional string errormsg = 7;
 }
 
-// metadata information on a block
-message ms_gateway_blockinfo {
-   required uint64 file_id = 1;           // ID of this file
-   required int64 file_version = 2;       // version of this file 
-   required uint64 block_id = 3;          // ID of the block
-   required int64 block_version = 4;      // version of he block
-   required uint64 blocking_factor = 5;   // size of the block
-   required int64 file_mtime_sec = 6;     // time of the write on the UG that created this block (seconds)
-   required int32 file_mtime_nsec = 7;    // time of the write on the UG that created this block (nanoseconds)
-   required uint64 owner = 8;             // ID of the SyndicateUser that owns this file
-   required uint64 writer = 9;            // ID of the UG that created this message
-   required uint64 volume = 10;           // ID of the Volume that this file/UG belong to
-   required string hash = 11;             // secure hash (SHA256) of the block bits
-   required string signature = 12;        // signature of this message, from the sender gateway's operator's private key
+// metadata information on a block/manifest request
+message ms_gateway_request_info {
+   enum ReplicaType {
+      MANIFEST = 1;
+      BLOCK = 2;
+   }
+   
+   required int32 type = 1;
+   required uint64 file_id = 2;           // ID of this file
+   required int64 file_version = 3;       // version of this file 
+   required uint64 block_id = 4;          // ID of the block
+   required int64 block_version = 5;      // version of he block
+   required uint64 size = 6;              // size of the block or manifest
+   required int64 file_mtime_sec = 7;     // time of the write on the UG that created this block (seconds)
+   required int32 file_mtime_nsec = 8;    // time of the write on the UG that created this block (nanoseconds)
+   required uint64 owner = 9;             // ID of the SyndicateUser that owns this file
+   required uint64 writer = 10;            // ID of the UG that created this message
+   required uint64 volume = 11;           // ID of the Volume that this file/UG belong to
+   required string hash = 12;             // secure hash (SHA256) of the block bits
+   required string signature = 13;        // signature of this message, from the sender gateway's operator's private key
 }
 
 

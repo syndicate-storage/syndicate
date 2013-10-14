@@ -618,7 +618,7 @@ class MSEntry( storagetypes.Object ):
          return -errno.EACCES
 
       # check for namespace collision
-      if nameholder.file_id != child_id:
+      if nameholder.file_id != child_id or nameholder.parent_id != parent_id or nameholder.volume_id != volume_id or nameholder.name != ent_attrs['name']:
          # nameholder already existed
          storagetypes.deferred.defer( MSEntry.delete_all, [nameholder.key] )
          return -errno.EEXIST

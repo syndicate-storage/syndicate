@@ -16,33 +16,32 @@ static struct md_path_locks md_locks;
 
 static struct md_user_entry md_guest_user;
 
-char const* MD_HTTP_NOMSG = "\n";
-char const* MD_HTTP_200_MSG = "OK\n";
-char const* MD_HTTP_400_MSG = "Bad Request\n";
-char const* MD_HTTP_401_MSG = "Invalid authorization credentials\n";
-char const* MD_HTTP_403_MSG = "Credentials required\n";
-char const* MD_HTTP_404_MSG = "Not found\n";
-char const* MD_HTTP_409_MSG = "Operation conflict\n";
-char const* MD_HTTP_413_MSG = "Requested entry too big\n";
-char const* MD_HTTP_422_MSG = "Unprocessable entry\n";
-char const* MD_HTTP_500_MSG = "Internal Server Error\n";
-char const* MD_HTTP_501_MSG = "Not implemented\n";
-char const* MD_HTTP_504_MSG = "Remote Server Timeout\n";
+char const MD_HTTP_NOMSG[128] = "\n";
+char const MD_HTTP_200_MSG[128] = "OK\n";
+char const MD_HTTP_400_MSG[128] = "Bad Request\n";
+char const MD_HTTP_401_MSG[128] = "Invalid authorization credentials\n";
+char const MD_HTTP_403_MSG[128] = "Credentials required\n";
+char const MD_HTTP_404_MSG[128] = "Not found\n";
+char const MD_HTTP_409_MSG[128] = "Operation conflict\n";
+char const MD_HTTP_413_MSG[128] = "Requested entry too big\n";
+char const MD_HTTP_422_MSG[128] = "Unprocessable entry\n";
+char const MD_HTTP_500_MSG[128] = "Internal Server Error\n";
+char const MD_HTTP_501_MSG[128] = "Not implemented\n";
+char const MD_HTTP_504_MSG[128] = "Remote Server Timeout\n";
 
-char const* MD_HTTP_DEFAULT_MSG = "RESPONSE\n";
+char const MD_HTTP_DEFAULT_MSG[128] = "RESPONSE\n";
 
-static char* md_load_file_as_string( char const* path ) {
-   size_t size = 0;
-   char* ret = load_file( path, &size );
+static char* md_load_file_as_string( char const* path, size_t* size ) {
+   char* ret = load_file( path, size );
 
    if( ret == NULL ) {
       errorf("failed to load %s\n", path );
       return NULL;
    }
 
-   ret = (char*)realloc( ret, size + 1 );
+   ret = (char*)realloc( ret, *size + 1 );
 
-   ret[ size ] = 0;
+   ret[ *size ] = 0;
 
    return ret;
 }
@@ -182,10 +181,10 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
 
 
    // load TLS credentials
-   if( c->server_key_path && c->server_cert_path ) {
+   if( c->server_key_path != NULL && c->server_cert_path != NULL ) {
       
-      c->server_key = md_load_file_as_string( c->server_key_path );
-      c->server_cert = md_load_file_as_string( c->server_cert_path );
+      c->server_key = md_load_file_as_string( c->server_key_path, &c->server_key_len );
+      c->server_cert = md_load_file_as_string( c->server_cert_path, &c->server_cert_len );
 
       if( c->server_key == NULL ) {
          errorf( "Could not read TLS private key %s\n", c->server_key_path );
@@ -196,8 +195,8 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
    }
 
    // load gateway public/private key
-   if( c->gateway_key_path ) {
-      c->gateway_key = md_load_file_as_string( c->gateway_key_path );
+   if( c->gateway_key_path != NULL ) {
+      c->gateway_key = md_load_file_as_string( c->gateway_key_path, &c->gateway_key_len );
 
       if( c->gateway_key == NULL ) {
          errorf("Could not read Gateway key %s\n", c->gateway_key_path );
@@ -3878,13 +3877,15 @@ int md_init( int gateway_type,
    md_default_conf( conf );
    
    // read the config file
-   rc = md_read_conf( config_file, conf );
-   if( rc != 0 ) {
-      dbprintf("ERR: failed to read %s, rc = %d\n", config_file, rc );
-      if( !(rc == -ENOENT || rc == -EACCES || rc == -EPERM) ) {
-         // not just a simple "not found" or "permission denied"
-         return rc;
-      }  
+   if( config_file != NULL ) {
+      rc = md_read_conf( config_file, conf );
+      if( rc != 0 ) {
+         dbprintf("ERR: failed to read %s, rc = %d\n", config_file, rc );
+         if( !(rc == -ENOENT || rc == -EACCES || rc == -EPERM) ) {
+            // not just a simple "not found" or "permission denied"
+            return rc;
+         }  
+      }
    }
    
    // merge command-line options with the config....

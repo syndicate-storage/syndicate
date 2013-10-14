@@ -101,9 +101,12 @@ char* fs_entry_remote_block_url( struct fs_core* core, uint64_t gateway_id, char
 }
 
 
-char* fs_entry_replica_block_url( struct fs_core* core, char* RG_url, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
+char* fs_entry_replica_block_url( struct fs_core* core, char* RG_url, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    // http:// URL to a remotely-hosted block on an RG
-   return fs_entry_block_url( core, core->volume, RG_url, fs_path, file_version, block_id, block_version, false, false );
+   char* url = CALLOC_LIST( char, strlen(RG_url) + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 );
+   sprintf( url, "%s/%" PRIu64 "/" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64, RG_url, file_id, file_version, block_id, block_version );
+   return url;
+   
 }
 
 char* fs_entry_block_url_path( struct fs_core* core, char const* fs_path, int64_t version, uint64_t block_id, int64_t block_version ) {
@@ -209,8 +212,10 @@ char* fs_entry_remote_manifest_url( struct fs_core* core, uint64_t UG_id, char c
    return ret;
 }
 
-char* fs_entry_replica_manifest_url( struct fs_core* core, char const* RG_url, char const* fs_path, int64_t version, struct timespec* ts ) {
-   return fs_entry_manifest_url( core, RG_url, core->volume, fs_path, version, ts );
+char* fs_entry_replica_manifest_url( struct fs_core* core, char const* RG_url, uint64_t file_id, int64_t version, struct timespec* ts ) {
+   char* url = CALLOC_LIST( char, strlen(RG_url) + 1 + 21 + 1 + 21 + 1 + 21 + 1 + strlen("manifest") + 21 + 1 + 21 );
+   sprintf( url, "%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", RG_url, core->volume, file_id, version, ts->tv_sec, ts->tv_nsec );
+   return url;
 }
 
 char* fs_entry_manifest_url_path( struct fs_core* core, char const* fs_path, int64_t version, struct timespec* ts ) {

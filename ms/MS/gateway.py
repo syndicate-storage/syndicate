@@ -495,7 +495,7 @@ class Gateway( storagetypes.Object ):
       
       vb = VolumeBinder.get_or_insert( VolumeBinder.make_key_name( volume_id, g_id, cls.GATEWAY_TYPE ), gateway_id=g_id, volume_id=volume_id, gateway_type=cls.GATEWAY_TYPE )
       
-      if vb.gateway_id != 0 or vb.gateway_type != Gateway.GATEWAY_TYPE:
+      if vb.gateway_id != g_id or vb.gateway_type != cls.GATEWAY_TYPE:
          raise Exception("Gateway %s already bound to Volume %s" % (g_id, volume_id) )
       
       return True

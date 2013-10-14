@@ -285,13 +285,19 @@ int ms_client_destroy( struct ms_client* client ) {
    if( client->userpass )
       free( client->userpass );
 
-   for( update_set::iterator itr = client->updates->begin(); itr != client->updates->end(); itr++ ) {
-      md_update_free( &itr->second );
-      memset( &itr->second, 0, sizeof(struct md_update) );
+   if( client->updates ) {
+      for( update_set::iterator itr = client->updates->begin(); itr != client->updates->end(); itr++ ) {
+         md_update_free( &itr->second );
+         memset( &itr->second, 0, sizeof(struct md_update) );
+      }
+      client->updates->clear();
+      delete client->updates;
    }
 
-   client->deadlines->clear();
-   client->updates->clear();
+   if( client->deadlines ) {
+      client->deadlines->clear();
+      delete client->deadlines;
+   }
 
    if( client->url )
       free( client->url );
@@ -301,9 +307,6 @@ int ms_client_destroy( struct ms_client* client ) {
 
    if( client->my_key )
       EVP_PKEY_free( client->my_key );
-
-   delete client->updates;
-   delete client->deadlines;
    
    ms_client_unlock( client );
    pthread_rwlock_destroy( &client->lock );
@@ -1631,7 +1634,7 @@ int ms_client_reload_volume( struct ms_client* client, char const* volume_name, 
 
 // verify that a message came from a gateway with the given ID.
 // this will write-lock the client view
-int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t user_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len ) {
+int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len ) {
    ms_client_view_wlock( client );
 
    struct ms_volume* vol = ms_client_find_volume( client, volume_id );

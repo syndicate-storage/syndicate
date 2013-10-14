@@ -70,12 +70,13 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    }
    
    // build an update
-   ms::ms_gateway_blockinfo replica_info;
+   ms::ms_gateway_request_info replica_info;
+   replica_info.set_type( ms::ms_gateway_request_info::MANIFEST );
    replica_info.set_file_id( fent->file_id );
    replica_info.set_file_version( fent->version );
    replica_info.set_block_id( 0 );
    replica_info.set_block_version( 0 );
-   replica_info.set_blocking_factor( core->blocking_factor );
+   replica_info.set_size( manifest_data_len );
    replica_info.set_file_mtime_sec( fent->mtime_sec );
    replica_info.set_file_mtime_nsec( fent->mtime_nsec );
    replica_info.set_owner( fent->owner );
@@ -100,7 +101,7 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    free( b64hash );
    free( hash );
    
-   rc = md_sign< ms::ms_gateway_blockinfo >( core->ms->my_key, &replica_info );
+   rc = md_sign< ms::ms_gateway_request_info >( core->ms->my_key, &replica_info );
    if( rc != 0 ) {
       errorf("md_sign rc = %d\n", rc );
       free( manifest_data );
@@ -187,11 +188,12 @@ int replica_context_block( struct fs_core* core, struct replica_context* rctx, s
    }
 
    // build an update
-   ms::ms_gateway_blockinfo replica_info;
+   ms::ms_gateway_request_info replica_info;
+   replica_info.set_type( ms::ms_gateway_request_info::BLOCK );
    replica_info.set_file_version( fent->version );
    replica_info.set_block_id( block_id );
    replica_info.set_block_version( block_info->version );
-   replica_info.set_blocking_factor( core->blocking_factor );
+   replica_info.set_size( sb.st_size );
    replica_info.set_file_mtime_sec( fent->mtime_sec );
    replica_info.set_file_mtime_nsec( fent->mtime_nsec );
    replica_info.set_file_id( fent->file_id );
@@ -210,7 +212,7 @@ int replica_context_block( struct fs_core* core, struct replica_context* rctx, s
    replica_info.set_hash( string(b64hash) );
    free( b64hash );
    
-   rc = md_sign< ms::ms_gateway_blockinfo >( core->ms->my_key, &replica_info );
+   rc = md_sign< ms::ms_gateway_request_info >( core->ms->my_key, &replica_info );
    if( rc != 0 ) {
       errorf("md_sign rc = %d\n", rc );
       fclose( f );

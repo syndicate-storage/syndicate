@@ -3,23 +3,39 @@
 # All Rights Reserved
 
 import sys
+import rm_common
 
 RG_STORE = "none"
 
 #-------------------------
 def debug():
-
-    from rg_common import log, parse_block_request
-
-    file_name = "test"
-
-    data = 'GET /SYNDICATE-DATA/tmp/hello.1375782135401/0.8649607004776574730'
-
-    parse_block_request(data)
-    
-    return True 
+   log = rm_common.get_logger()
+   
+   rm_common.syndicate_lib_path( "../libsyndicate/python" )
+   
+   gateway_name = "RG-localhost"
+   gateway_portnum = 32779
+   rg_username = "jcnelson@cs.princeton.edu"
+   rg_password = "nya!"
+   ms_url = "http://localhost:8080/"
+   my_key_file = "../../../replica_manager/test/replica_manager_key.pem"
+   volume_name = "testvolume-jcnelson-cs.princeton.edu"
+   
+   syndicate = rm_common.syndicate_init( ms_url=ms_url, gateway_name=gateway_name, portnum=gateway_portnum, volume_name=volume_name, gateway_cred=rg_username, gateway_pass=rg_password, my_key_filename=my_key_file )
+   
+   # test crypto
+   data = "abcdef"
+   
+   sigb64 = syndicate.md_sign_message( data )
+   
+   print "signature of '%s' is '%s'" % (data, sigb64)
+   
+   
+   
+   rm_common.syndicate_shutdown()
+   
+   return True 
 
 #-------------------------    
 if __name__ == "__main__":
-  
-    debug()
+   debug()

@@ -1,0 +1,21 @@
+# build replica_manager
+
+import os
+
+Import('env')
+env = env.Clone()
+
+Import('protobuf_py_files')
+
+# get a list of all files
+rm_files = Glob("*.py")
+rm_files.extend( Glob("protobufs/*.py") )
+
+cmds = []
+for pypb in protobuf_py_files:
+   cmd = env.Command( "protobufs/%s" % (os.path.basename(pypb.path)), "#" + pypb.path, "cp $SOURCE $TARGET" )
+   cmds.append( cmd )
+
+targets = rm_files + cmds
+
+Return( 'targets' )

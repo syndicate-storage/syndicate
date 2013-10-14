@@ -89,7 +89,7 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
       if( RG_urls != NULL ) {
          for( int i = 0; RG_urls[i] != NULL; i++ ) {
             // TODO: change to GET /SYNDICATE-DATA/$volume_id/$file_id.$file_version/$block_id.$block_version
-            char* replica_block_url = fs_entry_replica_block_url( core, RG_urls[i], fs_path, fent->version, block_id, block_version );
+            char* replica_block_url = fs_entry_replica_block_url( core, RG_urls[i], fent->file_id, fent->version, block_id, block_version );
 
             nr = fs_entry_download_block( core, replica_block_url, &block_buf, block_len );
             free( replica_block_url );

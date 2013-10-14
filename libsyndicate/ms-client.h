@@ -224,7 +224,7 @@ int ms_client_load_cert( struct ms_gateway_cert* cert, const ms::ms_gateway_cert
 int ms_client_reload_certs( struct ms_client* client, uint64_t volume_id, uint64_t volume_cert_version );
 int ms_client_reload_volume( struct ms_client* client, char const* volume_name, uint64_t volume_id );
 
-int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t user_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len );
+int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len );
 
 int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str );
 int ms_client_load_privkey( EVP_PKEY** key, char const* privkey_str );
