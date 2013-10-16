@@ -68,3 +68,9 @@ cdef extern from "libsyndicate.h":
    
    int md_sign_message( EVP_PKEY* pkey, const char* data, size_t len, char** sigb64, size_t* sigb64len )
    int ms_client_verify_gateway_message( ms_client* client, uint64_t volume_id, uint64_t gateway_id, const char* msg, size_t msg_len, char* sigb64, size_t sigb64_len )
+   
+   # ------------------------------------------
+   # config
+   int ms_client_get_closure_text( ms_client* client, char** closure_text, uint64_t* closure_text_len )
+   
+   

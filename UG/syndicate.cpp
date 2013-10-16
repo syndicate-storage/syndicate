@@ -399,7 +399,7 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          sprintf(buf, "%d", rc);
          md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 202, buf, strlen(buf) + 1);
 
-         ms_client_sched_volume_reload( state->ms, state->core->volume );
+         ms_client_sched_volume_reload( state->ms );
       }
       else {
          md_create_HTTP_response_ram( md_con_data->resp, "text/plain", 400, "INVALID REQUEST", strlen("INVALID REQUEST") + 1 );
@@ -580,8 +580,8 @@ int syndicate_init( char const* config_file,
    }
 
    // get the volume
-   uint64_t volume_id = ms_client_get_volume_id( state->ms, 0 );
-   uint64_t blocking_factor = ms_client_get_volume_blocksize( state->ms, volume_id );
+   uint64_t volume_id = ms_client_get_volume_id( state->ms );
+   uint64_t blocking_factor = ms_client_get_volume_blocksize( state->ms );
 
    if( volume_id == 0 ) {
       errorf("Volume '%s' not found\n", volume_name);
@@ -602,7 +602,7 @@ int syndicate_init( char const* config_file,
    struct md_entry root;
    memset( &root, 0, sizeof(root) );
 
-   rc = ms_client_get_volume_root( state->ms, volume_id, &root );
+   rc = ms_client_get_volume_root( state->ms, &root );
    if( rc != 0 ) {
       errorf("ms_client_get_volume_root rc = %d\n", rc );
       return -ENODATA;

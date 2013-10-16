@@ -81,9 +81,9 @@ class Volume( storagetypes.Object ):
    
    version = storagetypes.Integer( default=1, indexed=False )                 # version of this Volume's metadata
    cert_version = storagetypes.Integer( default=1, indexed=False )            # certificate bundle version
-   closure_version = storagetypes.Integer( default=1, indexed=False )         # closure version 
    
    private = storagetypes.Boolean()
+   archive = storagetypes.Boolean(default=False)                # only an AG can write to this Volume
    
    num_shards = storagetypes.Integer(default=20, indexed=False)    # number of shards per entry in this volume
 
@@ -92,6 +92,7 @@ class Volume( storagetypes.Object ):
 
    volume_secret_salted_hash = storagetypes.Text()                 # salted hash of shared secret between the volume and its administrator
    volume_secret_salt = storagetypes.Text()                        # salt for the above hashed value
+   
 
    @classmethod
    def generate_password_hash( cls, password, salt ):
@@ -137,16 +138,24 @@ class Volume( storagetypes.Object ):
       
    validators = {
       "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")) ) == 0 and not is_int(value) ),
-      "private": (lambda cls, value: type(value) is bool)
    }
 
    default_values = {
       "blocksize": (lambda cls, attrs: 61440), # 60 KB
       "version": (lambda cls, attrs: 1),
       "cert_version": (lambda cls, attrs: 1),
-      "closure_version": (lambda cls, attrs: 1),
-      "private": (lambda cls, attrs: True)
+      "private": (lambda cls, attrs: True),
+      "archive": (lambda cls, attrs: False)
    }
+   
+   def need_gateway_auth( self ):
+      """
+      Do we require an authentic gateway to interact with us?
+      """
+      if self.private or not self.archive:
+         return True
+      
+      return False
       
 
    def protobuf( self, volume_metadata, **kwargs ):
@@ -161,10 +170,10 @@ class Volume( storagetypes.Object ):
       volume_metadata.description = kwargs.get( 'description', self.description )
       volume_metadata.volume_version = kwargs.get('volume_version', self.version )
       volume_metadata.cert_version = kwargs.get('cert_version', self.cert_version )
-      volume_metadata.closure_version = kwargs.get( 'closure_version', self.closure_version )
       volume_metadata.volume_public_key = kwargs.get( 'public_key', self.public_key )
       volume_metadata.num_files = kwargs.get( 'num_files', Volume.get_num_files( volume_metadata.volume_id ) )
-      
+      volume_metadata.archive = kwargs.get( 'archive', self.archive )
+      volume_metadata.private = kwargs.get( 'private', self.private )
       # sign it
       volume_metadata.signature = ""
 
@@ -204,40 +213,27 @@ class Volume( storagetypes.Object ):
       # query certificate versions of all gateways
       futs = []
       for gwcls in gateway_classes:
-         qry_fut = gwcls.ListAll_ByVolume( self.volume_id, async=True )
+         qry_fut = gwcls.ListAll_ByVolume( self.volume_id, async=True, projection=[gwcls.g_id, gwcls.caps, gwcls.cert_version] )
          futs.append( qry_fut )
       
       storagetypes.wait_futures( futs )
       
-      # each query is a list of Gateway futures...
-      gateway_futs = []
-      gateway_fut_lists = []
-      for qry_fut in futs:
-         gw_futs = qry_fut.get_result()
-         gateway_fut_lists.append( gw_futs )
-         gateway_futs += gw_futs
-      
-      storagetypes.wait_futures( gateway_futs )
-      
-      gateway_lists = []
-      for gateway_fut_list in gateway_fut_lists:
-         gateway_lists.append( [g.get_result() for g in gateway_fut_list] )
-      
+      gateway_lists = [g.get_result() for g in futs]
       results = zip( gateway_classes, gateway_lists )
       
       for r in results:
          cls = r[0]
          listing = r[1]
          
-         for cert_metadata in listing:
+         for gateway_metadata in listing:
             cert_block = manifest.block_url_set.add()
          
-            cert_block.gateway_id = cert_metadata.g_id
+            cert_block.gateway_id = gateway_metadata.g_id
             cert_block.start_id = cls.GATEWAY_TYPE
-            cert_block.end_id = 0
-            cert_block.block_versions.append( cert_metadata.cert_version )
+            cert_block.end_id = gateway_metadata.caps
+            cert_block.block_versions.append( gateway_metadata.cert_version )
          
-            logging.info("cert block: (%s, %s, %s)" % (cls.GATEWAY_TYPE, cert_metadata.g_id, cert_metadata.cert_version) )
+            logging.info("cert block: (%s, %s, %s, %x)" % (cls.GATEWAY_TYPE, gateway_metadata.g_id, gateway_metadata.cert_version, gateway_metadata.caps) )
             sz += 1
       
       manifest.size = sz
@@ -306,8 +302,8 @@ class Volume( storagetypes.Object ):
                         active=kwargs.get('active',False),
                         version=1,
                         cert_version=1,
-                        closure_version=1,
                         private=kwargs['private'],
+                        archive=kwargs['archive'],
                         volume_secret_salt = kwargs['volume_secret_salt'],
                         volume_secret_salted_hash = kwargs['volume_secret_salted_hash'],
                         public_key = kwargs['public_key'],
@@ -466,7 +462,6 @@ class Volume( storagetypes.Object ):
 
       old_version = volume.version
       old_cert_version = volume.cert_version
-      old_closure_version = volume.closure_version
       
       # apply update
       for (k,v) in fields.items():
@@ -476,9 +471,6 @@ class Volume( storagetypes.Object ):
       
       if "cert_version" in fields:
          volume.cert_version = old_cert_version + 1
-      
-      if "closure_version" in fields:
-         volume.closure_version = old_closure_version + 1
          
       return volume.put()
          

@@ -771,6 +771,12 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
 #define SYNDICATE_RG       3
 #define VALID_GATEWAY_TYPE( type ) ((type) > 0 && (type) <= SYNDICATE_RG)
 
+#define GATEWAY_CAP_READ_DATA  1
+#define GATEWAY_CAP_WRITE_DATA  2
+#define GATEWAY_CAP_READ_METADATA  4
+#define GATEWAY_CAP_WRITE_METADATA  8
+#define GATEWAY_CAP_COORDINATE  16
+
 // limits
 #define SYNDICATE_MAX_WRITE_MESSEGE_LEN  4096
 #define URL_MAX         3000           // maximum length of a URL

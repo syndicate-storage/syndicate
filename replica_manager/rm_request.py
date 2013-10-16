@@ -1,11 +1,11 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright 2013 The Trustees of Princeton University
 # All Rights Reserved
 
 from rm_common import *
-from rm_certificates import *
 
 import base64 
+import binascii
 import errno
 import protobufs.serialization_pb2 as serialization_proto
 import protobufs.ms_pb2 as ms_proto
@@ -14,7 +14,7 @@ log = get_logger()
 
 
 # vetted block and manifest requests
-ReplicaInfo = collections.namedtuple( "ReplicaInfo", ["type",
+RequestInfo = collections.namedtuple( "RequestInfo", ["type",
                                                       "volume_id",
                                                       "gateway_id",
                                                       "user_id",
@@ -26,15 +26,42 @@ ReplicaInfo = collections.namedtuple( "ReplicaInfo", ["type",
                                                       "mtime_nsec",
                                                       "data_hash",
                                                       "size"] )
-ReplicaInfo.MANIFEST = 1
-ReplicaInfo.BLOCK = 2
+RequestInfo.MANIFEST = 1
+RequestInfo.BLOCK = 2
 
 
 #-------------------------
-def request_parse_replica_info( req_info_str ):
+def verify_protobuf( gateway_id, volume_id, pb ):
+   '''
+      Verify the signature of a protobuf (pb)
+      The protobuf must have a signature field,
+      which stores its base64-encoded signature.
+   '''
+   
+   # get the bits without the signature
+   sigb64 = pb.signature
+   pb.signature = ""
+   
+   toverify = pb.SerializeToString()
+   
+   pb.signature = sigb64
+   
+   # verify it
+   valid = False
+   try:
+      valid = libsyndicate.ms_client_verify_gateway_message( gateway_id, volume_id, toverify, sigb64 )
+   except Exception, e:
+      log.exception( e )
+   
+   return valid
+   
+
+#-------------------------
+def parse_request_info( req_info_str ):
 
     '''
-        Parse the "metadata" field of an incoming POST request.
+        Parse and verify a serialized ms_client_request_info protobuf.
+        Return a RequestInfo structure with the same information
     '''
     
     libsyndicate = get_libsyndicate()
@@ -49,21 +76,7 @@ def request_parse_replica_info( req_info_str ):
        log.debug("Failed to parse metadata string")
        return None
     
-    # get the bits without the signature
-    req_info_sigb64 = req_info.signature
-    req_info.signature = ""
-    
-    req_info_str_toverify = req_info.SerializeToString()
-    
-    # verify it
-    valid = False
-    try:
-       valid = libsyndicate.ms_client_verify_gateway_message( req_info.writer, req_info.volume, req_info_str_toverify, req_info_sigb64 )
-    except Exception, e:
-       log.exception( e )
-       
-    if not valid:
-       return None
+    valid = verify_protobuf( req_info.writer, req_info.volume, req_info )
     
     # construct a ReplicaInfo
     req_type = 0
@@ -85,9 +98,9 @@ def request_parse_replica_info( req_info_str ):
                                 block_version=req_info.block_version,
                                 mtime_sec=req_info.file_mtime_sec,
                                 mtime_nsec=req_info.file_mtime_nsec,
-                                data_hash=base64.b64decode( req_info.hash ),
+                                data_hash=binascii.b2a_hex( base64.b64decode( req_info.hash ) ),
                                 size=req_info.size,
                              )
  
-   return replica_info
+    return replica_info
    

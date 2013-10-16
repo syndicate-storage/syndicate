@@ -6,6 +6,7 @@
 """
 
 import os
+import protobufs.ms_pb2 as ms_pb2
 
 # configuration parameters
 
@@ -78,3 +79,14 @@ VOLUME_RSA_KEYSIZE = 4096
 # website
 MS_HOST = OPENID_TRUST_ROOT_HOST
 MS_URL = OPENID_HOST_URL
+
+# Gateway static constants
+GATEWAY_TYPE_UG = ms_pb2.ms_gateway_cert.USER_GATEWAY
+GATEWAY_TYPE_AG = ms_pb2.ms_gateway_cert.ACQUISITION_GATEWAY
+GATEWAY_TYPE_RG = ms_pb2.ms_gateway_cert.REPLICA_GATEWAY
+
+GATEWAY_CAP_READ_DATA = ms_pb2.ms_gateway_cert.CAP_READ_DATA
+GATEWAY_CAP_WRITE_DATA = ms_pb2.ms_gateway_cert.CAP_WRITE_DATA
+GATEWAY_CAP_READ_METADATA = ms_pb2.ms_gateway_cert.CAP_READ_METADATA
+GATEWAY_CAP_WRITE_METADATA = ms_pb2.ms_gateway_cert.CAP_WRITE_METADATA
+GATEWAY_CAP_COORDINATE = ms_pb2.ms_gateway_cert.CAP_COORDINATE

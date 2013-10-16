@@ -3971,8 +3971,8 @@ int md_init( int gateway_type,
 
    // if this is a UG, verify that we bound to the right volume
    if( gateway_type == SYNDICATE_UG ) {
-      uint64_t volume_id = ms_client_get_volume_id( client, 0 );
-      char* volname = ms_client_get_volume_name( client, volume_id );
+      
+      char* volname = ms_client_get_volume_name( client );
 
       if( volname == NULL ) {
          errorf("%s", "This gateway does not appear to be bound to any volumes!\n");

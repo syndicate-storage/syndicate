@@ -410,12 +410,12 @@ int calcDecodeLength(const char* b64input, size_t len) { //Calculates the length
   return (int)len*0.75 - padding;
 }
 
-int Base64Decode(char* b64message, size_t b64message_len, char** buffer, size_t* buffer_len) { //Decodes a base64 encoded string
+int Base64Decode(const char* b64message, size_t b64message_len, char** buffer, size_t* buffer_len) { //Decodes a base64 encoded string
   BIO *bio, *b64;
   int decodeLen = calcDecodeLength(b64message, b64message_len);
   long len = 0;
   *buffer = (char*)malloc(decodeLen+1);
-  FILE* stream = fmemopen(b64message, b64message_len, "r");
+  FILE* stream = fmemopen((void*)b64message, b64message_len, "r");
 
   b64 = BIO_new(BIO_f_base64());
   bio = BIO_new_fp(stream, BIO_NOCLOSE);

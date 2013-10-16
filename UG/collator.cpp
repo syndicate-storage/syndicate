@@ -170,7 +170,7 @@ void* Collator::release_loop( void* arg ) {
       
       pthread_mutex_unlock( &col->release_queue_lock );
 
-      char* gateway_url = ms_client_get_UG_content_url( col->core->ms, col->core->volume, next.gateway_id );
+      char* gateway_url = ms_client_get_UG_content_url( col->core->ms, next.gateway_id );
       if( gateway_url == NULL ) {
          dbprintf("WARN: No such gateway %" PRIu64 "\n", next.gateway_id );
          delete next.acceptMsg;

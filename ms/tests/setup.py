@@ -875,7 +875,8 @@ def test( ignore1, args ):
 
    
    volume_ids = []
-         
+   archive_volume_ids = []
+   
    if do_init:
       # create users and make them all volumes
       for i, user_email in enumerate(users):
@@ -897,6 +898,13 @@ def test( ignore1, args ):
             volume_key = storage.create_volume( user.email, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, active=True, private=False, owner_id=i+1, volume_secret="abcdef" )
             volume = volume_key.get()
             volume_ids.append( volume.volume_id )
+            
+            volume_key = storage.create_volume( user.email, name=(test_volume_name + "-archive"), description="%s's archive volume" % user_email,
+                                                blocksize=61440, active=True, private=False, archive=True, owner_id=i+1, volume_secret="abcdef" )
+            archive_volume = volume_key.get()
+            archive_volume_ids.append( archive_volume.volume_id )
+            
+            
          except:
             logging.info( "traceback: " + traceback.format_exc() )
             try:
@@ -912,12 +920,19 @@ def test( ignore1, args ):
          if volume.volume_id not in user.volumes_rw:
             user.volumes_rw.append( volume.volume_id )
             user.put()
+            
+         if archive_volume.volume_id not in user.volumes_o:
+            user.volumes_o.append( archive_volume.volume_id )
+            user.put()
+         if archive_volume.volume_id not in user.volumes_rw:
+            user.volumes_rw.append( archive_volume.volume_id )
+            user.put()
 
          # create a root MSEntry, with some sane defaults
          rc = storage.make_root( volume, user.owner_id )
 
       logging.info("created Volumes %s" % volume_ids )
-         
+      logging.info("created Archive Volumes %s" % archive_volume_ids )
 
    if do_ags:
       user = get_user( username )
@@ -926,20 +941,16 @@ def test( ignore1, args ):
       
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
-         try:
-            gw_key = storage.create_acquisition_gateway(user, ms_username=G_name("AG", node), ms_password="sniff", host=node, port=32778 )
-            logging.info("Created AG %s" % G_name("AG", node))
-            
-            if len(volume_ids) > 0:
-               gw = gw_key.get()
+         for j in xrange(0, len(archive_volume_ids)):
+            archive_volume_id = archive_volume_ids[j]
+            try:
+               gw_key = storage.create_acquisition_gateway(user, ms_username=G_name("AG", node) + "-" + str(archive_volume_id), ms_password="sniff", host=node, port=32778, volume_id=archive_volume_id )
+               logging.info("Created AG %s" % G_name("AG", node) + "-" + str(archive_volume_id))
                
-               for volume_id in volume_ids:
-                  storage.bind_acquisition_gateway_to_volume( gw.g_id, volume_id )
-               
-         except:
-            logging.info("traceback: %s" % traceback.format_exc())
-            # possibly already exists
-            pass
+            except:
+               logging.info("traceback: %s" % traceback.format_exc())
+               # possibly already exists
+               pass
 
    if do_rgs:
       user = get_user( username )
@@ -948,20 +959,18 @@ def test( ignore1, args ):
       
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
-         try:
-            gw_key = storage.create_replica_gateway( user, ms_username=G_name("RG", node), ms_password="sniff", host=node, port=32779, private=False )
+         for j in xrange(0, len(volume_ids)):
+            volume_id = volume_ids[j]
             
-            if len(volume_ids) > 0:
-               gw = gw_key.get()
+            try:
+               gw_key = storage.create_replica_gateway( user, ms_username=G_name("RG", node) + "-" + str(volume_id), ms_password="sniff", volume_id=volume_id, host=node, port=32779, private=False, config="""{ "closure" : "CiMhL3Vzci9iaW4vZW52IHB5dGhvbiAKCkNPTkZJRyA9IHsnZm9vJzogJ2Jhcid9CgpkZWYgcmVwbGljYV9yZWFkKCBkcml2ZXJzLCByZXF1ZXN0X2luZm8sIGZpbGVuYW1lLCBvdXRmaWxlICk6CiAgIHByaW50ICJyZXBsaWNhX3JlYWQgY2FsbGVkISIKICAgCiAgIGdsb2JhbCBDT05GSUcgCiAgIAogICBwcmludCAiQ09ORklHID0gIiArIHN0cihDT05GSUcpCiAgIHByaW50ICJkcml2ZXJzID0gIiArIHN0cihkcml2ZXJzKQogICBwcmludCAicmVxdWVzdF9pbmZvID0gIiArIHN0cihyZXF1ZXN0X2luZm8pCiAgIHByaW50ICJmaWxlbmFtZSA9ICIgKyBzdHIoZmlsZW5hbWUpCiAgIHByaW50ICJvdXRmaWxlID0gIiArIHN0cihvdXRmaWxlKQogICBwcmludCAiIgogICAKICAgZHJpdmVyc1snc2RfdGVzdCddLnJlYWRfZmlsZSggZmlsZW5hbWUsIG91dGZpbGUsIGV4dHJhX3BhcmFtPSJGb28iICkKICAgCiAgIHJldHVybiAwCiAgIApkZWYgcmVwbGljYV93cml0ZSggZHJpdmVycywgcmVxdWVzdF9pbmZvLCBmaWxlbmFtZSwgaW5maWxlICk6CiAgIHByaW50ICJyZXBsaWNhX3dyaXRlIGNhbGxlZCEiCiAgIAogICBnbG9iYWwgQ09ORklHIAogICAKICAgcHJpbnQgIkNPTkZJRyA9ICIgKyBzdHIoQ09ORklHKQogICAKICAgcHJpbnQgImRyaXZlcnMgPSAiICsgc3RyKGRyaXZlcnMpCiAgIHByaW50ICJyZXF1ZXN0X2luZm8gPSAiICsgc3RyKHJlcXVlc3RfaW5mbykKICAgcHJpbnQgImZpbGVuYW1lID0gIiArIHN0cihmaWxlbmFtZSkKICAgcHJpbnQgImluZmlsZSA9ICIgKyBzdHIoaW5maWxlKQogICBwcmludCAiIgogICAKICAgZHJpdmVyc1snc2RfdGVzdCddLndyaXRlX2ZpbGUoIGZpbGVuYW1lLCBpbmZpbGUsIGV4dHJhX3BhcmFtPSJGb28iICkKICAgCiAgIHJldHVybiAwCiAgIAo=", "drivers" : [ { "name" : "sd_test", "code" : "CiMhL3Vzci9iaW4vZW52IHB5dGhvbiAKCmRlZiByZWFkX2ZpbGUoIGZpbGVuYW1lLCBvdXRmaWxlLCAqKmt3ICk6CiAgIHByaW50ICIgIHJlYWRfZmlsZSBjYWxsZWQhIgogICBwcmludCAiICBmaWxlbmFtZSA9ICIgKyBzdHIoZmlsZW5hbWUpCiAgIHByaW50ICIgIG91dGZpbGUgPSAiICsgc3RyKG91dGZpbGUpCiAgIHByaW50ICIgIGt3ID0gIiArIHN0cihrdykKICAgcHJpbnQgIiIKICAgCiAgIHJldHVybiAwCgpkZWYgd3JpdGVfZmlsZSggZmlsZW5hbWUsIGluZmlsZSwgKiprdyApOgogICBwcmludCAiICB3cml0ZV9maWxlIGNhbGxlZCEiCiAgIHByaW50ICIgIGZpbGVuYW1lID0gIiArIHN0cihmaWxlbmFtZSkKICAgcHJpbnQgIiAgaW5maWxlID0gIiArIHN0cihpbmZpbGUpCiAgIHByaW50ICIgIGt3ID0gIiArIHN0cihrdykKICAgcHJpbnQgIiIKICAgCiAgIHJldHVybiAwCgogICAK" } ] }""" )
                
-               for volume_id in volume_ids:
-                  storage.bind_replica_gateway_to_volume( gw.g_id, volume_id )
-               
-            logging.info("Created RG %s" % G_name("RG", node))
-         except:
-            logging.info("traceback: %s" % traceback.format_exc())
-            # already exists
-            pass 
+                  
+               logging.info("Created RG %s" % G_name("RG", node) + "-" + str(volume_id))
+            except:
+               logging.info("traceback: %s" % traceback.format_exc())
+               # already exists
+               pass 
 
    # create fake UGs?
    if do_ugs:
@@ -976,11 +985,6 @@ def test( ignore1, args ):
          node = nodes[i]
          try:
             gw_key = storage.create_user_gateway( user, volume, ms_username=G_name("UG", node), ms_password="sniff", host=node, port=32780, read_write=True )
-            
-            if volume:
-               gw = gw_key.get()
-               
-               storage.bind_user_gateway_to_volume( gw.g_id, volume.volume_id )
                
             logging.info("Created UG %s" % G_name("UG", node))
          except:

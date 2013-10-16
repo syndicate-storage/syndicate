@@ -25,9 +25,9 @@ struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_en
    fh->parent_name = strdup( parent_name );
    fh->parent_id = parent_id;
 
-   fh->is_AG = ms_client_is_AG( core->ms, core->volume, ent->coordinator );
+   fh->is_AG = ms_client_is_AG( core->ms, ent->coordinator );
    if( fh->is_AG ) {
-      fh->AG_blocksize = ms_client_get_AG_blocksize( core->ms, core->volume, ent->coordinator );
+      fh->AG_blocksize = ms_client_get_AG_blocksize( core->ms, ent->coordinator );
    }
    
    pthread_rwlock_init( &fh->lock, NULL );

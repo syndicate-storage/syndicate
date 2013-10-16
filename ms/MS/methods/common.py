@@ -22,7 +22,6 @@ def make_ms_reply( volume, error ):
 
    reply.volume_version = volume.version
    reply.cert_version = volume.cert_version
-   reply.closure_version = volume.closure_version
    reply.error = error
 
    return reply

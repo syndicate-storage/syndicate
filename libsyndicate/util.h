@@ -161,7 +161,7 @@ int reg_match(const char *string, char const *pattern);
 int timespec_cmp( struct timespec* t1, struct timespec* t2 );
 uint32_t CMWC4096(void);
 
-int Base64Decode(char* b64message, size_t len, char** buffer, size_t* buffer_len);
+int Base64Decode(const char* b64message, size_t len, char** buffer, size_t* buffer_len);
 int Base64Encode(const char* message, size_t len, char** buffer);
 
 int util_init(void);

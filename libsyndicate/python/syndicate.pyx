@@ -104,11 +104,13 @@ cdef class Syndicate:
       '''
       return self.client_inst.gateway_id
    
+   
    def owner_id( self ):
       '''
          Get our user ID
       '''
       return self.client_inst.owner_id
+   
    
    cdef sign_message( self, data ):
       '''
@@ -132,6 +134,7 @@ cdef class Syndicate:
       stdlib.free( sigb64 )
       
       return py_sigb64
+   
    
    cdef verify_gateway_message( self, gateway_id, volume_id, message_bits, sigb64 ):
       '''
@@ -162,4 +165,27 @@ cdef class Syndicate:
       return False
    
    
+   cdef get_closure_text( self ):
+      '''
+         Get a copy of the closure text.
+      '''
+      
+      cdef char* c_closure_text = NULL
+      cdef uint64_t c_closure_len = 0
+      
+      rc = ms_client_get_closure_text( &self.client_inst, &c_closure_text, &c_closure_len )
+      
+      if rc == 0:
+         py_closure_text = c_closure_text[:c_closure_len]
+         stdlib.free( c_closure_text )
+         
+         return py_closure_text
+      
+      elif rc == -errno.ENOTCONN:
+         # something's seriously wrong
+         raise Exception( "No certificate for this gateway on file!" )
+      
+      else:
+         return None
+      
                    

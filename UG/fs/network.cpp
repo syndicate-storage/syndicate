@@ -62,9 +62,8 @@ int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_co
    struct ms_client* client = core->ms;
    
    writeMsg->set_type( type );
-   writeMsg->set_volume_version( ms_client_volume_version( client, core->volume ) );
-   writeMsg->set_cert_version( ms_client_cert_version( client, core->volume ) );
-   writeMsg->set_closure_version( ms_client_closure_version( client, core->volume ) );
+   writeMsg->set_volume_version( ms_client_volume_version( client ) );
+   writeMsg->set_cert_version( ms_client_cert_version( client ) );
    writeMsg->set_user_id( core->conf->owner );
    writeMsg->set_volume_id( core->volume );
    writeMsg->set_gateway_id( core->conf->gateway );
@@ -126,7 +125,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    CURL* curl_h = curl_easy_init();
    response_buffer_t buf;
 
-   char* content_url = ms_client_get_UG_content_url( core->ms, core->volume, gateway_id );
+   char* content_url = ms_client_get_UG_content_url( core->ms, gateway_id );
    if( content_url == NULL ) {
       errorf("No such Gateway %" PRIu64 "\n", gateway_id );
       curl_easy_cleanup( curl_h );
@@ -246,7 +245,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
          dbprintf( "recv WriteMsg type %d\n", recvMsg->type() );
          
          // send the MS-related header to our client
-         ms_client_process_header( core->ms, core->volume, recvMsg->volume_version(), recvMsg->cert_version(), recvMsg->closure_version() );
+         ms_client_process_header( core->ms, core->volume, recvMsg->volume_version(), recvMsg->cert_version() );
       }
    }
 

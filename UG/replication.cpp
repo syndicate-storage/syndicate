@@ -459,7 +459,7 @@ int replica_begin( struct syndicate_replication* rp, struct replica_context* rct
    sem_wait( &rctx->processing_lock );
    
    // find all RG urls
-   char** rg_urls = ms_client_RG_urls( rp->ms, rp->volume_id );
+   char** rg_urls = ms_client_RG_urls( rp->ms );
    
    pthread_mutex_lock( &rp->pending_lock );
    

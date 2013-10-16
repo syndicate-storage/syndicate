@@ -387,7 +387,7 @@ int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *sta
       return err;
    }
 
-   uint64_t num_files = ms_client_get_num_files( core->ms, vol );
+   uint64_t num_files = ms_client_get_num_files( core->ms );
 
    // populate the statv struct
    statv->f_bsize = core->blocking_factor;

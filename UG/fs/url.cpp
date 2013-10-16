@@ -91,7 +91,7 @@ char* fs_entry_public_staging_block_url( struct fs_core* core, char const* fs_pa
 
 char* fs_entry_remote_block_url( struct fs_core* core, uint64_t gateway_id, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    // http:// URL to a remotely-hosted block
-   char* content_url = ms_client_get_UG_content_url( core->ms, core->volume, gateway_id );
+   char* content_url = ms_client_get_UG_content_url( core->ms, gateway_id );
    if( content_url == NULL )
       return NULL;
 
@@ -116,7 +116,7 @@ char* fs_entry_block_url_path( struct fs_core* core, char const* fs_path, int64_
 }
 
 char* fs_entry_AG_block_url( struct fs_core* core, uint64_t ag_id, char const* fs_path, int64_t version, uint64_t block_id, int64_t block_version ) {
-   char* base_url = ms_client_get_AG_content_url( core->ms, core->volume, ag_id );
+   char* base_url = ms_client_get_AG_content_url( core->ms, ag_id );
                                                   
    int base_len = 25 + 1 + strlen(fs_path) + 1 + 25 + 1 + 25 + 1 + 25 + 1;
    
@@ -203,7 +203,7 @@ char* fs_entry_public_manifest_url( struct fs_core* core, char const* fs_path, i
 
 
 char* fs_entry_remote_manifest_url( struct fs_core* core, uint64_t UG_id, char const* fs_path, int64_t version, struct timespec* ts ) {
-   char* content_url = ms_client_get_UG_content_url( core->ms, core->volume, UG_id );
+   char* content_url = ms_client_get_UG_content_url( core->ms, UG_id );
    if( content_url == NULL )
       return NULL;
    

@@ -76,7 +76,7 @@ def read_basic_auth( headers ):
 
 
 
-def get_gateway( gateway_type, gateway_id ):
+def response_load_gateway_by_type_and_id( gateway_type, gateway_id ):
    if gateway_id == None:
       # invalid header
       return (None, 403, None)
@@ -99,7 +99,7 @@ def get_gateway( gateway_type, gateway_id ):
    return (gateway, 200, gateway_read_time)
 
 
-def get_volume( volume_name_or_id ):
+def response_load_volume( volume_name_or_id ):
 
    volume_id = -1
    try:
@@ -195,7 +195,7 @@ def response_load_gateway( request_handler ):
       return (None, None, None)
 
    # look up the requesting gateway
-   gateway, status, gateway_read_time = get_gateway( gateway_type_str, g_id )
+   gateway, status, gateway_read_time = response_load_gateway_by_type_and_id( gateway_type_str, g_id )
 
    if status != 200:
       response_user_error( request_handler, status )
@@ -220,18 +220,22 @@ def response_begin( request_handler, volume_name_or_id ):
    timing['request_start'] = storagetypes.get_time()
 
    # get the Volume
-   volume, status, volume_read_time = get_volume( volume_name_or_id )
+   volume, status, volume_read_time = response_load_volume( volume_name_or_id )
 
    if status != 200:
       response_volume_error( request_handler, status )
       return (None, None, None)
 
-   # get the Gateway
-   gateway, status, gateway_read_time = response_load_gateway( request_handler )
-
-   if status != 200:
-      return (None, None, None)
+   gateway_read_time = 0
+   gateway = None
    
+   if volume.need_gateway_auth():
+      # authenticate the gateway
+      gateway, status, gateway_read_time = response_load_gateway( request_handler )
+
+      if status != 200:
+         return (None, None, None)
+      
    # make sure this gateway is allowed to access this Volume
    valid_gateway = volume.is_gateway_in_volume( gateway )
    if not valid_gateway:
@@ -277,9 +281,13 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
 
    def get( self, volume_id_str ):
       gateway, volume, timing = response_begin( self, volume_id_str )
-      if gateway == None or volume == None:
+      if volume == None:
          return
 
+      if volume.need_gateway_auth() and gateway == None:
+         response_user_error( self, 403 )
+         return 
+      
       # request for volume metadata
       volume_metadata = ms_pb2.ms_volume_metadata();
       volume.protobuf( volume_metadata )
@@ -303,7 +311,7 @@ class MSCertManifestRequestHandler( webapp2.RequestHandler ):
          return
       
       # get the Volume
-      volume, status, _ = get_volume( volume_id_str )
+      volume, status, _ = response_load_volume( volume_id_str )
 
       if status != 200:
          response_volume_error( self, status )
@@ -347,7 +355,7 @@ class MSCertRequestHandler( webapp2.RequestHandler ):
       
       
       # get the Volume
-      volume, status, _ = get_volume( volume_id_str )
+      volume, status, _ = response_load_volume( volume_id_str )
 
       if status != 200:
          response_volume_error( self, status )
@@ -497,7 +505,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          openid_reply.challenge_method = OPENID_PROVIDER_CHALLENGE_METHOD
          openid_reply.response_method = OPENID_PROVIDER_RESPONSE_METHOD
          openid_reply.redirect_method = self.OPENID_RP_REDIRECT_METHOD
-
+         
          data = openid_reply.SerializeToString()
 
          session.save()
@@ -547,25 +555,26 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          gateway.protobuf_cert( registration_metadata.cert )
          
          # find all Volumes
-         volume_ids = gateway.volumes()
-         volumes = storage.get_volumes( volume_ids )
-         roots = storage.get_roots( volumes )
+         volume = storage.get_volume( gateway.volume_id )
+         
+         if volume == None:
+            response_user_error( self, 404 )
+            return 
+         
+         roots = storage.get_roots( [volume] )
+         
+         if roots == None or len(roots) == 0:
+            response_user_error( self, 404 )
+            return
 
-         for i in xrange(0, len(volume_ids)):
-            volume = volumes[i]
-            if volume == None:
-               logging.error("No volume %s" % volume_ids[i])
-               continue
-
-            if new_cert:
-               # next cert version (NOTE: this version increment does not need to be atomic; the version just needs to increase)
-               volume.cert_version += 1
-               
-               vol_fut = volume.put_async()
-               futs.append( vol_fut )
-               
-            registration_volume = registration_metadata.volumes.add()
-            self.protobuf_volume( registration_volume, volume, roots[i] )
+         if new_cert:
+            # next cert version (NOTE: this version increment does not need to be atomic; the version just needs to increase)
+            volume.cert_version += 1
+            
+            vol_fut = volume.put_async()
+            futs.append( vol_fut )
+         
+         self.protobuf_volume( registration_metadata.volume, volume, roots[0] )
 
          data = registration_metadata.SerializeToString()
 
@@ -573,9 +582,8 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          storage.wait_futures( futs )
          
          gateway.FlushCache( gateway.g_id )
-         for i in xrange(0, len(volume_ids)):
-            volume.FlushCache( volume_ids[i] )
-
+         volume.FlushCache( volume.volume_id )
+         
          response_end( self, 200, data, "application/octet-stream", None )
          return
 
@@ -605,11 +613,15 @@ class MSFileReadHandler(webapp2.RequestHandler):
          return
       
       gateway, volume, timing = response_begin( self, volume_id_str )
-      if gateway == None or volume == None:
+      if volume == None:
+         return
+      
+      if volume.need_gateway_auth() and gateway == None:
+         response_user_error( self, 403 )
          return
 
-      # this must be a User Gateway
-      if not isinstance( gateway, UserGateway ):
+      # this must be a User Gateway, if there is a specific gateway
+      if gateway != None and not isinstance( gateway, UserGateway ):
          response_user_error( self, 403 )
          return
 
@@ -618,7 +630,11 @@ class MSFileReadHandler(webapp2.RequestHandler):
       # request a file or directory
       resolve_start = storagetypes.get_time()
 
-      reply = Resolve( gateway.owner_id, volume, file_id, file_version, file_mtime_sec, file_mtime_nsec )
+      owner_id = volume.owner_id
+      if gateway != None:
+         owner_id = gateway.owner_id
+         
+      reply = Resolve( owner_id, volume, file_id, file_version, file_mtime_sec, file_mtime_nsec )
       
       resolve_time = storagetypes.get_time() - resolve_start
       
@@ -670,11 +686,20 @@ class MSFileWriteHandler(webapp2.RequestHandler):
 
       # begin the response
       gateway, volume, timing = response_begin( self, volume_id_str )
-      if gateway == None or volume == None:
+      if volume == None:
          return
 
-      # this must be a User Gateway or an Acquisition Gateway
-      if not isinstance( gateway, UserGateway ) and not isinstance( gateway, AcquisitionGateway ):
+      if volume.need_gateway_auth() and gateway == None:
+         response_user_error( self, 403 )
+         return 
+      
+      if volume.archive and (not isinstance( gateway, AcquisitionGateway ) or (isinstance( gateway, AcquisitionGateway and gateway.owner_id != volume.owner_id)) ):
+         # if this is an archive, on an AG owned by the same person as the Volume can write to it
+         response_user_error( self, 403 )
+         return 
+      
+      # this must be a User Gateway or an Acquisition Gateway, if anything
+      if gateway != None and not isinstance( gateway, UserGateway ) and not isinstance( gateway, AcquisitionGateway ):
          response_user_error( self, 403 )
          return
 

@@ -11,6 +11,7 @@ import os
 import base64
 import urllib
 import uuid
+import json
 from Crypto.Hash import SHA256, SHA
 from Crypto.PublicKey import RSA
 from Crypto import Random
@@ -67,17 +68,6 @@ class IDCounter( storagetypes.Object ):
       return cls.__next_value()
 
 
-class VolumeBinder( storagetypes.Object ):
-   volume_id = storagetypes.Integer(default=0)
-   gateway_id = storagetypes.Integer(default=0)
-   gateway_type = storagetypes.Integer(default=0)
-   
-   @classmethod
-   def make_key_name( cls, volume_id, gateway_id, gateway_type ):
-      return "VolumeBinder-%s-%s-%s" % (volume_id, gateway_id, gateway_type)
-   
-   
-
 def is_int( x ):
    try:
       y = int(x)
@@ -96,7 +86,8 @@ class Gateway( storagetypes.Object ):
    ms_password_hash = storagetypes.Text()
    ms_password_salt = storagetypes.Text()
    g_id = storagetypes.Integer()
-   caps = storagetypes.Integer(default=0,indexed=False)
+   volume_id = storagetypes.Integer()
+   caps = storagetypes.Integer(default=0)
    file_quota = storagetypes.Integer(default=-1,indexed=False)                # -1 means unlimited
 
    public_key = storagetypes.Text()          # PEM-encoded RSA public key, given by the SyndicateUser
@@ -108,7 +99,8 @@ class Gateway( storagetypes.Object ):
    cert_expires = storagetypes.Integer(default=-1)       # -1 means "never expires"
    
    cert_version = storagetypes.Integer( default=1 )   # certificate-related version of this gateway
-   closure_version = storagetypes.Integer( default=1 ) # closure-related version of this gateway
+   
+   config = storagetypes.Json()                # gateway-specific configuration
    
    required_attrs = [
       "owner_id",
@@ -131,7 +123,6 @@ class Gateway( storagetypes.Object ):
       "session_expires": (lambda cls, attrs: -1),
       "session_password": (lambda cls, attrs: Gateway.generate_session_credentials()),
       "cert_version": (lambda cls, attrs: 1),
-      "closure_version": (lambda cls, attrs: 1),
       "cert_expires": (lambda cls, attrs: -1)
    }
 
@@ -287,6 +278,13 @@ class Gateway( storagetypes.Object ):
       cert_pb.port = self.port
       cert_pb.caps = self.caps
       cert_pb.cert_expires = self.cert_expires
+      cert_pb.volume_id = self.volume_id
+      
+      if self.config == None:
+         cert_pb.closure_text = ""
+      else:
+         cert_pb.closure_text = self.config
+         
       cert_pb.signature = ""
 
       if self.public_key != None:
@@ -354,15 +352,6 @@ class Gateway( storagetypes.Object ):
          return False
 
       return True
-
-   
-   def volumes( self ):
-      # which volumes are we bound to?
-      return None
-   
-   # override this in subclasses
-   def is_in_volume( self, volume ):
-      return False
 
    
    @classmethod
@@ -489,56 +478,21 @@ class Gateway( storagetypes.Object ):
 
       return True
       
-      
    @classmethod
-   def BindVolume( cls, g_id, volume_id ):
-      
-      vb = VolumeBinder.get_or_insert( VolumeBinder.make_key_name( volume_id, g_id, cls.GATEWAY_TYPE ), gateway_id=g_id, volume_id=volume_id, gateway_type=cls.GATEWAY_TYPE )
-      
-      if vb.gateway_id != g_id or vb.gateway_type != cls.GATEWAY_TYPE:
-         raise Exception("Gateway %s already bound to Volume %s" % (g_id, volume_id) )
-      
-      return True
-   
-   
-   @classmethod
-   def UnbindVolume( cls, g_id, volume_id ):
-      vb_key = storagetypes.make_key( VolumeBinder, VolumeBinder.make_key_name( volume_id, g_id, cls.GATEWAY_TYPE ) )
-      vb_key.delete()
-      return True
-      
-
-   @classmethod
-   @storagetypes.concurrent
-   def gateway_query_mapper( cls, volume_binder ):
-      
-      gateway_cls = GATEWAY_TYPE_TO_CLS.get( volume_binder.gateway_type )
-      
-      if gateway_cls == None:
-         raise Exception("No such gateway type '%s'", volume_binder.gateway_type )
-      
-      key = storagetypes.make_key( gateway_cls, gateway_cls.make_key_name( g_id=volume_binder.gateway_id ) )
-      
-      fut = key.get_async()
-      
-      storagetypes.concurrent_return( fut )
-      
-      
-   @classmethod
-   def ListAll_ByVolume( cls, volume_id, async=False ):
+   def ListAll_ByVolume( cls, volume_id, async=False, projection=None ):
       """
       Given a volume id, find all gateway records bound to it.  Cache the results
       """
       
       #results = storagetypes.memcache.get( cache_key_name )
       results = None
-      if results == None:   
-         qry = VolumeBinder.query( storagetypes.opAND( VolumeBinder.volume_id == volume_id, VolumeBinder.gateway_type == cls.GATEWAY_TYPE ) )
+      if results == None:
+         qry = cls.query().filter( cls.volume_id == volume_id )
          
          if not async:
-            gateway_futs = qry.map( cls.gateway_query_mapper )
+            gateway_futs = qry.fetch( None, projection=projection )
          else:
-            return qry.map_async( cls.gateway_query_mapper )
+            return qry.fetch_async( None, projection=projection )
          
          storagetypes.wait_futures( gateway_futs )
          
@@ -555,12 +509,9 @@ class UserGateway( Gateway ):
 
    GATEWAY_TYPE = GATEWAY_TYPE_UG
    
-   volume_id = storagetypes.Integer()           # which volume are we attached to?
-
    read_write = storagetypes.Boolean(default=False)
    
    required_attrs = Gateway.required_attrs + [
-      "volume_id",
       "read_write"                      # will be converted into caps 
    ]
 
@@ -586,35 +537,13 @@ class UserGateway( Gateway ):
       
       return caps
 
-   def is_in_volume( self, volume ):
-      return volume.volume_id == self.volume_id
-
-   def volumes( self ):
-      return [self.volume_id]
-      
-   @classmethod
-   def BindVolume( cls, g_id, volume_id ):
-      # a UG can be bound to only one Volume.
-      # so, set the Volume ID to a fixed value in all cases.
-      return Gateway.BindVolume( g_id, 0 )
-   
    
 class AcquisitionGateway( Gateway ):
 
    GATEWAY_TYPE = GATEWAY_TYPE_AG
    
    # This is temporary; we should know what is really needed.   
-   json_config = storagetypes.Json()
-   volume_ids = storagetypes.Integer(repeated=True)           # which volumes are we attached to?
    block_size = storagetypes.Integer( default=61140 )         # block size
-
-   required_attrs = Gateway.required_attrs + [
-      "json_config"
-   ]
-
-   default_values = dict( Gateway.default_values.items() + {
-      "json_config": (lambda cls, attrs: {}) # Default is only read
-   }.items() )
    
    @classmethod
    def has_caps(cls, attrs):
@@ -624,12 +553,6 @@ class AcquisitionGateway( Gateway ):
    def get_caps( cls, attrs ):
       return GATEWAY_CAP_WRITE_METADATA
 
-   def is_in_volume( self, volume ):
-      return volume.volume_id in self.volume_ids
-
-   def volumes( self ):
-      return self.volume_ids
-      
    def protobuf_cert( self, cert_pb ):
       super( AcquisitionGateway, self ).protobuf_cert( cert_pb )
       
@@ -641,26 +564,47 @@ class ReplicaGateway( Gateway ):
 
    GATEWAY_TYPE = GATEWAY_TYPE_RG
    
+   validators = dict( Gateway.validators.items() + {
+      "config": lambda cls, value: ReplicaGateway.is_valid_config( value )
+   }.items() )
+   
    # This is temporary; we should know what is really needed.
-   json_config = storagetypes.Json()
    private = storagetypes.Boolean()
-   volume_ids = storagetypes.Integer(repeated=True)           # which volume(s) are we attached to?
-
-   required_attrs = Gateway.required_attrs + [
-      "json_config"
-   ]
 
    default_values = dict( Gateway.default_values.items() + {
-      "json_config": (lambda cls, attrs: {}), # Default is only read
       "private": (lambda cls, attrs: False) # Default is public
    }.items() )
-
-   def is_in_volume( self, volume ):
-      return volume.volume_id in self.volume_ids
-
-   def volumes( self ):
-      return self.volume_ids
-
+   
+   @classmethod
+   def is_valid_config( cls, json_str ):
+      '''
+         Is this config valid for replica gateways?
+      '''
+      try:
+         config_dict = json.loads( json_str )
+      except:
+         log.error("Invalid RG config %s" % json_str)
+         return False
+      
+      # TODO: common code with replica_manager...
+      top_keys = ['closure', 'drivers']
+      
+      driver_keys_all = ['name', 'code']
+      driver_keys_required = ['name']
+      
+      if set(top_keys) != set(config_dict.keys()):
+         return False
+      
+      for driver in config_dict['drivers']:
+         if not set(driver).issuperset( set(driver_keys_required) ):
+            log.error("Invalid RG config %s" % json_str)
+            return False
+         
+         if not set(driver_keys_all).issuperset( set(driver) ):
+            log.error("Invalid RG config %s" % json_str)
+            return False
+      
+      return True
 
 
 GATEWAY_TYPE_TO_CLS = {

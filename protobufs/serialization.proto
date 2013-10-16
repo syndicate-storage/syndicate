@@ -57,14 +57,14 @@ message DetachRequest {
 message BlockURLSetMsg {
    required uint64 gateway_id = 1;              // if this is a cert bundle, then this is the gateway ID
    required uint64 start_id = 2;                // if this is a cert bundle, then this is the gateway type
-   required uint64 end_id = 3;
+   required uint64 end_id = 3;                  // if this is a cert bundle, then this is the gateway's caps
    repeated int64 block_versions = 4;
 }
 
 // manifest
 message ManifestMsg {
    required uint64 volume_id = 1;
-   required uint64 gateway_id = 2;      // if 0, this is a special file from the MS (e.g. a cert bundle or a closure bundle)
+   required uint64 gateway_id = 2;      // if 0, this is a cert bundle from the MS
    required uint64 file_id = 3;
    required int64 file_version = 4;
    required int64 size = 5;             // if gateway_id == 0, then this is simply the number of certificates
@@ -104,23 +104,22 @@ message WriteMsg {
 
    required uint64 volume_version = 1;    // what is the known volume metadata version on the sender
    required uint64 cert_version = 2;      // what is the known certificate bundle version on the sender
-   required uint64 closure_version = 3;   // what is the known closure version on the sender 
    
-   required MsgType type = 4;             // what type of message
-   required uint64 user_id = 5;           // what user is running this gateway
-   required uint64 volume_id = 6;         // what volume is the sender in
-   required uint64 gateway_id = 7;        // who's sending this message
+   required MsgType type = 3;             // what type of message
+   required uint64 user_id = 4;           // what user is running this gateway
+   required uint64 volume_id = 5;         // what volume is the sender in
+   required uint64 gateway_id = 6;        // who's sending this message
 
-   optional FileMetadata metadata = 8;
-   optional BlockList blocks = 9;
-   optional BlockData blockdata = 10;
-   optional TruncateRequest truncate = 11;
-   optional DetachRequest detach = 12;
-   optional AcceptMsg accepted = 13;
+   optional FileMetadata metadata = 7;
+   optional BlockList blocks = 8;
+   optional BlockData blockdata = 9;
+   optional TruncateRequest truncate = 10;
+   optional DetachRequest detach = 11;
+   optional AcceptMsg accepted = 12;
 
-   optional int32 errorcode = 14;
-   optional string errortxt = 15;
+   optional int32 errorcode = 13;
+   optional string errortxt = 14;
 
-   required string signature = 16;     // cryptographic signature with the gateway's private key
+   required string signature = 15;     // cryptographic signature with the gateway's private key
 }
 

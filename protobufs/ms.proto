@@ -70,11 +70,10 @@ message ms_listing {
 message ms_reply {
    required uint64 volume_version = 1;           // version of this volume's metadata
    required uint64 cert_version = 2;             // Volume certificate bundle version
-   required uint64 closure_version = 3;          // Volume gateway config/closure version
-   required string signature = 4;                // Volume signature
-   required ms_listing listing = 5;
-   required int32 error = 6;
-   optional string errormsg = 7;
+   required string signature = 3;                // Volume signature
+   required ms_listing listing = 4;
+   required int32 error = 5;
+   optional string errormsg = 6;
 }
 
 // metadata information on a block/manifest request
@@ -125,12 +124,14 @@ message ms_gateway_cert {
    required string host = 6;              // hostname of this gateway
    required int32 port = 7;               // port number of this gateway
    required string public_key = 8;        // public key of this gateway
-   required int64 cert_expires = 9;      // when the certificate expires
+   required int64 cert_expires = 9;       // when the certificate expires
    required uint64 caps = 10;             // capabilities
+   required string closure_text = 11;     // serialized closure information
+   required uint64 volume_id = 12;         // which Volume we're bound to
    
-   optional uint64 blocksize = 11;         // (AG only) desired block size
+   optional uint64 blocksize = 13;        // (AG only) desired block size
    
-   required string signature = 12;        // Signature
+   required string signature = 14;        // Signature
 }
 
 
@@ -141,23 +142,24 @@ message ms_volume_metadata {
    required uint64 volume_id = 3;             // volume ID
    required uint64 volume_version = 4;          // volume metadata version
    required uint64 cert_version = 5;            // Volume cert bundle version
-   required uint64 closure_version = 6;         // Volume closure bundle version
-   required uint64 num_files = 7;
-   required string name = 8;
-   required string description = 9;
-   required string volume_public_key = 10;
-   optional ms_entry root = 11;             // root directory
+   required uint64 num_files = 6;
+   required string name = 7;
+   required string description = 8;
+   required string volume_public_key = 9;
+   required bool archive = 10;
+   required bool private = 11;
+   optional ms_entry root = 12;             // root directory
    
-   required string signature = 12;              // base64-encoded Volume signature of this message
+   required string signature = 13;              // base64-encoded Volume signature of this message
 }
 
 
 // Registration metadata
 message ms_registration_metadata {
-   required ms_gateway_cert cert = 1;        // session credentials for the requester
-   required string session_password = 2;        // session password
+   required ms_gateway_cert cert = 1;         // session certificate for the requester
+   required string session_password = 2;      // session password
    required int64 session_expires = 3;        // when the session password expires
-   repeated ms_volume_metadata volumes = 4;  // the Volumes we're subscribed to
+   required ms_volume_metadata volume = 4;    // the Volume we're subscribed to
 }
 
 
