@@ -1622,7 +1622,9 @@ int ms_client_load_cert( struct ms_gateway_cert* cert, const ms::ms_gateway_cert
    
    // NOTE: closure information is base64-encoded
    if( ms_cert->closure_text().size() > 0 ) {
-      Base64Decode( ms_cert->closure_text().c_str(), ms_cert->closure_text().size(), &cert->closure_text, &cert->closure_text_len );
+      cert->closure_text_len = ms_cert->closure_text().size();
+      cert->closure_text = CALLOC_LIST( char, cert->closure_text_len + 1 );
+      memcpy( cert->closure_text, ms_cert->closure_text().c_str(), cert->closure_text_len );
    }
    else {
       cert->closure_text = NULL;
@@ -3000,8 +3002,9 @@ void ms_client_free_download( struct ms_download_context* download ) {
 
 
 // build a path ent
-int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t file_id, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, char const* name, void* cls ) {
+int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, char const* name, void* cls ) {
    // build up the ms_path as we traverse our cached path
+   path_ent->volume_id = volume_id;
    path_ent->file_id = file_id;
    path_ent->version = version;
    path_ent->mtime.tv_sec = mtime_sec;
@@ -3186,7 +3189,7 @@ int ms_client_perform_multi_download( struct ms_client* client, struct ms_downlo
 
 // get a set of metadata entries.
 // on succes, populate ms_response with ms_listing structures for each path entry that needed to be downloaded, as indicated by the stale flag.
-int ms_client_get_listings( struct ms_client* client, uint64_t volume_id, path_t* path, ms_response_t* ms_response ) {
+int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_t* ms_response ) {
 
    unsigned int num_downloads = path->size();
 
@@ -3200,7 +3203,7 @@ int ms_client_get_listings( struct ms_client* client, uint64_t volume_id, path_t
    
    for( unsigned int i = 0; i < num_downloads; i++ ) {
       struct ms_path_ent* path_ent = &path->at(i);
-      ms_client_init_download( client, &path_downloads[i], volume_id, path_ent->file_id, path_ent->version, path_ent->mtime.tv_sec, path_ent->mtime.tv_nsec );
+      ms_client_init_download( client, &path_downloads[i], path_ent->volume_id, path_ent->file_id, path_ent->version, path_ent->mtime.tv_sec, path_ent->mtime.tv_nsec );
    }
 
    struct timespec ts, ts2;
@@ -3242,6 +3245,7 @@ int ms_client_get_listings( struct ms_client* client, uint64_t volume_id, path_t
       }
       
       // extract versioning information from the reply
+      uint64_t volume_id = ms_client_get_volume_id( client );
       ms_client_process_header( client, volume_id, reply.volume_version(), reply.cert_version() );
       
       // get the listing

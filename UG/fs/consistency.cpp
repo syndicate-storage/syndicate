@@ -324,7 +324,7 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
    }
                               
    struct ms_path_ent path_ent;
-   ms_client_make_path_ent( &path_ent, fent->file_id, fent->version, fent->mtime_sec, fent->mtime_nsec, fent->name, cls );
+   ms_client_make_path_ent( &path_ent, fent->volume, fent->file_id, fent->version, fent->mtime_sec, fent->mtime_nsec, fent->name, cls );
    
    ms_path->push_back( path_ent );
    
@@ -333,14 +333,14 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
 }
 
 
-static int fs_entry_build_ms_path( struct fs_core* core, uint64_t volume, char const* path, path_t* ms_path ) {
+static int fs_entry_build_ms_path( struct fs_core* core, char const* path, path_t* ms_path ) {
    // build up an ms_path from the actual path
    vector<char*> path_parts;
    size_t path_len = fs_entry_split_path( path, &path_parts );
    int rc = 0;
 
    // populate ms_path with our cached entries
-   struct fs_entry* fent = fs_entry_resolve_path_cls( core, path, core->ms->owner_id, volume, false, &rc, fs_entry_ms_path_append, ms_path );
+   struct fs_entry* fent = fs_entry_resolve_path_cls( core, path, core->ms->owner_id, core->volume, false, &rc, fs_entry_ms_path_append, ms_path );
    if( fent == NULL ) {
       if( rc == -ENOENT ) {
          rc = 0;
@@ -359,7 +359,7 @@ static int fs_entry_build_ms_path( struct fs_core* core, uint64_t volume, char c
 
             struct ms_path_ent path_ent;
 
-            ms_client_make_path_ent( &path_ent, 0, -1, -1, -1, path_parts[i], cls );
+            ms_client_make_path_ent( &path_ent, 0, 0, -1, -1, -1, path_parts[i], cls );
 
             ms_path->push_back( path_ent );
          }
@@ -750,12 +750,12 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
 
 
 // get listings and merge them into a path
-static int fs_entry_download_path_listings( struct fs_core* core, uint64_t volume, path_t* to_download ) {
+static int fs_entry_download_path_listings( struct fs_core* core, path_t* to_download ) {
 
    ms_response_t listings;
    
    // fetch the stale entries
-   int rc = ms_client_get_listings( core->ms, volume, to_download, &listings );
+   int rc = ms_client_get_listings( core->ms, to_download, &listings );
    if( rc != 0 ) {
       errorf("ms_client_get_listings() rc = %d\n", rc );
       return rc;
@@ -774,11 +774,11 @@ static int fs_entry_download_path_listings( struct fs_core* core, uint64_t volum
 
 
 // given the list of path entries that exist locally, reload them
-static int fs_entry_reload_local_path_entries( struct fs_entry_consistency_cls* cls, uint64_t volume, path_t* ms_path ) {
+static int fs_entry_reload_local_path_entries( struct fs_entry_consistency_cls* cls, path_t* ms_path ) {
 
    struct fs_core* core = cls->core;
 
-   int rc = fs_entry_download_path_listings( core, volume, ms_path );
+   int rc = fs_entry_download_path_listings( core, ms_path );
    if( rc != 0 ) {
       errorf("fs_entry_download_path_listings() rc = %d\n", rc );
       return rc;
@@ -887,12 +887,12 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
    fs_entry_make_listing_cls( child_listing_cls2, fent_listing_cls->fs_path, child_fent->name, true, false );
 
    struct ms_path_ent child_path_ent2;
-   ms_client_make_path_ent( &child_path_ent2, child_fent->file_id, child_fent->version, child_fent->mtime_sec, child_fent->mtime_nsec, child_fent->name, child_listing_cls2 );
+   ms_client_make_path_ent( &child_path_ent2, child_fent->volume, child_fent->file_id, child_fent->version, child_fent->mtime_sec, child_fent->mtime_nsec, child_fent->name, child_listing_cls2 );
    
    child_path.push_back( child_path_ent2 );
 
    // download the listing for the child
-   rc = fs_entry_download_path_listings( core, core->volume, &child_path );
+   rc = fs_entry_download_path_listings( core, &child_path );
    if( rc != 0 ) {
       fs_entry_unlock( child_fent );
       
@@ -939,7 +939,7 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
 
 // make a pass through a path and download any listings that are not local.
 // Path is populated with entries that are fresh if present, and is built with fs_entry_build_ms_path
-static int fs_entry_reload_remote_path_entries( struct fs_entry_consistency_cls* consistency_cls, uint64_t volume, path_t* path ) {
+static int fs_entry_reload_remote_path_entries( struct fs_entry_consistency_cls* consistency_cls, path_t* path ) {
 
    // get the last path
    struct fs_entry_listing_cls* listing_cls = (struct fs_entry_listing_cls*)path->at( path->size() - 1 ).cls;
@@ -1001,10 +1001,9 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
    memset( &consistency_cls, 0, sizeof(consistency_cls) );
    
    consistency_cls.core = core;
-   consistency_cls.volume = volume;
    clock_gettime( CLOCK_REALTIME, &consistency_cls.query_time );     // time of refresh start
 
-   rc = fs_entry_build_ms_path( core, volume, path, &ms_path );
+   rc = fs_entry_build_ms_path( core, path, &ms_path );
    if( rc != 0 ) {
       errorf("fs_entry_build_ms_path(%s) rc = %d\n", path, rc );
       free( path );
@@ -1043,7 +1042,7 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
    if( ms_path_stale.size() > 0 ) {
       // reload the stale entries
       dbprintf("%lu stale entries\n", ms_path_stale.size() );
-      rc = fs_entry_reload_local_path_entries( &consistency_cls, volume, &ms_path_stale );
+      rc = fs_entry_reload_local_path_entries( &consistency_cls, &ms_path_stale );
       
       if( rc != 0 ) {
          errorf("fs_entry_reload_local_path_entries(%s) rc = %d\n", path, rc );
@@ -1055,7 +1054,7 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
 
    if( missing_local ) {
       // get missing path components
-      rc = fs_entry_reload_remote_path_entries( &consistency_cls, volume, &ms_path );
+      rc = fs_entry_reload_remote_path_entries( &consistency_cls, &ms_path );
       if( rc != 0 ) {
          errorf("fs_entry_reload_remote_path_entries(%s) rc = %d\n", path, rc );
          free( path );
@@ -1141,7 +1140,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
 
             // next replica
             // TODO: change to GET /SYNDICATE-DATA/$volume_id/$file_id.$file_version/manifest.$mtime_sec.$mtime_nsec
-            manifest_url = fs_entry_replica_manifest_url( core, RG_urls[i], fent->file_id, fent->version, &modtime );
+            manifest_url = fs_entry_replica_manifest_url( core, RG_urls[i], fent->volume, fent->file_id, fent->version, &modtime );
             
             rc = fs_entry_download_manifest( core, manifest_url, &manifest_msg );
 
