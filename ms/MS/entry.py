@@ -180,6 +180,7 @@ class MSEntry( storagetypes.Object ):
    is_readable_in_list = storagetypes.Boolean( default=False )    # used to simplify queries
    parent_id = storagetypes.String( default="-1" )                # file_id value of parent directory
    deleted = storagetypes.Boolean( default=False, indexed=False ) # whether or not this directory is considered to be deleted
+   umount_id = storagetypes.String( default="None" )
    
    # stuff that can be encrypted
    name = storagetypes.String( default="", indexed=False )
@@ -413,7 +414,12 @@ class MSEntry( storagetypes.Object ):
    @classmethod
    def cache_listing_key_name( cls, volume_id=None, file_id=None ):
       return super( MSEntry, cls ).cache_listing_key_name( volume_id=volume_id, file_id=file_id )
-
+   
+   @classmethod
+   def umount_key_name( cls, volume_id=None, file_id=None ):
+      key_name = cls.make_key_name( volume_id=volume_id, file_id=file_id )
+      umount_key_name = key_name + ".umnt"
+      return umount_key_name
 
    def update_dir_shard( self, num_shards, parent_volume_id, parent_file_id, **parent_attrs ):
       """
@@ -489,11 +495,11 @@ class MSEntry( storagetypes.Object ):
       
    
    @classmethod
-   def update_parent_shard( cls, num_shards, parent_ent ):
+   def update_shard( cls, num_shards, ent ):
       
       # put the parent shard, updating the number of children
       parent_attrs = {}
-      parent_attrs.update( parent_ent.to_dict() )
+      parent_attrs.update( ent.to_dict() )
 
       now_sec, now_nsec = storagetypes.clock_gettime()
 
@@ -510,23 +516,23 @@ class MSEntry( storagetypes.Object ):
       parent_attrs['mtime_nsec'] = now_nsec
       parent_attrs['write_nonce'] = random.randint( -2**63, 2**63 - 1 )
       
-      key_name = MSEntry.make_key_name( parent_ent.volume_id, parent_ent.file_id )
+      key_name = MSEntry.make_key_name( ent.volume_id, ent.file_id )
       shard_key = MSEntry.get_shard_key( key_name, random.randint( 0, num_shards-1 ) )
       
-      shard = parent_ent.write_shard
+      shard = ent.write_shard
       if shard == None:
          shard = MSEntry.shard_class( key=shard_key )
       
-      MSEntry.populate_shard_inst( parent_ent, shard, **parent_attrs )
+      MSEntry.populate_shard_inst( ent, shard, **parent_attrs )
       
-      parent_ent.write_shard = shard
+      ent.write_shard = shard
       
       return shard
    
    
    @classmethod
-   def update_parent_async( cls, num_shards, parent_ent ):
-      shard = MSEntry.update_parent_shard( num_shards, parent_ent )
+   def update_shard_async( cls, num_shards, ent ):
+      shard = MSEntry.update_shard( num_shards, ent )
 
       shard_fut = shard.put_async()
       return shard_fut
@@ -630,7 +636,7 @@ class MSEntry( storagetypes.Object ):
       child_ent = MSEntry( key=storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, child_id ) ) )
       child_ent.populate( volume.num_shards, **ent_attrs )
       
-      parent_shard = MSEntry.update_parent_shard( volume.num_shards, parent_ent )
+      parent_shard = MSEntry.update_shard( volume.num_shards, parent_ent )
       
       futs = storagetypes.put_multi_async( [child_ent, child_ent.write_shard, parent_shard] )
       
@@ -860,7 +866,7 @@ class MSEntry( storagetypes.Object ):
          ent_fut = None
             
          # update the parent shard...
-         parent_shard_fut = MSEntry.update_parent_async( volume.num_shards, parent_ent )
+         parent_shard_fut = MSEntry.update_shard_async( volume.num_shards, parent_ent )
 
          # delete any listings of this parent
          storagetypes.memcache.delete_multi( [MSEntry.cache_listing_key_name( volume_id, parent_id), ent_cache_key_name] )
@@ -1002,6 +1008,28 @@ class MSEntry( storagetypes.Object ):
       storagetypes.memcache.set_multi( ent_dict )
       return
       
+   @classmethod
+   def ReadBase( cls, volume_id, file_id, async=False ):
+      if not isinstance( file_id, types.StringType ):
+         file_id = MSEntry.unserialize_id( file_id )
+         
+      ent_key_name = MSEntry.make_key_name( volume.volume_id, file_id)
+      ent_cache_key_name = MSEntry.cache_key_name( volume.volume_id, file_id )
+
+      ent_key = storagetypes.make_key( MSEntry, ent_key_name )
+      
+      ent = storagetypes.memcache.get( ent_cache_key_name )
+      if ent == None:
+         if async:
+            return ent_key.get_async()
+         else:
+            ent = ent_key.get()
+            
+            if ent:
+               storagetypes.memcache.set( ent_cache_key_name, ent )
+
+      return ent
+      
 
    @classmethod
    def Read( cls, volume, file_id, memcache_keys_only=False, futs_only=False, no_check_memcache=False ):
@@ -1038,6 +1066,7 @@ class MSEntry( storagetypes.Object ):
          all_futs.append( futs["base"] )
 
          futs["shard"] = [None] * len(shard_keys)
+      
          for i in xrange(0, len(shard_keys)):
             shard_key = shard_keys[i]
             fut = shard_key.get_async()
@@ -1106,3 +1135,4 @@ class MSEntry( storagetypes.Object ):
          ret.append( ent )
 
       return ret
+   

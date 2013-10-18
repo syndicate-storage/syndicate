@@ -452,7 +452,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
       gateway, user = self.load_objects( gateway_type_str, gateway_name, username )
 
       if gateway == None or user == None:
-         logging.info("load_objects failed")
          return
 
       # this SyndicateUser must own this Gateway

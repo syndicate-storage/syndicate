@@ -49,7 +49,7 @@ def verify_protobuf( gateway_id, volume_id, pb ):
    # verify it
    valid = False
    try:
-      valid = libsyndicate.ms_client_verify_gateway_message( gateway_id, volume_id, toverify, sigb64 )
+      valid = libsyndicate.verify_gateway_message( gateway_id, volume_id, toverify, sigb64 )
    except Exception, e:
       log.exception( e )
    

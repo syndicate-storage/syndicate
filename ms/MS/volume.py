@@ -15,7 +15,7 @@ import base64
 from Crypto.Hash import SHA256, SHA
 from Crypto.PublicKey import RSA
 from Crypto import Random
-from Crypto.Signature import PKCS1_v1_5
+from Crypto.Signature import PKCS1_v1_5 as CryptoSigner
 
 import protobufs.ms_pb2 as ms_pb2
 
@@ -263,7 +263,7 @@ class Volume( storagetypes.Object ):
       """
       key = RSA.importKey( self.private_key )
       h = SHA256.new( data )
-      signer = PKCS1_v1_5.new(key)
+      signer = CryptoSigner.new(key)
       signature = signer.sign( h )
       sigb64 = base64.b64encode( signature )
       return sigb64
@@ -364,7 +364,7 @@ class Volume( storagetypes.Object ):
          
 
    @classmethod
-   def Read( cls, volume_id, set_memcache=True ):
+   def Read( cls, volume_id, async=False, set_memcache=True ):
       """
       Given a volume ID, get the volume entity. Returns None on miss.
       """
@@ -373,7 +373,11 @@ class Volume( storagetypes.Object ):
 
       volume = storagetypes.memcache.get( volume_key_name )
       if volume == None:
-         volume = volume_key.get( use_memcache=False )
+         if not async:
+            volume = volume_key.get( use_memcache=False )
+         else:
+            return volume_key.get_async( use_memccahe=False )
+         
          if not volume:
             return None
          elif set_memcache:
@@ -488,6 +492,20 @@ class Volume( storagetypes.Object ):
       return ret
    
    @classmethod
+   def Mount( cls, volume_id, mountpoint_id, new_volume_id ):
+      '''
+      Attach one Volume to a particular directory in another one.
+      '''
+      return volume_mount( volume_id, mountpoint_id, new_volume_id )
+   
+   @classmethod
+   def Unmount( cls, volume_id, mountpoint_id ):
+      '''
+      Detach a Volume mounted at a given mountpoint.
+      '''
+      return volume_umount( volume_id, mountpoint_id )
+   
+   @classmethod
    def shard_counter_name( cls, volume_id, suffix ):
       return "%s-%s" % (volume_id, suffix)
 
@@ -508,4 +526,100 @@ class Volume( storagetypes.Object ):
       return ret
    
    
+from entry import MSEntry, MSENTRY_TYPE_DIR
+
+def volume_mount( volume_id, mountpoint_id, new_volume_id ):
+   '''
+   Mount the Volume named by new_volume_id on the directory within the Volume
+   indicated by volume_id at the directory indicated by mountpoint_id.
+   '''
    
+   def volume_mount_txn( vol, mountpoint_id, new_vol ):
+      
+      # load the mountpoint and new volume root
+      mountpoint_fut = MSEntry.ReadBase( vol.volume_id, mountpoint_id, async=True )
+      new_vol_root_fut = MSEntry.ReadBase( new_vol.volume_id, 0, async=True )
+      
+      storagetypes.wait_futures( [mountpoint_fut, new_vol_root_fut] )
+      
+      mountpoint = mountpoint_fut.get_result()
+      new_vol_root = new_vol_root_fut.get_result()
+      
+      if mountpoint == None or new_vol_root == None:
+         return -errno.ENOENT
+      
+      if mountpoint.ftype != MSENTRY_TYPE_DIR:
+         return -errno.ENOTDIR 
+      
+      mountpoint_key_name = MSEntry.make_key_name( mountpoint.volume_id, mountpoint.file_id )
+      umount_id = MSEntry.umount_key_name( mountpoint.volume_id, mountpoint.file_id )
+      
+      # put the new Volume's root as the mountpoint, and back up the mountpoint
+      new_mountpoint = MSEntry( key=mountpoint_key_name, umount_id=umount_id )
+      old_mountpoint = MSEntry( key=umount_id )
+      
+      new_mountpoint.populate( **new_vol_root.to_dict() )
+      old_mountpoint.populate( **mountpoint.to_dict() )
+      
+      new_shard = MSEntry.update_shard( vol.num_shards, new_mountpoint )
+      
+      new_mountpoint_fut = new_mountpoint.put_async()
+      old_mountpoint_fut = old_mountpoint.put_async()
+      new_shard_fut = new_shard.put_async()
+   
+      storagetypes.wait_futures( [new_mountpoint_fut, old_mountpoint_fut, new_shard_fut] )
+      
+      return
+   
+   vol_fut = Volume.Read( volume_id, async=True )
+   new_vol_fut = Volume.Read( new_volume_id, async=True )
+   
+   storagetypes.wait_futures( [vol_fut, new_vol_fut] )   
+
+   vol = vol_fut.get_result()
+   new_vol = new_vol_fut.get_result()
+   
+   if vol == None or new_vol == None:
+      return -errno.ENODEV
+   
+   return storagetypes.transaction( lambda: volume_mount_txn( vol, mountpoint_id, new_vol ), xg=True )
+
+
+def volume_unmount( volume_id, mountpoint_id ):
+   '''
+   Given the ID of a directory currently mounting a Volume, unmount it and restore 
+   the original directory.
+   '''
+   
+   def volume_unmount_txn( vol, mountpoint_id ):
+      
+      cur_mountpoint_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( vol.volume_id, mountpoint_id ) )
+      
+      cur_mountpoint = cur_mountpoint_key.get()
+      
+      if curr_mountpoint == None:
+         return -errno.ENOENT
+      
+      old_mountpoint_key = storagetypes.make_key( MSEntry, cur_mountpoint.umount_id )
+      
+      old_mountpoint = old_mountpoint_key.get()
+      
+      if old_mountpoint == None:
+         return -errno.ENOENT
+      
+      # restore the old directory
+      restored_mountpoint = MSEntry( key=MSEntry.make_key_name( vol.volume_id, mountpoint_id ) )
+      restored_mountpoint.populate( old_mountpoint.to_dict() )
+      restored_mountpoint_shard = MSEntry.update_shard( vol.num_shards, restored_mountpoint )
+      
+      restored_mountpoint_fut = restored_mountpoint.put_async()
+      restored_mountpoint_shard_fut = restored_mountpoint_shard.put_async()
+      
+      storagetypes.wait_futures( [restored_mountpoint_fut, restored_mountpoint_shard_fut] )
+      
+      return
+  
+   vol = Volume.Read( volume_id )
+   
+   return storagetypes.transaction( lambda: volume_umount_txn( vol, mountpoint_id ), xg=True )
+

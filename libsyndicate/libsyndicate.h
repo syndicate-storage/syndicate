@@ -316,6 +316,7 @@ struct md_syndicate_conf {
    char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
    char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
    uint64_t ag_block_size;                            // block size for an AG
+   char* local_sd_dir;                                // location on disk where RG storage drivers can be found.
    
    // debug
    int debug_read;                                    // print verbose information for reads
@@ -423,6 +424,8 @@ struct md_syndicate_conf {
 #define PIDFILE_KEY                 "PIDFILE"
 #define VOLUME_NAME_KEY             "VOLUME_NAME"
 #define GATEWAY_NAME_KEY            "GATEWAY_NAME"
+
+#define LOCAL_STORAGE_DRIVERS_KEY   "LOCAL_STORAGE_DRIVERS"
 
 // gateway config
 #define GATEWAY_METADATA_KEY        "GATEWAY_METADATA"

@@ -49,30 +49,23 @@ def syndicate_init( gateway_name=None,
    from syndicate import Syndicate
    
    if libsyndicate == None:
-      libsyndicate = Syndicate(  gateway_type=Syndicate.GATEWAY_TYPE_RG,
-                                 gateway_name=gateway_name,
-                                 volume_name=volume_name,
-                                 portnum=portnum,
-                                 ms_url=ms_url,
-                                 gateway_cred=gateway_cred,
-                                 gateway_pass=gateway_pass,
-                                 conf_filename=conf_filename,
-                                 my_key_filename=my_key_filename,
-                                 tls_pkey_filename=tls_pkey_filename,
-                                 tls_cert_filename=tls_cert_filename,
-                                 volume_key_filename=volume_key_filename )
+      libsyndicate = Syndicate.getinstance(  gateway_type=Syndicate.GATEWAY_TYPE_RG,
+                                             gateway_name=gateway_name,
+                                             volume_name=volume_name,
+                                             portnum=portnum,
+                                             ms_url=ms_url,
+                                             gateway_cred=gateway_cred,
+                                             gateway_pass=gateway_pass,
+                                             conf_filename=conf_filename,
+                                             my_key_filename=my_key_filename,
+                                             tls_pkey_filename=tls_pkey_filename,
+                                             tls_cert_filename=tls_cert_filename,
+                                             volume_key_filename=volume_key_filename )
          
    else:
       raise Exception("libsyndicate already initialized!")
    
    return libsyndicate
-
-
-#-------------------------
-def syndicate_shutdown():
-   global libsyndicate
-   del libsyndicate
-   libsyndicate=None
 
 #-------------------------
 def get_logger():

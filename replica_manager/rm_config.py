@@ -3,6 +3,7 @@
 # All Rights Reserved
 
 import os
+import sys
 import rm_common
 import types
 import inspect
@@ -271,7 +272,46 @@ def cache_local_drivers( storage_driver_module_names ):
          log.exception( e )
          continue
       
+
+#-------------------------
+def view_change_callback():
+   '''
+      Called when the Volume we're bound to changes state.
+   '''
+   print "view_change_callback called!"
+   return 0
+
+
+#-------------------------
+def init( libsyndicate ):
+   '''
+      Initialize this module.
+   '''
+   log = rm_common.get_logger()
+   
+   # load local drivers
+   sd_path = libsyndicate.get_sd_path()
+   
+   if sd_path != None:
+      # find all SDs
+      sd_names = os.listdir( sd_path )
       
+      # any SDs to load?
+      if not "__init__.py" in sd_names:
+         raise Exception("No __init__.py in storage driver directory '%s'" % sd_path )
+      
+      sys.path.append( sd_path )
+      
+      sd_module_names = map( lambda sd_name_py: sd_name_py.split(".")[0], filter( lambda sd_name: sd_name.startswith("sd_") and (sd_name.endswith(".py") or sd_name.endswith(".pyc")), sd_names ) )
+      
+      cache_local_drivers( sd_module_names )
+      
+   # register view change callback
+   libsyndicate.set_view_change_callback( view_change_callback )
+   
+   return 0
+   
+
       
 if __name__ == "__main__":
    import rm_request

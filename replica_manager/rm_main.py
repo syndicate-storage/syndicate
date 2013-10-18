@@ -4,6 +4,7 @@
 
 import sys
 import rm_common
+import rm_config
 
 RG_STORE = "none"
 
@@ -13,7 +14,7 @@ def debug():
    
    rm_common.syndicate_lib_path( "../libsyndicate/python" )
    
-   gateway_name = "RG-localhost"
+   gateway_name = "RG-localhost-1"
    gateway_portnum = 32779
    rg_username = "jcnelson@cs.princeton.edu"
    rg_password = "nya!"
@@ -23,16 +24,8 @@ def debug():
    
    syndicate = rm_common.syndicate_init( ms_url=ms_url, gateway_name=gateway_name, portnum=gateway_portnum, volume_name=volume_name, gateway_cred=rg_username, gateway_pass=rg_password, my_key_filename=my_key_file )
    
-   # test crypto
-   data = "abcdef"
-   
-   sigb64 = syndicate.md_sign_message( data )
-   
-   print "signature of '%s' is '%s'" % (data, sigb64)
-   
-   
-   
-   rm_common.syndicate_shutdown()
+   # start up config
+   rm_config.init( syndicate )
    
    return True 
 

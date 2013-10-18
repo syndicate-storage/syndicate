@@ -39,6 +39,9 @@ typedef map<uint64_t, long> deadline_queue;
 
 #define MS_NUM_CERT_BUNDLES 4
 
+// perfect forward secrecy!
+#define MS_CIPHER_SUITES "EECDH:EDH:!eNULL:!aNULL:!MD5:!DES:!DES3"
+
 
 // directory listing
 struct ms_listing {
@@ -157,6 +160,8 @@ struct ms_volume {
    bool loading;                 // set to true if the Volume is in the process of being reloaded
 };
 
+typedef int (*ms_client_view_change_callback)( struct ms_client*, void* );
+
 struct ms_client {
    int gateway_type;
    
@@ -165,7 +170,6 @@ struct ms_client {
    CURL* ms_read;
    CURL* ms_write;
    CURL* ms_view;
-   CURL* ms_certs;
    
    struct ms_client_timing read_times;
    struct ms_client_timing write_times;
@@ -194,6 +198,8 @@ struct ms_client {
    bool view_thread_running;        // set to true if the view thread is running
    bool early_reload;               // check back to see if there is new Volume information
    struct ms_volume* volume;        // Volume we're bound to
+   ms_client_view_change_callback view_change_callback;       // call this function when the Volume gets reloaded
+   void* view_change_callback_cls;                              // user-supplied argument to the above callbck
    pthread_rwlock_t view_lock;
 
    // session information
@@ -255,6 +261,8 @@ uint64_t ms_client_get_volume_id( struct ms_client* client );
 uint64_t ms_client_get_volume_blocksize( struct ms_client* client );
 char* ms_client_get_volume_name( struct ms_client* client );
 int ms_client_get_closure_text( struct ms_client* client, char** closure_text, uint64_t* closure_len );
+int ms_client_set_view_change_callback( struct ms_client* client, ms_client_view_change_callback clb, void* cls );
+void* ms_client_set_view_change_callback_cls( struct ms_client* client, void* cls );
 
 bool ms_client_is_AG( struct ms_client* client, uint64_t ag_id );
 uint64_t ms_client_get_AG_blocksize( struct ms_client* client, uint64_t gateway_id );

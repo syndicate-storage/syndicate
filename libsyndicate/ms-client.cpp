@@ -6,6 +6,8 @@
 
 #include "ms-client.h"
 
+static int ms_client_view_change_callback_default( struct ms_client* client, void* cls );
+
 static void* ms_client_uploader_thread( void* arg );
 static void* ms_client_view_thread( void* arg );
 static void ms_client_uploader_signal( struct ms_client* client );
@@ -54,6 +56,9 @@ static void ms_client_gateway_cert_free( struct ms_gateway_cert* cert ) {
 }
 
 static void ms_volume_free( struct ms_volume* vol ) {
+   if( vol == NULL )
+      return;
+   
    dbprintf("Destroy Volume '%s'\n", vol->name );
    
    if( vol->volume_public_key ) {
@@ -140,6 +145,17 @@ static int ms_client_gateway_type_str( int gateway_type, char* gateway_type_str 
 
    return 0;
 }
+
+// set up secure CURL handle 
+int ms_client_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char const* url ) {
+   md_init_curl_handle( curl, url, conf->metadata_connect_timeout);
+   curl_easy_setopt( curl, CURLOPT_USE_SSL, 1L );
+   curl_easy_setopt( curl, CURLOPT_SSL_VERIFYPEER, (conf->verify_peer ? 1L : 0L) );
+   curl_easy_setopt( curl, CURLOPT_SSL_VERIFYHOST, 2L );
+   curl_easy_setopt( curl, CURLOPT_NOSIGNAL, 1L );
+   curl_easy_setopt( curl, CURLOPT_SSL_CIPHER_LIST, MS_CIPHER_SUITES );
+   return 0;
+}
       
 
 // create an MS client context
@@ -153,7 +169,6 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    client->ms_read = curl_easy_init();
    client->ms_write = curl_easy_init();
    client->ms_view = curl_easy_init();
-   client->ms_certs = curl_easy_init();
    
    client->url = strdup( conf->metadata_url );
    
@@ -162,18 +177,12 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
       client->url[ strlen(client->url)-1 ] = 0;
 
    // will change URL once we know the Volume ID
-   md_init_curl_handle( client->ms_read, "https://localhost", conf->metadata_connect_timeout);
-   md_init_curl_handle( client->ms_write, "https://localhost", conf->metadata_connect_timeout);
-   md_init_curl_handle( client->ms_view, "https://localhost", conf->metadata_connect_timeout);
-   md_init_curl_handle( client->ms_certs, "http://localhost", conf->metadata_connect_timeout);
-
+   ms_client_init_curl_handle( conf, client->ms_read, "https://localhost" );
+   ms_client_init_curl_handle( conf, client->ms_write, "https://localhost" );
+   ms_client_init_curl_handle( conf, client->ms_view, "https://localhost" );
+   
    curl_easy_setopt( client->ms_write, CURLOPT_POST, 1L);
    curl_easy_setopt( client->ms_write, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );
-
-   curl_easy_setopt( client->ms_read, CURLOPT_SSL_VERIFYPEER, (conf->verify_peer ? 1L : 0L) );
-   curl_easy_setopt( client->ms_write, CURLOPT_SSL_VERIFYPEER, (conf->verify_peer ? 1L : 0L) );
-   curl_easy_setopt( client->ms_view, CURLOPT_SSL_VERIFYPEER, (conf->verify_peer ? 1L : 0L) );
-   curl_easy_setopt( client->ms_certs, CURLOPT_SSL_VERIFYPEER, (conf->verify_peer ? 1L : 0L) );
 
    curl_easy_setopt( client->ms_read, CURLOPT_HEADERFUNCTION, ms_client_header_func );
    curl_easy_setopt( client->ms_write, CURLOPT_HEADERFUNCTION, ms_client_header_func );
@@ -181,11 +190,6 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    curl_easy_setopt( client->ms_read, CURLOPT_WRITEHEADER, &client->read_times );
    curl_easy_setopt( client->ms_write, CURLOPT_WRITEHEADER, &client->write_times );
    
-   curl_easy_setopt( client->ms_read, CURLOPT_NOSIGNAL, 1L );
-   curl_easy_setopt( client->ms_write, CURLOPT_NOSIGNAL, 1L );
-   curl_easy_setopt( client->ms_view, CURLOPT_NOSIGNAL, 1L );
-   curl_easy_setopt( client->ms_certs, CURLOPT_NOSIGNAL, 1L );
-
    curl_easy_setopt( client->ms_read, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
    curl_easy_setopt( client->ms_write, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
    curl_easy_setopt( client->ms_view, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
@@ -229,6 +233,8 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
       }
    }
 
+   client->view_change_callback = ms_client_view_change_callback_default;
+   client->view_change_callback_cls = NULL;
 
    client->running = true;
    
@@ -273,7 +279,6 @@ int ms_client_destroy( struct ms_client* client ) {
    curl_easy_cleanup( client->ms_read );
    curl_easy_cleanup( client->ms_write );
    curl_easy_cleanup( client->ms_view );
-   curl_easy_cleanup( client->ms_certs );
 
    // clean up view
    pthread_rwlock_wrlock( &client->view_lock );
@@ -415,6 +420,11 @@ char* ms_client_register_url( struct ms_client* client ) {
    return url;
 }
 
+static int ms_client_view_change_callback_default( struct ms_client* client, void* cls ) {
+   dbprintf("%s", "Volume has changed!\n");
+   return 0;
+}
+
 // view thread body, for synchronizing Volume metadata
 static void* ms_client_view_thread( void* arg ) {
    struct ms_client* client = (struct ms_client*)arg;
@@ -491,6 +501,16 @@ static void* ms_client_view_thread( void* arg ) {
          int rc = ms_client_reload_volume( client );
 
          dbprintf("End reload Volume metadata, rc = %d\n", rc);
+         
+         if( rc == 0 ) {
+            ms_client_rlock( client );
+            
+            if( client->view_change_callback != NULL ) {
+               rc = (*client->view_change_callback)( client, client->view_change_callback_cls );
+            }
+            
+            ms_client_unlock( client );
+         }
 
          pthread_setcancelstate( PTHREAD_CANCEL_ENABLE, NULL );
       }
@@ -887,40 +907,6 @@ int ms_client_end_downloading_view( struct ms_client* client ) {
    return (int)(http_response);
 }
 
-
-int ms_client_begin_downloading_certs( struct ms_client* client, char const* url, struct curl_slist* headers ) {
-   ms_client_wlock_backoff( client, &client->downloading_certs );
-
-   client->downloading_certs = true;
-
-   curl_easy_setopt( client->ms_certs, CURLOPT_URL, url );
-   curl_easy_setopt( client->ms_certs, CURLOPT_HTTPHEADER, headers );
-
-   ms_client_unlock( client );
-
-   return 0;
-}
-
-
-int ms_client_end_downloading_certs( struct ms_client* client ) {
-   long http_response = 0;
-
-   ms_client_wlock( client );
-
-   // not downloading anymore
-   client->downloading_certs = false;
-
-   curl_easy_setopt( client->ms_certs, CURLOPT_URL, NULL );
-   curl_easy_setopt( client->ms_certs, CURLOPT_HTTPHEADER, NULL );
-   curl_easy_getinfo( client->ms_certs, CURLINFO_RESPONSE_CODE, &http_response );
-
-   ms_client_unlock( client );
-
-   return (int)(http_response);
-}
-
-
-
 int ms_client_begin_uploading( struct ms_client* client, char const* url, response_buffer_t* rb, struct curl_httppost* forms ) {
    // lock, but back off if someone else is uploading
    ms_client_wlock_backoff( client, &client->uploading );
@@ -1026,11 +1012,11 @@ int ms_client_download_cert_bundle_manifest( struct ms_client* client, uint64_t 
    char* url = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/CERT/") + 1 + 21 + 1 + strlen("manifest.") + 21 + 1 );
    sprintf(url, "%s/CERT/%" PRIu64 "/manifest.%" PRIu64, client->url, volume_id, volume_cert_version );
    
-   ms_client_begin_downloading_certs( client, url, NULL );
+   ms_client_begin_downloading_view( client, url, NULL );
    
-   int rc = md_download_manifest( client->conf, client->ms_certs, url, mmsg );
+   int rc = md_download_manifest( client->conf, client->ms_view, url, mmsg );
    
-   int http_response = ms_client_end_downloading_certs( client );
+   int http_response = ms_client_end_downloading_view( client );
    
    if( rc != 0 ) {
       errorf("md_download_manifest(%s) rc = %d\n", url, rc );
@@ -1572,22 +1558,26 @@ int ms_client_generate_key( EVP_PKEY** key ) {
    int rc = EVP_PKEY_keygen_init( ctx );
    if( rc <= 0 ) {
       md_openssl_error();
+      EVP_PKEY_CTX_free( ctx );
       return rc;
    }
 
    rc = EVP_PKEY_CTX_set_rsa_keygen_bits( ctx, RSA_KEY_SIZE );
    if( rc <= 0 ) {
       md_openssl_error();
+      EVP_PKEY_CTX_free( ctx );
       return rc;
    }
 
    rc = EVP_PKEY_keygen( ctx, &pkey );
    if( rc <= 0 ) {
       md_openssl_error();
+      EVP_PKEY_CTX_free( ctx );
       return rc;
    }
 
    *key = pkey;
+   EVP_PKEY_CTX_free( ctx );
    return 0;
 }
 
@@ -3509,6 +3499,31 @@ int ms_client_get_closure_text( struct ms_client* client, char** closure_text, u
    
    return ret;
 }
+
+// set the volume view change callback
+int ms_client_set_view_change_callback( struct ms_client* client, ms_client_view_change_callback clb, void* cls ) {
+   ms_client_view_wlock( client );
+   
+   client->view_change_callback = clb;
+   client->view_change_callback_cls = cls;
+   
+   ms_client_view_unlock( client );
+   
+   return 0;
+}
+
+// set the user cls
+void* ms_client_set_view_change_callback_cls( struct ms_client* client, void* cls ) {
+   ms_client_view_wlock( client );
+   
+   void* ret = client->view_change_callback_cls;
+   client->view_change_callback_cls = cls;
+   
+   ms_client_view_unlock( client );
+   
+   return ret;
+}
+   
 
 // schedule a Volume reload
 int ms_client_sched_volume_reload( struct ms_client* client ) {

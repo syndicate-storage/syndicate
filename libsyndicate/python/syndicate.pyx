@@ -3,6 +3,21 @@ cimport libc.stdlib as stdlib
 
 import errno
 
+syndicate_inited = False
+syndicate_ref = None
+syndicate_view_change_callback = None
+
+# ------------------------------------------
+cdef int py_view_change_callback_springboard( ms_client* client, void* cls ):
+   global syndicate_view_change_callback
+   
+   if syndicate_view_change_callback != None:
+      return syndicate_view_change_callback()
+   
+   return 0
+
+
+# ------------------------------------------
 cdef class Syndicate:
    '''
       Python interface to libsyndicate.
@@ -39,7 +54,12 @@ cdef class Syndicate:
       '''
          Initialize libsyndicate.
       '''
-
+      
+      global syndicate_inited
+      
+      if syndicate_inited:
+         raise Exception("Syndicate already initialized!  Use Syndicate.getinstance() to get a reference to the API.")
+      
       cdef:
          char *c_gateway_name = NULL
          char *c_ms_url = NULL
@@ -97,6 +117,47 @@ cdef class Syndicate:
       if rc != 0:
          raise Exception( "md_init rc = %d" % rc )
       
+      syndicate_inited = True
+      
+      
+   @classmethod
+   def getinstance( self,  gateway_type=0,
+                           gateway_name=None,
+                           portnum=0,
+                           ms_url=None,
+                           gateway_pass=None,
+                           gateway_cred=None,
+                           volume_name=None,
+                           volume_key_filename=None,
+                           conf_filename=None,
+                           my_key_filename=None,
+                           tls_pkey_filename=None,
+                           tls_cert_filename=None):
+      
+      '''
+         Get the current Syndicate instance,
+         instantiating it if needed.
+         Call this method instead of the constructor.
+      '''
+      
+      global syndicate_ref 
+      
+      if syndicate_ref == None:
+         syndicate_ref = Syndicate( gateway_type=gateway_type,
+                                    gateway_name=gateway_name,
+                                    portnum=portnum,
+                                    ms_url=ms_url,
+                                    gateway_pass=gateway_pass,
+                                    gateway_cred=gateway_cred,
+                                    volume_name=volume_name,
+                                    volume_key_filename=volume_key_filename,
+                                    conf_filename=conf_filename,
+                                    my_key_filename=my_key_filename,
+                                    tls_pkey_filename=tls_pkey_filename,
+                                    tls_cert_filename=tls_cert_filename )
+         
+      return syndicate_ref
+   
    
    def gateway_id( self ):
       '''
@@ -112,7 +173,7 @@ cdef class Syndicate:
       return self.client_inst.owner_id
    
    
-   cdef sign_message( self, data ):
+   cpdef sign_message( self, data ):
       '''
          Sign a message with our private key.
          Return a base64-encoded string containing the signature.
@@ -136,7 +197,7 @@ cdef class Syndicate:
       return py_sigb64
    
    
-   cdef verify_gateway_message( self, gateway_id, volume_id, message_bits, sigb64 ):
+   cpdef verify_gateway_message( self, gateway_id, volume_id, message_bits, sigb64 ):
       '''
          Verify a User SG message's authenticity, given the ID of the sender User SG,
          the ID of the Volume to which it claims to belong, the base64-encoded
@@ -165,7 +226,7 @@ cdef class Syndicate:
       return False
    
    
-   cdef get_closure_text( self ):
+   cpdef get_closure_text( self ):
       '''
          Get a copy of the closure text.
       '''
@@ -188,4 +249,31 @@ cdef class Syndicate:
       else:
          return None
       
-                   
+      
+   cpdef set_view_change_callback( self, callback_func ):
+      '''
+         Set the callback to be called when the Volume information gets changed.
+      '''
+      global syndicate_view_change_callback
+      
+      syndicate_view_change_callback = callback_func
+      
+      ms_client_set_view_change_callback( &self.client_inst, py_view_change_callback_springboard, NULL )
+      
+      return
+   
+   
+   cpdef get_sd_path( self ):
+      '''
+         Get the location of our local storage drivers.
+      '''
+      cdef char* c_sd_path = NULL
+      
+      c_sd_path = self.conf_inst.local_sd_dir
+      
+      if c_sd_path != NULL:
+         py_sd_path = <bytes> c_sd_path
+         return py_sd_path
+      
+      return None
+   

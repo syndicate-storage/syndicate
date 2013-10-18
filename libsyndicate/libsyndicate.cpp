@@ -640,12 +640,10 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->replica_logfile = strdup(values[0]);
       }
 
-      /*
-      else if( strcmp( key, BLOCKING_FACTOR_KEY ) == 0 ) {
-         conf->blocking_factor = (unsigned long)strtol( values[0], NULL, 10 );
+      else if( strcmp( key, LOCAL_STORAGE_DRIVERS_KEY ) == 0 ) {
+         conf->local_sd_dir = strdup( values[0] );
       }
-      */
-
+      
       else if( strcmp( key, REPLICA_OVERWRITE_KEY ) == 0 ) {
          conf->replica_overwrite = (strtol(values[0], NULL, 10) != 0 ? true : false);
       }

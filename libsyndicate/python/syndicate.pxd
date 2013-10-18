@@ -1,3 +1,4 @@
+# ------------------------------------------
 cdef extern from "sys/types.h":
    ctypedef int int64_t
    ctypedef unsigned int uint64_t
@@ -6,12 +7,14 @@ cdef extern from "sys/types.h":
    ctypedef int bool
    ctypedef int mode_t
 
+# ------------------------------------------
 cdef extern from "openssl/ssl.h":
    cdef struct EVP_PKEY_TAG:
       pass
    
    ctypedef EVP_PKEY_TAG EVP_PKEY
 
+# ------------------------------------------
 cdef extern from "ms-client.h":
    cdef struct ms_client_TAG:
       EVP_PKEY* my_key
@@ -26,11 +29,11 @@ cdef extern from "ms-client.h":
    int ms_client_init( ms_client* client, int gateway_type, md_syndicate_conf* conf )
    int ms_client_destroy( ms_client* client )
 
-
-
+# ------------------------------------------
 cdef extern from "libsyndicate.h":
 
    cdef struct md_syndicate_conf_TAG:
+      char* local_sd_dir
       pass
 
    ctypedef md_syndicate_conf_TAG md_syndicate_conf
@@ -38,6 +41,8 @@ cdef extern from "libsyndicate.h":
    cdef int SYNDICATE_UG
    cdef int SYNDICATE_RG
    cdef int SYNDICATE_AG
+   
+   ctypedef int (*ms_client_view_change_callback)( ms_client* client, void* cls )
 
    # ------------------------------------------
    # init and shutdown
@@ -71,6 +76,6 @@ cdef extern from "libsyndicate.h":
    
    # ------------------------------------------
    # config
+   
    int ms_client_get_closure_text( ms_client* client, char** closure_text, uint64_t* closure_text_len )
-   
-   
+   int ms_client_set_view_change_callback( ms_client* client, ms_client_view_change_callback clb, void* cls )
