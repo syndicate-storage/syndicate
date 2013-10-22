@@ -10,6 +10,8 @@ import inspect
 import collections
 import json
 import base64
+import threading
+import errno
 
 #-------------------------
 StorageDriver = collections.namedtuple("StorageDriver", ["name", "read_file", "write_file"])
@@ -17,7 +19,8 @@ StorageClosure = collections.namedtuple("StorageClosure", ["CONFIG", "replica_re
 StorageConfig = collections.namedtuple("StorageConfig", ["closure", "drivers"] )
 
 #-------------------------
-CACHED_STORAGE_DRIVERS = {}
+STORAGE_CONFIG = {}
+storage_config_lock = threading.Lock()
 
 #-------------------------
 REQUIRED_CLOSURE_FIELDS = {
@@ -69,35 +72,24 @@ def is_valid_function( func, signature ):
    else:
       return False
 
-
 #-------------------------
-def validate_fields( data, required_fields, optional_fields=None ):
-   missing = []
-   invalid = []
-   for req_field in required_fields.keys():
-      if not data.has_key( req_field ):
-         missing.append( req_field )
-      elif type(data[req_field]) != required_fields[req_field]:
-         print "invalid type for %s: got %s, expected %s" % (req_field, type(data[req_field]), required_fields[req_field])
-         invalid.append( req_field )
+def validate_driver( driver_data ):
+   '''
+      Verify that a driver (encoded as a dictionary) is valid.
+      Raise an exception if not.
+   '''
    
-   if optional_fields != None:
-      for field in data.keys():
-         if field not in required_fields.keys() and field not in optional_fields.keys():
-            invalid.append( field )
-            
-   if len(missing) != 0 or len(invalid) != 0:
-      missing_txt = ",".join( missing )
-      if len(missing_txt) == 0:
-         missing_txt = "None"
-         
-      invalid_txt = ",".join( invalid )
-      if len(invalid_txt) == 0:
-         invalid_txt = "None"
-         
-      raise Exception("Missing fields: %s; Invalid fields: %s" % (missing_txt, invalid_txt) )
+   driver_read_func = driver_data['read_file']
+   driver_write_func = driver_data['write_file']
    
-   return
+   # check functions
+   if not is_valid_function( driver_read_func, DRIVER_READ_SIGNATURE ):
+      raise Exception("Driver read function does not match required signature")
+   
+   if not is_valid_function( driver_write_func, DRIVER_WRITE_SIGNATURE ):
+      raise Exception("Driver write function does not match required signature")
+   
+   return True
 
 
 #-------------------------
@@ -131,7 +123,7 @@ def load_closure( python_text_b64 ):
    closure_vars.update( closure_globals )
    
    # sanity check 
-   validate_fields( closure_vars, REQUIRED_CLOSURE_FIELDS )
+   rm_common.validate_fields( closure_vars, REQUIRED_CLOSURE_FIELDS )
    
    cls = StorageClosure( CONFIG=closure_vars['CONFIG'], replica_read=closure_vars['replica_read'], replica_write=closure_vars['replica_write'] )
    
@@ -139,16 +131,15 @@ def load_closure( python_text_b64 ):
    
    
 #-------------------------
-def load_storage_driver( sd_name, sd_code_b64, force_reload=False ):
+def load_storage_driver( sd_name, sd_code_b64, force_reload=False, cache=None ):
    '''
       Load a storage driver module.
    '''
    
-   global CACHED_STORAGE_DRIVERS
    global REQUIRED_DRIVER_FIELDS
    
-   if not force_reload and sd_name in CACHED_STORAGE_DRIVERS.keys():
-      return CACHED_STORAGE_DRIVERS['sd_name']
+   if not force_reload and sd_name in cache.keys():
+      return cache[sd_name]
    
    if sd_code_b64 == None:
       raise Exception("No code loaded for driver '%s'" % sd_name )
@@ -167,17 +158,11 @@ def load_storage_driver( sd_name, sd_code_b64, force_reload=False ):
       return None
    
    # sanity check the driver
-   validate_fields( sd_locals, REQUIRED_DRIVER_FIELDS )
+   rm_common.validate_fields( sd_locals, REQUIRED_DRIVER_FIELDS )
+   validate_driver( sd_locals )
    
    driver_read_func = sd_locals['read_file']
    driver_write_func = sd_locals['write_file']
-   
-   # check functions
-   if not is_valid_function( driver_read_func, DRIVER_READ_SIGNATURE ):
-      raise Exception("Driver read function does not match required signature")
-   
-   if not is_valid_function( driver_write_func, DRIVER_WRITE_SIGNATURE ):
-      raise Exception("Driver write function does not match required signature")
    
    sd = StorageDriver( name=sd_name, read_file=driver_read_func, write_file=driver_write_func )
    
@@ -208,7 +193,7 @@ def load_config_json( json_str ):
    
    # sanity check the config dict
    try:
-      validate_fields( config_dict, REQUIRED_JSON_FIELDS )
+      rm_common.validate_fields( config_dict, REQUIRED_JSON_FIELDS )
    except Exception, e:
       log.exception( e )
       return None
@@ -220,7 +205,7 @@ def load_config_json( json_str ):
    
    for driver in driver_list:
       try:
-         validate_fields( driver, REQUIRED_JSON_DRIVER_FIELDS, OPTIONAL_JSON_DRIVER_FIELDS )
+         rm_common.validate_fields( driver, REQUIRED_JSON_DRIVER_FIELDS, OPTIONAL_JSON_DRIVER_FIELDS )
       except Exception, e:
          log.exception( e )
          continue
@@ -254,12 +239,14 @@ def load_config_json( json_str ):
    
 
 #-------------------------
-def cache_local_drivers( storage_driver_module_names ):
+def load_local_drivers( storage_driver_module_names ):
    '''
       Cache locally-hosted storage drivers
    '''
    
-   global CACHED_STORAGE_DRIVERS
+   global REQUIRED_DRIVER_FIELDS
+   
+   drivers = {}
    
    log = rm_common.get_logger()
    
@@ -272,24 +259,52 @@ def cache_local_drivers( storage_driver_module_names ):
          log.exception( e )
          continue
       
+      # validate it
+      sd_module_dict = dict( [ (attr_name, getattr(sd_module, attr_name)) for attr in dir(sd_module) ] )
+      
+      try:
+         rm_common.validate_fields( sd_module_dict, REQUIRED_DRIVER_FIELDS )
+         validate_driver( sd_module_dict )
+      except Excetion, e:
+         log.exception( e )
+         continue
+      
+      drivers[ sd_name ] = sd_module
+   
+   return drivers
+
 
 #-------------------------
 def view_change_callback():
    '''
       Called when the Volume we're bound to changes state.
+      Specifically, reload the storage config
    '''
-   print "view_change_callback called!"
-   return 0
-
-
-#-------------------------
-def init( libsyndicate ):
-   '''
-      Initialize this module.
-   '''
+   
+   global STORAGE_CONFIG
+   global storage_config_lock
+   
+   libsyndicate = rm_common.get_libsyndicate()
    log = rm_common.get_logger()
    
-   # load local drivers
+   try:
+      new_storage_config_text = libsyndicate.get_closure_text()
+   except Exception, e:
+      log.exception( e )
+      return -errno.ENOTCONN
+   
+   if new_storage_config_text == None:
+      # nothing to do...
+      log.info("No storage config given")
+      return
+   
+   try:
+      new_storage_config = load_config_json( new_storage_config_text )
+   except Exception, e:
+      log.exception( e )
+      return -errno.EINVAL
+   
+   # reload local drivers, unless there are ones already supplied by the config
    sd_path = libsyndicate.get_sd_path()
    
    if sd_path != None:
@@ -298,14 +313,104 @@ def init( libsyndicate ):
       
       # any SDs to load?
       if not "__init__.py" in sd_names:
-         raise Exception("No __init__.py in storage driver directory '%s'" % sd_path )
+         log.error("No __init__.py in storage driver directory '%s'" % sd_path )
       
-      sys.path.append( sd_path )
+      else:
+         if sd_path not in sys.path:
+            sys.path.append( sd_path )
+         
+         sd_module_names = map( lambda sd_name_py: sd_name_py.split(".")[0], filter( lambda sd_name: sd_name.startswith("sd_") and (sd_name.endswith(".py") or sd_name.endswith(".pyc")), sd_names ) )
+         
+         # only load drivers that were not supplied in the closure
+         sd_modules_to_load = set(sd_module_names) - set(new_storage_config.drivers.keys())
+         
+         local_drivers = load_local_drivers( sd_modules_to_load )
+         
+         storage_config.drivers.update( local_drivers )
       
-      sd_module_names = map( lambda sd_name_py: sd_name_py.split(".")[0], filter( lambda sd_name: sd_name.startswith("sd_") and (sd_name.endswith(".py") or sd_name.endswith(".pyc")), sd_names ) )
+   
+   # set the new config
+   storage_config_lock.acquire()
+   STORAGE_CONFIG = new_storage_config
+   storage_config_lock.release()
+   
+   return 0
+
+
+#-------------------------
+def call_config_read( request, filename, outfile ):
+   '''
+      Call the global storage config's read_replica() closure function.
+   '''
+   
+   global STORAGE_CONFIG
+   global storage_config_lock
+   
+   log = rm_common.get_logger()
+   
+   storage_config_lock.acquire()
+   
+   cls_locals = { "request" : request,
+                  "outfile" : outfile,
+                  "filename" : filename,
+                  "drivers" : STORAGE_CONFIG.drivers,
+                  "replica_read" : STORAGE_CONFIG.closure.replica_read,
+                }
+   
+   cls_globals = { 
+                   "CONFIG" : STORAGE_CONFIG.closure.CONFIG,
+                   "LOG" : log
+                 }
+   
+   rc = eval( "replica_read( drivers, request, filename, outfile )", cls_globals, cls_locals )
+   
+   storage_config_lock.release()
+   
+   return rc
+
+
+#-------------------------
+def call_config_write( request, filename, infile ):
+   '''
+      Call the global storage config's read_replica() closure function.
+   '''
+   
+   global STORAGE_CONFIG
+   global storage_config_lock
+   
+   log = rm_common.get_logger()
+   
+   storage_config_lock.acquire()
+   
+   cls_locals = { "request" : request,
+                  "infile" : infile,
+                  "filename" : filename,
+                  "drivers" : STORAGE_CONFIG.drivers,
+                  "replica_write" : STORAGE_CONFIG.closure.replica_write,
+                }
+   
+   cls_globals = { 
+                   "CONFIG" : STORAGE_CONFIG.closure.CONFIG,
+                   "LOG" : log
+                 }
+   
+   rc = eval( "replica_write( drivers, request, filename, infile )", cls_globals, cls_locals )
+   
+   storage_config_lock.release()
+   
+   return rc
+
+
+#-------------------------
+def init( libsyndicate ):
+   '''
+      Initialize this module.
+   '''
+   log = rm_common.get_logger()
       
-      cache_local_drivers( sd_module_names )
-      
+   # set up our storage
+   view_change_callback()
+   
    # register view change callback
    libsyndicate.set_view_change_callback( view_change_callback )
    
@@ -337,7 +442,7 @@ def replica_read( drivers, request_info, filename, outfile ):
    
    drivers['sd_test'].read_file( filename, outfile, extra_param="Foo" )
    
-   return 0
+   return 200
    
 def replica_write( drivers, request_info, filename, infile ):
    print "replica_write called!"
@@ -354,7 +459,7 @@ def replica_write( drivers, request_info, filename, infile ):
    
    drivers['sd_test'].write_file( filename, infile, extra_param="Foo" )
    
-   return 0
+   return 200
    
 """
 
@@ -368,6 +473,8 @@ def read_file( filename, outfile, **kw ):
    print "  kw = " + str(kw)
    print ""
    
+   outfile.write("This is some fake data from read_file")
+   
    return 0
 
 def write_file( filename, infile, **kw ):
@@ -377,6 +484,10 @@ def write_file( filename, infile, **kw ):
    print "  kw = " + str(kw)
    print ""
    
+   buf = infile.read()
+   
+   print "Got data: '" + str(buf) + "'"
+   
    return 0
 
    
@@ -385,7 +496,7 @@ def write_file( filename, infile, **kw ):
    
    print "json = " + json_str
    
-   storage_config = load_config_json( json_str )
+   STORAGE_CONFIG = load_config_json( json_str )
    
    infile_name = "/tmp/infile.test"
    outfile_name = "/tmp/outfile.test"
@@ -399,22 +510,8 @@ def write_file( filename, infile, **kw ):
    
    test_filename = "/tmp/testfilename"
    
-   cls_locals = { "request" : test_request,
-                  "infile" : infile,
-                  "outfile" : outfile,
-                  "filename" : test_filename,
-                  "drivers" : storage_config.drivers,
-                  "replica_read" : storage_config.closure.replica_read,
-                  "replica_write" : storage_config.closure.replica_write
-                }
-   
-   cls_globals = { 
-                   "CONFIG" : storage_config.closure.CONFIG
-                 }
-   
-   read_rc = eval( "replica_read( drivers, request, filename, outfile )", cls_globals, cls_locals )
-   
-   write_rc = eval( "replica_write( drivers, request, filename, infile )", cls_locals, cls_locals )
+   read_rc = call_config_read( test_request, test_filename, infile )
+   write_rc = call_config_write( test_request, test_filename, outfile )
    
    print "read_rc = %s, write_rc = %s" % (read_rc, write_rc)
    

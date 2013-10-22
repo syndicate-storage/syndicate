@@ -8,9 +8,11 @@ import types
 import inspect
 import collections
 
+import rm_config
+from rm_request import *
 
 #-------------------------
-def file_name_from_req_info( req_info ):
+def filename_from_req_info( req_info ):
    '''
       Generate a filename from a RequestInfo structure.
    '''
@@ -23,9 +25,15 @@ def file_name_from_req_info( req_info ):
 
 
 #-------------------------
-def read_data( storage_config, req_info, outfile ):
+def read_data( req_info, outfile ):
    '''
-      Call the read() method in the replica manager's closure.
+      Call the replica_read() method in the replica manager's closure.
    '''
-   pass
-   
+   return rm_config.call_config_read( req_info, filename_from_req_info( req_info ), outfile )
+
+#-------------------------
+def write_data( req_info, infile ):
+   '''
+      Call the replica_write() method in the replica manager's closure.
+   '''
+   return rm_config.call_config_write( req_info, filename_from_req_info( req_info ), infile )

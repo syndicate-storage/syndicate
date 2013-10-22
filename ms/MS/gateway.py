@@ -283,7 +283,7 @@ class Gateway( storagetypes.Object ):
       if self.config == None:
          cert_pb.closure_text = ""
       else:
-         cert_pb.closure_text = self.config
+         cert_pb.closure_text = str( self.config )
          
       cert_pb.signature = ""
 
@@ -372,12 +372,11 @@ class Gateway( storagetypes.Object ):
 
          return gw.put()
 
-
-      if volume:
+      if volume != None:
          kwargs['volume_id'] = volume.volume_id
       elif kwargs.has_key('volume_id'):
          kwargs['volume_id'] = 0
-         
+      
       kwargs['owner_id'] = user.owner_id
 
       cls.fill_defaults( kwargs )
@@ -564,48 +563,12 @@ class ReplicaGateway( Gateway ):
 
    GATEWAY_TYPE = GATEWAY_TYPE_RG
    
-   validators = dict( Gateway.validators.items() + {
-      "config": lambda cls, value: ReplicaGateway.is_valid_config( value )
-   }.items() )
-   
-   # This is temporary; we should know what is really needed.
    private = storagetypes.Boolean()
 
    default_values = dict( Gateway.default_values.items() + {
       "private": (lambda cls, attrs: False) # Default is public
    }.items() )
    
-   @classmethod
-   def is_valid_config( cls, json_str ):
-      '''
-         Is this config valid for replica gateways?
-      '''
-      try:
-         config_dict = json.loads( json_str )
-      except:
-         log.error("Invalid RG config %s" % json_str)
-         return False
-      
-      # TODO: common code with replica_manager...
-      top_keys = ['closure', 'drivers']
-      
-      driver_keys_all = ['name', 'code']
-      driver_keys_required = ['name']
-      
-      if set(top_keys) != set(config_dict.keys()):
-         return False
-      
-      for driver in config_dict['drivers']:
-         if not set(driver).issuperset( set(driver_keys_required) ):
-            log.error("Invalid RG config %s" % json_str)
-            return False
-         
-         if not set(driver_keys_all).issuperset( set(driver) ):
-            log.error("Invalid RG config %s" % json_str)
-            return False
-      
-      return True
-
 
 GATEWAY_TYPE_TO_CLS = {
    GATEWAY_TYPE_UG: UserGateway,

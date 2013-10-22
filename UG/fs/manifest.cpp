@@ -41,7 +41,7 @@ void block_url_set::init( uint64_t volume_id, uint64_t gateway_id, uint64_t file
    
    this->staging = staging;
    
-   dbprintf( "%" PRIu64 "/%" PRIu64 ": %" PRIu64 ".%" PRId64 "[%" PRIu64 "-%" PRIu64 "] (staging = %d)\n", volume_id, gateway_id, file_id, file_version, start, end, staging );
+   //dbprintf( "%" PRIu64 "/%" PRIu64 ": %" PRIu64 ".%" PRId64 "[%" PRIu64 "-%" PRIu64 "] (staging = %d)\n", volume_id, gateway_id, file_id, file_version, start, end, staging );
 }
 
 
@@ -541,7 +541,7 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
          }
       }
       else {
-         printf("// we don't have any blocks yet.  put the first one\n");
+         //printf("// we don't have any blocks yet.  put the first one\n");
          this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
       }
    }
@@ -757,12 +757,6 @@ void file_manifest::as_protobuf( struct fs_core* core, struct fs_entry* fent, Se
    mmsg->set_size( fent->size );
    mmsg->set_mtime_sec( fent->mtime_sec );
    mmsg->set_mtime_nsec( fent->mtime_nsec );
-
-   //struct timespec ts;
-   //fent->manifest->get_lastmod( &ts );
-
-   //mmsg->set_manifest_mtime_sec( ts.tv_sec );
-   //mmsg->set_manifest_mtime_nsec( ts.tv_nsec );
 
    pthread_rwlock_unlock( &this->manifest_lock );
 }

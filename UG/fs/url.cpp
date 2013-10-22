@@ -138,25 +138,25 @@ char* fs_entry_file_url( struct fs_core* core, uint64_t volume_id, char const* b
    if( local && staging ) {
       // local staging block
       ret = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->staging_root) + 1 + base_len );
-      sprintf(ret, "%s/%s/%" PRIu64 "%s.%" PRId64,
+      sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRId64,
               SYNDICATEFS_LOCAL_PROTO, core->conf->staging_root, volume_id, fs_path, file_version );
    }
    else if( local && !staging ) {
       // local, not-staging block
       ret = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->data_root) + 1 + base_len );
-      sprintf(ret, "%s/%s/%" PRIu64 "%s.%" PRId64,
+      sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRId64,
               SYNDICATEFS_LOCAL_PROTO, core->conf->data_root, volume_id, fs_path, file_version );
    }
    else if( !local && !staging ) {
       // remote data block
       ret = CALLOC_LIST( char, strlen(core->conf->content_url) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
-      sprintf(ret, "%s/%s/%" PRIu64 "%s.%" PRId64,
+      sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRId64,
               base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, file_version );
    }
    else if( !local && staging ) {
       // remote staging block
       ret = CALLOC_LIST( char, strlen(core->conf->content_url) + 1 + strlen(SYNDICATE_STAGING_PREFIX) + 1 + base_len );
-      sprintf(ret, "%s/%s/%" PRIu64 "%s.%" PRId64,
+      sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRId64,
               base_url, SYNDICATE_STAGING_PREFIX, volume_id, fs_path, file_version );
    }
 
@@ -192,7 +192,7 @@ char* fs_entry_public_staging_file_url( struct fs_core* core, char const* fs_pat
 
 char* fs_entry_manifest_url( struct fs_core* core, char const* gateway_base_url, uint64_t volume_id, char const* fs_path, int64_t version, struct timespec* ts ) {
    char* ret = CALLOC_LIST( char, strlen(SYNDICATE_DATA_PREFIX) + 1 + strlen(gateway_base_url) + 1 + strlen(fs_path) + 1 + 82 );
-   sprintf( ret, "%s/%s/%" PRIu64 "%s.%" PRId64 "/manifest.%ld.%ld", gateway_base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, version, ts->tv_sec, ts->tv_nsec );
+   sprintf( ret, "%s%s/%" PRIu64 "%s.%" PRId64 "/manifest.%ld.%ld", gateway_base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, version, ts->tv_sec, ts->tv_nsec );
    return ret;
 }
 

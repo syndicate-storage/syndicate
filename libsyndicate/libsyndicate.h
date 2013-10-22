@@ -323,15 +323,16 @@ struct md_syndicate_conf {
    int debug_lock;                                    // print verbose information on locks
 
    // common
-   char* gateway_name;
+   char* gateway_name;                                // name of this gateway
    int metadata_connect_timeout;                      // number of seconds to wait to connect on the control plane
    int portnum;                                       // Syndicate-side port number
-   int transfer_timeout;                              // how long a transfer is allowed to take
+   int transfer_timeout;                              // how long a transfer is allowed to take (in seconds)
    bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers
    char* gateway_key_path;                            // path to PEM-encoded user-given public/private key for this gateway
    char* cdn_prefix;                                  // CDN prefix
    char* proxy_url;                                   // URL to a proxy to use (instead of a CDN)
    int replica_connect_timeout;                       // number of seconds to wait to connect to an RG
+   
    
    // MS-related fields
    char* metadata_url;                                // URL (or path on disk) where to get the metadata

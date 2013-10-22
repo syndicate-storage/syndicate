@@ -513,6 +513,12 @@ static void* ms_client_view_thread( void* arg ) {
          }
 
          pthread_setcancelstate( PTHREAD_CANCEL_ENABLE, NULL );
+         
+         ms_client_view_wlock( client );
+         
+         client->early_reload = false;
+         
+         ms_client_view_unlock( client );
       }
    }
 
@@ -3284,7 +3290,7 @@ int ms_client_claim( struct ms_client* client, char const* path ) {
 }
 
 // get a copy of the RG URLs
-char** ms_client_RG_urls( struct ms_client* client ) {
+char** ms_client_RG_urls( struct ms_client* client, char const* scheme ) {
    ms_client_view_rlock( client );
 
    char** urls = CALLOC_LIST( char*, client->volume->RG_certs->size() + 1 );
@@ -3293,8 +3299,8 @@ char** ms_client_RG_urls( struct ms_client* client ) {
    for( ms_cert_bundle::iterator itr = client->volume->RG_certs->begin(); itr != client->volume->RG_certs->end(); itr++ ) {
       struct ms_gateway_cert* rg_cert = itr->second;
       
-      urls[i] = CALLOC_LIST( char, strlen("https://") + strlen(rg_cert->hostname) + 1 + 7 + 1 + strlen(SYNDICATE_DATA_PREFIX) + 2 );
-      sprintf( urls[i], "https://%s:%d/%s/", rg_cert->hostname, rg_cert->portnum, SYNDICATE_DATA_PREFIX );
+      urls[i] = CALLOC_LIST( char, strlen(scheme) + strlen(rg_cert->hostname) + 1 + 7 + 1 + strlen(SYNDICATE_DATA_PREFIX) + 2 );
+      sprintf( urls[i], "%s%s:%d/%s/", scheme, rg_cert->hostname, rg_cert->portnum, SYNDICATE_DATA_PREFIX );
       
       i++;
    }

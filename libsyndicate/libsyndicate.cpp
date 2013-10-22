@@ -4005,7 +4005,12 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->num_replica_threads = 1;
    conf->httpd_portnum = 44444;
 
+#ifndef _DEVELOPMENT
    conf->verify_peer = true;
+#else
+   conf->verify_peer = false;
+#endif
+   
    conf->num_http_threads = 1;
    conf->http_authentication_mode = HTTP_AUTHENTICATE_READWRITE;
    conf->replica_overwrite = false;
@@ -4013,7 +4018,7 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->ag_block_size = 0;
    
    conf->debug_read = false;
-   conf->debug_lock = true;
+   conf->debug_lock = false;
 
    conf->metadata_connect_timeout = 10;
    conf->replica_connect_timeout = 10;
@@ -4024,7 +4029,7 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->owner = getuid();
    conf->usermask = 0377;
 
-   conf->view_reload_freq = 3600;  // once an hour
+   conf->view_reload_freq = 3600;  // once an hour at minimum
 
    return 0;
 }

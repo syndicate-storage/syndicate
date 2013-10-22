@@ -121,6 +121,8 @@ struct fs_file_handle {
 
    bool is_AG;                // whether or not this file is hosted by an AG
    uint64_t AG_blocksize;     // blocksize of this AG
+   
+   int64_t transfer_timeout_ms;   // how long the transfer is allowed to take (in milliseconds)
 
    pthread_rwlock_t lock;     // lock to control access to this structure
    

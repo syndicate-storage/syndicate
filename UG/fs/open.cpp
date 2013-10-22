@@ -24,6 +24,7 @@ struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_en
    fh->path = strdup( opened_path );
    fh->parent_name = strdup( parent_name );
    fh->parent_id = parent_id;
+   fh->transfer_timeout_ms = (core->conf->transfer_timeout) * 1000L;
 
    fh->is_AG = ms_client_is_AG( core->ms, ent->coordinator );
    if( fh->is_AG ) {

@@ -41,6 +41,8 @@ struct replica_context {
    char* data;             // for the manifest
    FILE* file;             // for the block
    off_t size;             // number of bytes to send
+   
+   struct timespec deadline;
 
    int error;              // error code
    
@@ -83,6 +85,6 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
 int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh );
 
 int fs_entry_replicate_wait( struct fs_file_handle* fh );
-int fs_entry_replicate_wait( vector<struct replica_context*>* rctxs );
+int fs_entry_replicate_wait( vector<struct replica_context*>* rctxs, struct timespec* timeout );
 
 #endif

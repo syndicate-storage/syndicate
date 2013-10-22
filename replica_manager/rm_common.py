@@ -26,6 +26,48 @@ def get_libsyndicate():
 #-------------------------
 def syndicate_lib_path( path ):
    sys.path.append( path )
+   
+   
+#-------------------------
+def validate_fields( data, required_fields, optional_fields=None ):
+   '''
+      Given a dictionary (data), a dict of required fields (dict: name --> type), and 
+      a dict of optional fields (dict: name ---> type ), verify that all required fields
+      are present in the dict and have the apporpriate types.  If optional fields are given,
+      verify that any optional fields listed are present, and also verify that no other fields 
+      are given.
+      
+      Raise an exception if the data does not conform to the required or optional fields.
+      Return otherwise.
+   '''
+   
+   missing = []
+   invalid = []
+   for req_field in required_fields.keys():
+      if not data.has_key( req_field ):
+         missing.append( req_field )
+      elif type(data[req_field]) != required_fields[req_field]:
+         print "invalid type for %s: got %s, expected %s" % (req_field, type(data[req_field]), required_fields[req_field])
+         invalid.append( req_field )
+   
+   if optional_fields != None:
+      for field in data.keys():
+         if field not in required_fields.keys() and field not in optional_fields.keys():
+            invalid.append( field )
+            
+   if len(missing) != 0 or len(invalid) != 0:
+      missing_txt = ",".join( missing )
+      if len(missing_txt) == 0:
+         missing_txt = "None"
+         
+      invalid_txt = ",".join( invalid )
+      if len(invalid_txt) == 0:
+         invalid_txt = "None"
+         
+      raise Exception("Missing fields: %s; Invalid fields: %s" % (missing_txt, invalid_txt) )
+   
+   return
+
 
 #-------------------------
 def syndicate_init( gateway_name=None,

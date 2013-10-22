@@ -4,6 +4,7 @@
 
 from rm_common import *
 
+import re
 import base64 
 import binascii
 import errno
@@ -12,7 +13,11 @@ import protobufs.ms_pb2 as ms_proto
 
 log = get_logger()
 
+#-------------------------
+RE_BLOCK_PATH = re.compile( "^[/]+SYNDICATE-DATA[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)\.([0123456789]+)[/]+([0123456789]+)\.([0123456789]+)[/]*$" )
+RE_MANIFEST_PATH = re.compile( "^[/]+SYNDICATE-DATA[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)\.([0123456789]+)[/]+manifest\.([0123456789]+)\.([0123456789]+)[/]*$" )
 
+#-------------------------
 # vetted block and manifest requests
 RequestInfo = collections.namedtuple( "RequestInfo", ["type",
                                                       "volume_id",
@@ -38,6 +43,8 @@ def verify_protobuf( gateway_id, volume_id, pb ):
       which stores its base64-encoded signature.
    '''
    
+   libsyndicate = get_libsyndicate()
+   
    # get the bits without the signature
    sigb64 = pb.signature
    pb.signature = ""
@@ -57,7 +64,7 @@ def verify_protobuf( gateway_id, volume_id, pb ):
    
 
 #-------------------------
-def parse_request_info( req_info_str ):
+def parse_request_info_from_pb( req_info_str ):
 
     '''
         Parse and verify a serialized ms_client_request_info protobuf.
@@ -78,17 +85,17 @@ def parse_request_info( req_info_str ):
     
     valid = verify_protobuf( req_info.writer, req_info.volume, req_info )
     
-    # construct a ReplicaInfo
+    # construct a RequestInfo
     req_type = 0
     if req_info.type == ms_proto.ms_gateway_request_info.MANIFEST:
-       req_type = ReplicaInfo.MANIFEST
+       req_type = RequestInfo.MANIFEST
     elif req_info.type == ms_proto.ms_gateway_request_info.BLOCK:
-       req_type = ReplicaInfo.BLOCK
+       req_type = RequestInfo.BLOCK
     else:
        # invalid
        return None
     
-    replica_info = ReplicaInfo( type=req_type,
+    replica_info = RequestInfo( type=req_type,
                                 volume_id=req_info.volume,
                                 gateway_id=req_info.writer,
                                 user_id=req_info.owner,
@@ -103,4 +110,82 @@ def parse_request_info( req_info_str ):
                              )
  
     return replica_info
+
+
+#-------------------------
+def parse_request_info_from_url_path( url_path ):
+   '''
+      Convert a URL path (i.e. from a GET request) into a RequestInfo structure.
+   '''
+   
+   global RE_BLOCK_PATH
+   global RE_MANIFEST_PATH
+   
+   libsyndicate = get_libsyndicate()
+   log = get_logger()
+   
+   # block, manifest, or neither?
+   manifest_match = RE_MANIFEST_PATH.match( url_path )
+   block_match = None
+   if manifest_match == None:
+      block_match = RE_BLOCK_PATH.match( url_path )
+   
+   if block_match == None and manifest_match == None:
+      # neither
+      log.info("derp match")
+      return None
+   
+   elif block_match != None:
+      # block
+      try:
+         volume_id = int( block_match.groups()[0] )
+         file_id = int( block_match.groups()[1], 16 )
+         version = int( block_match.groups()[2] )
+         block_id = int( block_match.groups()[3] )
+         block_version = int( block_match.groups()[4] )
+      except:
+         log.info("derp block")
+         return None
+      
+      replica_info = RequestInfo( type=RequestInfo.BLOCK,
+                                  volume_id=volume_id,
+                                  gateway_id=None,
+                                  user_id=None,
+                                  file_id=file_id,
+                                  version=version,
+                                  block_id=block_id,
+                                  block_version=block_version,
+                                  mtime_sec=None,
+                                  mtime_nsec=None,
+                                  data_hash=None,
+                                  size=None )
+      
+      return replica_info
+   
+   else:
+      # manifest
+      try:
+         volume_id = int( manifest_match.groups()[0] )
+         file_id = int( manifest_match.groups()[1], 16 )
+         version = int( manifest_match.groups()[2] )
+         mtime_sec = int( manifest_match.groups()[3] )
+         mtime_nsec = int( manifest_match.groups()[4] )
+      except:
+         log.info("derp manifest")
+         return None
+      
+      replica_info = RequestInfo( type=RequestInfo.MANIFEST,
+                                  volume_id=volume_id,
+                                  gateway_id=None,
+                                  user_id=None,
+                                  file_id=file_id,
+                                  version=version,
+                                  block_id=None,
+                                  block_version=None,
+                                  mtime_sec=mtime_sec,
+                                  mtime_nsec=mtime_nsec,
+                                  data_hash=None,
+                                  size=None )
+      
+      return replica_info
    

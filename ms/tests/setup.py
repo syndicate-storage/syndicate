@@ -740,7 +740,79 @@ def get_user( username ):
       return user
    except:
       return None
-      
+
+
+closure_str = """
+#!/usr/bin/env python 
+
+CONFIG = {'foo': 'bar'}
+
+def replica_read( drivers, request_info, filename, outfile ):
+   print "replica_read called!"
+   
+   global CONFIG 
+   
+   print "CONFIG = " + str(CONFIG)
+   print "drivers = " + str(drivers)
+   print "request_info = " + str(request_info)
+   print "filename = " + str(filename)
+   print "outfile = " + str(outfile)
+   print ""
+   
+   drivers['sd_test'].read_file( filename, outfile, extra_param="Foo" )
+   
+   return 200
+   
+def replica_write( drivers, request_info, filename, infile ):
+   print "replica_write called!"
+   
+   global CONFIG 
+   
+   print "CONFIG = " + str(CONFIG)
+   
+   print "drivers = " + str(drivers)
+   print "request_info = " + str(request_info)
+   print "filename = " + str(filename)
+   print "infile = " + str(infile)
+   print ""
+   
+   drivers['sd_test'].write_file( filename, infile, extra_param="Foo" )
+   
+   return 200
+   
+"""
+
+driver_str = """
+#!/usr/bin/env python 
+
+def read_file( filename, outfile, **kw ):
+   print "  read_file called!"
+   print "  filename = " + str(filename)
+   print "  outfile = " + str(outfile)
+   print "  kw = " + str(kw)
+   print ""
+   
+   outfile.write("This is some fake data from read_file")
+   
+   return 0
+
+def write_file( filename, infile, **kw ):
+   print "  write_file called!"
+   print "  filename = " + str(filename)
+   print "  infile = " + str(infile)
+   print "  kw = " + str(kw)
+   print ""
+   
+   buf = infile.read()
+   
+   print "Got data: '" + str(buf) + "'"
+   
+   return 0
+
+   
+"""
+
+json_str = '{ "closure" : "%s", "drivers" : [ { "name" : "sd_test", "code" : "%s" } ] }' % (base64.b64encode( closure_str ), base64.b64encode( driver_str ) )
 
 # debugging entry point.
 def test( ignore1, args ):
@@ -837,6 +909,11 @@ def test( ignore1, args ):
       if args.has_key('ug_host'):
          ug_host = args['ug_host']
          logging.info("ug_host = %s" % ug_host )
+         
+      if args.has_key('localhost'):
+         nodes.remove( "localhost" )
+         nodes.append( args['localhost'] )
+         logging.info("localhost = %s" % args['localhost'])
          
       if args.has_key('ug_port'):
          try:
@@ -942,9 +1019,9 @@ def test( ignore1, args ):
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          for j in xrange(0, len(archive_volumes)):
-            archive_volume = archive_volume[j]
+            archive_volume = archive_volumes[j]
             try:
-               gw_key = storage.create_acquisition_gateway(user, ms_username=G_name("AG", node) + "-" + str(archive_volume.volume_id), ms_password="sniff", host=node, port=32778, volume=archive_volume )
+               gw_key = storage.create_acquisition_gateway(user, archive_volume, ms_username=G_name("AG", node) + "-" + str(archive_volume.volume_id), ms_password="sniff", host=node, port=32778 )
                logging.info("Created AG %s" % G_name("AG", node) + "-" + str(archive_volume.volume_id))
                
             except:
@@ -959,14 +1036,13 @@ def test( ignore1, args ):
       
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
-         for j in xrange(0, len(volume_ids)):
+         for j in xrange(0, len(volumes)):
             volume = volumes[j]
             
             try:
-               gw_key = storage.create_replica_gateway( user, ms_username=G_name("RG", node) + "-" + str(volume.volume_id), ms_password="sniff", volume=volume, host=node, port=32779, private=False, config="""{ "closure" : "CiMhL3Vzci9iaW4vZW52IHB5dGhvbiAKCkNPTkZJRyA9IHsnZm9vJzogJ2Jhcid9CgpkZWYgcmVwbGljYV9yZWFkKCBkcml2ZXJzLCByZXF1ZXN0X2luZm8sIGZpbGVuYW1lLCBvdXRmaWxlICk6CiAgIHByaW50ICJyZXBsaWNhX3JlYWQgY2FsbGVkISIKICAgCiAgIGdsb2JhbCBDT05GSUcgCiAgIAogICBwcmludCAiQ09ORklHID0gIiArIHN0cihDT05GSUcpCiAgIHByaW50ICJkcml2ZXJzID0gIiArIHN0cihkcml2ZXJzKQogICBwcmludCAicmVxdWVzdF9pbmZvID0gIiArIHN0cihyZXF1ZXN0X2luZm8pCiAgIHByaW50ICJmaWxlbmFtZSA9ICIgKyBzdHIoZmlsZW5hbWUpCiAgIHByaW50ICJvdXRmaWxlID0gIiArIHN0cihvdXRmaWxlKQogICBwcmludCAiIgogICAKICAgZHJpdmVyc1snc2RfdGVzdCddLnJlYWRfZmlsZSggZmlsZW5hbWUsIG91dGZpbGUsIGV4dHJhX3BhcmFtPSJGb28iICkKICAgCiAgIHJldHVybiAwCiAgIApkZWYgcmVwbGljYV93cml0ZSggZHJpdmVycywgcmVxdWVzdF9pbmZvLCBmaWxlbmFtZSwgaW5maWxlICk6CiAgIHByaW50ICJyZXBsaWNhX3dyaXRlIGNhbGxlZCEiCiAgIAogICBnbG9iYWwgQ09ORklHIAogICAKICAgcHJpbnQgIkNPTkZJRyA9ICIgKyBzdHIoQ09ORklHKQogICAKICAgcHJpbnQgImRyaXZlcnMgPSAiICsgc3RyKGRyaXZlcnMpCiAgIHByaW50ICJyZXF1ZXN0X2luZm8gPSAiICsgc3RyKHJlcXVlc3RfaW5mbykKICAgcHJpbnQgImZpbGVuYW1lID0gIiArIHN0cihmaWxlbmFtZSkKICAgcHJpbnQgImluZmlsZSA9ICIgKyBzdHIoaW5maWxlKQogICBwcmludCAiIgogICAKICAgZHJpdmVyc1snc2RfdGVzdCddLndyaXRlX2ZpbGUoIGZpbGVuYW1lLCBpbmZpbGUsIGV4dHJhX3BhcmFtPSJGb28iICkKICAgCiAgIHJldHVybiAwCiAgIAo=", "drivers" : [ { "name" : "sd_test", "code" : "CiMhL3Vzci9iaW4vZW52IHB5dGhvbiAKCmRlZiByZWFkX2ZpbGUoIGZpbGVuYW1lLCBvdXRmaWxlLCAqKmt3ICk6CiAgIHByaW50ICIgIHJlYWRfZmlsZSBjYWxsZWQhIgogICBwcmludCAiICBmaWxlbmFtZSA9ICIgKyBzdHIoZmlsZW5hbWUpCiAgIHByaW50ICIgIG91dGZpbGUgPSAiICsgc3RyKG91dGZpbGUpCiAgIHByaW50ICIgIGt3ID0gIiArIHN0cihrdykKICAgcHJpbnQgIiIKICAgCiAgIHJldHVybiAwCgpkZWYgd3JpdGVfZmlsZSggZmlsZW5hbWUsIGluZmlsZSwgKiprdyApOgogICBwcmludCAiICB3cml0ZV9maWxlIGNhbGxlZCEiCiAgIHByaW50ICIgIGZpbGVuYW1lID0gIiArIHN0cihmaWxlbmFtZSkKICAgcHJpbnQgIiAgaW5maWxlID0gIiArIHN0cihpbmZpbGUpCiAgIHByaW50ICIgIGt3ID0gIiArIHN0cihrdykKICAgcHJpbnQgIiIKICAgCiAgIHJldHVybiAwCgogICAK" } ] }""" )
-               
+               gw_key = storage.create_replica_gateway( user, volume, ms_username=G_name("RG", node) + "-" + str(volume.volume_id), ms_password="sniff", host=node, port=32779, private=False, config=json_str )
                   
-               logging.info("Created RG %s" % G_name("RG", node) + "-" + str(volume.volume_id))
+               logging.info("Created RG %s" % G_name("RG", node) + "-" + str(volume.volume_id) )
             except:
                logging.info("traceback: %s" % traceback.format_exc())
                # already exists

@@ -30,6 +30,9 @@ for key, value in ARGLIST:
       install_prefix = value
    if key == "CPPFLAGS":
       CPPFLAGS = value
+   if key == "devel":
+      if value == "true":
+         CPPFLAGS += " -D_DEVELOPMENT"
 
 # install directories
 bin_install_dir = os.path.join( install_prefix, "bin" )

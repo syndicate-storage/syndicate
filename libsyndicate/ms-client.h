@@ -255,7 +255,7 @@ int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_
 
 int ms_client_claim( struct ms_client* client, char const* path );
 
-char** ms_client_RG_urls( struct ms_client* client );
+char** ms_client_RG_urls( struct ms_client* client, char const* scheme );
 uint64_t ms_client_volume_version( struct ms_client* client );
 uint64_t ms_client_cert_version( struct ms_client* client );
 uint64_t ms_client_get_volume_id( struct ms_client* client );
