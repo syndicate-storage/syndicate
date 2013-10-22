@@ -275,9 +275,13 @@ ssize_t fs_entry_commit_block_data( struct fs_core* core, struct fs_entry* fent,
    
    char* block_path = GET_PATH( local_block_url );
    
+   bool created = false;
+   
    int fd = open( block_path, O_WRONLY | O_CREAT | O_EXCL, 0600 );
    if( fd < 0 && errno == EEXIST )
       fd = open( block_path, O_WRONLY );
+   else
+      created = true;
    
    if( fd < 0 ) {
       // this block doesn't exist, or some other error
@@ -287,11 +291,24 @@ ssize_t fs_entry_commit_block_data( struct fs_core* core, struct fs_entry* fent,
       return rc;
    }
    
+   if( created ) {
+      // make this block the block size
+      rc = ftruncate( fd, core->blocking_factor );
+      if( rc != 0 ) {
+         rc = -errno;
+         errorf("ftruncate(%s) rc = %d\n", block_path, rc );
+         unlink( block_path );
+         free( local_block_url );
+         close( fd );
+         return rc;
+      }
+   }
    off_t orc = lseek( fd, block_offset, SEEK_SET );
    if( orc < 0 ) {
       rc = -errno;
-      errorf("lseek(%d) rc = %d\n", fd, rc );
+      errorf("lseek(%s) rc = %d\n", block_path, rc );
       free( local_block_url );
+      close( fd );
       return rc;
    }
 

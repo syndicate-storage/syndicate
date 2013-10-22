@@ -360,8 +360,8 @@ static int replica_remove_upload_context( struct syndicate_replication* synrp, r
    if( rctx->refcount <= 0 ) {
       
       // processed!
-      synrp->uploads->erase( itr );
       curl_multi_remove_handle( synrp->running, itr->first );
+      synrp->uploads->erase( itr );
       
       if( rctx->refcount <= 0 ) {
          dbprintf("Finished %p\n", rctx );
@@ -594,8 +594,8 @@ int replica_begin( struct syndicate_replication* rp, struct replica_context* rct
       curl_easy_setopt( curl, CURLOPT_POST, 1L );
       curl_easy_setopt(curl, CURLOPT_HTTPPOST, rctx->form_data );
       
-      curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-      curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, my_trace);
+      //curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+      //curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, my_trace);
       
       (*rp->pending_uploads)[ rctx->curl ] = rctx;
       

@@ -6,6 +6,7 @@
 
 #include "write.h"
 #include "replication.h"
+#include "read.h"
 
 // expand a file (e.g. if we write to it beyond the end of the file).
 // record the blocks added.
@@ -119,6 +120,25 @@ ssize_t fs_entry_fill_block( struct fs_core* core, struct fs_entry* fent, char* 
 }
 
 
+static bool fs_entry_is_write_unaligned( off_t byte_offset, uint64_t block_size ) {
+   return (byte_offset % block_size) != 0;
+}
+
+
+static int fs_entry_hash_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len, struct fs_entry_block_info* binfo ) {
+   ssize_t sz = fs_entry_read_local_block( core, fent, block_id, block_bits, block_len );
+   if( sz >= 0 ) {
+      binfo->hash = sha256_hash_data( block_bits, block_len );
+      binfo->hash_len = sha256_len();
+      sz = 0;
+   }
+   else {
+      errorf("fs_entry_read_local_block(%" PRIX64 ") rc = %d\n", block_id, (int)sz );
+   }
+   
+   return (int)sz;
+}
+
 // write data to a file, either from a buffer or a file descriptor
 ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, char const* buf, int source_fd, size_t count, off_t offset ) {
    fs_file_handle_rlock( fh );
@@ -189,6 +209,15 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    fs_entry_unlock( fh->fent );
    
    char* block = CALLOC_LIST( char, core->blocking_factor );
+   
+   uint64_t start_id = fs_entry_block_id( core, offset );
+   uint64_t end_id = fs_entry_block_id( core, offset + count );
+   
+   // do we need to get the hashes of the first and last blocks?
+   bool need_start_id_hash = fs_entry_is_write_unaligned( offset, core->blocking_factor );
+   bool need_end_id_hash = start_id != end_id && fs_entry_is_write_unaligned( offset + count, core->blocking_factor );
+   
+   dbprintf("need_start_id_hash = %d, need_end_id_hash = %d\n", need_start_id_hash, need_end_id_hash );
 
    while( (size_t)num_written < count ) {
       // which block are we about to write?
@@ -224,14 +253,17 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       
       fs_entry_unlock( fh->fent );
       
-      
       // record that we've written this block
       struct fs_entry_block_info binfo;
       memset( &binfo, 0, sizeof(binfo) );
 
       binfo.version = new_version;
-      binfo.hash = sha256_hash_data( block, block_write_len );
-      binfo.hash_len = sha256_len();
+      
+      // only store the hash if it covers the whole block
+      if( (block_id == start_id && !need_start_id_hash) || (block_id == end_id && !need_end_id_hash) || (block_id != start_id && block_id != end_id) ) {
+         binfo.hash = sha256_hash_data( block, core->blocking_factor );
+         binfo.hash_len = sha256_len();
+      }
       
       modified_blocks[ block_id ] = binfo;
 
@@ -240,10 +272,27 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       memset( block, 0, core->blocking_factor );
    }
    
+   // hash the first block?
+   int hash_rc = 0;
+   if( need_start_id_hash ) {
+      memset( block, 0, core->blocking_factor );
+      hash_rc = fs_entry_hash_block( core, fh->fent, start_id, block, core->blocking_factor, &modified_blocks[ start_id ] );
+   }
+   
+   // hash the last block?
+   if( hash_rc == 0 && need_end_id_hash ) {
+      memset( block, 0, core->blocking_factor );
+      hash_rc = fs_entry_hash_block( core, fh->fent, end_id, block, core->blocking_factor, &modified_blocks[ end_id ] );
+   }
+   
    free( block );
 
-   if( rc != 0 )
+   if( hash_rc != 0 )
+      ret = hash_rc;
+   
+   else if( rc != 0 )
       ret = rc;
+   
    else
       ret = count;
 
