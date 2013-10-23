@@ -359,7 +359,7 @@ char* ms_client_file_url( struct ms_client* client, uint64_t volume_id ) {
 }
 
 // GET for a file
-char* ms_client_file_url( struct ms_client* client, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t tv_sec, int32_t tv_nsec ) {
+char* ms_client_file_url( struct ms_client* client, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce ) {
 
    char volume_id_str[50];
    sprintf( volume_id_str, "%" PRIu64, volume_id );
@@ -370,13 +370,13 @@ char* ms_client_file_url( struct ms_client* client, uint64_t volume_id, uint64_t
    char version_str[50];
    sprintf( version_str, "%" PRId64, version );
 
-   char timespec_str[60];
-   sprintf( timespec_str, "%" PRId64 "/%d", tv_sec, tv_nsec );
+   char write_nonce_str[60];
+   sprintf( write_nonce_str, "%" PRId64, write_nonce );
 
-   char* volume_file_path = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/FILE/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 + strlen(version_str) + 1 + strlen(timespec_str) + 1 );
+   char* volume_file_path = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/FILE/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 + strlen(version_str) + 1 + strlen(write_nonce_str) + 1 );
 
    ms_client_rlock( client );
-   sprintf( volume_file_path, "%s/FILE/%s/%s/%s/%s", client->url, volume_id_str, file_id_str, version_str, timespec_str );
+   sprintf( volume_file_path, "%s/FILE/%s/%s/%s/%s", client->url, volume_id_str, file_id_str, version_str, write_nonce_str );
    ms_client_unlock( client );
 
    return volume_file_path;
@@ -883,6 +883,7 @@ int ms_client_begin_downloading_view( struct ms_client* client, char const* url,
 
    client->downloading_view = true;
 
+   curl_easy_setopt( client->ms_view, CURLOPT_FOLLOWLOCATION, 1L );
    curl_easy_setopt( client->ms_view, CURLOPT_URL, url );
    curl_easy_setopt( client->ms_view, CURLOPT_HTTPHEADER, headers );
 
@@ -2972,8 +2973,8 @@ void ms_client_free_response( ms_response_t* ms_response ) {
 
 
 // initialize a download context
-int ms_client_init_download( struct ms_client* client, struct ms_download_context* download, uint64_t volume_id, uint64_t file_id, int64_t file_version, int64_t tv_sec, int32_t tv_nsec ) {
-   download->url = ms_client_file_url( client, volume_id, file_id, file_version, tv_sec, tv_nsec );
+int ms_client_init_download( struct ms_client* client, struct ms_download_context* download, uint64_t volume_id, uint64_t file_id, int64_t file_version, int64_t write_nonce ) {
+   download->url = ms_client_file_url( client, volume_id, file_id, file_version, write_nonce );
    download->curl = curl_easy_init();
    download->rb = new response_buffer_t();
 
@@ -3008,13 +3009,12 @@ void ms_client_free_download( struct ms_download_context* download ) {
 
 
 // build a path ent
-int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, char const* name, void* cls ) {
+int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, char const* name, void* cls ) {
    // build up the ms_path as we traverse our cached path
    path_ent->volume_id = volume_id;
    path_ent->file_id = file_id;
    path_ent->version = version;
-   path_ent->mtime.tv_sec = mtime_sec;
-   path_ent->mtime.tv_nsec = mtime_nsec;
+   path_ent->write_nonce = write_nonce;
    path_ent->name = strdup( name );
    path_ent->cls = cls;
    return 0;
@@ -3209,7 +3209,7 @@ int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_
    
    for( unsigned int i = 0; i < num_downloads; i++ ) {
       struct ms_path_ent* path_ent = &path->at(i);
-      ms_client_init_download( client, &path_downloads[i], path_ent->volume_id, path_ent->file_id, path_ent->version, path_ent->mtime.tv_sec, path_ent->mtime.tv_nsec );
+      ms_client_init_download( client, &path_downloads[i], path_ent->volume_id, path_ent->file_id, path_ent->version, path_ent->write_nonce );
    }
 
    struct timespec ts, ts2;

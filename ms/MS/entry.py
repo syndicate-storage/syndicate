@@ -742,8 +742,7 @@ class MSEntry( storagetypes.Object ):
          futs = [ent.put_shard_async()]
       
       # invalidate cached items
-      storagetypes.memcache.set( cache_ent_key, ent )
-
+      storagetypes.memcache.delete( cache_ent_key )
       storagetypes.wait_futures( futs )
 
       return 0

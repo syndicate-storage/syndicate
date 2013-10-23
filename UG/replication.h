@@ -34,7 +34,7 @@ using namespace std;
 
 // chunk of data to upload
 struct replica_context {
-   CURL* curl;
+   vector<CURL*>* curls;
    struct curl_httppost* form_data;    // what we're uploading
 
    int type;               // block or manifest?
@@ -49,8 +49,6 @@ struct replica_context {
    sem_t processing_lock;
    
    bool sync;              // synchronous or asynchronous upload
-   
-   int refcount;                // reference count
    
    uint64_t file_id;
 };
@@ -85,6 +83,6 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
 int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh );
 
 int fs_entry_replicate_wait( struct fs_file_handle* fh );
-int fs_entry_replicate_wait( vector<struct replica_context*>* rctxs, struct timespec* timeout );
+int fs_entry_replicate_wait_and_free( vector<struct replica_context*>* rctxs, struct timespec* timeout );
 
 #endif

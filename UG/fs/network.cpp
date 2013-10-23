@@ -92,7 +92,8 @@ int fs_entry_prepare_write_message( Serialization::WriteMsg* writeMsg, struct fs
    file_md->set_size( fent->size );
    file_md->set_mtime_sec( fent->mtime_sec );
    file_md->set_mtime_nsec( fent->mtime_nsec );
-   file_md->set_gateway_id( fent->coordinator );
+   file_md->set_write_nonce( fent->write_nonce );
+   file_md->set_coordinator_id( fent->coordinator );
    
    block_list->set_start_id( start_id );
    block_list->set_end_id( end_id );

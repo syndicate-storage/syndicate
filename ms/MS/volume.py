@@ -202,7 +202,7 @@ class Volume( storagetypes.Object ):
    
    def protobuf_gateway_cert_manifest( self, manifest, gateway_classes, sign=True ):
       manifest.volume_id = self.volume_id
-      manifest.gateway_id = 0
+      manifest.coordinator_id = 0
       manifest.file_id = 0
       manifest.file_version = self.cert_version
       manifest.mtime_sec = 0

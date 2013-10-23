@@ -213,11 +213,8 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    uint64_t start_id = fs_entry_block_id( core, offset );
    uint64_t end_id = fs_entry_block_id( core, offset + count );
    
-   // do we need to get the hashes of the first and last blocks?
-   bool need_start_id_hash = fs_entry_is_write_unaligned( offset, core->blocking_factor );
-   bool need_end_id_hash = start_id != end_id && fs_entry_is_write_unaligned( offset + count, core->blocking_factor );
-   
-   dbprintf("need_start_id_hash = %d, need_end_id_hash = %d\n", need_start_id_hash, need_end_id_hash );
+   // do we need to get the hashes of the last blocks from the entire block?
+   bool need_end_id_hash = (start_id != end_id && fs_entry_is_write_unaligned( offset + count, core->blocking_factor ));
 
    while( (size_t)num_written < count ) {
       // which block are we about to write?
@@ -225,12 +222,33 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       
       // what is the write offset into the block?
       off_t block_write_offset = (offset + num_written) % core->blocking_factor;
+      off_t block_put_offset = block_write_offset;
+      off_t block_fill_offset = 0;
       
       // how much data are we going to write into this block?
       size_t block_write_len = MIN( core->blocking_factor - block_write_offset, count - num_written );
+      size_t block_put_len = block_write_len;
+      
+      if( block_write_offset != 0 ) {
+         // need to fill this block with the contents of the current block first, since we're writing unaligned
+         
+         ssize_t read_rc = fs_entry_do_read_block( core, fh->path, fh->fent, block_id, block, core->blocking_factor );
+         if( read_rc < 0 ) {
+            errorf("fs_entry_do_read_block( %s ) rc = %d\n", fh->path, (int)read_rc );
+            rc = (int)read_rc;
+            break;
+         }
+         
+         // fill the rest of the block at the unaligned offset
+         block_fill_offset = block_write_offset;
+         
+         // write aligned--put the whole block
+         block_put_offset = 0;
+         block_put_len = core->blocking_factor;
+      }
       
       // get the data...
-      ssize_t read_len = fs_entry_fill_block( core, fh->fent, block, buf + num_written, source_fd, block_write_len );
+      ssize_t read_len = fs_entry_fill_block( core, fh->fent, block + block_fill_offset, buf + num_written, source_fd, block_write_len );
       if( (unsigned)read_len != block_write_len ) {
          errorf("fs_entry_fill_block(%s/%" PRId64 ", offset=%" PRId64 ", len=%" PRId64 ") rc = %zd\n", fh->path, block_id, block_write_offset, block_write_len, read_len );
          rc = read_len;
@@ -240,10 +258,10 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       fs_entry_wlock( fh->fent );
       
       // write the data...
-      ssize_t write_size = fs_entry_put_block_data( core, fh->fent, block_id, block, block_write_offset, block_write_len, !local );
+      ssize_t write_size = fs_entry_put_block_data( core, fh->fent, block_id, block, block_put_offset, block_put_len, !local );
       
-      if( (unsigned)write_size != block_write_len ) {
-         errorf("fs_entry_put_block_data(%s/%" PRId64 ", offset=%" PRId64 ", len=%" PRId64 ") rc = %zd\n", fh->path, block_id, block_write_offset, block_write_len, write_size );
+      if( (unsigned)write_size != block_put_len ) {
+         errorf("fs_entry_put_block_data(%s/%" PRId64 ", offset=%" PRId64 ", len=%" PRId64 ") rc = %zd\n", fh->path, block_id, block_put_offset, block_put_len, write_size );
          rc = write_size;
          fs_entry_unlock( fh->fent );
          break;
@@ -260,29 +278,30 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       binfo.version = new_version;
       
       // only store the hash if it covers the whole block
-      if( (block_id == start_id && !need_start_id_hash) || (block_id == end_id && !need_end_id_hash) || (block_id != start_id && block_id != end_id) ) {
+      if( (block_id == end_id && !need_end_id_hash) || (block_id != start_id && block_id != end_id) ) {
          binfo.hash = sha256_hash_data( block, core->blocking_factor );
          binfo.hash_len = sha256_len();
       }
       
       modified_blocks[ block_id ] = binfo;
 
-      num_written += write_size;
+      num_written += block_put_len;     // not write_size, since physically we may have written a whole block, while logically we've written less
       
       memset( block, 0, core->blocking_factor );
    }
    
-   // hash the first block?
    int hash_rc = 0;
-   if( need_start_id_hash ) {
-      memset( block, 0, core->blocking_factor );
-      hash_rc = fs_entry_hash_block( core, fh->fent, start_id, block, core->blocking_factor, &modified_blocks[ start_id ] );
-   }
    
    // hash the last block?
-   if( hash_rc == 0 && need_end_id_hash ) {
+   if( rc == 0 && hash_rc == 0 && need_end_id_hash ) {
       memset( block, 0, core->blocking_factor );
-      hash_rc = fs_entry_hash_block( core, fh->fent, end_id, block, core->blocking_factor, &modified_blocks[ end_id ] );
+      struct fs_entry_block_info* binfo = &modified_blocks[ end_id ];
+      
+      if( binfo->hash != NULL ) {
+         free( binfo->hash);
+      }
+      
+      hash_rc = fs_entry_hash_block( core, fh->fent, end_id, block, core->blocking_factor, binfo );
    }
    
    free( block );
@@ -465,7 +484,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, int sou
 
 
 // Handle a remote write.  Update the affected blocks in the manifest, and republish.
-int fs_entry_remote_write( struct fs_core* core, char const* fs_path, Serialization::WriteMsg* write_msg ) {
+int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t file_id, uint64_t coordinator_id, Serialization::WriteMsg* write_msg ) {
    int err = 0;
    uint64_t parent_id = 0;
    char* parent_name = NULL;
@@ -474,9 +493,23 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, Serializat
       return err;
    }
    
+   // validate
+   if( fent->file_id != file_id ) {
+      errorf("Remote write to file %s ID %" PRIX64 ", expected %" PRIX64 "\n", fs_path, file_id, fent->file_id );
+      fs_entry_unlock( fent );
+      return -ESTALE;
+   }
+   
+   if( fent->coordinator != coordinator_id ) {
+      errorf("Remote write to file %s coordinator %" PRIu64 ", expected %" PRIu64 "\n", fs_path, coordinator_id, fent->coordinator );
+      fs_entry_unlock( fent );
+      return -ESTALE;
+   }
+   
    uint64_t gateway_id = write_msg->gateway_id();
 
    struct timespec ts, ts2;
+   struct timespec mts;
 
    BEGIN_TIMING_DATA( ts );
 
@@ -490,10 +523,10 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, Serializat
 
    fent->size = write_msg->metadata().size();
 
-   clock_gettime( CLOCK_REALTIME, &ts );
+   clock_gettime( CLOCK_REALTIME, &mts );
 
-   fent->mtime_sec = ts.tv_sec;
-   fent->mtime_nsec = ts.tv_nsec;
+   fent->mtime_sec = mts.tv_sec;
+   fent->mtime_nsec = mts.tv_nsec;
 
    // propagate the update to the MS
    struct md_entry data;

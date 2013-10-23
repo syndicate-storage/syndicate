@@ -837,8 +837,11 @@ def test( ignore1, args ):
 
    user = None
    volume = None
+   localhost_name = None
+   num_local = 0
 
    logging.info("args = %s" % args)
+   
    
    if args != None:
       if args.has_key('start') and args.has_key('end'):
@@ -909,11 +912,15 @@ def test( ignore1, args ):
       if args.has_key('ug_host'):
          ug_host = args['ug_host']
          logging.info("ug_host = %s" % ug_host )
-         
+      
       if args.has_key('localhost'):
-         nodes.remove( "localhost" )
          nodes.append( args['localhost'] )
+         localhost_name = args['localhost']
          logging.info("localhost = %s" % args['localhost'])
+         
+      if args.has_key('num_local'):
+         num_local = int( args['num_local'] )
+         
          
       if args.has_key('ug_port'):
          try:
@@ -923,6 +930,16 @@ def test( ignore1, args ):
 
          logging.info("ug_port = %s" % ug_port)
 
+   if num_local != 0:
+      if localhost_name == None:
+         localhost_name = nodes[-1]
+      
+      for i in xrange(0,num_local):
+         nodes.append( localhost_name )
+      
+      end_idx += num_local
+      
+      
    if reset_volume:
 
       volume = None
@@ -1021,8 +1038,10 @@ def test( ignore1, args ):
          for j in xrange(0, len(archive_volumes)):
             archive_volume = archive_volumes[j]
             try:
-               gw_key = storage.create_acquisition_gateway(user, archive_volume, ms_username=G_name("AG", node) + "-" + str(archive_volume.volume_id), ms_password="sniff", host=node, port=32778 )
-               logging.info("Created AG %s" % G_name("AG", node) + "-" + str(archive_volume.volume_id))
+               name = G_name("AG", node) + "-" + str(archive_volume.volume_id) + "-" + str(i)
+               port = 12780 + i
+               gw_key = storage.create_acquisition_gateway(user, archive_volume, ms_username=name, ms_password="sniff", host=node, port=port )
+               logging.info("Created AG %s on port %d" % (name, port))
                
             except:
                logging.info("traceback: %s" % traceback.format_exc())
@@ -1040,9 +1059,11 @@ def test( ignore1, args ):
             volume = volumes[j]
             
             try:
-               gw_key = storage.create_replica_gateway( user, volume, ms_username=G_name("RG", node) + "-" + str(volume.volume_id), ms_password="sniff", host=node, port=32779, private=False, config=json_str )
+               name = G_name("RG", node) + "-" + str(volume.volume_id) + "-" + str(i)
+               port = 22780 + i
+               gw_key = storage.create_replica_gateway( user, volume, ms_username=name, ms_password="sniff", host=node, port=port, private=False, config=json_str )
                   
-               logging.info("Created RG %s" % G_name("RG", node) + "-" + str(volume.volume_id) )
+               logging.info("Created RG %s on port %d" % (name, port) )
             except:
                logging.info("traceback: %s" % traceback.format_exc())
                # already exists
@@ -1060,9 +1081,11 @@ def test( ignore1, args ):
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          try:
-            gw_key = storage.create_user_gateway( user, volume, ms_username=G_name("UG", node), ms_password="sniff", host=node, port=32780, read_write=True )
+            name = G_name("UG", node) + "-" + str(volume.volume_id) + "-" + str(i)
+            port = 32780 + i
+            gw_key = storage.create_user_gateway( user, volume, ms_username=name, ms_password="sniff", host=node, port=port, read_write=True )
                
-            logging.info("Created UG %s" % G_name("UG", node))
+            logging.info("Created UG %s on port %d" % (name, port))
          except:
             logging.info("traceback: %s" % traceback.format_exc())
             # already exists

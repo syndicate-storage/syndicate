@@ -661,7 +661,7 @@ struct md_HTTP_response* httpd_HTTP_DELETE_handler( struct md_HTTP_connection_da
 
    // file? just unlink
    if( S_ISREG( sb.st_mode ) ) {
-      rc = fs_entry_versioned_unlink( state->core, md_con_data->url_path, -1, state->conf.owner, state->core->volume );
+      rc = fs_entry_versioned_unlink( state->core, md_con_data->url_path, 0, 0, -1, state->conf.owner, state->core->volume, false );
       if( rc < 0 ) {
          // failed
          char buf[100];

@@ -14,8 +14,14 @@
 #include "replication.h"
 #include "collator.h"
 
+// make a truncate message
+// fent must be at least read-locked
 static void fs_entry_prepare_truncate_message( Serialization::WriteMsg* truncate_msg, char const* fs_path, struct fs_entry* fent, uint64_t new_max_block ) {
    Serialization::TruncateRequest* truncate_req = truncate_msg->mutable_truncate();
+   
+   truncate_req->set_volume_id( fent->volume );
+   truncate_req->set_coordinator_id( fent->coordinator );
+   truncate_req->set_file_id( fent->file_id );
    truncate_req->set_fs_path( fs_path );
    truncate_req->set_file_version( fent->version );
    truncate_req->set_size( fent->size );
@@ -216,7 +222,7 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 
 
 // truncate, only if the version is correct (or ignore it if it's -1)
-int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t newsize, int64_t known_version, uint64_t user, uint64_t volume ) {
+int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, uint64_t file_id, uint64_t coordinator_id, off_t newsize, int64_t known_version, uint64_t user, uint64_t volume, bool check_file_id_and_coordinator_id ) {
 
    int err = fs_entry_revalidate_path( core, volume, fs_path );
    if( err != 0 ) {
@@ -235,11 +241,27 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t
       return err;
    }
    
-   if( known_version > 0 && fent->version != known_version ) {
-      errorf( "fs_entry_get_version(%s): version mismatch (current = %" PRId64 ", known = %" PRId64 ")\n", fs_path, fent->version, known_version );
+   if( check_file_id_and_coordinator_id ) {
+      if( fent->file_id != file_id ) {
+         errorf("Remote truncate to file %s ID %" PRIX64 ", expected %" PRIX64 "\n", fs_path, file_id, fent->file_id );
+         fs_entry_unlock( fent );
+         free( parent_name );
+         return -ESTALE;
+      }
+      
+      if( fent->coordinator != coordinator_id ) {
+         errorf("Remote truncate to file %s coordinator %" PRIu64 ", expected %" PRIu64 "\n", fs_path, coordinator_id, fent->coordinator );
+         fs_entry_unlock( fent );
+         free( parent_name );
+         return -ESTALE;
+      }
+   }
+   
+   if( known_version > 0 && fent->version > 0 && fent->version != known_version ) {
+      errorf("Remote truncate to file %s version %" PRId64 ", expected %" PRId64 "\n", fs_path, known_version, fent->version );
       fs_entry_unlock( fent );
       free( parent_name );
-      return -EINVAL;
+      return -ESTALE;
    }
 
    int rc = fs_entry_truncate_impl( core, fs_path, fent, newsize, user, volume, parent_id, parent_name );

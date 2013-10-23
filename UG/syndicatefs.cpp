@@ -127,7 +127,7 @@ int syndicatefs_unlink(const char* path) {
 
    SYNDICATEFS_DATA->stats->enter( STAT_UNLINK );
    
-   int rc = fs_entry_versioned_unlink( SYNDICATEFS_DATA->core, path, -1, SYNDICATEFS_DATA->conf.owner, SYNDICATEFS_DATA->core->volume );
+   int rc = fs_entry_versioned_unlink( SYNDICATEFS_DATA->core, path, 0, 0, -1, SYNDICATEFS_DATA->conf.owner, SYNDICATEFS_DATA->core->volume, false );
 
    SYNDICATEFS_DATA->stats->leave( STAT_UNLINK, rc );
    
@@ -234,7 +234,7 @@ int syndicatefs_truncate(const char *path, off_t newsize) {
 
    SYNDICATEFS_DATA->stats->enter( STAT_TRUNCATE );
 
-   int rc = fs_entry_versioned_truncate( SYNDICATEFS_DATA->core, path, newsize, -1, conf->owner, SYNDICATEFS_DATA->core->volume );
+   int rc = fs_entry_versioned_truncate( SYNDICATEFS_DATA->core, path, newsize, 0, 0, -1, conf->owner, SYNDICATEFS_DATA->core->volume, false );
 
    SYNDICATEFS_DATA->stats->leave( STAT_TRUNCATE, rc );
    logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_truncate rc = %d\n", pthread_self(), rc );

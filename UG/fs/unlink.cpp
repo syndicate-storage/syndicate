@@ -135,7 +135,7 @@ int fs_entry_detach( struct fs_core* core, char const* path, uint64_t user, uint
 
 // unlink a file from the filesystem
 // pass -1 if the version is not known, or pass the known version to be unlinked
-int fs_entry_versioned_unlink( struct fs_core* core, char const* path, int64_t known_version, uint64_t owner, uint64_t volume ) {
+int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t file_id, uint64_t coordinator_id, int64_t known_version, uint64_t owner, uint64_t volume, bool check_file_id_and_coordinator_id ) {
 
    // get some info about this file first
    int rc = 0;
@@ -149,15 +149,27 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, int64_t k
 
    bool local = FS_ENTRY_LOCAL( core, fent );
    int64_t version = fent->version;
-
-   if( known_version > 0 && fent->version > 0 && known_version != fent->version ) {
-      // wrong file
-      errorf( "version mismatch on %s (current = %" PRId64 ", given = %" PRId64 ")\n", path, fent->version, known_version );
-      fs_entry_unlock( fent );
-      rc = -EINVAL;
-      return rc;
+   
+   if( check_file_id_and_coordinator_id ) {
+      if( fent->file_id != file_id ) {
+         errorf("Remote unlink to file %s ID %" PRIX64 ", expected %" PRIX64 "\n", path, file_id, fent->file_id );
+         fs_entry_unlock( fent );
+         return -ESTALE;
+      }
+      
+      if( fent->coordinator != coordinator_id ) {
+         errorf("Remote unlink to file %s coordinator %" PRIu64 ", expected %" PRIu64 "\n", path, coordinator_id, fent->coordinator );
+         fs_entry_unlock( fent );
+         return -ESTALE;
+      }
    }
-
+   
+   if( known_version > 0 && fent->version > 0 && fent->version != known_version ) {
+      errorf("Remote unlink to file %s version %" PRId64 ", expected %" PRId64 "\n", path, known_version, fent->version );
+      fs_entry_unlock( fent );
+      return -ESTALE;
+   }
+   
    char* path_dirname = md_dirname( path, NULL );
 
    struct fs_entry* parent = fs_entry_resolve_path( core, path_dirname, owner, volume, true, &err );
@@ -197,6 +209,9 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, int64_t k
       fs_entry_init_write_message( detach_request, core, Serialization::WriteMsg::DETACH );
       
       Serialization::DetachRequest* detach = detach_request->mutable_detach();
+      detach->set_volume_id( fent->volume );
+      detach->set_coordinator_id( fent->coordinator );
+      detach->set_file_id( fent->file_id );
       detach->set_fs_path( string(path) );
       detach->set_file_version( version );
 

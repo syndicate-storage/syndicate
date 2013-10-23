@@ -21,7 +21,7 @@ def prettyprint( ent ):
    
 
 
-def Resolve( owner_id, volume, file_id, file_version, mtime_sec, mtime_nsec ):
+def Resolve( owner_id, volume, file_id, file_version, write_nonce ):
    """
    Read file and listing of the given file_id
    """
@@ -60,7 +60,7 @@ def Resolve( owner_id, volume, file_id, file_version, mtime_sec, mtime_nsec ):
 
    if file_data != None:
       # do we need to actually send this?
-      if file_data.version == file_version and file_data.mtime_sec == mtime_sec and file_data.mtime_nsec == mtime_nsec:
+      if file_data.version == file_version and file_data.write_nonce == write_nonce:
          need_refresh = False
 
       else:

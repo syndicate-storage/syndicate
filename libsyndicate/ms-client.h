@@ -62,7 +62,7 @@ struct ms_path_ent {
    uint64_t volume_id;
    uint64_t file_id;
    int64_t version;
-   struct timespec mtime;
+   int64_t write_nonce;
    char* name;
 
    void* cls;
@@ -278,7 +278,7 @@ int ms_client_get_volume_root( struct ms_client* client, struct md_entry* root )
 int ms_client_sched_volume_reload( struct ms_client* client );
 int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version );
 
-int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, char const* name, void* cls );
+int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, char const* name, void* cls );
 void ms_client_free_path_ent( struct ms_path_ent* path_ent, void (*free_cls)(void*) );
 void ms_client_free_path( path_t* path, void (*free_cls)(void*) );
 void ms_client_free_response( ms_response_t* ms_response );

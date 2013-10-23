@@ -594,19 +594,17 @@ class MSFileReadHandler(webapp2.RequestHandler):
    It will read and list metadata entries via GET.
    """
 
-   def get( self, volume_id_str, file_id_str, file_version_str, file_mtime_sec_str, file_mtime_nsec_str ):
+   def get( self, volume_id_str, file_id_str, file_version_str, write_nonce_str ):
 
       file_request_start = storagetypes.get_time()
 
       file_id = -1
       file_version = -1
-      file_mtime_sec = -1
-      file_mtime_nsec = -1
+      write_nonce = 0
       try:
          file_id = MSEntry.unserialize_id( int( file_id_str, 16 ) )
          file_version = int( file_version )
-         file_mtime_sec = int( file_mtime_sec )
-         file_mtime_nsec = int( file_mtime_nsec )
+         write_nonce = int( write_nonce_str )
       except:
          response_end( self, 400, "BAD REQUEST", "text/plain", None )
          return
@@ -633,7 +631,7 @@ class MSFileReadHandler(webapp2.RequestHandler):
       if gateway != None:
          owner_id = gateway.owner_id
          
-      reply = Resolve( owner_id, volume, file_id, file_version, file_mtime_sec, file_mtime_nsec )
+      reply = Resolve( owner_id, volume, file_id, file_version, write_nonce )
       
       resolve_time = storagetypes.get_time() - resolve_start
       

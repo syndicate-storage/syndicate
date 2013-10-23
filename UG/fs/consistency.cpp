@@ -14,7 +14,7 @@
 
 // sync a file's metadata with the MS and flush replicas
 int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
-   fs_file_handle_rlock( fh );
+   fs_file_handle_wlock( fh );
    if( fh->fent == NULL ) {
       fs_file_handle_unlock( fh );
       return -EBADF;
@@ -76,16 +76,16 @@ bool fs_entry_is_read_stale( struct fs_entry* fent ) {
 
 // determine whether or not an entry is stale, given the current entry's modtime and the time of the query
 // fent must be at least read-locked!
-static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent, uint64_t mtime_sec, uint32_t mtime_nsec, uint64_t write_nonce, struct timespec* query_time ) {
+static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent, uint64_t mtime_sec, uint32_t mtime_nsec, int64_t write_nonce, struct timespec* query_time ) {
    
    // a directory is stale if the write nonce has changed
    if( fent->ftype == FTYPE_DIR ) {
       if( fent->write_nonce != write_nonce ) {
-         dbprintf("write nonce of directory %s have changed\n", fent->name);
+         dbprintf("write nonce of directory %s has changed\n", fent->name);
          return true;
       }
       else {
-         dbprintf("write nonce of directory %s have NOT changed\n", fent->name);
+         dbprintf("write nonce of directory %s has NOT changed\n", fent->name);
          return false;
       }
    }
@@ -150,7 +150,7 @@ int fs_entry_reload( struct fs_entry_consistency_cls* consistency_cls, struct fs
 
    if( fent->manifest ) {
       // the manifest is only stale 
-      if( fent->mtime_sec != ent->mtime_sec || fent->mtime_nsec != ent->mtime_nsec )
+      if( fent->mtime_sec != ent->mtime_sec || fent->mtime_nsec != ent->mtime_nsec || fent->write_nonce != ent->write_nonce )
          fent->manifest->mark_stale();
 
       if( fent->version != fent->manifest->get_file_version() )
@@ -324,11 +324,11 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
    }
                               
    struct ms_path_ent path_ent;
-   ms_client_make_path_ent( &path_ent, fent->volume, fent->file_id, fent->version, fent->mtime_sec, fent->mtime_nsec, fent->name, cls );
+   ms_client_make_path_ent( &path_ent, fent->volume, fent->file_id, fent->version, fent->write_nonce, fent->name, cls );
    
    ms_path->push_back( path_ent );
    
-   dbprintf("in path: %s.%" PRId64 " (%ld.%d) (%s)\n", fent->name, fent->version, fent->mtime_sec, fent->mtime_nsec, cls->fs_path);
+   dbprintf("in path: %s.%" PRId64 " (%" PRId64 ") (%s)\n", fent->name, fent->version, fent->write_nonce, cls->fs_path);
    return 0;
 }
 
@@ -359,7 +359,7 @@ static int fs_entry_build_ms_path( struct fs_core* core, char const* path, path_
 
             struct ms_path_ent path_ent;
 
-            ms_client_make_path_ent( &path_ent, 0, 0, -1, -1, -1, path_parts[i], cls );
+            ms_client_make_path_ent( &path_ent, 0, 0, -1, 0, path_parts[i], cls );
 
             ms_path->push_back( path_ent );
          }
@@ -887,7 +887,7 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
    fs_entry_make_listing_cls( child_listing_cls2, fent_listing_cls->fs_path, child_fent->name, true, false );
 
    struct ms_path_ent child_path_ent2;
-   ms_client_make_path_ent( &child_path_ent2, child_fent->volume, child_fent->file_id, child_fent->version, child_fent->mtime_sec, child_fent->mtime_nsec, child_fent->name, child_listing_cls2 );
+   ms_client_make_path_ent( &child_path_ent2, child_fent->volume, child_fent->file_id, child_fent->version, child_fent->write_nonce, child_fent->name, child_listing_cls2 );
    
    child_path.push_back( child_path_ent2 );
 

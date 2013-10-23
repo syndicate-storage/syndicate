@@ -73,7 +73,7 @@ struct md_entry {
    int32_t ctime_nsec;  // creation time (nanoseconds)
    int64_t mtime_sec;   // last-modified time (seconds)
    int32_t mtime_nsec;  // last-modified time (nanoseconds)
-   uint64_t write_nonce; // last-write nonce 
+   int64_t write_nonce; // last-write nonce 
    int64_t version;     // file version
    int32_t max_read_freshness;      // how long is this entry fresh until it needs revalidation?
    int32_t max_write_freshness;     // how long can we delay publishing this entry?

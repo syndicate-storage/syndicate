@@ -22,10 +22,10 @@ int replica_context_init( struct replica_context* rctx, int type, FILE* block_da
       return -EINVAL;
    }
    
+   rctx->curls = new vector<CURL*>();
    rctx->type = type;
    rctx->size = data_len;
    rctx->form_data = form_data;
-   rctx->refcount = 0;
    rctx->sync = sync;
    rctx->file_id = file_id;
    
@@ -37,6 +37,7 @@ int replica_context_init( struct replica_context* rctx, int type, FILE* block_da
 
 // free a replica context
 int replica_context_free( struct replica_context* rctx ) {
+   dbprintf("free replica %p\n", rctx);
    if( rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ) {
       fclose( rctx->file );
    }
@@ -44,7 +45,12 @@ int replica_context_free( struct replica_context* rctx ) {
       free( rctx->data );
    }
    
-   curl_easy_cleanup( rctx->curl );
+   for( unsigned int i = 0; i < rctx->curls->size(); i++ ) {
+      if( rctx->curls->at(i) != NULL )
+         curl_easy_cleanup( rctx->curls->at(i) );
+   }
+   
+   delete rctx->curls;
    
    curl_formfree( rctx->form_data );
    sem_destroy( &rctx->processing_lock );
@@ -308,14 +314,8 @@ int replica_multi_upload( struct syndicate_replication* synrp ) {
       return -1;
    }
    
-   // relinquish
-   pthread_mutex_unlock( &synrp->running_lock );
-   
    // find out which FDs are ready
    rc = select(maxfd+1, &fdread, &fdwrite, &fdexcep, &timeout);
-   
-   // reacquire
-   pthread_mutex_lock( &synrp->running_lock );
    
    if( rc < 0 ) {
       // we have a problem
@@ -347,31 +347,41 @@ int replica_multi_upload( struct syndicate_replication* synrp ) {
 }
 
 
-static int replica_remove_upload_context( struct syndicate_replication* synrp, replica_upload_set::iterator& itr ) {
+static int replica_remove_upload_context( struct syndicate_replication* synrp, CURL* curl ) {
    
-   struct replica_context* rctx = itr->second;
-   
-   int rc = 0;
-   
-   rctx->refcount--;
-   if( rctx->error != 0 )
-      rctx->refcount = 0;
-   
-   if( rctx->refcount <= 0 ) {
+   replica_upload_set::iterator itr = synrp->uploads->find( curl );
+   if( itr != synrp->uploads->end() ) {
       
-      // processed!
+      struct replica_context* rctx = itr->second;
+      
+      int rc = 0;
+      
       curl_multi_remove_handle( synrp->running, itr->first );
       synrp->uploads->erase( itr );
       
-      if( rctx->refcount <= 0 ) {
+      // clear this curl
+      int still_processing = 0;
+      
+      for( unsigned int i = 0; i < rctx->curls->size(); i++ ) {
+         if( rctx->curls->at(i) == curl ) {
+            curl_easy_cleanup( rctx->curls->at(i) );
+            rctx->curls->at(i) = NULL;
+         }
+         
+         if( rctx->curls->at(i) != NULL )
+            still_processing ++;
+      }
+      
+      // have all of this context's CURL handles finished?
+      if( still_processing == 0 ) {      
          dbprintf("Finished %p\n", rctx );
          sem_post( &rctx->processing_lock );
-         
-         rc = 1;
       }
+      
+      return rc;
    }
    
-   return rc;
+   return -ENOENT;
 }
 
 // how did the transfers go?
@@ -423,7 +433,7 @@ int replica_process_responses( struct syndicate_replication* synrp ) {
             
             dbprintf("Finished replicating %p (%s of %" PRIX64 ")\n", rctx, (rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ? "manifest" : "block"), rctx->file_id );
             
-            replica_remove_upload_context( synrp, itr );
+            replica_remove_upload_context( synrp, msg->easy_handle );
          }
       }
    } while( msg != NULL );
@@ -572,7 +582,7 @@ int my_trace(CURL *handle, curl_infotype type,
 }
 
 // begin downloading
-int replica_begin( struct syndicate_replication* rp, struct replica_context* rctx, bool sync ) {
+int replica_begin( struct syndicate_replication* rp, struct replica_context* rctx ) {
    
    // acquire this lock, since we're processing it now...
    sem_wait( &rctx->processing_lock );
@@ -585,7 +595,7 @@ int replica_begin( struct syndicate_replication* rp, struct replica_context* rct
    for( int i = 0; rg_urls[i] != NULL; i++ ) {
       
       CURL* curl = curl_easy_init();
-      rctx->curl = curl;
+      rctx->curls->push_back( curl );
       
       dbprintf("replicate %p (%s) to %s\n", rctx, (rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ? "block" : "manifest"), rg_urls[i] );
       md_init_curl_handle( curl, rg_urls[i], rp->ms->conf->replica_connect_timeout );
@@ -597,12 +607,7 @@ int replica_begin( struct syndicate_replication* rp, struct replica_context* rct
       //curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
       //curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, my_trace);
       
-      (*rp->pending_uploads)[ rctx->curl ] = rctx;
-      
-      rctx->refcount++;
-      
-      if( sync )
-         rctx->refcount++;      // caller will free
+      (*rp->pending_uploads)[ curl ] = rctx;
    }
    
    rp->has_pending = true;
@@ -622,6 +627,8 @@ int replica_begin( struct syndicate_replication* rp, struct replica_context* rct
 int replica_wait_and_remove( struct syndicate_replication* rp, struct replica_context* rctx, struct timespec* ts ) {
    if( ts == NULL ) {
       sem_wait( &rctx->processing_lock );
+      
+      // removed by replica_process_responses
       return 0;
    }
    else {
@@ -633,17 +640,16 @@ int replica_wait_and_remove( struct syndicate_replication* rp, struct replica_co
       int rc = sem_timedwait( &rctx->processing_lock, &abs_ts );
       if( rc != 0 ) {
          rc = -errno;
+         
+         // Remove the associated handle ourselves
+         pthread_mutex_lock( &rp->running_lock );
+         
+         for( unsigned int i = 0; i < rctx->curls->size(); i++ ) {
+            replica_remove_upload_context( rp, rctx->curls->at(i) );
+         }
+         
+         pthread_mutex_unlock( &rp->running_lock );
       }
-      
-      // Remove the associated handle.
-      pthread_mutex_lock( &rp->running_lock );
-      
-      replica_upload_set::iterator itr = rp->uploads->find( rctx->curl );
-      if( itr != rp->uploads->end() ) {
-         replica_remove_upload_context( rp, itr );
-      }
-      
-      pthread_mutex_unlock( &rp->running_lock );
       
       return rc;
    }
@@ -682,6 +688,8 @@ int replica_shutdown_replication( struct syndicate_replication* rp ) {
    pthread_cancel( rp->upload_thread );
    pthread_join( rp->upload_thread, NULL );
    
+   int need_running_unlock = pthread_mutex_trylock( &rp->running_lock );
+   
    for( replica_upload_set::iterator itr = rp->uploads->begin(); itr != rp->uploads->end(); itr++ ) {
       curl_multi_remove_handle( rp->running, itr->first );
       
@@ -689,6 +697,8 @@ int replica_shutdown_replication( struct syndicate_replication* rp ) {
       
       free( itr->second );
    }
+   
+   int need_pending_unlock = pthread_mutex_trylock( &rp->pending_lock );
    
    for( replica_upload_set::iterator itr = rp->pending_uploads->begin(); itr != rp->pending_uploads->end(); itr++ ) {
       
@@ -700,8 +710,17 @@ int replica_shutdown_replication( struct syndicate_replication* rp ) {
    delete rp->uploads;
    delete rp->pending_uploads;
    
-   pthread_mutex_destroy( &rp->running_lock );
+   rp->uploads = NULL;
+   rp->pending_uploads = NULL;
+   
+   if( need_running_unlock )
+      pthread_mutex_unlock( &rp->pending_lock );
+   
+   if( need_pending_unlock )
+      pthread_mutex_unlock( &rp->running_lock );
+   
    pthread_mutex_destroy( &rp->pending_lock );
+   pthread_mutex_destroy( &rp->running_lock );
    
    curl_multi_cleanup( rp->running );
    
@@ -733,7 +752,7 @@ int replication_shutdown() {
 
 
 // replicate a manifest
-// fent must be read-locked
+// fent must be write-locked
 int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bool sync, struct fs_file_handle* fh ) {
    struct replica_context* manifest_rctx = CALLOC_LIST( struct replica_context, 1 );
    
@@ -745,11 +764,12 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
    }
    
    // proceed to replicate
-   rc = replica_begin( &global_replication, manifest_rctx, sync );
+   rc = replica_begin( &global_replication, manifest_rctx );
    
    if( rc != 0 ) {
       errorf("replica_begin rc = %d\n", rc );
       replica_context_free( manifest_rctx );
+      free( manifest_rctx );
       return rc;
    }
    
@@ -763,8 +783,9 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
          ts.tv_nsec = 0;
          tsp = &ts;
       }
-      rc = replica_wait_and_remove( &global_replication, manifest_rctx, tsp );
       
+      rc = replica_wait_and_remove( &global_replication, manifest_rctx, tsp );
+         
       if( rc != 0 ) {
          errorf("replica_wait rc = %d\n", rc );
       }
@@ -775,6 +796,7 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
       }
       
       replica_context_free( manifest_rctx );
+      free( manifest_rctx );
       
       return rc;
    }
@@ -787,7 +809,7 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
 }
 
 // replicate a sequence of modified blocks
-// fent must be read-locked
+// fent must be write-locked
 int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh ) {
    vector<struct replica_context*> block_rctxs;
    int rc = 0;
@@ -806,7 +828,7 @@ int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modi
       
       block_rctxs.push_back( block_rctx );
       
-      rc = replica_begin( &global_replication, block_rctx, sync );
+      rc = replica_begin( &global_replication, block_rctx );
       if( rc != 0 ) {
          errorf("replica_begin rc = %d\n", rc );
       }
@@ -822,24 +844,10 @@ int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modi
          tsp = &ts;
       }
       
-      rc = fs_entry_replicate_wait( &block_rctxs, tsp );
+      rc = fs_entry_replicate_wait_and_free( &block_rctxs, tsp );
       if( rc != 0 ) {
          errorf("fs_entry_replicate_wait rc = %d\n", rc );
       }
-      
-      int worst_rc = 0;
-      
-      for( unsigned int i = 0; i < block_rctxs.size(); i++ ) {
-         if( block_rctxs[i]->error != 0 ) {
-            errorf("replication of block in %" PRIX64 " failed, rc = %d\n", fh->file_id, block_rctxs[i]->error );
-            worst_rc = block_rctxs[i]->error;
-         }
-         
-         replica_context_free( block_rctxs[i] );
-         free( block_rctxs[i] );
-      }
-      
-      rc = worst_rc;
    }
    
    else {
@@ -856,7 +864,7 @@ int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modi
 
 
 // wait for all replication to finish
-int fs_entry_replicate_wait( vector<struct replica_context*>* rctxs, struct timespec* timeout ) {
+int fs_entry_replicate_wait_and_free( vector<struct replica_context*>* rctxs, struct timespec* timeout ) {
    int rc = 0;
    int worst_rc = 0;
    
@@ -883,6 +891,7 @@ int fs_entry_replicate_wait( vector<struct replica_context*>* rctxs, struct time
       
       // wait for this replica to finish...
       rc = replica_wait_and_remove( &global_replication, rctxs->at(i), &rctxs->at(i)->deadline );
+      
       if( rc != 0 ) {
          errorf("replica_wait rc = %d\n", rc );
          worst_rc = -EIO;
@@ -895,11 +904,17 @@ int fs_entry_replicate_wait( vector<struct replica_context*>* rctxs, struct time
          errorf("replica error %d\n", rc );
          worst_rc = rc;
       }
+      
+      replica_context_free( rctxs->at(i) );
+      free( rctxs->at(i) );
+         
+      (*rctxs)[i] = NULL;
    }
    return worst_rc;
 }
 
 // wait for all replications to finish
+// fh must be write-locked
 int fs_entry_replicate_wait( struct fs_file_handle* fh ) {
    struct timespec *tsp = NULL;
    
@@ -910,12 +925,7 @@ int fs_entry_replicate_wait( struct fs_file_handle* fh ) {
       tsp = &ts;
    }
    
-   int rc = fs_entry_replicate_wait( fh->rctxs, tsp );
-   
-   for( unsigned int i = 0; i < fh->rctxs->size(); i++ ) {
-      replica_context_free( fh->rctxs->at(i) );
-      free( fh->rctxs->at(i) );
-   }
+   int rc = fs_entry_replicate_wait_and_free( fh->rctxs, tsp );
    
    fh->rctxs->clear();
    return rc;

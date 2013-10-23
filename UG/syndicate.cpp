@@ -187,14 +187,16 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
 
 
 // extract some useful information from the message
-bool extract_file_info( Serialization::WriteMsg* msg, char const** fs_path, int64_t* file_version ) {
+bool syndicate_extract_file_info( Serialization::WriteMsg* msg, char const** fs_path, uint64_t* file_id, uint64_t* coordinator_id, int64_t* file_version ) {
    switch( msg->type() ) {
       case Serialization::WriteMsg::ACCEPTED: {
          dbprintf("%s", "Got ACCEPTED\n");
          if( !msg->has_accepted() ) {
             return false;
          }
-
+         
+         *file_id = msg->accepted().file_id();
+         *coordinator_id = msg->accepted().coordinator_id();
          *fs_path = msg->accepted().fs_path().c_str();
          *file_version = msg->accepted().file_version();
          break;
@@ -205,20 +207,10 @@ bool extract_file_info( Serialization::WriteMsg* msg, char const** fs_path, int6
             return false;
          }
 
+         *file_id = msg->metadata().file_id();
+         *coordinator_id = msg->metadata().coordinator_id();
          *fs_path = msg->metadata().fs_path().c_str();
          *file_version = msg->metadata().file_version();
-
-         break;
-      }
-
-      case Serialization::WriteMsg::BLOCKDATA: {
-         dbprintf("%s", "Got BLOCKDATA\n");
-         if( !msg->has_blockdata() ) {
-            return false;
-         }
-
-         *fs_path = msg->blockdata().fs_path().c_str();
-         *file_version = msg->blockdata().file_version();
 
          break;
       }
@@ -234,6 +226,8 @@ bool extract_file_info( Serialization::WriteMsg* msg, char const** fs_path, int6
             return false;
          }
 
+         *file_id = msg->truncate().file_id();
+         *coordinator_id = msg->truncate().coordinator_id();
          *fs_path = msg->truncate().fs_path().c_str();
          *file_version = msg->truncate().file_version();
 
@@ -246,6 +240,8 @@ bool extract_file_info( Serialization::WriteMsg* msg, char const** fs_path, int6
             return false;
          }
 
+         *file_id = msg->detach().file_id();
+         *coordinator_id = msg->detach().coordinator_id();
          *fs_path = msg->detach().fs_path().c_str();
          *file_version = msg->detach().file_version();
 
@@ -308,7 +304,7 @@ void syndicate_make_msg_ack( struct md_HTTP_connection_data* md_con_data, Serial
 
 
 // fill a WriteMsg with a list of blocks
-void make_promise_msg( Serialization::WriteMsg* writeMsg ) {
+void syndicate_make_promise_msg( Serialization::WriteMsg* writeMsg ) {
    writeMsg->set_type( Serialization::WriteMsg::PROMISE );
 }
 
@@ -373,6 +369,8 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
    // prepare an ACK
    char const* fs_path = NULL;
+   uint64_t file_id = 0;
+   uint64_t coordinator_id = 0;
    int64_t file_version = -1;
    int rc = 0;
    bool no_ack = false;
@@ -412,7 +410,7 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
    
    fs_entry_init_write_message( &ack, state->core, Serialization::WriteMsg::ERROR );
 
-   if( !extract_file_info( msg, &fs_path, &file_version ) ) {
+   if( !syndicate_extract_file_info( msg, &fs_path, &file_id, &coordinator_id, &file_version ) ) {
       // missing information
       ack.set_errorcode( -EBADMSG );
       ack.set_errortxt( string("Missing message data") );
@@ -447,10 +445,10 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          // Also, begin downloading the affected blocks
 
          // update this file's manifest (republishing it in the process)
-         rc = fs_entry_remote_write( state->core, fs_path, msg );
+         rc = fs_entry_remote_write( state->core, fs_path, file_id, coordinator_id, msg );
          if( rc == 0 ) {
             // create a PROMISE request--ask the remote writer to hold on to the blocks so we can collate them later
-            make_promise_msg( &ack );
+            syndicate_make_promise_msg( &ack );
          }
          else {
 
@@ -464,18 +462,12 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          break;
       }
 
-      case Serialization::WriteMsg::BLOCKDATA: {
-         // received some blocks directly
-
-         break;
-      }
-
       case Serialization::WriteMsg::TRUNCATE: {
          // received a truncate message.
          // Truncate the file, and if successful,
          // send back an ACCEPTED
 
-         rc = fs_entry_versioned_truncate( state->core, fs_path, msg->truncate().size(), file_version, msg->user_id(), msg->volume_id() );
+         rc = fs_entry_versioned_truncate( state->core, fs_path, file_id, coordinator_id, msg->truncate().size(), file_version, msg->user_id(), msg->volume_id(), true );
          if( rc == 0 ) {
             ack.set_type( Serialization::WriteMsg::ACCEPTED );
          }
@@ -490,7 +482,7 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
       case Serialization::WriteMsg::DETACH: {
          // received DETACH request.
          // Unlink this file, and send back an ACCEPTED
-         rc = fs_entry_versioned_unlink( state->core, fs_path, file_version, msg->user_id(), msg->volume_id() );
+         rc = fs_entry_versioned_unlink( state->core, fs_path, file_id, coordinator_id, file_version, msg->user_id(), msg->volume_id(), true );
          if( rc == 0 ) {
             ack.set_type( Serialization::WriteMsg::ACCEPTED );
          }

@@ -2671,7 +2671,7 @@ int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
    msent->set_max_read_freshness( ent->max_read_freshness );
    msent->set_max_write_freshness( ent->max_write_freshness );
    msent->set_name( string( ent->name ) );
-   msent->set_write_nonce( (int64_t)(ent->write_nonce) );
+   msent->set_write_nonce( ent->write_nonce );
    return 0;
 }
 
@@ -2695,7 +2695,7 @@ int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent ) {
    ent->version = msent.version();
    ent->size = msent.size();
    ent->name = strdup( msent.name().c_str() );
-   ent->write_nonce = (uint64_t)msent.write_nonce();
+   ent->write_nonce = msent.write_nonce();
 
    if( msent.has_parent_id() )
       ent->parent_id = msent.parent_id();
@@ -3999,7 +3999,7 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    memset( conf, 0, sizeof(struct md_syndicate_conf) );
    
    conf->default_read_freshness = 5000;
-   conf->default_write_freshness = 5000;
+   conf->default_write_freshness = 0;
    conf->gather_stats = false;
    conf->use_checksums = false;
    conf->num_replica_threads = 1;

@@ -751,7 +751,7 @@ void file_manifest::as_protobuf( struct fs_core* core, struct fs_entry* fent, Se
    }
 
    mmsg->set_volume_id( core->volume );
-   mmsg->set_gateway_id( core->gateway );
+   mmsg->set_coordinator_id( fent->coordinator );
    mmsg->set_file_id( fent->file_id );
    mmsg->set_file_version( fent->version );
    mmsg->set_size( fent->size );
