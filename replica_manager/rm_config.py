@@ -14,8 +14,8 @@ import threading
 import errno
 
 #-------------------------
-StorageDriver = collections.namedtuple("StorageDriver", ["name", "read_file", "write_file"])
-StorageClosure = collections.namedtuple("StorageClosure", ["CONFIG", "replica_read", "replica_write"])
+StorageDriver = collections.namedtuple("StorageDriver", ["name", "read_file", "write_file", "delete_file"])
+StorageClosure = collections.namedtuple("StorageClosure", ["CONFIG", "replica_read", "replica_write", "replica_delete"])
 StorageConfig = collections.namedtuple("StorageConfig", ["closure", "drivers"] )
 
 #-------------------------
@@ -26,13 +26,15 @@ storage_config_lock = threading.Lock()
 REQUIRED_CLOSURE_FIELDS = {
    "CONFIG" : types.DictType,
    "replica_read": types.FunctionType,
-   "replica_write": types.FunctionType
+   "replica_write": types.FunctionType,
+   "replica_delete": types.FunctionType
 }
 
 #-------------------------
 REQUIRED_DRIVER_FIELDS = {
    "read_file": types.FunctionType,
-   "write_file": types.FunctionType
+   "write_file": types.FunctionType,
+   "delete_file": types.FunctionType
 }
 
 #-------------------------
@@ -52,9 +54,11 @@ OPTIONAL_JSON_DRIVER_FIELDS = {
 #-------------------------
 CLOSURE_READ_SIGNATURE = inspect.ArgSpec( args=['drivers', 'request_info', 'filename', 'outfile'], varargs=None, defaults=None, keywords='kw' )
 CLOSURE_WRITE_SIGNATURE = inspect.ArgSpec( args=['drivers', 'request_info', 'filename', 'infile'], varargs=None, defaults=None, keywords='kw' )
+CLOSURE_DELETE_SIGNATURE = inspect.ArgSpec( args=['drivers', 'request_info', 'filename'], varargs=None, defaults=None, keywords='kw' )
 
 DRIVER_READ_SIGNATURE = inspect.ArgSpec( args=['filename', 'outfile'], varargs=None, defaults=None, keywords='kw' )
 DRIVER_WRITE_SIGNATURE = inspect.ArgSpec( args=['filename', 'infile'], varargs=None, defaults=None, keywords='kw' )
+DRIVER_DELETE_SIGNATURE = inspect.ArgSpec( args=['filename'], varargs=None, defaults=None, keywords='kw' )
 
 #-------------------------
 def is_valid_function( func, signature ):
@@ -72,6 +76,7 @@ def is_valid_function( func, signature ):
    else:
       return False
 
+
 #-------------------------
 def validate_driver( driver_data ):
    '''
@@ -79,18 +84,17 @@ def validate_driver( driver_data ):
       Raise an exception if not.
    '''
    
-   driver_read_func = driver_data['read_file']
-   driver_write_func = driver_data['write_file']
+   global DRIVER_READ_SIGNATURE
+   global DRIVER_WRITE_SIGNATURE
+   global DRIVER_DELETE_SIGNATURE
    
-   # check functions
-   if not is_valid_function( driver_read_func, DRIVER_READ_SIGNATURE ):
-      raise Exception("Driver read function does not match required signature")
-   
-   if not is_valid_function( driver_write_func, DRIVER_WRITE_SIGNATURE ):
-      raise Exception("Driver write function does not match required signature")
-   
+   for func_name, func_sig in zip( ['read_file', 'write_file', 'delete_file'], [DRIVER_READ_SIGNATURE, DRIVER_WRITE_SIGNATURE, DRIVER_DELETE_SIGNATURE] ):
+      func = driver_data[ func_name ]
+      if not is_valid_function( func, func_sig ):
+         raise Exception( "Driver function '%s' does not match required signature" % (func_name) )
+      
    return True
-
+   
 
 #-------------------------
 def load_closure( python_text_b64 ):
@@ -102,7 +106,7 @@ def load_closure( python_text_b64 ):
    global REQUIRED_CLOSURE_FIELDS
    global ALL_CLOSURE_FIELDS
    
-   log = rm_common.get_logger()
+   log = rm_common.log
    
    closure_globals = {}
    closure_locals = {}
@@ -125,7 +129,7 @@ def load_closure( python_text_b64 ):
    # sanity check 
    rm_common.validate_fields( closure_vars, REQUIRED_CLOSURE_FIELDS )
    
-   cls = StorageClosure( CONFIG=closure_vars['CONFIG'], replica_read=closure_vars['replica_read'], replica_write=closure_vars['replica_write'] )
+   cls = StorageClosure( CONFIG=closure_vars['CONFIG'], replica_read=closure_vars['replica_read'], replica_write=closure_vars['replica_write'], replica_delete=closure_vars['replica_delete'] )
    
    return cls
    
@@ -163,8 +167,9 @@ def load_storage_driver( sd_name, sd_code_b64, force_reload=False, cache=None ):
    
    driver_read_func = sd_locals['read_file']
    driver_write_func = sd_locals['write_file']
+   driver_delete_func = sd_locals['delete_file']
    
-   sd = StorageDriver( name=sd_name, read_file=driver_read_func, write_file=driver_write_func )
+   sd = StorageDriver( name=sd_name, read_file=driver_read_func, write_file=driver_write_func, delete_file=driver_delete_func )
    
    return sd
 
@@ -179,7 +184,7 @@ def load_config_json( json_str ):
    global REQUIRED_JSON_FIELDS
    global REQUIRED_JSON_DRIVER_FIELDS
    
-   log = rm_common.get_logger()
+   log = rm_common.log
    
    config_dict = None 
    rg_config = {}
@@ -248,7 +253,7 @@ def load_local_drivers( storage_driver_module_names ):
    
    drivers = {}
    
-   log = rm_common.get_logger()
+   log = rm_common.log
    
    for sd_name in storage_driver_module_names:
       sd_module = None
@@ -285,7 +290,7 @@ def view_change_callback():
    global storage_config_lock
    
    libsyndicate = rm_common.get_libsyndicate()
-   log = rm_common.get_logger()
+   log = rm_common.log
    
    try:
       new_storage_config_text = libsyndicate.get_closure_text()
@@ -346,7 +351,7 @@ def call_config_read( request, filename, outfile ):
    global STORAGE_CONFIG
    global storage_config_lock
    
-   log = rm_common.get_logger()
+   log = rm_common.log
    
    storage_config_lock.acquire()
    
@@ -378,7 +383,7 @@ def call_config_write( request, filename, infile ):
    global STORAGE_CONFIG
    global storage_config_lock
    
-   log = rm_common.get_logger()
+   log = rm_common.log
    
    storage_config_lock.acquire()
    
@@ -402,11 +407,42 @@ def call_config_write( request, filename, infile ):
 
 
 #-------------------------
+def call_config_delete( request, filename ):
+   '''
+      Call the global storage config's delete_replica() closure function.
+   '''
+   
+   global STORAGE_CONFIG
+   global storage_config_lock
+   
+   log = rm_common.log
+   
+   storage_config_lock.acquire()
+   
+   cls_locals = { "request" : request,
+                  "filename" : filename,
+                  "drivers" : STORAGE_CONFIG.drivers,
+                  "replica_delete" : STORAGE_CONFIG.closure.replica_delete,
+                }
+   
+   cls_globals = { 
+                   "CONFIG" : STORAGE_CONFIG.closure.CONFIG,
+                   "LOG" : log
+                 }
+   
+   rc = eval( "replica_delete( drivers, request, filename )", cls_globals, cls_locals )
+   
+   storage_config_lock.release()
+   
+   return rc
+
+
+#-------------------------
 def init( libsyndicate ):
    '''
       Initialize this module.
    '''
-   log = rm_common.get_logger()
+   log = rm_common.log
       
    # set up our storage
    view_change_callback()
@@ -460,7 +496,22 @@ def replica_write( drivers, request_info, filename, infile ):
    drivers['sd_test'].write_file( filename, infile, extra_param="Foo" )
    
    return 200
+
+def replica_delete( drivers, request_info, filename ):
+   print "replica_delete called!"
    
+   global CONFIG 
+   
+   print "CONFIG = " + str(CONFIG)
+   
+   print "drivers = " + str(drivers)
+   print "request_info = " + str(request_info)
+   print "filename = " + str(filename)
+   print ""
+   
+   drivers['sd_test'].delete_file( filename, extra_param="Foo" )
+   
+   return 200
 """
 
    driver_str = """
@@ -482,16 +533,24 @@ def write_file( filename, infile, **kw ):
    print "  filename = " + str(filename)
    print "  infile = " + str(infile)
    print "  kw = " + str(kw)
-   print ""
    
    buf = infile.read()
    
-   print "Got data: '" + str(buf) + "'"
+   print "  Got data: '" + str(buf) + "'"
+   
+   print ""
    
    return 0
 
+def delete_file( filename, **kw ):
+   print "  delete_file called!"
+   print "  filename = " + str(filename)
+   print "  kw = " + str(kw)
+   print ""
    
+   return 0
 """
+
    json_str = '{ "closure" : "%s", "drivers" : [ { "name" : "sd_test", "code" : "%s" } ] }' % (base64.b64encode( closure_str ), base64.b64encode( driver_str ) )
    
    print "json = " + json_str
@@ -510,9 +569,10 @@ def write_file( filename, infile, **kw ):
    
    test_filename = "/tmp/testfilename"
    
-   read_rc = call_config_read( test_request, test_filename, infile )
-   write_rc = call_config_write( test_request, test_filename, outfile )
+   read_rc = call_config_read( test_request, test_filename, outfile )
+   write_rc = call_config_write( test_request, test_filename, infile )
+   delete_rc = call_config_delete( test_request, test_filename )
    
-   print "read_rc = %s, write_rc = %s" % (read_rc, write_rc)
+   print "read_rc = %s, write_rc = %s, delete_rc = %s" % (read_rc, write_rc, delete_rc)
    
       

@@ -16,6 +16,7 @@ Collator::Collator( struct fs_core* core ) {
 
    curl_easy_setopt( this->release_curl, CURLOPT_POST, 1L );
    curl_easy_setopt( this->release_curl, CURLOPT_SSL_VERIFYPEER, (core->conf->verify_peer ? 1L : 0L) );
+   curl_easy_setopt( this->release_curl, CURLOPT_SSL_VERIFYHOST, 2L );
    curl_easy_setopt( this->release_curl, CURLOPT_NOSIGNAL, 1L );
    
    sem_init( &this->release_sem, 0, 0 );
@@ -63,6 +64,7 @@ static int send_accepted( struct fs_core* core, CURL* curl_h, char const* conten
 
    curl_easy_setopt( curl_h, CURLOPT_POST, 1L );
    curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, (core->conf->verify_peer ? 1L : 0L) );
+   curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
    curl_easy_setopt( curl_h, CURLOPT_NOSIGNAL, 1L );
 
    struct curl_httppost *post = NULL, *last = NULL;

@@ -43,12 +43,19 @@ def post( metadata_field, infile ):
       infile: file-like object which can be read from
    '''
    
-   log = rm_common.get_logger()
+   log = rm_common.log
    
    # parse
-   req_info = rm_request.parse_request_info_from_pb( metadata_field )
+   req_info = None
+   try:
+      req_info = rm_request.parse_request_info_from_pb( metadata_field )
+   except Exception, e:
+      # verification failure
+      log.exception( e )
+      return 403
+      
    if req_info == None:
-      log.warning("parse_request_info failed")
+      log.error("could not parse uploaded request info")
       return 400
    
    # validate
@@ -57,13 +64,18 @@ def post( metadata_field, infile ):
    infile_hash = hf.hexdigest()
    
    if req_info.data_hash != infile_hash:
-      log.warning("Hash mismatch: expected '%s', got '%s'" % (req_info.data_hash, infile_hash))
+      log.error("Hash mismatch: expected '%s', got '%s'" % (req_info.data_hash, infile_hash))
       return 400
    
    infile.seek(0)
    
    # store
-   rc = rm_storage.write_data( req_info, infile )
+   rc = 0
+   try:
+      rc = rm_storage.write_data( req_info, infile )
+   except Exception, e:
+      log.exception( e )
+      rc = 500
    
    log.info("write_data rc = %d" % rc )
    
@@ -75,24 +87,66 @@ def get( url_path, outfile ):
    '''
       Process a GET request.  Return an HTTP status code.  Write all data to outfile.
       
-      headers_dict: header name (str): header value (str)
+      url_path: path of the object to fetch
       outfile: file-like object which can be written to
    '''
    
-   log = rm_common.get_logger()
+   log = rm_common.log
    
    # parse
    req_info = rm_request.parse_request_info_from_url_path( url_path )
    if req_info == None:
-      log.warning("Invalid URL path '%s'" % url_path )
+      log.error("Invalid URL path '%s'" % url_path )
       return 400 
    
    # fetch
-   rc = rm_storage.read_data( req_info, outfile )
+   rc = 0
+   try:
+      rc = rm_storage.read_data( req_info, outfile )
+   except Exception, e:
+      log.exception( e )
+      rc = 500
    
    log.info("read_data rc = %d" % rc )
    
    return rc
+
+
+#-------------------------
+def delete( metadata_field ):
+   '''
+      Process a DELETE request.  Return an HTTP status code.
+      
+      metadata_field: uploaded metadata value for the request
+   '''
+   
+   log = rm_common.log
+   
+   # parse
+   req_info = None
+   try:
+      req_info = rm_request.parse_request_info_from_pb( metadata_field )
+   except Exception, e:
+      # verification failure
+      log.exception( e )
+      return 403
+      
+   if req_info == None:
+      log.error("could not parse uploaded request info")
+      return 400
+   
+   # delete
+   rc = 0
+   try:
+      rc = rm_storage.delete_data( req_info )
+   except Exception, e:
+      log.exception( e )
+      rc = 500
+   
+   log.info("delete_data rc = %d" % rc )
+   
+   return rc
+
 
 
 #-------------------------
@@ -106,6 +160,7 @@ def invalid_request( start_response, status="400 Invalid request", resp="Invalid
    
    return [resp]
 
+
 #-------------------------
 def wsgi_application( environ, start_response ):
    '''
@@ -117,7 +172,7 @@ def wsgi_application( environ, start_response ):
    
    required_post_fields = [METADATA_FIELD_NAME, DATA_FIELD_NAME]
    
-   log = rm_common.get_logger()
+   log = rm_common.log
    
    if environ['REQUEST_METHOD'] == 'GET':
       # GET request

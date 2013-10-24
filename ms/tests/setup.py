@@ -779,7 +779,22 @@ def replica_write( drivers, request_info, filename, infile ):
    drivers['sd_test'].write_file( filename, infile, extra_param="Foo" )
    
    return 200
+
+def replica_delete( drivers, request_info, filename ):
+   print "replica_delete called!"
    
+   global CONFIG 
+   
+   print "CONFIG = " + str(CONFIG)
+   
+   print "drivers = " + str(drivers)
+   print "request_info = " + str(request_info)
+   print "filename = " + str(filename)
+   print ""
+   
+   drivers['sd_test'].delete_file( filename, extra_param="Foo" )
+   
+   return 200
 """
 
 driver_str = """
@@ -801,15 +816,22 @@ def write_file( filename, infile, **kw ):
    print "  filename = " + str(filename)
    print "  infile = " + str(infile)
    print "  kw = " + str(kw)
-   print ""
    
    buf = infile.read()
    
-   print "Got data: '" + str(buf) + "'"
+   print "  Got data: '" + str(buf) + "'"
+   
+   print ""
    
    return 0
 
+def delete_file( filename, **kw ):
+   print "  delete_file called!"
+   print "  filename = " + str(filename)
+   print "  kw = " + str(kw)
+   print ""
    
+   return 0
 """
 
 json_str = '{ "closure" : "%s", "drivers" : [ { "name" : "sd_test", "code" : "%s" } ] }' % (base64.b64encode( closure_str ), base64.b64encode( driver_str ) )

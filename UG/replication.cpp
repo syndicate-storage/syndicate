@@ -6,10 +6,12 @@
 
 #include "replication.h"
 
+int fs_entry_replicate_wait_and_free( vector<struct replica_context*>* rctxs, struct timespec* timeout );
+
 static struct syndicate_replication global_replication;
 
 // set up a replica context
-int replica_context_init( struct replica_context* rctx, int type, FILE* block_data, char* manifest_data, off_t data_len, struct curl_httppost* form_data, uint64_t file_id, bool sync ) {
+int replica_context_init( struct replica_context* rctx, int type, int op, FILE* block_data, char* manifest_data, off_t data_len, struct curl_httppost* form_data, uint64_t file_id, bool sync ) {
    memset( rctx, 0, sizeof(struct replica_context) );
    
    if( type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
@@ -24,6 +26,7 @@ int replica_context_init( struct replica_context* rctx, int type, FILE* block_da
    
    rctx->curls = new vector<CURL*>();
    rctx->type = type;
+   rctx->op = op;
    rctx->size = data_len;
    rctx->form_data = form_data;
    rctx->sync = sync;
@@ -39,23 +42,111 @@ int replica_context_init( struct replica_context* rctx, int type, FILE* block_da
 int replica_context_free( struct replica_context* rctx ) {
    dbprintf("free replica %p\n", rctx);
    if( rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ) {
-      fclose( rctx->file );
+      if( rctx->file ) {
+         fclose( rctx->file );
+         rctx->file = NULL;
+      }
    }
    else if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-      free( rctx->data );
+      if( rctx->data ) {
+         free( rctx->data );
+         rctx->data = NULL;
+      }
    }
    
    for( unsigned int i = 0; i < rctx->curls->size(); i++ ) {
-      if( rctx->curls->at(i) != NULL )
+      if( rctx->curls->at(i) != NULL ) {
          curl_easy_cleanup( rctx->curls->at(i) );
+      }
    }
    
    delete rctx->curls;
    
-   curl_formfree( rctx->form_data );
+   if( rctx->form_data ) {
+      curl_formfree( rctx->form_data );
+      rctx->form_data = NULL;
+   }
+   
    sem_destroy( &rctx->processing_lock );
    
    memset( rctx, 0, sizeof( struct replica_context ) );
+   
+   return 0;
+}
+
+
+// create metadata form field for posting a request info structure
+int replica_add_metadata_form( struct curl_httppost** form_data, struct curl_httppost** last, ms::ms_gateway_request_info* replica_info ) {
+   // serialize to string
+   string replica_info_str;
+   
+   bool src = replica_info->SerializeToString( &replica_info_str );
+   if( !src ) {
+      errorf("%s", "Failed to serialize data\n" );
+      return -EINVAL;
+   }
+   
+   // build up the form to submit to the RG
+   curl_formadd( form_data, last,  CURLFORM_COPYNAME, "metadata",
+                                   CURLFORM_CONTENTSLENGTH, replica_info_str.size(),
+                                   CURLFORM_COPYCONTENTS, replica_info_str.c_str(),
+                                   CURLFORM_CONTENTTYPE, "application/octet-stream",
+                                   CURLFORM_END );
+
+   return 0;
+}
+
+
+// create data form field for posting manifest data
+int replica_add_data_form( struct curl_httppost** form_data, struct curl_httppost** last, char const* data, size_t len ) {
+   curl_formadd( form_data, last, CURLFORM_COPYNAME, "data",
+                                    CURLFORM_PTRCONTENTS, data,
+                                    CURLFORM_CONTENTSLENGTH, len,
+                                    CURLFORM_CONTENTTYPE, "application/octet-stream",
+                                    CURLFORM_END );
+   
+   return 0;
+}
+
+
+// create data form field for posting block data
+int replica_add_data_form( struct curl_httppost** form_data, struct curl_httppost** last, FILE* f, off_t size ) {
+   curl_formadd( form_data, last, CURLFORM_COPYNAME, "data",
+                                    CURLFORM_FILENAME, "block",         // make this look like a file upload
+                                    CURLFORM_STREAM, f,
+                                    CURLFORM_CONTENTSLENGTH, (long)size,
+                                    CURLFORM_CONTENTTYPE, "application/octet-stream",
+                                    CURLFORM_END );
+   
+   return 0;
+}
+
+// populate a ms_gateway_request_info structure with data
+int replica_populate_request( ms::ms_gateway_request_info* replica_info, struct fs_core* core, int request_type, struct fs_entry* fent, uint64_t block_id, uint64_t block_version, off_t size, unsigned char const* hash, size_t hash_len ) {
+   
+   replica_info->set_type( request_type );
+   replica_info->set_file_version( fent->version );
+   replica_info->set_block_id( block_id );
+   replica_info->set_block_version( block_version );
+   replica_info->set_size( size );
+   replica_info->set_file_mtime_sec( fent->mtime_sec );
+   replica_info->set_file_mtime_nsec( fent->mtime_nsec );
+   replica_info->set_file_id( fent->file_id );
+   replica_info->set_owner( fent->owner );
+   replica_info->set_writer( core->gateway );
+   replica_info->set_volume( fent->volume );
+   
+   
+   char* b64hash = NULL;
+   int rc = Base64Encode( (char*)hash, hash_len, &b64hash );
+   if( rc != 0 ) {
+      errorf("Base64Encode rc = %d\n", rc );
+      return -EINVAL;
+   }
+   
+   replica_info->set_hash( string(b64hash) );
+   
+   free( b64hash );
    
    return 0;
 }
@@ -68,6 +159,7 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    // get the manifest data
    char* manifest_data = NULL;
    ssize_t manifest_data_len = 0;
+   int rc = 0;
    
    manifest_data_len = fs_entry_serialize_manifest( core, fent, &manifest_data, false );
    if( manifest_data_len < 0 ) {
@@ -75,37 +167,21 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
       return -EINVAL;
    }
    
-   // build an update
-   ms::ms_gateway_request_info replica_info;
-   replica_info.set_type( ms::ms_gateway_request_info::MANIFEST );
-   replica_info.set_file_id( fent->file_id );
-   replica_info.set_file_version( fent->version );
-   replica_info.set_block_id( 0 );
-   replica_info.set_block_version( 0 );
-   replica_info.set_size( manifest_data_len );
-   replica_info.set_file_mtime_sec( fent->mtime_sec );
-   replica_info.set_file_mtime_nsec( fent->mtime_nsec );
-   replica_info.set_owner( fent->owner );
-   replica_info.set_writer( core->gateway );
-   replica_info.set_volume( fent->volume );
-
-   
    // hash the manifest
    unsigned char* hash = sha256_hash_data( manifest_data, manifest_data_len );
    size_t hash_len = sha256_len();
    
-   char* b64hash = NULL;
-   int rc = Base64Encode( (char*)hash, hash_len, &b64hash );
+   // build an update
+   ms::ms_gateway_request_info replica_info;
+   rc = replica_populate_request( &replica_info, core, ms::ms_gateway_request_info::MANIFEST, fent, 0, 0, manifest_data_len, hash, hash_len );
+   
+   free( hash );
+   
    if( rc != 0 ) {
-      errorf("Base64Encode rc = %d\n", rc );
-      free( hash );
+      errorf("replica_populate_request rc = %d\n", rc );
       free( manifest_data );
       return -EINVAL;
    }
-
-   replica_info.set_hash( string(b64hash) );
-   free( b64hash );
-   free( hash );
    
    rc = md_sign< ms::ms_gateway_request_info >( core->ms->my_key, &replica_info );
    if( rc != 0 ) {
@@ -114,36 +190,33 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
       return -EINVAL;
    }
    
-   // serialize to string
-   string replica_info_str;
-   
-   bool src = replica_info.SerializeToString( &replica_info_str );
-   if( !src ) {
-      errorf("Failed to serialize data for %" PRIX64 "\n", fent->file_id );
-      free( manifest_data );
-      return -EINVAL;
-   }
-   
    // build up the form to submit to the RG
    struct curl_httppost* form_data = NULL;
    struct curl_httppost* last = NULL;
    
-   curl_formadd( &form_data, &last,  CURLFORM_COPYNAME, "metadata",
-                                     CURLFORM_CONTENTSLENGTH, replica_info_str.size(),
-                                     CURLFORM_COPYCONTENTS, replica_info_str.c_str(),
-                                     CURLFORM_CONTENTTYPE, "application/octet-stream",
-                                     CURLFORM_END );
-
-   curl_formadd( &form_data, &last, CURLFORM_COPYNAME, "data",
-                                    CURLFORM_PTRCONTENTS, manifest_data,
-                                    CURLFORM_CONTENTSLENGTH, manifest_data_len,
-                                    CURLFORM_CONTENTTYPE, "application/octet-stream",
-                                    CURLFORM_END );
+   // metadata form
+   rc = replica_add_metadata_form( &form_data, &last, &replica_info );
+   if( rc != 0 ) {
+      errorf("replica_add_metadata_form( %" PRIX64 " ) rc = %d\n", fent->file_id, rc );
+      free( manifest_data );
+      return -EINVAL;
+   }
+   
+   // data form
+   rc = replica_add_data_form( &form_data, &last, manifest_data, manifest_data_len );
+   if( rc != 0 ) {
+      errorf("replica_add_data_form( %" PRIX64 " ) rc = %d\n", fent->file_id, rc );
+      
+      curl_formfree( form_data );
+      free( manifest_data );
+      
+      return -EINVAL;
+   }
    
    // set up the replica context
-   rc = replica_context_init( rctx, REPLICA_CONTEXT_TYPE_MANIFEST, NULL, manifest_data, manifest_data_len, form_data, fent->file_id, sync );
+   rc = replica_context_init( rctx, REPLICA_CONTEXT_TYPE_MANIFEST, REPLICA_POST, NULL, manifest_data, manifest_data_len, form_data, fent->file_id, sync );
    if( rc != 0 ) {
-      errorf("fs_entry_init_replica_context(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
+      errorf("replica_context_init(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
       
       curl_formfree( form_data );
       free( manifest_data );
@@ -188,35 +261,20 @@ int replica_context_block( struct fs_core* core, struct replica_context* rctx, s
    if( rc != 0 ) {
       int errsv = -errno;
       errorf( "fstat errno = %d\n", errsv );
-      
       fclose( f );
+      
       return errsv;
    }
 
    // build an update
    ms::ms_gateway_request_info replica_info;
-   replica_info.set_type( ms::ms_gateway_request_info::BLOCK );
-   replica_info.set_file_version( fent->version );
-   replica_info.set_block_id( block_id );
-   replica_info.set_block_version( block_info->version );
-   replica_info.set_size( sb.st_size );
-   replica_info.set_file_mtime_sec( fent->mtime_sec );
-   replica_info.set_file_mtime_nsec( fent->mtime_nsec );
-   replica_info.set_file_id( fent->file_id );
-   replica_info.set_owner( fent->owner );
-   replica_info.set_writer( core->gateway );
-   replica_info.set_volume( fent->volume );
-
-   char* b64hash = NULL;
-   rc = Base64Encode( (char*)block_info->hash, block_info->hash_len, &b64hash );
+   rc = replica_populate_request( &replica_info, core, ms::ms_gateway_request_info::BLOCK, fent, block_id, block_info->version, sb.st_size, block_info->hash, block_info->hash_len );
    if( rc != 0 ) {
-      errorf("Base64Encode rc = %d\n", rc );
+      errorf("replica_populate_request rc = %d\n", rc );
       fclose( f );
+      
       return -EINVAL;
    }
-
-   replica_info.set_hash( string(b64hash) );
-   free( b64hash );
    
    rc = md_sign< ms::ms_gateway_request_info >( core->ms->my_key, &replica_info );
    if( rc != 0 ) {
@@ -225,37 +283,32 @@ int replica_context_block( struct fs_core* core, struct replica_context* rctx, s
       return -EINVAL;
    }
 
-   // serialize
-   string replica_info_str;
-   bool src = replica_info.SerializeToString( &replica_info_str );
-   if( !src ) {
-      errorf("%s", " failed to serialize\n");
-      fclose( f );
-      return -EINVAL;
-   }
-
    // build request
    struct curl_httppost* last = NULL;
    struct curl_httppost* form_data = NULL;
 
-
-   curl_formadd( &form_data, &last, CURLFORM_COPYNAME, "metadata",
-                                    CURLFORM_CONTENTSLENGTH, replica_info_str.size(),
-                                    CURLFORM_COPYCONTENTS, replica_info_str.c_str(),
-                                    CURLFORM_CONTENTTYPE, "application/octet-stream",
-                                    CURLFORM_END );
-
-   curl_formadd( &form_data, &last, CURLFORM_COPYNAME, "data",
-                                    CURLFORM_FILENAME, "block",         // make this look like a file upload
-                                    CURLFORM_STREAM, f,
-                                    CURLFORM_CONTENTSLENGTH, (long)sb.st_size,
-                                    CURLFORM_CONTENTTYPE, "application/octet-stream",
-                                    CURLFORM_END );
+   rc = replica_add_metadata_form( &form_data, &last, &replica_info );
+   if( rc != 0 ) {
+      errorf("replica_add_metadata_form( %" PRIX64 " ) rc = %d\n", fent->file_id, rc );
+      fclose( f );
+      
+      return rc;
+   }
+   
+   rc = replica_add_data_form( &form_data, &last, f, sb.st_size );
+   if( rc != 0 ) {
+      errorf("replica_add_data_form( %" PRIX64 " ) rc = %d\n", fent->file_id, rc );
+      
+      curl_formfree( form_data );
+      fclose( f );
+      
+      return rc;
+   }
    
    // set up the replica context
-   rc = replica_context_init( rctx, REPLICA_CONTEXT_TYPE_BLOCK, f, NULL, sb.st_size, form_data, fent->file_id, sync );
+   rc = replica_context_init( rctx, REPLICA_CONTEXT_TYPE_BLOCK, REPLICA_POST, f, NULL, sb.st_size, form_data, fent->file_id, sync );
    if( rc != 0 ) {
-      errorf("fs_entry_init_replica_context(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
+      errorf("replica_context_init(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
       
       curl_formfree( form_data );
       fclose( f );
@@ -265,6 +318,107 @@ int replica_context_block( struct fs_core* core, struct replica_context* rctx, s
    
    return 0;
 }
+
+
+// delete a manifest
+int replica_context_delete_manifest( struct fs_core* core, struct replica_context* rctx, struct fs_entry* fent, bool sync ) {
+   int rc = 0;
+   
+   // put random bits into the hash field, for some cryptographic padding
+   unsigned char fake_hash[256];
+   for( unsigned int i = 0; i < (256 / sizeof(uint32_t)); i++ ) {
+      uint32_t random_bits = CMWC4096();
+      memcpy( fake_hash + (i * sizeof(uint32_t)), &random_bits, sizeof(uint32_t) );
+   }
+   
+   // build an update
+   ms::ms_gateway_request_info replica_info;
+   rc = replica_populate_request( &replica_info, core, ms::ms_gateway_request_info::MANIFEST, fent, 0, 0, 0, fake_hash, 256 );
+   if( rc != 0 ) {
+      errorf("replica_populate_request rc = %d\n", rc );
+      return -EINVAL;
+   }
+   
+   rc = md_sign< ms::ms_gateway_request_info >( core->ms->my_key, &replica_info );
+   if( rc != 0 ) {
+      errorf("md_sign rc = %d\n", rc );
+      return -EINVAL;
+   }
+
+   // build request
+   struct curl_httppost* last = NULL;
+   struct curl_httppost* form_data = NULL;
+
+   rc = replica_add_metadata_form( &form_data, &last, &replica_info );
+   if( rc != 0 ) {
+      errorf("replica_add_metadata_form( %" PRIX64 " ) rc = %d\n", fent->file_id, rc );
+      
+      return rc;
+   }
+   
+   // set up the replica context
+   rc = replica_context_init( rctx, REPLICA_CONTEXT_TYPE_MANIFEST, REPLICA_DELETE, NULL, NULL, 0, form_data, fent->file_id, sync );
+   if( rc != 0 ) {
+      errorf("replica_context_init(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
+      
+      curl_formfree( form_data );
+      
+      return -EINVAL;
+   }
+   
+   return 0;
+}
+
+
+// delete a block
+int replica_context_delete_block( struct fs_core* core, struct replica_context* rctx, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool sync ) {
+   int rc = 0;
+   
+   // put random bits into the hash field, for some cryptographic padding
+   unsigned char fake_hash[256];
+   for( unsigned int i = 0; i < (256 / sizeof(uint32_t)); i++ ) {
+      uint32_t random_bits = CMWC4096();
+      memcpy( fake_hash + (i * sizeof(uint32_t)), &random_bits, sizeof(uint32_t) );
+   }
+   
+   // build an update
+   ms::ms_gateway_request_info replica_info;
+   rc = replica_populate_request( &replica_info, core, ms::ms_gateway_request_info::BLOCK, fent, block_id, block_version, 0, fake_hash, 256 );
+   if( rc != 0 ) {
+      errorf("replica_populate_request rc = %d\n", rc );
+      return -EINVAL;
+   }
+   
+   rc = md_sign< ms::ms_gateway_request_info >( core->ms->my_key, &replica_info );
+   if( rc != 0 ) {
+      errorf("md_sign rc = %d\n", rc );
+      return -EINVAL;
+   }
+
+   // build request
+   struct curl_httppost* last = NULL;
+   struct curl_httppost* form_data = NULL;
+
+   rc = replica_add_metadata_form( &form_data, &last, &replica_info );
+   if( rc != 0 ) {
+      errorf("replica_add_metadata_form( %" PRIX64 " ) rc = %d\n", fent->file_id, rc );
+      
+      return rc;
+   }
+   
+   // set up the replica context
+   rc = replica_context_init( rctx, REPLICA_CONTEXT_TYPE_BLOCK, REPLICA_DELETE, NULL, NULL, 0, form_data, fent->file_id, sync );
+   if( rc != 0 ) {
+      errorf("replica_context_init(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
+      
+      curl_formfree( form_data );
+      
+      return -EINVAL;
+   }
+   
+   return 0;
+}
+
 
 static int old_still_running = -1;
 
@@ -494,93 +648,6 @@ void* replica_main( void* arg ) {
 }
 
 
-static
-void dump(const char *text,
-          FILE *stream, unsigned char *ptr, size_t size,
-          char nohex)
-{
-  size_t i;
-  size_t c;
- 
-  unsigned int width=0x10;
- 
-  if(nohex)
-    /* without the hex output, we can fit more on screen */ 
-    width = 0x40;
- 
-  fprintf(stream, "%s, %10.10ld bytes (0x%8.8lx)\n",
-          text, (long)size, (long)size);
- 
-  for(i=0; i<size; i+= width) {
- 
-    fprintf(stream, "%4.4lx: ", (long)i);
- 
-    if(!nohex) {
-      /* hex not disabled, show it */ 
-      for(c = 0; c < width; c++)
-        if(i+c < size)
-          fprintf(stream, "%02x ", ptr[i+c]);
-        else
-          fputs("   ", stream);
-    }
- 
-    for(c = 0; (c < width) && (i+c < size); c++) {
-      /* check for 0D0A; if found, skip past and start a new line of output */ 
-      if (nohex && (i+c+1 < size) && ptr[i+c]==0x0D && ptr[i+c+1]==0x0A) {
-        i+=(c+2-width);
-        break;
-      }
-      fprintf(stream, "%c",
-              (ptr[i+c]>=0x20) && (ptr[i+c]<0x80)?ptr[i+c]:'.');
-      /* check again for 0D0A, to avoid an extra \n if it's at width */ 
-      if (nohex && (i+c+2 < size) && ptr[i+c+1]==0x0D && ptr[i+c+2]==0x0A) {
-        i+=(c+3-width);
-        break;
-      }
-    }
-    fputc('\n', stream); /* newline */ 
-  }
-  fflush(stream);
-}
- 
-static
-int my_trace(CURL *handle, curl_infotype type,
-             char *data, size_t size,
-             void *userp)
-{
-  const char *text;
-  (void)handle; /* prevent compiler warning */ 
- 
-  switch (type) {
-  case CURLINFO_TEXT:
-    fprintf(stderr, "== Info: %s", data);
-  default: /* in case a new one is introduced to shock us */ 
-    return 0;
- 
-  case CURLINFO_HEADER_OUT:
-    text = "=> Send header";
-    break;
-  case CURLINFO_DATA_OUT:
-    text = "=> Send data";
-    break;
-  case CURLINFO_SSL_DATA_OUT:
-    text = "=> Send SSL data";
-    break;
-  case CURLINFO_HEADER_IN:
-    text = "<= Recv header";
-    break;
-  case CURLINFO_DATA_IN:
-    text = "<= Recv data";
-    break;
-  case CURLINFO_SSL_DATA_IN:
-    text = "<= Recv SSL data";
-    break;
-  }
- 
-  dump(text, stderr, (unsigned char *)data, size, true);
-  return 0;
-}
-
 // begin downloading
 int replica_begin( struct syndicate_replication* rp, struct replica_context* rctx ) {
    
@@ -597,15 +664,19 @@ int replica_begin( struct syndicate_replication* rp, struct replica_context* rct
       CURL* curl = curl_easy_init();
       rctx->curls->push_back( curl );
       
-      dbprintf("replicate %p (%s) to %s\n", rctx, (rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ? "block" : "manifest"), rg_urls[i] );
+      dbprintf("%s %p (%s) to %s\n", (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx, (rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ? "block" : "manifest"), rg_urls[i] );
       md_init_curl_handle( curl, rg_urls[i], rp->ms->conf->replica_connect_timeout );
       
-      // upload...
+      // prepare upload
       curl_easy_setopt( curl, CURLOPT_POST, 1L );
-      curl_easy_setopt(curl, CURLOPT_HTTPPOST, rctx->form_data );
+      curl_easy_setopt( curl, CURLOPT_HTTPPOST, rctx->form_data );
+      
+      // if we're deleting, change the method
+      if( rctx->op == REPLICA_DELETE ) {
+         curl_easy_setopt( curl, CURLOPT_CUSTOMREQUEST, "DELETE" );
+      }
       
       //curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-      //curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, my_trace);
       
       (*rp->pending_uploads)[ curl ] = rctx;
    }
@@ -751,23 +822,16 @@ int replication_shutdown() {
 }
 
 
-// replicate a manifest
-// fent must be write-locked
-int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bool sync, struct fs_file_handle* fh ) {
-   struct replica_context* manifest_rctx = CALLOC_LIST( struct replica_context, 1 );
-   
-   int rc = replica_context_manifest( core, manifest_rctx, fent, sync );
-   if( rc != 0 ) {
-      errorf("replica_context_manifest rc = %d\n", rc );
-      free( manifest_rctx );
-      return rc;
-   }
+// run a manifest replication
+int replica_run_manifest_context( struct fs_core* core, struct replica_context* manifest_rctx, bool sync, struct fs_file_handle* fh ) {
+   int rc = 0;
    
    // proceed to replicate
    rc = replica_begin( &global_replication, manifest_rctx );
    
    if( rc != 0 ) {
-      errorf("replica_begin rc = %d\n", rc );
+      errorf("replica_begin(%p) rc = %d\n", manifest_rctx, rc );
+      
       replica_context_free( manifest_rctx );
       free( manifest_rctx );
       return rc;
@@ -808,6 +872,71 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
    return rc;
 }
 
+
+// run a set of block replications
+int replica_run_block_contexts( struct fs_core* core, vector<struct replica_context*>* block_rctxs, bool sync, struct fs_file_handle* fh ) {
+   
+   int rc = 0;
+   vector<struct replica_context*> running;
+   
+   // kick of the replicas
+   for( unsigned int i = 0; i < block_rctxs->size(); i++ ) {
+      rc = replica_begin( &global_replication, block_rctxs->at(i) );
+      if( rc != 0 ) {
+         errorf("replica_begin(%p) rc = %d\n", block_rctxs->at(i), rc );
+      }
+      else {
+         running.push_back( block_rctxs->at(i) );
+      }
+   }
+   
+   // wait for them all to finish?
+   if( sync ) {
+      struct timespec *tsp = NULL;
+      if( core->conf->transfer_timeout > 0 ) {
+         struct timespec ts;
+         ts.tv_sec = core->conf->transfer_timeout;
+         ts.tv_nsec = 0;
+         tsp = &ts;
+      }
+      
+      rc = fs_entry_replicate_wait_and_free( &running, tsp );
+      if( rc != 0 ) {
+         errorf("fs_entry_replicate_wait rc = %d\n", rc );
+      }
+   }
+   
+   else {
+      if( fh ) {
+         // wait for a later call to fs_entry_replicate_wait
+         for( unsigned int i = 0; i < running.size(); i++ ) {
+            fh->rctxs->push_back( running[i] );
+         }
+      }
+   }
+   
+   return rc;
+}
+
+
+// replicate a manifest
+// fent must be write-locked
+int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bool sync, struct fs_file_handle* fh ) {
+   struct replica_context* manifest_rctx = CALLOC_LIST( struct replica_context, 1 );
+   
+   int rc = replica_context_manifest( core, manifest_rctx, fent, sync );
+   if( rc != 0 ) {
+      errorf("replica_context_manifest rc = %d\n", rc );
+      free( manifest_rctx );
+      return rc;
+   }
+   
+   rc = replica_run_manifest_context( core, manifest_rctx, sync, fh );
+   
+   return rc;
+}
+
+
 // replicate a sequence of modified blocks
 // fent must be write-locked
 int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh ) {
@@ -827,37 +956,52 @@ int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modi
       }
       
       block_rctxs.push_back( block_rctx );
-      
-      rc = replica_begin( &global_replication, block_rctx );
-      if( rc != 0 ) {
-         errorf("replica_begin rc = %d\n", rc );
-      }
    }
    
-   // wait for them all to finish?
-   if( sync ) {
-      struct timespec *tsp = NULL;
-      if( core->conf->transfer_timeout > 0 ) {
-         struct timespec ts;
-         ts.tv_sec = core->conf->transfer_timeout;
-         ts.tv_nsec = 0;
-         tsp = &ts;
-      }
-      
-      rc = fs_entry_replicate_wait_and_free( &block_rctxs, tsp );
-      if( rc != 0 ) {
-         errorf("fs_entry_replicate_wait rc = %d\n", rc );
-      }
+   rc = replica_run_block_contexts( core, &block_rctxs, sync, fh );
+   
+   return rc;
+}
+
+
+// delete a manifest replica.
+int fs_entry_delete_manifest_replicas( struct fs_core* core, struct fs_entry* fent, bool sync, struct fs_file_handle* fh ) {
+   struct replica_context* manifest_rctx = CALLOC_LIST( struct replica_context, 1 );
+   
+   int rc = replica_context_delete_manifest( core, manifest_rctx, fent, sync );
+   if( rc != 0 ) {
+      errorf("replica_context_delete_manifest rc = %d\n", rc );
+      free( manifest_rctx );
+      return rc;
    }
    
-   else {
-      if( fh ) {
-         // wait for a later call to fs_entry_replicate_wait
-         for( unsigned int i = 0; i < block_rctxs.size(); i++ ) {
-            fh->rctxs->push_back( block_rctxs[i] );
-         }
+   rc = replica_run_manifest_context( core, manifest_rctx, sync, fh );
+   
+   return rc;
+}
+
+
+// delete block replicas
+int fs_entry_delete_block_replicas( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh ) {
+   vector<struct replica_context*> block_rctxs;
+   int rc = 0;
+   
+   for( modification_map::iterator itr = modified_blocks->begin(); itr != modified_blocks->end(); itr++ ) {
+      uint64_t block_id = itr->first;
+      struct fs_entry_block_info* block_info = &itr->second;
+      
+      struct replica_context* block_rctx = CALLOC_LIST( struct replica_context, 1 );
+      
+      rc = replica_context_delete_block( core, block_rctx, fent, block_id, block_info->version, sync );
+      if( rc != 0 ) {
+         errorf("replica_context_block rc = %d\n", rc );
+         free( block_rctx );
       }
+      
+      block_rctxs.push_back( block_rctx );
    }
+   
+   rc = replica_run_block_contexts( core, &block_rctxs, sync, fh );
    
    return rc;
 }
@@ -913,6 +1057,7 @@ int fs_entry_replicate_wait_and_free( vector<struct replica_context*>* rctxs, st
    return worst_rc;
 }
 
+
 // wait for all replications to finish
 // fh must be write-locked
 int fs_entry_replicate_wait( struct fs_file_handle* fh ) {
@@ -930,5 +1075,4 @@ int fs_entry_replicate_wait( struct fs_file_handle* fh ) {
    fh->rctxs->clear();
    return rc;
 }
-
 

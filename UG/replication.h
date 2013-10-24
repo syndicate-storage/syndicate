@@ -3,6 +3,9 @@
    All Rights Reserved
 */
 
+/*
+ * Interface for communicating with the replica managers in the Volume.
+ */
 
 #ifndef _REPLICATION_H_
 #define _REPLICATION_H_
@@ -32,37 +35,43 @@ using namespace std;
 #define REPLICA_CONTEXT_TYPE_BLOCK 1
 #define REPLICA_CONTEXT_TYPE_MANIFEST 2
 
+#define REPLICA_POST 1
+#define REPLICA_DELETE 2
+
 // chunk of data to upload
 struct replica_context {
-   vector<CURL*>* curls;
-   struct curl_httppost* form_data;    // what we're uploading
-
-   int type;               // block or manifest?
-   char* data;             // for the manifest
-   FILE* file;             // for the block
-   off_t size;             // number of bytes to send
+   vector<CURL*>* curls;        // connections to the replica managers in this Volume
    
-   struct timespec deadline;
+   int type;               // block or manifest?
+   int op;                 // put or delete?
+   
+   // data to upload
+   struct curl_httppost* form_data;    // what we're uploading
+   char* data;             // for POSTing the manifest
+   FILE* file;             // for POSTing the block
+   off_t size;             // number of bytes to send on POST
+   
+   struct timespec deadline;    // when we should abort this replication request
 
    int error;              // error code
    
-   sem_t processing_lock;
+   sem_t processing_lock;       // released when the context has been processed
    
-   bool sync;              // synchronous or asynchronous upload
+   bool sync;              // synchronous or asynchronous operation
    
-   uint64_t file_id;
+   uint64_t file_id;            // affected file
 };
 
 typedef map<CURL*, struct replica_context*> replica_upload_set;
 
 struct syndicate_replication {
    CURLM* running;                      // CURL multi-upload interface
-   replica_upload_set* uploads;         // pending uploads
+   replica_upload_set* uploads;         // contexts being processed
    pthread_mutex_t running_lock;        // lock for the above information
    
    // hold requests until we have a chance to insert them into CURL (since we don't want to lock the upload process if we can help it)
-   replica_upload_set* pending_uploads; // used for inserting updates
-   bool has_pending;
+   replica_upload_set* pending_uploads; // contexts to begin processing on the next loop iteration
+   bool has_pending;                    // do we have more work?
    pthread_mutex_t pending_lock;        // lock for the above pending
    
    pthread_t upload_thread;     // thread to send data to Replica SGs
@@ -82,7 +91,9 @@ int replica_context_free( struct replica_context* rctx );
 int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bool sync, struct fs_file_handle* fh );
 int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh );
 
+int fs_entry_delete_manifest_replicas( struct fs_core* core, struct fs_entry* fent, bool sync, struct fs_file_handle* fh );
+int fs_entry_delete_block_replicas( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh );
+
 int fs_entry_replicate_wait( struct fs_file_handle* fh );
-int fs_entry_replicate_wait_and_free( vector<struct replica_context*>* rctxs, struct timespec* timeout );
 
 #endif

@@ -1341,7 +1341,7 @@ size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t 
    
    size_t realsize = size * count;
    if( brb->size + realsize > (unsigned)brb->max_size ) {
-      realsize = brb->max_size - realsize;
+      realsize = brb->max_size - brb->size;
    }
    
    char* buf = CALLOC_LIST( char, realsize );
@@ -1483,7 +1483,12 @@ ssize_t md_download_file3( char const* url, int fd, char const* username, char c
    curl_easy_setopt( curl_h, CURLOPT_URL, url );
    curl_easy_setopt( curl_h, CURLOPT_FOLLOWLOCATION, 1L );
    curl_easy_setopt( curl_h, CURLOPT_FILETIME, 1L );
-   curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, SYNDICATE_CONF.verify_peer ? 1L : 0L );
+   
+   if( strncasecmp( url, "https", 5 ) == 0 ) {
+      curl_easy_setopt( curl_h, CURLOPT_USE_SSL, 1L );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, 1L );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
+   }
    
    char* userpass = NULL;
    if( username && password ) {
@@ -2985,6 +2990,13 @@ void md_init_curl_handle( CURL* curl_h, char const* url, time_t query_timeout ) 
    curl_easy_setopt( curl_h, CURLOPT_NOSIGNAL, 1L );
    curl_easy_setopt( curl_h, CURLOPT_CONNECTTIMEOUT, query_timeout );
    curl_easy_setopt( curl_h, CURLOPT_FILETIME, 1L );
+   
+   if( url != NULL && strncasecmp( url, "https", 5 ) == 0 ) {
+      curl_easy_setopt( curl_h, CURLOPT_USE_SSL, 1L );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, SYNDICATE_CONF.verify_peer ? 1L : 0L );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
+   }
+   
    //curl_easy_setopt( curl_h, CURLOPT_VERBOSE, 1L );
 }
 

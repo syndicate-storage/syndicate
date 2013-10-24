@@ -138,6 +138,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    curl_easy_setopt( curl_h, CURLOPT_WRITEFUNCTION, fs_entry_response_buffer );
    curl_easy_setopt( curl_h, CURLOPT_WRITEDATA, &buf );
    curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, (core->conf->verify_peer ? 1L : 0L) );
+   curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
 
    int rc = fs_entry_sign_write_message( sendMsg, core );
    if( rc != 0 ) {

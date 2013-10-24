@@ -131,7 +131,7 @@ message ms_gateway_cert {
    
    optional uint64 blocksize = 13;        // (AG only) desired block size
    
-   required string signature = 14;        // Signature
+   required string signature = 14;        // base64-encoded Volume signature of this cert
 }
 
 

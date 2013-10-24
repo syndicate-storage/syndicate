@@ -22,7 +22,7 @@ ext_modules=[
     Extension("syndicate",
               sources=["syndicate.pyx"],
               libraries=["syndicate"],
-              include_dirs=["../", "/usr/include/syndicate"],
+              include_dirs=["../", "../../protobufs", "/usr/include/syndicate"],
               language="c++") 
 ]
 

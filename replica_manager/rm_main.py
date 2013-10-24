@@ -11,12 +11,12 @@ from wsgiref.simple_server import make_server
 
 #-------------------------
 def debug():
-   log = rm_common.get_logger()
+   log = rm_common.log
    
    rm_common.syndicate_lib_path( "../libsyndicate/python" )
    
-   gateway_name = "RG-t510-1"
-   gateway_portnum = 32779
+   gateway_name = "RG-t510-1-691"
+   gateway_portnum = 23471
    rg_username = "jcnelson@cs.princeton.edu"
    rg_password = "nya!"
    ms_url = "http://localhost:8080/"
@@ -30,7 +30,7 @@ def debug():
    rm_config.init( syndicate )
    
    # start serving!
-   httpd = make_server( "t510", 32779, rm_server.wsgi_application )
+   httpd = make_server( "t510", gateway_portnum, rm_server.wsgi_application )
    
    httpd.serve_forever()
    

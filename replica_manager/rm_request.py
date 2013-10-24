@@ -11,8 +11,6 @@ import errno
 import protobufs.serialization_pb2 as serialization_proto
 import protobufs.ms_pb2 as ms_proto
 
-log = get_logger()
-
 #-------------------------
 RE_BLOCK_PATH = re.compile( "^[/]+SYNDICATE-DATA[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)\.([0123456789]+)[/]+([0123456789]+)\.([0123456789]+)[/]*$" )
 RE_MANIFEST_PATH = re.compile( "^[/]+SYNDICATE-DATA[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)\.([0123456789]+)[/]+manifest\.([0123456789]+)\.([0123456789]+)[/]*$" )
@@ -31,6 +29,9 @@ RequestInfo = collections.namedtuple( "RequestInfo", ["type",
                                                       "mtime_nsec",
                                                       "data_hash",
                                                       "size"] )
+
+# TODO: write_nonce, delete list 
+
 RequestInfo.MANIFEST = 1
 RequestInfo.BLOCK = 2
 
@@ -68,11 +69,11 @@ def parse_request_info_from_pb( req_info_str ):
 
     '''
         Parse and verify a serialized ms_client_request_info protobuf.
-        Return a RequestInfo structure with the same information
+        Return a RequestInfo structure with the same information.
+        Raises an exception if the authenticity of the sender could not be verified.
     '''
     
     libsyndicate = get_libsyndicate()
-    log = get_logger()
     
     # parse it
     req_info = ms_proto.ms_gateway_request_info()
@@ -84,7 +85,9 @@ def parse_request_info_from_pb( req_info_str ):
        return None
     
     valid = verify_protobuf( req_info.writer, req_info.volume, req_info )
-    
+    if not valid:
+       raise Exception("Could not verify request info message authenticity")
+      
     # construct a RequestInfo
     req_type = 0
     if req_info.type == ms_proto.ms_gateway_request_info.MANIFEST:
@@ -122,7 +125,6 @@ def parse_request_info_from_url_path( url_path ):
    global RE_MANIFEST_PATH
    
    libsyndicate = get_libsyndicate()
-   log = get_logger()
    
    # block, manifest, or neither?
    manifest_match = RE_MANIFEST_PATH.match( url_path )
@@ -188,4 +190,17 @@ def parse_request_info_from_url_path( url_path ):
                                   size=None )
       
       return replica_info
+   
+   
+if __name__ == "__main__":
+   
+   manifest_req_info = parse_request_info_from_url_path( "/SYNDICATE-DATA/1/12345.67890/manifest.12345.67890" )
+   block_req_info = parse_request_info_from_url_path( "/SYNDICATE-DATA/1/12345.67890/12.34" )
+   
+   print "GET"
+   print "manifest_req_info = %s" % str(manifest_req_info)
+   print ""
+   print "block_req_info = %s" % str(block_req_info)
+   print ""
+   
    

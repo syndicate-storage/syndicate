@@ -29,11 +29,21 @@ def read_data( req_info, outfile ):
    '''
       Call the replica_read() method in the replica manager's closure.
    '''
-   return rm_config.call_config_read( req_info, filename_from_req_info( req_info ), outfile )
+   filename = filename_from_req_info( req_info )
+   return rm_config.call_config_read( req_info, filename, outfile )
 
 #-------------------------
 def write_data( req_info, infile ):
    '''
       Call the replica_write() method in the replica manager's closure.
    '''
-   return rm_config.call_config_write( req_info, filename_from_req_info( req_info ), infile )
+   filename = filename_from_req_info( req_info )
+   return rm_config.call_config_write( req_info, filename, infile )
+
+#-------------------------
+def delete_data( req_info ):
+   '''
+      Call the replica_delete() method in the replica manager's closure.
+   '''
+   filename = filename_from_req_info( req_info )
+   return rm_config.call_config_delete( req_info, filename )

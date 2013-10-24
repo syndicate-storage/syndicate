@@ -1172,7 +1172,7 @@ int ms_client_download_cert( struct ms_client* client, CURL* curl, char const* u
    char* buf = NULL;
    ssize_t buf_len = 0;
    
-   int rc = md_download_cached( client->conf, curl, url, &buf, &buf_len, 4096 );
+   int rc = md_download_cached( client->conf, curl, url, &buf, &buf_len, MS_MAX_CERT_SIZE );
    
    if( rc != 0 ) {
       errorf("md_download_cached(%s) rc = %d\n", url, rc );
@@ -1310,6 +1310,11 @@ int ms_client_reload_certs( struct ms_client* client ) {
    // unlock Volume data, so we can download without locking the view-change threads
    ms_client_view_unlock( client );
    
+   // what's our gateway id?
+   ms_client_rlock( client );
+   uint64_t my_gateway_id = client->gateway_id;
+   ms_client_unlock( client );
+   
    // get the new certs...
    CURL* curl = curl_easy_init();
    
@@ -1352,7 +1357,7 @@ int ms_client_reload_certs( struct ms_client* client ) {
       
       // load!
       struct ms_gateway_cert* new_cert = CALLOC_LIST( struct ms_gateway_cert, 1 );
-      rc = ms_client_load_cert( new_cert, &ms_cert );
+      rc = ms_client_load_cert( my_gateway_id, new_cert, &ms_cert );
       if( rc != 0 ) {
          ms_client_view_unlock( client );
          
@@ -1614,8 +1619,9 @@ long ms_client_dump_pubkey( EVP_PKEY* pkey, char** buf ) {
 }
 
 
-// (re)load a gateway certificate
-int ms_client_load_cert( struct ms_gateway_cert* cert, const ms::ms_gateway_cert* ms_cert ) {
+// (re)load a gateway certificate.
+// If my_gateway_id matches the ID in the cert, then load the closure as well (since we'll need it)
+int ms_client_load_cert( uint64_t my_gateway_id, struct ms_gateway_cert* cert, const ms::ms_gateway_cert* ms_cert ) {
    cert->user_id = ms_cert->owner_id();
    cert->gateway_id = ms_cert->gateway_id();
    cert->gateway_type = ms_cert->gateway_type();
@@ -1628,7 +1634,7 @@ int ms_client_load_cert( struct ms_gateway_cert* cert, const ms::ms_gateway_cert
    cert->volume_id = ms_cert->volume_id();
    
    // NOTE: closure information is base64-encoded
-   if( ms_cert->closure_text().size() > 0 ) {
+   if( my_gateway_id == cert->gateway_id && ms_cert->closure_text().size() > 0 ) {
       cert->closure_text_len = ms_cert->closure_text().size();
       cert->closure_text = CALLOC_LIST( char, cert->closure_text_len + 1 );
       memcpy( cert->closure_text, ms_cert->closure_text().c_str(), cert->closure_text_len );
@@ -1756,7 +1762,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
 
    // load cert
    const ms::ms_gateway_cert& my_cert = registration_md->cert();
-   rc = ms_client_load_cert( &cert, &my_cert );
+   rc = ms_client_load_cert( 0, &cert, &my_cert );
    if( rc != 0 ) {
       errorf("ms_client_load_cert rc = %d\n", rc );
       return rc;
@@ -3486,7 +3492,7 @@ int ms_client_get_closure_text( struct ms_client* client, char** closure_text, u
    ms_client_cert_bundles( vol, cert_bundles );
    
    ms_cert_bundle::iterator itr = cert_bundles[ client->gateway_type ]->find( client->gateway_id );
-   if( itr == cert_bundles[ client->gateway_id ]->end() ) {
+   if( itr == cert_bundles[ client->gateway_type ]->end() ) {
       // something's seriously wrong here...
       ms_client_view_unlock( client );
       return -ENOTCONN;

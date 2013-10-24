@@ -27,6 +27,9 @@
 
 #define RSA_KEY_SIZE 4096
 
+// maximum cert size is 10MB
+#define MS_MAX_CERT_SIZE 10240000
+
 using namespace std;
 
 typedef map<long, struct md_update> update_set;
@@ -121,7 +124,7 @@ struct ms_gateway_cert {
    uint64_t volume_id;
    char* name;
    char* hostname;
-   char* closure_text;          // closure information
+   char* closure_text;          // closure information (only retained by our gateway)
    uint64_t closure_text_len;
    int portnum;
    EVP_PKEY* pubkey;
@@ -223,7 +226,7 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
 int ms_client_destroy( struct ms_client* client );
 
 int ms_client_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password );
-int ms_client_load_cert( struct ms_gateway_cert* cert, const ms::ms_gateway_cert* ms_cert );
+int ms_client_load_cert( uint64_t my_gateway_id, struct ms_gateway_cert* cert, const ms::ms_gateway_cert* ms_cert );
 int ms_client_reload_certs( struct ms_client* client );
 int ms_client_reload_volume( struct ms_client* client );
 
