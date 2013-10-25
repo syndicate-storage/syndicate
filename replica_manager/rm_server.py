@@ -156,7 +156,18 @@ def invalid_request( start_response, status="400 Invalid request", resp="Invalid
    '''
    
    headers = [('Content-Type', 'text/plain'), ('Content-Length', str(len(resp)))]
-   start_response( "400 Invalid request", headers )
+   start_response( status, headers )
+   
+   return [resp]
+
+#-------------------------
+def valid_request( start_response, status="200 OK", resp="OK" ):
+   '''
+   HTTP OK
+   '''
+   
+   headers = [('Content-Type', 'text/plain'), ('Content-Length', str(len(resp)))]
+   start_response( status, headers )
    
    return [resp]
 
@@ -171,6 +182,7 @@ def wsgi_application( environ, start_response ):
    global DATA_FIELD_NAME
    
    required_post_fields = [METADATA_FIELD_NAME, DATA_FIELD_NAME]
+   required_delete_fields = [METADATA_FIELD_NAME]
    
    log = rm_common.log
    
@@ -210,14 +222,27 @@ def wsgi_application( environ, start_response ):
       rc = post( metadata_field, infile )
       
       if rc == 200:
-         resp = "OK"
-         headers = [('Content-Type', 'application/text-plain'), ('Content-Length', str(resp))]
-         start_response( '200 OK', headers)
-         
-         return [resp]
+         return valid_request( start_response )
       else:
          return invalid_request( start_response, status=str(rc), resp="error code %s\n" % rc)
 
+   elif environ['REQUEST_METHOD'] == 'DELETE':
+      # DELETE request
+      post_fields = FieldStorage( fp=environ['wsgi.input'], environ=environ )
+      
+      # validate
+      if not post_fields.has_key('metadata'):
+         return invalid_request( start_response )
+      
+      metadata_field = post_fields['metadata'].value
+      
+      rc = delete( metadata_field )
+      
+      if rc == 200:
+         return valid_request( start_response )
+      else:
+         return invalid_request( start_response, status=str(rc), resp="error code %s\n" % rc)
+         
    else:
       # not supported
       return invalid_request( start_response, status="501", resp="Method not supported\n" )

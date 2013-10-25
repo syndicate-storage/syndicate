@@ -59,6 +59,8 @@ struct fs_entry_block_info {
    int64_t version;
    unsigned char* hash;
    size_t hash_len;
+   uint64_t gateway_id;
+   bool staging;
 };
 
 typedef map<uint64_t, struct fs_entry_block_info> modification_map;

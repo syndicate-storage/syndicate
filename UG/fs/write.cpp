@@ -139,6 +139,27 @@ static int fs_entry_hash_block( struct fs_core* core, struct fs_entry* fent, uin
    return (int)sz;
 }
 
+
+// can a block be garbage-collected?
+static bool fs_entry_is_garbage_collectable_block( struct fs_core* core, struct replica_snapshot* snapshot_fent, off_t fent_old_size, uint64_t block_id, modification_map* no_garbage_collect ) {
+   
+   // don't collect this one 
+   if( no_garbage_collect->find( block_id ) != no_garbage_collect->end() )
+      return false;
+   
+   // no blocks exist, so this is guaranteed new
+   if( fent_old_size == 0 )
+      return false;
+   
+   // block is beyond the last block in the file, so guaranteed new
+   if( block_id > ((uint64_t)fent_old_size / core->blocking_factor) && fent_old_size > 0 )
+      return false;
+   
+   // has an older copy to be removed
+   return true;
+}
+
+
 // write data to a file, either from a buffer or a file descriptor
 ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, char const* buf, int source_fd, size_t count, off_t offset ) {
    fs_file_handle_rlock( fh );
@@ -149,7 +170,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    }
 
    struct timespec ts, ts2;
-   struct timespec latency_ts, write_ts, replicate_ts, replicate_ts_total, remote_write_ts, update_ts;
+   struct timespec latency_ts, write_ts, replicate_ts, replicate_ts_total, garbage_collect_ts, remote_write_ts, update_ts;
 
    BEGIN_TIMING_DATA( ts );
    
@@ -181,8 +202,18 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    ssize_t ret = 0;
    ssize_t num_written = 0;
 
-   // record which blocks we've written
+   // record of blocks NOT to garbage-collect
+   modification_map no_garbage_collect;
+   
+   // record which blocks we've modified
    modification_map modified_blocks;
+   
+   // record of which blocks we've overwritten and can safely garbage-collect
+   modification_map overwritten_blocks;
+   
+   // snapshot fent before we do anything
+   struct replica_snapshot fent_snapshot;
+   fs_entry_replica_snapshot( core, fh->fent, 0, 0, &fent_snapshot );
    
    // do we first need to expand this file?
    if( offset > old_size ) {
@@ -199,10 +230,21 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
             // free memory
             for( modification_map::iterator itr = modified_blocks.begin(); itr != modified_blocks.end(); itr++ ) {
                free( itr->second.hash );
+               itr->second.hash = NULL;
             }
          }
 
          return rc;
+      }
+      
+      // dont garbage-collect these---remember their versions
+      for( modification_map::iterator itr = modified_blocks.begin(); itr != modified_blocks.end(); itr++ ) {
+         struct fs_entry_block_info new_binfo;
+         memset( &new_binfo, 0, sizeof(new_binfo) );
+         
+         new_binfo.version = itr->second.version;
+         
+         no_garbage_collect[ itr->first ] = new_binfo;
       }
    }
 
@@ -215,7 +257,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    
    // do we need to get the hashes of the last blocks from the entire block?
    bool need_end_id_hash = (start_id != end_id && fs_entry_is_write_unaligned( offset + count, core->blocking_factor ));
-
+   
    while( (size_t)num_written < count ) {
       // which block are we about to write?
       uint64_t block_id = fs_entry_block_id( core, offset + num_written );
@@ -257,6 +299,8 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       
       fs_entry_wlock( fh->fent );
       
+      uint64_t old_version = fh->fent->manifest->get_block_version( block_id );
+      
       // write the data...
       ssize_t write_size = fs_entry_put_block_data( core, fh->fent, block_id, block, block_put_offset, block_put_len, !local );
       
@@ -271,10 +315,22 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       
       fs_entry_unlock( fh->fent );
       
+      // is this a block to garbage collect?
+      if( fs_entry_is_garbage_collectable_block( core, &fent_snapshot, old_size, block_id, &no_garbage_collect ) ) {
+         
+         // mark the old version of the block that we've overwritten to be garbage-collected
+         struct fs_entry_block_info binfo_overwritten;
+         memset( &binfo_overwritten, 0, sizeof(binfo_overwritten) );
+
+         binfo_overwritten.version = old_version;
+         
+         overwritten_blocks[ block_id ] = binfo_overwritten;
+      }
+      
       // record that we've written this block
       struct fs_entry_block_info binfo;
       memset( &binfo, 0, sizeof(binfo) );
-
+      
       binfo.version = new_version;
       
       // only store the hash if it covers the whole block
@@ -322,17 +378,18 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    BEGIN_TIMING_DATA( replicate_ts_total );
    
    // if we wrote data, replicate the manifest and blocks.
-   if( modified_blocks.size() > 0 ) {
+   if( ret > 0 && modified_blocks.size() > 0 ) {
       
       if( local ) {
          BEGIN_TIMING_DATA( replicate_ts );
    
-         // replicate manifest
+         // replicate the new manifest
          int rc = fs_entry_replicate_manifest( core, fh->fent, false, fh );
          if( rc != 0 ) {
             errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fh->path, rc );
             ret = -EIO;
          }
+         
          
          END_TIMING_DATA( replicate_ts, ts2, "replicate manifest" );
       }
@@ -360,7 +417,37 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    }
 
    END_TIMING_DATA( replicate_ts_total, ts2, "replicate data" );
+   
+   BEGIN_TIMING_DATA( garbage_collect_ts );
+   
+   // if we modified data, then garbage-collect old data
+   if( ret > 0 && overwritten_blocks.size() > 0 ) {
+      
+      int rc = 0;
+      
+      if( local ) {
+         // garbage collect the old manifest
+         
+         rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
+         if( rc != 0 ) {
+            errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fh->path, rc );
+            rc = -EIO;
+         }
+      }
+      
+      if( ret >= 0 ) {
+         // garbage-collect written blocks
+         
+         rc = fs_entry_garbage_collect_blocks( core, &fent_snapshot, &overwritten_blocks );
+         if( rc != 0 ) {
+            errorf("fs_entry_garbage_collect_blocks(%s) rc = %d\n", fh->path, rc );
+            rc = -EIO;
+         }
+      }
+   }
 
+   END_TIMING_DATA( garbage_collect_ts, ts2, "garbage collect data" );
+   
    if( ret > 0 && count > 0 ) {
 
       // SUCCESS!
@@ -506,44 +593,135 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       return -ESTALE;
    }
    
+   // snapshot the fent so we can garbage-collect the manifest 
+   struct replica_snapshot fent_snapshot;
+   fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
+   
    uint64_t gateway_id = write_msg->gateway_id();
 
-   struct timespec ts, ts2;
+   struct timespec ts, ts2, replicate_ts, garbage_collect_ts, update_ts;
    struct timespec mts;
 
    BEGIN_TIMING_DATA( ts );
 
+   modification_map old_block_info;
+   
    // update the blocks
    for( unsigned int i = 0; i < write_msg->blocks().end_id() - write_msg->blocks().start_id(); i++ ) {
       uint64_t block_id = i + write_msg->blocks().start_id();
       int64_t new_version = write_msg->blocks().version(i);
 
+      // back up old version and gateway, in case we have to restore it
+      int64_t old_version = fent->manifest->get_block_version( block_id );
+      uint64_t old_gateway_id = fent->manifest->get_block_gateway( block_id );
+      bool old_staging_status = fent->manifest->is_block_staging( block_id );
+      
+      struct fs_entry_block_info binfo;
+      memset( &binfo, 0, sizeof(struct fs_entry_block_info) );
+      
+      binfo.version = old_version;
+      binfo.gateway_id = old_gateway_id;
+      binfo.staging = old_staging_status;
+      
+      old_block_info[ block_id ] = binfo;
+      
+      // put the new version into the manifest
       fs_entry_manifest_put_block( core, gateway_id, fent, block_id, new_version, false );
    }
-
+   
+   off_t old_size = fent->size;
    fent->size = write_msg->metadata().size();
 
    clock_gettime( CLOCK_REALTIME, &mts );
 
    fent->mtime_sec = mts.tv_sec;
    fent->mtime_nsec = mts.tv_nsec;
+   
+      
+   // replicate the manifest, synchronously
+   BEGIN_TIMING_DATA( replicate_ts );
 
-   // propagate the update to the MS
-   struct md_entry data;
-   fs_entry_to_md_entry( core, &data, fent, parent_id, parent_name );
-   
-   uint64_t max_write_freshness = fent->max_write_freshness;
-   fs_entry_unlock( fent );
-   
-   // NOTE: this will send the update immediately if max_write_freshness == 0
-   err = ms_client_queue_update( core->ms, &data, currentTimeMillis() + max_write_freshness, 0 );
+   err = fs_entry_replicate_manifest( core, fent, true, NULL );
    if( err != 0 ) {
-      errorf("%ms_client_queue_update(%s) rc = %d\n", fs_path, err );
-      err = -EREMOTEIO;
+      errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fs_path, err );
+      err = -EIO;
+   }
+   
+   END_TIMING_DATA( replicate_ts, ts2, "replicate manifest" );
+   
+   if( err == 0 ) {
+   
+      BEGIN_TIMING_DATA( update_ts );
+      
+      // replicated!
+      // propagate the update to the MS
+      struct md_entry data;
+      fs_entry_to_md_entry( core, &data, fent, parent_id, parent_name );
+      
+      uint64_t max_write_freshness = fent->max_write_freshness;
+      fs_entry_unlock( fent );
+      
+      // NOTE: this will send the update immediately if max_write_freshness == 0
+      err = ms_client_queue_update( core->ms, &data, currentTimeMillis() + max_write_freshness, 0 );
+      if( err != 0 ) {
+         errorf("%ms_client_queue_update(%s) rc = %d\n", fs_path, err );
+         err = -EREMOTEIO;
+      }
+      
+      md_entry_free( &data );      
+      
+      END_TIMING_DATA( update_ts, ts2, "MS update" );
    }
 
-   md_entry_free( &data );
    free( parent_name );
+   
+   // garbage-collect the old manifest
+   if( err == 0 ) {
+      
+      BEGIN_TIMING_DATA( garbage_collect_ts );
+      
+      int rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
+      if( rc != 0 ) {
+         errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
+         rc = -EIO;
+      }
+      
+      END_TIMING_DATA( garbage_collect_ts, ts2, "garbage collect manifest" );
+   }
+   
+   if( err != 0 ) {
+      errorf("roll back manifest of %s\n", fs_path );
+      
+      // had an error along the way.  Restore the old fs_entry's manifest
+      uint64_t proposed_size = fent->size;
+      
+      fent->size = old_size;
+      fent->mtime_sec = fent_snapshot.mtime_sec;
+      fent->mtime_nsec = fent_snapshot.mtime_nsec;
+      
+      uint64_t old_end_block = old_size / core->blocking_factor;
+      uint64_t proposed_end_block = proposed_size / core->blocking_factor;
+      
+      if( old_end_block < proposed_end_block ) {
+         // truncate the manifest back to its original size
+         fent->manifest->truncate( old_end_block );
+      }
+      
+      // restore gateway ownership and versions
+      for( modification_map::iterator itr = old_block_info.begin(); itr != old_block_info.end(); itr++ ) {
+         uint64_t block_id = itr->first;
+         
+         // skip blocks written beyond the end of the original manifest
+         if( block_id > old_end_block )
+            continue;
+         
+         struct fs_entry_block_info* old_binfo = &itr->second;
+         
+         fs_entry_manifest_put_block( core, old_binfo->gateway_id, fent, block_id, old_binfo->version, old_binfo->staging );
+      }
+      
+      fs_entry_unlock( fent );
+   }
    
    END_TIMING_DATA( ts, ts2, "write, remote" );
    return err;

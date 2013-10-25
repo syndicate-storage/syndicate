@@ -64,6 +64,13 @@ int64_t block_url_set::lookup_version( uint64_t block_id ) {
       return -1;
 }
 
+// look up the gateway
+uint64_t block_url_set::lookup_gateway( uint64_t block_id ) {
+   if( this->in_range( block_id ) )
+      return this->gateway_id;
+   else
+      return 0;
+}
 
 // is a block id in a range?
 bool block_url_set::in_range( uint64_t block_id ) { return (block_id >= this->start_id && block_id < this->end_id); }
@@ -325,6 +332,21 @@ void file_manifest::put_url_set( block_url_set* bus ) {
 }
 
 
+// look up a gateway version, given a block ID
+uint64_t file_manifest::get_block_gateway( uint64_t block ) {
+   pthread_rwlock_rdlock( &this->manifest_lock );
+   block_map::iterator urlset = this->find_block_set( block );
+   if( urlset == this->block_urls.end() ) {
+      pthread_rwlock_unlock( &this->manifest_lock );
+      return 0;     // not found
+   }
+   else {
+      int64_t ret = urlset->second->lookup_gateway( block );
+      pthread_rwlock_unlock( &this->manifest_lock );
+      return ret;
+   }
+}
+
 // look up a block version, given a block ID
 int64_t file_manifest::get_block_version( uint64_t block ) {
    pthread_rwlock_rdlock( &this->manifest_lock );
@@ -339,6 +361,7 @@ int64_t file_manifest::get_block_version( uint64_t block ) {
       return ret;
    }
 }
+
 
 // get the block versions (a copy)
 int64_t* file_manifest::get_block_versions( uint64_t start_id, uint64_t end_id ) {
