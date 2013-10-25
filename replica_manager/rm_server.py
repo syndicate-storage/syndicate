@@ -52,11 +52,11 @@ def post( metadata_field, infile ):
    except Exception, e:
       # verification failure
       log.exception( e )
-      return 403
+      return (403, "Authorization Required")
       
    if req_info == None:
       log.error("could not parse uploaded request info")
-      return 400
+      return (400, "Invalid request")
    
    # validate
    hf = HashFunc()
@@ -65,7 +65,7 @@ def post( metadata_field, infile ):
    
    if req_info.data_hash != infile_hash:
       log.error("Hash mismatch: expected '%s', got '%s'" % (req_info.data_hash, infile_hash))
-      return 400
+      return (400, "Invalid request")
    
    infile.seek(0)
    
@@ -75,11 +75,11 @@ def post( metadata_field, infile ):
       rc = rm_storage.write_data( req_info, infile )
    except Exception, e:
       log.exception( e )
-      rc = 500
+      rc = (500, "Internal server error")
    
    log.info("write_data rc = %d" % rc )
    
-   return rc
+   return (rc, "OK")
 
 
 #-------------------------
@@ -97,7 +97,7 @@ def get( url_path, outfile ):
    req_info = rm_request.parse_request_info_from_url_path( url_path )
    if req_info == None:
       log.error("Invalid URL path '%s'" % url_path )
-      return 400 
+      return (400, "Invalid request")
    
    # fetch
    rc = 0
@@ -105,11 +105,11 @@ def get( url_path, outfile ):
       rc = rm_storage.read_data( req_info, outfile )
    except Exception, e:
       log.exception( e )
-      rc = 500
+      rc = (500, "Internal server error")
    
    log.info("read_data rc = %d" % rc )
    
-   return rc
+   return (rc, "OK")
 
 
 #-------------------------
@@ -129,11 +129,11 @@ def delete( metadata_field ):
    except Exception, e:
       # verification failure
       log.exception( e )
-      return 403
+      return (403, "Authorization required")
       
    if req_info == None:
       log.error("could not parse uploaded request info")
-      return 400
+      return (400, "Invalid request")
    
    # delete
    rc = 0
@@ -141,11 +141,11 @@ def delete( metadata_field ):
       rc = rm_storage.delete_data( req_info )
    except Exception, e:
       log.exception( e )
-      rc = 500
+      rc = (500, "Internal server error")
    
    log.info("delete_data rc = %d" % rc )
    
-   return rc
+   return (rc, "OK")
 
 
 
@@ -191,17 +191,17 @@ def wsgi_application( environ, start_response ):
       url_path = environ['PATH_INFO']
       outfile = StringIO()
       
-      rc = get( url_path, outfile )
+      rc, msg = get( url_path, outfile )
       
       if rc == 200:
          size = outfile.len
          headers = [('Content-Type', 'application/octet-stream'), ('Content-Length', str(size))]
-         start_response( '200', headers )
+         start_response( '200 %s' % msg, headers )
          
          return FileWrapper( outfile )
       
       else:
-         return invalid_request( start_response )
+         return invalid_request( start_response, status="%s %s" % (rc, msg) )
       
    elif environ['REQUEST_METHOD'] == 'POST':
       # POST request
@@ -219,12 +219,12 @@ def wsgi_application( environ, start_response ):
       if infile == None:
          infile = StringIO( post_fields['data'].value )
       
-      rc = post( metadata_field, infile )
+      rc, msg = post( metadata_field, infile )
       
       if rc == 200:
          return valid_request( start_response )
       else:
-         return invalid_request( start_response, status=str(rc), resp="error code %s\n" % rc)
+         return invalid_request( start_response, status="%s %s" % (rc, msg), resp="error code %s\n" % rc)
 
    elif environ['REQUEST_METHOD'] == 'DELETE':
       # DELETE request
@@ -236,13 +236,13 @@ def wsgi_application( environ, start_response ):
       
       metadata_field = post_fields['metadata'].value
       
-      rc = delete( metadata_field )
+      rc, msg = delete( metadata_field )
       
       if rc == 200:
          return valid_request( start_response )
       else:
-         return invalid_request( start_response, status=str(rc), resp="error code %s\n" % rc)
+         return invalid_request( start_response, status="%s %s" % (rc, msg), resp="error code %s\n" % rc)
          
    else:
       # not supported
-      return invalid_request( start_response, status="501", resp="Method not supported\n" )
+      return invalid_request( start_response, status="501 No Such Method", resp="Method not supported\n" )

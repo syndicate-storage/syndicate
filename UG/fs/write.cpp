@@ -60,7 +60,7 @@ int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_e
    
    for( uint64_t id = start_id; id <= end_id; id++ ) {
 
-      rc = fs_entry_put_block_data( core, fent, id, block, 0, core->blocking_factor, !local );
+      rc = fs_entry_put_block_data( core, fent, id, block, core->blocking_factor, !local );
       if( rc < 0 ) {
          errorf("fs_entry_put_block(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "[%" PRIu64 "]) rc = %d\n", core->volume, core->gateway, fent->file_id, fent->version, id, rc );
          err = rc;
@@ -118,27 +118,6 @@ ssize_t fs_entry_fill_block( struct fs_core* core, struct fs_entry* fent, char* 
 
    return rc;
 }
-
-
-static bool fs_entry_is_write_unaligned( off_t byte_offset, uint64_t block_size ) {
-   return (byte_offset % block_size) != 0;
-}
-
-
-static int fs_entry_hash_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len, struct fs_entry_block_info* binfo ) {
-   ssize_t sz = fs_entry_read_local_block( core, fent, block_id, block_bits, block_len );
-   if( sz >= 0 ) {
-      binfo->hash = sha256_hash_data( block_bits, block_len );
-      binfo->hash_len = sha256_len();
-      sz = 0;
-   }
-   else {
-      errorf("fs_entry_read_local_block(%" PRIX64 ") rc = %d\n", block_id, (int)sz );
-   }
-   
-   return (int)sz;
-}
-
 
 // can a block be garbage-collected?
 static bool fs_entry_is_garbage_collectable_block( struct fs_core* core, struct replica_snapshot* snapshot_fent, off_t fent_old_size, uint64_t block_id, modification_map* no_garbage_collect ) {
@@ -252,24 +231,19 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    
    char* block = CALLOC_LIST( char, core->blocking_factor );
    
-   uint64_t start_id = fs_entry_block_id( core, offset );
-   uint64_t end_id = fs_entry_block_id( core, offset + count );
-   
-   // do we need to get the hashes of the last blocks from the entire block?
-   bool need_end_id_hash = (start_id != end_id && fs_entry_is_write_unaligned( offset + count, core->blocking_factor ));
-   
    while( (size_t)num_written < count ) {
       // which block are we about to write?
       uint64_t block_id = fs_entry_block_id( core, offset + num_written );
       
+      // make sure the write is aligned to the block size.
       // what is the write offset into the block?
       off_t block_write_offset = (offset + num_written) % core->blocking_factor;
-      off_t block_put_offset = block_write_offset;
       off_t block_fill_offset = 0;
       
       // how much data are we going to write into this block?
       size_t block_write_len = MIN( core->blocking_factor - block_write_offset, count - num_written );
       size_t block_put_len = block_write_len;
+      size_t write_add = block_write_len;
       
       if( block_write_offset != 0 ) {
          // need to fill this block with the contents of the current block first, since we're writing unaligned
@@ -284,9 +258,9 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
          // fill the rest of the block at the unaligned offset
          block_fill_offset = block_write_offset;
          
-         // write aligned--put the whole block
-         block_put_offset = 0;
+         // write aligned--put the whole block, but only count the logical addition
          block_put_len = core->blocking_factor;
+         write_add = core->blocking_factor - block_write_offset;
       }
       
       // get the data...
@@ -302,10 +276,10 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       uint64_t old_version = fh->fent->manifest->get_block_version( block_id );
       
       // write the data...
-      ssize_t write_size = fs_entry_put_block_data( core, fh->fent, block_id, block, block_put_offset, block_put_len, !local );
+      ssize_t write_size = fs_entry_put_block_data( core, fh->fent, block_id, block, block_put_len, !local );
       
       if( (unsigned)write_size != block_put_len ) {
-         errorf("fs_entry_put_block_data(%s/%" PRId64 ", offset=%" PRId64 ", len=%" PRId64 ") rc = %zd\n", fh->path, block_id, block_put_offset, block_put_len, write_size );
+         errorf("fs_entry_put_block_data(%s/%" PRId64 ", len=%" PRId64 ") rc = %zd\n", fh->path, block_id, block_put_len, write_size );
          rc = write_size;
          fs_entry_unlock( fh->fent );
          break;
@@ -327,45 +301,29 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
          overwritten_blocks[ block_id ] = binfo_overwritten;
       }
       
+      // zero out the unwritten parts of the block, so we can hash it
+      if( write_size < (signed)core->blocking_factor ) {
+         memset( block + write_size, 0, core->blocking_factor - write_size );
+      }
+      
       // record that we've written this block
       struct fs_entry_block_info binfo;
       memset( &binfo, 0, sizeof(binfo) );
       
       binfo.version = new_version;
-      
-      // only store the hash if it covers the whole block
-      if( (block_id == end_id && !need_end_id_hash) || (block_id != start_id && block_id != end_id) ) {
-         binfo.hash = sha256_hash_data( block, core->blocking_factor );
-         binfo.hash_len = sha256_len();
-      }
+      binfo.hash = sha256_hash_data( block, core->blocking_factor );
+      binfo.hash_len = sha256_len();
       
       modified_blocks[ block_id ] = binfo;
 
-      num_written += block_put_len;     // not write_size, since physically we may have written a whole block, while logically we've written less
+      num_written += write_add;     // not write_size, since physically we may have written a whole block, while logically we've written less
       
       memset( block, 0, core->blocking_factor );
-   }
-   
-   int hash_rc = 0;
-   
-   // hash the last block?
-   if( rc == 0 && hash_rc == 0 && need_end_id_hash ) {
-      memset( block, 0, core->blocking_factor );
-      struct fs_entry_block_info* binfo = &modified_blocks[ end_id ];
-      
-      if( binfo->hash != NULL ) {
-         free( binfo->hash);
-      }
-      
-      hash_rc = fs_entry_hash_block( core, fh->fent, end_id, block, core->blocking_factor, binfo );
    }
    
    free( block );
 
-   if( hash_rc != 0 )
-      ret = hash_rc;
-   
-   else if( rc != 0 )
+   if( rc != 0 )
       ret = rc;
    
    else

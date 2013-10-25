@@ -96,7 +96,7 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 
             uint64_t old_version = fent->manifest->get_block_version( trunc_block_id );
             
-            int rc = fs_entry_put_block_data( core, fent, trunc_block_id, block, 0, core->blocking_factor, !local );
+            int rc = fs_entry_put_block_data( core, fent, trunc_block_id, block, core->blocking_factor, !local );
             if( rc != 0 ) {
                errorf("fs_entry_put_block(%s[%" PRId64 "]) rc = %d\n", fs_path, trunc_block_id, rc );
                err = rc;

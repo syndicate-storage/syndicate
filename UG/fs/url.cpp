@@ -37,13 +37,13 @@ char* fs_entry_block_url( struct fs_core* core, uint64_t volume_id, char const* 
    if( local && staging ) {
       // local staging block
       ret = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->staging_root) + 1 + base_len );
-      sprintf(ret, "%s/%s/%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64,
+      sprintf(ret, "%s/%s%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64,
             SYNDICATEFS_LOCAL_PROTO, core->conf->staging_root, volume_id, fs_path, file_version, block_id, block_version );
    }
    else if( local && !staging ) {
       // local, not-staging block
       ret = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->data_root) + 1 + base_len );
-      sprintf(ret, "%s/%s/%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64,
+      sprintf(ret, "%s/%s%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64,
             SYNDICATEFS_LOCAL_PROTO, core->conf->data_root, volume_id, fs_path, file_version, block_id, block_version );
    }
    else if( !local && !staging ) {

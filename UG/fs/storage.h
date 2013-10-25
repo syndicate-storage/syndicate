@@ -14,13 +14,13 @@
 
 // add/remove blocks
 int fs_entry_open_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool staging, bool creat );
-ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, off_t offset, size_t len, bool staging );
+ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, size_t len, bool staging );
 int fs_entry_remove_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, bool staging );
 
 // read/write blocks
 ssize_t fs_entry_get_block_local( struct fs_core* core, int fd, char* block, size_t block_len );
 ssize_t fs_entry_write_block_data( struct fs_core* core, int fd, char* buf, size_t len );
-ssize_t fs_entry_commit_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* buf, off_t offset, size_t len, bool staging );
+ssize_t fs_entry_commit_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* buf, size_t len, bool staging );
 
 // stat block
 int fs_entry_block_stat( struct fs_core* core, char const* path, uint64_t block_id, struct stat* sb );

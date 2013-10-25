@@ -400,6 +400,8 @@ int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *sta
    statv->f_namemax = 256;    // might as well keep it limited to what ext2/ext3/ext4 can handle
    statv->f_frsize = 0;
    statv->f_flag = ST_NODEV | ST_NOSUID;
+   
+   fs_entry_unlock( fent );
 
    return 0;
 }

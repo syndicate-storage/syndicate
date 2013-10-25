@@ -254,7 +254,7 @@ int fs_entry_open_block( struct fs_core* core, struct fs_entry* fent, uint64_t b
 // put block data with the given version to the given offset
 // return 0 on success
 // FENT MUST BE WRITE-LOCKED, SO ANOTHER THREAD CAN'T ADD A BLOCK OF THE SAME VERSION
-ssize_t fs_entry_commit_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, off_t block_offset, char* buf, size_t len, bool staging ) {
+ssize_t fs_entry_commit_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* buf, size_t len, bool staging ) {
    int rc = 0;
 
    // get the location of this block
@@ -303,15 +303,7 @@ ssize_t fs_entry_commit_block_data( struct fs_core* core, struct fs_entry* fent,
          return rc;
       }
    }
-   off_t orc = lseek( fd, block_offset, SEEK_SET );
-   if( orc < 0 ) {
-      rc = -errno;
-      errorf("lseek(%s) rc = %d\n", block_path, rc );
-      free( local_block_url );
-      close( fd );
-      return rc;
-   }
-
+   
    ssize_t num_written = fs_entry_write_block_data( core, fd, buf, len );
    if( num_written < 0 ) {
       errorf("fs_entry_write_block_data(%s) rc = %zd\n", block_path, num_written );
@@ -396,13 +388,7 @@ int fs_entry_reversion_block( struct fs_core* core, struct fs_entry* fent, uint6
 // if the URL refers to a local place on disk, then store it to the data directory.
 // If it instead refers to a remote host, then store it to the staging directory.
 // fent MUST BE WRITE LOCKED, SINCE WE MODIFY THE MANIFEST
-ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, off_t block_offset, size_t len, bool staging ) {
-
-   // sanity check
-   if( block_offset + len > core->blocking_factor ) {
-      errorf("Write would expand block to %zu bytes (blocking factor is %zu)\n", block_offset + len, core->blocking_factor );
-      return -EINVAL;
-   }
+ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, size_t len, bool staging ) {
    
    int64_t old_block_version = fent->manifest->get_block_version( block_id );
    int64_t new_block_version = fs_entry_next_block_version();
@@ -413,10 +399,10 @@ ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, ui
    memset( prefix, 0, 21 );
    memcpy( prefix, block_data, MIN( 20, core->blocking_factor ) );
    
-   dbprintf("block_offset = %" PRId64 ", data: '%s'...\n", block_offset, prefix );
+   dbprintf("data: '%s'...\n", prefix );
    
    // put the block data into place
-   ssize_t rc = fs_entry_commit_block_data( core, fent, block_id, old_block_version, block_offset, block_data, len, staging );
+   ssize_t rc = fs_entry_commit_block_data( core, fent, block_id, old_block_version, block_data, len, staging );
    if( (unsigned)rc != len ) {
       // failed to write
       errorf("fs_entry_commit_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 " ) rc = %zd\n", core->gateway, core->volume, fent->file_id, fent->version, block_id, old_block_version, rc );

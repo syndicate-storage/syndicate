@@ -1179,8 +1179,9 @@ int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modi
          errorf("replica_context_block rc = %d\n", rc );
          free( block_rctx );
       }
-      
-      block_rctxs.push_back( block_rctx );
+      else {
+         block_rctxs.push_back( block_rctx );
+      }
    }
    
    vector<struct replica_context*>* rctxs = NULL;
