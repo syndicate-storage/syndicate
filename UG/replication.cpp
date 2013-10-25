@@ -1161,7 +1161,8 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
 }
 
 
-// replicate a sequence of modified blocks
+// replicate a sequence of modified blocks.
+// in modified_blocks, we only need the version, hash, and hash_len fields for each block.
 // fent must be write-locked
 int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh ) {
    vector<struct replica_context*> block_rctxs;
@@ -1213,6 +1214,7 @@ int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snap
 
 
 // garbage-collect blocks
+// in modified_blocks, we only need the version field for each block.
 int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* modified_blocks ) {
    vector<struct replica_context*> block_rctxs;
    int rc = 0;
@@ -1318,3 +1320,21 @@ int fs_entry_replicate_wait( struct fs_file_handle* fh ) {
    return rc;
 }
 
+// make a "fake" file handle that has just enough data in it for us to process
+int fs_entry_replica_file_handle( struct fs_core* core, struct fs_entry* fent, struct fs_file_handle* fh ) {
+   memset( fh, 0, sizeof( struct fs_file_handle ) );
+   
+   fh->rctxs = new vector<struct replica_context*>();
+   fh->transfer_timeout_ms = core->conf->transfer_timeout * 1000L;
+   
+   return 0;
+}
+
+// clean up a "fake" file handle
+int fs_entry_free_replica_file_handle( struct fs_file_handle* fh ) {
+   if( fh->rctxs ) {
+      delete fh->rctxs;
+   }
+   
+   return 0;
+}

@@ -689,7 +689,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       END_TIMING_DATA( garbage_collect_ts, ts2, "garbage collect manifest" );
    }
    
-   if( err != 0 ) {
+   else {
       errorf("roll back manifest of %s\n", fs_path );
       
       // had an error along the way.  Restore the old fs_entry's manifest

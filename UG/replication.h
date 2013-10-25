@@ -132,4 +132,7 @@ int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_f
 
 int fs_entry_replicate_wait( struct fs_file_handle* fh );
 
+int fs_entry_replica_file_handle( struct fs_core* core, struct fs_entry* fent, struct fs_file_handle* fh );
+int fs_entry_free_replica_file_handle( struct fs_file_handle* fh );
+
 #endif
