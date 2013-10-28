@@ -2,12 +2,10 @@
 # Copyright 2013 The Trustees of Princeton University
 # All Rights Reserved
  
-import sys
+from rm_common import *
 
 # Include the Dropbox SDK
 import dropbox
-
-from rm_common import *
 
 RG_STORE = "Dropbox"
 
@@ -162,9 +160,14 @@ def run_server(port):
 			print request.headers.keys()   # ['accept-charset', 'host', 'accept']
 			print request.headers['host'] 
 			print request.post_body
+			print '-' * 10
 
 			if(request.command == "STATUS"):
 				client.send("OK")
+
+			if(request.command == "POST"):
+				print request.path
+				client.send(request.post_body)
 					
 			client.close()
 
