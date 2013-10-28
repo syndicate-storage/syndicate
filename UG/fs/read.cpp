@@ -66,7 +66,7 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
    // this is a remotely-hosted block--get its bits
    uint64_t block_version = fent->manifest->get_block_version( block_id );
    char* block_url = NULL;
-   bool is_on_AG = ms_client_is_AG( core->ms, core->volume, fent->coordinator );
+   bool is_on_AG = ms_client_is_AG( core->ms, fent->coordinator );
 
    if( !is_on_AG ) {
       block_url = fs_entry_remote_block_url( core, fent->coordinator, fs_path, fent->version, block_id, block_version );
@@ -83,13 +83,13 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
    char* block_buf = NULL;
    ssize_t nr = fs_entry_download_block( core, block_url, &block_buf, block_len );
    if( nr <= 0 && !IS_STREAM_FILE( *fent ) && !is_on_AG ) {
-      char** RG_urls = ms_client_RG_urls_copy( core->ms, core->volume );
+      char** RG_urls = ms_client_RG_urls( core->ms, core->conf->verify_peer ? "https://" : "http://" );
 
       // try a replica
       if( RG_urls != NULL ) {
          for( int i = 0; RG_urls[i] != NULL; i++ ) {
             // TODO: change to GET /SYNDICATE-DATA/$volume_id/$file_id.$file_version/$block_id.$block_version
-            char* replica_block_url = fs_entry_replica_block_url( core, RG_urls[i], fs_path, fent->version, block_id, block_version );
+            char* replica_block_url = fs_entry_replica_block_url( core, RG_urls[i], fent->volume, fent->file_id, fent->version, block_id, block_version );
 
             nr = fs_entry_download_block( core, replica_block_url, &block_buf, block_len );
             free( replica_block_url );

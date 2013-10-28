@@ -3,6 +3,15 @@
    All Rights Reserved
 */
 
+/*
+ * Interface for communicating with the RGs in the Volume.
+ * This module has two related purposes: replicating new manifests and blocks,
+ * and garbage-collecting old manifests and blocks.  Garbage-collecting is really
+ * just the act of asking the RG to delete a particular block or manifest, but
+ * processing garbage-collection requests is the same to CURL as processing
+ * replication requests, so a lot of the infrastructure for replication 
+ * gets reused.
+ */
 
 #ifndef _REPLICATION_H_
 #define _REPLICATION_H_
@@ -29,91 +38,101 @@
 
 using namespace std;
 
-#define REPLICA_UPLOAD_OK     0
-#define REPLICA_UPLOAD_BUSY   1
+#define REPLICA_CONTEXT_TYPE_BLOCK 1
+#define REPLICA_CONTEXT_TYPE_MANIFEST 2
 
+#define REPLICA_POST 1
+#define REPLICA_DELETE 2
+
+// snapshot of vital fs_entry fields for replication and garbage collection
+struct replica_snapshot {
+   uint64_t file_id;
+   int64_t file_version;
+   uint64_t block_id;
+   int64_t block_version;
+   int64_t mtime_sec;
+   int32_t mtime_nsec;
+   uint64_t owner_id;
+   uint64_t writer_id;
+   uint64_t volume_id;
+};
 
 // chunk of data to upload
-struct RG_upload {
-   char* path;             // path of entity we're replicating
-   struct curl_httppost* form_data;    // what we're posting
-   int running;            // how many RGs are we still talking to?
-
-   char* data;             // for the manifest
-   FILE* file;             // for the block
+struct replica_context {
+   vector<CURL*>* curls;        // connections to the RGs in this Volume
+   
+   int type;               // block or manifest?
+   int op;                 // put or delete?
+   
+   // data to upload
+   struct curl_httppost* form_data;    // what we're uploading
+   char* data;             // for POSTing the manifest
+   FILE* file;             // for POSTing the block
+   off_t size;             // number of bytes to send on POST
+   
+   struct timespec deadline;    // when we should abort this replication request
 
    int error;              // error code
-
-   bool sync;              // synchronous replication?  If so, then the following data will be set
-   pthread_cond_t sync_cv;
-   pthread_mutex_t sync_lock;
+   
+   sem_t processing_lock;       // released when the context has been processed
+   
+   bool sync;                 // synchronous or asynchronous operation
+   bool free_on_processed;    // if true, destroy this structure when it is processed
+   
+   struct replica_snapshot snapshot;
 };
 
-typedef vector<struct RG_upload*> upload_list;
+typedef map<CURL*, struct replica_context*> replica_upload_set;
+typedef vector<struct replica_snapshot> replica_cancel_list;
+typedef set<CURL*> replica_expire_set;
 
-struct RG_channel {
-   CURL* curl_h;
-   upload_list* pending;
-   pthread_mutex_t pending_lock;
-   char* url;
-};
-
-// upload threadpool
-class ReplicaUploader : public CURLTransfer {
-public:
+struct syndicate_replication {
+   char* process_name;            // used for logging
    
-   ReplicaUploader( struct ms_client* ms, uint64_t volume_id );
-   ~ReplicaUploader();
-
-   void add_replica( struct RG_upload* rup );
+   CURLM* running;                      // CURL multi-upload interface
+   replica_upload_set* uploads;         // contexts being processed
+   pthread_mutex_t running_lock;        // lock for the above information
    
-   // start running
-   int start();
-
-   // stop running
-   int cancel();
-
-   // are we running?
-   bool running;
-
-   // are we stopped?
-   bool stopped;
-
-   // lock must be held when we're downloading stuff via CURL
-   pthread_mutex_t download_lock;
-
-   int get_num_RGs() { return this->num_RGs; }
-
-private:
+   // hold requests until we have a chance to insert them into CURL (since we don't want to lock the upload process if we can help it)
+   replica_upload_set* pending_uploads; // contexts to begin processing on the next loop iteration
+   bool has_pending;                    // do we have more work?
+   pthread_mutex_t pending_lock;        // lock for the above pending
    
-   // get a replica handle that finished downloading
-   struct RG_channel* next_ready_RG( int* err );
+   // hold cancellations until we have a chance to remove them from CURL (since we don't want to lock the upload process if we can help it)
+   replica_cancel_list* pending_cancels;   // contexts to remove on the next loop iteration
+   bool has_cancels;
+   pthread_mutex_t cancel_lock;
+   
+   // hold expirations until we have a chance to remove them from CURL (since we don't want to lock the upload process if we can help it)
+   replica_expire_set* pending_expires;
+   bool has_expires;
+   pthread_mutex_t expire_lock;
+   
+   pthread_t upload_thread;     // thread to send data to Replica SGs
+   
+   bool active;                 // set to true when the syndciate_replication thread is running
    
    struct ms_client* ms;
-
-   // upload thread
-   pthread_t thread;
-   
-   static void* thread_main(void* arg);
-   
-   void finish_replica( struct RG_channel* rsc, int status );
-   void enqueue_replica( struct RG_channel* rsc, struct RG_upload* rup );
-   int start_next_replica( struct RG_channel* rsc );
-   
-   // list of connections to our replica gateways
-   uint64_t volume_version;
-   struct RG_channel* RGs;
-   int num_RGs;
    uint64_t volume_id;
-
-   struct curl_slist** headers;
 };
 
 
 int replication_init( struct ms_client* ms, uint64_t volume_id );
 int replication_shutdown();
 
-int fs_entry_replicate_write( struct fs_core* core, char const* fs_path, struct fs_entry* fent, modification_map* modified_blocks, bool sync );
+int replica_context_free( struct replica_context* rctx );
+
+int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bool sync, struct fs_file_handle* fh );
+int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh );
+
+int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snapshot* snapshot );
+int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* modified_blocks );
+
+int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_fent, uint64_t block_id, int64_t block_version, struct replica_snapshot* snapshot );
+
 int fs_entry_replicate_wait( struct fs_file_handle* fh );
+
+int fs_entry_replica_file_handle( struct fs_core* core, struct fs_entry* fent, struct fs_file_handle* fh );
+int fs_entry_free_replica_file_handle( struct fs_file_handle* fh );
 
 #endif

@@ -740,7 +740,139 @@ def get_user( username ):
       return user
    except:
       return None
-      
+
+
+
+
+closure_str = """
+#!/usr/bin/env python 
+
+CONFIG = {'foo': 'bar', 'STORAGE_DIR': '/tmp/'}
+
+def replica_read( drivers, request_info, filename, outfile ):
+   print "replica_read called!"
+   
+   global CONFIG 
+   
+   print "CONFIG = " + str(CONFIG)
+   print "drivers = " + str(drivers)
+   print "request_info = " + str(request_info)
+   print "filename = " + str(filename)
+   print "outfile = " + str(outfile)
+   print ""
+   
+   rc = drivers['sd_test'].read_file( filename, outfile, extra_param="Foo", **CONFIG )
+   
+   return rc
+   
+def replica_write( drivers, request_info, filename, infile ):
+   print "replica_write called!"
+   
+   global CONFIG 
+   
+   print "CONFIG = " + str(CONFIG)
+   
+   print "drivers = " + str(drivers)
+   print "request_info = " + str(request_info)
+   print "filename = " + str(filename)
+   print "infile = " + str(infile)
+   print ""
+   
+   rc = drivers['sd_test'].write_file( filename, infile, extra_param="Foo", **CONFIG )
+   
+   return rc
+
+def replica_delete( drivers, request_info, filename ):
+   print "replica_delete called!"
+   
+   global CONFIG 
+   
+   print "CONFIG = " + str(CONFIG)
+   
+   print "drivers = " + str(drivers)
+   print "request_info = " + str(request_info)
+   print "filename = " + str(filename)
+   print ""
+   
+   rc = drivers['sd_test'].delete_file( filename, extra_param="Foo", **CONFIG )
+   
+   return rc
+"""
+
+driver_str = """
+#!/usr/bin/env python 
+
+def read_file( filename, outfile, **kw ):
+   import traceback
+
+   print "  read_file called!"
+   print "  filename = " + str(filename)
+   print "  outfile = " + str(outfile)
+   print "  kw = " + str(kw)
+   print ""
+   
+   STORAGE_DIR = kw['STORAGE_DIR']
+   
+   try:
+      fd = open( STORAGE_DIR + filename, "r" )
+      outfile.write( fd.read() )
+      fd.close()
+   except Exception, e:
+      print "Got exception: " + str(e)
+      traceback.print_exc()
+      return 500
+   
+   return 200
+
+def write_file( filename, infile, **kw ):
+   import traceback
+
+   print "  write_file called!"
+   print "  filename = " + str(filename)
+   print "  infile = " + str(infile)
+   print "  kw = " + str(kw)
+   
+   buf = infile.read()
+   
+   print "  Got data: '" + str(buf) + "'"
+   
+   print ""
+   
+   STORAGE_DIR = kw['STORAGE_DIR']
+   
+   try:
+      fd = open( STORAGE_DIR + filename, "w" )
+      fd.write( buf )
+      fd.close()
+   except Exception, e:
+      print "Got exception: " + str(e)
+      traceback.print_exc()
+      return 500
+   
+   return 200
+
+def delete_file( filename, **kw ):
+   import traceback
+   import os
+
+   print "  delete_file called!"
+   print "  filename = " + str(filename)
+   print "  kw = " + str(kw)
+   print ""
+   
+   STORAGE_DIR = kw['STORAGE_DIR']
+   
+   try:
+      os.unlink( STORAGE_DIR + filename )
+   except Exception, e:
+      print "Got exception: " + str(e)
+      traceback.print_exc()
+      return 500
+   
+   return 200
+"""
+
+json_str = '{ "closure" : "%s", "drivers" : [ { "name" : "sd_test", "code" : "%s" } ] }' % (base64.b64encode( closure_str ), base64.b64encode( driver_str ) )
 
 # debugging entry point.
 def test( ignore1, args ):
@@ -765,8 +897,11 @@ def test( ignore1, args ):
 
    user = None
    volume = None
+   localhost_name = None
+   num_local = 0
 
    logging.info("args = %s" % args)
+   
    
    if args != None:
       if args.has_key('start') and args.has_key('end'):
@@ -837,6 +972,15 @@ def test( ignore1, args ):
       if args.has_key('ug_host'):
          ug_host = args['ug_host']
          logging.info("ug_host = %s" % ug_host )
+      
+      if args.has_key('localhost'):
+         nodes.append( args['localhost'] )
+         localhost_name = args['localhost']
+         logging.info("localhost = %s" % args['localhost'])
+         
+      if args.has_key('num_local'):
+         num_local = int( args['num_local'] )
+         
          
       if args.has_key('ug_port'):
          try:
@@ -846,6 +990,16 @@ def test( ignore1, args ):
 
          logging.info("ug_port = %s" % ug_port)
 
+   if num_local != 0:
+      if localhost_name == None:
+         localhost_name = nodes[-1]
+      
+      for i in xrange(0,num_local):
+         nodes.append( localhost_name )
+      
+      end_idx += num_local
+      
+      
    if reset_volume:
 
       volume = None
@@ -873,6 +1027,10 @@ def test( ignore1, args ):
       rc = storage.make_root( volume, user.owner_id )
                               
 
+   
+   volumes = []
+   archive_volumes = []
+   
    if do_init:
       # create users and make them all volumes
       for i, user_email in enumerate(users):
@@ -893,6 +1051,14 @@ def test( ignore1, args ):
             # volume name: testvolume-$name
             volume_key = storage.create_volume( user.email, name=test_volume_name, description="%s's test volume" % user_email, blocksize=61440, active=True, private=False, owner_id=i+1, volume_secret="abcdef" )
             volume = volume_key.get()
+            volumes.append( volume )
+            
+            volume_key = storage.create_volume( user.email, name=(test_volume_name + "-archive"), description="%s's archive volume" % user_email,
+                                                blocksize=61440, active=True, private=False, archive=True, owner_id=i+1, volume_secret="abcdef" )
+            archive_volume = volume_key.get()
+            archive_volumes.append( archive_volume )
+            
+            
          except:
             logging.info( "traceback: " + traceback.format_exc() )
             try:
@@ -908,10 +1074,19 @@ def test( ignore1, args ):
          if volume.volume_id not in user.volumes_rw:
             user.volumes_rw.append( volume.volume_id )
             user.put()
+            
+         if archive_volume.volume_id not in user.volumes_o:
+            user.volumes_o.append( archive_volume.volume_id )
+            user.put()
+         if archive_volume.volume_id not in user.volumes_rw:
+            user.volumes_rw.append( archive_volume.volume_id )
+            user.put()
 
          # create a root MSEntry, with some sane defaults
          rc = storage.make_root( volume, user.owner_id )
 
+      logging.info("created Volumes %s" % [x.volume_id for x in volumes] )
+      logging.info("created Archive Volumes %s" % [x.volume_id for x in archive_volumes] )
 
    if do_ags:
       user = get_user( username )
@@ -920,13 +1095,18 @@ def test( ignore1, args ):
       
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
-         try:
-            storage.create_acquisition_gateway(user, ms_username=G_name("AG", node), ms_password="sniff", host=node, port=32780 )
-            logging.info("Created AG %s" % G_name("AG", node))
-         except:
-            logging.info("traceback: %s" % traceback.format_exc())
-            # possibly already exists
-            pass
+         for j in xrange(0, len(archive_volumes)):
+            archive_volume = archive_volumes[j]
+            try:
+               name = G_name("AG", node) + "-" + str(archive_volume.volume_id) + "-" + str(i)
+               port = 12780 + i
+               gw_key = storage.create_acquisition_gateway(user, archive_volume, ms_username=name, ms_password="sniff", host=node, port=port )
+               logging.info("Created AG %s on port %d" % (name, port))
+               
+            except:
+               logging.info("traceback: %s" % traceback.format_exc())
+               # possibly already exists
+               pass
 
    if do_rgs:
       user = get_user( username )
@@ -935,13 +1115,19 @@ def test( ignore1, args ):
       
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
-         try:
-            storage.create_replica_gateway( user, ms_username=G_name("RG", node), ms_password="sniff", host=node, port=32780, private=False )
-            logging.info("Created RG %s" % G_name("RG", node))
-         except:
-            logging.info("traceback: %s" % traceback.format_exc())
-            # already exists
-            pass 
+         for j in xrange(0, len(volumes)):
+            volume = volumes[j]
+            
+            try:
+               name = G_name("RG", node) + "-" + str(volume.volume_id) + "-" + str(i)
+               port = 22780 + i
+               gw_key = storage.create_replica_gateway( user, volume, ms_username=name, ms_password="sniff", host=node, port=port, private=False, config=json_str )
+                  
+               logging.info("Created RG %s on port %d" % (name, port) )
+            except:
+               logging.info("traceback: %s" % traceback.format_exc())
+               # already exists
+               pass 
 
    # create fake UGs?
    if do_ugs:
@@ -955,8 +1141,11 @@ def test( ignore1, args ):
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          try:
-            storage.create_user_gateway( user, volume, ms_username=G_name("UG", node), ms_password="sniff", host=node, port=32780, read_write=True )
-            logging.info("Created UG %s" % G_name("UG", node))
+            name = G_name("UG", node) + "-" + str(volume.volume_id) + "-" + str(i)
+            port = 32780 + i
+            gw_key = storage.create_user_gateway( user, volume, ms_username=name, ms_password="sniff", host=node, port=port, read_write=True )
+               
+            logging.info("Created UG %s on port %d" % (name, port))
          except:
             logging.info("traceback: %s" % traceback.format_exc())
             # already exists

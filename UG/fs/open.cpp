@@ -24,13 +24,17 @@ struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_en
    fh->path = strdup( opened_path );
    fh->parent_name = strdup( parent_name );
    fh->parent_id = parent_id;
+   fh->transfer_timeout_ms = (core->conf->transfer_timeout) * 1000L;
 
-   fh->is_AG = ms_client_is_AG( core->ms, core->volume, ent->coordinator );
+   fh->is_AG = ms_client_is_AG( core->ms, ent->coordinator );
    if( fh->is_AG ) {
-      fh->AG_blocksize = ms_client_get_AG_blocksize( core->ms, core->volume, ent->coordinator );
+      fh->AG_blocksize = ms_client_get_AG_blocksize( core->ms, ent->coordinator );
    }
    
    pthread_rwlock_init( &fh->lock, NULL );
+   
+   fh->rctxs = new vector<struct replica_context*>();
+   
    return fh;
 }
 
@@ -454,12 +458,14 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
 
          // revert
          child->open_count = 0;
+         fs_entry_unlock( child );
 
          // NOTE: parent will still exist--we can't remove a non-empty directory
          fs_entry_wlock( parent );
          fs_entry_detach_lowlevel( core, parent, child, true );
          fs_entry_unlock( parent );
 
+         child = NULL;
       }
       else {
          // success on MS!  create locally
@@ -488,7 +494,8 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
       fs_file_handle_open( ret, flags, mode );
    }
    
-   fs_entry_unlock( child );
+   if( child ) 
+      fs_entry_unlock( child );
    
    free( path_basename );
    free( path );

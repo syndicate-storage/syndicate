@@ -230,8 +230,8 @@ def delete_user_gateway( g_id ):
    return UserGateway.Delete( g_id )
 
 
-def create_acquisition_gateway( user, **kwargs ):
-   return AcquisitionGateway.Create( user, **kwargs )
+def create_acquisition_gateway( user, volume=None, **kwargs ):
+   return AcquisitionGateway.Create( user, volume, **kwargs )
       
 def read_acquisition_gateway( g_id ):
    return AcquisitionGateway.Read( g_id )
@@ -260,8 +260,8 @@ def delete_acquisition_gateway( g_id ):
 
    
 
-def create_replica_gateway( user, **kwargs ):
-   return ReplicaGateway.Create( user, **kwargs )
+def create_replica_gateway( user, volume=None, **kwargs ):
+   return ReplicaGateway.Create( user, volume, **kwargs )
 
 
 def read_replica_gateway( g_id ):

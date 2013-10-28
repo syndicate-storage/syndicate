@@ -25,7 +25,7 @@ static ssize_t (*get_callback)( struct gateway_context*, char* data, size_t len,
 static int (*delete_callback)( struct gateway_context*, void* usercls ) = NULL;
 static void* (*connect_callback)( struct gateway_context* ) = NULL;
 static void (*cleanup_callback)( void* usercls ) = NULL;
-static int (*metadata_callback)( struct gateway_context*, ms::ms_gateway_blockinfo*, void* ) = NULL;
+static int (*metadata_callback)( struct gateway_context*, ms::ms_gateway_request_info*, void* ) = NULL;
 static int (*publish_callback)( struct gateway_context*, ms_client*, char* ) = NULL;
 int (*controller_callback)(pid_t pid, int ctrl_flag);
 
@@ -55,7 +55,7 @@ void gateway_cleanup_func( void (*cleanup_func)(void* usercls) ) {
 }
 
 // set the metadata get callback
-void gateway_metadata_func( int (*metadata_func)(struct gateway_context* ctx, ms::ms_gateway_blockinfo*, void*) ) {
+void gateway_metadata_func( int (*metadata_func)(struct gateway_context* ctx, ms::ms_gateway_request_info*, void*) ) {
    metadata_callback = metadata_func;
 }
 
@@ -146,7 +146,7 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
    }
    
    memcpy( &con_data->ctx.reqdat, &reqdat, sizeof(reqdat) );
-   con_data->ctx.block_info = new ms::ms_gateway_blockinfo();
+   con_data->ctx.block_info = new ms::ms_gateway_request_info();
    con_data->ctx.hostname = md_con_data->remote_host;
    con_data->ctx.method = md_con_data->method;
    con_data->ctx.size = global_conf->ag_block_size;
@@ -366,7 +366,7 @@ static struct md_HTTP_response* gateway_GET_handler( struct md_HTTP_connection_d
 
 
 // populate an ms_block_info structure with defaults
-static int gateway_default_blockinfo( char const* url_path, struct gateway_connection_data* rpc, ms::ms_gateway_blockinfo* info ) {
+static int gateway_default_blockinfo( char const* url_path, struct gateway_connection_data* rpc, ms::ms_gateway_request_info* info ) {
    
    uint64_t volume_id = 0;
    int64_t file_version = 0;
@@ -386,7 +386,7 @@ static int gateway_default_blockinfo( char const* url_path, struct gateway_conne
    }
    
    // populate this structure, and then ask the driver to add its stuff on top of it
-   info->set_blocking_factor( global_conf->ag_block_size );
+   info->set_size( global_conf->ag_block_size );
    
    info->set_volume( volume_id );
    info->set_file_id( (uint64_t)(-1) );
@@ -422,7 +422,7 @@ static struct md_HTTP_response* gateway_HEAD_handler( struct md_HTTP_connection_
    
    // do we have metadata for this?
    int rc = 0;
-   ms::ms_gateway_blockinfo info;
+   ms::ms_gateway_request_info info;
    
    if( metadata_callback == NULL ) {
       md_create_HTTP_response_ram_static( resp, "text/plain", 501, MD_HTTP_501_MSG, strlen(MD_HTTP_501_MSG) + 1 );
@@ -539,8 +539,8 @@ int gateway_sign_manifest( EVP_PKEY* pkey, Serialization::ManifestMsg* mmsg ) {
 
 
 // sign a block info message
-int gateway_sign_blockinfo( EVP_PKEY* pkey, ms::ms_gateway_blockinfo* blkinfo ) {
-   return md_sign< ms::ms_gateway_blockinfo >( pkey, blkinfo );
+int gateway_sign_blockinfo( EVP_PKEY* pkey, ms::ms_gateway_request_info* blkinfo ) {
+   return md_sign< ms::ms_gateway_request_info >( pkey, blkinfo );
 }
 
 

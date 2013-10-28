@@ -26,8 +26,8 @@ int64_t fs_entry_get_version( struct fs_core* core, char const* fs_path );
 int64_t fs_entry_get_block_version( struct fs_core* core, char* fs_path, uint64_t block_id );
 uint64_t fs_entry_get_block_host( struct fs_core* core, char* fs_path, uint64_t block_id );
 char* fs_entry_get_manifest_str( struct fs_core* core, char* fs_path );
-ssize_t fs_entry_serialize_manifest( struct fs_core* core, char* fs_path, char** manifest_bits );
-ssize_t fs_entry_serialize_manifest( struct fs_core* core, struct fs_entry* fent, char** manifest_bits );
+ssize_t fs_entry_serialize_manifest( struct fs_core* core, char* fs_path, char** manifest_bits, bool sign );
+ssize_t fs_entry_serialize_manifest( struct fs_core* core, struct fs_entry* fent, char** manifest_bits, bool sign );
 
 // write metadata
 int fs_entry_chown( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, uint64_t new_user );

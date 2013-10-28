@@ -11,10 +11,11 @@ import os
 import base64
 import urllib
 import uuid
+import json
 from Crypto.Hash import SHA256, SHA
 from Crypto.PublicKey import RSA
 from Crypto import Random
-from Crypto.Signature import PKCS1_v1_5
+from Crypto.Signature import PKCS1_v1_5 as CryptoSigner
 
 #import protobufs.ms_pb2 as ms_pb2
 
@@ -28,6 +29,17 @@ import string
 import traceback
 
 from msconfig import *
+
+# TODO: sync up with ms_gateway_cert and libsyndicate?
+GATEWAY_TYPE_UG = 1
+GATEWAY_TYPE_AG = 2
+GATEWAY_TYPE_RG = 3
+
+GATEWAY_CAP_READ_DATA = 1;
+GATEWAY_CAP_WRITE_DATA = 2;
+GATEWAY_CAP_READ_METADATA = 4;
+GATEWAY_CAP_WRITE_METADATA = 8;
+GATEWAY_CAP_COORDINATE = 16;
 
 class IDCounter( storagetypes.Object ):
    value = storagetypes.Integer()
@@ -64,6 +76,8 @@ def is_int( x ):
       return False
 
 class Gateway( storagetypes.Object ):
+   
+   GATEWAY_TYPE = 0
 
    owner_id = storagetypes.Integer()         # ID of the SyndicateUser that owns this gateway
    host = storagetypes.String()
@@ -72,12 +86,21 @@ class Gateway( storagetypes.Object ):
    ms_password_hash = storagetypes.Text()
    ms_password_salt = storagetypes.Text()
    g_id = storagetypes.Integer()
+   volume_id = storagetypes.Integer()
+   caps = storagetypes.Integer(default=0)
+   file_quota = storagetypes.Integer(default=-1,indexed=False)                # -1 means unlimited
 
    public_key = storagetypes.Text()          # PEM-encoded RSA public key, given by the SyndicateUser
 
    session_password = storagetypes.Text()
    session_timeout = storagetypes.Integer(default=-1, indexed=False)
-   session_expires = storagetypes.Integer(default=-1, indexed=False)     # -1 means "never expires"
+   session_expires = storagetypes.Integer(default=-1)     # -1 means "never expires"
+   
+   cert_expires = storagetypes.Integer(default=-1)       # -1 means "never expires"
+   
+   cert_version = storagetypes.Integer( default=1 )   # certificate-related version of this gateway
+   
+   config = storagetypes.Json()                # gateway-specific configuration
    
    required_attrs = [
       "owner_id",
@@ -90,18 +113,41 @@ class Gateway( storagetypes.Object ):
    validators = {
       "ms_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
       "session_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
-      "ms_username": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.: ")) ) == 0 and not is_int(value) )
+      "ms_username": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.: ")) ) == 0 and not is_int(value) ),
+      "caps": (lambda cls, value: False)                # can't set this directly
    }
 
    # TODO: session expires in 3600 seconds
+   # TODO: cert expires in 86400 seconds
    default_values = {
       "session_expires": (lambda cls, attrs: -1),
-      "session_password": (lambda cls, attrs: Gateway.generate_session_credentials())
+      "session_password": (lambda cls, attrs: Gateway.generate_session_credentials()),
+      "cert_version": (lambda cls, attrs: 1),
+      "cert_expires": (lambda cls, attrs: -1)
    }
 
    key_attrs = [
       "g_id"
    ]
+   
+   # do we have caps to set?  What are they?
+   @classmethod
+   def has_caps( cls, attrs ):
+      return False
+   
+   @classmethod 
+   def get_caps( cls, attrs ):
+      return 0
+   
+   @classmethod
+   def validate_caps( gateway_type, caps ):
+      if gateway_type == GATEWAY_TYPE_RG:
+         return caps == 0
+      
+      if gateway_type == GATEWAY_TYPE_AG:
+         return (caps & ~(GATEWAY_CAP_WRITE_METADATA)) == 0
+      
+      return True
 
    @classmethod
    def is_valid_pubkey( self, pubkey_str ):
@@ -117,6 +163,7 @@ class Gateway( storagetypes.Object ):
          return False
 
       return True
+
 
    def authenticate( self, password ):
       """
@@ -140,7 +187,7 @@ class Gateway( storagetypes.Object ):
    def verify_signature( self, data, sig ):
       key = RSA.importKey( self.public_key )
       h = SHA256.new( data )
-      verifier = PKCS1_v1_5.new(key)
+      verifier = CryptoSigner.new(key)
       return verifier.verify( h, sig )
 
       
@@ -166,6 +213,7 @@ class Gateway( storagetypes.Object ):
    def generate_session_credentials( cls ):
       return cls.generate_password( GATEWAY_SESSION_PASSWORD_LENGTH )
       
+      
    def get_current_session_credentials( self ):
       """
       Get the session credentials, returning None if they are too old
@@ -176,7 +224,8 @@ class Gateway( storagetypes.Object ):
 
       return self.session_password
 
-   def regenerate_session_credentials( self ):
+
+   def regenerate_session_password( self ):
       """
       Regenerate a session password, given the Volume it's bound to.
       """
@@ -205,31 +254,49 @@ class Gateway( storagetypes.Object ):
       # pubkey_str is base64 encoded
       pubkey_str_unencoded = base64.b64decode( pubkey_str )
       if not Gateway.is_valid_pubkey( pubkey_str_unencoded ):
-         return False
+         return -errno.EINVAL
 
-      self.public_key = RSA.importKey( pubkey_str_unencoded ).exportKey()
-      return True
+      new_public_key = RSA.importKey( pubkey_str_unencoded ).exportKey()
+      if new_public_key == self.public_key:
+         return -errno.EEXIST
       
-   def protobuf_cred( self, cred_pb ):
+      self.public_key = new_public_key 
+      
+      return 0
+      
+   
+   def protobuf_cert( self, cert_pb ):
       """
       Populate an ms_volume_gateway_cred structure
       """
-      cred_pb.owner_id = self.owner_id
-      cred_pb.gateway_id = self.g_id
-      cred_pb.name = self.ms_username
-      cred_pb.host = self.host
-      cred_pb.port = self.port
+      cert_pb.version = self.cert_version
+      cert_pb.gateway_type = self.GATEWAY_TYPE
+      cert_pb.owner_id = self.owner_id
+      cert_pb.gateway_id = self.g_id
+      cert_pb.name = self.ms_username
+      cert_pb.host = self.host
+      cert_pb.port = self.port
+      cert_pb.caps = self.caps
+      cert_pb.cert_expires = self.cert_expires
+      cert_pb.volume_id = self.volume_id
+      
+      if self.config == None:
+         cert_pb.closure_text = ""
+      else:
+         cert_pb.closure_text = str( self.config )
+         
+      cert_pb.signature = ""
 
       if self.public_key != None:
-         cred_pb.public_key = self.public_key
+         cert_pb.public_key = self.public_key
       else:
-         cred_pb.public_key = "NONE"
+         cert_pb.public_key = "NONE"
 
 
    @classmethod
    def create_credentials( cls, user, kwargs ):
 
-      password, password_hash, password_salt = UserGateway.generate_credentials()
+      password, password_hash, password_salt = Gateway.generate_credentials()
       
       if kwargs.get("ms_username") == None:
          # generate new credentials
@@ -246,16 +313,14 @@ class Gateway( storagetypes.Object ):
          kwargs["ms_password_hash"] = password_hash
       
 
-   # override this in subclasses
-   def is_in_volume( self, volume ):
-      return False
+   def check_caps( self, caps ):
+      return (self.caps & caps) == caps
 
 
    def verify_ms_update( self, ms_update ):
       """
       Verify the authenticity of a received ms_update message
       """
-
       sig = ms_update.signature
       sig_bin = base64.b64decode( sig )
 
@@ -289,20 +354,164 @@ class Gateway( storagetypes.Object ):
       return True
 
    
-   def volumes( self ):
-      # which volumes are we bound to?
-      return None
+   @classmethod
+   def Create( cls, user, volume=None, **kwargs ):
+      
+      @storagetypes.transactional(xg=True)
+      def transactional_create(**kwargs):
+         g_id = IDCounter.next_value()
+         kwargs['g_id'] = g_id
+
+         key_name = cls.make_key_name( g_id=g_id )
+         g_key = storagetypes.make_key( cls, key_name)
+         gw = g_key.get()
+         
+         if 'ms_password' in kwargs:
+            del kwargs['ms_password']
+         gw = cls( key=g_key, **kwargs )
+
+         return gw.put()
+
+      if volume != None:
+         kwargs['volume_id'] = volume.volume_id
+      elif kwargs.has_key('volume_id'):
+         kwargs['volume_id'] = 0
+      
+      kwargs['owner_id'] = user.owner_id
+
+      cls.fill_defaults( kwargs )
+
+      cls.create_credentials( user, kwargs )
+
+      missing = cls.find_missing_attrs( kwargs )
+      if len(missing) != 0:
+         raise Exception( "Missing attributes: %s" % (", ".join( missing )))
+
+      invalid = cls.validate_fields( kwargs )
+      if len(invalid) != 0:
+         raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
+
+      kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")
+      
+      if cls.has_caps( kwargs ):
+         kwargs['caps'] = cls.get_caps( kwargs )
+      else:
+         kwargs['caps'] = 0
+      
+      gateway_type_str = cls.__name__
+      existing_gateways = cls.ListAll( {"%s.ms_username ==" % gateway_type_str : kwargs['ms_username']} )
+      if len(existing_gateways) > 0:
+         # gateway already exists
+         raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
+      else:
+         return transactional_create(**kwargs)
+
+   
+   @classmethod
+   def Read( cls, g_id, set_memcache=True ):
+      """
+      Given a UG ID, find the UG record
+      """
+      key_name = cls.make_key_name( g_id=g_id )
+
+      g = storagetypes.memcache.get( key_name )
+      if g == None:
+         #logging.info("UG with ID of {} not found in cache".format(g_id))
+         g_key = storagetypes.make_key( cls, cls.make_key_name( g_id=g_id ) )
+         g = g_key.get( use_memcache=False )
+         if not g:
+            logging.error("Gateway not found at all!")
+            
+         if set_memcache:
+            storagetypes.memcache.set( key_name, g )
+            
+      return g
+
+   @classmethod
+   def FlushCache( cls, g_id ):
+      gateway_key_name = cls.make_key_name( g_id=g_id )
+      storagetypes.memcache.delete(gateway_key_name)
+
+   
+   @classmethod
+   def Update( cls, g_id, **fields ):
+      '''
+      Update UG identified by ID with fields specified as a dictionary.
+      '''
+      @storagetypes.transactional(xg=True)
+      def update_gateway( caller_cls, g_id, **fields):
+         gateway = caller_cls.Read(g_id, set_memcache=False)
+         caller_cls.FlushCache( g_id )
+         
+         for key, value in fields.iteritems():
+            try:
+               setattr(gateway, key, value)
+            except:
+               raise Exception("Update: Unable to set attribute: %s, %s." % (key, value))
+
+         gateway.version += 1
+         return gateway.put()
+      
+      invalid = cls.validate_fields( fields )
+      if len(invalid) != 0:
+         raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
+
+      if cls.has_caps( fields ):
+         fields['caps'] = cls.get_caps( fields )
+      
+      return update_gateway( cls, g_id, **fields )
+   
+      
+   @classmethod
+   def Delete( cls, g_id ):
+      """
+      Given a UG ID, delete it
+      """
+      key_name = cls.make_key_name( g_id=g_id )
+
+      g_key = storagetypes.make_key( cls, key_name )
+
+      g_key.delete()
+      
+      storagetypes.memcache.delete(key_name)
+
+      return True
+      
+   @classmethod
+   def ListAll_ByVolume( cls, volume_id, async=False, projection=None ):
+      """
+      Given a volume id, find all gateway records bound to it.  Cache the results
+      """
+      
+      #results = storagetypes.memcache.get( cache_key_name )
+      results = None
+      if results == None:
+         qry = cls.query().filter( cls.volume_id == volume_id )
+         
+         if not async:
+            gateway_futs = qry.fetch( None, projection=projection )
+         else:
+            return qry.fetch_async( None, projection=projection )
+         
+         storagetypes.wait_futures( gateway_futs )
+         
+         results = []
+         for fut in gateway_futs:
+            gw = fut.get_result()
+            if gw != None:
+               results.append( gw )
+
+      return results
    
 
 class UserGateway( Gateway ):
 
-   read_write = storagetypes.Boolean()
-   volume_id = storagetypes.Integer()           # which volume are we attached to?
-
-
+   GATEWAY_TYPE = GATEWAY_TYPE_UG
+   
+   read_write = storagetypes.Boolean(default=False)
+   
    required_attrs = Gateway.required_attrs + [
-      "volume_id",
-      "read_write"
+      "read_write"                      # will be converted into caps 
    ]
 
    default_values = dict( Gateway.default_values.items() + {
@@ -310,479 +519,59 @@ class UserGateway( Gateway ):
       "port": (lambda cls, attrs:32780)
    }.items() )
    
-
-   @classmethod
-   def cache_listing_key_name( cls, **kwargs ):
-      assert 'volume_id' in kwargs, "Required attributes: volume_id"
-      return "UGs: volume=%s" % kwargs['volume_id']
-
-         
    
-   @classmethod
-   def Create( cls, user, volume=None, **kwargs ):
-      """
-      Given a user and volume, create a user gateway.
-      Extra kwargs:
-         ms_username          str
-         ms_password          str
-         ms_password_hash     str
-         read_write           bool
-         host                 str
-         port                 int
-      """
-      # Isolates the DB elements in a transactioned call
-      @storagetypes.transactional(xg=True)
-      def transactional_create(**kwargs):
-         ug_id = IDCounter.next_value()
-         kwargs['g_id'] = ug_id
-
-         ug_key_name = UserGateway.make_key_name( g_id=ug_id )
-         ug_key = storagetypes.make_key( UserGateway, ug_key_name)
-         ug = ug_key.get()
-         
-         if 'ms_password' in kwargs:
-            del kwargs['ms_password']
-         ug = UserGateway( key=ug_key, **kwargs )
-
-         # clear cached UG listings
-         storagetypes.memcache.delete( UserGateway.cache_listing_key_name( volume_id=kwargs['volume_id'] ) )
-         return ug.put()
-
-
-      if volume:
-         kwargs['volume_id'] = volume.volume_id
-      else:
-         kwargs['volume_id'] = 0
-      kwargs['owner_id'] = user.owner_id
-
-      UserGateway.fill_defaults( kwargs )
-
-      UserGateway.create_credentials( user, kwargs )
-
-      missing = UserGateway.find_missing_attrs( kwargs )
-      if len(missing) != 0:
-         raise Exception( "Missing attributes: %s" % (", ".join( missing )))
-
-      invalid = UserGateway.validate_fields( kwargs )
-      if len(invalid) != 0:
-         raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
-
-      kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")
-
-      existing_gateways = UserGateway.ListAll( {"UserGateway.ms_username ==" : kwargs['ms_username']} )
-      if len(existing_gateways) > 0:
-         # gateway already exists
-         raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
-      else:
-         return transactional_create(**kwargs)
-
+   @classmethod 
+   def has_caps(cls, attrs):
+      return attrs.has_key("read_write")
+   
+   @classmethod 
+   def get_caps( cls, attrs ):
+      return UserGateway.caps_from_readwrite( attrs.get("read_write") )
 
    @classmethod
-   def Read( cls, g_id ):
-      """
-      Given a UG ID, find the UG record
-      """
-      ug_key_name = UserGateway.make_key_name( g_id=g_id )
-
-      ug = storagetypes.memcache.get( ug_key_name )
-      if ug == None:
-         #logging.info("UG with ID of {} not found in cache".format(g_id))
-         ug_key = storagetypes.make_key( UserGateway, UserGateway.make_key_name( g_id=g_id ) )
-         ug = ug_key.get( use_memcache=False )
-         if not ug:
-            logging.error("UG not found at all!.")
-         storagetypes.memcache.set( ug_key_name, ug )
-      return ug
-
-   @classmethod
-   def FlushCache( cls, g_id ):
-      gateway_key_name = UserGateway.make_key_name( g_id=g_id )
-      storagetypes.memcache.delete(gateway_key_name)
-
+   def caps_from_readwrite( cls, readwrite ):
+      caps = GATEWAY_CAP_READ_DATA | GATEWAY_CAP_READ_METADATA
+      if readwrite:
+         caps |= GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA | GATEWAY_CAP_COORDINATE
       
-   @classmethod
-   def Update( cls, g_id, **fields ):
-      '''
-      Update UG identified by ID with fields specified as a dictionary.
-      '''
-      gateway = UserGateway.Read(g_id)
-      gateway_key_name = UserGateway.make_key_name( g_id=g_id )
-      storagetypes.memcache.delete(gateway_key_name)
+      return caps
 
-      for key, value in fields.iteritems():
-         try:
-            setattr(gateway, key, value)
-         except:
-            raise Exception("UserGatewayUpdate: Unable to set attribute: %s, %s." % (key, value))
-
-      UG_future = gateway.put_async()
-      storagetypes.wait_futures([UG_future])
-      return gateway.key
-      
-   @classmethod
-   def Delete( cls, g_id ):
-      """
-      Given a UG ID, delete it
-      """
-      ug_key_name = UserGateway.make_key_name( g_id=g_id )
-
-      ug_key = storagetypes.make_key( UserGateway, ug_key_name )
-
-      ug_key.delete()
-      
-      storagetypes.memcache.delete(ug_key_name)
-
-      return True
-      
-
-   @classmethod
-   def ListAll_ByVolume( cls, volume_id ):
-      """
-      Given a volume id, find all UserGateway records bound to it.  Cache the results
-      """
-      #cache_key_name = UserGateway.cache_listing_key_name( volume_id=volume_id )
-
-      #results = storagetypes.memcache.get( cache_key_name )
-      results = None
-      if results == None:
-         qry = UserGateway.query( UserGateway.volume_id == volume_id )
-         results_qry = qry.fetch(None, batch_size=1000 )
-
-         results = []
-         for rr in results_qry:
-            results.append( rr )
-
-         #storagetypes.memcache.add( cache_key_name, results )
-
-      return results
-
-   def is_in_volume( self, volume ):
-      return volume.volume_id == self.volume_id
-
-   def volumes( self ):
-      return [self.volume_id]
-      
    
 class AcquisitionGateway( Gateway ):
 
+   GATEWAY_TYPE = GATEWAY_TYPE_AG
+   
    # This is temporary; we should know what is really needed.   
-   json_config = storagetypes.Json()
-   volume_ids = storagetypes.Integer(repeated=True)           # which volumes are we attached to?
    block_size = storagetypes.Integer( default=61140 )         # block size
-
-   required_attrs = Gateway.required_attrs + [
-      "json_config"
-   ]
-
-   default_values = dict( Gateway.default_values.items() + {
-      "json_config": (lambda cls, attrs: {}) # Default is only read
-   }.items() )
-
-
-   @classmethod
-   def cache_listing_key_name( cls, **kwargs ):
-      assert 'volume_id' in kwargs, "Required attributes: volume_id"
-      return "AGs: volume=%s" % kwargs['volume_id']
-
-   @classmethod
-   def Create( cls, user, **kwargs ):
-      """
-      Given a volume, create an AcquisitionGateway gateway.
-      Extra kwargs:
-         ms_password          str
-         ms_password_hash     str
-         json_config          JSON (dict)
-      """
-      # Isolates the DB elements in a transactioned call
-      @storagetypes.transactional(xg=True)
-      def transactional_create(**kwargs):
-         ag_id = IDCounter.next_value()
-         kwargs['g_id'] = ag_id
-
-         ag_key_name = AcquisitionGateway.make_key_name( g_id=ag_id ) 
-         ag_key = storagetypes.make_key( AcquisitionGateway, ag_key_name )
-         ag = ag_key.get()
-
-         if 'ms_password' in kwargs:
-            del kwargs['ms_password']
-         ag = AcquisitionGateway( key=ag_key, **kwargs )
-
-         # clear cached AG listings
-         storagetypes.memcache.delete(ag_key_name)
-         return ag.put()
-
-
-
-      kwargs['owner_id'] = user.owner_id
-
-      AcquisitionGateway.fill_defaults( kwargs )
-
-      AcquisitionGateway.create_credentials( user, kwargs )
-
-      missing = AcquisitionGateway.find_missing_attrs( kwargs )
-      if len(missing) != 0:
-         raise Exception( "Missing attributes: %s" % (", ".join( missing )))
-
-      invalid = AcquisitionGateway.validate_fields( kwargs )
-      if len(invalid) != 0:
-         raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
-
-      # TODO: transaction -jcnelson
-      kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")
-
-
-      existing_gateways = AcquisitionGateway.ListAll( {"AcquisitionGateway.ms_username ==" : kwargs['ms_username']} )
-      if len(existing_gateways) > 0:
-         # gateway already exists
-         raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
-      else:
-         ag_key = transactional_create(**kwargs)
-         existing_gateways = AcquisitionGateway.ListAll( {"AcquisitionGateway.ms_username ==" : kwargs['ms_username']} )
-         if len(existing_gateways) > 1:
-            # concurrently created the same gateway
-            ag_key.delete()
-            return None
-         else:
-            return ag_key
-
-
-   @classmethod
-   def Read( cls, g_id ):
-      """
-      Given a AG id, find the AG record
-      """
-      ag_key_name = AcquisitionGateway.make_key_name( g_id=g_id )
-
-      ag = storagetypes.memcache.get( ag_key_name )
-      if ag == None:
-         ag_key = storagetypes.make_key( AcquisitionGateway, AcquisitionGateway.make_key_name( g_id=g_id ) )
-         ag = ag_key.get( use_memcache=False )
-         storagetypes.memcache.set( ag_key_name, ag )
-
-      return ag
-
-   @classmethod
-   def Update( cls, g_id, **fields ):
-      '''
-      Update AG identified by g_id with fields specified as a dictionary.
-      '''
-      gateway = AcquisitionGateway.Read(g_id)
-      gateway_key_name = AcquisitionGateway.make_key_name( g_id=g_id )
-      storagetypes.memcache.delete(gateway_key_name)
-
-      for key, value in fields.iteritems():
-         try:
-            setattr(gateway, key, value)
-         except:
-            raise Exception("AcquisitionGatewayUpdate: Unable to set attribute: %s, %s." % (key, value))
-      AG_future = gateway.put_async()
-      storagetypes.wait_futures([AG_future])
-      return gateway.key
-
-   @classmethod
-   def FlushCache( cls, g_id ):
-      gateway_key_name = AcquisitionGateway.make_key_name( g_id=g_id )
-      storagetypes.memcache.delete(gateway_key_name)
-
    
    @classmethod
-   def ListAll_ByVolume( cls, volume_id ):
-      """
-      Given a volume id, find all AcquisitionGateway records bound to it.  Cache the results
-      """
-      #cache_key_name = AcquisitionGateway.cache_listing_key_name( volume_id=volume_id )
-
-      #results = storagetypes.memcache.get( cache_key_name )
-      results = None
-      if results == None:
-         qry = AcquisitionGateway.query( AcquisitionGateway.volume_ids == volume_id )
-         results_qry = qry.fetch(None, batch_size=1000 )
-
-         results = []
-         for rr in results_qry:
-            results.append( rr )
-
-         #storagetypes.memcache.add( cache_key_name, results )
-
-      return results
-
-      
+   def has_caps(cls, attrs):
+      return True 
+   
    @classmethod
-   def Delete( cls, g_id ):
-      """
-      Given a AG ID, delete it
-      """
-      ag_key_name = AcquisitionGateway.make_key_name( g_id=g_id )
+   def get_caps( cls, attrs ):
+      return GATEWAY_CAP_WRITE_METADATA
 
-      ag_key = storagetypes.make_key( AcquisitionGateway, ag_key_name )
-
-      ag_key.delete()
+   def protobuf_cert( self, cert_pb ):
+      super( AcquisitionGateway, self ).protobuf_cert( cert_pb )
       
-      storagetypes.memcache.delete(ag_key_name)
-
-      return True
-
-   def is_in_volume( self, volume ):
-      return volume.volume_id in self.volume_ids
-
-   def volumes( self ):
-      return self.volume_ids
+      cert_pb.blocksize = self.block_size
+   
       
 
 class ReplicaGateway( Gateway ):
 
-   # This is temporary; we should know what is really needed.
-   json_config = storagetypes.Json()
+   GATEWAY_TYPE = GATEWAY_TYPE_RG
+   
    private = storagetypes.Boolean()
-   volume_ids = storagetypes.Integer(repeated=True)           # which volume(s) are we attached to?
-
-   required_attrs = Gateway.required_attrs + [
-      "json_config"
-   ]
 
    default_values = dict( Gateway.default_values.items() + {
-      "json_config": (lambda cls, attrs: {}), # Default is only read
       "private": (lambda cls, attrs: False) # Default is public
    }.items() )
-
-   @classmethod
-   def cache_listing_key_name( cls, **kwargs ):
-      assert 'volume_id' in kwargs, "Required attributes: volume_id"
-      return "RGs: volume=%s" % kwargs['volume_id']
-
-   @classmethod
-   def Create( cls, user, **kwargs ):
-      """
-      Given a volume, create an Replica gateway.
-      Extra kwargs:
-         ms_password          str
-         ms_password_hash     str
-         json_config          JSON (dict)
-         private              bool
-      """
-      # Isolates the DB elements in a transactioned call
-      @storagetypes.transactional(xg=True)
-      def transactional_create(**kwargs):
-         rg_id = IDCounter.next_value()
-         kwargs['g_id'] = rg_id
-
-         rg_key_name = ReplicaGateway.make_key_name( g_id=rg_id ) 
-         rg_key = storagetypes.make_key( ReplicaGateway, rg_key_name )
-         rg = rg_key.get()
-         if 'ms_password' in kwargs:
-            del kwargs['ms_password']
-         rg = ReplicaGateway( key=rg_key, **kwargs )
-
-         # clear cached RG listings
-         storagetypes.memcache.delete(rg_key_name)
-         
-         return rg.put()
-
-      kwargs['owner_id'] = user.owner_id
-
-      ReplicaGateway.fill_defaults( kwargs )
-
-      ReplicaGateway.create_credentials( user, kwargs )
-      
-      missing = ReplicaGateway.find_missing_attrs( kwargs )
-      if len(missing) != 0:
-         raise Exception( "Missing attributes: %s" % (", ".join( missing )))
-
-      invalid = ReplicaGateway.validate_fields( kwargs )
-      if len(invalid) != 0:
-         raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
-
-      # TODO: transaction -jcnelson
-      kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")      
-
-
-      existing_gateways = ReplicaGateway.ListAll( {"ReplicaGateway.ms_username ==" : kwargs['ms_username']} )
-      if len(existing_gateways) > 0:
-         # gateway already exists
-         raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
-      else:
-         return transactional_create(**kwargs)
-
-   @classmethod
-   def Read( cls, g_id ):
-      """
-      Given a RG ID, find the RG record
-      """
-      rg_key_name = ReplicaGateway.make_key_name( g_id=g_id )
-
-      rg = storagetypes.memcache.get( rg_key_name )
-      if rg == None:
-         rg_key = storagetypes.make_key( ReplicaGateway, ReplicaGateway.make_key_name( g_id=g_id ) )
-         rg = rg_key.get( use_memcache=False )
-         storagetypes.memcache.set( rg_key_name, rg )
-
-      return rg
-
-
-   @classmethod
-   def Update( cls, g_id, **fields ):
-      '''
-      Update RG identified by g_id with fields specified as a dictionary.
-      '''
-      gateway = ReplicaGateway.Read(g_id)
-      gateway_key_name = ReplicaGateway.make_key_name( g_id=g_id )
-      storagetypes.memcache.delete(gateway_key_name)
-
-      for key, value in fields.iteritems():
-         try:
-            setattr(gateway, key, value)
-         except Exception as e:
-            logging.info(e)
-            raise Exception("ReplicaGatewayUpdate: Unable to set attribute: %s, %s." % (key, value))
-      RG_future = gateway.put_async()
-      storagetypes.wait_futures([RG_future])
-      return gateway.key
-
-   @classmethod
-   def FlushCache( cls, g_id ):
-      gateway_key_name = ReplicaGateway.make_key_name( g_id=g_id )
-      storagetypes.memcache.delete(gateway_key_name)
-
-      
-   @classmethod
-   def Delete( cls, g_id ):
-      """
-      Given a RG ID, delete it
-      """
-      rg_key_name = ReplicaGateway.make_key_name( g_id=g_id )
-
-      rg_key = storagetypes.make_key( ReplicaGateway, rg_key_name )
-
-      rg_key.delete()
-      
-      storagetypes.memcache.delete(rg_key_name)
-
-      return True
    
-   @classmethod
-   def ListAll_ByVolume( cls, volume_id ):
-      """
-      Given a volume id, find all ReplicaGateway records bound to it.  Cache the results
-      """
-      #cache_key_name = ReplicaGateway.cache_listing_key_name( volume_id=volume_id )
 
-      #results = storagetypes.memcache.get( cache_key_name )
-      results = None 
-      if results == None:
-         qry = ReplicaGateway.query( ReplicaGateway.volume_ids == volume_id )
-         results_qry = qry.fetch(None, batch_size=1000 )
-
-         results = []
-         for rr in results_qry:
-            results.append( rr )
-
-         #storagetypes.memcache.add( cache_key_name, results )
-
-      return results
-
-
-   def is_in_volume( self, volume ):
-      return volume.volume_id in self.volume_ids
-
-   def volumes( self ):
-      return self.volume_ids
+GATEWAY_TYPE_TO_CLS = {
+   GATEWAY_TYPE_UG: UserGateway,
+   GATEWAY_TYPE_RG: ReplicaGateway,
+   GATEWAY_TYPE_AG: AcquisitionGateway
+}

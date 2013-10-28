@@ -96,9 +96,10 @@ char* dir_path( const char* path ) {
  * Get the current time in seconds since the epoch, local time
  */
 int64_t currentTimeSeconds() {
-   struct timeval tp;
-   gettimeofday(&tp, NULL);
-   return tp.tv_sec;
+   struct timespec ts;
+   clock_gettime( CLOCK_REALTIME, &ts );
+   int64_t ts_sec = (int64_t)ts.tv_sec;
+   return ts_sec;
 }
 
 
@@ -308,20 +309,6 @@ int dir_exists( char* dirpath ) {
 }
 
 
-// allocate a string that contains the directory component of a path.
-// if a well-formed path is given, then a string ending in a / is returned
-char* dirname( char* path, char* dest ) {
-   int delim_i = strlen(path) - 1;
-   for( ; delim_i > 0; delim_i-- ) {
-      if( path[delim_i] == '/' )
-         break;
-   }
-   memset( dest, 0, MAX(delim_i, 1) + 1 );
-   strncpy( dest, path, MAX(delim_i, 1) );
-   
-   return dest;
-}
-
 
 // load a file into RAM
 // return a pointer to the bytes.
@@ -423,12 +410,12 @@ int calcDecodeLength(const char* b64input, size_t len) { //Calculates the length
   return (int)len*0.75 - padding;
 }
 
-int Base64Decode(char* b64message, size_t b64message_len, char** buffer, size_t* buffer_len) { //Decodes a base64 encoded string
+int Base64Decode(const char* b64message, size_t b64message_len, char** buffer, size_t* buffer_len) { //Decodes a base64 encoded string
   BIO *bio, *b64;
   int decodeLen = calcDecodeLength(b64message, b64message_len);
   long len = 0;
   *buffer = (char*)malloc(decodeLen+1);
-  FILE* stream = fmemopen(b64message, b64message_len, "r");
+  FILE* stream = fmemopen((void*)b64message, b64message_len, "r");
 
   b64 = BIO_new(BIO_f_base64());
   bio = BIO_new_fp(stream, BIO_NOCLOSE);
@@ -482,149 +469,6 @@ int reg_match(const char *string, char const *pattern) {
       return 0;
    }
    return 1;
-}
-
-
-// curl transfer constructor
-CURLTransfer::CURLTransfer( int num_threads ) {
-   this->curlm_handles = (CURLM**)malloc( sizeof(CURLM*) * num_threads );
-   this->curlm_running = (int*)calloc( sizeof(int) * num_threads, 1 );
-   
-   for( int i = 0; i < num_threads; i++ ) {
-      this->curlm_handles[i] = curl_multi_init();
-   }
-   
-   this->num_handles = num_threads;
-}
-
-// curl transfer destructor
-CURLTransfer::~CURLTransfer() {
-   for( int i = 0; i < this->num_handles; i++ ) {
-      for( list<CURL*>::iterator itr = this->added.begin(); itr != this->added.end(); itr++ ) {
-         curl_multi_remove_handle( this->curlm_handles[i], *itr );
-      }
-      curl_multi_cleanup( this->curlm_handles[i] );
-   }  
-   
-   free( this->curlm_handles );
-   free( this->curlm_running );
-}
-
-// add a curl handle
-int CURLTransfer::add_curl_easy_handle( int thread_no, CURL* handle ) {
-   int rc = curl_multi_add_handle( this->curlm_handles[thread_no], handle );
-   if( rc == CURLE_OK ) {
-      this->added.push_back( handle );
-   }
-   return rc;
-}
-
-
-// remove a curl handle
-int CURLTransfer::remove_curl_easy_handle( int thread_no, CURL* handle ) {
-   int rc = curl_multi_remove_handle( this->curlm_handles[thread_no], handle );
-   if( rc == CURLE_OK ) {
-      bool erased = false;
-      
-      do {
-         erased = false;
-         
-         for( list<CURL*>::iterator itr = this->added.begin(); itr != this->added.end(); itr++ ) {
-            if( *itr == handle ) {
-               this->added.erase( itr );
-               erased = true;
-               break;
-            }
-         }
-      } while( erased );
-   }
-   
-   return rc;
-}
-
-// process curl (do polling)
-int CURLTransfer::process_curl( int thread_no ) {
-   int rc = 0;
-   
-   // process downloads
-   struct timeval timeout;
-   memset( &timeout, 0, sizeof(timeout) );
-   
-   fd_set fdread;
-   fd_set fdwrite;
-   fd_set fdexcep;
-   int maxfd = -1;
-
-   long curl_timeout = -1;
-
-   FD_ZERO(&fdread);
-   FD_ZERO(&fdwrite);
-   FD_ZERO(&fdexcep);
-   
-   // how long until we should call curl_multi_perform?
-   rc = curl_multi_timeout(this->curlm_handles[ thread_no ], &curl_timeout);
-   if( rc != 0 ) {
-      errorf("CURLTransfer(%d)::process_curl: curl_multi_timeout rc = %d\n", thread_no, rc );
-      return -1;
-   }
-   
-   if( curl_timeout < 0 ) {
-      // no timeout given; wait a default amount
-      timeout.tv_sec = CURL_DEFAULT_SELECT_SEC;
-      timeout.tv_usec = CURL_DEFAULT_SELECT_USEC;
-   }
-   else {
-      timeout.tv_sec = 0;
-      timeout.tv_usec = (curl_timeout % 1000) * 1000;
-   }
-   
-   // get FDs
-   rc = curl_multi_fdset(this->curlm_handles[ thread_no ], &fdread, &fdwrite, &fdexcep, &maxfd);
-   
-   if( rc != 0 ) {
-      errorf("CURLTransfer(%d)::process_curl: curl_multi_fdset rc = %d\n", thread_no, rc );
-      return -1;
-   }
-
-   // find out which FDs are ready
-   rc = select(maxfd+1, &fdread, &fdwrite, &fdexcep, &timeout);
-   if( rc < 0 ) {
-      // we have a problem
-      errorf("CURLTransfer(%d)::process_curl: select rc = %d, errno = %d\n", thread_no, rc, -errno );
-      return -1;
-   }
-   
-   // let CURL do its thing
-   do {
-      rc = curl_multi_perform( this->curlm_handles[ thread_no ], &this->curlm_running[ thread_no ] );
-      if( rc == CURLM_OK )
-         break;
-   } while( rc != CURLM_CALL_MULTI_PERFORM );
-   
-   // process messages
-   return 0;
-}
-
-// get the next curl message
-CURLMsg* CURLTransfer::get_next_curl_msg( int thread_no ) {
-   int num_msgs;
-   return curl_multi_info_read( this->curlm_handles[thread_no], &num_msgs );
-}
-
-
-int timespec_cmp( struct timespec* t1, struct timespec* t2 ) {
-   if( t1->tv_sec < t2->tv_sec )
-      return -1;
-   else if( t1->tv_sec > t2->tv_sec )
-      return 1;
-   else {
-      if( t1->tv_nsec < t2->tv_nsec )
-         return -1;
-      else if( t1->tv_nsec > t2->tv_nsec )
-         return 1;
-      else
-         return 0;
-   }
 }
 
 // random number generator

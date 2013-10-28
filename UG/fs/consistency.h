@@ -33,7 +33,6 @@ struct fs_entry_listing_cls {
 struct fs_entry_consistency_cls {
    struct fs_core* core;
    path_t* path;
-   uint64_t volume;
    struct timespec query_time;
    int err;
    

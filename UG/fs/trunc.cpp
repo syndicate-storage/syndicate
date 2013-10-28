@@ -14,8 +14,14 @@
 #include "replication.h"
 #include "collator.h"
 
+// make a truncate message
+// fent must be at least read-locked
 static void fs_entry_prepare_truncate_message( Serialization::WriteMsg* truncate_msg, char const* fs_path, struct fs_entry* fent, uint64_t new_max_block ) {
    Serialization::TruncateRequest* truncate_req = truncate_msg->mutable_truncate();
+   
+   truncate_req->set_volume_id( fent->volume );
+   truncate_req->set_coordinator_id( fent->coordinator );
+   truncate_req->set_file_id( fent->file_id );
    truncate_req->set_fs_path( fs_path );
    truncate_req->set_file_version( fent->version );
    truncate_req->set_size( fent->size );
@@ -61,6 +67,13 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 
    // which blocks are modified?
    modification_map modified_blocks;
+   
+   // which blocks do we garbage-collect?
+   modification_map garbage_blocks;
+   
+   // fent snapshot before we do anything
+   struct replica_snapshot fent_snapshot;
+   fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
 
    // are we going to lose any remote blocks?
    bool local = FS_ENTRY_LOCAL( core, fent );
@@ -81,7 +94,9 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
             // truncate this block
             memset( block + (size % core->blocking_factor), 0, core->blocking_factor - (size % core->blocking_factor) );
 
-            int rc = fs_entry_put_block_data( core, fent, trunc_block_id, block, 0, core->blocking_factor, !local );
+            uint64_t old_version = fent->manifest->get_block_version( trunc_block_id );
+            
+            int rc = fs_entry_put_block_data( core, fent, trunc_block_id, block, core->blocking_factor, !local );
             if( rc != 0 ) {
                errorf("fs_entry_put_block(%s[%" PRId64 "]) rc = %d\n", fs_path, trunc_block_id, rc );
                err = rc;
@@ -96,6 +111,15 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
                binfo.hash_len = sha256_len();
                
                modified_blocks[ trunc_block_id ] = binfo;
+               
+               // garbage collect the old version
+               struct fs_entry_block_info erase_binfo;
+               memset( &erase_binfo, 0, sizeof(erase_binfo) );
+               
+               erase_binfo.version = old_version;
+               
+               garbage_blocks[ trunc_block_id ] = erase_binfo;
+               
             }
          }
 
@@ -105,6 +129,16 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
       if( local ) {
          // unlink the blocks that would have been cut off
          for( uint64_t i = new_max_block; i < max_block; i++ ) {
+            
+            if( garbage_blocks.find( i ) != garbage_blocks.end() ) {
+               struct fs_entry_block_info erase_binfo;
+               memset( &erase_binfo, 0, sizeof(erase_binfo) );
+               
+               erase_binfo.version = fent->manifest->get_block_version( i );
+               
+               garbage_blocks[ i ] = erase_binfo;
+            }
+            
             int rc = fs_entry_remove_block( core, fent, i, fent->manifest->is_block_staging( i ) );
             if( rc != 0 && rc != -ENOENT ) {
                errorf("fs_entry_remove_block(%s.%" PRId64 "[%" PRIu64 "]) rc = %d\n", fs_path, fent->version, i, rc );
@@ -119,7 +153,8 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
       
    }
    else if( size > fent->size ) {
-
+      // truncate to expand the file
+      
       int rc = fs_entry_expand_file( core, fs_path, fent, size, &modified_blocks );
       if( rc != 0 ) {
          errorf("fs_entry_expand_file(%s) rc = %d\n", fs_path, rc );
@@ -127,9 +162,8 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
       }
    }
 
-   // inform the remote block owner that the data must be truncated
    if( err == 0 && !local ) {
-
+      // inform the remote block owner that the data must be truncated
       // build up a truncate write message
       Serialization::WriteMsg *truncate_msg = new Serialization::WriteMsg();
       fs_entry_init_write_message( truncate_msg, core, Serialization::WriteMsg::TRUNCATE );
@@ -170,13 +204,50 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 
    // replicate if the file is local
    if( err == 0 && local && modified_blocks.size() > 0 ) {
-      // stop collating the affected blocks
-      uint64_t cancel_block_start = modified_blocks.begin()->first;
-      uint64_t cancel_block_end = modified_blocks.rbegin()->first + 1;     // exclusive
       
-      int rc = fs_entry_replicate_write( core, fs_path, fent, &modified_blocks, true );
+      uint64_t modified_block_start = modified_blocks.begin()->first;
+      uint64_t modified_block_end = modified_blocks.rbegin()->first + 1;     // exclusive
+      
+      // make a file handle, but only for purposes of running both replica and block replications in parallel and blocking until completed.
+      struct fs_file_handle fh;
+      fs_entry_replica_file_handle( core, fent, &fh );
+      
+      int rc = fs_entry_replicate_manifest( core, fent, false, &fh );
       if( rc != 0 ) {
-         errorf("fs_entry_replicate_write(%s[%" PRId64 "-%" PRId64 "]) rc = %d\n", fs_path, cancel_block_start, cancel_block_end, rc );
+         errorf("fs_entry_replicate_manifest(%s[%" PRId64 "-%" PRId64 "]) rc = %d\n", fs_path, modified_block_start, modified_block_end, rc );
+         err = -EIO;
+      }
+      
+      else {
+         rc = fs_entry_replicate_blocks( core, fent, &modified_blocks, false, &fh );
+         if( rc != 0 ) {
+            errorf("fs_entry_replicate_write(%s[%" PRId64 "-%" PRId64 "]) rc = %d\n", fs_path, modified_block_start, modified_block_end, rc );
+            err = -EIO;
+         }
+      }
+      
+      // wait for replicas to complete
+      if( err == 0 ) {
+         rc = fs_entry_replicate_wait( &fh );
+         if( rc != 0 ) {
+            errorf("fs_entry_replica_wait(%s) rc = %d\n", fs_path, rc );
+            err = -EIO;
+         }
+      }
+      
+      fs_entry_free_replica_file_handle( &fh );
+      
+      // garbage collect old manifest and block on success
+      if( err == 0 ) {
+         rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
+         if( rc != 0 ) {
+            errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
+         }
+         
+         rc = fs_entry_garbage_collect_blocks( core, &fent_snapshot, &garbage_blocks );
+         if( rc != 0 ) {
+            errorf("fs_entry_garbage_collect_blocks(%s) rc = %d\n", fs_path, rc );
+         }
       }
    }
 
@@ -196,7 +267,7 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
       // free memory
       for( modification_map::iterator itr = modified_blocks.begin(); itr != modified_blocks.end(); itr++ ) {
          free( itr->second.hash );
-      }  
+      }
    }
    
    dbprintf("file size is now %" PRId64 "\n", (int64_t)fent->size );
@@ -207,7 +278,7 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 
 
 // truncate, only if the version is correct (or ignore it if it's -1)
-int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t newsize, int64_t known_version, uint64_t user, uint64_t volume ) {
+int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, uint64_t file_id, uint64_t coordinator_id, off_t newsize, int64_t known_version, uint64_t user, uint64_t volume, bool check_file_id_and_coordinator_id ) {
 
    int err = fs_entry_revalidate_path( core, volume, fs_path );
    if( err != 0 ) {
@@ -226,11 +297,27 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, off_t
       return err;
    }
    
-   if( known_version > 0 && fent->version != known_version ) {
-      errorf( "fs_entry_get_version(%s): version mismatch (current = %" PRId64 ", known = %" PRId64 ")\n", fs_path, fent->version, known_version );
+   if( check_file_id_and_coordinator_id ) {
+      if( fent->file_id != file_id ) {
+         errorf("Remote truncate to file %s ID %" PRIX64 ", expected %" PRIX64 "\n", fs_path, file_id, fent->file_id );
+         fs_entry_unlock( fent );
+         free( parent_name );
+         return -ESTALE;
+      }
+      
+      if( fent->coordinator != coordinator_id ) {
+         errorf("Remote truncate to file %s coordinator %" PRIu64 ", expected %" PRIu64 "\n", fs_path, coordinator_id, fent->coordinator );
+         fs_entry_unlock( fent );
+         free( parent_name );
+         return -ESTALE;
+      }
+   }
+   
+   if( known_version > 0 && fent->version > 0 && fent->version != known_version ) {
+      errorf("Remote truncate to file %s version %" PRId64 ", expected %" PRId64 "\n", fs_path, known_version, fent->version );
       fs_entry_unlock( fent );
       free( parent_name );
-      return -EINVAL;
+      return -ESTALE;
    }
 
    int rc = fs_entry_truncate_impl( core, fs_path, fent, newsize, user, volume, parent_id, parent_name );

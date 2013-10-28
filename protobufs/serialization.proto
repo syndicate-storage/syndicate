@@ -6,14 +6,15 @@
 package Serialization;
 
 message FileMetadata {
-   required string fs_path = 8;
+   required string fs_path = 9;
    required uint64 volume_id = 1;
-   required uint64 gateway_id = 2;
+   required uint64 coordinator_id = 2;
    required uint64 file_id = 3;
    required int64 file_version = 4;
    required int64 size = 5;
    required int64 mtime_sec = 6;
    required int32 mtime_nsec = 7;
+   required int64 write_nonce = 8;
 }
 
 message BlockList {
@@ -22,22 +23,10 @@ message BlockList {
    repeated int64 version = 3;
 }
 
-// a block of data to write
-message BlockData {
-   required uint64 volume_id = 1;
-   required uint64 gateway_id = 2;
-   required uint64 file_id = 3;
-   required int64 file_version = 4;
-   required uint64 block_id = 5;
-   required int64 block_version = 6;
-   required string data = 7;
-   required string fs_path = 8;
-}
-
 // truncate a file
 message TruncateRequest {
    required uint64 volume_id = 1;
-   required uint64 gateway_id = 2;
+   required uint64 coordinator_id = 2;
    required uint64 file_id = 3;
    required int64 file_version = 4;
    required int64 size = 5;
@@ -47,7 +36,7 @@ message TruncateRequest {
 // detach a file or directory
 message DetachRequest {
    required uint64 volume_id = 1;
-   required uint64 gateway_id = 2;
+   required uint64 coordinator_id = 2;
    required uint64 file_id = 3;
    required int64 file_version = 4;
    required string fs_path = 5;
@@ -55,19 +44,19 @@ message DetachRequest {
 
 // block url set (for manifests)
 message BlockURLSetMsg {
-   required uint64 gateway_id = 1;
-   required uint64 start_id = 2;
-   required uint64 end_id = 3;
+   required uint64 gateway_id = 1;              // if this is a cert bundle, then this is the gateway ID
+   required uint64 start_id = 2;                // if this is a cert bundle, then this is the gateway type
+   required uint64 end_id = 3;                  // if this is a cert bundle, then this is the gateway's caps
    repeated int64 block_versions = 4;
 }
 
 // manifest
 message ManifestMsg {
    required uint64 volume_id = 1;
-   required uint64 gateway_id = 2;
+   required uint64 coordinator_id = 2;      // if 0, this is a cert bundle from the MS
    required uint64 file_id = 3;
    required int64 file_version = 4;
-   required int64 size = 5;
+   required int64 size = 5;             // if gateway_id == 0, then this is simply the number of certificates
    required int64 mtime_sec = 6;
    required int32 mtime_nsec = 7;
    repeated BlockURLSetMsg block_url_set = 8;
@@ -76,10 +65,13 @@ message ManifestMsg {
 
 // accepted message
 message AcceptMsg {
-   required string fs_path = 4;
-   required int64 file_version = 1;
-   repeated uint64 block_id = 2;
-   repeated int64 block_version = 3;
+   required string fs_path = 7;
+   required uint64 volume_id = 1;
+   required uint64 coordinator_id = 2;
+   required uint64 file_id = 3;
+   required int64 file_version = 4;
+   repeated uint64 block_id = 5;
+   repeated int64 block_version = 6;
 }
 
 // PREPARE message uses FileMetadata and BlockList
@@ -95,33 +87,29 @@ message WriteMsg {
       PROMISE = 2;
       ACCEPT = 3;
       ACCEPTED = 4;
-      BLOCKDATA = 5;
-      TRUNCATE = 6;
-      DETACH = 7;
+      TRUNCATE = 5;
+      DETACH = 6;
 
-      ERROR = 8;
+      ERROR = 7;
    }
 
    required uint64 volume_version = 1;    // what is the known volume metadata version on the sender
-   required uint64 UG_version = 2;        // what is the known UG metadata version on the sender
-   required uint64 RG_version = 3;        // what is the known RG metadata version on the sender
-   required uint64 AG_version = 4;        // what is the known AG metadata version on the sender
+   required uint64 cert_version = 2;      // what is the known certificate bundle version on the sender
    
-   required MsgType type = 5;             // what type of message
-   required uint64 user_id = 6;           // what user is running this gateway
-   required uint64 volume_id = 7;         // what volume is the sender in
-   required uint64 gateway_id = 8;        // who's sending this message
+   required MsgType type = 3;             // what type of message
+   required uint64 user_id = 4;           // what user is running this gateway
+   required uint64 volume_id = 5;         // what volume is the sender in
+   required uint64 gateway_id = 6;        // who's sending this message
 
-   optional FileMetadata metadata = 9;
-   optional BlockList blocks = 10;
-   optional BlockData blockdata = 11;
-   optional TruncateRequest truncate = 12;
-   optional DetachRequest detach = 13;
-   optional AcceptMsg accepted = 14;
+   optional FileMetadata metadata = 7;
+   optional BlockList blocks = 8;
+   optional TruncateRequest truncate = 9;
+   optional DetachRequest detach = 10;
+   optional AcceptMsg accepted = 11;
 
-   optional int32 errorcode = 15;
-   optional string errortxt = 16;
+   optional int32 errorcode = 12;
+   optional string errortxt = 13;
 
-   required string signature = 17;     // cryptographic signature with the gateway's private key
+   required string signature = 14;     // cryptographic signature with the gateway's private key
 }
 

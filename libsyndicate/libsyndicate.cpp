@@ -16,33 +16,32 @@ static struct md_path_locks md_locks;
 
 static struct md_user_entry md_guest_user;
 
-char const* MD_HTTP_NOMSG = "\n";
-char const* MD_HTTP_200_MSG = "OK\n";
-char const* MD_HTTP_400_MSG = "Bad Request\n";
-char const* MD_HTTP_401_MSG = "Invalid authorization credentials\n";
-char const* MD_HTTP_403_MSG = "Credentials required\n";
-char const* MD_HTTP_404_MSG = "Not found\n";
-char const* MD_HTTP_409_MSG = "Operation conflict\n";
-char const* MD_HTTP_413_MSG = "Requested entry too big\n";
-char const* MD_HTTP_422_MSG = "Unprocessable entry\n";
-char const* MD_HTTP_500_MSG = "Internal Server Error\n";
-char const* MD_HTTP_501_MSG = "Not implemented\n";
-char const* MD_HTTP_504_MSG = "Remote Server Timeout\n";
+char const MD_HTTP_NOMSG[128] = "\n";
+char const MD_HTTP_200_MSG[128] = "OK\n";
+char const MD_HTTP_400_MSG[128] = "Bad Request\n";
+char const MD_HTTP_401_MSG[128] = "Invalid authorization credentials\n";
+char const MD_HTTP_403_MSG[128] = "Credentials required\n";
+char const MD_HTTP_404_MSG[128] = "Not found\n";
+char const MD_HTTP_409_MSG[128] = "Operation conflict\n";
+char const MD_HTTP_413_MSG[128] = "Requested entry too big\n";
+char const MD_HTTP_422_MSG[128] = "Unprocessable entry\n";
+char const MD_HTTP_500_MSG[128] = "Internal Server Error\n";
+char const MD_HTTP_501_MSG[128] = "Not implemented\n";
+char const MD_HTTP_504_MSG[128] = "Remote Server Timeout\n";
 
-char const* MD_HTTP_DEFAULT_MSG = "RESPONSE\n";
+char const MD_HTTP_DEFAULT_MSG[128] = "RESPONSE\n";
 
-static char* md_load_file_as_string( char const* path ) {
-   size_t size = 0;
-   char* ret = load_file( path, &size );
+static char* md_load_file_as_string( char const* path, size_t* size ) {
+   char* ret = load_file( path, size );
 
    if( ret == NULL ) {
       errorf("failed to load %s\n", path );
       return NULL;
    }
 
-   ret = (char*)realloc( ret, size + 1 );
+   ret = (char*)realloc( ret, *size + 1 );
 
-   ret[ size ] = 0;
+   ret[ *size ] = 0;
 
    return ret;
 }
@@ -182,10 +181,10 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
 
 
    // load TLS credentials
-   if( c->server_key_path && c->server_cert_path ) {
+   if( c->server_key_path != NULL && c->server_cert_path != NULL ) {
       
-      c->server_key = md_load_file_as_string( c->server_key_path );
-      c->server_cert = md_load_file_as_string( c->server_cert_path );
+      c->server_key = md_load_file_as_string( c->server_key_path, &c->server_key_len );
+      c->server_cert = md_load_file_as_string( c->server_cert_path, &c->server_cert_len );
 
       if( c->server_key == NULL ) {
          errorf( "Could not read TLS private key %s\n", c->server_key_path );
@@ -195,19 +194,9 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
       }
    }
 
-   /*
-   // load Volume public key
-   if( c->volume_public_key_path ) {
-      c->volume_public_key = md_load_file_as_string( c->volume_public_key_path );
-
-      if( c->volume_public_key == NULL ) {
-         errorf( "Could not read Volume public key %s\n", c->volume_public_key_path );
-      }
-   }
-   */
    // load gateway public/private key
-   if( c->gateway_key_path ) {
-      c->gateway_key = md_load_file_as_string( c->gateway_key_path );
+   if( c->gateway_key_path != NULL ) {
+      c->gateway_key = md_load_file_as_string( c->gateway_key_path, &c->gateway_key_len );
 
       if( c->gateway_key == NULL ) {
          errorf("Could not read Gateway key %s\n", c->gateway_key_path );
@@ -651,12 +640,10 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->replica_logfile = strdup(values[0]);
       }
 
-      /*
-      else if( strcmp( key, BLOCKING_FACTOR_KEY ) == 0 ) {
-         conf->blocking_factor = (unsigned long)strtol( values[0], NULL, 10 );
+      else if( strcmp( key, LOCAL_STORAGE_DRIVERS_KEY ) == 0 ) {
+         conf->local_sd_dir = strdup( values[0] );
       }
-      */
-
+      
       else if( strcmp( key, REPLICA_OVERWRITE_KEY ) == 0 ) {
          conf->replica_overwrite = (strtol(values[0], NULL, 10) != 0 ? true : false);
       }
@@ -1354,7 +1341,7 @@ size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t 
    
    size_t realsize = size * count;
    if( brb->size + realsize > (unsigned)brb->max_size ) {
-      realsize = brb->max_size - realsize;
+      realsize = brb->max_size - brb->size;
    }
    
    char* buf = CALLOC_LIST( char, realsize );
@@ -1496,7 +1483,12 @@ ssize_t md_download_file3( char const* url, int fd, char const* username, char c
    curl_easy_setopt( curl_h, CURLOPT_URL, url );
    curl_easy_setopt( curl_h, CURLOPT_FOLLOWLOCATION, 1L );
    curl_easy_setopt( curl_h, CURLOPT_FILETIME, 1L );
-   curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, SYNDICATE_CONF.verify_peer ? 1L : 0L );
+   
+   if( strncasecmp( url, "https", 5 ) == 0 ) {
+      curl_easy_setopt( curl_h, CURLOPT_USE_SSL, CURLUSESSL_ALL );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, 1L );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
+   }
    
    char* userpass = NULL;
    if( username && password ) {
@@ -1559,6 +1551,234 @@ ssize_t md_download_file6( CURL* curl_h, char** buf, ssize_t max_len ) {
 ssize_t md_download_file5( CURL* curl_h, char** buf ) {
    return md_download_file6( curl_h, buf, -1 );
 }
+
+// download data via local proxy and CDN
+// return 0 on success
+// return negative on irrecoverable error
+int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len ) {
+   
+   ssize_t len = 0;
+   long status_code = 0;
+   int rc = 0;
+
+   md_init_curl_handle( curl, url, conf->metadata_connect_timeout );
+
+   if( proxy ) {
+      curl_easy_setopt( curl, CURLOPT_PROXY, proxy );
+   }
+
+   struct md_bound_response_buffer brb;
+   brb.max_size = max_len;
+   brb.size = 0;
+   brb.rb = new response_buffer_t();
+   
+   char* tmpbuf = NULL;
+   
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, (void*)&brb );
+   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, md_get_callback_bound_response_buffer );
+   
+   rc = curl_easy_perform( curl );
+   
+   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &status_code );
+
+   if( rc != 0 ) {
+      long err = 0;
+      
+      // get the errno
+      curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &err );
+      err = -abs(err);
+      
+      errorf("curl_easy_perform(%p, %s, proxy=%s) rc = %d, err = %ld\n", curl, url, proxy, rc, err );
+   }
+   else {
+      tmpbuf = response_buffer_to_string( brb.rb );
+      len = response_buffer_size( brb.rb );
+      
+      if( status_code != 200 ) {
+         if( status_code == 202 ) {
+            // error code from remote host
+            char* tmp = NULL;
+            long errcode = strtol( tmpbuf, &tmp, 10 );
+            if( tmp == tmpbuf ) {
+               // failed to parse
+               char errbuf[101];
+               strncpy( errbuf, tmpbuf, 100 );
+               
+               errorf("%p: Invalid error response from %s (proxy=%s) (truncated): '%s'...\n", curl, url, proxy, errbuf );
+
+               rc = -EREMOTEIO;
+            }
+            else {
+               errorf("%p: Remote gateway error from %s (proxy=%s): %d\n", curl, url, proxy, (int)errcode );
+               rc = -abs((int)errcode);
+            }
+         }
+         else {
+            errorf("%p: HTTP status code %d from %s (proxy=%s)\n", curl, (int)status_code, url, proxy );
+            
+            if( status_code == 0 ) {
+               // couldn't even get a response
+               rc = -ENOTCONN;
+            }
+            else {
+               rc = -abs(status_code);
+            }
+         }
+      }
+   }
+   
+   response_buffer_free( brb.rb );
+   delete brb.rb;
+
+   if( rc == 0 ) {
+      *bits = tmpbuf;
+      *ret_len = len;
+   }
+   else {
+      *bits = NULL;
+      *ret_len = -1;
+      
+      if( tmpbuf ) {
+         free( tmpbuf );
+      }
+   }
+
+   return rc;
+}
+
+// download data, trying in order:
+// * both CDN and proxy
+// * from proxy
+// * from CDN
+// * from gateway
+int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len ) {
+   int rc = 0;
+
+   char* cdn_url = md_cdn_url( url );
+   char* proxy_url = conf->proxy_url;
+   
+   char const* proxy_urls[10];
+   memset( proxy_urls, 0, sizeof(char const*) * 10 );
+
+   if( conf->proxy_url ) {
+      // try CDN and Proxy
+      proxy_urls[0] = cdn_url;
+      proxy_urls[1] = proxy_url;
+
+      // try proxy only
+      proxy_urls[2] = url;
+      proxy_urls[3] = proxy_url;
+
+      // try CDN only
+      proxy_urls[4] = cdn_url;
+      proxy_urls[5] = NULL;
+
+      // try direct
+      proxy_urls[6] = url;
+      proxy_urls[7] = NULL;
+   }
+   else {
+      // try CDN only
+      proxy_urls[0] = cdn_url;
+      proxy_urls[1] = NULL;
+
+      // try direct
+      proxy_urls[2] = url;
+      proxy_urls[3] = NULL;
+   }
+
+   for( int i = 0; true; i++ ) {
+      char const* target_url = proxy_urls[2*i];
+      char const* target_proxy = proxy_urls[2*i + 1];
+
+      if( target_url == NULL && target_proxy == NULL )
+         break;
+
+      rc = md_download( conf, curl, target_proxy, target_url, bits, ret_len, max_len );
+      if( rc == 0 ) {
+         // success!
+         break;
+      }
+      if( rc < 0 ) {
+         // try again
+         errorf("md_download_cached(%p, %s, CDN_url=%s, proxy=%s) rc = %d\n", curl, url, target_url, target_proxy, rc );
+      }
+   }
+
+   free( cdn_url );
+   
+   return rc;
+}
+
+
+// download a manifest
+int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
+
+   char* manifest_data = NULL;
+   ssize_t manifest_data_len = 0;
+   int rc = 0;
+
+   rc = md_download_cached( conf, curl, manifest_url, &manifest_data, &manifest_data_len, 100000 );     // maximum manifest size is ~100KB
+   
+   if( rc != 0 ) {
+      errorf( "md_download_cached(%s) rc = %d\n", manifest_url, rc );
+      return rc;
+   }
+
+   else {
+      // got data!  parse it
+      bool valid = false;
+      try {
+         valid = mmsg->ParseFromString( string(manifest_data, manifest_data_len) );
+      }
+      catch( exception e ) {
+         errorf("failed to parse manifest %s, caught exception\n", manifest_url);
+         rc = -EIO;
+      }
+      
+      if( !valid ) {
+         errorf( "invalid manifest (%zd bytes)\n", manifest_data_len );
+         rc = -EIO;
+      }
+   }
+
+   if( manifest_data )
+      free( manifest_data );
+
+   return rc;
+}
+
+
+// download a block 
+ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char const* block_url, char** block_bits, size_t block_len ) {
+
+   ssize_t nr = 0;
+   char* block_buf = NULL;
+   
+   dbprintf("fetch '%s'\n", block_url );
+   
+   int ret = md_download_cached( conf, curl, block_url, &block_buf, &nr, block_len );
+   if( ret == 0 ) {
+      // success
+      *block_bits = block_buf;
+      return nr;
+   }
+   
+   if( ret == 204 ) {
+      // signal from AG that it's not ready yet
+      errorf("md_download_cached(%s) rc = %d\n", block_url, ret );
+      *block_bits = NULL;
+      return -EAGAIN;
+   }
+
+   if( ret > 0 ) {
+      // bad HTTP code
+      errorf("md_download_cached(%s) HTTP status code %d\n", block_url, ret );
+      *block_bits = NULL;
+   }
+   return nr;
+}
+
 
 // parse a query string into a list of CGI arguments
 // NOTE: this modifies args_str
@@ -2463,7 +2683,7 @@ int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
    msent->set_max_read_freshness( ent->max_read_freshness );
    msent->set_max_write_freshness( ent->max_write_freshness );
    msent->set_name( string( ent->name ) );
-
+   msent->set_write_nonce( ent->write_nonce );
    return 0;
 }
 
@@ -2487,6 +2707,7 @@ int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent ) {
    ent->version = msent.version();
    ent->size = msent.size();
    ent->name = strdup( msent.name().c_str() );
+   ent->write_nonce = msent.write_nonce();
 
    if( msent.has_parent_id() )
       ent->parent_id = msent.parent_id();
@@ -2770,12 +2991,28 @@ void md_free_download_buf( struct md_download_buf* buf ) {
 // initialze a curl handle
 void md_init_curl_handle( CURL* curl_h, char const* url, time_t query_timeout ) {
    curl_easy_setopt( curl_h, CURLOPT_NOPROGRESS, 1L );   // no progress bar
-   curl_easy_setopt( curl_h, CURLOPT_USERAGENT, "Syndicate-agent/1.0");
+   curl_easy_setopt( curl_h, CURLOPT_USERAGENT, "Syndicate-Gateway/1.0");
    curl_easy_setopt( curl_h, CURLOPT_URL, url );
    curl_easy_setopt( curl_h, CURLOPT_FOLLOWLOCATION, 1L );
    curl_easy_setopt( curl_h, CURLOPT_NOSIGNAL, 1L );
    curl_easy_setopt( curl_h, CURLOPT_CONNECTTIMEOUT, query_timeout );
    curl_easy_setopt( curl_h, CURLOPT_FILETIME, 1L );
+   
+   if( url != NULL && strncasecmp( url, "https", 5 ) == 0 ) {
+      curl_easy_setopt( curl_h, CURLOPT_USE_SSL, CURLUSESSL_ALL );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, SYNDICATE_CONF.verify_peer ? 1L : 0L );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
+      
+      dbprintf("use SSL for %s (%p)\n", url, curl_h );
+   }
+   else {
+      curl_easy_setopt( curl_h, CURLOPT_USE_SSL, CURLUSESSL_NONE );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, 0L );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 0L );
+      
+      dbprintf("don't use SSL for %s (%p)\n", url, curl_h );
+   }
+   
    //curl_easy_setopt( curl_h, CURLOPT_VERBOSE, 1L );
 }
 
@@ -3666,13 +3903,15 @@ int md_init( int gateway_type,
    md_default_conf( conf );
    
    // read the config file
-   rc = md_read_conf( config_file, conf );
-   if( rc != 0 ) {
-      dbprintf("ERR: failed to read %s, rc = %d\n", config_file, rc );
-      if( !(rc == -ENOENT || rc == -EACCES || rc == -EPERM) ) {
-         // not just a simple "not found" or "permission denied"
-         return rc;
-      }  
+   if( config_file != NULL ) {
+      rc = md_read_conf( config_file, conf );
+      if( rc != 0 ) {
+         dbprintf("ERR: failed to read %s, rc = %d\n", config_file, rc );
+         if( !(rc == -ENOENT || rc == -EACCES || rc == -EPERM) ) {
+            // not just a simple "not found" or "permission denied"
+            return rc;
+         }  
+      }
    }
    
    // merge command-line options with the config....
@@ -3694,14 +3933,6 @@ int md_init( int gateway_type,
 
       conf->ms_password = strdup( md_password );
    }
-   /*
-   if( volume_name ) {
-      if( conf->volume_name )
-         free( conf->volume_name );
-
-      conf->volume_name = strdup( volume_name );
-   }
-   */
    if( gateway_name ) {
       if( conf->gateway_name )
          free( conf->gateway_name );
@@ -3766,8 +3997,8 @@ int md_init( int gateway_type,
 
    // if this is a UG, verify that we bound to the right volume
    if( gateway_type == SYNDICATE_UG ) {
-      uint64_t volume_id = ms_client_get_volume_id( client, 0 );
-      char* volname = ms_client_get_volume_name( client, volume_id );
+      
+      char* volname = ms_client_get_volume_name( client );
 
       if( volname == NULL ) {
          errorf("%s", "This gateway does not appear to be bound to any volumes!\n");
@@ -3796,29 +4027,37 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    memset( conf, 0, sizeof(struct md_syndicate_conf) );
    
    conf->default_read_freshness = 5000;
-   conf->default_write_freshness = 5000;
+   conf->default_write_freshness = 0;
    conf->gather_stats = false;
    conf->use_checksums = false;
    conf->num_replica_threads = 1;
    conf->httpd_portnum = 44444;
 
+#ifndef _DEVELOPMENT
    conf->verify_peer = true;
+#else
+   conf->verify_peer = false;
+#endif
+   
    conf->num_http_threads = 1;
    conf->http_authentication_mode = HTTP_AUTHENTICATE_READWRITE;
    conf->replica_overwrite = false;
 
    conf->ag_block_size = 0;
+   
    conf->debug_read = false;
    conf->debug_lock = false;
 
-   conf->metadata_connect_timeout = 60;
+   conf->metadata_connect_timeout = 10;
+   conf->replica_connect_timeout = 10;
+   
    conf->portnum = 32780;
-   conf->transfer_timeout = 60;
+   conf->transfer_timeout = 300;
 
    conf->owner = getuid();
    conf->usermask = 0377;
 
-   conf->view_reload_freq = 3600;  // once an hour
+   conf->view_reload_freq = 3600;  // once an hour at minimum
 
    return 0;
 }
@@ -3844,10 +4083,6 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
    }
    if( conf->content_url == NULL ) {
       fprintf(stderr, err_fmt, CONTENT_URL_KEY );
-   }
-   if( conf->content_url == NULL ) {
-      rc = -EINVAL;
-      fprintf(stderr, err_fmt, CONTENT_URL_KEY);
    }
    if( conf->metadata_url == NULL ) {
       rc = -EINVAL;

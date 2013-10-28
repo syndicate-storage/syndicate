@@ -73,6 +73,7 @@ struct md_entry {
    int32_t ctime_nsec;  // creation time (nanoseconds)
    int64_t mtime_sec;   // last-modified time (seconds)
    int32_t mtime_nsec;  // last-modified time (nanoseconds)
+   int64_t write_nonce; // last-write nonce 
    int64_t version;     // file version
    int32_t max_read_freshness;      // how long is this entry fresh until it needs revalidation?
    int32_t max_write_freshness;     // how long can we delay publishing this entry?
@@ -173,16 +174,6 @@ struct md_HTTP_header {
    char* value;
 };
 
-// HTTP file response
-struct md_HTTP_file_response {
-   union {
-      FILE* f;
-      int fd;
-   };
-   off_t offset;
-   size_t size;
-};
-
 
 // ssize_t (*)(void* cls, uint64_t pos, char* buf, size_t max)
 typedef MHD_ContentReaderCallback md_HTTP_stream_callback;
@@ -268,20 +259,20 @@ struct md_HTTP {
    void                      (*HTTP_cleanup)(struct MHD_Connection *connection, void *con_cls, enum MHD_RequestTerminationCode term);
 };
 
-extern char const* MD_HTTP_NOMSG;
-extern char const* MD_HTTP_200_MSG;
-extern char const* MD_HTTP_400_MSG;
-extern char const* MD_HTTP_401_MSG;
-extern char const* MD_HTTP_403_MSG;
-extern char const* MD_HTTP_404_MSG;
-extern char const* MD_HTTP_409_MSG;
-extern char const* MD_HTTP_413_MSG;
-extern char const* MD_HTTP_422_MSG;
-extern char const* MD_HTTP_500_MSG;
-extern char const* MD_HTTP_501_MSG;
-extern char const* MD_HTTP_504_MSG;
+extern char const MD_HTTP_NOMSG[128];
+extern char const MD_HTTP_200_MSG[128];
+extern char const MD_HTTP_400_MSG[128];
+extern char const MD_HTTP_401_MSG[128];
+extern char const MD_HTTP_403_MSG[128];
+extern char const MD_HTTP_404_MSG[128];
+extern char const MD_HTTP_409_MSG[128];
+extern char const MD_HTTP_413_MSG[128];
+extern char const MD_HTTP_422_MSG[128];
+extern char const MD_HTTP_500_MSG[128];
+extern char const MD_HTTP_501_MSG[128];
+extern char const MD_HTTP_504_MSG[128];
 
-extern char const* MD_HTTP_DEFAULT_MSG;
+extern char const MD_HTTP_DEFAULT_MSG[128];
 
 #define MD_HTTP_TYPE_STATEMACHINE   MHD_USE_SELECT_INTERNALLY
 #define MD_HTTP_TYPE_THREAD         MHD_USE_THREAD_PER_CONNECTION
@@ -325,20 +316,23 @@ struct md_syndicate_conf {
    char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
    char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
    uint64_t ag_block_size;                            // block size for an AG
-
+   char* local_sd_dir;                                // location on disk where RG storage drivers can be found.
+   
    // debug
    int debug_read;                                    // print verbose information for reads
    int debug_lock;                                    // print verbose information on locks
 
    // common
-   char* gateway_name;
+   char* gateway_name;                                // name of this gateway
    int metadata_connect_timeout;                      // number of seconds to wait to connect on the control plane
    int portnum;                                       // Syndicate-side port number
-   int transfer_timeout;                              // how long a transfer is allowed to take
+   int transfer_timeout;                              // how long a transfer is allowed to take (in seconds)
    bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers
    char* gateway_key_path;                            // path to PEM-encoded user-given public/private key for this gateway
    char* cdn_prefix;                                  // CDN prefix
    char* proxy_url;                                   // URL to a proxy to use (instead of a CDN)
+   int replica_connect_timeout;                       // number of seconds to wait to connect to an RG
+   
    
    // MS-related fields
    char* metadata_url;                                // URL (or path on disk) where to get the metadata
@@ -350,8 +344,11 @@ struct md_syndicate_conf {
 
    // security fields
    char* gateway_key;
+   size_t gateway_key_len;
    char* server_key;
+   size_t server_key_len;
    char* server_cert;
+   size_t server_cert_len;
 
    // misc
    mode_t usermask;                                   // umask of the user running this program
@@ -429,6 +426,8 @@ struct md_syndicate_conf {
 #define VOLUME_NAME_KEY             "VOLUME_NAME"
 #define GATEWAY_NAME_KEY            "GATEWAY_NAME"
 
+#define LOCAL_STORAGE_DRIVERS_KEY   "LOCAL_STORAGE_DRIVERS"
+
 // gateway config
 #define GATEWAY_METADATA_KEY        "GATEWAY_METADATA"
 #define GATEWAY_PORTNUM_KEY         "GATEWAY_PORTNUM"
@@ -499,7 +498,7 @@ typedef vector<long> md_pathlist;
 #endif
 
 
-BEGIN_EXTERN_C
+extern "C" {
    
 // library config 
 int md_debug( int level );
@@ -533,7 +532,7 @@ int md_withdraw_dir( char const* root, char const* fs_path );
 char* md_publish_path_file( char const* publish_root, char const* fs_path, int64_t version );
 char* md_publish_path_block( char const* publish_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version );
 char* md_staging_path_block( char const* staging_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version );
-char* md_full_block_path( char const* root, char const* fs_path, uint64_t block_id );
+char* md_full_block_path( char const* root, char const* fs_path, int64_t file_version, uint64_t block_id );
 int64_t md_path_version( char const* path );
 int md_path_version_offset( char const* path );
 ssize_t md_metadata_update_text( struct md_syndicate_conf* conf, char **buf, struct md_update** updates );
@@ -555,7 +554,6 @@ char* md_basename( char const* path, char* dest );
 int md_depth( char const* path );
 int md_basename_begin( char const* path );
 int md_dirname_end( char const* path );
-char* md_realpath( char const* cwd, char const* path );
 char* md_prepend( char const* prefix, char const* str, char* output );
 long md_hash( char const* path );
 int md_path_split( char const* path, vector<char*>* result );
@@ -565,13 +563,10 @@ bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url );
 // serialization
 int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent );
 int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent );
-int md_write_metadata( int fd, struct md_entry** ents );
-size_t md_metadata_line_len( struct md_entry* ent );
-char* md_to_string( struct md_entry* ent, char* buf );
 
 // directory manipulation
 int md_mkdirs( char const* dirp );
-int md_mkdirs2( char const* dirp, int off );
+int md_mkdirs2( char const* dirp, int start, mode_t mode );
 int md_mkdirs3( char const* dirp, mode_t mode );
 int md_rmdirs( char const* dirp );
 
@@ -582,8 +577,7 @@ int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile );
 // daemonization
 int md_release_privileges();
 
-// HTTP and URL processing
-int md_connect_timeout( unsigned long timeout );
+// downloads
 ssize_t md_download_file( char const* url, char** buf, int* status_code );
 ssize_t md_download_file2( char const* url, char** buf, char const* username, char const* password );
 ssize_t md_download_file3( char const* url, int fd, char const* username, char const* password );
@@ -591,6 +585,13 @@ ssize_t md_download_file4( char const* url, char** buf, char const* username, ch
 ssize_t md_download_file5( CURL* curl_h, char** buf );
 ssize_t md_download_file6( CURL* curl_h, char** buf, ssize_t max_len );
 ssize_t md_download_file_proxied( char const* url, char** buf, char const* proxy, int* status_code );
+int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len );
+int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len );
+int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg );
+ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char const* block_url, char** block_bits, size_t block_len );
+
+// HTTP and URL control
+int md_connect_timeout( unsigned long timeout );
 char** md_parse_cgi_args( char* query_string );
 char* md_url_hostname( char const* url );
 char* md_url_scheme( char const* url );
@@ -624,7 +625,6 @@ int md_create_HTTP_response_ram_nocopy( struct md_HTTP_response* resp, char cons
 int md_create_HTTP_response_ram_static( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len );
 int md_create_HTTP_response_fd( struct md_HTTP_response* resp, char const* mimetype, int status, int fd, off_t offset, size_t size );
 int md_create_HTTP_response_stream( struct md_HTTP_response* resp, char const* mimetype, int status, uint64_t size, size_t blk_size, md_HTTP_stream_callback scb, void* cls, md_HTTP_free_cls_callback fcb );
-int md_HTTP_response_headers( struct md_HTTP_response* resp, struct md_HTTP_header** headers );
 void md_free_HTTP_response( struct md_HTTP_response* resp );
 void* md_cls_get( void* cls );
 void md_cls_set_status( void* cls, int status );
@@ -657,21 +657,21 @@ size_t response_buffer_size( response_buffer_t* rb );
 void response_buffer_free( response_buffer_t* rb );
 
 // top-level initialization
-int md_init( int gateway_type,
-             char const* config_file,
-             struct md_syndicate_conf* conf,
-             struct ms_client* client,
-             int portnum,
-             char const* ms_url,
-             char const* volume_name,
-             char const* gateway_name,
-             char const* md_username,
-             char const* md_password,
-             char const* volume_key_file,
-             char const* my_key_file,
-             char const* tls_key_file,
-             char const* tls_cert_file
-           );
+int md_init(int gateway_type,
+            char const* config_file,
+            struct md_syndicate_conf* conf,
+            struct ms_client* client,
+            int portnum,
+            char const* ms_url,
+            char const* volume_name,
+            char const* gateway_name,
+            char const* md_username,
+            char const* md_password,
+            char const* volume_key_file,
+            char const* my_key_file,
+            char const* tls_key_file,
+            char const* tls_cert_file
+         );
 
 int md_shutdown(void);
 int md_default_conf( struct md_syndicate_conf* conf );
@@ -685,7 +685,7 @@ int md_openssl_error(void);
 int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len );
 int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len );
 
-END_EXTERN_C
+}
 
 
 
@@ -769,9 +769,17 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
 #define INVALID_VOLUME_ID INVALID_BLOCK_ID
 
 // gateway types for md_init
+// TODO: sync up with ms.proto?
 #define SYNDICATE_UG       1
 #define SYNDICATE_AG       2
 #define SYNDICATE_RG       3
+#define VALID_GATEWAY_TYPE( type ) ((type) > 0 && (type) <= SYNDICATE_RG)
+
+#define GATEWAY_CAP_READ_DATA  1
+#define GATEWAY_CAP_WRITE_DATA  2
+#define GATEWAY_CAP_READ_METADATA  4
+#define GATEWAY_CAP_WRITE_METADATA  8
+#define GATEWAY_CAP_COORDINATE  16
 
 // limits
 #define SYNDICATE_MAX_WRITE_MESSEGE_LEN  4096

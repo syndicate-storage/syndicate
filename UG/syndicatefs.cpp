@@ -60,12 +60,12 @@ struct fuse_operations get_syndicatefs_opers() {
 int syndicatefs_getattr(const char *path, struct stat *statbuf) {
    
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_getattr( %s, %p )\n", path, statbuf );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_getattr( %s, %p )\n", pthread_self(), path, statbuf );
    
    SYNDICATEFS_DATA->stats->enter( STAT_GETATTR );
    
    int rc = fs_entry_stat( SYNDICATEFS_DATA->core, path, statbuf, conf->owner, SYNDICATEFS_DATA->core->volume );
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_getattr rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_getattr rc = %d\n", pthread_self(), rc );
    
    SYNDICATEFS_DATA->stats->leave( STAT_GETATTR, rc );
    
@@ -79,7 +79,7 @@ int syndicatefs_getattr(const char *path, struct stat *statbuf) {
 int syndicatefs_readlink(const char *path, char *link, size_t size) {
 
    SYNDICATEFS_DATA->stats->enter( STAT_READLINK );
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_readlink on path %s, size %u\n", path, size);
+   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_readlink on path %s, size %u\n", pthread_self(), path, size);
    logerr( SYNDICATEFS_DATA->logfile, "ERR: not implemented\n");
    
    SYNDICATEFS_DATA->stats->leave( STAT_READLINK, -1 );
@@ -94,7 +94,7 @@ int syndicatefs_readlink(const char *path, char *link, size_t size) {
 int syndicatefs_mknod(const char *path, mode_t mode, dev_t dev) {
 
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_mknod( %s, %o, %d )\n", path, mode, dev );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_mknod( %s, %o, %d )\n", pthread_self(), path, mode, dev );
    
    SYNDICATEFS_DATA->stats->enter( STAT_MKNOD );
    
@@ -109,7 +109,7 @@ int syndicatefs_mknod(const char *path, mode_t mode, dev_t dev) {
 int syndicatefs_mkdir(const char *path, mode_t mode) {
 
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_mkdir( %s, %o )\n", path, mode );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_mkdir( %s, %o )\n", pthread_self(), path, mode );
    
    SYNDICATEFS_DATA->stats->enter( STAT_MKDIR );
    
@@ -117,21 +117,21 @@ int syndicatefs_mkdir(const char *path, mode_t mode) {
    
    SYNDICATEFS_DATA->stats->leave( STAT_MKDIR, rc );
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_mkdir rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_mkdir rc = %d\n", pthread_self(), rc );
    return rc;
 }
 
 /** Remove a file (unlink) */
 int syndicatefs_unlink(const char* path) {
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_unlink( %s )\n", path );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_unlink( %s )\n", pthread_self(), path );
 
    SYNDICATEFS_DATA->stats->enter( STAT_UNLINK );
    
-   int rc = fs_entry_versioned_unlink( SYNDICATEFS_DATA->core, path, -1, SYNDICATEFS_DATA->conf.owner, SYNDICATEFS_DATA->core->volume );
+   int rc = fs_entry_versioned_unlink( SYNDICATEFS_DATA->core, path, 0, 0, -1, SYNDICATEFS_DATA->conf.owner, SYNDICATEFS_DATA->core->volume, false );
 
    SYNDICATEFS_DATA->stats->leave( STAT_UNLINK, rc );
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_unlink rc = %d\n", rc);
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_unlink rc = %d\n", pthread_self(), rc);
    return rc;
 }
 
@@ -139,7 +139,7 @@ int syndicatefs_unlink(const char* path) {
 int syndicatefs_rmdir(const char *path) {
    
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_rmdir( %s )\n", path );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_rmdir( %s )\n", pthread_self(), path );
    
    SYNDICATEFS_DATA->stats->enter( STAT_RMDIR );
    
@@ -147,7 +147,7 @@ int syndicatefs_rmdir(const char *path) {
    
    SYNDICATEFS_DATA->stats->leave( STAT_RMDIR, rc );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_rmdir rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_rmdir rc = %d\n", pthread_self(), rc );
    return rc;
 }
 
@@ -156,7 +156,7 @@ int syndicatefs_rmdir(const char *path) {
 int syndicatefs_symlink(const char *path, const char *link) {
 
    SYNDICATEFS_DATA->stats->enter( STAT_SYMLINK );
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_symlink on path %s, link %s\n", path, link);
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_symlink on path %s, link %s\n", pthread_self(), path, link);
    SYNDICATEFS_DATA->stats->leave( STAT_SYMLINK, -1 );
    return -EPERM; // not supported
 }
@@ -166,7 +166,7 @@ int syndicatefs_symlink(const char *path, const char *link) {
 int syndicatefs_rename(const char *path, const char *newpath) {
    
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_rename( %s, %s )\n", path, newpath );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_rename( %s, %s )\n", pthread_self(), path, newpath );
    
    SYNDICATEFS_DATA->stats->enter( STAT_RENAME );
 
@@ -180,7 +180,7 @@ int syndicatefs_rename(const char *path, const char *newpath) {
 /** Create a hard link to a file (link) */
 int syndicatefs_link(const char *path, const char *newpath) {
    SYNDICATEFS_DATA->stats->enter( STAT_LINK );
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_link hard from %s to %s\n", path, newpath);
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_link hard from %s to %s\n", pthread_self(), path, newpath);
    SYNDICATEFS_DATA->stats->leave( STAT_LINK, -1 );
    return -EXDEV;    // not supported
 }
@@ -190,7 +190,7 @@ int syndicatefs_link(const char *path, const char *newpath) {
 int syndicatefs_chmod(const char *path, mode_t mode) {
    
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_chmod( %s, %o )\n", path, mode );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_chmod( %s, %o )\n", pthread_self(), path, mode );
    
    SYNDICATEFS_DATA->stats->enter( STAT_CHMOD );
    
@@ -200,7 +200,7 @@ int syndicatefs_chmod(const char *path, mode_t mode) {
    }
    
    SYNDICATEFS_DATA->stats->leave( STAT_CHMOD, rc );
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_chmod rc = %d\n");
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_chmod rc = %d\n");
    return rc;
 }
 
@@ -209,7 +209,7 @@ int syndicatefs_chmod(const char *path, mode_t mode) {
 int syndicatefs_chown(const char *path, uid_t uid, gid_t gid) {
    /*
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_chown( %s, %d, %d )\n", path, uid, gid );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_chown( %s, %d, %d )\n", pthread_self(), path, uid, gid );
    
    SYNDICATEFS_DATA->stats->enter( STAT_CHOWN );
    
@@ -219,7 +219,7 @@ int syndicatefs_chown(const char *path, uid_t uid, gid_t gid) {
    }
    
    SYNDICATEFS_DATA->stats->leave( STAT_CHOWN, rc );
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_chown rc = %d\n", rc);
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_chown rc = %d\n", pthread_self(), rc);
    return rc;
    */
    return -ENOSYS;
@@ -230,14 +230,14 @@ int syndicatefs_chown(const char *path, uid_t uid, gid_t gid) {
 /* only works on local files */
 int syndicatefs_truncate(const char *path, off_t newsize) {
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_truncate( %s, %ld )\n", path, newsize );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_truncate( %s, %ld )\n", pthread_self(), path, newsize );
 
    SYNDICATEFS_DATA->stats->enter( STAT_TRUNCATE );
 
-   int rc = fs_entry_versioned_truncate( SYNDICATEFS_DATA->core, path, newsize, -1, conf->owner, SYNDICATEFS_DATA->core->volume );
+   int rc = fs_entry_versioned_truncate( SYNDICATEFS_DATA->core, path, newsize, 0, 0, -1, conf->owner, SYNDICATEFS_DATA->core->volume, false );
 
    SYNDICATEFS_DATA->stats->leave( STAT_TRUNCATE, rc );
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_truncate rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_truncate rc = %d\n", pthread_self(), rc );
    return rc;
 }
 
@@ -245,7 +245,7 @@ int syndicatefs_truncate(const char *path, off_t newsize) {
 /** Change the access and/or modification times of a file (utime) */
 int syndicatefs_utime(const char *path, struct utimbuf *ubuf) {
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_utime( %s, {%d, %d} )\n", path, ubuf->actime, ubuf->modtime );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_utime( %s, {%d, %d} )\n", pthread_self(), path, ubuf->actime, ubuf->modtime );
    
    SYNDICATEFS_DATA->stats->enter( STAT_UTIME );
    
@@ -254,7 +254,7 @@ int syndicatefs_utime(const char *path, struct utimbuf *ubuf) {
       // TODO: update the modtime of this file
    }
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_utime rc = %d\n", rc);
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_utime rc = %d\n", pthread_self(), rc);
    SYNDICATEFS_DATA->stats->leave( STAT_UTIME, rc );
    return rc;
 }
@@ -265,7 +265,7 @@ int syndicatefs_utime(const char *path, struct utimbuf *ubuf) {
 int syndicatefs_open(const char *path, struct fuse_file_info *fi) {
 
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_open( %s, %p (flags = %o) )\n", path, fi, fi->flags );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_open( %s, %p (flags = %o) )\n", pthread_self(), path, fi, fi->flags );
    
    SYNDICATEFS_DATA->stats->enter( STAT_OPEN );
    
@@ -279,7 +279,7 @@ int syndicatefs_open(const char *path, struct fuse_file_info *fi) {
    fi->direct_io = 1;
    
    SYNDICATEFS_DATA->stats->leave( STAT_OPEN, err );
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_open rc = %d\n", err );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_open rc = %d\n", pthread_self(), err );
    
    return err;
 }
@@ -288,7 +288,7 @@ int syndicatefs_open(const char *path, struct fuse_file_info *fi) {
 /** Read data from an open file.  Return number of bytes read. */
 int syndicatefs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_read( %s, %p, %ld, %ld, %p )\n", path, buf, size, offset, fi );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_read( %s, %p, %ld, %ld, %p )\n", pthread_self(), path, buf, size, offset, fi );
    
    SYNDICATEFS_DATA->stats->enter( STAT_READ );
    
@@ -297,7 +297,7 @@ int syndicatefs_read(const char *path, char *buf, size_t size, off_t offset, str
    
    if( rc < 0 ) {
       SYNDICATEFS_DATA->stats->leave( STAT_READ, -1 );
-      logerr( SYNDICATEFS_DATA->logfile, "syndicatefs_read rc = %ld\n", rc );
+      logerr( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_read rc = %ld\n", pthread_self(), rc );
       return -1;
    }
    
@@ -306,7 +306,7 @@ int syndicatefs_read(const char *path, char *buf, size_t size, off_t offset, str
       memset( buf + rc, 0, size - rc );
    }
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_read rc = %ld\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_read rc = %ld\n", pthread_self(), rc );
    
    SYNDICATEFS_DATA->stats->leave( STAT_READ, (rc >= 0 ? 0 : rc) );
    return rc;
@@ -317,7 +317,7 @@ int syndicatefs_read(const char *path, char *buf, size_t size, off_t offset, str
 int syndicatefs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
 
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_write( %s, %p, %ld, %ld, %p )\n", path, buf, size, offset, fi->fh );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_write( %s, %p, %ld, %ld, %p )\n", pthread_self(), path, buf, size, offset, fi->fh );
    
    SYNDICATEFS_DATA->stats->enter( STAT_WRITE );
    
@@ -326,7 +326,7 @@ int syndicatefs_write(const char *path, const char *buf, size_t size, off_t offs
    
    SYNDICATEFS_DATA->stats->leave( STAT_WRITE, (rc >= 0 ? 0 : rc)  );
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_write rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_write rc = %d\n", pthread_self(), rc );
    return (int)rc;
 }
 
@@ -338,7 +338,7 @@ int syndicatefs_write(const char *path, const char *buf, size_t size, off_t offs
  */
 int syndicatefs_statfs(const char *path, struct statvfs *statv) {
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_statfs( %s, %p )\n", path, statv );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_statfs( %s, %p )\n", pthread_self(), path, statv );
    
    SYNDICATEFS_DATA->stats->enter( STAT_STATFS );
    
@@ -352,7 +352,7 @@ int syndicatefs_statfs(const char *path, struct statvfs *statv) {
 /** Possibly flush cached data (No-op) */
 int syndicatefs_flush(const char *path, struct fuse_file_info *fi) {
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_flush( %s, %p )\n", path, fi );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_flush( %s, %p )\n", pthread_self(), path, fi );
    
    SYNDICATEFS_DATA->stats->enter( STAT_FLUSH );
 
@@ -362,7 +362,7 @@ int syndicatefs_flush(const char *path, struct fuse_file_info *fi) {
    
    SYNDICATEFS_DATA->stats->leave( STAT_FLUSH, rc );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_flush rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_flush rc = %d\n", pthread_self(), rc );
    return rc;
 }
 
@@ -370,7 +370,7 @@ int syndicatefs_flush(const char *path, struct fuse_file_info *fi) {
 /** Release an open file (close) */
 int syndicatefs_release(const char *path, struct fuse_file_info *fi) {
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_release( %s, %p )\n", path, fi );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_release( %s, %p )\n", pthread_self(), path, fi );
    
    SYNDICATEFS_DATA->stats->enter( STAT_RELEASE );
    
@@ -378,12 +378,12 @@ int syndicatefs_release(const char *path, struct fuse_file_info *fi) {
    
    int rc = fs_entry_close( SYNDICATEFS_DATA->core, fh );
    if( rc != 0 ) {
-      logerr( SYNDICATEFS_DATA->logfile, "syndicatefs_release: fs_entry_close rc = %d\n", rc );
+      logerr( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_release: fs_entry_close rc = %d\n", pthread_self(), rc );
    }
    
    free( fh );
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_release rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_release rc = %d\n", pthread_self(), rc );
    
    SYNDICATEFS_DATA->stats->leave( STAT_RELEASE, rc );
    return rc;
@@ -398,7 +398,7 @@ int syndicatefs_release(const char *path, struct fuse_file_info *fi) {
  */
 int syndicatefs_fsync(const char *path, int datasync, struct fuse_file_info *fi) {
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_fsync( %s, %d, %p )\n", path, datasync, fi );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_fsync( %s, %d, %p )\n", pthread_self(), path, datasync, fi );
    
    SYNDICATEFS_DATA->stats->enter( STAT_FSYNC );
    
@@ -412,7 +412,7 @@ int syndicatefs_fsync(const char *path, int datasync, struct fuse_file_info *fi)
       
    SYNDICATEFS_DATA->stats->leave( STAT_FSYNC, rc );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_fsync rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_fsync rc = %d\n", pthread_self(), rc );
    return rc;
 }
 
@@ -424,7 +424,7 @@ int syndicatefs_setxattr(const char *path, const char *name, const char *value, 
    
    char* safe_value = (char*)calloc( size + 1, 1 );
    strncpy( safe_value, value, size );
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_setxattr( %s, %s, %s, %d, %x )\n", path, name, safe_value, size, flags );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_setxattr( %s, %s, %s, %d, %x )\n", pthread_self(), path, name, safe_value, size, flags );
    free( safe_value );
    
    SYNDICATEFS_DATA->stats->enter( STAT_SETXATTR );
@@ -433,7 +433,7 @@ int syndicatefs_setxattr(const char *path, const char *name, const char *value, 
    
    SYNDICATEFS_DATA->stats->leave( STAT_SETXATTR, rc );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_setxattr rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_setxattr rc = %d\n", pthread_self(), rc );
    return rc;
 }
 
@@ -443,7 +443,7 @@ int syndicatefs_getxattr(const char *path, const char *name, char *value, size_t
 
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_getxattr( %s, %s, %p, %d )\n", path, name, value, size );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_getxattr( %s, %s, %p, %d )\n", pthread_self(), path, name, value, size );
    
    SYNDICATEFS_DATA->stats->enter( STAT_GETXATTR );
    
@@ -451,7 +451,7 @@ int syndicatefs_getxattr(const char *path, const char *name, char *value, size_t
    
    SYNDICATEFS_DATA->stats->leave( STAT_GETXATTR, rc );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_getxattr rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_getxattr rc = %d\n", pthread_self(), rc );
    return rc;
 }
 
@@ -461,7 +461,7 @@ int syndicatefs_listxattr(const char *path, char *list, size_t size) {
 
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_listxattr( %s, %p, %d )\n", path, list, size );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_listxattr( %s, %p, %d )\n", pthread_self(), path, list, size );
    
    SYNDICATEFS_DATA->stats->enter( STAT_LISTXATTR );
    
@@ -469,7 +469,7 @@ int syndicatefs_listxattr(const char *path, char *list, size_t size) {
    
    SYNDICATEFS_DATA->stats->leave( STAT_LISTXATTR, rc );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_listxattr rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_listxattr rc = %d\n", pthread_self(), rc );
    
    return rc;
 }
@@ -479,7 +479,7 @@ int syndicatefs_listxattr(const char *path, char *list, size_t size) {
 int syndicatefs_removexattr(const char *path, const char *name) {
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_removexattr( %s, %s )\n", path, name );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_removexattr( %s, %s )\n", pthread_self(), path, name );
    
    SYNDICATEFS_DATA->stats->enter( STAT_REMOVEXATTR );
    
@@ -487,7 +487,7 @@ int syndicatefs_removexattr(const char *path, const char *name) {
 
    SYNDICATEFS_DATA->stats->leave( STAT_REMOVEXATTR, rc );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_removexattr rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_removexattr rc = %d\n", pthread_self(), rc );
    return rc;
 }
 
@@ -497,7 +497,7 @@ int syndicatefs_opendir(const char *path, struct fuse_file_info *fi) {
 
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_opendir( %s, %p )\n", path, fi );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_opendir( %s, %p )\n", pthread_self(), path, fi );
    
    SYNDICATEFS_DATA->stats->enter( STAT_OPENDIR );
 
@@ -509,7 +509,7 @@ int syndicatefs_opendir(const char *path, struct fuse_file_info *fi) {
    
    SYNDICATEFS_DATA->stats->leave( STAT_OPENDIR, rc );
    
-   logmsg( SYNDICATEFS_DATA->logfile,  "syndicatefs_opendir rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile,  "%16lx: syndicatefs_opendir rc = %d\n", pthread_self(), rc );
    
    return rc;
 }
@@ -538,7 +538,7 @@ int syndicatefs_opendir(const char *path, struct fuse_file_info *fi) {
 int syndicatefs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
 
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_readdir( %s, %p, %p, %ld, %p )\n", path, buf, filler, offset, fi );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_readdir( %s, %p, %p, %ld, %p )\n", pthread_self(), path, buf, filler, offset, fi );
    
    SYNDICATEFS_DATA->stats->enter( STAT_READDIR );
 
@@ -553,7 +553,7 @@ int syndicatefs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off
       int i = 0;
       while( dirents[i] != NULL ) {
          if( filler(buf, dirents[i]->data.name, NULL, 0) != 0 ) {
-            logerr( SYNDICATEFS_DATA->logfile, "ERR: syndicatefs_readdir filler: buffer full\n");
+            logerr( SYNDICATEFS_DATA->logfile, "%16lx: ERR: syndicatefs_readdir filler: buffer full\n");
             rc = -ENOMEM;
             break;
          }
@@ -564,7 +564,7 @@ int syndicatefs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off
    fs_dir_entry_destroy_all( dirents );
    free( dirents );
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_readdir rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_readdir rc = %d\n", pthread_self(), rc );
    
    SYNDICATEFS_DATA->stats->leave( STAT_READDIR, rc );
    return rc;
@@ -574,7 +574,7 @@ int syndicatefs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off
 /** Release directory (closedir) */
 int syndicatefs_releasedir(const char *path, struct fuse_file_info *fi) {
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_releasedir( %s, %p )\n", path, fi );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_releasedir( %s, %p )\n", pthread_self(), path, fi );
    
    SYNDICATEFS_DATA->stats->enter( STAT_RELEASEDIR );
    
@@ -586,20 +586,20 @@ int syndicatefs_releasedir(const char *path, struct fuse_file_info *fi) {
    
    SYNDICATEFS_DATA->stats->leave( STAT_RELEASEDIR, rc );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_releasedir rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_releasedir rc = %d\n", pthread_self(), rc );
    return rc;
 }
 
 
 /** Synchronize directory contents (no-op) */
 int syndicatefs_fsyncdir(const char *path, int datasync, struct fuse_file_info *fi) {
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_fsyncdir( %s, %d, %p )\n", path, datasync, fi );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_fsyncdir( %s, %d, %p )\n", pthread_self(), path, datasync, fi );
    
    SYNDICATEFS_DATA->stats->enter( STAT_FSYNCDIR );
    
    SYNDICATEFS_DATA->stats->leave( STAT_FSYNCDIR, 0 );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_fsyncdir rc = %d\n", 0 );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_fsyncdir rc = %d\n", pthread_self(), 0 );
    return 0;
 }
 
@@ -610,7 +610,7 @@ int syndicatefs_fsyncdir(const char *path, int datasync, struct fuse_file_info *
 int syndicatefs_access(const char *path, int mask) {
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_access( %s, %x )\n", path, mask );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_access( %s, %x )\n", pthread_self(), path, mask );
    
    SYNDICATEFS_DATA->stats->enter( STAT_ACCESS );
    
@@ -618,7 +618,7 @@ int syndicatefs_access(const char *path, int mask) {
       
    SYNDICATEFS_DATA->stats->leave( STAT_ACCESS, rc );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_access rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_access rc = %d\n", pthread_self(), rc );
    return rc;
 }
 
@@ -629,7 +629,7 @@ int syndicatefs_access(const char *path, int mask) {
 int syndicatefs_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_create( %s, %o, %p )\n", path, mode, fi );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_create( %s, %o, %p )\n", pthread_self(), path, mode, fi );
    
    SYNDICATEFS_DATA->stats->enter( STAT_CREATE );
    
@@ -642,7 +642,7 @@ int syndicatefs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
    
    SYNDICATEFS_DATA->stats->leave( STAT_CREATE, rc );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_create rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_create rc = %d\n", pthread_self(), rc );
    return rc;
 }
 
@@ -654,7 +654,7 @@ int syndicatefs_ftruncate(const char *path, off_t length, struct fuse_file_info 
 
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_ftruncate( %s, %ld, %p )\n", path, length, fi );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_ftruncate( %s, %ld, %p )\n", pthread_self(), path, length, fi );
    
    SYNDICATEFS_DATA->stats->enter( STAT_FTRUNCATE );
 
@@ -666,7 +666,7 @@ int syndicatefs_ftruncate(const char *path, off_t length, struct fuse_file_info 
    
    SYNDICATEFS_DATA->stats->leave( STAT_FTRUNCATE, rc );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_ftrunctate rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_ftrunctate rc = %d\n", pthread_self(), rc );
    
    return rc;
 }
@@ -677,7 +677,7 @@ int syndicatefs_ftruncate(const char *path, off_t length, struct fuse_file_info 
  */
 int syndicatefs_fgetattr(const char *path, struct stat *statbuf, struct fuse_file_info *fi) {
    
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_fgetattr( %s, %p, %p )\n", path, statbuf, fi );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_fgetattr( %s, %p, %p )\n", pthread_self(), path, statbuf, fi );
    
    SYNDICATEFS_DATA->stats->enter( STAT_FGETATTR );
    
@@ -686,7 +686,7 @@ int syndicatefs_fgetattr(const char *path, struct stat *statbuf, struct fuse_fil
    
    SYNDICATEFS_DATA->stats->leave( STAT_FGETATTR, rc );
 
-   logmsg( SYNDICATEFS_DATA->logfile, "syndicatefs_fgetattr rc = %d\n", rc );
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_fgetattr rc = %d\n", pthread_self(), rc );
    
    return rc;
 }

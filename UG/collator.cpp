@@ -16,6 +16,7 @@ Collator::Collator( struct fs_core* core ) {
 
    curl_easy_setopt( this->release_curl, CURLOPT_POST, 1L );
    curl_easy_setopt( this->release_curl, CURLOPT_SSL_VERIFYPEER, (core->conf->verify_peer ? 1L : 0L) );
+   curl_easy_setopt( this->release_curl, CURLOPT_SSL_VERIFYHOST, 2L );
    curl_easy_setopt( this->release_curl, CURLOPT_NOSIGNAL, 1L );
    
    sem_init( &this->release_sem, 0, 0 );
@@ -63,6 +64,7 @@ static int send_accepted( struct fs_core* core, CURL* curl_h, char const* conten
 
    curl_easy_setopt( curl_h, CURLOPT_POST, 1L );
    curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, (core->conf->verify_peer ? 1L : 0L) );
+   curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
    curl_easy_setopt( curl_h, CURLOPT_NOSIGNAL, 1L );
 
    struct curl_httppost *post = NULL, *last = NULL;
@@ -170,7 +172,7 @@ void* Collator::release_loop( void* arg ) {
       
       pthread_mutex_unlock( &col->release_queue_lock );
 
-      char* gateway_url = ms_client_get_UG_content_url( col->core->ms, col->core->volume, next.gateway_id );
+      char* gateway_url = ms_client_get_UG_content_url( col->core->ms, next.gateway_id );
       if( gateway_url == NULL ) {
          dbprintf("WARN: No such gateway %" PRIu64 "\n", next.gateway_id );
          delete next.acceptMsg;

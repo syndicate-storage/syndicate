@@ -29,7 +29,7 @@ message ms_entry {
    required int32 max_write_freshness = 14;
    required string name = 15;
    
-   optional int64 write_nonce = 16;
+   required int64 write_nonce = 16;
    
    optional uint64 parent_id = 17;
    optional string parent_name = 18;
@@ -69,96 +69,106 @@ message ms_listing {
 // metadata information for the entries of a path
 message ms_reply {
    required uint64 volume_version = 1;           // version of this volume's metadata
-   required uint64 UG_version = 2;               // version of this volume's UGs
-   required uint64 RG_version = 3;               // version of this volume's RGs
-   required uint64 AG_version = 4;               // version of this volume's AGs
-   required string signature = 5;                // Volume signature
-   required ms_listing listing = 6;
-   required int32 error = 7;
-   optional string errormsg = 8;
+   required uint64 cert_version = 2;             // Volume certificate bundle version
+   required string signature = 3;                // Volume signature
+   required ms_listing listing = 4;
+   required int32 error = 5;
+   optional string errormsg = 6;
 }
 
-// metadata information on a block
-message ms_gateway_blockinfo {
-   required uint64 file_id = 1;           // ID of this file
-   required int64 file_version = 2;       // version of this file 
-   required uint64 block_id = 3;          // ID of the block
-   required int64 block_version = 4;      // version of he block
-   required uint64 blocking_factor = 5;   // size of the block
-   required int64 file_mtime_sec = 6;     // time of the write on the UG that created this block (seconds)
-   required int32 file_mtime_nsec = 7;    // time of the write on the UG that created this block (nanoseconds)
-   required uint64 owner = 8;             // ID of the SyndicateUser that owns this file
-   required uint64 writer = 9;            // ID of the UG that created this message
-   required uint64 volume = 10;           // ID of the Volume that this file/UG belong to
-   required string hash = 11;             // secure hash (SHA256) of the block bits
-   required string signature = 12;        // signature of this message, from the sender gateway's operator's private key
+// key/value arguments for replica drivers
+message ms_keyword_arg {
+   required string key = 1;
+   required string value = 2;
+}
+
+// metadata information on a block/manifest request to an RG
+message ms_gateway_request_info {
+   enum ReplicaType {
+      MANIFEST = 1;
+      BLOCK = 2;
+   }
+   
+   required int32 type = 1;
+   required uint64 file_id = 2;           // ID of this file
+   required int64 file_version = 3;       // version of this file 
+   required uint64 block_id = 4;          // ID of the block
+   required int64 block_version = 5;      // version of he block
+   required uint64 size = 6;              // size of the block or manifest
+   required int64 file_mtime_sec = 7;     // time of the write on the UG that created this block (seconds)
+   required int32 file_mtime_nsec = 8;    // time of the write on the UG that created this block (nanoseconds)
+   required uint64 owner = 9;             // ID of the SyndicateUser that owns this file
+   required uint64 writer = 10;            // ID of the UG that created this message
+   required uint64 volume = 11;           // ID of the Volume that this file/UG belong to
+   required string hash = 12;             // secure hash (SHA256) of the block or manifest bits
+   
+   repeated ms_keyword_arg args = 13;     // driver-specific arguments
+   
+   required string signature = 14;        // signature of this message, from the sender gateway's operator's private key
 }
 
 
-// volume gateway credential set.  Lets gateways authenticate to the MS
-message ms_volume_gateway_cred {
-   required uint64 owner_id = 1;          // ID of user that owns this gateway
-   required uint64 gateway_id = 2;        // ID of this gateway
-   required string name = 3;              // name of gateway
-   required string host = 4;              // hostname of this gateway
-   required int32 port = 5;               // port number of this gateway
-   required string public_key = 6;        // public key of this gateway
+// gateway certificate
+message ms_gateway_cert {
+   enum GatewayType {
+      USER_GATEWAY = 1;
+      REPLICA_GATEWAY = 2;
+      ACQUISITION_GATEWAY = 3;
+   }
+   
+   enum Capabilities {
+      CAP_READ_DATA = 1;
+      CAP_WRITE_DATA = 2;
+      CAP_READ_METADATA = 4;
+      CAP_WRITE_METADATA = 8;
+      CAP_COORDINATE = 16;
+   }
+   
+   required uint64 version = 1;           // version of this certificate
+   
+   required uint32 gateway_type = 2;      // type of gateway
+   required uint64 gateway_id = 3;        // ID of this gateway
+   required uint64 owner_id = 4;          // ID of user that owns this gateway
+   required string name = 5;              // name of gateway
+   required string host = 6;              // hostname of this gateway
+   required int32 port = 7;               // port number of this gateway
+   required string public_key = 8;        // public key of this gateway
+   required int64 cert_expires = 9;       // when the certificate expires
+   required uint64 caps = 10;             // capabilities
+   required string closure_text = 11;     // serialized closure information
+   required uint64 volume_id = 12;         // which Volume we're bound to
+   
+   optional uint64 blocksize = 13;        // (AG only) desired block size
+   
+   required string signature = 14;        // base64-encoded Volume signature of this cert
 }
 
-// UGs
-message ms_volume_UGs {
-   required uint64 ug_version = 1;
-   required string signature = 2;                  // base64-encoded Volume signature of this message
-   repeated ms_volume_gateway_cred ug_creds = 3;  // session credentials for the other write-capable UGs in this Volume
-}
-
-// RGs
-message ms_volume_RGs {
-   required uint64 rg_version = 1;
-   required string signature = 2;      // base64-encoded Volume signature of this message
-   repeated string rg_hosts = 3;
-   repeated int32 rg_ports = 4;
-}
-
-// AGs
-message ms_volume_AGs {
-   required uint64 ag_version = 1;
-   required string signature = 2;
-   repeated uint64 ag_ids = 3;
-   repeated uint64 ag_blocksizes = 4;
-   repeated string hostnames = 5;
-   repeated int32 portnums = 6;
-}
 
 // Volume metadata
 message ms_volume_metadata {
    required uint64 blocksize = 1;
    required uint64 owner_id = 2;               // UID of the volume owner
    required uint64 volume_id = 3;             // volume ID
-   required uint64 volume_version = 4;
-   required uint64 UG_version = 5;
-   required uint64 RG_version = 6;
-   required uint64 AG_version = 7;
-   required uint64 num_files = 8;
-   required string name = 9;
-   required string description = 10;
-   required string volume_public_key = 11;
-   required string signature = 12;              // base64-encoded Volume signature of this message
-
-   optional ms_volume_UGs ugs = 13;         // ug information (included only on registration)
-   optional ms_volume_RGs rgs = 14;         // rg information (included only on registration)
-   optional ms_volume_AGs ags = 15;          // ag information (included only on registration)
-   optional ms_entry root = 16;             // root directory
+   required uint64 volume_version = 4;          // volume metadata version
+   required uint64 cert_version = 5;            // Volume cert bundle version
+   required uint64 num_files = 6;
+   required string name = 7;
+   required string description = 8;
+   required string volume_public_key = 9;
+   required bool archive = 10;
+   required bool private = 11;
+   optional ms_entry root = 12;             // root directory
+   
+   required string signature = 13;              // base64-encoded Volume signature of this message
 }
 
 
 // Registration metadata
 message ms_registration_metadata {
-   required ms_volume_gateway_cred cred = 1;   // session credentials for the requester
-   required string session_password = 2;       // temporary password the gateway should use in the future to authenticate to the MS
-   required int64 session_timeout = 3;       // how long is the above information good for?
-
-   repeated ms_volume_metadata volumes = 4;     // the Volumes we're subscribed to
+   required ms_gateway_cert cert = 1;         // session certificate for the requester
+   required string session_password = 2;      // session password
+   required int64 session_expires = 3;        // when the session password expires
+   required ms_volume_metadata volume = 4;    // the Volume we're subscribed to
 }
 
 

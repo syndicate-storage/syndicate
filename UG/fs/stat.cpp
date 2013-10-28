@@ -84,16 +84,21 @@ char* fs_entry_get_manifest_str( struct fs_core* core, char* fs_path ) {
 
 
 // serialize the manifest from a locked fent
-ssize_t fs_entry_serialize_manifest( struct fs_core* core, struct fs_entry* fent, char** manifest_bits ) {
+ssize_t fs_entry_serialize_manifest( struct fs_core* core, struct fs_entry* fent, char** manifest_bits, bool sign ) {
 
    Serialization::ManifestMsg mmsg;
    fent->manifest->as_protobuf( core, fent, &mmsg );
 
-   int rc = gateway_sign_manifest( core->ms->my_key, &mmsg );
-   if( rc != 0 ) {
-      errorf("gateway_sign_manifest rc = %d\n", rc );
-      *manifest_bits = NULL;
-      return rc;
+   if( sign ) {
+      int rc = gateway_sign_manifest( core->ms->my_key, &mmsg );
+      if( rc != 0 ) {
+         errorf("gateway_sign_manifest rc = %d\n", rc );
+         *manifest_bits = NULL;
+         return rc;
+      }
+   }
+   else {
+      mmsg.set_signature("");
    }
    
    string mb;
@@ -111,7 +116,7 @@ ssize_t fs_entry_serialize_manifest( struct fs_core* core, struct fs_entry* fent
 
 
 // get a file manifest as a serialized protobuf
-ssize_t fs_entry_serialize_manifest( struct fs_core* core, char* fs_path, char** manifest_bits ) {
+ssize_t fs_entry_serialize_manifest( struct fs_core* core, char* fs_path, char** manifest_bits, bool sign ) {
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
    if( !fent || err ) {
@@ -119,7 +124,7 @@ ssize_t fs_entry_serialize_manifest( struct fs_core* core, char* fs_path, char**
       return err;
    }
 
-   ssize_t ret = fs_entry_serialize_manifest( core, fent, manifest_bits );
+   ssize_t ret = fs_entry_serialize_manifest( core, fent, manifest_bits, sign );
 
    fs_entry_unlock( fent );
 
@@ -187,7 +192,7 @@ int fs_entry_set_mod_time( struct fs_core* core, char const* fs_path, struct tim
 static int fs_entry_do_stat( struct fs_core* core, struct fs_entry* fent, struct stat* sb ) {
    int rc = 0;
 
-   memset( sb, 0, sizeof(sb) );
+   memset( sb, 0, sizeof(struct stat) );
    
    sb->st_dev = 0;
    sb->st_ino = (ino_t)fent->file_id;
@@ -309,19 +314,29 @@ bool fs_entry_is_local( struct fs_core* core, char const* path, uint64_t user, u
 
 // fstat
 int fs_entry_fstat( struct fs_core* core, struct fs_file_handle* fh, struct stat* sb ) {
-   if( fs_file_handle_rlock( fh ) != 0 ) {
+   int rc = fs_file_handle_rlock( fh );
+   if( rc != 0 ) {
+      errorf("fs_file_handle_rlock rc = %d\n", rc );
       return -EBADF;
    }
 
    // revalidate
-   int rc = fs_entry_revalidate_path( core, fh->volume, fh->path );
+   rc = fs_entry_revalidate_path( core, fh->volume, fh->path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
+      
+      if( rc == -ENOENT ) {
+         // file no longer exists
+         return -EBADF;
+      }
+      
       return -EREMOTEIO;
    }
    
-   if( fs_entry_rlock( fh->fent ) != 0 ) {
+   rc = fs_entry_rlock( fh->fent );
+   if( rc != 0 ) {
+      errorf("fs_entry_rlock rc = %d\n", rc );
       fs_file_handle_unlock( fh );
       return -EBADF;
    }
@@ -372,7 +387,7 @@ int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *sta
       return err;
    }
 
-   uint64_t num_files = ms_client_get_num_files( core->ms, vol );
+   uint64_t num_files = ms_client_get_num_files( core->ms );
 
    // populate the statv struct
    statv->f_bsize = core->blocking_factor;
@@ -385,6 +400,8 @@ int fs_entry_statfs( struct fs_core* core, char const* path, struct statvfs *sta
    statv->f_namemax = 256;    // might as well keep it limited to what ext2/ext3/ext4 can handle
    statv->f_frsize = 0;
    statv->f_flag = ST_NODEV | ST_NOSUID;
+   
+   fs_entry_unlock( fent );
 
    return 0;
 }

@@ -15,7 +15,7 @@ import base64
 from Crypto.Hash import SHA256, SHA
 from Crypto.PublicKey import RSA
 from Crypto import Random
-from Crypto.Signature import PKCS1_v1_5
+from Crypto.Signature import PKCS1_v1_5 as CryptoSigner
 
 import protobufs.ms_pb2 as ms_pb2
 
@@ -78,15 +78,13 @@ class Volume( storagetypes.Object ):
    description = storagetypes.Text()
    owner_id = storagetypes.Integer()
    volume_id = storagetypes.Integer()
-   version = storagetypes.Integer( indexed=False )                 # version of this Volume's metadata
-   UG_version = storagetypes.Integer( default=1, indexed=False )              # version of the UG listing in this Volume
-   RG_version = storagetypes.Integer( default=1, indexed=False )              # version of the RG listing in this Volume
-   AG_version = storagetypes.Integer( default=1, indexed=False )              # version of the AG listing in this Volume
+   
+   version = storagetypes.Integer( default=1, indexed=False )                 # version of this Volume's metadata
+   cert_version = storagetypes.Integer( default=1, indexed=False )            # certificate bundle version
+   
    private = storagetypes.Boolean()
-   ag_ids = storagetypes.Integer( repeated=True )                  # AG's publishing data to this volume
-   rg_ids = storagetypes.Integer( repeated=True )                  # RG's replicating data for this volume.
-
-
+   archive = storagetypes.Boolean(default=False)                # only an AG can write to this Volume
+   
    num_shards = storagetypes.Integer(default=20, indexed=False)    # number of shards per entry in this volume
 
    public_key = storagetypes.Text()          # Volume public key, in PEM format
@@ -94,6 +92,7 @@ class Volume( storagetypes.Object ):
 
    volume_secret_salted_hash = storagetypes.Text()                 # salted hash of shared secret between the volume and its administrator
    volume_secret_salt = storagetypes.Text()                        # salt for the above hashed value
+   
 
    @classmethod
    def generate_password_hash( cls, password, salt ):
@@ -127,8 +126,6 @@ class Volume( storagetypes.Object ):
       "owner_id",
       "volume_secret_salt",
       "volume_secret_salted_hash",
-      "ag_ids",
-      "rg_ids",
       "private",
       "public_key",
       "private_key",
@@ -141,38 +138,24 @@ class Volume( storagetypes.Object ):
       
    validators = {
       "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")) ) == 0 and not is_int(value) ),
-      "private": (lambda cls, value: type(value) is bool)
    }
 
    default_values = {
-      "ag_ids": (lambda cls, attrs: []),
-      "rg_ids": (lambda cls, attrs: []),
       "blocksize": (lambda cls, attrs: 61440), # 60 KB
       "version": (lambda cls, attrs: 1),
-      "private": (lambda cls, attrs: True)
+      "cert_version": (lambda cls, attrs: 1),
+      "private": (lambda cls, attrs: True),
+      "archive": (lambda cls, attrs: False)
    }
-
-      
-   def protobuf( self, volume_metadata, caller_gateway, **kwargs ):
+   
+   def need_gateway_auth( self ):
       """
-      Convert to a protobuf (ms_volume_metadata).
+      Do we require an authentic gateway to interact with us?
       """
-
-      caller_gateway.protobuf_cred( volume_metadata.cred )
+      if self.private or not self.archive:
+         return True
       
-
-      if volume_metadata.session_password == None:
-         raise Exception("Regenerate gateway session credentials and try again")
-      
-      volume_metadata.signature = ""
-
-      # serialize, then sign, then insert the signature
-      volume_metadata_str = volume_metadata.SerializeToString()
-      sig = self.sign_message( volume_metadata_str )
-
-      volume_metadata.signature = sig
-      
-      return
+      return False
       
 
    def protobuf( self, volume_metadata, **kwargs ):
@@ -186,12 +169,11 @@ class Volume( storagetypes.Object ):
       volume_metadata.name = kwargs.get( 'name', self.name )
       volume_metadata.description = kwargs.get( 'description', self.description )
       volume_metadata.volume_version = kwargs.get('volume_version', self.version )
-      volume_metadata.UG_version = kwargs.get('UG_version', self.UG_version )
-      volume_metadata.RG_version = kwargs.get('RG_version', self.RG_version )
-      volume_metadata.AG_version = kwargs.get('AG_version', self.AG_version )
+      volume_metadata.cert_version = kwargs.get('cert_version', self.cert_version )
       volume_metadata.volume_public_key = kwargs.get( 'public_key', self.public_key )
       volume_metadata.num_files = kwargs.get( 'num_files', Volume.get_num_files( volume_metadata.volume_id ) )
-      
+      volume_metadata.archive = kwargs.get( 'archive', self.archive )
+      volume_metadata.private = kwargs.get( 'private', self.private )
       # sign it
       volume_metadata.signature = ""
 
@@ -202,65 +184,70 @@ class Volume( storagetypes.Object ):
 
       return
       
-
-   def protobuf_UGs( self, ug_metadata, user_gateways, sign=True ):
+   
+   def protobuf_gateway_cert( self, gateway_cert, gateway, sign=True ):
+      gateway.protobuf_cert( gateway_cert )
       
-      ug_metadata.ug_version = self.UG_version
-      for ug in user_gateways:
-         ug_pb = ug_metadata.ug_creds.add()
-         ug.protobuf_cred( ug_pb )
-
-      ug_metadata.signature = ""
-
+      gateway_cert.signature = ""
+      
       if sign:
-         # sign this
-         data = ug_metadata.SerializeToString()
+         # sign the cert
+         data = gateway_cert.SerializeToString()
          sig = self.sign_message( data )
-
-         ug_metadata.signature = sig
          
-      return
-
-
-   def protobuf_RGs( self, rg_metadata, rgs, sign=True ):
-
-      rg_metadata.rg_version = self.RG_version
-      for rg in rgs:
-         rg_metadata.rg_hosts.append( rg.host )
-         rg_metadata.rg_ports.append( rg.port )
-
-      rg_metadata.signature = ""
-
+         gateway_cert.signature = sig
+      
+      return 
+   
+   
+   def protobuf_gateway_cert_manifest( self, manifest, gateway_classes, sign=True ):
+      manifest.volume_id = self.volume_id
+      manifest.coordinator_id = 0
+      manifest.file_id = 0
+      manifest.file_version = self.cert_version
+      manifest.mtime_sec = 0
+      manifest.mtime_nsec = 0
+      
+      sz = 0
+      
+      # query certificate versions of all gateways
+      futs = []
+      for gwcls in gateway_classes:
+         qry_fut = gwcls.ListAll_ByVolume( self.volume_id, async=True, projection=[gwcls.g_id, gwcls.caps, gwcls.cert_version] )
+         futs.append( qry_fut )
+      
+      storagetypes.wait_futures( futs )
+      
+      gateway_lists = [g.get_result() for g in futs]
+      results = zip( gateway_classes, gateway_lists )
+      
+      for r in results:
+         cls = r[0]
+         listing = r[1]
+         
+         for gateway_metadata in listing:
+            cert_block = manifest.block_url_set.add()
+         
+            cert_block.gateway_id = gateway_metadata.g_id
+            cert_block.start_id = cls.GATEWAY_TYPE
+            cert_block.end_id = gateway_metadata.caps
+            cert_block.block_versions.append( gateway_metadata.cert_version )
+         
+            logging.info("cert block: (%s, %s, %s, %x)" % (cls.GATEWAY_TYPE, gateway_metadata.g_id, gateway_metadata.cert_version, gateway_metadata.caps) )
+            sz += 1
+      
+      manifest.size = sz
+      manifest.signature = ""
+      
       if sign:
-         # sign this
-         data = rg_metadata.SerializeToString()
+         data = manifest.SerializeToString()
          sig = self.sign_message( data )
-
-         rg_metadata.signature = sig
          
+         manifest.signature = sig
+      
       return
-
-
-   def protobuf_AGs( self, ag_metadata, ags, sign=True ):
-
-      ag_metadata.ag_version = self.AG_version
-      for ag in ags:
-         ag_metadata.ag_ids.append( ag.g_id )
-         ag_metadata.ag_blocksizes.append( ag.block_size )
-         ag_metadata.hostnames.append( ag.host )
-         ag_metadata.portnums.append( ag.port )
-
-      ag_metadata.signature = ""
-
-      if sign:
-         # sign this
-         data = ag_metadata.SerializeToString()
-         sig = self.sign_message( data )
-
-         ag_metadata.signature = sig
-         
-      return
-
+      
+      
 
    def is_gateway_in_volume( self, gateway ):
       if not self.private:
@@ -276,7 +263,7 @@ class Volume( storagetypes.Object ):
       """
       key = RSA.importKey( self.private_key )
       h = SHA256.new( data )
-      signer = PKCS1_v1_5.new(key)
+      signer = CryptoSigner.new(key)
       signature = signer.sign( h )
       sigb64 = base64.b64encode( signature )
       return sigb64
@@ -314,11 +301,9 @@ class Volume( storagetypes.Object ):
                         volume_id=volume_id,
                         active=kwargs.get('active',False),
                         version=1,
-                        UG_version=1,
-                        RG_version=1,
+                        cert_version=1,
                         private=kwargs['private'],
-                        rg_ids=kwargs['rg_ids'],
-                        ag_ids=kwargs['ag_ids'],
+                        archive=kwargs['archive'],
                         volume_secret_salt = kwargs['volume_secret_salt'],
                         volume_secret_salted_hash = kwargs['volume_secret_salted_hash'],
                         public_key = kwargs['public_key'],
@@ -379,7 +364,7 @@ class Volume( storagetypes.Object ):
          
 
    @classmethod
-   def Read( cls, volume_id ):
+   def Read( cls, volume_id, async=False, set_memcache=True ):
       """
       Given a volume ID, get the volume entity. Returns None on miss.
       """
@@ -388,10 +373,14 @@ class Volume( storagetypes.Object ):
 
       volume = storagetypes.memcache.get( volume_key_name )
       if volume == None:
-         volume = volume_key.get( use_memcache=False )
+         if not async:
+            volume = volume_key.get( use_memcache=False )
+         else:
+            return volume_key.get_async( use_memccahe=False )
+         
          if not volume:
             return None
-         else:
+         elif set_memcache:
             storagetypes.memcache.set( volume_key_name, volume )
 
       return volume
@@ -465,6 +454,10 @@ class Volume( storagetypes.Object ):
       '''
       Update volume identified by name with fields specified as a dictionary.
       '''
+      invalid = Volume.validate_fields( fields )
+      if len(invalid) != 0:
+         raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
+      
       volume = Volume.Read(volume_id)
       if not volume:
          raise Exception("No volume with the ID %d exists.", volume_id)
@@ -472,31 +465,17 @@ class Volume( storagetypes.Object ):
       Volume.FlushCache( volume_id )
 
       old_version = volume.version
-      old_rg_version = volume.RG_version
-      old_ug_version = volume.UG_version
-      old_ag_version = volume.AG_version
-
+      old_cert_version = volume.cert_version
+      
+      # apply update
       for (k,v) in fields.items():
          setattr( volume, k, v )
-
-      # If rg_ids change update, RG_version, but don't allow manual changing.
-      if "RG_version" in fields:
-         volume.RG_version = old_rg_version
-      if "rg_ids" in fields:
-         volume.RG_version = old_rg_version + 1
-
-      if "AG_version" in fields:
-         volume.AG_version = old_ag_version
-      if "ag_ids" in fields:
-         volume.AG_version = old_ag_version + 1
-
-      # Kinda hacky, but allows deliberate updating of UG_version field when changing 
-      # UG's attached volume by assuming any attempt to change UG_version is a desire to increment
-      if "UG_version" in fields:
-         logging.info("SDKJFLDJF")
-         setattr( volume, "UG_version", old_ug_version + 1)
-
+         
       volume.version = old_version + 1
+      
+      if "cert_version" in fields:
+         volume.cert_version = old_cert_version + 1
+         
       return volume.put()
          
 
@@ -511,6 +490,20 @@ class Volume( storagetypes.Object ):
       FlushCache( volume_id )
       
       return ret
+   
+   @classmethod
+   def Mount( cls, volume_id, mountpoint_id, new_volume_id ):
+      '''
+      Attach one Volume to a particular directory in another one.
+      '''
+      return volume_mount( volume_id, mountpoint_id, new_volume_id )
+   
+   @classmethod
+   def Unmount( cls, volume_id, mountpoint_id ):
+      '''
+      Detach a Volume mounted at a given mountpoint.
+      '''
+      return volume_umount( volume_id, mountpoint_id )
    
    @classmethod
    def shard_counter_name( cls, volume_id, suffix ):
@@ -533,4 +526,100 @@ class Volume( storagetypes.Object ):
       return ret
    
    
+from entry import MSEntry, MSENTRY_TYPE_DIR
+
+def volume_mount( volume_id, mountpoint_id, new_volume_id ):
+   '''
+   Mount the Volume named by new_volume_id on the directory within the Volume
+   indicated by volume_id at the directory indicated by mountpoint_id.
+   '''
    
+   def volume_mount_txn( vol, mountpoint_id, new_vol ):
+      
+      # load the mountpoint and new volume root
+      mountpoint_fut = MSEntry.ReadBase( vol.volume_id, mountpoint_id, async=True )
+      new_vol_root_fut = MSEntry.ReadBase( new_vol.volume_id, 0, async=True )
+      
+      storagetypes.wait_futures( [mountpoint_fut, new_vol_root_fut] )
+      
+      mountpoint = mountpoint_fut.get_result()
+      new_vol_root = new_vol_root_fut.get_result()
+      
+      if mountpoint == None or new_vol_root == None:
+         return -errno.ENOENT
+      
+      if mountpoint.ftype != MSENTRY_TYPE_DIR:
+         return -errno.ENOTDIR 
+      
+      mountpoint_key_name = MSEntry.make_key_name( mountpoint.volume_id, mountpoint.file_id )
+      umount_id = MSEntry.umount_key_name( mountpoint.volume_id, mountpoint.file_id )
+      
+      # put the new Volume's root as the mountpoint, and back up the mountpoint
+      new_mountpoint = MSEntry( key=mountpoint_key_name, umount_id=umount_id )
+      old_mountpoint = MSEntry( key=umount_id )
+      
+      new_mountpoint.populate( **new_vol_root.to_dict() )
+      old_mountpoint.populate( **mountpoint.to_dict() )
+      
+      new_shard = MSEntry.update_shard( vol.num_shards, new_mountpoint )
+      
+      new_mountpoint_fut = new_mountpoint.put_async()
+      old_mountpoint_fut = old_mountpoint.put_async()
+      new_shard_fut = new_shard.put_async()
+   
+      storagetypes.wait_futures( [new_mountpoint_fut, old_mountpoint_fut, new_shard_fut] )
+      
+      return
+   
+   vol_fut = Volume.Read( volume_id, async=True )
+   new_vol_fut = Volume.Read( new_volume_id, async=True )
+   
+   storagetypes.wait_futures( [vol_fut, new_vol_fut] )   
+
+   vol = vol_fut.get_result()
+   new_vol = new_vol_fut.get_result()
+   
+   if vol == None or new_vol == None:
+      return -errno.ENODEV
+   
+   return storagetypes.transaction( lambda: volume_mount_txn( vol, mountpoint_id, new_vol ), xg=True )
+
+
+def volume_unmount( volume_id, mountpoint_id ):
+   '''
+   Given the ID of a directory currently mounting a Volume, unmount it and restore 
+   the original directory.
+   '''
+   
+   def volume_unmount_txn( vol, mountpoint_id ):
+      
+      cur_mountpoint_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( vol.volume_id, mountpoint_id ) )
+      
+      cur_mountpoint = cur_mountpoint_key.get()
+      
+      if curr_mountpoint == None:
+         return -errno.ENOENT
+      
+      old_mountpoint_key = storagetypes.make_key( MSEntry, cur_mountpoint.umount_id )
+      
+      old_mountpoint = old_mountpoint_key.get()
+      
+      if old_mountpoint == None:
+         return -errno.ENOENT
+      
+      # restore the old directory
+      restored_mountpoint = MSEntry( key=MSEntry.make_key_name( vol.volume_id, mountpoint_id ) )
+      restored_mountpoint.populate( old_mountpoint.to_dict() )
+      restored_mountpoint_shard = MSEntry.update_shard( vol.num_shards, restored_mountpoint )
+      
+      restored_mountpoint_fut = restored_mountpoint.put_async()
+      restored_mountpoint_shard_fut = restored_mountpoint_shard.put_async()
+      
+      storagetypes.wait_futures( [restored_mountpoint_fut, restored_mountpoint_shard_fut] )
+      
+      return
+  
+   vol = Volume.Read( volume_id )
+   
+   return storagetypes.transaction( lambda: volume_umount_txn( vol, mountpoint_id ), xg=True )
+

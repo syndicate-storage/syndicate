@@ -30,6 +30,9 @@ for key, value in ARGLIST:
       install_prefix = value
    if key == "CPPFLAGS":
       CPPFLAGS = value
+   if key == "devel":
+      if value == "true":
+         CPPFLAGS += " -D_DEVELOPMENT"
 
 # install directories
 bin_install_dir = os.path.join( install_prefix, "bin" )
@@ -58,12 +61,13 @@ protobuf_py_files = filter( lambda x: x.path.endswith(".py"), protobufs )
 
 Export("protobuf_out")           # needed by libsyndicate
 Export("protobuf_cc_files")      # needed by libsyndicate
-Export("protobuf_py_files")      # needed by ms
+Export("protobuf_py_files")      # needed by ms and rm
 
 # libsyndicate build
 libsyndicate_out = "build/out/libsyndicate"
-libsyndicate, libsyndicate_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
-env.Depends( libsyndicate_source_paths, protobufs )  # libsyndicate requires protobufs to be built first
+libsyndicate, libsyndicate_python, libsyndicate_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
+env.Depends( libsyndicate_source_paths, protobuf_cc_files )  # libsyndicate requires protobufs to be built first
+env.Depends( libsyndicate_python, protobuf_py_files )
 
 # UG for shared library build
 if "UG-shared" in COMMAND_LINE_TARGETS:
@@ -117,6 +121,11 @@ ms_out = "build/out/ms"
 ms = SConscript( "ms/SConscript", variant_dir=ms_out )
 env.Depends( ms, protobuf_py_files )  # ms requires Python protobufs to be built first
 
+# replica_manager build
+rm_out = "build/out/replica_manager"
+rm = SConscript( "replica_manager/SConscript", variant_dir=rm_out )
+env.Depends( rm, [libsyndicate_python, protobufs] )  # replica_manager requires Python protobofs to be built first
+
 # UG installation 
 common.install_targets( env, 'UG-install', bin_install_dir, ugs )
 env.Install( conf_install_dir, "conf/syndicate-UG.conf" )
@@ -127,8 +136,12 @@ common.install_targets( env, 'AG-install', bin_install_dir, ags )
 
 # alias installation targets for libsyndicate
 libsyndicate_install_headers = env.InstallHeader( inc_install_dir, libsyndicate_header_paths + protobuf_header_paths )
-libsyndicate_install_library = env.InstallLibrary( lib_install_dir, libsyndicate )
+libsyndicate_install_library = env.InstallLibrary( lib_install_dir, libsyndicate ) 
+libsyndicate_install_python = env.Command( "syndicate.so", [], "cd %s/python && ./setup.py install" % libsyndicate_out )
+
 env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers] )
+env.Alias( 'libsyndicate-python-install', [libsyndicate_install_python] )
+env.Depends( libsyndicate_install_python, [libsyndicate_install_library, libsyndicate_install_headers] )
 
 # alias installation targets for AG disk driver
 if "AG-disk-driver-install" in COMMAND_LINE_TARGETS:

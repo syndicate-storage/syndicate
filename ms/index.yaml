@@ -10,6 +10,13 @@ indexes:
 # automatically uploaded to the admin console when you next deploy
 # your application using appcfg.py.
 
+- kind: AcquisitionGateway
+  properties:
+  - name: volume_id
+  - name: caps
+  - name: cert_version
+  - name: g_id
+
 - kind: MSEntry
   properties:
   - name: is_readable_in_list
@@ -42,3 +49,17 @@ indexes:
   - name: server_url_hash
   - name: issued
     direction: desc
+
+- kind: ReplicaGateway
+  properties:
+  - name: volume_id
+  - name: caps
+  - name: cert_version
+  - name: g_id
+
+- kind: UserGateway
+  properties:
+  - name: volume_id
+  - name: caps
+  - name: cert_version
+  - name: g_id

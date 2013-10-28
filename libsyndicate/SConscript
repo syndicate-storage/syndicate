@@ -43,6 +43,11 @@ HEADERS = """
 # add additional CPPFLAGS here
 CPPFLAGS = ""
 
+# add additional CPPDEFINES here
+CPPDEFINES = [
+   "_REENTRANT",
+   "_THREAD_SAFE"
+]
 
 # get our environment
 Import('env')
@@ -55,11 +60,14 @@ env.Append(LIBS = Split(LIBS))
 env.Append(CPPPATH = Split(CPPPATH))
 env.Append(CPPPATH = "#" + protobuf_out)
 env.Append(CPPFLAGS = CPPFLAGS)
+env.Append(CPPDEFINES = CPPDEFINES)
 
 # generate the shared library, from generated protobuf cc files and from libsyndicate source
 libsyndicate = env.SharedLibrary( target="libsyndicate.so", source=[protobuf_cc_files, Split(source_files)] )
+libsyndicate_python = SConscript("python/SConscript")
 
 # generate header and source paths
 header_paths = [os.path.join( Dir(".").path, x ) for x in Split(HEADERS)]
 source_paths = [os.path.join( Dir(".").path, x ) for x in Split(source_files)] 
-Return( 'libsyndicate header_paths source_paths' )
+Return( 'libsyndicate libsyndicate_python header_paths source_paths' )
+

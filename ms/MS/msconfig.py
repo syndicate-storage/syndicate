@@ -6,9 +6,17 @@
 """
 
 import os
+import protobufs.ms_pb2 as ms_pb2
 
 # configuration parameters
 
+# debug
+OPENID_DEBUG = True
+
+# MS
+MS_HOSTNAME = ""
+MS_PROTO = ""
+MS_URL = ""
 
 # OpenID
 OPENID_SESSION_SSL_ONLY=True
@@ -17,35 +25,45 @@ OPENID_TRUST_ROOT_HOST = ""
 OPENID_HOST_URL = ""
 
 if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
-   OPENID_TRUST_ROOT_HOST = "localhost:8080"
+   MS_HOSTNAME = "localhost:8080"
+   MS_PROTO = "http://"
+   
+   OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
    OPENID_HOST_URL = "http://" + OPENID_TRUST_ROOT_HOST
    OPENID_SESSION_SSL_ONLY=False
    OPENID_LOCAL_TEST=True
+   
 else:
-   OPENID_TRUST_ROOT_HOST = "syndicate-metadata.appspot.com"
+   MS_HOSTNAME = "syndicate-metadata.appspot.com"
+   MS_PROTO = "https://"
+   
+   OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
    OPENID_HOST_URL = "https://" + OPENID_TRUST_ROOT_HOST
    OPENID_SESSION_SSL_ONLY=True
    OPENID_LOCAL_TEST=False
-   
-OPENID_PROVIDER_NAME = "VICCI"
-OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
-OPENID_PROVIDER_AUTH_HANDLER = "https://www.vicci.org/id-allow"
-OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
-OPENID_PROVIDER_USERNAME_FIELD = "login_as"
-OPENID_PROVIDER_PASSWORD_FIELD = "password"
-OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
-OPENID_PROVIDER_RESPONSE_METHOD = "POST"
 
-"""
-OPENID_PROVIDER_NAME = "localhost"
-OPENID_PROVIDER_URL = "http://localhost:8081/id/"
-OPENID_PROVIDER_AUTH_HANDLER = "http://localhost:8081/allow"
-OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
-OPENID_PROVIDER_USERNAME_FIELD = "login_as"
-OPENID_PROVIDER_PASSWORD_FIELD = "password"
-OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
-OPENID_PROVIDER_RESPONSE_METHOD = "POST"
-"""
+if not OPENID_DEBUG:
+   OPENID_PROVIDER_NAME = "VICCI"
+   OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
+   OPENID_PROVIDER_AUTH_HANDLER = "https://www.vicci.org/id-allow"
+   OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
+   OPENID_PROVIDER_USERNAME_FIELD = "login_as"
+   OPENID_PROVIDER_PASSWORD_FIELD = "password"
+   OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
+   OPENID_PROVIDER_RESPONSE_METHOD = "POST"
+
+else:
+   OPENID_PROVIDER_NAME = "localhost"
+   OPENID_PROVIDER_URL = "http://localhost:8081/id/"
+   OPENID_PROVIDER_AUTH_HANDLER = "http://localhost:8081/allow"
+   OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
+   OPENID_PROVIDER_USERNAME_FIELD = "login_as"
+   OPENID_PROVIDER_PASSWORD_FIELD = "password"
+   OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
+   OPENID_PROVIDER_RESPONSE_METHOD = "POST"
+
+
+MS_URL = MS_PROTO + MS_HOSTNAME
 
 # gateways
 GATEWAY_PASSWORD_LENGTH = 256
@@ -62,3 +80,14 @@ VOLUME_RSA_KEYSIZE = 4096
 # website
 MS_HOST = OPENID_TRUST_ROOT_HOST
 MS_URL = OPENID_HOST_URL
+
+# Gateway static constants
+GATEWAY_TYPE_UG = ms_pb2.ms_gateway_cert.USER_GATEWAY
+GATEWAY_TYPE_AG = ms_pb2.ms_gateway_cert.ACQUISITION_GATEWAY
+GATEWAY_TYPE_RG = ms_pb2.ms_gateway_cert.REPLICA_GATEWAY
+
+GATEWAY_CAP_READ_DATA = ms_pb2.ms_gateway_cert.CAP_READ_DATA
+GATEWAY_CAP_WRITE_DATA = ms_pb2.ms_gateway_cert.CAP_WRITE_DATA
+GATEWAY_CAP_READ_METADATA = ms_pb2.ms_gateway_cert.CAP_READ_METADATA
+GATEWAY_CAP_WRITE_METADATA = ms_pb2.ms_gateway_cert.CAP_WRITE_METADATA
+GATEWAY_CAP_COORDINATE = ms_pb2.ms_gateway_cert.CAP_COORDINATE

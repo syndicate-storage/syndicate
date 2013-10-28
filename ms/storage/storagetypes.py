@@ -142,18 +142,13 @@ class Object( Model ):
       if shards == None or len(shards) == 0:
          return
       
-      good = False
-      for s in shards:
-         if s != None:
-            good = True
-            break
-
-      if not good:
+      shards_existing = filter( lambda x: x != None, shards )
+      if len(shards_existing) == 0:
          raise Exception("No valid shards for %s" % self)
       
       # populate an instance with value from shards
       for (shard_field, shard_reader) in self.shard_readers.items():
-         setattr( self, shard_field, shard_reader( self, shards ) )
+         setattr( self, shard_field, shard_reader( self, shards_existing ) )
 
       
       

@@ -10,6 +10,7 @@
 #include "ms-client.h"
 #include "collator.h"
 #include "consistency.h"
+#include "replication.h"
 
 int _debug_locks = 0;
 
@@ -317,7 +318,6 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    fent->version = version;
    fent->owner = owner;
    fent->coordinator = coordinator;
-   fent->coordinator = owner;
    fent->volume = volume;
    fent->mode = mode;
    fent->size = size;
@@ -331,6 +331,7 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    fent->max_read_freshness = core->conf->default_read_freshness;
    fent->max_write_freshness = core->conf->default_write_freshness;
    fent->read_stale = false;
+   fent->xattrs = new fs_entry_xattrs();
 
    clock_gettime( CLOCK_REALTIME, &fent->refresh_time );
    
@@ -430,6 +431,7 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
    }
 
    fent->file_id = ent->file_id;
+   fent->write_nonce = ent->write_nonce;
    
    return 0;
 }
@@ -438,7 +440,7 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
 // destroy an FS entry
 int fs_entry_destroy( struct fs_entry* fent, bool needlock ) {
 
-   dbprintf("destroy %" PRIX64 " (%s)\n", fent->file_id, fent->name );
+   dbprintf("destroy %" PRIX64 " (%s) (%p)\n", fent->file_id, fent->name, fent );
    
    // free common fields
    if( needlock )
@@ -457,6 +459,11 @@ int fs_entry_destroy( struct fs_entry* fent, bool needlock ) {
    if( fent->children ) {
       delete fent->children;
       fent->children = NULL;
+   }
+   
+   if( fent->xattrs ) {
+      delete fent->xattrs;
+      fent->xattrs = NULL;
    }
 
    fent->ftype = FTYPE_DEAD;      // next thread to hold this lock knows this is a dead entry
@@ -487,39 +494,54 @@ long fs_entry_name_hash( char const* name ) {
 }
 
 // lock a file for reading
-int fs_entry_rlock( struct fs_entry* fent ) {
-   if( _debug_locks ) {
-      dbprintf( "%p: %s\n", fent, fent->name );
+int fs_entry_rlock2( struct fs_entry* fent, char const* from_str, int line_no ) {
+   int rc = pthread_rwlock_rdlock( &fent->lock );
+   if( rc == 0 ) {
+      if( _debug_locks ) {
+         dbprintf( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
+      }
+   }
+   else {
+      errorf("pthread_rwlock_rdlock(%p) rc = %d\n", fent, rc );
    }
 
-   int rc = pthread_rwlock_rdlock( &fent->lock );
    return rc;
 }
 
 // lock a file for writing
-int fs_entry_wlock( struct fs_entry* fent ) {
-   if( _debug_locks ) {
-      dbprintf( "%p: %s\n", fent, fent->name);
-   }
-
+int fs_entry_wlock2( struct fs_entry* fent, char const* from_str, int line_no ) {
    int rc = pthread_rwlock_wrlock( &fent->lock );
    if( fent->ftype == FTYPE_DEAD )
       return -ENOENT;
    
-   if( rc == 0 )
+   if( rc == 0 ) {
       fent->write_locked = true;
    
+      if( _debug_locks ) {
+         dbprintf( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
+      }
+   }
+   else {
+      errorf("pthread_rwlock_wrlock(%p) rc = %d\n", fent, rc );
+   }
+
    return rc;
 }
 
 // unlock a file
-int fs_entry_unlock( struct fs_entry* fent ) {
-   if( _debug_locks ) {
-      dbprintf( "%p: %s\n", fent, fent->name );
+int fs_entry_unlock2( struct fs_entry* fent, char const* from_str, int line_no ) {
+   fent->write_locked = false;
+   int rc = pthread_rwlock_unlock( &fent->lock );
+   if( rc == 0 ) {
+      if( _debug_locks ) {
+         dbprintf( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
+      }
+   }
+   else {
+      errorf("pthread_rwlock_unlock nlock(%p) rc = %d\n", fent, rc );
    }
 
-   fent->write_locked = false;
-   return pthread_rwlock_unlock( &fent->lock );
+   return rc;
 }
 
 // lock a file handle for reading
@@ -888,6 +910,16 @@ int fs_file_handle_destroy( struct fs_file_handle* fh ) {
    if( fh->parent_name ) {
       free( fh->parent_name );
       fh->parent_name = NULL;
+   }
+   if( fh->rctxs ) {
+      for( unsigned int i = 0; i < fh->rctxs->size(); i++ ) {
+         if( fh->rctxs->at(i) == NULL )
+            continue;
+         
+         replica_context_free( fh->rctxs->at(i) );
+         free( fh->rctxs->at(i) );
+      }
+      delete fh->rctxs;
    }
    pthread_rwlock_unlock( &fh->lock );
    pthread_rwlock_destroy( &fh->lock );

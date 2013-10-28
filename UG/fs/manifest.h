@@ -34,6 +34,10 @@ public:
    // get the version of a block, if we have this block ID.
    // return -1 if not found
    int64_t lookup_version( uint64_t block_id );
+   
+   // get the gateway_id of a block, if we have this block ID.
+   // return 0 if not found
+   uint64_t lookup_gateway( uint64_t block_id );
 
    // is this block in range?
    bool in_range( uint64_t block_id );
@@ -53,14 +57,6 @@ public:
    // remove blocks from the end of this URL set.  return true if blocks were removed
    bool truncate( uint64_t new_end_id );
 
-   /*
-   // grow left by one, and put a version in
-   bool grow_left( int64_t block_version );
-
-   // grow right by one, and put a version in
-   bool grow_right( int64_t block_version );
-   */
-   
    // shrink left by one
    bool shrink_left();
 
@@ -128,6 +124,9 @@ public:
 
    // look up a block version, given a block ID
    int64_t get_block_version( uint64_t block );
+   
+   // look up a block's coordinator
+   uint64_t get_block_gateway( uint64_t block );
 
    // get all the block versions
    int64_t* get_block_versions( uint64_t start_id, uint64_t end_id );

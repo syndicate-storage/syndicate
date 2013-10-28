@@ -54,11 +54,14 @@ using namespace std;
 
 typedef pair<long, struct fs_entry*> fs_dirent;
 typedef vector<fs_dirent> fs_entry_set;
+typedef map<string, string> fs_entry_xattrs;
 
 struct fs_entry_block_info {
    int64_t version;
    unsigned char* hash;
    size_t hash_len;
+   uint64_t gateway_id;
+   bool staging;
 };
 
 typedef map<uint64_t, struct fs_entry_block_info> modification_map;
@@ -66,7 +69,7 @@ typedef map<uint64_t, struct fs_entry_block_info> modification_map;
 // pre-declare these
 class Collator;
 class file_manifest;
-struct RG_channel;
+struct replica_context;
 
 // Syndicate filesystem entry
 struct fs_entry {
@@ -89,6 +92,7 @@ struct fs_entry {
    int64_t ctime_sec;         // creation time (seconds)
    int32_t ctime_nsec;        // creation time (nanoseconds)
    int64_t atime;             // access time (seconds)
+   int64_t write_nonce;       // nonce generated at last write
    
    struct timespec refresh_time;    // time of last refresh from the ms
    uint32_t max_read_freshness;     // how long since last refresh, in ms, this fs_entry is to be considered fresh for reading (negative means always fresh)
@@ -99,6 +103,8 @@ struct fs_entry {
    pthread_rwlock_t lock;     // lock to control access to this structure
 
    fs_entry_set* children;    // used only for directories--set of children
+   
+   fs_entry_xattrs* xattrs;     // extended attributes on this file 
    
    bool write_locked;
 };
@@ -120,8 +126,12 @@ struct fs_file_handle {
 
    bool is_AG;                // whether or not this file is hosted by an AG
    uint64_t AG_blocksize;     // blocksize of this AG
+   
+   int64_t transfer_timeout_ms;   // how long the transfer is allowed to take (in milliseconds)
 
    pthread_rwlock_t lock;     // lock to control access to this structure
+   
+   vector<struct replica_context*>* rctxs;        // used for write replication
 };
 
 // Syndicate directory handle
@@ -207,9 +217,13 @@ int fs_dir_entry_destroy_all( struct fs_dir_entry** dents );
 
 
 // fs_entry locking
-int fs_entry_rlock( struct fs_entry* fent );
-int fs_entry_wlock( struct fs_entry* fent );
-int fs_entry_unlock( struct fs_entry* fent );
+int fs_entry_rlock2( struct fs_entry* fent, char const* from_str, int lineno );
+int fs_entry_wlock2( struct fs_entry* fent, char const* from_str, int lineno );
+int fs_entry_unlock2( struct fs_entry* fent, char const* from_str, int lineno );
+
+#define fs_entry_rlock( fent ) fs_entry_rlock2( fent, __FILE__, __LINE__ )
+#define fs_entry_wlock( fent ) fs_entry_wlock2( fent, __FILE__, __LINE__ )
+#define fs_entry_unlock( fent ) fs_entry_unlock2( fent, __FILE__, __LINE__ )
 
 // fs_file_handle locking
 int fs_file_handle_rlock( struct fs_file_handle* fh );

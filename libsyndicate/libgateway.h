@@ -40,7 +40,7 @@ struct gateway_context {
    char** args;
    int err;
    int http_status;
-   ms::ms_gateway_blockinfo *block_info;
+   ms::ms_gateway_request_info *block_info;
 };
 
 
@@ -71,14 +71,14 @@ void gateway_put_func( ssize_t (*put_func)(struct gateway_context*, char const* 
 void gateway_get_func( ssize_t (*get_func)(struct gateway_context*, char* buf, size_t len, void* usercls) );
 void gateway_delete_func( int (*delete_func)(struct gateway_context*, void* usercls) );
 void gateway_cleanup_func( void (*cleanup_func)(void* usercls) );
-void gateway_metadata_func( int (*metadata_func)(struct gateway_context*, ms::ms_gateway_blockinfo* info, void* usercls) );
+void gateway_metadata_func( int (*metadata_func)(struct gateway_context*, ms::ms_gateway_request_info* info, void* usercls) );
 void gateway_publish_func( int (*publish_func)(struct gateway_context*, struct ms_client*, char* dataset ) );
 void gateway_controller_func( int (*controller_func)(pid_t pid, int ctrl_flag));
 
 int gateway_key_value( char* arg, char* key, char* value );
 
 int gateway_sign_manifest( EVP_PKEY* pkey, Serialization::ManifestMsg* mmsg );
-int gateway_sign_blockinfo( EVP_PKEY* pkey, ms::ms_gateway_blockinfo* blkinfo );
+int gateway_sign_blockinfo( EVP_PKEY* pkey, ms::ms_gateway_request_info* blkinfo );
 
 void gateway_request_data_free( struct gateway_request_data* reqdat );
 
