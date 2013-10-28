@@ -568,7 +568,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
             response_user_error( self, 404 )
             return
 
-         if True or new_cert:
+         if new_cert:
             # next cert version (NOTE: this version increment does not need to be atomic; the version just needs to increase)
             volume.cert_version += 1
             
