@@ -183,8 +183,6 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
       session = gaesession.get_current_session()
 
       if not session.has_key( 'id' ):
-         # load from datastore
-         #session = gaesession.Session( cookie_key = gaesession.SESSION_COOKIE_KEY )
          session.start( ssl_only=OPENID_SESSION_SSL_ONLY )
          sid = randomString(16, '0123456789abcdef')
          session['id'] = sid

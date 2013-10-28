@@ -319,8 +319,9 @@ class MSCertManifestRequestHandler( webapp2.RequestHandler ):
       
       # check version
       if volume_cert_version != volume.cert_version:
-         self.response.headers['Location'] = "%s/CERT/%s/manifest.%s" % (MS_SECURE_URL, volume_id_str, volume.cert_version)
-         response_end( self, 302, "", "text/plain" )
+         hdr = "%s/CERT/%s/manifest.%s" % (MS_URL, volume_id_str, volume.cert_version)
+         self.response.headers['Location'] = hdr
+         response_end( self, 302, "Location: %s" % hdr, "text/plain" )
          return
 
       # build the manifest
@@ -381,8 +382,9 @@ class MSCertRequestHandler( webapp2.RequestHandler ):
      
       # request only the right version
       if volume_cert_version != volume.cert_version or gateway_cert_version != gateway.cert_version:
-         self.response.headers['Location'] = "%s/CERT/%s/%s/%s/%s/%s" % (MS_SECURE_URL, volume_id_str, volume.cert_version, gateway_type_str, gateway_id_str, gateway.cert_version)
-         response_end( self, 302, "", "text/plain" )
+         hdr = "%s/CERT/%s/%s/%s/%s/%s" % (MS_URL, volume_id_str, volume.cert_version, gateway_type_str, gateway_id_str, gateway.cert_version)
+         self.response.headers['Location'] = hdr
+         response_end( self, 302, "Location: %s" % hdr, "text/plain" )
          return
       
       # generate the certificate
@@ -566,7 +568,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
             response_user_error( self, 404 )
             return
 
-         if new_cert:
+         if True or new_cert:
             # next cert version (NOTE: this version increment does not need to be atomic; the version just needs to increase)
             volume.cert_version += 1
             
@@ -584,6 +586,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          volume.FlushCache( volume.volume_id )
          
          response_end( self, 200, data, "application/octet-stream", None )
+         
          return
 
 

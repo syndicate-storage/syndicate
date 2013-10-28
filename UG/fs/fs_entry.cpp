@@ -331,6 +331,7 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    fent->max_read_freshness = core->conf->default_read_freshness;
    fent->max_write_freshness = core->conf->default_write_freshness;
    fent->read_stale = false;
+   fent->xattrs = new fs_entry_xattrs();
 
    clock_gettime( CLOCK_REALTIME, &fent->refresh_time );
    
@@ -458,6 +459,11 @@ int fs_entry_destroy( struct fs_entry* fent, bool needlock ) {
    if( fent->children ) {
       delete fent->children;
       fent->children = NULL;
+   }
+   
+   if( fent->xattrs ) {
+      delete fent->xattrs;
+      fent->xattrs = NULL;
    }
 
    fent->ftype = FTYPE_DEAD;      // next thread to hold this lock knows this is a dead entry

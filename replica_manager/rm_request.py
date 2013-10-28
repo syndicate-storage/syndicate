@@ -28,7 +28,8 @@ RequestInfo = collections.namedtuple( "RequestInfo", ["type",
                                                       "mtime_sec",
                                                       "mtime_nsec",
                                                       "data_hash",
-                                                      "size"] )
+                                                      "size",
+                                                      "kwargs"] )
 
 # TODO: write_nonce, delete list 
 
@@ -110,6 +111,7 @@ def parse_request_info_from_pb( req_info_str ):
                                 mtime_nsec=req_info.file_mtime_nsec,
                                 data_hash=binascii.b2a_hex( base64.b64decode( req_info.hash ) ),
                                 size=req_info.size,
+                                kwargs=dict( [(a.key, a.value) for a in req_info.args] )
                              )
  
     return replica_info
@@ -160,7 +162,8 @@ def parse_request_info_from_url_path( url_path ):
                                   mtime_sec=None,
                                   mtime_nsec=None,
                                   data_hash=None,
-                                  size=None )
+                                  size=None,
+                                  kwargs={})
       
       return replica_info
    
@@ -187,7 +190,8 @@ def parse_request_info_from_url_path( url_path ):
                                   mtime_sec=mtime_sec,
                                   mtime_nsec=mtime_nsec,
                                   data_hash=None,
-                                  size=None )
+                                  size=None,
+                                  kwargs={})
       
       return replica_info
    

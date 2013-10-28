@@ -1485,7 +1485,7 @@ ssize_t md_download_file3( char const* url, int fd, char const* username, char c
    curl_easy_setopt( curl_h, CURLOPT_FILETIME, 1L );
    
    if( strncasecmp( url, "https", 5 ) == 0 ) {
-      curl_easy_setopt( curl_h, CURLOPT_USE_SSL, 1L );
+      curl_easy_setopt( curl_h, CURLOPT_USE_SSL, CURLUSESSL_ALL );
       curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, 1L );
       curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
    }
@@ -1555,7 +1555,6 @@ ssize_t md_download_file5( CURL* curl_h, char** buf ) {
 // download data via local proxy and CDN
 // return 0 on success
 // return negative on irrecoverable error
-// return positive HTTP status code if the problem is with the proxy
 int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len ) {
    
    ssize_t len = 0;
@@ -1582,9 +1581,14 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
    
    curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &status_code );
 
-   if( rc < 0 ) {
-      errorf("md_download_file6(%s, proxy=%s) rc = %d\n", url, proxy, rc );
-      rc = -EIO;
+   if( rc != 0 ) {
+      long err = 0;
+      
+      // get the errno
+      curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &err );
+      err = -abs(err);
+      
+      errorf("curl_easy_perform(%p, %s, proxy=%s) rc = %d, err = %ld\n", curl, url, proxy, rc, err );
    }
    else {
       tmpbuf = response_buffer_to_string( brb.rb );
@@ -1600,18 +1604,25 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
                char errbuf[101];
                strncpy( errbuf, tmpbuf, 100 );
                
-               errorf("md_download_file5(%s, proxy=%s): Invalid error response (truncated): '%s'...\n", url, proxy, errbuf );
+               errorf("%p: Invalid error response from %s (proxy=%s) (truncated): '%s'...\n", curl, url, proxy, errbuf );
 
                rc = -EREMOTEIO;
             }
             else {
-               errorf("md_download_file5(%s, proxy=%s): remote gateway error: %d\n", url, proxy, (int)errcode );
+               errorf("%p: Remote gateway error from %s (proxy=%s): %d\n", curl, url, proxy, (int)errcode );
                rc = -abs((int)errcode);
             }
          }
          else {
-            errorf("md_download_file5(%s, proxy=%s): HTTP status code %d\n", url, proxy, (int)status_code );
-            rc = status_code;
+            errorf("%p: HTTP status code %d from %s (proxy=%s)\n", curl, (int)status_code, url, proxy );
+            
+            if( status_code == 0 ) {
+               // couldn't even get a response
+               rc = -ENOTCONN;
+            }
+            else {
+               rc = -abs(status_code);
+            }
          }
       }
    }
@@ -1689,13 +1700,9 @@ int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* 
          break;
       }
       if( rc < 0 ) {
-         // irrecoverable error
-         errorf("md_download_cached(%s, CDN_url=%s, proxy=%s) rc = %d\n", url, target_url, target_proxy, rc );
-         break;
+         // try again
+         errorf("md_download_cached(%p, %s, CDN_url=%s, proxy=%s) rc = %d\n", curl, url, target_url, target_proxy, rc );
       }
-
-      // try again--got an HTTP status code we didn't understand
-      dbprintf("md_download_cached(%s, CDN_url=%s, proxy=%s) HTTP status code = %d\n", url, target_url, target_proxy, rc );
    }
 
    free( cdn_url );
@@ -2984,7 +2991,7 @@ void md_free_download_buf( struct md_download_buf* buf ) {
 // initialze a curl handle
 void md_init_curl_handle( CURL* curl_h, char const* url, time_t query_timeout ) {
    curl_easy_setopt( curl_h, CURLOPT_NOPROGRESS, 1L );   // no progress bar
-   curl_easy_setopt( curl_h, CURLOPT_USERAGENT, "Syndicate-agent/1.0");
+   curl_easy_setopt( curl_h, CURLOPT_USERAGENT, "Syndicate-Gateway/1.0");
    curl_easy_setopt( curl_h, CURLOPT_URL, url );
    curl_easy_setopt( curl_h, CURLOPT_FOLLOWLOCATION, 1L );
    curl_easy_setopt( curl_h, CURLOPT_NOSIGNAL, 1L );
@@ -2992,9 +2999,18 @@ void md_init_curl_handle( CURL* curl_h, char const* url, time_t query_timeout ) 
    curl_easy_setopt( curl_h, CURLOPT_FILETIME, 1L );
    
    if( url != NULL && strncasecmp( url, "https", 5 ) == 0 ) {
-      curl_easy_setopt( curl_h, CURLOPT_USE_SSL, 1L );
+      curl_easy_setopt( curl_h, CURLOPT_USE_SSL, CURLUSESSL_ALL );
       curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, SYNDICATE_CONF.verify_peer ? 1L : 0L );
       curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
+      
+      dbprintf("use SSL for %s (%p)\n", url, curl_h );
+   }
+   else {
+      curl_easy_setopt( curl_h, CURLOPT_USE_SSL, CURLUSESSL_NONE );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, 0L );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 0L );
+      
+      dbprintf("don't use SSL for %s (%p)\n", url, curl_h );
    }
    
    //curl_easy_setopt( curl_h, CURLOPT_VERBOSE, 1L );

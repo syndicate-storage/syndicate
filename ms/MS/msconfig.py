@@ -15,8 +15,8 @@ OPENID_DEBUG = True
 
 # MS
 MS_HOSTNAME = ""
+MS_PROTO = ""
 MS_URL = ""
-MS_SECURE_URL = ""
 
 # OpenID
 OPENID_SESSION_SSL_ONLY=True
@@ -26,6 +26,7 @@ OPENID_HOST_URL = ""
 
 if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
    MS_HOSTNAME = "localhost:8080"
+   MS_PROTO = "http://"
    
    OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
    OPENID_HOST_URL = "http://" + OPENID_TRUST_ROOT_HOST
@@ -34,6 +35,7 @@ if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
    
 else:
    MS_HOSTNAME = "syndicate-metadata.appspot.com"
+   MS_PROTO = "https://"
    
    OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
    OPENID_HOST_URL = "https://" + OPENID_TRUST_ROOT_HOST
@@ -61,8 +63,7 @@ else:
    OPENID_PROVIDER_RESPONSE_METHOD = "POST"
 
 
-MS_URL = "http://" + MS_HOSTNAME
-MS_SECURE_URL = "https://" + MS_HOSTNAME
+MS_URL = MS_PROTO + MS_HOSTNAME
 
 # gateways
 GATEWAY_PASSWORD_LENGTH = 256

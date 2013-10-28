@@ -54,6 +54,7 @@ using namespace std;
 
 typedef pair<long, struct fs_entry*> fs_dirent;
 typedef vector<fs_dirent> fs_entry_set;
+typedef map<string, string> fs_entry_xattrs;
 
 struct fs_entry_block_info {
    int64_t version;
@@ -102,6 +103,8 @@ struct fs_entry {
    pthread_rwlock_t lock;     // lock to control access to this structure
 
    fs_entry_set* children;    // used only for directories--set of children
+   
+   fs_entry_xattrs* xattrs;     // extended attributes on this file 
    
    bool write_locked;
 };

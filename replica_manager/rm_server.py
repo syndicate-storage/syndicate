@@ -195,6 +195,7 @@ def wsgi_application( environ, start_response ):
       
       if rc == 200:
          size = outfile.len
+         outfile.seek(0)
          headers = [('Content-Type', 'application/octet-stream'), ('Content-Length', str(size))]
          start_response( '200 %s' % msg, headers )
          

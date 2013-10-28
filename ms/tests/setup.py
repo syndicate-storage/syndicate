@@ -742,10 +742,12 @@ def get_user( username ):
       return None
 
 
+
+
 closure_str = """
 #!/usr/bin/env python 
 
-CONFIG = {'foo': 'bar'}
+CONFIG = {'foo': 'bar', 'STORAGE_DIR': '/tmp/'}
 
 def replica_read( drivers, request_info, filename, outfile ):
    print "replica_read called!"
@@ -759,9 +761,9 @@ def replica_read( drivers, request_info, filename, outfile ):
    print "outfile = " + str(outfile)
    print ""
    
-   drivers['sd_test'].read_file( filename, outfile, extra_param="Foo" )
+   rc = drivers['sd_test'].read_file( filename, outfile, extra_param="Foo", **CONFIG )
    
-   return 200
+   return rc
    
 def replica_write( drivers, request_info, filename, infile ):
    print "replica_write called!"
@@ -776,9 +778,9 @@ def replica_write( drivers, request_info, filename, infile ):
    print "infile = " + str(infile)
    print ""
    
-   drivers['sd_test'].write_file( filename, infile, extra_param="Foo" )
+   rc = drivers['sd_test'].write_file( filename, infile, extra_param="Foo", **CONFIG )
    
-   return 200
+   return rc
 
 def replica_delete( drivers, request_info, filename ):
    print "replica_delete called!"
@@ -792,26 +794,39 @@ def replica_delete( drivers, request_info, filename ):
    print "filename = " + str(filename)
    print ""
    
-   drivers['sd_test'].delete_file( filename, extra_param="Foo" )
+   rc = drivers['sd_test'].delete_file( filename, extra_param="Foo", **CONFIG )
    
-   return 200
+   return rc
 """
 
 driver_str = """
 #!/usr/bin/env python 
 
 def read_file( filename, outfile, **kw ):
+   import traceback
+
    print "  read_file called!"
    print "  filename = " + str(filename)
    print "  outfile = " + str(outfile)
    print "  kw = " + str(kw)
    print ""
    
-   outfile.write("This is some fake data from read_file")
+   STORAGE_DIR = kw['STORAGE_DIR']
    
-   return 0
+   try:
+      fd = open( STORAGE_DIR + filename, "r" )
+      outfile.write( fd.read() )
+      fd.close()
+   except Exception, e:
+      print "Got exception: " + str(e)
+      traceback.print_exc()
+      return 500
+   
+   return 200
 
 def write_file( filename, infile, **kw ):
+   import traceback
+
    print "  write_file called!"
    print "  filename = " + str(filename)
    print "  infile = " + str(infile)
@@ -823,15 +838,38 @@ def write_file( filename, infile, **kw ):
    
    print ""
    
-   return 0
+   STORAGE_DIR = kw['STORAGE_DIR']
+   
+   try:
+      fd = open( STORAGE_DIR + filename, "w" )
+      fd.write( buf )
+      fd.close()
+   except Exception, e:
+      print "Got exception: " + str(e)
+      traceback.print_exc()
+      return 500
+   
+   return 200
 
 def delete_file( filename, **kw ):
+   import traceback
+   import os
+
    print "  delete_file called!"
    print "  filename = " + str(filename)
    print "  kw = " + str(kw)
    print ""
    
-   return 0
+   STORAGE_DIR = kw['STORAGE_DIR']
+   
+   try:
+      os.unlink( STORAGE_DIR + filename )
+   except Exception, e:
+      print "Got exception: " + str(e)
+      traceback.print_exc()
+      return 500
+   
+   return 200
 """
 
 json_str = '{ "closure" : "%s", "drivers" : [ { "name" : "sd_test", "code" : "%s" } ] }' % (base64.b64encode( closure_str ), base64.b64encode( driver_str ) )

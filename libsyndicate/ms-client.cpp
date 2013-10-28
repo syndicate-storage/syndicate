@@ -1929,6 +1929,7 @@ int ms_client_begin_register( EVP_PKEY* my_key, CURL* curl, char const* username
    rc = curl_easy_perform( curl );
 
    long http_response = 0;
+   
    curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
    curl_easy_setopt( curl, CURLOPT_URL, NULL );
    curl_easy_setopt( curl, CURLOPT_POSTFIELDS, NULL );
@@ -1938,8 +1939,14 @@ int ms_client_begin_register( EVP_PKEY* my_key, CURL* curl, char const* username
    free( post );
 
    if( rc != 0 ) {
-      errorf("curl_easy_perform rc = %d\n", rc );
-      return -abs(rc);
+      long err = 0;
+   
+      // get the errno
+      curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &err );
+      err = -abs(err);
+      
+      errorf("curl_easy_perform rc = %d, err = %ld\n", rc, err );
+      return err;
    }
 
    if( http_response != 200 ) {
@@ -2008,7 +2015,7 @@ int ms_client_auth_op( char const* ms_username, char const* ms_password, CURL* c
    char* post = NULL;
    char const* openid_redirect_url = oid_reply->redirect_url().c_str();
    long http_response = 0;
-
+   
    // how we ask the OID provider to challenge us
    char const* challenge_method = oid_reply->challenge_method().c_str();
 
@@ -2060,7 +2067,15 @@ int ms_client_auth_op( char const* ms_username, char const* ms_password, CURL* c
       free( url_qs );
 
    if( rc != 0 ) {
-      errorf("curl_easy_perform rc = %d\n", rc );
+      
+      long err = 0;
+      
+      // get the errno
+      curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &err );
+      err = -abs(err);
+      
+      errorf("curl_easy_perform rc = %d, err = %ld\n", rc, err );
+      
       response_buffer_free( &header_rb );
       return -abs(rc);
    }
@@ -2132,7 +2147,12 @@ int ms_client_auth_op( char const* ms_username, char const* ms_password, CURL* c
    free( post );
 
    if( rc != 0 ) {
-      errorf("curl_easy_perform rc = %d\n", rc );
+      long err = 0;
+      
+      curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &err );
+      err = -abs(err);
+      
+      errorf("curl_easy_perform rc = %d, err = %ld\n", rc, err );
       response_buffer_free( &header_rb );
       return -abs(rc);
    }

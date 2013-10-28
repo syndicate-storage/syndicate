@@ -422,7 +422,7 @@ def call_config_delete( request, filename ):
    cls_locals = { "request" : request,
                   "filename" : filename,
                   "drivers" : STORAGE_CONFIG.drivers,
-                  "replica_delete" : STORAGE_CONFIG.closure.replica_delete,
+                  "replica_delete" : STORAGE_CONFIG.closure.replica_delete
                 }
    
    cls_globals = { 
@@ -453,16 +453,12 @@ def init( libsyndicate ):
    return 0
    
 
-      
-if __name__ == "__main__":
-   import rm_request
-   
-   test_request = rm_request.RequestInfo( type=rm_request.RequestInfo.BLOCK, volume_id=123, file_id=456, gateway_id=789, user_id=246, version=135, block_id=468, block_version=357, mtime_sec=2, mtime_nsec=3, data_hash="abcdef", size=4 )
-   
-   closure_str = """
+
+
+closure_str = """
 #!/usr/bin/env python 
 
-CONFIG = {'foo': 'bar'}
+CONFIG = {'foo': 'bar', 'STORAGE_DIR': '/tmp/'}
 
 def replica_read( drivers, request_info, filename, outfile ):
    print "replica_read called!"
@@ -476,9 +472,9 @@ def replica_read( drivers, request_info, filename, outfile ):
    print "outfile = " + str(outfile)
    print ""
    
-   drivers['sd_test'].read_file( filename, outfile, extra_param="Foo" )
+   rc = drivers['sd_test'].read_file( filename, outfile, extra_param="Foo", **CONFIG )
    
-   return 200
+   return rc
    
 def replica_write( drivers, request_info, filename, infile ):
    print "replica_write called!"
@@ -493,9 +489,9 @@ def replica_write( drivers, request_info, filename, infile ):
    print "infile = " + str(infile)
    print ""
    
-   drivers['sd_test'].write_file( filename, infile, extra_param="Foo" )
+   rc = drivers['sd_test'].write_file( filename, infile, extra_param="Foo", **CONFIG )
    
-   return 200
+   return rc
 
 def replica_delete( drivers, request_info, filename ):
    print "replica_delete called!"
@@ -509,26 +505,39 @@ def replica_delete( drivers, request_info, filename ):
    print "filename = " + str(filename)
    print ""
    
-   drivers['sd_test'].delete_file( filename, extra_param="Foo" )
+   rc = drivers['sd_test'].delete_file( filename, extra_param="Foo", **CONFIG )
    
-   return 200
+   return rc
 """
 
-   driver_str = """
+driver_str = """
 #!/usr/bin/env python 
 
 def read_file( filename, outfile, **kw ):
+   import traceback
+
    print "  read_file called!"
    print "  filename = " + str(filename)
    print "  outfile = " + str(outfile)
    print "  kw = " + str(kw)
    print ""
    
-   outfile.write("This is some fake data from read_file")
+   STORAGE_DIR = kw['STORAGE_DIR']
    
-   return 0
+   try:
+      fd = open( STORAGE_DIR + filename, "r" )
+      outfile.write( fd.read() )
+      fd.close()
+   except Exception, e:
+      print "Got exception: " + str(e)
+      traceback.print_exc()
+      return 500
+   
+   return 200
 
 def write_file( filename, infile, **kw ):
+   import traceback
+
    print "  write_file called!"
    print "  filename = " + str(filename)
    print "  infile = " + str(infile)
@@ -540,16 +549,58 @@ def write_file( filename, infile, **kw ):
    
    print ""
    
-   return 0
+   STORAGE_DIR = kw['STORAGE_DIR']
+   
+   try:
+      fd = open( STORAGE_DIR + filename, "w" )
+      fd.write( buf )
+      fd.close()
+   except Exception, e:
+      print "Got exception: " + str(e)
+      traceback.print_exc()
+      return 500
+   
+   return 200
 
 def delete_file( filename, **kw ):
+   import traceback
+   import os
+
    print "  delete_file called!"
    print "  filename = " + str(filename)
    print "  kw = " + str(kw)
    print ""
    
-   return 0
+   STORAGE_DIR = kw['STORAGE_DIR']
+   
+   try:
+      os.unlink( STORAGE_DIR + filename )
+   except Exception, e:
+      print "Got exception: " + str(e)
+      traceback.print_exc()
+      return 500
+   
+   return 200
 """
+
+      
+if __name__ == "__main__":
+   import rm_request
+   
+   test_request = rm_request.RequestInfo( type=rm_request.RequestInfo.BLOCK,
+                                          volume_id=123,
+                                          file_id=456,
+                                          gateway_id=789,
+                                          user_id=246,
+                                          version=135,
+                                          block_id=468,
+                                          block_version=357,
+                                          mtime_sec=2,
+                                          mtime_nsec=3,
+                                          data_hash="abcdef",
+                                          size=4,
+                                          kwargs={"asdf": "jkl;"} )
+   
 
    json_str = '{ "closure" : "%s", "drivers" : [ { "name" : "sd_test", "code" : "%s" } ] }' % (base64.b64encode( closure_str ), base64.b64encode( driver_str ) )
    
@@ -567,10 +618,11 @@ def delete_file( filename, **kw ):
    infile = open( infile_name, "r" )
    outfile = open( outfile_name, "w" )
    
-   test_filename = "/tmp/testfilename"
+   test_filename = "testfilename"
    
-   read_rc = call_config_read( test_request, test_filename, outfile )
+   
    write_rc = call_config_write( test_request, test_filename, infile )
+   read_rc = call_config_read( test_request, test_filename, outfile )
    delete_rc = call_config_delete( test_request, test_filename )
    
    print "read_rc = %s, write_rc = %s, delete_rc = %s" % (read_rc, write_rc, delete_rc)
