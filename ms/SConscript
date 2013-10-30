@@ -28,11 +28,24 @@ ms_files.extend( Glob('django_ug/*.py') )
 # django templates
 ms_files.extend( Glob("django_templates/*") )
 ms_files.extend( Glob("django_templates/gateway_templates/*.html"))
+ms_files.extend( Glob("django_templates/gumby_templates/*.html"))
 
-# django supplementary files
+
+# django supplementary/static files
 ms_files.extend( Glob("django_static/*") )
 ms_files.extend( Glob("django_lib/*") )
 ms_files.extend( Glob("django_home/templatetags/*.py"))
+
+# gumby files
+ms_files.extend( Glob("django_static/gumby/*") )
+ms_files.extend( Glob("django_static/gumby/css/*") )
+ms_files.extend( Glob("django_static/gumby/js/*") )
+ms_files.extend( Glob("django_static/gumby/js/libs/*") )
+ms_files.extend( Glob("django_static/gumby/js/libs/ui/*") )
+ms_files.extend( Glob("django_static/gumby/fonts/*") )
+ms_files.extend( Glob("django_static/gumby/fonts/icons/*") )
+ms_files.extend( Glob("django_static/gumby/img/*") )
+
 
 # googlepb files
 ms_files.extend( Glob("googlepb/*.py") )
@@ -56,6 +69,9 @@ ms_files.extend( Glob("openid/extensions/draft/*.py") )
 ms_files.extend( Glob("openid/store/*.py") )
 ms_files.extend( Glob("openid/consumer/*.py") )
 ms_files.extend( Glob("openid/yadis/*.py") )
+
+# rpc
+ms_files.extend( Glob("rpc/*.py") )
 
 # storage
 ms_files.extend( Glob("storage/*.py") )

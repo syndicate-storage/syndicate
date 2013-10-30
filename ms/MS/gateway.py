@@ -74,19 +74,43 @@ def is_int( x ):
       return True
    except:
       return False
+   
+   
+class GatewayNameHolder( storagetypes.Object ):
+   '''
+   Mark a Gateway's name as in use
+   '''
+   
+   name = storagetypes.String()
+   g_id = storagetypes.Integer()
+   
+   required_attrs = [
+      "name"
+   ]
+   
+   
+   @classmethod
+   def make_key_name( cls, name ):
+      return "GatewayNameHolder: name=%s" % (name)
+   
+   @classmethod
+   def create_async( cls,  _name, _id ):
+      return GatewayNameHolder.get_or_insert_async( GatewayNameHolder.make_key_name( _name ), name=_name, g_id=_id )
+      
+   
 
 class Gateway( storagetypes.Object ):
    
    GATEWAY_TYPE = 0
 
-   owner_id = storagetypes.Integer()         # ID of the SyndicateUser that owns this gateway
+   owner_id = storagetypes.Integer(default=-1)         # ID of the SyndicateUser that owns this gateway
    host = storagetypes.String()
    port = storagetypes.Integer()
-   ms_username = storagetypes.String()
-   ms_password_hash = storagetypes.Text()
+   ms_username = storagetypes.String()          # name of this gateway
+   ms_password_hash = storagetypes.Text()       # hash of the password needed to edit this gateway on the MS
    ms_password_salt = storagetypes.Text()
    g_id = storagetypes.Integer()
-   volume_id = storagetypes.Integer()
+   volume_id = storagetypes.Integer(default=-1)
    caps = storagetypes.Integer(default=0)
    file_quota = storagetypes.Integer(default=-1,indexed=False)                # -1 means unlimited
 
@@ -109,19 +133,12 @@ class Gateway( storagetypes.Object ):
       "ms_username",
       "ms_password"
    ]
-
-   validators = {
-      "ms_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
-      "session_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
-      "ms_username": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.: ")) ) == 0 and not is_int(value) ),
-      "caps": (lambda cls, value: False)                # can't set this directly
-   }
-
+   
    # TODO: session expires in 3600 seconds
    # TODO: cert expires in 86400 seconds
    default_values = {
       "session_expires": (lambda cls, attrs: -1),
-      "session_password": (lambda cls, attrs: Gateway.generate_session_credentials()),
+      "session_password": (lambda cls, attrs: Gateway.generate_session_password()),
       "cert_version": (lambda cls, attrs: 1),
       "cert_expires": (lambda cls, attrs: -1)
    }
@@ -130,6 +147,33 @@ class Gateway( storagetypes.Object ):
       "g_id"
    ]
    
+   @classmethod
+   def is_valid_key( cls, key_str ):
+      '''
+      Validate a given PEM-encoded RSA key, both in formatting and security.
+      '''
+      try:
+         key = RSA.importKey( key_str )
+      except Exception, e:
+         logging.error("RSA.importKey %s", traceback.format_exc() )
+         return False
+
+      # must have desired security level 
+      if key.size() != GATEWAY_RSA_KEYSIZE - 1:
+         logging.error("invalid key size = %s" % key.size() )
+         return False
+
+      return True
+   
+
+   validators = {
+      "ms_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
+      "session_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
+      "ms_username": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.: ")) ) == 0 and not is_int(value) ),
+      "caps": (lambda cls, value: False),               # can't set this directly
+      "public_key": (lambda cls, value: Gateway.is_valid_key( value ) )
+   }
+
    # do we have caps to set?  What are they?
    @classmethod
    def has_caps( cls, attrs ):
@@ -137,10 +181,16 @@ class Gateway( storagetypes.Object ):
    
    @classmethod 
    def get_caps( cls, attrs ):
+      '''
+      Get this gateway's capability bits
+      '''
       return 0
    
    @classmethod
-   def validate_caps( gateway_type, caps ):
+   def validate_caps( cls, gateway_type, caps ):
+      '''
+      Validate a given capability bitstring, given the type of Gateway this is.
+      '''
       if gateway_type == GATEWAY_TYPE_RG:
          return caps == 0
       
@@ -149,25 +199,10 @@ class Gateway( storagetypes.Object ):
       
       return True
 
-   @classmethod
-   def is_valid_pubkey( self, pubkey_str ):
-      try:
-         key = RSA.importKey( pubkey_str )
-      except Exception, e:
-         logging.error("RSA.importKey %s", traceback.format_exc() )
-         return False
-
-      # must be 4096 bits
-      if key.size() != GATEWAY_RSA_KEYSIZE - 1:
-         logging.error("invalid key size = %s" % key.size() )
-         return False
-
-      return True
-
 
    def authenticate( self, password ):
       """
-      Verify that a password is correct
+      Verify that the ms_password is correct (i.e. when editing a gateway)
       """
       h = SHA256.new()
       h.update( self.ms_password_salt )
@@ -185,6 +220,9 @@ class Gateway( storagetypes.Object ):
 
       
    def verify_signature( self, data, sig ):
+      '''
+      Verify that a message (as a byte string) was signed by this gateway
+      '''
       key = RSA.importKey( self.public_key )
       h = SHA256.new( data )
       verifier = CryptoSigner.new(key)
@@ -193,7 +231,9 @@ class Gateway( storagetypes.Object ):
       
    @classmethod
    def generate_password_hash( cls, pw, salt ):
-
+      '''
+      Given a password and salt, generate the hash to store.
+      '''
       h = SHA256.new()
       h.update( salt )
       h.update( pw )
@@ -205,31 +245,26 @@ class Gateway( storagetypes.Object ):
 
    @classmethod
    def generate_password( cls, length ):
+      '''
+      Create a random password of a given length
+      '''
       password = "".join( [random.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") for i in xrange(length)] )
       return password
 
 
    @classmethod
-   def generate_session_credentials( cls ):
+   def generate_session_password( cls ):
+      '''
+      Generate a session password
+      '''
       return cls.generate_password( GATEWAY_SESSION_PASSWORD_LENGTH )
-      
-      
-   def get_current_session_credentials( self ):
-      """
-      Get the session credentials, returning None if they are too old
-      """
-      now = int( time.time() )
-      if self.session_password == None or (now > self.session_expires and self.session_expires > 0):
-         return None
-
-      return self.session_password
 
 
    def regenerate_session_password( self ):
       """
-      Regenerate a session password, given the Volume it's bound to.
+      Regenerate a session password
       """
-      self.session_password = Gateway.generate_session_credentials()
+      self.session_password = Gateway.generate_session_password()
       if self.session_timeout > 0:
          self.session_expires = now + self.session_timeout
       else:
@@ -239,9 +274,9 @@ class Gateway( storagetypes.Object ):
          
 
    @classmethod
-   def generate_credentials( cls ):
+   def generate_session_secrets( cls ):
       """
-      Generate (password, SHA256(password), salt) for this gateway
+      Generate a password, password hash, and salt for this gateway
       """
       password = cls.generate_password( GATEWAY_PASSWORD_LENGTH )
       salt = "".join( [random.choice(string.printable) for i in xrange(GATEWAY_SALT_LENGTH)] )
@@ -250,10 +285,25 @@ class Gateway( storagetypes.Object ):
       return ( password, pw_hash, salt )  
 
 
-   def load_pubkey( self, pubkey_str ):
-      # pubkey_str is base64 encoded
-      pubkey_str_unencoded = base64.b64decode( pubkey_str )
-      if not Gateway.is_valid_pubkey( pubkey_str_unencoded ):
+   def load_pubkey( self, pubkey_str, base64=True ):
+      """
+      Load a PEM-encoded RSA public key.
+      if base64 == True, then try to base64-decode it first (i.e. the PEM-encoded
+      public key is itself base64-encoded again)
+      
+      return 0 on success
+      return -EINVAL if the key is invalid 
+      return -EEXIST if the key is the same as the one we have in this Gateway
+      """
+      
+      pubkey_str = None 
+      
+      if base64:
+         pubkey_str_unencoded = base64.b64decode( pubkey_str )
+      else:
+         pubkey_str_unencoded = pubkey_str
+         
+      if not Gateway.is_valid_key( pubkey_str_unencoded ):
          return -errno.EINVAL
 
       new_public_key = RSA.importKey( pubkey_str_unencoded ).exportKey()
@@ -294,26 +344,32 @@ class Gateway( storagetypes.Object ):
 
 
    @classmethod
-   def create_credentials( cls, user, kwargs ):
-
-      password, password_hash, password_salt = Gateway.generate_credentials()
+   def setup_credentials( cls, user, attrs ):
+      """
+      Set up MS access credentials for this gateway
+      """
       
-      if kwargs.get("ms_username") == None:
-         # generate new credentials
-         kwargs["ms_username"] = uuid.uuid4().urn
+      password, password_hash, password_salt = Gateway.generate_session_secrets()
+      
+      if attrs.get("ms_username") == None:
+         # give a random gateway name
+         attrs["ms_username"] = uuid.uuid4().urn
 
-      if kwargs.get("ms_password") != None:
+      if attrs.get("ms_password") != None:
          # use user-given password if provided
-         kwargs["ms_password_salt"] = password_salt
-         kwargs["ms_password_hash"] = Gateway.generate_password_hash( kwargs.get("ms_password"), password_salt )
+         attrs["ms_password_salt"] = password_salt
+         attrs["ms_password_hash"] = Gateway.generate_password_hash( attrs.get("ms_password"), password_salt )
       
-      if kwargs.get("ms_password_hash") == None:
-         kwargs["ms_password"] = password
-         kwargs["ms_password_salt"] = password_salt
-         kwargs["ms_password_hash"] = password_hash
+      if attrs.get("ms_password_hash") == None:
+         attrs["ms_password"] = password
+         attrs["ms_password_salt"] = password_salt
+         attrs["ms_password_hash"] = password_hash
       
 
    def check_caps( self, caps ):
+      """
+      Given a bitmask of caps, verify that all of them are met by our caps.
+      """
       return (self.caps & caps) == caps
 
 
@@ -332,85 +388,86 @@ class Gateway( storagetypes.Object ):
       ms_update.signature = sig
 
       return ret
-
-
-   def is_valid_cred( self, cred_pb ):
-      """
-      Is a given ms_volume_gateway_cred valid?
-      """
-
-      if self.owner_id != cred_pb.owner_id:
-         return False
-
-      if self.ms_username != cred_pb.name:
-         return False
-
-      if self.host != cred_pb.host:
-         return False
-
-      if self.port != cred_pb.port:
-         return False
-
-      return True
-
    
    @classmethod
    def Create( cls, user, volume=None, **kwargs ):
+      """
+      Create a gateway
+      """
       
-      @storagetypes.transactional(xg=True)
-      def transactional_create(**kwargs):
-         g_id = IDCounter.next_value()
-         kwargs['g_id'] = g_id
-
-         key_name = cls.make_key_name( g_id=g_id )
-         g_key = storagetypes.make_key( cls, key_name)
-         gw = g_key.get()
-         
-         if 'ms_password' in kwargs:
-            del kwargs['ms_password']
-         gw = cls( key=g_key, **kwargs )
-
-         return gw.put()
-
+      # do not set the Volume ID, unless volume was given (i.e. the caller allowed it).
       if volume != None:
          kwargs['volume_id'] = volume.volume_id
       elif kwargs.has_key('volume_id'):
          kwargs['volume_id'] = 0
       
+      # enforce ownership--make sure the calling user owns this gateway
       kwargs['owner_id'] = user.owner_id
 
+      # populate kwargs with default values for missing attrs
       cls.fill_defaults( kwargs )
 
-      cls.create_credentials( user, kwargs )
-
+      # sanity check: do we have everything we need?
       missing = cls.find_missing_attrs( kwargs )
       if len(missing) != 0:
          raise Exception( "Missing attributes: %s" % (", ".join( missing )))
 
+      # populate kwargs with our credentials
+      cls.setup_credentials( user, kwargs )
+      
+      # sanity check: are our fields valid?
       invalid = cls.validate_fields( kwargs )
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
 
-      kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")
+      # do NOT remmeber ms_password
+      if kwargs.has_key( 'ms_password' ):
+         del kwargs['ms_password']
+         
+      #kwargs['ms_username'] = unicode(kwargs['ms_username']).strip().replace(" ","_")
       
+      # set capabilities correctly
       if cls.has_caps( kwargs ):
          kwargs['caps'] = cls.get_caps( kwargs )
       else:
          kwargs['caps'] = 0
       
-      gateway_type_str = cls.__name__
-      existing_gateways = cls.ListAll( {"%s.ms_username ==" % gateway_type_str : kwargs['ms_username']} )
-      if len(existing_gateways) > 0:
-         # gateway already exists
-         raise Exception( "Gateway '%s' already exists" % kwargs['ms_username'] )
-      else:
-         return transactional_create(**kwargs)
+      # ID and key...
+      g_id = random.randint( 0, 2**63 - 1 )
+      kwargs['g_id'] = g_id
+      
+      g_key_name = cls.make_key_name( g_id=g_id )
+      g_key = storagetypes.make_key( cls, g_key_name)
+      
+      # create a nameholder and this gateway at once---there's a good chance we'll succeed
+      gateway_nameholder_fut = GatewayNameHolder.create_async( kwargs['ms_username'], g_id )
+      gateway_fut = cls.get_or_insert_async( g_key_name, **kwargs )
+      
+      # wait for operations to complete
+      storagetypes.wait_futures( [gateway_nameholder_fut, gateway_fut] )
+      
+      # check for collision...
+      gateway_nameholder = gateway_nameholder_fut.get_result()
+      gateway = gateway_fut.get_result()
+      
+      if gateway_nameholder.g_id != g_id:
+         # name collision...
+         storagetypes.deferred.defer( Gateway.delete_all, [g_key] )
+         raise Exception( "Gateway '%s' already exists!" % kwargs['ms_username'] )
+      
+      if gateway.g_id != g_id:
+         # ID collision...
+         storagetypes.deferred.defer( Gateway.delete_all, [gateway_nameholder.key] )
+         raise Exception( "Gateway ID collision.  Please try again." )
+      
+      # we're good!
+      return g_key
 
    
    @classmethod
    def Read( cls, g_id, set_memcache=True ):
       """
-      Given a UG ID, find the UG record
+      Given a Gateway ID, read its record.  Optionally cache it.
       """
       key_name = cls.make_key_name( g_id=g_id )
 
@@ -429,6 +486,9 @@ class Gateway( storagetypes.Object ):
 
    @classmethod
    def FlushCache( cls, g_id ):
+      """
+      Purge cached copies of this gateway
+      """
       gateway_key_name = cls.make_key_name( g_id=g_id )
       storagetypes.memcache.delete(gateway_key_name)
 
@@ -436,51 +496,116 @@ class Gateway( storagetypes.Object ):
    @classmethod
    def Update( cls, g_id, **fields ):
       '''
-      Update UG identified by ID with fields specified as a dictionary.
+      Update a gateway identified by ID with fields specified as keyword arguments.
       '''
-      @storagetypes.transactional(xg=True)
-      def update_gateway( caller_cls, g_id, **fields):
-         gateway = caller_cls.Read(g_id, set_memcache=False)
-         caller_cls.FlushCache( g_id )
-         
-         for key, value in fields.iteritems():
-            try:
-               setattr(gateway, key, value)
-            except:
-               raise Exception("Update: Unable to set attribute: %s, %s." % (key, value))
-
-         gateway.version += 1
-         return gateway.put()
       
+      # validate...
       invalid = cls.validate_fields( fields )
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
 
+      # gateway-specific capability processing
       if cls.has_caps( fields ):
          fields['caps'] = cls.get_caps( fields )
       
-      return update_gateway( cls, g_id, **fields )
+      rename = False
+      gateway_nameholder_new_key = None
+      old_name = None
+      
+      # do we intend to rename?  If so, reserve the name
+      if "ms_username" in fields.keys():
+         gateway_nameholder_new_fut = GatewayNameHolder.create_async( fields.get("ms_username"), g_id )
+         
+         gateway_nameholder_new = gateway_nameholder_new_fut.get_result()
+         gateway_nameholder_new_key = gateway_nameholder_new.key
+         
+         if gateway_nameholder_new.g_id != g_id:
+            # name collision
+            raise Exception("Gateway '%s' already exists!" % (fields.get("ms_username")) )
+         
+         else:
+            # reserved!
+            rename = True
+      
+      
+      def update_txn( fields ):
+         '''
+         Update the Gateway transactionally.
+         '''
+         
+         gateway = cls.Read(g_id)
+         if not gateway:
+            # gateway does not exist...
+            # if we were to rename it, then delete the new nameholder
+            if rename:
+               storagetypes.deferred.defer( Gateway.delete_all, [gateway_nameholder_new_key] )
+               
+            raise Exception("No Gateway with the ID %d exists.", g_id)
+
+         
+         old_name = gateway.ms_username 
+         
+         # purge from cache
+         Gateway.FlushCache( g_id )
+         
+         old_version = gateway.cert_version
+         
+         # apply update
+         for (k,v) in fields.items():
+            setattr( gateway, k, v )
+         
+         if "cert_version" in fields.keys():
+            gateway.cert_version = old_version + 1
+         
+         return gateway.put()
+      
+      
+      gateway_key = None
+      try:
+         gateway_key = storagetypes.transaction( lambda: update_txn( fields ), xg=True )
+      except Exception, e:
+         logging.exception( e )
+         raise e
+      
+      if rename:
+         # delete the old placeholder
+         gateway_nameholder_old_key = storagetypes.make_key( GatewayNameHolder, GatewayNameHolder.make_key_name( old_name ) )
+         storagetypes.deferred.defer( Gateway.delete_all, [gateway_nameholder_old_key] )
+         
+      return gateway_key
    
       
    @classmethod
    def Delete( cls, g_id ):
       """
-      Given a UG ID, delete it
+      Given a gateway ID, delete the corresponding gateway
       """
       key_name = cls.make_key_name( g_id=g_id )
 
       g_key = storagetypes.make_key( cls, key_name )
 
-      g_key.delete()
+      # find the nameholder and delete it too
+      gateway = g_key.get()
+      if gateway == None:
+         return True
       
+      g_name_key = storagetypes.make_key( GatewayNameHolder, GatewayNameHolder.make_key_name( gateway.ms_username ) )
+      
+      g_delete_fut = g_key.delete_async()
+      g_name_delete_fut = g_name_key.delete_async()
+            
       storagetypes.memcache.delete(key_name)
 
+      storagetypes.wait_futures( [g_delete_fut, g_name_delete_fut] )
+      
       return True
+
       
    @classmethod
    def ListAll_ByVolume( cls, volume_id, async=False, projection=None ):
       """
-      Given a volume id, find all gateway records bound to it.  Cache the results
+      Given a volume id, find all gateway records bound to it.
+      Optionally return a query future (if async==True), and use the given projection.
       """
       
       #results = storagetypes.memcache.get( cache_key_name )
@@ -502,6 +627,13 @@ class Gateway( storagetypes.Object ):
                results.append( gw )
 
       return results
+   
+   
+   def is_bound_to_volume( self ):
+      '''
+      Return True if this gateway is bound to a Volume
+      '''
+      return self.volume_id > 0
    
 
 class UserGateway( Gateway ):

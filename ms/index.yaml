@@ -57,6 +57,16 @@ indexes:
   - name: cert_version
   - name: g_id
 
+- kind: SyndicateUser
+  properties:
+  - name: volumes_r
+  - name: email
+
+- kind: SyndicateUser
+  properties:
+  - name: volumes_rw
+  - name: email
+
 - kind: UserGateway
   properties:
   - name: volume_id

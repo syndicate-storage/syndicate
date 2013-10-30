@@ -32,6 +32,8 @@ from MS.user import SyndicateUser as User
 from MS.entry import MSENTRY_TYPE_DIR
 from MS.msconfig import *
 
+from collections import namedtuple
+
 @authenticate
 def myvolumes(request):
     '''
@@ -41,32 +43,29 @@ def myvolumes(request):
     username = session['login_email']
     user = db.read_user(username)
 
-    attrs = {}
+    vols_owned = []
+    vols_rw = []
+    vols_ro = []
+    
     if user.volumes_o:
-        attrs['Volume.volume_id IN'] = user.volumes_o
-        myvols = db.list_volumes(attrs)
-    else:
-        myvols = []
-    all_users = []
-
-    for v in myvols:
-        uattrs = {}
-        users_set = []
-        uattrs['SyndicateUser.volumes_rw =='] = v.volume_id 
-        q = db.list_users(uattrs)
-        for u in q:
-            users_set.append(u)
-        uattrs = {}
-        uattrs['SyndicateUser.volumes_r =='] = v.volume_id 
-        q = db.list_users(uattrs)
-        for u in q:
-            users_set.append(u)
-        all_users.append(users_set)
-
-    vols_users = zip(myvols, all_users)
-    t = loader.get_template('myvolumes.html')
-    c = Context({'username':username, 'vols':vols_users})
-    return HttpResponse(t.render(c))
+       vols_owned = db.list_volumes( {"Volume.volume_id IN": user.volumes_o} )
+    
+    if user.volumes_rw:
+       volumes_rw_without_o = list( set(user.volumes_o) - set(user.volumes_rw) )
+       
+       if volumes_rw_without_o:
+         vols_rw = db.list_volumes( {"Volume.volume_id IN": volumes_rw_without_o} )
+    
+    if user.volumes_r:
+       vols_ro = db.list_Volumes( {"Volume.volume_id IN": user.volumes_r} )
+    
+    # filter out volumes that I own that I can also read/write
+    
+    t = loader.get_template( 'myvolumes.html' )
+    c = Context( {'username':username, 'vols_owned': vols_owned, 'vols_rw': vols_rw, 'vols_ro': vols_ro} )
+    
+    return HttpResponse( t.render( c ) )
+   
 
 @authenticate
 def allvolumes(request):
@@ -180,7 +179,7 @@ def changepermissions(request, volume_id):
     PermissionFormSet = formset_factory(forms.Permissions, extra=0)
     
     if request.method != "POST":
-        return redirect('syn/volume/' + str(vol.volume_id) + '/permissions')
+        return redirect('/syn/volume/' + str(vol.volume_id) + '/permissions')
     else:
         passwordform = libforms.Password(request.POST)
         formset = PermissionFormSet(request.POST)
@@ -326,6 +325,20 @@ def viewvolume(request, volume_id):
     if not vol:
         return redirect('django_volume.views.failure')
 
+    UserInfo = namedtuple( "UserInfo", ["email", "caps_str"] )
+    
+    user_info = []
+    user_info.append( UserInfo( email=user.email, caps_str="owner" ) )
+    
+    rw_users = db.list_rw_volume_users( vol.volume_id, sort=True, projection=['email'] )
+    ro_users = db.list_ro_volume_users( vol.volume_id, sort=True, projection=['email'] )
+    
+    for u in rw_users:
+       user_info.append( UserInfo( email=u.email, caps_str="read/write") )
+    
+    for u in ro_users:
+       user_info.append( UserInfo( email=u.email, caps_str="read-only") )
+       
     rgs = db.list_replica_gateways_by_volume(vol.volume_id)
     ags = db.list_acquisition_gateways_by_volume(vol.volume_id)
 
@@ -334,6 +347,7 @@ def viewvolume(request, volume_id):
                                  'volume':vol,
                                  'ags':ags,
                                  'rgs':rgs,
+                                 'user_info': user_info
                                  } 
                        )
     return HttpResponse(t.render(c))
@@ -713,6 +727,84 @@ def volumesettings(request, volume_id):
                                  'rg_form':rg_form,
                                  } )
     return HttpResponse(t.render(c))
+ 
+ 
+"""
+@verifyownership_private
+@authenticate
+def volumeupdate(request, volume_id):
+   '''
+   Update the Volume with new information
+   '''
+   
+   session = request.session
+   username = session['login_email']
+   vol = db.read_volume( volume_id )
+   
+   if not vol:
+      session['message'] = "Internal error: no such Volume %s" % volume_id
+      return redirect('django_volume.views.editvolume', volume_id)
+   
+   volume_data = {}
+   
+   if "edit_form" in request.POST:
+      
+      # load the basic data
+      edit_form = forms.EditForm( request.POST )
+      
+      if edit_form.is_valid():
+         
+         volume_data = basic_volume_data.cleaned_data
+         
+         print volume_data
+      
+   
+      
+   
+   
+ 
+@verifyownership_private
+@authenticate
+def volumeedit(request, volume_id):
+    '''
+    Load the volume editing page
+    '''
+
+    session = request.session
+    username = session['login_email']
+    vol = db.read_volume( volume_id )
+    
+    if not vol:
+       session['message'] = "Internal error: no such Volume %s" % volume_id
+       return redirect('django_volume.views.viewvolume', volume_id)
+    
+    
+    # clear message
+    message = session.pop('message', "")
+    
+    # basic edit fields
+    edit_form_fields = {
+       "description": volume.description,
+       "private": volume.private,
+       "archive": volume.archive
+    }
+    
+    edit_form = forms.EditVolume( edit_form_fields )
+    
+    # connected users
+    volume_users_query = db.list_volume_users( volume.volume_id, sort=True, query_only=True )
+    volume_users_form = libforms.MSPaginator( volume_users_query, 25 ) 
+    
+    t = loader.get_template("volumeedit.html")
+    c = RequestContext( request, {"username": username,
+                                  "volume": vol,
+                                  "edit_form": edit_form,
+                                  "volume_users_form": volume_users_form,
+                                  "message": message
+                                  } )
+    
+    return HttpResponse(t.render(c))
+"""
 
 @verifyownership_private
 @authenticate

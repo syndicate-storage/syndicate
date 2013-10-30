@@ -5,21 +5,20 @@
    All Rights Reserved
 """
 
+"""
+This is the high-level storage API.
+"""
+
 import storagetypes
 from storagetypes import *
-
-from google.appengine.ext import ndb
-from google.appengine.api import memcache
-from google.appengine.ext import deferred
-from google.appengine.ext.db import TransactionFailedError
 
 import logging
 
 import MS
 import MS.entry
 from MS.entry import MSEntry, MSEntryShard, MSENTRY_TYPE_DIR
-from MS.volume import Volume, VolumeIDCounter
-from MS.user import SyndicateUser, SyndicateUIDCounter
+from MS.volume import Volume
+from MS.user import SyndicateUser
 from MS.gateway import UserGateway, AcquisitionGateway, ReplicaGateway
 
 import protobufs.ms_pb2 as ms_pb2
@@ -36,11 +35,9 @@ def create_volume( username, **kwargs ):
 
 def read_volume( volume_id ):
    return Volume.Read( volume_id )
+      
 
-def get_volumes( volume_ids ):
-   return Volume.ReadAll( volume_ids )
-
-def get_roots( volumes ):
+def get_volume_roots( volumes ):
    # read all root directories
    roots = [None] * len(volumes)
    root_memcache = [None] * len(volumes)
@@ -103,7 +100,7 @@ def get_volume( volume_id ):
    return read_volume( volume_id )
 
 def get_volume_by_name( volume_name ):
-   vols = list_volumes( {"Volume.name ==": volume_name} )
+   vols = list_volumes( {"Volume.name ==": volume_name}, limit=2 )
    if len(vols) > 1:
       raise Exception("More than one Volume by the name of '%s'" % volume_name)
 
@@ -111,37 +108,7 @@ def get_volume_by_name( volume_name ):
       return None
 
    return vols[0]
-   
-   
-def create_user( **kwargs ):
-   return SyndicateUser.Create( **kwargs )
-   
 
-def read_user( email ):
-   return SyndicateUser.Read( email )
-
-
-def update_user( email, **fields ):
-   return SyndicateUser.Update( email, **fields )
-
-   
-def delete_user( email, **fields ):
-   return SyndicateUser.Delete( email, **fields )
-
-   
-def list_users( attrs=None, limit=None ):
-   return SyndicateUser.ListAll( attrs, limit=limit )
-
-def get_user( attr ):
-   allusers = list_users(attr)
-   if len(allusers) > 1:
-      raise Exception("More than one users satisfies attrs: %s" % attr)
-   for u in allusers:
-      return u
-   return None
-
-
-   
 def make_root( volume, owner_id, **root_attrs ):
    now_sec, now_nsec = storagetypes.clock_gettime()
    
@@ -179,6 +146,71 @@ def make_root( volume, owner_id, **root_attrs ):
 
    return 0
    
+
+   
+   
+   
+   
+   
+def create_user( **kwargs ):
+   return SyndicateUser.Create( **kwargs )
+   
+
+def read_user( email ):
+   return SyndicateUser.Read( email )
+
+
+def update_user( email, **fields ):
+   return SyndicateUser.Update( email, **fields )
+
+   
+def delete_user( email, get_volumes=True, **fields ):
+   return SyndicateUser.Delete( email, get_volumes=get_volumes, **fields )
+
+   
+def list_users( attrs=None, sort=False, limit=None, query_only=False ):
+   return SyndicateUser.ListAll( attrs, limit=limit, sort=sort, query_only=False )
+
+def list_rw_volume_users( volume_id, sort=False, offset=None, limit=None, projection=None, query_only=False ):
+   order = None
+   if sort:
+      order = ["SyndicateUser.email"]
+      
+   return SyndicateUser.ListAll( {"SyndicateUser.volumes_rw ==": volume_id}, order=order, offset=offset, limit=limit, projection=projection, query_only=query_only )
+
+
+def list_ro_volume_users( volume_id, sort=False, offset=None, limit=None, projection=None, query_only=False ):
+   order = None
+   if sort:
+      order = ["SyndicateUser.email"]
+      
+   return SyndicateUser.ListAll( {"SyndicateUser.volumes_r ==": volume_id}, order=order, offset=offset, limit=limit, projection=projection, query_only=query_only )
+
+
+def list_volume_users( volume_id, sort=False, offset=False, limit=None, projection=None, query_only=False ):
+   order = None 
+   if sort:
+      order = ["SyndicateUser.email"]
+      
+   return SyndicateUser.ListAll( {"SyndicateUser.volumes_r ==": volume_id, "SyndicateUser.volumes_rw ==": volume_id}, order=order, offset=offset, limit=limit, projection=projection, query_only=query_only )
+
+
+def get_user( attr ):
+   allusers = list_users(attr)
+   if len(allusers) > 1:
+      raise Exception("More than one users satisfies attrs: %s" % attr)
+   for u in allusers:
+      return u
+   return None
+
+
+
+   
+   
+   
+   
+   
+   
    
 def create_msentry( user_owner_id, volume, **ent_attrs ):
    return MSEntry.Create( user_owner_id, volume, **ent_attrs )
@@ -199,6 +231,11 @@ def list_msentry_children( volume, file_id ):
 def read_msentry( volume, file_id ):
    return MSEntry.Read( volume, file_id )
 
+
+
+
+
+
    
 def create_user_gateway( user, volume=None, **kwargs ):
    return UserGateway.Create( user, volume, **kwargs )
@@ -216,7 +253,7 @@ def list_user_gateways_by_volume( volume_id ):
    return UserGateway.ListAll_ByVolume( volume_id )
 
 def get_user_gateway_by_name( name ):
-   ugs = list_user_gateways( {"ms_username ==" : name} )
+   ugs = list_user_gateways( {"ms_username ==" : name}, limit=2 )
    if len(ugs) > 1:
       raise Exception("%s UGs named %s" % (len(ugs), name))
 
@@ -228,6 +265,11 @@ def get_user_gateway_by_name( name ):
    
 def delete_user_gateway( g_id ):
    return UserGateway.Delete( g_id )
+
+
+
+
+
 
 
 def create_acquisition_gateway( user, volume=None, **kwargs ):
@@ -246,7 +288,7 @@ def list_acquisition_gateways( attrs=None, limit=None ):
    return AcquisitionGateway.ListAll( attrs, limit=limit )
 
 def get_acquisition_gateway_by_name( name ):
-   ags = list_acquisition_gateways( {"ms_username ==" : name} )
+   ags = list_acquisition_gateways( {"ms_username ==" : name}, limit=2 )
    if len(ags) > 1:
       raise Exception("%s AGs named %s" % (len(ags), name))
 
@@ -259,10 +301,14 @@ def delete_acquisition_gateway( g_id ):
    return AcquisitionGateway.Delete( g_id )
 
    
+   
+   
+   
+   
+   
 
 def create_replica_gateway( user, volume=None, **kwargs ):
    return ReplicaGateway.Create( user, volume, **kwargs )
-
 
 def read_replica_gateway( g_id ):
    return ReplicaGateway.Read( g_id )
@@ -277,7 +323,7 @@ def list_replica_gateways( attrs=None, limit=None ):
    return ReplicaGateway.ListAll( attrs, limit=limit )
 
 def get_replica_gateway_by_name( name ):
-   rgs = list_replica_gateways( {"ms_username ==" : name} )
+   rgs = list_replica_gateways( {"ms_username ==" : name}, limit=2 )
    if len(rgs) > 1:
       raise Exception("%s RGs named %s" % (len(rgs), name))
 

@@ -748,12 +748,6 @@ class MSEntry( storagetypes.Object ):
       return 0
 
 
-
-   # deferred operation
-   @classmethod
-   def delete_all( cls, shard_keys ):
-      storagetypes.delete_multi( shard_keys )
-
    @classmethod
    def Delete( cls, user_owner_id, volume, **ent_attrs ):
 

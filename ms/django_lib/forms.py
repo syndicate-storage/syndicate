@@ -11,10 +11,13 @@ Also contains common constants used in different forms.
 
 
 from django import forms
+import potatopage.paginator as potatopaginator
+
+MSPaginator = potatopaginator
 
 LONGEST_CHAR_FIELD = 499
-LONGEST_PASS_FIELD = 20
-LONGEST_JSON_FIELD = 5000
+LONGEST_PASS_FIELD = 256
+LONGEST_JSON_FIELD = 1000000
 LONGEST_DESC = 2000
 
 # http://stackoverflow.com/questions/324477/in-a-django-form-how-to-make-a-field-readonly-or-disabled-so-that-it-cannot-b
@@ -46,3 +49,4 @@ class ChangePassword(forms.Form):
     newpassword_2 = forms.CharField(label="Re-enter new password",
                                max_length=LONGEST_PASS_FIELD,
                                widget=forms.PasswordInput)
+    

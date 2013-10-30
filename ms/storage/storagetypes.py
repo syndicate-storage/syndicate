@@ -414,13 +414,13 @@ class Object( Model ):
       raise NotImplementedError
 
    @classmethod
-   def ListAll( cls, filter_attrs, limit=None ):
+   def ListAll( cls, filter_attrs, order=None, limit=None, offset=None, pagesize=None, start_cursor=None, async=False, projection=None, query_only=False ):
       qry = cls.query()
-      ret = cls.ListAll_runQuery( qry, filter_attrs, limit )
+      ret = cls.ListAll_runQuery( qry, filter_attrs, order=order, limit=limit, offset=offset, pagesize=pagesize, async=async, start_cursor=start_cursor, projection=projection, query_only=query_only )
       return ret
 
    @classmethod
-   def ListAll_runQuery( cls, qry, filter_attrs, limit=None ):
+   def ListAll_runQuery( cls, qry, filter_attrs, order=None, limit=None, offset=None, pagesize=None, start_cursor=None, async=False, projection=None, query_only=False ):
       if filter_attrs == None:
          filter_attrs = {}
          
@@ -460,5 +460,54 @@ class Object( Model ):
          elif op == "IN":
             qry = qry.filter( cls._properties[attr_name].IN( value ) )
 
-      qry_ret = qry.fetch( limit )
+      if order != None:
+         # apply ordering
+         for attr_name in order:
+            if "." in attr_name:
+               attr_name = attr_name.split(".")[-1]
+               
+            reverse = False 
+            
+            if attr_name[0] == '-':
+               attr_name = attr_name[1:]
+               reverse = True
+            
+            if reverse:
+               qry = qry.order( -cls._properties[attr_name] )
+            else:
+               qry = qry.order( cls._properties[attr_name] )
+         
+      proj_attrs = None
+      if projection != None:
+         proj_attrs = []
+         for proj_attr in projection:
+            proj_attrs.append( cls._properties[proj_attr] )
+      
+      qry_ret = None
+      
+      if query_only:
+         # query only, no data
+         qry_ret = qry
+      
+      else:
+         if pagesize != None:
+            # paging response 
+            if async:
+               qry_ret = qry.fetch_page_async( pagesize, limit=limit, offset=offset, start_cursor=start_cursor, projection=proj_attrs )
+            else:
+               qry_ret = qry.fetch_page( pagesize, limit=limit, offset=offset, start_cursor=start_cursor, projection=proj_attrs )
+         
+         else:
+            # direct fetch
+            if async:
+               qry_ret = qry.fetch_async( limit, offset=offset, projection=proj_attrs )
+            else:
+               qry_ret = qry.fetch( limit, offset=offset, projection=proj_attrs )
+            
       return qry_ret
+
+   # deferred operation
+   @classmethod
+   def delete_all( cls, keys ):
+      delete_multi( keys )
+      

@@ -63,7 +63,29 @@ class SyndicateUIDCounter( storagetypes.Object ):
    def make_key_name( cls, **args ):
       return "SyndicateUIDCounter"
 
-      
+
+class SyndicateUserNameHolder( storagetypes.Object ):
+   '''
+   Mark a Volume name as taken
+   '''
+   
+   name = storagetypes.String()
+   owner_id = storagetypes.Integer()
+   
+   required_attrs = [
+      "name"
+   ]
+   
+   
+   @classmethod
+   def make_key_name( cls, name ):
+      return "SyndicateUserNameHolder: name=%s" % (name)
+   
+   @classmethod
+   def create_async( cls,  _name, _id ):
+      return SyndicateUserNameHolder.get_or_insert_async( SyndicateUserNameHolder.make_key_name( _name ), name=_name, owner_id=_id )
+
+
 
 class SyndicateUser( storagetypes.Object ):
    email = storagetypes.String()         # used as the username
@@ -76,7 +98,7 @@ class SyndicateUser( storagetypes.Object ):
    
    required_attrs = [
       "email",
-      "openid_url",
+      "openid_url"
    ]
 
    key_attrs = [
@@ -93,17 +115,33 @@ class SyndicateUser( storagetypes.Object ):
       "email" : (lambda cls, value: valid_email(cls, value))
    }
 
+   read_attrs = [
+      "email",
+      "owner_id",
+      "openid_url",
+      "volumes_o",
+      "volumes_r",
+      "volumes_rw"
+   ]
+   
+   write_attrs = [
+      "openid_url",
+      "volumes_o",
+      "volumes_r",
+      "volumes_rw"
+   ]
+
 
    @classmethod
-   def _create_user( cls, **kwargs ):
+   def Create( cls, **kwargs ):
       """
-      Given user data, store it.
-
-      kwargs:
-         email: str
-         Open_ID_url: str
+      Create a SyndicateUser.
+      
+      Required keyword arguments:
+      email             -- Email address of the user.  Serves as the username (str)
+      openid_url        -- OpenID identifier for authenticating this user (str)
       """
-
+      
       SyndicateUser.fill_defaults( kwargs )
       missing = SyndicateUser.find_missing_attrs( kwargs )
       if len(missing) != 0:
@@ -116,43 +154,26 @@ class SyndicateUser( storagetypes.Object ):
 
       email = kwargs.get( "email" )
       openid_url = kwargs.get( "openid_url" )
-
-      user_key = storagetypes.make_key( SyndicateUser, SyndicateUser.make_key_name( email=email ) )
-      user = user_key.get()
-      if user != None and user.owner_id > 0:
-         # user already exists
+      owner_id = random.randint( 1, 2**63 - 1 )
+      
+      user_key_name = SyndicateUser.make_key_name( email=email )
+      user = SyndicateUser.get_or_insert( user_key_name, email=email, openid_url=openid_url, owner_id=owner_id )
+      
+      # check for collisions
+      if user.owner_id != owner_id:
+         # collision
          raise Exception("User '%s' already exists" % email)
-
-      else:
-         uid_counter = SyndicateUIDCounter.get_or_insert( SyndicateUIDCounter.make_key_name(), value=0 )
-         
-         uid_counter.value += 1
-
-         uid_future = uid_counter.put_async()
-
-         # new user
-         user = SyndicateUser(key=user_key,
-                              owner_id=uid_counter.value,
-                              email=email,
-                              openid_url=openid_url)
-
-
-         user_future = user.put_async()
-
-         storagetypes.wait_futures( [user_future, uid_future] )
-
-         return user.key
-
-
-   @classmethod
-   def Create( cls, **kwargs ):
-      return storagetypes.transaction( lambda: SyndicateUser._create_user( **kwargs ), xg=True, retries=10 )
-
+      
+      return user.key
+      
 
    @classmethod
    def Read( cls, email ):
       """
-      Read a user, given the username
+      Read a SyndicateUser
+      
+      Arguments:
+      email             -- Email address of the user to read (str)
       """
       user_key_name = SyndicateUser.make_key_name( email=email)
       user_key = storagetypes.make_key( SyndicateUser, user_key_name )
@@ -169,13 +190,18 @@ class SyndicateUser( storagetypes.Object ):
 
 
    @classmethod
-   def add_volume_to_owner( cls, volume_id, username ):
+   def add_volume_to_user( cls, volume_id, email ):
       """
-      Update a SyndicateUser, so that the SyndicateUser owns the Volume and the Volume is put to the datastore.
-      Run this in a transaction.
+      Make a SyndicateUser the owner of a Volume, and give the user read/write permission in it.
+      Unless the caller knows what its doing, this should be run as a transaction.
+      
+      Arguments:
+      volume_id         -- ID of the Volume to add to the user (int)
+      email             -- Email address of the user to own the Volume (str)
       """
-      user = SyndicateUser.Read( username )
+      user = SyndicateUser.Read( email )
 
+      # only put the user if there is a change.
       diff = False
       if volume_id not in user.volumes_o:
          user.volumes_o.append( volume_id )
@@ -186,7 +212,7 @@ class SyndicateUser( storagetypes.Object ):
          diff = True
 
       if diff:
-         user_key_name = SyndicateUser.make_key_name( email=username )
+         user_key_name = SyndicateUser.make_key_name( email=email )
          storagetypes.memcache.delete( user_key_name )
          return user.put()
 
@@ -196,25 +222,77 @@ class SyndicateUser( storagetypes.Object ):
    @classmethod
    def Update( cls, email, **fields ):
       '''
-      Update volume identified by name with fields specified as a dictionary.
+      Atomically (transactionally) update a SyndicateUser with the new fields.
+      
+      Arguments:
+      email             -- Email address of the user to update (str)
+      
+      Keyword arguments:
+      openid_url        -- OpenID URL to authenticate this user (str)
+      volumes_o         -- list of Volume IDs this user owns ([int])
+      volumes_rw        -- list of Volume IDs this user can read/write ([int])
+      volumes_r         -- list of Volume IDs this user can read ([int])
       '''
-      user = SyndicateUser.Read(email)
-      user_key_name = SyndicateUser.make_key_name( email=email)
-      storagetypes.memcache.delete( user_key_name )
+      
+      def update_txn( email, **fields ):
+         user = SyndicateUser.Read(email)
+         user_key_name = SyndicateUser.make_key_name( email=email)
+         storagetypes.memcache.delete( user_key_name )
 
-      for (k,v) in fields.items():
-         setattr(user, k, v )
-      return user.put()
+         for (k,v) in fields.items():
+            setattr(user, k, v )
+         return user.put()
+      
+      # sanity check
+      invalid = SyndicateUser.validate_fields( fields )
+      if len(invalid) > 0:
+         raise Exception( "Invalid fields: %s" % (', '.join( invalid )) )
+      
+      invalid = SyndicateUser.validate_write( fields )
+      if len(invalid) > 0:
+         raise Exception( "Unwritable fields: %s" % (', '.join( invalid )) )
+      
+      return storagetypes.transaction( lambda: update_txn( email, **fields ) )
       
 
    @classmethod
-   def Delete( cls, email ):
+   def Delete( cls, email, get_volumes=True ):
       '''
-      Delete user from datastore.
+      Delete a SyndicateUser
+      
+      Arguments:
+      email             -- Email of the user to delete (str)
+      
+      Keyword arguments:
+      get_volumes       -- If true, return the list of Volumes this SyndicateUser owns
+                           (this will cause the operation to run a transaction).
       '''
+      
       user_key_name = SyndicateUser.make_key_name( email=email)
       user_key = make_key( SyndicateUser, user_key_name )
-      return user_key.delete()
+      
+      def delete_func( user_key ):
+         
+         user = user_key.get()
+      
+         if user == None:
+            # done!
+            return True
+      
+         volume_ids = user.volumes_o
+         
+         user_key.delete()
+         return
+      
+      
+      if get_volumes:
+         # transactionally delete and get Volume IDs
+         volume_ids = storagetypes.transaction( lambda: delete_func( user_key ) )
+         return volume_ids
+         
+      else:
+         user_key.delete()
+         return True
 
    
    

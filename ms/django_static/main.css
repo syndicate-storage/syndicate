@@ -12,6 +12,10 @@ h1 {
     text-align:center
 }
 
+h2 {
+    text-align:center
+}
+
 a.navbar:link {
     text-decoration: none;
     color:ivory !important;
@@ -96,7 +100,6 @@ input.center {
     margin-top: 10px;
     margin-bottom: 10px;
     display:block;
-
 }
 
 table {
@@ -118,6 +121,55 @@ table.volume th {
 table.volume td {
     padding:5px;
 }
+
+section.volume_users {
+    display:table;
+    margin-left:auto;
+    margin-right:auto;
+}
+
+header.volume_users_row {
+    display:table-row;
+    vertical-align:top;
+    padding:10px;
+    font-weight:bold;
+}
+
+div.volume_users_row {
+    display:table-row;
+    vertical-align:top;
+    padding:10px;
+}
+
+div.volume_users_cell {
+    display:table-cell;
+    padding:5px;
+}
+
+section.volume_config {
+    display:table;
+    margin-left:auto;
+    margin-right:auto;
+}
+
+header.volume_config_row {
+    display:table-row;
+    vertical-align:top;
+    padding:10px;
+    font-weight:bold;
+}
+
+div.volume_config_row {
+    display:table-row;
+    vertical-align:top;
+    padding:10px;
+}
+
+div.volume_config_cell {
+    display:table-cell;
+    padding:5px;
+}
+
 
 table.createvolume {
     margin-left:auto;

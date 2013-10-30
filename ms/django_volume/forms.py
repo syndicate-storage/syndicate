@@ -40,6 +40,21 @@ class CreateVolume(forms.Form):
                                widget=forms.PasswordInput)
 
 
+class EditVolume(forms.Form):
+   
+   private = forms.BooleanField(label="Private",
+                                required=False)
+   
+   archive = forms.BooleanField(label="Archive",
+                                required=False)
+   
+   description = forms.CharField( widget=forms.Textarea,
+                                  label="Volume description",
+                                  max_length=LONGEST_DESC,
+                                  help_text=str(LONGEST_DESC) + " characters maximum")
+   
+
+
 class ChangeVolumeD(forms.Form):
 
     description = forms.CharField(widget=forms.Textarea,

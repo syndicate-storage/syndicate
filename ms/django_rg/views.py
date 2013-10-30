@@ -409,7 +409,7 @@ def changelocation(request, g_id):
 @authenticate
 def allgateways(request):
     '''
-    View to look at all AG's in a tabular format, with owners and attached volumes.
+    View to look at all RG's in a tabular format, with owners and attached volumes.
     '''
     session = request.session
     username = session['login_email']
@@ -442,7 +442,7 @@ def allgateways(request):
 @authenticate
 def create(request):
     '''
-    View to handle creation of AG's
+    View to handle creation of RG's
     '''
     session = request.session
     username = session['login_email']
@@ -471,11 +471,11 @@ def create(request):
                     return give_create_form(username, session)
                 config = request.FILES['json_config'].read()
                 try:
-                    kwargs['json_config'] = json.loads(config)
+                    kwargs['config'] = json.loads(config)
                 except Exception as e:
                     logging.info("Possible JSON load error: %s" % e)
                     try:
-                        kwargs['json_config'] = json.loads("\"" + config + "\"")
+                        kwargs['config'] = json.loads("\"" + config + "\"")
                     except Exception as e:
                         logging.error("Definite JSON load error %s" % e)
                         session['message'] = "Error parsing given JSON text."
@@ -484,11 +484,11 @@ def create(request):
             # No upload, check text-box
             elif "json_config_text" in form.cleaned_data:
                 try:
-                    kwargs['json_config'] = json.loads(form.cleaned_data['json_config_text'])
+                    kwargs['config'] = json.loads(form.cleaned_data['json_config_text'])
                 except Exception as e:
                     logging.info("Possible JSON load error: %s" % e)
                     try:
-                        kwargs['json_config'] = json.loads("\"" + str(form.cleaned_data['json_config_text']) + "\"")
+                        kwargs['config'] = json.loads("\"" + str(form.cleaned_data['json_config_text']) + "\"")
                     except Exception as e:
                         logging.error("Definite JSON load error %s" % e)
                         session['message'] = "Error parsing given JSON text."

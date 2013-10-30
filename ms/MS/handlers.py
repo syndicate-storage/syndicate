@@ -17,6 +17,7 @@ import protobufs.serialization_pb2 as serialization_pb2
 from storage import storage
 import storage.storagetypes as storagetypes
 
+import api
 from entry import MSEntry
 from volume import Volume
 from gateway import UserGateway, ReplicaGateway, AcquisitionGateway
@@ -31,6 +32,7 @@ import urllib
 import time
 import cgi
 import datetime
+import rpc.jsonrpc
 
 from openid.gaeopenid import GAEOpenIDRequestHandler
 from openid.consumer import consumer
@@ -544,14 +546,14 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
             new_cert = False
             
          # generate a session password
-         gateway.regenerate_session_password()
+         session_pass = gateway.regenerate_session_password()
          gateway_fut = gateway.put_async()
          futs = [gateway_fut]
 
          registration_metadata = ms_pb2.ms_registration_metadata()
 
          # registration information
-         registration_metadata.session_password = gateway.session_password 
+         registration_metadata.session_password = session_pass
          registration_metadata.session_expires = gateway.session_expires
          gateway.protobuf_cert( registration_metadata.cert )
          
@@ -562,7 +564,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
             response_user_error( self, 404 )
             return 
          
-         roots = storage.get_roots( [volume] )
+         roots = storage.get_volume_roots( [volume] )
          
          if roots == None or len(roots) == 0:
             response_user_error( self, 404 )
@@ -810,4 +812,14 @@ class MSOpenIDRequestHandler(GAEOpenIDRequestHandler):
       self.auth_redirect()
       return 0
       
-     
+
+class MSJSONRPCHandler(webapp2.RequestHandler):
+   """
+   JSON RPC request handler 
+   """
+   
+   def post( self ):
+      # pass on to JSON RPC server
+      server = rpc.jsonrpc.Server( api.API() )
+      server.handle( self.request, self.response )
+   

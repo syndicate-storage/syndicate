@@ -6,7 +6,7 @@ import MS.handlers
 import tests.debughandler
 import openid.gaeopenid
 
-from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSCertRequestHandler, MSCertManifestRequestHandler, MSRegisterRequestHandler, MSOpenIDRequestHandler
+from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSCertRequestHandler, MSCertManifestRequestHandler, MSRegisterRequestHandler, MSOpenIDRequestHandler, MSJSONRPCHandler
 from tests.debughandler import MSDebugHandler
 
 app = webapp2.WSGIApplication([
@@ -20,6 +20,7 @@ app = webapp2.WSGIApplication([
     ('/VOLUME/([0123456789]+)', MSVolumeRequestHandler),
     ('/REGISTER/([^/]+)/([^/]+)/([^/]+)/([^/]+)', MSRegisterRequestHandler),
     ('/CERT/([0123456789]+)/manifest.([0123456789]+)', MSCertManifestRequestHandler),
-    ('/CERT/([0123456789]+)/([0123456789]+)/(UG|RG|AG)/([0123456789]+)/([0123456789]+)', MSCertRequestHandler)
+    ('/CERT/([0123456789]+)/([0123456789]+)/(UG|RG|AG)/([0123456789]+)/([0123456789]+)', MSCertRequestHandler),
+    ('/jsonrpc', MSJSONRPCHandler)
 ], debug=True)
 

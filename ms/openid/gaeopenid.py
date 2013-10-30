@@ -391,7 +391,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
        self.render_success( info, sreg_resp, pape_resp )
        return 0
 
-    def process_failure( info, sreg_resp, pape_resp ):
+    def process_failure( self, info, sreg_resp, pape_resp ):
       """
       Called when we fail to process an authentication response from the OP
       """

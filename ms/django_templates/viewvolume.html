@@ -2,7 +2,7 @@
 {% load ms_extras %}
 
 {% block head %}
-<h1> {{volume.name|replace:"_|| "}} <span style="font-style:italic;font-size:60%;">(Version {{volume.version}})</span></h1>
+<h1> {{volume.name}} <span style="font-style:italic;font-size:60%;">(Version {{volume.version}})</span></h1>
 {% endblock %}
 
 {% block mainbody %}
@@ -23,20 +23,46 @@
     <p> Volume is {% if volume.active %}<span style="font-weight:bold;color:green;">active{% else %}<span style="font-weight:bold;color:red;">inactive{% endif %}</span>.</p>
     <p> Block size:<span style="font-weight:bold;"> {{volume.blocksize}}</span></p>
     <br/>
-    <p><span style="font-weight:bold;">Description:</span>{{volume.description}}
+    <p><span style="font-weight:bold;">Description:</span><br/>
+    <p>{{volume.description}}</p>
     </p>
+    <br/>
+    <p><span style="font-weight:bold;">Users:</span></p>
+      <p>
+      <section class="volume_users">
+         <header class="volume_users_row">
+            <div class="volume_users_cell"> Email </div>
+            <div class="volume_users_cell"> Capabilities </div>
+            <div class="volume_users_cell"> Options </div>
+         </header>
+         
+            {% for u in user_info %}
+            <div class="volume_users_row">
+               <div class="volume_users_cell">{{u.email}}</div>
+               <div class="volume_users_cell"><a href="{% url django_volume.views.changepermissions volume.volume_id %}">{{u.caps_str}}</a></div>
+               <div class="volume_users_cell"><a href="{% url django_volume.views.changepermissions volume.volume_id %}">Remove</a></div>
+            </div>
+            {% empty %}
+            <div class="volume_users_row">No users</div>
+            {% endfor %}
+      </section>
+      </p>
     <br/>
     <p><span style="font-weight:bold;">Attached Replica Gateways:</span></p>
     <li>
       {% for g in rgs %}
-      <p><a href="{% url django_rg.views.viewgateway g.g_id %}">{{ g.ms_username|replace:"_|| " }}</a></p>
+      <p><a href="{% url django_rg.views.viewgateway g.g_id %}">{{ g.ms_username }}</a></p>
+      {% empty %}
+      <p> None attached </p>
       {% endfor %}
     </li>
     <br/>
     <p><span style="font-weight:bold;">Attached Acquisition Gateways:</span></p>
     <li>
       {% for g in ags %}
-        <p><a href="{% url django_rg.views.viewgateway g.g_id %}">{{ g.ms_username|replace:"_|| " }}</a></p>
+        <p><a href="{% url django_rg.views.viewgateway g.g_id %}">{{ g.ms_username }}</a></p>
+      {% empty %}
+      <p> None attached </p>
       {% endfor %}
     </li>
   </div>

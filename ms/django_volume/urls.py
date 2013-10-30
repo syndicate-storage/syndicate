@@ -49,5 +49,11 @@ urlpatterns = patterns('django_volume.views',
                         
                         url(r'^(?P<volume_id>[\w\.-]+)/?',
                          'viewvolume'),
+                        
+                        url(r'^(?P<volume_id>[\w\.-]+)/edit/?',
+                         'volumeedit'),
+                        
+                        url(r'^(?P<volume_id>[\w\.-]+)/submit/?',
+                         'volumesubmit'),
 
 )

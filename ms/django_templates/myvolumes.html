@@ -5,6 +5,111 @@
     <h1> My Volumes </h1>
 {% endblock %}
 {% block mainbody %}
+
+   {% block volumes_you_own %}
+
+      <h2> Volumes you own </h2>
+      
+      <!-- Volumes you own -->
+      <table class="volume" border>
+      <thead>
+         <th> Name </th>
+         <th> Description </th>
+         <th> Active </th>
+      </thead>
+      <tbody>
+         
+         {% for volume in vols_owned %}
+         <tr>
+            <td> <a href='{% url django_volume.views.viewvolume volume.volume_id %}'>{{volume.name}}</a> </td>
+            <td> {{volume.description}} </td>
+            <td> {% if volume.active %} <span style="font-weight:bold;color:grean;"> Active {% else %} <span style="font-weight:bold;color:read;"> Inactive {% endif %}</span> </td>
+         </tr>
+
+         {% empty %}
+         <tr>
+            <td colspan="3"> No volumes here </td>
+         </tr>
+
+         {% endfor %}
+      
+      </tbody>
+      </table>
+   {% endblock %}
+
+   {% block volumes_you_rw %}
+
+      <h2> Volumes you can read and write </h2> 
+
+      <!-- Volumes you can r/w -->
+      <table class="volume" border>
+      <thead>
+         <th> Name </th>
+         <th> Description </th>
+      </thead>
+      <tbody>
+         
+         {% for volume in vols_rw %}
+         <tr>
+            <td> <a href='{% url django_volume.views.viewvolume volume.volume_id %}'>{{volume.name}}</a> </td>
+            <td> {{volume.description}} </td>
+         </tr>
+
+         {% empty %}
+         <tr>
+            <td colspan="2"> No volumes here </td>
+         </tr>
+         
+         {% endfor %}
+      </tbody>
+      </table>
+   {% endblock %}
+
+   {% block volumes_you_ro %}
+
+      <h2> Volumes you can read </h2>
+
+      <!-- Volumes you can r/w -->
+      <table class="volume" border>
+      <thead>
+         <th> Name </th>
+         <th> Description </th>
+      </thead>
+      <tbody>
+      
+         {% for volume in vols_ro %}
+         <tr>
+            <td> <a href='{% url django_volume.views.viewvolume volume.volume_id %}'>{{volume.name}}</a> </td>
+            <td> {{volume.description}} </td>
+         </tr>
+         
+         {% empty %}
+         <tr>
+            <td colspan="2"> No Volumes here </td>
+         </tr>
+         
+         {% endfor %}
+      </tbody>
+      </table>
+
+   {% endblock %}
+         
+
+{% endblock %}
+{% block footer %}
+<a  href='{% url django_volume.views.createvolume %}'>Create new volume</a>
+<a  href='{% url django_home.views.home %}'>Back to home</a>
+{% endblock %}
+
+
+<!--{% comment %}
+{% extends "base.html" %}
+{% load ms_extras %}
+
+{% block head %}
+    <h1> My Volumes </h1>
+{% endblock %}
+{% block mainbody %}
     <table class="volume" border>
       <thead>
 	<th> Volume Name </th>
@@ -50,3 +155,4 @@
     <a  href='{% url django_volume.views.createvolume %}'>Create new volume</a>
     <a  href='{% url django_home.views.home %}'>Back to home</a>
     {% endblock %}
+{% endcomment %}-->

@@ -67,12 +67,16 @@ def viewgateway(request, g_id=0):
 
     vol = db.read_volume(g.volume_id)
     if not vol:
+        vol = None
+        owner = None
+        """
         if g.volume_id != 0:
-            logging.error("Volume ID in gateways volume_ids does not map to volume. Gateway: %d" % g_id)
+            logging.error("Volume ID %s in gateways volume_ids does not map to volume. Gateway: %s" % (g.volume_id, g_id))
             return redirect('django_ug.views.allgateways')
         else:
             vol = None
             owner = None
+        """
     else:
         attrs = {"SyndicateUser.owner_id ==": vol.owner_id}
         owner = db.get_user(attrs)
@@ -200,10 +204,20 @@ def changevolume(request, g_id):
         if (new_vol.volume_id not in user.volumes_r) and (new_vol.volume_id not in user.volumes_rw):
             session['message'] = "Must have read rights to volume %s to assign UG to it." % form.cleaned_data['volume_name']
             return redirect('django_ug.views.viewgateway', g_id)
+         
         old_vol = g.volume_id
-        fields = {"volume_id":new_vol.volume_id}
+        #fields = {"volume_id":new_vol.volume_id, "cert_version": True}
         try:
-            update_ug_and_vol(g_id, fields, old_vol, new_vol.volume_id)
+           
+            db.update_user_gateway( g_id, volume_id=new_vol.volume_id, cert_version=True )
+            
+            db.update_volume( new_vol.volume_id, version=True, cert_version=True )
+            
+            if g.is_bound_to_volume():
+               # update the old Volume
+               db.update_volume( old_vol, version=True, cert_version=True )
+            
+            #update_ug_and_vol(g_id, fields, old_vol, new_vol.volume_id)
         except Exception, e:
             logging.error("Unable to update UG with ID %s. Error was %s." % (g_id, e))
             session['message'] = "Error. Unable to change user gateway."
