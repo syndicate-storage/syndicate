@@ -124,10 +124,10 @@ class Server(object):
                 result = method(**clean_params)
             else:
                 result = method(*params)
-        except:
+        except Exception, e:
             logging.error(sys.exc_info())
             traceback.print_exc()
-            return self.error(id, -32603)
+            return self.error(id, -32603, e.message)
 
         if id is not None:
             return self.result({'result': result, 'id': id, 'jsonrpc': VERSION})
@@ -187,7 +187,7 @@ class Client(object):
         else:
             return None
 
-
+"""
 class ClientAsync(object):
 
     def __init__(self, uri, headers={}):
@@ -245,4 +245,4 @@ class ClientAsync(object):
             raise ndb.Return(result['result'])
         else:
             raise ndb.Return(None)
-
+"""

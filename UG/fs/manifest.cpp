@@ -242,7 +242,7 @@ file_manifest::file_manifest( file_manifest* fm ) {
    pthread_rwlock_init( &this->manifest_lock, NULL );
 }
 
-file_manifest::file_manifest( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg& mmsg ) {
+file_manifest::file_manifest( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg* mmsg ) {
    pthread_rwlock_init( &this->manifest_lock, NULL );
    this->file_version = fent->version;
    this->stale = true;
@@ -264,6 +264,20 @@ void file_manifest::set_file_version(struct fs_core* core, int64_t version) {
    
    pthread_rwlock_unlock( &this->manifest_lock );
    return;
+}
+
+// get the number of blocks
+uint64_t file_manifest::get_num_blocks() {
+   uint64_t num_blocks = 0;
+   pthread_rwlock_rdlock( &this->manifest_lock );
+   
+   block_map::reverse_iterator last = this->block_urls.rbegin();
+   if( last != this->block_urls.rend() ) {
+      num_blocks = last->second->end_id;
+   }
+   
+   pthread_rwlock_unlock( &this->manifest_lock );
+   return num_blocks;
 }
 
 // generate a block URL
@@ -316,9 +330,7 @@ uint64_t file_manifest::get_block_host( struct fs_core* core, uint64_t block_id 
    }
    else {
       uint64_t ret = itr->second->gateway_id;
-      
       pthread_rwlock_unlock( &this->manifest_lock );
-
       return ret;
    }
 }
@@ -331,21 +343,6 @@ void file_manifest::put_url_set( block_url_set* bus ) {
    pthread_rwlock_unlock( &this->manifest_lock );
 }
 
-
-// look up a gateway version, given a block ID
-uint64_t file_manifest::get_block_gateway( uint64_t block ) {
-   pthread_rwlock_rdlock( &this->manifest_lock );
-   block_map::iterator urlset = this->find_block_set( block );
-   if( urlset == this->block_urls.end() ) {
-      pthread_rwlock_unlock( &this->manifest_lock );
-      return 0;     // not found
-   }
-   else {
-      int64_t ret = urlset->second->lookup_gateway( block );
-      pthread_rwlock_unlock( &this->manifest_lock );
-      return ret;
-   }
-}
 
 // look up a block version, given a block ID
 int64_t file_manifest::get_block_version( uint64_t block ) {
@@ -379,7 +376,8 @@ int64_t* file_manifest::get_block_versions( uint64_t start_id, uint64_t end_id )
       block_map::iterator itr = this->find_block_set( curr_id );
       if( itr == this->block_urls.end() ) {
          free( ret );
-         return NULL;
+         ret = NULL;
+         break;
       }
 
       for( uint64_t j = 0; j < itr->second->end_id - itr->second->start_id && curr_id < end_id; j++ ) {
@@ -393,6 +391,28 @@ int64_t* file_manifest::get_block_versions( uint64_t start_id, uint64_t end_id )
    return ret;
 }
 
+
+// set the host of a range of blocks
+void file_manifest::set_block_hosts( uint64_t gateway_id, uint64_t start_id, uint64_t end_id ) {
+   if( end_id <= start_id )
+      return;
+   
+   pthread_rwlock_rdlock( &this->manifest_lock );
+   
+   for( uint64_t i = start_id; i < end_id; i++ ) {
+      block_map::iterator itr = this->find_block_set( i );
+      if( itr == this->block_urls.end() ) {
+         // done
+         break;
+      }
+      
+      itr->second->gateway_id = gateway_id;
+      start_id = itr->second->end_id + 1;
+   }
+   
+   pthread_rwlock_unlock( &this->manifest_lock );
+   return;
+}
 
 // is a block stored in local storage
 int file_manifest::is_block_local( struct fs_core* core, uint64_t block_id ) {
@@ -785,7 +805,7 @@ void file_manifest::as_protobuf( struct fs_core* core, struct fs_entry* fent, Se
 }
 
 // reload a manifest
-void file_manifest::reload( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg& mmsg ) {
+void file_manifest::reload( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg* mmsg ) {
    pthread_rwlock_wrlock( &this->manifest_lock );
 
    for( block_map::iterator itr = this->block_urls.begin(); itr != this->block_urls.end(); itr++ ) {
@@ -804,18 +824,18 @@ void file_manifest::reload( struct fs_core* core, struct fs_entry* fent, Seriali
 // populate a manifest from a protobuf
 // must lock the manifest first,
 // and must lock fent first
-int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, file_manifest* m, Serialization::ManifestMsg& mmsg ) {
+int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, file_manifest* m, Serialization::ManifestMsg* mmsg ) {
 
    int rc = 0;
 
    // validate
-   if( mmsg.volume_id() != core->volume ) {
-      errorf("Invalid Manifest: manifest belongs to Volume %" PRIu64 ", but this Gateway is attached to %" PRIu64 "\n", mmsg.volume_id(), core->volume );
+   if( mmsg->volume_id() != core->volume ) {
+      errorf("Invalid Manifest: manifest belongs to Volume %" PRIu64 ", but this Gateway is attached to %" PRIu64 "\n", mmsg->volume_id(), core->volume );
       return -EINVAL;
    }
    
-   for( int i = 0; i < mmsg.block_url_set_size(); i++ ) {
-      Serialization::BlockURLSetMsg busmsg = mmsg.block_url_set( i );
+   for( int i = 0; i < mmsg->block_url_set_size(); i++ ) {
+      Serialization::BlockURLSetMsg busmsg = mmsg->block_url_set( i );
 
       int64_t* block_versions = CALLOC_LIST( int64_t, busmsg.end_id() - busmsg.start_id() );
 
@@ -827,13 +847,13 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
 
       bool staging = (core->gateway == gateway_id && !FS_ENTRY_LOCAL( core, fent ));
 
-      m->block_urls[ busmsg.start_id() ] = new block_url_set( core->volume, gateway_id, fent->file_id, mmsg.file_version(), busmsg.start_id(), busmsg.end_id(), block_versions, staging );
+      m->block_urls[ busmsg.start_id() ] = new block_url_set( core->volume, gateway_id, fent->file_id, mmsg->file_version(), busmsg.start_id(), busmsg.end_id(), block_versions, staging );
 
       free( block_versions );
    }
 
    if( rc == 0 )
-      m->file_version = mmsg.file_version();
+      m->file_version = mmsg->file_version();
 
    return rc;
 }
@@ -850,3 +870,27 @@ int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, stru
    
    return 0;
 }
+
+static uint64_t random64() {
+   return ((uint64_t)CMWC4096() << 32L) | CMWC4096();
+}
+
+// generate a manifest that indicates an error message
+// all required fields will be filled with random numbers (for cryptographic padding)
+int fs_entry_manifest_error( Serialization::ManifestMsg* mmsg, int error, char const* errormsg ) {
+   
+   mmsg->set_volume_id( random64() );
+   mmsg->set_coordinator_id( random64() );
+   mmsg->set_file_id( random64() );
+   mmsg->set_file_version( (int64_t)random64() );
+   mmsg->set_size( (int64_t)random64() );
+   mmsg->set_mtime_sec( (int64_t)random64() );
+   mmsg->set_mtime_nsec( (int64_t)random64() );
+
+   mmsg->set_errorcode( error );
+   mmsg->set_errortxt( string(errormsg) );
+   
+   return 0;
+}
+
+

@@ -60,8 +60,13 @@ message ManifestMsg {
    required int64 mtime_sec = 6;
    required int32 mtime_nsec = 7;
    repeated BlockURLSetMsg block_url_set = 8;
-   required string signature = 9;       // signature of this message using the origin gateway's private key
+   
+   optional int32 errorcode = 9;
+   optional string errortxt = 10;
+   
+   required string signature = 11;       // base64-encoded signature of this message using the origin gateway's private key
 }
+
 
 // accepted message
 message AcceptMsg {

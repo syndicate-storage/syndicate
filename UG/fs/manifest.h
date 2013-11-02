@@ -87,22 +87,25 @@ public:
    file_manifest( file_manifest& fm );
    file_manifest( file_manifest* fm );
    file_manifest( int64_t version );
-   file_manifest( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg& mmsg );
+   file_manifest( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg* mmsg );
 
    ~file_manifest();
 
    // set the file version
    void set_file_version( struct fs_core* core, int64_t version );
+   
+   // get the number of blocks
+   uint64_t get_num_blocks();
 
    // parse a manifest form a protobuf
-   static int parse_protobuf( struct fs_core* core, struct fs_entry* fent, file_manifest* m, Serialization::ManifestMsg& mmsg );
+   static int parse_protobuf( struct fs_core* core, struct fs_entry* fent, file_manifest* m, Serialization::ManifestMsg* mmsg );
 
    // serialize this manifest to protobuf data
    // read-lock the fent first
    void as_protobuf( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg* mmsg );
 
    // reload a manifest from a protobuf
-   void reload( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg& mmsg );
+   void reload( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg* mmsg );
 
    // serialize this manifest to a string
    char* serialize_str();
@@ -124,12 +127,12 @@ public:
 
    // look up a block version, given a block ID
    int64_t get_block_version( uint64_t block );
-   
-   // look up a block's coordinator
-   uint64_t get_block_gateway( uint64_t block );
 
    // get all the block versions
    int64_t* get_block_versions( uint64_t start_id, uint64_t end_id );
+   
+   // set the host of a sequence of blocks
+   void set_block_hosts( uint64_t gateway_id, uint64_t start_id, uint64_t end_id );
 
    // is a block local?
    int is_block_local( struct fs_core* core, uint64_t block_id );
@@ -182,5 +185,7 @@ private:
 };
 
 int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool staging );
+
+int fs_entry_manifest_error( Serialization::ManifestMsg* mmsg, int error, char const* errormsg );
 
 #endif

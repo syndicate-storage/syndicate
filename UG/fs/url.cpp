@@ -117,7 +117,9 @@ char* fs_entry_block_url_path( struct fs_core* core, char const* fs_path, int64_
 
 char* fs_entry_AG_block_url( struct fs_core* core, uint64_t ag_id, char const* fs_path, int64_t version, uint64_t block_id, int64_t block_version ) {
    char* base_url = ms_client_get_AG_content_url( core->ms, ag_id );
-                                                  
+   if( base_url == NULL )
+      return NULL;
+   
    int base_len = 25 + 1 + strlen(fs_path) + 1 + 25 + 1 + 25 + 1 + 25 + 1;
    
    char* ret = CALLOC_LIST( char, strlen(base_url) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
@@ -128,7 +130,15 @@ char* fs_entry_AG_block_url( struct fs_core* core, uint64_t ag_id, char const* f
    return ret;
 }
 
-
+char* fs_entry_RG_block_url( struct fs_core* core, uint64_t rg_id, uint64_t volume_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version ) {
+   char* base_url = ms_client_get_RG_content_url( core->ms, rg_id );
+   if( base_url == NULL )
+      return NULL;
+   
+   char* ret = fs_entry_replica_block_url( core, base_url, volume_id, file_id, version, block_id, block_version );
+   free( base_url );
+   return ret;
+}
 
 char* fs_entry_file_url( struct fs_core* core, uint64_t volume_id, char const* base_url, char const* fs_path, int64_t file_version, bool local, bool staging ) {
    
@@ -212,10 +222,32 @@ char* fs_entry_remote_manifest_url( struct fs_core* core, uint64_t UG_id, char c
    return ret;
 }
 
-char* fs_entry_replica_manifest_url( struct fs_core* core, char const* RG_url, uint64_t volume_id, uint64_t file_id, int64_t version, struct timespec* ts ) {
-   char* url = CALLOC_LIST( char, strlen(RG_url) + 1 + 21 + 1 + 21 + 1 + 21 + 21 + 1 + strlen("manifest") + 21 + 1 + 21 );
-   sprintf( url, "%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", RG_url, volume_id, file_id, version, ts->tv_sec, ts->tv_nsec );
+char* fs_entry_replica_manifest_url( struct fs_core* core, char const* base_url, uint64_t volume_id, uint64_t file_id, int64_t version, struct timespec* ts ) {
+   char* url = CALLOC_LIST( char, strlen(base_url) + 1 + 21 + 1 + 21 + 1 + 21 + 21 + 1 + strlen("manifest") + 21 + 1 + 21 );
+   sprintf( url, "%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, volume_id, file_id, version, ts->tv_sec, ts->tv_nsec );
    return url;
+}
+
+char* fs_entry_RG_manifest_url( struct fs_core* core, uint64_t rg_id, uint64_t volume_id, uint64_t file_id, int64_t file_version, struct timespec* ts ) {
+   char* base_url = ms_client_get_RG_content_url( core->ms, rg_id );
+   if( base_url == NULL )
+      return NULL;
+   
+   char* ret = fs_entry_replica_manifest_url( core, base_url, volume_id, file_id, file_version, ts );
+   free( base_url );
+   return ret;
+}
+
+char* fs_entry_AG_manifest_url( struct fs_core* core, uint64_t ag_id, char const* fs_path, int64_t file_version, struct timespec* ts ) {
+   char* base_url = ms_client_get_AG_content_url( core->ms, ag_id );
+   if( base_url == NULL )
+      return NULL;
+   
+   char* ret = CALLOC_LIST( char, strlen(SYNDICATE_DATA_PREFIX) + 1 + strlen(base_url) + 1 + strlen(fs_path) + 1 + 82 );
+   sprintf( ret, "%s%s%s.%" PRId64 "/manifest.%ld.%ld", base_url, SYNDICATE_DATA_PREFIX, fs_path, file_version, ts->tv_sec, ts->tv_nsec );
+   
+   free( base_url );
+   return ret;
 }
 
 char* fs_entry_manifest_url_path( struct fs_core* core, char const* fs_path, int64_t version, struct timespec* ts ) {

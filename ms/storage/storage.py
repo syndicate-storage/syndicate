@@ -35,7 +35,9 @@ def create_volume( username, **kwargs ):
 
 def read_volume( volume_id ):
    return Volume.Read( volume_id )
-      
+
+def read_volume_by_name( volume_name ):
+   return Volume.Read_ByName( volume_name )
 
 def get_volume_roots( volumes ):
    # read all root directories
@@ -168,31 +170,35 @@ def delete_user( email, get_volumes=True, **fields ):
    return SyndicateUser.Delete( email, get_volumes=get_volumes, **fields )
 
    
-def list_users( attrs=None, sort=False, limit=None, query_only=False ):
-   return SyndicateUser.ListAll( attrs, limit=limit, sort=sort, query_only=False )
+def list_users( attrs=None, **q_opts ):
+   return SyndicateUser.ListAll( attrs, **q_opts )
 
-def list_rw_volume_users( volume_id, sort=False, offset=None, limit=None, projection=None, query_only=False ):
+def list_rw_volume_users( volume_id, sort=False, **q_opts ):
    order = None
    if sort:
       order = ["SyndicateUser.email"]
       
-   return SyndicateUser.ListAll( {"SyndicateUser.volumes_rw ==": volume_id}, order=order, offset=offset, limit=limit, projection=projection, query_only=query_only )
+   q_opts["order"] = order
+   
+   return SyndicateUser.ListAll( {"SyndicateUser.volumes_rw ==": volume_id}, **q_opts )
 
 
-def list_ro_volume_users( volume_id, sort=False, offset=None, limit=None, projection=None, query_only=False ):
+def list_ro_volume_users( volume_id, sort=False, **q_opts ):
    order = None
    if sort:
       order = ["SyndicateUser.email"]
       
-   return SyndicateUser.ListAll( {"SyndicateUser.volumes_r ==": volume_id}, order=order, offset=offset, limit=limit, projection=projection, query_only=query_only )
+   q_opts["order"] = order
+   return SyndicateUser.ListAll( {"SyndicateUser.volumes_r ==": volume_id}, **q_opts )
 
 
-def list_volume_users( volume_id, sort=False, offset=False, limit=None, projection=None, query_only=False ):
+def list_volume_users( volume_id, sort=False, **q_opts ):
    order = None 
    if sort:
       order = ["SyndicateUser.email"]
       
-   return SyndicateUser.ListAll( {"SyndicateUser.volumes_r ==": volume_id, "SyndicateUser.volumes_rw ==": volume_id}, order=order, offset=offset, limit=limit, projection=projection, query_only=query_only )
+   q_opts["order"] = order
+   return SyndicateUser.ListAll( {"SyndicateUser.volumes_r ==": volume_id, "SyndicateUser.volumes_rw ==": volume_id}, **q_opts )
 
 
 def get_user( attr ):
@@ -236,6 +242,7 @@ def read_msentry( volume, file_id ):
 
 
 
+
    
 def create_user_gateway( user, volume=None, **kwargs ):
    return UserGateway.Create( user, volume, **kwargs )
@@ -246,11 +253,14 @@ def read_user_gateway( g_id ):
 def update_user_gateway( g_id, **fields):
    return UserGateway.Update( g_id, **fields )
 
-def list_user_gateways(attrs=None, limit=None):
-   return UserGateway.ListAll(attrs, limit=limit)
+def list_user_gateways(attrs=None, **q_opts):
+   return UserGateway.ListAll(attrs, **q_opts)
 
-def list_user_gateways_by_volume( volume_id ):
-   return UserGateway.ListAll_ByVolume( volume_id )
+def list_user_gateways_by_volume( volume_id, **q_opts ):
+   return UserGateway.ListAll( {"UserGateway.volume_id ==": volume_id}, **q_opts )
+
+def list_user_gateways_by_host( hostname, **q_opts ):
+   return UserGateway.ListAll( {"UserGateway.host ==": hostname}, **q_opts )
 
 def get_user_gateway_by_name( name ):
    ugs = list_user_gateways( {"ms_username ==" : name}, limit=2 )
@@ -281,11 +291,14 @@ def read_acquisition_gateway( g_id ):
 def update_acquisition_gateway( g_id, **fields ):
    return AcquisitionGateway.Update( g_id, **fields )
 
-def list_acquisition_gateways_by_volume( volume_id ):
-   return AcquisitionGateway.ListAll_ByVolume( volume_id )
-
 def list_acquisition_gateways( attrs=None, limit=None ):
    return AcquisitionGateway.ListAll( attrs, limit=limit )
+
+def list_acquisition_gateways_by_volume( volume_id, **q_opts ):
+   return AcquisitionGateway.ListAll( {"AcquisitionGateway.volume_id ==": volume_id}, **q_opts )
+
+def list_acquisition_gateways_by_host( hostname, **q_opts ):
+   return AcquisitionGateway.ListAll( {"AcquisitionGateway.host ==": hostname}, **q_opts )
 
 def get_acquisition_gateway_by_name( name ):
    ags = list_acquisition_gateways( {"ms_username ==" : name}, limit=2 )
@@ -316,11 +329,14 @@ def read_replica_gateway( g_id ):
 def update_replica_gateway( g_id, **fields ):
    return ReplicaGateway.Update( g_id, **fields )
 
-def list_replica_gateways_by_volume( volume_id ):
-   return ReplicaGateway.ListAll_ByVolume( volume_id )
-
 def list_replica_gateways( attrs=None, limit=None ):
    return ReplicaGateway.ListAll( attrs, limit=limit )
+
+def list_replica_gateways_by_volume( volume_id ):
+   return ReplicaGateway.ListAll( {"ReplicaGateway.volume_id ==": volume_id}, **q_opts )
+
+def list_replica_gateways_by_host( hostname, **q_opts ):
+   return ReplicaGateway.ListAll( {"ReplicaGateway.host ==": hostname}, **q_opts )
 
 def get_replica_gateway_by_name( name ):
    rgs = list_replica_gateways( {"ms_username ==" : name}, limit=2 )

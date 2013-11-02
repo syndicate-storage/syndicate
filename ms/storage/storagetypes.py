@@ -414,7 +414,16 @@ class Object( Model ):
       raise NotImplementedError
 
    @classmethod
-   def ListAll( cls, filter_attrs, order=None, limit=None, offset=None, pagesize=None, start_cursor=None, async=False, projection=None, query_only=False ):
+   def ListAll( cls, filter_attrs, **q_opts ):
+      order = q_opts.get("order", None)
+      limit = q_opts.get("limit", None)
+      offset = q_opts.get('offset', None)
+      pagesize = q_opts.get("pagesize", None)
+      start_cursor = q_opts.get("start_cursor", None)
+      async = q_opts.get("async", False)
+      projection = q_opts.get("projection", None)
+      query_only = q_opts.get("query_only", False )
+      
       qry = cls.query()
       ret = cls.ListAll_runQuery( qry, filter_attrs, order=order, limit=limit, offset=offset, pagesize=pagesize, async=async, start_cursor=start_cursor, projection=projection, query_only=query_only )
       return ret

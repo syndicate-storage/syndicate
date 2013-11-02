@@ -41,6 +41,7 @@ message ms_update {
       CREATE = 1;
       UPDATE = 2;
       DELETE = 3;
+      CHOWN = 4;
    }
 
    required int32 type = 1;

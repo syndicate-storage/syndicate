@@ -7,7 +7,9 @@
 #ifndef _LIBSYNDICATE_H_
 #define _LIBSYNDICATE_H_
 
+#ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
+#endif
 
 #include "util.h"
 
@@ -57,7 +59,6 @@ using namespace std;
 #include "microhttpd.h"
 #include "ms.pb.h"
 #include "serialization.pb.h"
-#include "ms-client.h"
 
 struct md_syndicate_conf; 
 
@@ -108,6 +109,7 @@ struct md_update {
 #define MD_OP_VER    'V'      // write verification request
 #define MD_OP_USR    'S'      // special (context-specific) state
 #define MD_OP_NEWBLK 'B'      // new block written
+#define MD_OP_CHOWN  'C'
 
 // download buffer
 struct md_download_buf {
@@ -688,13 +690,63 @@ int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, cha
 }
 
 
+// protobuf serializer
+// have to put this here, since C++ forbids separating the declaration and definition of template functions.
+template <class T> int md_serialize( T* protobuf, char** bits, size_t* bits_len ) {
+   string msgbits;
+   try {
+      protobuf->SerializeToString( &msgbits );
+   }
+   catch( exception e ) {
+      return -EINVAL;
+   }
+   
+   char* ret = CALLOC_LIST( char, msgbits.size() );
+   if( ret == NULL ) {
+      return -ENOMEM;
+   }
+   
+   memcpy( ret, msgbits.data(), msgbits.size() );
+   
+   *bits = ret;
+   *bits_len = msgbits.size();
+   
+   return 0;
+}
+
+
+// protobuf parser
+// have to put this here, since C++ forbids separating the declaration and definition of template functions.
+template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len ) {
+   bool valid = false;
+   try {
+      valid = protobuf->ParseFromString( string(bits, bits_len) );
+   }
+   catch( exception e ) {
+      return -EINVAL;
+   }
+   
+   if( !valid )
+      return -EINVAL;
+   
+   return 0;
+}
+
 
 // signature verifier
+// have to put this here, since C++ forbids separating the declaration and definition of template functions.
 // NOTE:  class T should be a protobuf, and should have a string signature field
 // TODO: verify the signature of the hash of the message, not the whole message?
 template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
    // get the signature
    size_t sigb64_len = protobuf->signature().size();
+   
+   if( sigb64_len == 0 ) {
+      // malformed message
+      errorf("%s\n", "invalid signature length");
+      return -EINVAL;
+   }
+   
    char* sigb64 = CALLOC_LIST( char, sigb64_len + 1 );
    memcpy( sigb64, protobuf->signature().data(), sigb64_len );
    
@@ -707,6 +759,8 @@ template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
    catch( exception e ) {
       return -EINVAL;
    }
+   
+   dbprintf("VERIFY: igb64_len = %zu, strlen(sigb64) = %zu, sigb64 = %s\n", sigb64_len, strlen(sigb64), sigb64 );
 
    // verify the signature
    int rc = md_verify_signature( pkey, bits.data(), bits.size(), sigb64, sigb64_len );
@@ -721,10 +775,11 @@ template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
 
 
 // signature generator
+// have to put this here, since C++ forbids separating the declaration and definition of template functions.
 // NOTE: class T should be a protobuf, and should have a string signature field 
 // TODO: sign the hash of the message, not the whole message?
 template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
-   protobuf->set_signature( string("") );
+   protobuf->set_signature( "" );
 
    string bits;
    bool valid;
@@ -741,7 +796,7 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
       errorf("%s", "failed to serialize update set\n");
       return -EINVAL;
    }
-
+   
    // sign this message
    char* sigb64 = NULL;
    size_t sigb64_len = 0;
@@ -753,6 +808,9 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
    }
 
    protobuf->set_signature( string(sigb64, sigb64_len) );
+   
+   dbprintf("SIGN: sigb64_len = %zu, strlen(sigb64) = %zu, sigb64 = %s\n", sigb64_len, strlen(sigb64), sigb64 );
+   
    free( sigb64 );
    return 0;
 }
@@ -783,7 +841,9 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
 
 // limits
 #define SYNDICATE_MAX_WRITE_MESSEGE_LEN  4096
+#define SYNDICATE_MAX_MANIFEST_LEN              1000000         // 1MB
 #define URL_MAX         3000           // maximum length of a URL
 
+#include "ms-client.h"
 
 #endif

@@ -1552,7 +1552,7 @@ ssize_t md_download_file5( CURL* curl_h, char** buf ) {
    return md_download_file6( curl_h, buf, -1 );
 }
 
-// download data via local proxy and CDN
+// download data from a remote gateway via local proxy and CDN
 // return 0 on success
 // return negative on irrecoverable error
 int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len ) {
@@ -1579,8 +1579,6 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
    
    rc = curl_easy_perform( curl );
    
-   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &status_code );
-
    if( rc != 0 ) {
       long err = 0;
       
@@ -1589,59 +1587,34 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
       err = -abs(err);
       
       errorf("curl_easy_perform(%p, %s, proxy=%s) rc = %d, err = %ld\n", curl, url, proxy, rc, err );
+      
+      rc = -EREMOTEIO;
    }
    else {
-      tmpbuf = response_buffer_to_string( brb.rb );
-      len = response_buffer_size( brb.rb );
       
-      if( status_code != 200 ) {
-         if( status_code == 202 ) {
-            // error code from remote host
-            char* tmp = NULL;
-            long errcode = strtol( tmpbuf, &tmp, 10 );
-            if( tmp == tmpbuf ) {
-               // failed to parse
-               char errbuf[101];
-               strncpy( errbuf, tmpbuf, 100 );
-               
-               errorf("%p: Invalid error response from %s (proxy=%s) (truncated): '%s'...\n", curl, url, proxy, errbuf );
+      curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &status_code );
 
-               rc = -EREMOTEIO;
-            }
-            else {
-               errorf("%p: Remote gateway error from %s (proxy=%s): %d\n", curl, url, proxy, (int)errcode );
-               rc = -abs((int)errcode);
-            }
-         }
-         else {
-            errorf("%p: HTTP status code %d from %s (proxy=%s)\n", curl, (int)status_code, url, proxy );
-            
-            if( status_code == 0 ) {
-               // couldn't even get a response
-               rc = -ENOTCONN;
-            }
-            else {
-               rc = -abs(status_code);
-            }
-         }
+      if( status_code == 200 ) {
+         // everything was okay
+         
+         tmpbuf = response_buffer_to_string( brb.rb );
+         len = response_buffer_size( brb.rb );
+         
+         *bits = tmpbuf;
+         *ret_len = len;
+      }
+      else {
+         // HTTP protocol error
+         errorf("curl_easy_perform(%p, %s, proxy=%s) HTTP status = %ld\n", curl, url, proxy, status_code );
+         
+         *bits = NULL;
+         *ret_len = -status_code;
+         rc = -EREMOTEIO;
       }
    }
    
    response_buffer_free( brb.rb );
    delete brb.rb;
-
-   if( rc == 0 ) {
-      *bits = tmpbuf;
-      *ret_len = len;
-   }
-   else {
-      *bits = NULL;
-      *ret_len = -1;
-      
-      if( tmpbuf ) {
-         free( tmpbuf );
-      }
-   }
 
    return rc;
 }
@@ -1665,17 +1638,13 @@ int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* 
       proxy_urls[0] = cdn_url;
       proxy_urls[1] = proxy_url;
 
-      // try proxy only
-      proxy_urls[2] = url;
-      proxy_urls[3] = proxy_url;
-
       // try CDN only
-      proxy_urls[4] = cdn_url;
-      proxy_urls[5] = NULL;
+      proxy_urls[2] = cdn_url;
+      proxy_urls[3] = NULL;
 
       // try direct
-      proxy_urls[6] = url;
-      proxy_urls[7] = NULL;
+      proxy_urls[4] = url;
+      proxy_urls[5] = NULL;
    }
    else {
       // try CDN only
@@ -1696,12 +1665,13 @@ int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* 
 
       rc = md_download( conf, curl, target_proxy, target_url, bits, ret_len, max_len );
       if( rc == 0 ) {
-         // success!
+         // HTTP indicates success
          break;
       }
-      if( rc < 0 ) {
+      else {
          // try again
-         errorf("md_download_cached(%p, %s, CDN_url=%s, proxy=%s) rc = %d\n", curl, url, target_url, target_proxy, rc );
+         errorf("md_download_cached(%p, %s, CDN_url=%s, proxy=%s) rc = %d, status code = %zd\n", curl, url, target_url, target_proxy, rc, *ret_len );
+         *ret_len = 0;
       }
    }
 
@@ -1711,37 +1681,33 @@ int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* 
 }
 
 
-// download a manifest
+// download a manifest and parse it.
+// Do not attempt to check it for errors, or verify its authenticity
 int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
 
    char* manifest_data = NULL;
    ssize_t manifest_data_len = 0;
    int rc = 0;
 
-   rc = md_download_cached( conf, curl, manifest_url, &manifest_data, &manifest_data_len, 100000 );     // maximum manifest size is ~100KB
+   rc = md_download_cached( conf, curl, manifest_url, &manifest_data, &manifest_data_len, SYNDICATE_MAX_MANIFEST_LEN );
    
    if( rc != 0 ) {
       errorf( "md_download_cached(%s) rc = %d\n", manifest_url, rc );
       return rc;
    }
-
-   else {
-      // got data!  parse it
-      bool valid = false;
-      try {
-         valid = mmsg->ParseFromString( string(manifest_data, manifest_data_len) );
-      }
-      catch( exception e ) {
-         errorf("failed to parse manifest %s, caught exception\n", manifest_url);
-         rc = -EIO;
-      }
-      
-      if( !valid ) {
-         errorf( "invalid manifest (%zd bytes)\n", manifest_data_len );
-         rc = -EIO;
-      }
+   
+   if( manifest_data_len < 0 ) {
+      // bad HTTP status
+      errorf( "md_download_cached(%s) HTTP status %d\n", manifest_url, abs(manifest_data_len) );
+      return -EREMOTEIO;
    }
 
+   rc = md_parse< Serialization::ManifestMsg >( mmsg, manifest_data, manifest_data_len );
+   if( rc != 0 ) {
+      errorf("md_parse rc = %d\n", rc );
+      return -ENODATA;
+   }
+   
    if( manifest_data )
       free( manifest_data );
 
@@ -1755,27 +1721,45 @@ ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char cons
    ssize_t nr = 0;
    char* block_buf = NULL;
    
-   dbprintf("fetch '%s'\n", block_url );
+   dbprintf("fetch at most %zu bytes from '%s'\n", block_len, block_url );
    
    int ret = md_download_cached( conf, curl, block_url, &block_buf, &nr, block_len );
-   if( ret == 0 ) {
-      // success
-      *block_bits = block_buf;
+   
+   if( ret != 0 ) {
+      errorf("md_download_cached(%s) ret = %d\n", block_url, ret );
+      return ret;
+   }
+   
+   if( nr < 0 ) {
+      // bad HTTP status
+      errorf("md_download_cached(%s) HTTP status %d\n", block_url, abs(nr) );
+      return -EREMOTEIO;
+   }
+   
+   if( nr != (signed)block_len ) {
+      // got back an error code.  Attempt to parse it
+      char errorbuf[50];
+      memcpy( errorbuf, block_buf, MIN( 49, nr ) );
+      
+      char* tmp = NULL;
+      long error = strtol( block_buf, &tmp, 10 );
+      if( tmp == block_buf ) {
+         // failed to parse
+         errorf("%s", "Incomprehensible error code\n");
+         nr = -EREMOTEIO;
+      }
+      else {
+         errorf("block error %ld\n", error );
+         nr = -abs(error);
+      }
+      
+      free( block_buf );
       return nr;
    }
    
-   if( ret == 204 ) {
-      // signal from AG that it's not ready yet
-      errorf("md_download_cached(%s) rc = %d\n", block_url, ret );
-      *block_bits = NULL;
-      return -EAGAIN;
-   }
-
-   if( ret > 0 ) {
-      // bad HTTP code
-      errorf("md_download_cached(%s) HTTP status code %d\n", block_url, ret );
-      *block_bits = NULL;
-   }
+   // got back data!
+   *block_bits = block_buf;
+   
    return nr;
 }
 
@@ -3002,15 +2986,11 @@ void md_init_curl_handle( CURL* curl_h, char const* url, time_t query_timeout ) 
       curl_easy_setopt( curl_h, CURLOPT_USE_SSL, CURLUSESSL_ALL );
       curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, SYNDICATE_CONF.verify_peer ? 1L : 0L );
       curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
-      
-      dbprintf("use SSL for %s (%p)\n", url, curl_h );
    }
    else {
       curl_easy_setopt( curl_h, CURLOPT_USE_SSL, CURLUSESSL_NONE );
       curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, 0L );
       curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 0L );
-      
-      dbprintf("don't use SSL for %s (%p)\n", url, curl_h );
    }
    
    //curl_easy_setopt( curl_h, CURLOPT_VERBOSE, 1L );

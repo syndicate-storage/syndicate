@@ -141,6 +141,10 @@ static bool fs_entry_is_garbage_collectable_block( struct fs_core* core, struct 
 
 // write data to a file, either from a buffer or a file descriptor
 ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, char const* buf, int source_fd, size_t count, off_t offset ) {
+   // sanity check
+   if( count == 0 )
+      return 0;
+   
    fs_file_handle_rlock( fh );
    if( fh->fent == NULL || fh->open_count <= 0 ) {
       // invalid
@@ -163,7 +167,11 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    fs_entry_wlock( fh->fent );
    
    bool local = FS_ENTRY_LOCAL( core, fh->fent );
+   
+   // snapshot modifiable metadata fields 
    off_t old_size = fh->fent->size;
+   int64_t old_mtime_sec = fh->fent->mtime_sec;
+   int32_t old_mtime_nsec = fh->fent->mtime_nsec;
 
    rc = fs_entry_revalidate_manifest( core, fh->path, fh->fent );
 
@@ -332,6 +340,21 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    END_TIMING_DATA( write_ts, ts2, "write data" );
 
    fs_entry_wlock( fh->fent );
+   
+   // update file metadata
+   if( ret > 0 ) {
+      
+      // update size
+      // NOTE: size may have changed due to expansion, but it shouldn't affect this computation
+      fh->fent->size = MAX( fh->fent->size, (unsigned)(offset + count) );
+      
+      // update mtime
+      struct timespec new_mtime;
+      clock_gettime( CLOCK_REALTIME, &new_mtime );
+      
+      fh->fent->mtime_sec = new_mtime.tv_sec;
+      fh->fent->mtime_nsec = new_mtime.tv_nsec;
+   }
 
    BEGIN_TIMING_DATA( replicate_ts_total );
    
@@ -406,7 +429,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
 
    END_TIMING_DATA( garbage_collect_ts, ts2, "garbage collect data" );
    
-   if( ret > 0 && count > 0 ) {
+   if( ret > 0 ) {
 
       // SUCCESS!
 
@@ -414,7 +437,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       uint64_t end_id = modified_blocks.rbegin()->first + 1;      // exclusive
 
       // NOTE: size may have changed due to expansion, but it shouldn't affect this computation
-      fh->fent->size = MAX( fh->fent->size, (unsigned)(offset + count) );
+      //fh->fent->size = MAX( fh->fent->size, (unsigned)(offset + count) );
       
       if( !local ) {
          BEGIN_TIMING_DATA( remote_write_ts );
@@ -464,15 +487,6 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       }
    }
    
-   if( ret > 0 ) {
-      // update mtime
-      struct timespec new_mtime;
-      clock_gettime( CLOCK_REALTIME, &new_mtime );
-      
-      fh->fent->mtime_sec = new_mtime.tv_sec;
-      fh->fent->mtime_nsec = new_mtime.tv_nsec;
-   }
-
    if( ret > 0 && local ) {
 
       BEGIN_TIMING_DATA( update_ts );
@@ -501,6 +515,13 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       }
 
       END_TIMING_DATA( update_ts, ts2, "MS update" );
+   }
+   
+   if( ret < 0 ) {
+      // error--revert metadata fields
+      fh->fent->size = old_size;
+      fh->fent->mtime_sec = old_mtime_sec;
+      fh->fent->mtime_nsec = old_mtime_nsec;
    }
    
    fs_entry_unlock( fh->fent );
@@ -571,7 +592,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
 
       // back up old version and gateway, in case we have to restore it
       int64_t old_version = fent->manifest->get_block_version( block_id );
-      uint64_t old_gateway_id = fent->manifest->get_block_gateway( block_id );
+      uint64_t old_gateway_id = fent->manifest->get_block_host( core, block_id );
       bool old_staging_status = fent->manifest->is_block_staging( block_id );
       
       struct fs_entry_block_info binfo;

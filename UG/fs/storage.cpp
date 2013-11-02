@@ -7,6 +7,8 @@
 #include "storage.h"
 #include "manifest.h"
 #include "url.h"
+#include "consistency.h"
+#include "network.h"
 
 // given a string and a version, concatenate them, preserving delimiters
 char* fs_entry_add_version( char const* fs_path, int64_t version ) {
@@ -585,6 +587,67 @@ int fs_entry_release_staging( struct fs_core* core, Serialization::WriteMsg* acc
    return rc;
 }
 
+
+// become the coordinator for a fent
+// fent must be write-locked!
+int fs_entry_coordintate( struct fs_core* core, struct fs_entry* fent, int num_tries ) {
+   
+   // sanity check...
+   if( FS_ENTRY_LOCAL( core, fent ) )
+      return 0;
+   
+   int rc = 0;
+   
+   // get a manifest...
+   Serialization::ManifestMsg mmsg;
+   uint64_t rg_id = 0;
+   
+   rc = fs_entry_download_manifest_replica( core, fent->coordinator, fent->volume, fent->file_id, fent->version, fent->mtime_sec, fent->mtime_nsec, &mmsg, &rg_id );
+   if( rc != 0 ) {
+      // failed to get replicated manifest
+      errorf("fs_entry_download_manifest_replica( /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d (%s) ) rc = %d\n", fent->volume, fent->file_id, fent->version, fent->mtime_sec, fent->mtime_nsec, fent->name, rc );
+      rc = -ENODATA;
+   }
+   
+   struct md_entry ent;
+   fs_entry_to_md_entry( core, &ent, fent, 0, NULL );
+   
+   for( int i = 0; i < num_tries || num_tries < 0; i++ ) {
+      
+      rc = 0;
+      
+      // try to become the coordinator
+      uint64_t current_owner = 0;
+      rc = ms_client_coordinate( core->ms, &current_owner, &ent );
+      
+      if( rc != 0 ) {
+         // failed to contact the MS
+         errorf("ms_client_coordinate( /%" PRIu64 "/%" PRIX64 " (%s) ) rc = %d\n", core->volume, fent->file_id, fent->name, rc );
+         break;
+      }
+      
+      // if the coordintaor is different than us, then retry the operation
+      if( current_owner != core->gateway ) {
+         dbprintf("/%" PRIu64 "/%" PRIX64 " now coordinated by UG %" PRIu64 "\n", core->volume, fent->file_id, current_owner );
+         rc = -EAGAIN;
+         fent->coordinator = current_owner;
+      }
+      
+      // otherwise, we succeeded!
+      else {
+         // load the manifest
+         fs_entry_reload_manifest( core, fent, &mmsg );
+         
+         // direct the manifest to refer future reads to this RG
+         fent->manifest->set_block_hosts( rg_id, 0, fent->manifest->get_num_blocks() );
+         break;
+      }
+   }
+   
+   md_entry_free( &ent );
+   
+   return rc;
+}
 
 // get information about a specific block
 int fs_entry_block_stat( struct fs_core* core, char const* path, uint64_t block_id, struct stat* sb ) {         // system use only

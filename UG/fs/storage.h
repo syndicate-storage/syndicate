@@ -39,4 +39,7 @@ int fs_entry_reversion_local_file( struct fs_core* core, struct fs_entry* fent, 
 // withdraw
 int fs_entry_withdraw_dir( struct fs_core* core, char const* path );
 
+// change/learn coordinator
+int fs_entry_coordintate( struct fs_core* core, struct fs_entry* fent, uint64_t* coordinator, int num_tries );
+
 #endif

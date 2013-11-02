@@ -543,6 +543,11 @@ int gateway_sign_blockinfo( EVP_PKEY* pkey, ms::ms_gateway_request_info* blkinfo
    return md_sign< ms::ms_gateway_request_info >( pkey, blkinfo );
 }
 
+// verify a manifest received from a gateway
+int gateway_verify_manifest( EVP_PKEY* pkey, Serialization::ManifestMsg* mmsg ) {
+   return md_verify< Serialization::ManifestMsg >( pkey, mmsg );
+}
+
 
 // start up server
 static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf, struct ms_client* ms ) {

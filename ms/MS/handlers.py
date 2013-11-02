@@ -10,6 +10,7 @@ import urlparse
 
 import MS
 from MS.methods.resolve import Resolve
+import MS.methods.common
 
 import protobufs.ms_pb2 as ms_pb2
 import protobufs.serialization_pb2 as serialization_pb2
@@ -53,7 +54,7 @@ def get_client_lastmod( headers ):
 
    
 
-def read_basic_auth( headers ):
+def read_gateway_basic_auth( headers ):
    basic_auth = headers.get("Authorization")
    if basic_auth == None:
       logging.info("no authorization header")
@@ -190,7 +191,7 @@ def response_user_error( request_handler, status, message=None ):
 
 def response_load_gateway( request_handler ):
    # get the gateway's credentials
-   gateway_type_str, g_id, password = read_basic_auth( request_handler.request.headers )
+   gateway_type_str, g_id, password = read_gateway_basic_auth( request_handler.request.headers )
 
    if gateway_type_str == None or g_id == None or password == None:
       response_user_error( request_handler, 401 )
@@ -716,7 +717,15 @@ class MSFileWriteHandler(webapp2.RequestHandler):
       create_times = []
       update_times = []
       delete_times = []
+      chown_times = []
 
+      reply = MS.methods.common.make_ms_reply( volume, 0 )
+      reply.listing.status = 0
+      reply.listing.ftype = 0
+      reply.error = 0
+      status = 200
+      sign = False
+      
       # carry out the operation(s)
       for update in updates_set.updates:
 
@@ -724,27 +733,32 @@ class MSFileWriteHandler(webapp2.RequestHandler):
          attrs = MSEntry.unprotobuf_dict( update.entry )
 
          rc = 0
-         file_id = -1
+         ent = None
 
          # create?
          if update.type == ms_pb2.ms_update.CREATE:
             logging.info("create /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
             
             create_start = storagetypes.get_time()
-            file_id = MSEntry.Create( gateway.owner_id, volume, **attrs )
+            
+            rc, ent = MSEntry.Create( gateway.owner_id, volume, **attrs )
+            
             create_time = storagetypes.get_time() - create_start
             create_times.append( create_time )
 
-            logging.info("create /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], file_id ) )
+            sign = True
             
-            rc = file_id
-
+            logging.info("create /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
+            
+               
          # update?
          elif update.type == ms_pb2.ms_update.UPDATE:
             logging.info("update /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
             
             update_start = storagetypes.get_time()
-            rc = MSEntry.Update( gateway.owner_id, volume, **attrs )
+            
+            rc, ent = MSEntry.Update( gateway.owner_id, volume, **attrs )
+            
             update_time = storagetypes.get_time() - update_start
             update_times.append( update_time )
             
@@ -755,21 +769,43 @@ class MSFileWriteHandler(webapp2.RequestHandler):
             logging.info("delete /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
             
             delete_start = storagetypes.get_time()
+            
             rc = MSEntry.Delete( gateway.owner_id, volume, **attrs )
+            ent = None
+            
             delete_time = storagetypes.get_time() - delete_start
             delete_times.append( delete_time )
             
             logging.info("delete /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
 
+         # chown? 
+         elif update.type == ms_pb2.ms_update.CHOWN:
+            logging.info("chown /%s/%s (%s) to %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], gateway.g_id) )
+            
+            chown_start = storagetypes.get_time()
+            
+            rc, ent = MSEntry.Chown( gateway.owner_id, attrs['file_id'], attrs['write_nonce'], attrs['owner_id'], volume, gateway )
+            
+            chown_time = storagetypes.get_time() - chown_start
+            chown_times.append( chown_time )
+            
+            sign = True 
+            
+            logging.info("chown /%s/%s (%s) rc = %d" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
+            
          else:
             # not a valid method
             response_end( self, 202, "%s\n" % -errno.ENOSYS, "text/plain", None )
             return
-
-         if rc < 0:
-            # send back the error code
-            response_end( self, 202, "%s\n" % rc, "text/plain", None )
-            return
+         
+         if rc == 0 and ent != None:
+            # success
+            ent_pb = reply.listing.entries.add()
+            ent.protobuf( ent_pb )
+         else:
+            # error
+            reply.error = rc
+            break
 
 
       if len(create_times) > 0:
@@ -781,7 +817,22 @@ class MSFileWriteHandler(webapp2.RequestHandler):
       if len(delete_times) > 0:
          timing['X-Delete-Times'] = ",".join( [str(t) for t in delete_times] )
 
-      response_end( self, 200, "%s\n" % rc, "text/plain", timing )
+      if len(chown_times) > 0:
+         timing['X-Chown-Times'] = ",".join( [str(t) for t in chown_times] )
+         
+      # sign the response
+      reply.signature = ""
+
+      reply_str = reply.SerializeToString()
+      
+      if sign:
+         sig = volume.sign_message( reply_str )
+
+         reply.signature = sig
+
+         reply_str = reply.SerializeToString()
+         
+      response_end( self, status, reply_str, "application/octet-stream", timing )
          
       return
 
@@ -820,6 +871,11 @@ class MSJSONRPCHandler(webapp2.RequestHandler):
    
    def post( self ):
       # pass on to JSON RPC server
-      server = rpc.jsonrpc.Server( api.API() )
+      server = rpc.jsonrpc.Server( api.API( self.request.headers ) )
+      server.handle( self.request, self.response )
+   
+   def get( self ):
+      # pass on to JSON RPC server
+      server = rpc.jsonrpc.Server( api.API( self.request.headers ) )
       server.handle( self.request, self.response )
    

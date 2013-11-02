@@ -53,6 +53,7 @@ ssize_t fs_entry_read_local_block( struct fs_core* core, struct fs_entry* fent, 
 
 
 // read a block known to be remote
+// fent must be read-locked
 ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len ) {
 
    if( block_id * block_len >= (unsigned)fent->size ) {
@@ -66,14 +67,22 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
    // this is a remotely-hosted block--get its bits
    uint64_t block_version = fent->manifest->get_block_version( block_id );
    char* block_url = NULL;
-   bool is_on_AG = ms_client_is_AG( core->ms, fent->coordinator );
-
-   if( !is_on_AG ) {
+   
+   int gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
+   
+   if( gateway_type < 0 ) {
+      // unknown gateway---maybe try reloading the certs?
+      errorf("Unknown gateway %" PRIu64 "\n", fent->coordinator );
+      ms_client_sched_volume_reload( core->ms );
+      return -EAGAIN;
+   }
+      
+   if( gateway_type == SYNDICATE_UG )
       block_url = fs_entry_remote_block_url( core, fent->coordinator, fs_path, fent->version, block_id, block_version );
-   }
-   else {
+   else if( gateway_type == SYNDICATE_RG )
+      block_url = fs_entry_RG_block_url( core, fent->coordinator, fent->volume, fent->file_id, fent->version, block_id, block_version );
+   else if( gateway_type == SYNDICATE_AG )
       block_url = fs_entry_AG_block_url( core, fent->coordinator, fs_path, fent->version, block_id, block_version );
-   }
    
    if( block_url == NULL ) {
       errorf("Failed to compute block URL for Gateway %" PRIu64 "\n", fent->coordinator);
@@ -82,30 +91,33 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
 
    char* block_buf = NULL;
    ssize_t nr = fs_entry_download_block( core, block_url, &block_buf, block_len );
-   if( nr <= 0 && !IS_STREAM_FILE( *fent ) && !is_on_AG ) {
-      char** RG_urls = ms_client_RG_urls( core->ms, core->conf->verify_peer ? "https://" : "http://" );
-
-      // try a replica
-      if( RG_urls != NULL ) {
-         for( int i = 0; RG_urls[i] != NULL; i++ ) {
-            // TODO: change to GET /SYNDICATE-DATA/$volume_id/$file_id.$file_version/$block_id.$block_version
-            char* replica_block_url = fs_entry_replica_block_url( core, RG_urls[i], fent->volume, fent->file_id, fent->version, block_id, block_version );
-
-            nr = fs_entry_download_block( core, replica_block_url, &block_buf, block_len );
-            free( replica_block_url );
-
-            if( nr > 0 )
-               break;
-         }
-
-         FREE_LIST( RG_urls );
+   
+   if( nr <= 0 ) {
+      errorf("fs_entry_download_block(%s) rc = %zd\n", block_url, nr );
+   }
+   
+   if( nr <= 0 && gateway_type != SYNDICATE_AG ) {
+      // try from an RG
+      uint64_t rg_id = 0;
+      
+      int rc = fs_entry_download_block_replica( core, fent->volume, fent->file_id, fent->version, block_id, block_version, &block_buf, block_len, &rg_id );
+      
+      if( rc != 0 ) {
+         // error
+         errorf("Failed to read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 " from RGs\n", fent->volume, fent->file_id, fent->version, block_id, block_version );
+         nr = -ENODATA;
+      }
+      else {
+         // success!
+         dbprintf("Read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 " from RG %" PRIu64 "\n", fent->volume, fent->file_id, fent->version, block_id, block_version, rg_id );
+         nr = block_len;
       }
    }
    if( nr <= 0 ) {
       nr = -ENODATA;
    }
    else {
-      memcpy( block_bits, block_buf, block_len );
+      memcpy( block_bits, block_buf, nr );
       free( block_buf );
       dbprintf("read %ld bytes remotely\n", (long)nr);
    }

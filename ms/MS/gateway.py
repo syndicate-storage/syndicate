@@ -134,6 +134,29 @@ class Gateway( storagetypes.Object ):
       "ms_password"
    ]
    
+   read_attrs = [
+      "owner_id",
+      "host",
+      "port",
+      "ms_username",
+      "g_id",
+      "volume_id",
+      "caps",
+      "file_quota",
+      "public_key",
+      "config"
+   ]
+   
+   write_attrs = [
+      "owner_id",
+      "host",
+      "port",
+      "file_quota",
+      "public_key",
+      "config",
+      "caps"
+   ]
+   
    # TODO: session expires in 3600 seconds
    # TODO: cert expires in 86400 seconds
    default_values = {
@@ -212,6 +235,42 @@ class Gateway( storagetypes.Object ):
       return pw_hash == self.ms_password_hash
 
 
+   @classmethod 
+   def Authenticate( cls, gateway_name_or_id, password ):
+      """
+      Load a gateway and then authenticate it against the password.
+      Return the Gateway instance on success; False if found but wrong password; None if not found
+      """
+      
+      # id or name?
+      gateway_id = None
+      gateway_name = None
+      
+      try:
+         gateway_id = int( gateway_name_or_id )
+      except:
+         gateway_name = gateway_name_or_id
+         pass
+      
+      g = None 
+      if gateway_id != None:
+         g = cls.Read( gateway_id )
+      
+      else:
+         g = cls.Read_ByName( gateway_name )
+      
+      if g == None:
+         # not found
+         return None
+      
+      if g.authenticate( password ):
+         # success!
+         return g 
+      else:
+         # failure
+         return False
+
+
    def authenticate_session( self, password ):
       """
       Verify that the session password is correct
@@ -285,10 +344,10 @@ class Gateway( storagetypes.Object ):
       return ( password, pw_hash, salt )  
 
 
-   def load_pubkey( self, pubkey_str, base64=True ):
+   def load_pubkey( self, pubkey_str, in_base64=True ):
       """
       Load a PEM-encoded RSA public key.
-      if base64 == True, then try to base64-decode it first (i.e. the PEM-encoded
+      if in_base64 == True, then try to base64-decode it first (i.e. the PEM-encoded
       public key is itself base64-encoded again)
       
       return 0 on success
@@ -296,9 +355,9 @@ class Gateway( storagetypes.Object ):
       return -EEXIST if the key is the same as the one we have in this Gateway
       """
       
-      pubkey_str = None 
+      pubkey_str_unencoded = None 
       
-      if base64:
+      if in_base64:
          pubkey_str_unencoded = base64.b64decode( pubkey_str )
       else:
          pubkey_str_unencoded = pubkey_str
@@ -344,7 +403,7 @@ class Gateway( storagetypes.Object ):
 
 
    @classmethod
-   def setup_credentials( cls, user, attrs ):
+   def setup_credentials( cls, attrs ):
       """
       Set up MS access credentials for this gateway
       """
@@ -413,7 +472,7 @@ class Gateway( storagetypes.Object ):
          raise Exception( "Missing attributes: %s" % (", ".join( missing )))
 
       # populate kwargs with our credentials
-      cls.setup_credentials( user, kwargs )
+      cls.setup_credentials( kwargs )
       
       # sanity check: are our fields valid?
       invalid = cls.validate_fields( kwargs )
@@ -465,24 +524,79 @@ class Gateway( storagetypes.Object ):
 
    
    @classmethod
-   def Read( cls, g_id, set_memcache=True ):
+   def Read( cls, g_id, async=False, use_memcache=True ):
       """
       Given a Gateway ID, read its record.  Optionally cache it.
       """
       key_name = cls.make_key_name( g_id=g_id )
 
-      g = storagetypes.memcache.get( key_name )
+      g = None
+      
+      if use_memcache:
+         g = storagetypes.memcache.get( key_name )
+         
       if g == None:
          #logging.info("UG with ID of {} not found in cache".format(g_id))
          g_key = storagetypes.make_key( cls, cls.make_key_name( g_id=g_id ) )
-         g = g_key.get( use_memcache=False )
+         
+         if async:
+            g_fut = g_key.get_async( use_memcache=False )
+            return g_fut
+         
+         else:
+            g = g_key.get( use_memcache=False )
+            
          if not g:
             logging.error("Gateway not found at all!")
             
-         if set_memcache:
+         if use_memcache:
             storagetypes.memcache.set( key_name, g )
             
       return g
+
+
+   @classmethod
+   def Read_ByName( cls, gateway_name, async=False, use_memcache=True ):
+      """
+      Given a gateway name, look it up and optionally cache it.
+      """
+      
+      g_name_to_id_cache_key = None 
+      
+      if use_memcache:
+         g_name_to_id_cache_key = "Read_ByName: Gateway: %s" % gateway_name
+         g_id = storagetypes.memcache.get( g_name_to_id_cache_key )
+         
+         if g_id != None and isinstance( g_id, int ):
+            return cls.Read( g_id, async=async, use_memcache=use_memcache )
+         
+      
+      # no dice
+      if async:
+         g_fut = cls.ListAll( {"%s.ms_username ==" % cls.__name__: gateway_name}, async=async )
+         return g_fut
+      
+      else:
+         g = cls.ListAll( {"%s.ms_username ==" % cls.__name__: gateway_name}, async=async )
+         
+         if len(g) > 1:
+            raise Exception( "More than one %s named '%s'" % (cls.__name__, gateway_name) )
+         
+         if g: 
+            g = g[0]
+         else:
+            g = None
+         
+         if use_memcache:
+            if g:
+               to_set = {
+                  g_name_to_id_cache_key: g.g_id,
+                  cls.make_key_name( g_id=g_id ): g
+               }
+               
+               storagetypes.memcache.set_multi( to_set )
+            
+         return g
 
    @classmethod
    def FlushCache( cls, g_id ):
@@ -504,6 +618,10 @@ class Gateway( storagetypes.Object ):
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
 
+      invalid = cls.validate_write( fields )
+      if len(invalid) != 0:
+         raise Exception( "Unwritable fields: %s" % (", ".join(invalid)) )
+      
       # gateway-specific capability processing
       if cls.has_caps( fields ):
          fields['caps'] = cls.get_caps( fields )
@@ -600,14 +718,10 @@ class Gateway( storagetypes.Object ):
       
       return True
 
-      
+   
+   """
    @classmethod
    def ListAll_ByVolume( cls, volume_id, async=False, projection=None ):
-      """
-      Given a volume id, find all gateway records bound to it.
-      Optionally return a query future (if async==True), and use the given projection.
-      """
-      
       #results = storagetypes.memcache.get( cache_key_name )
       results = None
       if results == None:
@@ -627,7 +741,7 @@ class Gateway( storagetypes.Object ):
                results.append( gw )
 
       return results
-   
+   """
    
    def is_bound_to_volume( self ):
       '''

@@ -21,6 +21,7 @@ import datetime
 import collections
 
 from volume import Volume
+from gateway import Gateway, GATEWAY_CAP_COORDINATE
 
 from msconfig import *
 
@@ -298,10 +299,16 @@ class MSEntry( storagetypes.Object ):
    
    @classmethod 
    def unserialize_id( self, i ):
+      """
+      Convert a numeric file_id to a string
+      """
       return '{:016X}'.format(i)
    
    @classmethod
    def serialize_id( self, i_str ):
+      """
+      Convert a file_id as a hex string to an int.
+      """
       return int(i_str, 16)
    
    def protobuf( self, pbent, **kwargs ):
@@ -493,6 +500,8 @@ class MSEntry( storagetypes.Object ):
       else:
          ent_attrs['is_readable_in_list'] = False
       
+      ent_attrs['write_nonce'] = random.randint( -2**63, 2**63 - 1 )
+      
    
    @classmethod
    def update_shard( cls, num_shards, ent ):
@@ -547,7 +556,7 @@ class MSEntry( storagetypes.Object ):
 
       rc = MSEntry.check_call_attrs( ent_attrs )
       if rc != 0:
-         return rc
+         return (rc, None)
 
       # get parent name and ID
       parent_id = ent_attrs['parent_id']
@@ -559,7 +568,7 @@ class MSEntry( storagetypes.Object ):
       missing = MSEntry.find_missing_attrs( ent_attrs )
       if len(missing) > 0:
          logging.error("missing: %s" % missing)
-         return -errno.EINVAL
+         return (-errno.EINVAL, None)
 
       # get child vitals
       child_name = ent_attrs["name"]
@@ -570,7 +579,7 @@ class MSEntry( storagetypes.Object ):
       invalid = MSEntry.validate_fields( ent_attrs )
       if len(invalid) > 0:
          logging.error("not allowed: %s" % invalid)
-         return -errno.EINVAL
+         return (-errno.EINVAL, None)
 
       # get a Child ID
       if child_name == '/':
@@ -580,7 +589,7 @@ class MSEntry( storagetypes.Object ):
 
       if child_id == 0 and user_owner_id != 0 and volume.owner_id != user_owner_id:
          # can't create root if we don't own the Volume, or aren't admin
-         return -errno.EACCES
+         return (-errno.EACCES, None)
       
       # get the parent entry outside of the transaction
       parent_ent = None
@@ -616,18 +625,18 @@ class MSEntry( storagetypes.Object ):
       # if parent was deleted, then roll back
       if parent_ent == None or parent_ent.deleted:
          storagetypes.deferred.defer( MSEntry.delete_all, [nameholder.key] )
-         return -errno.ENOENT
+         return (-errno.ENOENT, None)
 
       # if parent isn't writeable, then roll back
       if not is_writable( user_owner_id, volume_id, parent_ent.owner_id, parent_ent.mode ):
          storagetypes.deferred.defer( MSEntry.delete_all, [nameholder.key] )
-         return -errno.EACCES
+         return (-errno.EACCES, None)
 
       # check for namespace collision
       if nameholder.file_id != child_id or nameholder.parent_id != parent_id or nameholder.volume_id != volume_id or nameholder.name != ent_attrs['name']:
          # nameholder already existed
          storagetypes.deferred.defer( MSEntry.delete_all, [nameholder.key] )
-         return -errno.EEXIST
+         return (-errno.EEXIST, None)
       
       # cache parent...
       storagetypes.memcache.add( parent_cache_key_name, parent_ent )
@@ -667,9 +676,8 @@ class MSEntry( storagetypes.Object ):
 
       if ret == 0:
          storagetypes.deferred.defer( Volume.increase_file_count, volume_id )
-         ret = MSEntry.serialize_id( child_id )
 
-      return ret
+      return (0, child_ent)
 
 
 
@@ -678,7 +686,7 @@ class MSEntry( storagetypes.Object ):
 
       rc = MSEntry.check_call_attrs( ent_attrs )
       if rc != 0:
-         return rc
+         return (rc, None)
       
       # Update an MSEntry.
       # A file will be updated by at most one UG, so we don't need a transaction.
@@ -708,11 +716,11 @@ class MSEntry( storagetypes.Object ):
          ent = ent_fut.get_result()
 
       if ent == None:
-         return -errno.ENOENT
+         return (-errno.ENOENT, None)
 
       # does this user have permission to write?
       if not is_writable( user_owner_id, volume.owner_id, ent.owner_id, ent.mode ):
-         return -errno.EACCES
+         return (-errno.EACCES, None)
 
       put_ent = False
       
@@ -730,9 +738,6 @@ class MSEntry( storagetypes.Object ):
             break
          
       
-      # last write...
-      ent_attrs['write_nonce'] = random.randint( -2**63, 2**63 - 1 )
-      
       # make a new shard with the mtime, write_nonce, and size
       ent.populate_shard( volume.num_shards, **ent_attrs )
 
@@ -745,8 +750,50 @@ class MSEntry( storagetypes.Object ):
       storagetypes.memcache.delete( cache_ent_key )
       storagetypes.wait_futures( futs )
 
-      return 0
+      return (0, ent)
 
+
+   @classmethod
+   def Chown( cls, user_owner_id, file_id, write_nonce, current_coordinator_id, volume, gateway ):
+      """
+      Switch coordinators (chown operation in a gateway).
+      """
+      
+      # does this gateway have coordination capability?
+      if gateway.check_caps( GATEWAY_CAP_COORDINATE ) == 0:
+         return (-errno.EACCES, None)
+
+      # get the ent
+      # try from cache first
+      cache_ent_key = MSEntry.cache_key_name( volume_id, file_id )
+
+      ent = storagetypes.memcache.get( cache_ent_key )
+      if ent == None:
+         # not in the cache.  Get from the datastore
+         ent_fut = MSEntry.__read_msentry( volume_id, file_id, volume.num_shards, use_memcache=False )
+         ent = ent_fut.get_result()
+
+      if ent == None:
+         return (-errno.ENOENT, None)
+
+      # does this user have permission to write?
+      if not is_writable( user_owner_id, volume.owner_id, ent.owner_id, ent.mode ):
+         return (-errno.EACCES, None)
+      
+      # does this gateway have the most recent copy of this file?
+      if ent.write_nonce != write_nonce:
+         return (-errno.ESTALE, None)
+      
+      # only allow the change if the requesting gateway knows the current coordinator.
+      if current_coordinator_id != ent.coordinator_id:
+         return ent.coordinator_id
+      
+      # allow the change
+      ent.coordinator_id = gateway.g_id
+      ent.put()
+      
+      return (0, ent)
+      
 
    @classmethod
    def Delete( cls, user_owner_id, volume, **ent_attrs ):

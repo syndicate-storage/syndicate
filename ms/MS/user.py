@@ -118,10 +118,7 @@ class SyndicateUser( storagetypes.Object ):
    read_attrs = [
       "email",
       "owner_id",
-      "openid_url",
-      "volumes_o",
-      "volumes_r",
-      "volumes_rw"
+      "openid_url"
    ]
    
    write_attrs = [
@@ -130,7 +127,7 @@ class SyndicateUser( storagetypes.Object ):
       "volumes_r",
       "volumes_rw"
    ]
-
+   
 
    @classmethod
    def Create( cls, **kwargs ):

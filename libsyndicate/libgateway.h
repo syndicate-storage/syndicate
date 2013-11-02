@@ -78,6 +78,8 @@ void gateway_controller_func( int (*controller_func)(pid_t pid, int ctrl_flag));
 int gateway_key_value( char* arg, char* key, char* value );
 
 int gateway_sign_manifest( EVP_PKEY* pkey, Serialization::ManifestMsg* mmsg );
+int gateway_verify_manifest( EVP_PKEY* pkey, Serialization::ManifestMsg* mmsg );
+
 int gateway_sign_blockinfo( EVP_PKEY* pkey, ms::ms_gateway_request_info* blkinfo );
 
 void gateway_request_data_free( struct gateway_request_data* reqdat );

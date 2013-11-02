@@ -1698,6 +1698,7 @@ def test( ignore1, args ):
          logging.info("ug_host = %s" % ug_host )
       
       if args.has_key('localhost'):
+         nodes.remove("localhost")
          nodes.append( args['localhost'] )
          localhost_name = args['localhost']
          logging.info("localhost = %s" % args['localhost'])

@@ -23,6 +23,7 @@ ext_modules=[
               sources=["syndicate.pyx"],
               libraries=["syndicate"],
               include_dirs=["../", "../../protobufs", "/usr/include/syndicate"],
+              extra_compile_args=["-D__STDC_FORMAT_MACROS"],
               language="c++") 
 ]
 

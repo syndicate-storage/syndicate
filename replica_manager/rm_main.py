@@ -15,8 +15,8 @@ def debug():
    
    rm_common.syndicate_lib_path( "../libsyndicate/python" )
    
-   gateway_name = "RG-t510-1-691"
-   gateway_portnum = 23471
+   gateway_name = "RG-t510-0-690"
+   gateway_portnum = 25540
    rg_username = "jcnelson@cs.princeton.edu"
    rg_password = "nya!"
    ms_url = "http://localhost:8080/"

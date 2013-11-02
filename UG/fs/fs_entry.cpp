@@ -871,6 +871,7 @@ int fs_entry_to_md_entry( struct fs_core* core, struct md_entry* dest, struct fs
    dest->max_read_freshness = fent->max_read_freshness;
    dest->max_write_freshness = fent->max_write_freshness;
    dest->parent_id = parent_id;
+   dest->write_nonce = fent->write_nonce;
 
    if( parent_name )
       dest->parent_name = strdup( parent_name );

@@ -39,7 +39,6 @@ _tls = threading.local()
 def get_current_session():
     """Returns the session associated with the current request."""
     ses = _tls.current_session
-    print "ses == %s" % ses
     return _tls.current_session
 
 

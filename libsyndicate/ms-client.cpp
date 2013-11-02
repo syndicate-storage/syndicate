@@ -15,6 +15,8 @@ int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadat
 static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void *userdata);
 char* ms_client_cert_url( struct ms_client* client, uint64_t volume_id, uint64_t volume_cert_version, int gateway_type, uint64_t gateway_id, uint64_t gateway_cert_version );
 
+int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char const* buf, size_t buf_len, bool verify );
+
 static void ms_client_cert_bundles( struct ms_volume* volume, ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1] ) {
    // NOTE: this is indexed to SYNDICATE_UG, SYNDICATE_AG, SYNDICATE_RG
    memset( cert_bundles, 0, sizeof(cert_bundles[0]) * (MS_NUM_CERT_BUNDLES + 1) );
@@ -1481,10 +1483,9 @@ int ms_client_reload_volume( struct ms_client* client ) {
    return 0;
 }
 
-// verify that a message came from a gateway with the given ID.
-// this will write-lock the client view
+// verify that a message came from a UG with the given ID (needed by libsyndicate python wrapper)
 int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len ) {
-   ms_client_view_wlock( client );
+   ms_client_view_rlock( client );
 
    if( client->volume->volume_id != volume_id ) {
       // not from this volume
@@ -1773,7 +1774,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    // verify that our host and port match the MS's record
    if( strcmp( cert.hostname, client->conf->hostname ) != 0 || cert.portnum != client->conf->portnum ) {
       // wrong host
-      errorf("ERR: This UG is running on %s:%d, but the MS says it should be running on %s:%d.  Please log into the MS and update the UG record.\n", client->conf->hostname, client->conf->portnum, cert.hostname, cert.portnum );
+      errorf("ERR: This gateway is running on %s:%d, but the MS says it should be running on %s:%d.  Please log into the MS and update the gateway record.\n", client->conf->hostname, client->conf->portnum, cert.hostname, cert.portnum );
       ms_client_unlock( client );
 
       ms_client_gateway_cert_free( &cert );
@@ -2503,8 +2504,9 @@ int ms_client_clear_update( struct ms_client* client, uint64_t volume_id, uint64
    return rc;
 }
 
+
 // post data
-static int ms_client_send( struct ms_client* client, uint64_t* file_id, char const* url, char const* data, size_t len ) {
+static int ms_client_send( struct ms_client* client, char const* url, char const* data, size_t len, ms::ms_reply* reply, bool verify ) {
    struct curl_httppost *post = NULL, *last = NULL;
    int rc = 0;
    response_buffer_t* rb = new response_buffer_t();
@@ -2530,52 +2532,34 @@ static int ms_client_send( struct ms_client* client, uint64_t* file_id, char con
       errorf( "curl_easy_perform rc = %d\n", rc );
    }
    else if( http_response == 200 ) {
-      // we're good!
+      // got something!
       rc = 0;
-      if( rb->size() > 0 && file_id ) {
-         // this should be the File ID
+      if( rb->size() > 0 ) {
+         // this should be an ms_reply structure
+         
          char* ret = response_buffer_to_string( rb );
          size_t ret_len = response_buffer_size( rb );
          
-         // force null-termination and length
-         char buf[ret_len + 1];
-         memset( buf, 0, ret_len + 1 );
-         strncpy( buf, ret, ret_len );
-         
-         uint64_t fid = 0;
-         int cnt = sscanf( buf, "%" PRIu64, &fid );
-         
-         if( cnt == 0 || fid == 0 ) {
-            // critical error
-            char* errbuf = CALLOC_LIST( char, ret_len + 1 );
-            strncpy( errbuf, ret, ret_len );
-            errorf("Invalid HTTP 200 response: '%s'\n", errbuf );
-            rc = -EREMOTEIO;
-            free( errbuf );
+         rc = ms_client_parse_reply( client, reply, ret, ret_len, verify );
+         if( rc != 0 ) {
+            // failed to parse--bad message
+            errorf("ms_client_parse_reply rc = %d\n", rc );
+            rc = -EBADMSG;
          }
          else {
-            *file_id = fid;
+            // check for errors
+            rc = reply->error();
+            if( rc != 0 ) {
+               errorf("MS reply error %d\n", rc );
+            }
          }
          
          free( ret );
       }
-   }
-   else if( http_response == 202 ) {
-      // not OK--the MS returned an error code
-      if( rb->size() > 0 ) {
-         char* ret = response_buffer_to_string( rb );
-
-         rc = strtol( ret, NULL, 10 );
-         if( rc == 0 )
-            rc = -EREMOTEIO;
-
-         free( ret );
+      else {
+         // no response...
+         rc = -ENODATA;
       }
-   }
-   else {
-      // some other HTTP code
-      rc = -http_response;
-      
    }
 
    response_buffer_free( rb );
@@ -2668,12 +2652,26 @@ static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t
 
    char* file_url = ms_client_file_url( client, volume_id );
 
+   bool need_verify = (op == ms::ms_update::CREATE || op == ms::ms_update::CHOWN);
+   
+   ms::ms_reply reply;
+   
    // send it off
-   rc = ms_client_send( client, file_id, file_url, update_text, update_text_len );
+   rc = ms_client_send( client, file_url, update_text, update_text_len, &reply, need_verify );
    
    free( update_text );
 
    free( file_url );
+   
+   if( rc == 0 && file_id ) {
+      // success
+      if( reply.listing().entries_size() > 0 ) {
+         *file_id = reply.listing().entries(0).file_id();
+      }
+      else {
+         rc = -ENODATA;
+      }
+   }
       
    return rc;
 }
@@ -2739,6 +2737,10 @@ int ms_client_update( struct ms_client* client, struct md_entry* ent ) {
    return ms_client_post( client, NULL, ent->volume, ms::ms_update::UPDATE, ent );
 }
 
+// change coordinator ownership of a file on the MS, synchronously
+int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, struct md_entry* ent ) {
+   return ms_client_post( client, new_coordinator, ent->volume, ms::ms_update::CHOWN, ent );
+}
 
 // send a batch of updates.
 // client must NOT be locked in any way.
@@ -2788,7 +2790,8 @@ static int ms_client_send_updates( struct ms_client* client, update_set* all_upd
       char* file_url = ms_client_file_url( client, itr->first );
 
       // send it off
-      rc = ms_client_send( client, NULL, file_url, update_text, update_text_len );
+      ms::ms_reply reply;
+      rc = ms_client_send( client, file_url, update_text, update_text_len, &reply, false );
 
       free( update_text );
 
@@ -2930,19 +2933,33 @@ int ms_client_sync_updates( struct ms_client* client, uint64_t freshness_ms ) {
 
 
 // parse an MS reply
-int ms_client_parse_reply( ms::ms_reply* src, char const* buf, size_t buf_len ) {
+int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char const* buf, size_t buf_len, bool verify ) {
 
-   // de-serialize
-   bool valid = src->ParseFromString( string(buf, buf_len) );
-   if( !valid ) {
-      errorf("%s", "Invalid data\n" );
-      return -EINVAL;
+   ms_client_view_rlock( client );
+   
+   int rc = md_parse< ms::ms_reply >( src, buf, buf_len );
+   if( rc != 0 ) {
+      ms_client_view_unlock( client );
+      
+      errorf("md_parse ms_reply failed, rc = %d\n", rc );
+      
+      return rc;
    }
    
-   if( src->error() != 0 ) {
-      errorf("MS error: %d\n", src->error() );
-      return -EREMOTEIO;
+   if( verify ) {
+      // verify integrity and authenticity
+      rc = md_verify< ms::ms_reply >( client->volume->volume_public_key, src );
+      if( rc != 0 ) {
+         
+         ms_client_view_unlock( client );
+         
+         errorf("md_verify ms_reply failed, rc = %d\n", rc );
+         
+         return rc;
+      }
    }
+   
+   ms_client_view_unlock( client );
    
    return 0;
 }
@@ -3177,26 +3194,14 @@ int ms_client_perform_multi_download( struct ms_client* client, struct ms_downlo
                   errorf("curl_easy_getinfo rc = %d\n", rc );
                   rc = -ENODATA;
                }
-               else if( http_status != 200 ) {
+               
+               if( http_status != 200 ) {
                   errorf("MS HTTP response code %ld for %s\n", http_status, downloads[i].url );
                   if( http_status == 404 ) {
                      rc = -ENOENT;
                   }
                   else if( http_status == 403 ) {
                      rc = -EACCES;
-                  }
-                  else if( http_status == 202 ) {
-                     // parse response
-                     char* buf = response_buffer_to_string( downloads[i].rb );
-                     char* tmp = NULL;
-                     long resp = strtol( buf, &tmp, 10 );
-                     if( tmp == buf ) {
-                        errorf("%s", "Inintelligable response from MS\n");
-                        rc = -EREMOTEIO;
-                     }
-                     else {
-                        rc = -abs(resp);
-                     }
                   }
                   else {
                      rc = -EREMOTEIO;
@@ -3265,12 +3270,22 @@ int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_
       char* buf = response_buffer_to_string( path_downloads[di].rb );
       size_t buf_len = response_buffer_size( path_downloads[di].rb );
       
-      // parse
+      // parse and verify
       ms::ms_reply reply;
-      rc = ms_client_parse_reply( &reply, buf, buf_len );
+      rc = ms_client_parse_reply( client, &reply, buf, buf_len, true );
       if( rc != 0 ) {
          errorf("ms_client_parse_reply(%s) rc = %d\n", path_downloads[di].url, rc );
          rc = -EIO;
+         ms_client_free_response( ms_response );
+         free( buf );
+         break;
+      }
+      
+      // check errors
+      int err = reply.error();
+      if( err != 0 ) {
+         errorf("MS reply error %d from %s\n", err, path_downloads[di].url );
+         rc = err;
          ms_client_free_response( ms_response );
          free( buf );
          break;
@@ -3309,11 +3324,25 @@ int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_
 }
 
 
-// attempt to become the acting owner of an MSEntry if we can't reach its owner
-int ms_client_claim( struct ms_client* client, char const* path ) {
-   // TODO
-   return -EACCES;
+// get a list of RG ids
+uint64_t* ms_client_RG_ids( struct ms_client* client ) {
+   ms_client_view_rlock( client );
+   
+   uint64_t* ret = CALLOC_LIST( uint64_t, client->volume->RG_certs->size() + 1 );
+   int i = 0;
+   
+   for( ms_cert_bundle::iterator itr = client->volume->RG_certs->begin(); itr != client->volume->RG_certs->end(); itr++ ) {
+      struct ms_gateway_cert* rg_cert = itr->second;
+      
+      ret[i] = rg_cert->gateway_id;
+      
+      i++;
+   }
+   
+   ms_client_view_unlock( client );
+   return ret;
 }
+
 
 // get a copy of the RG URLs
 char** ms_client_RG_urls( struct ms_client* client, char const* scheme ) {
@@ -3386,6 +3415,24 @@ uint64_t ms_client_get_volume_blocksize( struct ms_client* client ) {
    return ret;
 }
 
+// get the type of gateway
+int ms_client_get_gateway_type( struct ms_client* client, uint64_t g_id ) {
+   ms_client_view_rlock( client );
+   
+   int ret = -ENOENT;
+   
+   if( client->volume->UG_certs->count( g_id ) != 0 )
+      ret = SYNDICATE_UG;
+   
+   else if( client->volume->RG_certs->count( g_id ) != 0 )
+      ret = SYNDICATE_RG;
+   
+   else if( client->volume->AG_certs->count( g_id ) != 0 ) 
+      ret = SYNDICATE_AG;
+   
+   ms_client_view_unlock( client );
+   return ret;
+}
 
 // is this ID an AG ID?
 bool ms_client_is_AG( struct ms_client* client, uint64_t ag_id ) {
@@ -3441,6 +3488,26 @@ char* ms_client_get_AG_content_url( struct ms_client* client, uint64_t ag_id ) {
    return ret;
 }
 
+
+char* ms_client_get_RG_content_url( struct ms_client* client, uint64_t rg_id ) {
+   ms_client_view_rlock( client );
+
+   char* ret = NULL;
+
+   ms_cert_bundle::iterator itr = client->volume->RG_certs->find( rg_id );
+   if( itr != client->volume->RG_certs->end() ) {
+      ret = CALLOC_LIST( char, strlen("http://") + strlen(itr->second->hostname) + 1 + 7 + 1 );
+      sprintf( ret, "http://%s:%d/", itr->second->hostname, itr->second->portnum );
+   }
+
+   ms_client_view_unlock( client );
+
+   if( ret == NULL ) {
+      errorf("No such RG %" PRIu64 "\n", rg_id );
+   }
+
+   return ret;
+}
 
 uint64_t ms_client_get_num_files( struct ms_client* client ) {
    ms_client_view_rlock( client );
@@ -3592,6 +3659,4 @@ int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint
    ms_client_view_unlock( client );
    return rc;
 }
-   
-
 

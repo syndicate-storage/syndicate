@@ -9,37 +9,40 @@
 #include "url.h"
 #include "collator.h"
 
-// download data via local proxy and CDN
-// return 0 on success
-// return negative on irrecoverable error
-// return positive HTTP status code if the problem is with the proxy
-int fs_entry_download( struct fs_core* core, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len ) {
-   return md_download( core->conf, curl, proxy, url, bits, ret_len, max_len );
-}
-
-
-// download data, trying in order:
-// * both CDN and proxy
-// * from proxy
-// * from CDN
-// * from gateway
-int fs_entry_download_cached( struct fs_core* core, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len ) {
-   CURL* curl = curl_easy_init();
-   
-   int rc = md_download_cached( core->conf, curl, url, bits, ret_len, max_len );
-   
-   curl_easy_cleanup( curl );
-   return rc;
-}
-
-
 // download a manifest
-int fs_entry_download_manifest( struct fs_core* core, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
+int fs_entry_download_manifest( struct fs_core* core, uint64_t origin, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
    CURL* curl = curl_easy_init();
    
    int rc = md_download_manifest( core->conf, curl, manifest_url, mmsg );
+   if( rc != 0 ) {
+      
+      errorf("md_download_manifest(%s) rc = %d\n", manifest_url, rc );
+      curl_easy_cleanup( curl );
+      return rc;
+   }
    
    curl_easy_cleanup( curl );
+   
+   int gateway_type = ms_client_get_gateway_type( core->ms, origin );
+   if( gateway_type < 0 ) {
+      errorf("ms_client_get_gateway_type( %" PRIu64 " ) rc = %d\n", origin, gateway_type );
+      return -EINVAL;
+   }
+   
+   // verify it
+   rc = ms_client_verify_gateway_message< Serialization::ManifestMsg >( core->ms, core->volume, gateway_type, origin, mmsg );
+   if( rc != 0 ) {
+      errorf("ms_client_verify_manifest(%s) from Gateway %" PRIu64 " rc = %d\n", manifest_url, origin, rc );
+      return -EBADMSG;
+   }
+   
+   // error code? 
+   if( mmsg->has_errorcode() ) {
+      rc = mmsg->errorcode();
+      errorf("manifest gives error %d\n", rc );
+      return rc;
+   }
+   
    return rc;
 }
 
@@ -49,10 +52,23 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, ch
 
    CURL* curl = curl_easy_init();
    
-   int rc = md_download_block( core->conf, curl, block_url, block_bits, block_len );
+   char* block_buf = NULL;
+   
+   ssize_t download_len = md_download_block( core->conf, curl, block_url, &block_buf, block_len );
+   if( download_len < 0 ) {
+      
+      errorf("md_download_block(%s) rc = %zd\n", block_url,download_len );
+      curl_easy_cleanup( curl );
+      return download_len;
+   }
    
    curl_easy_cleanup( curl );
-   return rc;
+   
+   // TODO: verify it...
+   
+   *block_bits = block_buf;
+   
+   return download_len;
 }
 
 
@@ -182,10 +198,18 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    
    if( rc != 0 ) {
       // could not perform
+      // OS error?
+      
+      long err = 0;
+      curl_easy_getinfo( curl_h, CURLINFO_OS_ERRNO, &err );
+      
+      dbprintf("curl_easy_perform(%s) rc = %d, err = %ld\n", content_url, rc, err );
+      
       response_buffer_free( &buf );
       curl_easy_cleanup( curl_h );
       free( content_url );
-      return rc;
+      
+      return -ENODATA;
    }
    else {
       long http_status = 0;
@@ -220,34 +244,30 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
 
       // got back a message--parse it
       char* msg_buf = response_buffer_to_string( &buf );
+      size_t msg_len = response_buffer_size( &buf );
 
       // extract the messsage
-      string msg_buf_str( msg_buf, response_buffer_size( &buf ) );
-
-      bool valid = false;
-
-      try {
-         valid = recvMsg->ParseFromString( msg_buf_str );
-      }
-      catch( exception e ) {
-         errorf("failed to parse response from %s, caught exception\n", content_url);
-      }
-
+      rc = md_parse< Serialization::WriteMsg >( recvMsg, msg_buf, msg_len );
+      
       free( msg_buf );
       response_buffer_free( &buf );
       curl_easy_cleanup( curl_h );
-
-      if( !valid ) {
-         // not a valid message
+      
+      if( rc != 0 ) {
+         errorf("Failed to parse response from %s\n", content_url );
          rc = -EBADMSG;
-         errorf("recv bad message from %s\n", content_url);
       }
       else {
-         rc = 0;
-         dbprintf( "recv WriteMsg type %d\n", recvMsg->type() );
-         
-         // send the MS-related header to our client
-         ms_client_process_header( core->ms, core->volume, recvMsg->volume_version(), recvMsg->cert_version() );
+         // verify authenticity
+         rc = ms_client_verify_gateway_message< Serialization::WriteMsg >( core->ms, core->volume, SYNDICATE_UG, gateway_id, recvMsg );
+         if( rc != 0 ) {
+            errorf("Failed to verify the authenticity of Gateway %" PRIu64 "'s response, rc = %d\n", gateway_id, rc );
+            rc = -EBADMSG;
+         }
+         else {
+            // send the MS-related header to our client
+            ms_client_process_header( core->ms, core->volume, recvMsg->volume_version(), recvMsg->cert_version() );
+         }
       }
    }
 
@@ -255,4 +275,126 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
 
    return rc;
 }
+
+// get a replicated block from an RG
+// NOTE: this does NOT verify the authenticity of the block!
+int fs_entry_download_block_replica( struct fs_core* core, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char** block_buf, size_t block_len, uint64_t* successful_RG_id ) {
+   
+   uint64_t* rg_ids = ms_client_RG_ids( core->ms );
+   
+   ssize_t nr = 0;
+   
+   int rc = 0;
+   int i = -1;
+   
+   // try a replica
+   if( rg_ids != NULL ) {
+      for( i = 0; rg_ids[i] != 0; i++ ) {
+         
+         rc = 0;
+         
+         char* replica_url = fs_entry_RG_block_url( core, rg_ids[i], volume_id, file_id, file_version, block_id, block_version );
+         
+         nr = fs_entry_download_block( core, replica_url, block_buf, block_len );
+
+         if( nr > 0 ) {
+            rc = 0;
+            free( replica_url );
+            break;
+         }
+         else {
+            errorf("fs_entry_download_block(%s) rc = %zd\n", replica_url, nr );
+            rc = -ENODATA;
+         }
+         
+         free( replica_url );
+      }
+
+      if( rc == 0 && successful_RG_id && i >= 0 ) {
+         *successful_RG_id = rg_ids[i];
+      }
+      
+      free( rg_ids);
+   }
+   
+   return rc;
+}
+
+
+// download a manifest from an RG.
+int fs_entry_download_manifest_replica( struct fs_core* core,
+                                        uint64_t origin,
+                                        uint64_t volume_id,
+                                        uint64_t file_id,
+                                        int64_t file_version,
+                                        int64_t mtime_sec,
+                                        int32_t mtime_nsec,
+                                        Serialization::ManifestMsg* mmsg,
+                                        uint64_t* successful_RG_id ) {
+   
+   uint64_t* rg_ids = ms_client_RG_ids( core->ms );
+   
+   ssize_t nr = 0;
+   
+   int rc = 0;
+   int i = -1;
+   uint64_t RG_id = 0;
+   
+   // try a replica
+   if( rg_ids != NULL ) {
+      for( i = 0; rg_ids[i] != 0; i++ ) {
+         
+         rc = 0;
+         
+         struct timespec ts;
+         ts.tv_sec = mtime_sec;
+         ts.tv_nsec = mtime_nsec;
+         
+         char* replica_url = fs_entry_RG_manifest_url( core, rg_ids[i], volume_id, file_id, file_version, &ts );
+         
+         nr = fs_entry_download_manifest( core, origin, replica_url, mmsg );
+
+         if( nr > 0 ) {
+            rc = 0;
+            free( replica_url );
+            break;
+         }
+         else {
+            errorf("fs_entry_download_manifest(%s) rc = %zd\n", replica_url, nr );
+            rc = -ENODATA;
+         }
+         
+         free( replica_url );
+      }
+
+      if( rc == 0 && i >= 0 ) {
+         RG_id = rg_ids[i];
+         
+         if( successful_RG_id )
+            *successful_RG_id = RG_id;
+      }
+      
+      free( rg_ids);
+   }
+   
+   if( rc == 0 ) {
+         
+      // verify it
+      rc = ms_client_verify_gateway_message< Serialization::ManifestMsg >( core->ms, volume_id, SYNDICATE_UG, origin, mmsg );
+      if( rc != 0 ) {
+         errorf("ms_client_verify_manifest(from RG %" PRIu64 ") from Gateway %" PRIu64 " rc = %d\n", RG_id, origin, rc );
+         return -EBADMSG;
+      }
+      
+      // error code? 
+      if( mmsg->has_errorcode() ) {
+         rc = mmsg->errorcode();
+         errorf("manifest gives error %d\n", rc );
+         return rc;
+      }
+   }
+   
+   return rc;
+}
+
 

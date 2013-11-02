@@ -26,8 +26,9 @@ struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_en
    fh->parent_id = parent_id;
    fh->transfer_timeout_ms = (core->conf->transfer_timeout) * 1000L;
 
-   fh->is_AG = ms_client_is_AG( core->ms, ent->coordinator );
-   if( fh->is_AG ) {
+   int gateway_type = ms_client_get_gateway_type( core->ms, ent->coordinator );
+   if( gateway_type == SYNDICATE_AG ) {
+      fh->is_AG = true;
       fh->AG_blocksize = ms_client_get_AG_blocksize( core->ms, ent->coordinator );
    }
    

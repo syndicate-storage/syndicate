@@ -16,6 +16,7 @@ char* fs_entry_public_block_url( struct fs_core* core, char const* fs_path, int6
 char* fs_entry_public_staging_block_url( struct fs_core* core, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version );
 char* fs_entry_remote_block_url( struct fs_core* core, uint64_t gateway_id, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version );
 char* fs_entry_replica_block_url( struct fs_core* core, char* RG_url, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
+char* fs_entry_RG_block_url( struct fs_core* core, uint64_t rg_id, uint64_t volume_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version );
 char* fs_entry_AG_block_url( struct fs_core* core, uint64_t ag_id, char const* fs_path, int64_t version, uint64_t block_id, int64_t block_version );
 char* fs_entry_block_url_path( struct fs_core* core, char const* fs_path, int64_t version, uint64_t block_id, int64_t block_version );
 
@@ -30,5 +31,7 @@ char* fs_entry_public_manifest_url( struct fs_core* core, char const* fs_path, i
 char* fs_entry_remote_manifest_url( struct fs_core* core, uint64_t UG_id, char const* fs_path, int64_t version, struct timespec* ts );
 char* fs_entry_replica_manifest_url( struct fs_core* core, char const* RG_url, uint64_t volume_id, uint64_t file_id, int64_t version, struct timespec* ts );
 char* fs_entry_manifest_url_path( struct fs_core* core, char const* fs_path, int64_t version, struct timespec* ts );
+char* fs_entry_RG_manifest_url( struct fs_core* core, uint64_t rg_id, uint64_t volume_id, uint64_t file_id, int64_t file_version, struct timespec* ts );
+char* fs_entry_AG_manifest_url( struct fs_core* core, uint64_t ag_id, char const* fs_path, int64_t file_version, struct timespec* ts );
 
 #endif 

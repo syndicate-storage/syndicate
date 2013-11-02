@@ -822,21 +822,23 @@ int replica_begin( struct syndicate_replication* rp, struct replica_context* rct
    // acquire this lock, since we're processing it now...
    sem_wait( &rctx->processing_lock );
    
-   // find all RG urls
-   char** rg_urls = ms_client_RG_urls( rp->ms, rp->ms->conf->verify_peer ? "https://" : "http://" );
+   // all RG ids
+   uint64_t* rg_ids = ms_client_RG_ids( rp->ms );
    
    int rc = 0;
    size_t num_rgs = 0;
    
    pthread_mutex_lock( &rp->pending_lock );
    
-   for( int i = 0; rg_urls[i] != NULL; i++ ) {
+   for( int i = 0; rg_ids[i] != 0; i++ ) {
+      
+      char* rg_base_url = ms_client_get_RG_content_url( rp->ms, rg_ids[i] );
       
       CURL* curl = curl_easy_init();
       rctx->curls->push_back( curl );
       
-      dbprintf("%s: %s %p (%s) to %s\n", rp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx, (rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ? "block" : "manifest"), rg_urls[i] );
-      md_init_curl_handle( curl, rg_urls[i], rp->ms->conf->replica_connect_timeout );
+      dbprintf("%s: %s %p (%s) to %s\n", rp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx, (rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ? "block" : "manifest"), rg_base_url );
+      md_init_curl_handle( curl, rg_base_url, rp->ms->conf->replica_connect_timeout );
       
       // prepare upload
       curl_easy_setopt( curl, CURLOPT_POST, 1L );
@@ -851,6 +853,8 @@ int replica_begin( struct syndicate_replication* rp, struct replica_context* rct
       
       (*rp->pending_uploads)[ curl ] = rctx;
       num_rgs += 1;
+      
+      free( rg_base_url );
    }
    
    if( num_rgs > 0 ) {
@@ -864,10 +868,7 @@ int replica_begin( struct syndicate_replication* rp, struct replica_context* rct
    
    pthread_mutex_unlock( &rp->pending_lock );
    
-   for( int i = 0; rg_urls[i] != NULL; i++ ) {
-      free( rg_urls[i] );
-   }
-   free( rg_urls );
+   free( rg_ids );
    
    return rc;
 }

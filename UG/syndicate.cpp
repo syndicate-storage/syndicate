@@ -161,9 +161,29 @@ struct md_HTTP_response* syndicate_HTTP_GET_handler( struct md_HTTP_connection_d
             dbprintf( "served manifest %s.%" PRId64 "/manifest.%ld.%ld, %zd bytes\n", reqdat.fs_path, reqdat.file_version, reqdat.manifest_timestamp.tv_sec, reqdat.manifest_timestamp.tv_nsec, manifest_txt_len );
          }
          else {
-            char buf[100];
-            snprintf(buf, 100, "fs_entry_serialize_manifest rc = %zd\n", manifest_txt_len );
-            http_io_error_resp( resp, 500, buf );
+            // send error response
+            Serialization::ManifestMsg error_mmsg;
+            fs_entry_manifest_error( &error_mmsg, manifest_txt_len, "" );
+            
+            gateway_sign_manifest( state->ms->my_key, &error_mmsg );
+            
+            char* manifest_bits = NULL;
+            size_t manifest_len = 0;
+            
+            int rc = md_serialize< Serialization::ManifestMsg >( &error_mmsg, &manifest_bits, &manifest_len );
+            
+            if( rc != 0 ) {
+               errorf("md_serialize rc = %d\n", rc );
+               char buf[100];
+               snprintf(buf, 100, "md_serialize rc = %d\n", rc );
+               http_io_error_resp( resp, 500, buf );
+            }
+            else {
+               md_create_HTTP_response_ram_nocopy( resp, "text/plain", 200, manifest_bits, manifest_len );
+               http_make_default_headers( resp, sb.st_mtime, manifest_len, true );
+
+               dbprintf( "served error manifest %s.%" PRId64 "/manifest.%ld.%ld, %zd bytes\n", reqdat.fs_path, reqdat.file_version, reqdat.manifest_timestamp.tv_sec, reqdat.manifest_timestamp.tv_nsec, manifest_len );
+            }
          }
 
          gateway_request_data_free( &reqdat );
@@ -312,48 +332,17 @@ void syndicate_make_promise_msg( Serialization::WriteMsg* writeMsg ) {
 // extract and verify a write message
 int syndicate_parse_write_message( struct syndicate_state* state, Serialization::WriteMsg* msg, char* msg_buf, size_t msg_sz ) {
    // extract the actual message
-   bool valid = false;
-
-   try {
-      valid = msg->ParseFromString( string(msg_buf, msg_sz) );
-   }
-   catch( exception e ) {
-      errorf("%s", "failed to parse message, caught exception\n" );
-      return -EINVAL;
-   }
-
-   if( !valid ) {
-      errorf("%s", "Invalid message\n");
-      return -EINVAL;
-   }
-
-   // verify message
-
-   struct ms_client* client = state->ms;
-   char* sigb64 = strdup( msg->signature().c_str() );
-   size_t sigb64_len = msg->signature().size();
-
-   msg->set_signature( string("") );
-
-   string msg_data;
-   valid = msg->SerializeToString( &msg_data );
-   if( !valid ) {
-      // something's seriously wrong
-      errorf("%s", "failed to serialize message\n");
-      free( sigb64 );
-      return -EINVAL;
-   }
-
-   // which gateway sent this?  Find its public key
-   int rc = ms_client_verify_gateway_message( client, state->core->volume, msg->gateway_id(), msg_data.c_str(), msg_data.size(), sigb64, sigb64_len );
+   int rc = md_parse< Serialization::WriteMsg >( msg, msg_buf, msg_sz );
    if( rc != 0 ) {
-      // not valid
-      errorf("ms_client_verify_gateway_message rc = %d\n", rc );
-      free( sigb64 );
-      return rc;
+      errorf("md_parse rc = %d\n", rc );
+      return -EBADMSG;
    }
-
-   free( sigb64 );
+   
+   rc = ms_client_verify_gateway_message< Serialization::WriteMsg >( state->ms, state->core->volume, SYNDICATE_UG, msg->gateway_id(), msg );
+   if( rc != 0 ) {
+      errorf("Message from Gateway %" PRIu64 " could not be verified! rc = %d\n", msg->gateway_id(), rc );
+      return -EBADMSG;
+   }
 
    return 0;
 }

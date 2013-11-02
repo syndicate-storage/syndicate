@@ -98,7 +98,7 @@ class Volume( storagetypes.Object ):
    @classmethod
    def hash_volume_secret( cls, secret ):
 
-      salt = digits = "".join( [random.choice(string.printable) for i in xrange(VOLUME_SECRET_SALT_LENGTH)] )
+      salt = "".join( [random.choice(string.printable) for i in xrange(VOLUME_SECRET_SALT_LENGTH)] )
       secret_salted_hash = Volume.generate_password_hash( secret, salt )
 
       return (salt, secret_salted_hash)
@@ -188,6 +188,48 @@ class Volume( storagetypes.Object ):
    ]
    
    
+   def authenticate( self, password ):
+      """
+      Authenticate a secret password against our volume_secret_salted_hash
+      """
+      password_salted_hash = Volume.generate_password_hash( password, self.volume_secret_salt )
+      return self.volume_secret_salted_hash == password_salted_hash
+      
+   
+   @classmethod
+   def Authenticate( self, volume_name_or_id, password ):
+      """
+      Load and then authenticate a Volume.
+      Return the Volume instance if successful, False if found but unsuccessful, None if not found
+      """
+      
+      # volume name or ID?
+      volume_id = None
+      volume_name = None
+      
+      try:
+         volume_id = int(volume_name_or_id)
+      except:
+         volume_name = volume_name_or_id
+         pass
+      
+      # get the Volume
+      vol = None
+      if volume_id:
+         vol = Volume.Read( volume_id )
+      else:
+         vol = Volume.Read_ByName( volume_name )
+      
+      if not vol:
+         return None
+      
+      # do the authentication 
+      if vol.authenticate( password ):
+         return vol
+      else:
+         return False
+      
+   
    def need_gateway_auth( self ):
       """
       Do we require an authentic gateway to interact with us?
@@ -265,7 +307,7 @@ class Volume( storagetypes.Object ):
       # query certificate versions of all gateways
       futs = []
       for gwcls in gateway_classes:
-         qry_fut = gwcls.ListAll_ByVolume( self.volume_id, async=True, projection=[gwcls.g_id, gwcls.caps, gwcls.cert_version] )
+         qry_fut = gwcls.ListAll( {"%s.volume_id ==" % gwcls.__name__: self.volume_id}, async=True, projection=["g_id", "caps", "cert_version"] )
          futs.append( qry_fut )
       
       storagetypes.wait_futures( futs )
@@ -467,12 +509,64 @@ class Volume( storagetypes.Object ):
          else:
             return volume_key.get_async( use_memccahe=False )
          
-         if not volume:
-            return None
-         elif use_memcache:
+         if volume != None and use_memcache:
             storagetypes.memcache.set( volume_key_name, volume )
 
       return volume
+
+
+   @classmethod
+   def Read_ByName( cls, volume_name, async=False, use_memcache=True ):
+      """
+      Given a volume name, get the Volume.
+      
+      This is slower than Read(), since the name isn't in the object's key.
+      
+      Arguments:
+      volume_name       -- name of the Volume to get (str)
+      
+      Keyword arguments:
+      async             -- If true, return a Future for the query (bool)
+      use_memcache      -- If true, check memcache for the Volume, and if async is false, cache the results
+      """
+      
+      vol_name_to_id_cached = None
+      
+      if use_memcache:
+         vol_name_to_id_cached = "Read_ByName: volume_name=%s" % volume_name
+         volume_id = storagetypes.memcache.get( vol_name_to_id_cached )
+         
+         if volume_id != None and isinstance( volume_id, int ):
+            vol = Volume.Read( volume_id, async=async, use_memcache=use_memcache )
+            return vol
+         
+      # no dice 
+      vol = Volume.ListAll( {"Volume.name ==": volume_name}, async=async )
+      
+      if async:
+         # this will be a Future 
+         return vol
+
+      elif vol:
+         if len(vol) > 1:
+            # something's wrong...there should only be one
+            raise Exception("Multiple Volumes named '%s'" % (volume_name))
+         
+         vol = vol[0]
+         if not vol:
+            vol = None
+            
+         elif use_memcache:
+            to_set = {
+               vol_name_to_id_cached: vol.volume_id,
+               Volume.make_key_name( volume_id=vol.volume_id ): vol
+            }
+            
+            storagetypes.memcache.set_multi( to_set )
+            
+      return vol
+            
+      
 
    @classmethod
    def ReadAll( cls, volume_ids, async=False, use_memcache=True ):
@@ -541,6 +635,7 @@ class Volume( storagetypes.Object ):
       
       return num_shards
 
+
    @classmethod
    def FlushCache( cls, volume_id ):
       volume_key_name = Volume.make_key_name( volume_id=volume_id )
@@ -553,6 +648,7 @@ class Volume( storagetypes.Object ):
       volume_key_name = Volume.make_key_name( volume_id=volume_id )
       
       storagetypes.memcache.set( volume_key_name, volume )
+      
       
    @classmethod
    def Update( cls, volume_id, **fields ):
@@ -683,12 +779,14 @@ class Volume( storagetypes.Object ):
       
       return True
    
+   
    @classmethod
    def Mount( cls, volume_id, mountpoint_id, new_volume_id ):
       '''
       Attach one Volume to a particular directory in another one.
       '''
       return volume_mount( volume_id, mountpoint_id, new_volume_id )
+   
    
    @classmethod
    def Unmount( cls, volume_id, mountpoint_id ):
@@ -697,19 +795,23 @@ class Volume( storagetypes.Object ):
       '''
       return volume_umount( volume_id, mountpoint_id )
    
+   
    @classmethod
    def shard_counter_name( cls, volume_id, suffix ):
       return "%s-%s" % (volume_id, suffix)
+
 
    @classmethod
    def increase_file_count( cls, volume_id ):
       name = Volume.shard_counter_name( volume_id, "file_count" )
       shardcounter.increment(name)
    
+   
    @classmethod
    def decrease_file_count( cls, volume_id ):
       name = Volume.shard_counter_name( volume_id, "file_count" )
       shardcounter.decrement(name)
+      
       
    @classmethod
    def get_num_files( cls, volume_id ):

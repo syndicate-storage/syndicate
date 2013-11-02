@@ -22,6 +22,9 @@ bool fs_entry_is_manifest_stale( struct fs_entry* fent );
 int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const* fs_path );
 int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent );
 
+// manifest
+int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg* mmsg );
+
 struct fs_entry_listing_cls {
    // extra information to be stored in path entries
    bool stale;

@@ -7,6 +7,12 @@
 #ifndef _MS_CLIENT_H_
 #define _MS_CLIENT_H_
 
+#ifndef __STDC_FORMAT_MACROS
+#define __STDC_FORMAT_MACROS
+#endif
+
+#include <inttypes.h>
+
 #include <sstream>
 #include <queue>
 #include <set>
@@ -250,15 +256,14 @@ int ms_client_create( struct ms_client* client, uint64_t* file_id, struct md_ent
 int ms_client_mkdir( struct ms_client* client, uint64_t* file_id, struct md_entry* ent );
 int ms_client_delete( struct ms_client* client, struct md_entry* ent );
 int ms_client_update( struct ms_client* client, struct md_entry* ent );
+int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, struct md_entry* ent );
 
 int ms_client_sync_update( struct ms_client* client, uint64_t volume_id, uint64_t file_id );
 int ms_client_sync_updates( struct ms_client* client, uint64_t freshness_ms );
 
 int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_t* ms_response );
 
-int ms_client_claim( struct ms_client* client, char const* path );
-
-char** ms_client_RG_urls( struct ms_client* client, char const* scheme );
+uint64_t* ms_client_RG_ids( struct ms_client* client );
 uint64_t ms_client_volume_version( struct ms_client* client );
 uint64_t ms_client_cert_version( struct ms_client* client );
 uint64_t ms_client_get_volume_id( struct ms_client* client );
@@ -268,14 +273,17 @@ int ms_client_get_closure_text( struct ms_client* client, char** closure_text, u
 int ms_client_set_view_change_callback( struct ms_client* client, ms_client_view_change_callback clb, void* cls );
 void* ms_client_set_view_change_callback_cls( struct ms_client* client, void* cls );
 
-bool ms_client_is_AG( struct ms_client* client, uint64_t ag_id );
+int ms_client_get_gateway_type( struct ms_client* client, uint64_t g_id );
+
 uint64_t ms_client_get_AG_blocksize( struct ms_client* client, uint64_t gateway_id );
+char* ms_client_get_UG_content_url( struct ms_client* client, uint64_t gateway_id );
 char* ms_client_get_AG_content_url( struct ms_client* client, uint64_t gateway_id );
+char* ms_client_get_RG_content_url( struct ms_client* client, uint64_t gateway_id );
+
 uint64_t ms_client_get_num_files( struct ms_client* client );
 
 int ms_client_get_num_volumes( struct ms_client* client );
 
-char* ms_client_get_UG_content_url( struct ms_client* client, uint64_t gateway_id );
 int ms_client_get_volume_root( struct ms_client* client, struct md_entry* root );
 
 int ms_client_sched_volume_reload( struct ms_client* client );
@@ -288,5 +296,56 @@ void ms_client_free_response( ms_response_t* ms_response );
 void ms_client_free_listing( struct ms_listing* listing );
 
 }
+
+// have to put this here, since C++ forbids separating the declaration and definition of template functions.
+// Verify the authenticity of a gateway message, encoded as a protobuf
+template< class T > int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t gateway_type, uint64_t gateway_id, T* protobuf ) {
+   ms_client_view_rlock( client );
+
+   if( client->volume->volume_id != volume_id ) {
+      // not from this volume
+      errorf("Message from outside Volume %" PRIu64 "\n", volume_id );
+      ms_client_view_unlock( client );
+      return -ENOENT;
+   }
+   
+   // look up the certificate bundle
+   ms_cert_bundle* bundle = NULL;
+   
+   if( gateway_type == SYNDICATE_UG ) {
+      bundle = client->volume->UG_certs;
+   }
+   else if( gateway_type == SYNDICATE_RG ) {
+      bundle = client->volume->RG_certs;
+   }
+   else if( gateway_type == SYNDICATE_AG ) {
+      bundle = client->volume->AG_certs;
+   }
+   else {
+      errorf("Invalid Gateway type %" PRIu64 "\n", gateway_type );
+      ms_client_view_unlock( client );
+      return -EINVAL;
+   }
+   
+   // look up the cert
+   ms_cert_bundle::iterator itr = bundle->find( gateway_id );
+   if( itr == bundle->end() ) {
+      // not found here--probably means we need to reload our certs
+      
+      dbprintf("WARN: No cached certificate for Gateway %" PRIu64 "\n", gateway_id );
+      
+      client->early_reload = true;
+      ms_client_view_unlock( client );
+      return -EAGAIN;
+   }
+   
+   // verify the cert
+   int rc = md_verify< T >( itr->second->pubkey, protobuf );
+   
+   ms_client_view_unlock( client );
+   
+   return rc;
+}
+
 
 #endif
