@@ -7,6 +7,7 @@
 #include "unlink.h"
 #include "storage.h"
 #include "collator.h"
+#include "replication.h"
 
 // lowlevel unlink operation--given an fs_entry and the name of an entry
 // PARENT MUST BE LOCKED FIRST!
@@ -187,6 +188,10 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    }
    
    rc = 0;
+   
+   // snapshot this fent before we delete it
+   struct replica_snapshot fent_snapshot;
+   fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
 
    if( local ) {
       // we're responsible for this file; tell the metadata server we just unlinked
@@ -204,6 +209,37 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
          fs_entry_unlock( fent );
          fs_entry_unlock( parent );
          return rc;
+      }
+      else {
+         // now garbage-collect the manifest
+         rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
+         if( rc != 0 ) {
+            errorf( "fs_entry_garbage_collect_manifest(%s) rc = %d\n", path, rc );
+            rc = 0;
+         }
+         
+         // garbage-collect each block
+         uint64_t num_blocks = fent->manifest->get_num_blocks();
+         modification_map block_infos;
+         
+         for( uint64_t i = 0; i < num_blocks; i++ ) {
+            
+            // acquire block info 
+            struct fs_entry_block_info binfo;
+            memset( &binfo, 0, sizeof(binfo) );
+            
+            binfo.version = fent->manifest->get_block_version( i );
+            binfo.gateway_id = fent->manifest->get_block_host( core, i );
+            
+            block_infos[ i ] = binfo;
+         }
+         
+         rc = fs_entry_garbage_collect_blocks( core, &fent_snapshot, &block_infos );
+         if( rc != 0 ) {
+            errorf( "fs_entry_garbage_collect_blocks(%s) rc = %d\n", path, rc );
+            rc = 0;
+         }
+         
       }
    }
    else {

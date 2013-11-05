@@ -424,9 +424,10 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       
       if( local ) {
          // garbage collect the old manifest
-         fs_entry_garbage_collect_manifest( core, &fent_snapshot );
+         rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
          if( rc != 0 ) {
             errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fh->path, rc );
+            rc = 0;
          }
       }
       
@@ -436,6 +437,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
          rc = fs_entry_garbage_collect_blocks( core, &fent_snapshot, &overwritten_blocks );
          if( rc != 0 ) {
             errorf("fs_entry_garbage_collect_blocks(%s) rc = %d\n", fh->path, rc );
+            rc = 0;
          }
       }
       
@@ -511,6 +513,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
                      
                      if( rc != 0 ) {
                         errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fh->path, rc );
+                        rc = 0;
                      }
                      
                      // done here
