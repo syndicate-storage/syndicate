@@ -15,7 +15,8 @@ import base64
 from Crypto.Hash import SHA256, SHA
 from Crypto.PublicKey import RSA
 from Crypto import Random
-from Crypto.Signature import PKCS1_v1_5 as CryptoSigner
+#from Crypto.Signature import PKCS1_v1_5 as CryptoSigner
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 import protobufs.ms_pb2 as ms_pb2
 
@@ -298,6 +299,7 @@ class Volume( storagetypes.Object ):
       manifest.volume_id = self.volume_id
       manifest.coordinator_id = 0
       manifest.file_id = 0
+      manifest.owner_id = 0
       manifest.file_version = self.cert_version
       manifest.mtime_sec = 0
       manifest.mtime_nsec = 0

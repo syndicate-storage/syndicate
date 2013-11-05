@@ -23,8 +23,24 @@ int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_f
    snapshot->mtime_sec = snapshot_fent->mtime_sec;
    snapshot->mtime_nsec = snapshot_fent->mtime_nsec;
    snapshot->volume_id = snapshot_fent->volume;
+   snapshot->size = snapshot_fent->size;
    return 0;
 }
+
+// revert a snapshot to a fent
+// fent must be write-locked
+int fs_entry_replica_snapshot_restore( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* snapshot ) {
+   
+   fent->version = snapshot->file_version;
+   fent->coordinator = snapshot->writer_id;
+   fent->owner = snapshot->owner_id;
+   fent->mtime_sec = snapshot->mtime_sec;
+   fent->mtime_nsec = snapshot->mtime_nsec;
+   fent->size = snapshot->size;
+   
+   return 0;
+}
+
 
 // set up a replica context
 int replica_context_init( struct replica_context* rctx,
@@ -190,7 +206,7 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    ssize_t manifest_data_len = 0;
    int rc = 0;
    
-   manifest_data_len = fs_entry_serialize_manifest( core, fent, &manifest_data, false );
+   manifest_data_len = fs_entry_serialize_manifest( core, fent, &manifest_data, true );
    if( manifest_data_len < 0 ) {
       errorf("fs_entry_serialize_manifest(%" PRIX64 ") rc = %zd\n", fent->file_id, manifest_data_len);
       return -EINVAL;
@@ -199,6 +215,8 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    // snapshot this fent
    struct replica_snapshot snapshot;
    fs_entry_replica_snapshot( core, fent, 0, 0, &snapshot );
+   
+   // TODO: encrypt manifest string
    
    // hash the manifest
    unsigned char* hash = sha256_hash_data( manifest_data, manifest_data_len );
@@ -567,9 +585,13 @@ static int replica_erase_upload_context( struct syndicate_replication* synrp, co
    // have all of this context's CURL handles finished?
    if( still_processing == 0 ) {      
       dbprintf("%s: Finished %p\n", synrp->process_name, rctx );
+      
+      // record this before posting, since the waiting thread can free rctx
+      bool free_on_processed = rctx->free_on_processed;
+      
       sem_post( &rctx->processing_lock );
       
-      if( rctx->free_on_processed ) {
+      if( free_on_processed ) {
          // destroy this
          replica_context_free( rctx );
          free( rctx );

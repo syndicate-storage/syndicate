@@ -53,6 +53,10 @@ int fs_entry_detach_lowlevel( struct fs_core* core, struct fs_entry* parent, str
          // do the removal if the file is coordinated locally
          if( child->ftype == FTYPE_FILE && FS_ENTRY_LOCAL( core, child ) ) {
             rc = fs_entry_remove_local_file( core, child->file_id, child->version );
+            if( rc == -ENOENT ) {
+               // not a problem
+               rc = 0;
+            }
          }
       }
       

@@ -1621,7 +1621,6 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
 
 // download data, trying in order:
 // * both CDN and proxy
-// * from proxy
 // * from CDN
 // * from gateway
 int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len ) {
@@ -4200,10 +4199,32 @@ int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, cha
    const EVP_MD* sha256 = EVP_sha256();
 
    EVP_MD_CTX *mdctx = EVP_MD_CTX_create();
+   EVP_PKEY_CTX* pkey_ctx = NULL;
 
-   rc = EVP_DigestVerifyInit( mdctx, NULL, sha256, NULL, public_key );
+   rc = EVP_DigestVerifyInit( mdctx, &pkey_ctx, sha256, NULL, public_key );
    if( rc <= 0 ) {
       errorf("EVP_DigestVerifyInit_ex rc = %d\n", rc);
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+   
+   // set up padding
+   
+   // activate PSS
+   rc = EVP_PKEY_CTX_set_rsa_padding( pkey_ctx, RSA_PKCS1_PSS_PADDING );
+   if( rc <= 0 ) {
+      errorf( "EVP_PKEY_CTX_set_rsa_padding rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+   
+   // use maximum possible salt length, as per http://wiki.openssl.org/index.php/Manual:EVP_PKEY_CTX_ctrl(3).
+   // This is only because PyCrypto (used by the MS) does this in its PSS implementation.
+   rc = EVP_PKEY_CTX_set_rsa_pss_saltlen( pkey_ctx, -1 );
+   if( rc <= 0 ) {
+      errorf( "EVP_PKEY_CTX_set_rsa_pss_saltlen rc = %d\n", rc );
       md_openssl_error();
       EVP_MD_CTX_destroy( mdctx );
       return -EINVAL;
@@ -4241,29 +4262,62 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
 
    EVP_MD_CTX *mdctx = EVP_MD_CTX_create();
 
-   int rc = EVP_SignInit( mdctx, sha256 );
+   //int rc = EVP_SignInit( mdctx, sha256 );
+   EVP_PKEY_CTX* pkey_ctx = NULL;
+   int rc = EVP_DigestSignInit( mdctx, &pkey_ctx, sha256, NULL, pkey );
+   
    if( rc <= 0 ) {
-      errorf("EVP_SignInit rc = %d\n", rc);
+      errorf("EVP_DigestSignInit rc = %d\n", rc);
       md_openssl_error();
       EVP_MD_CTX_destroy( mdctx );
       return -EINVAL;
    }
-
-   rc = EVP_SignUpdate( mdctx, (void*)data, len );
+   
+   // set up padding
+   
+   // activate PSS
+   rc = EVP_PKEY_CTX_set_rsa_padding( pkey_ctx, RSA_PKCS1_PSS_PADDING );
    if( rc <= 0 ) {
-      errorf("EVP_SignUpdate rc = %d\n", rc );
+      errorf( "EVP_PKEY_CTX_set_rsa_padding rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+   
+   // use salt length == digest_length, as per http://wiki.openssl.org/index.php/Manual:EVP_PKEY_CTX_ctrl(3).
+   // This is only because PyCrypto (used by the MS) does this in its PSS implementation.
+   rc = EVP_PKEY_CTX_set_rsa_pss_saltlen( pkey_ctx, -1 );
+   if( rc <= 0 ) {
+      errorf( "EVP_PKEY_CTX_set_rsa_pss_saltlen rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+   
+   rc = EVP_DigestSignUpdate( mdctx, (void*)data, len );
+   if( rc <= 0 ) {
+      errorf("EVP_DigestSignUpdate rc = %d\n", rc );
+      md_openssl_error();
+      EVP_MD_CTX_destroy( mdctx );
+      return -EINVAL;
+   }
+   
+   // get signature size
+   size_t sig_bin_len = 0;
+   rc = EVP_DigestSignFinal( mdctx, NULL, &sig_bin_len );
+   if( rc <= 0 ) {
+      errorf("EVP_DigestSignFinal rc = %d\n", rc );
       md_openssl_error();
       EVP_MD_CTX_destroy( mdctx );
       return -EINVAL;
    }
 
    // allocate the signature
-   unsigned char* sig_bin = CALLOC_LIST( unsigned char, EVP_PKEY_size( pkey ) );
-   unsigned int sig_bin_len;
+   unsigned char* sig_bin = CALLOC_LIST( unsigned char, sig_bin_len );
 
-   rc = EVP_SignFinal( mdctx, sig_bin, &sig_bin_len, pkey );
+   rc = EVP_DigestSignFinal( mdctx, sig_bin, &sig_bin_len );
    if( rc <= 0 ) {
-      errorf("EVP_SignFinal rc = %d\n", rc );
+      errorf("EVP_DigestSignFinal rc = %d\n", rc );
       md_openssl_error();
       EVP_MD_CTX_destroy( mdctx );
       return -EINVAL;

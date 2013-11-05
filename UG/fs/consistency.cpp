@@ -328,7 +328,7 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
    
    ms_path->push_back( path_ent );
    
-   dbprintf("in path: %s.%" PRId64 " (%" PRId64 ") (%s)\n", fent->name, fent->version, fent->write_nonce, cls->fs_path);
+   dbprintf("in path: %s.%" PRId64 " (mtime=%" PRId64 ".%d) (write_nonce=%" PRId64 ") (%s)\n", fent->name, fent->version, fent->mtime_sec, fent->mtime_nsec, fent->write_nonce, cls->fs_path);
    return 0;
 }
 
@@ -513,7 +513,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
          continue;
       
       ms_ents[i] = &(*ms_ents_vec)[i];
-      dbprintf("listing: %s.%" PRId64 " (%ld.%d)\n", ms_ents[i]->name, ms_ents[i]->version, ms_ents[i]->mtime_sec, ms_ents[i]->mtime_nsec);
+      dbprintf("listing: %s.%" PRId64 " (mtime=%" PRId64 ".%d) (write_nonce=%" PRId64 ")\n", ms_ents[i]->name, ms_ents[i]->version, ms_ents[i]->mtime_sec, ms_ents[i]->mtime_nsec, ms_ents[i]->write_nonce);
    }
 
    // reload this entry
@@ -1083,9 +1083,12 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
 }
 
 
-// ensure that the manifest is up to date
+// ensure that the manifest is up to date.
+// if check_coordinator is true, then ask the manifest-designated gateway before asking the RGs.
+// if check_coordinator is false, then fs_path will be ignored (since RGs don't need it).
+// if successful_gateway_id != NULL, then fill it with the ID of the gateway that served the manifest (if any). Otherwise set to 0 if given but the manifest was frsh.
 // FENT MUST BE WRITE-LOCKED FIRST!
-int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
+int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id ) {
    
    if( FS_ENTRY_LOCAL( core, fent ) )
       return 0;      // nothing to do--we automatically have the latest
@@ -1097,7 +1100,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    bool need_refresh = false;
    
    if( fent->manifest == NULL ) {
-      fent->manifest = new file_manifest( fent->version );
+      fent->manifest = new file_manifest( version );
       need_refresh = true;
    }
    else {
@@ -1110,62 +1113,83 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
       clock_gettime( CLOCK_MONOTONIC, &ts );
       END_TIMING_DATA( ts, ts2, "manifest refresh (fresh)" );
    
+      if( successful_gateway_id )
+         *successful_gateway_id = 0;
+      
       return 0;
    }
 
    // otherwise, we need to refresh.  GoGoGo!
    struct timespec modtime;
-   modtime.tv_sec = fent->mtime_sec;
-   modtime.tv_nsec = fent->mtime_nsec;
+   modtime.tv_sec = mtime_sec;
+   modtime.tv_nsec = mtime_sec;
    
    char* manifest_url = NULL;
-   
-   int gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
-   
-   if( gateway_type < 0 ) {
-      // unknown gateway...try refreshing the Volume
-      errorf("Unknown Gateway %" PRIu64 "\n", fent->coordinator );
-      ms_client_sched_volume_reload( core->ms );
-      return -EAGAIN;
-   }
-   
-   if( gateway_type == SYNDICATE_UG )
-      manifest_url = fs_entry_remote_manifest_url( core, fent->coordinator, fs_path, fent->version, &modtime );
-   else if( gateway_type == SYNDICATE_RG )
-      manifest_url = fs_entry_RG_manifest_url( core, fent->coordinator, fent->volume, fent->file_id, fent->version, &modtime );
-   else if( gateway_type == SYNDICATE_AG )
-      manifest_url = fs_entry_AG_manifest_url( core, fent->coordinator, fs_path, fent->version, &modtime );
-   
-   if( manifest_url == NULL ) {
-      // unknown gateway...try refreshing the Volume
-      errorf("Unknown Gateway %" PRIu64 "\n", fent->coordinator );
-      ms_client_sched_volume_reload( core->ms );
-      return -EAGAIN;
-   }
-   
-   dbprintf("Reload manifest from Gateway %" PRIu64 " at %s\n", fent->coordinator, manifest_url );
-   
-   // try the primary, then the replicas
+   int rc = 0;
    Serialization::ManifestMsg manifest_msg;
-   int rc = fs_entry_download_manifest( core, fent->coordinator, manifest_url, &manifest_msg );
-   if( rc != 0 ) {
+   
+   
+   if( check_coordinator ) {
+      // check the MS-listed coordinator first, instead of asking the RGs directly
+         
+      int gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
       
-      errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
+      if( gateway_type < 0 ) {
+         // unknown gateway...try refreshing the Volume
+         errorf("Unknown Gateway %" PRIu64 "\n", fent->coordinator );
+         ms_client_sched_volume_reload( core->ms );
+         return -EAGAIN;
+      }
+      
+      if( gateway_type == SYNDICATE_UG )
+         manifest_url = fs_entry_remote_manifest_url( core, fent->coordinator, fs_path, version, &modtime );
+      else if( gateway_type == SYNDICATE_RG )
+         manifest_url = fs_entry_RG_manifest_url( core, fent->coordinator, fent->volume, fent->file_id, version, &modtime );
+      else if( gateway_type == SYNDICATE_AG )
+         manifest_url = fs_entry_AG_manifest_url( core, fent->coordinator, fs_path, version, &modtime );
+      
+      if( manifest_url == NULL ) {
+         // unknown gateway...try refreshing the Volume
+         errorf("Unknown Gateway %" PRIu64 "\n", fent->coordinator );
+         ms_client_sched_volume_reload( core->ms );
+         return -EAGAIN;
+      }
+   
+      dbprintf("Reload manifest from Gateway %" PRIu64 " at %s\n", fent->coordinator, manifest_url );
+  
+      rc = fs_entry_download_manifest( core, fent->coordinator, manifest_url, &manifest_msg );
+      
+      if( rc == 0 && successful_gateway_id ) {
+         // got it from the coordinator
+         *successful_gateway_id = fent->coordinator;
+      }
+   }
+   
+   if( !check_coordinator || rc != 0 ) {
+      
+      if( rc != 0 ) {
+         errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
+      }
       
       // try the RGs
       uint64_t rg_id = 0;
       
-      int rc = fs_entry_download_manifest_replica( core, fent->coordinator, fent->volume, fent->file_id, fent->version, fent->mtime_sec, fent->mtime_nsec, &manifest_msg, &rg_id );
+      rc = fs_entry_download_manifest_replica( core, fent->coordinator, fent->volume, fent->file_id, version, mtime_sec, mtime_nsec, &manifest_msg, &rg_id );
       
       if( rc != 0 ) {
          // error
-         errorf("Failed to read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d from RGs\n", fent->volume, fent->file_id, fent->version, fent->mtime_sec, fent->mtime_nsec );
+         errorf("Failed to read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d from RGs\n", fent->volume, fent->file_id, version, mtime_sec, mtime_nsec );
          rc = -ENODATA;
       }
       else {
          // success!
-         dbprintf("Read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d from RG %" PRIu64 "\n", fent->volume, fent->file_id, fent->version, fent->mtime_sec, fent->mtime_nsec, rg_id );
+         dbprintf("Read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d from RG %" PRIu64 "\n", fent->volume, fent->file_id, version, mtime_sec, mtime_nsec, rg_id );
          rc = 0;
+         
+         if( successful_gateway_id ) {
+            // got it from this RG
+            *successful_gateway_id = rg_id;
+         }
       }
    }
 
@@ -1182,9 +1206,9 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    }
    
    // verify that the manifest matches the timestamp
-   if( manifest_msg.mtime_sec() != fent->mtime_sec || manifest_msg.mtime_nsec() != fent->mtime_nsec ) {
+   if( manifest_msg.mtime_sec() != mtime_sec || manifest_msg.mtime_nsec() != mtime_nsec ) {
       // invalid manifest
-      errorf("timestamp mismatch: got %" PRId64 ".%d, expected %" PRId64 ".%d\n", manifest_msg.mtime_sec(), manifest_msg.mtime_nsec(), fent->mtime_sec, fent->mtime_nsec );
+      errorf("timestamp mismatch: got %" PRId64 ".%d, expected %" PRId64 ".%d\n", manifest_msg.mtime_sec(), manifest_msg.mtime_nsec(), mtime_sec, mtime_nsec );
       return -EBADMSG;
    }
    
@@ -1198,4 +1222,56 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    END_TIMING_DATA( ts, ts2, "manifest refresh (stale)" );
    
    return 0;
+}
+
+int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
+   return fs_entry_revalidate_manifest( core, fs_path, fent, fent->version, fent->mtime_sec, fent->mtime_nsec, true, NULL );
+}
+
+
+// become the coordinator for a fent
+// fent must be write-locked!
+int fs_entry_coordinate( struct fs_core* core, struct fs_entry* fent, int64_t replica_version, int64_t replica_manifest_mtime_sec, int32_t replica_manifest_mtime_nsec ) {
+   
+   // sanity check...
+   if( FS_ENTRY_LOCAL( core, fent ) )
+      return 0;
+   
+   // which RG served?
+   uint64_t rg_id = 0;
+   
+   // revalidate the manifest 
+   int rc = fs_entry_revalidate_manifest( core, NULL, fent, replica_version, replica_manifest_mtime_sec, replica_manifest_mtime_nsec, false, &rg_id );
+   if( rc != 0 ) {
+      // failed to revalidate manifest
+      errorf("fs_entry_revalidate_manifest( /%" PRIu64 "/%" PRIX64 ".%" PRId64 " (modtime=%" PRId64 ".%d) ) rc = %d\n", fent->volume, fent->file_id, replica_version, replica_manifest_mtime_sec, replica_manifest_mtime_nsec, rc );
+      return -ENODATA;
+   }
+   
+   
+   struct md_entry ent;
+   fs_entry_to_md_entry( core, &ent, fent, 0, NULL );
+   
+   // try to become the coordinator
+   uint64_t current_coordinator = 0;
+   rc = ms_client_coordinate( core->ms, &current_coordinator, &ent );
+   
+   if( rc != 0 ) {
+      // failed to contact the MS
+      errorf("ms_client_coordinate( /%" PRIu64 "/%" PRIX64 " (%s) ) rc = %d\n", core->volume, fent->file_id, fent->name, rc );
+      rc = -EREMOTEIO;
+   }
+   
+   else {
+      // if the coordintaor is different than us, then retry the operation
+      if( current_coordinator != core->gateway ) {
+         dbprintf("/%" PRIu64 "/%" PRIX64 " now coordinated by UG %" PRIu64 "\n", core->volume, fent->file_id, current_coordinator );
+         rc = -EAGAIN;
+         fent->coordinator = current_coordinator;
+      }
+   }
+   
+   md_entry_free( &ent );
+   
+   return rc;
 }

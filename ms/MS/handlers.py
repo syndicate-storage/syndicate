@@ -778,27 +778,27 @@ class MSFileWriteHandler(webapp2.RequestHandler):
             
             logging.info("delete /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
 
-         # chown? 
+         # change coordinator? 
          elif update.type == ms_pb2.ms_update.CHOWN:
-            logging.info("chown /%s/%s (%s) to %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], gateway.g_id) )
+            logging.info("chcoord /%s/%s (%s) to %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], gateway.g_id) )
             
             chown_start = storagetypes.get_time()
             
-            rc, ent = MSEntry.Chown( gateway.owner_id, attrs['file_id'], attrs['write_nonce'], attrs['owner_id'], volume, gateway )
+            rc, ent = MSEntry.Chcoord( gateway.owner_id, volume, gateway, **attrs )
             
             chown_time = storagetypes.get_time() - chown_start
             chown_times.append( chown_time )
             
             sign = True 
             
-            logging.info("chown /%s/%s (%s) rc = %d" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
+            logging.info("chcoord /%s/%s (%s) rc = %d" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
             
          else:
             # not a valid method
-            response_end( self, 202, "%s\n" % -errno.ENOSYS, "text/plain", None )
+            response_end( self, 501, "Method not supported", "text/plain", None )
             return
          
-         if rc == 0 and ent != None:
+         if rc >= 0 and ent != None:
             # success
             ent_pb = reply.listing.entries.add()
             ent.protobuf( ent_pb )
@@ -818,7 +818,7 @@ class MSFileWriteHandler(webapp2.RequestHandler):
          timing['X-Delete-Times'] = ",".join( [str(t) for t in delete_times] )
 
       if len(chown_times) > 0:
-         timing['X-Chown-Times'] = ",".join( [str(t) for t in chown_times] )
+         timing['X-Chcoord-Times'] = ",".join( [str(t) for t in chown_times] )
          
       # sign the response
       reply.signature = ""

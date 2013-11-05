@@ -1474,6 +1474,7 @@ closure_str = """
 CONFIG = {'foo': 'bar', 'STORAGE_DIR': '/tmp/'}
 
 def replica_read( drivers, request_info, filename, outfile ):
+   print ""
    print "replica_read called!"
    
    global CONFIG 
@@ -1490,6 +1491,7 @@ def replica_read( drivers, request_info, filename, outfile ):
    return rc
    
 def replica_write( drivers, request_info, filename, infile ):
+   print ""
    print "replica_write called!"
    
    global CONFIG 
@@ -1507,6 +1509,7 @@ def replica_write( drivers, request_info, filename, infile ):
    return rc
 
 def replica_delete( drivers, request_info, filename ):
+   print ""
    print "replica_delete called!"
    
    global CONFIG 
@@ -1529,6 +1532,7 @@ driver_str = """
 def read_file( filename, outfile, **kw ):
    import traceback
 
+   print ""
    print "  read_file called!"
    print "  filename = " + str(filename)
    print "  outfile = " + str(outfile)
@@ -1551,6 +1555,7 @@ def read_file( filename, outfile, **kw ):
 def write_file( filename, infile, **kw ):
    import traceback
 
+   print ""
    print "  write_file called!"
    print "  filename = " + str(filename)
    print "  infile = " + str(infile)
@@ -1579,6 +1584,7 @@ def delete_file( filename, **kw ):
    import traceback
    import os
 
+   print ""
    print "  delete_file called!"
    print "  filename = " + str(filename)
    print "  kw = " + str(kw)

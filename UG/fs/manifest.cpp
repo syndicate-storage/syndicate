@@ -292,12 +292,13 @@ char* file_manifest::get_block_url( struct fs_core* core, char const* fs_path, s
    else {
       int64_t block_version = itr->second->lookup_version( block_id );
       bool staging = itr->second->staging;
-      bool local = itr->second->gateway_id == core->gateway;
+      bool local = (itr->second->gateway_id == core->gateway);
       
       pthread_rwlock_unlock( &this->manifest_lock );
 
       if( block_version == 0 ) {
          // no such block
+         errorf("No version for block %" PRIu64 "\n", block_id );
          return NULL;
       }
 
@@ -309,8 +310,9 @@ char* file_manifest::get_block_url( struct fs_core* core, char const* fs_path, s
       }
       else {
          // not hosted here
-         if( fs_path != NULL )
+         if( fs_path != NULL ) {
             return fs_entry_remote_block_url( core, itr->second->gateway_id, fs_path, fent->version, block_id, block_version );
+         }
          else {
             errorf("%s", "No fs_path given\n");
             return NULL;
@@ -407,6 +409,8 @@ void file_manifest::set_block_hosts( uint64_t gateway_id, uint64_t start_id, uin
       }
       
       itr->second->gateway_id = gateway_id;
+      itr->second->staging = false;
+      
       start_id = itr->second->end_id + 1;
    }
    
@@ -795,6 +799,7 @@ void file_manifest::as_protobuf( struct fs_core* core, struct fs_entry* fent, Se
 
    mmsg->set_volume_id( core->volume );
    mmsg->set_coordinator_id( fent->coordinator );
+   mmsg->set_owner_id( fent->owner );
    mmsg->set_file_id( fent->file_id );
    mmsg->set_file_version( fent->version );
    mmsg->set_size( fent->size );
@@ -852,8 +857,9 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
       free( block_versions );
    }
 
-   if( rc == 0 )
+   if( rc == 0 ) {
       m->file_version = mmsg->file_version();
+   }
 
    return rc;
 }

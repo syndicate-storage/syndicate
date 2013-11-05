@@ -55,6 +55,7 @@ struct replica_snapshot {
    uint64_t owner_id;
    uint64_t writer_id;
    uint64_t volume_id;
+   off_t size;
 };
 
 // chunk of data to upload
@@ -129,6 +130,7 @@ int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snap
 int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* modified_blocks );
 
 int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_fent, uint64_t block_id, int64_t block_version, struct replica_snapshot* snapshot );
+int fs_entry_replica_snapshot_restore( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* snapshot );
 
 int fs_entry_replicate_wait( struct fs_file_handle* fh );
 

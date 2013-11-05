@@ -20,7 +20,6 @@ public:
    uint64_t end_id;           // ending block ID
    int64_t file_version;      // version of this file
    int64_t* block_versions;   // versions of the blocks across the volume
-   bool local;                // is this file locally-coordinated?
    bool staging;              // is this block set in staging?
 
    block_url_set();

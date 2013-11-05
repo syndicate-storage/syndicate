@@ -101,6 +101,7 @@ static void ms_volume_free( struct ms_volume* vol ) {
    memset( vol, 0, sizeof(struct ms_volume) );
 }
 
+// verify that a given key has our desired security parameters
 static int ms_client_verify_key( EVP_PKEY* key ) {
    RSA* ref_rsa = EVP_PKEY_get1_RSA( key );
    if( ref_rsa == NULL ) {
@@ -115,10 +116,39 @@ static int ms_client_verify_key( EVP_PKEY* key ) {
       errorf("Invalid RSA size %d\n", size * 8 );
       return -EINVAL;
    }
-
+   
+   /*
+   // public key context...
+   EVP_PKEY_CTX* key_ctx = EVP_PKEY_CTX_new( key, NULL );
+   if( key_ctx == NULL ) {
+      errorf("%s", "EVP_PKEY_CTX_new returned NULL\n");
+      md_openssl_error();
+      return -ENOENT;
+   }
+   
+   // activate PSS
+   int rc = EVP_PKEY_CTX_set_rsa_padding( key_ctx, RSA_PKCS1_PSS_PADDING );
+   if( rc <= 0 ) {
+      errorf( "EVP_PKEY_CTX_set_rsa_padding rc = %d\n", rc );
+      md_openssl_error();
+      EVP_PKEY_CTX_free( key_ctx );
+      return -ENOENT;
+   }
+   
+   // use maximum possible salt length, as per http://wiki.openssl.org/index.php/Manual:EVP_PKEY_CTX_ctrl(3)
+   rc = EVP_PKEY_CTX_set_rsa_pss_saltlen( key_ctx, -2 );
+   if( rc <= 0 ) {
+      errorf( "EVP_PKEY_CTX_set_rsa_pss_saltlen rc = %d\n", rc );
+      md_openssl_error();
+      EVP_PKEY_CTX_free( key_ctx );
+      return -ENOENT;
+   }
+   
+   EVP_PKEY_CTX_free( key_ctx );
+   */
+   
    return 0;
 }
-
 
 static long ms_client_hash( uint64_t volume_id, uint64_t file_id ) {
    locale loc;
@@ -218,12 +248,6 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
          errorf("ms_client_load_privkey rc = %d\n", rc );
          return rc;
       }
-
-      rc = ms_client_verify_key( client->my_key );
-      if( rc != 0 ) {
-         errorf("ms_client_verify_key rc = %d\n", rc );
-         return rc;
-      }
    }
    else {
       // generate our public/private key pairs
@@ -233,6 +257,12 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
          ms_client_unlock( client );
          return rc;
       }
+   }
+   
+   rc = ms_client_verify_key( client->my_key );
+   if( rc != 0 ) {
+      errorf("ms_client_setup_and_verify_key rc = %d\n", rc );
+      return rc;
    }
 
    client->view_change_callback = ms_client_view_change_callback_default;
@@ -2561,6 +2591,11 @@ static int ms_client_send( struct ms_client* client, char const* url, char const
          rc = -ENODATA;
       }
    }
+   else {
+      // protocol error
+      errorf("curl_easy_perform HTTP status %d\n", http_response );
+      rc = -EREMOTEIO;
+   }
 
    response_buffer_free( rb );
    delete rb;
@@ -2622,8 +2657,9 @@ static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) 
 }
 
 
-// post a record on the MS, synchronously
-static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t volume_id, int op, struct md_entry* ent ) {
+// post a record on the MS, synchronously.
+// Get back a new file ID and coordinator ID
+static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t* coordinator_id, uint64_t volume_id, int op, struct md_entry* ent ) {
    struct md_update up;
    up.op = op;
    memcpy( &up.ent, ent, sizeof(struct md_entry) );
@@ -2663,13 +2699,25 @@ static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t
 
    free( file_url );
    
-   if( rc == 0 && file_id ) {
+   if( rc == 0 ) {
       // success
-      if( reply.listing().entries_size() > 0 ) {
-         *file_id = reply.listing().entries(0).file_id();
+      
+      if( file_id ) {
+         if( reply.listing().entries_size() > 0 ) {
+            *file_id = reply.listing().entries(0).file_id();
+         }
+         else {
+            rc = -ENODATA;
+         }
       }
-      else {
-         rc = -ENODATA;
+      
+      if( coordinator_id ) {
+         if( reply.listing().entries_size() > 0 ) {
+            *coordinator_id = reply.listing().entries(0).coordinator();
+         }
+         else {
+            rc = -ENODATA;
+         }
       }
    }
       
@@ -2695,7 +2743,7 @@ int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, struct md
    
    dbprintf("desired file_id: %" PRIX64 "\n", file_id );
    
-   int rc = ms_client_post( client, &file_id, ent->volume, ms::ms_update::CREATE, ent );
+   int rc = ms_client_post( client, &file_id, NULL, ent->volume, ms::ms_update::CREATE, ent );
    
    if( rc == 0 ) {
       *file_id_ret = file_id;
@@ -2715,7 +2763,7 @@ int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, struct md_
    ent->file_id = file_id;
    
    dbprintf("desired file_id: %" PRIX64 "\n", file_id );
-   int rc = ms_client_post( client, &file_id, ent->volume, ms::ms_update::CREATE, ent );
+   int rc = ms_client_post( client, &file_id, NULL, ent->volume, ms::ms_update::CREATE, ent );
    
    if( rc == 0 ) {
       *file_id_ret = file_id;
@@ -2729,17 +2777,17 @@ int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, struct md_
 
 // delete a record on the MS, synchronously
 int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
-   return ms_client_post( client, NULL, ent->volume, ms::ms_update::DELETE, ent );
+   return ms_client_post( client, NULL, NULL, ent->volume, ms::ms_update::DELETE, ent );
 }
 
 // update a record on the MS, synchronously
 int ms_client_update( struct ms_client* client, struct md_entry* ent ) {
-   return ms_client_post( client, NULL, ent->volume, ms::ms_update::UPDATE, ent );
+   return ms_client_post( client, NULL, NULL, ent->volume, ms::ms_update::UPDATE, ent );
 }
 
 // change coordinator ownership of a file on the MS, synchronously
 int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, struct md_entry* ent ) {
-   return ms_client_post( client, new_coordinator, ent->volume, ms::ms_update::CHOWN, ent );
+   return ms_client_post( client, NULL, new_coordinator, ent->volume, ms::ms_update::CHOWN, ent );
 }
 
 // send a batch of updates.

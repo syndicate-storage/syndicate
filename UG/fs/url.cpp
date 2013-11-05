@@ -37,13 +37,13 @@ char* fs_entry_block_url( struct fs_core* core, uint64_t volume_id, char const* 
    if( local && staging ) {
       // local staging block
       ret = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->staging_root) + 1 + base_len );
-      sprintf(ret, "%s/%s%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64,
+      sprintf(ret, "%s%s%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64,
             SYNDICATEFS_LOCAL_PROTO, core->conf->staging_root, volume_id, fs_path, file_version, block_id, block_version );
    }
    else if( local && !staging ) {
       // local, not-staging block
       ret = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->data_root) + 1 + base_len );
-      sprintf(ret, "%s/%s%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64,
+      sprintf(ret, "%s%s%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64,
             SYNDICATEFS_LOCAL_PROTO, core->conf->data_root, volume_id, fs_path, file_version, block_id, block_version );
    }
    else if( !local && !staging ) {
@@ -104,7 +104,7 @@ char* fs_entry_remote_block_url( struct fs_core* core, uint64_t gateway_id, char
 char* fs_entry_replica_block_url( struct fs_core* core, char* RG_url, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    // http:// URL to a remotely-hosted block on an RG
    char* url = CALLOC_LIST( char, strlen(RG_url) + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 );
-   sprintf( url, "%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64, RG_url, volume_id, file_id, file_version, block_id, block_version );
+   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64, RG_url, SYNDICATE_DATA_PREFIX, volume_id, file_id, file_version, block_id, block_version );
    return url;
    
 }
@@ -224,7 +224,7 @@ char* fs_entry_remote_manifest_url( struct fs_core* core, uint64_t UG_id, char c
 
 char* fs_entry_replica_manifest_url( struct fs_core* core, char const* base_url, uint64_t volume_id, uint64_t file_id, int64_t version, struct timespec* ts ) {
    char* url = CALLOC_LIST( char, strlen(base_url) + 1 + 21 + 1 + 21 + 1 + 21 + 21 + 1 + strlen("manifest") + 21 + 1 + 21 );
-   sprintf( url, "%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, volume_id, file_id, version, ts->tv_sec, ts->tv_nsec );
+   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, SYNDICATE_DATA_PREFIX, volume_id, file_id, version, ts->tv_sec, ts->tv_nsec );
    return url;
 }
 

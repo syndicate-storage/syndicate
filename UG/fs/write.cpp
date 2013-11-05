@@ -7,6 +7,7 @@
 #include "write.h"
 #include "replication.h"
 #include "read.h"
+#include "consistency.h"
 
 // expand a file (e.g. if we write to it beyond the end of the file).
 // record the blocks added.
@@ -139,7 +140,12 @@ static bool fs_entry_is_garbage_collectable_block( struct fs_core* core, struct 
 }
 
 
-// write data to a file, either from a buffer or a file descriptor
+// write data to a file, either from a buffer or a file descriptor.
+// Zeroth, revalidate path and manifest and optionally expand the file if we're writing beyond the end of it.
+// First, write blocks to disk for subsequent re-read and for serving to other UGs.
+// Second, replicate blocks to all RGs.
+// Third, if this file is local, send the MS the new file metadata.  Otherwise, send a remote-write message to the coordinator.
+// TODO: Make sure we can clean up if we crash during a write (i.e. log operations).  We'll need to unlink locally-written blocks and garbage-collect replicated blocks if we crash before getting an ACK from the MS or coordinator.
 ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, char const* buf, int source_fd, size_t count, off_t offset ) {
    // sanity check
    if( count == 0 )
@@ -157,6 +163,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
 
    BEGIN_TIMING_DATA( ts );
    
+   // reload this path
    int rc = fs_entry_revalidate_path( core, core->volume, fh->path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate(%s) rc = %d\n", fh->path, rc );
@@ -168,12 +175,9 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    
    bool local = FS_ENTRY_LOCAL( core, fh->fent );
    
-   // snapshot modifiable metadata fields 
-   off_t old_size = fh->fent->size;
-   int64_t old_mtime_sec = fh->fent->mtime_sec;
-   int32_t old_mtime_nsec = fh->fent->mtime_nsec;
-
-   rc = fs_entry_revalidate_manifest( core, fh->path, fh->fent );
+   // reload this manifest.  If we get this manifest from an RG, remember which one.
+   uint64_t rg_id = 0;
+   rc = fs_entry_revalidate_manifest( core, fh->path, fh->fent, fh->fent->version, fh->fent->mtime_sec, fh->fent->mtime_nsec, true, &rg_id );
 
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fh->path, rc );
@@ -198,12 +202,15 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    // record of which blocks we've overwritten and can safely garbage-collect
    modification_map overwritten_blocks;
    
-   // snapshot fent before we do anything
+   // did we replicate a manifest?
+   bool replicated_manifest = false;
+   
+   // snapshot fent before we do anything to it
    struct replica_snapshot fent_snapshot;
    fs_entry_replica_snapshot( core, fh->fent, 0, 0, &fent_snapshot );
    
    // do we first need to expand this file?
-   if( offset > old_size ) {
+   if( offset > fent_snapshot.size ) {
       rc = fs_entry_expand_file( core, fh->path, fh->fent, offset, &modified_blocks );
       if( rc != 0 ) {
          // can't proceed
@@ -298,7 +305,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       fs_entry_unlock( fh->fent );
       
       // is this a block to garbage collect?
-      if( fs_entry_is_garbage_collectable_block( core, &fent_snapshot, old_size, block_id, &no_garbage_collect ) ) {
+      if( fs_entry_is_garbage_collectable_block( core, &fent_snapshot, fent_snapshot.size, block_id, &no_garbage_collect ) ) {
          
          // mark the old version of the block that we've overwritten to be garbage-collected
          struct fs_entry_block_info binfo_overwritten;
@@ -341,6 +348,10 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
 
    fs_entry_wlock( fh->fent );
    
+   // prepare a new snapshot with the new metadata
+   struct replica_snapshot fent_new_snapshot;
+   memcpy( &fent_new_snapshot, &fent_snapshot, sizeof(fent_new_snapshot) );
+   
    // update file metadata
    if( ret > 0 ) {
       
@@ -354,6 +365,9 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       
       fh->fent->mtime_sec = new_mtime.tv_sec;
       fh->fent->mtime_nsec = new_mtime.tv_nsec;
+      
+      // snapshot this for future use...
+      fs_entry_replica_snapshot( core, fh->fent, 0, 0, &fent_new_snapshot );
    }
 
    BEGIN_TIMING_DATA( replicate_ts_total );
@@ -370,7 +384,9 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
             errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fh->path, rc );
             ret = -EIO;
          }
-         
+         else {
+            replicated_manifest = true;
+         }
          
          END_TIMING_DATA( replicate_ts, ts2, "replicate manifest" );
       }
@@ -392,7 +408,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       }
       
       if( fh->flags & O_SYNC ) {
-         // wait for all replicas to finish
+         // wait for all replicas to finish, since we're synchronous
          fs_entry_replicate_wait( fh );
       }
    }
@@ -425,6 +441,9 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
             rc = -EIO;
          }
       }
+      
+      if( rc != 0 ) 
+         ret = rc;
    }
 
    END_TIMING_DATA( garbage_collect_ts, ts2, "garbage collect data" );
@@ -436,9 +455,6 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       uint64_t start_id = modified_blocks.begin()->first;
       uint64_t end_id = modified_blocks.rbegin()->first + 1;      // exclusive
 
-      // NOTE: size may have changed due to expansion, but it shouldn't affect this computation
-      //fh->fent->size = MAX( fh->fent->size, (unsigned)(offset + count) );
-      
       if( !local ) {
          BEGIN_TIMING_DATA( remote_write_ts );
       
@@ -449,17 +465,75 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
          int64_t* versions = fh->fent->manifest->get_block_versions( start_id, end_id );
          fs_entry_prepare_write_message( write_msg, core, fh->path, fh->fent, start_id, end_id, versions );
          free( versions );
-
+         
          Serialization::WriteMsg *write_ack = new Serialization::WriteMsg();
-         int rc = fs_entry_post_write( write_ack, core, fh->fent->coordinator, write_msg );
+         
+         // try to send to the coordinator, or become the coordinator
+         bool sent = false;
+         while( !sent ) {
+            int rc = fs_entry_post_write( write_ack, core, fh->fent->coordinator, write_msg );
 
-         // process the write message--hopefully it's a PROMISE
-         if( rc != 0 ) {
-            // failed to post
-            errorf( "fs_entry_post_write(%s) rc = %d\n", fh->path, rc );
-            ret = -EIO;
+            // process the write message--hopefully it's a PROMISE
+            if( rc != 0 ) {
+               // failed to post
+               errorf( "fs_entry_post_write(%s) rc = %d\n", fh->path, rc );
+               
+               if( rc == -ENODATA ) {
+                  // curl couldn't connect--this is maybe a partition.
+                  // Try to become the coordinator.
+                  rc = fs_entry_coordinate( core, fh->fent, fent_snapshot.file_version, fent_snapshot.mtime_sec, fent_snapshot.mtime_nsec );
+                  
+                  if( rc == 0 ) {
+                     // we're now the coordinator, and the MS has the latest metadata.
+                     local = true;
+                     
+                     // replicate our new manifest
+                     rc = fs_entry_replicate_manifest( core, fh->fent, false, fh );
+                     if( rc != 0 ) {
+                        errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fh->path, rc );
+                        ret = -EIO;
+                     }
+                     else {
+                        replicated_manifest = true;
+                        
+                        if( fh->flags & O_SYNC ) {
+                           // wait for all replicas to finish, since we're synchronous
+                           fs_entry_replicate_wait( fh );
+                        }
+                     }
+                     
+                     // done here
+                     break;
+                  }
+                  else if( rc == -EAGAIN ) {
+                     // the coordinator changed to someone else.  Try again.
+                     // fent->coordinator refers to the current coordinator.
+                     rc = 0;
+                     continue;
+                  }
+                  else {
+                     // some other (fatal) error
+                     errorf("fs_entry_coordinate(%s) rc = %d\n", fh->path, rc );
+                     break;
+                  }
+               }
+               else {
+                  // some other (fatal) error
+                  break;
+               }
+            }
+            else {
+               // success!
+               sent = true;
+            }
+            
+            if( rc != 0 ) {
+               ret = rc;
+            }
          }
-         else if( write_ack->type() != Serialization::WriteMsg::PROMISE ) {
+         
+         if( sent && write_ack->type() != Serialization::WriteMsg::PROMISE ) {
+            // got something back, but not a PROMISE
             if( write_ack->type() == Serialization::WriteMsg::ERROR ) {
                if( write_ack->errorcode() == -EINVAL ) {
                   // file version mismatch--the file got reversioned while we were writing (e.g. due to a truncate)
@@ -485,43 +559,48 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
          
          END_TIMING_DATA( remote_write_ts, ts2, "send remote write" );
       }
-   }
-   
-   if( ret > 0 && local ) {
-
-      BEGIN_TIMING_DATA( update_ts );
       
-      // synchronize the new modifications with the MS
-      struct md_entry ent;
-      fs_entry_to_md_entry( core, &ent, fh->fent, fh->parent_id, fh->parent_name );
-
-      int up_rc = 0;
-      char const* errstr = NULL;
-      
-      if( fh->fent->max_write_freshness > 0 && !(fh->flags & O_SYNC) ) {
-         up_rc = ms_client_queue_update( core->ms, &ent, currentTimeMillis() + fh->fent->max_write_freshness, 0 );
-         errstr = "ms_client_queue_update";
-      }
       else {
-         up_rc = ms_client_update( core->ms, &ent );
-         errstr = "ms_client_update";
-      }
-      
-      md_entry_free( &ent );
 
-      if( up_rc != 0 ) {
-         errorf("%s(%s) rc = %d\n", errstr, fh->path, rc );
-         ret = -EREMOTEIO;
-      }
+         BEGIN_TIMING_DATA( update_ts );
+         
+         // synchronize the new modifications with the MS
+         struct md_entry ent;
+         fs_entry_to_md_entry( core, &ent, fh->fent, fh->parent_id, fh->parent_name );
 
-      END_TIMING_DATA( update_ts, ts2, "MS update" );
+         int up_rc = 0;
+         char const* errstr = NULL;
+         
+         if( fh->fent->max_write_freshness > 0 && !(fh->flags & O_SYNC) ) {
+            up_rc = ms_client_queue_update( core->ms, &ent, currentTimeMillis() + fh->fent->max_write_freshness, 0 );
+            errstr = "ms_client_queue_update";
+         }
+         else {
+            up_rc = ms_client_update( core->ms, &ent );
+            errstr = "ms_client_update";
+         }
+         
+         md_entry_free( &ent );
+
+         if( up_rc != 0 ) {
+            errorf("%s(%s) rc = %d\n", errstr, fh->path, rc );
+            ret = -EREMOTEIO;
+         }
+
+         END_TIMING_DATA( update_ts, ts2, "MS update" );
+      }
    }
    
    if( ret < 0 ) {
-      // error--revert metadata fields
-      fh->fent->size = old_size;
-      fh->fent->mtime_sec = old_mtime_sec;
-      fh->fent->mtime_nsec = old_mtime_nsec;
+      
+      // revert uploaded data
+      fs_entry_garbage_collect_blocks( core, &fent_new_snapshot, &overwritten_blocks );
+      
+      if( replicated_manifest )
+         fs_entry_garbage_collect_manifest( core, &fent_new_snapshot );
+      
+      // revert metadata 
+      fs_entry_replica_snapshot_restore( core, fh->fent, &fent_snapshot );
    }
    
    fs_entry_unlock( fh->fent );
@@ -549,7 +628,13 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, int sou
 }
 
 
-// Handle a remote write.  Update the affected blocks in the manifest, and republish.
+// Handle a remote write.  The given write_msg must have been verified prior to calling this method.
+// Zeroth, sanity check.
+// First, update the local manifest.
+// Second, synchronously replicate the manifest to all RGs.
+// Third, upload new metadata to the MS for this file.
+// Fourth, acknowledge the remote writer.
+// TODO: if this method crashes, roll back the write properly.  Garbage-collect replicated manifests, for example, if we can't ack the writer or send metadata to the MS.
 int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t file_id, uint64_t coordinator_id, Serialization::WriteMsg* write_msg ) {
    int err = 0;
    uint64_t parent_id = 0;
@@ -670,6 +755,17 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
    
    else {
       errorf("roll back manifest of %s\n", fs_path );
+      
+      // some manifests may have succeeded in replicating.
+      // Destroy them.
+      
+      struct replica_snapshot new_fent_snapshot;
+      fs_entry_replica_snapshot( core, fent, 0, 0, &new_fent_snapshot );
+      
+      int rc = fs_entry_garbage_collect_manifest( core, &new_fent_snapshot );
+      if( rc != 0 ) {
+         errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
+      }
       
       // had an error along the way.  Restore the old fs_entry's manifest
       uint64_t proposed_size = fent->size;

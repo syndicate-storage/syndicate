@@ -92,7 +92,7 @@ struct fs_entry {
    int64_t ctime_sec;         // creation time (seconds)
    int32_t ctime_nsec;        // creation time (nanoseconds)
    int64_t atime;             // access time (seconds)
-   int64_t write_nonce;       // nonce generated at last write
+   int64_t write_nonce;       // nonce generated at last write by the MS
    
    struct timespec refresh_time;    // time of last refresh from the ms
    uint32_t max_read_freshness;     // how long since last refresh, in ms, this fs_entry is to be considered fresh for reading (negative means always fresh)

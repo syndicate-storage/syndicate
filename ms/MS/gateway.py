@@ -15,7 +15,8 @@ import json
 from Crypto.Hash import SHA256, SHA
 from Crypto.PublicKey import RSA
 from Crypto import Random
-from Crypto.Signature import PKCS1_v1_5 as CryptoSigner
+#from Crypto.Signature import PKCS1_v1_5 as CryptoSigner
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 #import protobufs.ms_pb2 as ms_pb2
 
@@ -285,7 +286,11 @@ class Gateway( storagetypes.Object ):
       key = RSA.importKey( self.public_key )
       h = SHA256.new( data )
       verifier = CryptoSigner.new(key)
-      return verifier.verify( h, sig )
+      ret = verifier.verify( h, sig )
+      if not ret:
+         logging.error("Verification failed")
+      
+      return ret
 
       
    @classmethod

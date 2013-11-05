@@ -136,7 +136,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
          fs_entry_detach_lowlevel( core, parent, child, false );
       }
       else {
-         rc = fs_entry_create_local_file( core, child->file_id, child->version, child->mode );
+         rc = fs_entry_create_local_file( core, child->file_id, child->version, mode );
          if( rc != 0 ) {
             // revert
             errorf("fs_entry_create_local_file(%s /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", path, child->volume, child->coordinator, child->file_id, rc );

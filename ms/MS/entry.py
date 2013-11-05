@@ -113,6 +113,7 @@ class MSEntryShard(storagetypes.Object):
             continue
          
          mm = MSEntryShard.modtime_max( mm, shard )
+      
       return mm
 
    @classmethod
@@ -166,9 +167,8 @@ class MSEntryNameHolder( storagetypes.Object ):
 class MSEntry( storagetypes.Object ):
    """
    Syndicate metadata entry.
-   Each entry is named by its path.
-   Each entry is in its own entity group, and is named by its path.
-   Each entry refers to its parent, so we can resolve a path's worth of metadata quickly.
+   Each entry is named by its file ID and volume ID.
+   Each entry is in its own entity group, and is named by its file ID and volume ID.   
    """
 
    # stuff that can't be encrypted
@@ -220,7 +220,7 @@ class MSEntry( storagetypes.Object ):
       "file_id",
    ]
 
-   # required for each call
+   # required for create/update/delete calls
    call_attrs = [
       "volume_id",
       "file_id",
@@ -264,8 +264,7 @@ class MSEntry( storagetypes.Object ):
       "mtime_sec",
       "mtime_nsec",
       "max_read_freshness",
-      "max_write_freshness",
-      "coordinator_id"
+      "max_write_freshness"
    ]
 
    # shard class
@@ -487,7 +486,7 @@ class MSEntry( storagetypes.Object ):
             needed.append( key_attr )
 
       if len(needed) > 0:
-         logging.error( "Missing update attrs: %s" % (",".join(needed) ) )
+         logging.error( "Missing call attrs: %s" % (",".join(needed) ) )
          return -errno.EINVAL;
 
       return 0
@@ -680,6 +679,43 @@ class MSEntry( storagetypes.Object ):
       return (0, child_ent)
 
 
+   @classmethod
+   def __write_msentry( cls, ent, num_shards, write_base=False, **write_attrs ):
+      """
+      Update and then put an entry if it is changed.  Always put a shard.
+      If write_base==True, always write the base entry and a shard.
+      """
+      
+      # do some preprocessing on the ent attributes...
+      MSEntry.preprocess_attrs( write_attrs )
+      
+      # necessary, since the version can change (i.e. on a truncate)
+      for write_attr in write_attrs.keys():
+         if write_attr in MSEntry.shard_fields:
+            continue
+         
+         if getattr( ent, write_attr, None ) != write_attrs[write_attr]:
+            write_base = True
+            ent.populate_base( **write_attrs )
+            break
+         
+      
+      # make a new shard with the mtime, write_nonce, and size
+      ent.populate_shard( num_shards, volume_id=ent.volume_id, file_id=ent.file_id, **write_attrs )
+
+      if write_base:
+         futs = storagetypes.put_multi_async( [ent, ent.write_shard] )
+      else:
+         futs = [ent.put_shard_async()]
+      
+      cache_ent_key = MSEntry.cache_key_name( ent.volume_id, ent.file_id )
+      
+      # invalidate cached items
+      storagetypes.memcache.delete( cache_ent_key )
+      storagetypes.wait_futures( futs )
+      
+      return ent
+   
 
    @classmethod
    def Update( cls, user_owner_id, volume, **ent_attrs ):
@@ -692,19 +728,18 @@ class MSEntry( storagetypes.Object ):
       # A file will be updated by at most one UG, so we don't need a transaction.
       # A directory can be updated by anyone, but the update conflict resolution is last-write-wins.
 
+      write_attrs = {}
+      write_attrs.update( ent_attrs )
+      
       volume_id = volume.volume_id
       file_id = ent_attrs['file_id']
       ent_name = ent_attrs['name']
       parent_id = ent_attrs['parent_id']
 
-      # only write writable attributes
-      writable_attrs = {}
-      writable_attrs.update( ent_attrs )
-
-      not_writable = MSEntry.validate_write( ent_attrs.keys() )
+      not_writable = MSEntry.validate_write( write_attrs.keys() )
       for nw in not_writable:
-         del writable_attrs[nw]
-
+         del write_attrs[nw]
+      
       # get the ent
       # try from cache first
       cache_ent_key = MSEntry.cache_key_name( volume_id, file_id )
@@ -722,77 +757,71 @@ class MSEntry( storagetypes.Object ):
       if not is_writable( user_owner_id, volume.owner_id, ent.owner_id, ent.mode ):
          return (-errno.EACCES, None)
 
-      put_ent = False
-      
-      # do some preprocessing on the ent attributes...
-      MSEntry.preprocess_attrs( ent_attrs )
-      
-      # necessary, since the version can change (i.e. on a truncate)
-      for write_attr in writable_attrs.keys():
-         if write_attr in MSEntry.shard_fields:
-            continue
-         
-         if getattr(ent, write_attr, None) != writable_attrs[write_attr]:
-            put_ent = True
-            ent.populate_base( **writable_attrs )
-            break
-         
-      
-      # make a new shard with the mtime, write_nonce, and size
-      ent.populate_shard( volume.num_shards, **ent_attrs )
-
-      if put_ent:
-         futs = storagetypes.put_multi_async( [ent, ent.write_shard] )
-      else:
-         futs = [ent.put_shard_async()]
-      
-      # invalidate cached items
-      storagetypes.memcache.delete( cache_ent_key )
-      storagetypes.wait_futures( futs )
+      ent = MSEntry.__write_msentry( ent, volume.num_shards, **write_attrs )
 
       return (0, ent)
 
 
    @classmethod
-   def Chown( cls, user_owner_id, file_id, write_nonce, current_coordinator_id, volume, gateway ):
+   def Chcoord( cls, user_owner_id, volume, gateway, **attrs ):
       """
-      Switch coordinators (chown operation in a gateway).
+      Switch coordinators.
+      Performs a transaction--either the chcoord happens, or the caller learns the current coordinator.
       """
+      
+      rc = MSEntry.check_call_attrs( attrs )
+      if rc != 0:
+         return (rc, None)
       
       # does this gateway have coordination capability?
       if gateway.check_caps( GATEWAY_CAP_COORDINATE ) == 0:
          return (-errno.EACCES, None)
-
-      # get the ent
-      # try from cache first
-      cache_ent_key = MSEntry.cache_key_name( volume_id, file_id )
-
-      ent = storagetypes.memcache.get( cache_ent_key )
-      if ent == None:
-         # not in the cache.  Get from the datastore
-         ent_fut = MSEntry.__read_msentry( volume_id, file_id, volume.num_shards, use_memcache=False )
-         ent = ent_fut.get_result()
-
-      if ent == None:
-         return (-errno.ENOENT, None)
-
-      # does this user have permission to write?
-      if not is_writable( user_owner_id, volume.owner_id, ent.owner_id, ent.mode ):
-         return (-errno.EACCES, None)
       
-      # does this gateway have the most recent copy of this file?
-      if ent.write_nonce != write_nonce:
-         return (-errno.ESTALE, None)
+      # vet the write
+      file_id = attrs['file_id']
+      current_coordinator_id = attrs['coordinator_id']
       
-      # only allow the change if the requesting gateway knows the current coordinator.
-      if current_coordinator_id != ent.coordinator_id:
-         return ent.coordinator_id
+      write_attrs = {}
+      write_attrs.update( attrs )
       
-      # allow the change
-      ent.coordinator_id = gateway.g_id
-      ent.put()
+      not_writable = MSEntry.validate_write( write_attrs.keys() )
+      for nw in not_writable:
+         del write_attrs[nw]
       
-      return (0, ent)
+
+      def chcoord_txn( file_id, current_coordinator_id, volume, gateway, **attrs ):
+         volume_id = volume.volume_id
+         
+         # get the ent
+         # try from cache first
+         cache_ent_key = MSEntry.cache_key_name( volume_id, file_id )
+
+         ent = storagetypes.memcache.get( cache_ent_key )
+         if ent == None:
+            # not in the cache.  Get from the datastore
+            ent_fut = MSEntry.__read_msentry( volume_id, file_id, volume.num_shards, use_memcache=False )
+            ent = ent_fut.get_result()
+
+         if ent == None:
+            return (-errno.ENOENT, None)
+
+         # does this user have permission to write?
+         if not is_writable( user_owner_id, volume.owner_id, ent.owner_id, ent.mode ):
+            return (-errno.EACCES, None)
+         
+         # only allow the change if the requesting gateway knows the current coordinator.
+         if current_coordinator_id != ent.coordinator_id:
+            return (ent.coordinator_id, ent)
+         
+         # otherwise, allow the change
+         ent.coordinator_id = gateway.g_id
+         
+         ent = MSEntry.__write_msentry( ent, volume.num_shards, write_base=True, **attrs )
+         return (0, ent)
+      
+      
+      rc, ent = storagetypes.transaction( lambda: chcoord_txn( file_id, current_coordinator_id, volume, gateway, **write_attrs ), xg=True )
+      return (rc, ent)
       
 
    @classmethod

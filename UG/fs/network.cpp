@@ -9,7 +9,7 @@
 #include "url.h"
 #include "collator.h"
 
-// download a manifest
+// download and verify a manifest
 int fs_entry_download_manifest( struct fs_core* core, uint64_t origin, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
    CURL* curl = curl_easy_init();
    
@@ -87,11 +87,6 @@ int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_co
 }
 
 
-// sign a write message
-int fs_entry_sign_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core ) {
-   return md_sign<Serialization::WriteMsg>( core->ms->my_key, writeMsg );
-}
-
 // set up a PREPARE message
 // NEED TO AT LEAST READ-LOCK fent
 int fs_entry_prepare_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t start_id, uint64_t end_id, int64_t* versions ) {
@@ -155,32 +150,27 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    curl_easy_setopt( curl_h, CURLOPT_WRITEDATA, &buf );
    curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, (core->conf->verify_peer ? 1L : 0L) );
    curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
-
-   int rc = fs_entry_sign_write_message( sendMsg, core );
+   
+   // sign this
+   int rc = md_sign<Serialization::WriteMsg>( core->ms->my_key, sendMsg );
    if( rc != 0 ) {
-      errorf("fs_entry_sign_write_message rc = %d\n", rc );
+      errorf("md_sign rc = %d\n", rc );
       curl_easy_cleanup( curl_h );
       return rc;
    }
    
-   string msg_data_str;
-   bool valid = false;
+   char* writemsg_buf = NULL;
+   size_t writemsg_len = 0;
    
-   try {
-      valid = sendMsg->SerializeToString( &msg_data_str );
-   }
-   catch( exception e ) {
-      valid = false;
-   }
-   
-   if( !valid ) {
-      errorf("%s", "Failed to serialize message\n");
+   rc = md_serialize<Serialization::WriteMsg>( sendMsg, &writemsg_buf, &writemsg_len );
+   if( rc != 0 ) {
+      errorf("md_serialize rc = %d\n", rc );
       curl_easy_cleanup( curl_h );
-      return -EINVAL;
+      return rc;
    }
    
    struct curl_httppost *post = NULL, *last = NULL;
-   curl_formadd( &post, &last, CURLFORM_PTRNAME, "WriteMsg", CURLFORM_PTRCONTENTS, msg_data_str.data(), CURLFORM_CONTENTSLENGTH, msg_data_str.size(), CURLFORM_END );
+   curl_formadd( &post, &last, CURLFORM_PTRNAME, "WriteMsg", CURLFORM_PTRCONTENTS, writemsg_buf, CURLFORM_CONTENTSLENGTH, writemsg_len, CURLFORM_END );
 
    curl_easy_setopt( curl_h, CURLOPT_HTTPPOST, post );
 
@@ -188,13 +178,16 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
 
    BEGIN_TIMING_DATA( ts );
    
-   dbprintf( "send WriteMsg type %d length %zu\n", sendMsg->type(), msg_data_str.size() );
+   dbprintf( "send WriteMsg type %d length %zu\n", sendMsg->type(), writemsg_len );
    rc = curl_easy_perform( curl_h );
 
    END_TIMING_DATA( ts, ts2, "Remote write" );
    
+   // free memory
    curl_easy_setopt( curl_h, CURLOPT_HTTPPOST, NULL );
    curl_formfree( post );
+   
+   free( writemsg_buf );
    
    if( rc != 0 ) {
       // could not perform
@@ -218,28 +211,11 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       if( http_status != 200 ) {
          errorf( "remote HTTP response %ld\n", http_status );
 
-         if( http_status == 202 ) {
-            // got back an error code
-            char* resp = response_buffer_to_string( &buf );
-            char* tmp = NULL;
-            long ret = strtol( resp, &tmp, 10 );
-            if( tmp != NULL ) {
-               rc = ret;
-            }
-            else {
-               errorf("Incoherent error message '%s'\n", resp);
-               rc = -EREMOTEIO;
-            }
-         }
-         else {
-            rc = -EREMOTEIO;
-         }
-
          response_buffer_free( &buf );
          curl_easy_cleanup( curl_h );
          free( content_url );
 
-         return rc;
+         return -EREMOTEIO;
       }
 
       // got back a message--parse it
@@ -265,8 +241,16 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
             rc = -EBADMSG;
          }
          else {
-            // send the MS-related header to our client
-            ms_client_process_header( core->ms, core->volume, recvMsg->volume_version(), recvMsg->cert_version() );
+            // check for error codes
+            if( recvMsg->has_errorcode() ) {
+               errorf("WriteMsg error %d\n", recvMsg->errorcode() );
+               rc = recvMsg->errorcode();
+            }
+            
+            else {
+               // send the MS-related header to our client
+               ms_client_process_header( core->ms, core->volume, recvMsg->volume_version(), recvMsg->cert_version() );
+            }
          }
       }
    }
@@ -352,10 +336,9 @@ int fs_entry_download_manifest_replica( struct fs_core* core,
          
          char* replica_url = fs_entry_RG_manifest_url( core, rg_ids[i], volume_id, file_id, file_version, &ts );
          
-         nr = fs_entry_download_manifest( core, origin, replica_url, mmsg );
+         rc = fs_entry_download_manifest( core, origin, replica_url, mmsg );
 
-         if( nr > 0 ) {
-            rc = 0;
+         if( rc == 0 ) {
             free( replica_url );
             break;
          }
@@ -378,13 +361,6 @@ int fs_entry_download_manifest_replica( struct fs_core* core,
    }
    
    if( rc == 0 ) {
-         
-      // verify it
-      rc = ms_client_verify_gateway_message< Serialization::ManifestMsg >( core->ms, volume_id, SYNDICATE_UG, origin, mmsg );
-      if( rc != 0 ) {
-         errorf("ms_client_verify_manifest(from RG %" PRIu64 ") from Gateway %" PRIu64 " rc = %d\n", RG_id, origin, rc );
-         return -EBADMSG;
-      }
       
       // error code? 
       if( mmsg->has_errorcode() ) {
