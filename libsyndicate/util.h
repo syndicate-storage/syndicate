@@ -164,6 +164,9 @@ uint32_t CMWC4096(void);
 int Base64Decode(const char* b64message, size_t len, char** buffer, size_t* buffer_len);
 int Base64Encode(const char* message, size_t len, char** buffer);
 
+double timespec_to_double( struct timespec* ts );
+double now_ns(void);
+
 int util_init(void);
 
 }

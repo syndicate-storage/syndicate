@@ -55,6 +55,7 @@ struct replica_snapshot {
    uint64_t owner_id;
    uint64_t writer_id;
    uint64_t volume_id;
+   uint32_t max_write_freshness;
    off_t size;
 };
 
@@ -86,6 +87,7 @@ struct replica_context {
 typedef map<CURL*, struct replica_context*> replica_upload_set;
 typedef vector<struct replica_snapshot> replica_cancel_list;
 typedef set<CURL*> replica_expire_set;
+typedef map<double, struct replica_context*> replica_delay_queue;
 
 struct syndicate_replication {
    char* process_name;            // used for logging
@@ -108,6 +110,11 @@ struct syndicate_replication {
    replica_expire_set* pending_expires;
    bool has_expires;
    pthread_mutex_t expire_lock;
+   
+   // hold replication requests until after the write_ttl expires
+   replica_delay_queue* write_delayed;
+   bool has_write_delayed;
+   pthread_mutex_t write_delayed_lock;
    
    pthread_t upload_thread;     // thread to send data to Replica SGs
    

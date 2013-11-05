@@ -24,6 +24,7 @@ int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_f
    snapshot->mtime_nsec = snapshot_fent->mtime_nsec;
    snapshot->volume_id = snapshot_fent->volume;
    snapshot->size = snapshot_fent->size;
+   snapshot->max_write_freshness = snapshot_fent->max_write_freshness;
    return 0;
 }
 
@@ -476,6 +477,92 @@ int replica_context_garbage_block( struct fs_core* core, struct replica_context*
 }
 
 
+// add a CURL handle to our running uploads
+// synrp->uploads should be locked
+static void replica_insert_upload( struct syndicate_replication* synrp, CURL* curl, struct replica_context* rctx ) {
+   // add to running 
+   dbprintf("%s: running: %p\n", synrp->process_name, rctx );
+   
+   (*synrp->uploads)[ curl ] = rctx;
+   curl_multi_add_handle( synrp->running, curl );
+}
+
+// add a replica context's CURL handles to our running uploads
+// synrp->uploads should be locked
+static void replica_insert_uploads( struct syndicate_replication* synrp, struct replica_context* rctx ) {
+   for( unsigned int i = 0; i < rctx->curls->size(); i++ ) {
+      replica_insert_upload( synrp, rctx->curls->at(i), rctx );
+   }
+}
+
+// add a CURL handle to our penduing uploads
+// synrp->pending should be locked
+static void replica_insert_pending_upload( struct syndicate_replication* synrp, CURL* curl, struct replica_context* rctx ) {
+   // add to running 
+   dbprintf("%s: pending: %p\n", synrp->process_name, rctx );
+   
+   (*synrp->pending_uploads)[ curl ] = rctx;
+}
+
+// add a replica context's CURL handles to our running uploads
+// synrp->uploads should be locked
+static void replica_insert_pending_uploads( struct syndicate_replication* synrp, struct replica_context* rctx ) {
+   for( unsigned int i = 0; i < rctx->curls->size(); i++ ) {
+      replica_insert_pending_upload( synrp, rctx->curls->at(i), rctx );
+   }
+}
+
+// connect a replica context to the RGs, and begin processing it
+int replica_context_connect( struct syndicate_replication* rp, struct replica_context* rctx ) {
+   
+   // replicate everywhere
+   uint64_t* rg_ids = ms_client_RG_ids( rp->ms );
+
+   // acquire this lock, since we're processing it now...
+   sem_wait( &rctx->processing_lock );
+   
+   int rc = 0;
+   size_t num_rgs = 0;
+   
+   for( int i = 0; rg_ids[i] != 0; i++ ) {
+      
+      char* rg_base_url = ms_client_get_RG_content_url( rp->ms, rg_ids[i] );
+      
+      CURL* curl = curl_easy_init();
+      rctx->curls->push_back( curl );
+      
+      dbprintf("%s: %s %p (%s) to %s\n", rp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx, (rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ? "block" : "manifest"), rg_base_url );
+      md_init_curl_handle( curl, rg_base_url, rp->ms->conf->replica_connect_timeout );
+      
+      // prepare upload
+      curl_easy_setopt( curl, CURLOPT_POST, 1L );
+      curl_easy_setopt( curl, CURLOPT_HTTPPOST, rctx->form_data );
+      
+      // if we're deleting, change the method
+      if( rctx->op == REPLICA_DELETE ) {
+         curl_easy_setopt( curl, CURLOPT_CUSTOMREQUEST, "DELETE" );
+      }
+      
+      num_rgs += 1;
+      
+      free( rg_base_url );
+   }
+   
+   if( num_rgs > 0 ) {
+      rp->has_pending = true;
+   }
+   else {
+      // no replica gateways!
+      errorf("%s: No RGs are known to us!\n", rp->process_name);
+      rc = -EHOSTDOWN;
+   }
+   
+   free( rg_ids );
+   
+   return rc;
+}
+
+
 static int old_still_running = -1;
 
 // process curl
@@ -632,10 +719,30 @@ static bool replica_context_snapshot_match( struct replica_context* rctx, struct
 static int replica_cancel_contexts( struct syndicate_replication* synrp, struct replica_snapshot* snapshot ) {
    int num_erased = 0;
    
-   // search pending first
-   pthread_mutex_lock( &synrp->pending_lock );
-   
    set<struct replica_context*> to_free;
+   
+   // search write delayed
+   pthread_mutex_lock( &synrp->write_delayed_lock );
+   
+   for( replica_delay_queue::iterator itr = synrp->write_delayed->begin(); itr != synrp->write_delayed->end(); itr++ ) {
+      struct replica_context* rctx = itr->second;
+      
+      replica_delay_queue::iterator to_erase = itr;
+      itr++;
+      
+      if( replica_context_snapshot_match( rctx, snapshot ) ) {
+         
+         to_free.insert( rctx );
+         
+         synrp->write_delayed->erase( to_erase );
+         num_erased++;
+      }
+   }
+   
+   pthread_mutex_unlock( &synrp->write_delayed_lock );
+   
+   // search pending
+   pthread_mutex_lock( &synrp->pending_lock );
    
    for( replica_upload_set::iterator itr = synrp->pending_uploads->begin(); itr != synrp->pending_uploads->end();  ) {
       struct replica_context* rctx = itr->second;
@@ -733,6 +840,7 @@ int replica_process_responses( struct syndicate_replication* synrp ) {
 }
 
 
+
 // thread body for processing the work of a syndicate_replication instance
 void* replica_main( void* arg ) {
    struct syndicate_replication* synrp = (struct syndicate_replication*)arg;
@@ -745,16 +853,42 @@ void* replica_main( void* arg ) {
       // run CURL for a bit
       pthread_mutex_lock( &synrp->running_lock );
       
+      // do we have delayed replicas?
+      if( synrp->has_write_delayed ) {
+         pthread_mutex_lock( &synrp->write_delayed_lock );
+         
+         double now = now_ns();
+         
+         for( replica_delay_queue::iterator itr = synrp->write_delayed->begin(); itr != synrp->write_delayed->end(); itr++ ) {
+            if( itr->first > now ) {
+               // future deadline 
+               break;
+            }
+            
+            struct replica_context* rctx = itr->second;
+            
+            int rc = replica_context_connect( synrp, rctx );
+            if( rc != 0 ) {
+               errorf("%s: replica_context_connect(%p) rc = %d\n", synrp->process_name, itr->second, rc );
+            }
+            else {
+               replica_insert_uploads( synrp, rctx );
+            }
+         }
+         
+         if( synrp->write_delayed->size() == 0 )
+            synrp->has_write_delayed = false;
+         
+         pthread_mutex_unlock( &synrp->write_delayed_lock );
+      }
+      
+      
       // do we have pending?
       if( synrp->has_pending ) {
          pthread_mutex_lock( &synrp->pending_lock );
          
          for( replica_upload_set::iterator itr = synrp->pending_uploads->begin(); itr != synrp->pending_uploads->end(); itr++ ) {
-            
-            dbprintf("%s: running: %p\n", synrp->process_name, itr->second );
-            
-            (*synrp->uploads)[ itr->first ] = itr->second;
-            curl_multi_add_handle( synrp->running, itr->first );
+            replica_insert_upload( synrp, itr->first, itr->second );
          }
          
          synrp->pending_uploads->clear();
@@ -839,58 +973,40 @@ void* replica_main( void* arg ) {
 
 
 // begin downloading
-int replica_begin( struct syndicate_replication* rp, struct replica_context* rctx ) {
-   
-   // acquire this lock, since we're processing it now...
-   sem_wait( &rctx->processing_lock );
-   
-   // all RG ids
-   uint64_t* rg_ids = ms_client_RG_ids( rp->ms );
+int replica_begin( struct syndicate_replication* rp, struct replica_context* rctx, double when ) {
    
    int rc = 0;
-   size_t num_rgs = 0;
    
-   pthread_mutex_lock( &rp->pending_lock );
-   
-   for( int i = 0; rg_ids[i] != 0; i++ ) {
-      
-      char* rg_base_url = ms_client_get_RG_content_url( rp->ms, rg_ids[i] );
-      
-      CURL* curl = curl_easy_init();
-      rctx->curls->push_back( curl );
-      
-      dbprintf("%s: %s %p (%s) to %s\n", rp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx, (rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ? "block" : "manifest"), rg_base_url );
-      md_init_curl_handle( curl, rg_base_url, rp->ms->conf->replica_connect_timeout );
-      
-      // prepare upload
-      curl_easy_setopt( curl, CURLOPT_POST, 1L );
-      curl_easy_setopt( curl, CURLOPT_HTTPPOST, rctx->form_data );
-      
-      // if we're deleting, change the method
-      if( rctx->op == REPLICA_DELETE ) {
-         curl_easy_setopt( curl, CURLOPT_CUSTOMREQUEST, "DELETE" );
+   if( when <= 0.0 ) {
+      rc = replica_context_connect( rp, rctx );
+      if( rc != 0 ) {
+         errorf("%s: replica_connect_context(%p) rc = %d\n", rp->process_name, rctx, rc );
       }
-      
-      //curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-      
-      (*rp->pending_uploads)[ curl ] = rctx;
-      num_rgs += 1;
-      
-      free( rg_base_url );
-   }
-   
-   if( num_rgs > 0 ) {
-      rp->has_pending = true;
+      else {
+         pthread_mutex_lock( &rp->pending_lock );
+         
+         replica_insert_pending_uploads( rp, rctx );
+         
+         rp->has_pending = true;
+         pthread_mutex_unlock( &rp->pending_lock );
+      }
    }
    else {
-      // no replica gateways!
-      errorf("%s: No RGs are known to us!\n", rp->process_name);
-      rc = -EHOSTDOWN;
+      // begin later
+      pthread_mutex_lock( &rp->write_delayed_lock );
+      
+      // check for duplicates...
+      replica_delay_queue::iterator itr = rp->write_delayed->find( when );
+      while( itr != rp->write_delayed->end() ) {
+         when += 1e-9;
+         itr = rp->write_delayed->find( when );
+      }
+      
+      // write after a certain amount of time has passed
+      (*rp->write_delayed)[ when ] = rctx;
+      rp->has_write_delayed = true;
+      pthread_mutex_unlock( &rp->write_delayed_lock );
    }
-   
-   pthread_mutex_unlock( &rp->pending_lock );
-   
-   free( rg_ids );
    
    return rc;
 }
@@ -938,6 +1054,7 @@ int replica_init_replication( struct syndicate_replication* rp, char const* name
    pthread_mutex_init( &rp->pending_lock, NULL );
    pthread_mutex_init( &rp->cancel_lock, NULL );
    pthread_mutex_init( &rp->expire_lock, NULL );
+   pthread_mutex_init( &rp->write_delayed_lock, NULL );
    
    rp->running = curl_multi_init();
    rp->process_name = strdup( name );
@@ -946,6 +1063,7 @@ int replica_init_replication( struct syndicate_replication* rp, char const* name
    rp->pending_uploads = new replica_upload_set();
    rp->pending_cancels = new replica_cancel_list();
    rp->pending_expires = new replica_expire_set();
+   rp->write_delayed = new replica_delay_queue();
    
    rp->active = true;
    
@@ -990,17 +1108,28 @@ int replica_shutdown_replication( struct syndicate_replication* rp ) {
       free( itr->second );
    }
    
+   int need_write_delayed_lock = pthread_mutex_trylock( &rp->write_delayed_lock );
+   
+   for( replica_delay_queue::iterator itr = rp->write_delayed->begin(); itr != rp->write_delayed->end(); itr++ ) {
+      
+      replica_context_free( itr->second );
+      
+      free( itr->second );
+   }
+   
    rp->pending_cancels->clear();
    
    delete rp->uploads;
    delete rp->pending_uploads;
    delete rp->pending_cancels;
    delete rp->pending_expires;
+   delete rp->write_delayed;
    
    rp->uploads = NULL;
    rp->pending_uploads = NULL;
    rp->pending_cancels = NULL;
    rp->pending_expires = NULL;
+   rp->write_delayed = NULL;
    
    if( need_running_unlock )
       pthread_mutex_unlock( &rp->pending_lock );
@@ -1008,10 +1137,14 @@ int replica_shutdown_replication( struct syndicate_replication* rp ) {
    if( need_pending_unlock )
       pthread_mutex_unlock( &rp->running_lock );
    
+   if( need_write_delayed_lock )
+      pthread_mutex_unlock( &rp->write_delayed_lock );
+   
    pthread_mutex_destroy( &rp->pending_lock );
    pthread_mutex_destroy( &rp->running_lock );
    pthread_mutex_destroy( &rp->cancel_lock );
    pthread_mutex_destroy( &rp->expire_lock );
+   pthread_mutex_destroy( &rp->write_delayed_lock );
    
    curl_multi_cleanup( rp->running );
    
@@ -1063,11 +1196,11 @@ int replication_shutdown() {
 
 
 // run a manifest replication
-int replica_run_manifest_context( struct fs_core* core, struct syndicate_replication* synrp, struct replica_context* manifest_rctx, bool sync, vector<struct replica_context*>* rctxs ) {
+int replica_run_manifest_context( struct fs_core* core, struct syndicate_replication* synrp, struct replica_context* manifest_rctx, bool sync, vector<struct replica_context*>* rctxs, double start_time ) {
    int rc = 0;
    
    // proceed to replicate
-   rc = replica_begin( synrp, manifest_rctx );
+   rc = replica_begin( synrp, manifest_rctx, start_time );
    
    if( rc != 0 ) {
       errorf("replica_begin(%p) rc = %d\n", manifest_rctx, rc );
@@ -1114,14 +1247,14 @@ int replica_run_manifest_context( struct fs_core* core, struct syndicate_replica
 
 
 // run a set of block replications
-int replica_run_block_contexts( struct fs_core* core, struct syndicate_replication* synrp, vector<struct replica_context*>* block_rctxs, bool sync, vector<struct replica_context*>* rctxs ) {
+int replica_run_block_contexts( struct fs_core* core, struct syndicate_replication* synrp, vector<struct replica_context*>* block_rctxs, bool sync, vector<struct replica_context*>* rctxs, double start_time ) {
    
    int rc = 0;
    vector<struct replica_context*> running;
    
    // kick of the replicas
    for( unsigned int i = 0; i < block_rctxs->size(); i++ ) {
-      rc = replica_begin( synrp, block_rctxs->at(i) );
+      rc = replica_begin( synrp, block_rctxs->at(i), start_time );
       if( rc != 0 ) {
          errorf("replica_begin(%p) rc = %d\n", block_rctxs->at(i), rc );
       }
@@ -1178,7 +1311,7 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
    if( fh )
       rctxs = fh->rctxs;
    
-   rc = replica_run_manifest_context( core, &global_replication, manifest_rctx, sync, rctxs );
+   rc = replica_run_manifest_context( core, &global_replication, manifest_rctx, sync, rctxs, -1.0 );
    
    return rc;
 }
@@ -1212,7 +1345,7 @@ int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modi
    if( fh )
       rctxs = fh->rctxs;
    
-   rc = replica_run_block_contexts( core, &global_replication, &block_rctxs, sync, rctxs );
+   rc = replica_run_block_contexts( core, &global_replication, &block_rctxs, sync, rctxs, -1.0 );
    
    return rc;
 }
@@ -1231,7 +1364,13 @@ int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snap
    // if there are any pending uploads for this same manifest, stop them
    replica_cancel_contexts( &global_replication, snapshot );
    
-   rc = replica_run_manifest_context( core, &global_garbage_collector, manifest_rctx, false, NULL );
+   struct timespec write_ttl;
+   write_ttl.tv_sec = snapshot->max_write_freshness;
+   write_ttl.tv_nsec = 0;
+   
+   double start_time = timespec_to_double( &write_ttl );
+   
+   rc = replica_run_manifest_context( core, &global_garbage_collector, manifest_rctx, false, NULL, start_time );
       
    return rc;
 }
@@ -1269,7 +1408,13 @@ int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapsh
       block_rctxs.push_back( block_rctx );
    }
    
-   rc = replica_run_block_contexts( core, &global_garbage_collector, &block_rctxs, false, NULL );
+   struct timespec write_ttl;
+   write_ttl.tv_sec = snapshot->max_write_freshness;
+   write_ttl.tv_nsec = 0;
+   
+   double start_time = timespec_to_double( &write_ttl );
+   
+   rc = replica_run_block_contexts( core, &global_garbage_collector, &block_rctxs, false, NULL, start_time );
    
    return rc;
 }

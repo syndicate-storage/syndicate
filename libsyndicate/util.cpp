@@ -546,3 +546,16 @@ int uninstall_signal_handler(int signo) {
     return 0;
 }
 
+
+double timespec_to_double( struct timespec* ts ) {
+   double ret = (double)ts->tv_sec + ((double)ts->tv_nsec) / 1e9;
+   return ret;
+}
+
+double now_ns(void) {
+   struct timespec ts;
+   clock_gettime( CLOCK_REALTIME, &ts );
+   
+   return timespec_to_double( &ts );
+}
+

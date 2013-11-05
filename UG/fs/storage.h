@@ -36,8 +36,6 @@ int fs_entry_clear_local_file( struct fs_core* core, uint64_t file_id, int64_t v
 int fs_entry_remove_local_file( struct fs_core* core, uint64_t file_id, int64_t version );
 int fs_entry_reversion_local_file( struct fs_core* core, struct fs_entry* fent, uint64_t new_version );
 
-// withdraw
-int fs_entry_withdraw_dir( struct fs_core* core, char const* path );
-
+// log writes
 
 #endif
