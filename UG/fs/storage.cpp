@@ -490,7 +490,7 @@ int fs_entry_collate( struct fs_core* core, struct fs_entry* fent, uint64_t bloc
    free( block_dir );
    
    // move the data into place
-   int rc = rename( tmppath, block_path );
+   rc = rename( tmppath, block_path );
 
    if( rc != 0 ) {
       rc = -errno;

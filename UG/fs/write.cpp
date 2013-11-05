@@ -424,11 +424,9 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       
       if( local ) {
          // garbage collect the old manifest
-         
-         rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
+         fs_entry_garbage_collect_manifest( core, &fent_snapshot );
          if( rc != 0 ) {
             errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fh->path, rc );
-            rc = -EIO;
          }
       }
       
@@ -438,7 +436,6 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
          rc = fs_entry_garbage_collect_blocks( core, &fent_snapshot, &overwritten_blocks );
          if( rc != 0 ) {
             errorf("fs_entry_garbage_collect_blocks(%s) rc = %d\n", fh->path, rc );
-            rc = -EIO;
          }
       }
       
@@ -500,6 +497,20 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
                            // wait for all replicas to finish, since we're synchronous
                            fs_entry_replicate_wait( fh );
                         }
+                     }
+                     
+                     // garbage-collect the old manifest.
+                     // First, update the snapshot to indicate that we coordinate this file
+                     uint64_t old_writer_id = fent_snapshot.writer_id;
+                     fent_snapshot.writer_id = fh->fent->coordinator;
+                     
+                     fs_entry_garbage_collect_manifest( core, &fent_snapshot );
+                     
+                     // restore
+                     fent_snapshot.writer_id = old_writer_id;
+                     
+                     if( rc != 0 ) {
+                        errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fh->path, rc );
                      }
                      
                      // done here
