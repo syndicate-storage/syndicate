@@ -71,6 +71,9 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
    // which blocks do we garbage-collect?
    modification_map garbage_blocks;
    
+   // did we replicate successfully?
+   bool replicated = false;
+   
    // fent snapshot before we do anything
    struct replica_snapshot fent_snapshot;
    fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
@@ -236,6 +239,9 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
       }
       
       fs_entry_free_replica_file_handle( &fh );
+      
+      if( err == 0 )
+         replicated = true;
    }
 
    // reversion this file atomically
@@ -263,8 +269,35 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
       }
       rc = 0;
    }
+   
+   // recover if error
+   if( err != 0 ) {
+      errorf("Reverting %s due to error\n", fs_path );
+      
+      if( local && replicated ) {
+         struct replica_snapshot new_fent_snapshot;
+         fs_entry_replica_snapshot( core, fent, 0, 0, &new_fent_snapshot );
+         
+         int rc = fs_entry_garbage_collect_manifest( core, &new_fent_snapshot );
+         if( rc != 0 ) {
+            errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
+         }
+         
+         rc = fs_entry_garbage_collect_blocks( core, &new_fent_snapshot, &garbage_blocks );
+         if( rc != 0 ) {
+            errorf("fs_entry_garbage_collect_blocks(%s) rc = %d\n", fs_path, rc );
+         }
+         rc = 0;
+      }
+      
+      // roll back metadata
+      fent->size = fent_snapshot.size;
+      fent->mtime_sec = fent_snapshot.mtime_sec;
+      fent->mtime_nsec = fent_snapshot.mtime_nsec;
+      fent->version = fent_snapshot.file_version;
+   }
 
-   if( modified_blocks.size() > 0 ) {
+   if( err == 0 && modified_blocks.size() > 0 ) {
       // free memory
       for( modification_map::iterator itr = modified_blocks.begin(); itr != modified_blocks.end(); itr++ ) {
          free( itr->second.hash );
