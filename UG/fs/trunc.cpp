@@ -236,19 +236,6 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
       }
       
       fs_entry_free_replica_file_handle( &fh );
-      
-      // garbage collect old manifest and block on success
-      if( err == 0 ) {
-         rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
-         if( rc != 0 ) {
-            errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
-         }
-         
-         rc = fs_entry_garbage_collect_blocks( core, &fent_snapshot, &garbage_blocks );
-         if( rc != 0 ) {
-            errorf("fs_entry_garbage_collect_blocks(%s) rc = %d\n", fs_path, rc );
-         }
-      }
    }
 
    // reversion this file atomically
@@ -261,6 +248,20 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
       if( err != 0 ) {
          errorf("fs_entry_reversion_file(%s.%" PRId64 " --> %" PRId64 ") rc = %d\n", fs_path, fent->version, new_version, err );
       }
+   }
+   
+   // garbage collect old manifest and block on success
+   if( err == 0 && local ) {
+      int rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
+      if( rc != 0 ) {
+         errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
+      }
+      
+      rc = fs_entry_garbage_collect_blocks( core, &fent_snapshot, &garbage_blocks );
+      if( rc != 0 ) {
+         errorf("fs_entry_garbage_collect_blocks(%s) rc = %d\n", fs_path, rc );
+      }
+      rc = 0;
    }
 
    if( modified_blocks.size() > 0 ) {
