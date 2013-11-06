@@ -48,8 +48,11 @@ typedef map<uint64_t, long> deadline_queue;
 
 #define MS_NUM_CERT_BUNDLES 4
 
-// perfect forward secrecy!
-#define MS_CIPHER_SUITES "EECDH:EDH:!eNULL:!aNULL:!MD5:!DES:!DES3"
+// use STRONG crypto.
+// Use ephemeral Diffie-Helman for key exchange (RSA or ECC)
+// Use at least 256-bit keys in the data encryption
+// Use at least 256-bit MACs
+#define MS_CIPHER_SUITES "ECDHE:EDH:SHA256:SHA384:SHA512:AES256:!DH:!eNULL:!aNULL:!MD5:!DES:!DES3:!LOW:!EXP:!SRP:!DSS:!RC4:!PSK:!SHA1:!SHA2:!AES128"
 
 
 // directory listing

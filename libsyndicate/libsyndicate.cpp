@@ -3417,7 +3417,7 @@ int md_start_HTTP( struct md_HTTP* http, int portnum ) {
                                                 MHD_OPTION_HTTPS_MEM_KEY, conf->server_key, 
                                                 MHD_OPTION_HTTPS_MEM_CERT, conf->server_cert,
                                                 MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_HTTPS_PRIORITIES, "NORMAL",
+                                                MHD_OPTION_HTTPS_PRIORITIES, SYNDICATE_GNUTLS_CIPHER_SUITES,
                                                 MHD_OPTION_END );
       }
       else {
@@ -3426,7 +3426,7 @@ int md_start_HTTP( struct md_HTTP* http, int portnum ) {
                                                 MHD_OPTION_HTTPS_MEM_CERT, conf->server_cert, 
                                                 MHD_OPTION_THREAD_POOL_SIZE, conf->num_http_threads,
                                                 MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_HTTPS_PRIORITIES, "NORMAL",
+                                                MHD_OPTION_HTTPS_PRIORITIES, SYNDICATE_GNUTLS_CIPHER_SUITES,
                                                 MHD_OPTION_END );
       }
    

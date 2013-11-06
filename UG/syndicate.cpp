@@ -506,7 +506,6 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
       }
 
       default: {
-         //errorf( "unknown transaction message type %d (xid = %ld, session = %ld)\n", msg.type(), msg.transaction_id(), msg.session_id() );
          break;
       }
    }

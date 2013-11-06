@@ -294,6 +294,12 @@ extern char const MD_HTTP_DEFAULT_MSG[128];
 #define md_HTTP_auth_mode( http, auth_mode ) (http).authentication_mode = auth_mode
 #define md_HTTP_server_type( http, type ) (http).server_type = type
 
+// use STRONG encryption, with perfect forward security
+// Use ephemeral Diffie-Hellman for key exchange (RSA or ECC)
+// Use at least 256-bit MACs
+// Use at least 256-bit keys for data encryption.
+#define SYNDICATE_GNUTLS_CIPHER_SUITES "PFS:-ARCFOUR-128:-3DES-CBC:-AES-128-CBC:-AES-128-GCM:-CAMELLIA-128-CBC:-MD5:-SHA1"
+
 // server configuration
 struct md_syndicate_conf {
    // UG fields
