@@ -6,6 +6,11 @@
 #include "manifest.h"
 #include "url.h"
 
+// get the pointer at a particular offset into a list of hashes
+static inline unsigned char* hash_at( unsigned char* hashes, uint64_t block_offset ) {
+   return hashes + (block_offset) * BLOCK_HASH_LEN();
+}
+
 // default constructor
 block_url_set::block_url_set() {
    this->file_id = 0;
@@ -13,23 +18,24 @@ block_url_set::block_url_set() {
    this->end_id = -1;
    this->block_versions = NULL;
    this->file_version = -1;
+   this->block_hashes = NULL;
    this->staging = false;
 }
 
 // value constructor
-block_url_set::block_url_set( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, bool staging ) {
-   this->init( volume_id, gateway_id, file_id, file_version, start, end, bv, staging );
+block_url_set::block_url_set( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, unsigned char* hashes, bool staging ) {
+   this->init( volume_id, gateway_id, file_id, file_version, start, end, bv, hashes, staging );
 }
 
 
 // copy constructor
 block_url_set::block_url_set( block_url_set& bus ) {
-   this->init( bus.volume_id, bus.gateway_id, bus.file_id, bus.file_version, bus.start_id, bus.end_id, bus.block_versions, bus.staging );
+   this->init( bus.volume_id, bus.gateway_id, bus.file_id, bus.file_version, bus.start_id, bus.end_id, bus.block_versions, bus.block_hashes, bus.staging );
 }
 
 
 // initialization
-void block_url_set::init( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, bool staging ) {
+void block_url_set::init( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, unsigned char* hashes, bool staging ) {
    this->file_id = file_id;
    this->gateway_id = gateway_id;
    this->volume_id = volume_id;
@@ -38,6 +44,9 @@ void block_url_set::init( uint64_t volume_id, uint64_t gateway_id, uint64_t file
    this->file_version = file_version;
    this->block_versions = CALLOC_LIST( int64_t, end - start );
    memcpy( this->block_versions, bv, sizeof(int64_t) * (end - start) );
+   
+   this->block_hashes = CALLOC_LIST( unsigned char, (end - start) * BLOCK_HASH_LEN() );
+   memcpy( this->block_hashes, hashes, (end - start) * BLOCK_HASH_LEN() );
    
    this->staging = staging;
    
@@ -51,8 +60,12 @@ block_url_set::~block_url_set() {
       free( this->block_versions );
       this->block_versions = NULL;
    }
-   start_id = -1;
-   end_id = -1;
+   if( this->block_hashes ) {
+      free( this->block_hashes );
+      this->block_hashes = NULL;
+   }
+   this->start_id = -1;
+   this->end_id = -1;
 }
 
 
@@ -72,6 +85,32 @@ uint64_t block_url_set::lookup_gateway( uint64_t block_id ) {
       return 0;
 }
 
+// compare a hash 
+int block_url_set::hash_cmp( uint64_t block_id, unsigned char* hash ) {
+   if( this->in_range( block_id ) ) {
+      int rc = memcmp( hash_at( this->block_hashes, block_id - this->start_id ), hash, BLOCK_HASH_LEN() );
+      if( rc != 0 )
+         return 1;
+      else
+         return 0;
+   }
+   else {
+      return -ENOENT;
+   }
+}
+
+// duplicate a hash
+unsigned char* block_url_set::hash_dup( uint64_t block_id ) {
+   if( this->in_range( block_id ) ) {
+      unsigned char* ret = CALLOC_LIST( unsigned char, BLOCK_HASH_LEN() );
+      memcpy( ret, hash_at( this->block_hashes, block_id - this->start_id ), BLOCK_HASH_LEN() );
+      return ret;
+   }
+   else {
+      return NULL;
+   }
+}
+
 // is a block id in a range?
 bool block_url_set::in_range( uint64_t block_id ) { return (block_id >= this->start_id && block_id < this->end_id); }
 
@@ -89,12 +128,18 @@ bool block_url_set::is_prependable( uint64_t vid, uint64_t gid, uint64_t fid, ui
 uint64_t block_url_set::size() { return this->end_id - this->start_id; }
 
 // append a block to a set
-bool block_url_set::append( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, bool staging ) {
+bool block_url_set::append( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash, bool staging ) {
    if( this->is_appendable( vid, gid, fid, block_id, staging ) ) {
       this->end_id++;
-      int64_t* tmp = (int64_t*)realloc( this->block_versions, (this->end_id - this->start_id) * sizeof(int64_t) );
-      tmp[ this->end_id - 1 - this->start_id ] = block_version;
-      this->block_versions = tmp;
+      
+      int64_t* new_versions = (int64_t*)realloc( this->block_versions, (this->end_id - this->start_id) * sizeof(int64_t) );
+      new_versions[ this->end_id - 1 - this->start_id ] = block_version;
+      
+      unsigned char* new_hashes = (unsigned char*)realloc( this->block_hashes, (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
+      memcpy( hash_at( new_hashes, this->end_id - 1 - this->start_id ), hash, BLOCK_HASH_LEN() );
+      
+      this->block_versions = new_versions;
+      this->block_hashes = new_hashes;
 
       return true;
    }
@@ -105,17 +150,25 @@ bool block_url_set::append( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t b
 
 
 // prepend a block to a set
-bool block_url_set::prepend( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, bool staging ) {
+bool block_url_set::prepend( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash, bool staging ) {
    if( this->is_prependable( vid, gid, fid, block_id, staging ) ) {
       // shift everyone down
       this->start_id--;
-      int64_t* tmp = CALLOC_LIST( int64_t, this->end_id - this->start_id );
-      tmp[ 0 ] = block_version;
-      memcpy( tmp + 1, this->block_versions, sizeof(int64_t) * (this->end_id - this->start_id - 1) );
+      
+      int64_t* new_versions = CALLOC_LIST( int64_t, this->end_id - this->start_id );
+      new_versions[ 0 ] = block_version;
+      memcpy( new_versions + 1, this->block_versions, sizeof(int64_t) * (this->end_id - this->start_id - 1) );
 
+      unsigned char* new_hashes = CALLOC_LIST( unsigned char, (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
+      memcpy( new_hashes, hash, BLOCK_HASH_LEN() );
+      memcpy( hash_at( new_hashes, 1 ), this->block_hashes, (this->end_id - this->start_id - 1) * BLOCK_HASH_LEN() );
+      
       free( this->block_versions);
-      this->block_versions = tmp;
+      this->block_versions = new_versions;
 
+      free( this->block_hashes );
+      this->block_hashes = new_hashes;
+      
       return true;
    }
    else {
@@ -141,12 +194,19 @@ bool block_url_set::shrink_left() {
       return false;
 
    this->start_id++;
-   int64_t* tmp = CALLOC_LIST( int64_t, this->end_id - this->start_id );
 
-   memcpy( tmp, this->block_versions + 1, sizeof(int64_t) * (this->end_id - this->start_id) );
+   int64_t* new_versions = CALLOC_LIST( int64_t, this->end_id - this->start_id );
+
+   memcpy( new_versions, this->block_versions + 1, sizeof(int64_t) * (this->end_id - this->start_id) );
    free( this->block_versions );
-   this->block_versions = tmp;
+   this->block_versions = new_versions;
 
+   unsigned char* new_hashes = CALLOC_LIST( unsigned char, (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
+   
+   memcpy( new_hashes, hash_at( this->block_hashes, 1 ), (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
+   free( this->block_hashes );
+   this->block_hashes = new_hashes;
+   
    return true;
 }
 
@@ -156,20 +216,28 @@ bool block_url_set::shrink_right() {
    if( this->start_id + 1 >= this->end_id )
       return false;
 
+   // TODO: realloc instead?
+   
    this->end_id--;
-   int64_t* tmp = CALLOC_LIST( int64_t, this->end_id - this->start_id );
+   int64_t* new_versions = CALLOC_LIST( int64_t, this->end_id - this->start_id );
 
-   memcpy( tmp, this->block_versions, sizeof(int64_t) * (this->end_id - this->start_id) );
+   memcpy( new_versions, this->block_versions, sizeof(int64_t) * (this->end_id - this->start_id) );
    free( this->block_versions );
-   this->block_versions = tmp;
+   this->block_versions = new_versions;
 
+   unsigned char* new_hashes = CALLOC_LIST( unsigned char, (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
+   
+   memcpy( new_hashes, this->block_hashes, (this->end_id - this->start_id) * BLOCK_HASH_LEN() );
+   free( this->block_hashes );
+   this->block_hashes = new_hashes;
+   
    return true;
 }
 
 
 // split to the left
 block_url_set* block_url_set::split_left( uint64_t block_id ) {
-   block_url_set* ret = new block_url_set( this->volume_id, this->gateway_id, this->file_id, this->file_version, this->start_id, block_id, this->block_versions, this->staging );
+   block_url_set* ret = new block_url_set( this->volume_id, this->gateway_id, this->file_id, this->file_version, this->start_id, block_id, this->block_versions, this->block_hashes, this->staging );
    return ret;
 }
 
@@ -177,7 +245,7 @@ block_url_set* block_url_set::split_left( uint64_t block_id ) {
 // split to the right
 block_url_set* block_url_set::split_right( uint64_t block_id ) {
    int64_t off = (int64_t)(block_id) - this->start_id + 1;
-   block_url_set* ret = new block_url_set( this->volume_id, this->gateway_id, this->file_id, this->file_version, block_id+1, this->end_id, this->block_versions + off, this->staging );
+   block_url_set* ret = new block_url_set( this->volume_id, this->gateway_id, this->file_id, this->file_version, block_id+1, this->end_id, this->block_versions + off, hash_at( this->block_hashes, off ), this->staging );
    return ret;
 }
 
@@ -189,6 +257,7 @@ void block_url_set::as_protobuf( struct fs_core* core, Serialization::BlockURLSe
    busmsg->set_gateway_id( this->gateway_id );
    for( uint64_t id = this->start_id; id < this->end_id; id++ ) {
       busmsg->add_block_versions( this->block_versions[id - this->start_id] );
+      busmsg->add_block_hashes( string( (char*)hash_at(this->block_hashes, id - this->start_id), BLOCK_HASH_LEN() ) );
    }
 }
 
@@ -394,6 +463,43 @@ int64_t* file_manifest::get_block_versions( uint64_t start_id, uint64_t end_id )
 }
 
 
+// compare a hash
+int file_manifest::hash_cmp( uint64_t block_id, unsigned char* hash ) {
+   pthread_rwlock_rdlock( &this->manifest_lock );
+   
+   block_map::iterator itr = this->find_block_set( block_id );
+   if( itr == this->block_urls.end() ) {
+      // not found
+      pthread_rwlock_unlock( &this->manifest_lock );
+      return -ENOENT;
+   }
+   
+   int ret = itr->second->hash_cmp( block_id, hash );
+
+   pthread_rwlock_unlock( &this->manifest_lock );
+   return ret;
+}
+
+
+// duplicate a hash
+unsigned char* file_manifest::hash_dup( uint64_t block_id ) {
+   pthread_rwlock_rdlock( &this->manifest_lock );
+   
+   block_map::iterator itr = this->find_block_set( block_id );
+   if( itr == this->block_urls.end() ) {
+      // not found
+      pthread_rwlock_unlock( &this->manifest_lock );
+      return NULL;
+   }
+   
+   unsigned char* ret = CALLOC_LIST( unsigned char, BLOCK_HASH_LEN() );
+   memcpy( ret, hash_at( itr->second->block_hashes, block_id - itr->second->start_id ), BLOCK_HASH_LEN() );
+
+   pthread_rwlock_unlock( &this->manifest_lock );
+   return ret;
+}
+
+
 // set the host of a range of blocks
 void file_manifest::set_block_hosts( uint64_t gateway_id, uint64_t start_id, uint64_t end_id ) {
    if( end_id <= start_id )
@@ -500,22 +606,28 @@ bool file_manifest::merge_adjacent( uint64_t block_id ) {
       
       // these block URL sets refer to blocks on the same host.  merge them
       int64_t *bvec = CALLOC_LIST( int64_t, right->end_id - left->start_id );
+      unsigned char* hashes = CALLOC_LIST( unsigned char, (right->end_id - left->start_id) * BLOCK_HASH_LEN() );
 
+      // TODO: optimize into four memcpy() calls
+      
       uint64_t i = 0;
       for( uint64_t j = 0; j < left->end_id - left->start_id; j++ ) {
          bvec[i] = left->block_versions[j];
+         memcpy( hashes + i * BLOCK_HASH_LEN(), hash_at( left->block_hashes, j ), BLOCK_HASH_LEN() );
          
          i++;
       }
       for( uint64_t j = 0; j < right->end_id - right->start_id; j++ ) {
          bvec[i] = right->block_versions[j];
-
+         memcpy( hashes + i * BLOCK_HASH_LEN(), hash_at( right->block_hashes, j ), BLOCK_HASH_LEN() );
+         
          i++;
       }
       
-      block_url_set* merged = new block_url_set( left->volume_id, left->gateway_id, left->file_id, left->file_version, left->start_id, right->end_id, bvec, left->staging );
+      block_url_set* merged = new block_url_set( left->volume_id, left->gateway_id, left->file_id, left->file_version, left->start_id, right->end_id, bvec, hashes, left->staging );
 
       free( bvec );
+      free( hashes );
 
       this->block_urls.erase( itr );
       this->block_urls.erase( itr2 );
@@ -554,7 +666,7 @@ int file_manifest::get_range( uint64_t block_id, uint64_t* start_id, uint64_t* e
 
 // insert a URL into a file manifest
 // fent must be at least read-locked
-int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool staging ) {
+int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash, bool staging ) {
    pthread_rwlock_wrlock( &this->manifest_lock );
 
    // sanity check
@@ -578,10 +690,10 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
          block_map::reverse_iterator last_range_itr = this->block_urls.rbegin();
          block_url_set* last_range = last_range_itr->second;
 
-         bool rc = last_range->append( core->volume, gateway, fent->file_id, block_id, block_version, staging );
+         bool rc = last_range->append( core->volume, gateway, fent->file_id, block_id, block_version, block_hash, staging );
          if( !rc ) {
             //printf("// could not append to the last block range, so we'll need to make a new one\n");
-            this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
+            this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
          }
          else {
             //printf("// successfully appended this block to the last range!\n");
@@ -589,7 +701,7 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
       }
       else {
          //printf("// we don't have any blocks yet.  put the first one\n");
-         this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
+         this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
       }
    }
 
@@ -610,6 +722,7 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
          //printf("// this block URL belongs to this url set.\n");
          //printf("// insert the version\n");
          existing->block_versions[ block_id - existing->start_id ] = block_version;
+         memcpy( hash_at( existing->block_hashes, block_id - existing->start_id ), block_hash, BLOCK_HASH_LEN() );
       }
       else {
          //printf("// this block URL does not belong to this block URL set.\n");
@@ -626,19 +739,19 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
                itr--;
                block_url_set* prev_existing = itr->second;
 
-               bool rc = prev_existing->append( core->volume, gateway, fent->file_id, block_id, block_version, staging );
+               bool rc = prev_existing->append( core->volume, gateway, fent->file_id, block_id, block_version, block_hash, staging );
                if( !rc ) {
                   //printf("// could not append to the previous block URL set.\n");
                   //printf("// Make a new block URL set and insert it (replacing existing)\n");
                   
-                  block_url_set* bus = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
+                  block_url_set* bus = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
                   this->block_urls[ block_id ] = bus;
                }
             }
             else {
                //printf("// need to insert this block URL set at the beginning (replacing existing)\n");
                
-               block_url_set* bus = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
+               block_url_set* bus = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
                this->block_urls[ block_id ] = bus;
                
                need_clear = false;
@@ -671,13 +784,13 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
                block_url_set* next_existing = itr->second;
 
                if( itr != this->block_urls.end() ) {
-                  rc = next_existing->prepend( core->volume, gateway, fent->file_id, block_id, block_version, staging );
+                  rc = next_existing->prepend( core->volume, gateway, fent->file_id, block_id, block_version, block_hash, staging );
                }
 
                if( !rc ) {
                   //printf("// could not prepend to the next block URL set.\n");
                   //printf("// Make a new block URL set and insert it.\n");
-                  this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
+                  this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
                }
                else {
                   //printf("// adjust and shift next_existing into its new place.\n");
@@ -688,7 +801,7 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
             }
             else {
                //printf("// need to insert this block URL at the end\n");
-               this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
+               this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
             }
 
             //printf("// will need to shrink existing\n");
@@ -707,7 +820,7 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
             //printf("// split up this URL set\n");
             block_url_set* left = existing->split_left( block_id );
             block_url_set* right = existing->split_right( block_id );
-            block_url_set* given = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, staging );
+            block_url_set* given = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
 
             delete existing;
 
@@ -777,6 +890,17 @@ char* file_manifest::serialize_str() {
       }
       
       sts << itr->second->block_versions[itr->second->end_id - itr->second->start_id - 1] << "] ";
+      
+      sts << "hashes=[";
+      for( uint64_t i = 0; i < itr->second->end_id - itr->second->start_id - 1; i++ ) {
+         char* printable_hash = BLOCK_HASH_TO_STRING( hash_at( itr->second->block_hashes, i ) );
+         sts << printable_hash << ",";
+         free( printable_hash);
+      }
+      
+      char* printable_hash = BLOCK_HASH_TO_STRING( hash_at( itr->second->block_hashes, itr->second->end_id - itr->second->start_id - 1 ) );
+      sts << printable_hash << "] ";
+      free( printable_hash);
 
       char buf[50];
       sprintf(buf, "%" PRIX64, itr->second->file_id);
@@ -842,19 +966,37 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
    for( int i = 0; i < mmsg->block_url_set_size(); i++ ) {
       Serialization::BlockURLSetMsg busmsg = mmsg->block_url_set( i );
 
+      // make sure version and hash lengths match up
+      if( busmsg.block_versions_size() != busmsg.block_hashes_size() ) {
+         errorf("Manifest message len(block_versions) == %u differs from len(block_hashes) == %u\n", busmsg.block_versions_size(), busmsg.block_hashes_size() );
+         return -EINVAL;
+      }
+      
       int64_t* block_versions = CALLOC_LIST( int64_t, busmsg.end_id() - busmsg.start_id() );
+      unsigned char* block_hashes = CALLOC_LIST( unsigned char, (busmsg.end_id() - busmsg.start_id()) * BLOCK_HASH_LEN() );
 
       for( int j = 0; j < busmsg.block_versions_size(); j++ ) {
+         
+         // validate length
+         if( busmsg.block_hashes(j).size() != BLOCK_HASH_LEN() ) {
+            errorf("Block URL set hash length for block %" PRIu64 " is %zu, which differs from expected %zu\n", (uint64_t)(busmsg.start_id() + j), busmsg.block_hashes(j).size(), BLOCK_HASH_LEN() );
+            free( block_versions );
+            free( block_hashes );
+            return -EINVAL;
+         }
+         
          block_versions[j] = busmsg.block_versions(j);
+         memcpy( hash_at( block_hashes, j ), busmsg.block_hashes(j).data(), BLOCK_HASH_LEN() );
       }
 
       uint64_t gateway_id = busmsg.gateway_id();
 
       bool staging = (core->gateway == gateway_id && !FS_ENTRY_LOCAL( core, fent ));
 
-      m->block_urls[ busmsg.start_id() ] = new block_url_set( core->volume, gateway_id, fent->file_id, mmsg->file_version(), busmsg.start_id(), busmsg.end_id(), block_versions, staging );
+      m->block_urls[ busmsg.start_id() ] = new block_url_set( core->volume, gateway_id, fent->file_id, mmsg->file_version(), busmsg.start_id(), busmsg.end_id(), block_versions, block_hashes, staging );
 
       free( block_versions );
+      free( block_hashes );
    }
 
    if( rc == 0 ) {
@@ -866,9 +1008,9 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
 
 // put a single block into a manifest
 // fent must be write-locked
-int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool staging ) {
+int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash, bool staging ) {
    
-   int rc = fent->manifest->put_block( core, gateway_id, fent, block_id, block_version, staging );
+   int rc = fent->manifest->put_block( core, gateway_id, fent, block_id, block_version, block_hash, staging );
    if( rc != 0 ) {
       errorf("manifest::put_block(%" PRId64 ".%" PRIu64 ", staging=%d) rc = %d\n", block_id, block_version, staging, rc );
       return rc;

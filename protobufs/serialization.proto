@@ -21,6 +21,7 @@ message BlockList {
    required uint64 start_id = 1;
    required uint64 end_id = 2;
    repeated int64 version = 3;
+   repeated bytes hash = 4;            // must be the same length as version
 }
 
 // truncate a file
@@ -47,7 +48,8 @@ message BlockURLSetMsg {
    required uint64 gateway_id = 1;              // if this is a cert bundle, then this is the gateway ID
    required uint64 start_id = 2;                // if this is a cert bundle, then this is the gateway type
    required uint64 end_id = 3;                  // if this is a cert bundle, then this is the gateway's caps
-   repeated int64 block_versions = 4;
+   repeated int64 block_versions = 4;           // block version list 
+   repeated bytes block_hashes = 5;            // block hash list (must be same length as versions)
 }
 
 // manifest

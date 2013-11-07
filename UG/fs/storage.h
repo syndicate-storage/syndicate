@@ -12,15 +12,15 @@
 
 #define SYNDICATE_COLLATE_TMPPATH "/tmp/syndicate-collate-XXXXXX"
 
-// add/remove blocks
+// add/remove blocks to fs_entry structures
 int fs_entry_open_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool staging, bool creat );
-ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, size_t len, bool staging );
+ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, size_t len, unsigned char* hash, bool staging );
 int fs_entry_remove_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, bool staging );
 
-// read/write blocks
+// read/write block data
 ssize_t fs_entry_get_block_local( struct fs_core* core, int fd, char* block, size_t block_len );
 ssize_t fs_entry_write_block_data( struct fs_core* core, int fd, char* buf, size_t len );
-ssize_t fs_entry_commit_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* buf, size_t len, bool staging );
+ssize_t fs_entry_commit_block_data( struct fs_core* core, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char* buf, size_t len, bool staging );
 
 // stat block
 int fs_entry_block_stat( struct fs_core* core, char const* path, uint64_t block_id, struct stat* sb );

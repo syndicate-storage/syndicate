@@ -255,12 +255,12 @@ int fs_entry_open_block( struct fs_core* core, struct fs_entry* fent, uint64_t b
 
 // put block data with the given version to the given offset
 // return 0 on success
-// FENT MUST BE WRITE-LOCKED, SO ANOTHER THREAD CAN'T ADD A BLOCK OF THE SAME VERSION
-ssize_t fs_entry_commit_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* buf, size_t len, bool staging ) {
+// the corresponding fent should be write-locked, to prevent another thread from writing the same block!
+ssize_t fs_entry_commit_block_data( struct fs_core* core, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char* buf, size_t len, bool staging ) {
    int rc = 0;
 
    // get the location of this block
-   char* local_block_url = fs_entry_get_block_storage_url( core, fent->file_id, fent->version, block_id, block_version, staging );
+   char* local_block_url = fs_entry_get_block_storage_url( core, file_id, file_version, block_id, block_version, staging );
    
    // make sure the directories leading to this block exist
    char* storage_dir = md_dirname( GET_PATH( local_block_url ), NULL );
@@ -390,7 +390,7 @@ int fs_entry_reversion_block( struct fs_core* core, struct fs_entry* fent, uint6
 // if the URL refers to a local place on disk, then store it to the data directory.
 // If it instead refers to a remote host, then store it to the staging directory.
 // fent MUST BE WRITE LOCKED, SINCE WE MODIFY THE MANIFEST
-ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, size_t len, bool staging ) {
+ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, size_t len, unsigned char* block_hash, bool staging ) {
    
    int64_t old_block_version = fent->manifest->get_block_version( block_id );
    int64_t new_block_version = fs_entry_next_block_version();
@@ -404,7 +404,7 @@ ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, ui
    dbprintf("data: '%s'...\n", prefix );
    
    // put the block data into place
-   ssize_t rc = fs_entry_commit_block_data( core, fent, block_id, old_block_version, block_data, len, staging );
+   ssize_t rc = fs_entry_commit_block_data( core, fent->file_id, fent->version, block_id, old_block_version, block_data, len, staging );
    if( (unsigned)rc != len ) {
       // failed to write
       errorf("fs_entry_commit_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 " ) rc = %zd\n", core->gateway, core->volume, fent->file_id, fent->version, block_id, old_block_version, rc );
@@ -420,7 +420,7 @@ ssize_t fs_entry_put_block_data( struct fs_core* core, struct fs_entry* fent, ui
          return rc;
       }
 
-      rc = fs_entry_manifest_put_block( core, core->gateway, fent, block_id, new_block_version, staging );
+      rc = fs_entry_manifest_put_block( core, core->gateway, fent, block_id, new_block_version, block_hash, staging );
       if( rc != 0 ) {
          errorf("fs_entry_manifest_put_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 "/%" PRId64 " --> .%" PRId64 " rc = %zd\n",
                 core->gateway, core->volume, fent->file_id, fent->version, block_id, old_block_version, new_block_version, rc );
@@ -499,11 +499,33 @@ int fs_entry_collate( struct fs_core* core, struct fs_entry* fent, uint64_t bloc
       return -EIO;
    }
    
+   // hash the block
+   fd = open( block_path, O_RDONLY );
+   if( fd < 0 ) {
+      rc = -errno;
+      errorf("open(%s) errno = %d\n", block_path, rc );
+      free( block_url );
+      return -EIO;
+   }
+   
+   unsigned char* block_hash = BLOCK_HASH_FD( fd );
+   
+   close( fd );
+   
+   if( block_hash == NULL ) {
+      rc = -errno;
+      errorf("Failed to hash block %s, errno = %d\n", block_path, rc );
+      free( block_url );
+      return -EIO;
+   }
+   
    free( block_url );
-
+   
    // add the block 
-   fs_entry_manifest_put_block( core, core->gateway, fent, block_id, block_version, false );
+   fs_entry_manifest_put_block( core, core->gateway, fent, block_id, block_version, block_hash, false );
 
+   free( block_hash );
+   
    // update timestamp on the MS
    struct md_entry data;
    fs_entry_to_md_entry( core, &data, fent, parent_id, parent_name );

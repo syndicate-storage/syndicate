@@ -19,20 +19,30 @@ public:
    uint64_t start_id;         // starting block ID
    uint64_t end_id;           // ending block ID
    int64_t file_version;      // version of this file
-   int64_t* block_versions;   // versions of the blocks across the volume
+   int64_t* block_versions;   // versions of the blocks in this set
+   unsigned char* block_hashes;       // hashes of the blocks in this set, interpreted as intervals of BLOCK_HASH_LEN()
    bool staging;              // is this block set in staging?
 
    block_url_set();
    block_url_set( block_url_set& bus );
-   block_url_set( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, bool staging );
+   block_url_set( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, unsigned char* hashes, bool staging );
 
-   void init( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, bool staging );
+   void init( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, unsigned char* hashes, bool staging );
 
    ~block_url_set();
 
    // get the version of a block, if we have this block ID.
    // return -1 if not found
    int64_t lookup_version( uint64_t block_id );
+   
+   // compare the hash of a block to a given hash.
+   // return 0 if equal.
+   // return 1 if not equal.
+   // return -ENOENT if block not found
+   int hash_cmp( uint64_t block_id, unsigned char* hash );
+   
+   // duplicate a hash
+   unsigned char* hash_dup( uint64_t block_id );
    
    // get the gateway_id of a block, if we have this block ID.
    // return 0 if not found
@@ -48,10 +58,10 @@ public:
    bool is_prependable( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, bool staging );
 
    // append the block to end of this url set
-   bool append( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, bool staging );
+   bool append( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash, bool staging );
 
    // prepend the block to the beginning of this url set
-   bool prepend( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, bool staging );
+   bool prepend( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash, bool staging );
 
    // remove blocks from the end of this URL set.  return true if blocks were removed
    bool truncate( uint64_t new_end_id );
@@ -108,6 +118,12 @@ public:
 
    // serialize this manifest to a string
    char* serialize_str();
+   
+   // compare a block hash
+   int hash_cmp( uint64_t block_id, unsigned char* hash );
+   
+   // get a block hash
+   unsigned char* hash_dup( uint64_t block_id );
 
    // get a block's URL for I/O.
    char* get_block_url( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id );
@@ -116,7 +132,7 @@ public:
    uint64_t get_block_host( struct fs_core* core, uint64_t block_id );
 
    // put a block URL.
-   int put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool staging );
+   int put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash, bool staging );
 
    // directly put a url set
    void put_url_set( block_url_set* bus );
@@ -183,7 +199,7 @@ private:
    pthread_rwlock_t manifest_lock;
 };
 
-int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, bool staging );
+int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash, bool staging );
 
 int fs_entry_manifest_error( Serialization::ManifestMsg* mmsg, int error, char const* errormsg );
 

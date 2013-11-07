@@ -10,6 +10,23 @@
 #include "network.h"
 #include "url.h"
 
+// verify the integrity of a block, given the fent (and its manifest).
+// fent must be at least read-locked
+int fs_entry_verify_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len ) {
+   unsigned char* block_hash = BLOCK_HASH_DATA( block_bits, block_len );
+   
+   int rc = fent->manifest->hash_cmp( block_id, block_hash );
+   
+   free( block_hash );
+   
+   if( rc != 0 ) {
+      errorf("Hash mismatch (rc = %d)\n", rc );
+      return -EINVAL;
+   }
+   else {
+      return 0;
+   }
+}
 
 // read a block known to be local
 ssize_t fs_entry_read_local_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len ) {
@@ -43,11 +60,18 @@ ssize_t fs_entry_read_local_block( struct fs_core* core, struct fs_entry* fent, 
       close( fd );
       return nr;
    }
-
+   
    close( fd );
    free( block_url );
+   
+   // verify
+   int rc = fs_entry_verify_block( core, fent, block_id, block_bits, block_len );
+   if( rc != 0 )
+      nr = rc;
 
-   dbprintf("read %zd bytes locally\n", nr );
+   else
+      dbprintf("read %zd bytes locally\n", nr );
+   
    return nr;
 }
 
@@ -117,9 +141,17 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
       nr = -ENODATA;
    }
    else {
-      memcpy( block_bits, block_buf, nr );
+      // verify the block
+      int rc = fs_entry_verify_block( core, fent, block_id, block_buf, block_len );
+      if( rc != 0 ) {
+         nr = rc;
+      }
+      else {
+         memcpy( block_bits, block_buf, nr );
+         dbprintf("read %ld bytes remotely\n", (long)nr);
+      }
+      
       free( block_buf );
-      dbprintf("read %ld bytes remotely\n", (long)nr);
    }
 
    free( block_url );

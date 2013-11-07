@@ -60,11 +60,14 @@ int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_e
    bool cleared = false;
    
    for( uint64_t id = start_id; id <= end_id; id++ ) {
+      
+      unsigned char* hash = BLOCK_HASH_DATA( block, core->blocking_factor );
 
-      rc = fs_entry_put_block_data( core, fent, id, block, core->blocking_factor, !local );
+      rc = fs_entry_put_block_data( core, fent, id, block, core->blocking_factor, hash, !local );
       if( rc < 0 ) {
-         errorf("fs_entry_put_block(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "[%" PRIu64 "]) rc = %d\n", core->volume, core->gateway, fent->file_id, fent->version, id, rc );
+         errorf("fs_entry_put_block_data(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "[%" PRIu64 "]) rc = %d\n", core->volume, core->gateway, fent->file_id, fent->version, id, rc );
          err = rc;
+         free( hash );
          break;
       }
 
@@ -73,8 +76,8 @@ int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_e
       memset( &binfo, 0, sizeof(binfo) );
 
       binfo.version = fent->manifest->get_block_version( id );
-      binfo.hash = sha256_hash_data( block, core->blocking_factor );
-      binfo.hash_len = sha256_len();
+      binfo.hash = hash;
+      binfo.hash_len = BLOCK_HASH_LEN();
       
       (*modified_blocks)[ id ] = binfo;
 
@@ -290,13 +293,17 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       
       uint64_t old_version = fh->fent->manifest->get_block_version( block_id );
       
+      // hash the data
+      unsigned char* hash = BLOCK_HASH_DATA( block, core->blocking_factor );
+      
       // write the data...
-      ssize_t write_size = fs_entry_put_block_data( core, fh->fent, block_id, block, block_put_len, !local );
+      ssize_t write_size = fs_entry_put_block_data( core, fh->fent, block_id, block, block_put_len, hash, !local );
       
       if( (unsigned)write_size != block_put_len ) {
          errorf("fs_entry_put_block_data(%s/%" PRId64 ", len=%" PRId64 ") rc = %zd\n", fh->path, block_id, block_put_len, write_size );
          rc = write_size;
          fs_entry_unlock( fh->fent );
+         free( hash );
          break;
       }
       
@@ -326,8 +333,8 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       memset( &binfo, 0, sizeof(binfo) );
       
       binfo.version = new_version;
-      binfo.hash = sha256_hash_data( block, core->blocking_factor );
-      binfo.hash_len = sha256_len();
+      binfo.hash = hash;
+      binfo.hash_len = BLOCK_HASH_LEN();
       
       modified_blocks[ block_id ] = binfo;
 
@@ -486,6 +493,8 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
                      // we're now the coordinator, and the MS has the latest metadata.
                      local = true;
                      
+                     dbprintf("Now coordinator for %" PRIu64 " (at %s)\n", fh->fent->file_id, fh->path );
+                     
                      // replicate our new manifest
                      rc = fs_entry_replicate_manifest( core, fh->fent, false, fh );
                      if( rc != 0 ) {
@@ -522,6 +531,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
                   else if( rc == -EAGAIN ) {
                      // the coordinator changed to someone else.  Try again.
                      // fent->coordinator refers to the current coordinator.
+                     dbprintf("coordinator of %s is now %" PRIu64 "\n", fh->path, fh->fent->coordinator );
                      rc = 0;
                      continue;
                   }
@@ -671,6 +681,20 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       return -ESTALE;
    }
    
+   // validate fields
+   unsigned int num_blocks = write_msg->blocks().end_id() - 1 - write_msg->blocks().start_id();
+   if( (unsigned)write_msg->blocks().version_size() != num_blocks ) {
+      errorf("Invalid write message: number of blocks = %u, but number of versions = %u\n", num_blocks, write_msg->blocks().version_size() );
+      fs_entry_unlock( fent );
+      return -EINVAL;
+   }
+   
+   if( (unsigned)write_msg->blocks().hash_size() != num_blocks ) {
+      errorf("Invalid write message: number of blocks = %u, but number of hashes = %u\n", num_blocks, write_msg->blocks().hash_size() );
+      fs_entry_unlock( fent );
+      return -EINVAL;
+   }
+   
    // snapshot the fent so we can garbage-collect the manifest 
    struct replica_snapshot fent_snapshot;
    fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
@@ -679,7 +703,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
 
    struct timespec ts, ts2, replicate_ts, garbage_collect_ts, update_ts;
    struct timespec mts;
-
+   
    BEGIN_TIMING_DATA( ts );
 
    modification_map old_block_info;
@@ -688,11 +712,13 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
    for( unsigned int i = 0; i < write_msg->blocks().end_id() - write_msg->blocks().start_id(); i++ ) {
       uint64_t block_id = i + write_msg->blocks().start_id();
       int64_t new_version = write_msg->blocks().version(i);
+      unsigned char* block_hash = (unsigned char*)write_msg->blocks().hash(i).data();
 
       // back up old version and gateway, in case we have to restore it
       int64_t old_version = fent->manifest->get_block_version( block_id );
       uint64_t old_gateway_id = fent->manifest->get_block_host( core, block_id );
       bool old_staging_status = fent->manifest->is_block_staging( block_id );
+      unsigned char* old_block_hash = fent->manifest->hash_dup( block_id );
       
       struct fs_entry_block_info binfo;
       memset( &binfo, 0, sizeof(struct fs_entry_block_info) );
@@ -700,11 +726,12 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       binfo.version = old_version;
       binfo.gateway_id = old_gateway_id;
       binfo.staging = old_staging_status;
+      binfo.hash = old_block_hash;
       
       old_block_info[ block_id ] = binfo;
       
       // put the new version into the manifest
-      fs_entry_manifest_put_block( core, gateway_id, fent, block_id, new_version, false );
+      fs_entry_manifest_put_block( core, gateway_id, fent, block_id, new_version, block_hash, false );
    }
    
    off_t old_size = fent->size;
@@ -806,10 +833,17 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
          
          struct fs_entry_block_info* old_binfo = &itr->second;
          
-         fs_entry_manifest_put_block( core, old_binfo->gateway_id, fent, block_id, old_binfo->version, old_binfo->staging );
+         fs_entry_manifest_put_block( core, old_binfo->gateway_id, fent, block_id, old_binfo->version, old_binfo->hash, old_binfo->staging );
       }
       
       fs_entry_unlock( fent );
+   }
+   
+   // free memory
+   for( modification_map::iterator itr = old_block_info.begin(); itr != old_block_info.end(); itr++ ) {
+      if( itr->second.hash ) {
+         free( itr->second.hash );
+      }
    }
    
    END_TIMING_DATA( ts, ts2, "write, remote" );

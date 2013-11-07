@@ -177,8 +177,10 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
             *err = rc;
             return NULL;
          }
-         
-         // otherwise we're good
+         else {
+            // otherwise we're good
+            rc = 0;
+         }
       }
       else {
          // consistency cannot be guaranteed

@@ -1267,8 +1267,8 @@ int fs_entry_coordinate( struct fs_core* core, struct fs_entry* fent, int64_t re
       if( current_coordinator != core->gateway ) {
          dbprintf("/%" PRIu64 "/%" PRIX64 " now coordinated by UG %" PRIu64 "\n", core->volume, fent->file_id, current_coordinator );
          rc = -EAGAIN;
-         fent->coordinator = current_coordinator;
       }
+      fent->coordinator = current_coordinator;
    }
    
    md_entry_free( &ent );

@@ -829,7 +829,7 @@ int replica_process_responses( struct syndicate_replication* synrp ) {
                }
             }
             
-            dbprintf("%s: Finished replicating %p (%s of %" PRIX64 ")\n", synrp->process_name, rctx, (rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ? "manifest" : "block"), rctx->snapshot.file_id );
+            dbprintf("%s: Finished %p (%s of %" PRIX64 ")\n", synrp->process_name, rctx, (rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ? "manifest" : "block"), rctx->snapshot.file_id );
             
             replica_remove_upload_context( synrp, msg->easy_handle );
          }

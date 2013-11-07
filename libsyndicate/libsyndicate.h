@@ -772,8 +772,6 @@ template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
       return -EINVAL;
    }
    
-   dbprintf("VERIFY: sigb64_len = %zu, strlen(sigb64) = %zu, sigb64 = %s\n", sigb64_len, strlen(sigb64), sigb64 );
-
    // verify the signature
    int rc = md_verify_signature( pkey, bits.data(), bits.size(), sigb64, sigb64_len );
    
@@ -823,8 +821,6 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
    }
 
    protobuf->set_signature( string(sigb64, sigb64_len) );
-   
-   dbprintf("SIGN: sigb64_len = %zu, strlen(sigb64) = %zu, sigb64 = %s\n", sigb64_len, strlen(sigb64), sigb64 );
    
    free( sigb64 );
    return 0;

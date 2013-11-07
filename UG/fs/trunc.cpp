@@ -99,10 +99,13 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 
             uint64_t old_version = fent->manifest->get_block_version( trunc_block_id );
             
-            int rc = fs_entry_put_block_data( core, fent, trunc_block_id, block, core->blocking_factor, !local );
+            unsigned char* hash = BLOCK_HASH_DATA( block, core->blocking_factor );
+            
+            int rc = fs_entry_put_block_data( core, fent, trunc_block_id, block, core->blocking_factor, hash, !local );
             if( rc != 0 ) {
                errorf("fs_entry_put_block(%s[%" PRId64 "]) rc = %d\n", fs_path, trunc_block_id, rc );
                err = rc;
+               free( hash );
             }
             else {
                // record that we've written this block
@@ -110,8 +113,8 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
                memset( &binfo, 0, sizeof(binfo) );
 
                binfo.version = fent->manifest->get_block_version( trunc_block_id );
-               binfo.hash = sha256_hash_data( block, core->blocking_factor );
-               binfo.hash_len = sha256_len();
+               binfo.hash = hash;
+               binfo.hash_len = BLOCK_HASH_LEN();
                
                modified_blocks[ trunc_block_id ] = binfo;
                

@@ -4196,6 +4196,8 @@ int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, cha
       return -EINVAL;
    }
 
+   dbprintf("VERIFY: message len = %zu, last signature octet = %02X, strlen(sigb64) = %zu, sigb64 = %s\n", len, (unsigned char)sig_bin[sig_bin_len-1], strlen(sigb64), sigb64 );
+   
    const EVP_MD* sha256 = EVP_sha256();
 
    EVP_MD_CTX *mdctx = EVP_MD_CTX_create();
@@ -4247,6 +4249,7 @@ int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, cha
    }
 
    EVP_MD_CTX_destroy( mdctx );
+   
    free( sig_bin );
 
    return 0;
@@ -4335,11 +4338,14 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
    }
 
    EVP_MD_CTX_destroy( mdctx );
-   free( sig_bin );
 
    *sigb64 = b64;
    *sigb64len = strlen(b64);
+   
+   dbprintf("SIGN: message len = %zu, last signature octet = %02X, sigb64_len = %zu, sigb64 = %s\n", len, (unsigned char)sig_bin[sig_bin_len-1], strlen(b64), b64 );
 
+   free( sig_bin );
+   
    return 0;
 }
 
