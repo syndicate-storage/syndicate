@@ -21,7 +21,7 @@ import storage.storagetypes as storagetypes
 import api
 from entry import MSEntry
 from volume import Volume
-from gateway import UserGateway, ReplicaGateway, AcquisitionGateway
+from gateway import *
 from msconfig import *
 
 import errno
@@ -627,6 +627,11 @@ class MSFileReadHandler(webapp2.RequestHandler):
       if gateway != None and not isinstance( gateway, UserGateway ):
          response_user_error( self, 403 )
          return
+      
+      # this gateway must have METADATA_READ caps
+      if gateway != None and not gateway.check_caps( GATEWAY_CAP_READ_METADATA ):
+         response_user_error( self, 403 )
+         return 
 
       logging.info("resolve /%s/%s" % (volume.volume_id, file_id) )
       
@@ -692,19 +697,27 @@ class MSFileWriteHandler(webapp2.RequestHandler):
       if volume == None:
          return
 
-      if volume.need_gateway_auth() and gateway == None:
+      # gateway must be known
+      if gateway == None:
          response_user_error( self, 403 )
          return 
       
-      if volume.archive and (not isinstance( gateway, AcquisitionGateway ) or (isinstance( gateway, AcquisitionGateway and gateway.owner_id != volume.owner_id)) ):
-         # if this is an archive, on an AG owned by the same person as the Volume can write to it
-         response_user_error( self, 403 )
-         return 
-      
-      # this must be a User Gateway or an Acquisition Gateway, if anything
-      if gateway != None and not isinstance( gateway, UserGateway ) and not isinstance( gateway, AcquisitionGateway ):
+      # this can only be a User Gateway or an Acquisition Gateway
+      if not isinstance( gateway, UserGateway ) and not isinstance( gateway, AcquisitionGateway ):
          response_user_error( self, 403 )
          return
+      
+      # if this is an archive, on an AG owned by the same person as the Volume can write to it
+      if volume.archive:
+         if (not isinstance( gateway, AcquisitionGateway ) or (isinstance( gateway, AcquisitionGateway and gateway.owner_id != volume.owner_id)) ):
+            response_user_error( self, 403 )
+            return 
+      
+      # if this is not an archive, then the gateway must have CAP_WRITE_METADATA
+      elif not gateway.check_caps( GATEWAY_CAP_WRITE_METADATA ):
+         response_user_error( self, 403 )
+         return
+       
 
       # validate the message
       if not gateway.verify_ms_update( updates_set ):
@@ -725,6 +738,21 @@ class MSFileWriteHandler(webapp2.RequestHandler):
       reply.error = 0
       status = 200
       sign = False
+      
+      # validate operations
+      for update in updates_set.updates:
+         
+         # valid operation?
+         if update.type not in [ms_pb2.ms_update.CREATE, ms_pb2.ms_update.UPDATE, ms_pb2.ms_update.DELETE, ms_pb2.ms_update.CHOWN]:
+            # nope
+            response_end( self, 501, "Method not supported", "text/plain", None )
+            return
+         
+         # if the gateway sent a CHOWN request, it must have that capability
+         if update.type == ms_pb2.ms_update.CHOWN and not gateway.check_caps( GATEWAY_CAP_COORDINATE ):
+            response_user_error( self, 403 )
+            return
+         
       
       # carry out the operation(s)
       for update in updates_set.updates:
@@ -780,6 +808,7 @@ class MSFileWriteHandler(webapp2.RequestHandler):
 
          # change coordinator? 
          elif update.type == ms_pb2.ms_update.CHOWN:
+            
             logging.info("chcoord /%s/%s (%s) to %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], gateway.g_id) )
             
             chown_start = storagetypes.get_time()
@@ -794,7 +823,7 @@ class MSFileWriteHandler(webapp2.RequestHandler):
             logging.info("chcoord /%s/%s (%s) rc = %d" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
             
          else:
-            # not a valid method
+            # not a valid method (shouldn't ever reach here...)
             response_end( self, 501, "Method not supported", "text/plain", None )
             return
          
