@@ -24,7 +24,16 @@
 		<link href="static/css/style.css" rel="stylesheet">
 		
 		<!-- Favicon -->
-		<link rel="shortcut icon" href="#">
+		<link rel="shortcut icon" href="http://syndicatedrive.com/favicon.ico">
+
+				<!-- Begin MailChimp Signup Form -->
+	<link href="//cdn-images.mailchimp.com/embedcode/slim-081711.css" rel="stylesheet" type="text/css">
+	<style type="text/css">
+		#mc_embed_signup{clear:left; font:14px Helvetica,Arial,sans-serif;  width:350px;}
+	/* Add your own MailChimp form style overrides in your site stylesheet or in this style block.
+	   We recommend moving this block and the preceding CSS link to the HEAD of your HTML file. */
+	</style>
+
 	</head>
 	
 	<body>
@@ -43,8 +52,8 @@
 						</div>
 						<div class="navigation pull-right">
 							<a href="index.html">Home</a>
-							<a href="#start">Getting Started</a>
-							<a href="#apps">Apps</a>
+							<a href="#download">Download</a>
+							<a href="#research">Research</a>
 							<a href="#about">About</a>
 						</div>
 					</div>
@@ -58,10 +67,17 @@
 					<div class="row">
 						<div class="col-md-8">
 							<div class="intro">
-								<h2>Private<span class="tblue">.</span> Cloud<span class="tblue">.</span> Storage<span class="tblue">.</span></h2>
+								<h2>Decentralized<span class="tblue">.</span> Storage<span class="tblue">.</span></h2>
 								<p>With Syndicate users store data privately in the cloud, using any cloud provider. Underlying providers cannot view user data and Syndicate enables fast downloads.</p><br />
-								<a href="#" class="download"><i class="icon-cloud-download"></i> Sign Up</a> <strong>or <a href="#" style="color:white">View on Github</a></strong>
-							</div>
+
+								<div id="mc_embed_signup">
+								<form action="http://syndicatedrive.us4.list-manage.com/subscribe/post?u=c16cd4b8ca4344319fbe3328d&amp;id=915185dfa6" method="post" id="mc-embedded-subscribe-form" name="mc-embedded-subscribe-form" class="validate" target="_blank" novalidate>
+	<label for="mce-EMAIL"><p style="color:white">Get notified when we release:</p></label><br>
+	<input type="email" value="" name="EMAIL" class="email" id="mce-EMAIL" placeholder="email address" required><br>
+	<div class="clear" style="padding:10px"><input type="submit" value="Notify me" name="subscribe" id="mc-embedded-subscribe" class="btn btn-primary"></div>
+</form>
+</div>
+						</div>
 						</div>
 						<div class="col-md-4">
 							<div class="shot">
@@ -93,7 +109,7 @@
 					<div class="col-md-3  col-xs-6">
 						<div class="feat">
 							<p><i class="icon-cloud"></i></p>
-							<h4>De-centralized</h4>
+							<h4>Decentralized</h4>
 							<p>With Syndicate users are not tied down to any single cloud provider and users can seamlessly move between cloud providers.</p>
 						</div>
 					</div>
@@ -101,7 +117,7 @@
 						<div class="feat">
 							<p><i class="icon-lock"></i></p>
 							<h4>Secure</h4>
-							<p>User data is always encypted and users can explicitly control access to their data. Cloud providers have no visibility into user data.</p>
+							<p>User data is always encrypted and users can explicitly control access to their data. Cloud providers have no visibility into user data.</p>
 						</div>
 					</div>
 					<div class="col-md-3 col-xs-6">
@@ -136,12 +152,12 @@
 					</div>
 					<div class="col-md-6">
 						<div class="shotcontent">
-							<h3><a name="start">Getting Started</a></h3>
+							<h3><a name="download">Download RPM</a></h3>
 							<div class="row">
 								<div class="col-md-10 col-xs-6">
 									<div class="shot-content-body">
 										<h4><i class="icon-hdd tblue"></i> Syndicate Drive</h4>
-										<p> You can simply <a href="#">signup</a> and start using a free 5GB drive. You can choose to store data on Dropbox, Google Storage, Amazon S3/Glacier, or Box.</p>
+										<p>Syndicate runs as a <a href="http://fuse.sourceforge.net/">FUSE</a> filesystem on UNIX-like operating systems (Linux, Mac OS X, etc.). You can get the nightly RPMs <a href="http://vcoblitz-cmi.cs.princeton.edu/syndicate-nightly/RPMS/">here</a>. We plan on releasing the source code with documentation soon. Our first release will be for <a href="http://planet-lab.org">PlanetLab</a> users.</p>
 									</div>
 								</div>
 							</div>
@@ -156,8 +172,15 @@
 				<div class="row">
 					<div class="col-md-12">
 						<div class="shotcontent">
-							<h3><a name="apps">Applications using <span class="text-muted">Syndicate</span></a></h3>
-							<p class="shot-para">Applications that are being built using Syndicate include:</p><br>
+							<h3><a name="research">Research</a></h3>
+							<div class="shot-content-body">
+							<p> Syndicate enables a cloud storage "abstraction layer" by providing a virtual private cloud storage service. With Syndicate, a user can combine multiple cloud storage accounts and/or local storage to create a virtual, always-on, decentralized storage drive. Syndicate uses CDNs and edge caches to provide scalable data delievery. 
+
+The key innovation behind Syndicate is a novel data consistency protocol. Syndicate provides the semantics of cloud storage independent of the providers, lowering the barrier-to-entry for deploying cloud storage and increasing consumer freedom.</p><br>
+
+<p>Please read our <a href="static/files/syndicate_poster.pdf">extended abstract</a> or <a href="static/files/syndicate_whitepaper.pdf">whitepaper</a> for a technical overview of the Syndicate architecture.</p><br> <p>Applications that are being built using Syndicate include:</p><br>
+</div>
+
 							
 							<div class="row">
 								<div class="col-md-4 col-xs-4">
@@ -225,6 +248,9 @@ It enables researchers to quickly deploy search systems by re-using common compo
 				
 			</div>
 		</footer>
+
+<!--End mc_embed_signup-->
+
 		<!-- Footer Ends -->
 			
 		<!-- Javascript files -->
