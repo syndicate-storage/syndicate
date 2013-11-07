@@ -697,7 +697,7 @@ int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, cha
 
 
 // protobuf serializer
-// have to put this here, since C++ forbids separating the declaration and definition of template functions.
+// have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
 template <class T> int md_serialize( T* protobuf, char** bits, size_t* bits_len ) {
    string msgbits;
    try {
@@ -722,7 +722,7 @@ template <class T> int md_serialize( T* protobuf, char** bits, size_t* bits_len 
 
 
 // protobuf parser
-// have to put this here, since C++ forbids separating the declaration and definition of template functions.
+// have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
 template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len ) {
    bool valid = false;
    try {
@@ -740,7 +740,7 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 
 
 // signature verifier
-// have to put this here, since C++ forbids separating the declaration and definition of template functions.
+// have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
 // NOTE:  class T should be a protobuf, and should have a string signature field
 // TODO: verify the signature of the hash of the message, not the whole message?
 template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
@@ -788,7 +788,7 @@ template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
 
 
 // signature generator
-// have to put this here, since C++ forbids separating the declaration and definition of template functions.
+// have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
 // NOTE: class T should be a protobuf, and should have a string signature field 
 // TODO: sign the hash of the message, not the whole message?
 template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {

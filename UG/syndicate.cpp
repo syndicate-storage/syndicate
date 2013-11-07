@@ -456,7 +456,7 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          // Truncate the file, and if successful,
          // send back an ACCEPTED
 
-         rc = fs_entry_versioned_truncate( state->core, fs_path, file_id, coordinator_id, msg->truncate().size(), file_version, msg->user_id(), msg->volume_id(), true );
+         rc = fs_entry_versioned_truncate( state->core, fs_path, file_id, coordinator_id, msg->truncate().size(), file_version, msg->user_id(), msg->volume_id(), msg->gateway_id(), true );
          if( rc == 0 ) {
             ack.set_type( Serialization::WriteMsg::ACCEPTED );
          }
@@ -471,7 +471,7 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
       case Serialization::WriteMsg::DETACH: {
          // received DETACH request.
          // Unlink this file, and send back an ACCEPTED
-         rc = fs_entry_versioned_unlink( state->core, fs_path, file_id, coordinator_id, file_version, msg->user_id(), msg->volume_id(), true );
+         rc = fs_entry_versioned_unlink( state->core, fs_path, file_id, coordinator_id, file_version, msg->user_id(), msg->volume_id(), msg->gateway_id(), true );
          if( rc == 0 ) {
             ack.set_type( Serialization::WriteMsg::ACCEPTED );
          }

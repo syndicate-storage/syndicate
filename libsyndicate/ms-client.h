@@ -20,8 +20,6 @@
 
 #include "libsyndicate.h"
 
-#define HTTP_VOLUME_SECRET "Syndicate-VolumeSecret"
-
 #define HTTP_VOLUME_TIME   "X-Volume-Time"
 #define HTTP_GATEWAY_TIME  "X-Gateway-Time"
 #define HTTP_TOTAL_TIME    "X-Total-Time"
@@ -49,7 +47,7 @@ typedef map<uint64_t, long> deadline_queue;
 #define MS_NUM_CERT_BUNDLES 4
 
 // use STRONG crypto.
-// Use ephemeral Diffie-Helman for key exchange (RSA or ECC)
+// Use ephemeral Diffie-Helman for symmetric key (with in RSA, DSA, or ECC for key exchange)
 // Use at least 256-bit keys in the data encryption
 // Use at least 256-bit MACs
 #define MS_CIPHER_SUITES "ECDHE:EDH:SHA256:SHA384:SHA512:AES256:!DH:!eNULL:!aNULL:!MD5:!DES:!DES3:!LOW:!EXP:!SRP:!DSS:!RC4:!PSK:!SHA1:!SHA2:!AES128"
@@ -133,7 +131,7 @@ struct ms_gateway_cert {
    uint64_t volume_id;
    char* name;
    char* hostname;
-   char* closure_text;          // closure information (only retained by our gateway)
+   char* closure_text;          // closure information (only retained for our gateway)
    uint64_t closure_text_len;
    int portnum;
    EVP_PKEY* pubkey;
@@ -289,6 +287,8 @@ int ms_client_get_num_volumes( struct ms_client* client );
 
 int ms_client_get_volume_root( struct ms_client* client, struct md_entry* root );
 
+int ms_client_check_gateway_caps( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t caps );
+
 int ms_client_sched_volume_reload( struct ms_client* client );
 int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version );
 
@@ -300,7 +300,7 @@ void ms_client_free_listing( struct ms_listing* listing );
 
 }
 
-// have to put this here, since C++ forbids separating the declaration and definition of template functions.
+// have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
 // Verify the authenticity of a gateway message, encoded as a protobuf
 template< class T > int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t gateway_type, uint64_t gateway_id, T* protobuf ) {
    ms_client_view_rlock( client );

@@ -638,7 +638,7 @@ private:
 
         SYNDICATEFS_DATA->stats->enter(STAT_UNLINK);
 
-        int rc = fs_entry_versioned_unlink(SYNDICATEFS_DATA->core, path, 0, 0, -1, SYNDICATEFS_DATA->conf.owner, SYNDICATEFS_DATA->core->volume, false );
+        int rc = fs_entry_versioned_unlink(SYNDICATEFS_DATA->core, path, 0, 0, -1, SYNDICATEFS_DATA->conf.owner, SYNDICATEFS_DATA->core->volume, SYNDICATEFS_DATA->core->gateway, false );
 
         SYNDICATEFS_DATA->stats->leave(STAT_UNLINK, rc);
 

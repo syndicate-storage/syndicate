@@ -3615,6 +3615,38 @@ int ms_client_get_volume_root( struct ms_client* client, struct md_entry* root )
    return rc;
 }
 
+
+// check a gateway's capabilities (as a bit mask)
+// return 0 if all the capabilites are allowed, or -EPERM if at least one is not.
+// return -EAGAIN if the gateway is not known.
+int ms_client_check_gateway_caps( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t caps ) {
+   
+   if( gateway_type <= 0 || gateway_type >= MS_NUM_CERT_BUNDLES )
+      return -EINVAL;
+   
+   ms_client_view_rlock( client );
+   
+   ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1];
+   ms_client_cert_bundles( client->volume, cert_bundles );
+   
+   ms_cert_bundle::iterator itr = cert_bundles[ gateway_type ]->find( gateway_id );
+   if( itr == cert_bundles[ client->gateway_type ]->end() ) {
+      // not found--need to reload certs?
+      client->early_reload = true;      // writing this is okay, since regardless of thread scheduling the view thread will read it eventually
+      ms_client_view_unlock( client );
+      
+      return -EAGAIN;
+   }
+   
+   struct ms_gateway_cert* cert = itr->second;
+   
+   int ret = ((cert->caps & caps) == caps ? 0 : -EPERM);
+   
+   ms_client_view_unlock( client );
+   
+   return ret;
+}
+
 // get a copy of the closure text for this gateway
 int ms_client_get_closure_text( struct ms_client* client, char** closure_text, uint64_t* closure_len ) {
    // find my cert

@@ -140,13 +140,18 @@ int fs_entry_detach( struct fs_core* core, char const* path, uint64_t user, uint
 
 // unlink a file from the filesystem
 // pass -1 if the version is not known, or pass the known version to be unlinked
-int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t file_id, uint64_t coordinator_id, int64_t known_version, uint64_t owner, uint64_t volume, bool check_file_id_and_coordinator_id ) {
+int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t file_id, uint64_t coordinator_id, int64_t known_version, uint64_t owner, uint64_t volume, uint64_t gateway_id, bool check_file_id_and_coordinator_id ) {
 
+   // capability check---can this gateway even write?
+   int err = ms_client_check_gateway_caps( core->ms, SYNDICATE_UG, gateway_id, GATEWAY_CAP_WRITE_DATA );
+   if( err != 0 ) {
+      errorf("ms_client_check_gateway_caps( %" PRIu64 " ) for writing data rc = %d\n", gateway_id, err );
+      return err;
+   }
+   
    // get some info about this file first
    int rc = 0;
 
-   int err = 0;
-   
    struct fs_entry* fent = fs_entry_resolve_path( core, path, owner, volume, false, &err );
    if( !fent || err ) {
       return err;

@@ -315,9 +315,17 @@ int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs
 
 
 // truncate, only if the version is correct (or ignore it if it's -1)
-int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, uint64_t file_id, uint64_t coordinator_id, off_t newsize, int64_t known_version, uint64_t user, uint64_t volume, bool check_file_id_and_coordinator_id ) {
+int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, uint64_t file_id, uint64_t coordinator_id, off_t newsize,
+                                int64_t known_version, uint64_t user, uint64_t volume, uint64_t gateway_id, bool check_file_id_and_coordinator_id ) {
 
-   int err = fs_entry_revalidate_path( core, volume, fs_path );
+   // capability check---can this gateway even write?
+   int err = ms_client_check_gateway_caps( core->ms, SYNDICATE_UG, gateway_id, GATEWAY_CAP_WRITE_DATA );
+   if( err != 0 ) {
+      errorf("ms_client_check_gateway_caps( %" PRIu64 " ) for writing data rc = %d\n", gateway_id, err );
+      return err;
+   }
+   
+   err = fs_entry_revalidate_path( core, volume, fs_path );
    if( err != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", fs_path, err );
       return -EREMOTEIO;
