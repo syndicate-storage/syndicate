@@ -528,12 +528,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->num_http_threads = (unsigned int)strtol( values[0], NULL, 10 );
       }
       
-      else if( strcmp( key, USE_CHECKSUMS_KEY ) == 0 ) {
-         // use checksums
-         long v = strtol( values[0], NULL, 10 );
-         conf->use_checksums = (v != 0 ? true : false);
-      }
-      
       else if( strcmp( key, DATA_ROOT_KEY ) == 0 ) {
          // data root
          conf->data_root = strdup( values[0] );
@@ -733,10 +727,6 @@ void md_entry_free( struct md_entry* ent ) {
       free( ent->name );
       ent->name = NULL;
    }
-   if( ent->checksum ) {
-      free( ent->checksum );
-      ent->checksum = NULL;
-   }
    if( ent->parent_name ) {
       free( ent->parent_name );
       ent->parent_name = NULL;
@@ -767,11 +757,6 @@ void md_entry_dup2( struct md_entry* src, struct md_entry* ret ) {
 
    if( src->name ) {
       ret->name = strdup( src->name );
-   }
-
-   if( src->checksum ) {
-      ret->checksum = (unsigned char*)calloc( SHA_DIGEST_LENGTH * sizeof(unsigned char), 1 );
-      memcpy( ret->checksum, src->checksum, SHA_DIGEST_LENGTH );
    }
 
    if( src->parent_name ) {
@@ -4008,7 +3993,6 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->default_read_freshness = 5000;
    conf->default_write_freshness = 0;
    conf->gather_stats = false;
-   conf->use_checksums = false;
    conf->num_replica_threads = 1;
    conf->httpd_portnum = 44444;
 

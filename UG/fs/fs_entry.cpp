@@ -963,5 +963,13 @@ int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct f
    return rc;
 }
 
+// how many children (besides . and ..) are there in this fent?
+unsigned int fs_entry_num_children( struct fs_entry* fent ) {
+   if( fent->ftype != FTYPE_DIR || fent->children == NULL )
+      return 0;
+   
+   return fent->children->size() - 2;
+}
+
 
 

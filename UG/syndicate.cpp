@@ -268,6 +268,20 @@ bool syndicate_extract_file_info( Serialization::WriteMsg* msg, char const** fs_
          break;
       }
 
+      case Serialization::WriteMsg::RENAME: {
+         dbprintf("%s", "Got RENAME\n");
+         if( !msg->has_rename() ) {
+            return false;
+         }
+         
+         *file_id = msg->rename().file_id();
+         *coordinator_id = msg->rename().coordinator_id();
+         *file_version = msg->rename().file_version();
+         *fs_path = msg->rename().old_fs_path().c_str();
+         
+         break;
+      }
+      
       default: {
          // unknown
          errorf( "unknown message type %d\n", msg->type() );
@@ -348,6 +362,51 @@ int syndicate_parse_write_message( struct syndicate_state* state, Serialization:
 }
 
 
+// verify remote operation
+int syndicate_verify_caller_privileges( struct syndicate_state* state, uint64_t gateway_id, uint64_t claimed_user_id, uint64_t claimed_volume_id, uint64_t caps ) {
+   
+   // can only receive messages from within our Volume
+   if( claimed_volume_id != state->core->volume ) {
+      errorf("Invalid Volume %" PRIu64 "\n", claimed_volume_id );
+      return -EINVAL;
+   }
+   
+   // capability check---can this gateway even perform these operations?
+   int err = ms_client_check_gateway_caps( state->core->ms, SYNDICATE_UG, gateway_id, caps );
+   if( err != 0 ) {
+      errorf("ms_client_check_gateway_caps( %" PRIu64 " ) for capabilities 0x%" PRIX64 " rc = %d\n", gateway_id, caps, err );
+      return err;
+   }
+   
+   // validate user ID against gateway cert
+   uint64_t user_id = (uint64_t)(-1);
+   err = ms_client_get_gateway_user( state->core->ms, SYNDICATE_UG, gateway_id, &user_id );
+   
+   if( err != 0 ) {
+      errorf("ms_client_get_gateway_user( %" PRIu64 " ) rc = %d\n", gateway_id, err );
+      return err;
+   }
+   
+   if( user_id != claimed_user_id ) {
+      // user mismatch
+      errorf("Caller claims to be running for user %" PRIu64 ", but the caller's certificate indicates user %" PRIu64 "\n", claimed_user_id, user_id );
+      return -EPERM;
+   }
+   
+   // validate volume ID against gateway cert
+   uint64_t volume_id = (uint64_t)(-1);
+   err = ms_client_get_gateway_volume( state->core->ms, SYNDICATE_UG, gateway_id, &volume_id );
+   
+   if( volume_id != claimed_volume_id ) {
+      // volume mismatch
+      errorf("Caller claims to be running in Volume %" PRIu64 ", but the caller's certificate indicates Volume %" PRIu64 "\n", claimed_volume_id, volume_id );
+      return -EINVAL;
+   }
+   
+   return 0;
+}
+
+
 // POST finish--extract the pending message and handle it
 void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
@@ -370,6 +429,7 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
    dbprintf("received message of length %zu\n", msg_sz);
 
+   // parse and verify the authenticity of the message
    rc = syndicate_parse_write_message( state, msg, msg_buf, msg_sz );
 
    free( msg_buf );
@@ -425,29 +485,41 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
    }
 
    dbprintf( "got WriteMsg(type=%d, path=%s)\n", msg->type(), fs_path );
-
+   
    // handle the message
    switch( msg->type() ) {
       case Serialization::WriteMsg::PREPARE: {
          // got a PREPARE message; we'll need to respond with a PROMISE message
          // and update the appropriate file manifest to redirect to this client for the block data.
          // Also, begin downloading the affected blocks
-
-         // update this file's manifest (republishing it in the process)
-         rc = fs_entry_remote_write( state->core, fs_path, file_id, coordinator_id, msg );
-         if( rc == 0 ) {
-            // create a PROMISE request--ask the remote writer to hold on to the blocks so we can collate them later
-            syndicate_make_promise_msg( &ack );
-         }
-         else {
-
-            // error
-            errorf( "fs_entry_handle_remote_write(%s) rc = %d\n", fs_path, rc );
+         
+         
+         // verify that this gateway can, in fact, write to us
+         rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), GATEWAY_CAP_WRITE_DATA );
+         if( rc != 0 ) {
+            errorf("syndicate_verify_caller_privileges() rc = %d\n", rc );
             
-            ack.set_errorcode( rc );
-            ack.set_errortxt( string("failed to update manifest") );
+            ack.set_errorcode( -EPERM );
+            ack.set_errortxt( string("Insufficient capabilities or privileges") );
          }
+         
+         else {
+            // update this file's manifest (republishing it in the process)
+            rc = fs_entry_remote_write( state->core, fs_path, file_id, coordinator_id, msg );
+            if( rc == 0 ) {
+               // create a PROMISE request--ask the remote writer to hold on to the blocks so we can collate them later
+               syndicate_make_promise_msg( &ack );
+            }
+            else {
 
+               // error
+               errorf( "fs_entry_handle_remote_write(%s) rc = %d\n", fs_path, rc );
+               
+               ack.set_errorcode( rc );
+               ack.set_errortxt( string("failed to update manifest") );
+            }
+         }
+         
          break;
       }
 
@@ -455,29 +527,55 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          // received a truncate message.
          // Truncate the file, and if successful,
          // send back an ACCEPTED
-
-         rc = fs_entry_versioned_truncate( state->core, fs_path, file_id, coordinator_id, msg->truncate().size(), file_version, msg->user_id(), msg->volume_id(), msg->gateway_id(), true );
-         if( rc == 0 ) {
-            ack.set_type( Serialization::WriteMsg::ACCEPTED );
+         
+         
+         // verify that this gateway can, in fact, write to us
+         rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), GATEWAY_CAP_WRITE_DATA );
+         if( rc != 0 ) {
+            errorf("syndicate_verify_caller_privileges() rc = %d\n", rc );
+            
+            ack.set_errorcode( -EPERM );
+            ack.set_errortxt( string("Insufficient capabilities or privileges") );
          }
          else {
-            ack.set_errorcode( rc );
-            ack.set_errortxt( string("failed to truncate") );
+            rc = fs_entry_versioned_truncate( state->core, fs_path, file_id, coordinator_id, msg->truncate().size(), file_version, msg->user_id(), msg->volume_id(), msg->gateway_id(), true );
+            if( rc == 0 ) {
+               ack.set_type( Serialization::WriteMsg::ACCEPTED );
+            }
+            else {
+               errorf("fs_entry_versioned_truncate(%s) rc = %d\n", fs_path, rc );
+               
+               ack.set_errorcode( rc );
+               ack.set_errortxt( string("failed to truncate") );
+            }
          }
-
+         
          break;
       }
 
       case Serialization::WriteMsg::DETACH: {
          // received DETACH request.
          // Unlink this file, and send back an ACCEPTED
-         rc = fs_entry_versioned_unlink( state->core, fs_path, file_id, coordinator_id, file_version, msg->user_id(), msg->volume_id(), msg->gateway_id(), true );
-         if( rc == 0 ) {
-            ack.set_type( Serialization::WriteMsg::ACCEPTED );
+         
+         
+         // verify that this gateway can, in fact, write to us
+         rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA );
+         if( rc != 0 ) {
+            errorf("syndicate_verify_caller_privileges() rc = %d\n", rc );
+            
+            ack.set_errorcode( -EPERM );
+            ack.set_errortxt( string("Insufficient capabilities or privileges") );
          }
          else {
-            ack.set_errorcode( rc );
-            ack.set_errortxt( string("failed to unlink") );
+            rc = fs_entry_versioned_unlink( state->core, fs_path, file_id, coordinator_id, file_version, msg->user_id(), msg->volume_id(), msg->gateway_id(), true );
+            if( rc == 0 ) {
+               ack.set_type( Serialization::WriteMsg::ACCEPTED );
+            }
+            else {
+               errorf("fs_entry_versioned_unlink(%s) rc = %d\n", fs_path, rc );
+               ack.set_errorcode( rc );
+               ack.set_errortxt( string("failed to unlink") );
+            }
          }
 
          break;
@@ -485,9 +583,9 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
 
       case Serialization::WriteMsg::ACCEPTED: {
          // received an ACCEPTED message directly.
-         // We're allowed to forget about this block then,
+         // We're allowed to evict this block then,
          // if the remote client didn't encounter any errors
-         // collating the data
+         // collating the data.
 
          if( msg->has_errorcode() ) {
             errorf( "ACCEPTED error %d (%s)\n", msg->errorcode(), msg->errortxt().c_str() );
@@ -502,6 +600,34 @@ void syndicate_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          }
 
          no_ack = true;
+         break;
+      }
+      
+      case Serialization::WriteMsg::RENAME: {
+         // Received a RENAME message.
+         // Carry out the rename (informing the MS of the operation).
+         
+         
+         // verify that this gateway can, in fact, write to us
+         rc = syndicate_verify_caller_privileges( state, msg->gateway_id(), msg->user_id(), msg->volume_id(), GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA );
+         if( rc != 0 ) {
+            errorf("syndicate_verify_caller_privileges() rc = %d\n", rc );
+            
+            ack.set_errorcode( -EPERM );
+            ack.set_errortxt( string("Insufficient capabilities or privileges") );
+         }
+         else {
+            rc = fs_entry_remote_rename( state->core, msg );
+            if( rc == 0 ) {
+               ack.set_type( Serialization::WriteMsg::ACCEPTED );
+            }
+            else {
+               errorf("fs_entry_remote_rename(%s --> %s) rc = %d\n", msg->rename().old_fs_path().c_str(), msg->rename().new_fs_path().c_str(), rc );
+               ack.set_errorcode( rc );
+               ack.set_errortxt( string("failed to rename") );
+            }
+         }
+         
          break;
       }
 

@@ -95,14 +95,17 @@ AUTH_VOLUME_API = [
    storage.read_volume,
    storage.read_volume_by_name,
    storage.get_volume_by_name,
+   
    storage.update_volume,
-   storage.delete_volume,
+   
    storage.create_user_gateway,
    storage.create_replica_gateway,
    storage.create_acquisition_gateway,
+   
    storage.list_user_gateways_by_volume,
    storage.list_replica_gateways_by_volume,
    storage.list_acquisition_gateways_by_volume,
+   
    storage.list_user_gateways_by_host,
    storage.list_replica_gateways_by_host,
    storage.list_acquisition_gateways_by_host
@@ -113,6 +116,7 @@ AUTH_GATEWAY_API = [
    storage.read_user_gateway,
    storage.read_replica_gateway,
    storage.read_acquisition_gateway,
+   
    storage.update_user_gateway,
    storage.update_replica_gateway,
    storage.update_acquisition_gateway

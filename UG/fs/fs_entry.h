@@ -271,4 +271,7 @@ int fs_entry_to_md_entry( struct fs_core* core, struct md_entry* dest, struct fs
 int64_t fs_entry_next_version_number(void);
 int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t new_version, uint64_t parent_id, char const* parent_name );
 
+// misc
+unsigned int fs_entry_num_children( struct fs_entry* fent );
+
 #endif

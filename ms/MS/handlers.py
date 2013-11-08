@@ -727,10 +727,12 @@ class MSFileWriteHandler(webapp2.RequestHandler):
          self.response.write( "Signature validation failed\n" )
          return
 
+      # benchmarking information...
       create_times = []
       update_times = []
       delete_times = []
       chown_times = []
+      rename_times = []
 
       reply = MS.methods.common.make_ms_reply( volume, 0 )
       reply.listing.status = 0
@@ -743,7 +745,7 @@ class MSFileWriteHandler(webapp2.RequestHandler):
       for update in updates_set.updates:
          
          # valid operation?
-         if update.type not in [ms_pb2.ms_update.CREATE, ms_pb2.ms_update.UPDATE, ms_pb2.ms_update.DELETE, ms_pb2.ms_update.CHOWN]:
+         if update.type not in [ms_pb2.ms_update.CREATE, ms_pb2.ms_update.UPDATE, ms_pb2.ms_update.DELETE, ms_pb2.ms_update.CHOWN, ms_pb2.ms_update.RENAME]:
             # nope
             response_end( self, 501, "Method not supported", "text/plain", None )
             return
@@ -751,6 +753,12 @@ class MSFileWriteHandler(webapp2.RequestHandler):
          # if the gateway sent a CHOWN request, it must have that capability
          if update.type == ms_pb2.ms_update.CHOWN and not gateway.check_caps( GATEWAY_CAP_COORDINATE ):
             response_user_error( self, 403 )
+            return
+         
+         # if the operation is a RENAME request, then we must have two entries
+         if update.type == ms_pb2.ms_update.RENAME and not update.HasField("dest"):
+            logging.error("Update is for RENAME, but has no 'dest' field")
+            response_user_error( self, 400 )
             return
          
       
@@ -773,7 +781,8 @@ class MSFileWriteHandler(webapp2.RequestHandler):
             
             create_time = storagetypes.get_time() - create_start
             create_times.append( create_time )
-
+            
+            # giving back information, so need to sign
             sign = True
             
             logging.info("create /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
@@ -818,9 +827,29 @@ class MSFileWriteHandler(webapp2.RequestHandler):
             chown_time = storagetypes.get_time() - chown_start
             chown_times.append( chown_time )
             
+            # giving back information, so need to sign
             sign = True 
             
             logging.info("chcoord /%s/%s (%s) rc = %d" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
+            
+         # rename?
+         elif update.type == ms_pb2.ms_update.RENAME:
+            src_attrs = attrs
+            dest_attrs = MSEntry.unprotobuf_dict( update.dest )
+            
+            logging.info("rename /%s/%s (name=%s, parent=%s) to (name=%s, parent=%s)" % 
+                         (src_attrs['volume_id'], src_attrs['file_id'], src_attrs['name'], src_attrs['parent_id'], dest_attrs['name'], dest_attrs['parent_id']) )
+            
+            rename_start = storagetypes.get_time()
+            
+            rc = MSEntry.Rename( gateway.owner_id, volume, src_attrs, dest_attrs )
+            ent = None
+            
+            rename_time = storagetypes.get_time() - rename_start
+            rename_times.append( rename_time )
+            
+            logging.info("rename /%s/%s (name=%s, parent=%s) to (name=%s, parent=%s) rc = %s" % 
+                         (src_attrs['volume_id'], src_attrs['file_id'], src_attrs['name'], src_attrs['parent_id'], dest_attrs['name'], dest_attrs['parent_id'], rc) )
             
          else:
             # not a valid method (shouldn't ever reach here...)
@@ -831,7 +860,7 @@ class MSFileWriteHandler(webapp2.RequestHandler):
             # success
             ent_pb = reply.listing.entries.add()
             ent.protobuf( ent_pb )
-         else:
+         elif rc < 0:
             # error
             reply.error = rc
             break
@@ -848,6 +877,9 @@ class MSFileWriteHandler(webapp2.RequestHandler):
 
       if len(chown_times) > 0:
          timing['X-Chcoord-Times'] = ",".join( [str(t) for t in chown_times] )
+         
+      if len(rename_times) > 0:
+         timing['X-Rename-Times'] = ",".join( [str(t) for t in rename_times] )
          
       # sign the response
       reply.signature = ""

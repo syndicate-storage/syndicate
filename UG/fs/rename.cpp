@@ -6,15 +6,50 @@
 #include "rename.h"
 #include "url.h"
 #include "storage.h"
+#include "network.h"
+#include "replication.h"
+#include "unlink.h"
+
+// generate an md_entry for the destination that does not (yet) exist
+int fs_entry_make_dest_entry( struct fs_core* core, char const* new_path, uint64_t parent_id, struct md_entry* src, struct md_entry* dest ) {
+   md_entry_dup2( src, dest );
+   
+   // fix up name 
+   char* dest_name = md_basename( new_path, NULL );
+   free( dest->name );
+   dest->name = dest_name;
+   
+   // fix up parent name
+   char* dest_dir = md_dirname( new_path, NULL );
+   char* parent_name = md_basename( dest_dir, NULL );
+   free( dest_dir );
+   free( dest->parent_name );
+   dest->parent_name = parent_name;
+   
+   // fix up parent ID
+   dest->parent_id = parent_id;
+   
+   // tell the MS that file ID for dest isn't known
+   dest->file_id = 0;
+   
+   return 0;
+}
+
+
+// handle a remote rename
+int fs_entry_remote_rename( struct fs_core* core, Serialization::WriteMsg* renameMsg ) {
+   // verify that this fent is local
+   if( core->gateway != renameMsg->rename().coordinator_id() ) {
+      errorf("File %" PRIX64 " (at %s) is not local\n", renameMsg->rename().file_id(), renameMsg->rename().old_fs_path().c_str() );
+      return -EINVAL;
+   }
+   
+   return fs_entry_versioned_rename( core, renameMsg->rename().old_fs_path().c_str(), renameMsg->rename().new_fs_path().c_str(), renameMsg->user_id(), renameMsg->volume_id(), renameMsg->rename().file_version() );
+}
 
 // rename a file
-// NOTE: this is NOT atomic!
-// NOTE: error recovery on conflicting updates?
-int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new_path, uint64_t user, uint64_t volume ) {
-   // TODO: need to rewrite
-   return -ENOSYS;
+int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char const* new_path, uint64_t user, uint64_t volume, int64_t version ) {
    
-   /*
    int err_old = 0, err_new = 0, err = 0;
 
    int rc = 0;
@@ -115,6 +150,10 @@ int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new
    err = 0;
    if( fent_old == NULL )
       err = -ENOENT;
+   
+   // old must be the right version
+   if( fent_old != NULL && version > 0 && fent_old->version != version )
+      err = -ENOENT;
 
    // also, if we rename a file into itself, then it's okay
    if( err != 0 || fent_old == fent_new ) {
@@ -139,6 +178,7 @@ int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new
       fs_entry_wlock( fent_new );
 
    // don't make a directory a subdirectory of itself
+   // TODO: it's more correct to check file IDs than paths...
    if( fent_old->ftype == FTYPE_DIR && strlen(old_path) <= strlen(new_path) && strncmp( old_path, new_path, strlen(old_path) ) == 0 )
       err = -EINVAL;
 
@@ -153,67 +193,117 @@ int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new
          }
       }
    }
-
-   // don't rename local to remote
-   if( FS_ENTRY_LOCAL( core, fent_old ) && fent_new != NULL && !FS_ENTRY_LOCAL( core, fent_new )) {
-      err = -EINVAL;
-   }
-
-   // TODO: for now, rename remote to local will fail
-   if( !FS_ENTRY_LOCAL( core, fent_old) && (fent_new == NULL || FS_ENTRY_LOCAL( core, fent_new ) ) ) {
-      err = -EINVAL;
-   }
-
-
-   if( err ) {
-      if( fent_old_parent ) {
-         fs_entry_unlock( fent_old_parent );
-      }
-      if( fent_new_parent ) {
-         fs_entry_unlock( fent_new_parent );
-      }
-      if( fent_common_parent ) {
-         fs_entry_unlock( fent_common_parent );
-      }
-      fs_entry_unlock( fent_old );
-      if( fent_new )
-         fs_entry_unlock( fent_new );
-
-      free( new_path_basename );
-
-      return err;
-   }
-
-   // create the old entry into the new path
-   struct md_entry new_ent;
-   fs_entry_to_md_entry( core, fent_old, &new_ent );
-
-   struct md_entry old_ent;
-   fs_entry_to_md_entry( core, fent_old, &old_ent );
-
-   // do the rename
-   // create the new entry
-   uint64_t new_file_id = 0;
-   rc = ms_client_create( core->ms, &new_file_id, &new_ent );
-
-   md_entry_free( &new_ent );
    
-   if( rc != 0 ) {
-      errorf( "ms_entry_create(%s) rc = %d\n", new_path, rc );
-      rc = -EREMOTEIO;
+   
+   // serialize...
+   struct md_entry old_ent, new_ent;
+   uint64_t new_parent_id = 0;
+   uint64_t old_parent_id = 0;
+   char const* new_parent_name = NULL;
+   char const* old_parent_name = NULL;
+   
+   memset( &old_ent, 0, sizeof(old_ent) );
+   memset( &new_ent, 0, sizeof(new_ent) );
+   
+   if( fent_new_parent && fent_old_parent ) {
+      new_parent_id = fent_new_parent->file_id;
+      old_parent_id = fent_old_parent->file_id;
+      new_parent_name = fent_new_parent->name;
+      old_parent_name = fent_old_parent->name;
    }
    else {
-      // temporarily increase...
-      fs_core_fs_wlock( core );
-      core->num_files--;
-      fs_core_fs_unlock( core );
+      new_parent_id = fent_common_parent->file_id;
+      old_parent_id = new_parent_id;
+      new_parent_name = fent_common_parent->name;
+      old_parent_name = new_parent_name;
    }
    
-   err = rc;
+   
+   fs_entry_to_md_entry( core, &old_ent, fent_old, old_parent_id, old_parent_name );
+   
+   if( fent_new ) {
+      fs_entry_to_md_entry( core, &new_ent, fent_new, new_parent_id, new_parent_name );
+   }
+   else {
+      fs_entry_make_dest_entry( core, new_path, new_parent_id, &old_ent, &new_ent );
+   }
+   
+   // dealing with files?
+   if( fent_old->ftype == FTYPE_FILE && (fent_new == NULL || (fent_new != NULL && fent_new->ftype == FTYPE_FILE )) ) {
+      if( FS_ENTRY_LOCAL( core, fent_old ) ) {
+         // rename on the MS 
+         err = ms_client_rename( core->ms, &old_ent, &new_ent );
+         if( err != 0 ) {
+            errorf("ms_client_rename(%s --> %s) rc = %d\n", old_ent.name, new_ent.name, err );
+         }
+      }
+      else {
+         // tell remote coordinator to rename 
+         Serialization::WriteMsg* rename_request = new Serialization::WriteMsg();
 
-   // success?
+         fs_entry_init_write_message( rename_request, core, Serialization::WriteMsg::RENAME );
+         
+         Serialization::RenameMsg* rename_info = rename_request->mutable_rename();
+         rename_info->set_volume_id( fent_old->volume );
+         rename_info->set_coordinator_id( fent_old->coordinator );
+         rename_info->set_file_id( fent_old->file_id );
+         rename_info->set_file_version( version );
+         rename_info->set_old_fs_path( string(old_path) );
+         rename_info->set_new_fs_path( string(new_path) );
+         
+         Serialization::WriteMsg* ack = new Serialization::WriteMsg();
+
+         rc = fs_entry_post_write( ack, core, fent_old->coordinator, rename_request );
+         if( rc != 0 ) {
+            errorf( "fs_entry_post_write(%s) rc = %d\n", old_path, rc );
+
+            err = rc;
+         }
+         else {
+            if( ack->type() != Serialization::WriteMsg::ACCEPTED ) {
+               if( ack->type() == Serialization::WriteMsg::ERROR ) {
+                  // could not rename on the remote end
+                  errorf( "remote rename error = %d (%s)\n", ack->errorcode(), ack->errortxt().c_str() );
+                  rc = ack->errorcode();
+               }
+               else {
+                  // unknown message
+                  errorf( "remote rename invalid message %d\n", ack->type() );
+                  rc = -EIO;
+               }
+               
+               err = rc;
+            }
+         }
+         
+         delete ack;
+         delete rename_request;
+      }
+   }
+   else {
+      // directories.  make sure the dest, if it exists, is empty 
+      if( fent_new != NULL && fs_entry_num_children( fent_new ) > 0 ) {
+         // can't rename
+         err = -ENOTEMPTY;
+         errorf("%s is not empty\n", fent_new->name );
+      }
+      else {
+         // do the rename on the MS
+         err = ms_client_rename( core->ms, &old_ent, &new_ent );
+         if( err != 0 ) {
+            errorf("ms_client_rename(%s --> %s) rc = %d\n", old_ent.name, new_ent.name, err );
+         }
+      }
+   }
+   
+   // update our metadata
    if( err == 0 ) {
+      
+      struct fs_entry* dest_parent = NULL;
+      
       if( fent_common_parent ) {
+         dest_parent = fent_common_parent;
+         
          fs_entry_set_remove( fent_common_parent->children, fent_old->name );
 
          // rename this fs_entry
@@ -226,6 +316,8 @@ int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new
          fs_entry_set_insert( fent_common_parent->children, fent_old->name, fent_old );
       }
       else {
+         dest_parent = fent_new_parent;
+         
          fs_entry_set_remove( fent_old_parent->children, fent_old->name );
 
          // rename this fs_entry
@@ -238,60 +330,19 @@ int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new
          fs_entry_set_insert( fent_new_parent->children, fent_old->name, fent_old );
       }
       if( fent_new ) {
-         // unlink
-         fent_new->link_count--;
-         if( fent_new->link_count <= 0 ) {
-            if( fent_new->open_count <= 0 ) {
-               fs_entry_destroy( fent_new, false );
-               fent_new = NULL;
-
-               fs_core_fs_wlock( core );
-               core->num_files--;
-               fs_core_fs_unlock( core );
-            }
-         }
-      }
-
-      // if this file was local, then we'll need to rename the local data
-      if( FS_ENTRY_LOCAL( core, fent_old ) ) {
-         char* old_path_localdata = md_fullpath( core->conf->data_root, old_path, NULL );
-         char* new_path_localdata = md_fullpath( core->conf->data_root, new_path, NULL );
-
-         char* old_path_localdata_versioned = fs_entry_mkpath( old_path_localdata, fent_old->version );
-         char* new_path_localdata_versioned = fs_entry_mkpath( new_path_localdata, fent_old->version );
-
-         free( old_path_localdata );
-         free( new_path_localdata );
-
-         int rc = md_mkdirs( new_path_localdata_versioned );
-         if( rc != 0 ) {
-            err = rc;
-         }
-         else {
-            // rename everything over
-            rc = fs_entry_move_local_data( old_path_localdata_versioned, new_path_localdata_versioned );
-            if( rc != 0 ) {
-               errorf( "failed to move bits from %s to %s\n", old_path_localdata_versioned, new_path_localdata_versioned );
-               err = rc;
-            }
-         }
-
-         free( old_path_localdata_versioned );
-         free( new_path_localdata_versioned );
-      }
-
-      if( err == 0 ) {
-         // withdraw old file
-         rc = ms_client_delete( core->ms, &old_ent );
+         // unlink fent_new's data
+         fs_entry_garbage_collect_file( core, fent_new );
          
-         if( rc != 0 ) {
-            errorf( "ms_client_delete(%s) rc = %d\n", old_path, rc );
-            rc = -EREMOTEIO;
+         fs_entry_unlock( fent_new );
+         err = fs_entry_detach_lowlevel( core, dest_parent, fent_new, true );
+         
+         if( err != 0 ) {
+            // technically, it's still safe to access fent_new since dest_parent is write-locked
+            errorf("fs_entry_detach_lowelevel(%s from %s) rc = %d\n", fent_new->name, dest_parent->name, err );
          }
-
-         err = rc;
       }
    }
+   
    // unlock everything
    if( fent_old_parent ) {
       fs_entry_unlock( fent_old_parent );
@@ -306,9 +357,12 @@ int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new
    if( fent_new )
       fs_entry_unlock( fent_new );
 
+   
+   if( err != 0 )
+      free( new_path_basename );
+   
    md_entry_free( &old_ent );
    md_entry_free( &new_ent );
 
    return err;
-   */
 }

@@ -1507,3 +1507,47 @@ int fs_entry_free_replica_file_handle( struct fs_file_handle* fh ) {
    
    return 0;
 }
+
+
+// garbage collect a file's data
+// fent must be read-locked
+int fs_entry_garbage_collect_file( struct fs_core* core, struct fs_entry* fent ) {
+   if( !FS_ENTRY_LOCAL( core, fent ) )
+      return -EINVAL;
+   
+   struct replica_snapshot fent_snapshot;
+   fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
+
+   int rc = 0;
+   
+   // garbage-collect manifest
+   rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
+   if( rc != 0 ) {
+      errorf( "fs_entry_garbage_collect_manifest(%s) rc = %d\n", fent->name, rc );
+      rc = 0;
+   }
+   
+   // garbage-collect each block
+   uint64_t num_blocks = fent->manifest->get_num_blocks();
+   modification_map block_infos;
+   
+   for( uint64_t i = 0; i < num_blocks; i++ ) {
+      
+      // acquire block info 
+      struct fs_entry_block_info binfo;
+      memset( &binfo, 0, sizeof(binfo) );
+      
+      binfo.version = fent->manifest->get_block_version( i );
+      
+      block_infos[ i ] = binfo;
+   }
+   
+   rc = fs_entry_garbage_collect_blocks( core, &fent_snapshot, &block_infos );
+   if( rc != 0 ) {
+      errorf( "fs_entry_garbage_collect_blocks(%s) rc = %d\n", fent->name, rc );
+      rc = 0;
+   }
+ 
+   return rc;
+}
+

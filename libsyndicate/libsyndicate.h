@@ -83,10 +83,9 @@ struct md_entry {
    uint64_t volume;        // ID of the Volume
    mode_t mode;         // file permission bits
    off_t size;          // size of the file
-   unsigned char* checksum;      // SHA256 hash (NULL if not given)
    int32_t error;       // error information with this md_entry
    uint64_t parent_id;  // id of this file's parent directory
-   char* parent_name;   // name of htis file's parent directory
+   char* parent_name;   // name of this file's parent directory
 };
 
 typedef list<struct md_entry*> md_entry_list;
@@ -98,6 +97,7 @@ typedef list<struct md_entry*> md_entry_list;
 struct md_update {
    char op;               // update operation
    struct md_entry ent;
+   struct md_entry dest;        // only used by RENAME
    int error;             // error information
 };
 
@@ -307,7 +307,6 @@ struct md_syndicate_conf {
    int64_t default_write_freshness;                   // default number of milliseconds a file can age before needing refresh for writes
    char* logfile_path;                                // path to the logfile
    bool gather_stats;                                 // gather statistics or not?
-   bool use_checksums;                                // if set, send checksums of our local files in the metadata, and validate checksums (if possible) from remote files
    char* content_url;                                 // what is the URL under which published files can be accessed?
    char* data_root;                                   // root of the path where we store local file blocks
    char* staging_root;                                // root of the path where we store locally-written rmeote file blocks 
@@ -409,7 +408,6 @@ struct md_syndicate_conf {
 #define METADATA_USERNAME_KEY       "METADATA_USERNAME"
 #define METADATA_PASSWORD_KEY       "METADATA_PASSWORD"
 #define METADATA_UID_KEY            "METADATA_UID"
-#define USE_CHECKSUMS_KEY           "USE_CHECKSUMS"
 #define DATA_ROOT_KEY               "DATA_ROOT"
 #define STAGING_ROOT_KEY            "STAGING_ROOT"
 

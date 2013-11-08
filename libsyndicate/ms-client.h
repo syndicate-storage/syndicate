@@ -125,15 +125,15 @@ struct ms_client_timing {
 
 
 struct ms_gateway_cert {
-   uint64_t user_id;
+   uint64_t user_id;            // SyndicateUser ID
    uint64_t gateway_id;
    int gateway_type;
    uint64_t volume_id;
-   char* name;
+   char* name;                  // account (gateway) name
    char* hostname;
+   int portnum;
    char* closure_text;          // closure information (only retained for our gateway)
    uint64_t closure_text_len;
-   int portnum;
    EVP_PKEY* pubkey;
    uint64_t caps;
    uint64_t expires;
@@ -258,6 +258,7 @@ int ms_client_mkdir( struct ms_client* client, uint64_t* file_id, struct md_entr
 int ms_client_delete( struct ms_client* client, struct md_entry* ent );
 int ms_client_update( struct ms_client* client, struct md_entry* ent );
 int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, struct md_entry* ent );
+int ms_client_rename( struct ms_client* client, struct md_entry* src, struct md_entry* dest );
 
 int ms_client_sync_update( struct ms_client* client, uint64_t volume_id, uint64_t file_id );
 int ms_client_sync_updates( struct ms_client* client, uint64_t freshness_ms );
@@ -289,6 +290,9 @@ int ms_client_get_volume_root( struct ms_client* client, struct md_entry* root )
 
 int ms_client_check_gateway_caps( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t caps );
 
+int ms_client_get_gateway_user( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t* user_id );
+int ms_client_get_gateway_volume( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t* volume_id );
+
 int ms_client_sched_volume_reload( struct ms_client* client );
 int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint64_t volume_version, uint64_t cert_version );
 
@@ -298,6 +302,7 @@ void ms_client_free_path( path_t* path, void (*free_cls)(void*) );
 void ms_client_free_response( ms_response_t* ms_response );
 void ms_client_free_listing( struct ms_listing* listing );
 
+uint64_t ms_client_make_file_id();
 }
 
 // have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???

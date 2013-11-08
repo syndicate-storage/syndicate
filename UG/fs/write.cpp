@@ -661,15 +661,10 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, int sou
 // TODO: if this method crashes, roll back the write properly.  Garbage-collect replicated manifests, for example, if we can't ack the writer or send metadata to the MS.
 int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t file_id, uint64_t coordinator_id, Serialization::WriteMsg* write_msg ) {
    
-   // capability check---can this gateway even write?
-   int err = ms_client_check_gateway_caps( core->ms, SYNDICATE_UG, write_msg->gateway_id(), GATEWAY_CAP_WRITE_DATA );
-   if( err != 0 ) {
-      errorf("ms_client_check_gateway_caps( %" PRIu64 " ) for writing data rc = %d\n", write_msg->gateway_id(), err );
-      return err;
-   }
-   
    uint64_t parent_id = 0;
    char* parent_name = NULL;
+   int err = 0;
+   
    struct fs_entry* fent = fs_entry_resolve_path_and_parent_info( core, fs_path, write_msg->user_id(), write_msg->volume_id(), true, &err, &parent_id, &parent_name );
    if( err != 0 || fent == NULL ) {
       return err;

@@ -170,8 +170,10 @@ int syndicatefs_rename(const char *path, const char *newpath) {
    
    SYNDICATEFS_DATA->stats->enter( STAT_RENAME );
 
-   int rc = fs_entry_rename( SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume );
+   int rc = fs_entry_versioned_rename( SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume, -1 );
 
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_rename( %s, %s ) rc = %d\n", pthread_self(), path, newpath, rc );
+   
    SYNDICATEFS_DATA->stats->leave( STAT_RENAME, rc );
    return rc;
 }

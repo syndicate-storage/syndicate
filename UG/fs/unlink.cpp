@@ -11,6 +11,7 @@
 
 // lowlevel unlink operation--given an fs_entry and the name of an entry
 // PARENT MUST BE LOCKED FIRST!
+// CHILD MUST NOT BE LOCKED!
 int fs_entry_detach_lowlevel( struct fs_core* core, struct fs_entry* parent, struct fs_entry* child, bool remove_data ) {
 
    if( parent == child ) {
@@ -141,17 +142,11 @@ int fs_entry_detach( struct fs_core* core, char const* path, uint64_t user, uint
 // unlink a file from the filesystem
 // pass -1 if the version is not known, or pass the known version to be unlinked
 int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t file_id, uint64_t coordinator_id, int64_t known_version, uint64_t owner, uint64_t volume, uint64_t gateway_id, bool check_file_id_and_coordinator_id ) {
-
-   // capability check---can this gateway even write?
-   int err = ms_client_check_gateway_caps( core->ms, SYNDICATE_UG, gateway_id, GATEWAY_CAP_WRITE_DATA );
-   if( err != 0 ) {
-      errorf("ms_client_check_gateway_caps( %" PRIu64 " ) for writing data rc = %d\n", gateway_id, err );
-      return err;
-   }
    
    // get some info about this file first
    int rc = 0;
-
+   int err = 0;
+   
    struct fs_entry* fent = fs_entry_resolve_path( core, path, owner, volume, false, &err );
    if( !fent || err ) {
       return err;
@@ -194,10 +189,6 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    
    rc = 0;
    
-   // snapshot this fent before we delete it
-   struct replica_snapshot fent_snapshot;
-   fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
-
    if( local ) {
       // we're responsible for this file; tell the metadata server we just unlinked
       // preserve the entry information so we can issue a withdraw
@@ -216,35 +207,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
          return rc;
       }
       else {
-         // now garbage-collect the manifest
-         rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
-         if( rc != 0 ) {
-            errorf( "fs_entry_garbage_collect_manifest(%s) rc = %d\n", path, rc );
-            rc = 0;
-         }
-         
-         // garbage-collect each block
-         uint64_t num_blocks = fent->manifest->get_num_blocks();
-         modification_map block_infos;
-         
-         for( uint64_t i = 0; i < num_blocks; i++ ) {
-            
-            // acquire block info 
-            struct fs_entry_block_info binfo;
-            memset( &binfo, 0, sizeof(binfo) );
-            
-            binfo.version = fent->manifest->get_block_version( i );
-            binfo.gateway_id = fent->manifest->get_block_host( core, i );
-            
-            block_infos[ i ] = binfo;
-         }
-         
-         rc = fs_entry_garbage_collect_blocks( core, &fent_snapshot, &block_infos );
-         if( rc != 0 ) {
-            errorf( "fs_entry_garbage_collect_blocks(%s) rc = %d\n", path, rc );
-            rc = 0;
-         }
-         
+         fs_entry_garbage_collect_file( core, fent );
       }
    }
    else {

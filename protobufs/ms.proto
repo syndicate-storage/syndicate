@@ -42,10 +42,12 @@ message ms_update {
       UPDATE = 2;
       DELETE = 3;
       CHOWN = 4;
+      RENAME = 5;
    }
 
    required int32 type = 1;
    required ms_entry entry = 2;
+   optional ms_entry dest = 3;          // used by rename
 }
 
 // collection of object updates

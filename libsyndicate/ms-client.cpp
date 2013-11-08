@@ -2620,6 +2620,12 @@ static int ms_client_serialize_update_set( update_set* updates, ms::ms_updates* 
       ms::ms_entry* ms_ent = ms_up->mutable_entry();
 
       md_entry_to_ms_entry( ms_ent, &update->ent );
+      
+      // if this is a RENAME, then add the 'dest' argument
+      if( update->op == ms::ms_update::RENAME ) {
+         ms::ms_entry* dest_ent = ms_up->mutable_dest();
+         md_entry_to_ms_entry( dest_ent, &update->dest );
+      }
    }
 
    ms_updates->set_signature( string("") );
@@ -2658,13 +2664,27 @@ static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) 
 
 
 // post a record on the MS, synchronously.
-// Get back a new file ID and coordinator ID
-static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t* coordinator_id, uint64_t volume_id, int op, struct md_entry* ent ) {
+// Get back a new file ID and/or coordinator ID, depending on the operation
+static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t* coordinator_id, uint64_t volume_id, int op, struct md_entry* ent, struct md_entry* dest ) {
+   
+   // pack the first entry
    struct md_update up;
+   memset( &up, 0, sizeof(up) );
    up.op = op;
    memcpy( &up.ent, ent, sizeof(struct md_entry) );
 
    update_set updates;
+   
+   // do we have a second entry?  We need one for rename
+   if( op == ms::ms_update::RENAME ) {
+      if( dest != NULL ) {
+         memcpy( &up.dest, dest, sizeof(struct md_entry) );
+      }
+      else {
+         return -EINVAL;
+      }
+   }
+   
    updates[ ms_client_hash( ent->volume, ent->file_id ) ] = up;
 
    ms::ms_updates ms_updates;
@@ -2688,6 +2708,8 @@ static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t
 
    char* file_url = ms_client_file_url( client, volume_id );
 
+   // do we need to verify the authenticity of the reply?  That is, will the reply contain 
+   // information beyond a positive or negative ACK?
    bool need_verify = (op == ms::ms_update::CREATE || op == ms::ms_update::CHOWN);
    
    ms::ms_reply reply;
@@ -2702,6 +2724,7 @@ static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t
    if( rc == 0 ) {
       // success
       
+      // did the caller expect a file ID?
       if( file_id ) {
          if( reply.listing().entries_size() > 0 ) {
             *file_id = reply.listing().entries(0).file_id();
@@ -2711,6 +2734,7 @@ static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t
          }
       }
       
+      // did the caller expect a coordinator ID?
       if( coordinator_id ) {
          if( reply.listing().entries_size() > 0 ) {
             *coordinator_id = reply.listing().entries(0).coordinator();
@@ -2725,7 +2749,7 @@ static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t
 }
 
 
-static uint64_t ms_client_make_file_id() {
+uint64_t ms_client_make_file_id() {
    uint64_t lower = CMWC4096();
    uint64_t upper = CMWC4096();
    
@@ -2743,7 +2767,7 @@ int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, struct md
    
    dbprintf("desired file_id: %" PRIX64 "\n", file_id );
    
-   int rc = ms_client_post( client, &file_id, NULL, ent->volume, ms::ms_update::CREATE, ent );
+   int rc = ms_client_post( client, &file_id, NULL, ent->volume, ms::ms_update::CREATE, ent, NULL );
    
    if( rc == 0 ) {
       *file_id_ret = file_id;
@@ -2755,6 +2779,8 @@ int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, struct md
    return rc;
 }
 
+
+// make a directory on the MS, synchronously
 int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, struct md_entry* ent ) {   
    ent->type = MD_ENTRY_DIR;
    
@@ -2763,7 +2789,7 @@ int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, struct md_
    ent->file_id = file_id;
    
    dbprintf("desired file_id: %" PRIX64 "\n", file_id );
-   int rc = ms_client_post( client, &file_id, NULL, ent->volume, ms::ms_update::CREATE, ent );
+   int rc = ms_client_post( client, &file_id, NULL, ent->volume, ms::ms_update::CREATE, ent, NULL );
    
    if( rc == 0 ) {
       *file_id_ret = file_id;
@@ -2777,17 +2803,25 @@ int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, struct md_
 
 // delete a record on the MS, synchronously
 int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
-   return ms_client_post( client, NULL, NULL, ent->volume, ms::ms_update::DELETE, ent );
+   return ms_client_post( client, NULL, NULL, ent->volume, ms::ms_update::DELETE, ent, NULL );
 }
 
 // update a record on the MS, synchronously
 int ms_client_update( struct ms_client* client, struct md_entry* ent ) {
-   return ms_client_post( client, NULL, NULL, ent->volume, ms::ms_update::UPDATE, ent );
+   return ms_client_post( client, NULL, NULL, ent->volume, ms::ms_update::UPDATE, ent, NULL );
 }
 
 // change coordinator ownership of a file on the MS, synchronously
 int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, struct md_entry* ent ) {
-   return ms_client_post( client, NULL, new_coordinator, ent->volume, ms::ms_update::CHOWN, ent );
+   return ms_client_post( client, NULL, new_coordinator, ent->volume, ms::ms_update::CHOWN, ent, NULL );
+}
+
+// rename from src to dest 
+int ms_client_rename( struct ms_client* client, struct md_entry* src, struct md_entry* dest ) {
+   if( src->volume != dest->volume )
+      return -EXDEV;
+      
+   return ms_client_post( client, NULL, NULL, src->volume, ms::ms_update::RENAME, src, dest );
 }
 
 // send a batch of updates.
@@ -3646,6 +3680,65 @@ int ms_client_check_gateway_caps( struct ms_client* client, uint64_t gateway_typ
    
    return ret;
 }
+
+
+// get a gateway's user 
+int ms_client_get_gateway_user( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t* user_id ) {
+   if( gateway_type <= 0 || gateway_type >= MS_NUM_CERT_BUNDLES )
+      return -EINVAL;
+   
+   ms_client_view_rlock( client );
+   
+   ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1];
+   ms_client_cert_bundles( client->volume, cert_bundles );
+   
+   ms_cert_bundle::iterator itr = cert_bundles[ gateway_type ]->find( gateway_id );
+   if( itr == cert_bundles[ client->gateway_type ]->end() ) {
+      // not found--need to reload certs?
+      client->early_reload = true;      // writing this is okay, since regardless of thread scheduling the view thread will read it eventually
+      ms_client_view_unlock( client );
+      
+      return -EAGAIN;
+   }
+   
+   struct ms_gateway_cert* cert = itr->second;
+   
+   *user_id = cert->user_id;
+   
+   ms_client_view_unlock( client );
+   
+   return 0;
+}
+
+
+// get a gateway's volume
+int ms_client_get_gateway_volume( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t* user_id ) {
+   if( gateway_type <= 0 || gateway_type >= MS_NUM_CERT_BUNDLES )
+      return -EINVAL;
+   
+   ms_client_view_rlock( client );
+   
+   ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1];
+   ms_client_cert_bundles( client->volume, cert_bundles );
+   
+   ms_cert_bundle::iterator itr = cert_bundles[ gateway_type ]->find( gateway_id );
+   if( itr == cert_bundles[ client->gateway_type ]->end() ) {
+      // not found--need to reload certs?
+      client->early_reload = true;      // writing this is okay, since regardless of thread scheduling the view thread will read it eventually
+      ms_client_view_unlock( client );
+      
+      return -EAGAIN;
+   }
+   
+   struct ms_gateway_cert* cert = itr->second;
+   
+   *user_id = cert->volume_id;
+   
+   ms_client_view_unlock( client );
+   
+   return 0;
+}
+
 
 // get a copy of the closure text for this gateway
 int ms_client_get_closure_text( struct ms_client* client, char** closure_text, uint64_t* closure_len ) {
