@@ -165,7 +165,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
 
    char* path = strdup(_path);
    md_sanitize_path( path );
-
+   
    // revalidate this path
    int rc = fs_entry_revalidate_path( core, vol, path );
    if( rc != 0 ) {

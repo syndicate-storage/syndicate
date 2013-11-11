@@ -35,6 +35,20 @@ int fs_entry_make_dest_entry( struct fs_core* core, char const* new_path, uint64
    return 0;
 }
 
+int fs_entry_rename_cleanup( struct fs_entry* fent_common_parent, struct fs_entry* fent_old_parent, struct fs_entry* fent_new_parent ) {
+   if( fent_old_parent ) {
+      fs_entry_unlock( fent_old_parent );
+   }
+   if( fent_new_parent ) {
+      fs_entry_unlock( fent_new_parent );
+   }
+   if( fent_common_parent ) {
+      fs_entry_unlock( fent_common_parent );
+   }
+
+   return 0;
+}
+
 
 // handle a remote rename
 int fs_entry_remote_rename( struct fs_core* core, Serialization::WriteMsg* renameMsg ) {
@@ -47,12 +61,42 @@ int fs_entry_remote_rename( struct fs_core* core, Serialization::WriteMsg* renam
    return fs_entry_versioned_rename( core, renameMsg->rename().old_fs_path().c_str(), renameMsg->rename().new_fs_path().c_str(), renameMsg->user_id(), renameMsg->volume_id(), renameMsg->rename().file_version() );
 }
 
+
+// check that we aren't trying to move a directory into itself
+int fs_entry_verify_no_loop( struct fs_entry* fent, void* cls ) {
+   set<uint64_t>* file_ids = (set<uint64_t>*)cls;
+   
+   if( file_ids->count( fent->file_id ) > 0 ) {
+      // encountered this file ID before...
+      errorf("File /%" PRIu64 "/%" PRIX64 " would occur twice\n", fent->volume, fent->file_id );
+      return -EINVAL;
+   }
+   
+   file_ids->insert( fent->file_id );
+   
+   return 0;
+}
+
 // rename a file
 int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char const* new_path, uint64_t user, uint64_t volume, int64_t version ) {
    
    int err_old = 0, err_new = 0, err = 0;
 
    int rc = 0;
+   
+   // consistency check
+   err = fs_entry_revalidate_path( core, volume, old_path );
+   if( err != 0 ) {
+      errorf("fs_entry_revalidate_path(%s) rc = %d\n", old_path, err );
+      return err;
+   }
+
+   // consistency check
+   err = fs_entry_revalidate_path( core, volume, new_path );
+   if( err != 0 && err != -ENOENT ) {
+      errorf("fs_entry_revalidate_path(%s) rc = %d\n", new_path, err );
+      return err;
+   }
 
    // identify the parents of old_path and new_path
    char* old_path_dirname = md_dirname( old_path, NULL );
@@ -65,10 +109,14 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
    // resolve the parent *lower* in the FS hierarchy first.  order matters!
    if( md_depth( old_path ) > md_depth( new_path ) ) {
       fent_old_parent = fs_entry_resolve_path( core, old_path_dirname, user, volume, true, &err_old );
-      fent_new_parent = fs_entry_resolve_path( core, new_path_dirname, user, volume, true, &err_new );
+      if( fent_old_parent != NULL ) {
+         set<uint64_t> file_ids;
+         fent_new_parent = fs_entry_resolve_path_cls( core, new_path_dirname, user, volume, true, &err_new, fs_entry_verify_no_loop, &file_ids );
+      }
    }
    else if( md_depth( old_path ) < md_depth( new_path ) ) {
-      fent_new_parent = fs_entry_resolve_path( core, new_path_dirname, user, volume, true, &err_new );
+      set<uint64_t> file_ids;
+      fent_new_parent = fs_entry_resolve_path_cls( core, new_path_dirname, user, volume, true, &err_new, fs_entry_verify_no_loop, &file_ids );
       fent_old_parent = fs_entry_resolve_path( core, old_path_dirname, user, volume, true, &err_old );
    }
    else {
@@ -79,7 +127,8 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
       }
       else {
          // parents are different; safe to lock both
-         fent_new_parent = fs_entry_resolve_path( core, new_path_dirname, user, volume, true, &err_new );
+         set<uint64_t> file_ids;
+         fent_new_parent = fs_entry_resolve_path_cls( core, new_path_dirname, user, volume, true, &err_new, fs_entry_verify_no_loop, &file_ids );
          fent_old_parent = fs_entry_resolve_path( core, old_path_dirname, user, volume, true, &err_old );
       }
    }
@@ -87,24 +136,16 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
    free( old_path_dirname );
    free( new_path_dirname );
 
-   // check path resolution errors...
-   if( err_new || err_old ) {
-      if( fent_old_parent ) {
-         fs_entry_unlock( fent_old_parent );
-         err = err_old;
-      }
-      if( fent_new_parent ) {
-         fs_entry_unlock( fent_new_parent );
-         err = err_new;
-      }
-      if( fent_common_parent ) {
-         fs_entry_unlock( fent_common_parent );
-         err = err_old;
-      }
-      
-      return err;
+   if( err_new ) {
+      fs_entry_rename_cleanup( fent_common_parent, fent_old_parent, fent_new_parent );
+      return err_new;
    }
-
+   
+   if( err_old ) {
+      fs_entry_rename_cleanup( fent_common_parent, fent_old_parent, fent_new_parent );
+      return err_old;
+   }
+   
    // check permission errors...
    if( (fent_new_parent != NULL && (!IS_DIR_READABLE( fent_new_parent->mode, fent_new_parent->owner, fent_new_parent->volume, user, volume ) ||
                                    !IS_WRITEABLE( fent_new_parent->mode, fent_new_parent->owner, fent_new_parent->volume, user, volume ))) ||
@@ -115,16 +156,7 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
        (fent_common_parent != NULL && (!IS_DIR_READABLE( fent_common_parent->mode, fent_common_parent->owner, fent_common_parent->volume, user, volume )
                                     || !IS_WRITEABLE( fent_common_parent->mode, fent_common_parent->owner, fent_common_parent->volume, user, volume ))) ) {
 
-      if( fent_old_parent ) {
-         fs_entry_unlock( fent_old_parent );
-      }
-      if( fent_new_parent ) {
-         fs_entry_unlock( fent_new_parent );
-      }
-      if( fent_common_parent ) {
-         fs_entry_unlock( fent_common_parent );
-      }
-
+      fs_entry_rename_cleanup( fent_common_parent, fent_old_parent, fent_new_parent );
       return -EACCES;
    }
 
@@ -157,16 +189,7 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
 
    // also, if we rename a file into itself, then it's okay
    if( err != 0 || fent_old == fent_new ) {
-      if( fent_old_parent ) {
-         fs_entry_unlock( fent_old_parent );
-      }
-      if( fent_new_parent ) {
-         fs_entry_unlock( fent_new_parent );
-      }
-      if( fent_common_parent ) {
-         fs_entry_unlock( fent_common_parent );
-      }
-
+      fs_entry_rename_cleanup( fent_common_parent, fent_old_parent, fent_new_parent );
       free( new_path_basename );
 
       return err;
@@ -176,11 +199,6 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
    fs_entry_wlock( fent_old );
    if( fent_new )
       fs_entry_wlock( fent_new );
-
-   // don't make a directory a subdirectory of itself
-   // TODO: it's more correct to check file IDs than paths...
-   if( fent_old->ftype == FTYPE_DIR && strlen(old_path) <= strlen(new_path) && strncmp( old_path, new_path, strlen(old_path) ) == 0 )
-      err = -EINVAL;
 
    // don't proceed if one is a directory and the other is not
    if( fent_new ) {
@@ -194,6 +212,16 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
       }
    }
    
+   if( err != 0 ) {
+      fs_entry_rename_cleanup( fent_common_parent, fent_old_parent, fent_new_parent );
+      free( new_path_basename );
+
+      return err;
+   }
+   
+   // snapshot old fent
+   struct replica_snapshot fent_old_snapshot;
+   fs_entry_replica_snapshot( core, fent_old, 0, 0, &fent_old_snapshot );
    
    // serialize...
    struct md_entry old_ent, new_ent;
@@ -230,15 +258,11 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
    
    // dealing with files?
    if( fent_old->ftype == FTYPE_FILE && (fent_new == NULL || (fent_new != NULL && fent_new->ftype == FTYPE_FILE )) ) {
-      if( FS_ENTRY_LOCAL( core, fent_old ) ) {
-         // rename on the MS 
-         err = ms_client_rename( core->ms, &old_ent, &new_ent );
-         if( err != 0 ) {
-            errorf("ms_client_rename(%s --> %s) rc = %d\n", old_ent.name, new_ent.name, err );
-         }
-      }
-      else {
-         // tell remote coordinator to rename 
+      
+      bool local = FS_ENTRY_LOCAL( core, fent_old );
+      
+      if( !local ) {
+         // tell remote coordinator to rename, or become the coordinator
          Serialization::WriteMsg* rename_request = new Serialization::WriteMsg();
 
          fs_entry_init_write_message( rename_request, core, Serialization::WriteMsg::RENAME );
@@ -252,14 +276,15 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
          rename_info->set_new_fs_path( string(new_path) );
          
          Serialization::WriteMsg* ack = new Serialization::WriteMsg();
-
-         rc = fs_entry_post_write( ack, core, fent_old->coordinator, rename_request );
-         if( rc != 0 ) {
+         
+         rc = fs_entry_send_write_or_coordinate( core, fent_old, &fent_old_snapshot, rename_request, ack );
+         if( rc < 0 ) {
             errorf( "fs_entry_post_write(%s) rc = %d\n", old_path, rc );
 
             err = rc;
          }
-         else {
+         else if( rc == 0 ) {
+            // successfully sent write!
             if( ack->type() != Serialization::WriteMsg::ACCEPTED ) {
                if( ack->type() == Serialization::WriteMsg::ERROR ) {
                   // could not rename on the remote end
@@ -275,9 +300,20 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
                err = rc;
             }
          }
+         else if( rc > 0 ) {
+            local = true;
+         }
          
          delete ack;
          delete rename_request;
+      }
+      
+      if( local ) {
+         // rename on the MS 
+         err = ms_client_rename( core->ms, &old_ent, &new_ent );
+         if( err != 0 ) {
+            errorf("ms_client_rename(%s --> %s) rc = %d\n", old_ent.name, new_ent.name, err );
+         }
       }
    }
    else {
@@ -344,15 +380,7 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
    }
    
    // unlock everything
-   if( fent_old_parent ) {
-      fs_entry_unlock( fent_old_parent );
-   }
-   if( fent_new_parent ) {
-      fs_entry_unlock( fent_new_parent );
-   }
-   if( fent_common_parent ) {
-      fs_entry_unlock( fent_common_parent );
-   }
+   fs_entry_rename_cleanup( fent_common_parent, fent_old_parent, fent_new_parent );
    fs_entry_unlock( fent_old );
    if( fent_new )
       fs_entry_unlock( fent_new );
@@ -365,4 +393,9 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
    md_entry_free( &new_ent );
 
    return err;
+}
+
+// rename (local caller)
+int fs_entry_rename( struct fs_core* core, char const* old_path, char const* new_path, uint64_t user, uint64_t volume ) {
+   return fs_entry_versioned_rename( core, old_path, new_path, user, volume, -1 );
 }

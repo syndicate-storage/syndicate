@@ -143,6 +143,45 @@ static bool fs_entry_is_garbage_collectable_block( struct fs_core* core, struct 
 }
 
 
+// replicate a new manifest and delete the old one.
+// fent must be write-locked
+// fh must be write-locked
+int fs_entry_replace_manifest( struct fs_core* core, struct fs_file_handle* fh, struct fs_entry* fent, struct replica_snapshot* fent_snapshot_prewrite ) {
+   // replicate our new manifest
+   int rc = fs_entry_replicate_manifest( core, fent, false, fh );
+   if( rc != 0 ) {
+      errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fh->path, rc );
+      rc = -EIO;
+   }
+   else {
+      if( fh->flags & O_SYNC ) {
+         // wait for all replicas to finish, since we're synchronous
+         fs_entry_replicate_wait( fh );
+      }
+   }
+   
+   if( rc == 0 ) {
+      // garbage-collect the old manifest.
+      // First, update the snapshot to indicate that we coordinate this file
+      uint64_t old_writer_id = fent_snapshot_prewrite->writer_id;
+      fent_snapshot_prewrite->writer_id = fent->coordinator;
+      
+      fs_entry_garbage_collect_manifest( core, fent_snapshot_prewrite );
+      
+      // restore
+      fent_snapshot_prewrite->writer_id = old_writer_id;
+      
+      if( rc != 0 ) {
+         errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fh->path, rc );
+         rc = 0;
+      }
+   }
+   
+   return rc;
+}
+                  
+
+
 // write data to a file, either from a buffer or a file descriptor.
 // Zeroth, revalidate path and manifest and optionally expand the file if we're writing beyond the end of it.
 // First, write blocks to disk for subsequent re-read and for serving to other UGs.
@@ -162,14 +201,13 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    }
 
    struct timespec ts, ts2;
-   struct timespec latency_ts, write_ts, replicate_ts, replicate_ts_total, garbage_collect_ts, remote_write_ts, update_ts;
+   struct timespec write_ts, replicate_ts, replicate_ts_total, garbage_collect_ts, remote_write_ts, update_ts;
 
    BEGIN_TIMING_DATA( ts );
    
-   // reload this path
-   int rc = fs_entry_revalidate_path( core, core->volume, fh->path );
+   int rc = fs_entry_revalidate_metadata( core, fh->path, fh->fent, NULL );
    if( rc != 0 ) {
-      errorf("fs_entry_revalidate(%s) rc = %d\n", fh->path, rc );
+      errorf("fs_entry_revalidate_metadata(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
       return -EREMOTEIO;
    }
@@ -178,19 +216,6 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
    
    bool local = FS_ENTRY_LOCAL( core, fh->fent );
    
-   // reload this manifest.  If we get this manifest from an RG, remember which one.
-   uint64_t rg_id = 0;
-   rc = fs_entry_revalidate_manifest( core, fh->path, fh->fent, fh->fent->version, fh->fent->mtime_sec, fh->fent->mtime_nsec, true, &rg_id );
-
-   if( rc != 0 ) {
-      errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fh->path, rc );
-      fs_entry_unlock( fh->fent );
-      fs_file_handle_unlock( fh );
-      return -EREMOTEIO;
-   }
-
-   END_TIMING_DATA( ts, latency_ts, "metadata latency" );
-
    BEGIN_TIMING_DATA( write_ts );
 
    ssize_t ret = 0;
@@ -474,89 +499,19 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
          
          Serialization::WriteMsg *write_ack = new Serialization::WriteMsg();
          
-         // try to send to the coordinator, or become the coordinator
-         bool sent = false;
-         while( !sent ) {
-            int rc = fs_entry_post_write( write_ack, core, fh->fent->coordinator, write_msg );
-
-            // process the write message--hopefully it's a PROMISE
-            if( rc != 0 ) {
-               // failed to post
-               errorf( "fs_entry_post_write(%s) rc = %d\n", fh->path, rc );
-               
-               if( rc == -ENODATA ) {
-                  // curl couldn't connect--this is maybe a partition.
-                  // Try to become the coordinator.
-                  rc = fs_entry_coordinate( core, fh->fent, fent_snapshot.file_version, fent_snapshot.mtime_sec, fent_snapshot.mtime_nsec );
-                  
-                  if( rc == 0 ) {
-                     // we're now the coordinator, and the MS has the latest metadata.
-                     local = true;
-                     
-                     dbprintf("Now coordinator for %" PRIu64 " (at %s)\n", fh->fent->file_id, fh->path );
-                     
-                     // replicate our new manifest
-                     rc = fs_entry_replicate_manifest( core, fh->fent, false, fh );
-                     if( rc != 0 ) {
-                        errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fh->path, rc );
-                        ret = -EIO;
-                     }
-                     else {
-                        replicated_manifest = true;
-                        
-                        if( fh->flags & O_SYNC ) {
-                           // wait for all replicas to finish, since we're synchronous
-                           fs_entry_replicate_wait( fh );
-                        }
-                     }
-                     
-                     // garbage-collect the old manifest.
-                     // First, update the snapshot to indicate that we coordinate this file
-                     uint64_t old_writer_id = fent_snapshot.writer_id;
-                     fent_snapshot.writer_id = fh->fent->coordinator;
-                     
-                     fs_entry_garbage_collect_manifest( core, &fent_snapshot );
-                     
-                     // restore
-                     fent_snapshot.writer_id = old_writer_id;
-                     
-                     if( rc != 0 ) {
-                        errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fh->path, rc );
-                        rc = 0;
-                     }
-                     
-                     // done here
-                     break;
-                  }
-                  else if( rc == -EAGAIN ) {
-                     // the coordinator changed to someone else.  Try again.
-                     // fent->coordinator refers to the current coordinator.
-                     dbprintf("coordinator of %s is now %" PRIu64 "\n", fh->path, fh->fent->coordinator );
-                     rc = 0;
-                     continue;
-                  }
-                  else {
-                     // some other (fatal) error
-                     errorf("fs_entry_coordinate(%s) rc = %d\n", fh->path, rc );
-                     break;
-                  }
-               }
-               else {
-                  // some other (fatal) error
-                  break;
-               }
-            }
-            else {
-               // success!
-               sent = true;
+         int rc = fs_entry_send_write_or_coordinate( core, fh->fent, &fent_snapshot, write_msg, write_ack );
+         
+         if( rc > 0 ) {
+            // we're now the coordinator.  Replicate our new manifest and remove the old one.
+            rc = fs_entry_replace_manifest( core, fh, fh->fent, &fent_snapshot );
+            if( rc == 0 ) {
+               replicated_manifest = true;
             }
             
-            if( rc != 0 ) {
-               ret = rc;
-            }
+            local = true;
          }
          
-         if( sent && write_ack->type() != Serialization::WriteMsg::PROMISE ) {
+         if( rc >= 0 && write_ack->type() != Serialization::WriteMsg::PROMISE ) {
             // got something back, but not a PROMISE
             if( write_ack->type() == Serialization::WriteMsg::ERROR ) {
                if( write_ack->errorcode() == -EINVAL ) {
@@ -658,7 +613,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, int sou
 // Second, synchronously replicate the manifest to all RGs.
 // Third, upload new metadata to the MS for this file.
 // Fourth, acknowledge the remote writer.
-// TODO: if this method crashes, roll back the write properly.  Garbage-collect replicated manifests, for example, if we can't ack the writer or send metadata to the MS.
 int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t file_id, uint64_t coordinator_id, Serialization::WriteMsg* write_msg ) {
    
    uint64_t parent_id = 0;

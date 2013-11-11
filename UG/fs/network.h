@@ -24,4 +24,6 @@ int fs_entry_download_manifest_replica( struct fs_core* core, uint64_t origin,
                                         uint64_t volume_id, uint64_t file_id, int64_t file_version, int64_t mtime_sec, int32_t mtime_nsec,
                                         Serialization::ManifestMsg* mmsg, uint64_t* successful_RG_id );
 
+int fs_entry_send_write_or_coordinate( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* fent_snapshot_prewrite, Serialization::WriteMsg* write_msg, Serialization::WriteMsg* write_ack );
+
 #endif 

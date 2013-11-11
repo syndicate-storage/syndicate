@@ -1275,3 +1275,43 @@ int fs_entry_coordinate( struct fs_core* core, struct fs_entry* fent, int64_t re
    
    return rc;
 }
+
+
+// revalidate a path and the manifest at the end of the path
+int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t* rg_id_ret ) {
+   
+   struct timespec ts, ts2;
+
+   BEGIN_TIMING_DATA( ts );
+   
+   // reload this path
+   int rc = fs_entry_revalidate_path( core, core->volume, fs_path );
+   if( rc != 0 ) {
+      errorf("fs_entry_revalidate(%s) rc = %d\n", fs_path, rc );
+      return rc;
+   }
+   
+   fs_entry_wlock( fent );
+   
+   // reload this manifest.  If we get this manifest from an RG, remember which one.
+   uint64_t rg_id = 0;
+   rc = fs_entry_revalidate_manifest( core, fs_path, fent, fent->version, fent->mtime_sec, fent->mtime_nsec, true, &rg_id );
+
+   if( rc != 0 ) {
+      errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, rc );
+      fs_entry_unlock( fent );
+      return rc;
+   }
+
+   if( rg_id_ret != NULL ) {
+      *rg_id_ret = rg_id;
+   }
+   
+   END_TIMING_DATA( ts, ts2, "metadata latency" );
+ 
+   fs_entry_unlock( fent );
+   
+   return rc;
+}
+
+

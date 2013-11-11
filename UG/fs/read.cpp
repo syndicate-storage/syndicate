@@ -212,19 +212,17 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
    }
 
    struct timespec ts, ts2, read_ts;
-   struct timespec latency_ts;
-
+   
    BEGIN_TIMING_DATA( ts );
    
-   // refresh the path metadata
-   int rc = fs_entry_revalidate_path( core, fh->volume, fh->path );
+   int rc = fs_entry_revalidate_metadata( core, fh->path, fh->fent, NULL );
    if( rc != 0 ) {
-      errorf("fs_entry_revalidate_path(%s) rc = %d\n", fh->path, rc );
+      errorf("fs_entry_revalidate_metadata(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
       return -EREMOTEIO;
    }
    
-   fs_entry_wlock( fh->fent );
+   fs_entry_rlock( fh->fent );
    
    if( !IS_STREAM_FILE( *(fh->fent) ) && fh->fent->size < offset ) {
       // eof
@@ -233,20 +231,10 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
       return 0;
    }
 
-   rc = fs_entry_revalidate_manifest( core, fh->path, fh->fent );
-   if( rc != 0 ) {
-      errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fh->path, rc );
-      fs_entry_unlock( fh->fent );
-      fs_file_handle_unlock( fh );
-      return -EREMOTEIO;
-   }
-
    off_t file_size = fh->fent->size;
    
    fs_entry_unlock( fh->fent );
-
-   END_TIMING_DATA( ts, latency_ts, "metadata latency" );
-
+   
    BEGIN_TIMING_DATA( read_ts );
    
    ssize_t total_read = 0;

@@ -827,7 +827,7 @@ class MSEntry( storagetypes.Object ):
    
    @classmethod
    @storagetypes.concurrent
-   def __rename_verify_absent_async( cls, volume, absent_file_id, ent ):
+   def __rename_verify_no_loop_async( cls, volume, absent_file_id, ent ):
       """
       Verify that an MSEntry does not appear in the path from root to a given entry.
       This is used to verify that renaming a directory would not make it its own parent.
@@ -878,6 +878,7 @@ class MSEntry( storagetypes.Object ):
       if rc != 0:
          return rc
       
+      src_name = src_attrs['name']
       src_file_id = src_attrs['file_id']
       src_parent_id = src_attrs['parent_id']
       
@@ -974,7 +975,7 @@ class MSEntry( storagetypes.Object ):
          dest_delete_fut = MSEntry.__delete_begin_async( dest )
       
       # while we're at it, make sure we're not moving src to a subdirectory of itself
-      src_verify_absent = MSEntry.__rename_verify_absent_async( volume, src_file_id, dest_parent )
+      src_verify_absent = MSEntry.__rename_verify_no_loop_async( volume, src_file_id, dest_parent )
       
       # gather results
       futs = [src_verify_absent]
@@ -1002,6 +1003,9 @@ class MSEntry( storagetypes.Object ):
          
          return src_absent_rc
       
+      # put a new nameholder for src
+      new_nameholder_fut = MSEntryNameHolder.create_async( volume_id, dest_parent_id, src_file_id, dest_name )
+      
       # we're good to go
       src_write_attrs = {
          "name": dest_name,
@@ -1011,15 +1015,32 @@ class MSEntry( storagetypes.Object ):
       }
       
       if dest != None:
-         dest_delete_fut = dest.delete_async()
+         dest_delete_fut = MSEntry.__delete_finish_async( volume, dest_parent, dest )
       
       src_write_fut = MSEntry.__write_msentry_async( src, volume.num_shards, write_base=True, **src_write_attrs )
       
-      futs = [src_write_fut]
+      futs = [src_write_fut, new_nameholder_fut]
       
       if dest_delete_fut != None:
-         futs.apend( dest_delete_fut )
+         futs.append( dest_delete_fut )
       
+      # clean up cache
+      cache_delete = [
+         MSEntry.cache_key_name( volume_id, src_parent_id ),
+         MSEntry.cache_key_name( volume_id, dest_parent_id ),
+         MSEntry.cache_key_name( volume_id, src_file_id ),
+         MSEntry.cache_key_name( volume_id, dest_file_id ),
+         MSEntry.cache_listing_key_name( volume_id, src_parent_id ),
+         MSEntry.cache_listing_key_name( volume_id, dest_parent_id )
+      ]
+      
+      storagetypes.memcache.delete_multi( cache_delete );
+      
+      # remove src's old nameholder
+      old_nameholder_key = storagetypes.make_key( MSEntryNameHolder, MSEntryNameHolder.make_key_name( volume_id, src_parent_id, src_name ) )
+      storagetypes.deferred.defer( MSEntry.delete_all, [old_nameholder_key] )
+      
+      # wait for the operation to complete
       storagetypes.wait_futures( futs )
       
       return 0
@@ -1076,16 +1097,57 @@ class MSEntry( storagetypes.Object ):
    
    @classmethod
    @storagetypes.concurrent
+   def __delete_finish_async( cls, volume, parent_ent, ent ):
+      """
+      Finish deleting an entry.
+      Remove it and its nameholder, update its parent's shard, and flush the cached entry, the cached parent entry, and the cached listing entry.
+      """
+
+      if not ent.deleted:
+         logging.error("Entry is not yet deleted: %s" % str(ent))
+         storagetypes.concurrent_return( -errno.EINVAL )
+      
+      volume_id = volume.volume_id
+      parent_id = parent_ent.file_id
+      ent_key_name = MSEntry.make_key_name( volume_id, ent.file_id )
+      ent_shard_keys = MSEntry.get_shard_keys( volume.num_shards, ent_key_name )
+      ent_cache_key_name = MSEntry.cache_key_name( volume_id, ent.file_id )
+      
+      # update the parent shard...
+      yield MSEntry.update_shard_async( volume.num_shards, parent_ent )
+      
+      # delete any listings of this parent
+      storagetypes.memcache.delete_multi( [MSEntry.cache_listing_key_name( volume_id, parent_id), ent_cache_key_name] )
+
+      # delete this entry, its shards, and its nameholder
+      ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, ent.file_id ) )
+      nh_key = storagetypes.make_key( MSEntryNameHolder, MSEntryNameHolder.make_key_name( volume_id, parent_id, ent.name ) )
+      storagetypes.deferred.defer( MSEntry.delete_all, [nh_key, ent_key] + ent_shard_keys )
+      
+      # decrease number of files
+      storagetypes.deferred.defer( Volume.decrease_file_count, volume_id )
+      
+      storagetypes.concurrent_return( 0 )
+      
+      
+   @classmethod
+   def __delete_finish( cls, volume, parent_ent, ent ):
+      delete_fut = MSEntry.__delete_finish_async( volume, parent_ent, ent )
+      rc = delete_fut.get_result()
+      return rc
+   
+   @classmethod
+   @storagetypes.concurrent
    def __delete_undo_async( cls, ent ):
       ent.deleted = False
       yield ent.put_async()
-      storagetypes.concurrent_return()
+      storagetypes.concurrent_return( 0 )
 
    @classmethod
    def __delete_undo( cls, ent ):
       delete_undo_fut = MSEntry.__delete_undo( ent )
       delete_undo_fut.get_result()
-      return
+      return 0
 
    @classmethod
    def Delete( cls, user_owner_id, volume, **ent_attrs ):
@@ -1202,6 +1264,9 @@ class MSEntry( storagetypes.Object ):
 
       if do_delete:
 
+         ret = MSEntry.__delete_finish( volume, parent_ent, ent );
+         
+         """
          ent_fut = None
             
          # update the parent shard...
@@ -1220,7 +1285,8 @@ class MSEntry( storagetypes.Object ):
 
          # wait for this to finish
          parent_shard_fut.get_result()
-
+         """
+         
       return ret
 
 

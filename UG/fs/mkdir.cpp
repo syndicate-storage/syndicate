@@ -115,8 +115,8 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_
       
       if( err != 0 ) {
          errorf("ms_client_create(%s) rc = %d\n", path, err );
-         err = -EREMOTEIO;
-
+         
+         fs_entry_unlock( child );
          rc = fs_entry_detach_lowlevel( core, parent, child, true );
          if( rc != 0 ) {
             errorf("fs_entry_detach_lowlevel(%s) rc = %d\n", path, rc );

@@ -8,6 +8,7 @@
 #include "manifest.h"
 #include "url.h"
 #include "collator.h"
+#include "replication.h"
 
 // download and verify a manifest
 int fs_entry_download_manifest( struct fs_core* core, uint64_t origin, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
@@ -63,8 +64,6 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, ch
    }
    
    curl_easy_cleanup( curl );
-   
-   // TODO: verify it...
    
    *block_bits = block_buf;
    
@@ -371,6 +370,77 @@ int fs_entry_download_manifest_replica( struct fs_core* core,
    }
    
    return rc;
+}
+
+
+// send a write message for a file to a remote gateway, or become the coordinator of the file.
+// this does not affect the manifest in any way.
+// fent must be write-locked!
+// return 0 if the send was successful.
+// return 1 if we're now the coordinator.
+// return negative on error.
+int fs_entry_send_write_or_coordinate( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* fent_snapshot_prewrite, Serialization::WriteMsg* write_msg, Serialization::WriteMsg* write_ack ) {
+
+   int ret = 0;
+   
+   // try to send to the coordinator, or become the coordinator
+   bool sent = false;
+   bool local = false;
+   
+   while( !sent ) {
+      int rc = fs_entry_post_write( write_ack, core, fent->coordinator, write_msg );
+
+      // process the write message acknowledgement--hopefully it's a PROMISE
+      if( rc != 0 ) {
+         // failed to post
+         errorf( "fs_entry_post_write(/%" PRIu64 "/%" PRIX64 " (%s)) to %" PRIu64 " rc = %d\n", fent->volume, fent->file_id, fent->name, fent->coordinator, rc );
+         
+         if( rc == -ENODATA ) {
+            // curl couldn't connect--this is maybe a partition.
+            // Try to become the coordinator.
+            rc = fs_entry_coordinate( core, fent, fent_snapshot_prewrite->file_version, fent_snapshot_prewrite->mtime_sec, fent_snapshot_prewrite->mtime_nsec );
+            
+            if( rc == 0 ) {
+               // we're now the coordinator, and the MS has the latest metadata.
+               local = true;
+               
+               dbprintf("Now coordinator for %" PRIu64 " (%s)\n", fent->file_id, fent->name );
+               
+               break;
+            }
+            else if( rc == -EAGAIN ) {
+               // the coordinator changed to someone else.  Try again.
+               // fent->coordinator refers to the current coordinator.
+               dbprintf("coordinator of /%" PRIu64 "/%" PRIX64 " is now %" PRIu64 "\n", fent->volume, fent->file_id, fent->coordinator );
+               rc = 0;
+               continue;
+            }
+            else {
+               // some other (fatal) error
+               errorf("fs_entry_coordinate(/%" PRIu64 "/%" PRIX64 ") rc = %d\n", fent->volume, fent->file_id, rc );
+               break;
+            }
+         }
+         else {
+            // some other (fatal) error
+            break;
+         }
+      }
+      else {
+         // success!
+         sent = true;
+      }
+      
+      if( rc != 0 ) {
+         ret = rc;
+      }
+   }
+   
+   // are we the coordinator?
+   if( ret == 0 && local )
+      ret = 1;
+
+   return ret;
 }
 
 

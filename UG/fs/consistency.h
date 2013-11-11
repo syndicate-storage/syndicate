@@ -28,6 +28,9 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
 int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id );
 int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg* mmsg );
 
+// revalidate all of a path and the fent at the end
+int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t* rg_id_ret );
+
 // change/learn coordinator
 int fs_entry_coordinate( struct fs_core* core, struct fs_entry* fent, int64_t replica_version, int64_t replica_manifest_mtime_sec, int32_t replica_manifest_mtime_nsec );
 

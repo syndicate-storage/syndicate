@@ -147,7 +147,15 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    int rc = 0;
    int err = 0;
    
-   struct fs_entry* fent = fs_entry_resolve_path( core, path, owner, volume, false, &err );
+   // consistency check
+   err = fs_entry_revalidate_path( core, volume, path );
+   if( err != 0 ) {
+      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, err );
+      return -EREMOTEIO;
+   }
+
+   // get the fent...
+   struct fs_entry* fent = fs_entry_resolve_path( core, path, owner, volume, true, &err );
    if( !fent || err ) {
       return err;
    }
@@ -175,8 +183,16 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
       return -ESTALE;
    }
    
-   char* path_dirname = md_dirname( path, NULL );
+   // make sure the manifest is fresh, so we delete every block
+   err = fs_entry_revalidate_manifest( core, path, fent );
+   if( err != 0 ) {
+      errorf( "fs_entry_revalidate_manifest(%s) rc = %d\n", path, err );
+      fs_entry_unlock( fent );
+      return err;
+   }
 
+   char* path_dirname = md_dirname( path, NULL );
+   
    struct fs_entry* parent = fs_entry_resolve_path( core, path_dirname, owner, volume, true, &err );
 
    free( path_dirname );
@@ -189,6 +205,55 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    
    rc = 0;
    
+   // before we do anything, snapshot
+   struct replica_snapshot fent_snapshot;
+   fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
+  
+   if( !local ) {
+      // this is someone else's file; tell them to unlink
+      Serialization::WriteMsg* detach_request = new Serialization::WriteMsg();
+
+      fs_entry_init_write_message( detach_request, core, Serialization::WriteMsg::DETACH );
+      
+      Serialization::DetachRequest* detach = detach_request->mutable_detach();
+      detach->set_volume_id( fent->volume );
+      detach->set_coordinator_id( fent->coordinator );
+      detach->set_file_id( fent->file_id );
+      detach->set_fs_path( string(path) );
+      detach->set_file_version( version );
+
+      Serialization::WriteMsg* detach_ack = new Serialization::WriteMsg();
+      
+      // send the write message, or coordinate
+      rc = fs_entry_send_write_or_coordinate( core, fent, &fent_snapshot, detach_request, detach_ack );
+      
+      if( rc < 0 ) {
+         errorf( "fs_entry_send_write_or_coordinate(%s) rc = %d\n", path, rc );
+      }
+      else if( rc == 0 ) {
+         // successfully sent
+         if( detach_ack->type() != Serialization::WriteMsg::ACCEPTED ) {
+            if( detach_ack->type() == Serialization::WriteMsg::ERROR ) {
+               // could not detach on the remote end
+               errorf( "remote unlink error = %d (%s)\n", detach_ack->errorcode(), detach_ack->errortxt().c_str() );
+               rc = detach_ack->errorcode();
+            }
+            else {
+               // unknown message
+               errorf( "remote unlink invalid message %d\n", detach_ack->type() );
+               rc = -EIO;
+            }
+         }
+      }
+      else {
+         // we're now the coordinator.          
+         local = true;
+      }
+
+      delete detach_ack;
+      delete detach_request;
+   }
+
    if( local ) {
       // we're responsible for this file; tell the metadata server we just unlinked
       // preserve the entry information so we can issue a withdraw
@@ -210,65 +275,15 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
          fs_entry_garbage_collect_file( core, fent );
       }
    }
-   else {
-      // this is someone else's file; tell them to unlink
-      Serialization::WriteMsg* detach_request = new Serialization::WriteMsg();
-
-      fs_entry_init_write_message( detach_request, core, Serialization::WriteMsg::DETACH );
-      
-      Serialization::DetachRequest* detach = detach_request->mutable_detach();
-      detach->set_volume_id( fent->volume );
-      detach->set_coordinator_id( fent->coordinator );
-      detach->set_file_id( fent->file_id );
-      detach->set_fs_path( string(path) );
-      detach->set_file_version( version );
-
-      Serialization::WriteMsg* detach_ack = new Serialization::WriteMsg();
-
-      rc = fs_entry_post_write( detach_ack, core, fent->coordinator, detach_request );
-      if( rc != 0 ) {
-         errorf( "fs_entry_post_write(%s) rc = %d\n", path, rc );
-
-         delete detach_ack;
-         delete detach_request;
-
-         fs_entry_unlock( fent );
-         fs_entry_unlock( parent );
-         return rc;
-      }
-      else {
-         if( detach_ack->type() != Serialization::WriteMsg::ACCEPTED ) {
-            if( detach_ack->type() == Serialization::WriteMsg::ERROR ) {
-               // could not detach on the remote end
-               errorf( "remote unlink error = %d (%s)\n", detach_ack->errorcode(), detach_ack->errortxt().c_str() );
-               rc = detach_ack->errorcode();
-            }
-            else {
-               // unknown message
-               errorf( "remote unlink invalid message %d\n", detach_ack->type() );
-               rc = -EIO;
-            }
-
-            delete detach_ack;
-            delete detach_request;
-
-            fs_entry_unlock( fent );
-            fs_entry_unlock( parent );
-            return rc;
-         }
-
-         // otherwise, we're good
-         delete detach_ack;
-         delete detach_request;
-      }
-   }
-
+   
    // detach from our FS
    fs_entry_unlock( fent );
 
-   rc = fs_entry_detach_lowlevel( core, parent, fent, true );
-   if( rc != 0 ) {
-      errorf( "fs_entry_detach_lowlevel rc = %d\n", rc );
+   if( rc == 0 ) {
+      rc = fs_entry_detach_lowlevel( core, parent, fent, true );
+      if( rc != 0 ) {
+         errorf( "fs_entry_detach_lowlevel rc = %d\n", rc );
+      }
    }
 
    fs_entry_unlock( parent );

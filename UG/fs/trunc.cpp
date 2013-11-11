@@ -41,7 +41,7 @@ static void fs_entry_prepare_truncate_message( Serialization::WriteMsg* truncate
 // truncate an open file.
 // fent must be write locked.
 // NOTE: we must reversion the file on truncate, since size can't decrease on the MS for the same version of the entry!
-int fs_entry_truncate_impl( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size, uint64_t user, uint64_t volume, uint64_t parent_id, char const* parent_name ) {
+int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size, uint64_t user, uint64_t volume, uint64_t parent_id, char const* parent_name ) {
 
    // make sure we have the latest manifest 
    int err = fs_entry_revalidate_manifest( core, fs_path, fent );
@@ -359,7 +359,7 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* fs_path, uint6
       return -ESTALE;
    }
 
-   int rc = fs_entry_truncate_impl( core, fs_path, fent, newsize, user, volume, parent_id, parent_name );
+   int rc = fs_entry_truncate_real( core, fs_path, fent, newsize, user, volume, parent_id, parent_name );
    free( parent_name );
    
    if( rc != 0 ) {
@@ -395,7 +395,7 @@ int fs_entry_truncate( struct fs_core* core, char const* fs_path, off_t size, ui
       return err;
    }
    
-   err = fs_entry_truncate_impl( core, fs_path, fent, size, user, volume, parent_id, parent_name );
+   err = fs_entry_truncate_real( core, fs_path, fent, size, user, volume, parent_id, parent_name );
 
    fs_entry_unlock( fent );
    free( parent_name );
@@ -408,7 +408,7 @@ int fs_entry_ftruncate( struct fs_core* core, struct fs_file_handle* fh, off_t s
    fs_file_handle_rlock( fh );
    fs_entry_wlock( fh->fent );
 
-   int rc = fs_entry_truncate_impl( core, fh->path, fh->fent, size, user, volume, fh->parent_id, fh->parent_name );
+   int rc = fs_entry_truncate_real( core, fh->path, fh->fent, size, user, volume, fh->parent_id, fh->parent_name );
    
    fs_entry_unlock( fh->fent );
    fs_file_handle_unlock( fh );

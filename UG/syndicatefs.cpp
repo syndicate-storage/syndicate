@@ -170,7 +170,8 @@ int syndicatefs_rename(const char *path, const char *newpath) {
    
    SYNDICATEFS_DATA->stats->enter( STAT_RENAME );
 
-   int rc = fs_entry_versioned_rename( SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume, -1 );
+   //int rc = fs_entry_versioned_rename( SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume, -1 );
+   int rc = fs_entry_rename( SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume );
 
    logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_rename( %s, %s ) rc = %d\n", pthread_self(), path, newpath, rc );
    
@@ -236,7 +237,8 @@ int syndicatefs_truncate(const char *path, off_t newsize) {
 
    SYNDICATEFS_DATA->stats->enter( STAT_TRUNCATE );
 
-   int rc = fs_entry_versioned_truncate( SYNDICATEFS_DATA->core, path, newsize, 0, 0, -1, conf->owner, SYNDICATEFS_DATA->core->volume, SYNDICATEFS_DATA->core->gateway, false );
+   //int rc = fs_entry_versioned_truncate( SYNDICATEFS_DATA->core, path, newsize, 0, 0, -1, conf->owner, SYNDICATEFS_DATA->core->volume, SYNDICATEFS_DATA->core->gateway, false );
+   int rc = fs_entry_truncate( SYNDICATEFS_DATA->core, path, newsize, conf->owner, SYNDICATEFS_DATA->core->volume );
 
    SYNDICATEFS_DATA->stats->leave( STAT_TRUNCATE, rc );
    logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_truncate rc = %d\n", pthread_self(), rc );
