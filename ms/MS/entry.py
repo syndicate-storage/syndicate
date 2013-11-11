@@ -971,8 +971,8 @@ class MSEntry( storagetypes.Object ):
       dest_delete_fut = None
       src_verify_absent = None
       
-      # if dest exists and is a directory, it must be empty.  Proceed to delete it.
-      if dest != None and dest.ftype == MSENTRY_TYPE_DIR:
+      # if dest exists, proceed to delete it.
+      if dest != None:
          dest_delete_fut = MSEntry.__delete_begin_async( dest )
       
       # while we're at it, make sure we're not moving src to a subdirectory of itself
@@ -1218,75 +1218,9 @@ class MSEntry( storagetypes.Object ):
       
       rc = MSEntry.__delete_begin( ent )
       if rc == 0:
-         do_delete = True
-      
-
-      """
-      if ent.ftype == MSENTRY_TYPE_FILE:
-         # this is a file; just delete it and update the parent mtime
-         do_delete = True
-         ret = 0
-
-         # erase from the cache
-         storagetypes.memcache.delete( ent_cache_key_name )
-
-      else:
-         
-         # mark as deleted.  Creates will fail from now on
-         ent.deleted = True
-         ent.put()
-         storagetypes.memcache.set( ent_cache_key_name, ent )
-         
-         # make sure the ent was actually empty
-         qry_ents = MSEntry.query()
-         qry_ents = qry_ents.filter( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id )
-         child = qry_ents.fetch( 1, keys_only=True )
-
-         if len(child) != 0:
-            # attempt to get this (since queries are eventually consistent, but gets on an entity group are strongly consistent)
-            child_ent = child[0].get()
-
-            if child_ent != None:
-               # not empty
-               ent.deleted = False
-               ent.put()
-
-               # uncache
-               storagetypes.memcache.delete( ent_cache_key_name )
-               return -errno.ENOTEMPTY
-         
-         # clear from cache
-         storagetypes.memcache.delete( ent_cache_key_name )
-         
-         # safe to delete
-         do_delete = True
-         ret = 0
-      """
-
-      if do_delete:
-
          ret = MSEntry.__delete_finish( volume, parent_ent, ent );
-         
-         """
-         ent_fut = None
-            
-         # update the parent shard...
-         parent_shard_fut = MSEntry.update_shard_async( volume.num_shards, parent_ent )
-
-         # delete any listings of this parent
-         storagetypes.memcache.delete_multi( [MSEntry.cache_listing_key_name( volume_id, parent_id), ent_cache_key_name] )
-
-         # delete this entry, its shards, and its nameholder
-         ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, file_id ) )
-         nh_key = storagetypes.make_key( MSEntryNameHolder, MSEntryNameHolder.make_key_name( volume_id, parent_id, ent.name ) )
-         storagetypes.deferred.defer( MSEntry.delete_all, [nh_key, ent_key] + ent_shard_keys )
-         
-         # decrease number of files
-         storagetypes.deferred.defer( Volume.decrease_file_count, volume_id )
-
-         # wait for this to finish
-         parent_shard_fut.get_result()
-         """
+      else:
+         ret = rc;
          
       return ret
 
