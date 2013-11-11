@@ -682,7 +682,7 @@ class MSEntry( storagetypes.Object ):
 
    @classmethod
    @storagetypes.concurrent
-   def __write_msentry_async( cls, ent, num_shards, write_base=False, **write_attrs ):
+   def __write_msentry_async( cls, ent, num_shards, write_base=False, write_base_only=False, **write_attrs ):
       """
       Update and then put an entry if it is changed.  Always put a shard.
       If write_base==True, always write the base entry and a shard.
@@ -703,9 +703,10 @@ class MSEntry( storagetypes.Object ):
          
       
       # make a new shard with the mtime, write_nonce, and size
-      ent.populate_shard( num_shards, volume_id=ent.volume_id, file_id=ent.file_id, **write_attrs )
+      if not write_base_only:
+         ent.populate_shard( num_shards, volume_id=ent.volume_id, file_id=ent.file_id, **write_attrs )
 
-      if write_base:
+      if write_base and not write_base_only:
          yield storagetypes.put_multi_async( [ent, ent.write_shard] )
       else:
          yield ent.put_shard_async()
@@ -719,8 +720,8 @@ class MSEntry( storagetypes.Object ):
    
    
    @classmethod
-   def __write_msentry( cls, ent, num_shards, write_base=False, **write_attrs ):
-      write_fut = MSEntry.__write_msentry_async( ent, num_shards, write_base=write_base, **write_attrs )
+   def __write_msentry( cls, ent, num_shards, write_base=False, write_base_only=False, **write_attrs ):
+      write_fut = MSEntry.__write_msentry_async( ent, num_shards, write_base=write_base, write_base_only=write_base_only, **write_attrs )
       return write_fut.get_result()
 
 
@@ -799,7 +800,7 @@ class MSEntry( storagetypes.Object ):
          volume_id = volume.volume_id
          
          # get the ent
-         ent_fut = MSEntry.__read_msentry( volume_id, file_id, volume.num_shards, use_memcache=False )
+         ent_fut = MSEntry.__read_msentry_base( volume_id, file_id, use_memcache=False )
          ent = ent_fut.get_result()
 
          if ent == None:
