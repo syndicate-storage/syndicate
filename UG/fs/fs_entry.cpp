@@ -122,7 +122,7 @@ uint64_t fs_entry_block_id( struct fs_core* core, off_t offset ) {
    return ((uint64_t)offset) / core->blocking_factor;
 }
 
-uint64_t fs_entry_block_id( uint64_t blocksize, off_t offset ) {
+uint64_t fs_entry_block_id( size_t blocksize, off_t offset ) {
    return ((uint64_t)offset) / blocksize;
 }
 
