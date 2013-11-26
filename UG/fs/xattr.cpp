@@ -28,7 +28,7 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
       }
       else {
          memset( value, 0, size );
-         snprintf( value, size, "%ld.%d", fent->mtime_sec, fent->mtime_nsec );
+         snprintf( value, size, "%" PRId64 ".%d", fent->mtime_sec, fent->mtime_nsec );
          ret = strlen( value ) + 1;
       }
    }

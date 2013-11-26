@@ -309,7 +309,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       // get the data...
       ssize_t read_len = fs_entry_fill_block( core, fh->fent, block + block_fill_offset, buf + num_written, source_fd, block_write_len );
       if( (unsigned)read_len != block_write_len ) {
-         errorf("fs_entry_fill_block(%s/%" PRId64 ", offset=%zu, len=%zu) rc = %zd\n", fh->path, block_id, block_write_offset, block_write_len, read_len );
+         errorf("fs_entry_fill_block(%s/%" PRId64 ", offset=%jd, len=%zu) rc = %zd\n", fh->path, block_id, (intmax_t)block_write_offset, block_write_len, read_len );
          rc = read_len;
          break;
       }
@@ -325,7 +325,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       ssize_t write_size = fs_entry_put_block_data( core, fh->fent, block_id, block, block_put_len, hash, !local );
       
       if( (unsigned)write_size != block_put_len ) {
-         errorf("fs_entry_put_block_data(%s/%" PRId64 ", len=%" PRId64 ") rc = %zd\n", fh->path, block_id, block_put_len, write_size );
+         errorf("fs_entry_put_block_data(%s/%" PRId64 ", len=%zu) rc = %zd\n", fh->path, block_id, block_put_len, write_size );
          rc = write_size;
          fs_entry_unlock( fh->fent );
          free( hash );

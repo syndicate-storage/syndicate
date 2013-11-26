@@ -13,10 +13,10 @@ void fs_entry_split_uint64( uint64_t i, uint16_t* o ) {
       // i is big endian...
       i = htole64( i );
    }
-   o[0] = (i & 0xFFFF000000000000) >> 48;
-   o[1] = (i & 0x0000FFFF00000000) >> 32;
-   o[2] = (i & 0x00000000FFFF0000) >> 16;
-   o[3] = (i & 0x000000000000FFFF);
+   o[0] = (i & (uint64_t)0xFFFF000000000000LL) >> 48;
+   o[1] = (i & (uint64_t)0x0000FFFF00000000LL) >> 32;
+   o[2] = (i & (uint64_t)0x00000000FFFF0000LL) >> 16;
+   o[3] = (i & (uint64_t)0x000000000000FFFFLL);
 }
 
 char* fs_entry_path_from_file_id( uint64_t file_id ) {
