@@ -95,8 +95,15 @@ if "UG-shared" in COMMAND_LINE_TARGETS:
 
 # UG build
 ug_out = "build/out/UG"
-ugs = SConscript( "UG/SConscript", variant_dir=ug_out )
-env.Depends( ugs, libsyndicate )
+syndicatefs, syndicate_httpd, syndicate_ipc = SConscript( "UG/SConscript", variant_dir=ug_out )
+ugs = [syndicatefs, syndicate_httpd, syndicate_ipc]
+env.Depends( syndicatefs, libsyndicate )
+env.Depends( syndicate_ipc, libsyndicate )
+env.Depends( syndicate_httpd, libsyndicate )
+
+env.Alias("syndicatefs", syndicatefs)
+env.Alias("UG", [syndicatefs, syndicate_httpd] )
+env.Alias("UG-ipc", syndicate_ipc )
 
 # UG installation 
 common.install_targets( env, 'UG-install', bin_install_dir, ugs )
