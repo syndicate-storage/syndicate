@@ -28,19 +28,26 @@ LIBPATH = """
 """
 
 # add libraries here
-LIBS = """
+LIBS_COMMON = """
    curl
    pthread
    crypto
    microhttpd
    syndicate
    protobuf
+"""
+
+LIBS_FS = """
    fuse
 """
 
 LIBS_IPC = """
    boost_thread
    boost_system
+"""
+
+LIBS_HTTPD = """
+   gnutls
 """
 
 # add additional CPPFLAGS here
@@ -57,14 +64,18 @@ CPPDEFINES = [
 Import('env')
 env = env.Clone()
 
-env.Append(LIBS = Split(LIBS))
 env.Append(LIBPATH = Split(LIBPATH))
 env.Append(CPPPATH = Split(CPPPATH))
 env.Append(CPPFLAGS = Split(CPPFLAGS))
 env.Append(CPPDEFINES = CPPDEFINES)
 
-env2 = env.Clone()
-env2.Append(LIBS = Split(LIBS + LIBS_IPC))
+env_ipc = env.Clone()
+env_ipc.Append(LIBS = Split(LIBS_COMMON + LIBS_IPC))
+
+env_httpd = env.Clone()
+env_httpd.Append(LIBS = Split(LIBS_COMMON + LIBS_HTTPD))
+
+env.Append(LIBS = Split(LIBS_COMMON + LIBS_FS))
 
 # build fs
 fs_objs = SConscript("fs/SConscript")
@@ -72,12 +83,13 @@ fs_objs = SConscript("fs/SConscript")
 # build syndicate
 syndicate_common_objs = env.Object( source=Split(common_source_files) )
 syndicatefs_obj = env.Object( source=Split(syndicatefs_source) )
-syndicate_httpd_obj = env.Object( source=Split(syndicate_httpd_source) )
+syndicate_httpd_obj = env_httpd.Object( source=Split(syndicate_httpd_source) )
 
 syndicatefs = env.Program("syndicatefs", source=[syndicate_common_objs, fs_objs, syndicatefs_obj] )
-syndicate_httpd = env.Program("syndicate-httpd", source=[syndicate_common_objs, fs_objs, syndicate_httpd_obj] )
 
-syndicate_ipc_obj = env2.Object( source=Split(syndicate_ipc_source) )
-syndicate_ipc = env2.Program("syndicate-ipc", source=[syndicate_common_objs, fs_objs, syndicate_ipc_obj] )
+syndicate_httpd = env_httpd.Program("syndicate-httpd", source=[syndicate_common_objs, fs_objs, syndicate_httpd_obj] )
+
+syndicate_ipc_obj = env_ipc.Object( source=Split(syndicate_ipc_source) )
+syndicate_ipc = env_ipc.Program("syndicate-ipc", source=[syndicate_common_objs, fs_objs, syndicate_ipc_obj] )
 
 Return( 'syndicatefs syndicate_httpd syndicate_ipc' )

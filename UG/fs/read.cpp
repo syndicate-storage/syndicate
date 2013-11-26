@@ -9,6 +9,7 @@
 #include "storage.h"
 #include "network.h"
 #include "url.h"
+#include "fs_entry.h"
 
 // verify the integrity of a block, given the fent (and its manifest).
 // fent must be at least read-locked
@@ -267,7 +268,8 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
       }
 
       // TODO: unlock fent somehow while we're reading/downloading
-      ssize_t tmp = fs_entry_do_read_block( core, fh->path, fh->fent, fs_entry_block_id( block_len, offset + total_read ), block, block_len );
+      uint64_t block_id = fs_entry_block_id( block_len, offset + total_read );
+      ssize_t tmp = fs_entry_do_read_block( core, fh->path, fh->fent, block_id, block, block_len );
       
       if( tmp > 0 ) {
          size_t read_if_not_eof = (unsigned)MIN( (size_t)(tmp - block_offset), count - total_read );
