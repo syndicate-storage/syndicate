@@ -76,6 +76,17 @@ libsyndicate_python = SConscript("libsyndicate/python/SConscript", variant_dir=l
 env.Depends( libsyndicate_source_paths, protobuf_cc_files )  # libsyndicate requires protobufs to be built first
 env.Depends( libsyndicate_python, protobuf_py_files )
 
+# alias installation targets for libsyndicate
+libsyndicate_install_headers = env.Install( inc_install_dir, libsyndicate_header_paths + protobuf_header_paths )
+libsyndicate_install_library = env.Install( lib_install_dir, libsyndicate ) 
+libsyndicate_install_c_targets = [libsyndicate_install_headers, libsyndicate_install_library]
+libsyndicate_install_python = env.Command( "syndicate.so", [], "cd %s/python && ./setup.py install" % libsyndicate_out )
+
+env.Alias( 'libsyndicate-python', [libsyndicate_python] )
+env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers] )
+env.Alias( 'libsyndicate-python-install', [libsyndicate_install_python] )
+env.Depends( libsyndicate_install_python, libsyndicate_install_c_targets )
+
 # UG for shared library build
 if "UG-shared" in COMMAND_LINE_TARGETS:
    ugshared_out = "build/out/UG-shared"
@@ -87,41 +98,50 @@ ug_out = "build/out/UG"
 ugs = SConscript( "UG/SConscript", variant_dir=ug_out )
 env.Depends( ugs, libsyndicate )
 
+# UG installation 
+common.install_targets( env, 'UG-install', bin_install_dir, ugs )
+env.Install( conf_install_dir, "conf/syndicate-UG.conf" )
+env.Alias("UG-install", conf_install_dir )
+
 # AG build
 ag_out = "build/out/AG"
 ags = SConscript( "AG/SConscript", variant_dir=ag_out )
 env.Depends( ags, libsyndicate )
 
 # AG driver build
-#if "AG/drivers/common" in COMMAND_LINE_TARGETS:
 libAGcommon_out = "build/out/AG/drivers/common"
 libAGcommon = SConscript( "AG/drivers/common/SConscript", variant_dir=libAGcommon_out )
 env.Depends( libAGcommon, libsyndicate )
+ag_common_install = env.Install( lib_install_dir, libAGcommon )
+env.Alias( 'AG-common-install', [ag_common_install] )
 
-# disk driver
-if "AG/drivers/disk" in COMMAND_LINE_TARGETS:
-    libAGdiskdriver_out = "build/out/AG/drivers/disk"
-    libAGdiskdriver = SConscript( "AG/drivers/disk/SConscript", variant_dir=libAGdiskdriver_out )
-    env.Depends( libAGdiskdriver, libsyndicate )
+# AG disk driver
+libAGdiskdriver_out = "build/out/AG/drivers/disk"
+libAGdiskdriver = SConscript( "AG/drivers/disk/SConscript", variant_dir=libAGdiskdriver_out )
+ag_driver_disk_install = env.Install( lib_install_dir, libAGdiskdriver )
+env.Alias( 'AG-disk-driver-install', [ag_driver_disk_install] )
+env.Depends( libAGdiskdriver, libAGcommon  )
 
-# SQL driver
-if "AG/drivers/sql" in COMMAND_LINE_TARGETS:
-    libAGSQLdriver_out = "build/out/AG/drivers/sql"
-    libAGSQLdriver = SConscript( "AG/drivers/sql/SConscript", variant_dir=libAGSQLdriver_out )
-    env.Depends( libAGSQLdriver, libsyndicate)
-    env.Depends( libAGSQLdriver, libAGcommon )
+# AG SQL driver
+libAGSQLdriver_out = "build/out/AG/drivers/sql"
+libAGSQLdriver = SConscript( "AG/drivers/sql/SConscript", variant_dir=libAGSQLdriver_out )
+ag_driver_sql_install = env.Install( lib_install_dir, libAGSQLdriver )
+env.Alias( 'AG-SQL-driver-install', [ag_driver_sql_install] )
+env.Depends( libAGSQLdriver, libAGcommon )
 
-# Shell driver
-if "AG/drivers/shell" in COMMAND_LINE_TARGETS:
-    libAGshelldriver_out = "build/out/AG/drivers/shell"
-    libAGshelldriver = SConscript( "AG/drivers/shell/SConscript", variant_dir=libAGshelldriver_out )
-    env.Depends( libAGshelldriver, libsyndicate  )
-    env.Depends( libAGshelldriver, libAGcommon  )
+# AG Shell driver
+libAGshelldriver_out = "build/out/AG/drivers/shell"
+libAGshelldriver = SConscript( "AG/drivers/shell/SConscript", variant_dir=libAGshelldriver_out )
+ag_driver_shell_install = env.Install( lib_install_dir, libAGshelldriver )
+env.Alias( 'AG-shell-driver-install', [ag_driver_shell_install] )
+env.Depends( libAGshelldriver, libAGcommon )
 
-#Watchdog daemon
-if "AG/watchdog-daemon" in COMMAND_LINE_TARGETS:
-    watchdog_daemon_out = "build/out/AG/watchdog-daemon"
-    watchdog_daemon = SConscript( "AG/watchdog-daemon/SConscript", variant_dir=watchdog_daemon_out )
+# AG Watchdog daemon
+watchdog_daemon_out = "build/out/AG/watchdog-daemon"
+watchdog_daemon = SConscript( "AG/watchdog-daemon/SConscript", variant_dir=watchdog_daemon_out )
+
+# AG installation
+common.install_targets( env, 'AG-install', bin_install_dir, ags )
 
 # ms build
 ms_out = "build/out/ms"
@@ -137,55 +157,7 @@ rm_out = "build/out/replica_manager"
 rm = SConscript( "replica_manager/SConscript", variant_dir=rm_out )
 env.Depends( rm, [libsyndicate_python, protobufs] )  # replica_manager requires Python protobofs to be built first
 
-# UG installation 
-common.install_targets( env, 'UG-install', bin_install_dir, ugs )
-env.Install( conf_install_dir, "conf/syndicate-UG.conf" )
-env.Alias("UG-install", conf_install_dir )
 
-# AG installation
-common.install_targets( env, 'AG-install', bin_install_dir, ags )
-
-# alias installation targets for libsyndicate
-libsyndicate_install_headers = env.InstallHeader( inc_install_dir, libsyndicate_header_paths + protobuf_header_paths )
-libsyndicate_install_library = env.InstallLibrary( lib_install_dir, libsyndicate ) 
-libsyndicate_install_python = env.Command( "syndicate.so", [], "cd %s/python && ./setup.py install" % libsyndicate_out )
-
-env.Alias( 'libsyndicate-python', [libsyndicate_python] )
-env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers] )
-env.Alias( 'libsyndicate-python-install', [libsyndicate_install_python] )
-env.Depends( libsyndicate_install_python, [libsyndicate_install_library, libsyndicate_install_headers] )
-
-# alias installation targets for AG disk driver
-if "AG-disk-driver-install" in COMMAND_LINE_TARGETS:
-    libAGdiskdriver_out = "build/out/AG/drivers/disk"
-    libAGdiskdriver = SConscript( "AG/drivers/disk/SConscript", variant_dir=libAGdiskdriver_out )
-    ag_driver_disk_install = env.InstallLibrary( lib_install_dir, libAGdiskdriver )
-    env.Alias( 'AG-disk-driver-install', [ag_driver_disk_install] )
-
-# alias installation targets for AG disk driver
-if "AG-SQL-driver-install" in COMMAND_LINE_TARGETS:
-    libAGSQLdriver_out = "build/out/AG/drivers/sql"
-    libAGSQLdriver = SConscript( "AG/drivers/sql/SConscript", variant_dir=libAGSQLdriver_out )
-    ag_driver_sql_install = env.InstallLibrary( lib_install_dir, libAGSQLdriver )
-    env.Alias( 'AG-SQL-driver-install', [ag_driver_sql_install] )
-
-# alias installation targets for AG disk driver
-if "AG-shell-driver-install" in COMMAND_LINE_TARGETS:
-    libAGshelldriver_out = "build/out/AG/drivers/shell"
-    libAGshelldriver = SConscript( "AG/drivers/shell/SConscript", variant_dir=libAGshelldriver_out )
-    ag_driver_shell_install = env.InstallLibrary( lib_install_dir, libAGshelldriver )
-    env.Alias( 'AG-shell-driver-install', [ag_driver_shell_install] )
-
-# alias installation targets for AG watchdog daemon
-if "watchdog-daemon-install" in COMMAND_LINE_TARGETS:
-    watchdog_daemon_out = "build/out/AG/watchdog-daemon"
-    watchdog_daemon = SConscript( "AG/watchdog-daemon/SConscript", variant_dir=watchdog_daemon_out )
-
-common.install_targets( env, 'watchdog-daemon-install', bin_install_dir, ags )
-
-#if "AG-common-install" in COMMAND_LINE_TARGETS:
-ag_common_install = env.InstallLibrary( lib_install_dir, libAGcommon )
-env.Alias( 'AG-common-install', [ag_common_install] )
 # initialization
 
 # set umask correctly
