@@ -6,7 +6,9 @@
 #ifndef _FS_ENTRY_H_
 #define _FS_ENTRY_H_
 
+#ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
+#endif
 
 #include <map>
 #include <set>

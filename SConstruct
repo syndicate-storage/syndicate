@@ -22,7 +22,7 @@ CPPPATH = [
 ]
 
 # default CPPFLAGS
-CPPFLAGS = "-g -Wall"
+CPPFLAGS = "-g -Wall -D__STDC_FORMAT_MACROS"
 
 # parse options
 devel = False

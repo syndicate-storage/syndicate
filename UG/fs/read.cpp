@@ -282,7 +282,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
          }
          
          else {
-            dbprintf("file_size = %zd, total_read = %zd, tmp = %zd, block_offset = %zd, count = %lu, total_copy = %zd\n", file_size, total_read, tmp, block_offset, count, total_copy);
+            dbprintf("file_size = %zd, total_read = %zd, tmp = %zd, block_offset = %jd, count = %zu, total_copy = %zd\n", file_size, total_read, tmp, (intmax_t)block_offset, count, total_copy);
             
             memcpy( buf + total_read, block + block_offset, total_copy );
 

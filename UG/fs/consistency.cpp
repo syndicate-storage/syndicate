@@ -374,7 +374,7 @@ static int fs_entry_build_ms_path( struct fs_core* core, char const* path, path_
       free( path_parts[i] );
    }
    
-   dbprintf("ms_path size = %lu\n", ms_path->size() );
+   dbprintf("ms_path size = %zu\n", ms_path->size() );
    for( unsigned int i = 0; i < ms_path->size(); i++ ) {
       struct fs_entry_listing_cls* cls = (struct fs_entry_listing_cls*)ms_path->at(i).cls;
       dbprintf("ms_path[%d] = %s, stale = %d, exists = %d\n", i, ms_path->at(i).name, cls->stale, cls->exists );
@@ -413,7 +413,7 @@ static int fs_entry_reload_file( struct fs_entry_consistency_cls* consistency_cl
       return -EINVAL;
 
    if( listing->entries->size() != 1 ) {
-      errorf("Got back %lu listings\n", listing->entries->size() );
+      errorf("Got back %zu listings\n", listing->entries->size() );
       return -EINVAL;
    }
 
@@ -1041,7 +1041,7 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
 
    if( ms_path_stale.size() > 0 ) {
       // reload the stale entries
-      dbprintf("%lu stale entries\n", ms_path_stale.size() );
+      dbprintf("%zu stale entries\n", ms_path_stale.size() );
       rc = fs_entry_reload_local_path_entries( &consistency_cls, &ms_path_stale );
       
       if( rc != 0 ) {
