@@ -12,7 +12,7 @@ source_files = """
 """
 
 # command to build Python wrapper for libsyndicate
-libsyndicate_python = env.Command( "libsyndicate-python", Split(source_files), "cd %s && python ./setup.py build_ext --inplace" % Dir(".").path )
+libsyndicate_python = env.Command( "syndicate.so", Split(source_files), "cd %s && python ./setup.py build_ext --inplace" % Dir(".").path )
 
 build_files = Glob("*.py")
 build_files.append(Glob("*.pxd"))

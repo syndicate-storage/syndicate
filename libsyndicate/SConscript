@@ -3,12 +3,7 @@
 import os
 
 # add additional source files here
-source_files = """
-   libsyndicate.cpp
-   util.cpp
-   ms-client.cpp
-   libgateway.cpp
-"""
+source_files = Glob("*.cpp")
 
 # add source file search paths here
 CPPPATH = """
@@ -33,12 +28,7 @@ LIBS = """
 """
 
 # add headers here (will be returned by SCons)
-HEADERS = """
-   libsyndicate.h
-   util.h
-   ms-client.h
-   libgateway.h
-"""
+headers = Glob("*.h")
 
 # add additional CPPFLAGS here
 CPPFLAGS = ""
@@ -64,10 +54,9 @@ env.Append(CPPDEFINES = CPPDEFINES)
 
 # generate the shared library, from generated protobuf cc files and from libsyndicate source
 libsyndicate = env.SharedLibrary( target="libsyndicate.so", source=[protobuf_cc_files, Split(source_files)] )
-libsyndicate_python = SConscript("python/SConscript")
 
 # generate header and source paths
-header_paths = [os.path.join( Dir(".").path, x ) for x in Split(HEADERS)]
-source_paths = [os.path.join( Dir(".").path, x ) for x in Split(source_files)] 
-Return( 'libsyndicate libsyndicate_python header_paths source_paths' )
+header_paths = [os.path.join( x.path ) for x in Split(headers)]
+source_paths = [os.path.join( x.path ) for x in Split(source_files)] 
+Return( 'libsyndicate header_paths source_paths' )
 

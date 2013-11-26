@@ -68,7 +68,11 @@ Export("protobuf_py_files")      # needed by ms and rm
 
 # libsyndicate build
 libsyndicate_out = "build/out/libsyndicate"
-libsyndicate, libsyndicate_python, libsyndicate_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
+libsyndicate_python_out = "build/out/python"
+
+libsyndicate, libsyndicate_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
+libsyndicate_python = SConscript("libsyndicate/python/SConscript", variant_dir=libsyndicate_python_out )
+
 env.Depends( libsyndicate_source_paths, protobuf_cc_files )  # libsyndicate requires protobufs to be built first
 env.Depends( libsyndicate_python, protobuf_py_files )
 
@@ -146,6 +150,7 @@ libsyndicate_install_headers = env.InstallHeader( inc_install_dir, libsyndicate_
 libsyndicate_install_library = env.InstallLibrary( lib_install_dir, libsyndicate ) 
 libsyndicate_install_python = env.Command( "syndicate.so", [], "cd %s/python && ./setup.py install" % libsyndicate_out )
 
+env.Alias( 'libsyndicate-python', [libsyndicate_python] )
 env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers] )
 env.Alias( 'libsyndicate-python-install', [libsyndicate_install_python] )
 env.Depends( libsyndicate_install_python, [libsyndicate_install_library, libsyndicate_install_headers] )

@@ -116,7 +116,7 @@ def run( opts ):
 def debug():
    log = rm_common.log
    
-   rm_common.syndicate_lib_path( "../libsyndicate/python" )
+   rm_common.syndicate_lib_path( "../python" )
    
    gateway_name = "RG-t510-0-690"
    gateway_portnum = 24160
