@@ -30,7 +30,7 @@ from openid.extensions import pape, sreg
 import gaesession
 
 import MS
-from MS.msconfig import *
+from common.msconfig import *
 
 class GAEOpenIDRequestHandler(webapp2.RequestHandler):
     """Request handler that knows how to verify an OpenID identity."""

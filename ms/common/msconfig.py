@@ -1,0 +1,135 @@
+#!/usr/bin/pyhon
+
+"""
+   Copyright 2013 The Trustees of Princeton University
+   All Rights Reserved
+"""
+
+import os
+
+try:
+   import syndicate.protobufs.ms_pb2 as ms_pb2
+except:
+   import protobufs.ms_pb2 as ms_pb2
+
+# configuration parameters
+
+# debug
+OPENID_DEBUG = True
+
+# MS
+MS_HOSTNAME = ""
+MS_PROTO = ""
+MS_URL = ""
+
+# OpenID
+OPENID_SESSION_SSL_ONLY=True
+OPENID_LOCAL_TEST=True
+OPENID_TRUST_ROOT_HOST = ""
+OPENID_HOST_URL = ""
+
+if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
+   MS_HOSTNAME = "localhost:8080"
+   MS_PROTO = "http://"
+   
+   OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
+   OPENID_HOST_URL = "http://" + OPENID_TRUST_ROOT_HOST
+   OPENID_SESSION_SSL_ONLY=False
+   OPENID_LOCAL_TEST=True
+   
+else:
+   MS_HOSTNAME = "syndicate-metadata.appspot.com"
+   MS_PROTO = "https://"
+   
+   OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
+   OPENID_HOST_URL = "https://" + OPENID_TRUST_ROOT_HOST
+   OPENID_SESSION_SSL_ONLY=True
+   OPENID_LOCAL_TEST=False
+
+if not OPENID_DEBUG:
+   OPENID_PROVIDER_NAME = "VICCI"
+   OPENID_PROVIDER_URL = "https://www.vicci.org/id/"
+   OPENID_PROVIDER_AUTH_HANDLER = "https://www.vicci.org/id-allow"
+   OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
+   OPENID_PROVIDER_USERNAME_FIELD = "login_as"
+   OPENID_PROVIDER_PASSWORD_FIELD = "password"
+   OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
+   OPENID_PROVIDER_RESPONSE_METHOD = "POST"
+
+else:
+   OPENID_PROVIDER_NAME = "localhost"
+   OPENID_PROVIDER_URL = "http://localhost:8081/id/"
+   OPENID_PROVIDER_AUTH_HANDLER = "http://localhost:8081/allow"
+   OPENID_PROVIDER_EXTRA_ARGS = {"yes": "yes"}
+   OPENID_PROVIDER_USERNAME_FIELD = "login_as"
+   OPENID_PROVIDER_PASSWORD_FIELD = "password"
+   OPENID_PROVIDER_CHALLENGE_METHOD = "POST"
+   OPENID_PROVIDER_RESPONSE_METHOD = "POST"
+
+
+MS_URL = MS_PROTO + MS_HOSTNAME
+
+# security
+OBJECT_KEY_SIZE = 4096
+
+# gateways
+GATEWAY_PASSWORD_LENGTH = 256
+GATEWAY_SALT_LENGTH = 256
+GATEWAY_SESSION_PASSWORD_LENGTH = 16
+GATEWAY_RSA_KEYSIZE = OBJECT_KEY_SIZE
+
+# volumes
+VOLUME_SECRET_LENGTH = 256
+VOLUME_SECRET_SALT_LENGTH = 256
+
+VOLUME_RSA_KEYSIZE = OBJECT_KEY_SIZE
+
+# users
+USER_RSA_KEYSIZE = OBJECT_KEY_SIZE
+
+USER_VOLUME_OWN = 1
+USER_VOLUME_READONLY = 2
+USER_VOLUME_READWRITE = 4
+USER_VOLUME_HOST = 8
+
+# website
+MS_HOST = OPENID_TRUST_ROOT_HOST
+MS_URL = OPENID_HOST_URL
+
+# Gateway static constants
+GATEWAY_TYPE_UG = ms_pb2.ms_gateway_cert.USER_GATEWAY
+GATEWAY_TYPE_AG = ms_pb2.ms_gateway_cert.ACQUISITION_GATEWAY
+GATEWAY_TYPE_RG = ms_pb2.ms_gateway_cert.REPLICA_GATEWAY
+
+GATEWAY_CAP_READ_DATA = ms_pb2.ms_gateway_cert.CAP_READ_DATA
+GATEWAY_CAP_WRITE_DATA = ms_pb2.ms_gateway_cert.CAP_WRITE_DATA
+GATEWAY_CAP_READ_METADATA = ms_pb2.ms_gateway_cert.CAP_READ_METADATA
+GATEWAY_CAP_WRITE_METADATA = ms_pb2.ms_gateway_cert.CAP_WRITE_METADATA
+GATEWAY_CAP_COORDINATE = ms_pb2.ms_gateway_cert.CAP_COORDINATE
+
+# JSON
+JSON_AUTH_COOKIE_NAME = "SynAuth"
+JSON_MS_API_VERSION = "1.0"
+JSON_SYNDICATE_CALLING_CONVENTION_FLAG = "__syndicate_json_rpc_calling_convention"
+
+# admin 
+# TODO: swap with Jude's public key (instead of the test key)
+ADMIN_PUBLIC_KEY = """
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA4PdsHO21NSZxAKq24R/Z
+TaCy4bg9SvADpdnHkj7cxsCQi4A1SDHK9Cd65nje125eLJ4DC7nP4NtEHVzUgbX1
+6InpHgx897IKD7dcftxsDolCpQgR/pGIYi+hI/SlRVuFIk4Z/BjbtQSabp73TrLj
+n8n5mIH0m1jm7XUWcT6qCMvDSjFgMBX6BGZdM8iS7zCkvLsuaJY9WdSCqV2q9vgY
++aePQ+5VbSrnMDqsVwK1m8zfsUah9d1og2KdA3N0O1qKIz/zeNypjb+6xhzyrRIt
+ZTP8wQiOry25YvmSILL1eklspSfS8eJm6qTdRAX0TWmZ2PQcnQcGtToC5ma6v+it
+Xb0LqSmxty7LmIHI5x8gb5XOm1r28m5UR5fQqXqanfXgXZT6ZPikEkzylx2n35V5
+GkkqXNcU8nPsxp4x35vrUMs5LdQ+ixEHiqxL2NRBXHYRw+DIYDmBybY0VD8YN4fm
+7bkBvdGk4AKT0gBLM3sQSI6dPZyawCDjhd1y4tsXonAox91tprikh+xqqLzYMeKS
+ed/ZV0q8wzJKfPTBkFdQYAJPVT2+Vv8TDLWzwua1QaQOI1BtP2wegStlOJWTs/4S
+BusItZjRV9G9wooRI4tT/Q8yOuD6GEVOO+L9ZSrBAj3QQlF4MyemOsw7spdRylDr
+rm2JREPm40kd9kx4MY1JHqsCAwEAAQ==
+-----END PUBLIC KEY-----
+""".strip()
+
+ADMIN_EMAIL = "judecn@gmail.com"
+ADMIN_OPENID_URL = "https://www.vicci.org/id/jcnelson"

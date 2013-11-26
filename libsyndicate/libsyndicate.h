@@ -298,7 +298,7 @@ extern char const MD_HTTP_DEFAULT_MSG[128];
 // Use ephemeral Diffie-Hellman for key exchange (RSA or ECC)
 // Use at least 256-bit MACs
 // Use at least 256-bit keys for data encryption.
-#define SYNDICATE_GNUTLS_CIPHER_SUITES "PFS:-ARCFOUR-128:-3DES-CBC:-AES-128-CBC:-AES-128-GCM:-CAMELLIA-128-CBC:-MD5:-SHA1"
+#define SYNDICATE_GNUTLS_CIPHER_SUITES "PFS:-ARCFOUR-128:-3DES-CBC:-AES-128-CBC:-AES-256-CBC:-CAMELLIA-128-CBC:-MD5:-SHA1"
 
 // server configuration
 struct md_syndicate_conf {
@@ -837,10 +837,10 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
 
 // gateway types for md_init
 // TODO: sync up with ms.proto?
-#define SYNDICATE_UG       1
-#define SYNDICATE_AG       2
-#define SYNDICATE_RG       3
-#define VALID_GATEWAY_TYPE( type ) ((type) > 0 && (type) <= SYNDICATE_RG)
+#define SYNDICATE_UG       ms::ms_gateway_cert::USER_GATEWAY
+#define SYNDICATE_AG       ms::ms_gateway_cert::ACQUISITION_GATEWAY
+#define SYNDICATE_RG       ms::ms_gateway_cert::REPLICA_GATEWAY
+#define VALID_GATEWAY_TYPE( type ) ((type) == SYNDICATE_UG || (type) == SYNDICATE_RG || (type) == SYNDICATE_AG)
 
 #define GATEWAY_CAP_READ_DATA  1
 #define GATEWAY_CAP_WRITE_DATA  2

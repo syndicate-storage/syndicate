@@ -23,12 +23,14 @@ def prettyprint( ent ):
 
 def Resolve( owner_id, volume, file_id, file_version, write_nonce ):
    """
-   Read file and listing of the given file_id
+   Read file and listing of the given file_id.
+   TODO: have the client indicate whether or not it think the given file is a file or directory.
+   Throw an exception if the MS disagrees on what it is.
    """
 
    file_memcache = MSEntry.Read( volume, file_id, memcache_keys_only=True )
    file_data = storagetypes.memcache.get( file_memcache )
-   listing = MSEntry.ListAll( volume, file_id )
+   listing = MSEntry.ListDir( volume, file_id )
 
    all_ents = None
    file_fut = None

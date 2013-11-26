@@ -12,10 +12,9 @@ import storage.shardcounter as shardcounter
 
 import os
 import base64
-from Crypto.Hash import SHA256, SHA
-from Crypto.PublicKey import RSA
+from Crypto.Hash import SHA256 as HashAlg
+from Crypto.PublicKey import RSA as CryptoKey
 from Crypto import Random
-#from Crypto.Signature import PKCS1_v1_5 as CryptoSigner
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 import protobufs.ms_pb2 as ms_pb2
@@ -29,8 +28,143 @@ import string
 import logging
 import traceback
 
-from user import SyndicateUser
-from msconfig import *
+from common.msconfig import *
+
+from MS.gateway import Gateway
+
+
+# ----------------------------------
+class VolumeAccessRequest( storagetypes.Object ):
+   STATUS_PENDING = 1
+   STATUS_GRANTED = 2
+   
+   requester_owner_id = storagetypes.Integer()          # owner id of the requester
+   request_message = storagetypes.Text()                # message to the owner 
+   volume_id = storagetypes.Integer()                   # ID of volume to join 
+   gateway_caps = storagetypes.Integer( indexed=False )  # gateway capabilities requested
+   nonce = storagetypes.Integer( indexed=False )
+   request_timestamp = storagetypes.Integer()
+   status = storagetypes.Integer()
+   
+   required_attrs = [
+      "requester_owner_id",
+      "nonce",
+      "request_timestamp",
+      "status"
+   ]
+   
+   read_attrs = [
+      "requester_owner_id",
+      "request_message",
+      "volume_id",
+      "gateway_caps",
+      "request_timestamp",
+      "status"
+   ]
+   
+   read_attrs_api_required = read_attrs
+   
+   def owned_by( self, user ):
+      return (user.owner_id == self.requester_owner_id)
+   
+   @classmethod
+   def make_key_name( cls, requester_owner_id, volume_id ):
+      return "VolumeAccessRequest: owner_id=%s,volume_id=%s" % (requester_owner_id, volume_id)
+   
+   @classmethod
+   def create_async( cls, _requester_owner_id, _volume_id, _nonce, _status, **attrs ):
+      ts = int(storagetypes.get_time())
+      return VolumeAccessRequest.get_or_insert_async( VolumeAccessRequest.make_key_name( _requester_owner_id, _volume_id ),
+                                                      requester_owner_id = _requester_owner_id,
+                                                      volume_id = _volume_id,
+                                                      nonce=_nonce,
+                                                      request_timestamp=ts,
+                                                      status=_status,
+                                                      **attrs )
+   
+
+   @classmethod
+   def RequestAccess( cls, owner_id, volume_id, gateway_caps, message ):
+      """
+      Create a request that a particular user be granted certain capabilities to access a particular Volume.
+      Include a message that the Volume owner will be able to read.
+      
+      Return if the request was successfully placed.
+      Raise an exception if there is already a pending request.
+      """
+      
+      nonce = random.randint( -2**63, 2**63 - 1 )
+      req_fut = VolumeAccessRequest.create_async( owner_id, volume_id, nonce, requester_message=message, gateway_caps=gateway_caps, status=STATUS_PENDING )
+      req = fut.get_result()
+      
+      # duplicate?
+      if req.nonce != nonce:
+         raise Exception( "User '%s' already attempted to join Volume '%s'" % (owner_id, volume_id) )
+      
+      return req.key
+   
+   @classmethod
+   def GrantAccess( cls, owner_id, volume_id, gateway_caps=None ):
+      req_key_name = VolumeAccessRequest.make_key_name( owner_id, volume_id )
+      req_key = storagetypes.make_key( VolumeAccessRequest, req_key_name )
+      
+      req = req_key.get() 
+      
+      if req == None:
+         raise Exception("No such request")
+      
+      if gateway_caps != None:
+         req.gateway_caps = gateway_caps 
+      
+      req.status = STATUS_GRANTED
+      req.put()
+      
+      storagetypes.memcache.delete( req_key_name )
+      
+      return True
+         
+   @classmethod
+   def GetAccess( cls, owner_id, volume_id ):
+      
+      req_key_name = VolumeAccessRequest.make_key_name( owner_id, volume_id )
+      req = storagetypes.memcache.get( req_key_name )
+      
+      if req != None:
+         return req
+      
+      req_key = storagetypes.make_key( VolumeAccessRequest, req_key_name )
+      
+      req = req_key.get() 
+      if req != None:
+         storagetypes.memcache.set( req_key_name, req )
+      
+      return req
+   
+   @classmethod
+   def RemoveAccessRequest( cls, owner_id, volume_id ):
+      """
+      Delete an access request.
+      """
+      
+      req_key_name = VolumeAccessRequest.make_key_name( owner_id, volume_id )
+      req_key = storagetypes.make_key( VolumeAccessRequest, req_key_name )
+      storagetypes.deferred.defer( cls.delete_all, [req_key] )
+      storagetypes.memcache.delete( req_key_name )
+      
+      return True
+   
+   @classmethod
+   def ListUserAccessRequests( cls, owner_id, **q_opts ):
+      
+      return VolumeAccessRequest.ListAll( {"requester_owner_id ==": owner_id}, **q_opts )
+   
+   @classmethod
+   def ListVolumeAccessRequests( cls, volume_id, **q_opts ):
+      
+      return VolumeAccessRequest.ListAll( {"volume_id ==": volume_id}, **q_opts )
+
+
+
 
 class VolumeNameHolder( storagetypes.Object ):
    '''
@@ -62,10 +196,8 @@ def is_int( x ):
    except:
       return False
    
-   
-class Volume( storagetypes.Object ):
 
-   HTTP_VOLUME_SECRET = "Syndicate-VolumeSecret"
+class Volume( storagetypes.Object ):
    
    name = storagetypes.String()
    blocksize = storagetypes.Integer( indexed=False ) # Stored in bytes!!
@@ -82,66 +214,37 @@ class Volume( storagetypes.Object ):
    
    num_shards = storagetypes.Integer(default=20, indexed=False)    # number of shards per entry in this volume
 
-   public_key = storagetypes.Text()          # Volume public key, in PEM format
-   private_key = storagetypes.Text()         # Volume private key, in PEM format
-
-   volume_secret_salted_hash = storagetypes.Text()                 # salted hash of shared secret between the volume and its administrator
-   volume_secret_salt = storagetypes.Text()                        # salt for the above hashed value
+   metadata_public_key = storagetypes.Text()          # Volume public key, in PEM format, for verifying metadata
+   metadata_private_key = storagetypes.Text()         # Volume private key, in PEM format, for signing metadata
    
-
-   @classmethod
-   def generate_password_hash( cls, password, salt ):
-      h = SHA256.new()
-      h.update( salt )
-      h.update( password )
-      return h.hexdigest()
-
-   @classmethod
-   def hash_volume_secret( cls, secret ):
-
-      salt = "".join( [random.choice(string.printable) for i in xrange(VOLUME_SECRET_SALT_LENGTH)] )
-      secret_salted_hash = Volume.generate_password_hash( secret, salt )
-
-      return (salt, secret_salted_hash)
-
-   @classmethod
-   def generate_volume_keys( cls ):
-      rng = Random.new().read
-      RSAkey = RSA.generate(VOLUME_RSA_KEYSIZE, rng)
-
-      private_key_pem = RSAkey.exportKey()
-      public_key_pem = RSAkey.publickey().exportKey()
-
-      return (public_key_pem, private_key_pem)
+   signing_public_key = storagetypes.Text()               # public key, in PEM format, for authenticating API requests
    
+   verify_public_key = storagetypes.Text()                 # public/private key pair for signing API replies
+   verify_private_key = storagetypes.Text()
+
+   file_quota = storagetypes.Integer( default=-1 )                 # maximum number of files allowed here (-1 means unlimited)
+   
+   deleted = storagetypes.Boolean( default=False )      # is this Volume deleted?
+   
+   default_gateway_caps = storagetypes.Integer( default=0, indexed=False )
+
+
    @classmethod
-   def is_valid_key( cls, key_str ):
-      '''
-      Validate a given PEM-encoded public key, both in formatting and security.
-      '''
-      try:
-         key = RSA.importKey( key_str )
-      except Exception, e:
-         logging.error("RSA.importKey %s", traceback.format_exc() )
-         return False
-
-      # must have desired security level 
-      if key.size() != VOLUME_RSA_KEYSIZE - 1:
-         logging.error("invalid key size = %s" % key.size() )
-         return False
-
-      return True
+   def generate_metadata_keys( cls ):
+      """
+      Generate metadata public/private keys for metadata sign/verify
+      """
+      return cls.generate_keys( VOLUME_RSA_KEYSIZE )
       
       
    required_attrs = [
       "name",
       "blocksize",
       "owner_id",
-      "volume_secret_salt",
-      "volume_secret_salted_hash",
       "private",
-      "public_key",
-      "private_key",
+      "metadata_private_key",
+      "signing_public_key",
+      "default_gateway_caps"
    ]
 
    key_attrs = [
@@ -150,8 +253,8 @@ class Volume( storagetypes.Object ):
    
    validators = {
       "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")) ) == 0 and not is_int(value) ),
-      "public_key": (lambda cls, value: Volume.is_valid_key( value )),
-      "private_key": (lambda cls, value: Volume.is_valid_key( value ))
+      "metadata_public_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE )),
+      "metadata_private_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE ))
    }
 
    default_values = {
@@ -159,77 +262,88 @@ class Volume( storagetypes.Object ):
       "version": (lambda cls, attrs: 1),
       "cert_version": (lambda cls, attrs: 1),
       "private": (lambda cls, attrs: True),
-      "archive": (lambda cls, attrs: False)
+      "archive": (lambda cls, attrs: False),
+      "file_quota": (lambda cls, attrs: -1),
+      "default_gateway_caps": (lambda cls, attrs: GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA )           # read only
    }
    
-   read_attrs = [
-      "name",
+   read_attrs_api_required = [
+      "signing_public_key",
       "blocksize",
       "active",
-      "description",
-      "owner_id",
       "volume_id",
       "version",
       "cert_version",
       "private",
       "archive",
-      "public_key"
+      "file_quota",
+      "default_gateway_caps"
    ]
+   
+   read_attrs = [
+      "name",
+      "description",
+      "owner_id",
+      "metadata_public_key",
+      "verify_public_key"
+   ] + read_attrs_api_required
    
    write_attrs = [
       "active",
       "description",
-      "owner_id",
-      "volume_id",
       "private",
       "archive",
-      "public_key",
-      "private_key",
-      "volume_secret"
+      "file_quota",
+      "default_gateway_caps"
    ]
    
+   write_attrs_api_required = write_attrs
    
-   def authenticate( self, password ):
-      """
-      Authenticate a secret password against our volume_secret_salted_hash
-      """
-      password_salted_hash = Volume.generate_password_hash( password, self.volume_secret_salt )
-      return self.volume_secret_salted_hash == password_salted_hash
-      
+   
+   def owned_by( self, user ):
+      return user.owner_id == self.owner_id
+   
    
    @classmethod
-   def Authenticate( self, volume_name_or_id, password ):
+   def Authenticate( cls, volume_name_or_id, data, data_signature ):
       """
-      Load and then authenticate a Volume.
-      Return the Volume instance if successful, False if found but unsuccessful, None if not found
+      Authenticate a Volume, given some identifying data and its signature.
+      Verify that it was signed by the admin's private key.
+      Use RSA PSS for security.
+      Return the Volume if authenticated; None if no such Volume; False if signature failed
       """
       
-      # volume name or ID?
       volume_id = None
       volume_name = None
+      volume = None
       
       try:
-         volume_id = int(volume_name_or_id)
+         volume_id = int( volume_name_or_id )
       except:
          volume_name = volume_name_or_id
-         pass
       
-      # get the Volume
-      vol = None
       if volume_id:
-         vol = Volume.Read( volume_id )
+         volume = Volume.Read( volume_id )
       else:
-         vol = Volume.Read_ByName( volume_name )
+         volume = Volume.Read_ByName( volume_name )
       
-      if not vol:
+      if volume == None:
          return None
       
-      # do the authentication 
-      if vol.authenticate( password ):
-         return vol
-      else:
+      ret = cls.auth_verify( volume.signing_public_key, data, data_signature )
+      if not ret:
+         logging.error("Verification failed")
          return False
       
+      else:
+         return volume
+   
+   
+   @classmethod
+   def Sign( cls, volume, data ):
+      # Sign an API response
+      return Volume.auth_sign( volume.verify_private_key, data )
+   
    
    def need_gateway_auth( self ):
       """
@@ -253,10 +367,11 @@ class Volume( storagetypes.Object ):
       volume_metadata.description = kwargs.get( 'description', self.description )
       volume_metadata.volume_version = kwargs.get('volume_version', self.version )
       volume_metadata.cert_version = kwargs.get('cert_version', self.cert_version )
-      volume_metadata.volume_public_key = kwargs.get( 'public_key', self.public_key )
+      volume_metadata.volume_public_key = kwargs.get( 'metadata_public_key', self.metadata_public_key )
       volume_metadata.num_files = kwargs.get( 'num_files', Volume.get_num_files( volume_metadata.volume_id ) )
       volume_metadata.archive = kwargs.get( 'archive', self.archive )
       volume_metadata.private = kwargs.get( 'private', self.private )
+      
       # sign it
       volume_metadata.signature = ""
 
@@ -288,12 +403,10 @@ class Volume( storagetypes.Object ):
       return 
    
    
-   def protobuf_gateway_cert_manifest( self, manifest, gateway_classes, sign=True ):
+   def protobuf_gateway_cert_manifest( self, manifest, sign=True ):
       """
       Generate a specially-crafted manifest protobuf, which a gateway can use to learn 
       the IDs and types of all gateways in the Volume, as well as their certs' versions.
-      
-      gateway_classes is a list of Gateway subclasses for us to process
       """
       
       manifest.volume_id = self.volume_id
@@ -306,31 +419,19 @@ class Volume( storagetypes.Object ):
       
       sz = 0
       
-      # query certificate versions of all gateways
-      futs = []
-      for gwcls in gateway_classes:
-         qry_fut = gwcls.ListAll( {"%s.volume_id ==" % gwcls.__name__: self.volume_id}, async=True, projection=["g_id", "caps", "cert_version"] )
-         futs.append( qry_fut )
+      # query certificate versions, types, and caps of all gateways          
+      listing = Gateway.ListAll( {"Gateway.volume_id ==" : self.volume_id}, projection=["g_id", "gateway_type", "cert_version", "caps"] )
       
-      storagetypes.wait_futures( futs )
+      for gateway_metadata in listing:
+         cert_block = manifest.block_url_set.add()
       
-      gateway_lists = [g.get_result() for g in futs]
-      results = zip( gateway_classes, gateway_lists )
+         cert_block.gateway_id = gateway_metadata.g_id
+         cert_block.start_id = gateway_metadata.gateway_type
+         cert_block.end_id = gateway_metadata.caps
+         cert_block.block_versions.append( gateway_metadata.cert_version )
       
-      for r in results:
-         cls = r[0]
-         listing = r[1]
-         
-         for gateway_metadata in listing:
-            cert_block = manifest.block_url_set.add()
-         
-            cert_block.gateway_id = gateway_metadata.g_id
-            cert_block.start_id = cls.GATEWAY_TYPE
-            cert_block.end_id = gateway_metadata.caps
-            cert_block.block_versions.append( gateway_metadata.cert_version )
-         
-            logging.info("cert block: (%s, %s, %s, %x)" % (cls.GATEWAY_TYPE, gateway_metadata.g_id, gateway_metadata.cert_version, gateway_metadata.caps) )
-            sz += 1
+         logging.info("cert block: (%s, %s, %s, %x)" % (gateway_metadata.gateway_type, gateway_metadata.g_id, gateway_metadata.cert_version, gateway_metadata.caps) )
+         sz += 1
       
       manifest.size = sz
       manifest.signature = ""
@@ -360,62 +461,53 @@ class Volume( storagetypes.Object ):
    def sign_message( self, data ):
       """
       Return the base64-encoded crypto signature of the data,
-      signed with our private key.
+      signed with our metadata private key.
       """
-      
-      key = RSA.importKey( self.private_key )
-      h = SHA256.new( data )
-      signer = CryptoSigner.new(key)
-      signature = signer.sign( h )
+      signature = Volume.auth_sign( self.metadata_private_key, data )
       sigb64 = base64.b64encode( signature )
       return sigb64
       
 
    @classmethod
-   def Create( cls, username, **kwargs ):
+   def Create( cls, user, **kwargs ):
       """
       Given volume data, store it.
       Update the corresponding SyndicateUser atomically along with creating the Volume
       so that the SyndicateUser owns the Volume.
       
       Arguments:
-      username          -- Name of the SyndicateUser that will own this Volume
+      user              -- SyndicateUser instance that will own this Volume
       
       Required keyword arguments:
       name              -- name of the Volume (str)
       blocksize         -- size of the Volume's blocks in bytes (int)
       description       -- description of the Volume (str)
       private           -- whether or not this Volume is visible to other users (bool)
-      volume_secret     -- password to use for administrating this Volume (str)
+      signing_public_key           -- PEM-encoded RSA public key, 4096 bits (str)
       
       Optional keyword arguments:
-      public_key        -- PEM-encoded RSA public key, 4096 bits (str)
-      private_key       -- PEM-encoded RSA private key, 4096 bits (str)
-      archive           -- whether or not this Volume is populated only by Acquisition Gateways (bool)
+      metadata_private_key       -- PEM-encoded RSA private key, 4096 bits (str)
+      archive                    -- whether or not this Volume is populated only by Acquisition Gateways (bool)
+      default_gateway_caps      -- bitfield of capabilities Gateways created within this Volume should receive
       """
       
       # sanity check 
-      if not username:
-         raise Exception( "No username given" )
+      if not user:
+         raise Exception( "No user given" )
       
       kwargs['owner_id'] = 0     # will look up user and fill with owner ID once we validate input.
       Volume.fill_defaults( kwargs )
 
-      # Get or finalize credentials
-      volume_secret = kwargs.get("volume_secret")
-
-      if volume_secret == None:
-         raise Exception( "No password given")
-
-      else:
-         volume_secret_salt, volume_secret_salted_hash = Volume.hash_volume_secret(volume_secret)
-
-         kwargs['volume_secret_salt'] = volume_secret_salt
-         kwargs['volume_secret_salted_hash'] = volume_secret_salted_hash
-
       # generate keys if they're not given 
-      if kwargs.get('public_key') == None or kwargs.get('private_key') == None:
-         kwargs['public_key'], kwargs['private_key'] = Volume.generate_volume_keys()
+      if kwargs.get('metadata_private_key') == None:
+         kwargs['metadata_public_key'], kwargs['metadata_private_key'] = Volume.generate_metadata_keys()
+      else:
+         # extract the public key
+         try:
+            metadata_private_key = CryptoKey.importKey( kwargs['metadata_private_key'] )
+            kwargs['metadata_public_key'] = metadata_private_key.publickey().exportKey()
+         except:
+            raise Exception("Invalid metadata private key")
 
       # Validate
       missing = Volume.find_missing_attrs( kwargs )
@@ -423,10 +515,16 @@ class Volume( storagetypes.Object ):
          raise Exception( "Missing attributes: %s" % (", ".join( missing )))
 
       
-      #kwargs['name'] = unicode(kwargs['name']).strip().replace(" ","_")
       invalid = Volume.validate_fields( kwargs )
       if len(invalid) != 0:
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
+      
+      # vet the keys
+      for key_field in ['metadata_public_key', 'metadata_private_key', 'signing_public_key']:
+         key_str = kwargs[key_field]
+         valid = cls.is_valid_key( key_str, VOLUME_RSA_KEYSIZE )
+         if not valid:
+            raise Exception("Key must be a %s-bit RSA key" % (VOLUME_RSA_KEYSIZE) )
       
       # attempt to create the Volume
       volume_id = random.randint( 1, 2**63 - 1 )
@@ -434,10 +532,7 @@ class Volume( storagetypes.Object ):
       volume_key_name = Volume.make_key_name( volume_id=volume_id )
       volume_key = storagetypes.make_key( Volume, volume_key_name )
       
-      # get the user
-      user = SyndicateUser.Read( username )
-      if not user:
-         raise Exception( "No such user '%s'" % username )
+      verify_public_key_str, verify_private_key_str = Volume.generate_keys( VOLUME_RSA_KEYSIZE )
       
       # put the Volume and nameholder at the same time---there's a good chance we'll succeed
       volume_nameholder_fut = VolumeNameHolder.create_async( kwargs['name'], volume_id )
@@ -452,10 +547,11 @@ class Volume( storagetypes.Object ):
                                                 cert_version=1,
                                                 private=kwargs['private'],
                                                 archive=kwargs['archive'],
-                                                volume_secret_salt = kwargs['volume_secret_salt'],
-                                                volume_secret_salted_hash = kwargs['volume_secret_salted_hash'],
-                                                public_key = kwargs['public_key'],
-                                                private_key = kwargs['private_key']
+                                                metadata_public_key = kwargs['metadata_public_key'],
+                                                metadata_private_key = kwargs['metadata_private_key'],
+                                                signing_public_key = kwargs['signing_public_key'],
+                                                verify_public_key = verify_public_key_str,
+                                                verify_private_key = verify_private_key_str
                                              )
       
       storagetypes.wait_futures( [volume_nameholder_fut, volume_fut] )
@@ -471,32 +567,36 @@ class Volume( storagetypes.Object ):
       
       if volume.volume_id != volume_id:
          # ID collision
-         storagetypes.deferred.defer( Volume.delete_all, [volume_nameholder.key] )
+         storagetypes.deferred.defer( Volume.delete_all, [volume_key, volume_nameholder.key] )
          raise Exception( "Volume ID collision.  Please try again" )
       
-      # bind the User to the Volume
-      try:
-         storagetypes.transaction( lambda: SyndicateUser.add_volume_to_user(volume_id, username) )
-      except Exception, e:
-         log.exception( e )
-         raise e
-      
+      # set permissions
+      req = VolumeAccessRequest.create_async( user.owner_id, volume_id, random.randint(-2**63, 2**63 - 1), VolumeAccessRequest.STATUS_GRANTED, request_message="Created").get_result()
       return volume_key
          
 
    @classmethod
-   def Read( cls, volume_id, async=False, use_memcache=True ):
+   def Read( cls, volume_name_or_id, async=False, use_memcache=True ):
       """
       Given a volume ID, get the Volume.
       
       Arguments:
-      volume_id         -- ID of the Volume to get (int)
+      volume_name_or_id -- name or ID of the Volume to get (str or int)
       
       Keyword arguments:
       async             -- If true, return a Future for the Volume (bool)
       use_memcache      -- If True, check memcache for the Volume, and if async is false, cache the results.
       """
       
+      volume_id = None
+      volume_name = None
+      
+      try:
+         volume_id = int( volume_name_or_id )
+      except:
+         volume_name = volume_name_or_id
+         return cls.Read_ByName( volume_name, async=async, use_memcache=use_memcache )
+         
       volume_key_name = Volume.make_key_name( volume_id=volume_id )
       volume_key = storagetypes.make_key( Volume, volume_key_name )
 
@@ -509,11 +609,21 @@ class Volume( storagetypes.Object ):
          if not async:
             volume = volume_key.get( use_memcache=False )
          else:
-            return volume_key.get_async( use_memccahe=False )
+            return volume_key.get_async( use_memcache=False )
          
-         if volume != None and use_memcache:
+         if volume != None and use_memcache and not volume.deleted:
             storagetypes.memcache.set( volume_key_name, volume )
 
+      elif async:
+         if volume.deleted:
+            volume = storagetypes.FutureWrapper(None)
+         else:
+            volume = storagetypes.FutureWrapper( volume )
+      
+      if not async:
+         if volume and volume.deleted:
+            return None
+         
       return volume
 
 
@@ -547,7 +657,7 @@ class Volume( storagetypes.Object ):
       
       if async:
          # this will be a Future 
-         return vol
+         return storagetypes.FutureQueryWrapper( vol )
 
       elif vol:
          if len(vol) > 1:
@@ -558,14 +668,20 @@ class Volume( storagetypes.Object ):
          if not vol:
             vol = None
             
-         elif use_memcache:
+         elif use_memcache and not vol.deleted:
             to_set = {
                vol_name_to_id_cached: vol.volume_id,
                Volume.make_key_name( volume_id=vol.volume_id ): vol
             }
             
             storagetypes.memcache.set_multi( to_set )
-            
+      else:
+         vol = None
+
+      if not async:
+         if vol and vol.deleted:
+            return None
+         
       return vol
             
       
@@ -604,11 +720,16 @@ class Volume( storagetypes.Object ):
                volume = volume_key.get( use_memcache=False )
                if not volume:
                   ret[i] = None
-               elif use_memcache:
+               elif use_memcache and not volume.deleted:
                   storagetypes.memcache.set( volume_key_name, volume )
 
          else:
-            ret[i] = volume
+            if not async:
+               # get results directly 
+               ret[i] = volume
+            else:
+               # wrap as future
+               ret[i] = storagetypes.FutureWrapper( volume )
 
       return ret
             
@@ -633,7 +754,7 @@ class Volume( storagetypes.Object ):
       Update the shard count of the volume, but in a transaction.
       """
       volume_key = storagetypes.make_key( Volume, Volume.make_key_name( volume_id=volume_id ) )      
-      num_shards = storagetypes.transaction( lambda: __volume_update_shard_count( volume_key, num_shards ), **txn_args )
+      num_shards = storagetypes.transaction( lambda: Volume.__update_shard_count( volume_key, num_shards ), **txn_args )
       
       return num_shards
 
@@ -641,8 +762,7 @@ class Volume( storagetypes.Object ):
    @classmethod
    def FlushCache( cls, volume_id ):
       volume_key_name = Volume.make_key_name( volume_id=volume_id )
-
-      storagetypes.memcache.delete(volume_key_name)
+      storagetypes.memcache.delete( volume_key_name )
       
       
    @classmethod
@@ -653,7 +773,7 @@ class Volume( storagetypes.Object ):
       
       
    @classmethod
-   def Update( cls, volume_id, **fields ):
+   def Update( cls, volume_name_or_id, **fields ):
       '''
       Atomically (transactionally) update a given Volume with the given fields.
       
@@ -662,6 +782,14 @@ class Volume( storagetypes.Object ):
       
       Keyword arguments: same as Create()
       '''
+      try:
+         volume_id = int(volume_name_or_id)
+      except:
+         volume = Volume.Read_ByName( volume_name_or_id )
+         if volume:
+            volume_id = volume.volume_id
+         else:
+            raise Exception("No such Volume '%s'" % volume_name_or_id )
       
       invalid = Volume.validate_fields( fields )
       if len(invalid) != 0:
@@ -672,16 +800,16 @@ class Volume( storagetypes.Object ):
       if len(invalid) != 0:
          raise Exception( "Unwritable fields: %s" % (", ".join( invalid )) )
       
-      # if we're updating either the public or private key, then we'll need to verify that both are present
-      if (fields.has_key( "public_key" ) and not fields.has_key( "private_key" )) or (not fields.has_key("public_key") and fields.has_key("private_key")):
-         raise Exception( "Need both public_key and private_key when changing the keys" )
-      
-      # if we're changing the password, then generate the salt and hash
-      if "volume_secret" in fields.keys():
-         volume_secret_salt, volume_secret_salted_hash = Volume.hash_volume_secret( fields['volume_secret'] )
+      if fields.has_key("metadata_private_key"):
+         # extract the public key
+         try:
+            metadata_private_key = CryptoKey.importKey( kwargs['metadata_private_key'] )
+            kwargs['metadata_public_key'] = metadata_private_key.publickey().exportKey()
+         except:
+            raise Exception("Invalid metadata private key: could not load")
          
-         fields['volume_secret_salt'] = volume_secret_salt
-         fields['volume_secret_salted_hash'] = volume_secret_salted_hash
+         if not Volume.is_valid_key( metadata_private_key ):
+            raise Exception("Invalid metadata private key: not sufficiently secure")
       
       # are we changing the name? acquire the new name if so
       rename = False
@@ -708,14 +836,13 @@ class Volume( storagetypes.Object ):
          '''
          
          volume = Volume.Read(volume_id)
-         if not volume:
+         if not volume or volume.deleted:
             # volume does not exist...
             # if we were to rename it, then delete the new nameholder
             if rename:
                storagetypes.deferred.defer( Volume.delete_all, [volume_nameholder_new_key] )
                
             raise Exception("No volume with the ID %d exists.", volume_id)
-
          
          old_name = volume.name 
          
@@ -752,32 +879,72 @@ class Volume( storagetypes.Object ):
          volume_nameholder_old_key = storagetypes.make_key( VolumeNameHolder, VolumeNameHolder.make_key_name( old_name ) )
          storagetypes.deferred.defer( Volume.delete_all, [volume_nameholder_old_key] )
          
+         # make sure Read_ByName uses the right name
+         vol_name_to_id_cached = "Read_ByName: volume_name=%s" % old_name
+         storagetypes.memcache.delete( vol_name_to_id_cached )
+         
       return volume_key
          
 
    @classmethod
-   def Delete( cls, volume_id ):
+   def SetPublicSigningKey( cls, volume_name_or_id, new_public_key ):
+      """
+      Set the authenticator public key for this Volume.
+      """
+      if not cls.is_valid_key( new_public_key ):
+         raise Exception("Invalid authentication key")
+      
+      cls.set_atomic( lambda: Volume.Read( volume_name_or_id ), signing_public_key=new_public_key )
+      return True
+
+
+   @classmethod
+   def delete_volume_and_friends( cls, volume_id, volume_name ):
+      access_keys_fut = VolumeAccessRequest.ListVolumeAccessRequests( volume_id, async=True, keys_only=True )
+      
+      storagetypes.wait_futures( [access_keys_fut] )
+      
+      access_keys = access_keys_fut.get_result()
+      
+      futs = []
+      
+      if access_keys:
+         for key in access_keys:
+            futs.append( key.delete_async() )
+      
+      volume_key = storagetypes.make_key( Volume, Volume.make_key_name( volume_id=volume_id ) )
+      futs.append( volume_key.delete_async() )
+      
+      volume_nameholder_key = storagetypes.make_key( VolumeNameHolder, VolumeNameHolder.make_key_name( volume_name ) )
+      futs.append( volume_nameholder_key.delete_async() )
+      
+      storagetypes.wait_futures( futs )
+      
+
+   @classmethod
+   def Delete( cls, volume_name_or_id ):
       '''
-      Delete volume from datastore.
+      Delete volume from datastore, as well as access requests and rights.
       
       Arguments:
-      volume_id         -- ID of the Volume to delete (str)
+      volume_id         -- ID of the Volume to delete
       '''
       
-      volume = Volume.Read( volume_id )
+      volume = Volume.Read( volume_name_or_id )
       if volume == None:
          # done!
          return True
       
-      volume_key = storagetypes.make_key( Volume, Volume.make_key_name( volume_id=volume_id ) )
-      volume_nameholder_key = storagetypes.make_key( VolumeNameHolder, VolumeNameHolder.make_key_name( name=volume.name ) )
+      volume.deleted = True
+      volume.put()
       
-      volume_delete_fut = volume_key.delete_async()
-      volume_nameholder_delete_fut = volume_nameholder_key.delete_async()
+      Volume.FlushCache( volume.volume_id )
       
-      FlushCache( volume_id )
+      vol_name_to_id_cached = "Read_ByName: volume_name=%s" % volume.name 
+      storagetypes.memcache.delete( vol_name_to_id_cached )
       
-      storagetypes.wait_futures( [volume_delete_fut, volume_nameholder_delete_fut] )
+      
+      storagetypes.deferred.defer( Volume.delete_volume_and_friends, volume.volume_id, volume.name )
       
       return True
    
@@ -796,7 +963,7 @@ class Volume( storagetypes.Object ):
       Detach a Volume mounted at a given mountpoint.
       '''
       return volume_umount( volume_id, mountpoint_id )
-   
+
    
    @classmethod
    def shard_counter_name( cls, volume_id, suffix ):
@@ -820,8 +987,7 @@ class Volume( storagetypes.Object ):
       name = Volume.shard_counter_name( volume_id, "file_count" )
       ret = shardcounter.get_count( name )
       return ret
-   
-  
+
 
 def volume_mount( volume_id, mountpoint_id, new_volume_id ):
    '''

@@ -15,6 +15,13 @@ import logging
 
 import backends as backend
 
+from Crypto.Hash import SHA256 as HashAlg
+from Crypto.PublicKey import RSA as CryptoKey
+from Crypto import Random
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
+
+import traceback
+
 SHARD_KEY_TEMPLATE = 'shard-{}-{:d}'
 
 # aliases for types
@@ -30,6 +37,8 @@ Json = backend.Json
 make_key = backend.make_key
 
 # aliases for asynchronous operations
+FutureWrapper = backend.FutureWrapper
+FutureQueryWrapper = backend.FutureQueryWrapper
 wait_futures = backend.wait_futures
 deferred = backend.deferred
 concurrent = backend.concurrent
@@ -80,11 +89,23 @@ class Object( Model ):
    # list of names of attributes that will be used to generate a primary key
    key_attrs = []
 
-   # list of names of attributes that can be read
+   # list of names of attributes that can be read, period
    read_attrs = []
+   
+   # list of names of attributes that can be read, but only with the object's API key
+   read_attrs_api_required = []
+   
+   # list of names of attributes that can be read, but only by the administrator
+   read_attrs_admin_required = []
 
-   # list of names of attributes that can be written 
+   # list of names of attributes that can be written, period
    write_attrs = []
+   
+   # list of names of attributes that can be written, but only with the object's API key
+   write_attrs_api_required = []
+   
+   # list of names of attributes that can be written, but only by the administrator
+   write_attrs_admin_required = []
 
    # dict of functions that generate default values
    # attribute name => lambda object_class, attribute_dict => default_value
@@ -110,6 +131,7 @@ class Object( Model ):
 
    # instance of a shard that will be populated and written
    write_shard = None
+
 
    @classmethod
    def shard_key_name( cls, name, idx ):
@@ -319,25 +341,31 @@ class Object( Model ):
       return found
 
    @classmethod
-   def validate_read( cls, attrlist ):
+   def validate_read( cls, attrlist, read_attrs=None ):
       """
       Generate a list of attributes that CANNOT be read, given an iterable of attributes.
       """
+      if read_attrs == None:
+         read_attrs = cls.read_attrs
+         
       not_readable = []
       for attr in attrlist:
-         if attr not in cls.read_attrs:
+         if attr not in read_attrs:
             not_readable.append( attr )
 
       return not_readable
 
    @classmethod
-   def validate_write( cls, attrlist ):
+   def validate_write( cls, attrlist, write_attrs=None ):
       """
       Generate a list of attributes that CANNOT be written, given an iterable attributes.
       """
+      if write_attrs == None:
+         write_attrs = cls.write_attrs 
+         
       not_writable = []
       for attr in attrlist:
-         if attr not in cls.write_attrs:
+         if attr not in write_attrs:
             not_writable.append( attr )
 
       return not_writable
@@ -423,13 +451,25 @@ class Object( Model ):
       async = q_opts.get("async", False)
       projection = q_opts.get("projection", None)
       query_only = q_opts.get("query_only", False )
+      keys_only = q_opts.get("keys_only", False )
+      map_func = q_opts.get("map_func", None )
       
       qry = cls.query()
-      ret = cls.ListAll_runQuery( qry, filter_attrs, order=order, limit=limit, offset=offset, pagesize=pagesize, async=async, start_cursor=start_cursor, projection=projection, query_only=query_only )
+      ret = cls.ListAll_runQuery( qry, filter_attrs,
+                                  order=order,
+                                  limit=limit,
+                                  offset=offset,
+                                  pagesize=pagesize,
+                                  async=async,
+                                  start_cursor=start_cursor,
+                                  projection=projection,
+                                  query_only=query_only,
+                                  keys_only=keys_only,
+                                  map_func=map_func )
       return ret
 
    @classmethod
-   def ListAll_runQuery( cls, qry, filter_attrs, order=None, limit=None, offset=None, pagesize=None, start_cursor=None, async=False, projection=None, query_only=False ):
+   def ListAll_runQuery( cls, qry, filter_attrs, order=None, limit=None, offset=None, pagesize=None, start_cursor=None, async=False, projection=None, query_only=False, keys_only=False, map_func=None ):
       if filter_attrs == None:
          filter_attrs = {}
          
@@ -499,19 +539,25 @@ class Object( Model ):
          qry_ret = qry
       
       else:
-         if pagesize != None:
-            # paging response 
-            if async:
-               qry_ret = qry.fetch_page_async( pagesize, limit=limit, offset=offset, start_cursor=start_cursor, projection=proj_attrs )
+         if map_func == None:
+            if pagesize != None:
+               # paging response 
+               if async:
+                  qry_ret = qry.fetch_page_async( pagesize, keys_only=keys_only, limit=limit, offset=offset, start_cursor=start_cursor, projection=proj_attrs )
+               else:
+                  qry_ret = qry.fetch_page( pagesize, keys_only=keys_only, limit=limit, offset=offset, start_cursor=start_cursor, projection=proj_attrs )
+            
             else:
-               qry_ret = qry.fetch_page( pagesize, limit=limit, offset=offset, start_cursor=start_cursor, projection=proj_attrs )
-         
+               # direct fetch
+               if async:
+                  qry_ret = qry.fetch_async( limit, keys_only=keys_only, offset=offset, projection=proj_attrs )
+               else:
+                  qry_ret = qry.fetch( limit, keys_only=keys_only, offset=offset, projection=proj_attrs )
          else:
-            # direct fetch
             if async:
-               qry_ret = qry.fetch_async( limit, offset=offset, projection=proj_attrs )
+               qry_ret = qry.map_async( map_func )
             else:
-               qry_ret = qry.fetch( limit, offset=offset, projection=proj_attrs )
+               qry_ret = qry.map( map_func )
             
       return qry_ret
 
@@ -520,3 +566,120 @@ class Object( Model ):
    def delete_all( cls, keys ):
       delete_multi( keys )
       
+   
+   @classmethod
+   def is_valid_key( cls, key_str, keysize ):
+      '''
+      Validate a given PEM-encoded public key, both in formatting and security.
+      '''
+      try:
+         key = CryptoKey.importKey( key_str )
+      except Exception, e:
+         logging.error("importKey %s", traceback.format_exc() )
+         return False
+
+      # must have desired security level 
+      if key.size() != keysize - 1:
+         logging.error("invalid key size = %s" % key.size() )
+         return False
+
+      return True
+   
+   
+   @classmethod
+   def auth_verify( cls, public_key_str, data, data_signature ):
+      """
+      Verify that a given data is signed by a private key that corresponds to a given public key (given as a PEM-encoded string).
+      """
+      try:
+         key = CryptoKey.importKey( public_key_str )
+      except Exception, e:
+         logging.error("importKey %s", traceback.format_exc() )
+         return False
+      
+      h = HashAlg.new( data )
+      verifier = CryptoSigner.new(key)
+      ret = verifier.verify( h, data_signature )
+      return ret
+   
+   
+   @classmethod
+   def auth_sign( cls, private_key_str, data ):
+      """
+      Sign data with a private key.  Return the signature
+      """
+      try:
+         key = CryptoKey.importKey( private_key_str )
+      except Exception, e:
+         logging.error("importKey %s", traceback.format_exc() )
+         return False
+      
+      h = HashAlg.new( data )
+      signer = CryptoSigner.new(key)
+      signature = signer.sign( h )
+      return signature
+   
+   
+   @classmethod
+   def generate_keys( cls, key_size ):
+      """
+      Generate public/private keys of a given size.
+      """
+      rng = Random.new().read
+      key = CryptoKey.generate(key_size, rng)
+
+      private_key_pem = key.exportKey()
+      public_key_pem = key.publickey().exportKey()
+
+      return (public_key_pem, private_key_pem)
+   
+   
+   @classmethod
+   def set_atomic( cls, read_func, **attrs ):
+      """
+      Set attributes atomically, in a transaction.
+      Use read_func() to get the object.
+      """
+      def set_atomic_txn( read_func, **attrs ):
+         obj = read_func()
+         if not obj:
+            raise Exception("No such object")
+         
+         for (attr_name, attr_value) in attrs:
+            if hasattr( obj, attr_name ):
+               setattr( obj, attr_name, attr_value )
+            
+         
+         obj.put()
+      
+      try:
+         transaction( set_atomic_txn, xg=True )
+      except Exception, e:
+         logging.exception( e )
+         raise e
+      
+         
+   @classmethod
+   def get_public_read_attrs( cls ):
+      return list( set(cls.read_attrs) - set(cls.read_attrs_api_required + cls.read_attrs_admin_required) )
+   
+   @classmethod
+   def get_api_read_attrs( cls ):
+      return list( set(cls.read_attrs) - set(cls.read_attrs_admin_required) )
+   
+   @classmethod
+   def get_admin_read_attrs( cls ):
+      return cls.read_attrs
+   
+   @classmethod
+   def get_public_write_attrs( cls ):
+      return list( set(cls.write_attrs) - set(cls.write_attrs_api_required + cls.write_attrs_admin_required) )
+   
+   @classmethod
+   def get_api_write_attrs( cls ):
+      return list( set(cls.write_attrs) - set(cls.write_attrs_admin_required) )
+   
+   @classmethod
+   def get_admin_write_attrs( cls ):
+      return cls.write_attrs
+   

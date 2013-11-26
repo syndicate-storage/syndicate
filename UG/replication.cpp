@@ -566,7 +566,7 @@ int replica_context_connect( struct syndicate_replication* rp, struct replica_co
 static int old_still_running = -1;
 
 // process curl
-// synrp must be locked
+// NOTE: synrp must be locked
 int replica_multi_upload( struct syndicate_replication* synrp ) {
    int rc = 0;
    int still_running = 0;
@@ -721,7 +721,7 @@ static int replica_cancel_contexts( struct syndicate_replication* synrp, struct 
    
    set<struct replica_context*> to_free;
    
-   // search write delayed
+   // search replicas that will be started in the future
    pthread_mutex_lock( &synrp->write_delayed_lock );
    
    for( replica_delay_queue::iterator itr = synrp->write_delayed->begin(); itr != synrp->write_delayed->end(); itr++ ) {
@@ -741,7 +741,7 @@ static int replica_cancel_contexts( struct syndicate_replication* synrp, struct 
    
    pthread_mutex_unlock( &synrp->write_delayed_lock );
    
-   // search pending
+   // search replicas that are about to start
    pthread_mutex_lock( &synrp->pending_lock );
    
    for( replica_upload_set::iterator itr = synrp->pending_uploads->begin(); itr != synrp->pending_uploads->end();  ) {
@@ -769,7 +769,7 @@ static int replica_cancel_contexts( struct syndicate_replication* synrp, struct 
       free( rctx );
    }
    
-   // schedule this for cancels
+   // schedule this replica to be stopped by the main loop
    pthread_mutex_lock( &synrp->cancel_lock );
    
    synrp->pending_cancels->push_back( *snapshot );
@@ -883,7 +883,7 @@ void* replica_main( void* arg ) {
       }
       
       
-      // do we have pending?
+      // do we have replicas that are waiting to be started?
       if( synrp->has_pending ) {
          pthread_mutex_lock( &synrp->pending_lock );
          
@@ -897,7 +897,7 @@ void* replica_main( void* arg ) {
          pthread_mutex_unlock( &synrp->pending_lock );
       }
       
-      // do we have cancels?
+      // do we have replicas to cancel?
       if( synrp->has_cancels ) {
          pthread_mutex_lock( &synrp->cancel_lock );
          
@@ -924,7 +924,7 @@ void* replica_main( void* arg ) {
          pthread_mutex_unlock( &synrp->cancel_lock );
       }
       
-      // do we have expires?
+      // do we have replicas that have expired (timed out)?
       if( synrp->has_expires ) {
          pthread_mutex_lock( &synrp->expire_lock );
          
@@ -947,6 +947,7 @@ void* replica_main( void* arg ) {
          pthread_mutex_unlock( &synrp->expire_lock );
       }
       
+      // upload data
       rc = replica_multi_upload( synrp );
       
       if( rc != 0 ) {

@@ -4063,6 +4063,10 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, GATEWAY_NAME_KEY );
    }
+   if( conf->gateway_key == NULL ) {
+      rc = -EINVAL;
+      fprintf(stderr, err_fmt, GATEWAY_KEY_KEY );
+   }
    
    if( gateway_type == SYNDICATE_UG ) {
       // UG-specific warnings and errors

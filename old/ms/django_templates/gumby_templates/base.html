@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+
+    {% load ms_extras %}
+    {% load staticfiles %}
+
+    <title>{% block title %}syndicate {% endblock %}</title>
+    
+    <!-- META -->
+    <!-- More to go here. -->
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+
+
+    <!-- CSS -->
+    <link rel="stylesheet" type="text/css" href='{% static "gumby/css/gumby.css" %}'>
+
+    <!-- JQuery -->
+
+        <!-- Grab Google CDN's jQuery, fall back to local if offline -->
+        <!-- 2.0 for modern browsers, 1.10 for .oldie -->
+        <script>
+        var oldieCheck = Boolean(document.getElementsByTagName('html')[0].className.match(/\soldie\s/g));
+        if(!oldieCheck) {
+          document.write('<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.2/jquery.min.js"><\/script>');
+        } else {
+          document.write('<script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.1/jquery.min.js"><\/script>');
+        }
+        </script>
+        <script>
+        if(!window.jQuery) {
+          if(!oldieCheck) {
+            document.write('<script src="{% static 'gumby/js/libs/jquery-2.0.2.min.js' %}"><\/script>');
+          } else {
+            document.write('<script src="{% static 'gumby/js/libs/jquery-1.10.1.min.js' %}"><\/script>');
+          }
+        }
+        </script>
+
+        <!-- mobile jquery... necessary? -->
+        <script src="{% static 'gumby/js/libs/jquery.mobile.custom.min.js' %}"></script>
+
+    <!-- JS -->
+
+        <!-- req -->
+        <script src="{% static 'gumby/js/libs/modernizr-2.6.2.min.js' %}"></script>
+        <script src="{% static 'gumby/js/libs/gumby.min.js' %}"></script>
+        <script src="{% static 'gumby/js/libs/gumby.init.js' %}"></script>
+
+        <!-- ui -->
+        <script src="{% static 'gumby/js/libs/ui/gumby.tabs.js' %}"></script>
+        <script src="{% static 'gumby/js/libs/ui/gumby.navbar.js' %}"></script>
+
+        <!-- Run Gumby + user plugins -->
+        <script src="{% static 'gumby/js/main.js' %}"></script>
+        <script src="{% static 'gumby/js/plugins.js' %}"></script>
+
+    <!-- end JS -->
+</head>
+
+<body>
+    <!-- Not footer! Hahahaha...ha. Row sets across and down save footer. Big box basically. -->
+    <div class="hander">
+
+        <!-- Main Navigation Bar -->
+
+            <nav class="navbar pretty">
+                <div class="row">
+                    <ul>
+                        <!--<li class="logospacer"></li> Pushes logo right -->
+                        <li><a href="{% url 'home' %}" class='syn'>syndicate</a></li>
+                        <li class='spacer'></li> <!-- Pushes logout right -->
+                        <li>
+                            <div class="btn small pretty logout"><a href="{% url 'logout' %}">Logout</a></div>
+                        </li>
+                    </ul>
+                </div>
+                <!-- Username/info strip beneath header -->
+                <div class="strip">
+                    <div class="row">
+                            <ul>
+                                <li class="top-label username">{{username}}</li>
+                                <ul class="arrow">
+                                    <li class="arrow btn pretty small"><i class="icon-right-open"></i></li>
+                                </ul>
+                                <li class="top-label home old-active">Home</li>
+                                <li class="top-label myvolumes">My Volumes</li>
+                                <li class="top-label storage">Storage Backends</li>
+                                <li class="top-label datasets">Public Datasets</li>
+                            <!-- Info labels -->
+                            {% for label in labels %}
+                                <ul class="arrow">
+                                    <li class="arrow btn pretty small"><i class="icon-right-open"></i></li>
+                                </ul>
+                                <li class="top-label">{{label}}</li>
+                            {% empty %}
+                                <!--<ul class="arrow">
+                                    <li class="arrow btn pretty small"><i class="icon-right-open"></i></li>
+                                </ul>-->
+                            {% endfor %}
+                    </div>
+                </div>
+            </nav>
+
+        <div class="subnavbar">
+         
+            <div class="row">
+
+                <div class="twelve columns">
+                    <section class="tabs vertical">
+
+                        <!-- Tab headers -->
+                        <ul class="tab-nav one column">
+                            <li class="top-tab home active"><a class="tab-button" href="#"><i class='icon-home'></i></a></li>
+                            <li class="myvolumes"><a class="tab-button" href="#"><i class='icon-folder'></i></a></li>
+                            <li class="storage"><a class="tab-button" href="#"><i class='icon-database'></i></a></li>
+                            <li class="bottom-tab datasets"><a class="tab-button" href="#"><i class='icon-archive'></i></a></li>
+                            {% comment %}<!--
+                            <li><a href="{% url "'myvolumes'" %}"><i></i></a></li>
+                            <li><a href="{% url "'rg_gateways'" %}"><i></i></a></li>
+                            <li><a href="{% url "'allvolumes'" %}"><i></i></a></li>
+                            -->{% endcomment %}
+                        </ul>
+
+                        <!-- Main console -->
+                        <div class="tab-content eleven columns home active">
+                            <div class="eleven columns">
+                                <h3>Dashboard</h3>
+                                <hr>
+                                {% block header %}
+                                    <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod
+                                    tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+                                    quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo
+                                    consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse
+                                    cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non
+                                    proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+                                {% endblock header %}
+                                {% block mainbody %}
+                                
+                                {% endblock mainbody %}
+                            </div>
+                        </div>
+                        <div class="tab-content eleven columns myvolumes">
+                            <div class="eleven columns">
+                                <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod
+                                tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+                                quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo
+                                consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse
+                                cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non
+                                proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+                            </div>
+                        </div>
+                        <div class="tab-content eleven columns rgs">
+                            <div class="eleven columns">
+                                <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod
+                                tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+                                quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo
+                                consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse
+                                cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non
+                                proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+                            </div>
+                        </div>
+                        <div class="tab-content eleven columns allvolumes">
+                            <div class="eleven columns">
+                                <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod
+                                tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+                                quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo
+                                consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse
+                                cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non
+                                proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+                            </div>
+                        </div>
+
+                    </section>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Footer, sticky. -->
+        <div class="push"></div>
+    </div>
+    <div class="footer">
+        <div class="row">
+            {% block footer %}
+            <p>Footer</p>
+            {% endblock footer %}
+        </div>  
+    </div>
+
+
+</body>
+</html>

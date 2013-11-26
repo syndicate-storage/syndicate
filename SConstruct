@@ -25,6 +25,7 @@ CPPPATH = [
 CPPFLAGS = "-g -Wall"
 
 # parse options
+devel = False
 for key, value in ARGLIST:
    if key == "DESTDIR":
       install_prefix = value
@@ -33,6 +34,7 @@ for key, value in ARGLIST:
    if key == "devel":
       if value == "true":
          CPPFLAGS += " -D_DEVELOPMENT"
+         devel = True
 
 # install directories
 bin_install_dir = os.path.join( install_prefix, "bin" )
@@ -46,7 +48,8 @@ env = Environment(
    CPPFLAGS = Split(CPPFLAGS),
    CPPPATH = CPPPATH,
    toolpath = ['build/tools'],
-   tools = ['default', 'protoc']
+   tools = ['default', 'protoc'],
+   devel = devel
 )
 
 common.setup_env( env )
@@ -118,8 +121,12 @@ if "AG/watchdog-daemon" in COMMAND_LINE_TARGETS:
 
 # ms build
 ms_out = "build/out/ms"
-ms = SConscript( "ms/SConscript", variant_dir=ms_out )
+ms, client_libs, client_bin = SConscript( "ms/SConscript", variant_dir=ms_out )
 env.Depends( ms, protobuf_py_files )  # ms requires Python protobufs to be built first
+env.Depends( client_libs, ms )
+env.Depends( client_bin, ms )
+
+env.Alias( "ms-tools", [client_libs, client_bin] )
 
 # replica_manager build
 rm_out = "build/out/replica_manager"

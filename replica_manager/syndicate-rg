@@ -1,0 +1,22 @@
+#!/usr/bin/env python 
+
+# Copyright 2013 The Trustees of Princeton University
+# All Rights Reserved
+
+
+import sys
+import os
+import rm_common
+import rm_config
+import rm_server
+import rm_main
+
+log = rm_common.log
+      
+if __name__ == "__main__":
+   optparser = rm_main.build_parser( sys.argv[0] )
+   opts = rm_main.validate_args( optparser )
+   
+   # fork, become a watchdog, and run the main server
+   child_pid = os.fork()
+   

@@ -18,11 +18,11 @@ import protobufs.serialization_pb2 as serialization_pb2
 from storage import storage
 import storage.storagetypes as storagetypes
 
-import api
+import common.api as api
 from entry import MSEntry
 from volume import Volume
 from gateway import *
-from msconfig import *
+from common.msconfig import *
 
 import errno
 import logging
@@ -33,7 +33,7 @@ import urllib
 import time
 import cgi
 import datetime
-import rpc.jsonrpc
+import common.jsonrpc as jsonrpc
 
 from openid.gaeopenid import GAEOpenIDRequestHandler
 from openid.consumer import consumer
@@ -116,16 +116,18 @@ def response_load_volume( volume_name_or_id ):
    if volume_id > 0:
       volume = storage.read_volume( volume_id )
    else:
-      volume = storage.get_volume_by_name( volume_name_or_id )
+      volume = storage.read_volume_by_name( volume_name_or_id )
 
    volume_read_time = storagetypes.get_time() - volume_read_start
 
    if volume == None:
       # no volume
+      response_volume_error( self, 404 )
       return (None, 404, None)
 
    if not volume.active:
       # inactive volume
+      response_volume_error( self, 503 )
       return (None, 503, None)
 
    return (volume, 200, volume_read_time)
@@ -195,14 +197,14 @@ def response_load_gateway( request_handler ):
 
    if gateway_type_str == None or g_id == None or password == None:
       response_user_error( request_handler, 401 )
-      return (None, None, None)
+      return (None, 401, None)
 
    # look up the requesting gateway
    gateway, status, gateway_read_time = response_load_gateway_by_type_and_id( gateway_type_str, g_id )
 
    if status != 200:
       response_user_error( request_handler, status )
-      return (None, None, None)
+      return (None, status, None)
 
    # make sure this gateway is legit, if needed
    valid_gateway = gateway.authenticate_session( password )
@@ -211,7 +213,7 @@ def response_load_gateway( request_handler ):
       # invalid credentials
       logging.error("Invalid session credentials")
       response_user_error( request_handler, 403 )
-      return (None, None, None)
+      return (None, 403, None)
 
    return (gateway, status, gateway_read_time)
    
@@ -226,7 +228,6 @@ def response_begin( request_handler, volume_name_or_id ):
    volume, status, volume_read_time = response_load_volume( volume_name_or_id )
 
    if status != 200:
-      response_volume_error( request_handler, status )
       return (None, None, None)
 
    gateway_read_time = 0
@@ -236,7 +237,7 @@ def response_begin( request_handler, volume_name_or_id ):
       # authenticate the gateway
       gateway, status, gateway_read_time = response_load_gateway( request_handler )
 
-      if status != 200:
+      if status != 200 or gateway == None:
          return (None, None, None)
       
    # make sure this gateway is allowed to access this Volume
@@ -317,7 +318,6 @@ class MSCertManifestRequestHandler( webapp2.RequestHandler ):
       volume, status, _ = response_load_volume( volume_id_str )
 
       if status != 200:
-         response_volume_error( self, status )
          return
       
       # check version
@@ -330,7 +330,7 @@ class MSCertManifestRequestHandler( webapp2.RequestHandler ):
       # build the manifest
       manifest = serialization_pb2.ManifestMsg()
       
-      volume.protobuf_gateway_cert_manifest( manifest, [UserGateway, ReplicaGateway, AcquisitionGateway] )
+      volume.protobuf_gateway_cert_manifest( manifest )
       
       data = manifest.SerializeToString()
       
@@ -344,13 +344,11 @@ class MSCertRequestHandler( webapp2.RequestHandler ):
    Certificate bundle request handler.
    """
    
-   def get( self, volume_id_str, volume_cert_version_str, gateway_type_str, gateway_id_str, gateway_cert_version_str ):
-      gateway_id = 0
+   def get( self, volume_id_str, volume_cert_version_str, gateway_type_str, gateway_name_or_id, gateway_cert_version_str ):
       volume_cert_version = 0
       gateway_cert_version = 0
       
       try:
-         gateway_id = int( gateway_id_str )
          gateway_cert_version = int( gateway_cert_version_str )
          volume_cert_version = int( volume_cert_version_str )
       except:
@@ -361,28 +359,27 @@ class MSCertRequestHandler( webapp2.RequestHandler ):
       # get the Volume
       volume, status, _ = response_load_volume( volume_id_str )
 
-      if status != 200:
-         response_volume_error( self, status )
+      if status != 200 or volume == None:
          return
-
-      # request the gateway
-      gateway = None
-      if gateway_type_str == "UG":
-         gateway = storage.read_user_gateway( gateway_id )
-      elif gateway_type_str == "RG":
-         gateway = storage.read_replica_gateway( gateway_id )
-      elif gateway_type_str == "AG":
-         gateway = storage.read_acquisition_gateway( gateway_id )
-      else:
+      
+      # get the gateway
+      if gateway_type_str not in ["UG", "RG", "AG"]:
          logging.error("Invalid gateway type '%s'" % gateway_type_str )
          response_user_error( self, 401 )
          return
          
+      gateway = storage.read_gateway( gateway_name_or_id )
       if gateway == None:
-         logging.error("No such %s named %s" % (gateway_type_str, gateway_name))
+         logging.error("No such Gateway named %s" % (gateway_name_or_id))
          response_user_error( self, 404 )
          return
-     
+      
+      for type_str, type_id in zip( ["UG", "RG", "AG"], [GATEWAY_TYPE_UG, GATEWAY_TYPE_RG, GATEWAY_TYPE_AG] ):
+         if gateway_type_str == type_str and gateway.gateway_type != type_id:
+            logging.error("No such %s named %s" % (gateway_type_str, gateway_name_or_id))
+            response_user_error( self, 404 )
+            return
+      
       # request only the right version
       if volume_cert_version != volume.cert_version or gateway_cert_version != gateway.cert_version:
          hdr = "%s/CERT/%s/%s/%s/%s/%s" % (MS_URL, volume_id_str, volume.cert_version, gateway_type_str, gateway_id_str, gateway.cert_version)
@@ -412,26 +409,27 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
    def load_objects( self, gateway_type_str, gateway_name, username ):
 
       # get the gateway
-      gateway = None
-      if gateway_type_str == "UG":
-         gateway = storage.get_user_gateway_by_name( gateway_name )
-      elif gateway_type_str == "RG":
-         gateway = storage.get_replica_gateway_by_name( gateway_name )
-      elif gateway_type_str == "AG":
-         gateway = storage.get_acquisition_gateway_by_name( gateway_name )
-      else:
+      if gateway_type_str not in ["UG", "RG", "AG"]:
          logging.error("Invalid gateway type '%s'" % gateway_type_str )
          response_user_error( self, 401 )
          return (None, None)
          
+         
+      gateway = storage.read_gateway( gateway_name )
       if gateway == None:
-         logging.error("No such %s named %s" % (gateway_type_str, gateway_name))
+         logging.error("No such Gateway named %s" % (gateway_name))
          response_user_error( self, 404 )
          return (None, None)
+      
+      for type_str, type_id in zip( ["UG", "RG", "AG"], [GATEWAY_TYPE_UG, GATEWAY_TYPE_RG, GATEWAY_TYPE_AG] ):
+         if gateway_type_str == type_str and gateway.gateway_type != type_id:
+            logging.error("No such %s named %s" % (gateway_type_str, gateway_name))
+            response_user_error( self, 404 )
+            return (None, None)
 
       user = storage.read_user( username )
       if user == None:
-         logging.error("storage.read_user returned None")
+         logging.error("No such user '%s'" % username)
          response_user_error( self, 401 )
          return (None, None)
 
@@ -465,16 +463,6 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          return
 
       if operation == "begin":
-
-         # load the public key
-         if not "syndicatepubkey" in self.request.POST:
-            response_user_error( self, 400 )
-            return
-
-         pubkey = self.request.POST.get("syndicatepubkey")
-         if pubkey == None:
-            response_user_error( self, 400 )
-            return
          
          # begin the OpenID authentication
          try:
@@ -489,10 +477,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          if rc != 0:
             response_server_error( self, 500, "OpenID error %s" % rc )
             return
-
-         # preserve the public key
-         session['syndicatepubkey'] = pubkey
-
+         
          # reply with the redirect URL
          trust_root = OPENID_HOST_URL
          return_to = self.buildURL( "/REGISTER/%s/%s/%s/complete" % (gateway_type_str, gateway_name, username) )
@@ -518,14 +503,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          return
 
       elif operation == "complete":
-
-         # get our saved pubkey
-         pubkey = session.get('syndicatepubkey')
-         if pubkey == None:
-            logging.error("could not load public key")
-            response_user_error( self, 400 )
-            return
-
+         
          # complete the authentication
          info, _, _ = self.complete_openid_auth()
          if info.status != consumer.SUCCESS:
@@ -533,20 +511,9 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
             response_user_error( self, 401 )
             return
          
-         new_cert = True
          
-         # attempt to load it into the gateway
-         rc = gateway.load_pubkey( pubkey )
-         if rc != 0 and rc != -errno.EEXIST:
-            logging.error("invalid public key (rc = %d)" % rc)
-            response_user_error( self, 400 )
-            return
-         
-         if rc == -errno.EEXIST:
-            # no need to update the certificate
-            new_cert = False
-            
          # generate a session password
+         # TODO: lock this operation, so we put the gateway and generate the password atomically?
          session_pass = gateway.regenerate_session_password()
          gateway_fut = gateway.put_async()
          futs = [gateway_fut]
@@ -559,26 +526,19 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          gateway.protobuf_cert( registration_metadata.cert )
          
          # find all Volumes
-         volume = storage.get_volume( gateway.volume_id )
+         volume = storage.read_volume( gateway.volume_id )
          
          if volume == None:
             response_user_error( self, 404 )
             return 
          
-         roots = storage.get_volume_roots( [volume] )
+         root = storage.get_volume_root( volume )
          
-         if roots == None or len(roots) == 0:
+         if root == None:
             response_user_error( self, 404 )
             return
 
-         if new_cert:
-            # next cert version (NOTE: this version increment does not need to be atomic; the version just needs to increase)
-            volume.cert_version += 1
-            
-            vol_fut = volume.put_async()
-            futs.append( vol_fut )
-         
-         self.protobuf_volume( registration_metadata.volume, volume, roots[0] )
+         self.protobuf_volume( registration_metadata.volume, volume, root )
 
          data = registration_metadata.SerializeToString()
 
@@ -628,7 +588,7 @@ class MSFileReadHandler(webapp2.RequestHandler):
          response_user_error( self, 403 )
          return
       
-      # this gateway must have METADATA_READ caps
+      # this gateway must be allowed to read metadata
       if gateway != None and not gateway.check_caps( GATEWAY_CAP_READ_METADATA ):
          response_user_error( self, 403 )
          return 
@@ -748,6 +708,11 @@ class MSFileWriteHandler(webapp2.RequestHandler):
          if update.type not in [ms_pb2.ms_update.CREATE, ms_pb2.ms_update.UPDATE, ms_pb2.ms_update.DELETE, ms_pb2.ms_update.CHOWN, ms_pb2.ms_update.RENAME]:
             # nope
             response_end( self, 501, "Method not supported", "text/plain", None )
+            return
+         
+         # if the gateway sent an UPDATE, it must be allowed to write data
+         if update.type in [ms_pb2.ms_update.UPDATE] and not gateway.check_caps( GATEWAY_CAP_WRITE_DATA ):
+            response_user_error( self, 403 )
             return
          
          # if the gateway sent a CHOWN request, it must have that capability
@@ -932,11 +897,13 @@ class MSJSONRPCHandler(webapp2.RequestHandler):
    
    def post( self ):
       # pass on to JSON RPC server
-      server = rpc.jsonrpc.Server( api.API( self.request.headers ) )
-      server.handle( self.request, self.response )
+      json_text = self.request.body
+      server = jsonrpc.Server( api.API(), JSON_MS_API_VERSION, signer=api.API.signer, verifier=api.API.verifier )
+      server.handle( json_text, self.response )
    
    def get( self ):
       # pass on to JSON RPC server
-      server = rpc.jsonrpc.Server( api.API( self.request.headers ) )
-      server.handle( self.request, self.response )
+      json_text = self.request.body
+      server = jsonrpc.Server( api.API(), JSON_MS_API_VERSION, signer=api.API.signer, verifier=api.API.verifier )
+      server.handle( json_text, self.response )
    

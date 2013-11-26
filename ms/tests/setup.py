@@ -717,10 +717,10 @@ nodes = [
 # hard-coded whitelist of users
 users = [
    "jcnelson@cs.princeton.edu",
-   "muneeb@cs.princeton.edu",
-   "wathsala@princeton.edu",
-   "jlwhelch@princeton.edu",
-   "iychoi@email.arizona.edu"
+   #"muneeb@cs.princeton.edu",
+   #"wathsala@princeton.edu",
+   #"jlwhelch@princeton.edu",
+   #"iychoi@email.arizona.edu"
 ]
 
 
@@ -1445,7 +1445,23 @@ fH7Sqhb+85q3Jzq1RIAObveFALyYpbB6aztkmWBw0irD0R0h+tHABeqNgChM
 """
    }
 ]
-   
+
+USER_PUBLIC_KEY = """
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA4PdsHO21NSZxAKq24R/Z
+TaCy4bg9SvADpdnHkj7cxsCQi4A1SDHK9Cd65nje125eLJ4DC7nP4NtEHVzUgbX1
+6InpHgx897IKD7dcftxsDolCpQgR/pGIYi+hI/SlRVuFIk4Z/BjbtQSabp73TrLj
+n8n5mIH0m1jm7XUWcT6qCMvDSjFgMBX6BGZdM8iS7zCkvLsuaJY9WdSCqV2q9vgY
++aePQ+5VbSrnMDqsVwK1m8zfsUah9d1og2KdA3N0O1qKIz/zeNypjb+6xhzyrRIt
+ZTP8wQiOry25YvmSILL1eklspSfS8eJm6qTdRAX0TWmZ2PQcnQcGtToC5ma6v+it
+Xb0LqSmxty7LmIHI5x8gb5XOm1r28m5UR5fQqXqanfXgXZT6ZPikEkzylx2n35V5
+GkkqXNcU8nPsxp4x35vrUMs5LdQ+ixEHiqxL2NRBXHYRw+DIYDmBybY0VD8YN4fm
+7bkBvdGk4AKT0gBLM3sQSI6dPZyawCDjhd1y4tsXonAox91tprikh+xqqLzYMeKS
+ed/ZV0q8wzJKfPTBkFdQYAJPVT2+Vv8TDLWzwua1QaQOI1BtP2wegStlOJWTs/4S
+BusItZjRV9G9wooRI4tT/Q8yOuD6GEVOO+L9ZSrBAj3QQlF4MyemOsw7spdRylDr
+rm2JREPm40kd9kx4MY1JHqsCAwEAAQ==
+-----END PUBLIC KEY-----
+"""
 
 DEFAULT_USERNAME=users[0]
 
@@ -1755,7 +1771,7 @@ def test( ignore1, args ):
       now_sec, now_nsec = storage.clock_gettime()
 
       # create a root, with some sane defaults
-      rc = storage.make_root( volume, user.owner_id )
+      rc = storage.make_root( user.owner_id, volume )
                               
 
    
@@ -1766,8 +1782,7 @@ def test( ignore1, args ):
       # create users and make them all volumes
       for i, user_email in enumerate(users):
          try:
-            user_key = storage.create_user( email=user_email, openid_url="https://vicci.org/id/%s" % user_email)
-            user = user_key.get()
+            user = storage.create_user( user_email, "https://vicci.org/id/%s" % user_email, USER_PUBLIC_KEY.strip() )
          except:
             logging.info( "traceback: " + traceback.format_exc() )
             try:
@@ -1784,10 +1799,11 @@ def test( ignore1, args ):
             vol_public_key = volume_keys[i]["public"].strip()
             vol_private_key = volume_keys[i]["private"].strip()
             
-            volume_key = storage.create_volume( user.email, name=test_volume_name, description="%s's test volume" % user_email,
-                                               blocksize=61440, active=False, private=False, owner_id=i+1, volume_secret="abcdef", public_key=vol_public_key, private_key=vol_private_key )
+            volume = storage.create_volume( user.email, 61440, vol_public_key, 
+                                            name=test_volume_name, description="%s's test volume" % user_email,
+                                            active=False, private=False, owner_id=i+1,
+                                            metadata_public_key=vol_public_key, metadata_private_key=vol_private_key )
             
-            volume = volume_key.get()
             volumes.append( volume )
             
             logging.info("update %s" % test_volume_name )
@@ -1797,37 +1813,22 @@ def test( ignore1, args ):
             archive_private_key = volume_archive_keys[i]["private"].strip()
             
             logging.info("create %s" % (test_volume_name + "-archive"))
-            volume_key = storage.create_volume( user.email, name=(test_volume_name + "-archive"), description="%s's archive volume" % user_email,
-                                                blocksize=61440, active=True, private=False, archive=True, owner_id=i+1, volume_secret="abcdef", public_key=archive_public_key, private_key=archive_private_key )
-            archive_volume = volume_key.get()
+            archive_volume  = storage.create_volume( user.email, 61440, vol_public_key,
+                                                     name=(test_volume_name + "-archive"), description="%s's archive volume" % user_email,
+                                                     active=True, private=False, archive=True, owner_id=i+1,
+                                                     metadata_public_key=archive_public_key, metadata_private_key=archive_private_key )
+            
             archive_volumes.append( archive_volume )
             
             
          except:
             logging.info( "traceback: " + traceback.format_exc() )
             try:
-               volume = storage.get_volume_by_name( test_volume_name )
+               volume = storage.read_volume( test_volume_name )
             except:
                logging.info( "traceback: " + traceback.format_exc() )
                return (500, "Failed to read volume '%s'" % test_volume_name)
 
-         # assign volume to user
-         if volume.volume_id not in user.volumes_o:
-            user.volumes_o.append( volume.volume_id )
-            user.put()
-         if volume.volume_id not in user.volumes_rw:
-            user.volumes_rw.append( volume.volume_id )
-            user.put()
-            
-         if archive_volume.volume_id not in user.volumes_o:
-            user.volumes_o.append( archive_volume.volume_id )
-            user.put()
-         if archive_volume.volume_id not in user.volumes_rw:
-            user.volumes_rw.append( archive_volume.volume_id )
-            user.put()
-
-         # create a root MSEntry, with some sane defaults
-         rc = storage.make_root( volume, user.owner_id )
 
       logging.info("created Volumes %s" % [x.volume_id for x in volumes] )
       logging.info("created Archive Volumes %s" % [x.volume_id for x in archive_volumes] )
@@ -1844,7 +1845,7 @@ def test( ignore1, args ):
             try:
                name = G_name("AG", node) + "-" + str(j) + "-" + str(i)
                port = 12780 + (i * (end_idx - start_idx + 1)) + j
-               gw_key = storage.create_acquisition_gateway(user, archive_volume, ms_username=name, ms_password="sniff", host=node, port=port )
+               gw_key = storage.create_acquisition_gateway(user, archive_volume, name=name, host=node, port=port )
                logging.info("Created AG %s on port %d" % (name, port))
                
             except:
@@ -1865,7 +1866,8 @@ def test( ignore1, args ):
             try:
                name = G_name("RG", node) + "-" + str(j) + "-" + str(i)
                port = 22780 + (i * (end_idx - start_idx + 1)) + j
-               gw_key = storage.create_replica_gateway( user, volume, ms_username=name, ms_password="sniff", host=node, port=port, private=False, config=json_str )
+               gw_key = storage.create_gateway( volume.volume_id, user.email, GATEWAY_TYPE_RG, name=name, host=node, port=port, config=json_str,
+                                                auth_public_key=USER_PUBLIC_KEY.strip(), gateway_public_key=USER_PUBLIC_KEY.strip())
                   
                logging.info("Created RG %s on port %d" % (name, port) )
             except:
@@ -1880,57 +1882,22 @@ def test( ignore1, args ):
          return (500, "Invalid username %s" % username)
 
       volume_name = testvolume_name( user.email )
-      volume = storage.get_volume_by_name( volume_name )
+      volume = storage.read_volume( volume_name )
       
       for i in xrange(start_idx, end_idx):
          node = nodes[i]
          try:
             name = G_name("UG", node) + "-" + str(0) + "-" + str(i)
             port = 32780 + i
-            gw_key = storage.create_user_gateway( user, volume, ms_username=name, ms_password="sniff", host=node, port=port, read_write=True )
+            gw_key = storage.create_gateway( volume.volume_id, user.email, GATEWAY_TYPE_UG, name=name, host=node, port=port,
+                                            caps=(GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_WRITE_METADATA | GATEWAY_CAP_READ_DATA | GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_COORDINATE),
+                                            auth_public_key=USER_PUBLIC_KEY.strip(), gateway_public_key=USER_PUBLIC_KEY.strip() )
                
             logging.info("Created UG %s on port %d" % (name, port))
          except:
             logging.info("traceback: %s" % traceback.format_exc())
             # already exists
             pass
-
-   # UG action?
-   if ug_action:
-      if ug_name == None:
-         return (500, "Missing argument: ug_name")
-
-      user = get_user( username )
-      if user == None:
-         return (500, "Invalid username %s" % username)
-
-      volume_name = testvolume_name( user.email )
-      volume = storage.get_volume_by_name( volume_name )
-
-      if ug_action == "create":
-
-         if ug_host == None:
-               return (500, "Missing argument: ug_host")
-
-         try:
-            storage.create_user_gateway( user, volume, ms_username=ug_name, ms_password="sniff", host=ug_host, port=str(ug_port) )
-         except:
-            return (500, "User gateway '%s' already exists" % ug_name)
-
-            
-      elif ug_action == "delete":
-         try:
-            ug = storage.read_user_gateway( ug_name )
-            if ug.owner_id != user.owner_id:
-               return (403, "User '%s' does not own UG '%s'" % (username, ug_name))
-               
-            storage.delete_user_gateway( ug_name )
-         except:
-            logging.info("traceback: %s" % traceback.format_exc())
-            return (500, "User gateway '%s' does not exist" % ug_name )
-         
-      else:
-         return (500, "ug_action '%s' not supported" % ug_action)
       
             
    return (200, "OK")

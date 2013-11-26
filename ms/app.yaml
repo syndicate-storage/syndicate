@@ -17,13 +17,6 @@ handlers:
   script: cron.app
   login: admin
 
-#- url: /static
-#  static_dir: django_static
-#
-#- url: /syn.*
-#  script: django_syndicate_web.wsgi.application
-#  secure: always
-
 - url: /CERT.*
   script: msapp.app
   secure: optional

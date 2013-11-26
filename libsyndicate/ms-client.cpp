@@ -250,13 +250,8 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
       }
    }
    else {
-      // generate our public/private key pairs
-      rc = ms_client_generate_key( &client->my_key );
-      if( rc != 0 ) {
-         errorf("ms_client_generate_key rc = %d\n", rc );
-         ms_client_unlock( client );
-         return rc;
-      }
+      errorf("%s: Missing public key\n", conf->gateway_name );
+      return -EINVAL;
    }
    
    rc = ms_client_verify_key( client->my_key );
@@ -1913,37 +1908,15 @@ int ms_client_load_openid_reply( ms::ms_openid_provider_reply* oid_reply, char* 
 
 
 // begin the registration process.  Ask to be securely redirected from the MS to the OpenID provider
-// client must be read-locked
-int ms_client_begin_register( EVP_PKEY* my_key, CURL* curl, char const* username, char const* register_url, ms::ms_openid_provider_reply* oid_reply ) {
-
-   // extract our public key bits
-   char* key_bits = NULL;
-   long keylen = ms_client_dump_pubkey( my_key, &key_bits );
-   if( keylen <= 0 ) {
-      errorf("ms_client_load_pubkey rc = %ld\n", keylen );
-      md_openssl_error();
-      return (int)keylen;
-   }
-
-   // Base64 encode the key (which will also be url-encoded)
-   char* key_bits_encoded = NULL;
-   int rc = Base64Encode( key_bits, keylen, &key_bits_encoded );
-   if( rc != 0 ) {
-      errorf("Base64Encode rc = %d\n", rc );
-      free( key_bits );
-      return -EINVAL;
-   }
+int ms_client_begin_register( CURL* curl, char const* username, char const* register_url, ms::ms_openid_provider_reply* oid_reply ) {
 
    // url-encode the username
    char* username_encoded = url_encode( username, strlen(username) );
    
-   free( key_bits );
-
    // post arguments
-   char* post = CALLOC_LIST( char, strlen("syndicatepubkey=") + strlen(key_bits_encoded) + 1 + strlen("openid_username") + 1 + strlen(username_encoded) + 1 );
-   sprintf( post, "openid_username=%s&syndicatepubkey=%s", username_encoded, key_bits_encoded );
+   char* post = CALLOC_LIST( char, strlen("openid_username") + 1 + strlen(username_encoded) + 1 );
+   sprintf( post, "openid_username=%s", username_encoded );
    
-   free( key_bits_encoded );
    free( username_encoded );
 
    response_buffer_t rb;      // will hold the OpenID provider reply
@@ -1957,7 +1930,7 @@ int ms_client_begin_register( EVP_PKEY* my_key, CURL* curl, char const* username
    curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_redirect_header_func );
    curl_easy_setopt( curl, CURLOPT_WRITEHEADER, (void*)&header_rb );
 
-   rc = curl_easy_perform( curl );
+   int rc = curl_easy_perform( curl );
 
    long http_response = 0;
    
@@ -2292,7 +2265,7 @@ int ms_client_gateway_register( struct ms_client* client, char const* gateway_na
    md_init_curl_handle( curl, NULL, client->conf->metadata_connect_timeout );
 
    // get info for the OpenID provider
-   rc = ms_client_begin_register( client->my_key, curl, username, register_url, &oid_reply );
+   rc = ms_client_begin_register( curl, username, register_url, &oid_reply );
 
    free( register_url );
    

@@ -6,7 +6,7 @@ import sys
 import rm_common
 import rm_config
 import rm_server
-import argparser
+import argparse
 import socket
 
 from wsgiref.simple_server import make_server 
@@ -119,7 +119,7 @@ def debug():
    rm_common.syndicate_lib_path( "../libsyndicate/python" )
    
    gateway_name = "RG-t510-0-690"
-   gateway_portnum = 25540
+   gateway_portnum = 24160
    rg_username = "jcnelson@cs.princeton.edu"
    rg_password = "nya!"
    ms_url = "http://localhost:8080/"

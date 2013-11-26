@@ -23,7 +23,7 @@ import collections
 from volume import Volume
 from gateway import Gateway, GATEWAY_CAP_COORDINATE
 
-from msconfig import *
+from common.msconfig import *
 
 MSENTRY_TYPE_FILE = ms_pb2.ms_entry.MS_ENTRY_TYPE_FILE
 MSENTRY_TYPE_DIR = ms_pb2.ms_entry.MS_ENTRY_TYPE_DIR
@@ -635,7 +635,6 @@ class MSEntry( storagetypes.Object ):
       # check for namespace collision
       if nameholder.file_id != child_id or nameholder.parent_id != parent_id or nameholder.volume_id != volume_id or nameholder.name != ent_attrs['name']:
          # nameholder already existed
-         storagetypes.deferred.defer( MSEntry.delete_all, [nameholder.key] )
          return (-errno.EEXIST, None)
       
       # cache parent...
@@ -679,6 +678,48 @@ class MSEntry( storagetypes.Object ):
 
       return (0, child_ent)
 
+
+   @classmethod
+   def MakeRoot( cls, user_owner_id, volume, **root_attrs ):
+      """
+      Create a Volume's root directory.
+      """
+      now_sec, now_nsec = storagetypes.clock_gettime()
+   
+      basic_root_attrs = {
+         "file_id": "0000000000000000",
+         "parent_id": "0000000000000000",
+         "name": "/",
+         "ftype": MSENTRY_TYPE_DIR,
+         "version": 1,
+         "ctime_sec" : now_sec,
+         "ctime_nsec" : now_nsec,
+         "mtime_sec" : now_sec,
+         "mtime_nsec" : now_nsec,
+         "owner_id" : user_owner_id,
+         "coordinator_id": 0,
+         "volume_id" : volume.volume_id,
+         "mode" : 0775,
+         "size": 4096,
+         "max_read_freshness" : 5000,
+         "max_write_freshness" : 0
+      }
+
+      basic_root_attrs.update( **root_attrs )
+      
+      root = MSEntry( key=storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume.volume_id, basic_root_attrs['file_id'] ) ) )
+      
+      root.populate( volume.num_shards, **basic_root_attrs )
+
+      root.update_dir_shard( volume.num_shards, volume.volume_id, basic_root_attrs['file_id'], **basic_root_attrs )
+
+      root_fut = root.put_async()
+      root_shard_fut = root.put_shard_async()
+      root_nameholder_fut = MSEntryNameHolder.create_async( volume.volume_id, basic_root_attrs['parent_id'], basic_root_attrs['file_id'], basic_root_attrs['name'] )
+      
+      storagetypes.wait_futures( [root_fut, root_shard_fut, root_nameholder_fut] )
+
+      return 0
 
    @classmethod
    @storagetypes.concurrent
@@ -1025,6 +1066,13 @@ class MSEntry( storagetypes.Object ):
       if dest_delete_fut != None:
          futs.append( dest_delete_fut )
       
+      # remove src's old nameholder
+      old_nameholder_key = storagetypes.make_key( MSEntryNameHolder, MSEntryNameHolder.make_key_name( volume_id, src_parent_id, src_name ) )
+      storagetypes.deferred.defer( MSEntry.delete_all, [old_nameholder_key] )
+      
+      # wait for the operation to complete
+      storagetypes.wait_futures( futs )
+      
       # clean up cache
       cache_delete = [
          MSEntry.cache_key_name( volume_id, src_parent_id ),
@@ -1036,13 +1084,6 @@ class MSEntry( storagetypes.Object ):
       ]
       
       storagetypes.memcache.delete_multi( cache_delete );
-      
-      # remove src's old nameholder
-      old_nameholder_key = storagetypes.make_key( MSEntryNameHolder, MSEntryNameHolder.make_key_name( volume_id, src_parent_id, src_name ) )
-      storagetypes.deferred.defer( MSEntry.delete_all, [old_nameholder_key] )
-      
-      # wait for the operation to complete
-      storagetypes.wait_futures( futs )
       
       return 0
       
@@ -1226,6 +1267,36 @@ class MSEntry( storagetypes.Object ):
 
 
    @classmethod
+   def DeleteAll( cls, volume ):
+      """
+      Obliterate all MSEntry records in this Volume.
+      """
+      
+      # caller must own the root
+      root_file_id = MSEntry.unserialize_id(0)
+      
+      root_ent = MSEntry.Read( volume, root_file_id )
+      if root_ent == None:
+         # done here
+         return 0
+      
+      # stop further creation
+      root_ent.deleted = True
+      root_ent.put()
+      
+      cached_root_key_name = MSEntry.cache_key_name( volume.volume_id, root_file_id )
+      storagetypes.memcache.delete( cached_root_key_name )
+      
+      
+      def __delete_mapper( ent ):
+         storagetypes.deferred.defer( MSEntry.delete_all, [ent.key] )
+      
+      MSEntry.ListAll( {"MSEntry.volume_id ==": volume.volume_id}, map_func=__delete_mapper )
+      return 0
+      
+   
+
+   @classmethod
    @storagetypes.concurrent
    def __read_msentry_key_mapper( cls, volume_id, file_id, num_shards ):
       msentry, shards = yield MSEntry.__read_msentry_base( volume_id, file_id ), MSEntry.__read_msentry_shards( volume_id, file_id, num_shards )
@@ -1240,7 +1311,7 @@ class MSEntry( storagetypes.Object ):
 
 
    @classmethod
-   def ListAll( cls, volume, file_id, owner_id=None, file_ids_only=False, no_check_memcache=False ):
+   def ListDir( cls, volume, file_id, owner_id=None, file_ids_only=False, no_check_memcache=False ):
       """
       Find all entries that are immediate children of this one.
       """

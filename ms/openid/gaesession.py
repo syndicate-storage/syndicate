@@ -13,7 +13,6 @@ import time
 
 from google.appengine.api import memcache
 from google.appengine.ext import db
-from django_syndicate_web.wsgi import application as django_app
 
 # Configurable cookie options
 COOKIE_NAME_PREFIX = "DgU"  # identifies a cookie as being one used by gae-sessions (so you can set cookies too)
