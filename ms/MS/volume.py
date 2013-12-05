@@ -228,7 +228,9 @@ class Volume( storagetypes.Object ):
    
    default_gateway_caps = storagetypes.Integer( default=0, indexed=False )
 
-
+   # for RPC
+   key_type = "volume"
+   
    @classmethod
    def generate_metadata_keys( cls ):
       """
@@ -455,7 +457,7 @@ class Volume( storagetypes.Object ):
       if not self.private:
          return True
 
-      return gateway.is_in_volume( self )
+      return gateway.volume_id == self.volume_id
 
 
    def sign_message( self, data ):
@@ -584,7 +586,7 @@ class Volume( storagetypes.Object ):
       volume_name_or_id -- name or ID of the Volume to get (str or int)
       
       Keyword arguments:
-      async             -- If true, return a Future for the Volume (bool)
+      async             -- If True, return a Future for the Volume (bool)
       use_memcache      -- If True, check memcache for the Volume, and if async is false, cache the results.
       """
       
@@ -614,17 +616,18 @@ class Volume( storagetypes.Object ):
          if volume != None and use_memcache and not volume.deleted:
             storagetypes.memcache.set( volume_key_name, volume )
 
-      elif async:
-         if volume.deleted:
-            volume = storagetypes.FutureWrapper(None)
+      if async:
+         if not volume or volume.deleted:
+            return storagetypes.FutureWrapper(None)
          else:
-            volume = storagetypes.FutureWrapper( volume )
+            return storagetypes.FutureWrapper( volume )
       
-      if not async:
+      else:
          if volume and volume.deleted:
             return None
          
-      return volume
+         else:
+            return volume
 
 
    @classmethod
@@ -678,9 +681,8 @@ class Volume( storagetypes.Object ):
       else:
          vol = None
 
-      if not async:
-         if vol and vol.deleted:
-            return None
+      if vol and vol.deleted:
+         return None
          
       return vol
             

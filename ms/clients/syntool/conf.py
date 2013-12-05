@@ -11,23 +11,19 @@ import syndicate.log
 import os
 import argparse
 import sys
+import StringIO
 import traceback
 
 import common.api as api
+import common.object_stub as object_stub
 
 log = syndicate.log.log
 
 CONFIG_DIR = os.path.expanduser( "~/.syndicate" )
 CONFIG_FILENAME = os.path.join(CONFIG_DIR, "syndicate.conf")
 
-KEY_TYPES = api.KEY_TYPES
-
-#NOTE:  matched to the above listing
-KEY_DIR_NAMES = {
-   "gateway": "gateway_keys",
-   "volume": "volume_keys",
-   "user": "user_keys"
-}
+# map key type to the object's key directory
+KEY_DIR_NAMES = dict( [(key_type, object_cls.key_dir) for (key_type, object_cls) in api.KEY_TYPE_TO_CLS.items()] )
 
 CONFIG_OPTIONS = {
    "MSAPI":             ("-M", 1, "URL to your Syndicate MS's API handler (e.g. https://www.foo.com/api)."),
@@ -37,10 +33,8 @@ CONFIG_OPTIONS = {
    "user_keys":         ("-k", 1, "Path to the directory where you store your User's signing and verifying keys."),
    "config":            ("-c", 1, "Path to your config file (default is %s)." % CONFIG_FILENAME),
    "trust_verify_key":  ("-t", 0, "Automatically trust an object's public verification key in a reply from the MS."),
-   "params":            (None, "+", "Method name, followed by parameters (positional and keyword supported).")
+   "params":            (None, "+", "Method name, followed by parameters (positional and keyword supported)."),
 }
-
-KEY_DIRS = ['signing', 'verifying']
 
 # -------------------
 def is_method( method_name ):
@@ -173,20 +167,6 @@ def build_parser( progname ):
    return parser
 
 # -------------------
-def verify_key_directory( directory_base, key_dirs ):
-   for key_dir in key_dirs:
-      key_path = os.path.join( directory_base, key_dir )
-      if not os.path.exists( key_path ):
-         log.error("Directory '%s' does not exist" % key_path )
-         return False
-      
-      if not os.path.isdir( key_path ):
-         log.error("File '%s' is not a directory" % key_path )
-         return False
-      
-   return True
-
-# -------------------
 def object_signing_key_filename( config, key_type, object_id ):
    key_dir = config.get( KEY_DIR_NAMES.get( key_type, None ) )
    if key_dir == None:
@@ -201,20 +181,65 @@ def object_verify_key_filename( config, key_type, object_id ):
    return os.path.join( os.path.join( key_dir, "verifying"), str(object_id) + ".pub" )   
 
 # -------------------
-def load_config_file( conf_filename ):
+def parse_args( method_name, args, kw ):
+   method = get_method( method_name )
+   try:
+      if method.parse_args:
+         args, kw, extras = method.parse_args( method.argspec, args, kw )
+         return args, kw, extras
+      else:
+         return args, kw, {}
+   except Exception, e:
+      traceback.print_exc()
+      raise Exception("Failed to parse method arguments")
+      
+# -------------------
+def validate_args( method_name, args, kw ):
+   method = get_method( method_name )
+   
+   arg_len = len(method.argspec.args)
+   def_len = 0
+   
+   if method.argspec.defaults is not None:
+      def_len = len(method.argspec.defaults)
+   
+   if len(args) != arg_len - def_len:
+      raise Exception("Method '%s' expects %s arguments; got %s" % (method_name, arg_len - def_len, len(args)))
+   
+   return True
+
+
+# -------------------
+def extend_paths( config, base_dir ):
+   # extend all paths
+   for (_, keydir) in KEY_DIR_NAMES.items():
+      path = config.get( keydir, None )
+      if path == None:
+         raise Exception("Missing key directory: %s" % keydir)
+      
+      if not os.path.isabs( path ):
+         # not absolute, so append with base dir 
+         path = os.path.join( base_dir, path )
+         config[keydir] = path
+
+
+# -------------------
+def load_config( config_path, config_str, opts ):
    
    config = ConfigParser.SafeConfigParser()
+   config_fd = StringIO.StringIO( config_str )
+   config_fd.seek( 0 )
    
    try:
-      config.read( conf_filename )
+      config.readfp( config_fd )
    except Exception, e:
       log.exception( e )
       return None
    
    # verify that all attributes are given
    missing = []
-   opts = config.options("syndicate")
-   for opt in opts:
+   config_opts = config.options("syndicate")
+   for opt in config_opts:
       if config.get("syndicate", opt) == None:
          missing.append( opt )
          
@@ -222,43 +247,11 @@ def load_config_file( conf_filename ):
       log.error("Missing options: %s" % (",".join(missing)) )
       return None
    
-   conf_dir = os.path.dirname( conf_filename )
-   
-   # extend all paths
-   for (_, keydir) in KEY_DIR_NAMES.items():
-      path = config.get( "syndicate", keydir )
-      if not os.path.isabs( path ):
-         # not absolute, so append with config dir 
-         path = os.path.join( conf_dir, path )
-         config.set( "syndicate", keydir, path )
-   
-   for (_, keydir) in KEY_DIR_NAMES.items():
-      rc = verify_key_directory( config.get("syndicate", keydir), KEY_DIRS )
-      
-      if not rc:
-         return None
-   
-   return config
-
-# -------------------
-def load_options( argv ):
-   global CONFIG_OPTIONS, CONFIG_FILENAME
-   
-   parser = build_parser( argv[0] )
-   opts = parser.parse_args( argv[1:] )
-   
-   # load everything into a dictionary
    ret = {}
-   config = None 
-   
    ret["_in_argv"] = []
    ret["_in_config"] = []
    
-   if hasattr( opts, "config" ) and opts.config != None:
-      config = load_config_file( opts.config )
-   else:
-      config = load_config_file( CONFIG_FILENAME )
-   
+   # convert to dictionary, merging in argv opts
    for arg_opt in CONFIG_OPTIONS.keys():
       if hasattr(opts, arg_opt) and getattr(opts, arg_opt) != None:
          ret[arg_opt] = getattr(opts, arg_opt)
@@ -273,7 +266,10 @@ def load_options( argv ):
          ret[arg_opt] = config.get("syndicate", arg_opt)
          
          ret["_in_config"].append( arg_opt )
-      
+         
+   conf_dir = os.path.dirname( config_path )
+   extend_paths( ret, conf_dir )
+   
    return ret
 
    

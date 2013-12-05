@@ -75,6 +75,7 @@ def extract_syndicate_json( json_data, api_version ):
 
 # ----------------------------------
 def json_stable_serialize( json_data ):
+   # convert a dict into json, ensuring that key-values are serialized in a stable order
    if isinstance( json_data, list ) or isinstance( json_data, tuple ):
       json_serialized_list = []
       for json_element in json_data:

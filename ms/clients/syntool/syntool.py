@@ -29,20 +29,9 @@ from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 import pprint 
 
-CONFIG = None
-
-# the private and public keys we're using to sign and verify requests
-SIGNING_PKEY = None
-VERIFYING_PUBKEY = None
-
-# the object we're processing
-OBJECT_SIGNING_KEY_NAME = None
-OBJECT_SIGNING_KEY_TYPE = None
-
-FORCE_USER_KEY_NAME = None
-
 log = Log.log
 
+TRUST_VERIFY_KEY = False 
 
 # -------------------
 def verify_key_from_method_result( method_result ):
@@ -97,31 +86,53 @@ The public key is:
    else:
       return False
    
+   
+# -------------------
+def prompt_revoke_signing_key( key_type, key_name ):
+   print """
+WARNING! REVOKING A %s PRIVATE SIGNING KEY CANNOT BE UNDONE!
+
+Once revoked, you will no longer be able to access this %s
+without administrator privileges.  This includes deleting
+it, reading it, and changing its public signing key.
+
+""" % (key_type.upper(), key_type)
+
+   prompt = "Revoke the private signing key for %s? (Y/n): " % key_name
+   while True:
+      trust = raw_input(prompt)
+      if trust not in ['Y', 'y', 'N', 'n']:
+         prompt = "Please enter 'Y' or 'N': "
+         continue
+      
+      break
+   
+   if trust in ['Y', 'y']:
+      return True 
+   else:
+      return False
+   
 
 # -------------------
-def api_call_signer( method_name, data ):
+def api_call_signer( signing_pkey, method_name, data ):
    """
    Sign an RPC call.
    """
-   global SIGNING_PKEY
-   
-   pkey = SIGNING_PKEY
    
    # sign the data
    h = HashAlg.new( data )
-   signer = CryptoSigner.new( pkey )
+   signer = CryptoSigner.new( signing_pkey )
    signature = signer.sign( h )
    
    return signature 
 
 
 # -------------------
-def ask_trust_verify_key( method_result, method_name, args, kw ):
-   global CONFIG 
+def ask_trust_verify_key( config, method_result, method_name, args, kw ):
    
    # do we know how to get the verification key from the method?
-   verify_key_type = conf.verify_key_type_from_method_name( CONFIG, method_name )
-   verify_key_name = conf.verify_key_name_from_method_result( CONFIG, method_name, args, kw, method_result )
+   verify_key_type = conf.verify_key_type_from_method_name( config, method_name )
+   verify_key_name = conf.verify_key_name_from_method_result( config, method_name, args, kw, method_result )
    verify_key = verify_key_from_method_result( method_result )
    
    if (verify_key_type == None or verify_key_name == None) and verify_key == None:
@@ -138,19 +149,18 @@ def ask_trust_verify_key( method_result, method_name, args, kw ):
       trust = prompt_trust_verify_key( verify_key_type, verify_key_name, verify_key )
       if trust:
          print "Trusting MS verification public key for %s %s" % (verify_key_type, verify_key_name)
-         storage.store_keys( CONFIG, verify_key_type, verify_key_name, verify_key, None )
+         storage.store_keys( config, verify_key_type, verify_key_name, verify_key, None )
          return True 
       else:
          return False
 
 
 # -------------------
-def api_call_verifier( method_name, args, kw, data, syndicate_data, rpc_result ):
+def api_call_verifier( config, pubkey, method_name, args, kw, data, syndicate_data, rpc_result, trust_verify_key ):
    """
    Verify an RPC call.
    It's possible that we don't have the key yet, so throw up a warning if so.
    """
-   global VERIFYING_PUBKEY, OBJECT_SIGNING_KEY_NAME, OBJECT_SIGNING_KEY_TYPE, CONFIG
    
    # sanity check
    if not 'signature' in syndicate_data:
@@ -163,7 +173,6 @@ def api_call_verifier( method_name, args, kw, data, syndicate_data, rpc_result )
    sig = syndicate_data['signature']
    
    # verify object ID and type
-   pubkey = VERIFYING_PUBKEY
    ret = False
    
    if pubkey is not None:
@@ -176,89 +185,110 @@ def api_call_verifier( method_name, args, kw, data, syndicate_data, rpc_result )
       if not ret:
          # verification key has changed on the MS
          warn_verification_key_change()
-      
    
    else:
-      # this public key is not known to us...prompt to trust it.
-      
-      # if we got back a list of things, ask for each key
-      if isinstance( method_result, list ):
-         for single_result in method_result:
-            if not ask_trust_verify_key( single_result, method_name, args, kw ):
-               ret = False
-               break
-            
+      if not trust_verify_key:
+         # this public key is not known to us...prompt to trust it, if we're not going to do so automatically
+         # if we got back a list of things, ask for each key
+         if isinstance( method_result, list ):
+            for single_result in method_result:
+               if not ask_trust_verify_key( config, single_result, method_name, args, kw ):
+                  ret = False
+                  break
+               
+         else:
+            ret = ask_trust_verify_key( config, method_result, method_name, args, kw )
+
       else:
-         ret = ask_trust_verify_key( method_result, method_name, args, kw )
+         # will store the verifying key automatically
+         ret = True
 
    return ret
 
 
 # -------------------
-def make_rpc_client( config, verify_reply=True ):
+def make_rpc_client( config, verifying_pubkey, signing_pkey, key_type, key_name, trust_verify_key, verify_reply=True ):
    ms_url = config["MSAPI"]
    
    if not ms_url.lower().startswith("https://"):
       log.warning("MS URL %s is NOT secure!" % ms_url )
    
-   verifier = api_call_verifier
+   signer = lambda method_name, data: api_call_signer( signing_pkey, method_name, data )
+   verifier = lambda method_name, args, kw, data, syndicate_data, rpc_result: api_call_verifier( config, verifying_pubkey, method_name, args, kw, data, syndicate_data, rpc_result, trust_verify_key )
+   
    if not verify_reply:
       verifier = None 
-      
-   json_client = jsonrpc.Client( ms_url, msconfig.JSON_MS_API_VERSION, signer=api_call_signer, verifier=verifier )
+   
+   json_client = jsonrpc.Client( ms_url, msconfig.JSON_MS_API_VERSION, signer=signer, verifier=verifier )
+   json_client.set_key_info( key_type, key_name )
    
    return json_client
 
 
-
 # -------------------
-def call_method( client, user_id, method_name, *args, **kw ):
-   # which key do we use?
-   global SIGNING_PKEY, VERIFYING_PUBKEY, CONFIG, OBJECT_SIGNING_KEY_NAME, OBJECT_SIGNING_KEY_TYPE
+def get_signing_and_verifying_keys( config, user_id, method_name, args, kw, force_user_key_name=None ):
    
-   SIGNING_PKEY = None
-   VERIFYING_PUBKEY = None
+   key_types = conf.signing_key_types_from_method_name( config, method_name )
+   key_names = conf.signing_key_names_from_method_args( config, method_name, args, kw )
    
-   key_types = conf.signing_key_types_from_method_name( CONFIG, method_name )
-   key_names = conf.signing_key_names_from_method_args( CONFIG, method_name, args, kw )
+   loaded_key_type = None 
+   loaded_key_name = None 
    
    for key_type, key_name in zip( key_types, key_names ):
       # override user key name if desired
-      if key_type == "user" and FORCE_USER_KEY_NAME != None:
-         key_name = FORCE_USER_KEY_NAME 
+      if key_type == "user" and force_user_key_name != None:
+         key_name = force_user_key_name 
          
       try:
-         VERIFYING_PUBKEY, SIGNING_PKEY = storage.get_object_keys( CONFIG, key_type, key_name )
+         verifying_pubkey, signing_pkey = storage.get_object_keys( config, key_type, key_name )
          
-         OBJECT_SIGNING_KEY_TYPE = key_type 
-         OBJECT_SIGNING_KEY_NAME = key_name 
-         
-         client.set_key_info( key_type, key_name )
+         loaded_key_type = key_type 
+         loaded_key_name = key_name 
          
       except Exception, e:
          traceback.print_exc()
-         SIGNING_PKEY = None
-         VERIFYING_PUBKEY = None
+         signing_pkey = None
+         verifying_pubkey = None
          log.error("Failed to load object keys")
          pass
       
-      if SIGNING_PKEY is not None and VERIFYING_PUBKEY is not None:
+      if signing_pkey is not None and verifying_pubkey is not None:
          # got a usable key-pair
          break
       
    
    # can we proceed?
-   if SIGNING_PKEY is None:
+   if signing_pkey is None:
       raise Exception("Failed to load a usable signing key for %s" % key_name)
-      
+   
+   return (verifying_pubkey, signing_pkey, loaded_key_type, loaded_key_name)
+
+
+# -------------------
+def need_verifying_key( config, method_name, signing_key_type ):
+   verifying_key_type = conf.verify_key_type_from_method_name( config, method_name )
+   if verifying_key_type != signing_key_type:
+      # won't get a verifying key in this call
+      return True
+   else:
+      return False
+
+# -------------------
+def call_method( config, client, method_name, args, kw ):
+   # which key do we use?
+   # what object signing key are we working on?
+   log.debug("With %s: call %s( args=%s, kw=%s )" % (conf.signing_key_types_from_method_name( config, method_name ), method_name, args, kw) )
+   
    method = getattr( client, method_name )
+   
    return method( *args, **kw )
    
    
 # -------------------
-def serialize_param( value ):
-   # try to cast value to something
+def serialize_positional_arg( value ):
+   # try to cast value to something for a positional argument (not a keyword argument)
    if "." in value or "e" in value:
+      # float?
       try:
          value = float(value)
          return value
@@ -266,6 +296,7 @@ def serialize_param( value ):
          pass
 
    if value == "True" or value == "False":
+      # bool?
       try:
          value = eval(value)
          return value 
@@ -273,6 +304,7 @@ def serialize_param( value ):
          pass
    
    if value.strip().startswith("{") or value.strip().startswith("["):
+      # dict or list?
       try:
          value = eval(value)
          return value
@@ -280,6 +312,7 @@ def serialize_param( value ):
          pass
    
    try:
+      # integer?
       value = int(value)
       return value
    except:
@@ -287,115 +320,32 @@ def serialize_param( value ):
    
    
    if value.find("=") == -1:
+      # string?
       return value
    
    raise Exception("Could not parse '%s'" % param)
    
 
 # -------------------
-def read_args_and_kw( params ):
+def read_params( params ):
+   method_name = params[0]
+   params = params[1:]
    args = []
    kw = {}
    for param in params:
       try:
-         serialized_param = serialize_param( param )
+         serialized_arg = serialize_positional_arg( param )
       except:
          # is this a keyword argument?
          param_parts = param.split("=")
          if len(param_parts) > 1:
-            kw[param_parts[0]] = serialize_param( "=".join( param_parts[1:] ) )
+            kw[param_parts[0]] = serialize_positional_arg( "=".join( param_parts[1:] ) )
          else:
             raise Exception("Malformed parameter '%s'" % param)
       else:
-         args.append( serialized_param )
+         args.append( serialized_arg )
 
-   return (args, kw)
-
-
-# -------------------   
-def generate_key_pair( key_size ):
-   log.info("Generating key pair...")
-   
-   rng = Random.new().read
-   key = CryptoKey.generate(key_size, rng)
-
-   private_key_pem = key.exportKey()
-   public_key_pem = key.publickey().exportKey()
-
-   return (public_key_pem, private_key_pem)
-
-
-# -------------------   
-def make_auth_keys():
-   key_size = msconfig.OBJECT_KEY_SIZE
-   
-   pubkey_pem, privkey_pem = generate_key_pair( key_size )
-   
-   return (pubkey_pem, privkey_pem)
-   
-
-# -------------------   
-def parse_auth_key_request( auth_key_request, arg ):
-   if auth_key_request == "MAKE_SIGNING_KEY":
-      return make_auth_keys()
-   
-   elif auth_key_request == "USE_SIGNING_KEY":
-      if arg == None:
-         raise Exception("Path required after USE_SIGNING_KEY")
-      
-      return (storage.read_auth_key( arg ), None)
-   
-   return (None, None)
-   
-   
-# -------------------   
-def insert_signing_key( args, kw ):
-   new_args = []
-   new_kw = {}
-   
-   key = None
-   
-   for i in xrange(0, len(args)):
-      
-      possible_auth_key_arg = None
-      if i + 1 < len(args):
-         possible_auth_key_arg = args[i+1]
-      
-      if key == None:
-         pubkey, privkey = parse_auth_key_request( args[i], possible_auth_key_arg )
-         
-         if pubkey != None:
-            new_args.append( pubkey )
-            key = (pubkey, privkey)
-         else:
-            new_args.append( args[i] )
-      else:
-         new_args.append( args[i] )
-         
-      
-   for param, value in kw.items():
-      
-      if key == None:
-         pubkey, privkey = parse_auth_key_request( param, value )
-         
-         if pubkey != None:
-            new_kw[param] = pubkey 
-            key = (pubkey, privkey)
-      
-         else:
-            new_kw[param] = value
-            
-      else:
-         new_kw[param] = value 
-   
-   pubkey = None 
-   privkey = None 
-   
-   if key:
-      pubkey, privkey = key
-      
-   return (new_args, new_kw, pubkey, privkey)
-
+   return (method_name, args, kw)
 
 # -------------------   
 def check_signing_key( method_result, signing_public_key ):
@@ -409,73 +359,183 @@ def check_signing_key( method_result, signing_public_key ):
    return True
    
 
+
+# -------------------
+def setup_key_directories( config ):
+   # validate key directories
+   for key_type, object_cls in api.KEY_TYPE_TO_CLS.items():
+      key_dirname = conf.KEY_DIR_NAMES.get(key_type)
+      if key_dirname == None:
+         # forgot to add an entry in KEY_DIR_NAMES for the given key type
+         raise Exception("BUG: unknown key type %s" % key_type)
+      
+      key_dir = config.get(key_dirname, None)
+      if key_dir == None:
+         # forgot to set the path to this directory in the config
+         raise Exception("BUG: unknown key directory %s" % key_dirname)
+      
+      ret = storage.make_or_verify_key_directories( key_dir, object_cls )
+      
+      if not ret:
+         raise Exception("Failed to set up key directories")
+   
+   return True
+
+
+# -------------------
+def load_options( argv ):
+   
+   parser = conf.build_parser( argv[0] )
+   opts = parser.parse_args( argv[1:] )
+   
+   # load everything into a dictionary and return it
+   config = None 
+   config_str = None
+   config_file_path = None
+   
+   if hasattr( opts, "config" ) and opts.config != None:
+      config_file_path = opts.config[0]
+   else:
+      config_file_path = conf.CONFIG_FILENAME
+   
+   config_str = storage.read_file( config_file_path )
+   if config_str == None:
+      raise Exception("Failed to load configuration from %s" % config_file_path)
+   
+   config = conf.load_config( config_file_path, config_str, opts )
+   if config == None:
+      raise Exception("Failed to parse configuration from %s" % config_file_path)
+   
+   config['params'] = getattr( opts, 'params', [] )
+   
+   setup_key_directories( config )
+   
+   return config
+
+
+# -------------------
+def do_method_help( config, all_params ):
+   try:
+      method_name = all_params[1]
+      method_help = conf.method_help_from_method_name( method_name )
+   except Exception, e:
+      log.exception(e)
+      method_help = "FIXME: General HELP goes here..."
+      
+   print "Help for '%s':\n%s" % (method_name, method_help)
+   sys.exit(0)
+
+
 # -------------------   
-if __name__ == "__main__":
+def do_untrust( config, all_params ):
+   try:
+      key_type = all_params[1]
+      key_name = all_params[2]
+   except Exception, e:
+      log.exception(e)
+      raise Exception("Usage: %s untrust <%s> <name>" % (sys.argv[0], "|".join( conf.KEY_DIR_NAMES.keys() )))
+   
+   if key_type not in conf.KEY_DIR_NAMES.keys():
+      raise Exception("Usage: %s untrust <%s> <name>" % (sys.argv[0], "|".join( conf.KEY_DIR_NAMES.keys() )))
+   
+   storage.revoke_keys( config, key_type, key_name, revoke_signing_key=False )
+   
+   sys.exit(0)
+   
+
+# -------------------   
+def do_revoke( config, all_params ):
+   
+   try:
+      key_type = all_params[1]
+      key_name = all_params[2]
+      
+   except Exception, e:
+      log.exception(e)
+      raise Exception("Usage: %s revoke <%s> <name>" % (sys.argv[0], "|".join( conf.KEY_DIR_NAMES.keys() ) ))
+
+   if key_type not in conf.KEY_DIR_NAMES.keys():
+      raise Exception("Usage: %s revoke <%s> <name>" % (sys.argv[0], "|".join( conf.KEY_DIR_NAMES.keys() ) ))
+   
+   revoke = prompt_revoke_signing_key( key_type, key_name )
+   if revoke:
+      storage.revoke_keys( config, key_type, key_name, revoke_signing_key=True )
+   
+   sys.exit(0)
+      
+
+# -------------------   
+def main( argv ):
    # read the config
-   CONFIG = conf.load_options( sys.argv )
-   pp = pprint.PrettyPrinter()
+   global TRUST_VERIFY_KEY
+   
+   CONFIG = load_options( argv )
    
    for opt in CONFIG.keys():
       log.debug( "%s = %s" % (opt, CONFIG[opt] ) )
    
    if not CONFIG.has_key("user_id") or not CONFIG.has_key("params"):
-      conf.usage( sys.argv[0] )
+      conf.usage( argv[0] )
    
    # calling user...
    user_id = CONFIG["user_id"]
+   force_user_key_name = None 
    
    if "user_id" in CONFIG['_in_argv']:
       # override user_id
-      FORCE_USER_KEY_NAME = user_id
+      force_user_key_name = user_id
    
    # method parameters
    all_params = CONFIG["params"]
-   
-   method_name = all_params[0]
-   args, kw = read_args_and_kw( all_params[1:] )
+   method_name, args, kw = read_params( all_params )
    
    # special case?
    if method_name == "help":
-      try:
-         method_name = all_params[1]
-         method_help = conf.method_help_from_method_name( method_name )
-      except:
-         method_help = "General HELP goes here..."
-         
-      print "Help for '%s':\n%s" % (method_name, method_help)
-      sys.exit(0)
+      do_method_help( CONFIG, all_params )
    
    elif method_name == "untrust":
+      do_untrust( CONFIG, all_params )
    
-      try:
-         key_type = all_params[1]
-         key_name = all_params[2]
-         
-         if key_type not in conf.KEY_TYPES:
-            raise Exception("Usage: %s untrust <%s> <name>" % (sys.argv[0], "|".join( conf.KEY_TYPES)))
-         
-         
-         storage.revoke_keys( CONFIG, key_type, key_name, revoke_signing_key=False )
-      except:
-         raise Exception("Usage: %s untrust <%s> <name>" % (sys.argv[0], "|".join( conf.KEY_TYPES)))
+   elif method_name == "revoke":
+      do_revoke( CONFIG, all_params )
    
-      sys.exit(0)
-         
+   # trust keys by default?
+   trust_verify_key = CONFIG.get('trust_verify_key', False)
    
-   # generate any signing keys
-   args, kw, signing_public_key, signing_private_key = insert_signing_key( args, kw )
+   # parse arguments; get extra data and hold onto it for now
+   args, kw, extras = conf.parse_args( method_name, args, kw )
    
-   # verify that we won't be clobbering an existing key
-   if signing_private_key is not None:
-      pass
+   # validate arguments
+   valid = conf.validate_args( method_name, args, kw )
+   if not valid:
+      raise Exception("Invalid arguments for %s" % method_name)
    
-   # what object signing key are we working on?
-   log.debug("With %s: call %s( args=%s, kw=%s )" % (conf.signing_key_types_from_method_name( CONFIG, method_name ), method_name, args, kw) )
+   # load the key information
+   verifying_pubkey, signing_pkey, key_type, key_name = get_signing_and_verifying_keys( CONFIG, user_id, method_name, args, kw, force_user_key_name=force_user_key_name )
    
-   client = make_rpc_client( CONFIG )
-   ret = call_method( client, user_id, method_name, *args, **kw ) 
+   # is a verifying key required in advance?
+   if need_verifying_key( CONFIG, method_name, key_type ) and verifying_pubkey is None:
+      raise Exception("No verifying key found")
    
-   # before storing anything, do we need to revoke and add trust in a verifying key?
+   # will we trust verifying keys automatically for this method?
+   trust_key_type = conf.trust_key_type_from_method_name( CONFIG, method_name )
+   trust_key_name = conf.trust_key_name_from_method_args( CONFIG, method_name, args, kw )
+   
+   if trust_key_type != None and trust_key_name != None:
+      # trust by default
+      trust_verify_key = True
+   
+   # create the RPC client
+   client = make_rpc_client( CONFIG, verifying_pubkey, signing_pkey, key_type, key_name, trust_verify_key )
+   
+   # call the method
+   ret = call_method( CONFIG, client, method_name, args, kw ) 
+   
+   # do we need to store a signing key?
+   new_signing_public_key = extras.get("signing_public_key", None )
+   new_signing_private_key = extras.get("signing_private_key", None )
+   
+   # before storing anything, do we need to revoke a verifying key?
    if ret != None:
       # remove old keys first
       revoke_key_type = conf.revoke_key_type_from_method_name( CONFIG, method_name )
@@ -483,32 +543,41 @@ if __name__ == "__main__":
       
       if revoke_key_type != None and revoke_key_name != None:
          storage.revoke_keys( CONFIG, revoke_key_type, revoke_key_name )
-   
-      # trust new keys, if need be
-      trust_key_type = conf.trust_key_type_from_method_name( CONFIG, method_name )
-      trust_key_name = conf.trust_key_name_from_method_args( CONFIG, method_name, args, kw )
       
-      if trust_key_type != None and trust_key_name != None:
+      
+      # trust new keys?
+      if trust_key_type != None and trust_key_name != None and trust_verify_key:
+         # automatically trust this verify key (TOFU), if we haven't done so already
          verify_key = verify_key_from_method_result( ret )
          if verify_key is not None:
             storage.store_keys( CONFIG, trust_key_type, trust_key_name, verify_key, None )
+            
          else:
             raise Exception("Server error: expected verify key in response")
          
+   
+      if new_signing_public_key is not None:
+         # verify that the key was returned by the MS (suggesting, but not implying, that it took)
+         check_signing_key( ret, new_signing_public_key )
          
-   if signing_public_key is not None and ret != None:
-      # verify that the key returned by the MS (suggesting, but not implying, that it took)
-      check_signing_key( ret, signing_public_key )
-      
-      verify_key_type = conf.verify_key_type_from_method_name( CONFIG, method_name )
-      verify_key_name = conf.verify_key_name_from_method_result( CONFIG, method_name, args, kw, ret )
-      
-      # save the object's signing private key 
-      if signing_private_key:
-         storage.store_keys( CONFIG, verify_key_type, verify_key_name, None, signing_private_key )
-      else:
-         raise Exception("Unable to determine which keys to store!")
-      
+         verify_key_type = conf.verify_key_type_from_method_name( CONFIG, method_name )
+         verify_key_name = conf.verify_key_name_from_method_result( CONFIG, method_name, args, kw, ret )
+         
+         # save the object's signing private key 
+         if new_signing_private_key:
+            storage.store_keys( CONFIG, verify_key_type, verify_key_name, None, new_signing_private_key )
+         else:
+            raise Exception("Unable to determine which keys to store!")
+   
+   # do we need to store any other object-specific stuff?
+   
+   return ret 
+
+
+if __name__ == "__main__":
+   ret = main( sys.argv )
+   pp = pprint.PrettyPrinter()
    pp.pprint( ret )
+   
    
    

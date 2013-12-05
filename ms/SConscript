@@ -34,11 +34,14 @@ ms_files.extend( Glob("protobufs/*.py") )
 protobuf_util = Glob("protobufs/__init__.py")
 protobuf_util.extend( Glob("protobufs/protobuf_to_dict.py"))
 
-# temporary...
+# development build?
 if env["devel"]:
    ms_files.extend( Glob("tests/__init__.py") )
    ms_files.extend( Glob("tests/setup.py") )
    ms_files.extend( Glob("tests/debughandler.py") )
+   ms_files.extend( Glob("tests/test_syntool.py") )
+   ms_files.extend( Glob("tests/user_test_key.pem") )
+   ms_files.extend( Glob("tests/local_setup.sh") )
 
 # openid
 ms_files.extend( Glob("openid/*.py") )
@@ -86,7 +89,7 @@ client_cmds = []
 for client_file in client_files:
    # put client files in place
    if client_file.path.endswith( TOOL_BIN ):
-      cmd = env.Command( "bin/%s" % TOOL_BIN, "#" + client_file.path, Move( "$TARGET", "$SOURCE" ) )
+      cmd = env.Command( "bin/%s" % TOOL_BIN, "#" + client_file.path, Copy( "$TARGET", "$SOURCE" ) )
       client_cmds.append( cmd )
 
    else:

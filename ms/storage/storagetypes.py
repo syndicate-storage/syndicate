@@ -132,6 +132,8 @@ class Object( Model ):
    # instance of a shard that will be populated and written
    write_shard = None
 
+   # for RPC
+   key_type = None
 
    @classmethod
    def shard_key_name( cls, name, idx ):
@@ -651,9 +653,10 @@ class Object( Model ):
             
          
          obj.put()
+         return obj
       
       try:
-         transaction( set_atomic_txn, xg=True )
+         return transaction( set_atomic_txn, xg=True )
       except Exception, e:
          logging.exception( e )
          raise e
@@ -683,3 +686,7 @@ class Object( Model ):
    def get_admin_write_attrs( cls ):
       return cls.write_attrs
    
+   @classmethod
+   def ParseArgs( cls, *args, **kw ):
+      # used by python clients, but not the MS
+      pass

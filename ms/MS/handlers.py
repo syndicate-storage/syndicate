@@ -85,24 +85,21 @@ def response_load_gateway_by_type_and_id( gateway_type, gateway_id ):
       return (None, 403, None)
 
    gateway_read_start = storagetypes.get_time()
-   gateway = None
-
-   # get the gateway and validate its type
-   if gateway_type == "UG":
-      gateway = UserGateway.Read( gateway_id )
-   elif gateway_type == "RG":
-      gateway = ReplicaGateway.Read( gateway_id )
-   elif gateway_type == "AG":
-      gateway = AcquisitionGateway.Read( gateway_id )
-   else:
+   gateway = Gateway.Read( gateway_id )
+   
+   if GATEWAY_TYPE_TO_STR.get( gateway.gateway_type ) == None:
+      # bad type (shouldn't happen)
+      return (None, 500, None)
+   
+   if GATEWAY_TYPE_TO_STR[ gateway.gateway_type ] != gateway_type:
+      # caller has the wrong type
       return (None, 401, None)
-
       
    gateway_read_time = storagetypes.get_time() - gateway_read_start
    return (gateway, 200, gateway_read_time)
 
 
-def response_load_volume( volume_name_or_id ):
+def response_load_volume( request_handler, volume_name_or_id ):
 
    volume_id = -1
    try:
@@ -122,12 +119,12 @@ def response_load_volume( volume_name_or_id ):
 
    if volume == None:
       # no volume
-      response_volume_error( self, 404 )
+      response_volume_error( request_handler, 404 )
       return (None, 404, None)
 
    if not volume.active:
       # inactive volume
-      response_volume_error( self, 503 )
+      response_volume_error( request_handler, 503 )
       return (None, 503, None)
 
    return (volume, 200, volume_read_time)
@@ -225,7 +222,7 @@ def response_begin( request_handler, volume_name_or_id ):
    timing['request_start'] = storagetypes.get_time()
 
    # get the Volume
-   volume, status, volume_read_time = response_load_volume( volume_name_or_id )
+   volume, status, volume_read_time = response_load_volume( request_handler, volume_name_or_id )
 
    if status != 200:
       return (None, None, None)
@@ -315,7 +312,7 @@ class MSCertManifestRequestHandler( webapp2.RequestHandler ):
          return
       
       # get the Volume
-      volume, status, _ = response_load_volume( volume_id_str )
+      volume, status, _ = response_load_volume( self, volume_id_str )
 
       if status != 200:
          return
@@ -357,7 +354,7 @@ class MSCertRequestHandler( webapp2.RequestHandler ):
       
       
       # get the Volume
-      volume, status, _ = response_load_volume( volume_id_str )
+      volume, status, _ = response_load_volume( self, volume_id_str )
 
       if status != 200 or volume == None:
          return
@@ -580,16 +577,19 @@ class MSFileReadHandler(webapp2.RequestHandler):
          return
       
       if volume.need_gateway_auth() and gateway == None:
+         print "no gateway"
          response_user_error( self, 403 )
          return
 
       # this must be a User Gateway, if there is a specific gateway
-      if gateway != None and not isinstance( gateway, UserGateway ):
+      if gateway != None and gateway.gateway_type != GATEWAY_TYPE_UG:
+         print "not UG"
          response_user_error( self, 403 )
          return
       
       # this gateway must be allowed to read metadata
       if gateway != None and not gateway.check_caps( GATEWAY_CAP_READ_METADATA ):
+         print "bad caps: %x" % gateway.caps
          response_user_error( self, 403 )
          return 
 
@@ -663,13 +663,13 @@ class MSFileWriteHandler(webapp2.RequestHandler):
          return 
       
       # this can only be a User Gateway or an Acquisition Gateway
-      if not isinstance( gateway, UserGateway ) and not isinstance( gateway, AcquisitionGateway ):
+      if gateway.gateway_type != GATEWAY_TYPE_UG and gateway.gateway_type != GATEWAY_TYPE_AG:
          response_user_error( self, 403 )
          return
       
       # if this is an archive, on an AG owned by the same person as the Volume can write to it
       if volume.archive:
-         if (not isinstance( gateway, AcquisitionGateway ) or (isinstance( gateway, AcquisitionGateway and gateway.owner_id != volume.owner_id)) ):
+         if gateway.gateway_type != GATEWAY_TYPE_AG or gateway.owner_id != volume.owner_id:
             response_user_error( self, 403 )
             return 
       

@@ -129,7 +129,6 @@ def __to_dict( obj, attr_list ):
    
    return ret
 
-
 # ----------------------------------
 def filter_result( caller_user_or_object, object_cls, result_raw ):
    """
@@ -181,9 +180,26 @@ def filter_write_attrs( caller_user, target_object, object_cls, write_attrs ):
 
 
 # ----------------------------------
+def object_id_from_name( object_name, func, args, kw ):
+   argspec = inspect.getargspec( func )
+   
+   # is it a positional arg?
+   for i in xrange(0, len(argspec.args)):
+      if object_name == argspec.args[i]:
+         return args[i]
+   
+   # is it a keyword arg?
+   for (key, value) in kw.items():
+      if object_name == key:
+         return value 
+   
+   return None
+
+
+# ----------------------------------
 class CreateAPIGuard:
    # creating an object requires a suitably capable user
-   def __init__(self, object_cls, admin_only=False, pass_caller_user=None ):
+   def __init__(self, object_cls, admin_only=False, pass_caller_user=None, **kw ):
       self.object_cls = object_cls 
       self.admin_only = admin_only
       self.pass_caller_user = pass_caller_user
@@ -215,7 +231,7 @@ class CreateAPIGuard:
 # ----------------------------------
 class ReadAPIGuard:
    # reading an object requires one of three things:  user is an admin, user owns the object, or the object is trying to read itself.
-   def __init__(self, object_cls, admin_only=False ):
+   def __init__(self, object_cls, admin_only=False,  **kw ):
       self.object_cls = object_cls
       self.admin_only = admin_only
    
@@ -242,13 +258,14 @@ class ReadAPIGuard:
 class UpdateAPIGuard:
    # updating an object requires a suitably capable user.  An unprivileged user can only write to objects it owns, and only to some fields.
    # NOTE: the decorated function must take an object's ID as its first argument!
-   def __init__(self, target_object_cls, admin_only=False, pass_caller_user=None ):
+   def __init__(self, target_object_cls, admin_only=False, pass_caller_user=None, target_object_name=None, **kw ):
       self.target_object_cls = target_object_cls
       self.admin_only = admin_only
       self.pass_caller_user = pass_caller_user
+      self.target_object_name = target_object_name
    
    def __call__(self, func):
-      def inner( caller_user, target_object_id, *args, **kw ):
+      def inner( caller_user, *args, **kw ):
          
          if caller_user == None:
             # authentication failed
@@ -261,6 +278,13 @@ class UpdateAPIGuard:
          if self.admin_only:
             assert_admin( caller_user )
             
+         # find the target object ID
+         target_object_id = object_id_from_name( self.target_object_name, func, args, kw )
+         
+         if target_object_id is None:
+            # invalid argument
+            raise Exception("No %s ID given" % (self.target_object_cls.__name__))
+         
          target_object = self.target_object_cls.Read( target_object_id )
          
          if target_object == None:
@@ -268,7 +292,6 @@ class UpdateAPIGuard:
          
          if not is_admin( caller_user ) and not target_object.owned_by( caller_user ):
             raise Exception("Object '%s: %s' is not owned by '%s'" % (self.target_object_cls.__name__, target_object_id, caller_user.email))
-         
          
          # only filter keywords that are writable in the object
          method_kw = {}
@@ -291,7 +314,7 @@ class UpdateAPIGuard:
          if self.pass_caller_user:
             method_kw[self.pass_caller_user] = caller_user 
             
-         ret = func(target_object_id, *args, **method_kw)
+         ret = func( *args, **method_kw)
          
          assert isinstance( ret, bool ), "Internal 'Update' error"
          
@@ -306,12 +329,13 @@ class UpdateAPIGuard:
 class DeleteAPIGuard:
    # Deleting an object requires a suitably capable user.
    # NOTE: the decorated function must take an object's ID as its first argument!
-   def __init__(self, target_object_cls, admin_only=False ):
+   def __init__(self, target_object_cls, admin_only=False, target_object_name=None, **kw ):
       self.admin_only = admin_only
       self.target_object_cls = target_object_cls
+      self.target_object_name = target_object_name
    
    def __call__(self, func):
-      def inner( caller_user, target_object_id, *args, **kw ):
+      def inner( caller_user, *args, **kw ):
          
          if caller_user == None:
             # authentication failed
@@ -324,6 +348,12 @@ class DeleteAPIGuard:
          if self.admin_only:
             assert_admin( caller_user )
          
+         # get the target object ID 
+         target_object_id = object_id_from_name( self.target_object_name, func, args, kw )
+         
+         if target_object_id is None:
+            raise Exception("No %s ID given" % self.target_object_cls.__name__)
+         
          target_object = self.target_object_cls.Read( target_object_id )
          
          if target_object == None:
@@ -333,7 +363,7 @@ class DeleteAPIGuard:
          if not is_admin( caller_user ) and not target_object.owned_by( caller_user ):
             raise Exception("Object '%s: %s' is not owned by '%s'" % (self.target_object_cls.__name__, target_object_id, caller_user.email))
          
-         ret = func(target_object_id, *args, **kw)
+         ret = func( *args, **kw)
          
          assert isinstance( ret, bool ), "Internal 'Delete' error"
          
@@ -347,7 +377,7 @@ class DeleteAPIGuard:
 # ----------------------------------
 class ListAPIGuard:
    # listing objects requires a suitably capable user.  An unprivileged user can only list API-level attributes of objects it owns, and only public attributes of objects it does not own.
-   def __init__(self, object_cls, admin_only=False, pass_caller_user=None ):
+   def __init__(self, object_cls, admin_only=False, pass_caller_user=None, **kw ):
       self.object_cls = object_cls
       self.admin_only = admin_only
       self.pass_caller_user = pass_caller_user
@@ -381,16 +411,18 @@ class ListAPIGuard:
 class BindAPIGuard:
    # caller user is attempting to bind/unbind a source and target object.  Verify that the caller user owns it first, or is admin.
    # NOTE: the decorated function must take a source object ID as its first argument, and a target object ID as its second argument!
-   def __init__(self, source_object_cls, target_object_cls, caller_owns_source=True, caller_owns_target=True, admin_only=False, pass_caller_user=None ):
+   def __init__(self, source_object_cls, target_object_cls, caller_owns_source=True, caller_owns_target=True, admin_only=False, pass_caller_user=None, source_object_name=None, target_object_name=None, **kw ):
       self.source_object_cls = source_object_cls
       self.target_object_cls = target_object_cls
       self.admin_only = admin_only
       self.caller_owns_source = caller_owns_source
       self.caller_owns_target = caller_owns_target
       self.pass_caller_user = pass_caller_user
+      self.source_object_name = source_object_name
+      self.target_object_name = target_object_name
    
    def __call__(self, func):
-      def inner(caller_user, source_object_id, target_object_id, *args, **kw):
+      def inner(caller_user, *args, **kw):
          if caller_user == None:
             # authentication failed
             raise Exception("Caller has insufficient privileges")
@@ -428,6 +460,12 @@ class BindAPIGuard:
             target_object = target_object_fut.get_result()
          
          if self.caller_owns_source:
+            # get the source object ID 
+            source_object_id = object_id_from_name( self.source_object_name, func, args, kw )
+            
+            if source_object_id is None:
+               raise Exception("No %s ID given" % self.source_object_cls.__name__)
+            
             if source_object == None:
                raise Exception("Source object '%s' does not exist" % source_object_id )
             
@@ -435,6 +473,12 @@ class BindAPIGuard:
                raise Exception("Source object '%s' is not owned by '%s'" % (source_object_id, caller_user.email) )
             
          if self.caller_owns_target:
+            # get the target object ID 
+            target_object_id = object_id_from_name( self.target_object_name, func, args, kw )
+            
+            if target_object_id is None:
+               raise Exception("No %s ID given" % self.target_object_cls.__name__)
+            
             if target_object == None:
                raise Exception("Target object '%s' does not exist" % target_object_id )
             
@@ -445,7 +489,7 @@ class BindAPIGuard:
             kw[self.pass_caller_user] = caller_user 
             
          # all check pass...
-         result = func( source_object_id, target_object_id, *args, **kw )
+         result = func( *args, **kw )
          
          assert isinstance( result, bool ), "Internal Bind error"
          
@@ -472,6 +516,9 @@ class Authenticate:
       inner.object_authenticator = self.object_authenticator
       inner.object_response_signer = self.object_response_signer
       inner.object_id_attrs = getattr( func, "object_id_attrs", None )
+      inner.target_object_name = getattr( func, "target_object_name", None )
+      inner.source_object_name = getattr( func, "source_object_name", None )
+      inner.is_public = True
       return inner
       
             
@@ -485,7 +532,7 @@ def assert_public_method( method ):
       # not a function
       raise Exception("No such method '%s'" % method_name)
    
-   if not hasattr( method, "object_authenticator" ) or not hasattr( method, "object_response_signer" ):
+   if not getattr(method, "is_public", False):
       # not a function decorated by Authenticate (i.e. not part of the API)
       raise Exception("No such method '%s'" % method_name)
    
@@ -509,6 +556,9 @@ class AuthMethod( object ):
    def sign_reply( self, data, authenticated_caller=None ):
       if authenticated_caller == None:
          authenticated_caller = self.authenticated_caller 
+      
+      if authenticated_caller == None:
+         raise Exception("Caller is not authenticated")
       
       if is_user( authenticated_caller ):
          return SyndicateUser.Sign( authenticated_caller, data )

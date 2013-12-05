@@ -28,6 +28,43 @@ import pprint
 log = Log.log
 
 # -------------------
+def make_or_verify_key_directories( key_base_dir, object_cls ):
+
+   for key_type in object_cls.key_types:
+      key_path = os.path.join( key_base_dir, key_type )
+   
+      if not os.path.exists( key_path ):
+         log.warn("Directory '%s' does not exist" % key_path )
+         
+         try:
+            os.makedirs( key_path, mode=0700 )
+            log.info("Created directory %s" % key_path)
+         except Exception, e:
+            log.error("Failed to create directory %s" % key_path)
+            log.exception( e )
+            
+            return False
+      
+      if not os.path.isdir( key_path ):
+         log.error("File '%s' is not a directory" % key_path )
+         return False
+         
+      try:
+         mode = os.stat( key_path ).st_mode
+         if (mode & (stat.S_IRGRP | stat.S_IROTH | stat.S_IXGRP | stat.S_IXOTH)) != 0:
+            log.warning("Key path %s is not privately readable.  Recommend 'chmod 0600 %s'" % (key_path, key_path))
+         
+         if (mode & (stat.S_IWGRP | stat.S_IWOTH)) != 0:
+            log.warning("Key path %s is not privately writable.  Recommend 'chmod 0600 %s'" % (key_path, key_path))
+            
+      except Exception, e:
+         log.error("Failed to stat directory %s" % key_path)
+         log.exception( e )
+         return False
+   
+   return True
+
+# -------------------
 def load_key( key_path ):
    try:
       pkey_text_fd = open(key_path, "r")
@@ -64,6 +101,15 @@ def read_auth_key( file_name ):
    key = load_key( file_name )
    return key.publickey().exportKey()
 
+# -------------------   
+def read_file( file_name ):
+   try:
+      fd = open( file_name, "r" )
+      buf = fd.read()
+      fd.close()
+      return buf
+   except:
+      return None
 
 # -------------------   
 def write_key( path, key_data ):

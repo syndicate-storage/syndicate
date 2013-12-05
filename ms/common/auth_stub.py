@@ -16,18 +16,19 @@ class StubAuth( object ):
    
    def __init__(self, *args, **kw ):
       self.admin_only = kw.get('admin_only', False)
+      self.parse_args = kw.get('parse_args', None)
    
    def __call__(self, func):
+      
       def inner( *args, **kw ):
          return func(*args, **kw)
-      
-      argspec = inspect.getargspec( func )
       
       inner.__name__ = func.__name__
       inner.__doc__ = func.__doc__
       inner.expect_verifying_key = self.expect_verifying_key
       inner.admin_only = self.admin_only
-      inner.argspec = argspec
+      inner.argspec = inspect.getargspec( func )
+      inner.parse_args = self.parse_args
       
       return inner
 
@@ -62,25 +63,10 @@ class Authenticate( StubAuth ):
    trust_key_type = None
    
    @classmethod
-   def check_args( cls, func, args, kw ):
-      # first off, do args and keywords match?
-      def_len = 0
-      if func.argspec.defaults != None:
-         def_len = len(func.argspec.defaults)
-         
-      if len(func.argspec.args) != len(args) - def_len:
-         raise Exception("Method '%s' takes %s argument(s), but got %s argument(s)" % (func.__name__, len(func.argspec.args), len(args)))
-      
-      return
-   
-   
-   @classmethod
    def get_signing_key_names( cls, func, signing_key_ids, method_name, args, kw ):
       if signing_key_ids == None:
          # this method does not return any keys for us to store
          return None
-      
-      cls.check_args( func, args, kw )
       
       ret = []
       

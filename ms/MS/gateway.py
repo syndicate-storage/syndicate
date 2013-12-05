@@ -119,6 +119,9 @@ class Gateway( storagetypes.Object ):
    
    gateway_blocksize = storagetypes.Integer( default=0 )        # (AG only) advertized blocksize
    
+   # for RPC
+   key_type = "gateway"
+   
    required_attrs = [
       "owner_id",
       "host",
@@ -126,8 +129,8 @@ class Gateway( storagetypes.Object ):
       "name",
       "gateway_type",
       "caps",
-      "gateway_public_key",
-      "signing_public_key"
+      "signing_public_key",
+      "gateway_public_key"
    ]
    
    read_attrs_api_required = [
@@ -402,7 +405,8 @@ class Gateway( storagetypes.Object ):
    @classmethod
    def Create( cls, user, volume, **kwargs ):
       """
-      Create a gateway
+      Create a gateway.
+      NOTE: careful--caps are required!  don't let users call this directly.
       """
       
       # enforce volume ID
@@ -414,12 +418,6 @@ class Gateway( storagetypes.Object ):
       # populate kwargs with default values for missing attrs
       cls.fill_defaults( kwargs )
       
-      # add keys if not present
-      if 'verify_public_key' not in kwargs.keys() or 'verify_private_key' not in kwargs.keys():
-         verify_public_key_str, verify_private_key_str = cls.generate_keys( GATEWAY_RSA_KEYSIZE )
-         kwargs['verify_public_key'] = verify_public_key_str 
-         kwargs['verify_private_key'] = verify_private_key_str
-
       # sanity check: do we have everything we need?
       missing = cls.find_missing_attrs( kwargs )
       if len(missing) != 0:
@@ -442,6 +440,11 @@ class Gateway( storagetypes.Object ):
       
       g_key_name = Gateway.make_key_name( g_id=g_id )
       g_key = storagetypes.make_key( cls, g_key_name)
+      
+      # verify keys
+      verify_public_key_str, verify_private_key_str = cls.generate_keys( GATEWAY_RSA_KEYSIZE )
+      kwargs['verify_public_key'] = verify_public_key_str 
+      kwargs['verify_private_key'] = verify_private_key_str
       
       # create a nameholder and this gateway at once---there's a good chance we'll succeed
       gateway_nameholder_fut = GatewayNameHolder.create_async( kwargs['name'], g_id )
@@ -657,7 +660,6 @@ class Gateway( storagetypes.Object ):
          g_name_to_id_cache_key = "Read_ByName: Gateway: %s" % old_name
          storagetypes.memcache.delete( g_name_to_id_cache_key )
          
-         
       return gateway_key
    
    
@@ -669,8 +671,13 @@ class Gateway( storagetypes.Object ):
       if not cls.is_valid_key( new_auth_key, GATEWAY_RSA_KEYSIZE ):
          raise Exception("Invalid authentication key")
       
-      cls.set_atomic( lambda: cls.Read( g_name_or_id ), verify_public_key=new_auth_key )
-      return True
+      gateway = cls.set_atomic( lambda: cls.Read( g_name_or_id ), verify_public_key=new_auth_key )
+      
+      if gateway is not None:
+         Gateway.FlushCache( gateway.g_id )
+         return True
+      else:
+         return False
    
    
    @classmethod
@@ -683,10 +690,17 @@ class Gateway( storagetypes.Object ):
          if gateway == None:
             raise Exception("No such Gateway '%s'" % caps)
          
-         gateway.caps = Gateway.safe_caps( caps )
+         gateway.caps = Gateway.safe_caps( gateway.gateway_type, caps )
          gateway.put()
+         return gateway
       
-      return storagetypes.transaction( lambda: set_caps_txn( g_name_or_id ) )
+      gateway = storagetypes.transaction( lambda: set_caps_txn( g_name_or_id ) )
+      
+      if gateway is not None:
+         Gateway.FlushCache( gateway.g_id )
+         return True
+      else:
+         return False
          
    
    @classmethod

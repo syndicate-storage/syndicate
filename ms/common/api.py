@@ -38,28 +38,34 @@ except Exception, e:
    logging.debug("Using auth stub")
    from auth_stub import *
 
+# ----------------------------------
+from Crypto.Hash import SHA256 as HashAlg
+from Crypto.PublicKey import RSA as CryptoKey
+from Crypto import Random
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
+
+# ----------------------------------
+def generate_key_pair( key_size ):
+   rng = Random.new().read
+   key = CryptoKey.generate(key_size, rng)
+
+   private_key_pem = key.exportKey()
+   public_key_pem = key.publickey().exportKey()
+
+   return (public_key_pem, private_key_pem)
 
 # ----------------------------------
 SIGNING_KEY_DEFAULT_USER_ID = 1         # use the client's given user ID, not one derived from the argument list
 
-KEY_TYPES = [
-   "gateway",
-   "user",
-   "volume"
-]
-
-KEY_TYPE_TO_CLS = {
-   "user": SyndicateUser,
-   "volume": Volume,
-   "gateway": Gateway
-}
+# map key type to the object class
+KEY_TYPE_TO_CLS = dict( [(cls.key_type, cls) for cls in [Volume, SyndicateUser, Gateway]] )
 
 
 # ----------------------------------
 # The User API.
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="user", verify_key_id="email", trust_key_type="user", trust_key_id="email" )
-@CreateAPIGuard( SyndicateUser, admin_only=True )
+@CreateAPIGuard( SyndicateUser, admin_only=True, parse_args=SyndicateUser.ParseArgs )
 def create_user( email, openid_url, signing_public_key, **attrs ):
    """
    Create a user.
@@ -84,6 +90,11 @@ def create_user( email, openid_url, signing_public_key, **attrs ):
          the MS that the program is acting on behalf of the
          owner of this user account.  Currently, this must be 
          a 4096-bit RSA key.
+         
+         Pass MAKE_SIGNING_KEY if you want your client to 
+         generate one for you, in which case the private 
+         signing key will be stored to your user key directory
+         on successful return of this method.
          
    Optional keyword arguments:
       max_volumes=int: (default: 10)
@@ -113,7 +124,7 @@ def create_user( email, openid_url, signing_public_key, **attrs ):
 
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="user", verify_key_id="email" )
-@ReadAPIGuard( SyndicateUser )
+@ReadAPIGuard( SyndicateUser, parse_args=SyndicateUser.ParseArgs )
 def read_user( email ):
    """
    Read a user.
@@ -134,7 +145,7 @@ def read_user( email ):
    return storage.read_user( email )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"] )
-@UpdateAPIGuard( SyndicateUser )
+@UpdateAPIGuard( SyndicateUser, target_object_name="email", parse_args=SyndicateUser.ParseArgs )
 def update_user( email, **attrs ):
    """
    Update a user.
@@ -177,7 +188,7 @@ def update_user( email, **attrs ):
    return storage.update_user( email, **attrs )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"], revoke_key_type="user", revoke_key_id="email" )
-@DeleteAPIGuard( SyndicateUser )
+@DeleteAPIGuard( SyndicateUser, target_object_name="email", parse_args=SyndicateUser.ParseArgs )
 def delete_user( email ):
    """
    Delete a user.
@@ -198,7 +209,7 @@ def delete_user( email ):
    return storage.delete_user( email )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="user", verify_key_id="email" )
-@ListAPIGuard( SyndicateUser, admin_only=True )
+@ListAPIGuard( SyndicateUser, admin_only=True, parse_args=SyndicateUser.ParseArgs )
 def list_users( query_attrs ):
    """
    List users.
@@ -226,7 +237,7 @@ def list_users( query_attrs ):
    return storage.list_users( query_attrs )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"], revoke_key_type="user", revoke_key_id="email" )
-@UpdateAPIGuard( SyndicateUser )
+@UpdateAPIGuard( SyndicateUser, target_object_name="email", parse_args=SyndicateUser.ParseArgs )
 def set_user_public_signing_key( email, signing_public_key, **attrs ):
    """
    Set a user's public signing key.
@@ -244,6 +255,11 @@ def set_user_public_signing_key( email, signing_public_key, **attrs ):
          the MS that the program is acting on behalf of the
          owner of this user account.  Currently, this must be 
          a 4096-bit RSA key.
+         
+         Pass MAKE_SIGNING_KEY if you want your client to 
+         generate one for you, in which case the private 
+         signing key will be stored to your user key directory
+         on successful return of this method.
    
    Returns:
       True on success, or an exception if the user does 
@@ -257,7 +273,7 @@ def set_user_public_signing_key( email, signing_public_key, **attrs ):
    return storage.set_user_public_signing_key( email, signing_public_key, **attrs )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID] )
-@ListAPIGuard( SyndicateUser, pass_caller_user="caller_user" )
+@ListAPIGuard( SyndicateUser, pass_caller_user="caller_user", parse_args=SyndicateUser.ParseArgs )
 def list_volume_user_ids( volume_name_or_id, **attrs ):
    """
    List the emails of the users that can access data
@@ -285,7 +301,7 @@ def list_volume_user_ids( volume_name_or_id, **attrs ):
 # The Volume API.
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="volume", verify_key_id="name", trust_key_type="volume", trust_key_id="name" )
-@CreateAPIGuard( Volume, pass_caller_user="caller_user" )
+@CreateAPIGuard( Volume, pass_caller_user="caller_user", parse_args=Volume.ParseArgs )
 def create_volume( email, name, description, blocksize, signing_public_key, **attrs ):
    """
    Create a Volume.  It will be owned by the calling user.
@@ -318,6 +334,11 @@ def create_volume( email, name, description, blocksize, signing_public_key, **at
          owner of this volume.  Currently, this must be 
          a 4096-bit RSA key.
          
+         Pass MAKE_SIGNING_KEY if you want your client to 
+         generate one for you, in which case the private 
+         signing key will be stored to your user key directory
+         on successful return of this method.
+         
    Optional keyword arguments:
       private=bool (default: True)
          If True, this volume will not be searchable, and users
@@ -327,7 +348,9 @@ def create_volume( email, name, description, blocksize, signing_public_key, **at
       metadata_private_key=str (default: None)
          The PEM-encoded private key the Volume will use to sign 
          metadata served to User Gateways.  It must be a 4096-bit
-         RSA key.  It will be automatically generated if not given.
+         RSA key.  It will be automatically generated by the MS
+         if not given.  If you want your client to generate the 
+         private key, pass MAKE_METADATA_PRIVATE_KEY.
       
       archive=bool (default: False)
          If True, only an Acquisition Gateway owned by the given 
@@ -360,42 +383,42 @@ def create_volume( email, name, description, blocksize, signing_public_key, **at
 @Authenticate( object_authenticator=Volume.Authenticate, object_response_signer=Volume.Sign,
                signing_key_types=["user", "volume"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID, "volume_name_or_id"],
                verify_key_type="volume", verify_key_id="name" )
-@ReadAPIGuard( Volume )
+@ReadAPIGuard( Volume, parse_args=Volume.ParseArgs )
 def read_volume( volume_name_or_id ):
    return storage.read_volume( volume_name_or_id )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID] )
-@UpdateAPIGuard( Volume )
+@UpdateAPIGuard( Volume, target_object_name="volume_name_or_id", parse_args=Volume.ParseArgs )
 def update_volume( volume_name_or_id, **attrs ):
    return storage.update_volume( volume_name_or_id, **attrs )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], revoke_key_type="volume", revoke_key_id="volume_name_or_id" )
-@DeleteAPIGuard( Volume )
+@DeleteAPIGuard( Volume, target_object_name="volume_name_or_id", parse_args=Volume.ParseArgs )
 def delete_volume( volume_name_or_id ):
    return storage.delete_volume( volume_name_or_id )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="volume", verify_key_id="name" )
-@ListAPIGuard( Volume, admin_only=True )
+@ListAPIGuard( Volume, admin_only=True, parse_args=Volume.ParseArgs )
 def list_volumes( query_attrs ):
    return storage.list_volumes( query_attrs )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="volume", verify_key_id="name" )
-@ListAPIGuard( Volume )
-def list_user_volumes( email ):   
-   return storage.list_user_volumes( email )
+@ListAPIGuard( Volume, parse_args=Volume.ParseArgs )
+def list_accessible_volumes( email ):   
+   return storage.list_accessible_volumes( email )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="volume", verify_key_id="name" )
-@ListAPIGuard( Volume )
+@ListAPIGuard( Volume, parse_args=Volume.ParseArgs )
 def list_public_volumes():
    return storage.list_public_volumes()
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="volume", verify_key_id="name" )
-@ListAPIGuard( Volume )
+@ListAPIGuard( Volume, parse_args=Volume.ParseArgs )
 def list_archive_volumes():
    return storage.list_archive_volumes()
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], revoke_key_type="volume", revoke_key_id="volume_name_or_id" )
-@UpdateAPIGuard( Volume, pass_caller_user="caller_user" )
+@UpdateAPIGuard( Volume, target_object_name="volume_name_or_id", pass_caller_user="caller_user", parse_args=Volume.ParseArgs )
 def set_volume_public_signing_key( volume_name_or_id, signing_public_key, **attrs ):   
    return storage.set_volume_public_signing_key( volume_name_or_id, signing_public_key, **attrs )
 
@@ -404,91 +427,91 @@ def set_volume_public_signing_key( volume_name_or_id, signing_public_key, **attr
 # The Volume Access Request API.
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"])
-@BindAPIGuard( SyndicateUser, Volume, caller_owns_target=False )
+@BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_target=False, parse_args=VolumeAccessRequest.ParseArgs )
 def remove_volume_access_request( email, volume_name_or_id ):
    return storage.remove_volume_access_request( email, volume_name_or_id )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"])
-@BindAPIGuard( SyndicateUser, Volume, caller_owns_target=False )
+@BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_target=False, parse_args=VolumeAccessRequest.ParseArgs )
 def request_volume_access( email, volume_name_or_id, caps, message ):
    return storage.request_volume_access( email, volume_name_or_id, caps, message )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID])
-@ListAPIGuard( VolumeAccessRequest, pass_caller_user="caller_user" )
+@ListAPIGuard( VolumeAccessRequest, pass_caller_user="caller_user", parse_args=VolumeAccessRequest.ParseArgs )
 def list_volume_access_requests( volume_name_or_id, **attrs ):
    return storage.list_volume_access_requests( volume_name_or_id, **attrs )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID])
-@ListAPIGuard( VolumeAccessRequest )
+@ListAPIGuard( VolumeAccessRequest, parse_args=VolumeAccessRequest.ParseArgs )
 def list_user_access_requests( email ):
    return storage.list_user_access_requests( email )
 
 
 # ----------------------------------
-# The Gateway API.
+# The Gateway API
 
-@Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="gateway", verify_key_id="name", trust_key_type="gateway", trust_key_id="name" )
-@CreateAPIGuard( Gateway )
-def create_gateway( volume_name_or_id, email, gateway_type, signing_public_key, **attrs ):
-   return storage.create_gateway( volume_name_or_id, email, gateway_type, signing_public_key, **attrs )
+@Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="gateway", verify_key_id="name", trust_key_type="gateway", trust_key_id="gateway_name" )
+@CreateAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
+def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, gateway_public_key, signing_public_key, **attrs ):
+   return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, gateway_public_key, signing_public_key, **attrs )
 
 @Authenticate( object_authenticator=Gateway.Authenticate, object_response_signer=Gateway.Sign,
                signing_key_types=["user", "gateway"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID, "g_name_or_id"],
-               verify_key_type="gateway", verify_key_id="name" )
-@ReadAPIGuard( Gateway )
+               verify_key_type="gateway", verify_key_id="g_name_or_id" )
+@ReadAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
 def read_gateway( g_name_or_id ):
    return storage.read_gateway( g_name_or_id )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID] )
-@UpdateAPIGuard( Gateway )
+@UpdateAPIGuard( Gateway, target_object_name="g_name_or_id", parse_args=Gateway.ParseArgs )
 def update_gateway( g_name_or_id, **attrs ):
    return storage.update_gateway( g_name_or_id, **attrs )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID] )
-@BindAPIGuard( Volume, Gateway, caller_owns_target=False )
-def set_gateway_caps( volume_name_or_id, g_name_or_id, caps ):
+@UpdateAPIGuard( Gateway, target_object_name="g_name_or_id", parse_args=Gateway.ParseArgs )
+def set_gateway_caps( g_name_or_id, caps ):
    return storage.set_gateway_caps( g_name_or_id, caps )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], revoke_key_type="gateway", revoke_key_id="g_name_or_id" )
-@DeleteAPIGuard( Gateway )
+@DeleteAPIGuard( Gateway, target_object_name="g_name_or_id", parse_args=Gateway.ParseArgs )
 def delete_gateway( g_name_or_id ):
    return storage.delete_gateway( g_name_or_id )  
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="gateway", verify_key_id="name" )
-@ListAPIGuard( Gateway, admin_only=True )
+@ListAPIGuard( Gateway, admin_only=True, parse_args=Gateway.ParseArgs )
 def list_gateways( query_attrs ):
    return storage.list_gateways( query_attrs )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="gateway", verify_key_id="name" )
-@ListAPIGuard( Gateway )
+@ListAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
 def list_gateways_by_user( email ):
    return storage.list_gateways_by_user( email )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="gateway", verify_key_id="name" )
-@ListAPIGuard( Gateway, admin_only=True )
+@ListAPIGuard( Gateway, admin_only=True, parse_args=Gateway.ParseArgs )
 def list_gateways_by_host( host ):
    return storage.list_gateways_by_host( host )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="gateway", verify_key_id="name" )
-@ListAPIGuard( Gateway )
+@ListAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
 def list_gateways_by_volume( volume_name_or_id ):
    return storage.list_gateways_by_volume( volume_name_or_id )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], revoke_key_type="gateway", revoke_key_id="g_name_or_id" )
-@UpdateAPIGuard( Gateway )
+@UpdateAPIGuard( Gateway, target_object_name="g_name_or_id", parse_args=Gateway.ParseArgs )
 def set_gateway_public_signing_key( g_name_or_id, signing_public_key, **attrs ):
    return storage.set_gateway_public_signing_key( g_name_or_id, signing_public_key, **attrs )
       
 
 # ----------------------------------
 class API( object ):
+   # NOTE: this should only be used by the MS
    
    def __init__(self):
       pass
    
    @classmethod
    def verifier( cls, method, args, kw, request_body, syndicate_data, data ):
-      # NOTE: this should only be used by the MS
       if not isinstance( method, AuthMethod ):
          raise Exception("Invalid method")
       

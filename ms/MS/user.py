@@ -108,6 +108,9 @@ class SyndicateUser( storagetypes.Object ):
    verify_public_key = storagetypes.Text()
    verify_private_key = storagetypes.Text()
    
+   # for RPC
+   key_type = "user"
+   
    required_attrs = [
       "email",
       "openid_url",
@@ -130,7 +133,8 @@ class SyndicateUser( storagetypes.Object ):
       "email" : (lambda cls, value: valid_email(cls, value)),
       "signing_public_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE )),
       "verify_public_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE )),
-      "verify_private_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE ))
+      "verify_private_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE )),
+      "openid_url": (lambda cls, value: len(value) < 4096)              # not much of a check here...
    }
 
    read_attrs_api_required = [
