@@ -7,17 +7,17 @@
 
 import ConfigParser
 
-import syndicate.log
 import os
 import argparse
 import sys
 import StringIO
 import traceback
 
-import common.api as api
-import common.object_stub as object_stub
+import syndicate.client.common.api as api
+import syndicate.client.common.object_stub as object_stub
+import syndicate.client.common.log as Log
 
-log = syndicate.log.log
+log = Log.log
 
 CONFIG_DIR = os.path.expanduser( "~/.syndicate" )
 CONFIG_FILENAME = os.path.join(CONFIG_DIR, "syndicate.conf")
@@ -36,105 +36,6 @@ CONFIG_OPTIONS = {
    "params":            (None, "+", "Method name, followed by parameters (positional and keyword supported)."),
 }
 
-# -------------------
-def is_method( method_name ):
-
-   return hasattr( api, method_name )
-
-# -------------------
-def get_method( method_name ):
-   
-   try:
-      method = getattr( api, method_name )
-   except:
-      raise Exception("Not an API method: '%s'" % method_name )
-   
-   return method
-
-# -------------------
-def signing_key_types_from_method_name( config, method_name ):
-   method = get_method( method_name )
-   try:
-      return method.signing_key_types
-   except:
-      raise Exception("Method '%s' has no known signing key types" % method_name)
-
-# -------------------
-def signing_key_names_from_method_args( config, method_name, args, kw ):
-   method = get_method( method_name )
-   try:
-      names = method.get_signing_key_names( method_name, args, kw )
-      
-      # fix up special type values 
-      for i in xrange(0,len(names)):
-         if names[i] == api.SIGNING_KEY_DEFAULT_USER_ID:
-            names[i] = config['user_id']
-      
-      return names 
-   
-   except Exception, e:
-      traceback.print_exc()
-      raise Exception("Method '%s' has no known signing key names" % method_name)
-
-# -------------------
-def verify_key_type_from_method_name( config, method_name ):
-   method = get_method( method_name )
-   try:
-      return method.verify_key_type
-   except Exception, e:
-      raise Exception("Method '%s' has no known verify key type" % method_name)
-
-# -------------------
-def verify_key_name_from_method_result( config, method_name, args, kw, method_result ):
-   method = get_method( method_name )
-   try:
-      # fix up special type values
-      if method.verify_key_type == api.SIGNING_KEY_DEFAULT_USER_ID:
-         return config['user_id']
-      else:
-         return method.get_verify_key_name( method_name, args, kw, method_result )
-   except Exception, e:
-      traceback.print_exc()
-      raise Exception("Method '%s' has no known verify key name" % method_name)
-   
-# -------------------
-def revoke_key_type_from_method_name( config, method_name ):
-   method = get_method( method_name )
-   try:
-      return method.revoke_key_type
-   except Exception, e:
-      raise Exception("Method '%s' has no known revoke key type" % method_name)
-
-# -------------------
-def revoke_key_name_from_method_args( config, method_name, args, kw ):
-   method = get_method( method_name )
-   try:
-      return method.get_revoke_key_name( method_name, args, kw )
-   except Exception, e:
-      traceback.print_exc()
-      raise Exception("Method '%s' has no known revoke key name" % method_name)
-   
-# -------------------
-def trust_key_type_from_method_name( config, method_name ):
-   method = get_method( method_name )
-   try:
-      return method.trust_key_type
-   except Exception, e:
-      raise Exception("Method '%s' has no known trust key type" % method_name)
-
-# -------------------
-def trust_key_name_from_method_args( config, method_name, args, kw ):
-   method = get_method( method_name )
-   try:
-      return method.get_trust_key_name( method_name, args, kw )
-   except Exception, e:
-      traceback.print_exc()
-      raise Exception("Method '%s' has no known trust key name" % method_name)
-
-# -------------------
-def method_help_from_method_name( method_name ):
-   method = get_method( method_name )
-   return method.__doc__
 
 # -------------------
 def build_config( config ):
@@ -167,22 +68,19 @@ def build_parser( progname ):
    return parser
 
 # -------------------
-def object_signing_key_filename( config, key_type, object_id ):
+def object_key_path( config, key_type, internal_type, object_id, public=False ):
+   suffix = ".pkey"
+   if public:
+      suffix = ".pub"
+      
    key_dir = config.get( KEY_DIR_NAMES.get( key_type, None ) )
    if key_dir == None:
       raise Exception("Could not get key directory for '%s'" % key_type)
-   return os.path.join( os.path.join( key_dir, "signing"), str(object_id) + ".rsa" )
-
-# -------------------
-def object_verify_key_filename( config, key_type, object_id ):
-   key_dir = config.get( KEY_DIR_NAMES.get( key_type, None ) )
-   if key_dir == None:
-      raise Exception("Could not get key directory for '%s'" % key_type)
-   return os.path.join( os.path.join( key_dir, "verifying"), str(object_id) + ".pub" )   
+   return os.path.join( os.path.join( key_dir, internal_type), str(object_id) + suffix )
 
 # -------------------
 def parse_args( method_name, args, kw ):
-   method = get_method( method_name )
+   method = api.get_method( method_name )
    try:
       if method.parse_args:
          args, kw, extras = method.parse_args( method.argspec, args, kw )
@@ -195,7 +93,7 @@ def parse_args( method_name, args, kw ):
       
 # -------------------
 def validate_args( method_name, args, kw ):
-   method = get_method( method_name )
+   method = api.get_method( method_name )
    
    arg_len = len(method.argspec.args)
    def_len = 0
@@ -207,7 +105,6 @@ def validate_args( method_name, args, kw ):
       raise Exception("Method '%s' expects %s arguments; got %s" % (method_name, arg_len - def_len, len(args)))
    
    return True
-
 
 # -------------------
 def extend_paths( config, base_dir ):

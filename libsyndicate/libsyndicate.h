@@ -548,7 +548,6 @@ bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path 
 char** md_versioned_paths( char const* base_path );
 int64_t* md_versions( char const* base_path );
 int64_t md_next_version( char** versioned_publish_paths );
-//int64_t md_next_version( int64_t* versions );
 char* md_clear_version( char* path );
 void md_update_free( struct md_update* update );
 void md_update_dup2( struct md_update* src, struct md_update* dest );
@@ -688,9 +687,16 @@ int md_openssl_thread_setup(void);
 int md_openssl_thread_cleanup(void);
 void md_init_OpenSSL(void);
 int md_openssl_error(void);
+int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str );
+int md_load_privkey( EVP_PKEY** key, char const* privkey_str );
+int md_generate_key( EVP_PKEY** key );
+long md_dump_pubkey( EVP_PKEY* pkey, char** buf );
 int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len );
 int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len );
-
+int md_encrypt( EVP_PKEY* pubkey, char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
+int md_encrypt_pem( char const* pubkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for syntool
+int md_decrypt( EVP_PKEY* privkey, char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
+int md_decrypt_pem( char const* privkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for syntool
 }
 
 
@@ -836,7 +842,6 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
 #define INVALID_VOLUME_ID INVALID_BLOCK_ID
 
 // gateway types for md_init
-// TODO: sync up with ms.proto?
 #define SYNDICATE_UG       ms::ms_gateway_cert::USER_GATEWAY
 #define SYNDICATE_AG       ms::ms_gateway_cert::ACQUISITION_GATEWAY
 #define SYNDICATE_RG       ms::ms_gateway_cert::REPLICA_GATEWAY

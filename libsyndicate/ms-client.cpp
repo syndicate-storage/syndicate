@@ -116,37 +116,6 @@ static int ms_client_verify_key( EVP_PKEY* key ) {
       errorf("Invalid RSA size %d\n", size * 8 );
       return -EINVAL;
    }
-   
-   /*
-   // public key context...
-   EVP_PKEY_CTX* key_ctx = EVP_PKEY_CTX_new( key, NULL );
-   if( key_ctx == NULL ) {
-      errorf("%s", "EVP_PKEY_CTX_new returned NULL\n");
-      md_openssl_error();
-      return -ENOENT;
-   }
-   
-   // activate PSS
-   int rc = EVP_PKEY_CTX_set_rsa_padding( key_ctx, RSA_PKCS1_PSS_PADDING );
-   if( rc <= 0 ) {
-      errorf( "EVP_PKEY_CTX_set_rsa_padding rc = %d\n", rc );
-      md_openssl_error();
-      EVP_PKEY_CTX_free( key_ctx );
-      return -ENOENT;
-   }
-   
-   // use maximum possible salt length, as per http://wiki.openssl.org/index.php/Manual:EVP_PKEY_CTX_ctrl(3)
-   rc = EVP_PKEY_CTX_set_rsa_pss_saltlen( key_ctx, -2 );
-   if( rc <= 0 ) {
-      errorf( "EVP_PKEY_CTX_set_rsa_pss_saltlen rc = %d\n", rc );
-      md_openssl_error();
-      EVP_PKEY_CTX_free( key_ctx );
-      return -ENOENT;
-   }
-   
-   EVP_PKEY_CTX_free( key_ctx );
-   */
-   
    return 0;
 }
 
@@ -243,9 +212,9 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
 
    if( conf->gateway_key != NULL ) {
       // we were given Gateway keys.  Load them
-      rc = ms_client_load_privkey( &client->my_key, conf->gateway_key );
+      rc = md_load_privkey( &client->my_key, conf->gateway_key );
       if( rc != 0 ) {
-         errorf("ms_client_load_privkey rc = %d\n", rc );
+         errorf("md_load_privkey rc = %d\n", rc );
          return rc;
       }
    }
@@ -1539,112 +1508,6 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_
 }
 
 
-// load a PEM-encoded (RSA) public key into an EVP key
-int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
-   BIO* buf_io = BIO_new_mem_buf( (void*)pubkey_str, strlen(pubkey_str) );
-
-   EVP_PKEY* public_key = PEM_read_bio_PUBKEY( buf_io, NULL, NULL, NULL );
-
-   BIO_free_all( buf_io );
-
-   if( public_key == NULL ) {
-      // invalid public key
-      errorf("%s", "ERR: failed to read public key\n");
-      md_openssl_error();
-      return -EINVAL;
-   }
-
-   *key = public_key;
-   
-   return 0;
-}
-
-
-// load a PEM-encoded (RSA) private key into an EVP key
-int ms_client_load_privkey( EVP_PKEY** key, char const* privkey_str ) {
-   BIO* buf_io = BIO_new_mem_buf( (void*)privkey_str, strlen(privkey_str) );
-
-   EVP_PKEY* privkey = PEM_read_bio_PrivateKey( buf_io, NULL, NULL, NULL );
-
-   BIO_free_all( buf_io );
-
-   if( privkey == NULL ) {
-      // invalid public key
-      errorf("%s", "ERR: failed to read private key\n");
-      md_openssl_error();
-      return -EINVAL;
-   }
-
-   *key = privkey;
-
-   return 0;
-}
-
-// generate RSA public/private key pair
-int ms_client_generate_key( EVP_PKEY** key ) {
-
-   dbprintf("%s", "Generating public/private key...\n");
-   
-   EVP_PKEY_CTX *ctx;
-   EVP_PKEY *pkey = NULL;
-   ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
-   if (!ctx) {
-      md_openssl_error();
-      return -1;
-   }
-
-   int rc = EVP_PKEY_keygen_init( ctx );
-   if( rc <= 0 ) {
-      md_openssl_error();
-      EVP_PKEY_CTX_free( ctx );
-      return rc;
-   }
-
-   rc = EVP_PKEY_CTX_set_rsa_keygen_bits( ctx, RSA_KEY_SIZE );
-   if( rc <= 0 ) {
-      md_openssl_error();
-      EVP_PKEY_CTX_free( ctx );
-      return rc;
-   }
-
-   rc = EVP_PKEY_keygen( ctx, &pkey );
-   if( rc <= 0 ) {
-      md_openssl_error();
-      EVP_PKEY_CTX_free( ctx );
-      return rc;
-   }
-
-   *key = pkey;
-   EVP_PKEY_CTX_free( ctx );
-   return 0;
-}
-
-
-// dump a key to memory
-long ms_client_dump_pubkey( EVP_PKEY* pkey, char** buf ) {
-   BIO* mbuf = BIO_new( BIO_s_mem() );
-   
-   int rc = PEM_write_bio_PUBKEY( mbuf, pkey );
-   if( rc <= 0 ) {
-      errorf("PEM_write_bio_PUBKEY rc = %d\n", rc );
-      md_openssl_error();
-      return -EINVAL;
-   }
-
-   (void) BIO_flush( mbuf );
-   
-   char* tmp = NULL;
-   long sz = BIO_get_mem_data( mbuf, &tmp );
-
-   *buf = CALLOC_LIST( char, sz );
-   memcpy( *buf, tmp, sz );
-
-   BIO_free( mbuf );
-   
-   return sz;
-}
-
-
 // (re)load a gateway certificate.
 // If my_gateway_id matches the ID in the cert, then load the closure as well (since we'll need it)
 int ms_client_load_cert( uint64_t my_gateway_id, struct ms_gateway_cert* cert, const ms::ms_gateway_cert* ms_cert ) {
@@ -1684,9 +1547,9 @@ int ms_client_load_cert( uint64_t my_gateway_id, struct ms_gateway_cert* cert, c
       cert->pubkey = NULL;
    }
    else {
-      int rc = ms_client_load_pubkey( &cert->pubkey, ms_cert->public_key().c_str() );
+      int rc = md_load_pubkey( &cert->pubkey, ms_cert->public_key().c_str() );
       if( rc != 0 ) {
-         errorf("ms_client_load_pubkey(Gateway %s) rc = %d\n", cert->name, rc );
+         errorf("md_load_pubkey(Gateway %s) rc = %d\n", cert->name, rc );
       }
    }
    
@@ -1712,9 +1575,9 @@ int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadat
       vol->reload_volume_key = false;
       
       // trust it this time, but not in the future
-      rc = ms_client_load_pubkey( &vol->volume_public_key, volume_md->volume_public_key().c_str() );
+      rc = md_load_pubkey( &vol->volume_public_key, volume_md->volume_public_key().c_str() );
       if( rc != 0 ) {
-         errorf("ms_client_load_pubkey rc = %d\n", rc );
+         errorf("md_load_pubkey rc = %d\n", rc );
          return -ENOTCONN;
       }
    }

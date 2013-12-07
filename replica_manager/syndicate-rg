@@ -7,16 +7,51 @@
 import sys
 import os
 import rm_common
-import rm_config
-import rm_server
 import rm_main
+import signal
 
 log = rm_common.log
-      
-if __name__ == "__main__":
-   optparser = rm_main.build_parser( sys.argv[0] )
-   opts = rm_main.validate_args( optparser )
-   
+
+def spawn_rg( argv ):
    # fork, become a watchdog, and run the main server
    child_pid = os.fork()
    
+   if child_pid == -1:
+      # failure
+      raise Exception("Failed to fork")
+   
+   if child_pid == 0:
+      # we're the child...start the server
+      rm_main.main( argv )
+   
+   return child_pid
+
+      
+if __name__ == "__main__":
+   
+   argv = sys.argv 
+   
+   # fork, become a watchdog, and run the main server
+   child_pid = spawn_rg( argv )
+   
+   # we're the parent...start monitoring 
+   while True:
+      # wait for child to die
+      try:
+         pid, exit_status = os.waitpid( child_pid, 0 )
+      except OSError, e:
+         log.exception(e)
+         sys.exit(1)
+      
+      # did the child exit on its own accord?
+      if os.WIFEXITED(exit_status):
+         log.info("RG exit status %s" % os.WEXITSTATUS( exit_status ) )
+         sys.exit( os.WEXITSTATUS( exit_status ) )
+      
+      # was the child signaled? 
+      elif os.WIFSIGNALED(exit_status):
+         sig = os.WTERMSIG( exit_status )
+         log.info("RG exited with signal %s" % sig )
+         
+         # respawn it 
+         child_pid = spawn_rg( argv )

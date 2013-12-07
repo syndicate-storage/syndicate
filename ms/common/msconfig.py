@@ -8,7 +8,7 @@
 import os
 
 try:
-   import syndicate.protobufs.ms_pb2 as ms_pb2
+   import syndicate.client.protobufs.ms_pb2 as ms_pb2
 except:
    import protobufs.ms_pb2 as ms_pb2
 

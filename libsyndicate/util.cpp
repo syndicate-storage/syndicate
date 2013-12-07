@@ -471,7 +471,7 @@ int reg_match(const char *string, char const *pattern) {
    return 1;
 }
 
-// random number generator
+// pseudo random number generator
 static uint32_t Q[4096], c=362436; /* choose random initial c<809430660 and */
                                          /* 4096 random 32-bit integers for Q[]   */
                                          
@@ -504,7 +504,7 @@ uint32_t CMWC4096(void) {
 
 
 int util_init(void) {
-   // random number init
+   // pseudo random number init
    int rfd = open("/dev/urandom", O_RDONLY );
    if( rfd < 0 ) {
       return -errno;

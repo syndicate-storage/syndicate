@@ -9,6 +9,8 @@ import errno
 import protobufs.serialization_pb2 as serialization_proto
 import protobufs.ms_pb2 as ms_proto
 
+from syndicate.syndicate import Syndicate
+
 DEBUG = True
 
 FILE_ROOT = os.path.abspath(os.path.dirname(__file__))
@@ -87,8 +89,6 @@ def syndicate_init( gateway_name=None,
    '''
    
    global libsyndicate
-   
-   from syndicate import Syndicate
    
    if libsyndicate == None:
       libsyndicate = Syndicate.getinstance(  gateway_type=Syndicate.GATEWAY_TYPE_RG,

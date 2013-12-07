@@ -1,0 +1,57 @@
+# build ms
+
+import os
+
+Import('env')
+env = env.Clone()
+
+# get the protobuf .py file paths
+Import('protobuf_py_files')
+
+# get a list of common files...
+common_files = Glob("common/*.py")
+
+# get a list of client files...
+client_python_files = Glob("clients/python/*.py")
+client_python_bin = Glob("clients/python/bin/*.py")
+
+client_python_files.extend( client_python_bin )
+
+# protobuf utilities
+protobuf_util = Glob("protobufs/__init__.py")
+protobuf_util.extend( Glob("protobufs/protobuf_to_dict.py"))
+
+# development build?
+test_files = Glob("tests/__init__.py")
+test_files.extend( Glob("tests/__init__.py") )
+test_files.extend( Glob("tests/test_syntool.py") )
+test_files.extend( Glob("tests/user_test_key.pem") )
+test_files.extend( Glob("tests/local_setup.sh") )
+
+python_lib_cmds = []
+python_lib_cmds.append( common_files )
+python_lib_cmds.append( protobuf_util )
+
+if env['devel']:
+   python_lib_cmds.append( test_files )
+
+for pypb in protobuf_py_files:
+   # copy protobuf files...
+   cmd = env.Command( "protobufs/%s" % (os.path.basename(pypb.path)), "#" + pypb.path, Copy( "$TARGET", "$SOURCE" ) )
+   python_lib_cmds.append( cmd )
+
+client_cmds = []
+for client_python_file in client_python_files:
+   # put client files in place
+   if client_python_file in client_python_bin:
+      cmd = env.Command( "../bin/%s" % (os.path.basename(client_python_file.path)), "#" + client_python_file.path, Move( "$TARGET", "$SOURCE" ) )
+      client_cmds.append( cmd )
+
+   else:
+      cmd = env.Command( "%s" % (os.path.basename(client_python_file.path)), "#" + client_python_file.path, Move( "$TARGET", "$SOURCE" ) )
+      python_lib_cmds.append( cmd )
+
+cleanup_cmds = []
+cleanup_commands = env.AlwaysBuild( env.Command("CLEANUP", "clients", Delete("$SOURCE") ) )
+
+Return( 'python_lib_cmds client_cmds cleanup_cmds' )

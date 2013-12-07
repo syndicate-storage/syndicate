@@ -33,7 +33,6 @@ from gateway import Gateway
 from common.msconfig import *
 import common.jsonrpc as jsonrpc
 
-
 # ----------------------------------
 def is_user( caller_user_or_object ):
    if caller_user_or_object.__class__ == SyndicateUser:
@@ -196,6 +195,21 @@ def object_id_from_name( object_name, func, args, kw ):
    
    return None
 
+# ----------------------------------
+def assert_public_method( method ):
+   if method == None:
+      # does not exist
+      raise Exception("No such method '%s'" % method_name)
+   
+   if type(method) != types.FunctionType:
+      # not a function
+      raise Exception("No such method '%s'" % method_name)
+   
+   if not getattr(method, "is_public", False):
+      # not a function decorated by Authenticate (i.e. not part of the API)
+      raise Exception("No such method '%s'" % method_name)
+   
+   return True
 
 # ----------------------------------
 class CreateAPIGuard:
@@ -521,23 +535,6 @@ class Authenticate:
       inner.source_object_name = getattr( func, "source_object_name", None )
       inner.is_public = True
       return inner
-      
-            
-# ----------------------------------
-def assert_public_method( method ):
-   if method == None:
-      # does not exist
-      raise Exception("No such method '%s'" % method_name)
-   
-   if type(method) != types.FunctionType:
-      # not a function
-      raise Exception("No such method '%s'" % method_name)
-   
-   if not getattr(method, "is_public", False):
-      # not a function decorated by Authenticate (i.e. not part of the API)
-      raise Exception("No such method '%s'" % method_name)
-   
-   return True
 
 # ----------------------------------
 class AuthMethod( object ):

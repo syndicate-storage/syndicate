@@ -10,6 +10,17 @@ from msconfig import *
 import api
 import inspect
 
+def assert_public_method( method ):
+   return True
+
+class AuthMethod( object ):
+   def __init__(self, method_func, authenticated_caller):
+      self.method_func = method_func
+   
+   def __call__(self, *args, **kw):
+      return self.method_func( *args, **kw )
+   
+   
 class StubAuth( object ):
    expect_verifying_key = False
    admin_only = False
@@ -174,5 +185,6 @@ class Authenticate( StubAuth ):
       func.get_verify_key_name = lambda method_name, args, kw, method_result: Authenticate.get_verify_key_name( func, self.verify_key_id, method_name, args, kw, method_result )
       func.get_revoke_key_name = lambda method_name, args, kw: Authenticate.get_revoke_key_name( func, self.revoke_key_id, method_name, args, kw )
       func.get_trust_key_name = lambda method_name, args, kw: Authenticate.get_trust_key_name( func, self.trust_key_id, method_name, args, kw )
+      func.is_public = True
       return func
       

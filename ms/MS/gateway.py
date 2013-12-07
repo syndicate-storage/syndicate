@@ -431,8 +431,8 @@ class Gateway( storagetypes.Object ):
       # what kind of gateway are we?
       gateway_type = kwargs['gateway_type']
       
-      # set capabilities correctly, if given
-      kwargs['caps'] = cls.safe_caps( gateway_type, kwargs['caps'] )
+      # set capabilities correctly and safely
+      kwargs['caps'] = cls.safe_caps( gateway_type, volume.default_gateway_caps )
       
       # ID...
       g_id = random.randint( 0, 2**63 - 1 )
@@ -583,6 +583,9 @@ class Gateway( storagetypes.Object ):
          else:
             raise Exception("No such Gateway '%s'" % g_name_or_id )
       
+      if len(fields.keys()) == 0:
+         return storagetypes.make_key( Gateway, storagetypes.make_key_name( g_id=g_id ) )
+      
       # validate...
       invalid = cls.validate_fields( fields )
       if len(invalid) != 0:
@@ -638,8 +641,7 @@ class Gateway( storagetypes.Object ):
          for (k,v) in fields.items():
             setattr( gateway, k, v )
          
-         if "cert_version" in fields.keys():
-            gateway.cert_version = old_version + 1
+         gateway.cert_version = old_version + 1
          
          return gateway.put()
       

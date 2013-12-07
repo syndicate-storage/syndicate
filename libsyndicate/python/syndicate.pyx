@@ -2,6 +2,7 @@ from syndicate cimport *
 cimport libc.stdlib as stdlib
 
 import errno
+import pickle
 
 syndicate_inited = False
 syndicate_ref = None
@@ -249,6 +250,61 @@ cdef class Syndicate:
       else:
          return None
       
+
+   cpdef encrypt_closure_secrets( self, gateway_pubkey_str, closure_secrets ):
+      '''
+         Encrypt a secrets object
+      '''
+      
+      try:
+         closure_secrets_serialized = pickle.dumps( closure_secrets )
+      except Exception, e:
+         return (-errno.EINVAL, None)
+      
+      cdef char* c_closure_secrets_serialized = closure_secrets_serialized
+      cdef size_t c_closure_secrets_serialized_len = len(closure_secrets_serialized)
+      
+      cdef char* c_encrypted_secrets = NULL
+      cdef size_t c_encrypted_secrets_len = 0
+      
+      rc = md_encrypt_pem( gateway_pubkey_str, c_closure_secrets_serialized, c_closure_secrets_serialized_len, &c_encrypted_secrets, &c_encrypted_secrets_len )
+      if rc != 0:
+         return (rc, None)
+      
+      else:
+         py_encrypted_secrets = c_encrypted_secrets[:c_encrypted_secrets_len]
+         stdlib.free( c_encrypted_secrets )
+         
+         return (0, py_encrypted_secrets)
+      
+      
+   cpdef decrypt_closure_secrets( self, gateway_privkey_str, closure_secrets ):
+      '''
+         Decrypt a secrets object
+      '''
+      
+      cdef char* c_closure_secrets_encrypted = closure_secrets
+      cdef size_t c_closure_secrets_encrypted_len = len(closure_secrets)
+      
+      cdef char* c_serialized_secrets = NULL
+      cdef size_t c_serialized_secrets_len = 0
+      
+      rc = md_decrypt_pem( gateway_privkey_str, c_closure_secrets_encrypted, c_closure_secrets_encrypted_len, &c_serialized_secrets, &c_serialized_secrets_len )
+      if rc != 0:
+         return (rc, None)
+      
+      else:
+         py_serialized_secrets = c_serialized_secrets[:c_serialized_secrets_len]
+         stdlib.free( c_serialized_secrets )
+         
+         # try to deserialize
+         try:
+            secrets_dict = pickle.loads( py_serialized_secrets )
+            return (0, secrets_dict)
+         except Exception, e:
+            return (-errno.ENODATA, None)
+         
+         
       
    cpdef set_view_change_callback( self, callback_func ):
       '''

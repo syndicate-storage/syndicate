@@ -10,6 +10,7 @@ Import('protobuf_py_files')
 # get a list of all files
 rm_files = Glob("*.py")
 rm_files.extend( Glob("protobufs/*.py") )
+rm_files.extend( Glob("syndicate-rg") )
 
 cmds = []
 for pypb in protobuf_py_files:

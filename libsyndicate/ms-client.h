@@ -228,7 +228,6 @@ struct ms_client {
 
 extern "C" {
 
-int ms_client_generate_key( EVP_PKEY** key );
 int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndicate_conf* conf );
 int ms_client_destroy( struct ms_client* client );
 
@@ -238,9 +237,6 @@ int ms_client_reload_certs( struct ms_client* client );
 int ms_client_reload_volume( struct ms_client* client );
 
 int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len );
-
-int ms_client_load_pubkey( EVP_PKEY** key, char const* pubkey_str );
-int ms_client_load_privkey( EVP_PKEY** key, char const* privkey_str );
 
 int ms_client_rlock( struct ms_client* client );
 int ms_client_wlock( struct ms_client* client );
@@ -303,6 +299,7 @@ void ms_client_free_response( ms_response_t* ms_response );
 void ms_client_free_listing( struct ms_listing* listing );
 
 uint64_t ms_client_make_file_id();
+
 }
 
 // have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???

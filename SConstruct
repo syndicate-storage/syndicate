@@ -68,10 +68,11 @@ Export("protobuf_py_files")      # needed by ms and rm
 
 # libsyndicate build
 libsyndicate_out = "build/out/libsyndicate"
-libsyndicate_python_out = "build/out/python"
+libsyndicate_python_out = "build/out/python/syndicate"
 
 libsyndicate, libsyndicate_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
 libsyndicate_python = SConscript("libsyndicate/python/SConscript", variant_dir=libsyndicate_python_out )
+libsyndicate_python_init = env.AlwaysBuild( env.Command("INIT", "", "touch %s/../__init__.py" % libsyndicate_python_out ) )
 
 env.Depends( libsyndicate_source_paths, protobuf_cc_files )  # libsyndicate requires protobufs to be built first
 env.Depends( libsyndicate_python, protobuf_py_files )
@@ -80,9 +81,9 @@ env.Depends( libsyndicate_python, protobuf_py_files )
 libsyndicate_install_headers = env.Install( inc_install_dir, libsyndicate_header_paths + protobuf_header_paths )
 libsyndicate_install_library = env.Install( lib_install_dir, libsyndicate ) 
 libsyndicate_install_c_targets = [libsyndicate_install_headers, libsyndicate_install_library]
-libsyndicate_install_python = env.Command( "syndicate.so", [], "cd %s/python && ./setup.py install" % libsyndicate_out )
+libsyndicate_install_python = env.Command( "syndicate.so", [], "cd %s && ./setup.py install" % libsyndicate_python_out )
 
-env.Alias( 'libsyndicate-python', [libsyndicate_python] )
+env.Alias( 'libsyndicate-python', [libsyndicate_python, libsyndicate_python_init] )
 env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers] )
 env.Alias( 'libsyndicate-python-install', [libsyndicate_install_python] )
 env.Depends( libsyndicate_install_python, libsyndicate_install_c_targets )
@@ -150,14 +151,21 @@ watchdog_daemon = SConscript( "AG/watchdog-daemon/SConscript", variant_dir=watch
 # AG installation
 common.install_targets( env, 'AG-install', bin_install_dir, ags )
 
-# ms build
-ms_out = "build/out/ms"
-ms, client_libs, client_bin = SConscript( "ms/SConscript", variant_dir=ms_out )
-env.Depends( ms, protobuf_py_files )  # ms requires Python protobufs to be built first
-env.Depends( client_libs, ms )
-env.Depends( client_bin, ms )
+# MS server build
+ms_server_out = "build/out/ms"
+ms_server = SConscript( "ms/SConscript.server", variant_dir=ms_server_out )
+env.Depends( ms_server, protobuf_py_files )  # ms requires Python protobufs to be built first
 
-env.Alias( "ms-tools", [client_libs, client_bin] )
+env.Alias( "ms", ms_server )
+
+# MS clients build
+ms_clients_out = "build/out/python/syndicate/client"
+client_libs, client_bin, client_cleanup = SConscript( "ms/SConscript.client", variant_dir=ms_clients_out )
+env.Depends( client_libs, protobuf_py_files )
+env.Depends( client_bin, protobuf_py_files )
+env.Depends( client_cleanup, [client_libs, client_bin] )
+
+env.Alias( "ms-clients", [client_libs, client_bin, client_cleanup] )
 
 # replica_manager build
 rm_out = "build/out/replica_manager"
