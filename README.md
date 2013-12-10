@@ -1,22 +1,20 @@
 Syndicate
 =========
 
-Syndicate is the virtual private cloud storage system that scales.  You pick any combination of local disk, cloud storage, and network caches, and use Syndicate to turn them into an always-on, scalable read/write storage medium tailored to you and your application's needs.  Syndicate keeps your data private to you and the people you authorize, and employs strong cryptography to prevent anyone else from accessing it.
+Syndicate is the virtual private cloud storage system that scales.  You pick any combination of local storage, cloud storage, CDNs, and HTTP caches, and use Syndicate to turn them into an always-on, scalable read/write storage system tailored to your application's needs.
 
 Why use Syndicate?
 ------------------
 
-Syndicate is **decentralized**.  You can distribute your Syndicate instance across multiple clouds, multiple local networks, and multiple devices.  Syndicate is not tied to any specific provider.
+Syndicate is **decentralized**.  You can distribute Syndicate across multiple clouds, multiple local networks, and multiple devices.  Syndicate is not tied to any specific provider.
 
-Syndicate is **scalable**.  You can use Syndicate to share data across just your personal devices, or you can use it to distribute terabytes of data to millions of people.  All you have to do is give it enough cloud storage and network caches to do so.
+Syndicate is **scalable**.  You can use Syndicate to share a few files across just your personal devices, or you can use it to distribute terabytes of data to millions of people.
 
-Syndicate is **secure**.  Syndicate implements a trustworthy storage abstraction layer, forming a narrow waist between you and your storage.  Syndicate components rely on strong, proven cryptography to authenticate to you and to one another, and employ a novel certificate distribution algorithm that keeps unauthorized users away from your data.
+Syndicate is **flexible**.  It doesn't matter what underlying storage and caches you give to Syndicate; Syndicate will combine them all into a single, virtual cloud that looks and acts the same regardless of your choices.  Syndicate offers a simple but powerful driver model that lets you add support for more back-ends and define file-specific storage policies with minimal effort.
 
-Syndicate is **private**.  Syndicate gives you automatic end-to-end encryption over whatever underlying storage and caches you use.  Only your endpoints can read data.
+Syndicate is **private**.  Syndicate gives you automatic end-to-end encryption on a per-file basis, such that only your endpoints can see the data.  The underlying cloud storage and caches only see ciphertext.
 
-Syndicate is **extensible**.  You can control how Syndicate manages file data.  Syndicate lets you set storage-level policies in the form of simple Python scripts, which let you define exactly what Syndicate does with your data.
-
-Syndicate is **consistent**.  Even though it uses network caches to help deliver your data to readers, it employs a novel consistency protocol to ensure that your readers do not hit stale cache data.  In doing so, it lets you leverage unmodified caching proxies and CDNs without having to rely on them to honor your HTTP cache control directives.
+Syndicate is **secure**.  Syndicate prevents unauthorized access and components rely on strong, proven cryptography to authenticate to you and to one another.  It is tamper-resistent and lets you quickly add and revoke access to your data on a per-user, per-host, and per-file basis.
 
 
 Building
