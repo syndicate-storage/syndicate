@@ -24,6 +24,7 @@ def get_bucket(context, bucket_name):
    else:
       log.debug("Connected to S3")
 
+   bucket = None
    try:
       bucket = conn.create_bucket(bucket_name)
    except Exception, e:
@@ -49,6 +50,8 @@ def write_file(file_name, infile, config=None, secrets=None):
    bucket_name = config['BUCKET']
    
    bucket = get_bucket(context, bucket_name)
+   if bucket == None:
+      raise Exception("Failed to get bucket")
 
    from boto.s3.key import Key
    k = Key(bucket)
@@ -78,7 +81,9 @@ def read_file( file_name, outfile, config=None, secrets=None ):
    
    bucket_name = config['BUCKET']
    
-   bucket = get_bucket(bucket_name)
+   bucket = get_bucket(context, bucket_name)
+   if bucket == None:
+      raise Exception("Failed to get bucket")
 
    from boto.s3.key import Key
    
@@ -110,7 +115,9 @@ def delete_file(file_name, config=None, secrets=None):
    
    bucket_name = config['BUCKET']
    
-   bucket = get_bucket(bucket_name)
+   bucket = get_bucket(context, bucket_name)
+   if bucket == None:
+      raise Exception("Failed to get bucket")
 
    from boto.s3.key import Key
    k = Key(bucket)
@@ -146,7 +153,7 @@ if __name__ == "__main__":
       bucket_name = sys.argv[5]
       
       import syndicate.rg.closure as rg_closure
-      import logging
+      import syndicate.rg.common as rg_common
       
       config = {
          "BUCKET": bucket_name
@@ -157,17 +164,37 @@ if __name__ == "__main__":
          "AWS_SECRET_ACCESS_KEY": secret_access_key
       }
       
-      log = logging.getLogger()
-      log.setLevel("DEBUG")
+      log = rg_common.get_logger("s3 test")
       
       context = rg_closure.make_context( config, secrets, None, log )
 
       if(option == '-w'):
-         write_file(file_name)
+         test_path = "/tmp/sd_s3_test.write"
+         
+         testfile_fd = open( test_path, "w")
+         testfile_fd.write("This is a test of the S3 storage driver.  If you can read this, it works.")
+         testfile_fd.close()
+         
+         testfile_fd = open( test_path, "r")
+         write_file(file_name, testfile_fd, config, secrets)
+         testfile_fd.close()
+         
+         os.unlink( test_path )
+         
       elif(option == '-r'):
-         read_file(file_name)
+         
+         test_path = "/tmp/sd_s3_test.read"
+         
+         testfile_fd = open(test_path, "w")
+         read_file(file_name, testfile_fd, config, secrets)
+         testfile_fd.close()
+         
+         print "wrote to %s" % test_path
+         
       elif(option == '-d'):
-         delete_file(file_name)
+         
+         delete_file(file_name, config, secrets)
+         
       else:
          usage()
 
