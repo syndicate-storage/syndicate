@@ -115,7 +115,7 @@ class Gateway( storagetypes.Object ):
    
    cert_version = storagetypes.Integer( default=1 )   # certificate-related version of this gateway
    
-   config = storagetypes.Json()                # gateway-specific configuration
+   closure = storagetypes.Json()                # gateway-specific configuration
    
    gateway_blocksize = storagetypes.Integer( default=0 )        # (AG only) advertized blocksize
    
@@ -134,7 +134,7 @@ class Gateway( storagetypes.Object ):
    ]
    
    read_attrs_api_required = [
-      "config",
+      "closure",
       "host",
       "port",
       "owner_id",
@@ -160,7 +160,7 @@ class Gateway( storagetypes.Object ):
       "owner_id",
       "host",
       "port",
-      "config",
+      "closure",
       "cert_expires",
       "session_expires",
       "session_timeout"
@@ -366,10 +366,10 @@ class Gateway( storagetypes.Object ):
       cert_pb.volume_id = self.volume_id
       cert_pb.blocksize = self.gateway_blocksize
       
-      if self.config == None:
+      if self.closure == None:
          cert_pb.closure_text = ""
       else:
-         cert_pb.closure_text = str( self.config )
+         cert_pb.closure_text = str( self.closure )
          
       cert_pb.signature = ""
 

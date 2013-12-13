@@ -12,16 +12,13 @@ Front-end API
 
 from msconfig import *
 
-try:
-   import logging
-except:
-   import log 
-   logging = log
+import log as Log
+log = Log.get_logger(__name__)
 
 try:
    import storage.storage as storage
 except Exception, e:
-   logging.debug("Using storage stub")
+   log.debug("Using storage stub")
    from storage_stub import StorageStub as storage
    
 try:
@@ -29,13 +26,13 @@ try:
    from MS.user import SyndicateUser
    from MS.gateway import Gateway
 except Exception, e:
-   logging.debug("Using object stub")
+   log.debug("Using object stub")
    from object_stub import *
 
 try:
    from MS.auth import *
-except Exception, e:
-   logging.debug("Using auth stub")
+except Exception, e:   
+   log.debug("Using auth stub")
    from auth_stub import *
 
 # ----------------------------------
@@ -514,6 +511,8 @@ class API( object ):
    
    @classmethod
    def verifier( cls, method, args, kw, request_body, syndicate_data, data ):
+      import logging 
+      
       if not isinstance( method, AuthMethod ):
          raise Exception("Invalid method")
       

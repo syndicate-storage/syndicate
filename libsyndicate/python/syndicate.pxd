@@ -82,3 +82,5 @@ cdef extern from "libsyndicate.h":
    
    int ms_client_get_closure_text( ms_client* client, char** closure_text, uint64_t* closure_text_len )
    int ms_client_set_view_change_callback( ms_client* client, ms_client_view_change_callback clb, void* cls )
+   int ms_client_sched_volume_reload( ms_client* client )
+   

@@ -14,8 +14,8 @@ import msconfig
 from Crypto.Hash import MD5
 
 try:
-   import syndicate.log as Log
-   log = Log.log
+   import syndicate.client.common.log as Log
+   log = Log.get_logger(__name__)
 except:
    import logging as log
 
@@ -268,7 +268,7 @@ class Server(object):
         try:
             result = method( *method_args, **method_kw )
         except Exception, e:
-            logging.error(sys.exc_info())
+            log.error(sys.exc_info())
             traceback.print_exc()
             return self.error(id, -32603, e.message)
 

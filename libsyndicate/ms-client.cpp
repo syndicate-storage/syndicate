@@ -1338,9 +1338,12 @@ int ms_client_reload_certs( struct ms_client* client ) {
          ms_client_view_unlock( client );
          curl_easy_cleanup( curl );
          
-         errorf("new cert version %" PRIu64 "\n", volume_cert_version );
+         errorf("Volume cert version %" PRIu64 " is too old (expected greater than %" PRIu64 ")\n", volume_cert_version, client->volume->volume_cert_version );
          return 0;
       }
+      
+      // advance the volume cert version
+      client->volume->volume_cert_version = volume_cert_version;
       
       // check signature with Volume public key
       rc = md_verify< ms::ms_gateway_cert >( client->volume->volume_public_key, &ms_cert );
@@ -1362,19 +1365,32 @@ int ms_client_reload_certs( struct ms_client* client ) {
          continue;
       }
       
-      // load this cert in.
+      // load this cert in, if it is newer
       // clear the old one, if needed.
       ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1];
       ms_client_cert_bundles( client->volume, cert_bundles );
       
       ms_cert_bundle::iterator itr = cert_bundles[ new_cert->gateway_type ]->find( new_cert->gateway_id );
       if( itr != cert_bundles[ new_cert->gateway_type ]->end() ) {
-         // old cert--revoke
-         ms_client_gateway_cert_free( itr->second );
-         free( itr->second );
-         cert_bundles[ new_cert->gateway_type ]->erase( itr );
+         // verify that this certificate is newer (otherwise reject it)
+         struct ms_gateway_cert* old_cert = itr->second;
+         if( old_cert->version >= new_cert->version ) {
+            if( old_cert->version > new_cert->version ) {
+               // tried to load an old cert
+               errorf("Downloaded certificate for Gateway %s (ID %" PRIu64 ") with old version %" PRIu64 "; expected greater than %" PRIu64 "\n", old_cert->name, old_cert->gateway_id, new_cert->version, old_cert->version);
+            }
+            
+            ms_client_gateway_cert_free( new_cert );
+            free( new_cert );
+         }
+         else {
+            // old cert--revoke
+            ms_client_gateway_cert_free( itr->second );
+            free( itr->second );
+            cert_bundles[ new_cert->gateway_type ]->erase( itr );
+         }
       }
-      
+      dbprintf("Trusting new certificate for Gateway %s (ID %" PRIu64 ")\n", new_cert->name, new_cert->gateway_id);
       (*cert_bundles[ new_cert->gateway_type ])[ new_cert->gateway_id ] = new_cert;
       
       ms_client_view_unlock( client );
@@ -1448,10 +1464,29 @@ int ms_client_reload_volume( struct ms_client* client ) {
    uint64_t old_version = vol->volume_version;
    uint64_t old_cert_version = vol->volume_cert_version;
    
-   rc = ms_client_load_volume_metadata( vol, &volume_md );
-
-   uint64_t new_version = vol->volume_version;
-   uint64_t new_cert_version = vol->volume_cert_version;
+   // get the new versions, and make sure they've advanced.
+   uint64_t new_version = volume_md.volume_version();
+   uint64_t new_cert_version = volume_md.cert_version();
+   
+   if( new_version < old_version ) {
+      errorf("Invalid volume version (expected greater than %" PRIu64 ", got %" PRIu64 ")\n", old_version, new_version );
+      ms_client_view_unlock( client );
+      return -ENOTCONN;
+   }
+   
+   if( new_cert_version < old_cert_version ) {
+      errorf("Invalid certificate version (expected greater than %" PRIu64 ", got %" PRIu64 ")\n", old_cert_version, new_cert_version );
+      ms_client_view_unlock( client );
+      return -ENOTCONN;
+   }
+   
+   if( new_version > old_version ) {
+      // have new data--load it in
+      rc = ms_client_load_volume_metadata( vol, &volume_md );
+   }
+   else {
+      rc = 0;
+   }
    
    ms_client_view_unlock( client );
    
@@ -1464,8 +1499,8 @@ int ms_client_reload_volume( struct ms_client* client ) {
    dbprintf("Volume  version %" PRIu64 " --> %" PRIu64 "\n", old_version, new_version );
    dbprintf("Cert    version %" PRIu64 " --> %" PRIu64 "\n", old_cert_version, new_cert_version );
 
+   // load new certificate information, if we have any
    if( new_cert_version > old_cert_version ) {
-      // new certificate information
       rc = ms_client_reload_certs( client );
       if( rc != 0 ) {
          errorf("ms_client_reload_certs rc = %d\n", rc );
@@ -1473,7 +1508,6 @@ int ms_client_reload_volume( struct ms_client* client ) {
          return rc;
       }
    }
-   
    return 0;
 }
 
@@ -1662,7 +1696,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    // verify that our host and port match the MS's record
    if( strcmp( cert.hostname, client->conf->hostname ) != 0 || cert.portnum != client->conf->portnum ) {
       // wrong host
-      errorf("ERR: This gateway is running on %s:%d, but the MS says it should be running on %s:%d.  Please log into the MS and update the gateway record.\n", client->conf->hostname, client->conf->portnum, cert.hostname, cert.portnum );
+      errorf("ERR: This gateway is running on %s:%d, but the MS says it should be running on %s:%d.  Please update the Gateway record on the MS.\n", client->conf->hostname, client->conf->portnum, cert.hostname, cert.portnum );
       ms_client_unlock( client );
 
       ms_client_gateway_cert_free( &cert );
@@ -1673,7 +1707,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
 
    struct ms_volume* volume = CALLOC_LIST( struct ms_volume, 1 );
    
-   dbprintf("Registered as Gateway %" PRIu64 "\n", cert.gateway_id );
+   dbprintf("Registered as Gateway %s (%" PRIu64 ")\n", cert.name, cert.gateway_id );
    
    volume->reload_volume_key = true;         // get the public key
 
@@ -1690,7 +1724,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
       return rc;
    }
 
-   dbprintf("Volume %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
+   dbprintf("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
 
    ms_client_view_wlock( client );
    client->volume = volume;

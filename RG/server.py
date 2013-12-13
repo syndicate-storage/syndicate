@@ -3,10 +3,9 @@
 # All Rights Reserved
 
 import os
-import rm_common
-import rm_request
-import rm_storage
-import rm_config
+import syndicate.rg.common as rg_common
+import syndicate.rg.request as rg_request
+import syndicate.rg.storage as rg_storage
 
 from hashlib import sha256 as HashFunc
 
@@ -17,6 +16,8 @@ from cgi import parse_qs, FieldStorage
 from StringIO import StringIO
 
 import types
+
+log = rg_common.get_logger(__name__)
 
 #-------------------------
 METADATA_FIELD_NAME = "metadata"
@@ -29,7 +30,7 @@ def validate_post( self, post_dict ):
    
    # sanity check
    try:
-      rm_common.validate_fields( post_dict, REQUIRED_POST_FIELDS )
+      rg_common.validate_fields( post_dict, REQUIRED_POST_FIELDS )
       return 0
    except:
       return 400
@@ -44,12 +45,10 @@ def post( metadata_field, infile ):
       infile: file-like object which can be read from
    '''
    
-   log = rm_common.log
-   
    # parse
    req_info = None
    try:
-      req_info = rm_request.parse_request_info_from_pb( metadata_field )
+      req_info = rg_request.parse_request_info_from_pb( metadata_field )
    except Exception, e:
       # verification failure
       log.exception( e )
@@ -73,7 +72,7 @@ def post( metadata_field, infile ):
    # store
    rc = 0
    try:
-      rc = rm_storage.write_data( req_info, infile )
+      rc = rg_storage.write_data( req_info, infile )
    except Exception, e:
       log.exception( e )
       rc = (500, "Internal server error")
@@ -92,10 +91,8 @@ def get( url_path, outfile ):
       outfile: file-like object which can be written to
    '''
    
-   log = rm_common.log
-   
    # parse
-   req_info = rm_request.parse_request_info_from_url_path( url_path )
+   req_info = rg_request.parse_request_info_from_url_path( url_path )
    if req_info == None:
       log.error("Invalid URL path '%s'" % url_path )
       return (400, "Invalid request")
@@ -103,7 +100,7 @@ def get( url_path, outfile ):
    # fetch
    rc = 0
    try:
-      rc = rm_storage.read_data( req_info, outfile )
+      rc = rg_storage.read_data( req_info, outfile )
    except Exception, e:
       log.exception( e )
       rc = (500, "Internal server error")
@@ -121,12 +118,10 @@ def delete( metadata_field ):
       metadata_field: uploaded metadata value for the request
    '''
    
-   log = rm_common.log
-   
    # parse
    req_info = None
    try:
-      req_info = rm_request.parse_request_info_from_pb( metadata_field )
+      req_info = rg_request.parse_request_info_from_pb( metadata_field )
    except Exception, e:
       # verification failure
       log.exception( e )
@@ -139,7 +134,7 @@ def delete( metadata_field ):
    # delete
    rc = 0
    try:
-      rc = rm_storage.delete_data( req_info )
+      rc = rg_storage.delete_data( req_info )
    except Exception, e:
       log.exception( e )
       rc = (500, "Internal server error")
@@ -184,8 +179,6 @@ def wsgi_application( environ, start_response ):
    
    required_post_fields = [METADATA_FIELD_NAME, DATA_FIELD_NAME]
    required_delete_fields = [METADATA_FIELD_NAME]
-   
-   log = rm_common.log
    
    if environ['REQUEST_METHOD'] == 'GET':
       # GET request

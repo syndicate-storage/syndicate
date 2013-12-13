@@ -29,7 +29,7 @@ from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 import pprint 
 
-log = Log.log
+log = Log.get_logger(__name__)
 
 TRUST_VERIFY_KEY = False 
 
@@ -519,7 +519,11 @@ def main( argv ):
       do_revoke( CONFIG, all_params )
    
    # parse arguments; get extra data and hold onto it for now
-   args, kw, extras = conf.parse_args( method_name, args, kw )
+   lib = conf.ArgLib()
+   lib.config = CONFIG
+   lib.storage = storage
+   
+   args, kw, extras = conf.parse_args( method_name, args, kw, lib )
    
    # validate arguments
    valid = conf.validate_args( method_name, args, kw )

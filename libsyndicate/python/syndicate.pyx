@@ -1,12 +1,14 @@
 from syndicate cimport *
 cimport libc.stdlib as stdlib
 
+import types
 import errno
 import pickle
 
 syndicate_inited = False
 syndicate_ref = None
 syndicate_view_change_callback = None
+runtime_privkey_path = None 
 
 # ------------------------------------------
 cdef int py_view_change_callback_springboard( ms_client* client, void* cls ):
@@ -16,6 +18,61 @@ cdef int py_view_change_callback_springboard( ms_client* client, void* cls ):
       return syndicate_view_change_callback()
    
    return 0
+
+# ------------------------------------------
+cpdef encrypt_closure_secrets( gateway_pubkey_str, closure_secrets ):
+   '''
+      Encrypt a string with a gateway's public key.
+   '''
+   
+   try:
+      closure_secrets_serialized = pickle.dumps( closure_secrets )
+   except Exception, e:
+      return (-errno.EINVAL, None)
+   
+   cdef char* c_closure_secrets_serialized = closure_secrets_serialized
+   cdef size_t c_closure_secrets_serialized_len = len(closure_secrets_serialized)
+   
+   cdef char* c_encrypted_secrets = NULL
+   cdef size_t c_encrypted_secrets_len = 0
+   
+   rc = md_encrypt_pem( gateway_pubkey_str, c_closure_secrets_serialized, c_closure_secrets_serialized_len, &c_encrypted_secrets, &c_encrypted_secrets_len )
+   if rc != 0:
+      return (rc, None)
+   
+   else:
+      py_encrypted_secrets = c_encrypted_secrets[:c_encrypted_secrets_len]
+      stdlib.free( c_encrypted_secrets )
+      
+      return (0, py_encrypted_secrets)
+
+
+# ------------------------------------------
+cpdef decrypt_closure_secrets( gateway_privkey_str, closure_secrets ):
+   '''
+      Decrypt a string with a gateway's public key.
+   '''
+   
+   cdef char* c_closure_secrets_encrypted = closure_secrets
+   cdef size_t c_closure_secrets_encrypted_len = len(closure_secrets)
+   
+   cdef char* c_serialized_secrets = NULL
+   cdef size_t c_serialized_secrets_len = 0
+   
+   rc = md_decrypt_pem( gateway_privkey_str, c_closure_secrets_encrypted, c_closure_secrets_encrypted_len, &c_serialized_secrets, &c_serialized_secrets_len )
+   if rc != 0:
+      return (rc, None)
+   
+   else:
+      py_serialized_secrets = c_serialized_secrets[:c_serialized_secrets_len]
+      stdlib.free( c_serialized_secrets )
+      
+      # try to deserialize
+      try:
+         secrets_dict = pickle.loads( py_serialized_secrets )
+         return (0, secrets_dict)
+      except Exception, e:
+         return (-errno.ENODATA, None)
 
 
 # ------------------------------------------
@@ -30,7 +87,7 @@ cdef class Syndicate:
    
    cdef md_syndicate_conf conf_inst
    cdef ms_client client_inst
-
+   
    def __cinit__(self):
       pass
 
@@ -57,6 +114,7 @@ cdef class Syndicate:
       '''
       
       global syndicate_inited
+      global runtime_privkey_path
       
       if syndicate_inited:
          raise Exception("Syndicate already initialized!  Use Syndicate.getinstance() to get a reference to the API.")
@@ -93,6 +151,7 @@ cdef class Syndicate:
       
       if my_key_filename != None:
          c_my_key_filename = my_key_filename
+         runtime_privkey_path = my_key_filename
          
       if tls_pkey_filename != None:
          c_tls_pkey_filename = tls_pkey_filename
@@ -249,61 +308,6 @@ cdef class Syndicate:
       
       else:
          return None
-      
-
-   cpdef encrypt_closure_secrets( self, gateway_pubkey_str, closure_secrets ):
-      '''
-         Encrypt a secrets object
-      '''
-      
-      try:
-         closure_secrets_serialized = pickle.dumps( closure_secrets )
-      except Exception, e:
-         return (-errno.EINVAL, None)
-      
-      cdef char* c_closure_secrets_serialized = closure_secrets_serialized
-      cdef size_t c_closure_secrets_serialized_len = len(closure_secrets_serialized)
-      
-      cdef char* c_encrypted_secrets = NULL
-      cdef size_t c_encrypted_secrets_len = 0
-      
-      rc = md_encrypt_pem( gateway_pubkey_str, c_closure_secrets_serialized, c_closure_secrets_serialized_len, &c_encrypted_secrets, &c_encrypted_secrets_len )
-      if rc != 0:
-         return (rc, None)
-      
-      else:
-         py_encrypted_secrets = c_encrypted_secrets[:c_encrypted_secrets_len]
-         stdlib.free( c_encrypted_secrets )
-         
-         return (0, py_encrypted_secrets)
-      
-      
-   cpdef decrypt_closure_secrets( self, gateway_privkey_str, closure_secrets ):
-      '''
-         Decrypt a secrets object
-      '''
-      
-      cdef char* c_closure_secrets_encrypted = closure_secrets
-      cdef size_t c_closure_secrets_encrypted_len = len(closure_secrets)
-      
-      cdef char* c_serialized_secrets = NULL
-      cdef size_t c_serialized_secrets_len = 0
-      
-      rc = md_decrypt_pem( gateway_privkey_str, c_closure_secrets_encrypted, c_closure_secrets_encrypted_len, &c_serialized_secrets, &c_serialized_secrets_len )
-      if rc != 0:
-         return (rc, None)
-      
-      else:
-         py_serialized_secrets = c_serialized_secrets[:c_serialized_secrets_len]
-         stdlib.free( c_serialized_secrets )
-         
-         # try to deserialize
-         try:
-            secrets_dict = pickle.loads( py_serialized_secrets )
-            return (0, secrets_dict)
-         except Exception, e:
-            return (-errno.ENODATA, None)
-         
          
       
    cpdef set_view_change_callback( self, callback_func ):
@@ -318,6 +322,14 @@ cdef class Syndicate:
       
       return
    
+   
+   cpdef sched_reload( self ):
+      '''
+         Schedule a reload of our configuration.
+      '''
+      ms_client_sched_volume_reload( &self.client_inst )
+      
+      return
    
    cpdef get_sd_path( self ):
       '''

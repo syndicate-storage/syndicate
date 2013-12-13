@@ -1,7 +1,5 @@
 #!/usr/bin/env python 
 
-CONFIG = {'foo': 'bar', 'STORAGE_DIR': '/tmp/'}
-
 def replica_read( drivers, request_info, filename, outfile ):
    print ""
    print "replica_read called!"

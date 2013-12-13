@@ -3,13 +3,13 @@
 # All Rights Reserved
 
 import os
-import rm_common
+import syndicate.rg.common as rg_common
 import types
 import inspect
 import collections
 
-import rm_config
-from rm_request import *
+import syndicate.rg.closure as rg_closure
+from syndicate.rg.request import *
 
 #-------------------------
 def filename_from_req_info( req_info ):
@@ -30,7 +30,7 @@ def read_data( req_info, outfile ):
       Call the replica_read() method in the replica manager's closure.
    '''
    filename = filename_from_req_info( req_info )
-   return rm_config.call_config_read( req_info, filename, outfile )
+   return rg_closure.call_closure_read( req_info, filename, outfile )
 
 #-------------------------
 def write_data( req_info, infile ):
@@ -38,7 +38,7 @@ def write_data( req_info, infile ):
       Call the replica_write() method in the replica manager's closure.
    '''
    filename = filename_from_req_info( req_info )
-   return rm_config.call_config_write( req_info, filename, infile )
+   return rg_closure.call_closure_write( req_info, filename, infile )
 
 #-------------------------
 def delete_data( req_info ):
@@ -46,4 +46,4 @@ def delete_data( req_info ):
       Call the replica_delete() method in the replica manager's closure.
    '''
    filename = filename_from_req_info( req_info )
-   return rm_config.call_config_delete( req_info, filename )
+   return rg_closure.call_closure_delete( req_info, filename )

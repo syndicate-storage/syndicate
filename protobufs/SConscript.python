@@ -1,0 +1,19 @@
+# build protobufs
+
+import os
+
+
+Import('env')
+env = env.Clone()
+
+Import("protobuf_py_files")
+
+python_lib_cmds = []
+
+for pypb in protobuf_py_files:
+   # copy protobuf files...
+   cmd = env.Command( "%s" % (os.path.basename(pypb.path)), "#" + pypb.path, Copy( "$TARGET", "$SOURCE" ) )
+   python_lib_cmds.append( cmd )
+
+python_lib_cmds.append( env.Command("__init__.py", "", "touch $TARGET" ) )
+Return( "python_lib_cmds" )

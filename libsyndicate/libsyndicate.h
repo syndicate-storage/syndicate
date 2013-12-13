@@ -49,6 +49,7 @@
 #include <openssl/rand.h>
 #include <openssl/err.h>
 #include <endian.h>
+#include <sys/resource.h>
 
 using namespace std;
 
@@ -575,11 +576,9 @@ int md_mkdirs2( char const* dirp, int start, mode_t mode );
 int md_mkdirs3( char const* dirp, mode_t mode );
 int md_rmdirs( char const* dirp );
 
-// threading
+// system
 pthread_t md_start_thread( void* (*thread_func)(void*), void* args, bool detach );
 int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile );
-
-// daemonization
 int md_release_privileges();
 
 // downloads

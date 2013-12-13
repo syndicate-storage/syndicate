@@ -3,30 +3,32 @@
 # All Rights Reserved
 
 import sys
-import rm_common
-import rm_config
-import rm_server
+import syndicate.rg.common as rg_common
+import syndicate.rg.closure as rg_closure
+import syndicate.rg.server as rg_server
 import argparse
 import socket
 import os
 
 from wsgiref.simple_server import make_server 
 
-log = rm_common.log
+log = rg_common.get_logger(__name__)
 
 CONFIG_OPTIONS = {
    "gateway":           ("-g", 1, "The name of this RG"),
    "volume":            ("-v", 1, "The Volume this RG runs in"),
    "config":            ("-c", 1, "Path to the Syndicate configuration file for this RG"),
    "username":          ("-u", 1, "Syndicate username of the owner of this RG"),
-   "password":          ("-p", 1, "If authenticating via OpenID, the OpenID provider password"),
+   "password":          ("-p", 1, "If authenticating via OpenID, the Syndicate user's OpenID password"),
    "port":              ("-P", 1, "Port number to listen on"),
    "MS":                ("-m", 1, "Syndicate MS URL"),
    "volume_pubkey":     ("-V", 1, "Path to the PEM-encoded Volume public key"),
    "gateway_pkey":      ("-G", 1, "Path to the PEM-encoded RG private key"),
-   "tls_pkey":          ("-S", 1, "Path to the PEM-encoded RG TLS private key"),
-   "tls_cert":          ("-C", 1, "Path to the PEM-encoded RG TLS certificate"),
-   "foreground":        ("-f", 0, "Run in the foreground")
+   "tls_pkey":          ("-S", 1, "Path to the PEM-encoded RG TLS private key.  Use if you want TLS for data transfers (might cause breakage if your HTTP caches do not expect TLS)."),
+   "tls_cert":          ("-C", 1, "Path to the PEM-encoded RG TLS certificate.  Use if you want TLS for data transfers (might cause breakage if your HTTP caches do not expect TLS)."),
+   "foreground":        ("-f", 0, "Run in the foreground"),
+   "logdir":            ("-L", 1, "Directory to contain the log files.  If not given, then write to stdout and stderr."),
+   "pidfile":           ("-l", 1, "Path to the desired PID file.")
 }
 
 #-------------------------
@@ -122,7 +124,7 @@ def validate_args( config ):
    return True
       
 #-------------------------
-def run( config ):
+def setup_syndicate( config ):
    
    gateway_portnum = int(config['port'])
    gateway_name = config.get('gateway', None)
@@ -137,7 +139,7 @@ def run( config ):
    config_file = config.get('config_file', None)
    
    # start up libsyndicate
-   syndicate = rm_common.syndicate_init( ms_url=ms_url,
+   syndicate = rg_common.syndicate_init( ms_url=ms_url,
                                          gateway_name=gateway_name,
                                          portnum=gateway_portnum,
                                          volume_name=volume_name,
@@ -149,14 +151,23 @@ def run( config ):
                                          tls_pkey_filename=tls_pkey,
                                          tls_cert_filename=tls_cert )
    
+   return syndicate 
+
+#-------------------------
+def run( config, syndicate )
+
    # get our hostname
    hostname = socket.gethostname()
    
+   # get our key file and port 
+   my_key_file = config.get("gateway_pkey", None )
+   gateway_portnum = int( config['port'] )
+   
    # get our configuration from the MS and start keeping it up to date 
-   rm_config.init( syndicate )
+   rg_closure.init( syndicate, my_key_file )
 
    # start serving
-   httpd = make_server( hostname, gateway_portnum, rm_server.wsgi_application )
+   httpd = make_server( hostname, gateway_portnum, rg_server.wsgi_application )
    
    httpd.serve_forever()
    
@@ -166,7 +177,7 @@ def run( config ):
 #-------------------------
 def debug():
    
-   rm_common.syndicate_lib_path( "../python" )
+   rg_common.syndicate_lib_path( "../python" )
    
    gateway_name = "RG-t510-0-690"
    gateway_portnum = 24160
@@ -177,20 +188,21 @@ def debug():
    volume_name = "testvolume-jcnelson-cs.princeton.edu"
    
    # start up libsyndicate
-   syndicate = rm_common.syndicate_init( ms_url=ms_url, gateway_name=gateway_name, portnum=gateway_portnum, volume_name=volume_name, gateway_cred=rg_username, gateway_pass=rg_password, my_key_filename=my_key_file )
+   syndicate = rg_common.syndicate_init( ms_url=ms_url, gateway_name=gateway_name, portnum=gateway_portnum, volume_name=volume_name, gateway_cred=rg_username, gateway_pass=rg_password, my_key_filename=my_key_file )
    
    # start up config
-   rm_config.init( syndicate )
+   rg_closure.init( syndicate, my_key_file )
    
    # start serving!
-   httpd = make_server( "t510", gateway_portnum, rm_server.wsgi_application )
+   httpd = make_server( "t510", gateway_portnum, rg_server.wsgi_application )
    
    httpd.serve_forever()
    
    return True 
 
 #-------------------------
-def main( argv ):
+def build_config( argv ):
+   
    parser = build_parser( argv[0] )
    opts = parser.parse_args( argv[1:] )
    config = load_config( None, opts )
@@ -205,10 +217,17 @@ def main( argv ):
       log.error("Invalid arguments")
       parser.print_help()
       sys.exit(1)
-   
-   run( config )
+      
+   return config
+      
+#-------------------------
+def main( config ):
+   syndicate = setup_syndicate( config )
+   run( config, syndicate )
+   #debug()
    
 
 #-------------------------    
 if __name__ == "__main__":
-   main( sys.argv )
+   config = build_config( argv )
+   main( config )

@@ -1,0 +1,130 @@
+#!/usr/bin/env python 
+
+# Copyright 2013 The Trustees of Princeton University
+# All Rights Reserved
+
+
+import sys
+import os
+import syndicate.rg.common as rg_common
+import syndicate.rg.main as rg_main
+import signal
+import resource
+import daemon 
+import grp
+import lockfile
+
+log = rg_common.get_logger(__name__)
+
+#-------------------------------
+def daemonize( config, syndicate, main_method ):
+   signal_map = {
+      signal.SIGTERM: 'terminate',
+      signal.SIGHUP: None,
+      signal.SIGUSR1: syndicate.sched_reload
+   }
+   
+   daemon_gid = grp.getgrnam('daemon').gr_gid
+   
+   output_fd = None
+   error_fd = None
+   
+   if config.get("logdir", None) != None:
+      # create log files
+      # TODO: access.log, error.log
+      output_fd = open( os.path.join(config["logdir"], "RG.log"), "w+" )
+      error_fd = output_fd 
+      
+      os.dup2( output_fd, sys.stdout )
+      os.dup2( output_fd, sys.stderr )
+      
+   else:
+      # write to stdout and stderr
+      output_fd = sys.stdout 
+      error_fd = sys.stderr
+   
+   context = daemon.DaemonContext( umask=0o002, prevent_core=True, signal_map=signal_map )
+   
+   # don't close these if they're open...
+   files_preserve = []
+   if output_fd:
+      files_preserve.append(output_fd)
+   if error_fd and error_fd != output_fd:
+      files_preserve.append(error_fd)
+   
+   context.files_preserve = files_preserve
+   
+   # pid file?
+   pidfile_path = config.get("pidfile", None) 
+   if pidfile_path:
+      context.pidfile = lockfile.FileLock(pidfile_path)
+   
+   # start up
+   with context:
+      main_method()
+      
+
+#-------------------------------
+def spawn_rg( config ):
+   # fork, become a watchdog, and run the main server
+   child_pid = os.fork()
+   
+   if child_pid == -1:
+      # failure
+      raise Exception("Failed to fork")
+   
+   if child_pid == 0:
+      # we're the child...start the server
+      rg_main.main( config )
+   
+   return child_pid
+
+
+#-------------------------------
+def main( config, syndicate ):
+   
+   # fork, become a watchdog, and run the main server
+   child_pid = spawn_rg( config )
+   
+   # we're the parent...start monitoring 
+   while True:
+      # wait for child to die
+      try:
+         pid, exit_status = os.waitpid( child_pid, 0 )
+      except OSError, e:
+         log.exception(e)
+         sys.exit(1)
+      
+      # did the child exit on its own accord?
+      if os.WIFEXITED(exit_status):
+         log.info("RG exit status %s" % os.WEXITSTATUS( exit_status ) )
+         sys.exit( os.WEXITSTATUS( exit_status ) )
+      
+      # was the child signaled? 
+      elif os.WIFSIGNALED(exit_status):
+         sig = os.WTERMSIG( exit_status )
+         log.info("RG exited with signal %s" % sig )
+         
+         # respawn it 
+         child_pid = spawn_rg( config )
+         
+   
+#-------------------------------
+if __name__ == "__main__":
+   
+   argv = sys.argv 
+   
+   config = rg_main.build_config( argv )
+   syndicate = rg_main.setup_syndicate( config )
+   
+   # run in foreground?
+   foreground = config.foreground
+   
+   if not foreground:
+      # become a daemon
+      daemonize( config, syndicate, lambda: main(config, syndicate) )
+   
+   else:
+      # run in the foreground
+      main( config, syndicate )
+      

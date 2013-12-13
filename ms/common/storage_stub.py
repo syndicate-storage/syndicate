@@ -9,7 +9,7 @@ try:
    import logging
 except:
    import log
-   logging = log.log
+   logging = log.get_logger(__name__)
 
 class StorageStub( object ):
    def __init__(self, *args, **kw ):

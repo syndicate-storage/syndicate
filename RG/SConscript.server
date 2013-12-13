@@ -1,0 +1,13 @@
+# build replica_manager
+
+import os
+
+Import('env')
+env = env.Clone()
+
+# get a list of all files
+rg_files = Glob("syndicate-rg")
+
+targets = rg_files
+
+Return( 'targets' )

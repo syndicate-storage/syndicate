@@ -1,0 +1,31 @@
+# build ms
+
+import os
+
+Import('env')
+env = env.Clone()
+
+# get a list of common files...
+common_files = Glob("common/*.py")
+
+# get a list of client files...
+client_python_files = Glob("clients/python/*.py")
+
+# development build?
+test_files = Glob("tests/__init__.py")
+test_files.extend( Glob("tests/__init__.py") )
+test_files.extend( Glob("tests/test_syntool.py") )
+test_files.extend( Glob("tests/user_test_key.pem") )
+test_files.extend( Glob("tests/local_setup.sh") )
+
+python_lib_cmds = []
+python_lib_cmds.append( common_files )
+
+if env['devel']:
+   python_lib_cmds.append( test_files )
+
+for client_python_file in client_python_files:
+   cmd = env.Command( "%s" % (os.path.basename(client_python_file.path)), "#" + client_python_file.path, Move( "$TARGET", "$SOURCE" ) )
+   python_lib_cmds.append( cmd )
+
+Return( 'python_lib_cmds' )

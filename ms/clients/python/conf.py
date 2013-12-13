@@ -17,7 +17,7 @@ import syndicate.client.common.api as api
 import syndicate.client.common.object_stub as object_stub
 import syndicate.client.common.log as Log
 
-log = Log.log
+log = Log.get_logger(__name__)
 
 CONFIG_DIR = os.path.expanduser( "~/.syndicate" )
 CONFIG_FILENAME = os.path.join(CONFIG_DIR, "syndicate.conf")
@@ -36,6 +36,10 @@ CONFIG_OPTIONS = {
    "params":            (None, "+", "Method name, followed by parameters (positional and keyword supported)."),
 }
 
+# -------------------
+class ArgLib(object):
+   def __init__(self):
+      pass
 
 # -------------------
 def build_config( config ):
@@ -79,11 +83,11 @@ def object_key_path( config, key_type, internal_type, object_id, public=False ):
    return os.path.join( os.path.join( key_dir, internal_type), str(object_id) + suffix )
 
 # -------------------
-def parse_args( method_name, args, kw ):
+def parse_args( method_name, args, kw, lib ):
    method = api.get_method( method_name )
    try:
       if method.parse_args:
-         args, kw, extras = method.parse_args( method.argspec, args, kw )
+         args, kw, extras = method.parse_args( method.argspec, args, kw, lib )
          return args, kw, extras
       else:
          return args, kw, {}

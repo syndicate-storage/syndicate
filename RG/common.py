@@ -6,8 +6,10 @@ import os
 import sys
 import collections
 import errno
-import protobufs.serialization_pb2 as serialization_proto
-import protobufs.ms_pb2 as ms_proto
+import logging
+
+import syndicate.protobufs.serialization_pb2 as serialization_proto
+import syndicate.protobufs.ms_pb2 as ms_proto
 
 from syndicate.syndicate import Syndicate
 
@@ -109,14 +111,15 @@ def syndicate_init( gateway_name=None,
    
    return libsyndicate
 
+
 #-------------------------
-def get_logger():
-
-    import logging
-
+def get_logger(name):
+   
     if(DEBUG):
-        log = logging.getLogger()
+       
+        log = logging.getLogger(__name__)
         log.setLevel(logging.DEBUG)
+        log.propagate = False
 
         formatter = logging.Formatter('[%(levelname)s] %(message)s')
         handler_stream = logging.StreamHandler()
@@ -127,6 +130,3 @@ def get_logger():
         log = None
 
     return log
-
-#-------------------------
-log = get_logger()

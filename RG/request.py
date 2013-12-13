@@ -2,14 +2,17 @@
 # Copyright 2013 The Trustees of Princeton University
 # All Rights Reserved
 
-from rm_common import *
+from syndicate.rg.common import *
 
 import re
 import base64 
 import binascii
 import errno
-import protobufs.serialization_pb2 as serialization_proto
-import protobufs.ms_pb2 as ms_proto
+import syndicate.protobufs.serialization_pb2 as serialization_proto
+import syndicate.protobufs.ms_pb2 as ms_proto
+
+import syndicate.rg.common as rg_common 
+log = rg_common.get_logger(__name__)
 
 #-------------------------
 RE_BLOCK_PATH = re.compile( "^[/]+SYNDICATE-DATA[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)\.([0123456789]+)[/]+([0123456789]+)\.([0123456789]+)[/]*$" )

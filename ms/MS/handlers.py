@@ -203,7 +203,7 @@ def response_load_gateway( request_handler ):
       response_user_error( request_handler, status )
       return (None, status, None)
 
-   # make sure this gateway is legit, if needed
+   # make sure this gateway is legit
    valid_gateway = gateway.authenticate_session( password )
 
    if not valid_gateway:

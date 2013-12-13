@@ -7,15 +7,16 @@
 """
 
 DEBUG = True
+import logging
 
 #-------------------------
-def get_logger():
-
-    import logging
+def get_logger( name ):
 
     if(DEBUG):
-        log = logging.getLogger()
+       
+        log = logging.getLogger(name)
         log.setLevel(logging.DEBUG)
+        log.propagate = False
 
         formatter = logging.Formatter('[%(levelname)s] %(message)s')
         handler_stream = logging.StreamHandler()
@@ -26,6 +27,3 @@ def get_logger():
         log = None
 
     return log
-
-#-------------------------
-log = get_logger()
