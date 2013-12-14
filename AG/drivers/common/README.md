@@ -11,6 +11,6 @@ Functionalities:
 
 Build Instructions:
 
-    Build:   scons AG/drivers/common
+    Build:   scons AG-common
     Install: scons AG-common-install
 

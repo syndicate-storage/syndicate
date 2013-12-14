@@ -101,6 +101,6 @@ Mapping XML:
 
 Build Instructions:
 
-    - scons AG/drivers/shell
+    - scons AG-shell-driver
     - scons AG-shell-driver-install
         

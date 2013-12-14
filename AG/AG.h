@@ -4,8 +4,8 @@
 */
 
 
-#ifndef _AG_DISK_H
-#define _AG_DISK_H_
+#ifndef _AG_H
+#define _AG_H_
 
 #include "libgateway.h"
 #include "ms-client.h"

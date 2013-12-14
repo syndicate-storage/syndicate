@@ -59,7 +59,6 @@ struct gateway_connection_data {
 
 BEGIN_EXTERN_C
 
-int RG_main( int argc, char** argv );
 int AG_main( int argc, char** argv );
 int gateway_main( int gateway_type, int argc, char** argv );
 int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *client, char* logfile, char* pidfile, bool make_daemon );

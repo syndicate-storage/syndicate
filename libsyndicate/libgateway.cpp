@@ -603,7 +603,7 @@ static void gateway_usage( char* name, struct option* opts, int exitcode ) {
    for( int i = 0; opts[i].name != NULL ; i++ ) {
       
       // extract the help text
-      char const* help_text = opts[i].name + strlen(opts[i].name);
+      char const* help_text = opts[i].name + strlen(opts[i].name) + 1;
 
       if( opts[i].has_arg == required_argument )
          fprintf(stderr, "\t[-%c|--%s] ARG\t\t%s\n", opts[i].val, opts[i].name, help_text );
@@ -614,10 +614,6 @@ static void gateway_usage( char* name, struct option* opts, int exitcode ) {
    exit(exitcode);
 }
 
-
-int RG_main( int argc, char** argv ) {
-   return gateway_main( SYNDICATE_RG, argc, argv );
-}
 
 int AG_main( int argc, char** argv ) {
    return gateway_main( SYNDICATE_AG, argc, argv );

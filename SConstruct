@@ -142,7 +142,7 @@ libAGSQLdriver_out = "build/out/lib/AG/drivers/sql"
 libAGSQLdriver = SConscript( "AG/drivers/sql/SConscript", variant_dir=libAGSQLdriver_out )
 ag_driver_sql_install = env.Install( lib_install_dir, libAGSQLdriver )
 env.Alias( 'AG-sql-driver', libAGSQLdriver )
-env.Alias( 'AG-SQL-driver-install', [ag_driver_sql_install] )
+env.Alias( 'AG-sql-driver-install', [ag_driver_sql_install] )
 env.Depends( libAGSQLdriver, libAGcommon )
 
 # AG Shell driver

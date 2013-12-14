@@ -120,8 +120,8 @@ Mapping XML:
 
 Build Instructions:
 
-    - scons AG/drivers/sql
-    - scons AG-SQL-driver-install
+    - scons AG-sql-driver
+    - scons AG-sql-driver-install
 
 
 
