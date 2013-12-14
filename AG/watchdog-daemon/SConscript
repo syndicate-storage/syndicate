@@ -34,6 +34,7 @@ ag_daemon_source = """
 # add source file search paths here
 CPPPATH = """
    /usr/include/thrift
+   /usr/local/include/thrift
    #AG/watchdog-daemon
    #AG/watchdog-daemon/thrift/cpp
    #AG/watchdog-daemon/thrift
@@ -47,6 +48,7 @@ LIBPATH = """
 LIBS = """
     libthrift
     config++
+    pthread
 """
 
 # add additional CPPFLAGS here

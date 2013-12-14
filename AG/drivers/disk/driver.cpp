@@ -130,7 +130,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 
 
 // get metadata for a dataset
-extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blockinfo* info, void* usercls ) {
+extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_request_info* info, void* usercls ) {
    errorf("%s","INFO: metadata_dataset\n"); 
    
    content_map::iterator itr = DATA.find( string( dat->reqdat.fs_path ) );
@@ -298,12 +298,10 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 
 static int publish_to_volumes(const char *fpath, const struct stat *sb,
 	int tflag, struct FTW *ftwbuf) {
-    int nr_volumes = ms_client_get_num_volumes(mc);
-    int vol_counter=0;
-    for (vol_counter=0; vol_counter<nr_volumes; vol_counter++) {
-	uint64_t volume_id = ms_client_get_volume_id(mc, vol_counter);
-	publish(fpath, sb, tflag, ftwbuf, volume_id);
-    }
+   
+   uint64_t volume_id = ms_client_get_volume_id(mc);
+   publish(fpath, sb, tflag, ftwbuf, volume_id);
+   
     return 0;
 }
 

@@ -137,7 +137,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 
 
 // get metadata for a dataset
-extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blockinfo* info, void* usercls ) {
+extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_request_info* info, void* usercls ) {
     DRIVER_RDONLY(&driver_lock);
     errorf("%s", "INFO: metadata_dataset\n"); 
     char* file_path = NULL;
@@ -152,8 +152,6 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_blo
 
     struct gateway_ctx* ctx = (struct gateway_ctx*)usercls;
     struct md_entry* ent = itr->second;
-
-    info->set_blocking_factor( ctx->blocking_factor );
 
     info->set_file_version( file_version );
     info->set_block_id( ctx->block_id );
@@ -299,8 +297,6 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     set<char*, path_comp> dir_hierachy;
     mp->parse();
     unsigned char* cp = mp->get_dsn();
-    int nr_volumes = ms_client_get_num_volumes(mc);
-    int vol_counter=0;
     init(cp);
     //DRIVER_RDWR should strictly be called after init.
     DRIVER_RDWR(&driver_lock);
@@ -332,19 +328,18 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 	dir_hierachy.insert(dir_path);
     }
     set<char*, path_comp>::iterator it;
-    //Publish to all the volumes
-    for (vol_counter=0; vol_counter<nr_volumes; vol_counter++) {
-	uint64_t volume_id = ms_client_get_volume_id(mc, vol_counter);
-	for( it = dir_hierachy.begin(); it != dir_hierachy.end(); it++ ) {
-	    struct map_info mi;
-	    publish (*it, MD_ENTRY_DIR, &mi, volume_id);
-	}
+    //Publish to the volume
+   uint64_t volume_id = ms_client_get_volume_id(mc);
+   for( it = dir_hierachy.begin(); it != dir_hierachy.end(); it++ ) {
+      struct map_info mi;
+      publish (*it, MD_ENTRY_DIR, &mi, volume_id);
+   }
 
-	for (iter = FS2CMD->begin(); iter != FS2CMD->end(); iter++) {
-	    publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second, 
-			volume_id);
-	}
-    }
+   for (iter = FS2CMD->begin(); iter != FS2CMD->end(); iter++) {
+      publish (iter->first.c_str(), MD_ENTRY_FILE, iter->second, 
+                  volume_id);
+   }
+   
     //Add map_info objects to reversion daemon
     for (iter = FS2CMD->begin(); iter != FS2CMD->end(); iter++) {
 	if (revd)
@@ -385,7 +380,6 @@ static int publish(const char *fpath, int type, struct map_info* mi,
 	free( parent_name_tmp );
 	ment->name = md_basename( path, NULL );
 
-	ment->checksum = NULL;
 	DATA[path] = ment;
     }
 
@@ -510,8 +504,6 @@ void driver_special_inval_handler(string file_path) {
 	    free(mde->name);
 	if (mde->parent_name)
 	    free(mde->parent_name);
-	if (mde->checksum)
-	    free(mde->checksum);
 	free(mde);
     }
     //Remove from reversion daemon

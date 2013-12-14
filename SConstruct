@@ -126,12 +126,14 @@ libAGcommon_out = "build/out/lib/AG/"
 libAGcommon = SConscript( "AG/drivers/common/SConscript", variant_dir=libAGcommon_out )
 env.Depends( libAGcommon, libsyndicate )
 ag_common_install = env.Install( lib_install_dir, libAGcommon )
+env.Alias( 'AG-common', libAGcommon )
 env.Alias( 'AG-common-install', [ag_common_install] )
 
 # AG disk driver
 libAGdiskdriver_out = "build/out/lib/AG/drivers/disk"
 libAGdiskdriver = SConscript( "AG/drivers/disk/SConscript", variant_dir=libAGdiskdriver_out )
 ag_driver_disk_install = env.Install( lib_install_dir, libAGdiskdriver )
+env.Alias( 'AG-disk-driver', libAGdiskdriver )
 env.Alias( 'AG-disk-driver-install', [ag_driver_disk_install] )
 env.Depends( libAGdiskdriver, libAGcommon  )
 
@@ -139,6 +141,7 @@ env.Depends( libAGdiskdriver, libAGcommon  )
 libAGSQLdriver_out = "build/out/lib/AG/drivers/sql"
 libAGSQLdriver = SConscript( "AG/drivers/sql/SConscript", variant_dir=libAGSQLdriver_out )
 ag_driver_sql_install = env.Install( lib_install_dir, libAGSQLdriver )
+env.Alias( 'AG-sql-driver', libAGSQLdriver )
 env.Alias( 'AG-SQL-driver-install', [ag_driver_sql_install] )
 env.Depends( libAGSQLdriver, libAGcommon )
 
@@ -146,12 +149,18 @@ env.Depends( libAGSQLdriver, libAGcommon )
 libAGshelldriver_out = "build/out/lib/AG/drivers/shell"
 libAGshelldriver = SConscript( "AG/drivers/shell/SConscript", variant_dir=libAGshelldriver_out )
 ag_driver_shell_install = env.Install( lib_install_dir, libAGshelldriver )
+env.Alias( 'AG-shell-driver', libAGshelldriver )
 env.Alias( 'AG-shell-driver-install', [ag_driver_shell_install] )
 env.Depends( libAGshelldriver, libAGcommon )
+
+# All drivers
+env.Alias( 'AG-drivers', [libAGSQLdriver, libAGshelldriver, libAGdiskdriver] )
+env.Alias( 'AG-drivers-install', [ag_driver_shell_install, ag_driver_sql_install, ag_driver_disk_install] )
 
 # AG Watchdog daemon
 watchdog_daemon_out = "build/out/bin/AG/watchdog"
 watchdog_daemon = SConscript( "AG/watchdog-daemon/SConscript", variant_dir=watchdog_daemon_out )
+env.Alias( "AG-watchdog", watchdog_daemon )
 
 # AG installation
 common.install_targets( env, 'AG-install', bin_install_dir, ags )
