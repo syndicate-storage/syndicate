@@ -17,6 +17,8 @@
 
 #define AG_DEFAULT_BLOCK_SIZE  61440
 
+#define REQUEST_IS_MANIFEST( reqdat ) ((reqdat).manifest_timestamp.tv_sec > 0)
+
 extern struct md_syndicate_conf *global_conf;
 
 struct gateway_request_data {

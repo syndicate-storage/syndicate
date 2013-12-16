@@ -6,7 +6,6 @@
 */
 
 #include <driver.h>
-#include <fs/fs_entry.h>
 
 // server config 
 extern struct md_syndicate_conf *global_conf;
@@ -46,17 +45,25 @@ ReversionDaemon* revd = NULL;
 bool initialized = false;
 
 // generate a manifest for an existing file, putting it into the gateway context
-extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, 
-					    struct gateway_ctx* ctx, struct md_entry* ent ) {
+extern "C" int gateway_generate_manifest( struct gateway_context* dataset_ctx, 
+					    struct shell_ctx* ctx, struct md_entry* ent ) {
     // No need of a lock.
     errorf("%s", "INFO: gateway_generate_manifest\n"); 
+    
+    uint64_t volume_id = ms_client_get_volume_id( mc );
+    
     // populate a manifest
     Serialization::ManifestMsg* mmsg = new Serialization::ManifestMsg();
+    mmsg->set_volume_id( volume_id );
+    mmsg->set_owner_id( global_conf->owner );
+    mmsg->set_coordinator_id( global_conf->gateway );
+    mmsg->set_file_id( ent->file_id );
     mmsg->set_size( ent->size );
     mmsg->set_file_version( 1 );
     mmsg->set_mtime_sec( ent->mtime_sec );
-    mmsg->set_mtime_nsec( 0 );
-
+    mmsg->set_mtime_nsec( ent->mtime_nsec );
+    mmsg->set_signature( string("") );
+    
     //uint64_t num_blocks = ent->size / global_conf->blocking_factor;
     uint64_t num_blocks = ent->size / ctx->blocking_factor;
     if( ent->size % ctx->blocking_factor != 0 )
@@ -65,24 +72,38 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx,
     Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
     bbmsg->set_start_id( 0 );
     bbmsg->set_end_id( num_blocks );
-
+    bbmsg->set_gateway_id( global_conf->gateway );
+    
+    char* fake_hash = CALLOC_LIST( char, BLOCK_HASH_LEN() );
+    
     for( uint64_t i = 0; i < num_blocks; i++ ) {
 	bbmsg->add_block_versions( 0 );
+        bbmsg->add_block_hashes( string(fake_hash, BLOCK_HASH_LEN()) );
     }
+    
+    free( fake_hash );
 
+    // sign
+    int rc = gateway_sign_manifest( mc->my_key, mmsg );
+    if( rc != 0 ) {
+       errorf("gateway_sign_manifest rc = %d\n", rc );
+       delete mmsg;
+       return -EINVAL;
+    }
+    
     // serialize
     string mmsg_str;
     bool src = mmsg->SerializeToString( &mmsg_str );
     if( !src ) {
-	// failed
-	errorf( "%s", "failed to serialize" );
-	delete mmsg;
-	return -EINVAL;
+        // failed
+        errorf( "%s", "failed to serialize" );
+        delete mmsg;
+        return -EINVAL;
     }
 
     ctx->data_len = mmsg_str.size();
     ctx->data = CALLOC_LIST( char, mmsg_str.size() );
-    replica_ctx->last_mod = ent->mtime_sec;
+    dataset_ctx->last_mod = ent->mtime_sec;
     memcpy( ctx->data, mmsg_str.data(), mmsg_str.size() );
 
     delete mmsg;
@@ -97,40 +118,50 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
     errorf("%s", "INFO: get_dataset\n"); 
     ssize_t ret = 0;
     ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
-    struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
-    if (dat->http_status == 404 && !ctx->complete) {
-	ret = 0;
-	ctx->complete = true;
+    struct shell_ctx* ctx = (struct shell_ctx*)user_cls;
+    
+    if (dat->http_status == 404 ) {
+        if( ctx != NULL && !ctx->complete ) {
+           ret = 0;
+	   ctx->complete = true;
+        }
     }
-    else if (dat->http_status == 204 && !ctx->complete) {
-	//This is the first request for this file.
-	ret = 0;
-	ctx->complete = true;
-	prch.execute_command(ctx, NULL, 0);
+    else if (dat->http_status == 204) {
+        if( ctx != NULL && !ctx->complete ) {
+            //This is the first request for this file.
+            ret = 0;
+            ctx->complete = true;
+            prch.execute_command(ctx, NULL, 0);
+        }
     }
-    else if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
-	if (!ctx->complete) {
-	    ret = prch.execute_command(ctx, buf, len);
-	    if (ctx->data_offset == (ssize_t)ctx->blocking_factor)
-		ctx->complete = true;
-	    if (ret < 0) {
-		ret = 0;
-		ctx->complete = true;
-	    }
-	}
-	else {
-	    ret = 0;
-	}
-    }
-    else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
-	// read from RAM
-	memcpy( buf, ctx->data + ctx->data_offset, MIN( (ssize_t)len, ctx->data_len - ctx->data_offset ) );
-	ctx->data_offset += len;
-	ret = (ssize_t)len;
+    else if( ctx != NULL ) {
+      if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
+         if (!ctx->complete) {
+            ret = prch.execute_command(ctx, buf, len);
+            if (ctx->data_offset == (ssize_t)ctx->blocking_factor)
+               ctx->complete = true;
+            if (ret < 0) {
+               ret = 0;
+               ctx->complete = true;
+            }
+         }
+         else {
+            ret = 0;
+         }
+      }
+      else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
+         // read from RAM
+         memcpy( buf, ctx->data + ctx->data_offset, MIN( (ssize_t)len, ctx->data_len - ctx->data_offset ) );
+         ctx->data_offset += len;
+         ret = (ssize_t)len;
+      }
+      else {
+         // invalid structure
+         ret = -EINVAL;
+      }
     }
     else {
-	// invalid structure
-	ret = -EINVAL;
+       ret = -ENOENT;
     }
     DRIVER_RETURN(ret, &driver_lock);
 }
@@ -150,7 +181,7 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_req
 	DRIVER_RETURN(-ENOENT, &driver_lock);
     }
 
-    struct gateway_ctx* ctx = (struct gateway_ctx*)usercls;
+    struct shell_ctx* ctx = (struct shell_ctx*)usercls;
     struct md_entry* ent = itr->second;
 
     info->set_file_version( file_version );
@@ -164,48 +195,47 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_req
 
 
 // interpret an inbound GET request
-extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
+extern "C" void* connect_dataset( struct gateway_context* dataset_ctx ) {
    DRIVER_RDONLY(&driver_lock);
    errorf("%s", "INFO: connect_dataset\n"); 
-   char* file_path = replica_ctx->reqdat.fs_path;
+   char* file_path = dataset_ctx->reqdat.fs_path;
    uint64_t block_id = 0;
-   struct timespec manifest_timestamp;
-   manifest_timestamp.tv_sec = 0;
-   manifest_timestamp.tv_nsec = 0;
-
 
    // is there metadata for this file?
    string fs_path( file_path );
    content_map::iterator itr = DATA.find( fs_path );
    if( itr == DATA.end() ) {
        // no entry; nothing to do
+       errorf("No dataset %s found\n", file_path);
        free( file_path );
-       replica_ctx->err = -404;
-       replica_ctx->http_status = 404;
+       dataset_ctx->err = -404;
+       dataset_ctx->http_status = 404;
        DRIVER_RETURN(NULL, &driver_lock);
    }
 
-   struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
+   struct shell_ctx* ctx = CALLOC_LIST( struct shell_ctx, 1 );
 
    // complete is initially false
    ctx->complete = false;
-   struct md_entry* ent = DATA[ file_path ];
+   ctx->blocking_factor = global_conf->ag_block_size;
+   struct md_entry* ent = itr->second;
 
    // is this a request for a manifest?
-   if( manifest_timestamp.tv_sec > 0 ) {
+   if( REQUEST_IS_MANIFEST( dataset_ctx->reqdat ) ) {
+       
        // request for a manifest
-       int rc = gateway_generate_manifest( replica_ctx, ctx, ent );
+       int rc = gateway_generate_manifest( dataset_ctx, ctx, ent );
        if( rc != 0 ) {
 	   // failed
 	   errorf( "gateway_generate_manifest rc = %d\n", rc );
 
 	   // meaningful error code
 	   if( rc == -ENOENT )
-	       replica_ctx->err = -404;
+	       dataset_ctx->err = -404;
 	   else if( rc == -EACCES )
-	       replica_ctx->err = -403;
+	       dataset_ctx->err = -403;
 	   else
-	       replica_ctx->err = -500;
+	       dataset_ctx->err = -500;
 
 	   free( ctx );
 	   free( file_path ); 
@@ -217,7 +247,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
        ctx->block_id = 0;
        ctx->file_path = file_path;
        //ctx->num_read = 0;
-       replica_ctx->size = ctx->data_len;
+       dataset_ctx->size = ctx->data_len;
    }
    else {
        struct map_info* mi; 
@@ -236,31 +266,35 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 	   ctx->id = mi->id;
 	   ctx->mi = mi;
 	   // Negative size switches libmicrohttpd to chunk transfer mode
-	   replica_ctx->size = -1;
-	   // Set blocking factor for this volume from replica_ctx
-	   ctx->blocking_factor = global_conf->ag_block_size;
+	   dataset_ctx->size = -1;
+	   
 	   // Check the block status and set the http response appropriately
 	   ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
 	   block_status blk_stat = prch.get_block_status(ctx);
 	   if (blk_stat.in_progress) {
-	       replica_ctx->err = -204;
-	       replica_ctx->http_status = 204;
+              errorf("In progress: %s\n", file_path );
+	      dataset_ctx->err = -204;
+	      dataset_ctx->http_status = 204;
 	   } 
 	   else if (blk_stat.block_available) {
-	       replica_ctx->err = -200;
-	       replica_ctx->http_status = 200;
+              errorf("Block available: %s\n", file_path );
+	      dataset_ctx->err = -200;
+	      dataset_ctx->http_status = 200;
 	   }
 	   else if (blk_stat.no_block) {
-	       replica_ctx->err = -200;
-	       replica_ctx->http_status = 200;
+              errorf("No block: %s\n", file_path );
+	      dataset_ctx->err = -200;
+	      dataset_ctx->http_status = 200;
 	   }
 	   else {
-	       replica_ctx->err = -404;
-	       replica_ctx->http_status = 404;
+              errorf("Not found: %s\n", file_path );
+	      dataset_ctx->err = -404;
+	      dataset_ctx->http_status = 404;
 	   }
        }
        else {
-	   replica_ctx->http_status = 404;
+          errorf("Not found: %s\n", file_path );
+          dataset_ctx->http_status = 404;
        }
    }
    DRIVER_RETURN(ctx, &driver_lock);
@@ -271,7 +305,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 extern "C" void cleanup_dataset( void* cls ) {   
     //No need to lock
     errorf("%s", "INFO: cleanup_dataset\n"); 
-    struct gateway_ctx* ctx = (struct gateway_ctx*)cls;
+    struct shell_ctx* ctx = (struct shell_ctx*)cls;
     if (ctx) {
 	if (ctx->data != NULL) {
 	    free(ctx->data);
@@ -282,7 +316,9 @@ extern "C" void cleanup_dataset( void* cls ) {
 	if (ctx->envp != NULL) {
 	    free(ctx->envp);
 	}
-	close(ctx->fd);
+	if( ctx->fd >= 0 ) {
+            close(ctx->fd);
+        }
 	free (ctx);
     }
 }
@@ -358,14 +394,14 @@ static int publish(const char *fpath, int type, struct map_info* mi,
     size_t len = strlen(fpath);
     char *path = NULL;
     uint64_t file_id = 0;
-    //size_t local_proto_len = strlen( SYNDICATEFS_AG_DB_PROTO ); 
-    //size_t url_len = local_proto_len + len;
+    
     if ( len < datapath_len ) { 
 	return -EINVAL;
     }
     if ( len == datapath_len ) {
 	return 0;
     }
+    
     //Set volume path
     size_t path_len = ( len - datapath_len ) + 1; 
     path = (char*)malloc( path_len );
@@ -374,12 +410,24 @@ static int publish(const char *fpath, int type, struct map_info* mi,
 
     if ((ment = DATA[path]) == NULL) {
 	ment = new struct md_entry;
+        memset( ment, 0, sizeof(struct md_entry) );
 	ment->version = 1;
-	char* parent_name_tmp = md_dirname( path, NULL );
-	ment->parent_name = md_basename( parent_name_tmp, NULL );
-	free( parent_name_tmp );
+        
+        // insert the parent name
+	char* parent_path = md_dirname( path, NULL );
+	ment->parent_name = md_basename( parent_path, NULL );
+        
+        // insert name
 	ment->name = md_basename( path, NULL );
 
+        // insert the parent's ID, if it is known...
+        content_map::iterator parent_itr = DATA.find( string(parent_path) );
+        if( parent_itr != DATA.end() ) {
+           ment->parent_id = parent_itr->second->file_id;
+        }
+        
+        free( parent_path );
+        
 	DATA[path] = ment;
     }
 
@@ -390,6 +438,7 @@ static int publish(const char *fpath, int type, struct map_info* mi,
 	return -1;
     }
 
+    dbprintf("INFO: publish %s\n", path);
     ment->ctime_sec = rtime.tv_sec;
     ment->ctime_nsec = rtime.tv_nsec;
     ment->mtime_sec = rtime.tv_sec;
@@ -398,6 +447,9 @@ static int publish(const char *fpath, int type, struct map_info* mi,
     ment->max_read_freshness = 1000;
     ment->max_write_freshness = 1;
     ment->volume = volume_id;
+    ment->owner = mc->owner_id;
+    ment->coordinator = mc->gateway_id;
+    
     //ment->owner = volume_owner;
     switch (type) {
 	case MD_ENTRY_DIR:
@@ -423,6 +475,9 @@ static int publish(const char *fpath, int type, struct map_info* mi,
 	default:
 	    break;
     }
+    
+    ment->file_id = file_id;
+    
     DATA[path] = ment;
     if (path)
 	free(path);

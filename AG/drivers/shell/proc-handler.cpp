@@ -124,6 +124,7 @@ void update_death(pid_t pid) {
 
 void* inotify_event_receiver(void *cls) {
     struct sigaction act;
+    memset(&act, 0, sizeof(act));
     block_all_signals();
     set_sigchld_handler(&act);
     //Initialize and start process monitoring thread using inotify...
@@ -177,6 +178,7 @@ void* inotify_event_receiver(void *cls) {
 	if (FD_ISSET(ifd, &read_fds)) {
 	    //There are file that have changed since the last update.
 	    char ievents[INOTIFY_READ_BUFFER_LEN];
+            memset( ievents, 0, INOTIFY_READ_BUFFER_LEN );
 	    //cout<<"inotify events available"<<endl;
 	    ssize_t read_size = read(ifd, ievents, INOTIFY_READ_BUFFER_LEN);
 	    if (read_size <= 0) {
@@ -260,6 +262,13 @@ ProcHandler::ProcHandler(char *cache_dir_str)
 {
     int rc = 0;
     cache_dir_path = cache_dir_str;
+    
+    // ensure this path exists
+    rc = md_mkdirs( cache_dir_path );
+    if( rc != 0 ) {
+       errorf("md_mkdirs(%s) rc = %d\n", cache_dir_str, rc );
+    }
+    
     pthread_mutex_init(&proc_table_lock, NULL);
     if (pipe(self_pipe) < 0) 
 	perror("pipe");
@@ -278,7 +287,7 @@ ProcHandler&  ProcHandler::get_handle(char *cache_dir_str)
 
 
 int ProcHandler::execute_command(const char* proc_name, char *argv[], 
-				char *envp[], struct gateway_ctx *ctx, 
+				char *envp[], struct shell_ctx *ctx, 
 				proc_table_entry *pte)
 {
     if (argv)
@@ -287,8 +296,7 @@ int ProcHandler::execute_command(const char* proc_name, char *argv[],
     if (file_name == NULL)
 	return -EIO;
     int file_path_len = strlen(cache_dir_path) + strlen(file_name);
-    char *file_path = (char*)malloc(file_path_len + 2); 
-    memset(file_path, 0, file_path_len + 2);
+    char *file_path = CALLOC_LIST( char, file_path_len + 2 );
     strcpy(file_path,  cache_dir_path);
     strcat(file_path, "/");
     strcat(file_path, file_name);
@@ -347,7 +355,7 @@ int ProcHandler::execute_command(const char* proc_name, char *argv[],
     return 0;
 }
 
-int ProcHandler::execute_command(struct gateway_ctx *ctx, 
+int ProcHandler::execute_command(struct shell_ctx *ctx, 
 				char *buffer, ssize_t read_size) 
 {
     char const *proc_name = ctx->proc_name;
@@ -485,8 +493,7 @@ ssize_t ProcHandler::encode_results()
 
 proc_table_entry* ProcHandler::alloc_proc_table_entry()
 {
-    proc_table_entry *pte = 
-		(proc_table_entry*)malloc(sizeof(proc_table_entry));
+    proc_table_entry *pte = CALLOC_LIST( proc_table_entry, 1 );
     pthread_rwlock_init(&pte->pte_lock, NULL);
     return pte;
 }
@@ -494,8 +501,7 @@ proc_table_entry* ProcHandler::alloc_proc_table_entry()
 char* ProcHandler::get_random_string()
 {
     const uint nr_chars = MAX_FILE_NAME_LEN;
-    char* rand_str = (char*)malloc(nr_chars + 1);
-    memset(rand_str, 0, nr_chars);
+    char* rand_str = CALLOC_LIST( char, nr_chars + 1 );
     struct timespec ts;
     if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0) {
 	free(rand_str);
@@ -519,7 +525,7 @@ pthread_t ProcHandler::get_thread_id()
     return inotify_event_thread;
 } 
 
-block_status ProcHandler::get_block_status(struct gateway_ctx *ctx) 
+block_status ProcHandler::get_block_status(struct shell_ctx *ctx) 
 {
     block_status blk_stat;
     blk_stat.in_progress = false;

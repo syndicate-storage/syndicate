@@ -126,7 +126,7 @@ def read_user( email ):
    """
    Read a user.
    
-   Required arguments:
+   Positional arguments:
       email (str):
          The email address of the desired user.
    
@@ -147,7 +147,7 @@ def update_user( email, **attrs ):
    """
    Update a user.
    
-   Required arguments:
+   Positional arguments:
       email (str):
          The email address of the desired user.
       
@@ -190,7 +190,7 @@ def delete_user( email ):
    """
    Delete a user.
    
-   Required arguments:
+   Positional arguments:
       email (str):
          The email address of the desired user.
    
@@ -211,7 +211,7 @@ def list_users( query_attrs ):
    """
    List users.
    
-   Required arguments:
+   Positional arguments:
       query_attrs (dict):
          The fields to query on.  Each item must be in
          the form of
@@ -239,7 +239,7 @@ def set_user_public_signing_key( email, signing_public_key, **attrs ):
    """
    Set a user's public signing key.
    
-   Required arguments:
+   Positional arguments:
       email (str):
          The email of the desired user. 
       
@@ -278,7 +278,7 @@ def list_volume_user_ids( volume_name_or_id, **attrs ):
    registered User Gateways that can access 
    the volume's metadata.
    
-   Required arguments:
+   Positional arguments:
       volume_name (str):
          The name of the volume to query.
    
@@ -301,9 +301,9 @@ def list_volume_user_ids( volume_name_or_id, **attrs ):
 @CreateAPIGuard( Volume, pass_caller_user="caller_user", parse_args=Volume.ParseArgs )
 def create_volume( email, name, description, blocksize, signing_public_key, **attrs ):
    """
-   Create a Volume.  It will be owned by the calling user.
+   Create a Volume.  It will be owned by the calling user, or, if the caller is an admin, the user identified by the given email address.
    
-   Required arguments:
+   Positional arguments:
       email (str):
          The email of the user to own this Volume.
       
@@ -453,6 +453,79 @@ def list_user_access_requests( email ):
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="gateway", verify_key_id="name", trust_key_type="gateway", trust_key_id="gateway_name" )
 @CreateAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
 def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, gateway_public_key, signing_public_key, **attrs ):
+   """
+   Create a Gateway.  It will be owned by the calling user, or, if the caller user is an admin, a user identified by the given email address.
+   
+   Positional arguments:
+      volume_name_or_id (str or int):
+         The name or ID of the Volume in which to create this Gateway.
+         Some clients will only accept a name, and others only an ID.
+         
+      email (str):
+         The email address of the user to own this Gateway.
+      
+      gateway_type (str):
+         The type of Gateway to create.
+         Pass UG for user gateway.
+         Pass RG for replica gateway.
+         Pass AG for acquisition gateway.
+      
+      gateway_name (str):
+         The human-readable name of this Gateway.
+      
+      host (str):
+         The name of the host on which this Gateway should run.
+      
+      port (int):
+         The port number this Gateway should listen on.
+      
+      gateway_public_key (str):
+         This Gateway's PEM-encoded public key.  The MS will
+         distribute this public key to all other Gateways in
+         the Volume, so they can use to authenticate messages sent 
+         from this particular Gateway.  You will need to give
+         the Gateway the corresponding private key at runtime.
+         
+         If you want to generate and store one automatically,
+         pass MAKE_GATEWAY_KEY.
+      
+      signing_public_key (str):
+         The PEM-encoded public key that the MS will
+         use to authenticate a client program that wishes
+         to read this volume.  The client program must use 
+         the corresponding private key (the "signing key")
+         to sign requests to the MS, in order to prove to
+         the MS that the program is acting on behalf of the
+         owner of this volume.  Currently, this must be 
+         a 4096-bit RSA key.
+         
+         Pass MAKE_SIGNING_KEY if you want your client to 
+         generate one for you, in which case the private 
+         signing key will be stored to your user key directory
+         on successful return of this method.
+
+   Optional keyword arguments:
+      closure (str):
+         This is a serialized JSON structure that stores gateway-
+         specific data.  Currently, this is only meaningful for 
+         replica gateways.
+         
+         If you want to generate a replica gateway's closure from 
+         a Python module, pass the path to the directory containing 
+         the files.
+
+   Returns:
+      On success, this method returns a Gateway.  On failure, it 
+      raises an exception.
+   
+   Authorization:
+      An administrator can create a Gateway in any Volume, for any user.
+      A user can only create Gateways in Volumes (s)he owns, or in Volumes
+      in which (s)he has been given the right to do so by the Volume's owner.
+      
+      A user may be subject to a quota enforced for each type of Gateway.
+   """
+   
    return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, gateway_public_key, signing_public_key, **attrs )
 
 @Authenticate( object_authenticator=Gateway.Authenticate, object_response_signer=Gateway.Sign,

@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<Map>
+  <Config>
+      <DSN>/tmp/shell-driver-cache</DSN>
+   </Config>
+   <Pair reval="10s 5m">
+      <File perm="740">/foo/bar</File>
+      <Query type="shell">/usr/bin/wget -q -O - http://www.google.com</Query>
+   </Pair>
+</Map>
+

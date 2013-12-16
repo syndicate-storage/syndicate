@@ -240,11 +240,19 @@ char* fs_entry_RG_manifest_url( struct fs_core* core, uint64_t rg_id, uint64_t v
 
 char* fs_entry_AG_manifest_url( struct fs_core* core, uint64_t ag_id, char const* fs_path, int64_t file_version, struct timespec* ts ) {
    char* base_url = ms_client_get_AG_content_url( core->ms, ag_id );
-   if( base_url == NULL )
+   if( base_url == NULL ) {
       return NULL;
+   }
+   
+   uint64_t volume_id = 0;
+   int rc = ms_client_get_gateway_volume( core->ms, SYNDICATE_AG, ag_id, &volume_id );
+   if( rc != 0 ) {
+      errorf("ms_client_gat_gateway_volume(%" PRIu64 ") rc = %d\n", ag_id, rc );
+      return NULL;
+   }
    
    char* ret = CALLOC_LIST( char, strlen(SYNDICATE_DATA_PREFIX) + 1 + strlen(base_url) + 1 + strlen(fs_path) + 1 + 82 );
-   sprintf( ret, "%s%s%s.%" PRId64 "/manifest.%ld.%ld", base_url, SYNDICATE_DATA_PREFIX, fs_path, file_version, ts->tv_sec, ts->tv_nsec );
+   sprintf( ret, "%s%s/%" PRIu64 "%s.%" PRId64 "/manifest.%ld.%ld", base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, file_version, ts->tv_sec, ts->tv_nsec );
    
    free( base_url );
    return ret;

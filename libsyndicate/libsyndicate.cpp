@@ -992,6 +992,8 @@ bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url ) {
 
 
 // recursively make a directory.
+// return 0 if the directory exists at the end of the call.
+// return negative if the directory could not be created.
 int md_mkdirs2( char const* dirp, int start, mode_t mode ) {
    char* currdir = (char*)calloc( strlen(dirp) + 1, 1 );
    unsigned int i = start;
@@ -3531,6 +3533,8 @@ static int md_parse_file_version( char* _name_and_version_str, int64_t* _file_ve
 }
 
 
+// parse a URL in the format of:
+// /$PREFIX/$volume_id/$file_path.$file_version/($block_id.$block_version || manifest.$mtime_sec.$mtime_nsec)
 int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_timestamp, bool* _staging ) {
    char* url_path = strdup( _url_path );
 

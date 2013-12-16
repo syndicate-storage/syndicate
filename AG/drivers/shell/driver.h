@@ -18,7 +18,7 @@
 #include <libsyndicate.h>
 #include <map-parser.h>
 #include <proc-handler.h>
-#include <gateway-ctx.h>
+#include <shell-ctx.h>
 #include <reversion-daemon.h>
 #include <AG-util.h>
 

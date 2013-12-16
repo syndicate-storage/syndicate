@@ -171,4 +171,11 @@ int util_init(void);
 
 }
 
+
+// extra macros
+#define BLOCK_HASH_LEN sha256_len
+#define BLOCK_HASH_DATA sha256_hash_data
+#define BLOCK_HASH_FD sha256_fd
+#define BLOCK_HASH_TO_STRING sha256_printable
+
 #endif

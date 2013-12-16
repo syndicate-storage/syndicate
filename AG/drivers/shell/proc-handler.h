@@ -30,7 +30,7 @@
 #include <vector>
 #include <set>
 
-#include <gateway-ctx.h>
+#include <shell-ctx.h>
 #include <map-parser.h>
 
 #define MAX_FILE_NAME_LEN	    32
@@ -100,13 +100,13 @@ class ProcHandler
 
     public:
 	static  ProcHandler&  get_handle(char* cache_dir_str);
-	int    execute_command(struct gateway_ctx *ctx, char *buffer, ssize_t read_size); 
+	int    execute_command(struct shell_ctx *ctx, char *buffer, ssize_t read_size); 
 	int  execute_command(const char* proc_name, char *argv[], char *evp[], 
-			     struct gateway_ctx *ctx,  proc_table_entry *pte); 
+			     struct shell_ctx *ctx,  proc_table_entry *pte); 
 	ssize_t	encode_results();
 	static proc_table_entry* alloc_proc_table_entry();
 	static bool is_proc_alive(pid_t);
-	block_status get_block_status(struct gateway_ctx *ctx);
+	block_status get_block_status(struct shell_ctx *ctx);
 	pthread_t get_thread_id();
 	void remove_proc_table_entry(string file_path);
 };

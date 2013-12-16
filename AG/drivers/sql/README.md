@@ -10,7 +10,7 @@ Block Index:
     the requested block - id based  on volume’s block size to one  or more driver specific block - ids that maps 
     to the data range of the requested block. 
     
-    Currently  the  size of a block index entry is 32 bytes, each block index entry is backed by a block of 40960 
+    Currently  the  size of a block index entry is 32 bytes, each block index entry is backed by a block of 4096 
     bytes (on a  platform  that has 4KB Pages). That is roughly 1MB block index for a 1GB file. This ratio could 
     be further increased by  increasing drivers’ internal block size (see AG_BLOCK_SIZE() in block-index.h). 
     

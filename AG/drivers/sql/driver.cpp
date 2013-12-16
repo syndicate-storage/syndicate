@@ -438,7 +438,7 @@ static int publish(const char *fpath, int type, struct map_info* mi,
     strncpy( path, fpath + datapath_len, path_len );
 
     if ((ment = DATA[path]) == NULL) {
-	ment = (struct md_entry*)malloc(sizeof(struct md_entry));
+	ment = (struct md_entry*)calloc(sizeof(struct md_entry), 1);
 	memset(ment, 0, sizeof(struct md_entry));
 	ment->version = 1;
 	char* parent_name_tmp = md_dirname( path, NULL );

@@ -319,7 +319,7 @@ int fs_entry_download_manifest_replica( struct fs_core* core,
    
    ssize_t nr = 0;
    
-   int rc = 0;
+   int rc = -ENOTCONN;
    int i = -1;
    uint64_t RG_id = 0;
    
@@ -357,6 +357,9 @@ int fs_entry_download_manifest_replica( struct fs_core* core,
       }
       
       free( rg_ids);
+   }
+   else {
+      rc = -ENODATA;
    }
    
    if( rc == 0 ) {

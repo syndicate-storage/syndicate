@@ -5,14 +5,14 @@
    Wathsala Vithanage (wathsala@princeton.edu)
 */
 
-#ifndef _GATEWAY_CTX_H_
-#define _GATEWAY_CTX_H_
+#ifndef _SHELL_CTX_H_
+#define _SHELL_CTX_H_
 
 #include <sys/types.h>
 #include <unistd.h>
 #include <map-parser.h>
 
-struct gateway_ctx {
+struct shell_ctx {
     int request_type;
     // file info 
     char const* file_path;
