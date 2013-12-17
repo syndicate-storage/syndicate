@@ -1086,7 +1086,8 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
 // ensure that the manifest is up to date.
 // if check_coordinator is true, then ask the manifest-designated gateway before asking the RGs.
 // if check_coordinator is false, then fs_path will be ignored (since RGs don't need it).
-// if successful_gateway_id != NULL, then fill it with the ID of the gateway that served the manifest (if any). Otherwise set to 0 if given but the manifest was frsh.
+// if successful_gateway_id != NULL, then fill it with the ID of the gateway that served the manifest (if any). Otherwise set to 0 if given but the manifest was fresh.
+// a manifest fetched from an AG will be marked as stale, since a subsequent read can fail with HTTP 204.  The caller should mark the manifest as fresh if it succeeds in reading data.
 // FENT MUST BE WRITE-LOCKED FIRST!
 int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id ) {
    
@@ -1128,11 +1129,10 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    int rc = 0;
    Serialization::ManifestMsg manifest_msg;
    
+   int gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
    
    if( check_coordinator ) {
       // check the MS-listed coordinator first, instead of asking the RGs directly
-         
-      int gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
       
       if( gateway_type < 0 ) {
          // unknown gateway...try refreshing the Volume
@@ -1214,6 +1214,10 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    
    // repopulate the manifest and update the relevant metadata
    fs_entry_reload_manifest( core, fent, &manifest_msg );
+   
+   // if this is an AG, then don't allow it to be considered fresh
+   if( gateway_type == SYNDICATE_AG )
+      fent->manifest->mark_stale();
 
    char* dat = fent->manifest->serialize_str();
    dbprintf("Manifest:\n%s\n", dat);

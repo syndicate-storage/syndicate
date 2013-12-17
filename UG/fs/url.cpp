@@ -120,11 +120,17 @@ char* fs_entry_AG_block_url( struct fs_core* core, uint64_t ag_id, char const* f
    if( base_url == NULL )
       return NULL;
    
-   int base_len = 25 + 1 + strlen(fs_path) + 1 + 25 + 1 + 25 + 1 + 25 + 1;
+   uint64_t volume_id = 0;
+   int rc = ms_client_get_gateway_volume( core->ms, SYNDICATE_AG, ag_id, &volume_id );
+   if( rc != 0 ) {
+      errorf("ms_client_gat_gateway_volume(%" PRIu64 ") rc = %d\n", ag_id, rc );
+      return NULL;
+   }
    
+   int base_len = 25 + 1 + 25 + 1 + strlen(fs_path) + 1 + 25 + 1 + 25 + 1 + 25 + 1;
    char* ret = CALLOC_LIST( char, strlen(base_url) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
 
-   sprintf(ret, "%s/%s%s.%" PRId64 "/%" PRIu64 ".%" PRId64, base_url, SYNDICATE_DATA_PREFIX, fs_path, version, block_id, block_version );
+   sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64, base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, version, block_id, block_version );
 
    free( base_url );
    return ret;

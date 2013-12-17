@@ -24,7 +24,8 @@ struct shell_ctx {
     char* data;
     ssize_t data_len;
     off_t data_offset;
-    off_t num_read;
+    bool need_padding;
+    
     // command name
     char const* proc_name;
     // arguments array
@@ -33,8 +34,6 @@ struct shell_ctx {
     char **envp;
     // file block info
     off_t block_id;
-    // are we done?
-    bool complete;
     // map_info
     struct map_info *mi;
     // blocking factor

@@ -1542,7 +1542,7 @@ ssize_t md_download_file5( CURL* curl_h, char** buf ) {
 // download data from a remote gateway via local proxy and CDN
 // return 0 on success
 // return negative on irrecoverable error
-int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len ) {
+int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len, int* _status_code ) {
    
    ssize_t len = 0;
    long status_code = 0;
@@ -1576,11 +1576,14 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
       errorf("curl_easy_perform(%p, %s, proxy=%s) rc = %d, err = %ld\n", curl, url, proxy, rc, err );
       
       rc = -EREMOTEIO;
+      *_status_code = 0;
    }
    else {
       
       curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &status_code );
 
+      *_status_code = status_code;
+      
       if( status_code == 200 ) {
          // everything was okay
          
@@ -1595,7 +1598,7 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
          errorf("curl_easy_perform(%p, %s, proxy=%s) HTTP status = %ld\n", curl, url, proxy, status_code );
          
          *bits = NULL;
-         *ret_len = -status_code;
+         *ret_len = 0;
          rc = -EREMOTEIO;
       }
    }
@@ -1610,7 +1613,10 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
 // * both CDN and proxy
 // * from CDN
 // * from gateway
-int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len ) {
+// return 0 on success.
+// return HTTP status code if not 200
+// return negative on error
+int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len, int* status_code ) {
    int rc = 0;
 
    char* cdn_url = md_cdn_url( url );
@@ -1649,15 +1655,17 @@ int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* 
       if( target_url == NULL && target_proxy == NULL )
          break;
 
-      rc = md_download( conf, curl, target_proxy, target_url, bits, ret_len, max_len );
+      rc = md_download( conf, curl, target_proxy, target_url, bits, ret_len, max_len, status_code );
       if( rc == 0 ) {
          // HTTP indicates success
          break;
       }
       else {
          // try again
-         errorf("md_download_cached(%p, %s, CDN_url=%s, proxy=%s) rc = %d, status code = %zd\n", curl, url, target_url, target_proxy, rc, *ret_len );
+         errorf("md_download_cached(%p, %s, CDN_url=%s, proxy=%s) rc = %d, status code = %d\n", curl, url, target_url, target_proxy, rc, *status_code );
          *ret_len = 0;
+         *status_code = 0;
+         rc = 0;
       }
    }
 
@@ -1667,25 +1675,43 @@ int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* 
 }
 
 
+// translate an HTTP status code into the approprate error code.
+// return the code if no error could be determined.
+static int md_HTTP_status_code_to_error_code( int status_code ) {
+   if( status_code == GATEWAY_HTTP_TRYAGAIN )
+      return -EAGAIN;
+   
+   if( status_code == GATEWAY_HTTP_EOF )
+      return 0;
+   
+   return status_code;
+}
+
 // download a manifest and parse it.
 // Do not attempt to check it for errors, or verify its authenticity
 int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
 
    char* manifest_data = NULL;
+   int status_code = 0;
    ssize_t manifest_data_len = 0;
    int rc = 0;
 
-   rc = md_download_cached( conf, curl, manifest_url, &manifest_data, &manifest_data_len, SYNDICATE_MAX_MANIFEST_LEN );
+   rc = md_download_cached( conf, curl, manifest_url, &manifest_data, &manifest_data_len, SYNDICATE_MAX_MANIFEST_LEN, &status_code );
    
    if( rc != 0 ) {
       errorf( "md_download_cached(%s) rc = %d\n", manifest_url, rc );
       return rc;
    }
    
-   if( manifest_data_len < 0 ) {
+   if( status_code != 200 ) {
       // bad HTTP status
-      errorf( "md_download_cached(%s) HTTP status %d\n", manifest_url, abs(manifest_data_len) );
-      return -EREMOTEIO;
+      errorf( "md_download_cached(%s) HTTP status %d\n", manifest_url, status_code );
+      
+      int err = md_HTTP_status_code_to_error_code( status_code );
+      if( err == 0 || err == status_code )
+         return -EREMOTEIO;
+      else
+         return err;
    }
 
    rc = md_parse< Serialization::ManifestMsg >( mmsg, manifest_data, manifest_data_len );
@@ -1706,40 +1732,46 @@ ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char cons
 
    ssize_t nr = 0;
    char* block_buf = NULL;
+   int status_code = 0;
    
    dbprintf("fetch at most %zu bytes from '%s'\n", block_len, block_url );
    
-   int ret = md_download_cached( conf, curl, block_url, &block_buf, &nr, block_len );
+   int ret = md_download_cached( conf, curl, block_url, &block_buf, &nr, block_len, &status_code );
    
    if( ret != 0 ) {
       errorf("md_download_cached(%s) ret = %d\n", block_url, ret );
       return ret;
    }
    
-   if( nr < 0 ) {
-      // bad HTTP status
-      errorf("md_download_cached(%s) HTTP status %d\n", block_url, abs(nr) );
-      return -EREMOTEIO;
-   }
-   
    if( nr != (signed)block_len ) {
       // got back an error code.  Attempt to parse it
-      char errorbuf[50];
-      memcpy( errorbuf, block_buf, MIN( 49, nr ) );
       
-      char* tmp = NULL;
-      long error = strtol( block_buf, &tmp, 10 );
-      if( tmp == block_buf ) {
-         // failed to parse
-         errorf("%s", "Incomprehensible error code\n");
-         nr = -EREMOTEIO;
+      int err = md_HTTP_status_code_to_error_code( status_code );
+      
+      if( err == status_code ) {
+         // manually parse message... 
+         char errorbuf[50];
+         memcpy( errorbuf, block_buf, MIN( 49, nr ) );
+         
+         char* tmp = NULL;
+         long error = strtol( block_buf, &tmp, 10 );
+         if( tmp == block_buf ) {
+            // failed to parse
+            errorf("%s", "Incomprehensible error code\n");
+            nr = -EREMOTEIO;
+         }
+         else {
+            errorf("block error %ld\n", error );
+            nr = -abs(error);
+         }
       }
-      else {
-         errorf("block error %ld\n", error );
-         nr = -abs(error);
+      else if( err == 0 ) {
+         // not strictly an error, but an EOF
+         nr = 0;
       }
       
       free( block_buf );
+      *block_bits = NULL;
       return nr;
    }
    

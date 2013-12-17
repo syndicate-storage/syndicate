@@ -306,8 +306,11 @@ static ssize_t gateway_HTTP_read_callback( void* cls, uint64_t pos, char* buf, s
 
    ssize_t ret = -1;
    if( get_callback ) {
+      // TODO: encrypt this as we send it back
       ret = (*get_callback)( &rpc->ctx, buf, max, rpc->user_cls );
       if( ret == 0 ) {
+         // NOTE: return 0 can indicate to try again!
+         errorf("get_callback returned %zd\n", ret);
          ret = -1;
       }
    }

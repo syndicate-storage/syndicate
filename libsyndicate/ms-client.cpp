@@ -1167,8 +1167,9 @@ int ms_client_download_cert( struct ms_client* client, CURL* curl, char const* u
    
    char* buf = NULL;
    ssize_t buf_len = 0;
+   int http_status = 0;
    
-   int rc = md_download_cached( client->conf, curl, url, &buf, &buf_len, MS_MAX_CERT_SIZE );
+   int rc = md_download_cached( client->conf, curl, url, &buf, &buf_len, MS_MAX_CERT_SIZE, &http_status );
    
    if( rc != 0 ) {
       errorf("md_download_cached(%s) rc = %d\n", url, rc );

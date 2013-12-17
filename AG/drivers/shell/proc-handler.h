@@ -46,9 +46,7 @@ struct _proc_table_entry {
     int	    block_file_wd;
     bool    is_read_complete;
     pid_t   proc_id;
-    //off_t   current_max_block;
-    //off_t   block_byte_offset;
-    off_t   current_offset;
+    off_t   written_so_far;
     bool    valid;
     pthread_rwlock_t pte_lock;
 }; 
@@ -58,6 +56,7 @@ struct _block_status {
     bool    no_block;
     bool    block_available;
     bool    no_file;
+    bool    need_padding;
 };
 
 typedef struct _proc_table_entry    proc_table_entry;
@@ -82,11 +81,13 @@ void wrlock_pte(proc_table_entry *pte);
 void rdlock_pte(proc_table_entry *pte);
 void unlock_pte(proc_table_entry *pte);
     
+typedef map<string, proc_table_entry*> proc_table_t;
+
 class ProcHandler 
 {
     private:
 	char* cache_dir_path;
-	map<string, proc_table_entry*> proc_table;
+	proc_table_t proc_table;
 	char* get_random_string();
 	pthread_t   inotify_event_thread;
 	//Mutex lock to synchronize operations on proc_tbale
@@ -100,7 +101,8 @@ class ProcHandler
 
     public:
 	static  ProcHandler&  get_handle(char* cache_dir_str);
-	int    execute_command(struct shell_ctx *ctx, char *buffer, ssize_t read_size); 
+        int start_command_idempotent( struct shell_ctx *ctx );
+	int read_command_results(struct shell_ctx *ctx, char *buffer, ssize_t read_size); 
 	int  execute_command(const char* proc_name, char *argv[], char *evp[], 
 			     struct shell_ctx *ctx,  proc_table_entry *pte); 
 	ssize_t	encode_results();

@@ -54,11 +54,6 @@ using namespace std;
 
 #define INVALID_BLOCK_ID (uint64_t)(-1)
 
-#define BLOCK_HASH_LEN sha256_len
-#define BLOCK_HASH_DATA sha256_hash_data
-#define BLOCK_HASH_FD sha256_fd
-#define BLOCK_HASH_TO_STRING sha256_printable
-
 typedef pair<long, struct fs_entry*> fs_dirent;
 typedef vector<fs_dirent> fs_entry_set;
 typedef map<string, string> fs_entry_xattrs;

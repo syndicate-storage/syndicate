@@ -45,8 +45,7 @@ ReversionDaemon* revd = NULL;
 bool initialized = false;
 
 // generate a manifest for an existing file, putting it into the gateway context
-extern "C" int gateway_generate_manifest( struct gateway_context* dataset_ctx, 
-					    struct shell_ctx* ctx, struct md_entry* ent ) {
+extern "C" int gateway_generate_manifest( struct gateway_context* dataset_ctx, struct shell_ctx* ctx, struct md_entry* ent ) {
     // No need of a lock.
     errorf("%s", "INFO: gateway_generate_manifest\n"); 
     
@@ -101,11 +100,14 @@ extern "C" int gateway_generate_manifest( struct gateway_context* dataset_ctx,
         return -EINVAL;
     }
 
+    
     ctx->data_len = mmsg_str.size();
     ctx->data = CALLOC_LIST( char, mmsg_str.size() );
-    dataset_ctx->last_mod = ent->mtime_sec;
+    
     memcpy( ctx->data, mmsg_str.data(), mmsg_str.size() );
-
+    
+    dataset_ctx->last_mod = ent->mtime_sec;
+    
     delete mmsg;
 
     return 0;
@@ -120,44 +122,44 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
     ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
     struct shell_ctx* ctx = (struct shell_ctx*)user_cls;
     
-    if (dat->http_status == 404 ) {
-        if( ctx != NULL && !ctx->complete ) {
-           ret = 0;
-	   ctx->complete = true;
-        }
-    }
-    else if (dat->http_status == 204) {
-        if( ctx != NULL && !ctx->complete ) {
-            //This is the first request for this file.
-            ret = 0;
-            ctx->complete = true;
-            prch.execute_command(ctx, NULL, 0);
-        }
-    }
-    else if( ctx != NULL ) {
-      if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
-         if (!ctx->complete) {
-            ret = prch.execute_command(ctx, buf, len);
-            if (ctx->data_offset == (ssize_t)ctx->blocking_factor)
-               ctx->complete = true;
-            if (ret < 0) {
-               ret = 0;
-               ctx->complete = true;
-            }
-         }
-         else {
-            ret = 0;
-         }
-      }
-      else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
-         // read from RAM
-         memcpy( buf, ctx->data + ctx->data_offset, MIN( (ssize_t)len, ctx->data_len - ctx->data_offset ) );
-         ctx->data_offset += len;
-         ret = (ssize_t)len;
+    if( ctx != NULL ) {
+    
+      if (dat->http_status == 404 ) {
+         // no data
+         ret = 0;
       }
       else {
-         // invalid structure
-         ret = -EINVAL;
+         if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
+            if( dat->http_status == GATEWAY_HTTP_TRYAGAIN ) {
+               // make sure the command is running 
+               ret = 0;
+               prch.start_command_idempotent(ctx);
+            }
+            else if( dat->http_status == GATEWAY_HTTP_EOF ) {
+               // no data
+               ret = 0;
+            }
+            else {
+               // give back data (TODO: encrypt)
+               ret = prch.read_command_results(ctx, buf, len);
+               
+               if( ret >= 0 && (unsigned)ret != len && ctx->need_padding ) {
+                  // pad the results
+                  memset( buf + ret, 0, ret - len );
+                  ret = len;
+               }
+            }
+         }
+         else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
+            // manifest data
+            memcpy( buf, ctx->data + ctx->data_offset, MIN( (ssize_t)len, ctx->data_len - ctx->data_offset ) );
+            ctx->data_offset += len;
+            ret = (ssize_t)len;
+         }
+         else {
+            // something's wrong
+            ret = -EINVAL;
+         }
       }
     }
     else {
@@ -199,7 +201,6 @@ extern "C" void* connect_dataset( struct gateway_context* dataset_ctx ) {
    DRIVER_RDONLY(&driver_lock);
    errorf("%s", "INFO: connect_dataset\n"); 
    char* file_path = dataset_ctx->reqdat.fs_path;
-   uint64_t block_id = 0;
 
    // is there metadata for this file?
    string fs_path( file_path );
@@ -208,16 +209,15 @@ extern "C" void* connect_dataset( struct gateway_context* dataset_ctx ) {
        // no entry; nothing to do
        errorf("No dataset %s found\n", file_path);
        free( file_path );
-       dataset_ctx->err = -404;
+       dataset_ctx->err = -ENOENT;
        dataset_ctx->http_status = 404;
        DRIVER_RETURN(NULL, &driver_lock);
    }
 
    struct shell_ctx* ctx = CALLOC_LIST( struct shell_ctx, 1 );
 
-   // complete is initially false
-   ctx->complete = false;
    ctx->blocking_factor = global_conf->ag_block_size;
+   
    struct md_entry* ent = itr->second;
 
    // is this a request for a manifest?
@@ -229,13 +229,15 @@ extern "C" void* connect_dataset( struct gateway_context* dataset_ctx ) {
 	   // failed
 	   errorf( "gateway_generate_manifest rc = %d\n", rc );
 
+           dataset_ctx->err = rc;
+           
 	   // meaningful error code
 	   if( rc == -ENOENT )
-	       dataset_ctx->err = -404;
+	       dataset_ctx->http_status = 404;
 	   else if( rc == -EACCES )
-	       dataset_ctx->err = -403;
+	       dataset_ctx->http_status = 403;
 	   else
-	       dataset_ctx->err = -500;
+	       dataset_ctx->http_status = 500;
 
 	   free( ctx );
 	   free( file_path ); 
@@ -246,55 +248,74 @@ extern "C" void* connect_dataset( struct gateway_context* dataset_ctx ) {
        ctx->data_offset = 0;
        ctx->block_id = 0;
        ctx->file_path = file_path;
-       //ctx->num_read = 0;
+       ctx->fd = -1;
        dataset_ctx->size = ctx->data_len;
    }
    else {
+       
        struct map_info* mi; 
        query_map::iterator itr = FS2CMD->find(string(file_path));
        if (itr != FS2CMD->end()) {
+          
+           // set up our driver's connection context
 	   mi = itr->second;
 	   char** cmd_array = str2array((char*)mi->shell_command);
 	   ctx->proc_name = cmd_array[0];
 	   ctx->argv = cmd_array;
 	   ctx->envp = NULL;
 	   ctx->data_offset = 0;
-	   ctx->block_id = block_id;
+	   ctx->block_id = dataset_ctx->reqdat.block_id;
 	   ctx->fd = -1;
 	   ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
 	   ctx->file_path = file_path;
 	   ctx->id = mi->id;
 	   ctx->mi = mi;
-	   // Negative size switches libmicrohttpd to chunk transfer mode
-	   dataset_ctx->size = -1;
 	   
+           // will serve a block of data 
+           dataset_ctx->size = ctx->data_len;
+       
+           
 	   // Check the block status and set the http response appropriately
 	   ProcHandler& prch = ProcHandler::get_handle((char*)cache_path);
 	   block_status blk_stat = prch.get_block_status(ctx);
-	   if (blk_stat.in_progress) {
-              errorf("In progress: %s\n", file_path );
-	      dataset_ctx->err = -204;
-	      dataset_ctx->http_status = 204;
-	   } 
-	   else if (blk_stat.block_available) {
-              errorf("Block available: %s\n", file_path );
-	      dataset_ctx->err = -200;
-	      dataset_ctx->http_status = 200;
-	   }
-	   else if (blk_stat.no_block) {
-              errorf("No block: %s\n", file_path );
-	      dataset_ctx->err = -200;
-	      dataset_ctx->http_status = 200;
-	   }
-	   else {
-              errorf("Not found: %s\n", file_path );
-	      dataset_ctx->err = -404;
-	      dataset_ctx->http_status = 404;
-	   }
+           
+           // do we have data to serve?
+           if( blk_stat.block_available ) {
+              dbprintf("Block %" PRIu64 " is available\n", ctx->block_id );
+              dataset_ctx->err = 0;
+              dataset_ctx->http_status = 200;
+              ctx->need_padding = blk_stat.need_padding;
+           }
+           else {
+              // no data
+              // try again?
+              if( blk_stat.in_progress ) {
+                 dbprintf("Block %" PRIu64 " is in progress\n", ctx->block_id );
+                 dataset_ctx->err = 0;
+                 dataset_ctx->http_status = GATEWAY_HTTP_TRYAGAIN;
+              }
+              else {
+                 // nothing :(
+                 // no file?
+                 if( blk_stat.no_file ) {
+                    errorf("No such file %s\n", ctx->file_path );
+                    dataset_ctx->err = -ENOENT;
+                    dataset_ctx->http_status = 404;
+                 }
+                 // or EOF?
+                 else {
+                    errorf("EOF on file %s (no such block %" PRIu64 ")\n", ctx->file_path, ctx->block_id );
+                    dataset_ctx->err = 0;
+                    dataset_ctx->http_status = GATEWAY_HTTP_EOF;
+                 }
+              }
+           }
        }
        else {
           errorf("Not found: %s\n", file_path );
           dataset_ctx->http_status = 404;
+          free( ctx );
+          ctx = NULL;
        }
    }
    DRIVER_RETURN(ctx, &driver_lock);

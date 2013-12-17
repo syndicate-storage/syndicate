@@ -43,7 +43,7 @@ void clean_invalid_proc_entry(proc_table_entry *pte) {
 	pte->block_file_wd = -1;
 	pte->is_read_complete = false;
 	pte->proc_id = -1;
-	pte->current_offset = 0;
+	pte->written_so_far = 0;
 	//pte->block_byte_offset = 0;
     }
 }
@@ -219,12 +219,9 @@ void* inotify_event_receiver(void *cls) {
 			byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
 			continue;
 		    }
-		    //Acquire the pte lock
+		    // update written size
 		    wrlock_pte(pte);
-		    //pte->current_max_block = stat_buff.st_size/BLK_SIZE;
-		    //pte->block_byte_offset = stat_buff.st_size - 
-		    //		    (pte->current_max_block * BLK_SIZE);
-		    pte->current_offset = stat_buff.st_size;
+		    pte->written_so_far = stat_buff.st_size;
 		    unlock_pte(pte);
 		}
 		else {
@@ -355,8 +352,54 @@ int ProcHandler::execute_command(const char* proc_name, char *argv[],
     return 0;
 }
 
-int ProcHandler::execute_command(struct shell_ctx *ctx, 
-				char *buffer, ssize_t read_size) 
+
+int ProcHandler::start_command_idempotent( struct shell_ctx *ctx ) {
+   char const *proc_name = ctx->proc_name;
+    char **argv  = ctx->argv;
+    char **envp = ctx->envp;
+    ssize_t len = 0;
+    struct stat st_buf;
+
+    
+    proc_table_entry *pte = NULL;
+    proc_table_t::iterator itr = proc_table.find( string(ctx->file_path) );
+    if( itr != proc_table.end() )
+       pte = itr->second;
+    
+    if (pte == NULL || (pte != NULL && !(pte->valid))) {
+        // Process has not yet been started, so kick it off and return EAGAIN
+       
+        if (pte == NULL)
+            pte = alloc_proc_table_entry();
+        
+        //Lock pte
+        wrlock_pte(pte);
+        
+        //check whether this pte is valid
+        if (!pte->valid) {
+            unlock_pte(pte);
+            return -EAGAIN;
+        }
+        
+        // start up the process and insert it into the process table
+        int rc = execute_command(proc_name, argv, envp, ctx, pte);
+        if (rc < 0) {
+            unlock_pte(pte);
+            return rc;
+        }
+        
+        // set up the map_info structure to remember this running process
+        ctx->mi->entry = pte;
+        ctx->mi->invalidate_entry = invalidate_entry;
+        
+        unlock_pte(pte);
+    }
+    
+    return 0;
+}
+
+
+int ProcHandler::read_command_results(struct shell_ctx *ctx, char *buffer, ssize_t read_size) 
 {
     char const *proc_name = ctx->proc_name;
     char **argv  = ctx->argv;
@@ -364,27 +407,45 @@ int ProcHandler::execute_command(struct shell_ctx *ctx,
     ssize_t len = 0;
     struct stat st_buf;
 
-    proc_table_entry *pte = proc_table[string(ctx->file_path)];
+    
+    proc_table_entry *pte = NULL;
+    proc_table_t::iterator itr = proc_table.find( string(ctx->file_path) );
+    if( itr != proc_table.end() )
+       pte = itr->second;
+    
     if (pte == NULL || (pte != NULL && !(pte->valid))) {
+        // Process has not yet been started, so kick it off and return EAGAIN
+       
 	if (pte == NULL)
 	    pte = alloc_proc_table_entry();
+        
 	//Lock pte
 	wrlock_pte(pte);
-	int rc = execute_command(proc_name, argv, 
-				envp, ctx, pte);
+        
+        //check whether this pte is valid
+        if (!pte->valid) {
+            unlock_pte(pte);
+            return -EAGAIN;
+        }
+        
+        // start up the process and insert it into the process table
+	int rc = execute_command(proc_name, argv, envp, ctx, pte);
 	if (rc < 0) {
 	    unlock_pte(pte);
 	    return rc;
 	}
-	//pte = proc_table[ctx->id];
-	pte = proc_table[string(ctx->file_path)];
-	//check whether this pte is valid
-	if (!pte->valid) {
-	    unlock_pte(pte);
-	    return -EAGAIN;
-	}
+	
+	// set up the map_info structure to remember this running process
 	ctx->mi->entry = pte;
 	ctx->mi->invalidate_entry = invalidate_entry;
+        
+        unlock_pte(pte);
+        
+        // tell the reader to try again, now that we're generating data
+        return -EAGAIN;
+        
+        /*
+        // set up the cached block file
 	int fd = open(pte->block_file, O_RDONLY);
 	if (fd < 0) {
 	    perror("open");
@@ -398,6 +459,7 @@ int ProcHandler::execute_command(struct shell_ctx *ctx,
 	    unlock_pte(pte);
 	    return -EIO;
 	}
+	
 	if (st_buf.st_size < (off_t)(ctx->block_id * ctx->blocking_factor)) {
 	    unlock_pte(pte);
 	    if (!pte->is_read_complete)
@@ -421,12 +483,18 @@ int ProcHandler::execute_command(struct shell_ctx *ctx,
 	ctx->data_offset += len;
 	unlock_pte(pte);
 	return len;
+        */
     }
     else {
+        // process is already running.  See if we have data to give back
 	//If data_offset is equal to block_size then we have read an 
 	//entire block. Therefore return 0.
+	/*
 	if (ctx->data_offset >= (ssize_t)ctx->blocking_factor)
 	    return 0;
+        */
+        
+        
 	//get proc_table_entry by id and return the block... 
 	//proc_table_entry *pte = proc_table[ctx->id];
 	//pte is only read here.
@@ -434,12 +502,14 @@ int ProcHandler::execute_command(struct shell_ctx *ctx,
 	//check whether this pte is valid
 	if (!pte->valid) {
 	    unlock_pte(pte);
-	    return -EAGAIN;
+            
+            // start over completely
+	    return -ENOTCONN;
 	}
-	if (pte->current_offset > (ctx->block_id * ctx->blocking_factor) + 
-				    ctx->data_offset) {
-	    off_t current_read_offset = (ctx->block_id * ctx->blocking_factor) + 
-					ctx->data_offset;
+	if (pte->written_so_far > ctx->block_id * ctx->blocking_factor + ctx->data_offset) {
+            // have more data
+	    off_t current_read_offset = ctx->block_id * ctx->blocking_factor + ctx->data_offset;
+            
 	    if (ctx->fd < 0) {
 		int fd = open(pte->block_file, O_RDONLY);
 		if (fd < 0) {
@@ -449,38 +519,44 @@ int ProcHandler::execute_command(struct shell_ctx *ctx,
 		}
 		ctx->fd = fd;
 	    }
-	    /*if (((pte->current_max_block == ctx->block_id) && 
-		    pte->block_byte_offset > ctx->data_offset) ||
-		    pte->current_max_block > ctx->block_id) {*/
+	    
 	    if (lseek(ctx->fd, current_read_offset, SEEK_SET) < 0) {
 		perror("lseek");
 		unlock_pte(pte);
 		return -EIO;
 	    }
-	    len = read(ctx->fd, buffer, read_size);
-	    if (len < 0) {
-		perror("read");
-		unlock_pte(pte);
-		return -EIO;
-	    }
-	    else {
-		ctx->data_offset += len;
-		unlock_pte(pte);
-		return len;
-	    }
-	    /*} 
-	      else {
-	      unlock_pte(pte);
-	      return -EAGAIN;
-	    }*/
+	    // read ALL the data
+	    ssize_t num_read = 0;
+            while( num_read < read_size ) {
+               ssize_t nr = read(ctx->fd, buffer, read_size);
+               if (nr < 0) {
+                  perror("read");
+                  unlock_pte(pte);
+                  return -EIO;
+               }
+               if( nr == 0 ) {
+                  // EOF
+                  break;
+               }
+               num_read += nr;
+            }
+            
+            ctx->data_offset += num_read;
+            unlock_pte(pte);
+            return num_read;
 	}
 	else { 
-	    unlock_pte(pte);
-	    if (pte->is_read_complete) {
-		return 0;
-	    }
-	    else
-		return -EAGAIN;
+           // do not have a block-full of data
+           unlock_pte(pte);
+           return 0;
+           /*
+            unlock_pte(pte);
+            if (pte->is_read_complete) {
+                  return 0;
+            }
+            else
+                  return -EAGAIN;
+          */
 	}
 	//unlock_pte(pte);
     }
@@ -529,15 +605,19 @@ block_status ProcHandler::get_block_status(struct shell_ctx *ctx)
 {
     block_status blk_stat;
     blk_stat.in_progress = false;
-    blk_stat.no_block = false;
     blk_stat.no_file = false;
     blk_stat.block_available = false;
+    blk_stat.need_padding = false;
 
     /*if (ctx->id >= DEFAULT_INIT_PROC_TBL_LEN) {
 	blk_stat.no_block = true;
     }*/
     //proc_table_entry *pte = proc_table[ctx->id];
-    proc_table_entry *pte = proc_table[string(ctx->file_path)];
+    proc_table_entry* pte = NULL;
+    proc_table_t::iterator itr = proc_table.find( string(ctx->file_path) );
+    if( itr != proc_table.end() )
+       pte = itr->second;
+    
     if (pte == NULL && ctx->file_path == NULL) {
 	blk_stat.no_file = true;
     }
@@ -545,28 +625,30 @@ block_status ProcHandler::get_block_status(struct shell_ctx *ctx)
 	blk_stat.in_progress = true;
     }
     else {
-	if (!(pte->valid)) {
-	    blk_stat.in_progress = true;
+	if (!pte->valid || !pte->is_read_complete ) {
+           // still generating data 
+	   blk_stat.in_progress = true;
 	}
-	else if (((ctx->block_id + 1) * ctx->blocking_factor) > pte->current_offset) {
-	    if (pte->is_read_complete) {
-		blk_stat.no_block = true;
-	    }
-	    else {
-		blk_stat.in_progress = true;
-	    }
-	}
-	else if (((ctx->block_id + 1) * ctx->blocking_factor) == pte->current_offset) {
-	    if (pte->is_read_complete) {
-		blk_stat.block_available = true;
-	    }
-	    else {
-		blk_stat.in_progress = true;
-	    }
-	}
-	else {
-		blk_stat.block_available = true;
-	}
+	
+	// do we have some data?
+	if( ctx->block_id * ctx->blocking_factor < pte->written_so_far ) {
+           // do we have a complete block?
+           if( (ctx->block_id + 1) * ctx->blocking_factor <= pte->written_so_far ) {
+              // whole block
+              blk_stat.block_available = true;
+           }
+           else {
+              // incomplete block.  If the process is done, then pad the last block 
+              if( pte->is_read_complete ) {
+                 blk_stat.need_padding = true;
+                 blk_stat.block_available = true;
+              }
+              
+              // otherwise, we're still generating data, but shouldn't serve it yet (since we'll need to encrypt each block)
+           }
+        }
+        
+        // otherwise, no data to serve
     }
     return blk_stat;
 }

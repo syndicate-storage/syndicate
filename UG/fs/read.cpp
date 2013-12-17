@@ -259,9 +259,10 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
    while( (size_t)total_read < count && ret >= 0 && !done ) {
       // read the next block
       fs_entry_rlock( fh->fent );
-      bool eof = (unsigned)(offset + total_read) >= fh->fent->size;
+      bool eof = ((unsigned)(offset + total_read) >= fh->fent->size && !IS_STREAM_FILE( *(fh->fent) ));
 
       if( eof ) {
+         dbprintf("EOF after reading %zd bytes\n", total_read);
          ret = 0;
          fs_entry_unlock( fh->fent );
          break;

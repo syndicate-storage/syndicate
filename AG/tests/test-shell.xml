@@ -7,5 +7,9 @@
       <File perm="740">/foo/bar</File>
       <Query type="shell">/usr/bin/wget -q -O - http://www.google.com</Query>
    </Pair>
+   <Pair reval="10s 5m">
+      <File perm="644">/foo/baz</File>
+      <Query type="shell">/bin/echo "hello world"</Query>
+   </Pair>
 </Map>
 

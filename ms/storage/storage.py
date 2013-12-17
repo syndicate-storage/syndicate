@@ -201,11 +201,11 @@ def list_accessible_volumes( email, **q_opts ):
    if user == None:
       raise Exception("No such user '%s'" % email)
    
-   def __volume_from_user_gateway( ug ):
-      return Volume.Read( ug.volume_id, async=True )
+   def __volume_from_access_request( var ):
+      return Volume.Read( var.volume_id, async=True )
    
-   q_opts["map_func"] = __volume_from_user_gateway
-   vols = Gateway.ListAll( {"Gateway.owner_id ==": user.owner_id, "Gateway.gateway_type ==": GATEWAY_TYPE_UG}, **q_opts )
+   q_opts["map_func"] = __volume_from_access_request
+   vols = VolumeAccessRequest.ListAll( {"VolumeAccessRequest.requester_owner_id ==": user.owner_id, "VolumeAccessRequest.status ==": VolumeAccessRequest.STATUS_GRANTED}, **q_opts )
    
    ret = filter( lambda x: x != None, vols )
    return ret

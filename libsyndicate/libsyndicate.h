@@ -589,8 +589,8 @@ ssize_t md_download_file4( char const* url, char** buf, char const* username, ch
 ssize_t md_download_file5( CURL* curl_h, char** buf );
 ssize_t md_download_file6( CURL* curl_h, char** buf, ssize_t max_len );
 ssize_t md_download_file_proxied( char const* url, char** buf, char const* proxy, int* status_code );
-int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len );
-int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len );
+int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len, int* status_code );
+int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len, int* status_code );
 int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg );
 ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char const* block_url, char** block_bits, size_t block_len );
 
@@ -845,6 +845,10 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
 #define SYNDICATE_AG       ms::ms_gateway_cert::ACQUISITION_GATEWAY
 #define SYNDICATE_RG       ms::ms_gateway_cert::REPLICA_GATEWAY
 #define VALID_GATEWAY_TYPE( type ) ((type) == SYNDICATE_UG || (type) == SYNDICATE_RG || (type) == SYNDICATE_AG)
+
+// gateway HTTP error codes (used by the AG and UG)
+#define GATEWAY_HTTP_TRYAGAIN 204
+#define GATEWAY_HTTP_EOF 210
 
 #define GATEWAY_CAP_READ_DATA  1
 #define GATEWAY_CAP_WRITE_DATA  2
