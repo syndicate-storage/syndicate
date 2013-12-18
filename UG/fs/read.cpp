@@ -143,11 +143,14 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
    }
    else {
       // verify the block
-      int rc = fs_entry_verify_block( core, fent, block_id, block_buf, block_len );
-      if( rc != 0 ) {
-         nr = rc;
+      // TODO: do this for AGs as well, once AGs hash blocks
+      if( gateway_type != SYNDICATE_AG ) {
+         int rc = fs_entry_verify_block( core, fent, block_id, block_buf, block_len );
+         if( rc != 0 ) {
+            nr = rc;
+         }
       }
-      else {
+      if( nr >= 0 ) {
          memcpy( block_bits, block_buf, nr );
          dbprintf("read %ld bytes remotely\n", (long)nr);
       }
@@ -180,7 +183,7 @@ ssize_t fs_entry_do_read_block( struct fs_core* core, char const* fs_path, struc
    }
    
    else {
-      // likely due to a truncate
+      // likely due to a truncate, or this file belongs to an AG
       errorf("Block %s.%" PRId64 "/%" PRIu64 " does not exist\n", fs_path, fent->version, block_id);
       return -ENOENT;
    }
@@ -315,8 +318,15 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
       }
       
       else {
-         errorf( "could not read %s, rc = %zd\n", fh->path, tmp );
-         ret = tmp;
+         // EOF on a stream file?
+         if( IS_STREAM_FILE( *(fh->fent) ) && tmp == -ENOENT ) {
+            // at the end of the file
+            ret = 0;
+         }
+         else {
+            errorf( "could not read %s, rc = %zd\n", fh->path, tmp );
+            ret = tmp;
+         }
          done = true;
       }
 
