@@ -356,7 +356,7 @@ static struct md_HTTP_response* gateway_GET_handler( struct md_HTTP_connection_d
 
    if( get_callback ) {
       int http_status = get_http_status( &rpc->ctx, 200 );
-      md_create_HTTP_response_stream( resp, "application/octet-stream", http_status, rpc->ctx.size, 4096, gateway_HTTP_read_callback, rpc, NULL );
+      md_create_HTTP_response_stream( resp, "application/octet-stream", http_status, rpc->ctx.size, global_conf->ag_block_size, gateway_HTTP_read_callback, rpc, NULL );
       add_last_mod_header( resp );
    }
    else {
@@ -835,9 +835,9 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
 	   conf.ag_driver = gw_driver;
    }
    
-   // make sure we have a sane block size
-   if( conf.ag_block_size == 0 ) 
-      conf.ag_block_size = AG_DEFAULT_BLOCK_SIZE;
+   // get the block size from the ms cert
+   conf.ag_block_size = ms_client_get_AG_blocksize( &client, client.gateway_id );
+   dbprintf("blocksize will be %" PRIu64 "\n", conf.ag_block_size );
    
    memcpy( global_conf, &conf, sizeof( struct md_syndicate_conf ) );
    memcpy( global_ms, &client, sizeof( struct ms_client ) );

@@ -133,7 +133,6 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
             if( dat->http_status == GATEWAY_HTTP_TRYAGAIN ) {
                // make sure the command is running 
                ret = 0;
-               prch.start_command_idempotent(ctx);
             }
             else if( dat->http_status == GATEWAY_HTTP_EOF ) {
                // no data
@@ -141,11 +140,12 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
             }
             else {
                // give back data (TODO: encrypt)
+               dbprintf("try to read %zu bytes\n", len );
                ret = prch.read_command_results(ctx, buf, len);
                
                if( ret >= 0 && (unsigned)ret != len && ctx->need_padding ) {
                   // pad the results
-                  memset( buf + ret, 0, ret - len );
+                  memset( buf + ret, 0, len - ret );
                   ret = len;
                }
             }
@@ -272,7 +272,7 @@ extern "C" void* connect_dataset( struct gateway_context* dataset_ctx ) {
 	   ctx->mi = mi;
 	   
            // will serve a block of data 
-           dataset_ctx->size = ctx->data_len;
+           dataset_ctx->size = global_conf->ag_block_size;
        
            
 	   // Check the block status and set the http response appropriately
@@ -281,7 +281,7 @@ extern "C" void* connect_dataset( struct gateway_context* dataset_ctx ) {
            
            // do we have data to serve?
            if( blk_stat.block_available ) {
-              dbprintf("Block %" PRIu64 " is available\n", ctx->block_id );
+              dbprintf("Block %" PRIu64 " is available with %zd bytes (padding: %d)\n", ctx->block_id, blk_stat.written_so_far, blk_stat.need_padding );
               dataset_ctx->err = 0;
               dataset_ctx->http_status = 200;
               ctx->need_padding = blk_stat.need_padding;
@@ -293,6 +293,8 @@ extern "C" void* connect_dataset( struct gateway_context* dataset_ctx ) {
                  dbprintf("Block %" PRIu64 " is in progress\n", ctx->block_id );
                  dataset_ctx->err = 0;
                  dataset_ctx->http_status = GATEWAY_HTTP_TRYAGAIN;
+                 
+                 prch.start_command_idempotent(ctx);
               }
               else {
                  // nothing :(
@@ -528,6 +530,18 @@ void init(unsigned char* dsn) {
     if (pthread_rwlock_init(&driver_lock, NULL) < 0) {
 	perror("pthread_rwlock_init");
 	exit(-1);
+    }
+    
+    // set up signals
+    struct sigaction act;
+    memset(&act, 0, sizeof(act));
+    block_all_signals();
+    set_sigchld_handler(&act);
+    
+    int rc = init_event_receiver();
+    if( rc != 0 ) {
+       errorf("init_event_receiver rc = %d\n", rc );
+       exit(-1);
     }
 }
 

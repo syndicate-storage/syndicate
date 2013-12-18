@@ -1663,8 +1663,6 @@ int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* 
       else {
          // try again
          errorf("md_download_cached(%p, %s, CDN_url=%s, proxy=%s) rc = %d, status code = %d\n", curl, url, target_url, target_proxy, rc, *status_code );
-         *ret_len = 0;
-         *status_code = 0;
          rc = 0;
       }
    }
@@ -1749,20 +1747,26 @@ ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char cons
       int err = md_HTTP_status_code_to_error_code( status_code );
       
       if( err == status_code ) {
-         // manually parse message... 
-         char errorbuf[50];
-         memcpy( errorbuf, block_buf, MIN( 49, nr ) );
-         
-         char* tmp = NULL;
-         long error = strtol( block_buf, &tmp, 10 );
-         if( tmp == block_buf ) {
-            // failed to parse
-            errorf("%s", "Incomprehensible error code\n");
-            nr = -EREMOTEIO;
+         if( block_buf != NULL ) {
+            // try to parse the error 
+            char errorbuf[50];
+            memcpy( errorbuf, block_buf, MIN( 49, nr ) );
+            
+            char* tmp = NULL;
+            long error = strtol( block_buf, &tmp, 10 );
+            if( tmp == block_buf ) {
+               // failed to parse
+               errorf("%s", "Incomprehensible error code\n");
+               nr = -EREMOTEIO;
+            }
+            else {
+               errorf("block error %ld\n", error );
+               nr = -abs(error);
+            }
          }
          else {
-            errorf("block error %ld\n", error );
-            nr = -abs(error);
+            // no data given
+            nr = -EREMOTEIO;
          }
       }
       else if( err == 0 ) {

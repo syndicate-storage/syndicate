@@ -53,10 +53,10 @@ struct _proc_table_entry {
 
 struct _block_status { 
     bool    in_progress;
-    bool    no_block;
     bool    block_available;
     bool    no_file;
     bool    need_padding;
+    off_t   written_so_far;
 };
 
 typedef struct _proc_table_entry    proc_table_entry;
@@ -80,6 +80,7 @@ void unlock_pid_map();
 void wrlock_pte(proc_table_entry *pte);
 void rdlock_pte(proc_table_entry *pte);
 void unlock_pte(proc_table_entry *pte);
+int init_event_receiver(void);
     
 typedef map<string, proc_table_entry*> proc_table_t;
 
@@ -87,7 +88,6 @@ class ProcHandler
 {
     private:
 	char* cache_dir_path;
-	proc_table_t proc_table;
 	char* get_random_string();
 	pthread_t   inotify_event_thread;
 	//Mutex lock to synchronize operations on proc_tbale
@@ -110,7 +110,7 @@ class ProcHandler
 	static bool is_proc_alive(pid_t);
 	block_status get_block_status(struct shell_ctx *ctx);
 	pthread_t get_thread_id();
-	void remove_proc_table_entry(string file_path);
+        void remove_proc_table_entry(string file_path);
 };
 
 
