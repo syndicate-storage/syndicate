@@ -31,8 +31,8 @@ if env["devel"]:
    ms_files.extend( Glob("tests/__init__.py") )
    ms_files.extend( Glob("tests/setup.py") )
    ms_files.extend( Glob("tests/debughandler.py") )
-   ms_files.extend( Glob("tests/local_setup.sh") )
-   ms_files.extend( Glob("tests/user_test_key.pem") )
+   ms_files.extend( Glob("tests/*.sh") )
+   ms_files.extend( Glob("tests/*.pem") )
 
 # openid
 ms_files.extend( Glob("openid/*.py") )

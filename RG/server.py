@@ -77,7 +77,7 @@ def post( metadata_field, infile ):
       log.exception( e )
       rc = (500, "Internal server error")
    
-   log.info("write_data rc = %d" % rc )
+   log.info("write_data rc = %s" % str(rc) )
    
    return (rc, "OK")
 
@@ -105,7 +105,7 @@ def get( url_path, outfile ):
       log.exception( e )
       rc = (500, "Internal server error")
    
-   log.info("read_data rc = %d" % rc )
+   log.info("read_data rc = %s" % str(rc) )
    
    return (rc, "OK")
 
@@ -139,7 +139,7 @@ def delete( metadata_field ):
       log.exception( e )
       rc = (500, "Internal server error")
    
-   log.info("delete_data rc = %d" % rc )
+   log.info("delete_data rc = %s" % str(rc) )
    
    return (rc, "OK")
 
@@ -219,7 +219,7 @@ def wsgi_application( environ, start_response ):
       if rc == 200:
          return valid_request( start_response )
       else:
-         return invalid_request( start_response, status="%s %s" % (rc, msg), resp="error code %s\n" % rc)
+         return invalid_request( start_response, status="%s %s" % (rc, msg), resp="error code %s\n" % str(rc))
 
    elif environ['REQUEST_METHOD'] == 'DELETE':
       # DELETE request
@@ -236,7 +236,7 @@ def wsgi_application( environ, start_response ):
       if rc == 200:
          return valid_request( start_response )
       else:
-         return invalid_request( start_response, status="%s %s" % (rc, msg), resp="error code %s\n" % rc)
+         return invalid_request( start_response, status="%s %s" % (rc, msg), resp="error code %s\n" % str(rc))
          
    else:
       # not supported

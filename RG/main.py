@@ -154,7 +154,7 @@ def setup_syndicate( config ):
    return syndicate 
 
 #-------------------------
-def run( config, syndicate )
+def run( config, syndicate ):
 
    # get our hostname
    hostname = socket.gethostname()
@@ -221,8 +221,10 @@ def build_config( argv ):
    return config
       
 #-------------------------
-def main( config ):
-   syndicate = setup_syndicate( config )
+def main( config, syndicate=None ):
+   if syndicate == None:
+      syndicate = setup_syndicate( config )
+      
    run( config, syndicate )
    #debug()
    

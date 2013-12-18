@@ -353,6 +353,10 @@ def create_volume( email, name, description, blocksize, signing_public_key, **at
          If True, only an Acquisition Gateway owned by the given 
          user may write metadata to this Volume.  It will be read-
          only to every other Gateway.
+         
+      active=bool (default: True)
+         If True, this Volume will be accessible by gateways immediately.
+         If False, it will not be.
       
       default_gateway_caps=int
          Default capability bits for User Gateways when they are 

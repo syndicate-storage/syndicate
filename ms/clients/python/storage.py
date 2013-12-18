@@ -195,7 +195,7 @@ def store_object_private_key( config, key_type, internal_type, object_id, key_da
 
 # -------------------   
 def revoke_object_key( config, key_type, internal_type, object_id, public=False ):
-   key_path = conf.object_key_filename( config, key_type, internal_type, object_id, public=public )
+   key_path = conf.object_key_path( config, key_type, internal_type, object_id, public=public )
    os.unlink( key_path )
    
 # -------------------   

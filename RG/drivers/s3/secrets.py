@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 SECRETS = {
-   "AWS_ACCESS_KEY": "XXX",
-   "AWS_SECRET_ACCESS_KEY": "XXX"
+   "AWS_ACCESS_KEY_ID": "AKIAI2TRFQV2HZIHUD4A",
+   "AWS_SECRET_ACCESS_KEY": "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"
 }
 

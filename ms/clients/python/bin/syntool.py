@@ -191,6 +191,7 @@ def api_call_verifier( config, pubkey, method_name, args, kw, data, syndicate_da
          # this public key is not known to us...prompt to trust it, if we're not going to do so automatically
          # if we got back a list of things, ask for each key
          if isinstance( method_result, list ):
+            ret = True
             for single_result in method_result:
                if not ask_trust_verify_key( config, single_result, method_name, args, kw ):
                   ret = False

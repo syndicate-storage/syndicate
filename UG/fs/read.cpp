@@ -138,7 +138,7 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
          nr = block_len;
       }
    }
-   if( nr <= 0 ) {
+   if( nr < 0 ) {
       nr = -ENODATA;
    }
    else {

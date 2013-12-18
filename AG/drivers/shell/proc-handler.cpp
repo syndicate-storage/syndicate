@@ -82,27 +82,27 @@ int  set_sigchld_handler(struct sigaction *action) {
 }
 
 void lock_pid_map() {
-    //dbprintf("%s\n", "locking PID map");
+    dbprintf("%s\n", "locking PID map");
     pthread_mutex_lock(&pid_map_lock);
 }
 
 void unlock_pid_map() {
-    //dbprintf("%s\n", "Unlocking PID map");
+    dbprintf("%s\n", "Unlocking PID map");
     pthread_mutex_unlock(&pid_map_lock);
 }
 
 void wrlock_pte(proc_table_entry *pte) {
-    //dbprintf("WrLock PTE %p\n", pte);
+    dbprintf("WrLock PTE %p\n", pte);
     pthread_rwlock_wrlock(&pte->pte_lock);
 }
 
 void rdlock_pte(proc_table_entry *pte) {
-    //dbprintf("RdLock PTE %p\n", pte);
+    dbprintf("RdLock PTE %p\n", pte);
     pthread_rwlock_rdlock(&pte->pte_lock);
 }
 
 void unlock_pte(proc_table_entry *pte) {
-    //dbprintf("UnLock PTE %p\n", pte);
+    dbprintf("UnLock PTE %p\n", pte);
     pthread_rwlock_unlock(&pte->pte_lock);
 }
 
@@ -478,6 +478,7 @@ int ProcHandler::start_command_idempotent( struct shell_ctx *ctx ) {
     }
     else {
        dbprintf("Already running: %s\n", ctx->file_path );
+       unlock_pte(pte);
     }
     
     return 0;

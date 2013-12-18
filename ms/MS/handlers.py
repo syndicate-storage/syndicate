@@ -230,13 +230,12 @@ def response_begin( request_handler, volume_name_or_id ):
    gateway_read_time = 0
    gateway = None
    
-   if volume.need_gateway_auth():
-      # authenticate the gateway
-      gateway, status, gateway_read_time = response_load_gateway( request_handler )
+   # authenticate the gateway
+   gateway, status, gateway_read_time = response_load_gateway( request_handler )
 
-      if status != 200 or gateway == None:
-         return (None, None, None)
-      
+   if volume.need_gateway_auth() and (status != 200 or gateway == None):
+      return (None, None, None)
+   
    # make sure this gateway is allowed to access this Volume
    valid_gateway = volume.is_gateway_in_volume( gateway )
    if not valid_gateway:
@@ -659,22 +658,26 @@ class MSFileWriteHandler(webapp2.RequestHandler):
 
       # gateway must be known
       if gateway == None:
+         logging.error("Unknown gateway")
          response_user_error( self, 403 )
          return 
       
       # this can only be a User Gateway or an Acquisition Gateway
       if gateway.gateway_type != GATEWAY_TYPE_UG and gateway.gateway_type != GATEWAY_TYPE_AG:
+         logging.error("Not a UG or RG")
          response_user_error( self, 403 )
          return
       
       # if this is an archive, on an AG owned by the same person as the Volume can write to it
       if volume.archive:
          if gateway.gateway_type != GATEWAY_TYPE_AG or gateway.owner_id != volume.owner_id:
+            logging.error("Not an AG, or not the Volume owner")
             response_user_error( self, 403 )
             return 
       
       # if this is not an archive, then the gateway must have CAP_WRITE_METADATA
       elif not gateway.check_caps( GATEWAY_CAP_WRITE_METADATA ):
+         logging.error("Write metadata is forbidden to this Gateway")
          response_user_error( self, 403 )
          return
        

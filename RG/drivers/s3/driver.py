@@ -10,6 +10,9 @@ def get_bucket(context, bucket_name):
 
    aws_id = context.secrets.get( 'AWS_ACCESS_KEY_ID', None )
    aws_key = context.secrets.get( 'AWS_SECRET_ACCESS_KEY', None )
+   
+   print "key ID: '%s'" % aws_id
+   print "key   : '%s'" % aws_key
 
    log = context.log
    
@@ -20,6 +23,7 @@ def get_bucket(context, bucket_name):
    except Exception, e:
       log.error("Connection to S3 failed")
       log.exception(e)
+      return None
       
    else:
       log.debug("Connected to S3")
@@ -37,9 +41,13 @@ def get_bucket(context, bucket_name):
    return bucket
 
 #-------------------------
-def write_file(file_name, infile, config=None, secrets=None):
-    
+def write_file(file_name, infile, **kw):
+   
+   context = kw['context']
+   
    log = context.log
+   config = context.config
+   secrets = context.secrets
    
    log.debug("Writing File: " + file_name)
 
@@ -70,8 +78,14 @@ def write_file(file_name, infile, config=None, secrets=None):
    return rc
 
 #-------------------------
-def read_file( file_name, outfile, config=None, secrets=None ):
+def read_file( file_name, outfile, **kw ):
+   
+   context = kw['context']
+   
    log = context.log
+   config = context.config
+   secrets = context.secrets
+   
    
    log.debug("Reading File: " + file_name)
 
@@ -103,9 +117,13 @@ def read_file( file_name, outfile, config=None, secrets=None ):
    return rc
    
 #-------------------------
-def delete_file(file_name, config=None, secrets=None):
+def delete_file(file_name, **kw):
+   
+   context = kw['context']
    
    log = context.log
+   config = context.config
+   secrets = context.secrets
    
    log.debug("Deleting File: " + file_name)
    
@@ -176,7 +194,7 @@ if __name__ == "__main__":
          testfile_fd.close()
          
          testfile_fd = open( test_path, "r")
-         write_file(file_name, testfile_fd, config, secrets)
+         write_file(file_name, testfile_fd, context=context)
          testfile_fd.close()
          
          os.unlink( test_path )
@@ -186,14 +204,14 @@ if __name__ == "__main__":
          test_path = "/tmp/sd_s3_test.read"
          
          testfile_fd = open(test_path, "w")
-         read_file(file_name, testfile_fd, config, secrets)
+         read_file(file_name, testfile_fd, context=context)
          testfile_fd.close()
          
          print "wrote to %s" % test_path
          
       elif(option == '-d'):
          
-         delete_file(file_name, config, secrets)
+         delete_file(file_name, context=context)
          
       else:
          usage()

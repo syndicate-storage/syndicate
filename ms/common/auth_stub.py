@@ -11,7 +11,7 @@ import api
 import inspect
 
 def assert_public_method( method ):
-   return True
+   return (method != None)
 
 class AuthMethod( object ):
    def __init__(self, method_func, authenticated_caller):

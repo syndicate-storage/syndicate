@@ -817,7 +817,7 @@ int replica_process_responses( struct syndicate_replication* synrp ) {
                rctx->error = -ENODATA;
             }
             else if( http_status != 200 ) {
-               errorf("%s: RG HTTP response code %ld\n", synrp->process_name, http_status );
+               errorf("%s: RG HTTP response code %ld for %p\n", synrp->process_name, http_status, rctx );
                if( http_status == 404 ) {
                   rctx->error = -ENOENT;
                }

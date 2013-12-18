@@ -4,11 +4,11 @@
       <DSN>/tmp/shell-driver-cache</DSN>
    </Config>
    <Pair reval="10s 5m">
-      <File perm="740">/foo/bar</File>
+      <File perm="740">/google</File>
       <Query type="shell">/usr/bin/wget -q -O - http://www.google.com</Query>
    </Pair>
    <Pair reval="10s 5m">
-      <File perm="644">/foo/baz</File>
+      <File perm="644">/hello</File>
       <Query type="shell">/bin/echo "hello world"</Query>
    </Pair>
 </Map>

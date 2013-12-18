@@ -15,6 +15,7 @@ import errno
 import pickle
 import imp
 import resource
+import traceback
 
 import syndicate.syndicate as c_syndicate
 
@@ -48,7 +49,7 @@ REQUIRED_JSON_FIELDS = {
    "secrets": types.UnicodeType,
    "config": types.UnicodeType,
    "drivers": types.ListType,
-   "user_sig": types.UnicodeType
+   #"user_sig": types.UnicodeType
 }
 
 REQUIRED_JSON_DRIVER_FIELDS = {
@@ -485,7 +486,7 @@ def view_change_callback():
    return 0
 
 #-------------------------
-def make_context( storage_config ):
+def make_context_from_storage_struct( storage_config ):
    return StorageContext(config=storage_config.closure.module.CONFIG, secrets=storage_config.closure.module.SECRETS, drivers=storage_config.drivers, log=log)
 
 #-------------------------
@@ -520,9 +521,15 @@ def call_closure_read( request, filename, outfile ):
    
    storage_closure_lock.acquire()
    
-   context = make_context( STORAGE_CONFIG )
+   context = make_context_from_storage_struct( STORAGE_CONFIG )
    
-   rc = STORAGE_CONFIG.closure.replica_read( context, request, filename, outfile )
+   rc = 500
+   
+   try:
+      rc = STORAGE_CONFIG.closure.replica_read( context, request, filename, outfile )
+   except Exception, e:
+      log.exception(e)
+      traceback.print_exc()
    
    storage_closure_lock.release()
    
@@ -541,9 +548,15 @@ def call_closure_write( request, filename, infile ):
    storage_closure_lock.acquire()
    
    
-   context = make_context( STORAGE_CONFIG )
+   context = make_context_from_storage_struct( STORAGE_CONFIG )
    
-   rc = STORAGE_CONFIG.closure.replica_write( context, request, filename, infile )
+   rc = 500
+   
+   try:
+      rc = STORAGE_CONFIG.closure.replica_write( context, request, filename, infile )
+   except Exception, e:
+      log.exception(e)
+      traceback.print_exc()
    
    storage_closure_lock.release()
    
@@ -561,9 +574,15 @@ def call_closure_delete( request, filename ):
    
    storage_closure_lock.acquire()
    
-   context = make_context( STORAGE_CONFIG )
+   context = make_context_from_storage_struct( STORAGE_CONFIG )
    
-   rc = STORAGE_CONFIG.closure.replica_delete( context, request, filename )
+   rc = 500
+   
+   try:
+      rc = STORAGE_CONFIG.closure.replica_delete( context, request, filename )
+   except Exception, e:
+      log.exception(e)
+      traceback.print_exc()
    
    storage_closure_lock.release()
    

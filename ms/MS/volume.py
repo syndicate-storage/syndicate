@@ -265,6 +265,7 @@ class Volume( storagetypes.Object ):
       "cert_version": (lambda cls, attrs: 1),
       "private": (lambda cls, attrs: True),
       "archive": (lambda cls, attrs: False),
+      "active": (lambda cls, attrs: True),
       "file_quota": (lambda cls, attrs: -1),
       "default_gateway_caps": (lambda cls, attrs: GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA )           # read only
    }
@@ -553,7 +554,8 @@ class Volume( storagetypes.Object ):
                                                 metadata_private_key = kwargs['metadata_private_key'],
                                                 signing_public_key = kwargs['signing_public_key'],
                                                 verify_public_key = verify_public_key_str,
-                                                verify_private_key = verify_private_key_str
+                                                verify_private_key = verify_private_key_str,
+                                                default_gateway_caps = kwargs['default_gateway_caps']
                                              )
       
       storagetypes.wait_futures( [volume_nameholder_fut, volume_fut] )
@@ -573,7 +575,7 @@ class Volume( storagetypes.Object ):
          raise Exception( "Volume ID collision.  Please try again" )
       
       # set permissions
-      req = VolumeAccessRequest.create_async( user.owner_id, volume_id, random.randint(-2**63, 2**63 - 1), VolumeAccessRequest.STATUS_GRANTED, request_message="Created").get_result()
+      req = VolumeAccessRequest.create_async( user.owner_id, volume_id, random.randint(-2**63, 2**63 - 1), VolumeAccessRequest.STATUS_GRANTED, gateway_caps=kwargs['default_gateway_caps'], request_message="Created").get_result()
       return volume_key
          
 

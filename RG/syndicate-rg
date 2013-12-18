@@ -65,7 +65,7 @@ def daemonize( config, syndicate, main_method ):
       
 
 #-------------------------------
-def spawn_rg( config ):
+def spawn_rg( config, syndicate ):
    # fork, become a watchdog, and run the main server
    child_pid = os.fork()
    
@@ -75,7 +75,7 @@ def spawn_rg( config ):
    
    if child_pid == 0:
       # we're the child...start the server
-      rg_main.main( config )
+      rg_main.main( config, syndicate )
    
    return child_pid
 
@@ -84,7 +84,7 @@ def spawn_rg( config ):
 def main( config, syndicate ):
    
    # fork, become a watchdog, and run the main server
-   child_pid = spawn_rg( config )
+   child_pid = spawn_rg( config, syndicate )
    
    # we're the parent...start monitoring 
    while True:
@@ -118,7 +118,7 @@ if __name__ == "__main__":
    syndicate = rg_main.setup_syndicate( config )
    
    # run in foreground?
-   foreground = config.foreground
+   foreground = config['foreground']
    
    if not foreground:
       # become a daemon
