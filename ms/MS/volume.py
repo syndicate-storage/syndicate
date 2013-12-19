@@ -94,8 +94,8 @@ class VolumeAccessRequest( storagetypes.Object ):
       """
       
       nonce = random.randint( -2**63, 2**63 - 1 )
-      req_fut = VolumeAccessRequest.create_async( owner_id, volume_id, nonce, requester_message=message, gateway_caps=gateway_caps, status=STATUS_PENDING )
-      req = fut.get_result()
+      req_fut = VolumeAccessRequest.create_async( owner_id, volume_id, nonce, VolumeAccessRequest.STATUS_PENDING, requester_message=message, gateway_caps=gateway_caps )
+      req = req_fut.get_result()
       
       # duplicate?
       if req.nonce != nonce:

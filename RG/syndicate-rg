@@ -13,8 +13,10 @@ import resource
 import daemon 
 import grp
 import lockfile
+import errno 
+import time
 
-log = rg_common.get_logger(__name__)
+log = rg_common.get_logger()
 
 #-------------------------------
 def daemonize( config, syndicate, main_method ):
@@ -81,6 +83,62 @@ def spawn_rg( config, syndicate ):
 
 
 #-------------------------------
+def handle_child_death( pid, exit_status ):
+   need_respawn = False
+   
+   # did the child exit on its own accord?
+   if os.WIFEXITED(exit_status):
+      log.info("RG exit status %s" % os.WEXITSTATUS( exit_status ) )
+      need_respawn = False
+   
+   # was the child signaled? 
+   elif os.WIFSIGNALED(exit_status):
+      sig = os.WTERMSIG( exit_status )
+      log.info("RG exited with signal %s" % sig )
+      need_respawn = True
+      
+   return need_respawn
+
+
+#-------------------------------
+def kill_rg( child_pid ):
+   # send SIGKILL
+   log.info("Sending SIGKILL to RG...")
+   os.kill( child_pid, signal.SIGKILL )
+
+#-------------------------------
+def stop_rg( child_pid ):
+   # send SIGTERM, then SIGKILL
+   log.info("Sending SIGTERM to RG...")
+   os.kill( child_pid, signal.SIGTERM )
+   
+   count = 3
+   while count > 0:
+      try:
+         pid, exit_status = os.waitpid( child_pid, os.WNOHANG )
+      except OSError, e:
+         log.exception(e)
+         
+         # if this wasn't ECHILD (i.e. the PID isn't invalid), then kill the process and die
+         if e.errno != errno.ECHILD:
+            kill_rg( child_pid )
+            return -1
+      
+      # did it exit?
+      if os.WIFEXITED(exit_status) or os.WIFSIGNALED(exit_status):
+         break
+      
+      # if not, try again
+      time.sleep(1.0)
+      count -= 1
+
+   if count == 0:
+      kill_rg( child_pid )
+      
+   return 0
+   
+
+#-------------------------------
 def main( config, syndicate ):
    
    # fork, become a watchdog, and run the main server
@@ -94,19 +152,18 @@ def main( config, syndicate ):
       except OSError, e:
          log.exception(e)
          sys.exit(1)
-      
-      # did the child exit on its own accord?
-      if os.WIFEXITED(exit_status):
-         log.info("RG exit status %s" % os.WEXITSTATUS( exit_status ) )
-         sys.exit( os.WEXITSTATUS( exit_status ) )
-      
-      # was the child signaled? 
-      elif os.WIFSIGNALED(exit_status):
-         sig = os.WTERMSIG( exit_status )
-         log.info("RG exited with signal %s" % sig )
+      except (KeyboardInterrupt, SystemExit):
+         # kill the child and exit
+         my_exit_status = stop_rg( child_pid )
+         sys.exit(my_exit_status)
          
-         # respawn it 
+      need_respawn = handle_child_death( pid, exit_status )
+      
+      if need_respawn:
          child_pid = spawn_rg( config )
+      
+      else:
+         sys.exit( os.WEXITSTATUS( exit_status ) )
          
    
 #-------------------------------

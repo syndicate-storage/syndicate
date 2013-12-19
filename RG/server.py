@@ -17,7 +17,7 @@ from StringIO import StringIO
 
 import types
 
-log = rg_common.get_logger(__name__)
+log = rg_common.get_logger()
 
 #-------------------------
 METADATA_FIELD_NAME = "metadata"

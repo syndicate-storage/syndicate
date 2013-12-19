@@ -89,7 +89,7 @@ def list_user_access_requests( email, **q_opts ):
    return VolumeAccessRequest.ListUserAccessRequests( user.owner_id, **q_opts )
 
 def request_volume_access( email, volume_name_or_id, caps, message ):
-   user, volume = _read_user_and_volume( email, volume_id )
+   user, volume = _read_user_and_volume( email, volume_name_or_id )
    if user == None:
       raise Exception("No such user '%s'" % email)
    if volume == None or volume.deleted:

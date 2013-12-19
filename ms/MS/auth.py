@@ -455,12 +455,14 @@ class BindAPIGuard:
          
          if self.caller_owns_source:
             # verify that the caller user owns the source object
-            source_object_fut = self.source_object_cls.Read( source_object_cls, async=True )
+            source_object_id = object_id_from_name( self.source_object_name, func, args, kw )
+            source_object_fut = self.source_object_cls.Read( source_object_id, async=True )
             futs.append( source_object_fut )
          
          if self.caller_owns_target:
             # verify that the caller user owns the target object
-            target_object_fut = self.target_object_cls.Read( target_object_cls, async=True )
+            target_object_id = object_id_from_name( self.target_object_name, func, args, kw )
+            target_object_fut = self.target_object_cls.Read( target_object_id, async=True )
             futs.append( target_object_fut )
          
          storagetypes.wait_futures( futs )

@@ -12,7 +12,7 @@ import syndicate.protobufs.serialization_pb2 as serialization_proto
 import syndicate.protobufs.ms_pb2 as ms_proto
 
 import syndicate.rg.common as rg_common 
-log = rg_common.get_logger(__name__)
+log = rg_common.get_logger()
 
 #-------------------------
 RE_BLOCK_PATH = re.compile( "^[/]+SYNDICATE-DATA[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)\.([0123456789]+)[/]+([0123456789]+)\.([0123456789]+)[/]*$" )
@@ -139,7 +139,7 @@ def parse_request_info_from_url_path( url_path ):
    
    if block_match == None and manifest_match == None:
       # neither
-      log.info("derp match")
+      log.info("bad match")
       return None
    
    elif block_match != None:
@@ -151,7 +151,7 @@ def parse_request_info_from_url_path( url_path ):
          block_id = int( block_match.groups()[3] )
          block_version = int( block_match.groups()[4] )
       except:
-         log.info("derp block")
+         log.info("bad block request")
          return None
       
       replica_info = RequestInfo( type=RequestInfo.BLOCK,
@@ -179,7 +179,7 @@ def parse_request_info_from_url_path( url_path ):
          mtime_sec = int( manifest_match.groups()[3] )
          mtime_nsec = int( manifest_match.groups()[4] )
       except:
-         log.info("derp manifest")
+         log.info("bad manifest request")
          return None
       
       replica_info = RequestInfo( type=RequestInfo.MANIFEST,

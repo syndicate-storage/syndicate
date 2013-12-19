@@ -73,7 +73,7 @@ DRIVER_DELETE_SIGNATURE = inspect.ArgSpec( args=['filename'], varargs=None, defa
 RUNTIME_PRIVKEY_PATH = None
 
 #-------------------------
-log = rg_common.get_logger(__name__)
+log = rg_common.get_logger()
    
 #-------------------------
 def is_valid_function( func, signature ):

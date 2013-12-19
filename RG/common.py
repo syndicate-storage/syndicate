@@ -19,6 +19,8 @@ FILE_ROOT = os.path.abspath(os.path.dirname(__file__))
 CONFIG_PATH = os.path.join(FILE_ROOT, "config/")
 LOG_PATH = os.path.join(FILE_ROOT, "log/")
 
+my_logger = None
+
 # libsyndicate instance 
 libsyndicate = None
 
@@ -113,20 +115,20 @@ def syndicate_init( gateway_name=None,
 
 
 #-------------------------
-def get_logger(name):
+def get_logger():
    
-    if(DEBUG):
-       
-        log = logging.getLogger(__name__)
-        log.setLevel(logging.DEBUG)
-        log.propagate = False
+    global my_logger
+    
+    if(DEBUG and my_logger == None):
+        
+        my_logger = logging.getLogger()
+        my_logger.setLevel(logging.DEBUG)
+        my_logger.propagate = False
 
         formatter = logging.Formatter('[%(levelname)s] %(message)s')
         handler_stream = logging.StreamHandler()
         handler_stream.setFormatter(formatter)
-        log.addHandler(handler_stream)
+        my_logger.addHandler(handler_stream)
 
-    else:
-        log = None
-
-    return log
+       
+    return my_logger

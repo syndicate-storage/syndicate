@@ -12,7 +12,7 @@ import os
 
 from wsgiref.simple_server import make_server 
 
-log = rg_common.get_logger(__name__)
+log = rg_common.get_logger()
 
 CONFIG_OPTIONS = {
    "gateway":           ("-g", 1, "The name of this RG"),
