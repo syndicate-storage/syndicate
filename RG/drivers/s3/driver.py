@@ -182,7 +182,7 @@ if __name__ == "__main__":
          "AWS_SECRET_ACCESS_KEY": secret_access_key
       }
       
-      log = rg_common.get_logger("s3 test")
+      log = rg_common.get_logger()
       
       context = rg_closure.make_context( config, secrets, None, log )
 
