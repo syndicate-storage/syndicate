@@ -93,12 +93,6 @@ env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_i
 env.Alias( 'libsyndicate-python-install', [libsyndicate_install_python] )
 env.Depends( libsyndicate_install_python, libsyndicate_install_c_targets )
 
-# UG for shared library build
-if "UG-shared" in COMMAND_LINE_TARGETS:
-   ugshared_out = "build/out/bin/UG-shared"
-   ugshareds = SConscript( "UG-shared/SConscript", variant_dir=ugshared_out )
-   env.Depends( ugshareds, libsyndicate )
-
 # UG build
 ug_out = "build/out/bin/UG"
 syndicatefs, syndicate_httpd, syndicate_ipc = SConscript( "UG/SConscript", variant_dir=ug_out )
