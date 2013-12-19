@@ -1,0 +1,32 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+This paper presents \Syndicate, a wide-area storage service that
+is unique in how it composes existing cloud storage, edge caches,
+and local storage to take advantage of the unique capabilities each offers.
+By addressing consistency, storage security, and storage policies
+as a layer on top of them, \Syndicate\ offers applications a virtual cloud storage
+service with the underlying capabilities of leveraged components.
+The key to doing so coherently is our novel 
+consistency protocol, which leverages existing edge caches to deliver 
+consistent data and control plane information to 
+a scalable number of end-points.  Our prototype implementation 
+validates the design, and demonstrates that \Syndicate\ 
+passes on the benefits of underlying systems to applications,
+minus a small, configurable overhead.
+
+By interpositioning \Syndicate\ gateways between the key participants
+and manipulating the underlying transport protocol (HTTP) and naming
+scheme (URIs), \Syndicate\ is able to transparently leverage those
+existing services without modification, and in doing so, gives users
+the opportunity to select among alternatives (based on their own
+criteria, including cost), and yet benefit from the wide-spread
+deployment and ongoing operational support they provide
+(freeing them from deploying and operating a global service on
+their own).  In doing so, we democratize cloud storage by 
+enabling user choice and lowering the barrier to entry.
+
+Beyond the specifics of wide-area storage, we believe
+\Syndicate\ represents an emerging style of building network system services
+through the composition of existing cloud services, and in doing so,
+has the potential to encourage a more efficient marketplace for them.

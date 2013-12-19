@@ -8,3 +8,5 @@ def replica_write( context, request_info, filename, infile ):
 
 def replica_delete( context, request_info, filename ):
    return context.drivers['builtin'].delete_file( filename, context=context )
+
+

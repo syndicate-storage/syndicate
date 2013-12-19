@@ -1,0 +1,368 @@
+\begin{thebibliography}{10}
+
+\bibitem{1000genomes}
+{1000 Genomes: A Deep Catalog of Human Genetic Variation}.
+\newblock \url{http://www.1000genomes.org/}.
+
+\bibitem{farsite}
+{\sc Adya, A., Bolosky, W.~J., Castro, M., Chaiken, R., Cermak, G., Douceur,
+  J.~R., Howell, J., Lorch, J.~R., Theimer, M., and Wattenhofer, R.~P.}
+\newblock Farsite: Federated, available, and reliable storage for an
+  incompletely trusted environment.
+\newblock In {\em PROCEEDINGS OF THE 5TH USENIX SYMPOSIUM ON OPERATING SYSTEMS
+  DESIGN AND IMPLEMENTATION\/} (2002), USENIX.
+
+\bibitem{amazon-gateway}
+{Amazon Gateway}.
+\newblock \url{http://aws.amazon.com/storagegateway/}.
+
+\bibitem{s3fs}
+{FUSE-based Filesystem backed by Amazon S3}.
+\newblock \url{https://code.google.com/p/s3fs/}.
+
+\bibitem{aws-overview}
+{Overview of Amazon Web Services}.
+\newblock \url{https://d36cz9buwru1tt.cloudfront.net/AWS_Overview.pdf}.
+
+\bibitem{shark}
+{\sc Annapureddy, S., Freedman, M.~J., and Mazieres, D.}
+\newblock Shark: Scaling file servers via cooperative caching.
+\newblock In {\em Proc.\ 2nd NSDI\/} (Boston,\ MA, 2005).
+
+\bibitem{gae-appstats}
+{Appstats for Python}.
+\newblock
+  \url{https://developers.google.com/appengine/docs/python/tools/appstats}.
+
+\bibitem{aura-rr}
+{Aura Lumen: Request Router}.
+\newblock
+  \url{http://www.akamai.com/dl/product_briefs/Aura_Lumen_Request_Router.pdf}.
+
+\bibitem{bolt-on-causal-consistency}
+{\sc Bailis, P., Ghodsi, A., Hellerstein, J.~M., and Stoica, I.}
+\newblock Bolt-on causal consistency.
+\newblock In {\em Proceedings of the 2013 ACM SIGMOD International Conference
+  on Management of Data\/} (New York, NY, USA, 2013), SIGMOD '13, ACM,
+  pp.~761--772.
+
+\bibitem{cern-vmfs}
+{\sc Blomer, J., Buncic, P., and Fuhrmann, T.}
+\newblock Cernvm-fs: delivering scientific software to globally distributed
+  computing resources.
+\newblock In {\em Proceedings of the first international workshop on
+  Network-aware data management\/} (New York, NY, USA, 2011), NDM '11, ACM,
+  pp.~49--56.
+
+\bibitem{Box.net}
+{Box.net}.
+\newblock \url{http://www.box.net/}.
+
+\bibitem{breslau99}
+{\sc Breslau, L., Cao, P., Fan, L., Phillips, G., and Shenker, S.}
+\newblock Web caching and zipf-like distributions: evidence and implications.
+\newblock In {\em INFOCOM '99. Eighteenth Annual Joint Conference of the IEEE
+  Computer and Communications Societies. Proceedings. IEEE\/} (1999), vol.~1,
+  pp.~126--134 vol.1.
+
+\bibitem{collective}
+{\sc Chandra, R., Zeldovich, N., Sapuntzakis, C., and Lam, M.}
+\newblock The collective: a cache-based system management architecture.
+\newblock In {\em Proc.\ 2nd Conference on Symposium on Networked Systems
+  Design and Implementation (NSDI)\/} (Boston, MA, May 2005).
+
+\bibitem{citrix}
+{Citrix VDI-in-a-Box}.
+\newblock \url{http://www.citrix.com/products/vdi-in-a-box/overview.html}.
+
+\bibitem{common-crawl}
+{Common Crawl}.
+\newblock \url{https://drive.google.com/}.
+
+\bibitem{practi}
+{\sc Dahlin, M., Gao, L., Nayate, A., Venkataramani, A., Yalagandula, P., and
+  Zheng, J.}
+\newblock Practi replication for large-scale systems.
+\newblock Tech. rep., 2004.
+
+\bibitem{g-store}
+{\sc Das, S., Agrawal, D., and El~Abbadi, A.}
+\newblock G-store: a scalable data store for transactional multi key access in
+  the cloud.
+\newblock In {\em Proceedings of the 1st ACM symposium on Cloud computing\/}
+  (New York, NY, USA, 2010), SoCC '10, ACM, pp.~163--174.
+
+\bibitem{akamai}
+{\sc Dilley, J., Maggs, B., Parikh, J., Prokop, H., and Weihl, B.}
+\newblock Globally distributed content delivery.
+\newblock {\em IEEE Internet Computing 6\/} (2002), 50--58.
+
+\bibitem{dropbox}
+{Dropbox}.
+\newblock \url{http://www.dropbox.com/}.
+
+\bibitem{encfs}
+{EncFS Encrypted Filesystem}.
+\newblock \url{http://www.arg0.net/encfs}.
+
+\bibitem{fuse}
+{Filesystems in Userspace}.
+\newblock \url{http://fuse.sourceforge.net}.
+
+\bibitem{sloppy-dht}
+{\sc Freedman, M., and Maziéres, D.}
+\newblock Sloppy hashing and self-organizing clusters.
+\newblock In {\em Peer-to-Peer Systems II}, M.~Kaashoek and I.~Stoica, Eds.,
+  vol.~2735 of {\em Lecture Notes in Computer Science}. Springer Berlin
+  Heidelberg, 2003, pp.~45--55.
+
+\bibitem{coralcdn}
+{\sc Freedman, M.~J.}
+\newblock {Experiences with CoralCDN: A Five-Year Operational View}.
+\newblock In {\em Proc.\ 2nd NSDI\/} (Boston,\ MA, 2005).
+
+\bibitem{GenBank}
+{GenBank}.
+\newblock \url{http://www.ncbi.nlm.nih.gov/genbank/}.
+
+\bibitem{scatter}
+{\sc Glendenning, L., Beschastnikh, I., Krishnamurthy, A., and Anderson, T.}
+\newblock Scalable consistency in scatter.
+\newblock In {\em Proceedings of the Twenty-Third ACM Symposium on Operating
+  Systems Principles\/} (New York, NY, USA, 2011), SOSP '11, ACM, pp.~15--28.
+
+\bibitem{chromeos}
+{Google Chrome OS}.
+\newblock \url{http://www.chromium.org/chromium-os}.
+
+\bibitem{google-docs}
+Google documents.
+\newblock \url{https://docs.google.com/}.
+
+\bibitem{google-drive}
+{Google Drive}.
+\newblock \url{http://www.measurementlab.net/}.
+
+\bibitem{google-appengine-status}
+{Google AppEngine System Status}.
+\newblock \url{https://code.google.com/status/appengine}.
+
+\bibitem{gray89}
+{\sc Gray, C., and Cheriton, D.}
+\newblock Leases: an efficient fault-tolerant mechanism for distributed file
+  cache consistency.
+\newblock {\em SIGOPS Oper. Syst. Rev. 23}, 5 (Nov. 1989), 202--210.
+
+\bibitem{Gwertzman96}
+{\sc Gwertzman, J., and Seltzer, M.}
+\newblock World-wide web cache consistency.
+\newblock In {\em PROCEEDINGS OF THE 1996 USENIX TECHNICAL CONFERENCE\/}
+  (1996), pp.~141--151.
+
+\bibitem{afs}
+{\sc Howard, J.~H.}
+\newblock An overview of the andrew file system.
+\newblock In {\em Proc.\ USENIX Winter Technical Conference '88\/} (Dallas,\
+  TX, 1988).
+
+\bibitem{karger99}
+{\sc Karger, D., Sherman, A., Berkheimer, A., Bogstad, B., Dhanidina, R.,
+  Iwamoto, K., Kim, B., Matkins, L., and Yerushalmi, Y.}
+\newblock Web caching with consistent hashing.
+\newblock {\em Computer Networks 31}, 11â€“16 (1999), 1203 -- 1213.
+
+\bibitem{paxos}
+{\sc Lamport, L.}
+\newblock Paxos made simple.
+\newblock {\em ACM SIGACT News (Distributed Computing Column) 32}, 4 (Dec.
+  2001), 51--58.
+
+\bibitem{folding-at-home}
+{\sc Larson, S.~M., Snow, C.~D., Shirts, M., P, V.~S., and Pande, V.~S.}
+\newblock Folding@home and genome@home: Using distributed computing to tackle
+  previously intractable problems in computational biology.
+
+\bibitem{tahoe-lafs}
+{Tahoe Least-Authority File System}.
+\newblock \url{https://tahoe-lafs.org/trac/tahoe-lafs}.
+
+\bibitem{deuteronomy}
+{\sc Levandoski, J.~J., Lomet, D.~B., Mokbel, M.~F., and Zhao, K.}
+\newblock Deuteronomy: Transaction support for cloud data.
+\newblock In {\em CIDR\/} (2011), www.cidrdb.org, pp.~123--133.
+
+\bibitem{Liu97}
+{\sc Liu, C., and Cao, P.}
+\newblock Maintaining strong cache consistency in the world-wide web.
+\newblock In {\em Distributed Computing Systems, 1997., Proceedings of the 17th
+  International Conference on\/} (1997), pp.~12--21.
+
+\bibitem{kademlia}
+{\sc Maymounkov, P., and Mazi\`{e}res, D.}
+\newblock Kademlia: A peer-to-peer information system based on the xor metric.
+\newblock In {\em Revised Papers from the First International Workshop on
+  Peer-to-Peer Systems\/} (London, UK, UK, 2002), IPTPS '01, Springer-Verlag,
+  pp.~53--65.
+
+\bibitem{mlab}
+{Measurement Lab}.
+\newblock \url{http://www.measurementlab.net/}.
+
+\bibitem{metagenomics}
+{Metagenomics MG-RAST}.
+\newblock \url{http://metagenomics.anl.gov/}.
+
+\bibitem{mokafive}
+{Mokafive}.
+\newblock \url{http://www.mokafive.com}.
+
+\bibitem{shibboleth}
+{\sc Morgan, R.~L., Cantor, S., Carmody, S., Hoehn, W., and Klingenstein, K.}
+\newblock Federated security: The shibboleth approach.
+\newblock {\em EDUCAUSE Quarterly 27}, 4 (2004), 12--17.
+
+\bibitem{ivy}
+{\sc Muthitacharoen, A., Morris, R., Gil, T.~M., and Chen, B.}
+\newblock Ivy: A read/write peer-to-peer file system.
+\newblock In {\em PROCEEDINGS OF THE 5TH USENIX SYMPOSIUM ON OPERATING SYSTEMS
+  DESIGN AND IMPLEMENTATION\/} (2002), USENIX.
+
+\bibitem{coblitz}
+{\sc Park, K.~S., and Pai, V.}
+\newblock {Scale and Performance in the CoBlitz Large-File Distribution
+  Service}.
+\newblock In {\em Proc.\ 3rd NSDI\/} (San Jose,\ CA, 2006).
+
+\bibitem{PlanetLab}
+{\sc Peterson, L., Bavier, A., Fiuczynski, M., and Muir, S.}
+\newblock {Experiences Building PlanetLab}.
+\newblock In {\em Proc.\ 7th Operating System Design and Implementation
+  (OSDI)\/} (Seattle, Washington, Nov. 2006).
+
+\bibitem{irods}
+{\sc Rajasekar, A., Moore, R., Hou, C.-y., Lee, C.~A., Marciano, R., de~Torcy,
+  A., Wan, M., Schroeder, W., Chen, S.-Y., Gilbert, L., Tooby, P., and Zhu, B.}
+\newblock {\em iRODS Primer: integrated Rule-Oriented Data System}.
+\newblock Morgan and Claypool Publishers, 2010.
+
+\bibitem{openid}
+{\sc Recordon, D., and Reed, D.}
+\newblock Openid 2.0: a platform for user-centric identity management.
+\newblock In {\em Proceedings of the second ACM workshop on Digital identity
+  management\/} (New York, NY, USA, 2006), DIM '06, ACM, pp.~11--16.
+
+\bibitem{oceanstore}
+{\sc Rhea, S., Eaton, P., Geels, D., Weatherspoon, H., Zhao, B., and
+  Kubiatowicz, J.}
+\newblock Pond: the oceanstore prototype.
+\newblock In {\em PROCEEDINGS OF THE 2ND USENIX CONFERENCE ON FILE AND STORAGE
+  TECHNOLOGIES\/} (2003), USENIX.
+
+\bibitem{riverbed-gateway}
+{Riverbed Gateway}.
+\newblock
+  \url{http://www.riverbed.com/us/company/news/press_releases/2011/press_060711.php}.
+
+\bibitem{pastry}
+{\sc Rowstron, A. I.~T., and Druschel, P.}
+\newblock Pastry: Scalable, decentralized object location, and routing for
+  large-scale peer-to-peer systems.
+\newblock In {\em Proceedings of the IFIP/ACM International Conference on
+  Distributed Systems Platforms Heidelberg\/} (London, UK, UK, 2001),
+  Middleware '01, Springer-Verlag, pp.~329--350.
+
+\bibitem{end-to-end}
+{\sc Saltzer, J.~H., Reed, D.~P., and Clark, D.~D.}
+\newblock End-to-end arguments in system design, 1984.
+
+\bibitem{hdfs}
+{\sc Shvachko, K., Kuang, H., Radia, S., and Chansler, R.}
+\newblock The hadoop distributed file system.
+\newblock In {\em Proceedings of the 2010 IEEE 26th Symposium on Mass Storage
+  Systems and Technologies (MSST)\/} (Washington, DC, USA, 2010), MSST '10,
+  IEEE Computer Society, pp.~1--10.
+
+\bibitem{Squid}
+Squid web proxy.
+\newblock \url{http://www.squid-cache.org/}.
+
+\bibitem{kerberos}
+{\sc Steiner, J.~G., Neuman, C., and Schiller, J.~I.}
+\newblock Kerberos: An authentication service for open network systems.
+\newblock In {\em in Usenix Conference Proceedings\/} (1988), pp.~191--202.
+
+\bibitem{chord}
+{\sc Stoica, I., Morris, R., Karger, D., Kaashoek, M.~F., and Balakrishnan, H.}
+\newblock Chord: A scalable peer-to-peer lookup service for internet
+  applications.
+\newblock In {\em Proceedings of the 2001 conference on Applications,
+  technologies, architectures, and protocols for computer communications\/}
+  (New York, NY, USA, 2001), SIGCOMM '01, ACM, pp.~149--160.
+
+\bibitem{wheelfs}
+{\sc Stribling, J., Sovran, Y., Zhang, I., Pretzer, X., Li, J., Kaashoek,
+  M.~F., and Morris, R.}
+\newblock Flexible, wide-area storage for distributed systems with wheelfs.
+\newblock In {\em Proc.\ 6th NSDI\/} (Boston,\ MA, 2009).
+
+\bibitem{bayou}
+{\sc Terry, D., Theimer, M., Petersen, K., Demers, A., Spreitzer, M., and
+  Hauser, C.}
+\newblock Managing update conflicts in bayou, a weakly connected replicated
+  storage system.
+\newblock In {\em In Proceedings of the Fifteenth ACM Symposium on Operating
+  Systems Principles\/} (1995), pp.~172--183.
+
+\bibitem{oauth}
+{The OAuth 2.0 Authorization Framework}.
+\newblock \url{http://tools.ietf.org/html/rfc6749}.
+
+\bibitem{wcdp}
+{\sc Thirumale, R.~T., Tewari, R., Niranjan, T., and Ramamurthy, S.}
+\newblock Wcdp: A protocol for web cache consistency.
+
+\bibitem{dot}
+{\sc Tolia, N., Kaminsky, M., Andersen, D.~G., and Patil, S.}
+\newblock An architecture for internet data transfer.
+\newblock In {\em In Proc. 3rd Symposium on Networked Systems Design and
+  Implementation (NSDI\/} (2006), pp.~253--266.
+
+\bibitem{delta-consistency}
+{\sc Torres-Rojas, F.~J., Ahamad, M., and Raynal, M.}
+\newblock Timed consistency for shared distributed objects, 1999.
+
+\bibitem{git}
+{\sc Torvalds, L.}
+\newblock {git}.
+\newblock \url{http://git-scm.com/}.
+
+\bibitem{treeoflife}
+{Tree of Life Web Project}.
+\newblock \url{http://tolweb.org}.
+
+\bibitem{twinstrata-gateway}
+{Twinstrata Gateway}.
+\newblock \url{http://www.twinstrata.com/}.
+
+\bibitem{VICCI}
+{VICCI: VIrtual Cloud Computing Infrastructure}.
+\newblock \url{http://www.vicci.org/}.
+
+\bibitem{cdn-redirect}
+{\sc Wang, L., Pai, V., and Peterson, L.}
+\newblock The effectiveness of request redirection on cdn robustness.
+\newblock {\em SIGOPS Oper. Syst. Rev. 36}, SI (Dec. 2002), 345--360.
+
+\bibitem{xFS}
+{\sc Wang, R., Wang, O.~Y., and Anderson, T.~E.}
+\newblock xfs: A wide area mass storage file system.
+\newblock In {\em In Fourth Workshop on Workstation Operating Systems\/}
+  (1993), pp.~71--78.
+
+\bibitem{ceph}
+{\sc Weil, S.~A., Brandt, S.~A., Miller, E.~L., Long, D. D.~E., and Maltzahn,
+  C.}
+\newblock Ceph: A scalable, high-performance distributed file system.
+\newblock In {\em Proc.\ 7th OSDI\/} (Seattle,\ WA, 2006).
+
+\end{thebibliography}

@@ -1,0 +1,204 @@
+\relax 
+\citation{akamai}
+\citation{coralcdn}
+\citation{coblitz}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}}
+\newlabel{sec:introduction}{{1}{1}}
+\citation{GenBank}
+\citation{metagenomics}
+\citation{1000genomes}
+\citation{treeoflife}
+\citation{irods}
+\citation{cern-vmfs}
+\citation{folding-at-home}
+\citation{git}
+\citation{google-docs}
+\citation{Box.net}
+\citation{collective}
+\citation{citrix}
+\citation{mokafive}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Usage Scenarios}{2}}
+\newlabel{sec:motivation}{{2}{2}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Scientific Datasets}{2}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Collaborative Document Sharing}{2}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Virtual Desktop Infrastructure}{2}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Observations}{2}}
+\citation{fuse}
+\citation{hdfs}
+\citation{aws-overview}
+\citation{dropbox}
+\citation{Box.net}
+\citation{google-drive}
+\citation{aws-overview}
+\citation{GenBank}
+\citation{common-crawl}
+\citation{mlab}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Design}{3}}
+\newlabel{sec:design}{{3}{3}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Components}{3}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Object Data and Consistency}{3}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces \it  Example deployment of SGs\ between edge caches, cloud storage, existing data sets, and application local storage.}}{4}}
+\newlabel{fig:deployment}{{1}{4}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces \it  Logical representation of a manifest for a 16-block object after three writes. Each SG\ (cylinders) hosts the latest copies of some of the object blocks (grey areas), which the manifest tracks. Generation nonces, last-write timestamps, and block nonces are kept short for brevity.}}{4}}
+\newlabel{fig:manifest}{{2}{4}}
+\citation{delta-consistency}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Metadata and Consistency}{5}}
+\newlabel{sec:metadata-consistency}{{3.3}{5}}
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces \it  Partial list of fields kept in each record by the Metadata Service.}}{5}}
+\newlabel{tab:metadata}{{1}{5}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Provider Composition}{5}}
+\newlabel{sec:composition}{{3.4}{5}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Scalability and Fault Tolerance}{6}}
+\newlabel{sec:controlplane}{{3.5}{6}}
+\citation{openid}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Security}{7}}
+\newlabel{sec:security}{{3.6}{7}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces \it  Summary of the fields kept in an SG\ certificate.}}{7}}
+\newlabel{tab:sg-cert}{{2}{7}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Implementation}{7}}
+\newlabel{sec:implementation}{{4}{7}}
+\citation{PlanetLab}
+\citation{Squid}
+\citation{Squid}
+\citation{VICCI}
+\citation{aura-rr}
+\citation{cdn-redirect}
+\citation{paxos}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Evaluation}{8}}
+\newlabel{sec:evaluation}{{5}{8}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Testbed}{8}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Metadata Operations}{8}}
+\citation{google-appengine-status}
+\citation{gae-appstats}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces \it  Metadata operation times (in seconds) across 300 PlanetLab nodes. Error bars are one standard deviation.}}{9}}
+\newlabel{fig:metadata-latency}{{3}{9}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Reads and Consistency}{9}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces \it  Read latencies on a local object's data. Error bars are one standard deviation.}}{9}}
+\newlabel{fig:read_latency_local}{{4}{9}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces \it  Approximate (self-reported) min/max latency from Google AppEngine on API calls, and the numbers of each API method synchronously called by each Syndicate\ metadata operation. The {\tt  update} operation is a transaction of one {\tt  get} and one {\tt  put}. }}{10}}
+\newlabel{tab:gae-performance}{{3}{10}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces \it  Read latencies on a remote object's data. Error bars are one standard deviation.}}{10}}
+\newlabel{fig:read_latency_remote}{{5}{10}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces \it  Read times of Syndicate, as compared against reading blocks directly from disk and directly from the CDN (on both cache hit and miss). Note that the Y axis is in log-scale. Error bars are one standard deviation. Numbers on each bar are in seconds.}}{11}}
+\newlabel{fig:read_performance}{{6}{11}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces \it  Times taken to read a remote object after a given percent of its blocks were modified. Note that the Y axis is in log-scale.}}{11}}
+\newlabel{fig:read_after_write}{{7}{11}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Writes and Consistency}{11}}
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces \it  Times taken to write a local object's data. Error bars are one standard deviation.}}{11}}
+\newlabel{fig:write_performance}{{8}{11}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Discussion}{11}}
+\citation{coblitz}
+\citation{end-to-end}
+\citation{bolt-on-causal-consistency}
+\citation{deuteronomy}
+\citation{g-store}
+\citation{scatter}
+\citation{kerberos}
+\citation{openid}
+\citation{oauth}
+\citation{shibboleth}
+\citation{riverbed-gateway}
+\citation{amazon-gateway}
+\citation{twinstrata-gateway}
+\citation{dropbox}
+\citation{s3fs}
+\citation{encfs}
+\citation{oceanstore}
+\citation{bayou}
+\citation{practi}
+\citation{kademlia}
+\citation{chord}
+\citation{pastry}
+\citation{dot}
+\citation{sloppy-dht}
+\citation{karger99}
+\citation{akamai}
+\citation{breslau99}
+\citation{afs}
+\citation{xFS}
+\citation{ceph}
+\citation{wheelfs}
+\citation{farsite}
+\citation{tahoe-lafs}
+\citation{shark}
+\citation{ivy}
+\citation{wcdp}
+\citation{Gwertzman96}
+\citation{Liu97}
+\citation{gray89}
+\citation{chromeos}
+\bibstyle{acm}
+\bibdata{bibdata}
+\bibcite{1000genomes}{1}
+\bibcite{farsite}{2}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Related Work}{12}}
+\newlabel{sec:related}{{6}{12}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Conclusion}{12}}
+\newlabel{sec:conclusion}{{7}{12}}
+\bibcite{amazon-gateway}{3}
+\bibcite{s3fs}{4}
+\bibcite{aws-overview}{5}
+\bibcite{shark}{6}
+\bibcite{gae-appstats}{7}
+\bibcite{aura-rr}{8}
+\bibcite{bolt-on-causal-consistency}{9}
+\bibcite{cern-vmfs}{10}
+\bibcite{Box.net}{11}
+\bibcite{breslau99}{12}
+\bibcite{collective}{13}
+\bibcite{citrix}{14}
+\bibcite{common-crawl}{15}
+\bibcite{practi}{16}
+\bibcite{g-store}{17}
+\bibcite{akamai}{18}
+\bibcite{dropbox}{19}
+\bibcite{encfs}{20}
+\bibcite{fuse}{21}
+\bibcite{sloppy-dht}{22}
+\bibcite{coralcdn}{23}
+\bibcite{GenBank}{24}
+\bibcite{scatter}{25}
+\bibcite{chromeos}{26}
+\bibcite{google-docs}{27}
+\bibcite{google-drive}{28}
+\bibcite{google-appengine-status}{29}
+\bibcite{gray89}{30}
+\bibcite{Gwertzman96}{31}
+\bibcite{afs}{32}
+\bibcite{karger99}{33}
+\bibcite{paxos}{34}
+\bibcite{folding-at-home}{35}
+\bibcite{tahoe-lafs}{36}
+\bibcite{deuteronomy}{37}
+\bibcite{Liu97}{38}
+\bibcite{kademlia}{39}
+\bibcite{mlab}{40}
+\bibcite{metagenomics}{41}
+\bibcite{mokafive}{42}
+\bibcite{shibboleth}{43}
+\bibcite{ivy}{44}
+\bibcite{coblitz}{45}
+\bibcite{PlanetLab}{46}
+\bibcite{irods}{47}
+\bibcite{openid}{48}
+\bibcite{oceanstore}{49}
+\bibcite{riverbed-gateway}{50}
+\bibcite{pastry}{51}
+\bibcite{end-to-end}{52}
+\bibcite{hdfs}{53}
+\bibcite{Squid}{54}
+\bibcite{kerberos}{55}
+\bibcite{chord}{56}
+\bibcite{wheelfs}{57}
+\bibcite{bayou}{58}
+\bibcite{oauth}{59}
+\bibcite{wcdp}{60}
+\bibcite{dot}{61}
+\bibcite{delta-consistency}{62}
+\bibcite{git}{63}
+\bibcite{treeoflife}{64}
+\bibcite{twinstrata-gateway}{65}
+\bibcite{VICCI}{66}
+\bibcite{cdn-redirect}{67}
+\bibcite{xFS}{68}
+\bibcite{ceph}{69}

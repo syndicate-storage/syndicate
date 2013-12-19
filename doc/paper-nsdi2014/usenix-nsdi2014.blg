@@ -1,0 +1,48 @@
+This is BibTeX, Version 0.99d (TeX Live 2012/Debian)
+Capacity: max_strings=35307, hash_size=35307, hash_prime=30011
+The top-level auxiliary file: usenix-nsdi2014.aux
+The style file: acm.bst
+Database file #1: bibdata.bib
+Warning--empty institution in practi
+You've used 69 entries,
+            2253 wiz_defined-function locations,
+            1291 strings with 22322 characters,
+and the built_in function-call counts, 21234 in all, are:
+= -- 1932
+> -- 949
+< -- 0
++ -- 408
+- -- 334
+* -- 1429
+:= -- 3073
+add.period$ -- 177
+call.type$ -- 69
+change.case$ -- 400
+chr.to.int$ -- 0
+cite$ -- 70
+duplicate$ -- 894
+empty$ -- 1993
+format.name$ -- 334
+if$ -- 4671
+int.to.chr$ -- 0
+int.to.str$ -- 69
+missing$ -- 37
+newline$ -- 317
+num.names$ -- 86
+pop$ -- 671
+preamble$ -- 1
+purify$ -- 331
+quote$ -- 0
+skip$ -- 646
+stack$ -- 0
+substring$ -- 999
+swap$ -- 237
+text.length$ -- 0
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 274
+warning$ -- 1
+while$ -- 146
+width$ -- 71
+write$ -- 615
+(There was 1 warning)

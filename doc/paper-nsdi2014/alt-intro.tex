@@ -1,0 +1,77 @@
+\section{Introduction}
+\label{sec:introduction}
+
+The cloud is changing how users store and access data.  This is true
+for both legacy applications that are migrating local data 
+into the cloud, and for emerging cloud-hosted applications
+that use a combination of content distribution networks (CDNs) and
+client-side local storage to achieve scalability.  In both cases, the goal is to 
+compose existing storage and caching services to
+implement scalable storage for the application.  However, the
+challenges in doing so are to keep data
+consistent, keep the storage layer secure, and
+enforce storage policies across services.  This paper 
+presents \Syndicate, a wide-area storage system 
+that meets these challenges in a general, coherent manner.
+
+There are two reasons to compose existing services to implement scalable storage. 
+First, if we factor a scalable storage system by the
+capabilities of existing services,
+it is interesting to ask what extra functionality
+is needed, and how is it best provided?
+Our strategy is to use cloud storage for durability and 
+scalable capacity, edge caches (CDNs and caching proxies)
+for scalable read bandwidth and reduced upstream load,
+and local storage for fast, possibly offline access.
+Once these capabilities are met, the remaining
+desirable functionality is wide-area consistency,
+storage layer security, and storage policy enforcement.
+\Syndicate\ introduces a new Metadata Service and storage
+middleware that provides this functionality in a general,
+configurable way.
+
+The second reason is that leveraging existing services
+is more than just taking advantage of someone having 
+already implemented the corresponding functionality.
+More importantly, doing so also leverages a globally-deployed
+and professionally-operated instantiation of that functionality.
+Deploying and operating a global service, even with 
+the availability of geographically distributed VMs, is an
+onerous task.  \Syndicate\ side-steps that problem by 
+using existing storage and caches, and in the process,
+significantly lowers the barrier-to-entry to constructing a 
+customized, global storage service.
+
+The thorniest problem \Syndicate\ faces is contending 
+with the weak consistency offered by edge caches.  Namely,
+the cache operator, not the application, ultimately decides
+what constitutes ``stale'' data for eviction purposes, making
+it difficult to rely on cache control directives.
+Rather than trying to avoid caches, we intentionally incorporate 
+them into the solution due to the tangible benefits they 
+offer.  Already, enterprises deploy on-site caching proxies to 
+accelerate Web access for users, content providers employ 
+global CDNs to distribute content to millions of readers,
+and ISPs deploy CDNs in their access networks to avoid 
+transferring frequently-requested data over expensive links
+~\cite{akamai,coralcdn,coblitz}.
+
+Our key insight into composing existing storage and caching
+services is that we should {\it avoid} treating them as
+first-class components.  Instead, we must treat 
+them as interchangeable utilities, distinguishable
+only by how well they provide their unique capabilities.
+Then, applications select services arbitrarily,
+and layer consistency, security, 
+and policies ``on top'' of them with \Syndicate.
+By doing so, we provide them a virtual cloud storage
+service.
+
+Our key contribution is a novel consistency protocol, employed in both the data
+plane and control plane, that achieves this end.  With this protocol,
+\Syndicate\ overcomes the weak consistency of edge caches in the data plane
+while continuing to leverage the benefits they offer.  It also 
+lets \Syndicate\ leverage caches in the control plane to scalably distribute
+certificates and signed executable code to middleware end-points,
+in order to secure the data plane and enforce data storage policies in 
+a trusted manner.

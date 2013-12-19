@@ -1,0 +1,54 @@
+\section{Implementation}
+\label{sec:implementation}
+
+Building \Syndicate\ resulted in two important artifacts: a generic
+and scalable Metadata Service, and a ``narrow waist'' interface
+between applications and providers.
+
+The first, which includes a client-side library, let an
+application use unchanging URIs (i.e. object paths) to download guaranteed-fresh mutable
+data from underlying caches, without relying on them for consistency.
+The client library manages manifests and caching, and provides 
+an API for uploading new metadata.
+
+To scale on top of a NoSQL store while providing filesystem-like metadata 
+consistency, the \MS\ divides a record into
+into a seldom-written ``base'' record, and a set of often-written ``shard'' records.
+Writes are distributed across shards, so the \MS\ can batch outstanding writes
+regardless of how long an individual {\tt put} operation in the store takes.
+They are recombined into a whole record by selecting the shard with the largest 
+last-write timestamp, providing last-write-wins write semantics.  Base records are 
+transactionally created to prevent name conflicts.
+
+% Definitely want a figure of this next paragraph.
+% If the reader remembers anything from this paper,
+% it should be this and the consistency protocol.
+% -jcn
+The second artifact is an application-controlled cloud
+abstraction layer, which forms a ``narrow waist''
+between applications and providers.  This facilitates rapid storage service 
+deployment by reducing the task of creating a custom storage system to deploying
+the appropriate \SGs.  It also facilitates 
+independent provider evolution by reducing the task of supporting legacy applications
+to providing the $R$ and $W$ that lets them continue to
+leverage the provider in the face of otherwise-incompatible changes.
+
+% Do these next two paragraphs belong in the Design section?
+% -jcn
+Broadly, there two deployment models for \Syndicate, depending on whether 
+or not the application is peer-to-peer or client/server.  In the first model, 
+each peer runs a write- and coordinate-capable \SG.  This is the deployment 
+model we use today on PlanetLab~\cite{PlanetLab}.
+
+In the second model, application servers run write- and coordinate-capable \SGs,
+and a scalable number of clients run read-only \SGs\ and send writes directly to 
+application servers.  This model dovetails with Web
+application design, where Web page (client) does not write to the storage tier 
+(server \SG) directly, but instead sends data to the application tier to write 
+it on its behalf.
+
+In both cases, Replica \SGs\ may be colocated with User \SGs, or deployed
+in a separate cluster.  The former horizontally scales 
+writes to cloud storage, but consumes extra application resources.  The latter provides the 
+cost and security benefits of a dedicated, isolated storage tier,
+but at the expense of one more network hop per write.

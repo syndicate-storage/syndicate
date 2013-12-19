@@ -1,0 +1,47 @@
+\section{Related Work}
+\label{sec:related}
+
+\Syndicate\ adds to a growing body of work on leveraging existing
+storage systems, where the main contributions are in separating storage 
+concerns into independent components, and applying the end-to-end
+principle~\cite{end-to-end} to move storage features to application end-points.
+Separating consistency has been exploited
+to provide causal consistency~\cite{bolt-on-causal-consistency},
+ACID semantics~\cite{deuteronomy}, and key-group transactions~\cite{g-store,scatter} on
+top of unmodified cloud storage.  Separating access and admission control 
+has been achieved with Kerberos~\cite{kerberos}, and is
+exploited today in Web applications with federated identity 
+management~\cite{openid,oauth,shibboleth} for single sign-on.
+Cloud storage customers enforce storage policies transparently using
+{\it cloud storage gateways}---on-site middleboxes that apply the policies
+locally (examples include~\cite{riverbed-gateway, amazon-gateway, twinstrata-gateway}).
+Customers can also mount certain cloud storage as filesystems~\cite{dropbox,s3fs},
+and then layer special-purpose filesystems on top of them that apply 
+storage policies transparently (such as encryption~\cite{encfs}).
+
+Unlike prior work, \Syndicate\ separates all of these concerns in a coherent manner.
+By applying our consistency protocol to both data and control plane information.
+we leverage edge caches to distribute object data, process
+certificates, and install end-point functionality in a scalable, secure way.
+
+Many peer-to-peer storage systems~\cite{oceanstore,bayou,practi,kademlia,chord,pastry,dot},
+caching systems~\cite{sloppy-dht,karger99,akamai,breslau99},
+and distributed filesystems~\cite{afs,xFS,ceph,wheelfs,farsite,tahoe-lafs,shark,ivy}
+have preceded \Syndicate, and address consistency, security, and storage policy
+in different contexts while offering similar feature sets.
+\Syndicate\ differs from these systems in two ways:  its
+approach to systems building, and how it leverages caches.  Whereas prior works focus on
+combining resource-constrained hosts to form scalable storage
+systems, \Syndicate\ focuses on a general way of combining
+scalable storage systems into virtual
+storage systems for cloud-hosted applications.
+Whereas prior works relied on system-specific caches and used client/cache polling,
+object leases, and cache invalidation protocols (such as~\cite{wcdp,Gwertzman96,Liu97,gray89})
+to scalably deliver consistent data to readers (if they used them at all), \Syndicate\
+exploits already-deployed, unmodified Web caches to obtain a scalable data and control plane.
+In doing so, \Syndicate\ complements prior and future caching and storage systems by
+letting applications use any of them transparently as underlying providers.
+
+Web thin clients (such as~\cite{chromeos}) combine
+local and cloud storage to reduce operating costs.  However, they are vertically integrated,
+making it difficult to use infrastructure beyond what the vender supports.

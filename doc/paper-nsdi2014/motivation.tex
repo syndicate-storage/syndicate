@@ -1,0 +1,119 @@
+\section{Usage Scenarios}
+\label{sec:motivation}
+
+\Syndicate\ is meant for applications that handle a scalable
+read/write workload in interactive settings,
+where local storage, cloud storage, and edge
+caches have complementary roles to play.  To motivate its
+design, we explore three application domains that currently
+rely on point-solutions, and argue that an
+equivalent solution can be built from existing systems by
+layering the proper functionality over them.  A concluding subsection
+summarizes the common themes in how this missing functionality is applied.
+
+\subsection{Scientific Datasets}
+
+Tens of thousands of computers work together to process multi-terabyte
+data sets; several genomic sequencing data sets being illustrative
+examples~\cite{GenBank,metagenomics,1000genomes,treeoflife}.
+Researchers run small experiments in their labs on local workstations
+and clusters, but run large experiments on powerful cloud computing platforms
+and scalable grids of donated computers in the wide-area.
+At the same time, they share findings with collaborators,
+archive working data sets in cloud storage,
+and submit vetted results for integration into the original data set.
+
+A hodge-podge of point-solutions have been developed to address various aspects
+of scientific data storage, but no coherent solution has emerged.
+In an ideal world, researchers
+would keep relevant data on their local workstations for fast access, and
+seamlessly stream data from the main data set on an
+as-needed basis (as in~\cite{irods}).  The data sets would
+support a scalable number of readers by employing edge caches (as in~\cite{cern-vmfs}),
+provided that readers are guaranteed to receive fresh data.
+Results from authorized grid computers would be sanitized and uploaded to researcher-chosen
+storage when it is cost-effective to do so (as in~\cite{folding-at-home}).
+Cloud storage providers would be selected based on 
+how expensive it is to transfer data to computing infrastructure
+later on.
+
+\subsection{Collaborative Document Sharing}
+
+Collaborative document sharing is widely used today, from 
+version control systems like {\tt git}~\cite{git} to online word-processing
+systems like Google Docs~\cite{google-docs}.  In all cases, a set of 
+users read and write a set of documents, and the system provides an 
+interface for user-driven conflict resolution.
+
+Nevertheless, there are cases where
+the trustworthiness of their underlying storage systems limit their applicability.  For example,
+hosting medical documents may require keeping a verifiable
+edit history and implementing certain privacy requirements.  As another
+example, some organizations require 
+online edits to be mirrored to private servers (as offered in~\cite{Box.net}).
+
+Ideally, a user could bring her own trusted storage system for hosting her writes.
+Then, the application writes her edits to it (with her permission), and makes
+them visible to a scalable number of readers by routing their requests
+to them through edge caches.  However, a layer of abstraction
+will be necessary to separate user-facing features
+from user-given providers, and ensure readers do not receive
+stale data from edge caches.
+
+\subsection{Virtual Desktop Infrastructure}
+
+An alternative approach to giving employees corporate computers
+is to let them bring their own devices, and have them run a corporate OS
+in a VM while they are at work.  Employees download their VM images
+when they begin the day, and periodically save their sessions until 
+they leave.  VDI systems exploit the fact that VM images 
+do not change much between sessions~\cite{collective} and have only
+one writer (the user) to achieve scalable VM deployment
+through local and on-site VM block caching.
+
+While some VDI implementations~\cite{citrix,mokafive} use system-specific
+infrastructure, the ideal scenario is to let the corporation
+choose the cache and storage providers that best meet their
+business needs.  The VDI infrastructure is not desirable
+if there already exists proven in-house infrastructure---not only 
+for caching and storage, but also for VM security and identity management.
+
+\subsection{Observations}
+
+Our goal is for \Syndicate\ to be flexible enough to serve 
+as the storage layer for these and similar applications, allowing
+them to take advantage of existing services rather than having to
+create point solutions.
+The challenge is to layer the required functionality
+on top of the existing services, and to this end, we observe three 
+common themes in how these applications use storage.  
+
+First, once consistency requirements are
+met, the value of edge caches is to improve data locality.
+In all three examples, the systems
+are able to scale in the number of reads because data naturally
+propagates to points in the Internet that are ``closer'' to readers,
+without the application having to do any extra work.  This implies that the storage
+layer should opportunistically exploit them for read
+performance, but handle consistency separately.  It also suggests
+that the storage layer speaks HTTP
+and addresses object chunks and metadata with URIs.
+
+Second, once write performance and storage policies are met,
+the value of cloud storage providers is to 
+enhance data durability.  As seen in these examples,
+the storage policies (including privacy) can be so specific that it is unrealistic to
+expect a provider to enforce them.  This suggests that 
+the virtual storage layer should do so itself,
+and treat a cloud storage 
+provider as public stable storage with no functional guarantees.
+This requires the application to trust it to do so correctly, however.
+
+Third, data consistency is application-specific, but metadata
+consistency has general requirements.  Because reads and writes must
+be routed to the correct data objects for these applications to work,
+an object name (URI) must refer to at most one object at all times.
+This means updates to the object namespace must be atomic with respect
+to reads and writes.  Since \Syndicate\ will be used in interactive
+workloads, the application must be able to structure and search the
+namespace dynamically.
