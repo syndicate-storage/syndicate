@@ -22,7 +22,7 @@ CPPPATH = [
 ]
 
 # default CPPFLAGS
-CPPFLAGS = "-g -Wall -D__STDC_FORMAT_MACROS"
+CPPFLAGS = "-g -Wall -D__STDC_FORMAT_MACROS -D_FORTIFY_SOURCE"
 
 # parse options
 devel = False

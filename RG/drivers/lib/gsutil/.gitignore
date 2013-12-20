@@ -1,4 +1,0 @@
-*.pyc
-build/*
-dist/*
-gsutil.egg-info/*
