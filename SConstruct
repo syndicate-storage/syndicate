@@ -56,6 +56,7 @@ common.setup_env( env )
 
 Export("env")
 
+# ----------------------------------------
 # protobuf build
 protobuf_out = "build/out/protobufs"
 protobufs, protobuf_header_paths = SConscript( "protobufs/SConscript", variant_dir=protobuf_out )
@@ -71,6 +72,8 @@ protobuf_py_out = "build/out/python/syndicate/protobufs"
 protobuf_py = SConscript("protobufs/SConscript.python", variant_dir=protobuf_py_out )
 env.Depends( protobuf_py, protobuf_py_files )
 
+
+# ----------------------------------------
 # libsyndicate build
 libsyndicate_out = "build/out/lib/libsyndicate"
 libsyndicate_python_out = "build/out/python/syndicate"
@@ -89,10 +92,14 @@ libsyndicate_install_c_targets = [libsyndicate_install_headers, libsyndicate_ins
 libsyndicate_install_python = env.Command( "syndicate.so", [], "cd %s && ./setup.py install" % libsyndicate_python_out )
 
 env.Alias( 'libsyndicate-python', [libsyndicate_python, libsyndicate_python_init] )
-env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers] )
 env.Alias( 'libsyndicate-python-install', [libsyndicate_install_python] )
 env.Depends( libsyndicate_install_python, libsyndicate_install_c_targets )
 
+# main targets...
+env.Alias( 'libsyndicate', [libsyndicate, libsyndicate_python_init, libsyndicate_python] )
+env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers, libsyndicate_install_python] )
+
+# ----------------------------------------
 # UG build
 ug_out = "build/out/bin/UG"
 syndicatefs, syndicate_httpd, syndicate_ipc = SConscript( "UG/SConscript", variant_dir=ug_out )
@@ -102,14 +109,14 @@ env.Depends( syndicate_ipc, libsyndicate )
 env.Depends( syndicate_httpd, libsyndicate )
 
 env.Alias("syndicatefs", syndicatefs)
-env.Alias("UG", [syndicatefs, syndicate_httpd] )
-env.Alias("UG-ipc", syndicate_ipc )
 
 # UG installation 
 common.install_targets( env, 'UG-install', bin_install_dir, ugs )
 env.Install( conf_install_dir, "conf/syndicate-UG.conf" )
 env.Alias("UG-install", conf_install_dir )
+env.Alias("UG", [syndicatefs, syndicate_httpd] )
 
+# ----------------------------------------
 # AG build
 ag_out = "build/out/bin/AG"
 ags = SConscript( "AG/SConscript", variant_dir=ag_out )
@@ -156,15 +163,20 @@ watchdog_daemon_out = "build/out/bin/AG/watchdog"
 watchdog_daemon = SConscript( "AG/watchdog-daemon/SConscript", variant_dir=watchdog_daemon_out )
 env.Alias( "AG-watchdog", watchdog_daemon )
 
-# AG installation
+# installation
 common.install_targets( env, 'AG-install', bin_install_dir, ags )
 
+# main targets....
+env.Alias( 'AG', [libAGcommon, libAGdiskdriver, libAGSQLdriver, libAGshelldriver, watchdog_daemon, ags] )
+
+
+# ----------------------------------------
 # MS server build
 ms_server_out = "build/out/ms"
 ms_server = SConscript( "ms/SConscript.server", variant_dir=ms_server_out )
 env.Depends( ms_server, protobuf_py_files )  # ms requires Python protobufs to be built first
 
-env.Alias( "ms", ms_server )
+env.Alias( "ms-server", ms_server )
 
 # MS clients build
 ms_clients_bin_out = "build/out/bin/ms"
@@ -176,6 +188,11 @@ env.Depends( ms_client_bin, [ms_client_python] )
 
 env.Alias( "ms-clients", [ms_client_python, ms_client_bin] )
 
+# main targets....
+env.Alias( "ms", [ms_server, ms_client_python, ms_client_bin] )
+
+
+# ----------------------------------------
 # replica gateway python library build
 rg_python_out = "build/out/python/syndicate/rg"
 rg_python = SConscript( "RG/SConscript.python", variant_dir=rg_python_out )
@@ -183,12 +200,16 @@ env.Depends( rg_python, [libsyndicate_python, protobuf_py] )  # RG requires Pyth
 
 # replica gateway server build
 rg_out = "build/out/bin/RG"
-rg = SConscript( "RG/SConscript.server", variant_dir=rg_out )
+rg_server = SConscript( "RG/SConscript.server", variant_dir=rg_out )
 #env.Depends( rg, rg_python )
 
-env.Alias( "RG", rg )
+env.Alias( "RG-server", rg_server )
 env.Alias( "RG-python", rg_python )
 
+env.Alias( "RG", [rg_server, rg_python] )
+
+
+# ----------------------------------------
 # initialization
 
 # set umask correctly
