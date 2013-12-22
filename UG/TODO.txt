@@ -1,5 +1,5 @@
-* deploy RG
-* open codebase
+* deploy RG (get drivers working too)
+* open codebase (get build process cleaned up and finish main documentation)
 * compile UG for NaCl
 * have webmail client call UG through NaCl
 

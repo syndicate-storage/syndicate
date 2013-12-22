@@ -26,6 +26,15 @@ ms_files.extend( Glob("protobufs/*.py") )
 protobuf_util = Glob("protobufs/__init__.py")
 protobuf_util.extend( Glob("protobufs/protobuf_to_dict.py"))
 
+# get a list of common files...
+ms_files.extend( Glob("common/*.py") )
+
+# get a list of client files...
+ms_files.extend( Glob("clients/python/*.py") )
+
+# get a list of client programs....
+ms_files.extend( Glob("clients/python/bin/*.py") )
+
 # development build?
 if env["devel"]:
    ms_files.extend( Glob("tests/__init__.py") )
@@ -33,6 +42,10 @@ if env["devel"]:
    ms_files.extend( Glob("tests/debughandler.py") )
    ms_files.extend( Glob("tests/*.sh") )
    ms_files.extend( Glob("tests/*.pem") )
+   ms_files.extend( Glob("tests/__init__.py") )
+   ms_files.extend( Glob("tests/test_syntool.py") )
+   ms_files.extend( Glob("tests/user_test_key.pem") )
+   ms_files.extend( Glob("tests/local_setup.sh") )
 
 # openid
 ms_files.extend( Glob("openid/*.py") )

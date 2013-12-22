@@ -12,7 +12,7 @@ Import('env')
 env = env.Clone()
 
 # build the protobufs into cc and py files
-proto_files = env.Protoc( [], Split(protobuf_files), PROTOCPROTOPATH=["."], PROTOCPYTHONOUTDIR=".", PROTOCOUTDIR="." )
+proto_files = env.Protoc( [], Split(protobuf_files), PROTOCPROTOPATH=["."], PROTOCPYTHONOUTDIR=".", PROTOCOUTDIR="." ) + [File("__init__.py")]
 proto_header_paths = [ x.path for x in filter( lambda x: x.path.endswith(".pb.h"), proto_files )]
 
 Return("proto_files proto_header_paths")

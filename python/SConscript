@@ -1,0 +1,18 @@
+# build libsyndicate python wrapper
+
+# get our environment
+Import('env')
+env = env.Clone()
+
+import os
+
+build_target = env.Command("PYTHON", [], "cd %s && python ./setup.py --source-root=%s --build-dir=%s build && cp -a build/lib.*/syndicate/* syndicate/ && cp -a build/lib.*/syndicate.so syndicate/" % (Dir(".").path, Dir("#").abspath, os.path.dirname(Dir(".").path)) )
+install_target = env.Command("PYTHON-INSTALL", [], "cd %s && python ./setup.py --source-root=%s --build-dir=%s install" )
+
+env.AlwaysBuild(build_target)
+
+source_files = Glob("syndicate.*")
+source_files.extend( Glob("syndicate/*") )
+source_files.extend( Glob("setup.py") )
+
+Return("build_target install_target source_files")

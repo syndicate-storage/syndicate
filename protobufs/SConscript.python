@@ -15,5 +15,5 @@ for pypb in protobuf_py_files:
    cmd = env.Command( "%s" % (os.path.basename(pypb.path)), "#" + pypb.path, Copy( "$TARGET", "$SOURCE" ) )
    python_lib_cmds.append( cmd )
 
-python_lib_cmds.append( env.Command("__init__.py", "", "touch $TARGET" ) )
+#python_lib_cmds.append( env.Command("__init__.py", "", "touch $TARGET" ) )
 Return( "python_lib_cmds" )
