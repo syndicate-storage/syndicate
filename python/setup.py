@@ -8,20 +8,8 @@ import os
 import sys
 import shutil
 
-ext_name="syndicate"
 source_root = "../"
 build_dir = ""
-
-"""
-# clean previous build
-for root, dirs, files in os.walk(".", topdown=False):
-    for name in files:
-        if (name.startswith(ext_name) and not(name.endswith(".pyx") or name.endswith(".pxd"))):
-            os.remove(os.path.join(root, name))
-    for name in dirs:
-        if (name == "build"):
-            shutil.rmtree(name)
-"""
 
 # is build_root in the args?
 i = 0
@@ -38,10 +26,6 @@ while i < len(sys.argv):
 
    i += 1
 
-print source_root
-print build_dir
-
-ext_name="syndicate"
 ext_source_root = source_root
 ext_library = "libsyndicate"
 
@@ -71,6 +55,7 @@ setup(name='syndicate',
       author='Jude Nelson',
       author_email='syndicate@lists.cs.princeton.edu',
       license='Apache 2.0',
+      ext_package='syndicate',
       ext_modules = ext_modules,
       packages = ['syndicate', 'syndicate.client', 'syndicate.client.common', 'syndicate.client.bin', 'syndicate.protobufs', 'syndicate.rg', 'syndicate.rg.drivers'] + driver_package_names,
       package_dir = dict({

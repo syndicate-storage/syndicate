@@ -34,7 +34,7 @@ Ubuntu/Debian:
 
 You will also need a recent version of libmicrohttpd.  At least version 0.9.27 should work.
 
-We have a Syndicate package repository at http://vcoblitz-cmi.cs.princeton.edu/syndicate-repo/RPMS.  To use, do the following:
-   $ sudo curl http://vcoblitz-cmi.cs.princeton.edu/yum/Syndicate.repo > /etc/yum.repos.d/Syndicate.repo
+We have a Syndicate package repository at http://vcoblitz-cmi.cs.princeton.edu/syndicate-nightly/RPMS.  To use, do the following:
+   $ sudo curl http://vcoblitz-cmi.cs.princeton.edu/yum/Syndicate-nightly.repo > /etc/yum.repos.d/Syndicate.repo
 
 

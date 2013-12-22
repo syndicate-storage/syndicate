@@ -6,12 +6,7 @@ env = env.Clone()
 
 import os
 
-build_cmd = """\
-cd %s && python ./setup.py --source-root=%s --build-dir=%s build && \
-cp -a build/lib.*/syndicate/* syndicate/ && \
-cp -a build/lib.*/syndicate.so syndicate/ && \
-mv build/lib.*/syndicate.so build/lib.*/syndicate \
-""" % (Dir(".").path, Dir("#").abspath, os.path.dirname(Dir(".").path))
+build_cmd = "cd %s && python ./setup.py --source-root=%s --build-dir=%s build" % (Dir(".").path, Dir("#").abspath, os.path.dirname(Dir(".").path))
 
 build_target = env.Command("PYTHON", [], build_cmd )
 install_target = env.Command("PYTHON-INSTALL", [], "cd %s && python ./setup.py --source-root=%s --build-dir=%s install" )
@@ -19,6 +14,7 @@ install_target = env.Command("PYTHON-INSTALL", [], "cd %s && python ./setup.py -
 env.AlwaysBuild(build_target)
 
 source_files = Glob("syndicate.*")
+source_files.extend( Glob("syn.*") )
 source_files.extend( Glob("syndicate/*") )
 source_files.extend( Glob("setup.py") )
 

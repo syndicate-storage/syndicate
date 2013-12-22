@@ -189,8 +189,13 @@ python_target, python_install, python_files = SConscript("python/SConscript", va
 env.Depends(python_target, [python_files, protobuf_py_files, libsyndicate])
 
 env.Alias("python", python_target)
+env.Alias("python-install", python_install)
 
+# ----------------------------------------
+# Top-level build
 
+env.Alias("syndicate", ["MS", "RG", "AG", "UG"])
+env.Alias("syndicate-install", ["RG-install", "AG-install", "UG-install"])
 
 # ----------------------------------------
 # initialization
