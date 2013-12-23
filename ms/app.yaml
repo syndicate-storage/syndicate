@@ -1,4 +1,4 @@
-application: syndicate-metadata
+application: syndicate-metadata # <--- change this to your application's name on the platform
 version: 1
 runtime: python27
 api_version: 1

@@ -15,7 +15,7 @@ from Crypto.Hash import MD5
 
 try:
    import syndicate.client.common.log as Log
-   log = Log.get_logger(__name__)
+   log = Log.get_logger()
 except:
    import logging as log
 

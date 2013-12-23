@@ -197,6 +197,12 @@ env.Alias("python-install", python_install)
 env.Alias("syndicate", ["MS", "RG", "AG", "UG"])
 env.Alias("syndicate-install", ["RG-install", "AG-install", "UG-install"])
 
+
+# ----------------------------------------
+# MS deployment
+
+
+
 # ----------------------------------------
 # initialization
 

@@ -36,7 +36,7 @@ try:
 except:
    import storage_stub as storage
 
-log = Log.get_logger(__name__)
+log = Log.get_logger()
 
 # RFC-822 compliant, as long as there aren't any comments in the address.
 # taken from http://chrisbailey.blogs.ilrt.org/2013/08/19/validating-email-addresses-in-python/

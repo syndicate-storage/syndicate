@@ -6,7 +6,7 @@ PKG_REPO=$3
 PKG_NAME="syndicate-AG"
 PKG_VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 PKG_BUILD=$PKG_ROOT/out/syndicate-AG
-PKG_INSTALL=$PKG_ROOT/out/syndicate-AG/usr
+PKG_INSTALL=$PKG_ROOT/out/syndicate-AG/usr/local
 
 PKG_DEPS="openssl curl uriparser protobuf fuse libsyndicate" 
 
@@ -29,5 +29,5 @@ scons AG
 scons AG-install DESTDIR=$PKG_INSTALL
 popd
 
-fpm --force -s dir -t rpm -v $PKG_VERSION -n $PKG_NAME $DEPARGS -d "libmicrohttpd > 0.9" -C $PKG_BUILD -p $PKG_PKGOUT --license proprietary --vendor PlanetLab --description "Syndicate Acquisition Gateways" $(ls $PKG_BUILD)
+fpm --force -s dir -t rpm -v $PKG_VERSION -n $PKG_NAME $DEPARGS -d "libmicrohttpd > 0.9" -C $PKG_BUILD -p $PKG_PKGOUT --license "Apache 2.0" --vendor "PlanetLab Consortium" --description "Syndicate Acquisition Gateways" $(ls $PKG_BUILD)
 

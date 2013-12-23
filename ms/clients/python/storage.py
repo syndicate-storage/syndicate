@@ -25,7 +25,7 @@ from Crypto.PublicKey import RSA as CryptoKey
 
 import pprint 
 
-log = Log.get_logger(__name__)
+log = Log.get_logger()
 
 # -------------------
 def make_or_verify_internal_key_directories( key_base_dir, object_cls ):

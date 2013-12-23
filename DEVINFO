@@ -16,13 +16,9 @@ This directory contains source files specific to the Replica Gateway implementat
 
 This directory contains source files specific to the Acquisition Gateway implementations.
 
-/doc
+/papers
 
 This directory contains experimental data, paper source files, posters, and figures.
-
-/coblitz
-
-This directory contains scripts and files needed for configuring the CoBlitz CDN in VICCI.
 
 /planetlab
 
@@ -36,11 +32,6 @@ This directory contains the Google AppEngine implementation of the Metadata Serv
 
 This directory contains obsolete code.  No need to look through here.
 
-/testscripts
-
-This directory will contain blackbox test scripts (but not yet).
-
-
 github:          https://github.com/jcnelson/syndicate.git
-mailing list:    syndicate@listserv.princeton.edu
+mailing list:    syndicate@lists.cs.princeton.edu
 primary author:  Jude Nelson (jcnelson@cs.princeton.edu)

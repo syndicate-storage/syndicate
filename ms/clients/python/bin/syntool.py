@@ -29,7 +29,7 @@ from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 import pprint 
 
-log = Log.get_logger(__name__)
+log = Log.get_logger()
 
 TRUST_VERIFY_KEY = False 
 
@@ -330,6 +330,9 @@ def serialize_positional_arg( value ):
 
 # -------------------
 def read_params( params ):
+   if len(params) == 0:
+      return (None, None, None)
+   
    method_name = params[0]
    params = params[1:]
    args = []
@@ -388,15 +391,38 @@ def load_options( argv ):
       config_file_path = conf.CONFIG_FILENAME
    
    config_str = storage.read_file( config_file_path )
-   if config_str == None:
-      raise Exception("Failed to load configuration from %s" % config_file_path)
    
-   config = conf.load_config( config_file_path, config_str, opts )
-   if config == None:
-      raise Exception("Failed to parse configuration from %s" % config_file_path)
+   config = {}
+   method_name, args, kw = read_params( getattr(opts, 'params', [] ) )
+   
+   if config_str == None:
+      # possibly calling 'setup', so fill in empty information
+      if method_name != "setup":
+         raise Exception("Failed to load configuration from %s" % config_file_path)
+      
+      conf.fill_defaults( config )
+      
+      if not hasattr(opts, 'user_id') and method_name == "setup":
+         raise Exception("--user_id option is required for 'setup'")
+      
+      config['user_id'] = opts.user_id
+      config_file_path = conf.CONFIG_FILENAME
+      config_str = "[syndicate]\n" + "\n".join( ["%s=%s" % (config_key, config_value) for (config_key, config_value) in config.items()] )
+      
+      config_with_opts = conf.load_config( config_file_path, config_str, opts )
+      if config_with_opts != None:
+         config.update( config_with_opts )
+      else:
+         raise Exception("Failed to parse command-line args")
+      
+   else:
+      config = conf.load_config( config_file_path, config_str, opts )
+      if config == None:
+         raise Exception("Failed to parse configuration from %s" % config_file_path)
    
    config['params'] = getattr( opts, 'params', [] )
    
+   # set up the key directories
    setup_key_directories( config )
    
    return config
@@ -453,7 +479,65 @@ def do_revoke( config, all_params ):
       storage.revoke_object_private_key( config, key_type, "signing", key_name )
    
    sys.exit(0)
+
+
+# -------------------   
+def do_setup( config, all_params ):
+   print "Setting up syntool..."
+   
+   # if the config file already exists, then bail
+   if os.path.exists( conf.CONFIG_FILENAME ):
+      raise Exception("syntool is already set up (in %s)" % conf.CONFIG_DIR)
+   
+   # check args...
+   for required_key in ['MSAPI', 'user_id', 'privkey']:
+      if config.get(required_key, None) == None:
+         print >> sys.stderr, "Missing argument: %s" % required_key
+         sys.exit(1)
+   
+   key_dirs = {}
+   for key_type, object_cls in api.KEY_TYPE_TO_CLS.items():
+      key_dirname = conf.KEY_DIR_NAMES.get(key_type)
+      key_dirs[key_type] = key_dirname + "/"
+   
+   config_str = """
+[syndicate]
+MSAPI=%s
+user_id=%s
+volume_keys=%s
+user_keys=%s
+gateway_keys=%s
+""" % (config['MSAPI'], config['user_id'], key_dirs['volume'], key_dirs['user'], key_dirs['gateway'])
+
+   config_str = config_str.strip() + "\n"
+
+   # try to read the private key
+   privkey_pem = None
+   try:   
+      privkey_pem = storage.read_private_key( config['privkey'] ).exportKey()
+   except Exception, e:
+      log.exception(e)
+      print >> sys.stderr, "Failed to read private key from %s" % config['privkey']
+      sys.exit(1)
+   
+   # we're good.  Store the key information
+   try:
+      storage.store_object_private_key( config, "user", "signing", config['user_id'], privkey_pem )
+   except Exception, e:
+      log.exception(e)
+      print >> sys.stderr, "Failed to write private key"
+      sys.exit(1)
+   
+   # store config
+   try:
+      storage.write_file( conf.CONFIG_FILENAME, config_str )
+   except Exception, e:
+      log.exception(e)
+      print >> sys.stderr, "Failed to write configuration"
+      sys.exit(1)
       
+   sys.exit(0)
+   
 
 # -------------------   
 def check_signing_key( method_result, signing_public_key ):
@@ -495,6 +579,7 @@ def main( argv ):
       log.debug( "%s = %s" % (opt, CONFIG[opt] ) )
    
    if not CONFIG.has_key("user_id") or not CONFIG.has_key("params"):
+      print >> sys.stderr, "Missing user ID or method"
       conf.usage( argv[0] )
    
    # calling user...
@@ -518,6 +603,9 @@ def main( argv ):
    
    elif method_name == "revoke":
       do_revoke( CONFIG, all_params )
+   
+   elif method_name == "setup":
+      do_setup( CONFIG, all_params )
    
    # parse arguments; get extra data and hold onto it for now
    lib = conf.ArgLib()

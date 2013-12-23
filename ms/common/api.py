@@ -13,12 +13,11 @@ Front-end API
 from msconfig import *
 
 import log as Log
-log = Log.get_logger(__name__)
+log = Log.get_logger()
 
 try:
    import storage.storage as storage
 except Exception, e:
-   log.debug("Using storage stub")
    from storage_stub import StorageStub as storage
    
 try:
@@ -26,13 +25,11 @@ try:
    from MS.user import SyndicateUser
    from MS.gateway import Gateway
 except Exception, e:
-   log.debug("Using object stub")
    from object_stub import *
 
 try:
    from MS.auth import *
 except Exception, e:   
-   log.debug("Using auth stub")
    from auth_stub import *
 
 # ----------------------------------

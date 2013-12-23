@@ -17,7 +17,7 @@ import syndicate.client.common.api as api
 import syndicate.client.common.object_stub as object_stub
 import syndicate.client.common.log as Log
 
-log = Log.get_logger(__name__)
+log = Log.get_logger()
 
 CONFIG_DIR = os.path.expanduser( "~/.syndicate" )
 CONFIG_FILENAME = os.path.join(CONFIG_DIR, "syndicate.conf")
@@ -28,11 +28,13 @@ KEY_DIR_NAMES = dict( [(key_type, object_cls.key_dir) for (key_type, object_cls)
 CONFIG_OPTIONS = {
    "MSAPI":             ("-M", 1, "URL to your Syndicate MS's API handler (e.g. https://www.foo.com/api)."),
    "user_id":           ("-u", 1, "The email address of the user to act as (overrides 'user_id' in the config file).  You must have the user's corresponding signing key!"),
+   'privkey':           ("-P", 1, "Path to the private key associated with the user you're running as (should only be passed for the 'setup' method)."),
    "volume_keys":       ("-v", 1, "Path to the directory where you store your Volume's signing and verifying keys."),
    "gateway_keys":      ("-g", 1, "Path to the directory where you store your Gateway's signing and verifying keys."),
    "user_keys":         ("-k", 1, "Path to the directory where you store your User's signing and verifying keys."),
    "config":            ("-c", 1, "Path to your config file (default is %s)." % CONFIG_FILENAME),
    "trust_verify_key":  ("-t", 0, "Automatically trust an object's public verification key in a reply from the MS."),
+   "debug":             ("-d", 0, "Verbose debugging output"),
    "params":            (None, "+", "Method name, followed by parameters (positional and keyword supported)."),
 }
 
@@ -171,7 +173,35 @@ def load_config( config_path, config_str, opts ):
    conf_dir = os.path.dirname( config_path )
    extend_paths( ret, conf_dir )
    
+   if ret['debug']:
+      Log.set_log_level( "DEBUG" )
+
+   else:
+      Log.set_log_level( "WARNING" )
+   
    return ret
+
+
+# -------------------
+def fill_defaults( config ):
+   
+   global KEY_DIR_NAMES 
+   
+   key_dirs = {}
+   for key_type, object_cls in api.KEY_TYPE_TO_CLS.items():
+      key_dirname = KEY_DIR_NAMES.get(key_type)
+      key_dirs[key_type] = key_dirname
+   
+   config['user_keys'] = key_dirs['user'] + '/'
+   config['volume_keys'] = key_dirs['volume'] + '/'
+   config['gateway_keys'] = key_dirs['gateway'] + '/'
+   
+   extend_paths( config, CONFIG_DIR )
+   
+   config['_in_argv'] = []
+   config['_in_config'] = []
+   
+   return 
 
    
 # -------------------
