@@ -19,7 +19,7 @@ Here are a few examples of how you can use Syndicate.  We're actively working on
 * Implementing scalable, secure VDI, using any combination of in-house and external storage and caches.
 * Implementing vendor-agnostic cloud storage gateways.
 
-Why use Syndicate of an existing cloud storage provider?
+Why use Syndicate of an existing cloud?
 --------------------------------------------------------
 
 Syndicate is **decentralized**.  You can distribute Syndicate across multiple clouds, multiple local networks, and multiple devices and servers.  Syndicate is not tied to any specific provider, and can tolerate a configurable number of server and provider failures.
@@ -66,92 +66,12 @@ $ sudo scons DESTDIR=/usr syndicate-install
 
 Alternatively, you can get nightly RPMs from our [build server](http://vcoblitz-cmi.cs.princeton.edu/syndicate-nightly/RPMS/).  They're compiled for Fedora 12, since that's what we run on [PlanetLab](http://www.planet-lab.org).
 
+Trying it out
+-------------
 
-How-To
-------
+TODO: set up an MS playground
 
-### Overview ###
+More information
+----------------
 
-Syndicate organizes your data into one or more Volumes.  A Volume is a logical collection of data organized into a filesystem.  Syndicate's components work together to implement your Volumes on top of your cloud storage and caches.
-
-There are four major components of Syndicate:  the Metadata Service ([MS](https://github.com/jcnelson/syndicate/tree/master/ms)), the User Gateway ([UG](https://github.com/jcnelson/syndicate/tree/master/UG)), the Replica Gateway ([RG](https://github.com/jcnelson/syndicate/tree/master/RG)), and the Acquisition Gateway ([AG](https://github.com/jcnelson/syndicate/tree/master/AG)).  The MS is an always-on service that Gateways use to coordinate--in many ways, it's similar to a private BitTorrent tracker.  The UGs are peers that cache and exchange Volume data and metadata on your behalf, and give you read/write interfaces to your data.  For example, there is a FUSE UG, and a Web store UG.  RGs are processes that take data from UGs and back it up to your storage, so other UGs can get to it.  AGs are processes that expose external, existing datasets as read-only directory hierarchies in your Volumes.
-
-At a minimum, you need to deploy the MS, one UG, and one RG.  That will get you Dropbox-like functionality.
-
-### Metadata Service ###
-
-Before you do anything, you (or someone you trust) will first need to get an MS up and running.  If you're going to be using an existing MS, you can skip this section.
-
-You can deploy the MS in one of two ways: as a [Google AppEngine](https://developers.google.com/appengine/) Python app, or as an [AppScale](http://www.appscale.com) Python app.  You can also run it locally (i.e. in a test environment) with the [Google AppEngine SDK](https://developers.google.com/appengine/docs/python/tools/devserver).
-
-Before you deploy your MS, you will need to set up an administrator account.  To do so, you'll need an RSA 4096-bit key.  You can generate an RSA 4096-bit key pair with these commands:
-
-```
-$ openssl genrsa -out /path/to/your/admin/key.pem 4096
-$ openssl rsa -in /path/to/your/admin/key.pem -pubout > /path/to/your/admin/public/key.pub
-```
-
-Then, you can set up the administrator account with this command:
-
-```
-$ scons MS-setup-admin email=YOUR.EMAIL@EXAMPLE.COM key=/path/to/your/admin/public/key.pub
-```
-
-You'll also need to generate an app.yaml file.  The only thing Syndicate needs from you is the MS name to use.  To generate the file, run this command:
-
-```
-$ scons MS-setup-app name=YOUR-APP-NAME
-```
-
-Now you can deploy the MS.  For example, to deploy to Google AppEngine, you simply use Google's appcfg.py script to upload the MS you just built to the AppEngine PaaS:
-
-```
-$ appcfg.py update build/out/ms
-```
-
-Once the MS is up and running, you need to set up the Syndicate management tool syntool.py, so you can go on to create users, Volumes, and Gateways.  You'll need to give it your administrator's email address and public key, as well as the URL to the MS's API (usually, this is the MS's hostname, followed by /api).  To do so, simply run:
-
-```
-$ syntool.py --user_id YOUR.EMAIL@EXAMPLE.COM --MSAPI https://YOUR.RUNNING.MS/api --privkey /path/to/your/admin/key.pem setup
-```
-
-You can remove the private key you generated after this step, since syntool.py makes a copy of it and puts it into its configuration directory (by default, this is $HOME/.syndicate/).
-
-From start to finish, here's a simple recipe that builds, sets up, and deploys the MS on Google AppEngine.
-
-```
-$ openssl genrsa -out ~/syndicate_admin.pem 4096
-$ openssl rsa -in ~/syndicate_admin.pem -pubout > ~/syndicate_admin.pub
-$ scons MS
-$ scons MS-setup-admin email=admin@syndicatedrive.com key=~/syndicate_admin.pub
-$ scons MS-setup-app name=syndicate-drive-ms
-$ appcfg.py update build/out/ms
-$ syntool.py --user_id admin@syndicatedrive.com --MSAPI https://syndicate-drive-ms.appspot.com/api --privkey ~/syndicate_admin.pem setup
-$ rm ~/syndicate_admin.pem
-```
-
-### Volumes ###
-
-Before you create your first Volume, make sure you have set up syntool.py with the Syndicate user ID you want to run as (this is the email address that identifies your user account on the MS you use).  This can be done with:
-
-```
-$ syntool.py --user_id YOUR.EMAIL@EXAMPLE.COm --MSAPI https://YOUR.RUNNING.MS/api --privkey /path/to/your/private/key.pem setup
-```
-
-Once syntool.py is set up, you can use it to create and manage your Volumes.  To create a Volume called "HelloWorld" with a block size of 60KB, simply issue the following command:
-
-```
-$ syntool.py create_volume YOUR.EMAIL@EXAMPLE.COM HelloWorld "This is my first Volume, called HelloWorld" 61440 default_gateway_caps=ALL
-```
-
-You can see a listing of what each positional and keyword argument means with:
-
-```
-$ syntool.py help create_volume
-```
-
-
-### User Gateways ###
-
-UGs do two things: act as Syndicate clients, and coordinate with one another to cache and distribute written data.  There are two UGs: a FUSE filesystem (syndicatefs), and a Web object store (syndicate-httpd).
-
+Take a look at our [wiki](https://github.com/jcnelson/syndicate/wiki) for how-tos and tutorials.
