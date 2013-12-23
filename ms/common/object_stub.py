@@ -90,13 +90,13 @@ class StubObject( object ):
    
    
    @classmethod
-   def parse_or_generate_private_key( cls, pkey_str, pkey_arg_name, key_size ):
+   def parse_or_generate_private_key( cls, pkey_str, pkey_generate_arg, key_size ):
       """
       Check a private key (pkey_str) and verify that it has the appopriate security 
-      parameters.  If pkey_str == pkey_arg_name, then generate a public/private key pair.
+      parameters.  If pkey_str == pkey_generate_arg, then generate a public/private key pair.
       Return the key pair.
       """
-      if pkey_str == pkey_arg_name:
+      if pkey_str == pkey_generate_arg:
          # generate one
          pubkey_str, pkey_str = api.generate_key_pair( key_size )
          return pubkey_str, pkey_str
@@ -121,6 +121,15 @@ class StubObject( object ):
       Interpret a bitwise OR of gateway caps as a string.
       """
       ret = 0
+      
+      aliases = {
+         "ALL": "GATEWAY_CAP_READ_DATA|GATEWAY_CAP_WRITE_DATA|GATEWAY_CAP_READ_METADATA|GATEWAY_CAP_WRITE_METADATA|GATEWAY_CAP_COORDINATE",
+         "READWRITE": "GATEWAY_CAP_READ_DATA|GATEWAY_CAP_WRITE_DATA|GATEWAY_CAP_READ_METADATA|GATEWAY_CAP_WRITE_METADATA",
+         "READONLY": "GATEWAY_CAP_READ_DATA|GATEWAY_CAP_READ_METADATA"
+      }
+      
+      if aliases.has_key( caps_str ):
+         caps_str = alises[caps_str]
       
       if isinstance( caps_str, str ):
          flags = caps_str.split("|")
@@ -174,23 +183,31 @@ class StubObject( object ):
       
       parsed = []
       
+      # fill default arguments
+      if argspec.defaults != None:
+         for i in xrange(0, len(argspec.defaults)):
+            kw[ argspec.args[ len(argspec.args) - len(argspec.defaults) + i] ] = argspec.defaults[i]
+      
       # parse args in order
-      for argname in argspec.args:
+      for i in xrange(0, len(argspec.args)):
+         argname = argspec.args[i]
          arg_func = cls.arg_parsers.get( argname, None )
          if arg_func != None:
             args, kw, extras = cls.ReplaceArg( argspec, argname, arg_func, args, kw, lib )
             extras_all.update( extras )
-            
+         
          parsed.append( argname )
       
-      # parse the rest
+      # parse the keyword arguments
       unparsed = list( set(cls.arg_parsers.keys()) - set(parsed) )
       
       for argname in unparsed:
          arg_func = cls.arg_parsers[argname]
          args, kw, extras = cls.ReplaceArg( argspec, argname, arg_func, args, kw, lib )
-      
+         extras_all.update( extras )
+         
       return args, kw, extras_all
+   
    
    @classmethod
    def ReplaceArg( cls, argspec, arg_name, arg_value_func, args, kw, lib ):
@@ -355,12 +372,12 @@ class Gateway( StubObject ):
       raise Exception("Unknown Gateway type '%s'" % type_str)
    
    @classmethod
-   def parse_gateway_public_key( cls, gateway_private_key, lib ):
+   def parse_gateway_public_key( cls, gateway_public_key, lib ):
       """
       Load or generate a gateway public key.  Preserve the private key 
       as extra data if we generate one.
       """
-      pubkey, privkey = cls.parse_or_generate_private_key( gateway_private_key, "MAKE_GATEWAY_KEY", OBJECT_KEY_SIZE )
+      pubkey, privkey = cls.parse_or_generate_private_key( gateway_public_key, "MAKE_GATEWAY_KEY", OBJECT_KEY_SIZE )
       extra = {'gateway_private_key': privkey}
       
       return pubkey, extra

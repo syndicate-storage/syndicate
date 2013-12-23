@@ -13,9 +13,8 @@ install_target = env.Command("PYTHON-INSTALL", [], "cd %s && python ./setup.py -
 
 env.AlwaysBuild(build_target)
 
-source_files = Glob("syndicate.*")
-source_files.extend( Glob("syn.*") )
-source_files.extend( Glob("syndicate/*") )
+source_files = Glob("syndicate.p*")
+source_files.extend( Glob("syndicate/*.py") )
 source_files.extend( Glob("setup.py") )
 
 Return("build_target install_target source_files")

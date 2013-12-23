@@ -454,7 +454,6 @@ def do_untrust( config, all_params ):
       raise Exception("Usage: %s untrust <%s> <name>" % (sys.argv[0], "|".join( conf.KEY_DIR_NAMES.keys() )))
    
    storage.revoke_object_public_key( config, key_type, "verifying", key_name )
-   storage.revoke_object_private_key( config, key_type, "signing", key_name )
    
    sys.exit(0)
    

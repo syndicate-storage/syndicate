@@ -61,8 +61,8 @@ def _get_volume_id( volume_name_or_id ):
    
 
 # ----------------------------------
-def create_user( email, openid_url, signing_public_key, **fields ):
-   user_key = SyndicateUser.Create( email, openid_url=openid_url, signing_public_key=signing_public_key, **fields )
+def create_user( email, openid_url, **fields ):
+   user_key = SyndicateUser.Create( email, openid_url=openid_url, **fields )
    return user_key.get()
 
 def read_user( email ):
@@ -136,7 +136,7 @@ def list_volume_user_ids( volume_name_or_id, **q_opts ):
    return ret
 
 # ----------------------------------
-def create_volume( email, name, description, blocksize, signing_public_key, **attrs ):
+def create_volume( email, name, description, blocksize, **attrs ):
    user = read_user( email )
    if user != None:
       caller_user = attrs.get("caller_user")
@@ -149,7 +149,7 @@ def create_volume( email, name, description, blocksize, signing_public_key, **at
       if len(user_volume_ids) > user.get_volume_quota():
          raise Exception("User '%s' has exceeded Volume quota" % email )
       
-      new_volume_key = Volume.Create( user, blocksize=blocksize, signing_public_key=signing_public_key, name=name, description=description, **attrs )
+      new_volume_key = Volume.Create( user, blocksize=blocksize, name=name, description=description, **attrs )
       if new_volume_key != None:
          # create succeed.  Make a root directory
          volume = new_volume_key.get()
@@ -226,7 +226,7 @@ def set_volume_public_signing_key( volume_id, new_key, **attrs ):
    
 
 # ----------------------------------
-def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, gateway_public_key, signing_public_key, **kwargs ):
+def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **kwargs ):
    user, volume = _read_user_and_volume( email, volume_id )
    
    if user == None:
@@ -267,7 +267,7 @@ def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, ga
       if len(gateway_ids) >= gateway_quota:
          raise Exception("User '%s' has too many Gateways" % (email))
    
-   gateway_key = Gateway.Create( user, volume, gateway_type=gateway_type, name=gateway_name, host=host, port=port, gateway_public_key=gateway_public_key, signing_public_key=signing_public_key, **kwargs )
+   gateway_key = Gateway.Create( user, volume, gateway_type=gateway_type, name=gateway_name, host=host, port=port, **kwargs )
    return gateway_key.get()
 
 
@@ -328,6 +328,7 @@ def count_user_gateways( email, **q_opts ):
    qry = Gateway
 
 def delete_gateway( g_id ):
+   # TODO: when deleting an AG, delete all of its files and directories as well
    return Gateway.Delete( g_id )
 
 def set_gateway_public_signing_key( g_name_or_id, new_key, **attrs ):

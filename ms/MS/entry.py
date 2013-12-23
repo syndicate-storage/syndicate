@@ -62,7 +62,7 @@ class MSEntryShard(storagetypes.Object):
    msentry_version = storagetypes.Integer(default=0, indexed=False )
 
    # volume ID of the MSEntry we're associated with
-   msentry_volume_id = storagetypes.Integer( indexed=False )
+   msentry_volume_id = storagetypes.Integer()
    
    @classmethod
    def modtime_max( cls, m1, m2 ):
@@ -149,7 +149,7 @@ class MSEntryNameHolder( storagetypes.Object ):
    """
    Exists to prove that an MSEntry record exists in a parent under a given name
    """
-   volume_id = storagetypes.Integer( default=-1, indexed=False )
+   volume_id = storagetypes.Integer( default=-1 )
    parent_id = storagetypes.String( default="None", indexed=False )
    file_id = storagetypes.String( default="None", indexed=False )
    name = storagetypes.String( default="", indexed=False )
@@ -1288,10 +1288,19 @@ class MSEntry( storagetypes.Object ):
       storagetypes.memcache.delete( cached_root_key_name )
       
       
-      def __delete_mapper( ent ):
+      def __delete_entry_mapper( ent ):
          storagetypes.deferred.defer( MSEntry.delete_all, [ent.key] )
+         
+      def __delete_shard_mapper( ent_shard ):
+         storagetypes.deferred.defer( MSEntryShard.delete_all, [ent_shard.key] )
+         
+      def __delete_nameholder_mapper( ent_nameholder ):
+         storagetypes.deferred.defer( MSEntryNameHolder.delete_all, [ent_nameholder.key] )                 
       
-      MSEntry.ListAll( {"MSEntry.volume_id ==": volume.volume_id}, map_func=__delete_mapper )
+      MSEntry.ListAll( {"MSEntry.volume_id ==": volume.volume_id}, map_func=__delete_entry_mapper )
+      MSEntryShard.ListAll( {"MSEntryShard.msentry_volume_id ==": volume.volume_id}, map_func=__delete_shard_mapper )
+      MSEntryNameHolder.ListAll( {"MSEntryNameHolder.volume_id ==": volume.volume_id}, map_func=__delete_nameholder_mapper )
+      
       return 0
       
    

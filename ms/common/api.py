@@ -16,20 +16,26 @@ import log as Log
 log = Log.get_logger()
 
 try:
+   # in the MS
    import storage.storage as storage
 except Exception, e:
+   # in syntool
    from storage_stub import StorageStub as storage
    
 try:
+   # in the MS
    from MS.volume import Volume, VolumeAccessRequest
    from MS.user import SyndicateUser
    from MS.gateway import Gateway
 except Exception, e:
+   # in syntool
    from object_stub import *
 
 try:
+   # in the MS
    from MS.auth import *
 except Exception, e:   
+   # in syntool
    from auth_stub import *
 
 # ----------------------------------
@@ -60,7 +66,7 @@ KEY_TYPE_TO_CLS = dict( [(cls.key_type, cls) for cls in [Volume, SyndicateUser, 
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="user", verify_key_id="email", trust_key_type="user", trust_key_id="email" )
 @CreateAPIGuard( SyndicateUser, admin_only=True, parse_args=SyndicateUser.ParseArgs )
-def create_user( email, openid_url, signing_public_key, **attrs ):
+def create_user( email, openid_url, signing_public_key="MAKE_SIGNING_KEY", **attrs ):
    """
    Create a user.
    
@@ -74,21 +80,6 @@ def create_user( email, openid_url, signing_public_key, **attrs ):
          The URL to the OpenID provider to use to 
          authenticate this user using password
          authentication.
-      
-      signing_public_key (str):
-         The PEM-encoded public key that the MS will
-         use to authenticate a client program that wishes
-         to access this user.  The client program must use 
-         the corresponding private key (the "signing key")
-         to sign requests to the MS, in order to prove to
-         the MS that the program is acting on behalf of the
-         owner of this user account.  Currently, this must be 
-         a 4096-bit RSA key.
-         
-         Pass MAKE_SIGNING_KEY if you want your client to 
-         generate one for you, in which case the private 
-         signing key will be stored to your user key directory
-         on successful return of this method.
          
    Optional keyword arguments:
       max_volumes=int: (default: 10)
@@ -106,6 +97,21 @@ def create_user( email, openid_url, signing_public_key, **attrs ):
       is_admin=bool: (default: False)
          Whether or not this user will be a Syndicate admin.
       
+      signing_public_key=str (default: automatically generated):
+         The PEM-encoded public key that the MS will
+         use to authenticate a client program that wishes
+         to access this user.  The client program must use 
+         the corresponding private key (the "signing key")
+         to sign requests to the MS, in order to prove to
+         the MS that the program is acting on behalf of the
+         owner of this user account.  Currently, this must be 
+         a 4096-bit RSA key.
+         
+         If you do not pass a value for this argument, a key
+         pair will be generated for you.  The public key will 
+         be passed as this argument, and the private key will 
+         be stored locally for future use.
+         
    Returns:
       A SyndicateUser object on success, or an exception
       on error.
@@ -114,7 +120,7 @@ def create_user( email, openid_url, signing_public_key, **attrs ):
       Only an administrator can create new users.
    """
    
-   return storage.create_user( email, openid_url, signing_public_key, **attrs )
+   return storage.create_user( email, openid_url, signing_public_key=signing_public_key, **attrs )
 
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="user", verify_key_id="email" )
@@ -296,7 +302,7 @@ def list_volume_user_ids( volume_name_or_id, **attrs ):
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="volume", verify_key_id="name", trust_key_type="volume", trust_key_id="name" )
 @CreateAPIGuard( Volume, pass_caller_user="caller_user", parse_args=Volume.ParseArgs )
-def create_volume( email, name, description, blocksize, signing_public_key, **attrs ):
+def create_volume( email, name, description, blocksize, signing_public_key="MAKE_SIGNING_KEY", metadata_private_key="MAKE_METADATA_KEY", **attrs ):
    """
    Create a Volume.  It will be owned by the calling user, or, if the caller is an admin, the user identified by the given email address.
    
@@ -317,21 +323,6 @@ def create_volume( email, name, description, blocksize, signing_public_key, **at
          be cached as an HTTP object in the underlying Web 
          caches, so it is probably best to pick block sizes between 
          4KB and 1MB or so.
-      
-      signing_public_key (str)
-         The PEM-encoded public key that the MS will
-         use to authenticate a client program that wishes
-         to read this volume.  The client program must use 
-         the corresponding private key (the "signing key")
-         to sign requests to the MS, in order to prove to
-         the MS that the program is acting on behalf of the
-         owner of this volume.  Currently, this must be 
-         a 4096-bit RSA key.
-         
-         Pass MAKE_SIGNING_KEY if you want your client to 
-         generate one for you, in which case the private 
-         signing key will be stored to your user key directory
-         on successful return of this method.
          
    Optional keyword arguments:
       private=bool (default: True)
@@ -339,12 +330,16 @@ def create_volume( email, name, description, blocksize, signing_public_key, **at
          will not be able to request access to it.  This value
          is True by default.
          
-      metadata_private_key=str (default: None)
+      metadata_private_key=str (default: automatically generated)
          The PEM-encoded private key the Volume will use to sign 
          metadata served to User Gateways.  It must be a 4096-bit
          RSA key.  It will be automatically generated by the MS
-         if not given.  If you want your client to generate the 
-         private key, pass MAKE_METADATA_KEY.
+         if not given.
+         
+         If you do not pass a value for this argument, a key
+         pair will be generated for you.  The private key will 
+         be passed as this argument, and the public key will 
+         be stored locally for future use.
       
       archive=bool (default: False)
          If True, only an Acquisition Gateway owned by the given 
@@ -355,6 +350,21 @@ def create_volume( email, name, description, blocksize, signing_public_key, **at
          If True, this Volume will be accessible by gateways immediately.
          If False, it will not be.
       
+      signing_public_key=str (default: automatically generated):
+         The PEM-encoded public key that the MS will
+         use to authenticate a client program that wishes
+         to access this user.  The client program must use 
+         the corresponding private key (the "signing key")
+         to sign requests to the MS, in order to prove to
+         the MS that the program is acting on behalf of the
+         owner of this user account.  Currently, this must be 
+         a 4096-bit RSA key.
+         
+         If you do not pass a value for this argument, a key
+         pair will be generated for you.  The public key will 
+         be passed as this argument, and the private key will 
+         be stored locally for future use.
+         
       default_gateway_caps=int
          Default capability bits for User Gateways when they are 
          added to this Volume.  By default, User Gateways are 
@@ -370,6 +380,13 @@ def create_volume( email, name, description, blocksize, signing_public_key, **at
          You can pass capability bits by name and bitwise OR them
          together (e.g. "GATEWAY_CAP_COORDINATE | GATEWAY_CAP_WRITE_DATA").
          
+         You can also pass one of these aliases to common sets of
+         capability bits.  These are:
+         
+         ALL            Set all capabilities
+         READWRITE      Set all but GATEWAY_CAP_COORDINATE
+         READONLY       GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA
+         
    Returns:
       On success, this method returns a Volume.  On failure, it
       raises an exception.
@@ -378,7 +395,7 @@ def create_volume( email, name, description, blocksize, signing_public_key, **at
       An administrator can create an unlimited number of volumes.
       A user can only create as many as allowed by its max_volumes value.
    """
-   return storage.create_volume( email, name, description, blocksize, signing_public_key, **attrs )
+   return storage.create_volume( email, name, description, blocksize, signing_public_key=signing_public_key, metadata_private_key=metadata_private_key, **attrs )
 
 
 @Authenticate( object_authenticator=Volume.Authenticate, object_response_signer=Volume.Sign,
@@ -453,7 +470,7 @@ def list_user_access_requests( email ):
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="gateway", verify_key_id="name", trust_key_type="gateway", trust_key_id="gateway_name" )
 @CreateAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
-def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, gateway_public_key, signing_public_key, **attrs ):
+def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, signing_public_key="MAKE_SIGNING_KEY", gateway_public_key="MAKE_GATEWAY_KEY", **attrs ):
    """
    Create a Gateway.  It will be owned by the calling user, or, if the caller user is an admin, a user identified by the given email address.
    
@@ -480,30 +497,6 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
       port (int):
          The port number this Gateway should listen on.
       
-      gateway_public_key (str):
-         This Gateway's PEM-encoded public key.  The MS will
-         distribute this public key to all other Gateways in
-         the Volume, so they can use to authenticate messages sent 
-         from this particular Gateway.  You will need to give
-         the Gateway the corresponding private key at runtime.
-         
-         If you want to generate and store one automatically,
-         pass MAKE_GATEWAY_KEY.
-      
-      signing_public_key (str):
-         The PEM-encoded public key that the MS will
-         use to authenticate a client program that wishes
-         to read this volume.  The client program must use 
-         the corresponding private key (the "signing key")
-         to sign requests to the MS, in order to prove to
-         the MS that the program is acting on behalf of the
-         owner of this volume.  Currently, this must be 
-         a 4096-bit RSA key.
-         
-         Pass MAKE_SIGNING_KEY if you want your client to 
-         generate one for you, in which case the private 
-         signing key will be stored to your user key directory
-         on successful return of this method.
 
    Optional keyword arguments:
       closure (str):
@@ -515,6 +508,33 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
          a Python module, pass the path to the directory containing 
          the files.
 
+      signing_public_key=str (default: automatically generated):
+         The PEM-encoded public key that the MS will
+         use to authenticate a client program that wishes
+         to access this user.  The client program must use 
+         the corresponding private key (the "signing key")
+         to sign requests to the MS, in order to prove to
+         the MS that the program is acting on behalf of the
+         owner of this user account.  Currently, this must be 
+         a 4096-bit RSA key.
+         
+         If you do not pass a value for this argument, a key
+         pair will be generated for you.  The public key will 
+         be passed as this argument, and the private key will 
+         be stored locally for future use.
+         
+      gateway_public_key=str (default: automatically generated):
+         This Gateway's PEM-encoded public key.  The MS will
+         distribute this public key to all other Gateways in
+         the Volume, so they can use to authenticate messages sent 
+         from this particular Gateway.  You will need to give
+         the Gateway the corresponding private key at runtime.
+         
+         If you do not pass a value for this argument, a key
+         pair will be generated for you.  The public key will 
+         be passed as this argument, and the private key will 
+         be stored locally for future use.
+         
    Returns:
       On success, this method returns a Gateway.  On failure, it 
       raises an exception.
@@ -527,7 +547,7 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
       A user may be subject to a quota enforced for each type of Gateway.
    """
    
-   return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, gateway_public_key, signing_public_key, **attrs )
+   return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, signing_public_key=signing_public_key, gateway_public_key=gateway_public_key, **attrs )
 
 @Authenticate( object_authenticator=Gateway.Authenticate, object_response_signer=Gateway.Sign,
                signing_key_types=["user", "gateway"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID, "g_name_or_id"],
