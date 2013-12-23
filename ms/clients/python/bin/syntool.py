@@ -645,7 +645,13 @@ def main( argv ):
    if revoke_key_type != None and revoke_key_name != None:
       storage.revoke_object_public_key( CONFIG, revoke_key_type, "verifying", revoke_key_name )
       storage.revoke_object_private_key( CONFIG, revoke_key_type, "signing", revoke_key_name )
-   
+      
+      # revoke any other keys as well
+      for internal_key_type in api.KEY_TYPE_TO_CLS[revoke_key_type].internal_keys:
+         if internal_key_type not in ["verifying", "signing"]:
+            storage.revoke_object_public_key( CONFIG, revoke_key_type, internal_key_type, revoke_key_name )
+            storage.revoke_object_private_key( CONFIG, revoke_key_type, internal_key_type, revoke_key_name )
+      
    
    result_verify_key = None
    

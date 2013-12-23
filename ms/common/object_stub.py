@@ -129,7 +129,7 @@ class StubObject( object ):
       }
       
       if aliases.has_key( caps_str ):
-         caps_str = alises[caps_str]
+         caps_str = aliases[caps_str]
       
       if isinstance( caps_str, str ):
          flags = caps_str.split("|")

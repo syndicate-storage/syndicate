@@ -8,7 +8,7 @@
 
 import os
 import json
-
+import errno
 import sys
 import tempfile
 import base64
@@ -179,9 +179,15 @@ def store_object_key( config, key_type, internal_type, object_id, key_data, publ
       log.error("Invalid key data")
       raise e 
    
+   keytype_str = None
+   if public:
+      keytype_str = "public"
+   else:
+      keytype_str = "private"
+      
    # store
    key_path = conf.object_key_path( config, key_type, internal_type, object_id, public=public )
-   log.info("Store %s key for %s at %s" % (internal_type, object_id, key_path))
+   log.info("Store %s %s key for %s at %s" % (internal_type, keytype_str, object_id, key_path))
    write_key( key_path, key_data )
    
    return 
@@ -196,11 +202,17 @@ def store_object_private_key( config, key_type, internal_type, object_id, key_da
 # -------------------   
 def revoke_object_key( config, key_type, internal_type, object_id, public=False ):
    key_path = conf.object_key_path( config, key_type, internal_type, object_id, public=public )
-   os.unlink( key_path )
+   try:
+      os.unlink( key_path )
+   except OSError, oe:
+      if oe.errno != errno.ENOENT:
+         raise oe
    
 # -------------------   
 def revoke_object_public_key( config, key_type, internal_type, object_id ):
+   log.info("Revoke %s public key for %s" % (internal_type, object_id ))
    return revoke_object_key( config, key_type, internal_type, object_id, public=True )
 
 def revoke_object_private_key( config, key_type, internal_type, object_id ):
+   log.info("Revoke %s private key for %s" % (internal_type, object_id ))
    return revoke_object_key( config, key_type, internal_type, object_id, public=False )
