@@ -654,6 +654,10 @@ def list_volume_access_requests( volume_name_or_id, **attrs ):
 def list_user_access_requests( email ):
    return storage.list_user_access_requests( email )
 
+@Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID])
+@BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", parse_args=VolumeAccessRequest.ParseArgs )
+def set_volume_access( email, volume_name_or_id, caps ):
+   return storage.set_volume_access( email, volume_name_or_id, caps )
 
 # ----------------------------------
 # The Gateway API
