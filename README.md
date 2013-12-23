@@ -19,7 +19,7 @@ Here are a few examples of how you can use Syndicate.  We're actively working on
 * Implementing scalable, secure VDI, using any combination of in-house and external storage and caches.
 * Implementing vendor-agnostic cloud storage gateways.
 
-Why use Syndicate of an existing cloud storage provider?
+Why use Syndicate of an existing cloud?
 --------------------------------------------------------
 
 Syndicate is **decentralized**.  You can distribute Syndicate across multiple clouds, multiple local networks, and multiple devices and servers.  Syndicate is not tied to any specific provider, and can tolerate a configurable number of server and provider failures.
@@ -66,43 +66,12 @@ $ sudo scons DESTDIR=/usr syndicate-install
 
 Alternatively, you can get nightly RPMs from our [build server](http://vcoblitz-cmi.cs.princeton.edu/syndicate-nightly/RPMS/).  They're compiled for Fedora 12, since that's what we run on [PlanetLab](http://www.planet-lab.org).
 
-Deploying Syndicate
--------------------
+Trying it out
+-------------
 
-Before you do anything, you (or someone you trust) will first need to get a Syndicate Metadata Service ([MS](https://github.com/jcnelson/syndicate/tree/master/ms)) up and running.  If you're going to be using an existing MS, you can skip this section.
+TODO: set up an MS playground
 
-The MS acts as an always-on coordination service for Syndicate's wide-area peers.  You can install it into [Google AppEngine](https://developers.google.com/appengine/) as a Python app; you can install it into an [AppScale](http://www.appscale.com) instance on your servers; or you can run it locally with the [Google AppEngine SDK](https://developers.google.com/appengine/docs/python/tools/devserver).
+More information
+----------------
 
-Before you deploy your MS, you will need to set up your administrator account.  To do so, you'll need an RSA 4096-bit key.  You can generate an RSA 4096-bit key pair with these commands:
-
-```
-$ openssl genrsa -out /path/to/your/admin/key.pem 4096
-$ openssl rsa -in /path/to/your/admin/key.pem -pubout > /path/to/your/admin/public/key.pub
-```
-
-Then, you can set up the administrator account with this command:
-
-```
-$ scons MS-setup-admin email=your.email@example.com key=/path/to/your/admin/public/key.pub
-```
-
-Before you deploy the MS, you'll need to generate an app.yaml file.  The only thing Syndicate needs from you is the application name to use.  To generate the file, run this command:
-
-```
-$ scons MS-setup-app name=YOUR-APP-NAME
-```
-
-Now you can deploy the MS.  For example, to deploy to Google AppEngine, you can run the appcfg.py script from the source root directory:
-
-```
-$ appcfg.py update build/out/ms
-```
-
-From start to finish, here's an example that builds, sets up, and deploys the MS used for PlanetLab's Syndicate instance:
-
-```
-$ scons MS
-$ scons MS-setup-admin email=jcnelson@cs.princeton.edu key=/home/jcnelson/.syndicate/user_keys/verifying/jcnelson@cs.princeton.edu.pub
-$ scons MS-setup-app name=syndicate-metadata
-$ appcfg.py update build/out/ms
-```
+Take a look at our [wiki](https://github.com/jcnelson/syndicate/wiki) for how-tos and tutorials.
