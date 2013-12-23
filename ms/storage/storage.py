@@ -193,7 +193,7 @@ def list_public_volumes( **q_opts ):
 
 
 def list_archive_volumes( **q_opts ):
-   return list_volumes( {"Volume.archive ==": True}, **q_opts )
+   return list_volumes( {"Volume.archive ==": True, "Volume.private ==": False}, **q_opts )
 
 
 def list_accessible_volumes( email, **q_opts ):
@@ -201,6 +201,11 @@ def list_accessible_volumes( email, **q_opts ):
    if user == None:
       raise Exception("No such user '%s'" % email)
    
+   if 'caller_user' in q_opts.keys():
+      caller_user = q_opts['caller_user']
+      if user.owner_id != caller_user.owner_id and not caller_user.is_admin:
+         raise Exception("User '%s' is not sufficiently privileged" % caller_user.email)
+      
    def __volume_from_access_request( var ):
       return Volume.Read( var.volume_id, async=True )
    
@@ -219,8 +224,8 @@ def set_volume_public_signing_key( volume_id, new_key, **attrs ):
       if volume == None or volume.deleted:
          raise Exception("Volume '%s' does not exist" % volume_id )
       
-      if volume.owner_id != caller_user.owner_id:
-         raise Exception("Caller user does not own Volume '%s'" % volume_id )
+      if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
+         raise Exception("Caller does not own Volume '%s'" % volume_id )
 
    return Volume.SetPublicSigningKey( volume_id, new_key )
    
@@ -305,7 +310,16 @@ def list_gateways( attrs=None, **q_opts):
 
 
 def list_gateways_by_volume( volume_name_or_id, **q_opts ):
-   volume_id = _get_volume_id( volume_name_or_id )
+   volume = storage.read_volume( volume_name_or_id )
+   
+   if volume == None or volume.deleted:
+      raise Exception("No such Volume '%s'" % volume_name_or_id )
+   
+   caller_user = q_opts.get("caller_user", None)
+   if caller_user:
+      if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
+         raise Exception("User '%s' is not sufficiently privileged" % caller_user.email)
+      
    return Gateway.ListAll( {"Gateway.volume_id ==" : volume_id}, **q_opts )
 
 
@@ -318,6 +332,11 @@ def list_gateways_by_user( email, **q_opts ):
    if user == None:
       raise Exception("No such user '%s'" % email )
    
+   caller_user = q_opts.get("caller_user", None)
+   if caller_user:
+      if caller_user.owner_id != user.owner_id and not caller_user.is_admin:
+         raise Exception("User '%s' is not sufficiently privileged" % caller_user.email )
+      
    return Gateway.ListAll( {"Gateway.owner_id ==": user.owner_id}, **q_opts )
    
 def count_user_gateways( email, **q_opts ):
@@ -331,8 +350,8 @@ def delete_gateway( g_id ):
    # TODO: when deleting an AG, delete all of its files and directories as well
    return Gateway.Delete( g_id )
 
-def set_gateway_public_signing_key( g_name_or_id, new_key, **attrs ):
-   caller_user = attrs.get("caller_user")
+def set_gateway_public_signing_key( g_name_or_id, new_key, **caller_user_dict ):
+   caller_user = caller_user_dict.get("caller_user")
    if caller_user != None:
       # verify that this user owns this gateway
       gateway = storage.read_gateway( g_name_or_id )

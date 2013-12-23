@@ -157,13 +157,13 @@ class Gateway( storagetypes.Object ):
    
    
    write_attrs = [
-      "owner_id",
       "host",
       "port",
       "closure",
       "cert_expires",
       "session_expires",
-      "session_timeout"
+      "session_timeout",
+      "gateway_public_key"
    ]
    
    write_attrs_api_required = write_attrs
