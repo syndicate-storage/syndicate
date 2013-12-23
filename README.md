@@ -1,26 +1,33 @@
 Syndicate
 =========
 
-Syndicate is an open-source cloud storage IP core, which implements a virtual private cloud storage system that scales.  You pick any combination of local storage, cloud storage, and edge caches (CDNs, HTTP object caches, caching proxies), and use Syndicate to turn them into an always-on, scalable read/write storage system tailored to your application's needs.
+Syndicate is an open source virtual cloud storage system.  You pick any combination of unmodified local storage, cloud storage, and Web caches (CDNs, HTTP object caches, caching proxies), and use Syndicate to combine them into an always-on, scalable read/write cloud storage medium you can mount as a local filesystem.
 
-Syndicate offers filesystem-like semantics and consistency.  You choose how fresh file and directory data will be when you read or write it, and Syndicate takes care of the rest.  Tighter freshness will mean higher latency but stronger consistency, while looser freshness lead to lower latency but weaker consistency.  All the while, the transfer bandwidth is the same as what you would get from underlying storage and caches.  Syndicate **does NOT** rely on HTTP cache control directives--it enforces consistency itself, meaning you can use unmodified, already-deployed caches to help your application scale.
+Overview
+--------
 
-Syndicate is easily extensible and programmable.  You can have Syndicate use your favorate storage systems as back-ends and define storage-level data management policies with only a few lines of Python.  Syndicate comes with support for local disk, Amazon S3, Dropbox, Box.net, Google Cloud Storage, and Amazon Glacier.
+Today, when people think of cloud storage, they think of cloud storage providers like Google, Amazon, or Dropbox.  These providers will sell you storage space, but they force you to access it with their APIs, locking you into their platforms.  Worse, they can change these APIs on a whim (breaking your applications), change their prices, read your data, or go bankrupt, taking your data with them.
+
+In a similar vein, [content delivery network](https://en.wikipedia.org/wiki/Content_delivery_network) providers such as [Akamai](http://www.akamai.com) and [CloudFlare](https://www.cloudflare.com/) will sell you edge caching capacity, allowing your applications to serve lots of data to lots users at once.  However, a well-known limitation of Web caches (including CDNs) is that they can serve your clients stale data.  Worse, Web cache operators ultimately decide what constitutes "stale" data, regardless of your [HTTP cache-control directives](https://en.wikipedia.org/wiki/Cache-Control#Controlling_Web_caches).
+
+Syndicate solves both problems by implementing a layer of abstraction around both cloud storage and Web cache providers.  Syndicate organizes your data into one or more filesystem-like hierarchies called *Volumes*, and lets you control how fresh file and directory data must be **independent of cache controls**.  By enforcing consistency itself, Syndicate lets you use unmodified, already-deployed clouds and caches to help your applications scale.
+
+Syndicate is easily extensible and programmable.  You can make Syndicate use your favorate storage systems for hosting data, and define storage-level data management policies with only a few lines of Python code.  Syndicate comes with support for local disk, [Amazon S3](https://aws.amazon.com/s3/), [Dropbox](http://www.dropbox.com), [Box.net](http://www.box.net), [Google Cloud Storage](https://cloud.google.com/products/cloud-storage/), and [Amazon Glacier](https://aws.amazon.com/glacier/).
 
 What can I use Syndicate for?
 -----------------------------
 
-Here are a few examples of how you can use Syndicate.  We're actively working on these applications as separate projects, while using Syndicate as the common storage layer.
+Here are a few examples of how we are currently using Syndicate:
 
-* Creating a [DropBox](http://www.dropbox.com)-like storage system that gives you transparent end-to-end encryption on top of your existing Dropbox account.
-* Augmenting [Hadoop](http://hadoop.apache.com) with CDNs, so computing clusters across the world can automatically access and locally cache scientific data without having to manually download and install a local copy, and without having to worry about receiving stale data.  See the [HSynth](https://github.com/iychoi/hsynth) project for details.
+* Creating a [DropBox](http://www.dropbox.com)-like storage system for [PlanetLab](http://www.planet-lab.org) that augments a PlanetLab VM with a private CDN, allowing you to push out large amounts of data to the wide-area without exceeding bandwidth caps.
+* Augmenting [Hadoop](http://hadoop.apache.com) with CDNs, so computing clusters across the world can automatically access and locally cache scientific data without having to manually download and install local copies, and without having to worry about receiving stale data.  See the [HSynth](https://github.com/iychoi/hsynth) project for details.
 * Adding HIPPA compliance on top of Amazon S3.
-* Creating in-browser webmail with transparent end-to-end encryption, transparent key management, and transparent backwards compatibility with email (using Google Native Client to run the Syndicate client).
-* Implementing scalable, secure VDI, using any combination of in-house and external storage and caches.
-* Implementing vendor-agnostic cloud storage gateways.
+* Creating in-browser webmail with transparent end-to-end encryption, automatic key management, and backwards compatibility with email.  Email data gets stored encrypted to cloud storage of your choice, so webmail providers like [Gmail](https://mail.google.com) can't snoop.
+* Implementing scalable secure VDI, using both in-house and external storage and caches.
+* Implementing vendor-agnostic [cloud storage gateways](https://en.wikipedia.org/wiki/Cloud_storage_gateway) on top of commodity hardware.
 
-Why use Syndicate of an existing cloud?
---------------------------------------------------------
+Why use Syndicate over an existing cloud?
+-----------------------------------------
 
 Syndicate is **decentralized**.  You can distribute Syndicate across multiple clouds, multiple local networks, and multiple devices and servers.  Syndicate is not tied to any specific provider, and can tolerate a configurable number of server and provider failures.
 
@@ -66,12 +73,7 @@ $ sudo scons DESTDIR=/usr syndicate-install
 
 Alternatively, you can get nightly RPMs from our [build server](http://vcoblitz-cmi.cs.princeton.edu/syndicate-nightly/RPMS/).  They're compiled for Fedora 12, since that's what we run on [PlanetLab](http://www.planet-lab.org).
 
-Trying it out
+Setting it up
 -------------
 
-TODO: set up an MS playground
-
-More information
-----------------
-
-Take a look at our [wiki](https://github.com/jcnelson/syndicate/wiki) for how-tos and tutorials.
+Take a look at our [wiki](https://github.com/jcnelson/syndicate/wiki#getting-started) for how-tos and tutorials to get your personal Syndicate instance set up.
