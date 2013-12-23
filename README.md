@@ -21,7 +21,7 @@ Here are a few examples of how we are currently using Syndicate:
 
 * Creating a [DropBox](http://www.dropbox.com)-like storage system for [PlanetLab](http://www.planet-lab.org) that augments a PlanetLab VM with a private CDN, allowing you to push out large amounts of data to the wide-area without exceeding bandwidth caps.
 * Augmenting [Hadoop](http://hadoop.apache.com) with CDNs, so computing clusters across the world can automatically access and locally cache scientific data without having to manually download and install local copies, and without having to worry about receiving stale data.  See the [HSynth](https://github.com/iychoi/hsynth) project for details.
-* Adding HIPPA compliance on top of Amazon S3.
+* Adding [HIPPA](https://en.wikipedia.org/wiki/HIPAA) compliance on top of Amazon S3.
 * Creating a decentralized video streaming service.
 * Creating in-browser webmail with transparent end-to-end encryption, automatic key management, and backwards compatibility with email.  Email data gets stored encrypted to cloud storage of your choice, so webmail providers like [Gmail](https://mail.google.com) can't snoop.
 * Implementing scalable secure VDI, using both in-house and external storage and caches.
