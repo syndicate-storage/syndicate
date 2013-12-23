@@ -64,7 +64,7 @@ By default, everything will be installed to /usr/local.  You can override this b
 $ sudo scons DESTDIR=/usr syndicate-install
 ```
 
-Alternatively, you can get nightly RPMs from our (build server)[http://vcoblitz-cmi.cs.princeton.edu/syndicate-nightly/RPMS/].  They're compiled for Fedora 12, since that's what we run on [PlanetLab](http://www.planet-lab.org).
+Alternatively, you can get nightly RPMs from our [build server](http://vcoblitz-cmi.cs.princeton.edu/syndicate-nightly/RPMS/).  They're compiled for Fedora 12, since that's what we run on [PlanetLab](http://www.planet-lab.org).
 
 Deploying Syndicate
 -------------------
