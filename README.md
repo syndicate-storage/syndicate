@@ -77,7 +77,7 @@ Before you deploy your MS, you will need to set up your administrator account.  
 
 ```
 $ openssl genrsa -out /path/to/your/admin/key.pem 4096
-$ openssl rsa -in /path/to/your/admin/key.pem pubout > /path/to/your/admin/public/key.pub
+$ openssl rsa -in /path/to/your/admin/key.pem -pubout > /path/to/your/admin/public/key.pub
 ```
 
 Then, you can set up the administrator account with this command:
@@ -95,5 +95,14 @@ $ scons MS-setup-app name=YOUR-APP-NAME
 Now you can deploy the MS.  For example, to deploy to Google AppEngine, you can run the appcfg.py script from the source root directory:
 
 ```
+$ appcfg.py update build/out/ms
+```
+
+From start to finish, here's an example that builds, sets up, and deploys the MS used for PlanetLab's Syndicate instance:
+
+```
+$ scons MS
+$ scons MS-setup-admin email=jcnelson@cs.princeton.edu key=/home/jcnelson/.syndicate/user_keys/verifying/jcnelson@cs.princeton.edu.pub
+$ scons MS-setup-app name=syndicate-metadata
 $ appcfg.py update build/out/ms
 ```
