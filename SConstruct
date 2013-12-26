@@ -175,21 +175,24 @@ env.Alias( 'AG', [libAGcommon, libAGdiskdriver, libAGSQLdriver, libAGshelldriver
 
 # ----------------------------------------
 # MS build
-ms_server_out = "build/out/ms"
-ms_server = SConscript( "ms/SConscript.server", variant_dir=ms_server_out )
-env.Depends( ms_server, protobuf_py_files )  # ms requires Python protobufs to be built first
+# Only parse the SConscript if we need to, since it performs argument validation.
 
-env.Alias( "MS-server", ms_server )
+if "MS" in COMMAND_LINE_TARGETS:
+   ms_server_out = "build/out/ms"
+   ms_server = SConscript( "ms/SConscript.server", variant_dir=ms_server_out )
+   env.Depends( ms_server, protobuf_py_files )  # ms requires Python protobufs to be built first
 
-# MS clients build
-ms_clients_bin_out = "build/out/bin/ms"
-ms_client_bin = SConscript( "ms/SConscript.client", variant_dir=ms_clients_bin_out )
+   env.Alias( "MS-server", ms_server )
 
-env.Alias( "MS-clients", [ms_client_bin] )
+   # MS clients build
+   ms_clients_bin_out = "build/out/bin/ms"
+   ms_client_bin = SConscript( "ms/SConscript.client", variant_dir=ms_clients_bin_out )
 
-# main targets....
-env.Alias( "MS", [ms_server, ms_client_bin] )
-env.Alias( "ms", [ms_server, ms_client_bin] )
+   env.Alias( "MS-clients", [ms_client_bin] )
+
+   # main targets....
+   env.Alias( "MS", [ms_server, ms_client_bin] )
+   env.Alias( "ms", [ms_server, ms_client_bin] )
 
 # ----------------------------------------
 # RG build
