@@ -4566,7 +4566,7 @@ int md_encrypt( EVP_PKEY* pubkey, char const* in_data, size_t in_data_len, char*
    memcpy( output_data + output_begin, &ek_len_n, sizeof(ek_len_n) );
    output_begin += sizeof(ek_len_n);
    
-   // key 
+   // encrypted key 
    memcpy( output_data + output_begin, ek, ek_len );
    output_begin += ek_len;
    

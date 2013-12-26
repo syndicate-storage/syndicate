@@ -26,15 +26,19 @@ CPPFLAGS = "-g -Wall -D__STDC_FORMAT_MACROS -D_FORTIFY_SOURCE"
 
 # parse options
 devel = False
+extra_args = {}
 for key, value in ARGLIST:
    if key == "DESTDIR":
       install_prefix = value
-   if key == "CPPFLAGS":
+   elif key == "CPPFLAGS":
       CPPFLAGS = value
-   if key == "devel":
+   elif key == "devel":
       if value == "true":
          CPPFLAGS += " -D_DEVELOPMENT"
          devel = True
+   else:
+      extra_args[key] = value
+   
 
 # install directories
 bin_install_dir = os.path.join( install_prefix, "bin" )
@@ -54,6 +58,7 @@ env = Environment(
 common.setup_env( env )
 
 Export("env")
+Export("extra_args")
 
 # ----------------------------------------
 # protobuf build
@@ -188,19 +193,22 @@ syndicate_python_out = "build/out/python"
 python_target, python_install, python_files = SConscript("python/SConscript", variant_dir=syndicate_python_out)
 env.Depends(python_target, [python_files, protobuf_py_files, libsyndicate])
 
-env.Alias("python", python_target)
-env.Alias("python-install", python_install)
+env.Alias("syndicate-python", python_target)
+env.Alias("syndicate-python-install", python_install)
 
 # ----------------------------------------
 # Top-level build
 
-env.Alias("syndicate", ["MS", "RG", "AG", "UG"])
+env.Alias("syndicate", ["RG", "AG", "UG"])
 env.Alias("syndicate-install", ["RG-install", "AG-install", "UG-install"])
 
 
 # ----------------------------------------
 # MS deployment
 
+#ms_admin_info, ms_app_name = SConscript("ms/SConscript.templates", variant_dir=ms_server_out )
+
+#env.Alias("MS-setup", [ms_admin_info, ms_app_name])
 
 
 # ----------------------------------------

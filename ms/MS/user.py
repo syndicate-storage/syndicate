@@ -126,7 +126,8 @@ class SyndicateUser( storagetypes.Object ):
       "max_UGs": (lambda cls, attrs: 10),
       "max_RGs": (lambda cls, attrs: 10),
       "max_AGs": (lambda cls, attrs: 10),
-      "is_admin": (lambda cls, attrs: False)
+      "is_admin": (lambda cls, attrs: False),
+      "openid_url": (lambda cls, attrs: "")
    }
 
    validators = {

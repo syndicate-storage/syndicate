@@ -13,6 +13,7 @@ import sys
 import tempfile
 import base64
 import stat
+import random
 
 import syndicate.client.conf as conf 
 import syndicate.client.common.jsonrpc as jsonrpc
@@ -202,7 +203,21 @@ def store_object_private_key( config, key_type, internal_type, object_id, key_da
 # -------------------   
 def revoke_object_key( config, key_type, internal_type, object_id, public=False ):
    key_path = conf.object_key_path( config, key_type, internal_type, object_id, public=public )
+   
+   # *erase* this key
    try:
+      size = os.stat(key_path).st_size
+      fd = open(key_path, "w")
+      
+      for i in xrange(0,10):
+         fd.seek(0)
+         
+         # overwrite with junk
+         buf = ''.join(chr(random.randint(0,255)) for i in xrange(0,size))
+         fd.write( buf )
+         fd.flush()
+
+      # now safe to unlink
       os.unlink( key_path )
    except OSError, oe:
       if oe.errno != errno.ENOENT:
