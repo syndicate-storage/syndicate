@@ -55,8 +55,8 @@ $ sudo scons libsyndicate-install
 To build and install the Syndicate Python library, issue the following commands:
 
 ```
-$ scons python
-$ sudo scons python-install
+$ scons syndicate-python
+$ sudo scons syndicate-python-install
 ```
 
 Finally, to build and install the various Syndicate components, issue the following commands:
