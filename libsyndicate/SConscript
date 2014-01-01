@@ -17,6 +17,7 @@ BASE_FILES = """
    libsyndicate.cpp
    ms-client.cpp
    util.cpp
+   storage.cpp
 """
 
 HTTPD_FILES = """

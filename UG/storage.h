@@ -20,7 +20,7 @@
 
 #include "fs_entry.h"
 #include "url.h"
-#include "libsyndicate/system.h"
+#include "libsyndicate/storage.h"
 
 #define SYNDICATE_COLLATE_TMPPATH "/tmp/syndicate-collate-XXXXXX"
 

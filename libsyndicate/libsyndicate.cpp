@@ -15,7 +15,7 @@
 */
 
 #include "libsyndicate/libsyndicate.h"
-#include "libsyndicate/system.h"
+#include "libsyndicate/storage.h"
 #include "libsyndicate/ms-client.h"
 
 static struct md_syndicate_conf SYNDICATE_CONF;

@@ -14,20 +14,16 @@
    limitations under the License.
 */
 
-// system methods
-
-#ifndef _LIBSYNDICATE_SYSTEM_H_
-#define _LIBSYNDICATE_SYSTEM_H_
+#ifndef _LIBSYNDICATE_STORAGE_H_
+#define _LIBSYNDICATE_STORAGE_H_
 
 #include "libsyndicate/libsyndicate.h"
 #include "util.h"
 
-extern "C" {
-   
-// daemon
-int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile );
-int md_release_privileges();
-
-}
+// directory manipulation
+int md_mkdirs( char const* dirp );
+int md_mkdirs2( char const* dirp, int start, mode_t mode );
+int md_mkdirs3( char const* dirp, mode_t mode );
+int md_rmdirs( char const* dirp );
 
 #endif

@@ -21,6 +21,7 @@
 #include "libsyndicate/httpd.h"
 #include "libsyndicate/ms-client.h"
 #include "libsyndicate/system.h"
+#include "libsyndicate/storage.h"
 
 #include <getopt.h>
 #include <ftw.h>

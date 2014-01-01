@@ -25,22 +25,14 @@ common_source_files = """
    replication.cpp
    stats.cpp
    syndicate.cpp
+   storage.cpp
+   network.cpp
 """
 
 # HTTP backend
 server_source_files = """
    http-common.cpp
    server.cpp
-"""
-
-# storage backend
-storage_source_files = """
-   storage.cpp
-""" 
-
-# network backend
-network_source_files = """
-   network.cpp
 """
 
 # FUSE-specific files
@@ -63,7 +55,7 @@ CPPPATH = """
    fs/
    #
    #build/out/protobufs/
-   /usr/local/include/syndicate
+   /usr/local/include/libsyndicate
 """
 
 # library search paths
@@ -128,10 +120,8 @@ Export("fs_objs_nacl")
 
 common = [syndicate_common_objs, fs_objs]
 server = create_objs( Split(server_source_files) )
-storage = create_objs( Split(storage_source_files) )
-network = create_objs( Split(network_source_files) )
 
-common_full = common + server + storage + network
+common_full = common + server
 
 syndicatefs = env.Program("syndicatefs", common_full + create_objs( Split(syndicatefs_source) ), LIBS=Split(LIBS_COMMON + LIBS_FS) )
 syndicate_httpd = env.Program("syndicate-httpd", common_full + create_objs( Split(syndicate_httpd_source) ), LIBS=Split(LIBS_COMMON + LIBS_HTTPD) )
