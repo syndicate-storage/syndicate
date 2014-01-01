@@ -20,6 +20,7 @@
 
 #include "fs_entry.h"
 #include "url.h"
+#include "libsyndicate/system.h"
 
 #define SYNDICATE_COLLATE_TMPPATH "/tmp/syndicate-collate-XXXXXX"
 
@@ -46,7 +47,5 @@ int fs_entry_move_local_file( char* path, char* new_path );
 int fs_entry_clear_local_file( struct fs_core* core, uint64_t file_id, int64_t version );
 int fs_entry_remove_local_file( struct fs_core* core, uint64_t file_id, int64_t version );
 int fs_entry_reversion_local_file( struct fs_core* core, struct fs_entry* fent, uint64_t new_version );
-
-// log writes
 
 #endif

@@ -985,7 +985,6 @@ static int fs_entry_reload_remote_path_entries( struct fs_entry_consistency_cls*
    return rc;
 }
 
-
 int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const* _path ) {
    // must be absolute
    if( _path[0] != '/' )
@@ -993,7 +992,8 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
    
    // normalize the path first
    int rc = 0;
-   char* path = md_normalize_url( _path, &rc );
+   //char* path = md_normalize_url( _path, &rc );
+   char* path = md_flatten_path( _path );
 
    if( rc != 0 ) {
       errorf("Invalid path '%s'\n", _path );

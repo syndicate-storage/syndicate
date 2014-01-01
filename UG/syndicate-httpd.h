@@ -18,10 +18,11 @@
 #ifndef _SYNDICATE_HTTPD_
 #define _SYNDICATE_HTTPD_
 
-#include "libsyndicate.h"
+#include "libsyndicate/libsyndicate.h"
 #include "syndicate.h"
 #include "http-common.h"
 #include "fs_entry.h"
+#include "server.h"
 
 #include <getopt.h>
 

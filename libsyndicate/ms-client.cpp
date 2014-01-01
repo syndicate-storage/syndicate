@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-#include "ms-client.h"
+#include "libsyndicate/ms-client.h"
 
 static int ms_client_view_change_callback_default( struct ms_client* client, void* cls );
 

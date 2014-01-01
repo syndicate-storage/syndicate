@@ -17,7 +17,7 @@
 #ifndef _STATS_H_
 #define _STATS_H_
 
-#include "libsyndicate.h"
+#include "libsyndicate/libsyndicate.h"
 #include "log.h"
 #include <string>
 #include <sys/time.h>

@@ -43,7 +43,7 @@
 #include <openssl/sha.h>
 #include <dirent.h>
 
-#include "libsyndicate.h"
+#include "libsyndicate/libsyndicate.h"
 #include "log.h"
 #include "fs.h"
 

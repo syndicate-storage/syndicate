@@ -248,7 +248,6 @@ int syndicatefs_truncate(const char *path, off_t newsize) {
 
    SYNDICATEFS_DATA->stats->enter( STAT_TRUNCATE );
 
-   //int rc = fs_entry_versioned_truncate( SYNDICATEFS_DATA->core, path, newsize, 0, 0, -1, conf->owner, SYNDICATEFS_DATA->core->volume, SYNDICATEFS_DATA->core->gateway, false );
    int rc = fs_entry_truncate( SYNDICATEFS_DATA->core, path, newsize, conf->owner, SYNDICATEFS_DATA->core->volume );
 
    SYNDICATEFS_DATA->stats->leave( STAT_TRUNCATE, rc );
@@ -879,16 +878,27 @@ int main(int argc, char** argv) {
 
    struct md_HTTP syndicate_http;
    
-   rc = syndicate_init( config_file, &syndicate_http, portnum, ms_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path );
+   // start core services
+   rc = syndicate_init( config_file, portnum, ms_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path );
    if( rc != 0 )
       exit(1);
+   
+   struct syndicate_state* state = syndicate_get_state();
 
+   // start back-end HTTP server
+   rc = server_init( state, &syndicate_http );
+   if( rc != 0 )
+      exit(1);
+   
+   // finish initialization
+   syndicate_finish_init( state );
+      
    printf("\n\nSyndicateFS starting up\n\n");
 
    struct fuse_operations syndicatefs_oper = get_syndicatefs_opers();
 
    // GO GO GO!!!
-   fuse_stat = fuse_main(args.argc, args.argv, &syndicatefs_oper, syndicate_get_state() );
+   fuse_stat = fuse_main(args.argc, args.argv, &syndicatefs_oper, state );
 
    errorf( " fuse_main returned %d\n", fuse_stat);
 
@@ -896,10 +906,8 @@ int main(int argc, char** argv) {
 
    free( mountpoint );
 
-   dbprintf("%s", "HTTP server shutdown\n");
+   server_shutdown( &syndicate_http );
 
-   md_stop_HTTP( &syndicate_http );
-   md_free_HTTP( &syndicate_http );
    syndicate_destroy();
    
    curl_global_cleanup();

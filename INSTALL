@@ -38,3 +38,4 @@ We have a Syndicate package repository at http://vcoblitz-cmi.cs.princeton.edu/s
    $ sudo curl http://vcoblitz-cmi.cs.princeton.edu/yum/Syndicate-nightly.repo > /etc/yum.repos.d/Syndicate.repo
 
 
+When compiling for Native Client, make sure your /dev/shm (or /run/shm) is mounted with exec, not noexec.

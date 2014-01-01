@@ -14,16 +14,15 @@
    limitations under the License.
 */
 
-// core state and thread control for Syndicate
+// core state and control for Syndicate
 
 #ifndef _SYNDICATE_H_
 #define _SYNDICATE_H_
 
-#include "libsyndicate.h"
+#include "libsyndicate/libsyndicate.h"
 #include "collator.h"
 #include "stats.h"
 #include "replication.h"
-#include "http-common.h"
 #include "fs.h"
 
 class Collator;
@@ -52,23 +51,7 @@ struct syndicate_state {
    Stats* stats;
 };
 
-struct metadata_poll_args {
-   char* metadata_read_url;
-   FILE* logfile;
-   long pulltime;
-   char* username;
-   char* password;
-   
-   int* running;
-};
-
-// data for a single connection
-struct syndicate_connection {
-   struct syndicate_state* state;
-};
-
 int syndicate_init( char const* config_file,
-                    struct md_HTTP* http_server,
                     int portnum,
                     char const* ms_url,
                     char const* volume_name,
@@ -82,6 +65,7 @@ int syndicate_init( char const* config_file,
 
 struct syndicate_state* syndicate_get_state();
 struct md_syndicate_conf* syndicate_get_conf();
+void syndicate_finish_init( struct syndicate_state* state );
 int syndicate_destroy();
 
 #endif

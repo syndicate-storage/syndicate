@@ -14,32 +14,15 @@
    limitations under the License.
 */
 
-#include "libsyndicate.h"
+#include "libsyndicate/libsyndicate.h"
+#include "libsyndicate/system.h"
+#include "libsyndicate/ms-client.h"
 
 static struct md_syndicate_conf SYNDICATE_CONF;
 
 static unsigned long _connect_timeout = 30L;
 static unsigned long _transfer_timeout = 60L;     // 1 minute
 static int _signals = 1;
-
-static struct md_path_locks md_locks;
-
-static struct md_user_entry md_guest_user;
-
-char const MD_HTTP_NOMSG[128] = "\n";
-char const MD_HTTP_200_MSG[128] = "OK\n";
-char const MD_HTTP_400_MSG[128] = "Bad Request\n";
-char const MD_HTTP_401_MSG[128] = "Invalid authorization credentials\n";
-char const MD_HTTP_403_MSG[128] = "Credentials required\n";
-char const MD_HTTP_404_MSG[128] = "Not found\n";
-char const MD_HTTP_409_MSG[128] = "Operation conflict\n";
-char const MD_HTTP_413_MSG[128] = "Requested entry too big\n";
-char const MD_HTTP_422_MSG[128] = "Unprocessable entry\n";
-char const MD_HTTP_500_MSG[128] = "Internal Server Error\n";
-char const MD_HTTP_501_MSG[128] = "Not implemented\n";
-char const MD_HTTP_504_MSG[128] = "Remote Server Timeout\n";
-
-char const MD_HTTP_DEFAULT_MSG[128] = "RESPONSE\n";
 
 static char* md_load_file_as_string( char const* path, size_t* size ) {
    char* ret = load_file( path, size );
@@ -54,9 +37,7 @@ static char* md_load_file_as_string( char const* path, size_t* size ) {
    ret[ *size ] = 0;
 
    return ret;
-}
-   
-   
+}  
 
 // initialize all global data structures
 static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char const* mountpoint ) {
@@ -64,12 +45,6 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
    GOOGLE_PROTOBUF_VERIFY_VERSION;
 
    md_init_OpenSSL();
-
-   md_path_locks_create( &md_locks );
-   
-   md_guest_user.uid = MD_GUEST_UID;
-   md_guest_user.username = strdup( "GUEST" );
-   md_guest_user.password_hash = NULL;
    
    // get the umask
    mode_t um = get_umask();
@@ -82,6 +57,7 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
       c->mountpoint = strdup( mountpoint );
    }
    
+#ifndef _SYNDICATE_NACL_
    // gateway server without a read url.  generate one
    struct addrinfo hints;
    memset( &hints, 0, sizeof(hints) );
@@ -115,9 +91,13 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
       return -abs(rc);
    }
    
-   c->hostname = strdup(hn);
-   
    dbprintf("canonical hostname is %s\n", hn);
+
+   c->hostname = strdup(hn);
+
+#else   
+   c->hostname = strdup("localhost");
+#endif
    
    // create a public url, if it does not exist
    if( c->content_url == NULL ) {
@@ -125,10 +105,18 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
       sprintf(c->content_url, "http://%s:%d/", c->hostname, c->portnum );
       dbprintf("content URL is %s\n", c->content_url );
    }
-
+   
    // make sure we have data root and staging root
+   pid_t my_pid = 0;
+   
+#ifndef _SYNDICATE_NACL_
+   my_pid = getpid();
+#else
+   my_pid = (pid_t)rand();
+#endif
+   
    char cwd[100];
-   sprintf(cwd, "/tmp/syndicate.%d", getpid() );
+   sprintf(cwd, "/tmp/syndicate.%d", my_pid );
    char* data_root = md_fullpath( cwd, "data/", NULL );
    char* staging_root = md_fullpath( cwd, "staging/", NULL );
    char* logfile_path = md_fullpath( cwd, "access.log", NULL );
@@ -180,6 +168,7 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
          NULL
       };
 
+#ifndef _SYNDICATE_NACL_
       for( int i = 0; dirs[i] != NULL; i++ ) {         
          rc = md_mkdirs( dirs[i] );
          if( rc != 0 ) {
@@ -187,6 +176,8 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
             return rc;
          }
       }
+#endif
+
    }
 
 
@@ -234,8 +225,7 @@ int md_error( int level ) {
 // shut down the library.
 // free all global data structures
 int md_shutdown() {
-   md_path_locks_free( &md_locks );
-
+   
    // shut down protobufs
    google::protobuf::ShutdownProtobufLibrary();
 
@@ -471,21 +461,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          }
       }
       
-      else if( strcmp( key, AUTH_OPERATIONS_KEY ) == 0 ) {
-         // what's the policy for authentication?
-         int policy = 0;
-         if( strcmp( values[0], "none" ) == 0 )
-            policy = 0;
-         else if( strcmp( values[0], "read" ) == 0 )
-            policy = HTTP_AUTHENTICATE_READ;
-         else if( strcmp( values[0], "write" ) == 0 )
-            policy = HTTP_AUTHENTICATE_WRITE;
-         else if( strcmp( values[0], "readwrite" ) == 0 )
-            policy = HTTP_AUTHENTICATE_READWRITE;
-         
-         conf->http_authentication_mode = policy;
-      }
-      
       else if( strcmp( key, VERIFY_PEER_KEY ) == 0 ) {
          // verify peer?
          char *end;
@@ -711,7 +686,6 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->server_cert,
       (void*)conf->server_key_path,
       (void*)conf->server_cert_path,
-      //(void*)conf->volume_public_key,
       (void*)conf->gateway_key,
       (void*)conf->gateway_key_path,
       (void*)conf->replica_logfile,
@@ -1000,164 +974,6 @@ bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url ) {
    return ret;
 }
 
-
-// recursively make a directory.
-// return 0 if the directory exists at the end of the call.
-// return negative if the directory could not be created.
-int md_mkdirs2( char const* dirp, int start, mode_t mode ) {
-   char* currdir = (char*)calloc( strlen(dirp) + 1, 1 );
-   unsigned int i = start;
-   while( i <= strlen(dirp) ) {
-      if( dirp[i] == '/' || i == strlen(dirp) ) {
-         strncpy( currdir, dirp, i == 0 ? 1 : i );
-         struct stat statbuf;
-         int rc = stat( currdir, &statbuf );
-         if( rc == 0 && !S_ISDIR( statbuf.st_mode ) ) {
-            free( currdir );
-            return -EEXIST;
-         }
-         if( rc != 0 ) {
-            rc = mkdir( currdir, mode );
-            if( rc != 0 ) {
-               free(currdir);
-               return -errno;
-            }
-         }
-      }
-      i++;
-   }
-   free(currdir);
-   return 0;
-}
-
-int md_mkdirs3( char const* dirp, mode_t mode ) {
-   return md_mkdirs2( dirp, 0, mode );
-}
-
-int md_mkdirs( char const* dirp ) {
-   return md_mkdirs2( dirp, 0, 0755 );
-}
-
-// remove a bunch of empty directories
-int md_rmdirs( char const* dirp ) {
-   char* dirname = strdup( dirp );
-   int rc = 0;
-   while( strlen(dirname) > 0 ) {
-      rc = rmdir( dirname );
-      if( rc != 0 ) {
-         break;
-      }
-      else {
-         char* tmp = md_dirname( dirname, NULL );
-         free( dirname );
-         dirname = tmp;
-      }
-   }
-   free( dirname );
-   return rc;
-}
-
-// set up a set of chubby path locks
-int md_path_locks_create( struct md_path_locks* locks ) {
-   locks->path_locks = new vector< long >();
-   pthread_mutex_init( &locks->path_locks_lock, NULL );
-   return 0;
-}
-
-// free a set of chubby path locks
-int md_path_locks_free( struct md_path_locks* locks ) {
-   pthread_mutex_lock( &locks->path_locks_lock );
-   delete locks->path_locks;
-   pthread_mutex_unlock( &locks->path_locks_lock );
-   pthread_mutex_destroy( &locks->path_locks_lock );
-   return 0;
-}
-
-// lock a path, spinning if needed
-int md_lock_path( struct md_path_locks* locks, char const* path ) {
-   long hash = md_hash( path );
-   
-   bool found = false;
-   bool locked = false;
-   
-   while( 1 ) {
-      if( pthread_mutex_lock( &locks->path_locks_lock ) != 0 ) {
-         errorf( "[%ld] pthread_mutex_lock failed\n", pthread_self() );
-         exit(1);
-      }
-      
-      found = false;
-      for( unsigned int i = 0; i < locks->path_locks->size(); i++ ) {
-         if( locks->path_locks->at(i) == hash ) {
-            // yup--can't lock.
-            found = true;
-            break;
-         }
-      }
-
-      if( !found ) {
-         locks->path_locks->push_back( hash );
-         locked = true;
-      }
-
-      if( pthread_mutex_unlock( &locks->path_locks_lock ) != 0 ) {
-         errorf( "[%ld] pthread_mutex_unlock failed\n", pthread_self() );
-         exit(1);
-      }
-
-      if( locked )
-         break;
-   }
-   return 0;
-}
-
-// lock a path in the master copy
-int md_lock_mc_path( struct md_path_locks* locks, char const* mdroot, char const* path ) {
-   char* fp = md_fullpath( mdroot, path, NULL );
-   int rc = md_lock_path( locks, fp );
-   free( fp );
-   return rc;
-}
-
-
-// lock a path using libsyndicate's lock set
-int md_global_lock_path( char const* mdroot, char const* path ) {
-   return md_lock_mc_path( &md_locks, mdroot, path );
-}
-
-// unlock a path
-void* md_unlock_path( struct md_path_locks* locks, char const* path ) {
-   long hash = md_hash( path );
-   void* ret = NULL;
-
-   pthread_mutex_lock( &locks->path_locks_lock );
-   
-   for( unsigned int i = 0; i < locks->path_locks->size(); i++ ) {
-      if( locks->path_locks->at(i) == hash ) {
-         locks->path_locks->erase( locks->path_locks->begin() + i );
-         i--;
-         break;
-      }
-   }
-
-   pthread_mutex_unlock( &locks->path_locks_lock );
-
-   return ret;
-}
-
-// unlock a path in the master copy
-void* md_unlock_mc_path( struct md_path_locks* locks, char const* mdroot, char const* path ) {
-   char* fp = md_fullpath( mdroot, path, NULL );
-   void* ret = md_unlock_path( locks, fp );
-   free( fp );
-   return ret;
-}
-
-// unlock a path using libsyndicate's lock set
-void* md_global_unlock_path( char const* mdroot, char const* path ) {
-   return md_unlock_mc_path( &md_locks, mdroot, path );
-}
-
 // start a thread
 pthread_t md_start_thread( void* (*thread_func)(void*), void* arg, bool detach ) {
 
@@ -1169,115 +985,25 @@ pthread_t md_start_thread( void* (*thread_func)(void*), void* arg, bool detach )
    rc = pthread_attr_init( &attrs );
    if( rc != 0 ) {
       errorf( "pthread_attr_init rc = %d\n", rc);
-      return -1;   // problem
+      return (pthread_t)(-1);   // problem
    }
 
    if( detach ) {
       rc = pthread_attr_setdetachstate( &attrs, PTHREAD_CREATE_DETACHED );    // make a detached thread--we won't join with it
       if( rc != 0 ) {
          errorf( "pthread_attr_setdetachstate rc = %d\n", rc );
-         return -1;
+         return (pthread_t)(-1);
       }
    }
    
    rc = pthread_create( &listen_thread, &attrs, thread_func, arg );
    if( rc != 0 ) {
       errorf( "pthread_create rc = %d\n", rc );
-      return -1;
+      return (pthread_t)(-1);
    }
    
    return listen_thread;
 }
-
-
-// turn into a deamon
-int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
-
-   FILE* log = NULL;
-   int pid_fd = -1;
-   
-   if( logfile_path ) {
-      log = fopen( logfile_path, "a" );
-   }
-   if( pidfile_path ) {
-      pid_fd = open( pidfile_path, O_CREAT | O_EXCL | O_WRONLY, 0644 );
-      if( pid_fd < 0 ) {
-         // specified a PID file, and we couldn't make it.  someone else is running
-         int errsv = -errno;
-         errorf( "Failed to create PID file %s (error %d)\n", pidfile_path, errsv );
-         return errsv;
-      }
-   }
-   
-   pid_t pid, sid;
-
-   pid = fork();
-   if (pid < 0) {
-      int rc = -errno;
-      errorf( "Failed to fork (errno = %d)\n", -errno);
-      return rc;
-   }
-
-   if (pid > 0) {
-      exit(0);
-   }
-
-   // child process 
-   // umask(0);
-
-   sid = setsid();
-   if( sid < 0 ) {
-      int rc = -errno;
-      errorf("setsid errno = %d\n", rc );
-      return rc;
-   }
-
-   if( chdir("/") < 0 ) {
-      int rc = -errno;
-      errorf("chdir errno = %d\n", rc );
-      return rc;
-   }
-
-   close( STDIN_FILENO );
-   close( STDOUT_FILENO );
-   close( STDERR_FILENO );
-
-   if( log ) {
-      int log_fileno = fileno( log );
-
-      if( dup2( log_fileno, STDOUT_FILENO ) < 0 ) {
-         int errsv = -errno;
-         errorf( "dup2 errno = %d\n", errsv);
-         return errsv;
-      }
-      if( dup2( log_fileno, STDERR_FILENO ) < 0 ) {
-         int errsv = -errno;
-         errorf( "dup2 errno = %d\n", errsv);
-         return errsv;
-      }
-
-      if( logfile )
-         *logfile = log;
-      else
-         fclose( log );
-   }
-   else {
-      int null_fileno = open("/dev/null", O_WRONLY);
-      dup2( null_fileno, STDOUT_FILENO );
-      dup2( null_fileno, STDERR_FILENO );
-   }
-
-   if( pid_fd >= 0 ) {
-      char buf[10];
-      sprintf(buf, "%d", getpid() );
-      write( pid_fd, buf, strlen(buf) );
-      fsync( pid_fd );
-      close( pid_fd );
-   }
-   return 0;
-}
-
-
 
 // download data to a buffer
 size_t md_default_get_callback_ram(void *stream, size_t size, size_t count, void *user_data) {
@@ -1824,26 +1550,6 @@ char** md_parse_cgi_args( char* args_str ) {
 }
 
 
-// degrade permissions and become a daemon
-int md_release_privileges() {
-   struct passwd* pwd;
-   int ret = 0;
-   
-   // switch to "daemon" user, if possible
-   pwd = getpwnam( "daemon" );
-   if( pwd != NULL ) {
-      setuid( pwd->pw_uid );
-      dbprintf( "became user '%s'\n", "daemon" );
-      ret = 0;
-   }
-   else {
-      dbprintf( "could not become '%s'\n", "daemon" );
-      ret = 1;
-   }
-   
-   return ret;
-}
-
 // get the scheme out of a URL
 char* md_url_scheme( char const* _url ) {
    char* url = strdup( _url );
@@ -2014,88 +1720,6 @@ char* md_strip_protocol( char const* url ) {
 }
 
 
-// convert a URL to normal form, which the caller must free
-char* md_normalize_url( char const* url, int* rc ) {
-   UriParserStateA state;
-   UriUriA curr;
-   
-   state.uri = &curr;
-   if( uriParseUriA( &state, url ) != URI_SUCCESS ) {
-      errorf( "could not parse %s\n", url );
-      
-      *rc = -EINVAL;
-      uriFreeUriMembersA( &curr );
-      return NULL;
-   }
-   
-   const unsigned int dirtyParts = uriNormalizeSyntaxMaskRequiredA( &curr );
-   if( uriNormalizeSyntaxExA( &curr, dirtyParts ) != URI_SUCCESS) {
-      errorf( "could not normalize %s\n", url );
-      
-      *rc = -EINVAL;
-      uriFreeUriMembersA( &curr );
-      return NULL;
-   }
-   
-   int len = 0;
-   if( uriToStringCharsRequiredA( &curr, &len ) != URI_SUCCESS ) {
-      errorf( "could not determine length of %s\n", url );
-      
-      *rc = -EINVAL;
-      uriFreeUriMembersA( &curr );
-      return NULL;
-   }
-   
-   len++;
-   char* ret = (char*)malloc( len * sizeof(char) );
-   
-   if( uriToStringA(ret, &curr, len, NULL) != URI_SUCCESS ) {
-      errorf( "could not extract %s\n", url );
-      
-      *rc = -EINVAL;
-      uriFreeUriMembersA( &curr );
-      free( ret );
-      return NULL;
-   }
-   
-   uriFreeUriMembersA( &curr );
-
-   // flatten the result
-   char* scheme_offset = strstr( ret, "://" );
-   if( scheme_offset != NULL && *(scheme_offset + 3) != '\0' ) {
-      char* path = md_flatten_path( scheme_offset + 3 );
-      char* tmp = CALLOC_LIST( char, (scheme_offset - ret) + strlen(path) + 4 );
-      strncpy( tmp, ret, scheme_offset + 3 - ret );
-      strcat( tmp, path );
-      free( path );
-      free( ret );
-      ret = tmp;
-   }
-
-   return ret;
-}
-
-
-// normalize a list of URLs
-int md_normalize_urls( char** urls, char** ret ) {
-
-   int worst_rc = 0;
-   for( int i = 0; urls[i] != NULL; i++ ) {
-      int rc = 0;
-      char* new_url = md_normalize_url( urls[i], &rc );
-      if( rc != 0 || new_url == NULL ) {
-         ret[i] = NULL;
-         worst_rc = rc;
-      }
-      else {
-         ret[i] = new_url;
-      }
-   }
-
-   return worst_rc;
-}
-
-
 // flatten a path.  That is, remove /./, /[/]*, etc, but don't resolve ..
 char* md_flatten_path( char const* path ) {
    size_t len = strlen(path);
@@ -2162,257 +1786,6 @@ char* md_cdn_url( char const* url ) {
    return update_url;
 }
 
-// publish a file.  Succeeds if the file is published.  Fails with -EEXIST if already published, or -ENOENT if there is no corresponding data, or -ENOTDIR if the data isn't in a directory
-int md_publish_file( char const* data_root, char const* publish_root, char const* fs_path, int64_t file_version ) {
-   char* data_path = md_publish_path_file( data_root, fs_path, file_version );
-   char* publish_path = md_publish_path_file( publish_root, fs_path, file_version );
-
-   struct stat sb;
-   int rc = stat( data_path, &sb );
-   if( rc != 0 ) {
-      int errsv = -errno;
-      free( data_path );
-      free( publish_path );
-      return -errsv;
-   }
-   
-   if( !S_ISDIR( sb.st_mode ) ) {
-      free( data_path );
-      free( publish_path );
-      return -ENOTDIR;
-   }
-
-   free( data_path );
-   
-   rc = md_mkdirs( publish_path );
-   if( rc != 0 ) {
-      errorf("md_mkdirs(%s) rc = %d\n", publish_path, rc );
-      free( publish_path );
-      return rc;
-   }
-
-   free( publish_path );
-
-   return 0;
-}
-
-// publish a block.  Succeeds if the block is published.  Fails with -EEXIST if already published.  Fails with -ENOENT if the data doesn't exist
-// fs_path is the path in the filesystem 
-// block_id is the name of the block.  version is the version to publish
-int md_publish_block( char const* data_root, char const* publish_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
-   char* publish_path = md_publish_path_block( publish_root, fs_path, file_version, block_id, block_version );
-
-   size_t num_len = (size_t)(log( MAX((unsigned)abs(file_version), MAX(block_id, (unsigned)abs(block_version))) + 1 )) + 1;
-   
-   char* data_path = CALLOC_LIST( char, strlen(data_root) + 1 + strlen(fs_path) + 1 + 3 * (num_len + 1) + 1 );
-   sprintf( data_path, "%s%s.%" PRId64, data_root, fs_path, file_version );
-
-   // verify the file exists
-   struct stat sb;
-   int rc = stat( data_path, &sb );
-   if( rc != 0 ) {
-      int errsv = -errno;
-      errorf("stat(%s) rc = %d\n", data_path, errsv);
-      free( data_path );
-      free( publish_path );
-      return errsv;
-   }
-
-   // append the block ID for publishing
-   sprintf( data_path, "%s%s.%" PRId64 "/%" PRIu64, data_root, fs_path, file_version, block_id );
-   rc = symlink( data_path, publish_path );
-   if( rc != 0 ) {
-      rc = -errno;
-      errorf( "symlink(%s, %s) rc = %d\n", data_path, publish_path, rc );
-   }
-
-   free( data_path );
-   free( publish_path );
-
-   return rc;
-}
-
-
-// perform the actual withdrawal--remove the given path if it is a symlink
-// path must be an absolute path on the underlying filesystem (not an fs_path)
-int md_withdraw( char const* path ) {
-   struct stat statbuf;
-   int rc = lstat( path, &statbuf );
-   if( rc != 0 ) {
-      rc = -errno;
-      errorf( "Could not stat %s, errno = %d\n", path, rc );
-      
-      return rc;
-   }
-   
-   if( S_ISLNK( statbuf.st_mode ) ) {
-      rc = unlink( path );
-      
-      if( rc != 0 ) {
-         errorf( "error = %d when removing %s\n", errno, path );
-         rc = -errno;
-      }
-   }
-   else {
-      errorf( "%s is not a symlink; will not withdraw\n", path );
-      rc = -EINVAL;
-   }
-   
-   return rc;
-}
-
-// withdraw a file's block.
-// return 0 on success.
-int md_withdraw_block( char const* publish_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
-   char* path = md_publish_path_block( publish_root, fs_path, file_version, block_id, block_version );
-   
-   dbprintf( "Withdraw %s\n", path );
-   int rc = md_withdraw( path );
-   
-   free( path );
-   
-   return rc;
-}
-
-
-// withdraw a filesystem entry--remove the blocks inside of its directory, and then its directory.
-// The root directory can be the publish directory, staging directory, or data directory.
-// TODO: ensure each unlinked item is, in fact, a block
-int md_withdraw_entry( char const* root, char const* fs_path, int64_t version ) {
-   int rc = 0;
-
-   char* publish_fs_path = NULL;
-   if( version >= 0 ) {
-      char buf[24];
-      sprintf(buf, ".%" PRId64, version );
-      publish_fs_path = md_prepend( fs_path, buf, NULL );
-   }
-   else {
-      publish_fs_path = strdup( fs_path );
-   }
-
-   char* publish_path = md_fullpath( root, publish_fs_path, NULL );
-   free( publish_fs_path );
-   
-   DIR* dir = opendir( publish_path );
-   if( dir == NULL ) {
-      int errsv = -errno;
-      errorf( "opendir(%s) errno = %d\n", publish_path, errsv );
-      free( publish_path );
-      return errsv;
-   }
-
-   int dirent_sz = offsetof(struct dirent, d_name) + pathconf(publish_path, _PC_NAME_MAX) + 1;
-
-   struct dirent* dent = (struct dirent*)malloc( dirent_sz );;
-   struct dirent* result = NULL;
-
-   int worst_rc = 0;
-   
-   do {
-      readdir_r( dir, dent, &result );
-      if( result != NULL ) {
-         if( strcmp(result->d_name, ".") == 0 ||strcmp(result->d_name, "..") == 0 )
-            continue;
-         
-         char* fp = md_fullpath( publish_path, result->d_name, NULL );
-         rc = unlink( fp );
-         free( fp );
-
-         if( rc != 0 ) {
-            worst_rc = -errno;
-            errorf( "unlink(%s) errno = %d\n", result->d_name, worst_rc );
-         }
-      }
-   } while( result != NULL );
-
-   closedir(dir);
-   free( dent );
-   
-   rc = rmdir( publish_path );
-   if( rc != 0 ) {
-      rc = -errno;
-      errorf( "rmdir(%s) errno = %d\n", publish_path, rc );
-   }
-
-   free( publish_path );
-   
-   return rc;
-}
-
-// withdraw a file
-int md_withdraw_file( char const* root, char const* fs_path, int64_t version ) {
-   return md_withdraw_entry( root, fs_path, version );
-}
-
-// withdraw a directory--remove it
-int md_withdraw_dir( char const* root, char const* fs_path ) {
-   return md_withdraw_entry( root, fs_path, -1 );
-}
-
-
-// given a root directory, filesystem path and the block ID, concatenate them
-char* md_full_block_path( char const* root, char const* fs_path, int64_t file_version, uint64_t block_id ) {
-   size_t len = strlen(root) + 1 + strlen(fs_path) + 1 + (size_t)log( (double)file_version + 1 ) + 2 + (size_t)log( (double)block_id + 1 ) + 2;
-   
-   char* ret = CALLOC_LIST( char, len );
-   char* path = md_fullpath( root, fs_path, NULL );
-   
-   if( path[strlen(path)-1] == '/' )
-      path[strlen(path)-1] = '\0';
-   
-   char buf[50];
-   sprintf(buf, ".%" PRId64 "/%" PRIu64, file_version, block_id );
-   strcat( ret, buf );
-   
-   return ret;
-}
-
-
-// calculate the location on disk to which this particular file would be published.
-// the caller must free the returned path
-// set version field to be less than 0 if you don't want the version field used
-char* md_publish_path_file( char const* root, char const* fs_path, int64_t version ) {
-   unsigned int ver_len = 60;
-   char* ret = CALLOC_LIST( char, strlen(root) + 2 + strlen(fs_path) + 1 + ver_len + 1 );
-   
-   sprintf(ret, "%s/%s.%" PRId64, root, fs_path, version );
-   
-   return ret;
-}
-
-// calculate the location on disk to which this particular block would be published.
-// the caller must free the returned path
-// set version field to be less than 0 if you don't want the version field used
-char* md_publish_path_block( char const* root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
-   unsigned int ver_len = (unsigned int)(log(abs(block_version) + 1) + 1);
-   unsigned int block_id_len = (unsigned int)(log(block_id + 1) + 1);
-   unsigned int file_version_len = (unsigned int)(log(abs(file_version) + 1) + 1);
-   
-   char* ret = CALLOC_LIST( char, strlen(root) + 2 + strlen(fs_path) + 1 + file_version_len + 1 + block_id_len + 1 + ver_len + 1 );
-   
-   sprintf(ret, "%s%s.%" PRId64" /%" PRIu64" .%" PRId64, root, fs_path, file_version, block_id, block_version );
-   
-   return ret;
-}
-
-
-
-// calculate the location on disk to which this particular block would be held in staging.
-// the caller must free the returned path
-// set version field to be less than 0 if you don't want the version field used
-char* md_staging_path_block( char const* staging_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
-   unsigned int ver_len = (unsigned int)(log(abs(block_version) + 1) + 1);
-   unsigned int block_id_len = (unsigned int)(log(block_id + 1) + 1);
-   unsigned int file_version_len = (unsigned int)(log(abs(file_version) + 1) + 1);
-
-   char* ret = CALLOC_LIST( char, strlen(staging_root) + 2 + strlen(fs_path) + 1 + file_version_len + 1 + block_id_len + 1 + ver_len + 1 );
-
-   sprintf(ret, "%s%s.%" PRId64 "/%" PRIu64" .%" PRId64, staging_root, fs_path, file_version, block_id, block_version );
-
-   return ret;
-}
-
 
 // Read the path version from a given path.
 // The path version is the number attached to the end of the path by a period.
@@ -2445,7 +1818,6 @@ int64_t md_path_version( char const* path ) {
    return version;
 }
 
-
 // Get the offset into a path where the version begins.
 // Returns nonnegative on success.
 // returns negative on error.
@@ -2477,7 +1849,6 @@ int md_path_version_offset( char const* path ) {
    return i;  
 }
 
-
 // given two paths, determine if one is the versioned form of the other
 bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path ) {
    // if this isn't a versioned path, then no
@@ -2494,97 +1865,6 @@ bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path 
    return true;
 }
 
-// find versioned copies of a given file.  base_path must be a full path
-char** md_versioned_paths( char const* base_path ) {
-   char* base_path_dir = md_dirname( base_path, NULL );
-   char* base_path_basename = md_basename( base_path, NULL );
-   
-   DIR* dir = opendir( base_path_dir );
-   if( dir == NULL ) {
-      int errsv = errno;
-      errorf( "could not open %s, errno = %d\n", base_path_dir, errsv );
-      free( base_path_dir );
-      free( base_path_basename );
-      return NULL;
-   }
-   
-   int dirent_sz = offsetof(struct dirent, d_name) + pathconf(base_path_dir, _PC_NAME_MAX) + 1;
-   
-   struct dirent* dent = (struct dirent*)malloc( dirent_sz );;
-   struct dirent* result = NULL;
-   
-   vector<char*> copies;
-   
-   do {
-      readdir_r( dir, dent, &result );
-      if( result != NULL ) {
-         if( md_is_versioned_form( base_path_basename, result->d_name ) ) {
-            copies.push_back( md_fullpath( base_path_dir, result->d_name, NULL ) );
-         }
-      }
-   } while( result != NULL );
-   
-   char** ret = (char**)malloc( sizeof(char*) * (copies.size() + 1) );
-   for( vector<char*>::size_type i = 0; i < copies.size(); i++ ) {
-      ret[i] = copies[i];
-   }
-   ret[copies.size()] = NULL;
-   
-   closedir(dir);
-   free( dent );
-   free( base_path_dir );
-   free( base_path_basename );
-   
-   return ret;
-}
-
-
-// find the versions of an unversioned path.
-// returned list is terminated by a -1
-int64_t* md_versions( char const* base_path ) {
-   char* base_path_dir = md_dirname( base_path, NULL );
-   char* base_path_basename = md_basename( base_path, NULL );
-
-   DIR* dir = opendir( base_path_dir );
-   if( dir == NULL ) {
-      int errsv = errno;
-      errorf( "could not open %s, errno = %d\n", base_path_dir, errsv );
-      return NULL;
-   }
-
-   int dirent_sz = offsetof(struct dirent, d_name) + pathconf(base_path_dir, _PC_NAME_MAX) + 1;
-
-   struct dirent* dent = (struct dirent*)malloc( dirent_sz );;
-   struct dirent* result = NULL;
-
-   vector<int64_t> versions;
-
-   do {
-      readdir_r( dir, dent, &result );
-      if( result != NULL ) {
-         if( md_is_versioned_form( base_path_basename, result->d_name ) ) {
-            int64_t ver = md_path_version( result->d_name );
-            if( ver >= 0 )
-               versions.push_back( ver );
-         }
-      }
-   } while( result != NULL );
-
-   int64_t* ret = CALLOC_LIST( int64_t, versions.size() + 1 );
-   for( unsigned int i = 0; i < versions.size(); i++ ) {
-      ret[i] = versions[i];
-   }
-   ret[ versions.size() ] = (int64_t)(-1);
-
-   closedir(dir);
-   free( dent );
-   free( base_path_dir );
-   free( base_path_basename );
-
-   return ret;
-}
-
-
 
 
 // clear the version of a path
@@ -2595,35 +1875,6 @@ char* md_clear_version( char* path ) {
    }
    return path;
 }
-
-// find the next version of a given set of paths
-int64_t md_next_version( char** versioned_publish_paths ) {
-   int64_t next_version = 1;
-   if( versioned_publish_paths[0] != NULL ) {
-      // this path is meant to be published for the first time.
-      // find the highest version number
-      next_version = -1;
-      for( int i = 0; versioned_publish_paths[i] != NULL; i++ ) {
-         int64_t ver = md_path_version( versioned_publish_paths[i] );
-         if( ver > next_version )
-            next_version = ver;
-      }
-      next_version++;
-   }
-   return next_version;
-}
-
-// find the next version from a set of versions
-int64_t md_next_version( int64_t* versions ) {
-   int64_t next_version = -1;
-   if( versions != NULL ) {
-      for( int i = 0; versions[i] >= 0; i++ ) {
-         next_version = MAX( next_version, versions[i] );
-      }
-   }
-   return next_version + 1;
-}
-
 
 // serialize updates
 
@@ -2806,194 +2057,6 @@ void md_update_dup2( struct md_update* src, struct md_update* dest ) {
 }
 
 
-// respond to a request
-static int md_HTTP_default_send_response( struct MHD_Connection* connection, int status_code, char* data ) {
-   char const* page = NULL;
-   struct MHD_Response* response = NULL;
-   
-   if( data == NULL ) {
-      // use a built-in status message
-      switch( status_code ) {
-         case MHD_HTTP_BAD_REQUEST:
-            page = MD_HTTP_400_MSG;
-            break;
-         
-         case MHD_HTTP_INTERNAL_SERVER_ERROR:
-            page = MD_HTTP_500_MSG;
-            break;
-         
-         case MHD_HTTP_UNAUTHORIZED:
-            page = MD_HTTP_401_MSG;
-            break;
-            
-         default:
-            page = MD_HTTP_DEFAULT_MSG;
-            break;
-      }
-      response = MHD_create_response_from_buffer( strlen(page), (void*)page, MHD_RESPMEM_PERSISTENT );
-   }
-   else {
-      // use the given status message
-      response = MHD_create_response_from_buffer( strlen(data), (void*)data, MHD_RESPMEM_MUST_FREE );
-   }
-   
-   if( !response )
-      return MHD_NO;
-      
-   // this is always a text/plain type
-   MHD_add_response_header( response, "Content-Type", "text/plain" );
-   int ret = MHD_queue_response( connection, status_code, response );
-   MHD_destroy_response( response );
-   
-   return ret;
-}
-
-// make a RAM response which we'll defensively copy
-int md_create_HTTP_response_ram( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len ) {
-   resp->resp = MHD_create_response_from_buffer( len, (void*)data, MHD_RESPMEM_MUST_COPY );
-   resp->status = status;
-   MHD_add_response_header( resp->resp, "Content-Type", mimetype );
-   return 0;
-}
-
-// make a RAM response which we'll keep a pointer to and free later
-int md_create_HTTP_response_ram_nocopy( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len ) {
-   resp->resp = MHD_create_response_from_buffer( len, (void*)data, MHD_RESPMEM_MUST_FREE );
-   resp->status = status;
-   MHD_add_response_header( resp->resp, "Content-Type", mimetype );
-   return 0;
-}
-
-// make a RAM response which is persistent
-int md_create_HTTP_response_ram_static( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len ) {
-   resp->resp = MHD_create_response_from_buffer( len, (void*)data, MHD_RESPMEM_PERSISTENT );
-   resp->status = status;
-   MHD_add_response_header( resp->resp, "Content-Type", mimetype );
-   return 0;
-}
-
-// make an FD-based response
-int md_create_HTTP_response_fd( struct md_HTTP_response* resp, char const* mimetype, int status, int fd, off_t offset, size_t size ) {
-   resp->resp = MHD_create_response_from_fd_at_offset( size, fd, offset );
-   resp->status = status;
-   MHD_add_response_header( resp->resp, "Content-Type", mimetype );
-   return 0;
-}
-
-// make a callback response
-int md_create_HTTP_response_stream( struct md_HTTP_response* resp, char const* mimetype, int status, uint64_t size, size_t blk_size, md_HTTP_stream_callback scb, void* cls, md_HTTP_free_cls_callback fcb ) {
-   resp->resp = MHD_create_response_from_callback( size, blk_size, scb, cls, fcb );
-   resp->status = status;
-   MHD_add_response_header( resp->resp, "Content-Type", mimetype );
-   return 0;
-}
-
-// give back a user-callback-created response
-static int md_HTTP_send_response( struct MHD_Connection* connection, struct md_HTTP_response* resp ) {
-   int ret = MHD_queue_response( connection, resp->status, resp->resp );
-   MHD_destroy_response( resp->resp );
-   
-   return ret;
-}
-
-
-// free an HTTP response
-void md_free_HTTP_response( struct md_HTTP_response* resp ) {
-   return;
-}
-
-
-// find an http header value
-char const* md_find_HTTP_header( struct md_HTTP_header** headers, char const* header ) {
-   for( int i = 0; headers[i] != NULL; i++ ) {
-      if( strcasecmp( headers[i]->header, header ) == 0 ) {
-         return headers[i]->value;
-      }
-   }
-   return NULL;
-}
-
-
-// find a user entry, given a username
-struct md_user_entry* md_find_user_entry( char const* username, struct md_user_entry** users ) {
-   for( int i = 0; users[i] != NULL; i++ ) {
-      if( strcmp( users[i]->username, username ) == 0 )
-         return users[i];
-   }
-   return NULL;
-}
-
-
-// find a user entry, given a uid
-struct md_user_entry* md_find_user_entry2( uint64_t uid, struct md_user_entry** users ) {
-   for( int i = 0; users[i] != NULL; i++ ) {
-      if( users[i]->uid == uid )
-         return users[i];
-   }
-   return NULL;
-}
-
-// validate a user entry, given the password
-bool md_validate_user_password( char const* password, struct md_user_entry* uent ) {
-   // hash the password
-   unsigned char* password_sha256 = sha256_hash( password );
-   char* password_hash = sha256_printable( password_sha256 );
-   free( password_sha256 );
-   
-   bool rc = (strcasecmp( password_hash, uent->password_hash ) == 0 );
-   
-   free( password_hash );
-   return rc;
-}
-
-
-// add a header
-int md_HTTP_add_header( struct md_HTTP_response* resp, char const* header, char const* value ) {
-   if( resp->resp != NULL ) {
-      MHD_add_response_header( resp->resp, header, value );
-   }
-   return 0;
-}
-
-
-// get the user's data out of a syndicate-managed connection data structure
-void* md_cls_get( void* cls ) {
-   struct md_HTTP_connection_data* dat = (struct md_HTTP_connection_data*)cls;
-   return dat->cls;
-}
-
-// set the status of a syndicate-managed connection data structure
-void md_cls_set_status( void* cls, int status ) {
-   struct md_HTTP_connection_data* dat = (struct md_HTTP_connection_data*)cls;
-   dat->status = status;
-}
-
-// set the response of a syndicate-managed connection data structure
-struct md_HTTP_response* md_cls_set_response( void* cls, struct md_HTTP_response* resp ) {
-   struct md_HTTP_connection_data* dat = (struct md_HTTP_connection_data*)cls;
-   struct md_HTTP_response* ret = dat->resp;
-   dat->resp = resp;
-   return ret;
-}
-
-
-// create an http header
-void md_create_HTTP_header( struct md_HTTP_header* header, char const* h, char const* v ) {
-   header->header = strdup( h );
-   header->value = strdup( v );
-}
-
-// free an HTTP header
-void md_free_HTTP_header( struct md_HTTP_header* header ) {
-   if( header->header ) {
-      free( header->header );
-   }
-   if( header->value ) {
-      free( header->value );
-   }
-   memset( header, 0, sizeof(struct md_HTTP_header) );
-}
-
 // free a download buffer
 void md_free_download_buf( struct md_download_buf* buf ) {
    if( buf->data ) {
@@ -3026,495 +2089,6 @@ void md_init_curl_handle( CURL* curl_h, char const* url, time_t query_timeout ) 
    }
    
    //curl_easy_setopt( curl_h, CURLOPT_VERBOSE, 1L );
-}
-
-
-// accumulate inbound headers
-static int md_accumulate_headers( void* cls, enum MHD_ValueKind kind, char const* key, char const* value ) {
-   vector<struct md_HTTP_header*> *header_list = (vector<struct md_HTTP_header*> *)cls;
-   
-   struct md_HTTP_header* hdr = (struct md_HTTP_header*)calloc( sizeof(struct md_HTTP_header), 1 );
-   md_create_HTTP_header( hdr, key, value );
-   
-   header_list->push_back( hdr );
-   return MHD_YES;
-}
-
-// free a list of headers
-static void md_free_headers( struct md_HTTP_header** headers ) {
-   for( unsigned int i = 0; headers[i] != NULL; i++ ) {
-      md_free_HTTP_header( headers[i] );
-      free( headers[i] );
-   }
-   free( headers );
-}
-
-// short message upload handler, for accumulating smaller messages into RAM via a response buffer
-int md_response_buffer_upload_iterator(void *coninfo_cls, enum MHD_ValueKind kind,
-                                       const char *key,
-                                       const char *filename, const char *content_type,
-                                       const char *transfer_encoding, const char *data,
-                                       uint64_t off, size_t size) {
-
-
-   dbprintf( "upload %zu bytes\n", size );
-
-   struct md_HTTP_connection_data *md_con_data = (struct md_HTTP_connection_data*)coninfo_cls;
-   response_buffer_t* rb = md_con_data->rb;
-
-   // add a copy of the data
-   char* data_dup = CALLOC_LIST( char, size );
-   memcpy( data_dup, data, size );
-
-   rb->push_back( buffer_segment_t( data_dup, size ) );
-
-   return MHD_YES;
-}
-
-
-
-// HTTP connection handler
-static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connection, 
-                                       char const* url, 
-                                       char const* method, 
-                                       char const* version, 
-                                       char const* upload_data, size_t* upload_size, 
-                                       void** con_cls ) {
-   
-   struct md_HTTP* http_ctx = (struct md_HTTP*)cls;
-   struct md_HTTP_connection_data* con_data = (struct md_HTTP_connection_data*)(*con_cls);
-
-   // need to create connection data?
-   if( con_data == NULL ) {
-
-      // verify that the URL starts with '/'
-      if( strlen(url) > 0 && url[0] != '/' ) {
-         errorf( "malformed URL %s\n", url );
-         return md_HTTP_default_send_response( connection, MHD_HTTP_BAD_REQUEST, NULL );
-      }
-      
-      con_data = CALLOC_LIST( struct md_HTTP_connection_data, 1 );
-      if( !con_data ) {
-         errorf("%s\n", "out of memory" );
-         return md_HTTP_default_send_response( connection, MHD_HTTP_INTERNAL_SERVER_ERROR, NULL );
-      }
-
-      struct MHD_PostProcessor* pp = NULL;
-      int mode = MD_HTTP_UNKNOWN;
-
-      if( strcmp( method, "GET" ) == 0 ) {
-         if( http_ctx->HTTP_GET_handler )
-            mode = MD_HTTP_GET;
-      }
-      else if( strcmp( method, "HEAD" ) == 0 ) {
-         if( http_ctx->HTTP_HEAD_handler )
-            mode = MD_HTTP_HEAD;
-      }
-      else if( strcmp( method, "POST" ) == 0 ) {
-
-         if( http_ctx->HTTP_POST_iterator ) {
-
-            char const* encoding = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_TYPE );
-            if( encoding != NULL &&
-               (strncasecmp( encoding, MHD_HTTP_POST_ENCODING_FORM_URLENCODED, strlen( MHD_HTTP_POST_ENCODING_FORM_URLENCODED ) ) == 0 ||
-                strncasecmp( encoding, MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA, strlen( MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA ) ) == 0 )) {
-
-               pp = MHD_create_post_processor( connection, 4096, http_ctx->HTTP_POST_iterator, con_data );
-               if( pp == NULL ) {
-                  errorf( "failed to create POST processor for %s\n", method);
-                  free( con_data );
-                  return md_HTTP_default_send_response( connection, 400, NULL );
-               }
-            }
-            else {
-               con_data->offset = 0;
-            }
-
-            mode = MD_HTTP_POST;
-         }
-      }
-      else if( strcmp( method, "PUT" ) == 0 ) {
-
-         if( http_ctx->HTTP_PUT_iterator ) {
-
-            char const* encoding = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_TYPE );
-            if( strncasecmp( encoding, MHD_HTTP_POST_ENCODING_FORM_URLENCODED, strlen( MHD_HTTP_POST_ENCODING_FORM_URLENCODED ) ) == 0 ||
-                strncasecmp( encoding, MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA, strlen( MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA ) ) == 0 ) {
-
-               pp = MHD_create_post_processor( connection, 4096, http_ctx->HTTP_PUT_iterator, con_data );
-               if( pp == NULL ) {
-                  errorf( "failed to create POST processor for %s\n", method);
-                  free( con_data );
-                  return md_HTTP_default_send_response( connection, 400, NULL );
-               }
-            }
-            else {
-               con_data->offset = 0;
-            }
-            mode = MD_HTTP_PUT;
-         }
-      }
-      else if( strcmp( method, "DELETE" ) == 0 ) {
-         if( http_ctx->HTTP_DELETE_handler )
-            mode = MD_HTTP_DELETE;
-      }
-
-      if( mode == MD_HTTP_UNKNOWN ) {
-         // unsupported method
-         struct md_HTTP_response* resp = CALLOC_LIST(struct md_HTTP_response, 1);
-         md_create_HTTP_response_ram_static( resp, "text/plain", 501, MD_HTTP_501_MSG, strlen(MD_HTTP_501_MSG) + 1 );
-         free( con_data );
-         
-         errorf("unknown HTTP method '%s'\n", method);
-         
-         return md_HTTP_send_response( connection, resp );
-      }
-      
-      // build up con_data from what we know
-      con_data->conf = http_ctx->conf;
-      con_data->http = http_ctx;
-      con_data->url_path = md_flatten_path( url );
-      con_data->version = strdup(version);
-      con_data->query_string = (char*)index( con_data->url_path, '?' );
-      con_data->rb = new response_buffer_t();
-      con_data->remote_host = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_HOST );
-      con_data->method = method;
-      con_data->mode = mode;
-      con_data->cls = NULL;
-      con_data->status = 200;
-      con_data->pp = pp;
-      con_data->ms = http_ctx->ms;
-
-      char const* content_length_str = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_LENGTH );
-      if( content_length_str != NULL )
-         con_data->content_length = strtol( content_length_str, NULL, 10 );
-      else
-         con_data->content_length = 0;
-
-      // split query string on '?'
-      if( con_data->query_string != NULL ) {
-         char* p = con_data->query_string;
-         *p = 0;
-         con_data->query_string = p + 1;
-      }
-
-      // get headers
-      vector<struct md_HTTP_header*> headers_vec;
-      MHD_get_connection_values( connection, MHD_HEADER_KIND, md_accumulate_headers, (void*)&headers_vec );
-
-      // convert to list
-      struct md_HTTP_header** headers = CALLOC_LIST( struct md_HTTP_header*, headers_vec.size() + 1 );
-      for( unsigned int i = 0; i < headers_vec.size(); i++ ) {
-         headers[i] = headers_vec.at(i);
-      }
-
-      con_data->headers = headers;
-
-      dbprintf("%s %s, query=%s, requester=%s, user=%s\n", method, con_data->url_path, con_data->query_string, con_data->remote_host, (con_data->user != NULL ? con_data->user->username : "NONE") );
-      
-      // perform connection setup
-      if( http_ctx->HTTP_connect != NULL ) {
-         con_data->cls = (*http_ctx->HTTP_connect)( con_data );
-
-         if( con_data->status >= 300 ) {
-            // not going to serve data
-            errorf("connect status = %d\n", con_data->status );
-            return md_HTTP_send_response( connection, con_data->resp );
-         }
-      }
-
-      *con_cls = con_data;
-
-      // perform authentication
-      if( http_ctx->HTTP_authenticate != NULL ) {
-
-         char* password = NULL;
-         char* username = MHD_basic_auth_get_username_password( connection, &password );
-
-         uint64_t uid = (*http_ctx->HTTP_authenticate)( con_data, username, password );
-
-         if( uid == MD_INVALID_UID ) {
-            errorf("Invalid userpass %s:%s\n", username, password );
-
-            free( username );
-            if( password != NULL )
-               free( password );
-            
-            return md_HTTP_default_send_response( connection, MHD_HTTP_UNAUTHORIZED, NULL );
-         }
-
-         con_data->user = CALLOC_LIST( struct md_user_entry, 1 );
-         con_data->user->username = username;
-         con_data->user->password_hash = NULL;
-         con_data->user->uid = uid;
-
-         if( password ) {
-            con_data->user->password_hash = sha256_hash_printable( password, strlen(password) );
-            free( password );
-         }
-      }
-      
-      return MHD_YES;
-   }
-
-   // POST
-   if( con_data->mode == MD_HTTP_POST ) {
-
-      if( *upload_size != 0 && con_data->status > 0 ) {
-         if( con_data->pp ) {
-            dbprintf( "POST %s, postprocess %zu bytes\n", con_data->url_path, *upload_size );
-            MHD_post_process( con_data->pp, upload_data, *upload_size );
-            *upload_size = 0;
-            return MHD_YES;
-         }
-         else {
-            dbprintf( "POST %s, raw %zu bytes\n", con_data->url_path, *upload_size );
-            int rc = (*http_ctx->HTTP_POST_iterator)( con_data, MHD_POSTDATA_KIND, NULL, NULL, NULL, NULL, upload_data, con_data->offset, *upload_size );
-            con_data->offset += *upload_size;
-            *upload_size = 0;
-            return rc;
-         }
-      }
-      else {
-         (*http_ctx->HTTP_POST_finish)( con_data );
-         dbprintf( "POST finished (%s)\n", url);
-         
-         if( con_data->resp == NULL ) {
-            return md_HTTP_default_send_response( connection, 500, NULL );
-         }
-         else {
-            return md_HTTP_send_response( connection, con_data->resp );
-         }
-      }
-   }
-   
-   // PUT
-   else if( con_data->mode == MD_HTTP_PUT ) {
-
-      if( *upload_size != 0 && con_data->status > 0 ) {
-         if( con_data->pp ) {
-            dbprintf( "PUT %s, postprocess %zu bytes\n", con_data->url_path, *upload_size );
-            MHD_post_process( con_data->pp, upload_data, *upload_size );
-            *upload_size = 0;
-            return MHD_YES;
-         }
-         else {
-            dbprintf( "PUT %s, raw %zu bytes\n", con_data->url_path, *upload_size );
-            int rc = (*http_ctx->HTTP_PUT_iterator)( con_data, MHD_POSTDATA_KIND, NULL, NULL, NULL, NULL, upload_data, con_data->offset, *upload_size );
-            con_data->offset += *upload_size;
-            *upload_size = 0;
-            return rc;
-         }
-      }
-      else {
-         
-         (*http_ctx->HTTP_PUT_finish)( con_data );
-         dbprintf( "PUT finished (%s)\n", url);
-         
-         if( con_data->resp == NULL ) {
-            return md_HTTP_default_send_response( connection, 500, NULL );
-         }
-         else {
-            return md_HTTP_send_response( connection, con_data->resp );
-         }
-      }
-   }
-
-   // DELETE
-   else if( con_data->mode == MD_HTTP_DELETE ) {
-      struct md_HTTP_response* resp = (*http_ctx->HTTP_DELETE_handler)( con_data, 0 );
-
-      if( resp == NULL ) {
-         resp = CALLOC_LIST(struct md_HTTP_response, 1);
-         md_create_HTTP_response_ram_static( resp, (char*)"text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-      }
-
-      con_data->resp = resp;
-      return md_HTTP_send_response( connection, con_data->resp );
-   }
-   
-   // GET
-   else if( con_data->mode == MD_HTTP_GET ) {
-      
-      struct md_HTTP_response* resp = (*http_ctx->HTTP_GET_handler)( con_data );
-      if( resp == NULL ) {
-         resp = CALLOC_LIST(struct md_HTTP_response, 1);
-         md_create_HTTP_response_ram_static( resp, (char*)"text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-      }
-
-      con_data->resp = resp;
-
-      return md_HTTP_send_response( connection, resp );
-   }
-   
-   // HEAD
-   else if( con_data->mode == MD_HTTP_HEAD ) {
-      
-      struct md_HTTP_response* resp = (*http_ctx->HTTP_HEAD_handler)( con_data );
-      if( resp == NULL ) {
-         resp = CALLOC_LIST(struct md_HTTP_response, 1);
-         md_create_HTTP_response_ram_static( resp, (char*)"text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-      }
-
-      con_data->resp = resp;
-
-      return md_HTTP_send_response( connection, resp );
-   }
-
-   return md_HTTP_default_send_response( connection, MHD_HTTP_BAD_REQUEST, NULL );
-}
-
-
-// free a connection state
-void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data ) {
-   if( con_data->pp ) {
-      MHD_destroy_post_processor( con_data->pp );
-   }
-   if( con_data->resp ) {
-      md_free_HTTP_response( con_data->resp );
-      free( con_data->resp );
-   }
-   if( con_data->url_path ) {
-      free( con_data->url_path );
-      con_data->url_path = NULL;
-   }
-   if( con_data->query_string ) {
-      free( con_data->query_string );
-      con_data->query_string = NULL;
-   }
-   if( con_data->version ) {
-      free( con_data->version );
-      con_data->version = NULL;
-   }
-   if( con_data->headers ) {
-      md_free_headers( con_data->headers );
-      con_data->headers = NULL;
-   }
-   if( con_data->rb ) {
-      response_buffer_free( con_data->rb );
-      delete con_data->rb;
-      con_data->rb = NULL;
-   }
-   if( con_data->user ) {
-      md_free_user_entry( con_data->user );
-      free( con_data->user );
-      con_data->user = NULL;
-   }
-}
-
-// default cleanup handler
-// calls user-supplied cleanup handler as well
-void md_HTTP_cleanup( void *cls, struct MHD_Connection *connection, void **con_cls, enum MHD_RequestTerminationCode term ) {
-   struct md_HTTP* http = (struct md_HTTP*)cls;
-   
-   struct md_HTTP_connection_data* con_data = NULL;
-   if( con_cls ) {
-      con_data = (struct md_HTTP_connection_data*)(*con_cls);
-   }
-   
-   if( http->HTTP_cleanup && con_data) {
-      (*http->HTTP_cleanup)( connection, con_data->cls, term );
-      con_data->cls = NULL;
-   }
-   if( con_data ) {
-      md_HTTP_free_connection_data( con_data );
-      free( con_data );
-   }
-}
-
-// set fields in an HTTP structure
-int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf, struct ms_client* client ) {
-   memset( http, 0, sizeof(struct md_HTTP) );
-   http->conf = conf;
-   http->server_type = server_type;
-   http->ms = client;
-   return 0;
-}
-
-
-// start the HTTP thread
-int md_start_HTTP( struct md_HTTP* http, int portnum ) {
-   
-   struct md_syndicate_conf* conf = http->conf;
-   
-   pthread_rwlock_init( &http->lock, NULL );
-   
-   if( conf->server_cert && conf->server_key ) {
-
-      http->server_pkey = conf->server_key;
-      http->server_cert = conf->server_cert;
-      
-      // SSL enabled
-      if( http->server_type == MHD_USE_THREAD_PER_CONNECTION ) {
-         http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SSL, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_HTTPS_MEM_KEY, conf->server_key, 
-                                                MHD_OPTION_HTTPS_MEM_CERT, conf->server_cert,
-                                                MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_HTTPS_PRIORITIES, SYNDICATE_GNUTLS_CIPHER_SUITES,
-                                                MHD_OPTION_END );
-      }
-      else {
-         http->http_daemon = MHD_start_daemon(  http->server_type | MHD_USE_SSL, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_HTTPS_MEM_KEY, conf->server_key, 
-                                                MHD_OPTION_HTTPS_MEM_CERT, conf->server_cert, 
-                                                MHD_OPTION_THREAD_POOL_SIZE, conf->num_http_threads,
-                                                MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_HTTPS_PRIORITIES, SYNDICATE_GNUTLS_CIPHER_SUITES,
-                                                MHD_OPTION_END );
-      }
-   
-      if( http->http_daemon )
-         dbprintf( "Started HTTP server with SSL enabled (cert = %s, pkey = %s) on port %d\n", conf->server_cert_path, conf->server_key_path, portnum);
-   }
-   else {
-      // SSL disabled
-      if( http->server_type == MHD_USE_THREAD_PER_CONNECTION ) {
-         http->http_daemon = MHD_start_daemon(  http->server_type, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_END );
-      }
-      else {
-         http->http_daemon = MHD_start_daemon(  http->server_type, portnum, NULL, NULL, &md_HTTP_connection_handler, http,
-                                                MHD_OPTION_THREAD_POOL_SIZE, conf->num_http_threads,
-                                                MHD_OPTION_NOTIFY_COMPLETED, md_HTTP_cleanup, http,
-                                                MHD_OPTION_END );
-      }
-      
-      if( http->http_daemon )
-         dbprintf( "Started HTTP server on port %d\n", portnum);
-   }
-   
-   if( http->http_daemon == NULL ) {
-      pthread_rwlock_destroy( &http->lock );
-      return -1;
-   }
-   
-   return 0;
-}
-
-// stop the HTTP thread
-int md_stop_HTTP( struct md_HTTP* http ) {
-   MHD_stop_daemon( http->http_daemon );
-   http->http_daemon = NULL;
-   return 0;
-}
-
-// free the HTTP server
-int md_free_HTTP( struct md_HTTP* http ) {
-   pthread_rwlock_destroy( &http->lock );
-   return 0;
-}
-
-int md_HTTP_rlock( struct md_HTTP* http ) {
-   return pthread_rwlock_rdlock( &http->lock );
-}
-
-int md_HTTP_wlock( struct md_HTTP* http ) {
-   return pthread_rwlock_wrlock( &http->lock );
-}
-
-int md_HTTP_unlock( struct md_HTTP* http ) {
-   return pthread_rwlock_unlock( &http->lock );
 }
 
 static int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out ) {
@@ -3734,114 +2308,6 @@ _md_HTTP_parse_url_path_finish:
    return rc;
 }
 
-struct md_user_entry** md_parse_secrets_file( char const* path ) {
-   FILE* passwd_file = fopen( path, "r" );
-   if( passwd_file == NULL ) {
-      errorf( "Could not read password file %s, errno = %d\n", path, -errno );
-      return NULL;
-   }
-
-   struct md_user_entry** ret = md_parse_secrets_file2( passwd_file, path );
-
-   fclose( passwd_file );
-   return ret;
-}
-
-// parse a secrets file
-struct md_user_entry** md_parse_secrets_file2( FILE* passwd_file, char const* path ) {
-   
-   // format: UID:username:password_hash:public_url\n
-   char* buf = NULL;
-   size_t len = 0;
-   vector<struct md_user_entry*> user_ents;
-   int line_num = 0;
-   
-   while( true ) {
-      ssize_t sz = getline( &buf, &len, passwd_file );
-      line_num++;
-      
-      if( sz < 0 ) {
-         // out of lines
-         free( buf );
-         break;
-      }
-      if( buf == NULL ) {
-         // error
-         errorf( "Error reading password file %s\n", path );
-         return NULL;
-      }
-      if( strlen(buf) == 0 ) {
-         // out of lines
-         free( buf );
-         break;
-      }
-      // parse the line
-      char* save_buf = NULL;
-      char* uid_str = strtok_r( buf, ":", &save_buf );
-      char* username_str = strtok_r( NULL, ":", &save_buf );
-      char* password_hash = strtok_r( NULL, "\n", &save_buf );
-      
-      // sanity check
-      if( uid_str == NULL || username_str == NULL || password_hash == NULL ) {
-         errorf( "Could not read password file %s: invalid line %d\n", path, line_num );
-         return NULL;
-      }
-      
-      // sanity check on UID
-      char* next = NULL;
-      uint64_t uid = strtol( uid_str, &next, 10 );
-      if( next == uid_str ) {
-         errorf( "Could not read password file %s: invalid UID '%s' at line %d\n", path, uid_str, line_num );
-         return NULL;
-      }
-      
-      // save the data
-      struct md_user_entry* uent = (struct md_user_entry*)calloc( sizeof(struct md_user_entry), 1 );
-      uent->uid = uid;
-      uent->username = strdup( username_str );
-      uent->password_hash = strdup( password_hash );
-      
-      dbprintf( "%" PRIu64 " %s %s\n", uid, username_str, password_hash);
-
-      user_ents.push_back( uent );
-   }
-   
-   // convert vector to NULL-terminated list
-   struct md_user_entry** ret = (struct md_user_entry**)calloc( sizeof(struct md_user_entry*) * (user_ents.size() + 1), 1 );
-   for( unsigned int i = 0; i < user_ents.size(); i++ ) {
-      ret[i] = user_ents.at(i);
-   }
-   
-   return ret;
-}
-
-// duplicate a user entry
-struct md_user_entry* md_user_entry_dup( struct md_user_entry* uent ) {
-   struct md_user_entry* ret = (struct md_user_entry*)calloc( sizeof(struct md_user_entry), 1 );
-   
-   if( uent->username )
-      ret->username = strdup( uent->username );
-   if( uent->password_hash )
-      ret->password_hash = strdup( uent->password_hash );
-   
-   ret->uid = uent->uid;
-   
-   return ret;
-}
-
-
-// free the memory of a user entry
-void md_free_user_entry( struct md_user_entry* uent ) {
-   if( uent->username ) {
-      free( uent->username );
-      uent->username = NULL;
-   }
-   if( uent->password_hash ) {
-      free( uent->password_hash );
-      uent->password_hash = NULL;
-   }
-}
-
 
 // flatten a response buffer into a byte string
 char* response_buffer_to_string( response_buffer_t* rb ) {
@@ -3903,17 +2369,21 @@ int md_init( int gateway_type,
            ) {
 
    // before we load anything, disable core dumps (i.e. to keep private keys from leaking)
+   int rc = 0;
+   
+#ifndef _SYNDICATE_NACL_
    struct rlimit rlim;
    getrlimit( RLIMIT_CORE, &rlim );
    rlim.rlim_max = 0;
    rlim.rlim_cur = 0;
    
-   int rc = setrlimit( RLIMIT_CORE, &rlim );
+   rc = setrlimit( RLIMIT_CORE, &rlim );
    if( rc != 0 ) {
       rc = -errno;
       errorf("Failed to disable core dumps, rc = %d\n", rc );
       return rc;
    }
+#endif
    
    // need a Volume name with UG
    if( gateway_type == SYNDICATE_UG && volume_name == NULL ) {
@@ -4066,7 +2536,6 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
 #endif
    
    conf->num_http_threads = 1;
-   conf->http_authentication_mode = HTTP_AUTHENTICATE_READWRITE;
    conf->replica_overwrite = false;
 
    conf->ag_block_size = 0;
@@ -4160,706 +2629,10 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
    return rc;
 }
 
-
-////////////////////////////////////////////////////////////////////////////////
-// derived from http://www.cs.odu.edu/~cs772/sourcecode/NSwO/compiled/common.c
-
-void md_init_OpenSSL(void) {
-    if (!md_openssl_thread_setup() || !SSL_library_init())
-    {
-        errorf("%s", "OpenSSL initialization failed!\n");
-        exit(-1);
-    }
-    
-    OpenSSL_add_all_digests();
-    ERR_load_crypto_strings();
-}
-
-
-/* This array will store all of the mutexes available to OpenSSL. */
-static MD_MUTEX_TYPE *md_openssl_mutex_buf = NULL ;
-
-static void locking_function(int mode, int n, const char * file, int line)
-{
-  if (mode & CRYPTO_LOCK)
-    MD_MUTEX_LOCK(md_openssl_mutex_buf[n]);
-  else
-    MD_MUTEX_UNLOCK(md_openssl_mutex_buf[n]);
-}
-
-static unsigned long id_function(void)
-{
-  return ((unsigned long)MD_THREAD_ID);
-}
-
-int md_openssl_thread_setup(void)
-{
-  if( md_openssl_mutex_buf != NULL )
-     // already initialized
-     return 1;
-     
-  int i;
-  md_openssl_mutex_buf = (MD_MUTEX_TYPE *) malloc(CRYPTO_num_locks( ) * sizeof(MD_MUTEX_TYPE));
-  if(!md_openssl_mutex_buf)
-    return 0;
-  for (i = 0; i < CRYPTO_num_locks( ); i++)
-    MD_MUTEX_SETUP(md_openssl_mutex_buf[i]);
-  CRYPTO_set_id_callback(id_function);
-  CRYPTO_set_locking_callback(locking_function);
-  return 1;
-}
-
-int md_openssl_thread_cleanup(void)
-{
-  int i;
-  if (!md_openssl_mutex_buf)
-    return 0;
-  CRYPTO_set_id_callback(NULL);
-  CRYPTO_set_locking_callback(NULL);
-  for (i = 0; i < CRYPTO_num_locks( ); i++)
-    MD_MUTEX_CLEANUP(md_openssl_mutex_buf[i]);
-  free(md_openssl_mutex_buf);
-  md_openssl_mutex_buf = NULL;
-  return 1;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-
-// print a crypto error message
-int md_openssl_error() {
-   unsigned long err = ERR_get_error();
-   char buf[4096];
-
-   ERR_error_string_n( err, buf, 4096 );
-   errorf("OpenSSL error %ld: %s\n", err, buf );
-   return 0;
-}
-
-// verify a message, given a base64-encoded signature
-int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len ) {
-   char* sig_bin = NULL;
-   size_t sig_bin_len = 0;
-
-   int rc = Base64Decode( sigb64, sigb64len, &sig_bin, &sig_bin_len );
-   if( rc != 0 ) {
-      errorf("Base64Decode rc = %d\n", rc );
-      return -EINVAL;
+// free a gateway_request_data
+void md_gateway_request_data_free( struct md_gateway_request_data* reqdat ) {
+   if( reqdat->fs_path ) {
+      free( reqdat->fs_path );
    }
-
-   dbprintf("VERIFY: message len = %zu, strlen(sigb64) = %zu, sigb64 = %s\n", len, strlen(sigb64), sigb64 );
-   
-   const EVP_MD* sha256 = EVP_sha256();
-
-   EVP_MD_CTX *mdctx = EVP_MD_CTX_create();
-   EVP_PKEY_CTX* pkey_ctx = NULL;
-
-   rc = EVP_DigestVerifyInit( mdctx, &pkey_ctx, sha256, NULL, public_key );
-   if( rc <= 0 ) {
-      errorf("EVP_DigestVerifyInit_ex rc = %d\n", rc);
-      md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-   
-   // set up padding
-   
-   // activate PSS
-   rc = EVP_PKEY_CTX_set_rsa_padding( pkey_ctx, RSA_PKCS1_PSS_PADDING );
-   if( rc <= 0 ) {
-      errorf( "EVP_PKEY_CTX_set_rsa_padding rc = %d\n", rc );
-      md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-   
-   // use maximum possible salt length, as per http://wiki.openssl.org/index.php/Manual:EVP_PKEY_CTX_ctrl(3).
-   // This is only because PyCrypto (used by the MS) does this in its PSS implementation.
-   rc = EVP_PKEY_CTX_set_rsa_pss_saltlen( pkey_ctx, -1 );
-   if( rc <= 0 ) {
-      errorf( "EVP_PKEY_CTX_set_rsa_pss_saltlen rc = %d\n", rc );
-      md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-
-   rc = EVP_DigestVerifyUpdate( mdctx, (void*)data, len );
-   if( rc <= 0 ) {
-      errorf("EVP_DigestVerifyUpdate rc = %d\n", rc );
-      md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-
-   rc = EVP_DigestVerifyFinal( mdctx, (unsigned char*)sig_bin, sig_bin_len );
-   if( rc <= 0 ) {
-      errorf("EVP_DigestVerifyFinal rc = %d\n", rc );
-      md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EBADMSG;
-   }
-
-   EVP_MD_CTX_destroy( mdctx );
-   
-   free( sig_bin );
-
-   return 0;
-}
-
-
-// sign a message
-// on success, populate sigb64 and sigb64len with the base64-encoded signature and length, respectively
-int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len ) {
-
-   // sign this with SHA256
-   const EVP_MD* sha256 = EVP_sha256();
-
-   EVP_MD_CTX *mdctx = EVP_MD_CTX_create();
-
-   //int rc = EVP_SignInit( mdctx, sha256 );
-   EVP_PKEY_CTX* pkey_ctx = NULL;
-   int rc = EVP_DigestSignInit( mdctx, &pkey_ctx, sha256, NULL, pkey );
-   
-   if( rc <= 0 ) {
-      errorf("EVP_DigestSignInit rc = %d\n", rc);
-      md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-   
-   // set up padding
-   
-   // activate PSS
-   rc = EVP_PKEY_CTX_set_rsa_padding( pkey_ctx, RSA_PKCS1_PSS_PADDING );
-   if( rc <= 0 ) {
-      errorf( "EVP_PKEY_CTX_set_rsa_padding rc = %d\n", rc );
-      md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-   
-   // use salt length == digest_length, as per http://wiki.openssl.org/index.php/Manual:EVP_PKEY_CTX_ctrl(3).
-   // This is only because PyCrypto (used by the MS) does this in its PSS implementation.
-   rc = EVP_PKEY_CTX_set_rsa_pss_saltlen( pkey_ctx, -1 );
-   if( rc <= 0 ) {
-      errorf( "EVP_PKEY_CTX_set_rsa_pss_saltlen rc = %d\n", rc );
-      md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-   
-   rc = EVP_DigestSignUpdate( mdctx, (void*)data, len );
-   if( rc <= 0 ) {
-      errorf("EVP_DigestSignUpdate rc = %d\n", rc );
-      md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-   
-   // get signature size
-   size_t sig_bin_len = 0;
-   rc = EVP_DigestSignFinal( mdctx, NULL, &sig_bin_len );
-   if( rc <= 0 ) {
-      errorf("EVP_DigestSignFinal rc = %d\n", rc );
-      md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-
-   // allocate the signature
-   unsigned char* sig_bin = CALLOC_LIST( unsigned char, sig_bin_len );
-
-   rc = EVP_DigestSignFinal( mdctx, sig_bin, &sig_bin_len );
-   if( rc <= 0 ) {
-      errorf("EVP_DigestSignFinal rc = %d\n", rc );
-      md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
-      return -EINVAL;
-   }
-
-   // convert to base64
-   char* b64 = NULL;
-   rc = Base64Encode( (char*)sig_bin, sig_bin_len, &b64 );
-   if( rc != 0 ) {
-      errorf("Base64Encode rc = %d\n", rc );
-      md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
-      free( sig_bin );
-      return rc;
-   }
-
-   EVP_MD_CTX_destroy( mdctx );
-
-   *sigb64 = b64;
-   *sigb64len = strlen(b64);
-   
-   dbprintf("SIGN: message len = %zu, sigb64_len = %zu, sigb64 = %s\n", len, strlen(b64), b64 );
-
-   free( sig_bin );
-   
-   return 0;
-}
-
-
-// load a PEM-encoded (RSA) public key into an EVP key
-int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str ) {
-   BIO* buf_io = BIO_new_mem_buf( (void*)pubkey_str, strlen(pubkey_str) );
-
-   EVP_PKEY* public_key = PEM_read_bio_PUBKEY( buf_io, NULL, NULL, NULL );
-
-   BIO_free_all( buf_io );
-
-   if( public_key == NULL ) {
-      // invalid public key
-      errorf("%s", "ERR: failed to read public key\n");
-      md_openssl_error();
-      return -EINVAL;
-   }
-
-   *key = public_key;
-   
-   return 0;
-}
-
-
-// load a PEM-encoded (RSA) private key into an EVP key
-int md_load_privkey( EVP_PKEY** key, char const* privkey_str ) {
-   BIO* buf_io = BIO_new_mem_buf( (void*)privkey_str, strlen(privkey_str) );
-
-   EVP_PKEY* privkey = PEM_read_bio_PrivateKey( buf_io, NULL, NULL, NULL );
-
-   BIO_free_all( buf_io );
-
-   if( privkey == NULL ) {
-      // invalid public key
-      errorf("%s", "ERR: failed to read private key\n");
-      md_openssl_error();
-      return -EINVAL;
-   }
-
-   *key = privkey;
-
-   return 0;
-}
-
-// generate RSA public/private key pair
-int md_generate_key( EVP_PKEY** key ) {
-
-   dbprintf("%s", "Generating public/private key...\n");
-   
-   EVP_PKEY_CTX *ctx;
-   EVP_PKEY *pkey = NULL;
-   ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
-   if (!ctx) {
-      md_openssl_error();
-      return -1;
-   }
-
-   int rc = EVP_PKEY_keygen_init( ctx );
-   if( rc <= 0 ) {
-      md_openssl_error();
-      EVP_PKEY_CTX_free( ctx );
-      return rc;
-   }
-
-   rc = EVP_PKEY_CTX_set_rsa_keygen_bits( ctx, RSA_KEY_SIZE );
-   if( rc <= 0 ) {
-      md_openssl_error();
-      EVP_PKEY_CTX_free( ctx );
-      return rc;
-   }
-
-   rc = EVP_PKEY_keygen( ctx, &pkey );
-   if( rc <= 0 ) {
-      md_openssl_error();
-      EVP_PKEY_CTX_free( ctx );
-      return rc;
-   }
-
-   *key = pkey;
-   EVP_PKEY_CTX_free( ctx );
-   return 0;
-}
-
-
-// dump a key to memory
-long md_dump_pubkey( EVP_PKEY* pkey, char** buf ) {
-   BIO* mbuf = BIO_new( BIO_s_mem() );
-   
-   int rc = PEM_write_bio_PUBKEY( mbuf, pkey );
-   if( rc <= 0 ) {
-      errorf("PEM_write_bio_PUBKEY rc = %d\n", rc );
-      md_openssl_error();
-      return -EINVAL;
-   }
-
-   (void) BIO_flush( mbuf );
-   
-   char* tmp = NULL;
-   long sz = BIO_get_mem_data( mbuf, &tmp );
-
-   *buf = CALLOC_LIST( char, sz );
-   memcpy( *buf, tmp, sz );
-
-   BIO_free( mbuf );
-   
-   return sz;
-}
-
-
-// encrypt data with a public key, using the EVP_Seal API.
-// use AES256 with Galois/Counter Mode, and a 256-bit IV
-int md_encrypt( EVP_PKEY* pubkey, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
-   const EVP_CIPHER* cipher = EVP_aes_256_gcm();
-   
-   // set up an encryption cipher
-   EVP_CIPHER_CTX ctx;
-   EVP_CIPHER_CTX_init( &ctx );
-   
-   // choose the cipher
-   int rc = EVP_SealInit( &ctx, cipher, NULL, 0, NULL, NULL, 0 );
-   if( rc == 0 ) {
-      errorf("EVP_SealInit rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
-   // set IV length 
-   int iv_len = 256 / 8;
-   unsigned char* iv = (unsigned char*)alloca( iv_len );
-   
-   rc = EVP_CIPHER_CTX_ctrl( &ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL );
-   if( rc == 0 ) {
-      errorf("EVP_CIPHER_CTX_ctrl rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
-   // get block size 
-   int block_size = EVP_CIPHER_block_size( cipher );
-   
-   // allocate encrypted key and IV
-   unsigned char* ek = CALLOC_LIST( unsigned char, EVP_PKEY_size( pubkey ) );
-   int ek_len = 0;
-   
-   // allocate the tag
-   int tag_len = 16;
-   unsigned char* tag = (unsigned char*)alloca( tag_len );
-   
-   // begin
-   rc = EVP_SealInit( &ctx, NULL, &ek, &ek_len, iv, &pubkey, 1 );
-   if( rc == 0 ) {
-      errorf("EVP_SealInit rc = %d\n", rc );
-      md_openssl_error();
-      
-      free( ek );
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
-   // copy in the key length, the (encrypted) key, the IV length, and the IV
-   int ek_len_n = htonl( ek_len );
-   int iv_len_n = htonl( iv_len );
-   int tag_len_n = htonl( tag_len );
-   int ciphertext_size = 0;
-   
-   // allocate the output buffer
-   size_t output_len = sizeof(ek_len_n) + ek_len + sizeof(iv_len_n) + iv_len + sizeof(tag_len_n) + tag_len + sizeof(ciphertext_size) + (in_data_len + 2 * block_size);
-   unsigned char* output_data = CALLOC_LIST( unsigned char, output_len );
-   int output_begin = 0;
-   
-   // key length
-   memcpy( output_data + output_begin, &ek_len_n, sizeof(ek_len_n) );
-   output_begin += sizeof(ek_len_n);
-   
-   // encrypted key 
-   memcpy( output_data + output_begin, ek, ek_len );
-   output_begin += ek_len;
-   
-   // IV length
-   memcpy( output_data + output_begin, &iv_len_n, sizeof(iv_len_n) );
-   output_begin += sizeof(iv_len_n);
-   
-   // IV
-   memcpy( output_data + output_begin, iv, iv_len );
-   output_begin += iv_len;
-   
-   // leave room for the tag size
-   unsigned char* tag_size_p = output_data + output_begin;
-   output_begin += sizeof(tag_len_n);
-   
-   // leave room for the tag
-   unsigned char* tag_p = output_data + output_begin;
-   output_begin += tag_len;
-   
-   // leave room for a payload size
-   unsigned char* ciphertext_size_p = output_data + output_begin;
-   output_begin += sizeof(ciphertext_size);
-   
-   // encrypt the data 
-   int output_written = 0;
-   rc = EVP_SealUpdate( &ctx, output_data + output_begin, &output_written, (unsigned char*)in_data, in_data_len );
-   if( rc == 0 ) {
-      errorf("EVP_SealUpdate rc = %d\n", rc );
-      md_openssl_error();
-      
-      free( ek );
-      free( output_data );
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
-   output_begin += output_written;
-   
-   // finalize...
-   int final_len = 0;
-   rc = EVP_SealFinal( &ctx, output_data + output_begin, &final_len );
-   if( rc == 0 ) {
-      errorf("EVP_SealFinal rc = %d\n", rc );
-      md_openssl_error();
-      
-      free( ek );
-      free( output_data );
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
-   output_begin += final_len;
-   
-   // get the tag
-   rc = EVP_CIPHER_CTX_ctrl( &ctx, EVP_CTRL_GCM_GET_TAG, tag_len, tag );
-   if( rc == 0 ) {
-      errorf("EVP_CIPHER_CTX_ctrl rc = %d\n", rc );
-      md_openssl_error();
-      
-      free( ek );
-      free( output_data );
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
-   // set the tag length
-   memcpy( tag_size_p, &tag_len_n, sizeof(tag_len_n) );
-   
-   // set the tag
-   memcpy( tag_p, tag, tag_len );
-   
-   // set the ciphertext size
-   ciphertext_size = htonl( output_written + final_len );
-   memcpy( ciphertext_size_p, &ciphertext_size, sizeof(ciphertext_size));
-   
-   // reply data
-   *out_data = (char*)output_data;
-   *out_data_len = (size_t)output_begin;
-   
-   // clean up 
-   free( ek );
-   EVP_CIPHER_CTX_cleanup( &ctx );
-   
-   return 0;
-}
-
-// helper function for md_encrypt, when we can't deal with EVP_PKEY (i.e. from a python script)
-int md_encrypt_pem( char const* pubkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
-   // load the key
-   EVP_PKEY* pubkey = NULL;
-   int rc = md_load_pubkey( &pubkey, pubkey_pem );
-   if( rc != 0 ) {
-      errorf("md_load_pubkey rc = %d\n", rc );
-      return -EINVAL;
-   }
-   
-   rc = md_encrypt( pubkey, in_data, in_data_len, out_data, out_data_len );
-   
-   EVP_PKEY_free( pubkey );
-   return rc;
-}
-
-// decrypt data, given a private key
-// use AES256 with Galois/Counter mode
-int md_decrypt( EVP_PKEY* privkey, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
-   int ek_len = 0, ek_len_n = 0;
-   int iv_len = 0, iv_len_n = 0;
-   int tag_len = 0, tag_len_n = 0;
-   int ciphertext_len = 0, ciphertext_len_n = 0;
-   unsigned char* ek = NULL;
-   unsigned char* iv = NULL;
-   unsigned char* tag = NULL;
-   unsigned char* ciphertext = NULL;
-   int input_begin = 0;
-   
-   // sanity check: need a key length
-   if( in_data_len < (size_t)(input_begin + sizeof(ek_len_n)) )
-      return -EINVAL;
-
-   // get the key length
-   memcpy( &ek_len_n, in_data + input_begin, sizeof(ek_len_n) );
-   input_begin += sizeof(ek_len_n);
-   
-   ek_len = ntohl( ek_len_n );
-   
-   // sanity check: need a key
-   if( in_data_len < (size_t)(input_begin + ek_len) )
-      return -EINVAL;
-   
-   // get the encrypted key
-   ek = (unsigned char*)(in_data + input_begin);
-   input_begin += ek_len;
-   
-   // sanity check: need an IV size 
-   if( in_data_len < input_begin + sizeof(iv_len_n) )
-      return -EINVAL;
-   
-   // get the IV length
-   memcpy( &iv_len_n, in_data + input_begin, sizeof(iv_len_n) );
-   input_begin += sizeof(iv_len_n);
-   
-   iv_len = ntohl( iv_len_n );
-   
-   // sanity check: need the IV
-   if( in_data_len < (size_t)(input_begin + iv_len) )
-      return -EINVAL;
-   
-   // get the IV
-   iv = (unsigned char*)(in_data + input_begin);
-   input_begin += iv_len;
-   
-   // sanity check: need the tag length
-   if( in_data_len < input_begin + sizeof(tag_len_n) )
-      return -EINVAL;
-   
-   // get the tag length
-   memcpy( &tag_len_n, in_data + input_begin, sizeof(tag_len_n) );
-   input_begin += sizeof(tag_len_n);
-   
-   tag_len = ntohl( tag_len_n );
-   
-   // sanity check: need the tag
-   if( in_data_len < (size_t)(input_begin + tag_len) )
-      return -EINVAL;
-   
-   // get the tag
-   tag = (unsigned char*)(in_data + input_begin);
-   input_begin += tag_len;
-   
-   // sanity check: need the ciphertext size
-   if( in_data_len < input_begin + sizeof(ciphertext_len_n) )
-      return -EINVAL;
-   
-   // get the ciphertext size
-   memcpy( &ciphertext_len_n, in_data + input_begin, sizeof(ciphertext_len_n) );
-   input_begin += sizeof(ciphertext_len_n);
-   
-   ciphertext_len = ntohl( ciphertext_len_n );
-   
-   // sanity check: need the ciphertext
-   if( in_data_len < (size_t)(input_begin + ciphertext_len) )
-      return -EINVAL;
-   
-   // get the ciphertext
-   ciphertext = (unsigned char*)(in_data + input_begin);
-   input_begin += ciphertext_len;
-   
-   // begin to decrypt it
-   const EVP_CIPHER* cipher = EVP_aes_256_gcm();
-   
-   // set up an encryption cipher
-   EVP_CIPHER_CTX ctx;
-   EVP_CIPHER_CTX_init( &ctx );
-   
-   // initialize the context
-   int rc = EVP_OpenInit( &ctx, cipher, NULL, 0, NULL, NULL );
-   if( rc == 0 ) {
-      errorf("EVP_OpenInit rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
-   // set the IV
-   rc = EVP_CIPHER_CTX_ctrl( &ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL );
-   if( rc == 0 ) {
-      errorf("EVP_CIPHER_CTX_ctrl rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
-   // initialize the cipher and start decrypting
-   rc = EVP_OpenInit( &ctx, NULL, ek, ek_len, iv, privkey );
-   if( rc == 0 ) {
-      errorf("EVP_OpenInit rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
-   // output buffer
-   unsigned char* output_buf = CALLOC_LIST( unsigned char, ciphertext_len );
-   int output_buf_written = 0;
-   
-   // decrypt everything
-   rc = EVP_OpenUpdate( &ctx, output_buf, &output_buf_written, ciphertext, ciphertext_len );
-   if( rc == 0 ) {
-      errorf("EVP_OpenUpdate rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      free( output_buf );
-      return -1;
-   }
-   
-   // set the expected tag
-   rc = EVP_CIPHER_CTX_ctrl( &ctx, EVP_CTRL_GCM_SET_TAG, tag_len, tag );
-   if( rc == 0 ) {
-      errorf("EVP_CIPHER_CTX_ctrl rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      free( output_buf );
-      return -1;
-   }
-      
-   // finalize 
-   int output_written_final = 0;
-   rc = EVP_OpenFinal( &ctx, output_buf + output_buf_written, &output_written_final );
-   if( rc == 0 ) {
-      errorf("EVP_OpenFinal rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      free( output_buf );
-      return -1;
-   }
-   
-   // reply decrypted data
-   *out_data = (char*)output_buf;
-   *out_data_len = output_buf_written + output_written_final;
-   
-   EVP_CIPHER_CTX_cleanup( &ctx );
-   return 0;
-}
-
-
-// helper function for md_decrypt, when we can't deal with EVP_PKEY (i.e. from a python script)
-int md_decrypt_pem( char const* privkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
-   // load the key
-   EVP_PKEY* privkey = NULL;
-   int rc = md_load_privkey( &privkey, privkey_pem );
-   if( rc != 0 ) {
-      errorf("md_load_privkey rc = %d\n", rc );
-      return -EINVAL;
-   }
-   
-   rc = md_decrypt( privkey, in_data, in_data_len, out_data, out_data_len );
-   
-   EVP_PKEY_free( privkey );
-   return rc;
+   memset( reqdat, 0, sizeof(struct md_gateway_request_data) );
 }

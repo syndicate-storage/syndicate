@@ -44,8 +44,8 @@
 #include <string>
 #include <iostream>
 #include <sys/socket.h>
-#include <sys/un.h>
-#include <attr/xattr.h>
+//#include <sys/un.h>
+//#include <attr/xattr.h>
 #include <pthread.h>
 #include <pwd.h>
 #include <math.h>
@@ -54,22 +54,24 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <inttypes.h>
-#include <openssl/pem.h>
-#include <openssl/ssl.h>
-#include <openssl/rand.h>
-#include <openssl/err.h>
-#include <endian.h>
+//#include <endian.h>
 #include <sys/resource.h>
 
 using namespace std;
 
 #include <curl/curl.h>
-#include <uriparser/Uri.h>
 
-#include "util.h"
-#include "microhttpd.h"
 #include "ms.pb.h"
 #include "serialization.pb.h"
+
+// if we're building a Google Native Client plugin, we have to define these...
+#ifndef EREMOTEIO
+#define EREMOTEIO 121
+#endif
+
+#ifndef MIN
+#define MIN(x,y) ((x) < (y) ? (x) : (y))
+#endif
 
 struct md_syndicate_conf; 
 
@@ -144,172 +146,17 @@ struct md_post_buf {
    int len;
 };
 
-// basic linked list
-struct md_linked_list {
-   void* what;
-   struct md_linked_list* next;
+
+// gateway request structure
+struct md_gateway_request_data {
+   uint64_t volume_id;
+   char* fs_path;
+   int64_t file_version;
+   uint64_t block_id;
+   int64_t block_version;
+   struct timespec manifest_timestamp;
+   bool staging;
 };
-
-// gateway user session
-struct md_user_entry {
-   uint64_t uid;
-   char* username;
-   char* password_hash;    // used as a session secret
-};
-
-#define MD_GUEST_UID 0xFFFFFFFF
-#define MD_INVALID_UID 0xFFFFFFFE
-
-// chubby path locks
-struct md_path_locks {
-   vector< long >* path_locks;
-   pthread_mutex_t path_locks_lock;
-   pthread_mutex_t wait_lock;
-   int wait_count;
-};
-
-// directory listing
-struct md_dir_listing {
-   struct dirent** namelist;
-   int num_entries;
-};
-
-// HTTP handler args
-struct md_HTTP_handler_args {
-   struct md_syndicate_conf* conf;
-   struct md_user_entry** users;
-};
-
-
-// HTTP headers
-struct md_HTTP_header {
-   char* header;
-   char* value;
-};
-
-
-// ssize_t (*)(void* cls, uint64_t pos, char* buf, size_t max)
-typedef MHD_ContentReaderCallback md_HTTP_stream_callback;
-
-// void (*)(void* cls)
-typedef MHD_ContentReaderFreeCallback md_HTTP_free_cls_callback;
-
-// HTTP stream response
-struct md_HTTP_stream_response {
-   md_HTTP_stream_callback scb;
-   md_HTTP_free_cls_callback fcb;
-   
-   void* cls;
-   size_t blk_size;
-   uint64_t size;
-};
-   
-
-// HTTP response (to be populated by handlers)
-struct md_HTTP_response {
-   int status;
-   struct MHD_Response* resp;
-};
-
-struct md_HTTP;
-
-
-// HTTP connection data
-struct md_HTTP_connection_data {
-   struct md_HTTP* http;
-   struct md_syndicate_conf* conf;
-   struct ms_client* ms;
-   struct MHD_PostProcessor* pp;
-   struct md_user_entry* user;
-   struct md_HTTP_response* resp;
-   struct md_HTTP_header** headers;
-   char const* remote_host;
-   char const* method;
-   size_t content_length;
-   
-   int status;
-   int mode;
-   off_t offset;              // if there isn't a post-processor, then this stores the offset 
-   
-   void* cls;                 // user-supplied closure
-   char* version;             // HTTP version
-   char* url_path;            // path requested
-   char* query_string;        // url's query string
-   response_buffer_t* rb;     // response buffer for small messages
-};
-
-// HTTP callbacks and control code
-struct md_HTTP {
-
-   pthread_rwlock_t lock;
-   
-   struct md_syndicate_conf* conf;
-   struct ms_client* ms;
-   int authentication_mode;
-   struct MHD_Daemon* http_daemon;
-   int server_type;   // one of the MHD options
-
-   char* server_cert;
-   char* server_pkey;
-   
-   void*                     (*HTTP_connect)( struct md_HTTP_connection_data* md_con_data );
-   uint64_t                  (*HTTP_authenticate)( struct md_HTTP_connection_data* md_con_data, char* username, char* password );
-   struct md_HTTP_response*  (*HTTP_HEAD_handler)( struct md_HTTP_connection_data* md_con_data );
-   struct md_HTTP_response*  (*HTTP_GET_handler)( struct md_HTTP_connection_data* md_con_data );
-   int                       (*HTTP_POST_iterator)(void *coninfo_cls, enum MHD_ValueKind kind, 
-                                                   char const *key,
-                                                   char const *filename, char const *content_type,
-                                                   char const *transfer_encoding, char const *data, 
-                                                   uint64_t off, size_t size);
-   void                      (*HTTP_POST_finish)( struct md_HTTP_connection_data* md_con_data );
-   int                       (*HTTP_PUT_iterator)(void *coninfo_cls, enum MHD_ValueKind kind,
-                                                  char const *key,
-                                                  char const *filename, char const *content_type,
-                                                  char const *transfer_encoding, char const *data,
-                                                  uint64_t off, size_t size);
-   void                      (*HTTP_PUT_finish)( struct md_HTTP_connection_data* md_con_data );
-   struct md_HTTP_response*  (*HTTP_DELETE_handler)( struct md_HTTP_connection_data* md_con_data, int depth );
-   void                      (*HTTP_cleanup)(struct MHD_Connection *connection, void *con_cls, enum MHD_RequestTerminationCode term);
-};
-
-extern char const MD_HTTP_NOMSG[128];
-extern char const MD_HTTP_200_MSG[128];
-extern char const MD_HTTP_400_MSG[128];
-extern char const MD_HTTP_401_MSG[128];
-extern char const MD_HTTP_403_MSG[128];
-extern char const MD_HTTP_404_MSG[128];
-extern char const MD_HTTP_409_MSG[128];
-extern char const MD_HTTP_413_MSG[128];
-extern char const MD_HTTP_422_MSG[128];
-extern char const MD_HTTP_500_MSG[128];
-extern char const MD_HTTP_501_MSG[128];
-extern char const MD_HTTP_504_MSG[128];
-
-extern char const MD_HTTP_DEFAULT_MSG[128];
-
-#define MD_HTTP_TYPE_STATEMACHINE   MHD_USE_SELECT_INTERNALLY
-#define MD_HTTP_TYPE_THREAD         MHD_USE_THREAD_PER_CONNECTION
-
-#define MD_MIN_POST_DATA 4096
-
-#define md_HTTP_connect( http, callback ) (http).HTTP_connect = (callback)
-#define md_HTTP_authenticate( http, callback ) (http.HTTP_authenticate) = (callback)
-#define md_HTTP_GET( http, callback ) (http).HTTP_GET_handler = (callback)
-#define md_HTTP_HEAD( http, callback ) (http).HTTP_HEAD_handler = (callback)
-#define md_HTTP_POST_iterator( http, callback ) (http).HTTP_POST_iterator = (callback)
-#define md_HTTP_POST_finish( http, callback ) (http).HTTP_POST_finish = (callback)
-#define md_HTTP_PUT_iterator( http, callback ) (http).HTTP_PUT_iterator = (callback)
-#define md_HTTP_PUT_finish( http, callback ) (http).HTTP_PUT_finish = (callback)
-#define md_HTTP_DELETE( http, callback ) (http).HTTP_DELETE_handler = (callback)
-#define md_HTTP_close( http, callback ) (http).HTTP_cleanup = (callback)
-#define md_HTTP_auth_mode( http, auth_mode ) (http).authentication_mode = auth_mode
-#define md_HTTP_server_type( http, type ) (http).server_type = type
-
-// use STRONG encryption, with perfect forward security
-// Use ephemeral Diffie-Hellman for key exchange (RSA or ECC)
-// Use at least 256-bit MACs
-// Use at least 256-bit keys for data encryption.
-#define SYNDICATE_GNUTLS_CIPHER_SUITES "PFS:-ARCFOUR-128:-3DES-CBC:-AES-128-CBC:-AES-256-CBC:-CAMELLIA-128-CBC:-MD5:-SHA1"
 
 // server configuration
 struct md_syndicate_conf {
@@ -327,7 +174,6 @@ struct md_syndicate_conf {
    
    // RG/AG servers
    unsigned int num_http_threads;                     // how many HTTP threads to create
-   int http_authentication_mode;                      // for which operations do we authenticate?
    char* md_pidfile_path;                             // where to store the PID file for the gateway server
    char* gateway_metadata_root;                       // location on disk (if desired) to record metadata
    bool replica_overwrite;                            // overwrite replica file at the client's request
@@ -377,29 +223,6 @@ struct md_syndicate_conf {
 };
 
 
-// authentication (can be OR'ed together)
-#define HTTP_AUTHENTICATE_NONE        0
-#define HTTP_AUTHENTICATE_READ        1
-#define HTTP_AUTHENTICATE_WRITE       2
-#define HTTP_AUTHENTICATE_READWRITE   3
-
-// types of responses
-#define HTTP_RESPONSE_RAM              1
-#define HTTP_RESPONSE_RAM_NOCOPY       2
-#define HTTP_RESPONSE_RAM_STATIC       3
-#define HTTP_RESPONSE_FILE             4
-#define HTTP_RESPONSE_FD               5
-#define HTTP_RESPONSE_CALLBACK         6
-
-// mode for connection data
-#define MD_HTTP_GET      0
-#define MD_HTTP_POST     1
-#define MD_HTTP_PUT      2
-#define MD_HTTP_HEAD     3
-#define MD_HTTP_DELETE   4
-
-#define MD_HTTP_UNKNOWN  -1
-
 #define COMMENT_KEY                 '#'
 
 #define DEBUG_KEY                   "DEBUG"
@@ -438,7 +261,6 @@ struct md_syndicate_conf {
 #define SSL_CERT_KEY                "TLS_CERT"
 #define GATEWAY_KEY_KEY             "GATEWAY_KEY"
 #define VOLUME_PUBKEY_KEY           "VOLUME_PUBKEY"
-#define AUTH_OPERATIONS_KEY         "AUTH_OPERATIONS"
 #define PIDFILE_KEY                 "PIDFILE"
 #define VOLUME_NAME_KEY             "VOLUME_NAME"
 #define GATEWAY_NAME_KEY            "GATEWAY_NAME"
@@ -493,28 +315,6 @@ typedef struct map<string, struct md_entry*> md_entmap;
 typedef vector<long> md_pathlist;
 
 
-// Lock types
-#if defined(WIN32)
-    #define MD_MUTEX_TYPE HANDLE
-    #define MD_MUTEX_SETUP(x) (x) = CreateMutex(NULL, FALSE, NULL)
-    #define MD_MUTEX_CLEANUP(x) CloseHandle(x)
-    #define MD_MUTEX_LOCK(x) WaitForSingleObject((x), INFINITE)
-    #define MD_MUTEX_UNLOCK(x) ReleaseMutex(x)
-    #define MD_THREAD_ID GetCurrentThreadId( )
-#elif defined (_POSIX_THREADS)
-    /* _POSIX_THREADS is normally defined in unistd.h if pthreads are available
-       on your platform. */
-    #define MD_MUTEX_TYPE pthread_mutex_t
-    #define MD_MUTEX_SETUP(x) pthread_mutex_init(&(x), NULL)
-    #define MD_MUTEX_CLEANUP(x) pthread_mutex_destroy(&(x))
-    #define MD_MUTEX_LOCK(x) pthread_mutex_lock(&(x))
-    #define MD_MUTEX_UNLOCK(x) pthread_mutex_unlock(&(x))
-    #define MD_THREAD_ID pthread_self( )
-#else
-    #error You must define mutex operations appropriate for your platform!
-#endif
-
-
 extern "C" {
    
 // library config 
@@ -532,33 +332,13 @@ struct md_entry* md_entry_dup( struct md_entry* src );
 void md_entry_dup2( struct md_entry* src, struct md_entry* ret );
 void md_entry_free( struct md_entry* ent );
 
-// path locks
-int md_path_locks_create( struct md_path_locks* locks );
-int md_path_locks_free( struct md_path_locks* locks );
-int md_lock_path( struct md_path_locks* locks, char const* path );
-int md_global_lock_path( char const* mdroot, char const* path );
-void* md_unlock_path( struct md_path_locks* locks, char const* path );
-void* md_global_unlock_path( char const* mdroot, char const* path );
-
 // publishing
-int md_publish_file( char const* data_root, char const* publish_root, char const* fs_path, int64_t file_version );
-int md_publish_block( char const* data_root, char const* publish_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version );
-int md_withdraw_block( char const* root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version );
-int md_withdraw_file( char const* root, char const* fs_path, int64_t version );
-int md_withdraw_dir( char const* root, char const* fs_path );
-char* md_publish_path_file( char const* publish_root, char const* fs_path, int64_t version );
-char* md_publish_path_block( char const* publish_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version );
-char* md_staging_path_block( char const* staging_root, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version );
-char* md_full_block_path( char const* root, char const* fs_path, int64_t file_version, uint64_t block_id );
+bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path );
 int64_t md_path_version( char const* path );
 int md_path_version_offset( char const* path );
 ssize_t md_metadata_update_text( struct md_syndicate_conf* conf, char **buf, struct md_update** updates );
 ssize_t md_metadata_update_text2( struct md_syndicate_conf* conf, char **buf, vector<struct md_update>* updates );
 ssize_t md_metadata_update_text3( struct md_syndicate_conf* conf, char **buf, struct md_update* (*iterator)( void* ), void* arg );
-bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path );
-char** md_versioned_paths( char const* base_path );
-int64_t* md_versions( char const* base_path );
-int64_t md_next_version( char** versioned_publish_paths );
 char* md_clear_version( char* path );
 void md_update_free( struct md_update* update );
 void md_update_dup2( struct md_update* src, struct md_update* dest );
@@ -580,18 +360,12 @@ bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url );
 int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent );
 int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent );
 
-// directory manipulation
-int md_mkdirs( char const* dirp );
-int md_mkdirs2( char const* dirp, int start, mode_t mode );
-int md_mkdirs3( char const* dirp, mode_t mode );
-int md_rmdirs( char const* dirp );
-
-// system
+// threading
 pthread_t md_start_thread( void* (*thread_func)(void*), void* args, bool detach );
-int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile );
-int md_release_privileges();
 
 // downloads
+int md_connect_timeout( unsigned long timeout );
+void md_init_curl_handle( CURL* curl, char const* url, time_t query_time );
 ssize_t md_download_file( char const* url, char** buf, int* status_code );
 ssize_t md_download_file2( char const* url, char** buf, char const* username, char const* password );
 ssize_t md_download_file3( char const* url, int fd, char const* username, char const* password );
@@ -604,8 +378,14 @@ int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* 
 int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg );
 ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char const* block_url, char** block_bits, size_t block_len );
 
-// HTTP and URL control
-int md_connect_timeout( unsigned long timeout );
+// download/upload callbacks
+size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t count, void* user_data );
+size_t md_default_get_callback_ram(void *stream, size_t size, size_t count, void *user_data);
+size_t md_default_get_callback_disk(void *stream, size_t size, size_t count, void *user_data);
+size_t md_get_callback_response_buffer( void* stream, size_t size, size_t count, void* user_data );
+size_t md_default_post_callback(void *ptr, size_t size, size_t nmemb, void *userp);
+
+// URL parsing
 char** md_parse_cgi_args( char* query_string );
 char* md_url_hostname( char const* url );
 char* md_url_scheme( char const* url );
@@ -614,61 +394,16 @@ char* md_fs_path_from_url( char const* url );
 char* md_url_strip_path( char const* url );
 int md_portnum_from_url( char const* url );
 char* md_strip_protocol( char const* url );
-char* md_normalize_url( char const* url, int* rc );
-int md_normalize_urls( char** urls, char** ret );
-size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t count, void* user_data );
-size_t md_default_get_callback_ram(void *stream, size_t size, size_t count, void *user_data);
-size_t md_default_get_callback_disk(void *stream, size_t size, size_t count, void *user_data);
-size_t md_get_callback_response_buffer( void* stream, size_t size, size_t count, void* user_data );
-size_t md_default_post_callback(void *ptr, size_t size, size_t nmemb, void *userp);
-int md_response_buffer_upload_iterator(void *coninfo_cls, enum MHD_ValueKind kind,
-                                       const char *key,
-                                       const char *filename, const char *content_type,
-                                       const char *transfer_encoding, const char *data,
-                                       uint64_t off, size_t size);
 char* md_flatten_path( char const* path );
 char* md_cdn_url( char const* url );
-int md_HTTP_rlock( struct md_HTTP* http );
-int md_HTTP_wlock( struct md_HTTP* http );
-int md_HTTP_unlock( struct md_HTTP* http );
-
-
-// HTTP server
-int md_create_HTTP_response_ram( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len );
-int md_create_HTTP_response_ram_nocopy( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len );
-int md_create_HTTP_response_ram_static( struct md_HTTP_response* resp, char const* mimetype, int status, char const* data, int len );
-int md_create_HTTP_response_fd( struct md_HTTP_response* resp, char const* mimetype, int status, int fd, off_t offset, size_t size );
-int md_create_HTTP_response_stream( struct md_HTTP_response* resp, char const* mimetype, int status, uint64_t size, size_t blk_size, md_HTTP_stream_callback scb, void* cls, md_HTTP_free_cls_callback fcb );
-void md_free_HTTP_response( struct md_HTTP_response* resp );
-void* md_cls_get( void* cls );
-void md_cls_set_status( void* cls, int status );
-struct md_HTTP_response* md_cls_set_response( void* cls, struct md_HTTP_response* resp );
-int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf, struct ms_client* client );
-int md_start_HTTP( struct md_HTTP* http, int portnum );
-int md_stop_HTTP( struct md_HTTP* http );
-int md_free_HTTP( struct md_HTTP* http );
-void md_create_HTTP_header( struct md_HTTP_header* header, char const* h, char const* value );
-void md_free_HTTP_header( struct md_HTTP_header* header );
-void md_free_download_buf( struct md_download_buf* buf );
-void md_init_curl_handle( CURL* curl, char const* url, time_t query_time );
-char const* md_find_HTTP_header( struct md_HTTP_header** headers, char const* header );
-int md_HTTP_add_header( struct md_HTTP_response* resp, char const* header, char const* value );
-int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_timestamp, bool* _staging );
-void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data );
-
-// user manipulation
-struct md_user_entry** md_parse_secrets_file( char const* path );
-struct md_user_entry** md_parse_secrets_file2( FILE* passwd_file, char const* path );
-struct md_user_entry* md_user_entry_dup( struct md_user_entry* uent );
-void md_free_user_entry( struct md_user_entry* uent );
-struct md_user_entry* md_find_user_entry( char const* username, struct md_user_entry** users );
-struct md_user_entry* md_find_user_entry2( uint64_t uid, struct md_user_entry** users );
-bool md_validate_user_password( char const* password, struct md_user_entry* uent );
 
 // response buffers
 char* response_buffer_to_string( response_buffer_t* rb );
 size_t response_buffer_size( response_buffer_t* rb );
 void response_buffer_free( response_buffer_t* rb );
+
+// request data
+void md_gateway_request_data_free( struct md_gateway_request_data* reqdat );
 
 // top-level initialization
 int md_init(int gateway_type,
@@ -691,21 +426,6 @@ int md_shutdown(void);
 int md_default_conf( struct md_syndicate_conf* conf );
 int md_check_conf( int gateway_type, struct md_syndicate_conf* conf );
 
-// OpenSSL
-int md_openssl_thread_setup(void);
-int md_openssl_thread_cleanup(void);
-void md_init_OpenSSL(void);
-int md_openssl_error(void);
-int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str );
-int md_load_privkey( EVP_PKEY** key, char const* privkey_str );
-int md_generate_key( EVP_PKEY** key );
-long md_dump_pubkey( EVP_PKEY* pkey, char** buf );
-int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len );
-int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len );
-int md_encrypt( EVP_PKEY* pubkey, char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
-int md_encrypt_pem( char const* pubkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for syntool
-int md_decrypt( EVP_PKEY* privkey, char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
-int md_decrypt_pem( char const* privkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for syntool
 }
 
 
@@ -752,94 +472,6 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 }
 
 
-// signature verifier
-// have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
-// NOTE:  class T should be a protobuf, and should have a string signature field
-// TODO: verify the signature of the hash of the message, not the whole message?
-template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
-   // get the signature
-   size_t sigb64_len = protobuf->signature().size();
-   
-   if( sigb64_len == 0 ) {
-      // malformed message
-      errorf("%s\n", "invalid signature length");
-      return -EINVAL;
-   }
-   
-   char* sigb64 = CALLOC_LIST( char, sigb64_len + 1 );
-   if( sigb64 == NULL )
-      return -ENOMEM;
-   
-   memcpy( sigb64, protobuf->signature().data(), sigb64_len );
-   
-   protobuf->set_signature( "" );
-
-   string bits;
-   try {
-      protobuf->SerializeToString( &bits );
-   }
-   catch( exception e ) {
-      // revert
-      protobuf->set_signature( string(sigb64) );
-      free( sigb64 );
-      return -EINVAL;
-   }
-   
-   // verify the signature
-   int rc = md_verify_signature( pkey, bits.data(), bits.size(), sigb64, sigb64_len );
-   
-   // revert
-   protobuf->set_signature( string(sigb64) );
-   free( sigb64 );
-
-   if( rc != 0 ) {
-      errorf("md_verify_signature rc = %d\n", rc );
-   }
-
-   return rc;
-}
-
-
-// signature generator
-// have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
-// NOTE: class T should be a protobuf, and should have a string signature field 
-// TODO: sign the hash of the message, not the whole message?
-template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
-   protobuf->set_signature( "" );
-
-   string bits;
-   bool valid;
-   
-   try {
-      valid = protobuf->SerializeToString( &bits );
-   }
-   catch( exception e ) {
-      errorf("%s", "failed to serialize update set\n");
-      return -EINVAL;
-   }
-
-   if( !valid ) {
-      errorf("%s", "failed to serialize update set\n");
-      return -EINVAL;
-   }
-   
-   // sign this message
-   char* sigb64 = NULL;
-   size_t sigb64_len = 0;
-
-   int rc = md_sign_message( pkey, bits.data(), bits.size(), &sigb64, &sigb64_len );
-   if( rc != 0 ) {
-      errorf("md_sign_message rc = %d\n", rc );
-      return rc;
-   }
-
-   protobuf->set_signature( string(sigb64, sigb64_len) );
-   
-   free( sigb64 );
-   return 0;
-}
-
-
 // system UID
 #define SYS_USER 0
 
@@ -866,11 +498,12 @@ template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
 #define GATEWAY_CAP_WRITE_METADATA  8
 #define GATEWAY_CAP_COORDINATE  16
 
+#define RSA_KEY_SIZE 4096
+
+
 // limits
 #define SYNDICATE_MAX_WRITE_MESSEGE_LEN  4096
 #define SYNDICATE_MAX_MANIFEST_LEN              1000000         // 1MB
 #define URL_MAX         3000           // maximum length of a URL
-
-#include "ms-client.h"
 
 #endif

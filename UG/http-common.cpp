@@ -145,7 +145,7 @@ int http_make_default_headers( struct md_HTTP_response* resp, time_t last_modifi
 // return HTTP_REDIRECT_NOT_HANDLED if a new URL was not generated, but there were no errors
 // return HTTP_REDIRECT_REMOTE if the requested data is not locally hosted
 // return negative if a new URL could not be generated
-int http_process_redirect( struct syndicate_state* state, char** redirect_url, struct stat* sb, struct gateway_request_data* reqdat ) {
+int http_process_redirect( struct syndicate_state* state, char** redirect_url, struct stat* sb, struct md_gateway_request_data* reqdat ) {
 
    memset( sb, 0, sizeof(struct stat) );
    
@@ -287,7 +287,7 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
 // handle redirect requests
 // return HTTP_REDIRECT_HANDLED for handled
 // return (HTTP_REDIRECT_NOT_HANDLED, HTTP_REDIRECT_REMOTE) otherwise
-int http_handle_redirect( struct syndicate_state* state, struct md_HTTP_response* resp, struct stat* sb, struct gateway_request_data* reqdat ) {
+int http_handle_redirect( struct syndicate_state* state, struct md_HTTP_response* resp, struct stat* sb, struct md_gateway_request_data* reqdat ) {
    char* redirect_url = NULL;
    
    int rc = http_process_redirect( state, &redirect_url, sb, reqdat );
@@ -312,9 +312,9 @@ int http_handle_redirect( struct syndicate_state* state, struct md_HTTP_response
 // and handle redirect requests.
 // populate the given arguments and return 0 or 1 on success (0 means that no redirect occurred; 1 means a redirect occurred)
 // return negative on error
-int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp, struct gateway_request_data* reqdat, char* url ) {
+int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp, struct md_gateway_request_data* reqdat, char* url ) {
 
-   memset( reqdat, 0, sizeof(struct gateway_request_data) );
+   memset( reqdat, 0, sizeof(struct md_gateway_request_data) );
    
    char* url_path = http_validate_url_path( http_ctx, url, resp );
    if( url_path == NULL ) {

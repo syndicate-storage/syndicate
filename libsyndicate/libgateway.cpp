@@ -15,7 +15,7 @@
 */
 
 
-#include "libgateway.h"
+#include "libsyndicate/libgateway.h"
 
 static bool gateway_running = true;
 static bool allow_overwrite = false;
@@ -80,14 +80,6 @@ void gateway_controller_func( int (*controller_func)(pid_t pid, int ctrl_flag)) 
     controller_callback = controller_func;
 }
 
-// free a gateway_request_data
-void gateway_request_data_free( struct gateway_request_data* reqdat ) {
-   if( reqdat->fs_path ) {
-      free( reqdat->fs_path );
-   }
-   memset( reqdat, 0, sizeof(struct gateway_request_data) );
-}
-
 // get the HTTP status
 int get_http_status( struct gateway_context* ctx, int default_value ) {
    int ret = default_value;
@@ -122,7 +114,7 @@ static char const* CONNECT_ERROR = "CONNECT ERROR";
 // connection handler
 static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    
-   struct gateway_request_data reqdat;
+   struct md_gateway_request_data reqdat;
    memset( &reqdat, 0, sizeof(reqdat) );
    
    int rc = md_HTTP_parse_url_path( md_con_data->url_path, &reqdat.volume_id, &reqdat.fs_path, &reqdat.file_version, &reqdat.block_id, &reqdat.block_version, &reqdat.manifest_timestamp, &reqdat.staging );
@@ -134,14 +126,13 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
    
    if( reqdat.staging ) {
       errorf("Invalid request: '%s' cannot be staging\n", md_con_data->url_path );
-      gateway_request_data_free( &reqdat );
+      md_gateway_request_data_free( &reqdat );
       return NULL;
    }
    
    
    struct gateway_connection_data* con_data = CALLOC_LIST( struct gateway_connection_data, 1 );
    
-   con_data->user = md_con_data->user;
    con_data->rb = new response_buffer_t();
    con_data->has_gateway_md = false;
    con_data->err = 0;
@@ -149,10 +140,6 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
    if( md_con_data->query_string ) {
       char* args_str = strdup( md_con_data->query_string );
       con_data->ctx.args = md_parse_cgi_args( args_str );
-   }
-   
-   if( md_con_data->user != NULL ) {
-      con_data->ctx.username = md_con_data->user->username;
    }
    
    memcpy( &con_data->ctx.reqdat, &reqdat, sizeof(reqdat) );
@@ -568,7 +555,6 @@ static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf, s
    //md_path_locks_create( &gateway_md_locks );
 
    md_HTTP_init( http, MHD_USE_SELECT_INTERNALLY | MHD_USE_POLL | MHD_USE_DEBUG, conf, ms );
-   md_HTTP_auth_mode( *http, conf->http_authentication_mode );
    md_HTTP_connect( *http, gateway_HTTP_connect );
    md_HTTP_GET( *http, gateway_GET_handler );
    md_HTTP_HEAD( *http, gateway_HEAD_handler );
@@ -874,6 +860,111 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    return 0;
 }
 
+
+// turn into a deamon
+int daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
+
+   FILE* log = NULL;
+   int pid_fd = -1;
+   
+   if( logfile_path ) {
+      log = fopen( logfile_path, "a" );
+   }
+   if( pidfile_path ) {
+      pid_fd = open( pidfile_path, O_CREAT | O_EXCL | O_WRONLY, 0644 );
+      if( pid_fd < 0 ) {
+         // specified a PID file, and we couldn't make it.  someone else is running
+         int errsv = -errno;
+         errorf( "Failed to create PID file %s (error %d)\n", pidfile_path, errsv );
+         return errsv;
+      }
+   }
+   
+   pid_t pid, sid;
+
+   pid = fork();
+   if (pid < 0) {
+      int rc = -errno;
+      errorf( "Failed to fork (errno = %d)\n", -errno);
+      return rc;
+   }
+
+   if (pid > 0) {
+      exit(0);
+   }
+
+   // child process 
+   // umask(0);
+
+   sid = setsid();
+   if( sid < 0 ) {
+      int rc = -errno;
+      errorf("setsid errno = %d\n", rc );
+      return rc;
+   }
+
+   if( chdir("/") < 0 ) {
+      int rc = -errno;
+      errorf("chdir errno = %d\n", rc );
+      return rc;
+   }
+
+   close( STDIN_FILENO );
+   close( STDOUT_FILENO );
+   close( STDERR_FILENO );
+
+   if( log ) {
+      int log_fileno = fileno( log );
+
+      if( dup2( log_fileno, STDOUT_FILENO ) < 0 ) {
+         int errsv = -errno;
+         errorf( "dup2 errno = %d\n", errsv);
+         return errsv;
+      }
+      if( dup2( log_fileno, STDERR_FILENO ) < 0 ) {
+         int errsv = -errno;
+         errorf( "dup2 errno = %d\n", errsv);
+         return errsv;
+      }
+
+      if( logfile )
+         *logfile = log;
+      else
+         fclose( log );
+   }
+   else {
+      int null_fileno = open("/dev/null", O_WRONLY);
+      dup2( null_fileno, STDOUT_FILENO );
+      dup2( null_fileno, STDERR_FILENO );
+   }
+
+   if( pid_fd >= 0 ) {
+      char buf[10];
+      sprintf(buf, "%d", getpid() );
+      write( pid_fd, buf, strlen(buf) );
+      fsync( pid_fd );
+      close( pid_fd );
+   }
+   
+   struct passwd* pwd;
+   int ret = 0;
+   
+   // switch to "daemon" user, if possible
+   pwd = getpwnam( "daemon" );
+   if( pwd != NULL ) {
+      setuid( pwd->pw_uid );
+      dbprintf( "became user '%s'\n", "daemon" );
+      ret = 0;
+   }
+   else {
+      dbprintf( "could not become '%s'\n", "daemon" );
+      ret = 1;
+   }
+   
+   return ret;
+}
+
+
 int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *client, char* logfile, char* pidfile, bool make_daemon ) {
    int rc = 0;
    // clean up stale records
@@ -884,9 +975,9 @@ int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *cli
    // need to daemonize?
    if( make_daemon ) {
       FILE* log = NULL;
-      rc = md_daemonize( logfile, pidfile, &log );
+      rc = daemonize( logfile, pidfile, &log );
       if( rc < 0 ) {
-         errorf( "md_daemonize rc = %d\n", rc );
+         errorf( "daemonize rc = %d\n", rc );
          exit(1);
       }
    }

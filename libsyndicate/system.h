@@ -14,15 +14,26 @@
    limitations under the License.
 */
 
-#ifndef _LOG_H_
-#define _LOG_H_
+// system methods
+
+#ifndef _LIBSYNDICATE_SYSTEM_H_
+#define _LIBSYNDICATE_SYSTEM_H_
 
 #include "libsyndicate/libsyndicate.h"
+#include "util.h"
 
-// logging functions
-FILE* log_init(const char* logpath);
-int log_shutdown( FILE* logfile );
-void logmsg( FILE* logfile, const char* msg, ... );
-int logerr( FILE* logfile, const char* msg, ... );
+extern "C" {
+   
+// daemon
+int md_daemonize( char* logfile_path, char* pidfile_path, FILE** logfile );
+int md_release_privileges();
+
+// directory manipulation
+int md_mkdirs( char const* dirp );
+int md_mkdirs2( char const* dirp, int start, mode_t mode );
+int md_mkdirs3( char const* dirp, mode_t mode );
+int md_rmdirs( char const* dirp );
+
+}
 
 #endif

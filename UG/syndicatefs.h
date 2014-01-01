@@ -19,13 +19,14 @@
 #ifndef _SYNDICATEFS_H_
 #define _SYNDICATEFS_H_
 
-#include "libsyndicate.h"
+#include "libsyndicate/libsyndicate.h"
 #include "stats.h"
 #include "log.h"
 #include "fs.h"
 #include "replication.h"
 #include "collator.h"
 #include "syndicate.h"
+#include "server.h"
 
 #define FUSE_USE_VERSION 28
 
@@ -34,7 +35,7 @@
 
 #include <fuse.h>
 
-class IOProcessor;
+//class IOProcessor;
 
 #define SYNDICATEFS_DATA ((struct syndicate_state *) fuse_get_context()->private_data)
 
@@ -43,7 +44,6 @@ int syndicatefs_getattr(const char *path, struct stat *statbuf);
 int syndicatefs_readlink(const char *path, char *link, size_t size);
 int syndicatefs_mknod(const char *path, mode_t mode, dev_t dev);
 int syndicatefs_mkdir(const char *path, mode_t mode);
-int syndicatefs_detach(const char* path, int64_t version);
 int syndicatefs_unlink(const char *path);
 int syndicatefs_rmdir(const char *path);
 int syndicatefs_symlink(const char *path, const char *link);
@@ -52,7 +52,6 @@ int syndicatefs_link(const char *path, const char *newpath);
 int syndicatefs_chmod(const char *path, mode_t mode);
 int syndicatefs_chown(const char *path, uid_t uid, gid_t gid);
 int syndicatefs_truncate(const char *path, off_t newsize);
-int syndicatefs_versioned_truncate(struct syndicate_state* state, const char* path, off_t newsize, int64_t known_version);
 int syndicatefs_utime(const char *path, struct utimbuf *ubuf);
 int syndicatefs_open(const char *path, struct fuse_file_info *fi);
 int syndicatefs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi);

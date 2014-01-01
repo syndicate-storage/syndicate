@@ -19,6 +19,11 @@
 
 #include "fs_entry.h"
 
+// in case we didn't include xattr.h
+#ifndef ENOTATTR
+#define ENOATTR ENODATA
+#endif
+
 #define SYNDICATE_XATTR_MTIME          "user.syndicate_modtime"
 #define SYNDICATE_XATTR_COORDINATOR    "user.syndicate_coordinator"
 

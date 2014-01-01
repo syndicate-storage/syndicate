@@ -49,12 +49,13 @@ Collator::~Collator() {
 
 
 // build up an AcceptMsg
-static int build_AcceptMsg( Serialization::WriteMsg* acceptMsg, struct fs_core* core, char const* fs_path, int64_t file_version, uint64_t start_id, uint64_t end_id, int64_t* block_versions ) {
+static int build_AcceptMsg( Serialization::WriteMsg* acceptMsg, struct fs_core* core, char const* fs_path, uint64_t file_id, int64_t file_version, uint64_t start_id, uint64_t end_id, int64_t* block_versions ) {
    fs_entry_init_write_message( acceptMsg, core, Serialization::WriteMsg::ACCEPTED );
 
    Serialization::AcceptMsg* accept_data = acceptMsg->mutable_accepted();
 
    accept_data->set_fs_path( string(fs_path) );
+   accept_data->set_file_id( file_id );
    accept_data->set_file_version( file_version );
 
    for( uint64_t i = 0; i < end_id - start_id; i++ ) {
@@ -129,7 +130,7 @@ int Collator::release_blocks( struct fs_core* core, char const* fs_path, struct 
       int64_t* blk_versions = fent->manifest->get_block_versions( start, end );
 
       Serialization::WriteMsg* msg = new Serialization::WriteMsg();
-      build_AcceptMsg( msg, core, fs_path, fent->version, start_block_id, end_block_id, blk_versions );
+      build_AcceptMsg( msg, core, fs_path, fent->file_id, fent->version, start_block_id, end_block_id, blk_versions );
 
       struct release_entry rls;
       memset( &rls, 0, sizeof(rls) );

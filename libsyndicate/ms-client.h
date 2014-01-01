@@ -22,13 +22,15 @@
 #endif
 
 #include <inttypes.h>
+#include <sys/types.h>
 
 #include <sstream>
 #include <queue>
 #include <set>
 #include <locale>
 
-#include "libsyndicate.h"
+#include "libsyndicate/libsyndicate.h"
+#include "libsyndicate/crypt.h"
 
 #define HTTP_VOLUME_TIME   "X-Volume-Time"
 #define HTTP_GATEWAY_TIME  "X-Gateway-Time"
@@ -38,8 +40,6 @@
 #define HTTP_UPDATE_TIMES  "X-Update-Times"
 #define HTTP_DELETE_TIMES  "X-Delete-Times"
 #define HTTP_MS_LASTMOD    "X-MS-LastMod"
-
-#define RSA_KEY_SIZE 4096
 
 // maximum cert size is 10MB
 #define MS_MAX_CERT_SIZE 10240000

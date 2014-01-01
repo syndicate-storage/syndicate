@@ -14,13 +14,14 @@
    limitations under the License.
 */
 
-#include "libsyndicate.h"
+#include "libsyndicate/libsyndicate.h"
 #include "stats.h"
 #include "log.h"
 #include "fs.h"
 #include "replication.h"
 #include "collator.h"
 #include "syndicate.h"
+#include "server.h"
 
 #include <boost/bind.hpp>
 #include <boost/asio.hpp>
@@ -1533,11 +1534,23 @@ int main(int argc, char* argv[]) {
 
     struct md_HTTP syndicate_http;
 
-    rc = syndicate_init(config_file, &syndicate_http, portnum, ms_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path);
+    // start core services
+    rc = syndicate_init(config_file, portnum, ms_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path);
     if (rc != 0)
         exit(1);
+    
 
-    syndicateipc_get_context()->syndicate_state_data = syndicate_get_state();
+    struct syndicate_state* state = syndicate_get_state();
+ 
+    // start back-end HTTP server
+    rc = server_init( state, &syndicate_http );
+    if( rc != 0 )
+       exit(1);
+
+    // finish initialization
+    syndicate_finish_init( state );
+      
+    syndicateipc_get_context()->syndicate_state_data = state;
     syndicateipc_get_context()->syndicate_http = syndicate_http;
 
     printf("\n\nSyndicateIPC starting up\n\n");
@@ -1553,10 +1566,8 @@ int main(int argc, char* argv[]) {
 
     printf("\n\nSyndicateIPC shutting down\n\n");
 
-    dbprintf("%s", "HTTP server shutdown\n");
+    server_shutdown( &syndicate_http );
 
-    md_stop_HTTP(&syndicate_http);
-    md_free_HTTP(&syndicate_http);
     syndicate_destroy();
 
     curl_global_cleanup();

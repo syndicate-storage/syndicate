@@ -1095,10 +1095,9 @@ int replica_init_replication( struct syndicate_replication* rp, char const* name
 int replica_shutdown_replication( struct syndicate_replication* rp ) {
    rp->active = false;
    
+   // NOTE: we don't care of pthread_cancel fails...
    pthread_cancel( rp->upload_thread );
    pthread_join( rp->upload_thread, NULL );
-   
-   // TODO: wait for everything to finish
    
    int need_running_unlock = pthread_mutex_trylock( &rp->running_lock );
    
@@ -1442,7 +1441,7 @@ int fs_entry_replicate_wait_and_free( struct syndicate_replication* synrp, vecto
          continue;
       
       if( timeout != NULL ) {
-         dbprintf("wait %ld.%ld seconds for replica %p\n", timeout->tv_sec, timeout->tv_nsec, rctxs->at(i) );
+         dbprintf("wait %ld.%ld seconds for replica %p\n", (long)timeout->tv_sec, (long)timeout->tv_nsec, rctxs->at(i) );
          
          rctxs->at(i)->deadline.tv_sec = timeout->tv_sec;
          rctxs->at(i)->deadline.tv_nsec = timeout->tv_nsec;

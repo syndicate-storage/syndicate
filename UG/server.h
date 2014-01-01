@@ -14,15 +14,19 @@
    limitations under the License.
 */
 
-#ifndef _LOG_H_
-#define _LOG_H_
+#ifndef _SERVER_H_
+#define _SERVER_H_
 
 #include "libsyndicate/libsyndicate.h"
+#include "http-common.h"
 
-// logging functions
-FILE* log_init(const char* logpath);
-int log_shutdown( FILE* logfile );
-void logmsg( FILE* logfile, const char* msg, ... );
-int logerr( FILE* logfile, const char* msg, ... );
+// data for a single connection
+struct syndicate_connection {
+   struct syndicate_state* state;
+};
+
+
+int server_init( struct syndicate_state* state, struct md_HTTP* server );
+int server_shutdown( struct md_HTTP* server );
 
 #endif

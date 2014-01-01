@@ -18,10 +18,11 @@
 #ifndef _COLLATOR_H_
 #define _COLLATOR_H_
 
-#include "util.h"
-#include "libsyndicate.h"
+#include "libsyndicate/util.h"
+#include "libsyndicate/libsyndicate.h"
 #include "serialization.pb.h"
 #include "fs.h"
+#include "network.h"
 
 #include <map>
 using namespace std;

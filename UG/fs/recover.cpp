@@ -19,6 +19,8 @@
 #include "consistency.h"
 #include "url.h"
 
+// NOTE: unsure if this is even needed, since the UG doesn't store hard state.
+
 // restore a single file's manifest from local data, given the latest data from the MS.
 // fent must refer to a local file
 int fs_entry_restore_file_from_disk( struct fs_core* core, struct fs_entry* fent ) {

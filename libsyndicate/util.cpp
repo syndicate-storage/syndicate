@@ -17,7 +17,7 @@
  * Utility functions (debugging, etc)
  */
  
-#include "util.h"
+#include "libsyndicate/util.h"
 
 int _DEBUG = 1;
 
@@ -275,51 +275,6 @@ unsigned char* sha256_fd( int fd ) {
 }
 
 
-// make a directory sanely
-int mkdir_sane( char* dirpath ) {
-   DIR* dir = opendir( dirpath );
-   if( dir == NULL && errno == ENOENT ) {
-      // the directory does not exist, so try making it
-      int old = umask( ~(0700) );
-      int rc = mkdir( dirpath, 0700 );
-      umask( old );
-      if( rc != 0 && errno != EEXIST ) {
-         return -errno;     // couldn't make the directory, and it wasn't because it already existed.
-      }
-   }
-   else if( dir == NULL ) {
-      // some other error
-      return -errno;
-   }
-   else {
-      // close the directory; we can write to it
-      closedir( dir );
-      return 0;
-   }
-   return 0;
-}
-
-
-// remove a directory sanely.
-// rf = true means that the function will recursively remove all files
-int rmdir_sane( char* dirpath, bool rf ) {
-   //logerr("ERR: rmdir_sane not implemented\n");
-   return 0;
-}
-
-// check and see whether or not a directory exists
-int dir_exists( char* dirpath ) {
-   DIR* dir = opendir( dirpath );
-   if( dir == NULL )
-      // doesn't exist or we can't read it
-      return -errno;
-   
-   closedir( dir );
-   return 0;      // it existed when we checked
-}
-
-
-
 // load a file into RAM
 // return a pointer to the bytes.
 // set the size.
@@ -539,8 +494,10 @@ void block_all_signals() {
     pthread_sigmask(SIG_SETMASK, &sigs, NULL);
 }
 
+// does NOT work in NaCl
 int install_signal_handler(int signo, struct sigaction *act, sighandler_t handler) {
     int rc = 0;
+#ifndef _SYNDICATE_NACL_
     sigset_t sigs;
     sigemptyset(&sigs);
     sigaddset(&sigs, signo);
@@ -549,6 +506,7 @@ int install_signal_handler(int signo, struct sigaction *act, sighandler_t handle
     if (rc < 0)
 	return rc;
     rc = pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
+#endif
     return rc;
 }
 

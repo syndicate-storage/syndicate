@@ -21,7 +21,7 @@
 #include <sys/types.h>
 #include <stdio.h>
 #include <string.h>
-#include <memory.h>
+//#include <memory.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -37,8 +37,8 @@
 #include <stdarg.h>
 #include <sys/time.h>
 #include <sys/socket.h>
-#include <sys/un.h>
-#include <attr/xattr.h>
+//#include <sys/un.h>
+//#include <attr/xattr.h>
 #include <semaphore.h>
 #include <signal.h>
 #include <openssl/sha.h>
@@ -56,10 +56,10 @@
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <math.h>
-#include <endian.h>
+//#include <endian.h>
 
 #define WHERESTR "%10lx: [%16s:%04u] %s: "
-#define WHEREARG pthread_self(), __FILE__, __LINE__, __func__
+#define WHEREARG (unsigned long)pthread_self(), __FILE__, __LINE__, __func__
 
 extern int _DEBUG_MESSAGES;
 extern int _ERROR_MESSAGES;
@@ -147,8 +147,10 @@ int64_t currentTimeSeconds();
 int64_t currentTimeMillis();
 double currentTimeMono();
 int64_t currentTimeMicros();
+double timespec_to_double( struct timespec* ts );
+double now_ns(void);
 
-// misc functions
+// sha256 functions
 size_t sha256_len(void);
 unsigned char* sha256_hash( char const* input );
 unsigned char* sha256_hash_data( char const* input, size_t len );
@@ -159,22 +161,20 @@ unsigned char* sha256_file( char const* path );
 unsigned char* sha256_fd( int fd );
 unsigned char* sha256_dup( unsigned char const* sha256 );
 int sha256_cmp( unsigned char const* sha256_1, unsigned char const* sha256_2 );
-int mkdir_sane( char* dirpath );
-int rmdir_sane( char* dirpath );
-int dir_exists( char* dirpath );
-int make_lockfiles( char* path, char* lnk );
+
+// system functions
 char* load_file( char const* path, size_t* size );
+
+// parser functions
 char* url_encode( char const* str, size_t len );
 char* url_decode( char const* str, size_t* len );
 int reg_match(const char *string, char const *pattern);
 int timespec_cmp( struct timespec* t1, struct timespec* t2 );
-uint32_t CMWC4096(void);
-
 int Base64Decode(const char* b64message, size_t len, char** buffer, size_t* buffer_len);
 int Base64Encode(const char* message, size_t len, char** buffer);
 
-double timespec_to_double( struct timespec* ts );
-double now_ns(void);
+// random number generator
+uint32_t CMWC4096(void);
 
 int util_init(void);
 

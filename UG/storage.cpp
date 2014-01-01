@@ -79,18 +79,13 @@ int fs_entry_move_local_file( char* path, char* new_path ) {
    return rc;
 }
 
-// remove all blocks for a file
-int fs_entry_clear_local_file( struct fs_core* core, uint64_t file_id, int64_t version ) {
-   // only remove if this directory represents an actual file
-
-   char* local_file_url = fs_entry_local_file_url( core, file_id, version );
-   char* local_path = GET_PATH( local_file_url );
+// clear a directory out
+static int fs_entry_clear_file_by_path( char const* local_path ) {
    
    DIR* dir = opendir( local_path );
    if( dir == NULL ) {
       int rc = -errno;
       errorf( "opendir(%s) errno = %d\n", local_path, rc );
-      free( local_file_url );
       return rc;
    }
 
@@ -121,35 +116,81 @@ int fs_entry_clear_local_file( struct fs_core* core, uint64_t file_id, int64_t v
 
    closedir( dir );
    free( dent );
-   free( local_file_url );
+   
    return worst_rc;
+}
+
+// remove all blocks for a file
+static int fs_entry_clear_file( struct fs_core* core, uint64_t file_id, int64_t version, bool staging ) {
+   // only remove if this directory represents an actual file
+
+   char* local_file_url = NULL;
+   
+   if( !staging )
+      local_file_url = fs_entry_local_file_url( core, file_id, version );
+   else
+      local_file_url = fs_entry_local_staging_file_url( core, file_id, version );
+   
+   char* local_path = GET_PATH( local_file_url );
+   
+   int rc = fs_entry_clear_file_by_path( local_path );
+   
+   free( local_file_url );
+   
+   return rc;
+}
+
+int fs_entry_clear_local_file( struct fs_core* core, uint64_t file_id, int64_t version ) {
+   return fs_entry_clear_file( core, file_id, version, false );
+}
+
+int fs_entry_clear_staging_file( struct fs_core* core, uint64_t file_id, int64_t version ) {
+   return fs_entry_clear_file( core, file_id, version, true );
+}
+
+
+static int fs_entry_remove_file_by_path( char const* local_path ) {
+   int rc = rmdir( local_path );
+   if( rc != 0 ) {
+      rc = -errno;
+      errorf( "rmdir(%s) errno = %d\n", local_path, rc );
+   }
+   
+   return rc;
 }
 
 // remove a local file from disk
 // path is the fully-qualified path
 // This path most somehow be locked first
-int fs_entry_remove_local_file( struct fs_core* core, uint64_t file_id, int64_t version ) {
+static int fs_entry_remove_file( struct fs_core* core, uint64_t file_id, int64_t version, bool staging ) {
    // only remove if this directory represents an actual file
-   int worst_rc = fs_entry_clear_local_file( core, file_id, version );
-
-   char* local_file_url = fs_entry_local_file_url( core, file_id, version );
+   int rc = fs_entry_clear_file( core, file_id, version, staging );
+   if( rc != 0 ) {
+      return rc;
+   }
+   
+   char* local_file_url = NULL;
+   
+   if( !staging )
+      local_file_url = fs_entry_local_file_url( core, file_id, version );
+   else
+      local_file_url = fs_entry_local_staging_file_url( core, file_id, version );
+   
    char* local_path = GET_PATH( local_file_url );
    
-   if( worst_rc == 0 ) {
-      
-      int rc = rmdir( local_path );
-      if( rc != 0 ) {
-         worst_rc = -errno;
-         errorf( "rmdir(%s) errno = %d\n", local_path, rc );
-      }
-   }
-   else {
-      errorf("fs_entry_truncate_local_file(%s, %" PRId64 ") rc = %d\n", local_path, version, worst_rc );
-   }
+   rc = fs_entry_remove_file_by_path( local_path );
 
    free( local_file_url );
 
-   return worst_rc;
+   return rc;
+}
+
+int fs_entry_remove_local_file( struct fs_core* core, uint64_t file_id, int64_t version ) {
+   return fs_entry_remove_file( core, file_id, version, false );
+}
+
+int fs_entry_remove_staging_file( struct fs_core* core, uint64_t file_id, int64_t version ) {
+   return fs_entry_remove_file( core, file_id, version, true );
 }
 
 
@@ -332,6 +373,52 @@ ssize_t fs_entry_commit_block_data( struct fs_core* core, uint64_t file_id, int6
 }
 
 
+// given a base path, find the instances of the path locally that have version numbers. 
+// return the version numbers as a -1 terminated list
+int64_t* fs_entry_read_versions( char const* base_path ) {
+   char* base_path_dir = md_dirname( base_path, NULL );
+   char* base_path_basename = md_basename( base_path, NULL );
+
+   DIR* dir = opendir( base_path_dir );
+   if( dir == NULL ) {
+      int errsv = errno;
+      errorf( "could not open %s, errno = %d\n", base_path_dir, errsv );
+      return NULL;
+   }
+
+   int dirent_sz = offsetof(struct dirent, d_name) + pathconf(base_path_dir, _PC_NAME_MAX) + 1;
+
+   struct dirent* dent = (struct dirent*)malloc( dirent_sz );;
+   struct dirent* result = NULL;
+
+   vector<int64_t> versions;
+
+   do {
+      readdir_r( dir, dent, &result );
+      if( result != NULL ) {
+         if( md_is_versioned_form( base_path_basename, result->d_name ) ) {
+            int64_t ver = md_path_version( result->d_name );
+            if( ver >= 0 )
+               versions.push_back( ver );
+         }
+      }
+   } while( result != NULL );
+
+   int64_t* ret = CALLOC_LIST( int64_t, versions.size() + 1 );
+   for( unsigned int i = 0; i < versions.size(); i++ ) {
+      ret[i] = versions[i];
+   }
+   ret[ versions.size() ] = (int64_t)(-1);
+
+   closedir(dir);
+   free( dent );
+   free( base_path_dir );
+   free( base_path_basename );
+
+   return ret;
+}
+
+
 // clear out old versions of a block.
 // preserve a block with current_block_version.
 // fent must be at least read_locked.
@@ -344,7 +431,7 @@ int fs_entry_remove_old_block_versions( struct fs_core* core, struct fs_entry* f
 
    char* block_path = GET_PATH( local_block_url_prefix );
 
-   int64_t* versions = md_versions( block_path );
+   int64_t* versions = fs_entry_read_versions( block_path );
 
    for( int i = 0; versions != NULL && versions[i] >= 0; i++ ) {
       if( versions[i] == current_block_version ) {
@@ -571,31 +658,22 @@ int fs_entry_release_staging( struct fs_core* core, Serialization::WriteMsg* acc
       if( !err )
          err = -ENOENT;
 
-      else if( err == -ENOENT ) {
-         // file got unlinked while it was being collated.
-         // just remove the staging directory for this file's blocks.
-
-         char const* fs_path = accept_msg->accepted().fs_path().c_str();
-         int64_t file_version = accept_msg->accepted().file_version();
-
-         // remove data
-         int rc = md_withdraw_file( core->conf->staging_root, fs_path, file_version );
-         if( rc != 0 ) {
-            errorf( "md_withdraw_file(%s.%" PRId64 ") rc = %d\n", fs_path, file_version, rc );
-         }
-         
-         err = rc;
-      }
-
       return err;
    }
+   
+   // check file_id match
+   if( fent->file_id != accept_msg->accepted().file_id() ) {
+      errorf("File ID mismatch: received %" PRIu64 ", expected %" PRIu64 "\n", accept_msg->accepted().file_id(), fent->file_id );
+      fs_entry_unlock( fent );
+      return -EINVAL;
+   }
+
 
    if( FS_ENTRY_LOCAL( core, fent ) ) {
       // only remote files have staging information
       fs_entry_unlock( fent );
       return -EINVAL;
    }
-
 
    // mark the manifest as stale so we refresh it on the next I/O operation
    fent->manifest->mark_stale();

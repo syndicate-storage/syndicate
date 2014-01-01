@@ -61,7 +61,8 @@ bool parse_byterange( char* header, uint64_t* start, uint64_t* end ) {
    if( strstr( header, "bytes=" ) == NULL )
       return false;
    
-   char range_value[1024];
+   char range_value[1025];
+   memset( range_value, 0, 1025 );
    strncpy( range_value, header, 1024 );
    
    char* tmp = NULL;
@@ -107,18 +108,14 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
    char* url = md_con_data->url_path;
    struct syndicate_state* state = syndicate_get_state();
 
-   uint64_t owner = 0;
-   if( md_con_data->user )
-      owner = md_con_data->user->uid;
-   else
-      owner = state->conf.owner;
+   uint64_t owner = state->conf.owner;
 
    dbprintf( "client_HTTP_HEAD_handler on %s\n", url);
 
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
 
    // parse the url_path into its constituent components
-   struct gateway_request_data reqdat;
+   struct md_gateway_request_data reqdat;
    
    int rc = http_parse_request( md_con_data->http, resp, &reqdat, url );
    if( rc < 0 ) {
@@ -149,7 +146,7 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
       char* url_path = md_path_from_url( redirect_url );
 
       free( redirect_url );
-      gateway_request_data_free( &reqdat );
+      md_gateway_request_data_free( &reqdat );
 
       rc = http_parse_request( md_con_data->http, resp, &reqdat, url_path );
 
@@ -182,22 +179,18 @@ struct md_HTTP_response* httpd_HTTP_HEAD_handler( struct md_HTTP_connection_data
       md_create_HTTP_response_ram_nocopy( resp, "text/plain", 200, md_str, strlen(md_str) + 1 );
    }
    
-   gateway_request_data_free( &reqdat );
+   md_gateway_request_data_free( &reqdat );
 
    return resp;
 }
 
 
 // GET a directory
-static int httpd_GET_dir( struct md_HTTP_response* resp, struct md_HTTP_connection_data* md_con_data, struct gateway_request_data* reqdat ) {
+static int httpd_GET_dir( struct md_HTTP_response* resp, struct md_HTTP_connection_data* md_con_data, struct md_gateway_request_data* reqdat ) {
 
    struct syndicate_state* state = syndicate_get_state();
 
-   uint64_t owner = 0;
-   if( md_con_data->user )
-      owner = md_con_data->user->uid;
-   else
-      owner = state->conf.owner;
+   uint64_t owner = state->conf.owner;
 
    int rc = 0;
    struct fs_dir_handle* fdh = fs_entry_opendir( state->core, reqdat->fs_path, owner, state->core->volume, &rc );
@@ -243,7 +236,7 @@ static int httpd_GET_dir( struct md_HTTP_response* resp, struct md_HTTP_connecti
 
 
 // GET a file block
-static int httpd_GET_file_blocks( struct md_HTTP_response* resp, struct md_HTTP_connection_data* md_con_data, struct gateway_request_data* reqdat, struct stat* sb ) {
+static int httpd_GET_file_blocks( struct md_HTTP_response* resp, struct md_HTTP_connection_data* md_con_data, struct md_gateway_request_data* reqdat, struct stat* sb ) {
 
    struct syndicate_state* state = syndicate_get_state();
    struct md_HTTP_header** client_headers = md_con_data->headers;
@@ -317,7 +310,7 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
    struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
 
    // parse the url_path into its constituent components
-   struct gateway_request_data reqdat;
+   struct md_gateway_request_data reqdat;
    
    int rc = http_parse_request( md_con_data->http, resp, &reqdat, url );
    if( rc < 0 ) {
@@ -337,7 +330,7 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
    if( redirect_rc < 0 ) {
       errorf( "http_process_redirect rc = %d\n", redirect_rc );
 
-      gateway_request_data_free( &reqdat );
+      md_gateway_request_data_free( &reqdat );
 
       char buf[100];
       snprintf(buf, 100, "GET http_process_redirect rc = %d\n", redirect_rc );
@@ -349,7 +342,7 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
       // request for directory listing
       httpd_GET_dir( resp, md_con_data, &reqdat );
 
-      gateway_request_data_free( &reqdat );
+      md_gateway_request_data_free( &reqdat );
       return resp;
    }
    
@@ -360,14 +353,14 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
       char* url_path = md_path_from_url( redirect_url );
 
       free( redirect_url );
-      gateway_request_data_free( &reqdat );
+      md_gateway_request_data_free( &reqdat );
       
       rc = http_parse_request( md_con_data->http, resp, &reqdat, url_path );
       
       free( url_path );
       
       if( rc < 0 ) {
-         gateway_request_data_free( &reqdat );
+         md_gateway_request_data_free( &reqdat );
          return resp;
       }
    }
@@ -375,7 +368,7 @@ struct md_HTTP_response* httpd_HTTP_GET_handler( struct md_HTTP_connection_data*
    // handle a file
    httpd_GET_file_blocks( resp, md_con_data, &reqdat, &sb );
 
-   gateway_request_data_free( &reqdat );
+   md_gateway_request_data_free( &reqdat );
    
    return resp;
 }
@@ -729,6 +722,131 @@ void quit_sigterm( int param ) {
    md_stop_HTTP( &g_http );
 }
 
+
+// degrade permissions and become a daemon
+int release_privileges() {
+   struct passwd* pwd;
+   int ret = 0;
+   
+   // switch to "daemon" user, if possible
+   pwd = getpwnam( "daemon" );
+   if( pwd != NULL ) {
+      setuid( pwd->pw_uid );
+      dbprintf( "became user '%s'\n", "daemon" );
+      ret = 0;
+   }
+   else {
+      dbprintf( "could not become '%s'\n", "daemon" );
+      ret = 1;
+   }
+   
+   return ret;
+}
+
+// turn into a deamon
+int daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
+
+   FILE* log = NULL;
+   int pid_fd = -1;
+   
+   if( logfile_path ) {
+      log = fopen( logfile_path, "a" );
+   }
+   if( pidfile_path ) {
+      pid_fd = open( pidfile_path, O_CREAT | O_EXCL | O_WRONLY, 0644 );
+      if( pid_fd < 0 ) {
+         // specified a PID file, and we couldn't make it.  someone else is running
+         int errsv = -errno;
+         errorf( "Failed to create PID file %s (error %d)\n", pidfile_path, errsv );
+         return errsv;
+      }
+   }
+   
+   pid_t pid, sid;
+
+   pid = fork();
+   if (pid < 0) {
+      int rc = -errno;
+      errorf( "Failed to fork (errno = %d)\n", -errno);
+      return rc;
+   }
+
+   if (pid > 0) {
+      exit(0);
+   }
+
+   // child process 
+   // umask(0);
+
+   sid = setsid();
+   if( sid < 0 ) {
+      int rc = -errno;
+      errorf("setsid errno = %d\n", rc );
+      return rc;
+   }
+
+   if( chdir("/") < 0 ) {
+      int rc = -errno;
+      errorf("chdir errno = %d\n", rc );
+      return rc;
+   }
+
+   close( STDIN_FILENO );
+   close( STDOUT_FILENO );
+   close( STDERR_FILENO );
+
+   if( log ) {
+      int log_fileno = fileno( log );
+
+      if( dup2( log_fileno, STDOUT_FILENO ) < 0 ) {
+         int errsv = -errno;
+         errorf( "dup2 errno = %d\n", errsv);
+         return errsv;
+      }
+      if( dup2( log_fileno, STDERR_FILENO ) < 0 ) {
+         int errsv = -errno;
+         errorf( "dup2 errno = %d\n", errsv);
+         return errsv;
+      }
+
+      if( logfile )
+         *logfile = log;
+      else
+         fclose( log );
+   }
+   else {
+      int null_fileno = open("/dev/null", O_WRONLY);
+      dup2( null_fileno, STDOUT_FILENO );
+      dup2( null_fileno, STDERR_FILENO );
+   }
+
+   if( pid_fd >= 0 ) {
+      char buf[10];
+      sprintf(buf, "%d", getpid() );
+      write( pid_fd, buf, strlen(buf) );
+      fsync( pid_fd );
+      close( pid_fd );
+   }
+   
+   struct passwd* pwd;
+   int ret = 0;
+   
+   // switch to "daemon" user, if possible
+   pwd = getpwnam( "daemon" );
+   if( pwd != NULL ) {
+      setuid( pwd->pw_uid );
+      dbprintf( "became user '%s'\n", "daemon" );
+      ret = 0;
+   }
+   else {
+      dbprintf( "could not become '%s'\n", "daemon" );
+      ret = 1;
+   }
+   
+   return ret;
+}
+
+
 // daemon execution starts here!
 int main( int argc, char** argv ) {
 
@@ -825,16 +943,27 @@ int main( int argc, char** argv ) {
       }
    }
 
-   int rc = syndicate_init( config_file, &syndicate_http, portnum, ms_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path );
+   // start core services
+   int rc = syndicate_init( config_file, portnum, ms_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path );
    if( rc != 0 )
       exit(1);
+   
+   
+   struct syndicate_state* state = syndicate_get_state();
+
+   // start back-end HTTP server
+   rc = server_init( state, &syndicate_http );
+   if( rc != 0 )
+      exit(1);
+   
+   // finish initialization
+   syndicate_finish_init( state );
+
    
    struct md_syndicate_conf* conf = syndicate_get_conf();
    if( portnum == 0 )
       portnum = conf->httpd_portnum;
-
-   struct syndicate_state* state = syndicate_get_state();
-
+   
    // create our HTTP server
    memset( &g_http, 0, sizeof(g_http) );
    
@@ -864,7 +993,7 @@ int main( int argc, char** argv ) {
 
    if( !foreground ) {
       // daemonize
-      rc = md_daemonize( logfile, pidfile, NULL );
+      rc = daemonize( logfile, pidfile, NULL );
       if( rc < 0 ) {
          errorf( "md_daemonize rc = %d\n", rc );
          exit(1);
@@ -877,10 +1006,8 @@ int main( int argc, char** argv ) {
       }
    }
 
+   server_shutdown( &syndicate_http );
 
-   md_stop_HTTP( &syndicate_http );
-   md_free_HTTP( &syndicate_http );
-   
    syndicate_destroy();
    
    return 0;

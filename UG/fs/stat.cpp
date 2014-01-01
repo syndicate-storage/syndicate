@@ -101,7 +101,7 @@ ssize_t fs_entry_serialize_manifest( struct fs_core* core, struct fs_entry* fent
    fent->manifest->as_protobuf( core, fent, &mmsg );
 
    if( sign ) {
-      int rc = gateway_sign_manifest( core->ms->my_key, &mmsg );
+      int rc = md_sign< Serialization::ManifestMsg >( core->ms->my_key, &mmsg );
       if( rc != 0 ) {
          errorf("gateway_sign_manifest rc = %d\n", rc );
          *manifest_bits = NULL;

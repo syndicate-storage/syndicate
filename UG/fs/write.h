@@ -19,6 +19,8 @@
 
 #include "fs_entry.h"
 #include "consistency.h"
+#include "network.h"
+#include "storage.h"
 
 ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char const* buf, size_t count, off_t offset );
 ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, int source_fd, size_t count, off_t offset );

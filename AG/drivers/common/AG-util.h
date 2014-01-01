@@ -88,5 +88,9 @@ void driver_event_start();
 
 int controller_signal_handler(pid_t pid, int flags);
 
+int load_AG_driver( char *lib );
+int unload_AG_driver( );
+
+
 #endif //_AG_UTIL_H_
 

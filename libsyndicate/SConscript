@@ -2,8 +2,33 @@
 
 import os
 
-# add additional source files here
-source_files = Glob("*.cpp")
+# get our environment
+Import('env')
+Import("nacl_env")
+env = env.Clone()
+
+Import('protobuf_cc_files')
+Import('protobuf_out')
+Import('extra_args')
+Import("make_nacl_env")
+
+BASE_FILES = """
+   crypt.cpp
+   libsyndicate.cpp
+   ms-client.cpp
+   util.cpp
+"""
+
+HTTPD_FILES = """
+   httpd.cpp
+   system.cpp
+   libgateway.cpp
+"""
+
+# build at least the base files...
+protobuf_files = "\n".join( ["#" + protobuf_out + "/" + os.path.basename(x.path) for x in protobuf_cc_files] )
+source_files_client = BASE_FILES # + protobuf_files
+source_files = source_files_client + HTTPD_FILES
 
 # add source file search paths here
 CPPPATH = """
@@ -14,20 +39,25 @@ LIBPATH = """
 """
 
 # add libraries here
-LIBS = """
+BASE_LIBS = """
    curl
    protobuf
    pthread
-   ssl
    crypto
-   uriparser
-   microhttpd
    rt
-   dl
    m
 """
 
+HTTPD_LIBS = """
+   microhttpd
+   gnutls
+"""
+
+LIBS_client = BASE_LIBS
+LIBS = LIBS_client + HTTPD_LIBS
+
 # add headers here (will be returned by SCons)
+# TODO: don't return httpd headers if we're not building it
 headers = Glob("*.h")
 
 # add additional CPPFLAGS here
@@ -39,24 +69,47 @@ CPPDEFINES = [
    "_THREAD_SAFE"
 ]
 
-# get our environment
-Import('env')
-env = env.Clone()
-
-Import('protobuf_cc_files')
-Import('protobuf_out')
-
-env.Append(LIBS = Split(LIBS))
+# environment...
 env.Append(CPPPATH = Split(CPPPATH))
 env.Append(CPPPATH = "#" + protobuf_out)
 env.Append(CPPFLAGS = CPPFLAGS)
 env.Append(CPPDEFINES = CPPDEFINES)
 
-# generate the shared library, from generated protobuf cc files and from libsyndicate source
-libsyndicate = env.SharedLibrary( target="libsyndicate.so", source=[protobuf_cc_files, Split(source_files)] )
+def create_sobjs(SRCS, path="", this_env=None):
+   if this_env is None:
+      this_env = env
+
+   return [this_env.SharedObject(path+src) for src in SRCS]
+
+def create_objs(SRCS, path="", this_env=None):
+   if this_env is None:
+      this_env = env
+
+   return [this_env.Object(path+src) for src in SRCS]
+
+# protobuf objects
+protobuf_objs = [env.SharedObject(x) for x in protobuf_cc_files]
+
+# full library
+libsyndicate = env.SharedLibrary( "libsyndicate.so", protobuf_objs + create_sobjs( Split(source_files) ), LIBS=Split(LIBS) )
+
+# Native Client library
+env_nacl = env.Clone()
+
+libsyndicate_nacl = None
+
+if nacl_env is not None:
+   env_nacl = nacl_env.Clone()
+   env_nacl.Append(CPPPATH = ["#build/out/protobufs"])
+
+   protobuf_nacl_objs = [env_nacl.Object("%s.nacl.o" % x.path, x) for x in protobuf_cc_files]
+   client_objs = [env_nacl.Object("%s.nacl.o" % x, x) for x in Split(source_files_client)]
+
+   libsyndicate_nacl = env_nacl.StaticLibrary("libsyndicate_nacl.a", protobuf_nacl_objs + client_objs, LIBS=Split(LIBS_client) )
+
 
 # generate header and source paths
 header_paths = [os.path.join( x.path ) for x in Split(headers)]
-source_paths = [os.path.join( x.path ) for x in Split(source_files)] 
-Return( 'libsyndicate header_paths source_paths' )
+source_paths = [os.path.join( x ) for x in Split(source_files)] 
+Return( 'libsyndicate libsyndicate_nacl header_paths source_paths' )
 

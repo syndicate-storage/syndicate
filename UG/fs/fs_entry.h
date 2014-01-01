@@ -44,9 +44,8 @@
 #include <inttypes.h>
 #include <math.h>
 
-#include "libsyndicate.h"
-#include "libgateway.h"
-#include "ms-client.h"
+#include "libsyndicate/libsyndicate.h"
+#include "libsyndicate/ms-client.h"
 
 using namespace std;
 

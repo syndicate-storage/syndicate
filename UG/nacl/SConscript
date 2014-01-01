@@ -14,34 +14,29 @@
    limitations under the License.
 """
 
+# get our environment
+Import('env')
+Import("nacl_env")
+Import("extra_args")
+
+# sanity check
+if nacl_env is None:
+   target = None
+   Return( "target" )
+
+Import("fs_objs_nacl")
+Import("syndicate_common_objs_nacl")
 
 # add additional source files here
 source_files = """
-   close.cpp
-   closedir.cpp
-   fs_entry.cpp
-   link.cpp
-   manifest.cpp
-   mkdir.cpp
-   mkfs.cpp
-   open.cpp
-   opendir.cpp
-   read.cpp
-   readdir.cpp
-   recover.cpp
-   rename.cpp
-   rmdir.cpp
-   stat.cpp
-   trunc.cpp
-   unlink.cpp
-   url.cpp
-   write.cpp
-   xattr.cpp
+   client.cpp
+   nacl_main.cpp
 """
 
 # add source file search paths here
 CPPPATH = """
    #UG/
+   #UG/fs/
    #libsyndicate/
    #build/out/protobufs/
 """
@@ -52,6 +47,18 @@ LIBPATH = """
 
 # add libraries here
 LIBS = """
+   syndicate_nacl
+   ssl
+   crypto
+   protobuf
+   curl
+   pthread
+   m
+   rt
+   ppapi
+   ppapi_cpp
+   nacl_io
+   dl
 """
 
 # add additional CPPFLAGS here
@@ -64,30 +71,22 @@ CPPDEFINES = [
    "_THREAD_SAFE"
 ]
 
-# get our environment
-Import('env')
-Import("nacl_env")
-Import("extra_args")
 
-env = env.Clone()
+src = Split(source_files)
 
-env.Append(LIBS = Split(LIBS))
-env.Append(CPPPATH = Split(CPPPATH))
-env.Append(CPPFLAGS = Split(CPPFLAGS))
-env.Append(CPPDEFINES = CPPDEFINES)
+nacl_plugin = None
 
-fs_src = Split(source_files)
-fs_objs = [env.Object( "%s.o" % x, x ) for x in fs_src]
+# Native Client plugin
+env_nacl = nacl_env.Clone()
+env_nacl.Append(LIBS = Split(LIBS))
+env_nacl.Append(CPPPATH = Split(CPPPATH))
+env_nacl.Append(CPPFLAGS = Split(CPPFLAGS))
+env_nacl.Append(CPPDEFINES = CPPDEFINES)
 
-fs_nacl_objs = None
+nacl_objs = [env_nacl.Object("%s.nacl.o" % x, x) for x in src]
 
-if nacl_env is not None:
-   # Native Client library
-   nacl_env = nacl_env.Clone()
-   nacl_env.Append(CPPPATH = Split(CPPPATH))
+nacl_plugin = env_nacl.Program( "UG.nexe", nacl_objs + syndicate_common_objs_nacl + fs_objs_nacl )
 
-   fs_nacl_objs = [nacl_env.Object("%s.nacl.o" % x, x ) for x in fs_src]
-
-Return( 'fs_objs fs_nacl_objs' )
+Return( 'nacl_plugin' )
 
 
