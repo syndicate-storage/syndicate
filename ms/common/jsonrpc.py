@@ -17,7 +17,7 @@
 """
 
 # Modified from https://code.google.com/p/app-engine-starter/source/browse/trunk/lib/jsonrpc.py
-
+# added support for positional and keyword arguments, and message signing and verifying
 
 import json, inspect
 import logging
@@ -27,8 +27,6 @@ import urllib2
 import sys
 import base64
 import msconfig
-
-from Crypto.Hash import MD5
 
 try:
    import syndicate.client.common.log as Log
@@ -45,7 +43,7 @@ ERROR_MESSAGE = {
     -32601: 'Method not found',
     -32602: 'Invalid params',
     -32603: 'Internal error',
-    -32400: 'Signature verification error'
+    -32400: 'Signature verification error'              # unofficial, Syndicate-specific
 }
 
 # ----------------------------------

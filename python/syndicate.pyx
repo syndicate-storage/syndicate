@@ -36,6 +36,46 @@ cdef int py_view_change_callback_springboard( ms_client* client, void* cls ):
    return 0
 
 # ------------------------------------------
+cpdef encrypt_data( pubkey_str, data_str ):
+
+   cdef char* c_data_str = data_str
+   cdef size_t c_data_str_len = len(data_str)
+   
+   cdef char* c_encrypted_data = NULL
+   cdef size_t c_encrypted_data_len = 0
+   
+   rc = md_encrypt_pem( pubkey_str, c_data_str, c_data_str_len, &c_encrypted_data, &c_encrypted_data_len )
+   if rc != 0:
+      return (rc, None)
+   
+   else:
+      py_encrypted_data = c_encrypted_data[:c_encrypted_data_len]
+      stdlib.free( c_encrypted_data )
+      
+      return (0, py_encrypted_data)
+
+
+# ------------------------------------------
+cpdef decrypt_data( privkey_str, encrypted_data_str ):
+   
+   cdef char* c_encrypted_data_str = encrypted_data_str
+   cdef size_t c_encrypted_data_str_len = len(encrypted_data_str)
+   
+   cdef char* c_data_str = NULL
+   cdef size_t c_data_str_len = 0
+   
+   rc = md_decrypt_pem( privkey_str, c_encrypted_data_str, c_encrypted_data_str_len, &c_data_str, &c_data_str_len )
+   if rc != 0:
+      return (rc, None)
+   
+   else:
+      py_data_str = c_data_str[:c_data_str_len]
+      stdlib.free( c_data_str )
+
+      return (0, py_data_str)
+      
+
+# ------------------------------------------
 cpdef encrypt_closure_secrets( gateway_pubkey_str, closure_secrets ):
    '''
       Encrypt a string with a gateway's public key.
@@ -45,22 +85,8 @@ cpdef encrypt_closure_secrets( gateway_pubkey_str, closure_secrets ):
       closure_secrets_serialized = pickle.dumps( closure_secrets )
    except Exception, e:
       return (-errno.EINVAL, None)
-   
-   cdef char* c_closure_secrets_serialized = closure_secrets_serialized
-   cdef size_t c_closure_secrets_serialized_len = len(closure_secrets_serialized)
-   
-   cdef char* c_encrypted_secrets = NULL
-   cdef size_t c_encrypted_secrets_len = 0
-   
-   rc = md_encrypt_pem( gateway_pubkey_str, c_closure_secrets_serialized, c_closure_secrets_serialized_len, &c_encrypted_secrets, &c_encrypted_secrets_len )
-   if rc != 0:
-      return (rc, None)
-   
-   else:
-      py_encrypted_secrets = c_encrypted_secrets[:c_encrypted_secrets_len]
-      stdlib.free( c_encrypted_secrets )
-      
-      return (0, py_encrypted_secrets)
+
+   return encrypt_data( gateway_pubkey_str, closure_secrets_serialized )
 
 
 # ------------------------------------------
@@ -69,20 +95,12 @@ cpdef decrypt_closure_secrets( gateway_privkey_str, closure_secrets ):
       Decrypt a string with a gateway's public key.
    '''
    
-   cdef char* c_closure_secrets_encrypted = closure_secrets
-   cdef size_t c_closure_secrets_encrypted_len = len(closure_secrets)
-   
-   cdef char* c_serialized_secrets = NULL
-   cdef size_t c_serialized_secrets_len = 0
-   
-   rc = md_decrypt_pem( gateway_privkey_str, c_closure_secrets_encrypted, c_closure_secrets_encrypted_len, &c_serialized_secrets, &c_serialized_secrets_len )
+   rc, py_serialized_secrets = decrypt_data( gateway_privkey_str, closure_secrets )
+
    if rc != 0:
       return (rc, None)
-   
-   else:
-      py_serialized_secrets = c_serialized_secrets[:c_serialized_secrets_len]
-      stdlib.free( c_serialized_secrets )
-      
+
+   else:      
       # try to deserialize
       try:
          secrets_dict = pickle.loads( py_serialized_secrets )

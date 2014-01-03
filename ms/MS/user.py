@@ -114,6 +114,7 @@ class SyndicateUser( storagetypes.Object ):
    is_admin = storagetypes.Boolean( default=False, indexed=False )      # is this user an administrator?
    
    signing_public_key = storagetypes.Text()     # PEM-encoded public key for authenticating this user
+   signing_public_key_expiration = storagetypes.Integer( default=-1 )           # seconds since the epoch
    
    # keys for signing responses to remote callers
    verify_public_key = storagetypes.Text()
@@ -125,7 +126,8 @@ class SyndicateUser( storagetypes.Object ):
    required_attrs = [
       "email",
       "openid_url",
-      "signing_public_key"
+      "signing_public_key",
+      "signing_public_key_expiration"
    ]
 
    key_attrs = [
@@ -138,7 +140,8 @@ class SyndicateUser( storagetypes.Object ):
       "max_RGs": (lambda cls, attrs: 10),
       "max_AGs": (lambda cls, attrs: 10),
       "is_admin": (lambda cls, attrs: False),
-      "openid_url": (lambda cls, attrs: "")
+      "openid_url": (lambda cls, attrs: ""),
+      "signing_public_key_expiration": (lambda cls, attrs: -1)
    }
 
    validators = {
@@ -158,6 +161,7 @@ class SyndicateUser( storagetypes.Object ):
       "max_RGs",
       "max_AGs",
       "signing_public_key",
+      "signing_public_key_expiration",
       "verify_public_key"
    ]
    
@@ -200,6 +204,14 @@ class SyndicateUser( storagetypes.Object ):
       else:
          return user
 
+   def makeCert( self ):
+      ret = {}
+      ret['expires'] = self.signing_public_key_expiration
+      ret['pubkey'] = self.signing_public_key
+      ret['email'] = self.email
+      ret['openid_url'] = self.openid_url
+      
+      return ret
 
    @classmethod
    def Sign( cls, user, data ):

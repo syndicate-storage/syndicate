@@ -21,6 +21,10 @@ handlers:
   script: msapp.app
   secure: optional
 
+- url: /USER.*
+  script: msapp.app
+  secure: always
+
 - url: .*
   script: msapp.app
   secure: always

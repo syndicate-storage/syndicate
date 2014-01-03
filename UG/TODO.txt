@@ -1,7 +1,8 @@
-* deploy RG (get drivers working too)
-* open codebase (get build process cleaned up and finish main documentation)
-* compile UG for NaCl
-* have webmail client call UG through NaCl
+* UG block encryption/decryption
+* contact API
+* message API
+* front/back-end integration (by January 8)
+* search API
 
 READING:
 // http://www1.icsi.berkeley.edu/~barath/papers/icn-hotnets11.pdf

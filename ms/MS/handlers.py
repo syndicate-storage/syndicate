@@ -404,6 +404,30 @@ class MSCertRequestHandler( webapp2.RequestHandler ):
       response_end( self, 200, data, "application/octet-stream" )
       return
    
+   
+class MSUserRequestHandler( webapp2.RequestHandler ):
+   """
+   User certificate request handler.
+   GET returns a user certificate, as JSON
+   """
+   
+   def get( self, user_email ):
+      # get the user
+      try:
+         user = storage.read_user( user_email )
+      except:
+         response_end( self, 404, "No such user", "text/plain")
+         return
+      
+      if user == None:
+         response_end( self, 404, "No such user", "text/plain")
+         
+      user_cert_dict = user.makeCert()
+      
+      user_cert_txt = jsonrpc.json_stable_serialize( user_cert_dict )
+      
+      response_end( self, 200, user_cert_txt, "application/json" )
+      return
       
       
 class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):

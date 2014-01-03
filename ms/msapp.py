@@ -27,7 +27,7 @@ import logging
 from MS.user import SyndicateUser
 from common.msconfig import *
 
-from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSCertRequestHandler, MSCertManifestRequestHandler, MSRegisterRequestHandler, MSOpenIDRequestHandler, MSJSONRPCHandler
+from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSCertRequestHandler, MSCertManifestRequestHandler, MSRegisterRequestHandler, MSOpenIDRequestHandler, MSJSONRPCHandler, MSUserRequestHandler
 from tests.debughandler import MSDebugHandler
 
 app = webapp2.WSGIApplication([
@@ -42,6 +42,7 @@ app = webapp2.WSGIApplication([
     ('/REGISTER/([^/]+)/([^/]+)/([^/]+)/([^/]+)', MSRegisterRequestHandler),
     ('/CERT/([0123456789]+)/manifest.([0123456789]+)', MSCertManifestRequestHandler),
     ('/CERT/([0123456789]+)/([0123456789]+)/(UG|RG|AG)/([0123456789]+)/([0123456789]+)', MSCertRequestHandler),
+    ('/USER/([^/]+)', MSUserRequestHandler),
     ('/api', MSJSONRPCHandler)
 ], debug=True)
 
