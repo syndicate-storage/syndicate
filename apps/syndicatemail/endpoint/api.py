@@ -54,6 +54,12 @@ class API( object ):
    def privateKeyStr():
       return cls.key_str( cls.config['privkey'] ) if (cls.config.has_key('privkey') and cls.config['privkey'] is not None) else None
    
+   
+   # ------------------------------------------------
+   @classmethod
+   def hello_world( cls, name, question="How are you?" ):
+      return "Hello, %s.  %s" % (name, question)
+   
    # ------------------------------------------------
    @classmethod
    @session_required

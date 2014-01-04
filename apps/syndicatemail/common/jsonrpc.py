@@ -55,7 +55,7 @@ def is_error_response( result ):
 class Server(object):
     response = None
 
-    def __init__(self, obj, api_version, signer=None, verifier=None):
+    def __init__(self, obj, api_version=VERSION, signer=None, verifier=None):
         self.obj = obj
         self.api_version = api_version
         self.signer = signer
@@ -118,6 +118,9 @@ class Server(object):
                   method_kw = params['kw']
                except:
                   return self.error(id, -32600)
+               
+            else:
+               return self.error(id, -32600)
                   
         else:
             params = {}
@@ -129,7 +132,7 @@ class Server(object):
         except AttributeError:
             return self.error(id, -32601)
         
-        method_info = inspect.getargspec(method.__call__)
+        method_info = inspect.getargspec(method)
         arg_len = len(method_info.args)
         def_len = 0
         

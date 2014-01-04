@@ -62,11 +62,11 @@ config = None          # initialized at runtime
 def api_dispatch():
    global json_server
    
-   json_text = request.json
-   if json_text is None:
+   json_dict = request.json
+   if json_dict is None:
       app.abort(400, "JSON API Request Handler")
    
-   json_server.handle( json_text, response=response )
+   return json_server.handle( None, data=json_dict )
 
 #-------------------------
 @app.get('/app/<filename:path>')
@@ -97,6 +97,8 @@ if __name__ == "__main__":
    rc = main_common.setup_storage( config )
    if not rc:
       raise Exception("Failed to set up storage")
+   
+   json_server = jsonrpc.Server( API )
    
    # start serving
    app.run( host="localhost", port=33333, debug=config['debug'] )
