@@ -23,6 +23,7 @@ import argparse
 import sys
 import StringIO
 import traceback
+import syndicate.client.common.log as Log
 
 log = Log.get_logger()
 
@@ -70,8 +71,13 @@ def extend_paths( config, base_dir, dirnames ):
 
 
 # -------------------
-def load_config( config_path, config_str, name, config_data, arg_opts ):
+def load_config( config_str, config_data, arg_opts ):
    
+   name = "config"
+   
+   if config_str == None:
+      config_str = "[%s]" % name
+      
    config = ConfigParser.SafeConfigParser()
    config_fd = StringIO.StringIO( config_str )
    config_fd.seek( 0 )

@@ -22,8 +22,11 @@ import storage
 import keys
 import conf
 
-import ar
+import syndicate.client.common.log as Log
 
+log = Log.get_logger()
+
+#-------------------------
 def set_storage_root( storage_root ):
    storage.STORAGE_ROOT = storage_root
 
@@ -32,9 +35,9 @@ def setup_storage( config ):
    
    storage_dirs = []
    for mod in [contact, message, storage, keys]:
-      storage_dir_module = getattr(mod, STORAGE_DIRS, None)
+      storage_dir_module = getattr(mod, "STORAGE_DIRS", None)
       if storage_dir_module != None:
-         storage_dirs.append( storage_dir_module )
+         storage_dirs += storage_dir_module
    
    rc = storage.setup_dirs( storage.STORAGE_ROOT, storage_dirs )
    if not rc:
@@ -45,9 +48,9 @@ def setup_storage( config ):
    
 
 #-------------------------
-def load_options( argv ):
+def load_options( argv, description, config_opts, default_config_file_path ):
    
-   parser = conf.build_parser( argv[0] )
+   parser = conf.build_parser( argv[0], description, config_opts )
    opts = parser.parse_args( argv[1:] )
    
    # load everything into a dictionary and return it
@@ -58,13 +61,13 @@ def load_options( argv ):
    if hasattr( opts, "config" ) and opts.config != None:
       config_file_path = opts.config[0]
    else:
-      config_file_path = conf.CONFIG_FILENAME
+      config_file_path = default_config_file_path
    
    config_str = storage.read_file( config_file_path )
    if config_str == None:
-      raise Exception("Failed to load configuration from %s" % config_file_path )
+      log.warning("Failed to read config file at %s" % config_file_path )
    
-   config = conf.load_config( config_file_path, config_str, opts )
+   config = conf.load_config( config_str, config_opts, opts )
    if config == None:
       raise Exception("Failed to parse configuration from %s" % config_file_path)
    

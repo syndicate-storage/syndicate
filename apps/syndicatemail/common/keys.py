@@ -20,7 +20,7 @@ import os
 import storage
 import collections
 
-from PBKDF2 import PBKDF2
+from pbkdf2 import PBKDF2
 import scrypt
 
 from Crypto.Hash import SHA256 as HashAlg

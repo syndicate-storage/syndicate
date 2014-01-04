@@ -18,6 +18,7 @@
 
 import collections
 import re
+import os
 import pickle
 import storage
 import syndicate.client.common.log as Log
@@ -60,7 +61,7 @@ def parse_addr( addr_str ):
    username = addr_parts[0]
    volume = addr_parts[1]
    
-   host_parts = (".".join(addr_parts[2])).split("@")
+   host_parts = (".".join(addr_parts[2:])).split("@")
    
    if len(host_parts) < 2:
       raise Exception("Invalid Syndicate email address: '%s'" % addr_str)
@@ -77,7 +78,7 @@ def make_contact_path( email_addr ):
    global STORAGE_DIR
    
    filename = storage.salt_string( email_addr )
-   return os.path.join( storage.ROOT_DIR, STORAGE_DIR, filename )
+   return storage.path_join( storage.ROOT_DIR, STORAGE_DIR, filename )
 
 
 # -------------------------------------
@@ -114,7 +115,7 @@ def read_contact( privkey_str, email_addr ):
    
    contact_path = make_contact_path( email_addr )
    
-   return read_contact_from_path( privkey_str, email_addr )
+   return read_contact_from_path( privkey_str, contact_path )
 
 # -------------------------------------
 def write_contact( pubkey_str, contact ):
@@ -129,7 +130,7 @@ def write_contact( pubkey_str, contact ):
       log.exception(e)
       return False
    
-   rc = storage.write_encrypted_file( pubkey_str, contact_json )
+   rc = storage.write_encrypted_file( pubkey_str, contact_path, contact_json )
    if not rc:
       return False
    
@@ -143,21 +144,22 @@ def add_contact( pubkey_str, email_addr, contact_pubkey_str, contact_fields ):
    contact = SyndicateContact( addr=email_addr, pubkey_pem=contact_pubkey_str, extras = contact_fields )
    contact_path = make_contact_path( email_addr )
    if os.path.exists( contact_path ):
-      log.exception( Exception("Contact already exists") )
+      log.error( "Contact '%s' already exists" % email_addr )
    
    return write_contact( pubkey_str, contact )
    
    
 # -------------------------------------
 def update_contact( pubkey_str, privkey_str, email_addr, extras ):
-   contact_path = make_contact_path( contact.addr )
+   contact_path = make_contact_path( email_addr )
    if not os.path.exists( contact_path ):
-      raise Exception("No such contact")
+      log.error("No such contact '%s'" % email_addr)
+      return False
    
    try:
       contact = read_contact( privkey_str, email_addr )
    except Exception, e:
-      log.error("Failed to read contact")
+      log.error("Failed to read contact '%s'" % email_addr)
       log.exception(e)
       return False 
    
@@ -190,8 +192,9 @@ def list_contacts( pubkey_str, privkey_str, start_idx=None, length=None ):
       log.info("No cached contacts")
    else:
       return cached_contacts
-      
-   dir_ents = os.listdir( storage.ROOT_DIR, STORAGE_DIR )
+   
+   contact_dir = storage.path_join( storage.ROOT_DIR, STORAGE_DIR )   
+   dir_ents = os.listdir( contact_dir )
    dir_ents.sort()
    
    if start_idx == None:
@@ -206,10 +209,9 @@ def list_contacts( pubkey_str, privkey_str, start_idx=None, length=None ):
    dir_ents = dir_ents[start_idx:start_idx + length]
    
    contact_emails = []
-   contact_dir = os.path.join( root.ROOT_DIR, STORAGE_DIR )
-   for contact_filename in contact_filename_list:
-      contact_path = os.path.join( contact_dir, contact_filename )
-      
+   
+   for contact_filename in dir_ents:
+      contact_path = storage.path_join( contact_dir, contact_filename )
       contact = read_contact_from_path( privkey_str, contact_path )
       if contact == None:
          log.warning("Failed to read contact file %s" % contact_path)
@@ -222,8 +224,12 @@ def list_contacts( pubkey_str, privkey_str, start_idx=None, length=None ):
    
       
 if __name__ == "__main__":
+   
+   storage.setup_dirs( storage.ROOT_DIR, [STORAGE_DIR] )
+   storage.setup_storage( storage.ROOT_DIR )
+   
    test_email_addrs = [
-      "jude.mailvolume.syndicate.com@email.princeotn.edu",
+      "jude.mailvolume.syndicate.com@email.princeton.edu",
       "wathsala.mailvolume.foo.syndicate.com@bar.com",
       "muneeb.volume.localhost@localhost"
    ]
@@ -231,7 +237,7 @@ if __name__ == "__main__":
    print "-------- parse_addr -----------"
    for addr in test_email_addrs:
       print addr
-      print "%s" % parse_addr( addr )
+      print "%s" % str(parse_addr( addr ))
      
    print "-------- contact DB -----------"
    
@@ -306,25 +312,28 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
 -----END RSA PRIVATE KEY-----
 """.strip()
    
-   contact_jude = SyndicateContact( addr="jude.mail.syndicate.com@example.com", pubkey_pem = pubkey_str, extras = {"Phone number": "5203318323"} )
-   contact_wathsala = SyndicateContact( addr="wathsala.mailvol.syndicate.com@princeton.edu", pubkey_pem = pubkey_str, extras = {"City": "Princeton"} )
+   contact_jude = SyndicateContact( addr="jude.mailvolume.syndicate.com@example.com", pubkey_pem = pubkey_str, extras = {"Phone number": "5203318323"} )
+   contact_wathsala = SyndicateContact( addr="wathsala.mailvolume.foo.syndicate.com@princeton.edu", pubkey_pem = pubkey_str, extras = {"City": "Princeton"} )
    
-   print "jude: %s" % contact_jude 
-   print "wathsala: %s" % contact_wathsala 
+   print "-------- Test existing -------------"
+   
+   print "jude: %s" % str(contact_jude)
+   print "wathsala: %s" % str(contact_wathsala)
    
    add_contact( pubkey_str, contact_jude.addr, contact_jude.pubkey_pem, contact_jude.extras )
    
    contact_list = list_contacts( pubkey_str, privkey_str )
-   print "listing: %s" % contact_list )
+   print "listing: %s" % str(contact_list)
    
    add_contact( pubkey_str, contact_wathsala.addr, contact_jude.pubkey_pem, contact_wathsala.extras )
    
    contact_list = list_contacts( pubkey_str, privkey_str )
-   print "listing: %s" % contact_list )
+   print "listing: %s" % str(contact_list)
    
-   contact_jude2 = read_contact( privkey_str, "jude.mail.syndicate.com@example.com" )
-   contact_wathsala2 = read_contact( privkey_str, "wathsala.mailvol.syndicate.com@princeton.edu" )
+   contact_jude2 = read_contact( privkey_str, "jude.mailvolume.syndicate.com@example.com" )
+   contact_wathsala2 = read_contact( privkey_str, "wathsala.mailvolume.foo.syndicate.com@princeton.edu" )
    
+   print "-------- Test nonexistant -------------"
    try:
       none = read_contact( privkey_str, "no.one.syndicate.com@nowhere.com" )
       assert none is None
@@ -332,33 +341,46 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
       log.exception(e)
       pass
    
-   print "jude2: %s" % contact_jude2 
-   print "wathsala2: %s" % contact_wathsala2
+   print "jude2: %s" % str(contact_jude2)
+   print "wathsala2: %s" % str(contact_wathsala2)
    
-   update_contact( pubkey_str, privkey_str, "jude.mail.syndicate.com@example.com", {"City": "Princeton"} )
-   update_contact( pubkey_str, privkey_str, "wathsala.mail.syndicate.com@example.com", {"City": "San Francisco", "State": "CA"} )
+   print "-------- Test update -------------"
    
-   contact_jude3 = read_contact( privkey_str, "jude.mail.syndicate.com@example.com" )
-   contact_wathsala3 = read_contact( privkey_str, "wathsala.mailvol.syndicate.com@princeton.edu" )
+   update_contact( pubkey_str, privkey_str, "jude.mailvolume.syndicate.com@example.com", {"City": "Princeton"} )
+   update_contact( pubkey_str, privkey_str, "wathsala.mailvolume.foo.syndicate.com@princeton.edu", {"City": "San Francisco", "State": "CA"} )
    
-   print "jude3: %s" % contact_jude3 
-   print "wathsala3: %s" % contact_wathsala3
+   contact_jude3 = read_contact( privkey_str, "jude.mailvolume.syndicate.com@example.com" )
+   contact_wathsala3 = read_contact( privkey_str, "wathsala.mailvolume.foo.syndicate.com@princeton.edu" )
    
-   delete_contact( "jude.mail.syndicate.com@example.com" )
+   print "jude3: %s" % str(contact_jude3)
+   print "wathsala3: %s" % str(contact_wathsala3)
    
-   contact_list = list_contacts( pubkey_str, privkey_str )
-   print "listing: %s" % contact_list )
-   
-   delete_contact( "wathsala.mailvol.syndicate.com@princeton.edu" )
+   print "-------- Test listing -------------"
    
    contact_list = list_contacts( pubkey_str, privkey_str )
-   print "listing: %s" % contact_list )
+   print "listing: %s" % str(contact_list)
    
+   contact_list = list_contacts( pubkey_str, privkey_str )
+   print "listing: %s" % str(contact_list)
+   
+   print "-------- Test Delete -------------"
+   
+   delete_contact( "jude.mailvolume.syndicate.com@example.com" )
+   
+   contact_list = list_contacts( pubkey_str, privkey_str )
+   print "listing: %s" % str(contact_list)
+   
+   delete_contact( "wathsala.mailvolume.foo.syndicate.com@princeton.edu" )
+   
+   contact_list = list_contacts( pubkey_str, privkey_str )
+   print "listing: %s" % str(contact_list)
+   
+   print "-------- Read after delete -------------"
    try:
-      none = read_contact( privkey_str, "jude.mail.syndicate.com@example.com" )
+      none = read_contact( privkey_str, "jude.mailvolume.syndicate.com@example.com" )
       assert none is None 
       
-      none = read_contact( privkey_str, "wathsala.mailvol.syndicate.com@princeton.edu" )
+      none = read_contact( privkey_str, "wathsala.mailvolume.foo.syndicate.com@princeton.edu" )
       assert none is None
    except Exception, e:
       log.exception(e)

@@ -104,3 +104,8 @@ def delete_account( config, email, password ):
    keys.delete_private_key_from_volume( email )
    keys.delete_private_key( email )
    return True
+
+
+if __name__ == "__main__":
+   print "put some tests here"
+   

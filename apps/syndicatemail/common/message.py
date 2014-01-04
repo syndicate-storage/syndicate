@@ -27,20 +27,20 @@ import hashlib
 log = Log.get_logger()
 
 STORAGE_DIR = "/messages"
-ATTACHMENTS_DIR = os.path.join( STORAGE_DIR, "attachments" )
-INCOMING_DIR = os.path.join( STORAGE_DIR, "incoming" )
-FOLDERS_DIR = os.path.join( STORAGE_DIR, "folders" )
+ATTACHMENTS_DIR = storage.path_join( STORAGE_DIR, "attachments" )
+INCOMING_DIR = storage.path_join( STORAGE_DIR, "incoming" )
+FOLDERS_DIR = storage.path_join( STORAGE_DIR, "folders" )
 
 INBOX_FOLDER = "Inbox"
-SENT_FOLDER = "Sent",
-DRAFTS_FOLDER = "Drafts",
-SPAM_FOLDER = "Spam",
+SENT_FOLDER = "Sent"
+DRAFTS_FOLDER = "Drafts"
+SPAM_FOLDER = "Spam"
 TRASH_FOLDER = "Trash"
 
 DEFAULT_FOLDERS = [
    INBOX_FOLDER,
    SENT_FOLDER,
-   DRATFS_FOLDER,
+   DRAFTS_FOLDER,
    SPAM_FOLDER,
    TRASH_FOLDER
 ]
@@ -55,7 +55,7 @@ CHECK_INCOMING_FOLDERS = [
 STORAGE_DIRS = [
    STORAGE_DIR,
    ATTACHMENTS_DIR
-] + [os.path.join(STORAGE_DIR, x) for x in DEFAULT_FOLDERS]
+] + [storage.path_join(STORAGE_DIR, x) for x in DEFAULT_FOLDERS]
 
 # locally-produced message and attachment
 SyndicateMessage = collections.namedtuple( "SyndicateMessage", ["id", "sender_addr", "receiver_addrs", "cc_addrs", "bcc_addrs", "subject", "body", "timestamp", "handle", "attachment_names"] )
@@ -72,13 +72,13 @@ SyndicateMessageMetadata = collections.namedtuple( "SyndicateMessageMetadata", [
 def folder_dir( folder_name ):
    global FOLDERS_DIR
    
-   return os.path.join( storage.ROOT_DIR, FOLDERS_DIR, folder )
+   return storage.path_join( storage.ROOT_DIR, FOLDERS_DIR, folder )
 
 #-------------------------
 def incoming_dir():
    global INCOMING_DIR
    
-   return os.path.join( storage.ROOT_DIR, INCOMING_DIR )
+   return storage.path_join( storage.ROOT_DIR, INCOMING_DIR )
 
 #-------------------------
 def message_handle( message_timestamp, message_id ):
@@ -87,9 +87,7 @@ def message_handle( message_timestamp, message_id ):
 #-------------------------
 def stored_message_path( folder, message_timestamp, message_id ):
    # message path for locally hosted messages
-   global 
-   
-   return os.path.join( folder_dir( folder_name ), message_handle( message_timestamp, message_id ))
+   return storage.path_join( folder_dir( folder_name ), message_handle( message_timestamp, message_id ))
 
 #-------------------------
 def timestamp_from_message_path( message_path ):
@@ -121,7 +119,7 @@ def incoming_message_path( message_timestamp, message_id ):
    # message path for remotely-hosted messages that we know about from our server
    global INCOMING_DIR
    
-   return os.path.join( storage.ROOT_DIR, INCOMING_DIR, message_handle(message_timestamp, message_id))
+   return storage.path_join( storage.ROOT_DIR, INCOMING_DIR, message_handle(message_timestamp, message_id))
 
 #-------------------------
 def attachment_storage_name( message_timestamp, message_id, attachment ):
@@ -140,7 +138,7 @@ def attachment_path( message_timestamp, message_id, attachment ):
    global STORAGE_DIR
    
    name = attachment_storage_name( message_timestamp, message_id, attachment )
-   return os.path.join( storage.ROOT_DIR, STORAGE_DIR, ATTACHMENTS_DIR, name )
+   return storage.path_join( storage.ROOT_DIR, STORAGE_DIR, ATTACHMENTS_DIR, name )
    
 
 #-------------------------
@@ -173,7 +171,7 @@ def store_message( pubkey_str, folder, _message, _attachments=None ):
          attachment_paths[ attachment_name ] = apath
    
    # generate the message with the attachments
-   attrs = dict( [field, getattr(_message, field)] for field in _message._fields] )
+   attrs = dict( [(field, getattr(_message, field)) for field in _message._fields] )
    attrs['attachment_names'] = attachment_paths.keys()
    
    message = SyndicateMessage( **attrs )
@@ -294,10 +292,12 @@ def send_message( pubkey_str, privkey_str, sender_addr, receiver_addrs, cc_addrs
                                body=body,
                                timestamp=now,
                                handle=handle,
-                               attachment_names=attachments.keys()
+                               attachment_names=attachments.keys() )
       
    contacts = []
+   new_contacts = []
    missing = []
+   send_via_gateway = []
    
    # get contact public keys from Volume
    for addr in receiver_addrs_parsed + cc_addrs_parsed + bcc_addrs_parsed:
@@ -314,15 +314,24 @@ def send_message( pubkey_str, privkey_str, sender_addr, receiver_addrs, cc_addrs
             
    # get remaining contact public keys from the network
    for missing_addr in missing:
+      # new contact...
+      pubkey_pem = network.download_user_pubkey( missing_addr )
+      if pubkey_pem is None:
+         # not on Syndicate
+         send_via_gateway.append( missing_addr )
       
+      else:
+         missing_contact = SyndicateContact( addr=missing_addr, pubkey_pem=pubkey_pem, extras={} )
+         new_contacts.append( missing_contact )
+         
+   # TODO: finish
          
    rc = store_message( pubkey_str, folder, message, attachments )
    if not rc:
       log.error("Failed to store message")
       return False
    
-      
-   pass
+   return True
 
 #-------------------------
 def store_incoming_message( pubkey_str, message ):
@@ -363,15 +372,19 @@ def read_incoming_message( privkey_str, msg_timestamp, msg_id ):
    
 
 #-------------------------
-def read_message( privkey_str, msg_timestamp, msg_id ):
+def read_message( privkey_str, folder, msg_timestamp, msg_id ):
    # is this an incoming message?
    mpath = incoming_message_path( msg_timestamp, msg_id )
    if os.path.exists( mpath ):
       # get the incoming message record
       incoming_message = read_incoming_message( privkey_str, msg_timestamp, msg_id )
       
-      # fetch the whole message from the remote Volume
+      # fetch the whole message from the remote Volume's SENT folder
+      return storage.read_volume_file( stored_message_path( SENT_FOLDER, msg_timestamp, msg_id ) )
       
+   else:
+      # it's a local message
+      return read_stored_message( privkey_str, folder, msg_timestamp, msg_id )
       
 
 #-------------------------
@@ -470,7 +483,7 @@ def list_messages( privkey_str, pubkey_str, folder_name, start_timestamp=None, e
                                            bcc_addrs=msg_data.bcc_addrs,
                                            subject=msg_data.subject,
                                            timestamp=msg_data.timestamp,
-                                           handle=message_handle( msg_data.timestamp, msg_data.id )
+                                           handle=message_handle( msg_data.timestamp, msg_data.id ),
                                            has_attachments=(len(msg_data.attachment_names) > 0),
                                            is_read=is_read )
       
@@ -480,3 +493,6 @@ def list_messages( privkey_str, pubkey_str, folder_name, start_timestamp=None, e
    return ret
 
          
+         
+if __name__ == "__main__":
+   print "fill in some tests here"

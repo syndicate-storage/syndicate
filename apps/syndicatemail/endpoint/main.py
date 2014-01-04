@@ -76,7 +76,7 @@ def serve_app_data():
 
 #-------------------------
 if __name__ == "__main__":
-   config = main_common.load_options( sys.argv )
+   config = main_common.load_options( sys.argv, "SyndicateMail Endpoint", CONFIG_OPTIONS, CONFIG_FILENAME )
    
    missing = False
    for required_option in ['mountpoint', 'app', 'volume', 'user_id', 'user_privkey', 'user_password', 'mail_server', 'MS']:

@@ -38,6 +38,14 @@ PATH_SALT = None  # loaded at runtime
 PATH_SALT_FILENAME = "/config/salt"
 
 # -------------------------------------
+def path_join( a, *b ):
+   b_stripped = []
+   for c in b:
+      b_stripped.append( c.strip("/") )
+   
+   return os.path.join( a, *b_stripped )
+
+# -------------------------------------
 def tuple_to_json( tuple_inst ):
    fields_dict = {}
    for f in tuple_inst._fields:
@@ -54,7 +62,7 @@ def tuple_to_json( tuple_inst ):
       log.error("Failed to serialize")
       raise e
    
-   return json_dict
+   return json_str
    
    
 # -------------------------------------
@@ -81,15 +89,23 @@ def json_to_tuple( tuple_class, json_str ):
    for field_name in _fields.keys():
       assert field_name in tuple_class._fields, "Unexpected field '%s'" % field_name
    
-   return tuple_class( _type, **_fields )
+   return tuple_class( **_fields )
       
 
 # -------------------------------------
 def setup_dirs( root_dir, mail_dirs ):
    for dirname in mail_dirs:
-      dir_path = os.path.join(root_dir, dirname)
+      dir_path = path_join(root_dir, dirname)
       try:
          os.makedirs( dir_path, mode=0700 )
+      except OSError, oe:
+         if oe.errno != errno.EEXIST:
+            log.error("Failed to create '%s'" % dir_path )
+            log.exception(oe)
+            return False
+         else:
+            pass
+         
       except Exception, e:
          log.error("Failed to create '%s'" % dir_path )
          log.exception(e)
@@ -101,7 +117,7 @@ def setup_dirs( root_dir, mail_dirs ):
 # -------------------------------------
 def delete_dirs( root_dir, mail_dirs, remove_contents=True ):
    for dirname in mail_dirs:
-      dir_path = os.path.join( root_dir, dirname )
+      dir_path = path_join( root_dir, dirname )
       
       if remove_contents:
          try:
@@ -125,8 +141,14 @@ def setup_storage( root_dir ):
    global PATH_SALT
    global PATH_SALT_FILENAME
    
-   salt_path = os.path.join( root_dir, PATH_SALT_FILENAME )
+   salt_path = path_join( root_dir, PATH_SALT_FILENAME )
    if not os.path.exists( salt_path ):
+      
+      dirname = os.path.dirname(salt_path)
+      rc = setup_dirs( "/", [dirname] )
+      if not rc:
+         raise Exception("Failed to create '%s'" % dirname)
+      
       # make a 512-bit (64-byte) salt
       salt = binascii.b2a_hex( os.urandom(64) )
       rc = write_file( salt_path, salt )
@@ -188,9 +210,9 @@ def read_file( file_path ):
 # -------------------------------------
 def write_file( file_path, data ):
    try:
-      fd = open( file_path, "r" )
+      fd = open( file_path, "w" )
    except:
-      log.error("Failed to open '%s' for reading" % file_path)
+      log.error("Failed to open '%s' for writing" % file_path)
       return False
    
    try:
@@ -229,7 +251,9 @@ def read_encrypted_file( privkey_pem, file_path ):
    try:
       enc_data = read_file( file_path )
       if enc_data == None:
-         raise Exception("No data for %s" % file_path)
+         log.error( "No data for %s" % file_path )
+         return None
+      
    except Exception, e:
       log.error("read_file(%s) failed" % file_path)
       log.exception(e)
@@ -239,7 +263,6 @@ def read_encrypted_file( privkey_pem, file_path ):
    rc, data = c_syndicate.decrypt_data( privkey_pem, enc_data )
    if rc != 0:
       log.error("decrypt_data rc = %s" % rc)
-      log.exception( Exception("Failed to decrypt %s" % file_path) )
       return None
    
    return data
@@ -250,12 +273,13 @@ def write_encrypted_file( pubkey_pem, file_path, data ):
    rc, enc_data = c_syndicate.encrypt_data( pubkey_pem, data )
    if rc != 0:
       log.error("encrypt_data rc = %s" % rc)
-      raise Exception("Failed to encrypt %s" % file_path)
+      return False
    
    try:
       rc = write_file( file_path, enc_data )
       if not rc:
-         raise Exception("write_file(%s) failed" % file_path)
+         log.error("write_file failed")
+         return False
       
       return True
    
@@ -284,7 +308,8 @@ def delete_file( file_path ):
       
 # -------------------------------------
 def cache_path( storage_dir, cache_name ):
-   return  os.path.join( ROOT_DIR, storage_dir, cache_name )
+   global ROOT_DIR
+   return path_join( ROOT_DIR, storage_dir, cache_name )
 
 # -------------------------------------
 def purge_cache( storage_dir, cache_name ):
@@ -308,7 +333,7 @@ def cache_data( pubkey_str, storage_dir, cache_name, data ):
       log.error("Failed to serialize data for caching")
       return False 
    
-   return write_encrypted_file( pubkey_str, data_serialized )
+   return write_encrypted_file( pubkey_str, cpath, data_serialized )
    
 
 # -------------------------------------
@@ -316,7 +341,7 @@ def get_cached_data( privkey_str, storage_dir, cache_name ):
    
    cp = cache_path( storage_dir, cache_name )
    if os.path.exists( cp ):
-      data_serialized = storage.read_encrypted_file( privkey_str, cp )
+      data_serialized = read_encrypted_file( privkey_str, cp )
       if data_serialized != None:
          # cache hit
          try:
@@ -334,21 +359,14 @@ def get_cached_data( privkey_str, storage_dir, cache_name ):
 
 
 # -------------------------------------
-def volume_mount( mountpoint ):
-   print "FIXME: stub"
-   pass
-
-# -------------------------------------
-def volume_unmount( mountpoint ):
-   print "FIXME: stub"
-   pass
-
-# -------------------------------------
-def volume_read_file( mountpoint, path ):
-   return read_file( os.path.join(mountpoint, path) )
+def read_volume_file( volume_name, path ):
+   print "FIXME: read_volume_file stub"
+   return "read_volume_file is not implemented"
 
 # -------------------------------------
 if __name__ == "__main__":
+   
+   ROOT_DIR = "/tmp/storage-test"
    
    print "------- setup --------"
    setup_dirs( ROOT_DIR, ["/tmp"] )
@@ -361,8 +379,8 @@ if __name__ == "__main__":
    goo = goo_class( foo="c", baz="d" )
    
    print "------- serialization --------"
-   print "foo == %s" % foo
-   print "goo == %s" % goo
+   print "foo == %s" % str(foo)
+   print "goo == %s" % str(goo)
    
    foo_json = tuple_to_json( foo )
    print "foo_json == %s" % foo_json
@@ -370,11 +388,11 @@ if __name__ == "__main__":
    goo_json = tuple_to_json( goo )
    print "goo_json == %s" % goo_json
    
-   foo2 = json_to_tuple( foo_json )
-   goo2 = json_to_tuple( goo_json )
+   foo2 = json_to_tuple( foo_class, foo_json )
+   goo2 = json_to_tuple( goo_class, goo_json )
    
-   print "foo2 == %s" % foo2
-   print "goo2 == %s" % goo2
+   print "foo2 == %s" % str(foo2)
+   print "goo2 == %s" % str(goo2)
    
    print "------ file I/O -------"
    
@@ -471,10 +489,9 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
    print "------------- cache --------------"
    
    cache_data( pubkey_str, "/tmp", "cache-test", "poop")
-   dat = get_cached_data( privkey_str, "/tmp", 
+   dat = get_cached_data( privkey_str, "/tmp", "cache-test" )
    
    assert dat == "poop", "get_cached_data( cache_data( dat ) ) != dat"
    
    purge_cache( "/tmp", "cache-test" )
-   
    
