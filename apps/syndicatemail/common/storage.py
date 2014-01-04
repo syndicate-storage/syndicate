@@ -117,6 +117,7 @@ def delete_dirs( root_dir, mail_dirs, remove_contents=True ):
     
    return True
 
+
 # -------------------------------------
 def setup_storage( root_dir ):
    # call after setup_dirs 
@@ -155,6 +156,7 @@ def salt_string( name, iterations=10000 ):
       m.update( name )
    
    return m.hexdigest()
+
 
 # -------------------------------------
 def read_file( file_path ):
@@ -332,7 +334,26 @@ def get_cached_data( privkey_str, storage_dir, cache_name ):
 
 
 # -------------------------------------
+def volume_mount( mountpoint ):
+   print "FIXME: stub"
+   pass
+
+# -------------------------------------
+def volume_unmount( mountpoint ):
+   print "FIXME: stub"
+   pass
+
+# -------------------------------------
+def volume_read_file( mountpoint, path ):
+   return read_file( os.path.join(mountpoint, path) )
+
+# -------------------------------------
 if __name__ == "__main__":
+   
+   print "------- setup --------"
+   setup_dirs( ROOT_DIR, ["/tmp"] )
+   setup_storage( ROOT_DIR )
+   
    foo_class = collections.namedtuple("Foo", ["bar", "baz"])
    goo_class = collections.namedtuple("Xyzzy", ["foo", "baz"])
    
@@ -428,6 +449,7 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
 -----END RSA PRIVATE KEY-----
 """.strip()
 
+   
    data = "abcde"
    path = "/tmp/test"
    
@@ -444,7 +466,15 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
    if buf != data:
       raise Exception("data not equal: got '%s', expected '%s'" % (buf, data))
    
+   delete_file( path )
    
+   print "------------- cache --------------"
    
+   cache_data( pubkey_str, "/tmp", "cache-test", "poop")
+   dat = get_cached_data( privkey_str, "/tmp", 
+   
+   assert dat == "poop", "get_cached_data( cache_data( dat ) ) != dat"
+   
+   purge_cache( "/tmp", "cache-test" )
    
    

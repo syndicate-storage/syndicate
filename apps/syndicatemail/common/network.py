@@ -43,12 +43,14 @@ def download_user_pubkey_from_SyndicateMail( addr ):
 def begin_post_message( recipient_addr ):
    # called by the endpoint
    # start to inform the recipient's server that they have a new message
+   print "FIXME: stub"
    pass
 
 # -------------------------------------
 def end_post_message( recipient_addr ):
    # called by the endpoint
    # process acknowledgement from the recipient's server
+   print "FIXME: stub"
    pass
 
 # -------------------------------------

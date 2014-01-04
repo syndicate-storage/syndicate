@@ -33,7 +33,7 @@ public class SMFDMailComposer {
 		
 		composeBtn = new Button();
 		composeBtn.setText("COMPOSE");
-		composeBtn.getElement().setClassName("compose_button");
+		composeBtn.getElement().setClassName("compose_button");		
 		
 		//Setup the dialog box
 		dlgBox = new DialogBox();

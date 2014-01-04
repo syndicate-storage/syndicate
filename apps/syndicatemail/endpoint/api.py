@@ -18,8 +18,21 @@
 
 # top-level API, to be called by the Javascript client
 
-import common.contact as contact
-import common.message as message
+import syndicatemail.common.contact as contact
+import syndicatemail.common.message as message
+import syndicatemail.common.session as session
+
+def session_required( func ):
+   # deocrator to ensure that the session is not expired
+   def inner( cls, *args, **kw ):
+      if session.is_expired( cls.config ):
+         raise Exception("Session expired")
+      else:
+         return func( cls, *args, **kw )
+      
+   inner.__name__ = func.__name__
+   return inner
+
 
 class API( object ):
    
@@ -28,50 +41,71 @@ class API( object ):
    @classmethod
    def setup( cls, conf ):
       cls.config = conf
+      
+   @classmethod
+   def key_str( cls, key ):
+      return key.exportKey()
+   
+   @classmethod
+   def publicKeyStr():
+      return cls.key_str( cls.config['pubkey'] ) if (cls.config.has_key('pubkey') and cls.config['pubkey'] is not None) else None
+   
+   @classmethod
+   def privateKeyStr():
+      return cls.key_str( cls.config['privkey'] ) if (cls.config.has_key('privkey') and cls.config['privkey'] is not None) else None
    
    # ------------------------------------------------
    @classmethod
+   @session_required
    def read_contact( cls, email_addr ):
-      return "NOT IMPLEMENTED"
+      return contact.read_contact( cls.privateKeyStr(), email_addr )
 
    @classmethod
+   @session_required
    def list_contacts( cls, start_idx=None, end_idx=None ):
-      return "NOT IMPLEMENTED"
+      return contact.list_contacts( cls.publicKeyStr(), cls.privateKeyStr(), start_idx=start_idx, end_idx=end_idx )
    
    @classmethod
+   @session_required
    def add_contact( cls, email_addr, pubkey_pem, **fields ):
-      return "NOT IMPLEMENTED"
+      return contact.add_contact( cls.publicKeyStr(), email_addr, pubkey_pem, fields )
 
    @classmethod
+   @session_required
    def delete_contact( cls, email_addr ):
-      return "NOT IMPLEMENTED"
+      return contact.delete_contact( email_addr )
 
    # ------------------------------------------------
    @classmethod
    def login( email, password ):
-      return "NOT IMPLEMENTED"
+      return session.do_login( cls.config, email, password )
    
    @classmethod
    def logout( email, password ):
-      return "NOT IMPLEMENTED"
+      return session.do_logout( cls.config, email, password )
 
    # ------------------------------------------------
    @classmethod
+   @session_required
    def read_message( folder, msg_handle ):
       return "NOT IMPLEMENTED"
 
    @classmethod
+   @session_required
    def read_attachment( folder, msg_handle, attachment_name ):
       return "NOT IMPLEMENTED"
 
    @classmethod
+   @session_required
    def list_messages( folder, timestamp_start, timestamp_end, length=None ):
       return "NOT IMPLEMENTED"
 
    @classmethod
+   @session_required
    def delete_message( folder, msg_handle ):
       return "NOT IMPLEMENTED"
 
    @classmethod
+   @session_required
    def send_message( recipient_addrs, msg_body, attachments=None ):
       return "NOT IMPLEMENTED"

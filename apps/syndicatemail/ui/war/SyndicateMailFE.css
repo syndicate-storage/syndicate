@@ -88,6 +88,27 @@ button.compose_button:hover {
 	background-color: red;
 }
 
+button.delete-button {
+	font-weight: bold;
+	font-size: 16px;
+	font-family: sans-serif;
+	color: black;
+	border-radius: 2px;
+	width: 90px;
+	height: 40px;
+	box-shadow: none;
+	text-transform: uppercase;
+	text-align: center;
+	outline: 0px;
+	padding: 0 8px; 
+	float: right;
+	border: 1px solid transparent;
+}
+
+button.delete-button:hover {
+	background-color: red;
+}
+
 .compose-title {
 	background-color: black;
 	height: 30px;
@@ -191,4 +212,9 @@ button.send-button {
 	resize: none;
 	color: black;
 	font-size: 13px;
+}
+
+.box-item-checkbox input {
+	border-radius: 0px;
+	box-shadow: none;
 }

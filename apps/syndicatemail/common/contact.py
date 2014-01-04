@@ -139,7 +139,8 @@ def write_contact( pubkey_str, contact ):
    
    
 # -------------------------------------
-def add_contact( pubkey_str, contact ):
+def add_contact( pubkey_str, email_addr, contact_pubkey_str, contact_fields ):
+   contact = SyndicateContact( addr=email_addr, pubkey_pem=contact_pubkey_str, extras = contact_fields )
    contact_path = make_contact_path( email_addr )
    if os.path.exists( contact_path ):
       log.exception( Exception("Contact already exists") )
@@ -311,12 +312,12 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
    print "jude: %s" % contact_jude 
    print "wathsala: %s" % contact_wathsala 
    
-   add_contact( pubkey_str, contact_jude )
+   add_contact( pubkey_str, contact_jude.addr, contact_jude.pubkey_pem, contact_jude.extras )
    
    contact_list = list_contacts( pubkey_str, privkey_str )
    print "listing: %s" % contact_list )
    
-   add_contact( pubkey_str, contact_wathsala )
+   add_contact( pubkey_str, contact_wathsala.addr, contact_jude.pubkey_pem, contact_wathsala.extras )
    
    contact_list = list_contacts( pubkey_str, privkey_str )
    print "listing: %s" % contact_list )

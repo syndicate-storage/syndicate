@@ -2,6 +2,7 @@ package edu.princeton.cs.client;
 
 import com.google.gwt.core.client.EntryPoint;
 import com.google.gwt.user.client.ui.FlexTable;
+import com.google.gwt.user.client.ui.HorizontalPanel;
 import com.google.gwt.user.client.ui.RootPanel;
 import com.google.gwt.user.client.ui.VerticalPanel;
 
@@ -12,12 +13,15 @@ public class SyndicateMailFE implements EntryPoint {
 	/**
 	 * This is the entry point method.
 	 */
+	private final int DEFAULT_MAIL_BOX = SMFMailDir.INBOX_ID;
 	public void onModuleLoad() {
 		loadUI();
 	}
 	
 	private void loadUI() {
 		VerticalPanel mainPanel = new VerticalPanel();
+		HorizontalPanel mainCtrlPanel = new HorizontalPanel();
+		mainCtrlPanel.setWidth("90%");
 		int mainPanelLen = com.google.gwt.user.client.Window.getClientWidth();
 		mainPanel.setWidth(new Integer(mainPanelLen).toString()+"px");
 		FlexTable mainTbl = new FlexTable();
@@ -38,6 +42,9 @@ public class SyndicateMailFE implements EntryPoint {
 		dirs[SMFMailDir.INBOX_ID] = smfInbox;
 		dirs[SMFMailDir.OUTBOX_ID] = smfOutbox;
 		
+		//Render default mail box
+		dirs[DEFAULT_MAIL_BOX].renderDir();
+		
 		SMFDirList dirList = new SMFDirList((int)(mainPanelLen * 0.1), dirs, SMFMailDir.INBOX_ID);
 		VerticalPanel dirListPanel = dirList.loadDirList();
 		mainTbl.setWidget(0, 0, dirListPanel);
@@ -46,7 +53,9 @@ public class SyndicateMailFE implements EntryPoint {
 		//create SMFDMailComposer
 		SMFDMailComposer comp = new SMFDMailComposer();
 		
-		mainPanel.add(comp.getComposeButton());
+		mainCtrlPanel.add(comp.getComposeButton());
+		mainCtrlPanel.add(SMFMailDir.getDeleteButton(mainTbl));;
+		mainPanel.add(mainCtrlPanel);
 		mainPanel.add(mainTbl);
 		RootPanel.get().add(mainPanel);
 	}
