@@ -1,0 +1,194 @@
+/** Add css rules here for your application. */
+
+
+/** Example rules used by the template application (remove for your app) */
+h1 {
+  font-size: 2em;
+  font-weight: bold;
+  color: #777777;
+  margin: 40px 0px 70px;
+  text-align: center;
+}
+
+.sendButton {
+  display: block;
+  font-size: 16pt;
+}
+
+/** Most GWT widgets already have a style name defined */
+.gwt-DialogBox {
+  width: 400px;
+}
+
+.dialogVPanel {
+  margin: 5px;
+}
+
+.serverResponseLabelError {
+  color: red;
+}
+
+/** Set ids using widget.getElement().setId("idOfElement") */
+#closeButton {
+  margin: 15px 6px 6px;
+}
+
+table.mainTbl td {
+	vertical-align: top;
+}
+
+table.inboxTbl {
+	border-collapse: collapse;
+}
+
+table.inboxTbl td {
+	border-top:	1px solid #CCCCCC;
+	font-weight: bolder;
+	font-family: sans-serif;
+}
+
+table.inboxTbl tr:hover {
+	background-color: #F5F5F5;
+	cursor: pointer;
+}
+
+.inbox_dir_lbl {
+	font-weight: bolder!important;
+	font-family: sans-serif;
+	font-size: 15px;
+	color: red;
+	cursor: pointer;
+}
+
+.outbox_dir_lbl {
+	font-weight: bolder;
+	font-size: 15px;
+	font-family: sans-serif;
+	cursor: pointer;
+}
+
+button.compose_button {
+	font-weight: bold;
+	font-size: 16px;
+	font-family: sans-serif;
+	color: white;
+	background-color: #009966;
+	border-radius: 2px;
+	width: 120px;
+	height: 40px;
+	box-shadow: none;
+	text-transform: uppercase;
+	text-align: center;
+	outline: 0px;
+	padding: 0 8px;
+	border: 1px solid transparent;
+}
+
+button.compose_button:hover {
+	background-color: red;
+}
+
+.compose-title {
+	background-color: black;
+	height: 30px;
+	opacity: 0.8;
+	padding: 5px;
+}
+
+.header-panel {
+	background-color: white;
+}
+
+.body-panel {
+	background-color: white;
+	padding: 0px;
+	border-collapse: collapse;
+}
+
+
+.button-panel {
+	background-color: white;
+	padding: 2px;	
+	vertical-align: middle;
+}
+
+.gwt-HTML.compose-caption {
+	color: white;
+	vertical-align: middle;
+	font-weight: bolder;
+}
+
+.gwt-HTML.compose-close-button {
+	color: white;
+	float: right;
+	vertical-align: middle;
+	cursor: pointer;
+}
+
+.compose-dlg {
+	border-radius: 2px;
+	border-bottom: 1px solid transparent;
+	border-left: 1px solid transparent;
+	border-right: 1px solid transparent;
+	outline: 0px;
+	/*background-color: inherit;*/
+}
+
+.gwt-TextBox.rcpt-txt-box {
+	outline: 0px;
+	border: 1px solid transparent;
+}
+
+.gwt-TextBox.subject-txt-box {
+	outline: 0px;
+	border: 1px solid transparent;
+}
+
+.email-body {
+	outline: 0px;
+	border: 2px solid;
+	border-color: grey;
+}
+
+button.send-button:hover {
+	background-color: red;
+}
+
+button.send-button {
+	font-weight: bold;
+	font-size: 13px;
+	font-family: sans-serif;
+	color: white;
+	background-color: #3399FF;
+	border-radius: 2px;
+	width: 70px;
+	height: 30px;
+	box-shadow: none;
+	text-align: center;
+	outline: 0px;
+	padding: 0 8px;
+	border: 1px solid transparent;
+}
+
+.mail-display-sbjlbl {
+	font-weight: 600;
+	font-size: 20px;
+	color: black;
+	border-bottom: 1px solid #CCCCCC;
+	padding-bottom: 10px;
+}
+
+.mail-display-sndrlbl {
+	font-weight: bolder;
+	font-family: sans-serif;
+	color: black;
+	padding-bottom: 10px;
+	padding-top:  10px
+}
+
+.mail-display-body {
+	border: 0px;
+	resize: none;
+	color: black;
+	font-size: 13px;
+}
