@@ -33,7 +33,6 @@ import pickle
 log = Log.get_logger()
 
 ROOT_DIR = "/tmp/syndicatemail"   # loaded at runtime
-STORAGE_DIR = "/config"
 
 PATH_SALT = None  # loaded at runtime
 PATH_SALT_FILENAME = "/config/salt"

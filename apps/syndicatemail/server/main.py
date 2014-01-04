@@ -17,7 +17,7 @@
 """
 
 from wsgiref.simple_server import make_server 
-from syndicate.apps.email.common import http as http_common
+from syndicateapps.email.common import http as http_common
 
 #-------------------------
 def syndicatemail_server( environ, start_response ):
