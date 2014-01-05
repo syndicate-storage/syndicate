@@ -8,13 +8,13 @@ import com.google.gwt.user.client.Window;
 import com.google.gwt.user.client.ui.Button;
 import com.google.gwt.user.client.ui.CellPanel;
 import com.google.gwt.user.client.ui.DialogBox;
-import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.HorizontalPanel;
-import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.TextArea;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.VerticalPanel;
+
+import edu.princeton.cs.shared.SMFEMailManager;
 
 public class SMFDMailComposer {
 	private Button composeBtn;
@@ -23,6 +23,9 @@ public class SMFDMailComposer {
 	private int displayHeight;
 	private int dlgBoxWidth;
 	private int dlgBoxHeight;
+	private final TextBox toTxt = new TextBox();
+	private final TextBox sbjTxt = new TextBox();
+	private final TextArea emailBody = new TextArea();
 	
 	public SMFDMailComposer() {
 		displayWidth = Window.getClientWidth();
@@ -101,7 +104,6 @@ public class SMFDMailComposer {
 		headerPanel.setWidth("100%");
 		headerPanel.addStyleName("header-panel");
 		//Add to text box.
-		final TextBox toTxt = new TextBox();
 		toTxt.setWidth(new Integer(dlgBoxWidth).toString()+"px");
 		toTxt.setText("To");
 		toTxt.addStyleName("rcpt-txt-box");
@@ -120,7 +122,6 @@ public class SMFDMailComposer {
 		});
 		headerPanel.add(toTxt);
 		//Add subject text box.
-		final TextBox sbjTxt = new TextBox();
 		sbjTxt.setWidth(new Integer(dlgBoxWidth).toString()+"px");
 		sbjTxt.addStyleName("subject-txt-box");
 		sbjTxt.setText("Subject");
@@ -145,7 +146,6 @@ public class SMFDMailComposer {
 		VerticalPanel bodyPanel = new VerticalPanel();
 		bodyPanel.addStyleName("body-panel");
 		bodyPanel.setWidth("100%");
-		TextArea emailBody = new TextArea();
 		emailBody.setStyleName("email-body");
 		emailBody.setSize(new Integer(dlgBoxWidth).toString()+"px", 
 				new Integer(dlgBoxHeight).toString()+"px");
@@ -163,7 +163,11 @@ public class SMFDMailComposer {
 			
 			@Override
 			public void onClick(ClickEvent event) {
-				Window.alert("Sending your email...");				
+				SMFEMailManager mm = SMFEMailManager.getMailManager();
+				String[] rcptAddrs = {toTxt.getText()};
+				String   msgBody = emailBody.getText();
+				String[] attachments = null;
+				mm.sendMessage(rcptAddrs, msgBody, attachments);		
 			}
 		});
 		btnPanel.add(sendBtn);

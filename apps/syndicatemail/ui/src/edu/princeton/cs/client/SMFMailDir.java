@@ -10,7 +10,8 @@ import com.google.gwt.user.client.ui.CheckBox;
 import com.google.gwt.user.client.ui.FlexTable;
 import com.google.gwt.user.client.ui.HorizontalPanel;
 import com.google.gwt.user.client.ui.Label;
-import com.google.gwt.user.client.ui.VerticalPanel;
+
+import edu.princeton.cs.shared.SMFEMailManager;
 
 public class SMFMailDir {
 	
@@ -23,6 +24,8 @@ public class SMFMailDir {
 		}
 		
 		public String[][] getSMFInboxPage() {
+			SMFEMailManager mm = SMFEMailManager.getMailManager();
+			mm.listMessages(SMFEMailManager.INBOX_ID, -1, 20);
 			String[][] page = new String[len][3];
 			for (int i=0; i<len; i++) {
 				page[i][0] = "wvithanag@gmail.com";
@@ -33,6 +36,8 @@ public class SMFMailDir {
 		}
 		
 		public String[][] getSMFOutboxPage() {
+			SMFEMailManager mm = SMFEMailManager.getMailManager();
+			mm.listMessages(SMFEMailManager.OUTBOX_ID, -1, 20);
 			String[][] page = new String[len][3];
 			for (int i=0; i<len; i++) {
 				page[i][0] = "wvithanag@gmail.com";
@@ -53,8 +58,6 @@ public class SMFMailDir {
 	HandlerRegistration boxTblHR;
 	
 	private final int INBOX_PAGE_LEN = 20;
-	public static final int INBOX_ID = 0;
-	public static final int OUTBOX_ID = 1;
 	
 	
 	public SMFMailDir(int width, int type, FlexTable parent) {
@@ -138,7 +141,7 @@ public class SMFMailDir {
 	private void _loadDir() {
 		SMFDirPage smfPage = new SMFDirPage(INBOX_PAGE_LEN);
 		switch (this.type) {
-			case INBOX_ID:
+			case SMFEMailManager.INBOX_ID:
 				String[][] inpage = smfPage.getSMFInboxPage();
 				for (int i = 0; i < 20; i++) {
 					CheckBox chkBox = new CheckBox();
@@ -149,7 +152,7 @@ public class SMFMailDir {
 					boxTbl.setWidget(i, 3, new Label(inpage[i][2]));
 				}
 				break;
-			case OUTBOX_ID:
+			case SMFEMailManager.OUTBOX_ID:
 				String[][] outpage = smfPage.getSMFOutboxPage();
 				for (int i = 0; i < 20; i++) {
 					CheckBox chkBox = new CheckBox();

@@ -7,6 +7,8 @@ import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.RootPanel;
 import com.google.gwt.user.client.ui.VerticalPanel;
 
+import edu.princeton.cs.shared.*;
+
 public class SMFDirList {
 	private int panelWidth;
 	private VerticalPanel dirListPanel;
@@ -25,7 +27,7 @@ public class SMFDirList {
 		activeDir = id;
 	}
 	
-	private SMFMailDir getActiveDir() {
+	protected SMFMailDir getActiveDir() {
 		return dirs[activeDir];
 	}
 	
@@ -49,17 +51,15 @@ public class SMFDirList {
 		inboxLbl.addClickHandler(new ClickHandler() {
 			@Override
 			public void onClick(ClickEvent event) {
-				SMFMailDir dir = getActiveDir();
-				dirs[SMFMailDir.INBOX_ID].reloadDir();
-				setActiveDir(SMFMailDir.INBOX_ID);
+				dirs[SMFEMailManager.INBOX_ID].reloadDir();
+				setActiveDir(SMFEMailManager.INBOX_ID);
 			}
 		});
 		outboxLbl.addClickHandler(new ClickHandler() {
 			@Override
 			public void onClick(ClickEvent event) {
-				SMFMailDir dir = getActiveDir();
-				dirs[SMFMailDir.OUTBOX_ID].reloadDir();
-				setActiveDir(SMFMailDir.OUTBOX_ID);
+				dirs[SMFEMailManager.OUTBOX_ID].reloadDir();
+				setActiveDir(SMFEMailManager.OUTBOX_ID);
 
 			}
 		});
