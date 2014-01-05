@@ -79,6 +79,6 @@ int syndicate_client_init( struct syndicate_state* state,
                            char const* storage_root
                          );
 
-int syndicate_client_shutdown( struct syndicate_state* state, bool flush_replicas );
+int syndicate_client_shutdown( struct syndicate_state* state, int wait_replicas );
 
 #endif

@@ -284,4 +284,22 @@ int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct f
 // misc
 unsigned int fs_entry_num_children( struct fs_entry* fent );
 
+// cython compatibility
+uint64_t fs_dir_entry_type( struct fs_dir_entry* dirent );
+char* fs_dir_entry_name( struct fs_dir_entry* dirent );
+uint64_t fs_dir_entry_file_id( struct fs_dir_entry* dirent );
+int64_t fs_dir_entry_mtime_sec( struct fs_dir_entry* dirent );
+int32_t fs_dir_entry_mtime_nsec( struct fs_dir_entry* dirent );
+int64_t fs_dir_entry_ctime_sec( struct fs_dir_entry* dirent );
+int32_t fs_dir_entry_ctime_nsec( struct fs_dir_entry* dirent );
+int64_t fs_dir_entry_write_nonce( struct fs_dir_entry* dirent );
+int64_t fs_dir_entry_version( struct fs_dir_entry* dirent );
+int32_t fs_dir_entry_max_read_freshness( struct fs_dir_entry* dirent );
+int32_t fs_dir_entry_max_write_freshness( struct fs_dir_entry* dirent );
+uint64_t fs_dir_entry_owner( struct fs_dir_entry* dirent );
+uint64_t fs_dir_entry_coordinator( struct fs_dir_entry* dirent );
+uint64_t fs_dir_entry_volume( struct fs_dir_entry* dirent );
+int32_t fs_dir_entry_mode( struct fs_dir_entry* dirent );
+uint64_t fs_dir_entry_size( struct fs_dir_entry* dirent );
+
 #endif

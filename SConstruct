@@ -184,7 +184,8 @@ env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_i
 ug_out = "build/out/bin/UG"
 syndicatefs, syndicate_httpd, syndicate_ipc, libUG, UG_nacl = SConscript( "UG/SConscript", variant_dir=ug_out )
 
-ugs = [syndicatefs, syndicate_httpd, syndicate_ipc, libUG]
+ugs_bin = [syndicatefs, syndicate_httpd, syndicate_ipc]
+ugs_lib = [libUG]
 ug_aliases = [syndicatefs, syndicate_httpd, syndicate_ipc, libUG]
 
 env.Depends( syndicatefs, libsyndicate )
@@ -200,7 +201,8 @@ env.Alias("UG-ipc", syndicate_ipc)
 env.Alias("UG-nacl", UG_nacl)
 
 # UG installation 
-common.install_targets( env, 'UG-install', bin_install_dir, ugs )
+common.install_targets( env, 'UG-install', bin_install_dir, ugs_bin )
+common.install_targets( env, 'libUG-install', lib_install_dir, ugs_lib )
 env.Alias("UG", ug_aliases )
 
 # ----------------------------------------

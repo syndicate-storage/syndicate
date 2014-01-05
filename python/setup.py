@@ -50,19 +50,19 @@ ext_modules=[
               libraries=["syndicate"],
               library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate")],             # libsyndicate local build
               include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "protobufs"), "/usr/local/include/syndicate"],
-              extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE"],
+              extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON"],
               language="c++"),
     
     Extension("volume",
               sources=["volume.pyx"],
-              libraries=["syndicate"],
+              libraries=["syndicate", "syndicate_volume"],
               library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "bin/UG")],             # local build
               include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"),
                             os.path.join(source_root, build_dir, "protobufs"),
                             os.path.join(source_root, build_dir, "bin/UG"),
                             os.path.join(source_root, build_dir, "bin/UG/fs"), 
                             "/usr/local/include/syndicate"],
-              extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE"],
+              extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON"],
               language="c++"),
 ]
 

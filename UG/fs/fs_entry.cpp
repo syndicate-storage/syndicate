@@ -987,5 +987,67 @@ unsigned int fs_entry_num_children( struct fs_entry* fent ) {
    return fent->children->size() - 2;
 }
 
+uint64_t fs_dir_entry_type( struct fs_dir_entry* dirent ) {
+   return dirent->data.type;
+}
 
+char* fs_dir_entry_name( struct fs_dir_entry* dirent ) {
+   return dirent->data.name;
+}
+
+uint64_t fs_dir_entry_file_id( struct fs_dir_entry* dirent ) {
+   return dirent->data.file_id;
+}
+
+int64_t fs_dir_entry_mtime_sec( struct fs_dir_entry* dirent ) {
+   return dirent->data.mtime_sec;
+}
+
+int32_t fs_dir_entry_mtime_nsec( struct fs_dir_entry* dirent ) {
+   return dirent->data.mtime_nsec;
+}
+
+int64_t fs_dir_entry_ctime_sec( struct fs_dir_entry* dirent ) {
+   return dirent->data.ctime_sec;
+}
+
+int32_t fs_dir_entry_ctime_nsec( struct fs_dir_entry* dirent ) {
+   return dirent->data.ctime_nsec;
+}
+
+int64_t fs_dir_entry_write_nonce( struct fs_dir_entry* dirent ) {
+   return dirent->data.write_nonce;
+}
+
+int64_t fs_dir_entry_version( struct fs_dir_entry* dirent ) {
+   return dirent->data.version;
+}
+
+int32_t fs_dir_entry_max_read_freshness( struct fs_dir_entry* dirent ) {
+   return dirent->data.max_read_freshness;
+}
+
+int32_t fs_dir_entry_max_write_freshness( struct fs_dir_entry* dirent ) {
+   return dirent->data.max_write_freshness;
+}
+
+uint64_t fs_dir_entry_owner( struct fs_dir_entry* dirent ) {
+   return dirent->data.owner;
+}
+
+uint64_t fs_dir_entry_coordinator( struct fs_dir_entry* dirent ) {
+   return dirent->data.coordinator;
+}
+
+uint64_t fs_dir_entry_volume( struct fs_dir_entry* dirent ) {
+   return dirent->data.volume;
+}
+
+int32_t fs_dir_entry_mode( struct fs_dir_entry* dirent ) {
+   return dirent->data.mode;
+}
+
+uint64_t fs_dir_entry_size( struct fs_dir_entry* dirent ) {
+   return dirent->data.size;
+}
 

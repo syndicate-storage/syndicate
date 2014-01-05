@@ -34,13 +34,11 @@ cdef extern from "openssl/ssl.h":
 
 # ------------------------------------------
 cdef extern from "ms-client.h":
-   cdef struct ms_client_TAG:
+   cdef struct ms_client:
       EVP_PKEY* my_key
       uint64_t gateway_id
       uint64_t owner_id
       pass
-
-   ctypedef ms_client_TAG ms_client
 
    cdef struct md_syndicate_conf
 
@@ -50,11 +48,9 @@ cdef extern from "ms-client.h":
 # ------------------------------------------
 cdef extern from "libsyndicate.h":
 
-   cdef struct md_syndicate_conf_TAG:
+   cdef struct md_syndicate_conf:
       char* local_sd_dir
       pass
-
-   ctypedef md_syndicate_conf_TAG md_syndicate_conf
 
    cdef int SYNDICATE_UG
    cdef int SYNDICATE_RG
