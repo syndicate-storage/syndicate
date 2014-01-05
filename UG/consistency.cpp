@@ -232,7 +232,7 @@ static struct fs_entry* fs_entry_attach_ms_file( struct fs_core* core, struct fs
    if( ( new_file->ftype != FTYPE_FILE ) &&
 	  ( new_file->ftype != FTYPE_FIFO )) {
       // invalid MS data
-      errorf("not a file: /%" PRIu64 "/%" PRIu64 "/%" PRIX64 "\n", ms_record->volume, ms_record->coordinator, ms_record->file_id );
+      errorf("not a file: /%" PRIu64 "/%" PRIu64 "/%" PRIX64 " (type = %d)\n", ms_record->volume, ms_record->coordinator, ms_record->file_id, new_file->ftype );
       fs_entry_destroy( new_file, true );
       return NULL;
    }

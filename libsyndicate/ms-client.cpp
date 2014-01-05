@@ -260,7 +260,9 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
 
 // destroy an MS client context 
 int ms_client_destroy( struct ms_client* client ) {
-
+   if( client == NULL )
+      return 0;
+   
    // shut down the uploader thread
    client->running = false;
 

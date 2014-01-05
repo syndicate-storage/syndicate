@@ -1114,39 +1114,55 @@ int replica_shutdown_replication( struct syndicate_replication* rp, int wait_rep
    
    int need_running_unlock = pthread_mutex_trylock( &rp->running_lock );
    
-   for( replica_upload_set::iterator itr = rp->uploads->begin(); itr != rp->uploads->end(); itr++ ) {
-      curl_multi_remove_handle( rp->running, itr->first );
-      
-      replica_context_free( itr->second );
-      
-      free( itr->second );
+   if( rp->uploads != NULL ) {
+      for( replica_upload_set::iterator itr = rp->uploads->begin(); itr != rp->uploads->end(); itr++ ) {
+         curl_multi_remove_handle( rp->running, itr->first );
+         
+         replica_context_free( itr->second );
+         
+         free( itr->second );
+      }
    }
    
    int need_pending_unlock = pthread_mutex_trylock( &rp->pending_lock );
    
-   for( replica_upload_set::iterator itr = rp->pending_uploads->begin(); itr != rp->pending_uploads->end(); itr++ ) {
-      
-      replica_context_free( itr->second );
-      
-      free( itr->second );
+   if( rp->pending_uploads != NULL ) {
+      for( replica_upload_set::iterator itr = rp->pending_uploads->begin(); itr != rp->pending_uploads->end(); itr++ ) {
+         
+         replica_context_free( itr->second );
+         
+         free( itr->second );
+      }
    }
    
    int need_write_delayed_lock = pthread_mutex_trylock( &rp->write_delayed_lock );
    
-   for( replica_delay_queue::iterator itr = rp->write_delayed->begin(); itr != rp->write_delayed->end(); itr++ ) {
-      
-      replica_context_free( itr->second );
-      
-      free( itr->second );
+   if( rp->write_delayed != NULL ) {
+      for( replica_delay_queue::iterator itr = rp->write_delayed->begin(); itr != rp->write_delayed->end(); itr++ ) {
+         
+         replica_context_free( itr->second );
+         
+         free( itr->second );
+      }
    }
    
-   rp->pending_cancels->clear();
+   if( rp->pending_cancels != NULL ) 
+      rp->pending_cancels->clear();
    
-   delete rp->uploads;
-   delete rp->pending_uploads;
-   delete rp->pending_cancels;
-   delete rp->pending_expires;
-   delete rp->write_delayed;
+   if( rp->uploads )
+      delete rp->uploads;
+   
+   if( rp->pending_uploads )
+      delete rp->pending_uploads;
+   
+   if( rp->pending_cancels )
+      delete rp->pending_cancels;
+   
+   if( rp->pending_expires )
+      delete rp->pending_expires;
+   
+   if( rp->write_delayed )
+      delete rp->write_delayed;
    
    rp->uploads = NULL;
    rp->pending_uploads = NULL;
@@ -1169,7 +1185,10 @@ int replica_shutdown_replication( struct syndicate_replication* rp, int wait_rep
    pthread_mutex_destroy( &rp->expire_lock );
    pthread_mutex_destroy( &rp->write_delayed_lock );
    
-   curl_multi_cleanup( rp->running );
+   if( rp->running )
+      curl_multi_cleanup( rp->running );
+   
+   rp->running = NULL;
    
    if( rp->process_name ) {
       dbprintf("destroyed %s\n", rp->process_name );

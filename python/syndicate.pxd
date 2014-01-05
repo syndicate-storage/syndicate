@@ -15,12 +15,10 @@
    limitations under the License.
 """
 
+from libc.stdint cimport int32_t, uint32_t, int64_t, uint64_t
+
 # ------------------------------------------
 cdef extern from "sys/types.h":
-   ctypedef int int64_t
-   ctypedef unsigned int uint64_t
-   ctypedef int int32_t
-   ctypedef unsigned int uint32_t
    ctypedef int bool
    ctypedef int mode_t
    

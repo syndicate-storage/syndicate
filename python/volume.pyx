@@ -31,14 +31,19 @@ cdef class SyndicateFileHandle:
       Python wrapper around syndicate_handle_t
    """
 
-   cdef uintptr_t handle_ptr
+   cpdef uintptr_t handle_ptr
 
    cdef Init( self, syndicate_handle_t* handle ):
       self.handle_ptr = <uintptr_t>handle
 
+   cpdef Get( self ):
+      return self.handle_ptr
+
 # ------------------------------------------
 SyndicateEntry = collections.namedtuple( "SyndicateEntry", ["type", "name", "file_id", "ctime", "mtime", "write_nonce", "version",
                                                              "max_read_freshness", "max_write_freshness", "owner", "coordinator", "volume", "mode", "size"] )
+
+SyndicateStat = collections.namedtuple( "SyndicateStat", ["st_mode", "st_ino", "st_dev", "st_nlink", "st_uid", "st_gid", "st_size", "st_atime", "st_mtime", "st_ctime"] )
 
 # ------------------------------------------
 cdef class Volume:
@@ -47,6 +52,7 @@ cdef class Volume:
    """
 
    cdef syndicate_state state_inst
+   cdef int wait_replicas
    
    # ------------------------------------------
    def __cinit__(self):
@@ -54,8 +60,9 @@ cdef class Volume:
 
    # ------------------------------------------
    def __dealloc__(self):
-      if not hasattr(self, "wait_replicas"):
-         self.wait_replias = -1
+      wr = -1
+      if hasattr(self, "wait_replicas"):
+         wr = self.wait_replicas
       
       syndicate_client_shutdown( &self.state_inst, self.wait_replicas )
 
@@ -111,7 +118,7 @@ cdef class Volume:
       if storage_root != None:
          c_storage_root = storage_root
 
-      self.wait_replicas = -1
+      self.wait_replicas = wait_replicas
 
       rc = syndicate_client_init( &self.state_inst,
                                   c_config_file,
@@ -127,7 +134,6 @@ cdef class Volume:
       if rc != 0:
          raise Exception("syndicate_client_init rc = %s" % rc )
 
-      pass
 
    # ------------------------------------------
    cpdef create( self, path, mode ):
@@ -159,7 +165,9 @@ cdef class Volume:
 
    # ------------------------------------------
    cpdef read( self, handle, size ):
-      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>handle.handle_ptr
+      cpdef uintptr_t tmp = handle.Get()
+      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>tmp
+
       cdef size_t c_size = size
 
       cdef char* c_buf = <char*>stdlib.malloc( size * cython.sizeof(char) )
@@ -178,8 +186,10 @@ cdef class Volume:
       return py_buf
 
    # ------------------------------------------
-   cpdef write( self, handle, size, buf ):
-      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>handle.handle_ptr
+   cpdef write( self, handle, buf ):
+      cpdef uintptr_t tmp = handle.Get()
+      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>tmp
+
       cdef size_t c_size = len(buf)
 
       cdef char* c_buf = buf
@@ -193,7 +203,9 @@ cdef class Volume:
 
    # ------------------------------------------
    cpdef seek( self, handle, offset, whence ):
-      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>handle.handle_ptr
+      cpdef uintptr_t tmp = handle.Get()
+      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>tmp
+
       cdef off_t c_offset = offset
       cdef int c_whence = whence
 
@@ -203,7 +215,8 @@ cdef class Volume:
 
    # ------------------------------------------
    cpdef close( self, handle ):
-      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>handle.handle_ptr
+      cpdef uintptr_t tmp = handle.Get()
+      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>tmp
       
       cdef int rc = syndicate_close( &self.state_inst, c_handle )
       
@@ -211,7 +224,8 @@ cdef class Volume:
 
    # ------------------------------------------
    cpdef fsync( self, handle, datasync=1 ):
-      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>handle.handle_ptr
+      cpdef uintptr_t tmp = handle.Get()
+      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>tmp
 
       cdef int rc = syndicate_fsync( &self.state_inst, datasync, c_handle )
       
@@ -224,16 +238,16 @@ cdef class Volume:
       
       cdef int rc = syndicate_getattr( &self.state_inst, path, &statbuf )
 
-      py_stat = os.stat_result( st_mode = statbuf.st_mode,
-                                st_ino = statbuf.st_ino,
-                                st_dev = statbuf.st_dev,
-                                st_nlink = statbuf.st_nlink,
-                                st_uid = statbuf.st_uid,
-                                st_gid = statbuf.st_gid,
-                                st_size = statbuf.st_size,
-                                st_atime = statbuf.st_atime,
-                                st_mtime = statbuf.st_mtime,
-                                st_ctime = statbuf.st_ctime )
+      py_stat = SyndicateStat(st_mode = statbuf.st_mode,
+                              st_ino = statbuf.st_ino,
+                              st_dev = statbuf.st_dev,
+                              st_nlink = statbuf.st_nlink,
+                              st_uid = statbuf.st_uid,
+                              st_gid = statbuf.st_gid,
+                              st_size = statbuf.st_size,
+                              st_atime = statbuf.st_atime,
+                              st_mtime = statbuf.st_mtime,
+                              st_ctime = statbuf.st_ctime )
 
       return py_stat
 
@@ -276,7 +290,8 @@ cdef class Volume:
 
    # ------------------------------------------
    cpdef readdir( self, handle ):
-      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>handle.handle_ptr
+      cpdef uintptr_t tmp = handle.Get()
+      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>tmp
 
       cdef syndicate_dir_listing_t c_dirs = NULL
 
@@ -285,12 +300,14 @@ cdef class Volume:
          raise Exception("syndicate_readdir rc = %s" % rc)
 
       # get number of entries
+      cdef char* name = NULL
       py_dirs = []
       i = 0
       while c_dirs[i] != NULL:
-         # FIXME: do we need to duplicate name?
+         name = fs_dir_entry_name( c_dirs[i] )
+         py_name = name[:]
          dir_ent = SyndicateEntry(  type = fs_dir_entry_type( c_dirs[i] ),
-                                    name = fs_dir_entry_name( c_dirs[i] ),
+                                    name = py_name,
                                     file_id = fs_dir_entry_file_id( c_dirs[i] ),
                                     ctime = (fs_dir_entry_ctime_sec( c_dirs[i] ), fs_dir_entry_ctime_nsec( c_dirs[i] )),
                                     mtime = (fs_dir_entry_mtime_sec( c_dirs[i] ), fs_dir_entry_mtime_nsec( c_dirs[i] )),
@@ -305,13 +322,15 @@ cdef class Volume:
                                     size = fs_dir_entry_size( c_dirs[i] ) )
 
          py_dirs.append( dir_ent )
+         i += 1
 
       syndicate_free_dir_listing( c_dirs )
       return py_dirs
 
    # ------------------------------------------
    cpdef closedir( self, handle ):
-      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>handle.handle_ptr
+      cpdef uintptr_t tmp = handle.Get()
+      cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>tmp
       
       cdef int rc = syndicate_closedir( &self.state_inst, c_handle )
       return rc

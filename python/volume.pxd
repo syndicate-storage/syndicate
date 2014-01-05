@@ -14,17 +14,15 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+
+from libc.stdint cimport int32_t, uint32_t, int64_t, uint64_t, uintptr_t
+
 # ------------------------------------------
 cdef extern from "sys/types.h":
-   ctypedef int int64_t
-   ctypedef unsigned int uint64_t
-   ctypedef int int32_t
-   ctypedef unsigned int uint32_t
    ctypedef int bool
    ctypedef int mode_t
    ctypedef unsigned int size_t
    ctypedef int off_t
-   ctypedef unsigned long long uintptr_t
    ctypedef unsigned int dev_t
    ctypedef unsigned long long ino_t
    ctypedef unsigned int nlink_t
@@ -112,9 +110,10 @@ cdef extern from "state.h":
 
 # ------------------------------------------   
 cdef extern from "client.h":
-   cdef struct syndicate_handle_t:
+   cdef struct syndicate_handle_t_TAG:
       pass
 
+   ctypedef syndicate_handle_t_TAG syndicate_handle_t
    ctypedef fs_dir_entry** syndicate_dir_listing_t
 
    int syndicate_client_init( syndicate_state* state,

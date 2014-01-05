@@ -155,7 +155,7 @@ int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t
    // initialize the root, but make it searchable and mark it as stale 
    core->root = CALLOC_LIST( struct fs_entry, 1 );
 
-   int rc = fs_entry_init_dir( core, core->root, "/", 1, owner_id, gateway_id, volume, 0755, 0, 0 );
+   int rc = fs_entry_init_dir( core, core->root, "/", 1, owner_id, 0, volume, 0755, 0, 0 );
    if( rc != 0 ) {
       errorf("fs_entry_init_dir rc = %d\n", rc );
       return rc;
@@ -305,6 +305,9 @@ int fs_unlink_children( struct fs_core* core, fs_entry_set* dir_children, bool r
 // destroy a filesystem.
 // this is NOT thread-safe!
 int fs_destroy( struct fs_core* core ) {
+   if( core == NULL )
+      return 0;
+   
    fs_entry_wlock( core->root );
    int rc = fs_unlink_children( core, core->root->children, false );
 
@@ -437,7 +440,7 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
       // this is a directory
       fs_entry_init_dir( core, fent, ent->name, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->mtime_sec, ent->mtime_nsec );
    }
-   else if (S_ISREG(ent->mode)){
+   else if ( ent->type == MD_ENTRY_FILE ){
       // this is a file
       fs_entry_init_file( core, fent, ent->name, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
    }
@@ -929,6 +932,7 @@ int fs_file_handle_destroy( struct fs_file_handle* fh ) {
       fh->parent_name = NULL;
    }
    if( fh->rctxs ) {
+      /*
       for( unsigned int i = 0; i < fh->rctxs->size(); i++ ) {
          if( fh->rctxs->at(i) == NULL )
             continue;
@@ -936,6 +940,7 @@ int fs_file_handle_destroy( struct fs_file_handle* fh ) {
          replica_context_free( fh->rctxs->at(i) );
          free( fh->rctxs->at(i) );
       }
+      */
       delete fh->rctxs;
    }
    pthread_rwlock_unlock( &fh->lock );

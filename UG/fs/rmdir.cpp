@@ -23,6 +23,20 @@ int fs_entry_rmdir( struct fs_core* core, char const* path, uint64_t user, uint6
 
    // get some info about this directory first
    int rc = 0;
+   
+   char* fpath = strdup( path );
+   md_sanitize_path( fpath );
+   
+   // revalidate this path
+   rc = fs_entry_revalidate_path( core, volume, fpath );
+   if( rc != 0 && rc != -ENOENT ) {
+      // consistency cannot be guaranteed
+      errorf("fs_entry_revalidate_path(%s) rc = %d\n", fpath, rc );
+      free( fpath );
+      return rc;
+   }
+   
+   free( fpath );
 
    int err = 0;
    struct fs_entry* dent = fs_entry_resolve_path( core, path, user, volume, false, &err );

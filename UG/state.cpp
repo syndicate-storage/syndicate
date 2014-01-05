@@ -117,9 +117,12 @@ int syndicate_destroy_state( struct syndicate_state* state, int wait_replicas ) 
    fs_destroy( state->core );
    free( state->core );
    
-   string statistics_str = state->stats->dump();
-   printf("Statistics: \n%s\n", statistics_str.c_str() );
-   delete state->stats;
+   if( state->stats != NULL ) {
+      string statistics_str = state->stats->dump();
+      printf("Statistics: \n%s\n", statistics_str.c_str() );
+      delete state->stats;
+      state->stats = NULL;
+   }
 
    dbprintf("%s", "log shutdown\n");
 

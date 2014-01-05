@@ -28,7 +28,7 @@ int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_e
       // create an fs_entry and attach it
       child = (struct fs_entry*)calloc( sizeof(struct fs_entry), 1 );
 
-      fs_entry_init_dir( core, child, path_basename, fs_entry_next_file_version(), user, user, vol, mode, mtime_sec, mtime_nsec );
+      fs_entry_init_dir( core, child, path_basename, fs_entry_next_file_version(), user, 0, vol, mode, mtime_sec, mtime_nsec );
       
       // add . and ..
       fs_entry_set_insert( child->children, ".", child );

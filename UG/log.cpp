@@ -32,7 +32,10 @@ FILE* log_init(const char* logpath) {
  * Close the logfile
  */
 int log_shutdown( FILE* logfile ) {
-   return fclose( logfile );
+   if( logfile )
+      return fclose( logfile );
+   else
+      return 0;
 }
 
 /*
