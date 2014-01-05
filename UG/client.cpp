@@ -171,9 +171,10 @@ syndicate_handle_t* syndicate_open(struct syndicate_state* state, const char *pa
    
    state->stats->enter( STAT_OPEN );
    
-   struct fs_file_handle* fh = fs_entry_open( state->core, path, conf->owner, state->core->volume, flags, ~conf->usermask, rc );
+   // client mode is always synchronous...
+   struct fs_file_handle* fh = fs_entry_open( state->core, path, conf->owner, state->core->volume, flags | O_SYNC, ~conf->usermask, rc );
    
-   // store th handle
+   // store the handle
    syndicate_handle_t* sh = CALLOC_LIST( syndicate_handle_t, 1 );
    sh->type = FTYPE_FILE;
    sh->fh = fh;

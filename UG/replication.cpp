@@ -505,6 +505,9 @@ static void replica_insert_uploads( struct syndicate_replication* synrp, struct 
 // add a CURL handle to our penduing uploads
 // synrp->pending should be locked
 static void replica_insert_pending_upload( struct syndicate_replication* synrp, CURL* curl, struct replica_context* rctx ) {
+   if( !synrp->accepting )
+      return;
+   
    // add to running 
    dbprintf("%s: pending: %p\n", synrp->process_name, rctx );
    
@@ -514,6 +517,9 @@ static void replica_insert_pending_upload( struct syndicate_replication* synrp, 
 // add a replica context's CURL handles to our running uploads
 // synrp->uploads should be locked
 static void replica_insert_pending_uploads( struct syndicate_replication* synrp, struct replica_context* rctx ) {
+   if( !synrp->accepting )
+      return;
+   
    for( unsigned int i = 0; i < rctx->curls->size(); i++ ) {
       replica_insert_pending_upload( synrp, rctx->curls->at(i), rctx );
    }
@@ -860,16 +866,22 @@ void* replica_main( void* arg ) {
       // run CURL for a bit
       pthread_mutex_lock( &synrp->running_lock );
       
+      int total_to_upload = 0;
+      
       // do we have delayed replicas?
-      if( synrp->has_write_delayed && synrp->accepting ) {
+      if( synrp->has_write_delayed ) {
          pthread_mutex_lock( &synrp->write_delayed_lock );
          
          double now = now_ns();
          
          for( replica_delay_queue::iterator itr = synrp->write_delayed->begin(); itr != synrp->write_delayed->end(); itr++ ) {
             if( itr->first > now ) {
-               // future deadline 
-               break;
+               if( synrp->accepting ) {
+                  // we're still running, so wait till the
+                  // future deadline 
+                  total_to_upload ++;
+                  break;
+               }
             }
             
             struct replica_context* rctx = itr->second;
@@ -891,7 +903,7 @@ void* replica_main( void* arg ) {
       
       
       // do we have replicas that are waiting to be started?
-      if( synrp->has_pending && synrp->accepting ) {
+      if( synrp->has_pending ) {
          pthread_mutex_lock( &synrp->pending_lock );
          
          for( replica_upload_set::iterator itr = synrp->pending_uploads->begin(); itr != synrp->pending_uploads->end(); itr++ ) {
@@ -954,6 +966,8 @@ void* replica_main( void* arg ) {
          pthread_mutex_unlock( &synrp->expire_lock );
       }
       
+      synrp->num_uploads = synrp->uploads->size() + total_to_upload;
+      
       // upload data
       rc = replica_multi_upload( synrp );
       
@@ -966,7 +980,6 @@ void* replica_main( void* arg ) {
       // find out what finished uploading
       rc = replica_process_responses( synrp );
       
-      synrp->num_uploads = synrp->uploads->size();
       pthread_mutex_unlock( &synrp->running_lock );
       
       if( rc != 0 ) {
@@ -981,8 +994,11 @@ void* replica_main( void* arg ) {
 }
 
 
-// begin downloading
+// begin uploading
 int replica_begin( struct syndicate_replication* rp, struct replica_context* rctx, double when ) {
+   
+   if( !rp->accepting )
+      return -ENOTCONN;
    
    int rc = 0;
    
@@ -1074,6 +1090,7 @@ int replica_init_replication( struct syndicate_replication* rp, char const* name
    rp->pending_expires = new replica_expire_set();
    rp->write_delayed = new replica_delay_queue();
    
+   rp->accepting = true;
    rp->active = true;
    
    rp->ms = client;
@@ -1095,15 +1112,19 @@ int replica_shutdown_replication( struct syndicate_replication* rp, int wait_rep
    rp->accepting = false;
    
    if( wait_replicas > 0 ) {
-      dbprintf("Wait %d seconds for all replicas to finish\n", wait_replicas );
+      dbprintf("Wait %d seconds for all replicas to finish in %s\n", wait_replicas, rp->process_name );
       sleep(wait_replicas);
    }
    else if( wait_replicas < 0 ) {
-      dbprintf("%s", "Wait for all replicas to finish\n");
+      dbprintf("Wait for all replicas to finish in %s\n", rp->process_name);
       
-      while( rp->num_uploads != 0 ) {
+      do {
+         dbprintf("remaining: %d\n", rp->num_uploads );
+         if( rp->num_uploads == 0 )
+            break;
+         
          sleep(1);
-      }
+      } while( rp->num_uploads != 0 );
    }
    
    rp->active = false;
@@ -1115,6 +1136,7 @@ int replica_shutdown_replication( struct syndicate_replication* rp, int wait_rep
    int need_running_unlock = pthread_mutex_trylock( &rp->running_lock );
    
    if( rp->uploads != NULL ) {
+      dbprintf("free %zu uploads for %s\n", rp->uploads->size(), rp->process_name);
       for( replica_upload_set::iterator itr = rp->uploads->begin(); itr != rp->uploads->end(); itr++ ) {
          curl_multi_remove_handle( rp->running, itr->first );
          
@@ -1127,6 +1149,7 @@ int replica_shutdown_replication( struct syndicate_replication* rp, int wait_rep
    int need_pending_unlock = pthread_mutex_trylock( &rp->pending_lock );
    
    if( rp->pending_uploads != NULL ) {
+      dbprintf("free %zu pending for %s\n", rp->pending_uploads->size(), rp->process_name);
       for( replica_upload_set::iterator itr = rp->pending_uploads->begin(); itr != rp->pending_uploads->end(); itr++ ) {
          
          replica_context_free( itr->second );
@@ -1138,6 +1161,7 @@ int replica_shutdown_replication( struct syndicate_replication* rp, int wait_rep
    int need_write_delayed_lock = pthread_mutex_trylock( &rp->write_delayed_lock );
    
    if( rp->write_delayed != NULL ) {
+      dbprintf("free %zu delayed for %s\n", rp->write_delayed->size(), rp->process_name );
       for( replica_delay_queue::iterator itr = rp->write_delayed->begin(); itr != rp->write_delayed->end(); itr++ ) {
          
          replica_context_free( itr->second );
@@ -1146,8 +1170,10 @@ int replica_shutdown_replication( struct syndicate_replication* rp, int wait_rep
       }
    }
    
-   if( rp->pending_cancels != NULL ) 
+   if( rp->pending_cancels != NULL ) {
+      dbprintf("free %zu pending cancels for %s\n", rp->pending_cancels->size(), rp->process_name );
       rp->pending_cancels->clear();
+   }
    
    if( rp->uploads )
       delete rp->uploads;
