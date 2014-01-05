@@ -21,6 +21,7 @@
 import syndicatemail.common.contact as contact
 import syndicatemail.common.message as message
 import syndicatemail.common.session as session
+import syndicatemail.common.storage as storage
 
 def session_required( func ):
    # deocrator to ensure that the session is not expired
@@ -47,11 +48,11 @@ class API( object ):
       return key.exportKey()
    
    @classmethod
-   def publicKeyStr():
+   def publicKeyStr( cls ):
       return cls.key_str( cls.config['pubkey'] ) if (cls.config.has_key('pubkey') and cls.config['pubkey'] is not None) else None
    
    @classmethod
-   def privateKeyStr():
+   def privateKeyStr( cls ):
       return cls.key_str( cls.config['privkey'] ) if (cls.config.has_key('privkey') and cls.config['privkey'] is not None) else None
    
    
@@ -64,12 +65,22 @@ class API( object ):
    @classmethod
    @session_required
    def read_contact( cls, email_addr ):
-      return contact.read_contact( cls.privateKeyStr(), email_addr )
+      contact_tuple = contact.read_contact( cls.privateKeyStr(), email_addr )
+      if contact_tuple != None:
+         contact_dict = storage.tuple_to_dict( contact_tuple )
+         return contact_dict
+      else:
+         return None
 
    @classmethod
    @session_required
-   def list_contacts( cls, start_idx=None, end_idx=None ):
-      return contact.list_contacts( cls.publicKeyStr(), cls.privateKeyStr(), start_idx=start_idx, end_idx=end_idx )
+   def list_contacts( cls, start_idx=None, length=None ):
+      listing = contact.list_contacts( cls.publicKeyStr(), cls.privateKeyStr(), start_idx=start_idx, length=length )
+      if listing != None:
+         listing_dicts = [storage.tuple_to_dict( x ) for x in listing]
+         return listing_dicts
+      else:
+         return []
    
    @classmethod
    @session_required

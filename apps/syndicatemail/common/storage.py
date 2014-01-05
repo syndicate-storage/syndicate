@@ -33,6 +33,7 @@ import pickle
 log = Log.get_logger()
 
 ROOT_DIR = "/tmp/syndicatemail"   # loaded at runtime
+CACHE_DIR = "/tmp/syndicatemail-cache"
 
 PATH_SALT = None  # loaded at runtime
 PATH_SALT_FILENAME = "/config/salt"
@@ -45,16 +46,23 @@ def path_join( a, *b ):
    
    return os.path.join( a, *b_stripped )
 
+
 # -------------------------------------
-def tuple_to_json( tuple_inst ):
+def tuple_to_dict( tuple_inst ):
    fields_dict = {}
    for f in tuple_inst._fields:
       fields_dict[f] = getattr(tuple_inst, f)
    
-   json_dict = {
+   tuple_dict = {
       "type": tuple_inst.__class__.__name__,
       "fields": fields_dict
    }
+   
+   return tuple_dict
+
+# -------------------------------------
+def tuple_to_json( tuple_inst ):
+   json_dict = tuple_to_dict( tuple_inst )
    
    try:
       json_str = json.dumps( json_dict )
@@ -62,8 +70,7 @@ def tuple_to_json( tuple_inst ):
       log.error("Failed to serialize")
       raise e
    
-   return json_str
-   
+   return json_str   
    
 # -------------------------------------
 def json_to_tuple( tuple_class, json_str ):
@@ -147,22 +154,29 @@ def setup_storage( root_dir ):
       dirname = os.path.dirname(salt_path)
       rc = setup_dirs( "/", [dirname] )
       if not rc:
-         raise Exception("Failed to create '%s'" % dirname)
+         log.error("Failed to create '%s'" % dirname)
+         return False
       
       # make a 512-bit (64-byte) salt
       salt = binascii.b2a_hex( os.urandom(64) )
       rc = write_file( salt_path, salt )
       if not rc:
-         raise Exception("Failed to write '%s'" % salt_path )
+         log.error("Failed to write '%s'" % salt_path )
+         return False
       
       PATH_SALT = salt
    
+      log.info("wrote salt to %s" % salt_path )
+      return True
+      
    else:
       salt = read_file( salt_path )
       if salt is None:
-         raise Exception("Failed to read '%s'" % salt_path )
+         log.error("Failed to read '%s'" % salt_path )
+         return False
    
       PATH_SALT = salt
+      return True
       
 
 # -------------------------------------
@@ -308,8 +322,7 @@ def delete_file( file_path ):
       
 # -------------------------------------
 def cache_path( storage_dir, cache_name ):
-   global ROOT_DIR
-   return path_join( ROOT_DIR, storage_dir, cache_name )
+   return path_join( CACHE_DIR, storage_dir, cache_name )
 
 # -------------------------------------
 def purge_cache( storage_dir, cache_name ):
@@ -326,7 +339,9 @@ def purge_cache( storage_dir, cache_name ):
 # -------------------------------------
 def cache_data( pubkey_str, storage_dir, cache_name, data ):
    cpath = cache_path( storage_dir, cache_name )
+   cpath_dir = os.path.dirname( cpath )
    
+   setup_dirs( "/", [cpath_dir] )
    try:
       data_serialized = pickle.dumps( data )
    except Exception, e:
@@ -370,6 +385,7 @@ if __name__ == "__main__":
    
    print "------- setup --------"
    setup_dirs( ROOT_DIR, ["/tmp"] )
+   setup_dirs( "/", [CACHE_DIR] )
    setup_storage( ROOT_DIR )
    
    foo_class = collections.namedtuple("Foo", ["bar", "baz"])

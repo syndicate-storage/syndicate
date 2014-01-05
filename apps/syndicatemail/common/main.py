@@ -28,7 +28,7 @@ log = Log.get_logger()
 
 #-------------------------
 def set_storage_root( storage_root ):
-   storage.STORAGE_ROOT = storage_root
+   storage.ROOT_DIR = storage_root
 
 #-------------------------
 def setup_storage( config ):
@@ -39,10 +39,15 @@ def setup_storage( config ):
       if storage_dir_module != None:
          storage_dirs += storage_dir_module
    
-   rc = storage.setup_dirs( storage.STORAGE_ROOT, storage_dirs )
+   rc = storage.setup_dirs( storage.ROOT_DIR, storage_dirs )
    if not rc:
       log.error("Failed to set up storage directories")
       return False
+   
+   rc = storage.setup_storage( storage.ROOT_DIR )
+   if not rc:
+      log.error("Failed to set up storage metadata")
+      return False 
    
    return True
    

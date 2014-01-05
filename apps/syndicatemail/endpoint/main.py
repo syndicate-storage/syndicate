@@ -31,6 +31,7 @@ import syndicatemail.common.conf as conf
 import syndicatemail.common.main as main_common
 import syndicatemail.common.keys as keys
 import syndicatemail.common.jsonrpc as jsonrpc
+import syndicatemail.common.session as session
 
 from api import API
 
@@ -88,7 +89,7 @@ if __name__ == "__main__":
       conf.usage( sys.argv[0] )
    
    # if we're testing, put everything into /tmp
-   if config.has_key('test') and config['test']:
+   if config['test']:
       main_common.set_storage_root( "/tmp" )
       
    else:
@@ -98,6 +99,10 @@ if __name__ == "__main__":
    if not rc:
       raise Exception("Failed to set up storage")
    
+   if config['test']:
+      session.do_test_login( config, "testuser.mail.syndicate.com@example.edu", "poop" )
+   
+   API.setup( config )
    json_server = jsonrpc.Server( API )
    
    # start serving
