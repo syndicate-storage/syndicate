@@ -24,32 +24,7 @@
 #include "stats.h"
 #include "replication.h"
 #include "fs.h"
-
-class Collator;
-
-struct syndicate_state {
-   FILE* logfile;
-   FILE* replica_logfile;
-   struct ms_client* ms;   // metadata service client
-   struct fs_core* core;   // core of the system
-   Collator* col;          // collator
-
-   // mounter info (since apparently FUSE doesn't do this right)
-   int gid;
-   int uid;
-
-   // when was the filesystem started?
-   time_t mounttime;
-
-   // configuration
-   struct md_syndicate_conf conf;
-
-   // global running flag
-   int running;
-
-   // statistics
-   Stats* stats;
-};
+#include "state.h"
 
 int syndicate_init( char const* config_file,
                     int portnum,
@@ -63,9 +38,11 @@ int syndicate_init( char const* config_file,
                     char const* tls_key_file,
                     char const* tls_cert_file );
 
+void syndicate_finish_init( struct syndicate_state* state );
+
 struct syndicate_state* syndicate_get_state();
 struct md_syndicate_conf* syndicate_get_conf();
-void syndicate_finish_init( struct syndicate_state* state );
-int syndicate_destroy();
+
+int syndicate_destroy( int wait_replicas );
 
 #endif

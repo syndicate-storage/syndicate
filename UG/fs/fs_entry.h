@@ -82,6 +82,7 @@ typedef map<uint64_t, struct fs_entry_block_info> modification_map;
 class Collator;
 class file_manifest;
 struct replica_context;
+struct syndicate_state;
 
 // Syndicate filesystem entry
 struct fs_entry {
@@ -172,6 +173,7 @@ struct fs_core {
    struct md_syndicate_conf* conf;     // Syndicate configuration structure
    struct ms_client* ms;               // link to the MS
    Collator* col;                   // Collator interface
+   struct syndicate_state* state;   // state 
    uint64_t volume;                 // Volume we're bound to
    uint64_t gateway;                // gateway ID
    uint64_t blocking_factor;        // block size
@@ -190,6 +192,7 @@ int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t
 int fs_core_destroy(struct fs_core* core);
 int fs_core_use_ms( struct fs_core* core, struct ms_client* ms );
 int fs_core_use_collator( struct fs_core* core, Collator* iop );
+int fs_core_use_state( struct fs_core* core, struct syndicate_state* state );
 
 // destroy
 int fs_destroy( struct fs_core* core );

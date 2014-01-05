@@ -36,7 +36,7 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
 
    BEGIN_TIMING_DATA( ts );
    
-   int rc = fs_entry_replicate_wait( fh );
+   int rc = fs_entry_replicate_wait( core, fh );
 
    END_TIMING_DATA( ts, ts2, "replication" );
    

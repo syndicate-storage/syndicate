@@ -20,6 +20,12 @@
 #include "libsyndicate/libsyndicate.h"
 #include "util.h"
 
+// initialize local storage
+int md_init_local_storage( struct md_syndicate_conf* c, char const* root_dir );
+
+// file I/O
+char* md_load_file_as_string( char const* path, size_t* size );
+
 // directory manipulation
 int md_mkdirs( char const* dirp );
 int md_mkdirs2( char const* dirp, int start, mode_t mode );

@@ -159,7 +159,7 @@ static int ms_client_gateway_type_str( int gateway_type, char* gateway_type_str 
 
 // set up secure CURL handle 
 int ms_client_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char const* url ) {
-   md_init_curl_handle( curl, url, conf->metadata_connect_timeout);
+   md_init_curl_handle( conf, curl, url, conf->connect_timeout);
    curl_easy_setopt( curl, CURLOPT_USE_SSL, 1L );
    curl_easy_setopt( curl, CURLOPT_SSL_VERIFYPEER, (conf->verify_peer ? 1L : 0L) );
    curl_easy_setopt( curl, CURLOPT_SSL_VERIFYHOST, 2L );
@@ -1327,7 +1327,7 @@ int ms_client_reload_certs( struct ms_client* client ) {
    
    for( int i = 0; cert_urls[i] != NULL; i++ ) {
       
-      md_init_curl_handle( curl, cert_urls[i], client->conf->metadata_connect_timeout );
+      md_init_curl_handle( client->conf, curl, cert_urls[i], client->conf->connect_timeout );
       
       ms::ms_gateway_cert ms_cert;
       
@@ -2170,7 +2170,7 @@ int ms_client_gateway_register( struct ms_client* client, char const* gateway_na
    
    ms_client_rlock( client );
    
-   md_init_curl_handle( curl, NULL, client->conf->metadata_connect_timeout );
+   md_init_curl_handle( client->conf, curl, NULL, client->conf->connect_timeout );
 
    // get info for the OpenID provider
    rc = ms_client_begin_register( curl, username, register_url, &oid_reply );
@@ -2984,7 +2984,7 @@ int ms_client_init_download( struct ms_client* client, struct ms_download_contex
    download->curl = curl_easy_init();
    download->rb = new response_buffer_t();
 
-   md_init_curl_handle( download->curl, download->url, client->conf->metadata_connect_timeout );
+   md_init_curl_handle( client->conf, download->curl, download->url, client->conf->connect_timeout );
    
    curl_easy_setopt( download->curl, CURLOPT_USERPWD, client->userpass );
    curl_easy_setopt( download->curl, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );

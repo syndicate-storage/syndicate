@@ -78,6 +78,7 @@ env.Append(CPPDEFINES = CPPDEFINES)
 
 fs_src = Split(source_files)
 fs_objs = [env.Object( "%s.o" % x, x ) for x in fs_src]
+fs_sobjs = [env.SharedObject( "%s.so" % x, x ) for x in fs_src]
 
 fs_nacl_objs = None
 
@@ -88,6 +89,6 @@ if nacl_env is not None:
 
    fs_nacl_objs = [nacl_env.Object("%s.nacl.o" % x, x ) for x in fs_src]
 
-Return( 'fs_objs fs_nacl_objs' )
+Return( 'fs_objs fs_sobjs fs_nacl_objs' )
 
 

@@ -43,19 +43,30 @@ while i < len(sys.argv):
    i += 1
 
 ext_source_root = source_root
-ext_library = "libsyndicate"
 
 ext_modules=[
     Extension("syndicate",
               sources=["syndicate.pyx"],
               libraries=["syndicate"],
               library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate")],             # libsyndicate local build
-              include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "protobufs"), "/usr/include/syndicate"],
+              include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "protobufs"), "/usr/local/include/syndicate"],
               extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE"],
-              language="c++") 
+              language="c++"),
+    
+    Extension("volume",
+              sources=["volume.pyx"],
+              libraries=["syndicate"],
+              library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "bin/UG")],             # local build
+              include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"),
+                            os.path.join(source_root, build_dir, "protobufs"),
+                            os.path.join(source_root, build_dir, "bin/UG"),
+                            os.path.join(source_root, build_dir, "bin/UG/fs"), 
+                            "/usr/local/include/syndicate"],
+              extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE"],
+              language="c++"),
 ]
 
-# get the list of drivers
+# get the list of RG drivers
 driver_path = os.path.abspath( os.path.join(ext_source_root, "RG") )
 sys.path.append( driver_path )
 
@@ -73,7 +84,13 @@ setup(name='syndicate',
       license='Apache 2.0',
       ext_package='syndicate',
       ext_modules = ext_modules,
-      packages = ['syndicate', 'syndicate.client', 'syndicate.client.common', 'syndicate.client.bin', 'syndicate.protobufs', 'syndicate.rg', 'syndicate.rg.drivers'] + driver_package_names,
+      packages = ['syndicate',
+                  'syndicate.client',
+                  'syndicate.client.common',
+                  'syndicate.client.bin',
+                  'syndicate.protobufs',
+                  'syndicate.rg',
+                  'syndicate.rg.drivers'] + driver_package_names,
       package_dir = dict({
                          'syndicate.client': os.path.join(ext_source_root, 'ms/clients/python'),
                          'syndicate.client.common': os.path.join(ext_source_root, 'ms/common'),

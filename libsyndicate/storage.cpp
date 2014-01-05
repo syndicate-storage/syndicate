@@ -16,7 +16,100 @@
 
 #include "libsyndicate/storage.h"
 
+char* md_load_file_as_string( char const* path, size_t* size ) {
+   char* ret = load_file( path, size );
 
+   if( ret == NULL ) {
+      errorf("failed to load %s\n", path );
+      return NULL;
+   }
+
+   ret = (char*)realloc( ret, *size + 1 );
+
+   ret[ *size ] = 0;
+
+   return ret;
+}  
+
+
+// initialize local storage
+int md_init_local_storage( struct md_syndicate_conf* c, char const* root_dir ) {
+   
+   char cwd[PATH_MAX + 1];
+   int rc = 0;
+   
+   if( root_dir == NULL ) {
+      // make a PID-named directory
+      pid_t my_pid = 0;
+      
+   #ifndef _SYNDICATE_NACL_
+      my_pid = getpid();
+   #else
+      my_pid = (pid_t)rand();
+   #endif
+      
+      sprintf(cwd, "/tmp/syndicate.%d", my_pid );
+   }
+   else {
+      if( strlen(root_dir) >= PATH_MAX - 20 ) {
+         errorf("Directory '%s' too long\n", root_dir );
+         return -EINVAL;
+      }
+      
+      strncpy( cwd, root_dir, PATH_MAX );
+   }
+   
+   char* data_root = md_fullpath( cwd, "data/", NULL );
+   char* staging_root = md_fullpath( cwd, "staging/", NULL );
+   char* logfile_path = md_fullpath( cwd, "access.log", NULL );
+   char* replica_logfile_path = md_fullpath( cwd, "replica.log", NULL );
+   
+   if( c->data_root == NULL )
+      c->data_root = strdup( data_root );
+
+   if( c->staging_root == NULL )
+      c->staging_root = strdup( staging_root );
+
+   if( c->logfile_path == NULL )
+      c->logfile_path = strdup( logfile_path );
+
+   if( c->replica_logfile == NULL )
+      c->replica_logfile = strdup( replica_logfile_path );
+
+   free( data_root );
+   free( staging_root );
+   free( logfile_path );
+   free( replica_logfile_path );
+
+   if( c->gateway_type == SYNDICATE_UG ) {
+      dbprintf("data root:     %s\n", c->data_root );
+      dbprintf("staging root:  %s\n", c->staging_root );
+      dbprintf("replica log:   %s\n", c->replica_logfile );
+   }
+
+   dbprintf("access log:    %s\n", c->logfile_path );
+
+   // make sure the storage roots exist
+   if( rc == 0 ) {
+      const char* dirs[] = {
+         c->data_root,
+         c->staging_root,
+         NULL
+      };
+
+#ifndef _SYNDICATE_NACL_
+      for( int i = 0; dirs[i] != NULL; i++ ) {         
+         rc = md_mkdirs( dirs[i] );
+         if( rc != 0 ) {
+            errorf("md_mkdirs(%s) rc = %d\n", dirs[i], rc );
+            return rc;
+         }
+      }
+#endif
+   }
+
+   return rc;
+}
 
 // recursively make a directory.
 // return 0 if the directory exists at the end of the call.

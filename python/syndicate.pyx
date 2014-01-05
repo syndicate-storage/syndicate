@@ -134,17 +134,19 @@ cdef class Syndicate:
                        gateway_name=None,
                        portnum=0,
                        ms_url=None,
-                       gateway_pass=None,
-                       gateway_cred=None,
+                       oid_username=None,
+                       oid_password=None,
                        volume_name=None,
                        volume_key_filename=None,
                        conf_filename=None,
                        my_key_filename=None,
                        tls_pkey_filename=None,
-                       tls_cert_filename=None ):
+                       tls_cert_filename=None,
+                       storage_root=None ):
 
       '''
          Initialize libsyndicate.
+         TODO: this method might not always be called, or called twice.  Need to be robust against it.
       '''
       
       global syndicate_inited
@@ -156,14 +158,15 @@ cdef class Syndicate:
       cdef:
          char *c_gateway_name = NULL
          char *c_ms_url = NULL
-         char *c_gateway_cred = NULL
-         char *c_gateway_pass = NULL
+         char *c_oid_username = NULL
+         char *c_oid_password = NULL
          char *c_volume_name = NULL
          char *c_volume_key_filename = NULL
          char *c_conf_filename = NULL
          char *c_my_key_filename = NULL
          char *c_tls_pkey_filename = NULL
          char *c_tls_cert_filename = NULL
+         char* c_storage_root = NULL
 
       if gateway_name != None:
          c_gateway_name = gateway_name
@@ -171,11 +174,11 @@ cdef class Syndicate:
       if ms_url != None:
          c_ms_url = ms_url
 
-      if gateway_cred != None:
-         c_gateway_cred = gateway_cred 
+      if oid_username != None:
+         c_oid_username = oid_username 
          
-      if gateway_pass != None:
-         c_gateway_pass = gateway_pass
+      if oid_password != None:
+         c_oid_password = oid_password
          
       if volume_name != None:
          c_volume_name = volume_name 
@@ -193,6 +196,9 @@ cdef class Syndicate:
       if tls_cert_filename != None:
          c_tls_cert_filename = tls_cert_filename
 
+      if storage_root != None:
+         c_storage_root = storage_root
+
       rc = md_init(  gateway_type,
                      c_gateway_name,
                      &self.conf_inst,
@@ -201,12 +207,13 @@ cdef class Syndicate:
                      c_ms_url,
                      c_volume_name,
                      c_gateway_name,
-                     c_gateway_cred,
-                     c_gateway_pass,
+                     c_oid_username,
+                     c_oid_password,
                      c_volume_key_filename,
                      c_my_key_filename,
                      c_tls_pkey_filename,
-                     c_tls_cert_filename )
+                     c_tls_cert_filename,
+                     c_storage_root )
       
       if rc != 0:
          raise Exception( "md_init rc = %d" % rc )
@@ -219,14 +226,15 @@ cdef class Syndicate:
                            gateway_name=None,
                            portnum=0,
                            ms_url=None,
-                           gateway_pass=None,
-                           gateway_cred=None,
+                           oid_username=None,
+                           oid_password=None,
                            volume_name=None,
                            volume_key_filename=None,
                            conf_filename=None,
                            my_key_filename=None,
                            tls_pkey_filename=None,
-                           tls_cert_filename=None):
+                           tls_cert_filename=None,
+                           storage_root=None):
       
       '''
          Get the current Syndicate instance,
@@ -241,14 +249,15 @@ cdef class Syndicate:
                                     gateway_name=gateway_name,
                                     portnum=portnum,
                                     ms_url=ms_url,
-                                    gateway_pass=gateway_pass,
-                                    gateway_cred=gateway_cred,
+                                    oid_username=oid_username,
+                                    oid_password=oid_password,
                                     volume_name=volume_name,
                                     volume_key_filename=volume_key_filename,
                                     conf_filename=conf_filename,
                                     my_key_filename=my_key_filename,
                                     tls_pkey_filename=tls_pkey_filename,
-                                    tls_cert_filename=tls_cert_filename )
+                                    tls_cert_filename=tls_cert_filename,
+                                    storage_root=storage_root)
          
       return syndicate_ref
    

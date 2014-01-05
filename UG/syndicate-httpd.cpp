@@ -868,6 +868,7 @@ int main( int argc, char** argv ) {
    char* gateway_pkey_path = NULL;
    char* tls_pkey_path = NULL;
    char* tls_cert_path = NULL;
+   bool flush_replicas = true;
   
    static struct option syndicate_options[] = {
       {"config-file",     required_argument,   0, 'c'},
@@ -882,12 +883,13 @@ int main( int argc, char** argv ) {
       {"gateway-pkey",    required_argument,   0, 'G'},
       {"tls-pkey",        required_argument,   0, 'S'},
       {"tls-cert",        required_argument,   0, 'C'},
+      {"no-flush-replicas", no_argument,       0, 'F'},
       {0, 0, 0, 0}
    };
 
    int opt_index = 0;
    
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:fm:V:G:S:C:", syndicate_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:Ffm:V:G:S:C:", syndicate_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -920,6 +922,9 @@ int main( int argc, char** argv ) {
          case 'f': {
             foreground = true;
             break;
+         }
+         case 'F': {
+            flush_replicas = false;
          }
          case 'V': {
             volume_pubkey_path = optarg;
@@ -1008,7 +1013,11 @@ int main( int argc, char** argv ) {
 
    server_shutdown( &syndicate_http );
 
-   syndicate_destroy();
+   int wait_replicas = 0;
+   if( flush_replicas )
+      wait_replicas = -1;
+      
+   syndicate_destroy( wait_replicas );
    
    return 0;
 }

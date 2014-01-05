@@ -81,7 +81,8 @@ cdef extern from "libsyndicate.h":
                char* volume_key_file,
                char* my_key_file,
                char* tls_key_file,
-               char* tls_cert_file
+               char* tls_cert_file,
+               char* storage_root
             ) 
 
    int md_shutdown()

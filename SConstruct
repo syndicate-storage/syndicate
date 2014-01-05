@@ -102,8 +102,6 @@ def make_nacl_env( env, NACL_TOOLCHAIN, PEPPER_ROOT, arch ):
 
 Export("make_nacl_env")
 
-build_httpd_support = ("httpd" not in extra_args.keys() or extra_args['httpd'].lower() == "true")
-
 # install directories
 bin_install_dir = os.path.join( install_prefix, "bin" )
 lib_install_dir = os.path.join( install_prefix, "lib" )
@@ -184,24 +182,20 @@ env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_i
 # ----------------------------------------
 # UG build
 ug_out = "build/out/bin/UG"
-syndicatefs, syndicate_httpd, syndicate_ipc, UG_nacl = SConscript( "UG/SConscript", variant_dir=ug_out )
+syndicatefs, syndicate_httpd, syndicate_ipc, libUG, UG_nacl = SConscript( "UG/SConscript", variant_dir=ug_out )
 
-ugs = []
-ug_aliases = []
-if build_httpd_support:
-   ugs = [syndicatefs, syndicate_httpd, syndicate_ipc]
-   ug_aliases = [syndicatefs, syndicate_httpd, syndicate_ipc]
-   env.Depends( syndicate_httpd, libsyndicate )
-
-else:
-   ugs = [syndicatefs, UG_nacl]
-   ug_aliases = [syndicatefs, UG_nacl]
+ugs = [syndicatefs, syndicate_httpd, syndicate_ipc, libUG]
+ug_aliases = [syndicatefs, syndicate_httpd, syndicate_ipc, libUG]
 
 env.Depends( syndicatefs, libsyndicate )
 env.Depends( syndicate_ipc, libsyndicate )
+env.Depends( syndicate_httpd, libsyndicate )
+env.Depends( libUG, libsyndicate )
 env.Depends( UG_nacl, libsyndicate_nacl )
 
 env.Alias("syndicatefs", syndicatefs)
+env.Alias("UG-httpd", syndicate_httpd)
+env.Alias("libUG", libUG)
 env.Alias("UG-ipc", syndicate_ipc)
 env.Alias("UG-nacl", UG_nacl)
 
@@ -300,7 +294,7 @@ common.install_targets( env, "RG-install", bin_install_dir, rg_server )
 
 syndicate_python_out = "build/out/python"
 python_target, python_install, python_files = SConscript("python/SConscript", variant_dir=syndicate_python_out)
-env.Depends(python_target, [python_files, protobuf_py_files, libsyndicate])
+env.Depends(python_target, [python_files, protobuf_py_files, libsyndicate, libUG])
 
 env.Alias("syndicate-python", python_target)
 env.Alias("syndicate-python-install", python_install)

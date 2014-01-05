@@ -23,7 +23,7 @@ Collator::Collator( struct fs_core* core ) {
    pthread_mutex_init( &this->release_queue_lock, NULL );
 
    this->release_curl = curl_easy_init();
-   md_init_curl_handle( this->release_curl, "http://foo.com", core->conf->metadata_connect_timeout );
+   md_init_curl_handle( core->conf, this->release_curl, "http://foo.com", core->conf->connect_timeout );
 
    curl_easy_setopt( this->release_curl, CURLOPT_POST, 1L );
    curl_easy_setopt( this->release_curl, CURLOPT_SSL_VERIFYPEER, (core->conf->verify_peer ? 1L : 0L) );
@@ -72,7 +72,7 @@ static int send_accepted( struct fs_core* core, CURL* curl_h, char const* conten
    string msg_data_str;
    acceptMsg->SerializeToString( &msg_data_str );
 
-   md_init_curl_handle( curl_h, content_url, core->conf->metadata_connect_timeout );
+   md_init_curl_handle( core->conf, curl_h, content_url, core->conf->connect_timeout );
 
    curl_easy_setopt( curl_h, CURLOPT_POST, 1L );
    curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, (core->conf->verify_peer ? 1L : 0L) );

@@ -157,8 +157,8 @@ def setup_syndicate( config ):
                                          gateway_name=gateway_name,
                                          portnum=gateway_portnum,
                                          volume_name=volume_name,
-                                         gateway_cred=rg_username,
-                                         gateway_pass=rg_password,
+                                         oid_username=rg_username,
+                                         oid_password=rg_password,
                                          my_key_filename=my_key_file,
                                          conf_filename=config_file,
                                          volume_key_filename=volume_pubkey,
@@ -202,7 +202,7 @@ def debug():
    volume_name = "testvolume-jcnelson-cs.princeton.edu"
    
    # start up libsyndicate
-   syndicate = rg_common.syndicate_init( ms_url=ms_url, gateway_name=gateway_name, portnum=gateway_portnum, volume_name=volume_name, gateway_cred=rg_username, gateway_pass=rg_password, my_key_filename=my_key_file )
+   syndicate = rg_common.syndicate_init( ms_url=ms_url, gateway_name=gateway_name, portnum=gateway_portnum, volume_name=volume_name, oid_username=rg_username, oid_password=rg_password, my_key_filename=my_key_file )
    
    # start up config
    rg_closure.init( syndicate, my_key_file )

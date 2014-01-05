@@ -183,6 +183,11 @@ int fs_core_use_ms( struct fs_core* core, struct ms_client* ms ) {
    return 0;
 }
 
+int fs_core_use_state( struct fs_core* core, struct syndicate_state* state ) {
+   core->state = state;
+   return 0;
+}
+   
 // destroy the core of the FS
 int fs_core_destroy( struct fs_core* core ) {
    //delete core->dtp;

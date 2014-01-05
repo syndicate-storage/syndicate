@@ -1437,7 +1437,8 @@ int main(int argc, char* argv[]) {
     char* tls_pkey_path = NULL;
     char* tls_cert_path = NULL;
     int ipcportnum = -1;
-
+    bool flush_replicas = true;
+    
     static struct option syndicate_options[] = {
         {"config-file", required_argument, 0, 'c'},
         {"volume-name", required_argument, 0, 'v'},
@@ -1451,12 +1452,13 @@ int main(int argc, char* argv[]) {
         {"gateway-pkey", required_argument, 0, 'G'},
         {"tls-pkey", required_argument, 0, 'S'},
         {"tls-cert", required_argument, 0, 'C'},
+        {"no-flush-replicas", no_argument, 0, 'F'},
         {0, 0, 0, 0}
     };
 
     int opt_index = 0;
     int c = 0;
-    while ((c = getopt_long(argc, argv, "c:v:u:p:P:O:m:g:V:G:S:C:", syndicate_options, &opt_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "c:v:u:p:P:O:m:g:V:G:S:C:F", syndicate_options, &opt_index)) != -1) {
         switch (c) {
             case 'v':
             {
@@ -1518,7 +1520,11 @@ int main(int argc, char* argv[]) {
                 tls_cert_path = optarg;
                 break;
             }
-
+            case 'F':
+            {
+                 flush_replicas = false;
+                 break;
+            }
             default:
             {
                 break;
@@ -1568,7 +1574,11 @@ int main(int argc, char* argv[]) {
 
     server_shutdown( &syndicate_http );
 
-    syndicate_destroy();
+    int wait_replicas = -1;
+    if( !flush_replicas )
+       wait_replicas = 0;
+    
+    syndicate_destroy( wait_replicas );
 
     curl_global_cleanup();
     google::protobuf::ShutdownProtobufLibrary();

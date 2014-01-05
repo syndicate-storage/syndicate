@@ -130,14 +130,19 @@ struct syndicate_replication {
    pthread_t upload_thread;     // thread to send data to Replica SGs
    
    bool active;                 // set to true when the syndciate_replication thread is running
+   bool accepting;              // set to true if we're accepting new uploads
+   
+   int num_uploads;             // number of uploads running; safe for readers to access
    
    struct ms_client* ms;
+   struct md_syndicate_conf* conf;
    uint64_t volume_id;
 };
 
+struct syndicate_state;
 
-int replication_init( struct ms_client* ms, uint64_t volume_id );
-int replication_shutdown();
+int replication_init( struct syndicate_state* state, uint64_t volume_id );
+int replication_shutdown( struct syndicate_state* state, int wait_replicas );
 
 int replica_context_free( struct replica_context* rctx );
 
@@ -150,7 +155,7 @@ int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapsh
 int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_fent, uint64_t block_id, int64_t block_version, struct replica_snapshot* snapshot );
 int fs_entry_replica_snapshot_restore( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* snapshot );
 
-int fs_entry_replicate_wait( struct fs_file_handle* fh );
+int fs_entry_replicate_wait( struct fs_core* core, struct fs_file_handle* fh );
 
 int fs_entry_replica_file_handle( struct fs_core* core, struct fs_entry* fent, struct fs_file_handle* fh );
 int fs_entry_free_replica_file_handle( struct fs_file_handle* fh );

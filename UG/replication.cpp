@@ -15,12 +15,9 @@
 */
 
 #include "replication.h"
+#include "state.h"
 
 int fs_entry_replicate_wait_and_free( struct syndicate_replication* synrp, vector<struct replica_context*>* rctxs, struct timespec* timeout );
-
-static struct syndicate_replication global_replication;                 // upload data to the replica gateways
-static struct syndicate_replication global_garbage_collector;           // instruct the replica gateways to delete old data
-
 
 // populate a replica_snapshot
 int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_fent, uint64_t block_id, int64_t block_version, struct replica_snapshot* snapshot ) {
@@ -542,7 +539,7 @@ int replica_context_connect( struct syndicate_replication* rp, struct replica_co
       rctx->curls->push_back( curl );
       
       dbprintf("%s: %s %p (%s) to %s\n", rp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx, (rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ? "block" : "manifest"), rg_base_url );
-      md_init_curl_handle( curl, rg_base_url, rp->ms->conf->replica_connect_timeout );
+      md_init_curl_handle( rp->conf, curl, rg_base_url, rp->ms->conf->replica_connect_timeout );
       
       // prepare upload
       curl_easy_setopt( curl, CURLOPT_POST, 1L );
@@ -864,7 +861,7 @@ void* replica_main( void* arg ) {
       pthread_mutex_lock( &synrp->running_lock );
       
       // do we have delayed replicas?
-      if( synrp->has_write_delayed ) {
+      if( synrp->has_write_delayed && synrp->accepting ) {
          pthread_mutex_lock( &synrp->write_delayed_lock );
          
          double now = now_ns();
@@ -894,7 +891,7 @@ void* replica_main( void* arg ) {
       
       
       // do we have replicas that are waiting to be started?
-      if( synrp->has_pending ) {
+      if( synrp->has_pending && synrp->accepting ) {
          pthread_mutex_lock( &synrp->pending_lock );
          
          for( replica_upload_set::iterator itr = synrp->pending_uploads->begin(); itr != synrp->pending_uploads->end(); itr++ ) {
@@ -969,6 +966,7 @@ void* replica_main( void* arg ) {
       // find out what finished uploading
       rc = replica_process_responses( synrp );
       
+      synrp->num_uploads = synrp->uploads->size();
       pthread_mutex_unlock( &synrp->running_lock );
       
       if( rc != 0 ) {
@@ -1060,7 +1058,7 @@ int replica_wait_and_remove( struct syndicate_replication* rp, struct replica_co
 
 
 // initalize a syndicate replication instance
-int replica_init_replication( struct syndicate_replication* rp, char const* name, struct ms_client* client, uint64_t volume_id ) {
+int replica_init_replication( struct syndicate_replication* rp, char const* name, struct md_syndicate_conf* conf, struct ms_client* client, uint64_t volume_id ) {
    pthread_mutex_init( &rp->running_lock, NULL );
    pthread_mutex_init( &rp->pending_lock, NULL );
    pthread_mutex_init( &rp->cancel_lock, NULL );
@@ -1079,6 +1077,7 @@ int replica_init_replication( struct syndicate_replication* rp, char const* name
    rp->active = true;
    
    rp->ms = client;
+   rp->conf = conf;
    rp->volume_id = volume_id;
    
    rp->upload_thread = md_start_thread( replica_main, rp, false );
@@ -1092,7 +1091,21 @@ int replica_init_replication( struct syndicate_replication* rp, char const* name
 
 
 // shut down a syndicate replication instance
-int replica_shutdown_replication( struct syndicate_replication* rp ) {
+int replica_shutdown_replication( struct syndicate_replication* rp, int wait_replicas ) {
+   rp->accepting = false;
+   
+   if( wait_replicas > 0 ) {
+      dbprintf("Wait %d seconds for all replicas to finish\n", wait_replicas );
+      sleep(wait_replicas);
+   }
+   else if( wait_replicas < 0 ) {
+      dbprintf("%s", "Wait for all replicas to finish\n");
+      
+      while( rp->num_uploads != 0 ) {
+         sleep(1);
+      }
+   }
+   
    rp->active = false;
    
    // NOTE: we don't care of pthread_cancel fails...
@@ -1170,14 +1183,14 @@ int replica_shutdown_replication( struct syndicate_replication* rp ) {
 
 
 // start up replication
-int replication_init(struct ms_client* client, uint64_t volume_id) {
-   int rc = replica_init_replication( &global_replication, "replication", client, volume_id );
+int replication_init( struct syndicate_state* state, uint64_t volume_id) {
+   int rc = replica_init_replication( &state->replication, "replication", &state->conf, state->ms, volume_id );
    if( rc != 0 ) {
       errorf("replication: replica_init_replication rc = %d\n", rc );
       return -ENOSYS;
    }
    
-   rc = replica_init_replication( &global_garbage_collector, "garbage collector", client, volume_id );
+   rc = replica_init_replication( &state->garbage_collector, "garbage collector", &state->conf, state->ms, volume_id );
    if( rc != 0 ) {
       errorf("garbage collector: replica_init_replication rc = %d\n", rc );
       return -ENOSYS;
@@ -1188,16 +1201,16 @@ int replication_init(struct ms_client* client, uint64_t volume_id) {
 
 
 // shut down replication
-int replication_shutdown() {
-   int rc = replica_shutdown_replication( &global_replication );
+int replication_shutdown( struct syndicate_state* state, int wait_replicas ) {
+   int rc = replica_shutdown_replication( &state->replication, wait_replicas );
    if( rc != 0 ) {
-      errorf("%s: replica_shutdown_replication rc = %d\n", global_replication.process_name, rc );
+      errorf("%s: replica_shutdown_replication rc = %d\n", state->replication.process_name, rc );
       return -ENOSYS;
    }
    
-   rc = replica_shutdown_replication( &global_garbage_collector );
+   rc = replica_shutdown_replication( &state->garbage_collector, wait_replicas );
    if( rc != 0 ) {
-      errorf("%s: replica_shutdown_replication rc = %d\n", global_garbage_collector.process_name, rc );
+      errorf("%s: replica_shutdown_replication rc = %d\n", state->garbage_collector.process_name, rc );
       return -ENOSYS;
    }
    
@@ -1321,7 +1334,7 @@ int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bo
    if( fh )
       rctxs = fh->rctxs;
    
-   rc = replica_run_manifest_context( core, &global_replication, manifest_rctx, sync, rctxs, -1.0 );
+   rc = replica_run_manifest_context( core, &core->state->replication, manifest_rctx, sync, rctxs, -1.0 );
    
    return rc;
 }
@@ -1355,7 +1368,7 @@ int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modi
    if( fh )
       rctxs = fh->rctxs;
    
-   rc = replica_run_block_contexts( core, &global_replication, &block_rctxs, sync, rctxs, -1.0 );
+   rc = replica_run_block_contexts( core, &core->state->replication, &block_rctxs, sync, rctxs, -1.0 );
    
    return rc;
 }
@@ -1372,7 +1385,7 @@ int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snap
    }
    
    // if there are any pending uploads for this same manifest, stop them
-   replica_cancel_contexts( &global_replication, snapshot );
+   replica_cancel_contexts( &core->state->replication, snapshot );
    
    struct timespec write_ttl;
    write_ttl.tv_sec = snapshot->max_write_freshness;
@@ -1380,7 +1393,7 @@ int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snap
    
    double start_time = timespec_to_double( &write_ttl );
    
-   rc = replica_run_manifest_context( core, &global_garbage_collector, manifest_rctx, false, NULL, start_time );
+   rc = replica_run_manifest_context( core, &core->state->garbage_collector, manifest_rctx, false, NULL, start_time );
       
    return rc;
 }
@@ -1412,7 +1425,7 @@ int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapsh
       }
       
       // if there are any pending uploads for this block, then simply stop them.
-      replica_cancel_contexts( &global_replication, &block_snapshot );
+      replica_cancel_contexts( &core->state->replication, &block_snapshot );
       
       // garbage collect!
       block_rctxs.push_back( block_rctx );
@@ -1424,7 +1437,7 @@ int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapsh
    
    double start_time = timespec_to_double( &write_ttl );
    
-   rc = replica_run_block_contexts( core, &global_garbage_collector, &block_rctxs, false, NULL, start_time );
+   rc = replica_run_block_contexts( core, &core->state->garbage_collector, &block_rctxs, false, NULL, start_time );
    
    return rc;
 }
@@ -1483,7 +1496,7 @@ int fs_entry_replicate_wait_and_free( struct syndicate_replication* synrp, vecto
 
 // wait for all replications to finish
 // fh must be write-locked
-int fs_entry_replicate_wait( struct fs_file_handle* fh ) {
+int fs_entry_replicate_wait( struct fs_core* core, struct fs_file_handle* fh ) {
    struct timespec *tsp = NULL;
    
    if( fh->transfer_timeout_ms > 0 ) {
@@ -1493,7 +1506,7 @@ int fs_entry_replicate_wait( struct fs_file_handle* fh ) {
       tsp = &ts;
    }
    
-   int rc = fs_entry_replicate_wait_and_free( &global_replication, fh->rctxs, tsp );
+   int rc = fs_entry_replicate_wait_and_free( &core->state->replication, fh->rctxs, tsp );
    
    fh->rctxs->clear();
    return rc;

@@ -153,7 +153,7 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
       return -EINVAL;
    }
 
-   md_init_curl_handle( curl_h, content_url, core->conf->metadata_connect_timeout );
+   md_init_curl_handle( core->conf, curl_h, content_url, core->conf->connect_timeout );
    curl_easy_setopt( curl_h, CURLOPT_POST, 1L );
    curl_easy_setopt( curl_h, CURLOPT_WRITEFUNCTION, fs_entry_response_buffer );
    curl_easy_setopt( curl_h, CURLOPT_WRITEDATA, &buf );

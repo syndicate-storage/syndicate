@@ -55,7 +55,6 @@ struct fuse_operations get_syndicatefs_opers() {
    fo.releasedir = syndicatefs_releasedir;
    fo.fsyncdir = syndicatefs_fsyncdir;
    fo.init = syndicatefs_init;
-   //fo.destroy = syndicatefs_destroy;
    fo.access = syndicatefs_access;
    fo.create = syndicatefs_create;
    fo.ftruncate = syndicatefs_ftruncate;
@@ -221,21 +220,6 @@ int syndicatefs_chmod(const char *path, mode_t mode) {
 
 /** Change the owner and group of a file (chown) */
 int syndicatefs_chown(const char *path, uid_t uid, gid_t gid) {
-   /*
-   struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
-   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_chown( %s, %d, %d )\n", pthread_self(), path, uid, gid );
-   
-   SYNDICATEFS_DATA->stats->enter( STAT_CHOWN );
-   
-   int rc = fs_entry_chown( SYNDICATEFS_DATA->core, path, conf->owner, SYNDICATEFS_DATA->core->volume, uid );
-   if( rc == 0 ) {
-      // TODO: update the modtime of this file
-   }
-   
-   SYNDICATEFS_DATA->stats->leave( STAT_CHOWN, rc );
-   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_chown rc = %d\n", pthread_self(), rc);
-   return rc;
-   */
    return -ENOSYS;
 }
 
@@ -768,6 +752,7 @@ int main(int argc, char** argv) {
    char* gateway_pkey_path = NULL;
    char* tls_pkey_path = NULL;
    char* tls_cert_path = NULL;
+   bool flush_replicas = true;
    
    static struct option syndicate_options[] = {
       {"config-file",     required_argument,   0, 'c'},
@@ -781,12 +766,13 @@ int main(int argc, char** argv) {
       {"gateway-pkey",    required_argument,   0, 'G'},
       {"tls-pkey",        required_argument,   0, 'S'},
       {"tls-cert",        required_argument,   0, 'C'},
+      {"no-flush-replicas", no_argument,       0, 'F'},
       {0, 0, 0, 0}
    };
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:o:m:fsg:V:G:S:C:", syndicate_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:o:m:fFsg:V:G:S:C:", syndicate_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -832,6 +818,11 @@ int main(int argc, char** argv) {
          case 's': {
             // single-threaded (FUSE)
             fuse_opt_add_arg( &args, "-s" );
+            break;
+         }
+         case 'F': {
+            // don't flush replicas
+            flush_replicas = false;
             break;
          }
          case 'V': {
@@ -908,7 +899,12 @@ int main(int argc, char** argv) {
 
    server_shutdown( &syndicate_http );
 
-   syndicate_destroy();
+   int wait_replicas = -1;
+   if( !flush_replicas ) {
+      wait_replicas = 0;
+   }
+   
+   syndicate_destroy( wait_replicas );
    
    curl_global_cleanup();
    google::protobuf::ShutdownProtobufLibrary();

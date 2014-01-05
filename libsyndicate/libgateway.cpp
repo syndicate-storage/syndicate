@@ -563,9 +563,6 @@ static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf, s
    md_HTTP_DELETE( *http, gateway_DELETE_handler );
    md_HTTP_close( *http, gateway_cleanup );
 
-   md_mkdirs( conf->gateway_metadata_root );
-
-   md_connect_timeout( conf->metadata_connect_timeout );
    md_signals( 0 );        // no signals
 
    int rc = md_start_HTTP( http, conf->portnum );
@@ -820,7 +817,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    struct ms_client client;
    struct md_syndicate_conf conf;
  
-   rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path );
+   rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path, NULL );
    if( rc != 0 ) {
       exit(1);
    }

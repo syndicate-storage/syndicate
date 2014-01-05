@@ -166,7 +166,7 @@ int fs_entry_replace_manifest( struct fs_core* core, struct fs_file_handle* fh, 
    else {
       if( fh->flags & O_SYNC ) {
          // wait for all replicas to finish, since we're synchronous
-         fs_entry_replicate_wait( fh );
+         fs_entry_replicate_wait( core, fh );
       }
    }
    
@@ -451,7 +451,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       
       if( fh->flags & O_SYNC ) {
          // wait for all replicas to finish, since we're synchronous
-         fs_entry_replicate_wait( fh );
+         fs_entry_replicate_wait( core, fh );
       }
    }
 

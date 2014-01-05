@@ -174,8 +174,6 @@ struct md_syndicate_conf {
    
    // RG/AG servers
    unsigned int num_http_threads;                     // how many HTTP threads to create
-   char* md_pidfile_path;                             // where to store the PID file for the gateway server
-   char* gateway_metadata_root;                       // location on disk (if desired) to record metadata
    bool replica_overwrite;                            // overwrite replica file at the client's request
    char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
    char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
@@ -188,15 +186,14 @@ struct md_syndicate_conf {
 
    // common
    char* gateway_name;                                // name of this gateway
-   int metadata_connect_timeout;                      // number of seconds to wait to connect on the control plane
    int portnum;                                       // Syndicate-side port number
+   int connect_timeout;                               // number of seconds to wait to connect for data
    int transfer_timeout;                              // how long a transfer is allowed to take (in seconds)
    bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers
    char* gateway_key_path;                            // path to PEM-encoded user-given public/private key for this gateway
    char* cdn_prefix;                                  // CDN prefix
    char* proxy_url;                                   // URL to a proxy to use (instead of a CDN)
    int replica_connect_timeout;                       // number of seconds to wait to connect to an RG
-   
    
    // MS-related fields
    char* metadata_url;                                // URL (or path on disk) where to get the metadata
@@ -216,10 +213,9 @@ struct md_syndicate_conf {
 
    // misc
    mode_t usermask;                                   // umask of the user running this program
-   char* mountpoint;                                  // absolute path to the place where the metadata server is mounted
    char* hostname;                                    // what's our hostname?
    char* ag_driver;                                   // AG gatway driver that encompasses gateway callbacks
-
+   int gateway_type;
 };
 
 
@@ -261,14 +257,12 @@ struct md_syndicate_conf {
 #define SSL_CERT_KEY                "TLS_CERT"
 #define GATEWAY_KEY_KEY             "GATEWAY_KEY"
 #define VOLUME_PUBKEY_KEY           "VOLUME_PUBKEY"
-#define PIDFILE_KEY                 "PIDFILE"
 #define VOLUME_NAME_KEY             "VOLUME_NAME"
 #define GATEWAY_NAME_KEY            "GATEWAY_NAME"
 
 #define LOCAL_STORAGE_DRIVERS_KEY   "LOCAL_STORAGE_DRIVERS"
 
 // gateway config
-#define GATEWAY_METADATA_KEY        "GATEWAY_METADATA"
 #define GATEWAY_PORTNUM_KEY         "GATEWAY_PORTNUM"
 #define REPLICA_OVERWRITE_KEY       "REPLICA_OVERWRITE"
 
@@ -364,15 +358,10 @@ int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent );
 pthread_t md_start_thread( void* (*thread_func)(void*), void* args, bool detach );
 
 // downloads
-int md_connect_timeout( unsigned long timeout );
-void md_init_curl_handle( CURL* curl, char const* url, time_t query_time );
-ssize_t md_download_file( char const* url, char** buf, int* status_code );
-ssize_t md_download_file2( char const* url, char** buf, char const* username, char const* password );
-ssize_t md_download_file3( char const* url, int fd, char const* username, char const* password );
-ssize_t md_download_file4( char const* url, char** buf, char const* username, char const* password, char const* proxy, void (*curl_extractor)( CURL*, int, void* ), void* arg );
+void md_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char const* url, time_t query_time );
+ssize_t md_download_file4( struct md_syndicate_conf* conf, char const* url, char** buf, char const* username, char const* password, char const* proxy, void (*curl_extractor)( CURL*, int, void* ), void* arg );
 ssize_t md_download_file5( CURL* curl_h, char** buf );
 ssize_t md_download_file6( CURL* curl_h, char** buf, ssize_t max_len );
-ssize_t md_download_file_proxied( char const* url, char** buf, char const* proxy, int* status_code );
 int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len, int* status_code );
 int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len, int* status_code );
 int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg );
@@ -395,7 +384,7 @@ char* md_url_strip_path( char const* url );
 int md_portnum_from_url( char const* url );
 char* md_strip_protocol( char const* url );
 char* md_flatten_path( char const* path );
-char* md_cdn_url( char const* url );
+char* md_cdn_url( char const* cdn_prefix, char const* url );
 
 // response buffers
 char* response_buffer_to_string( response_buffer_t* rb );
@@ -419,8 +408,25 @@ int md_init(int gateway_type,
             char const* volume_key_file,
             char const* my_key_file,
             char const* tls_key_file,
-            char const* tls_cert_file
+            char const* tls_cert_file,
+            char const* storage_root
          );
+
+
+// initialize syndicate as a client only
+int md_init_client( int gateway_type,
+                    char const* config_file,
+                    struct md_syndicate_conf* conf,
+                    struct ms_client* client,
+                    char const* ms_url,
+                    char const* volume_name, 
+                    char const* gateway_name,
+                    char const* oid_username,
+                    char const* oid_password,
+                    char const* volume_key_path,
+                    char const* my_key_path,
+                    char const* storage_root
+                  );
 
 int md_shutdown(void);
 int md_default_conf( struct md_syndicate_conf* conf );

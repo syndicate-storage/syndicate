@@ -18,29 +18,99 @@
 #include "libsyndicate/storage.h"
 #include "libsyndicate/ms-client.h"
 
-static struct md_syndicate_conf SYNDICATE_CONF;
-
-static unsigned long _connect_timeout = 30L;
-static unsigned long _transfer_timeout = 60L;     // 1 minute
 static int _signals = 1;
 
-static char* md_load_file_as_string( char const* path, size_t* size ) {
-   char* ret = load_file( path, size );
-
-   if( ret == NULL ) {
-      errorf("failed to load %s\n", path );
-      return NULL;
+// initialize server information
+static int md_init_server_info( struct md_syndicate_conf* c, bool is_client ) {
+   
+   int rc = 0;
+   
+   // sanity check
+   if( !is_client && c->portnum <= 0 ) {
+      errorf("Invalid portnum %d\n", c->portnum);
+      return -EINVAL;
    }
+   
+   if( !is_client ) {
+   #ifndef _SYNDICATE_NACL_
+      // get hostname
+      struct addrinfo hints;
+      memset( &hints, 0, sizeof(hints) );
+      hints.ai_family = AF_UNSPEC;
+      hints.ai_socktype = SOCK_STREAM;
+      hints.ai_flags = AI_NUMERICSERV | AI_CANONNAME;
+      hints.ai_protocol = 0;
+      hints.ai_canonname = NULL;
+      hints.ai_addr = NULL;
+      hints.ai_next = NULL;
 
-   ret = (char*)realloc( ret, *size + 1 );
+      char portnum_buf[10];
+      sprintf(portnum_buf, "%d", c->portnum);
 
-   ret[ *size ] = 0;
+      struct addrinfo *result = NULL;
+      char hostname[HOST_NAME_MAX+1];
+      gethostname( hostname, HOST_NAME_MAX );
 
-   return ret;
-}  
+      rc = getaddrinfo( hostname, portnum_buf, &hints, &result );
+      if( rc != 0 ) {
+         // could not get addr info
+         errorf("getaddrinfo: %s\n", gai_strerror( rc ) );
+         return -abs(rc);
+      }
+      
+      // now reverse-lookup ourselves
+      char hn[HOST_NAME_MAX+1];
+      rc = getnameinfo( result->ai_addr, result->ai_addrlen, hn, HOST_NAME_MAX, NULL, 0, NI_NAMEREQD );
+      if( rc != 0 ) {
+         errorf("getnameinfo: %s\n", gai_strerror( rc ) );
+         return -abs(rc);
+      }
+      
+      dbprintf("canonical hostname is %s\n", hn);
+
+      c->hostname = strdup(hn);
+
+   #else   
+      c->hostname = strdup("localhost");
+   #endif
+         
+      // create a public url, if it does not exist
+      if( c->content_url == NULL ) {
+         c->content_url = CALLOC_LIST( char, strlen(c->hostname) + 20 );
+         sprintf(c->content_url, "http://%s:%d/", c->hostname, c->portnum );
+         dbprintf("content URL is %s\n", c->content_url );
+      }
+         
+      // load TLS credentials
+      if( c->server_key_path != NULL && c->server_cert_path != NULL ) {
+         
+         c->server_key = md_load_file_as_string( c->server_key_path, &c->server_key_len );
+         c->server_cert = md_load_file_as_string( c->server_cert_path, &c->server_cert_len );
+
+         if( c->server_key == NULL ) {
+            errorf( "Could not read TLS private key %s\n", c->server_key_path );
+            rc = -ENOENT;
+         }
+         if( c->server_cert == NULL ) {
+            errorf( "Could not read TLS certificate %s\n", c->server_cert_path );
+            rc = -ENOENT;
+         }
+      }
+   }
+   else {
+      // fill in defaults, but they won't be used
+      c->portnum = 32780;
+      c->hostname = strdup("localhost");
+      c->content_url = strdup("http://localhost:32780/");
+      c->server_key = NULL;
+      c->server_cert = NULL;
+   }
+   
+   return rc;
+}
 
 // initialize all global data structures
-static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char const* mountpoint ) {
+static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char const* local_storage_root, bool is_client ) {
 
    GOOGLE_PROTOBUF_VERIFY_VERSION;
 
@@ -50,162 +120,32 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
    mode_t um = get_umask();
    c->usermask = um;
    
+   c->gateway_type = gateway_type;
+   
    int rc = 0;
    
-   // mountpoint
-   if( mountpoint ) {
-      c->mountpoint = strdup( mountpoint );
-   }
-   
-#ifndef _SYNDICATE_NACL_
-   // gateway server without a read url.  generate one
-   struct addrinfo hints;
-   memset( &hints, 0, sizeof(hints) );
-   hints.ai_family = AF_UNSPEC;
-   hints.ai_socktype = SOCK_STREAM;
-   hints.ai_flags = AI_NUMERICSERV | AI_CANONNAME;
-   hints.ai_protocol = 0;
-   hints.ai_canonname = NULL;
-   hints.ai_addr = NULL;
-   hints.ai_next = NULL;
-
-   char portnum_buf[10];
-   sprintf(portnum_buf, "%d", c->portnum);
-
-   struct addrinfo *result = NULL;
-   char hostname[HOST_NAME_MAX+1];
-   gethostname( hostname, HOST_NAME_MAX );
-
-   rc = getaddrinfo( hostname, portnum_buf, &hints, &result );
+   rc = md_init_local_storage( c, local_storage_root );
    if( rc != 0 ) {
-      // could not get addr info
-      errorf("getaddrinfo: %s\n", gai_strerror( rc ) );
-      return -abs(rc);
+      errorf("md_init_local_storage(%s) rc = %d\n", local_storage_root, rc );
+      return rc;
    }
    
-   // now reverse-lookup ourselves
-   char hn[HOST_NAME_MAX+1];
-   rc = getnameinfo( result->ai_addr, result->ai_addrlen, hn, HOST_NAME_MAX, NULL, 0, NI_NAMEREQD );
+   rc = md_init_server_info( c, is_client );
    if( rc != 0 ) {
-      errorf("getnameinfo: %s\n", gai_strerror( rc ) );
-      return -abs(rc);
+      errorf("md_init_server_info() rc = %d\n", rc );
+      return rc;
    }
    
-   dbprintf("canonical hostname is %s\n", hn);
-
-   c->hostname = strdup(hn);
-
-#else   
-   c->hostname = strdup("localhost");
-#endif
-   
-   // create a public url, if it does not exist
-   if( c->content_url == NULL ) {
-      c->content_url = CALLOC_LIST( char, strlen(c->hostname) + 20 );
-      sprintf(c->content_url, "http://%s:%d/", c->hostname, c->portnum );
-      dbprintf("content URL is %s\n", c->content_url );
-   }
-   
-   // make sure we have data root and staging root
-   pid_t my_pid = 0;
-   
-#ifndef _SYNDICATE_NACL_
-   my_pid = getpid();
-#else
-   my_pid = (pid_t)rand();
-#endif
-   
-   char cwd[100];
-   sprintf(cwd, "/tmp/syndicate.%d", my_pid );
-   char* data_root = md_fullpath( cwd, "data/", NULL );
-   char* staging_root = md_fullpath( cwd, "staging/", NULL );
-   char* logfile_path = md_fullpath( cwd, "access.log", NULL );
-   char* replica_logfile_path = md_fullpath( cwd, "replica.log", NULL );
-   char* RG_metadata_path = md_fullpath( cwd, "RG-metadata/", NULL );
-   char* AG_metadata_path = md_fullpath( cwd, "AG-metadata/", NULL );
-   
-   if( c->data_root == NULL )
-      c->data_root = strdup( data_root );
-
-   if( c->staging_root == NULL )
-      c->staging_root = strdup( staging_root );
-
-   if( c->logfile_path == NULL )
-      c->logfile_path = strdup( logfile_path );
-
-   if( c->replica_logfile == NULL )
-      c->replica_logfile = strdup( replica_logfile_path );
-
-   if( gateway_type == SYNDICATE_AG && c->gateway_metadata_root == NULL )
-      c->gateway_metadata_root = strdup( AG_metadata_path );
-
-   if( gateway_type == SYNDICATE_RG && c->gateway_metadata_root == NULL )
-      c->gateway_metadata_root = strdup( RG_metadata_path );
-      
-   free( data_root );
-   free( staging_root );
-   free( logfile_path );
-   free( replica_logfile_path );
-   free( AG_metadata_path );
-   free( RG_metadata_path );
-
-   if( gateway_type == SYNDICATE_UG ) {
-      dbprintf("data root:     %s\n", c->data_root );
-      dbprintf("staging root:  %s\n", c->staging_root );
-      dbprintf("replica log:   %s\n", c->replica_logfile );
-   }
-   else {
-      dbprintf("metadata root: %s\n", c->gateway_metadata_root );
-   }
-
-   dbprintf("access log:    %s\n", c->logfile_path );
-
-   // make sure the storage roots exist
-   if( rc == 0 ) {
-      const char* dirs[] = {
-         c->data_root,
-         c->staging_root,
-         NULL
-      };
-
-#ifndef _SYNDICATE_NACL_
-      for( int i = 0; dirs[i] != NULL; i++ ) {         
-         rc = md_mkdirs( dirs[i] );
-         if( rc != 0 ) {
-            errorf("md_mkdirs(%s) rc = %d\n", dirs[i], rc );
-            return rc;
-         }
-      }
-#endif
-
-   }
-
-
-   // load TLS credentials
-   if( c->server_key_path != NULL && c->server_cert_path != NULL ) {
-      
-      c->server_key = md_load_file_as_string( c->server_key_path, &c->server_key_len );
-      c->server_cert = md_load_file_as_string( c->server_cert_path, &c->server_cert_len );
-
-      if( c->server_key == NULL ) {
-         errorf( "Could not read TLS private key %s\n", c->server_key_path );
-      }
-      if( c->server_cert == NULL ) {
-         errorf( "Could not read TLS certificate %s\n", c->server_cert_path );
-      }
-   }
-
    // load gateway public/private key
    if( c->gateway_key_path != NULL ) {
       c->gateway_key = md_load_file_as_string( c->gateway_key_path, &c->gateway_key_len );
 
       if( c->gateway_key == NULL ) {
          errorf("Could not read Gateway key %s\n", c->gateway_key_path );
+         rc = -ENOENT;
       }
    }
    
-   memcpy( &SYNDICATE_CONF, c, sizeof(SYNDICATE_CONF) );
-
    return rc;
 }
 
@@ -424,7 +364,7 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
             errorf( " WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
          }
          else {
-            conf->metadata_connect_timeout = time;
+            conf->connect_timeout = time;
          }
       }
       
@@ -533,11 +473,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          }
       }
 
-      else if( strcmp( key, PIDFILE_KEY ) == 0 ) {
-         // pidfile path
-         conf->md_pidfile_path = strdup(values[0]);
-      }
-      
       else if( strcmp( key, SSL_PKEY_KEY ) == 0 ) {
          // server private key
          conf->server_key_path = strdup( values[0] );
@@ -577,17 +512,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       else if( strcmp( key, GATEWAY_NAME_KEY ) == 0 ) {
          // gateway name
          conf->gateway_name = strdup( values[0] );
-      }
-      
-      else if( strcmp( key, GATEWAY_METADATA_KEY ) == 0 ) {
-         // replica metadata directory
-         conf->gateway_metadata_root = strdup( values[0] );
-         if( strlen(conf->gateway_metadata_root) > 0 && conf->gateway_metadata_root[ strlen(conf->gateway_metadata_root) - 1 ] != '/' ) {
-            char* tmp = CALLOC_LIST( char, strlen(conf->gateway_metadata_root) + 2 );
-            sprintf(tmp, "%s/", conf->gateway_metadata_root );
-            free( conf->gateway_metadata_root );
-            conf->gateway_metadata_root = tmp;
-         }
       }
       
       else if( strcmp( key, DEBUG_KEY ) == 0 ) {
@@ -633,7 +557,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
 
       else if( strcmp( key, TRANSFER_TIMEOUT_KEY ) == 0 ) {
          conf->transfer_timeout = strtol( values[0], NULL, 10 );
-         _transfer_timeout = conf->transfer_timeout;
       }
 
       else if( strcmp( key, AG_GATEWAY_DRIVER_KEY ) == 0 ) {
@@ -689,8 +612,6 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->gateway_key,
       (void*)conf->gateway_key_path,
       (void*)conf->replica_logfile,
-      (void*)conf->md_pidfile_path,
-      (void*)conf->gateway_metadata_root,
       (void*)conf
    };
 
@@ -1089,14 +1010,6 @@ size_t md_default_get_callback_disk(void *stream, size_t size, size_t count, voi
 }
 
 
-// set the connection timeout
-int md_connect_timeout( unsigned long timeout ) {
-   unsigned long tmp = _connect_timeout;
-   _connect_timeout = timeout;
-   return tmp;
-}
-
-
 // no signals?
 int md_signals( int use_signals ) {
    int tmp = _signals;
@@ -1106,7 +1019,7 @@ int md_signals( int use_signals ) {
 
 // download a file.  put the contents in buf
 // return the size of the downloaded file (or negative on error)
-ssize_t md_download_file4( char const* url, char** buf, char const* username, char const* password, char const* proxy, void (*curl_extractor)( CURL*, int, void* ), void* arg ) {
+ssize_t md_download_file4( struct md_syndicate_conf* conf, char const* url, char** buf, char const* username, char const* password, char const* proxy, void (*curl_extractor)( CURL*, int, void* ), void* arg ) {
    CURL* curl_h;
 
    response_buffer_t rb;
@@ -1134,8 +1047,8 @@ ssize_t md_download_file4( char const* url, char** buf, char const* username, ch
       curl_easy_setopt( curl_h, CURLOPT_NOSIGNAL, 1L );
    
    curl_easy_setopt( curl_h, CURLOPT_WRITEDATA, (void*)&rb );
-   curl_easy_setopt( curl_h, CURLOPT_CONNECTTIMEOUT, _connect_timeout );
-   curl_easy_setopt( curl_h, CURLOPT_TIMEOUT, _transfer_timeout );
+   curl_easy_setopt( curl_h, CURLOPT_CONNECTTIMEOUT, conf->connect_timeout );
+   curl_easy_setopt( curl_h, CURLOPT_TIMEOUT, conf->transfer_timeout );
    curl_easy_setopt( curl_h, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );
    
    int rc = curl_easy_perform( curl_h );
@@ -1165,76 +1078,6 @@ ssize_t md_download_file4( char const* url, char** buf, char const* username, ch
       free( userpass );
 
    return len;
-}
-
-
-ssize_t md_download_file2( char const* url, char** buf, char const* username, char const* password ) {
-   return md_download_file4( url, buf, username, password, NULL, NULL, NULL );
-}
-
-
-static void status_code_extractor( CURL* curl_h, int curl_rc, void* arg ) {
-   long* resp = (long*)arg;
-   if( curl_rc == 0 ) {
-      curl_easy_getinfo( curl_h, CURLINFO_RESPONSE_CODE, resp );
-   }
-}
-
-ssize_t md_download_file( char const* url, char** buf, int* status_code ) {
-   long sc = 0;
-   ssize_t ret = md_download_file4( url, buf, NULL, NULL, NULL, status_code_extractor, &sc );
-   if( status_code )
-      *status_code = (int)sc;
-   return ret;
-}
-
-ssize_t md_download_file_proxied( char const* url, char** buf, char const* proxy, int* status_code ) {
-   long sc = 0;
-   ssize_t ret = md_download_file4( url, buf, NULL, NULL, proxy, status_code_extractor, &sc );
-   if( status_code )
-      *status_code = (int)sc;
-   return ret;
-}
-
-
-// download a file, but save it to disk
-ssize_t md_download_file3( char const* url, int fd, char const* username, char const* password ) {
-   
-   CURL* curl_h = curl_easy_init();
-   curl_easy_setopt( curl_h, CURLOPT_NOPROGRESS, 1L );   // no progress bar
-   curl_easy_setopt( curl_h, CURLOPT_USERAGENT, "Syndicate-agent/1.0");
-   curl_easy_setopt( curl_h, CURLOPT_URL, url );
-   curl_easy_setopt( curl_h, CURLOPT_FOLLOWLOCATION, 1L );
-   curl_easy_setopt( curl_h, CURLOPT_FILETIME, 1L );
-   
-   if( strncasecmp( url, "https", 5 ) == 0 ) {
-      curl_easy_setopt( curl_h, CURLOPT_USE_SSL, CURLUSESSL_ALL );
-      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, 1L );
-      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
-   }
-   
-   char* userpass = NULL;
-   if( username && password ) {
-      curl_easy_setopt( curl_h, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
-      userpass = (char*)calloc( strlen(username) + 1 + strlen(password) + 1, 1 );
-      sprintf( userpass, "%s:%s", username, password );
-      curl_easy_setopt( curl_h, CURLOPT_USERPWD, userpass );
-   }
-   if( !_signals )
-      curl_easy_setopt( curl_h, CURLOPT_NOSIGNAL, 1L );
-   
-   curl_easy_setopt( curl_h, CURLOPT_WRITEDATA, (void*)&fd );
-   curl_easy_setopt( curl_h, CURLOPT_CONNECTTIMEOUT, _connect_timeout );
-   curl_easy_setopt( curl_h, CURLOPT_TIMEOUT, _transfer_timeout );
-   curl_easy_setopt( curl_h, CURLOPT_WRITEFUNCTION, md_default_get_callback_disk );
-   
-   int rc = curl_easy_perform( curl_h );
-   
-   curl_easy_cleanup( curl_h );
-   if( userpass )
-      free( userpass );
-   
-   return -abs(rc);
 }
 
 // download straight from an existing curl handle
@@ -1284,7 +1127,7 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
    long status_code = 0;
    int rc = 0;
 
-   md_init_curl_handle( curl, url, conf->metadata_connect_timeout );
+   md_init_curl_handle( conf, curl, url, conf->connect_timeout );
 
    if( proxy ) {
       curl_easy_setopt( curl, CURLOPT_PROXY, proxy );
@@ -1355,7 +1198,7 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
 int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len, int* status_code ) {
    int rc = 0;
 
-   char* cdn_url = md_cdn_url( url );
+   char* cdn_url = md_cdn_url( conf->cdn_prefix, url );
    char* proxy_url = conf->proxy_url;
    
    char const* proxy_urls[10];
@@ -1773,9 +1616,8 @@ char* md_flatten_path( char const* path ) {
 
 
 // convert the URL into the CDN-ified form
-char* md_cdn_url( char const* url ) {
+char* md_cdn_url( char const* cdn_prefix, char const* url ) {
    // fix the URL so it is prefixed by the hostname and CDN, instead of being file://path or http://hostname/path
-   char* cdn_prefix = SYNDICATE_CONF.cdn_prefix;
    char* host_path = md_strip_protocol( url );
    if( cdn_prefix == NULL || strlen(cdn_prefix) == 0 ) {
       // no prefix given
@@ -2068,7 +1910,7 @@ void md_free_download_buf( struct md_download_buf* buf ) {
 
 
 // initialze a curl handle
-void md_init_curl_handle( CURL* curl_h, char const* url, time_t query_timeout ) {
+void md_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl_h, char const* url, time_t query_timeout ) {
    curl_easy_setopt( curl_h, CURLOPT_NOPROGRESS, 1L );   // no progress bar
    curl_easy_setopt( curl_h, CURLOPT_USERAGENT, "Syndicate-Gateway/1.0");
    curl_easy_setopt( curl_h, CURLOPT_URL, url );
@@ -2079,7 +1921,7 @@ void md_init_curl_handle( CURL* curl_h, char const* url, time_t query_timeout ) 
    
    if( url != NULL && strncasecmp( url, "https", 5 ) == 0 ) {
       curl_easy_setopt( curl_h, CURLOPT_USE_SSL, CURLUSESSL_ALL );
-      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, SYNDICATE_CONF.verify_peer ? 1L : 0L );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, conf->verify_peer ? 1L : 0L );
       curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
    }
    else {
@@ -2351,50 +2193,71 @@ size_t response_buffer_size( response_buffer_t* rb ) {
    return ret;
 }
 
-// initialize Syndicate
-int md_init( int gateway_type,
-             char const* config_file,
-             struct md_syndicate_conf* conf,
-             struct ms_client* client,
-             int portnum,
-             char const* ms_url,
-             char const* volume_name,
-             char const* gateway_name,
-             char const* md_username,
-             char const* md_password,
-             char const* volume_key_file,
-             char const* my_key_file,
-             char const* tls_pkey_file,
-             char const* tls_cert_file
-           ) {
 
-   // before we load anything, disable core dumps (i.e. to keep private keys from leaking)
+
+// merge command-line options with the config....
+#define MD_INIT_MERGE_OPT( conf, optname, value ) \
+   do { \
+     if( (value) ) { \
+        if( (conf).optname ) { \
+           free( (conf).optname ); \
+        } \
+        \
+        (conf).optname = strdup( value ); \
+      } \
+   } while( 0 );
+
+
+static bool _already_inited = false;
+
+// basic Syndicate initialization
+int md_init_begin( int gateway_type,
+                   char const* config_file,
+                   struct md_syndicate_conf* conf,
+                   struct ms_client* client,
+                   char const* ms_url,
+                   char const* volume_name,
+                   char const* gateway_name,
+                   char const* oid_username,
+                   char const* oid_password,
+                   char const* volume_key_path,
+                   char const* my_key_path,
+                   char const* tls_pkey_file,
+                   char const* tls_cert_file ) {
+   
+ 
    int rc = 0;
    
-#ifndef _SYNDICATE_NACL_
-   struct rlimit rlim;
-   getrlimit( RLIMIT_CORE, &rlim );
-   rlim.rlim_max = 0;
-   rlim.rlim_cur = 0;
-   
-   rc = setrlimit( RLIMIT_CORE, &rlim );
-   if( rc != 0 ) {
-      rc = -errno;
-      errorf("Failed to disable core dumps, rc = %d\n", rc );
-      return rc;
-   }
-#endif
-   
-   // need a Volume name with UG
-   if( gateway_type == SYNDICATE_UG && volume_name == NULL ) {
-      errorf("%s", "ERR: missing Volume name for UG\n");
-      return -EINVAL;
-   }
+   if( !_already_inited ) {
+   #ifndef _SYNDICATE_NACL_
+      // before we load anything, disable core dumps (i.e. to keep private keys from leaking)
+      
+      struct rlimit rlim;
+      getrlimit( RLIMIT_CORE, &rlim );
+      rlim.rlim_max = 0;
+      rlim.rlim_cur = 0;
+      
+      rc = setrlimit( RLIMIT_CORE, &rlim );
+      if( rc != 0 ) {
+         rc = -errno;
+         errorf("Failed to disable core dumps, rc = %d\n", rc );
+         return rc;
+      }
+   #endif
+      
+      // need a Volume nam
+      if( volume_name == NULL ) {
+         errorf("%s", "ERR: missing Volume name\n");
+         return -EINVAL;
+      }
 
-   rc = util_init();
-   if( rc != 0 ) {
-      errorf("util_init rc = %d\n", rc );
-      return rc;
+      rc = util_init();
+      if( rc != 0 ) {
+         errorf("util_init rc = %d\n", rc );
+         return rc;
+      }
+      
+      _already_inited = true;
    }
    
    md_default_conf( conf );
@@ -2411,89 +2274,46 @@ int md_init( int gateway_type,
       }
    }
    
-   // merge command-line options with the config....
-   if( ms_url ) {
-      if( conf->metadata_url )
-         free( conf->metadata_url );
-
-      conf->metadata_url = strdup( ms_url );
-   }
-   if( md_username ) {
-      if( conf->ms_username )
-         free( conf->ms_username );
-
-      conf->ms_username = strdup( md_username );
-   }
-   if( md_password ) {
-      if( conf->ms_password )
-         free( conf->ms_password );
-
-      conf->ms_password = strdup( md_password );
-   }
-   if( gateway_name ) {
-      if( conf->gateway_name )
-         free( conf->gateway_name );
-
-      conf->gateway_name = strdup( gateway_name );
-   }
-   if( my_key_file ) {
-      if( conf->gateway_key_path )
-         free( conf->gateway_key_path );
-
-      if( conf->gateway_key )
-         free( conf->gateway_key );
-
-      conf->gateway_key_path = strdup( my_key_file );
-      conf->gateway_key = NULL;
-   }
-   if( tls_cert_file ) {
-      if( conf->server_cert_path )
-         free( conf->server_cert_path );
-
-      conf->server_cert_path = strdup( tls_cert_file );
-   }
-   if( tls_pkey_file ) {
-      if( conf->server_key_path )
-         free( conf->server_key_path );
-
-      conf->server_key_path = strdup( tls_pkey_file );
-   }
+   MD_INIT_MERGE_OPT( *conf, metadata_url, ms_url );
+   MD_INIT_MERGE_OPT( *conf, ms_username, oid_username );
+   MD_INIT_MERGE_OPT( *conf, ms_password, oid_password );
+   MD_INIT_MERGE_OPT( *conf, gateway_name, gateway_name );
+   MD_INIT_MERGE_OPT( *conf, server_cert_path, tls_cert_file );
+   MD_INIT_MERGE_OPT( *conf, server_key_path, tls_pkey_file );
+   MD_INIT_MERGE_OPT( *conf, gateway_key_path, my_key_path );
    
-   if( portnum > 0 ) {
-      conf->portnum = portnum;
-   }
+   return rc;
+}
 
-   if( conf->portnum <= 0 ) {
-      errorf("invalid port number: conf's is %d, caller's is %d\n", conf->portnum, portnum);
-      return -EINVAL;
-   }
 
-   // set up libsyndicate runtime information
-   md_runtime_init( gateway_type, conf, NULL );
-
+// finish initialization
+int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, char const* volume_name ) {
+   
+   int rc = 0;
+   
    // validate the config
-   rc = md_check_conf( gateway_type, conf );
+   rc = md_check_conf( conf->gateway_type, conf );
    if( rc != 0 ) {
       errorf("ERR: md_check_conf rc = %d\n", rc );
       return rc;
    }
 
    // setup the client
-   rc = ms_client_init( client, gateway_type, conf );
+   rc = ms_client_init( client, conf->gateway_type, conf );
    if( rc != 0 ) {
       errorf("ms_client_init rc = %d\n", rc );
       return rc;
    }
 
    // register the gateway
-   rc = ms_client_gateway_register( client, gateway_name, conf->ms_username, conf->ms_password );
+   rc = ms_client_gateway_register( client, conf->gateway_name, conf->ms_username, conf->ms_password );
    if( rc != 0 ) {
       errorf("ms_client_register rc = %d\n", rc );
       return rc;
    }
 
    // if this is a UG, verify that we bound to the right volume
-   if( gateway_type == SYNDICATE_UG ) {
+   if( conf->gateway_type == SYNDICATE_UG ) {
       
       char* volname = ms_client_get_volume_name( client );
 
@@ -2514,9 +2334,90 @@ int md_init( int gateway_type,
    conf->owner = client->owner_id;
    conf->gateway = client->gateway_id;
    ms_client_unlock( client );
-
-   return 0;
+   
+   return rc;
 }
+   
+   
+// initialize Syndicate
+int md_init( int gateway_type,
+             char const* config_file,
+             struct md_syndicate_conf* conf,
+             struct ms_client* client,
+             int portnum,
+             char const* ms_url,
+             char const* volume_name,
+             char const* gateway_name,
+             char const* oid_username,
+             char const* oid_password,
+             char const* volume_key_file,
+             char const* my_key_file,
+             char const* tls_pkey_file,
+             char const* tls_cert_file,
+             char const* storage_root
+           ) {
+
+   int rc = md_init_begin( gateway_type, config_file, conf, client, ms_url, volume_name, gateway_name, oid_username, oid_password, volume_key_file, my_key_file, tls_pkey_file, tls_cert_file );
+
+   if( rc != 0 ) {
+      errorf("md_init_begin() rc = %d\n", rc );
+      return rc;
+   }
+   
+   if( portnum > 0 ) {
+      conf->portnum = portnum;
+   }
+
+   if( conf->portnum <= 0 ) {
+      errorf("invalid port number: conf's is %d, caller's is %d\n", conf->portnum, portnum);
+      return -EINVAL;
+   }
+
+   // set up libsyndicate runtime information
+   rc = md_runtime_init( gateway_type, conf, storage_root, false );
+   if( rc != 0 ) {
+      errorf("md_runtime_init() rc = %d\n", rc );
+      return rc;
+   }
+   
+   return md_init_finish( conf, client, volume_name );
+}
+
+
+// initialize syndicate as a client only
+int md_init_client( int gateway_type,
+                    char const* config_file,
+                    struct md_syndicate_conf* conf,
+                    struct ms_client* client,
+                    char const* ms_url,
+                    char const* volume_name, 
+                    char const* gateway_name,
+                    char const* oid_username,
+                    char const* oid_password,
+                    char const* volume_key_path,
+                    char const* my_key_path,
+                    char const* storage_root
+                  ) {
+   
+   
+   int rc = md_init_begin( gateway_type, config_file, conf, client, ms_url, volume_name, gateway_name, oid_username, oid_password, volume_key_path, my_key_path, NULL, NULL );
+
+   if( rc != 0 ) {
+      errorf("md_init_begin() rc = %d\n", rc );
+      return rc;
+   }
+   
+   // set up libsyndicate runtime information
+   rc = md_runtime_init( gateway_type, conf, storage_root, true );
+   if( rc != 0 ) {
+      errorf("md_runtime_init() rc = %d\n", rc );
+      return rc;
+   }
+   
+   return md_init_finish( conf, client, volume_name );   
+}
+
+
 
 // default configuration
 int md_default_conf( struct md_syndicate_conf* conf ) {
@@ -2543,7 +2444,7 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->debug_read = false;
    conf->debug_lock = false;
 
-   conf->metadata_connect_timeout = 10;
+   conf->connect_timeout = 10;
    conf->replica_connect_timeout = 10;
    
    conf->portnum = 32780;
@@ -2614,10 +2515,6 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
 
    else {
       // RG/AG-specific warnings and errors
-      if( conf->gateway_metadata_root == NULL ) {
-         rc = -EINVAL;
-         fprintf(stderr, err_fmt, GATEWAY_METADATA_KEY );
-      }
       if( conf->server_key == NULL ) {
          fprintf(stderr, warn_fmt, SSL_PKEY_KEY );
       }

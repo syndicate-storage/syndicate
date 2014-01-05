@@ -245,7 +245,7 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
       
       // wait for replicas to complete
       if( err == 0 ) {
-         rc = fs_entry_replicate_wait( &fh );
+         rc = fs_entry_replicate_wait( core, &fh );
          if( rc != 0 ) {
             errorf("fs_entry_replica_wait(%s) rc = %d\n", fs_path, rc );
             err = -EIO;
