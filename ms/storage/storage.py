@@ -178,7 +178,7 @@ def create_volume( email, name, description, blocksize, **attrs ):
             raise Exception("Caller user cannot create Volumes for other users")
          
       # check quota
-      user_volume_ids = list_accessible_volumes( email, projection=['volume_id'] )
+      user_volume_ids = list_accessible_volumes( email, caller_user=caller_user, projection=['volume_id'] )
       if len(user_volume_ids) > user.get_volume_quota():
          raise Exception("User '%s' has exceeded Volume quota" % email )
       
@@ -306,7 +306,7 @@ def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **
       raise Exception("User '%s' cannot create Gateways" % (email))
    
    if gateway_quota > 0:
-      gateway_ids = list_gateways_by_user( user.email, keys_only=True )
+      gateway_ids = list_gateways_by_user( user.email, caller_user=user, keys_only=True )
       if len(gateway_ids) >= gateway_quota:
          raise Exception("User '%s' has too many Gateways" % (email))
    

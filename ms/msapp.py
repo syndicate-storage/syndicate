@@ -25,7 +25,7 @@ import openid.gaeopenid
 import logging
 
 from MS.user import SyndicateUser
-from common.msconfig import *
+from common.admin_info import *
 
 from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSCertRequestHandler, MSCertManifestRequestHandler, MSRegisterRequestHandler, MSOpenIDRequestHandler, MSJSONRPCHandler, MSUserRequestHandler
 from tests.debughandler import MSDebugHandler

@@ -23,8 +23,6 @@ try:
 except:
    import protobufs.ms_pb2 as ms_pb2
 
-import admin_info
-
 # configuration parameters
 
 # debug
@@ -126,11 +124,6 @@ GATEWAY_CAP_WRITE_DATA = ms_pb2.ms_gateway_cert.CAP_WRITE_DATA
 GATEWAY_CAP_READ_METADATA = ms_pb2.ms_gateway_cert.CAP_READ_METADATA
 GATEWAY_CAP_WRITE_METADATA = ms_pb2.ms_gateway_cert.CAP_WRITE_METADATA
 GATEWAY_CAP_COORDINATE = ms_pb2.ms_gateway_cert.CAP_COORDINATE
-
-# import admin stuff
-ADMIN_PUBLIC_KEY = admin_info.ADMIN_PUBLIC_KEY
-ADMIN_EMAIL = admin_info.ADMIN_EMAIL 
-ADMIN_OPENID_URL = admin_info.ADMIN_OPENID_URL 
 
 # JSON
 JSON_AUTH_COOKIE_NAME = "SynAuth"
