@@ -307,7 +307,6 @@ def setup_storage( volume_root_dir, local_dir, modules, volume=GET_FROM_SESSION 
       salt_path = volume_path( PATH_SALT_FILENAME )
       
    if not path_exists( salt_path, volume=volume ):
-      
       salt_dirname = os.path.dirname(PATH_SALT_FILENAME)
       rc = setup_dirs( [salt_dirname], volume=volume )
       if not rc:
@@ -560,11 +559,11 @@ def path_exists( file_path, volume=GET_FROM_SESSION ):
          statbuf = volume.stat( file_path )
          if statbuf is None:
             return False
-         elif isinst(statbuf, int) and statbuf < 0:
+         elif isinstance(statbuf, int) and statbuf < 0:
             return False
          else:
             return True
-      except:
+      except Exception, e:
          return False
       
 # -------------------------------------

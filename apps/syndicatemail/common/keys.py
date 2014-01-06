@@ -38,7 +38,7 @@ log = Log.get_logger()
 
 PRIVATE_STORAGE_DIR = ".keys"
 
-STORAGE_DIR = "/keys"
+STORAGE_DIR = "/public_keys"
 
 VOLUME_STORAGE_DIRS = [
    STORAGE_DIR
@@ -381,7 +381,6 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
    privkey = CryptoKey.importKey( privkey_str )
    pubkey = CryptoKey.importKey( pubkey_str )
    
-   PRIVATE_STORAGE_DIR = "/tmp"
    rc = store_private_key( "test.key", privkey, "sniff" )
    if not rc:
       raise Exception("store_private_key failed")
@@ -400,5 +399,5 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
    
    assert pubkey2_str == pubkey_str, "load(store(pubkey)) != pubkey"
    
-   delete_private_key( "test.key" )
+   #delete_private_key( "test.key" )
    
