@@ -16,17 +16,32 @@
    limitations under the License.
 """
 
-import keys
-import storage
 import time
+import os
+import errno
+import stat
+
+import syndicate.client.common.log as Log
+
+log = Log.get_logger()
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
 from Crypto import Random
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
+import syndicate.volume
+from syndicate.volume import Volume
+
 # -------------------------------------
 SESSION_LENGTH = 3600 * 24 * 7      # one week
+
+# global volume instance
+MY_VOLUME = None                # initialized on login
+
+def get_volume():
+   global MY_VOLUME
+   return MY_VOLUME
 
 # -------------------------------------
 def do_login( config, email, password ):
@@ -62,50 +77,134 @@ def is_expired( config ):
    return False
 
 # -------------------------------------
-def create_account( config, email, password, syndicate_user_privkey, num_downloads, duration ):
-   # generate a private key, certify its public key, and store it
-   global KEY_SIZE
+class FakeVolume:
+   def __init__(self, storage_root):
+      try:
+         os.makedirs(storage_root)
+      except OSError, oe:
+         if oe.errno != errno.EEXIST:
+            raise oe 
+         else:
+            pass
+         
+      self.storage_root = storage_root
    
-   pubkey_pem, privkey_pem = keys.generate_key_pair( key_size )
-   
-   # encrypt and store the private key to the Volume
-   privkey = CryptoKey.importKey( privkey_pem )
-   rc = keys.store_private_key_to_volume( email, privkey, password, num_downloads, duration )
-
-   if not rc:
-      log.error("Failed to store account info")
-      raise Exception("Failed to store account info")
-
-   # save locally too
-   rc = keys.store_private_key( email, privkey, password )
-   if not rc:
-      log.error("Failed to store account info locally")
-      keys.delete_private_key_from_volume( email )
-      raise Exception("Failed to store account info")
-   
-   # sign and store the public key to the Volume
-   pubkey = CryptoKey.importKey( pubkey_pem )
-   rc = keys.store_public_key( email, pubkey, syndicate_user_privkey )
-   if not rc:
-      log.error("Failed to store account info")
-      keys.delete_private_key_from_volume( email )
-      keys.delete_private_key( email )
-      raise Exception("Failed to store account info")
+   def create(self, path, mode ):
+      try:
+         fp = os.path.join(self.storage_root, path.strip("/"))
+         fd = os.open( fp, os.O_CREAT | os.O_RDONLY )
+         os.close( fd )
+         os.chmod( fp, mode )
+      except OSError, oe:
+         log.error( "create %s rc = %d" % (fp, -oe.errno) )
+         return -oe.errno
       
-   return True
-
-
-# -------------------------------------
-def delete_account( config, email, password ):
-   # verify the user
-   try:
-      do_login( config, email, password )
-   except Exception, e:
-      raise Exception("Invalid credentials")
+   def open( self, path, flags ):
+      try:
+         fp = os.path.join(self.storage_root, path.strip("/"))
+         fd = os.open( fp, flags )
+         return fd
+      except OSError, oe:
+         log.error( "open %s rc = %d" % (fp, -oe.errno) )
+         return -oe.errno
    
-   keys.delete_private_key_from_volume( email )
-   keys.delete_private_key( email )
-   return True
+   def read( self, fd, size ):
+      try:
+         buf = os.read( fd, size )
+         return buf
+      except OSError, oe:
+         return -oe.errno
+   
+   def write( self, fd, buf ):
+      try:
+         return os.write( fd, buf )
+      except OSError, oe:
+         return -oe.errno
+   
+   def close( self, fd ):
+      try:
+         os.close( fd )
+      except OSError, oe:
+         return -oe.errno
+      
+      return 0
+   
+   def mkdir( self, path, mode ):
+      try:
+         fp = os.path.join(self.storage_root, path.strip("/"))
+         os.mkdir( fp, mode )
+         return 0
+      except OSError, oe:
+         return -oe.errno
+   
+   def rmdir( self, path ):
+      try:
+         fp = os.path.join(self.storage_root, path.strip("/"))
+         os.rmdir( fp, path )
+         return 0
+      except OSError, oe:
+         return -oe.errno 
+   
+   def opendir( self, path ):
+      return path
+   
+   def readdir( self, handle ):
+      try:
+         fp = os.path.join(self.storage_root, handle.strip("/"))
+         names = os.listdir( fp )
+      except OSError, oe:
+         log.error( "readdir %s rc = %d" % (fp, -oe.errno) )
+         return -oe.errno
+      
+      ret = []
+      for name in names:
+         fp = os.path.join( self.storage_root, handle.strip("/"), name.strip("/") )
+         sb = os.stat( fp )
+         
+         ftype = 0
+         if stat.S_ISDIR( sb.st_mode ):
+            ftype = syndicate.volume.Volume.ENT_TYPE_DIR 
+         elif stat.S_ISREG( sb.st_mode ):
+            ftype = syndicate.volume.Volume.ENT_TYPE_FILE
+            
+         se = syndicate.volume.SyndicateEntry( type=ftype, name=name, file_id=sb.st_ino, ctime=(sb.st_ctime, 0), mtime=(sb.st_mtime,0), write_nonce=0, version=0,
+                                               max_read_freshness=-1, max_write_freshness=-1, owner=0, coordinator=0, volume=0, mode=sb.st_mode, size=sb.st_size )
+         
+         ret.append( se )
+      
+      return ret
+   
+   def closedir( self, path ):
+      return 0
+   
+   def unlink( self, path ):
+      try:
+         fp = os.path.join(self.storage_root, path.strip("/"))
+         os.unlink( fp )
+      except OSError, oe:
+         log.error( "unlink %s rc = %d" % (fp, -oe.errno) )
+         return -oe.errno
+      
+   def fsync( self, fd ):
+      try:
+         os.fsync( fd )
+         return 0
+      except OSError, oe:
+         return -oe.errno
+   
+   def seek( self, fd, pos, whence ):
+      try:
+         return os.lseek( fd, pos, whence )
+      except OSError, oe:
+         return -oe.errno
+   
+   def stat( self, path ):
+      try:
+         fp = os.path.join(self.storage_root, path.strip("/")) 
+         return os.stat( fp )
+      except OSError, oe:
+         #log.error( "stat %s rc = %d" % (fp, -oe.errno) )
+         return -oe.errno
 
 # -------------------------------------
 def do_test_login( config, email, password ):
@@ -170,6 +269,13 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
    config['session_expires'] = time.time() + SESSION_LENGTH
    
    return True
+
+
+# -------------------------------------
+def do_test_volume( storage_root ):
+   global MY_VOLUME 
+   
+   MY_VOLUME = FakeVolume( storage_root )
 
 if __name__ == "__main__":
    print "put some tests here"

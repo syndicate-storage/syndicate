@@ -51,6 +51,9 @@ cdef class Volume:
       Python interface to a Volume.
    """
 
+   ENT_TYPE_FILE = FTYPE_FILE
+   ENT_TYPE_DIR = FTYPE_DIR
+   
    cdef syndicate_state state_inst
    cdef int wait_replicas
    

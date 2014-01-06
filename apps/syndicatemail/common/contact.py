@@ -22,17 +22,20 @@ import os
 import pickle
 import storage
 import syndicate.client.common.log as Log
+import session
 
 log = Log.get_logger()
 
 STORAGE_DIR = "/contacts"
 
 # for setup
-STORAGE_DIRS = [
+VOLUME_STORAGE_DIRS = [
    STORAGE_DIR
 ]
 
-CACHED_CONTACT_LIST = ".contacts.cache"
+LOCAL_STORAGE_DIRS = []
+
+CACHED_CONTACT_LIST = "contacts.cache"
 
 # RFC-822 compliant, as long as there aren't any comments in the address.
 # taken from http://chrisbailey.blogs.ilrt.org/2013/08/19/validating-email-addresses-in-python/
@@ -78,13 +81,7 @@ def make_contact_path( email_addr ):
    global STORAGE_DIR
    
    filename = storage.salt_string( email_addr )
-   return storage.path_join( storage.ROOT_DIR, STORAGE_DIR, filename )
-
-
-# -------------------------------------
-def contact_exists( email_addr ):
-   contact_path = make_contact_path( email_addr )
-   return os.path.exists( contact_path )
+   return storage.volume_path( STORAGE_DIR, filename )
 
 
 # -------------------------------------
@@ -135,7 +132,7 @@ def write_contact( pubkey_str, contact ):
       return False
    
    # purge contacts cache
-   storage.purge_cache( STORAGE_DIR, CACHED_CONTACT_LIST )
+   storage.purge_cache( CACHED_CONTACT_LIST )
    return True
    
    
@@ -143,7 +140,7 @@ def write_contact( pubkey_str, contact ):
 def add_contact( pubkey_str, email_addr, contact_pubkey_str, contact_fields ):
    contact = SyndicateContact( addr=email_addr, pubkey_pem=contact_pubkey_str, extras = contact_fields )
    contact_path = make_contact_path( email_addr )
-   if os.path.exists( contact_path ):
+   if storage.path_exists( contact_path ):
       log.error( "Contact '%s' already exists" % email_addr )
    
    return write_contact( pubkey_str, contact )
@@ -152,7 +149,7 @@ def add_contact( pubkey_str, email_addr, contact_pubkey_str, contact_fields ):
 # -------------------------------------
 def update_contact( pubkey_str, privkey_str, email_addr, extras ):
    contact_path = make_contact_path( email_addr )
-   if not os.path.exists( contact_path ):
+   if not storage.path_exists( contact_path ):
       log.error("No such contact '%s'" % email_addr)
       return False
    
@@ -179,7 +176,7 @@ def delete_contact( email_addr ):
       return False
    
    else:
-      storage.purge_cache( STORAGE_DIR, CACHED_CONTACT_LIST )
+      storage.purge_cache( CACHED_CONTACT_LIST )
       
    return True
 
@@ -187,14 +184,14 @@ def delete_contact( email_addr ):
 def list_contacts( pubkey_str, privkey_str, start_idx=None, length=None ):
    global STORAGE_DIR, CACHED_CONTACT_LIST
    
-   cached_contacts = storage.get_cached_data( privkey_str, STORAGE_DIR, CACHED_CONTACT_LIST )
+   cached_contacts = storage.get_cached_data( privkey_str, CACHED_CONTACT_LIST )
    if cached_contacts == None:
       log.info("No cached contacts")
    else:
       return cached_contacts
    
-   contact_dir = storage.path_join( storage.ROOT_DIR, STORAGE_DIR )   
-   dir_ents = os.listdir( contact_dir )
+   contact_dir = storage.volume_path( STORAGE_DIR )   
+   dir_ents = storage.listdir( contact_dir )
    dir_ents.sort()
    
    if start_idx == None:
@@ -219,14 +216,18 @@ def list_contacts( pubkey_str, privkey_str, start_idx=None, length=None ):
    
       contact_emails.append( contact.addr )
    
-   storage.cache_data( pubkey_str, STORAGE_DIR, CACHED_CONTACT_LIST, contact_emails )
+   storage.cache_data( pubkey_str, CACHED_CONTACT_LIST, contact_emails )
    return contact_emails
    
       
 if __name__ == "__main__":
    
-   storage.setup_dirs( storage.ROOT_DIR, [STORAGE_DIR] )
-   storage.setup_storage( storage.ROOT_DIR )
+   fake_module = collections.namedtuple( "FakeModule", ["VOLUME_STORAGE_DIRS", "LOCAL_STORAGE_DIRS"] )
+   session.do_test_volume( "/tmp/storage-test/volume" )
+   
+   fake_mod = fake_module( LOCAL_STORAGE_DIRS=LOCAL_STORAGE_DIRS, VOLUME_STORAGE_DIRS=VOLUME_STORAGE_DIRS )
+   assert storage.setup_storage( "/apps/syndicatemail/data", "/tmp/storage-test/local", [fake_mod] ), "setup_storage failed"
+   
    
    test_email_addrs = [
       "jude.mailvolume.syndicate.com@email.princeton.edu",

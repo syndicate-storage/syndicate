@@ -32,7 +32,7 @@ def get_logger():
         log.setLevel(logging.DEBUG)
         log.propagate = False
 
-        formatter = logging.Formatter('[%(levelname)s] %(message)s')
+        formatter = logging.Formatter('[%(levelname)s] [%(module)s:%(lineno)d] %(message)s')
         handler_stream = logging.StreamHandler()
         handler_stream.setFormatter(formatter)
         log.addHandler(handler_stream)

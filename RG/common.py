@@ -139,7 +139,7 @@ def get_logger():
         my_logger.setLevel(logging.DEBUG)
         my_logger.propagate = False
 
-        formatter = logging.Formatter('[%(levelname)s] %(message)s')
+        formatter = logging.Formatter('[%(levelname)s] [%(module)s:%(lineno)d] %(message)s')
         handler_stream = logging.StreamHandler()
         handler_stream.setFormatter(formatter)
         my_logger.addHandler(handler_stream)

@@ -30,12 +30,16 @@ import syndicate.client.common.log as Log
 
 log = Log.get_logger()
 
-PRIVATE_STORAGE_DIR = os.path.join( "~/.syndicatemail/keys/" )
+PRIVATE_STORAGE_DIR = ".keys"
 
 STORAGE_DIR = "/keys"
 
-STORAGE_DIRS = [
+VOLUME_STORAGE_DIRS = [
    STORAGE_DIR
+]
+
+LOCAL_STORAGE_DIRS = [
+   PRIVATE_STORAGE_DIR
 ]
 
 #-------------------------
@@ -55,11 +59,11 @@ def generate_key_pair( key_size ):
    return (public_key_pem, private_key_pem)
 
 #-------------------------
-def make_key_storage_path( name ):
+def make_key_local_path( name ):
    global PRIVATE_STORAGE_DIR
    
    # NOTE: do NOT store this on the Volume
-   return os.path.join( PRIVATE_STORAGE_DIR, name )
+   return storage.local_path( PRIVATE_STORAGE_DIR, name )
 
 
 #-------------------------
@@ -67,7 +71,7 @@ def make_key_volume_path( name ):
    global STORAGE_DIR
    
    # used for loading the private key from the Volume
-   return os.path.join( storage.ROOT_DIR, STORAGE_DIR, name )
+   return storage.volume_path( STORAGE_DIR, name )
 
 
 #-------------------------
@@ -98,8 +102,15 @@ def decrypt_private_key( encrypted_private_key, password ):
 
 
 #-------------------------
-def load_private_key_from_path( key_path, password ):
-   encrypted_privkey_str = storage.read_file( key_path )
+def load_private_key_from_path( key_path, password, local ):
+   encrypted_privkey_str = None
+   
+   if local:
+      encrypted_privkey_str = storage.read_file( key_path, volume=None )
+   
+   else:
+      encrypted_privkey_str = storage.read_file( key_path )
+      
    if encrypted_privkey_str is None:
       return None
    
@@ -125,12 +136,14 @@ def load_private_key_from_path( key_path, password ):
 
 #-------------------------
 def load_private_key( key_name, password ):
-   key_path = make_key_storage_path( key_name )
+   key_path = make_key_local_path( key_name )
+   local = True
    if not os.path.exists( key_path ):
       # load it from the Volume
       key_path = make_key_volume_path( key_name )
+      local = False
       
-   return load_private_key_from_path( key_path, password )
+   return load_private_key_from_path( key_path, password, local )
 
 #-------------------------
 def load_private_key_from_volume( key_name, password ):
@@ -139,7 +152,7 @@ def load_private_key_from_volume( key_name, password ):
 
 
 #-------------------------
-def store_private_key_to_path( key_path, privkey, password ):
+def store_private_key_to_path( key_path, privkey, password, local ):
    privkey_str = privkey.exportKey()
    
    encrypted_private_key = encrypt_private_key( privkey_str, password )
@@ -150,7 +163,13 @@ def store_private_key_to_path( key_path, privkey, password ):
       log.error("Failed to serialize encrypted private key")
       return False
    
-   rc = storage.write_file( key_path, encrypted_privkey_json )
+   rc = False
+   
+   if local:
+      rc = storage.write_file( key_path, encrypted_privkey_json, volume=None )
+   else:
+      rc = storage.write_file( key_path, encrypted_privkey_json )
+      
    return rc
    
    
@@ -164,17 +183,17 @@ def store_private_key( key_name, privkey, password ):
       log.error("Failed to set up key directory")
       return False
    
-   key_path = make_key_storage_path( key_name )
-   return store_private_key_to_path( key_path, privkey, password )
+   key_path = make_key_local_path( key_name )
+   return store_private_key_to_path( key_path, privkey, password, True )
 
 
 #-------------------------
 def store_private_key_to_volume( key_name, privkey, password, num_downloads, duration ):
    # ensure the path exists...
-   key_path = make_key_storage_path( key_name )
+   key_path = make_key_local_path( key_name )
    
    # TODO: use num_downloads, duration to limit key lifetime on the Volume
-   return store_private_key_to_path( key_path, privkey, password )
+   return store_private_key_to_path( key_path, privkey, password, False )
 
 
 #-------------------------
@@ -185,8 +204,8 @@ def delete_private_key_from_volume( key_name ):
 
 #-------------------------
 def delete_private_key( key_name ):
-   key_path = make_key_storage_path( key_name )
-   rc = storage.delete_file( key_path )
+   key_path = make_key_local_path( key_name )
+   rc = storage.delete_file( key_path, volume=None )
    return rc
 
 #-------------------------

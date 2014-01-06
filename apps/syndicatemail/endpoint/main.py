@@ -36,7 +36,7 @@ import syndicatemail.common.session as session
 from api import API
 
 #-------------------------
-CONFIG_DIR = "/tmp/syndicatemail"
+CONFIG_DIR = "/tmp/syndicatemail"               # overwritten at runtime
 CONFIG_FILENAME = os.path.join( CONFIG_DIR, "syndicatemail.conf" )
 
 CONFIG_OPTIONS = {
@@ -44,13 +44,18 @@ CONFIG_OPTIONS = {
    "config":            ("-c", 1, "Path to your config file (default is %s)" % CONFIG_FILENAME),
    "debug":             ("-d", 0, "Verbose debugging output"),
    "volume":            ("-V", 1, "Name of the Syndicate Volume to use"),
-   "mountpoint":        ("-m", 1, "Volume mountpoint"),
+   "local_storage_root":      ("-r", 1, "Local storage root"),
+   "volume_storage_root":     ("-R", 1, "Volume storage root"),
    "user_id":           ("-u", 1, "Syndicate user ID for mounting the Volume"),
-   "user_privkey":      ("-P", 1, "Syndicate user private key"),
    "user_password":     ("-p", 1, "Syndicate Volume password"),
    "mail_server":       ("-s", 1, "Mail server hostname"),
    "app":               ("-a", 1, "Path to application static files"),
    "test":              ("-t", 0, "Testing")
+}
+
+DEFAULT_OPTIONS = {
+   "local_storage_root": os.path.expanduser( "~/.syndicatemail" ),
+   "volume_storage_root": "/apps/syndicatemail/storage"
 }
    
 #-------------------------
@@ -80,20 +85,13 @@ if __name__ == "__main__":
    config = main_common.load_options( sys.argv, "SyndicateMail Endpoint", CONFIG_OPTIONS, CONFIG_FILENAME )
    
    missing = False
-   for required_option in ['mountpoint', 'app', 'volume', 'user_id', 'user_privkey', 'user_password', 'mail_server', 'MS']:
+   for required_option in ['local_storage_root', 'volume_storage_root', 'app', 'volume', 'user_id', 'user_password', 'mail_server', 'MS']:
       if required_option not in config:
          print >> sys.stderr, "Missing option: %s" % required_option
          missing = True
    
    if missing:
       conf.usage( sys.argv[0] )
-   
-   # if we're testing, put everything into /tmp
-   if config['test']:
-      main_common.set_storage_root( "/tmp" )
-      
-   else:
-      main_common.set_storage_root( config['mountpoint'] )
    
    rc = main_common.setup_storage( config )
    if not rc:

@@ -16,9 +16,11 @@
    limitations under the License.
 """
 
-
 import syndicate.client.common.log as Log
 import syndicate.syndicate as c_syndicate
+from syndicate.volume import Volume
+
+import session
 
 import os 
 import errno
@@ -32,11 +34,14 @@ import pickle
 
 log = Log.get_logger()
 
-ROOT_DIR = "/tmp/syndicatemail"   # loaded at runtime
-CACHE_DIR = "/tmp/syndicatemail-cache"
+VOLUME_ROOT_DIR = None   # root directory on the Volume; overwritten at runtime
+LOCAL_ROOT_DIR = None    # root directory on local disk
+CACHE_DIR = ".syndicatemail.cache"        # root directory for cached data; overwritten at runtime
 
 PATH_SALT = None  # loaded at runtime
 PATH_SALT_FILENAME = "/config/salt"
+
+GET_FROM_SESSION=True
 
 # -------------------------------------
 def path_join( a, *b ):
@@ -46,6 +51,15 @@ def path_join( a, *b ):
    
    return os.path.join( a, *b_stripped )
 
+# -------------------------------------
+def volume_path( a, *b ):
+   parts = [a] + list(b)
+   return path_join( VOLUME_ROOT_DIR, *parts )
+
+# -------------------------------------
+def local_path( a, *b ):
+   parts = [a] + list(b)
+   return path_join( LOCAL_ROOT_DIR, *parts )
 
 # -------------------------------------
 def tuple_to_dict( tuple_inst ):
@@ -100,21 +114,44 @@ def json_to_tuple( tuple_class, json_str ):
       
 
 # -------------------------------------
-def setup_dirs( root_dir, mail_dirs ):
-   for dirname in mail_dirs:
-      dir_path = path_join(root_dir, dirname)
+def volume_makedirs( volume, dir_abspath, mode=0700 ):
+   pieces = dir_abspath.split("/")
+   prefix = "/"
+   for piece in pieces:
+      prefix = os.path.join( prefix, piece )
+      rc = volume.mkdir( prefix, mode )
+      if rc != 0 and rc != -errno.EEXIST:
+         raise Exception("Volume mkdir rc = %s"  % rc )
+   
+   return True
+   
+
+# -------------------------------------
+def setup_dirs( dir_names, prefix="/", volume=GET_FROM_SESSION ):
+   if volume == GET_FROM_SESSION:
+      volume = session.get_volume()
+      
+   for dirname in dir_names:
       try:
-         os.makedirs( dir_path, mode=0700 )
+         dir_path = None
+         
+         if volume is None:
+            dir_path = local_path(prefix, dirname)
+            os.makedirs( dir_path, mode=0700 )
+         else:
+            dir_path = volume_path(prefix, dirname)
+            volume_makedirs( volume, dir_path, mode=0700 )
+            
       except OSError, oe:
          if oe.errno != errno.EEXIST:
-            log.error("Failed to create '%s'" % dir_path )
+            log.error("Failed to mkdir '%s'" % dir_path )
             log.exception(oe)
             return False
          else:
             pass
          
       except Exception, e:
-         log.error("Failed to create '%s'" % dir_path )
+         log.error("Failed to mkdir '%s'" % dir_path )
          log.exception(e)
          return False
    
@@ -122,62 +159,170 @@ def setup_dirs( root_dir, mail_dirs ):
 
 
 # -------------------------------------
-def delete_dirs( root_dir, mail_dirs, remove_contents=True ):
-   for dirname in mail_dirs:
-      dir_path = path_join( root_dir, dirname )
+def volume_listdir( volume, dir_path ):
+   dfd = volume.opendir( dir_path )
+   dents = volume.readdir( dfd )
+   volume.closedir( dfd )
+   
+   return [x.name for x in dents]
+
+
+# -------------------------------------
+def listdir( path, volume=GET_FROM_SESSION ):
+   if volume == GET_FROM_SESSION:
+      volume = session.get_volume()
       
-      if remove_contents:
-         try:
-            shutil.rmtree( dir_path )
-         except:
-            return False
+   if volume is None:
+      return os.listdir(path)
+   else:
+      return volume_listdir( volume, path)
+
+# -------------------------------------
+def volume_rmtree( volume, dir_abspath ):
+   
+   dfd = volume.opendir( dir_abspath )
+   if dfd is None or dfd < 0:
+      if isinstance(dfd, int) and dfd == -errno.ENOENT:
+         return True
       
+      raise Exception("Could not open %s" % dir_abspath)
+   
+   dents = volume.readdir( dfd )
+   if dents is None or dents < 0:
+      raise Exception("Could not read %s" % dir_abspath)
+   
+   volume.closedir( dfd )
+   
+   for dent in dents:
+      if dent.type == volume.ENT_TYPE_DIR:
+         child_dir_path = os.path.join( dir_abspath, dent.name )
+         volume_rmtree( volume, child_dir_path )
+         
+      elif dent.type == volume.ENT_TYPE_FILE:
+         child_ent_path = os.path.join( dir_abspath, dent.name )
+         volume.unlink( child_ent_path )
+            
+   
+# -------------------------------------
+def delete_dirs( dirs, prefix="/", remove_contents=True, volume=GET_FROM_SESSION ):
+   if volume == GET_FROM_SESSION:
+      volume = session.get_volume()
+      
+   for dirname in dirs:
+      if volume is None:
+         dir_path = local_path( prefix, dirname )
+         if remove_contents:
+            try:
+               shutil.rmtree( dir_path )
+            except:
+               return False
+         
+         else:
+            try:
+               os.rmdir( dir_path )
+            except:
+               return False
+            
       else:
-         try:
-            os.rmdir( dir_path )
-         except:
-            return False
+         dir_path = volume_path( prefix, dirname )
+         if remove_contents:
+            try:
+               volume_rmtree( volume, dir_path )
+            except Exception, e:
+               log.exception(e)
+               return False
+         
+         else:
+            try:
+               volume.rmdir( dir_path )
+            except Exception, e:
+               log.exception(e)
+               return False
     
    return True
 
 
 # -------------------------------------
-def setup_storage( root_dir ):
-   # call after setup_dirs 
-   
+def setup_storage( volume_root_dir, local_dir, modules, volume=GET_FROM_SESSION ):
+   if volume == GET_FROM_SESSION:
+      volume = session.get_volume()
+      
    global PATH_SALT
    global PATH_SALT_FILENAME
+   global VOLUME_ROOT_DIR
+   global LOCAL_ROOT_DIR
+   global CACHE_DIR
+   global MY_VOLUME
    
-   salt_path = path_join( root_dir, PATH_SALT_FILENAME )
-   if not os.path.exists( salt_path ):
+   # set this here so the following will work
+   VOLUME_ROOT_DIR = volume_root_dir 
+   LOCAL_ROOT_DIR = local_dir
+   
+   all_volume_dirs = []
+   all_local_dirs = []
+   for mod in modules:
+      volume_dirs = getattr(mod, "VOLUME_STORAGE_DIRS", None)
+      if volume_dirs is not None:
+         all_volume_dirs += volume_dirs
+         
+      local_dirs = getattr(mod, "LOCAL_STORAGE_DIRS", None)
+      if local_dirs is not None:
+         all_local_dirs += local_dirs
+   
+   # set up volume directories
+   rc = setup_dirs( ["/"] + all_volume_dirs, volume=volume )
+   if not rc:
+      log.error("Volume setup_dirs failed")
+      return rc
+   
+   # set up local directories
+   rc = setup_dirs( ["/"] + all_local_dirs, volume=None )
+   if not rc:
+      log.error("Local setup_dirs failed")
+      return rc
+               
+   # set up cache
+   rc = setup_dirs( ["/"] + [".syndicatemail.cache"], volume=None )
+   if not rc:
+      log.error("Local cache setup failed")
+      return rc
+   
+   salt_path = None
+   
+   if volume is None:
+      salt_path = local_path( PATH_SALT_FILENAME )
+   else:
+      salt_path = volume_path( PATH_SALT_FILENAME )
       
-      dirname = os.path.dirname(salt_path)
-      rc = setup_dirs( "/", [dirname] )
+   if not path_exists( salt_path, volume=volume ):
+      
+      salt_dirname = os.path.dirname(PATH_SALT_FILENAME)
+      rc = setup_dirs( [salt_dirname], volume=volume )
       if not rc:
          log.error("Failed to create '%s'" % dirname)
          return False
       
       # make a 512-bit (64-byte) salt
       salt = binascii.b2a_hex( os.urandom(64) )
-      rc = write_file( salt_path, salt )
+      rc = write_file( salt_path, salt, volume=volume )
       if not rc:
          log.error("Failed to write '%s'" % salt_path )
          return False
       
       PATH_SALT = salt
    
-      log.info("wrote salt to %s" % salt_path )
-      return True
+      log.info("wrote salt to %s" % salt_path )      
       
    else:
-      salt = read_file( salt_path )
+      salt = read_file( salt_path, volume=volume )
       if salt is None:
          log.error("Failed to read '%s'" % salt_path )
          return False
    
       PATH_SALT = salt
-      return True
-      
+   
+   return True
+
 
 # -------------------------------------
 def salt_string( name, iterations=10000 ):
@@ -195,75 +340,129 @@ def salt_string( name, iterations=10000 ):
 
 
 # -------------------------------------
-def read_file( file_path ):
-   try:
-      fd = open( file_path, "r" )
-   except:
-      log.error("Failed to open '%s' for reading" % file_path)
-      return None
-   
-   try:
-      buf = fd.read()
-   except:
-      log.error("Failed to read '%s'" % file_path)
-      try:
-         fd.close()
-      except:
-         pass 
+def read_file( file_path, volume=GET_FROM_SESSION ):
+   if volume == GET_FROM_SESSION:
+      volume = session.get_volume()
       
-      return None
-   
-   try:
-      fd.close()
-      return buf
-   except:
-      log.error("Failed to close '%s'" % file_path)
-      return None
-   
-   
-# -------------------------------------
-def write_file( file_path, data ):
-   try:
-      fd = open( file_path, "w" )
-   except:
-      log.error("Failed to open '%s' for writing" % file_path)
-      return False
-   
-   try:
-      fd.write(data)
-      fd.flush()
-   except:
-      log.error("Failed to write '%s'" % file_path)
+   if volume is None:
       try:
-         os.unlink(file_path)
+         fd = open( file_path, "r" )
       except:
-         pass 
+         log.error("Failed to open '%s' for reading" % file_path)
+         return None
+      
+      try:
+         buf = fd.read()
+      except:
+         log.error("Failed to read '%s'" % file_path)
+         try:
+            fd.close()
+         except:
+            pass 
+         
+         return None
       
       try:
          fd.close()
+         return buf
       except:
-         pass
+         log.error("Failed to close '%s'" % file_path)
+         return None
       
-      return False
-   
-   try:
-      fd.close()
-   except:
-      log.error("Failed to close '%s'" % file_path)
+   else:
       try:
-         os.unlink(file_path)
-      except:
-         pass
-      return False
+         statbuf = volume.stat( file_path )
+         if isinstance(statbuf, int) and statbuf < 0:
+            raise Exception("volume.stat rc = %d", statbuf)
+         
+         size = statbuf.st_size
+
+         fd = volume.open( file_path, os.O_RDONLY )
+         if fd is None:
+            raise Exception("Failed to open Volume file %s" % file_path)
+         
+         buf = volume.read( fd, size )
+         volume.close( fd )
+         return buf 
+      
+      except Exception, e:
+         log.exception(e)
+         log.error("Failed to read Volume file %s" % file_path)
+         return None
+
    
-   return True
+   
+# -------------------------------------
+def write_file( file_path, data, volume=GET_FROM_SESSION, create_mode=0600 ):
+   if volume == GET_FROM_SESSION:
+      volume = session.get_volume()
+      
+   if volume is None:
+      try:
+         fd = open( file_path, "w+" )
+      except:
+         log.error("Failed to open '%s' for writing" % file_path)
+         return False
+      
+      try:
+         fd.write(data)
+         fd.flush()
+      except:
+         log.error("Failed to write '%s'" % file_path)
+         try:
+            os.unlink(file_path)
+         except:
+            pass 
+         
+         try:
+            fd.close()
+         except:
+            pass
+         
+         return False
+      
+      try:
+         fd.close()
+      except:
+         log.error("Failed to close '%s'" % file_path)
+         try:
+            os.unlink(file_path)
+         except:
+            pass
+         return False
+      
+      return True
+   
+   else:
+      try:
+         fd = volume.create( file_path, create_mode )
+         if fd < 0:
+            # try to open?
+            fd = volume.open( file_path, os.O_WRONLY | os.O_TRUNC )
+            
+         if fd < 0:
+            raise Exception("Failed to open Volume file %s for writing: rc = %d" % (file_path, fd) )
+         
+         rc = volume.write( fd, data ) 
+         if rc != len(data):
+            raise Exception("Volume write rc = %d (expected %s)" % (rc, len(data)))
+         
+         volume.close( fd )
+         return True
+      except Exception, e:
+         log.exception(e)
+         log.error("Failed to write Volume file %s" % file_path )
+         return False
       
       
 # -------------------------------------
-def read_encrypted_file( privkey_pem, file_path ):
+def read_encrypted_file( privkey_pem, file_path, volume=GET_FROM_SESSION ):
+   if volume == GET_FROM_SESSION:
+      volume = session.get_volume()
+      
    # get file data
    try:
-      enc_data = read_file( file_path )
+      enc_data = read_file( file_path, volume=volume )
       if enc_data == None:
          log.error( "No data for %s" % file_path )
          return None
@@ -282,7 +481,10 @@ def read_encrypted_file( privkey_pem, file_path ):
    return data
 
 # -------------------------------------
-def write_encrypted_file( pubkey_pem, file_path, data ):
+def write_encrypted_file( pubkey_pem, file_path, data, volume=GET_FROM_SESSION ):
+   if volume == GET_FROM_SESSION:
+      volume = session.get_volume()
+      
    # encrypt data first
    rc, enc_data = c_syndicate.encrypt_data( pubkey_pem, data )
    if rc != 0:
@@ -290,7 +492,7 @@ def write_encrypted_file( pubkey_pem, file_path, data ):
       return False
    
    try:
-      rc = write_file( file_path, enc_data )
+      rc = write_file( file_path, enc_data, volume=volume )
       if not rc:
          log.error("write_file failed")
          return False
@@ -304,32 +506,67 @@ def write_encrypted_file( pubkey_pem, file_path, data ):
       
 
 # -------------------------------------
-def delete_file( file_path ):
-   try:
-      os.unlink( file_path )
-   except OSError, oe:
-      if oe.errno != errno.EEXIST:
-         return False
-      else:
-         log.exception(oe)
-         return True
-   
-   except Exception, e:
-      log.exception(e)
-      return False
-   
-   return True
+def delete_file( file_path, volume=GET_FROM_SESSION ):
+   if volume == GET_FROM_SESSION:
+      volume = session.get_volume()
       
-# -------------------------------------
-def cache_path( storage_dir, cache_name ):
-   return path_join( CACHE_DIR, storage_dir, cache_name )
+   if volume is None:
+      try:
+         os.unlink( file_path )
+      except OSError, oe:
+         if oe.errno != errno.EEXIST:
+            return False
+         else:
+            log.exception(oe)
+            return True
+      
+      except Exception, e:
+         log.exception(e)
+         return False
+      
+      return True
+   
+   else:
+      try:
+         volume.unlink( file_path )
+         return True
+      except Exception, e:
+         log.exception(e)
+         return False
+
 
 # -------------------------------------
-def purge_cache( storage_dir, cache_name ):
+def path_exists( file_path, volume=GET_FROM_SESSION ):
+   if volume == GET_FROM_SESSION:
+      volume = session.get_volume()
+      
+   if volume is None:
+      return os.path.exists( file_path )
+   
+   else:
+      try:
+         statbuf = volume.stat( file_path )
+         if statbuf is None:
+            return False
+         elif isinst(statbuf, int) and statbuf < 0:
+            return False
+         else:
+            return True
+      except:
+         return False
+      
+# -------------------------------------
+def cache_path( cache_name ):
+   ret = local_path( CACHE_DIR, cache_name )
+   return ret
+
+# -------------------------------------
+def purge_cache( cache_name ):
    # purge cache
    try:
-      cpath = cache_path( storage_dir, cache_name )
+      cpath = cache_path( cache_name )
       os.unlink( cpath )
+         
    except Exception, e:
       log.info("No cache to purge")
       pass
@@ -337,33 +574,34 @@ def purge_cache( storage_dir, cache_name ):
    return True
 
 # -------------------------------------
-def cache_data( pubkey_str, storage_dir, cache_name, data ):
-   cpath = cache_path( storage_dir, cache_name )
-   cpath_dir = os.path.dirname( cpath )
+def cache_data( pubkey_str, cache_name, data ):
+   global CACHE_DIR
    
-   setup_dirs( "/", [cpath_dir] )
+   if "/" in cache_name:
+      setup_dirs( [os.path.dirname(cache_name)], prefix=CACHE_DIR, volume=None )
+      
    try:
       data_serialized = pickle.dumps( data )
    except Exception, e:
       log.error("Failed to serialize data for caching")
       return False 
    
-   return write_encrypted_file( pubkey_str, cpath, data_serialized )
+   return write_encrypted_file( pubkey_str, cache_path( cache_name ), data_serialized, volume=None )
    
 
 # -------------------------------------
-def get_cached_data( privkey_str, storage_dir, cache_name ):
+def get_cached_data( privkey_str, cache_name ):
    
-   cp = cache_path( storage_dir, cache_name )
-   if os.path.exists( cp ):
-      data_serialized = read_encrypted_file( privkey_str, cp )
+   cp = cache_path( cache_name )
+   if path_exists( cp, volume=None ):
+      data_serialized = read_encrypted_file( privkey_str, cp, volume=None )
       if data_serialized != None:
          # cache hit
          try:
             data = pickle.loads(data_serialized)
          except Exception, e:
             log.warning("Failed to deserialize cache")
-            purge_cache( storage_dir, cache_name )
+            purge_cache( cache_name )
             return None
          
          else:
@@ -374,19 +612,14 @@ def get_cached_data( privkey_str, storage_dir, cache_name ):
 
 
 # -------------------------------------
-def read_volume_file( volume_name, path ):
-   print "FIXME: read_volume_file stub"
-   return "read_volume_file is not implemented"
-
-# -------------------------------------
 if __name__ == "__main__":
    
-   ROOT_DIR = "/tmp/storage-test"
+   fake_module = collections.namedtuple( "FakeModule", ["VOLUME_STORAGE_DIRS", "LOCAL_STORAGE_DIRS"] )
+   session.do_test_volume( "/tmp/storage-test/volume" )
    
    print "------- setup --------"
-   setup_dirs( ROOT_DIR, ["/tmp"] )
-   setup_dirs( "/", [CACHE_DIR] )
-   setup_storage( ROOT_DIR )
+   fake_mod = fake_module( LOCAL_STORAGE_DIRS=['/testroot-local'], VOLUME_STORAGE_DIRS=['/testroot-volume'] )
+   assert setup_storage( "/apps/syndicatemail/data", "/tmp/storage-test/local", [fake_mod] ), "setup_storage failed"
    
    foo_class = collections.namedtuple("Foo", ["bar", "baz"])
    goo_class = collections.namedtuple("Xyzzy", ["foo", "baz"])
@@ -485,7 +718,7 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
 
    
    data = "abcde"
-   path = "/tmp/test"
+   path = volume_path( "/test" )
    
    rc = write_encrypted_file( pubkey_str, path, data )
    
@@ -504,10 +737,10 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
    
    print "------------- cache --------------"
    
-   cache_data( pubkey_str, "/tmp", "cache-test", "poop")
-   dat = get_cached_data( privkey_str, "/tmp", "cache-test" )
+   cache_data( pubkey_str, "/cache/test", "poop")
+   dat = get_cached_data( privkey_str, "/cache/test" )
    
-   assert dat == "poop", "get_cached_data( cache_data( dat ) ) != dat"
+   assert dat == "poop", "get_cached_data( cache_data( %s ) ) == %s" % ("poop", dat)
    
-   purge_cache( "/tmp", "cache-test" )
+   purge_cache( "/cache/test" )
    

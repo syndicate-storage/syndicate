@@ -32,21 +32,16 @@ def set_storage_root( storage_root ):
 
 #-------------------------
 def setup_storage( config ):
+   # if we're testing, put everything into /tmp
+   root_dir = None
+   if config['test']:
+      root_dir = "/tmp"
+   else:
+      root_dir = config['local_storage_root']
    
-   storage_dirs = []
-   for mod in [contact, message, storage, keys]:
-      storage_dir_module = getattr(mod, "STORAGE_DIRS", None)
-      if storage_dir_module != None:
-         storage_dirs += storage_dir_module
-   
-   rc = storage.setup_dirs( storage.ROOT_DIR, storage_dirs )
+   rc = storage.setup_storage( root_dir, [contact, message, storage, keys] )
    if not rc:
       log.error("Failed to set up storage directories")
-      return False
-   
-   rc = storage.setup_storage( storage.ROOT_DIR )
-   if not rc:
-      log.error("Failed to set up storage metadata")
       return False 
    
    return True

@@ -52,10 +52,12 @@ CHECK_INCOMING_FOLDERS = [
 ]
 
 # for setup
-STORAGE_DIRS = [
+VOLUME_STORAGE_DIRS = [
    STORAGE_DIR,
    ATTACHMENTS_DIR
 ] + [storage.path_join(STORAGE_DIR, x) for x in DEFAULT_FOLDERS]
+
+LOCAL_STORAGE_DIRS = []
 
 # locally-produced message and attachment
 SyndicateMessage = collections.namedtuple( "SyndicateMessage", ["id", "sender_addr", "receiver_addrs", "cc_addrs", "bcc_addrs", "subject", "body", "timestamp", "handle", "attachment_names"] )
@@ -72,13 +74,13 @@ SyndicateMessageMetadata = collections.namedtuple( "SyndicateMessageMetadata", [
 def folder_dir( folder_name ):
    global FOLDERS_DIR
    
-   return storage.path_join( storage.ROOT_DIR, FOLDERS_DIR, folder )
+   return storage.volume_path( FOLDERS_DIR, folder )
 
 #-------------------------
 def incoming_dir():
    global INCOMING_DIR
    
-   return storage.path_join( storage.ROOT_DIR, INCOMING_DIR )
+   return storage.volume_path( INCOMING_DIR )
 
 #-------------------------
 def message_handle( message_timestamp, message_id ):
@@ -86,8 +88,8 @@ def message_handle( message_timestamp, message_id ):
 
 #-------------------------
 def stored_message_path( folder, message_timestamp, message_id ):
-   # message path for locally hosted messages
-   return storage.path_join( folder_dir( folder_name ), message_handle( message_timestamp, message_id ))
+   # message path for messages hosted on our own Volume
+   return storage.volume_path( folder_dir( folder_name ), message_handle( message_timestamp, message_id ))
 
 #-------------------------
 def timestamp_from_message_path( message_path ):
@@ -119,7 +121,7 @@ def incoming_message_path( message_timestamp, message_id ):
    # message path for remotely-hosted messages that we know about from our server
    global INCOMING_DIR
    
-   return storage.path_join( storage.ROOT_DIR, INCOMING_DIR, message_handle(message_timestamp, message_id))
+   return storage.volume_path( INCOMING_DIR, message_handle(message_timestamp, message_id))
 
 #-------------------------
 def attachment_storage_name( message_timestamp, message_id, attachment ):
@@ -138,7 +140,7 @@ def attachment_path( message_timestamp, message_id, attachment ):
    global STORAGE_DIR
    
    name = attachment_storage_name( message_timestamp, message_id, attachment )
-   return storage.path_join( storage.ROOT_DIR, STORAGE_DIR, ATTACHMENTS_DIR, name )
+   return storage.volume_path( STORAGE_DIR, ATTACHMENTS_DIR, name )
    
 
 #-------------------------
@@ -147,13 +149,13 @@ def folder_cache_name( folder_name ):
 
 #-------------------------
 def create_folder( folder_name ):
-   return storage.setup_dirs( storage.ROOT_DIR, [folder_name] )
+   return storage.setup_dirs( "/", [folder_dir( folder_name )] )
 
 #-------------------------
 def delete_folder( folder_name ):
    global DEFAULT_FOLDERS
    if folder_name not in DEFAULT_FOLDERS:
-      return storage.delete_dirs( storage.ROOT_DIR, [folder_name] )
+      return storage.delete_dirs( "/", [folder_dir( folder_name )] )
    else:
       # can't delete built-in folder
       return False
@@ -380,7 +382,8 @@ def read_message( privkey_str, folder, msg_timestamp, msg_id ):
       incoming_message = read_incoming_message( privkey_str, msg_timestamp, msg_id )
       
       # fetch the whole message from the remote Volume's SENT folder
-      return storage.read_volume_file( stored_message_path( SENT_FOLDER, msg_timestamp, msg_id ) )
+      # TODO: remote volume instance!
+      return storage.read_file( stored_message_path( SENT_FOLDER, msg_timestamp, msg_id ) )
       
    else:
       # it's a local message
