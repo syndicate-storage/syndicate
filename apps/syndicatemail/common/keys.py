@@ -19,14 +19,20 @@
 import os
 import storage
 import collections
+from itertools import izip
 
-from pbkdf2 import PBKDF2
 import scrypt
+import base64
 
 from Crypto.Hash import SHA256 as HashAlg
+from Crypto.Hash import HMAC
 from Crypto.PublicKey import RSA as CryptoKey
+from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 import syndicate.client.common.log as Log
+
+import session 
 
 log = Log.get_logger()
 
@@ -78,27 +84,28 @@ def make_key_volume_path( name ):
 def encrypt_private_key( privkey_str, password ):
    # first, make a PBKDF2 key from the password
    salt = os.urandom(64)        # 512 bits
-   key = PBKDF2( password, salt, dkLen=64, hashAlgo=HashAlg ).read( 64 )  # 512 bit key
+   
+   key = PBKDF2( unicode(password), salt, dkLen=64 )  # 512 bit key
    
    # second, feed this key and the private key into scrypt.
    # NOTE: scrypt uses AES256-CTR with encrypt-then-MAC
-   encrypted_key = scrypt.encrypt( privkey_str, key )
+   encrypted_key = scrypt.encrypt( str(privkey_str), key )
    
-   return EncryptedPrivateKey( salt=salt, data=encrypted_key )
+   return EncryptedPrivateKey( salt=base64.b64encode(salt), data=base64.b64encode( encrypted_key ) )
 
 
 #-------------------------
 def decrypt_private_key( encrypted_private_key, password ):
    # reproduce the password for decryption...
-   key = PBKDF2( password, encrypted_private_key.salt, dkLen=64, hashAlgo=HashAlg ).read( 64 )
+   key = PBKDF2( unicode(password), base64.b64decode( encrypted_private_key.salt ), dkLen=64 )
    
    try:
-      privkey_str = scrypt.decrypt( encrypted_private_key.data, key )
+      privkey_str = scrypt.decrypt( base64.b64decode( encrypted_private_key.data ), key )
    except:
       log.error( "Failed to decrypt private key.  Wrong password?")
       return None
    
-   return privkey_str
+   return str(privkey_str)
 
 
 #-------------------------
@@ -112,11 +119,12 @@ def load_private_key_from_path( key_path, password, local ):
       encrypted_privkey_str = storage.read_file( key_path )
       
    if encrypted_privkey_str is None:
+      log.error("Failed to load key from %s" % key_path )
       return None
    
    try:
-      encrypted_private_key = storage.json_to_tuple( encrypted_privkey_str )
-   except:
+      encrypted_private_key = storage.json_to_tuple( EncryptedPrivateKey, encrypted_privkey_str )
+   except Exception, e: 
       log.error("Failed to unserialize private key")
       return None
    
@@ -159,7 +167,7 @@ def store_private_key_to_path( key_path, privkey, password, local ):
 
    try:
       encrypted_privkey_json = storage.tuple_to_json( encrypted_private_key )
-   except:
+   except Exception, e:
       log.error("Failed to serialize encrypted private key")
       return False
    
@@ -178,7 +186,7 @@ def store_private_key( key_name, privkey, password ):
    # ensure the path exists...
    global PRIVATE_STORAGE_DIR
    
-   rc = storage.setup_dirs( "/", PRIVATE_STORAGE_DIR )
+   rc = storage.setup_dirs( [PRIVATE_STORAGE_DIR], volume=None )
    if not rc:
       log.error("Failed to set up key directory")
       return False
@@ -220,7 +228,7 @@ def sign_public_key( pubkey_str, syndicate_user_privkey ):
 def verify_public_key( pubkey, syndicate_user_pubkey ):
    h = HashAlg.new( pubkey.pubkey_str )
    verifier = CryptoSigner.new(syndicate_user_pubkey)
-   ret = verifier.verify( h, pubkey.signature )
+   ret = verifier.verify( h, base64.b64decode(pubkey.signature) )
    return ret
    
    
@@ -230,7 +238,7 @@ def store_public_key( key_name, pubkey, syndicate_user_privkey ):
    
    signature = sign_public_key( pubkey_str, syndicate_user_privkey )
    
-   pubkey = SignedPublicKey( signature=signature, pubkey_str=pubkey_str )
+   pubkey = SignedPublicKey( signature=base64.b64encode(signature), pubkey_str=pubkey_str )
    
    try:
       pubkey_json = storage.tuple_to_json( pubkey )
@@ -253,7 +261,7 @@ def load_public_key( key_name, syndicate_user_pubkey ):
       return False
    
    try:
-      pubkey = storage.json_to_tuple( pubkey_json )
+      pubkey = storage.json_to_tuple( SignedPublicKey, pubkey_json )
    except Exception, e:
       log.error("Failed to unserialize signed public key")
       log.exception(e)
@@ -265,9 +273,27 @@ def load_public_key( key_name, syndicate_user_pubkey ):
       return rc
    
    return CryptoKey.importKey( pubkey.pubkey_str )
-         
+
+
+#-------------------------   
+def secure_hash_compare(s1, s2):
+    # constant-time compare
+    # see http://carlos.bueno.org/2011/10/timing.html
+    diff = 0
+    for char_a, char_b in izip(s1, s2):
+        diff |= ord(char_a) ^ ord(char_b)
+    return diff == 0
+
 
 if __name__ == "__main__":
+   
+   
+   fake_module = collections.namedtuple( "FakeModule", ["VOLUME_STORAGE_DIRS", "LOCAL_STORAGE_DIRS"] )
+   session.do_test_volume( "/tmp/storage-test/volume" )
+   
+   fake_mod = fake_module( LOCAL_STORAGE_DIRS=LOCAL_STORAGE_DIRS, VOLUME_STORAGE_DIRS=VOLUME_STORAGE_DIRS )
+   assert storage.setup_storage( "/apps/syndicatemail/data", "/tmp/storage-test/local", [fake_mod] ), "setup_storage failed"
+   
    pubkey_str = """
 -----BEGIN PUBLIC KEY-----
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAxwhi2mh+f/Uxcx6RuO42
@@ -339,10 +365,18 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
 -----END RSA PRIVATE KEY-----
 """.strip()
 
+   print "----- secure hash compare -----"
+   
+   assert secure_hash_compare("sniff", "sniff"), "secure compare failed for equality"
+   assert not secure_hash_compare("sniff", "yoink"), "secure compare failed for inequality"
+   
+   print "----- encrypt key -----"
    encrypted_key = encrypt_private_key( privkey_str, "sniff" )
+   
+   print "----- decrypt key -----"
    decrypted_key = decrypt_private_key( encrypted_key, "sniff" )
    
-   assert encrypted_key == decrypted_key, "Decrypt(Encrypt(key)) != key"
+   assert privkey_str == decrypted_key, "Decrypt(Encrypt( key )) != key\n\nexpected\n%s\n\n\ngot\n%s" % (str(privkey_str), str(decrypted_key))
    
    privkey = CryptoKey.importKey( privkey_str )
    pubkey = CryptoKey.importKey( pubkey_str )
@@ -362,7 +396,7 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
    if not rc:
       raise Exception("store_public_key failed")
    
-   pubkey2_str = load_public_key( "test2.key", pubkey )
+   pubkey2_str = load_public_key( "test2.key", pubkey ).exportKey()
    
    assert pubkey2_str == pubkey_str, "load(store(pubkey)) != pubkey"
    

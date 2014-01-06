@@ -53,11 +53,17 @@ def path_join( a, *b ):
 
 # -------------------------------------
 def volume_path( a, *b ):
+   if VOLUME_ROOT_DIR is None:
+      raise Exception("VOLUME_ROOT_DIR not set")
+   
    parts = [a] + list(b)
    return path_join( VOLUME_ROOT_DIR, *parts )
 
 # -------------------------------------
 def local_path( a, *b ):
+   if LOCAL_ROOT_DIR is None:
+      raise Exception("LOCAL_ROOT_DIR not set")
+   
    parts = [a] + list(b)
    return path_join( LOCAL_ROOT_DIR, *parts )
 
@@ -131,13 +137,19 @@ def setup_dirs( dir_names, prefix="/", volume=GET_FROM_SESSION ):
    if volume == GET_FROM_SESSION:
       volume = session.get_volume()
       
+   if prefix is None:
+      raise Exception("Invalid argument: paseed None as prefix")
+   
    for dirname in dir_names:
+      if dirname is None:
+         raise Exception("Invalid argument: passed None as a directory")
       try:
          dir_path = None
          
          if volume is None:
             dir_path = local_path(prefix, dirname)
             os.makedirs( dir_path, mode=0700 )
+            
          else:
             dir_path = volume_path(prefix, dirname)
             volume_makedirs( volume, dir_path, mode=0700 )
@@ -151,7 +163,7 @@ def setup_dirs( dir_names, prefix="/", volume=GET_FROM_SESSION ):
             pass
          
       except Exception, e:
-         log.error("Failed to mkdir '%s'" % dir_path )
+         log.error("Failed to mkdir '%s'" % dirname )
          log.exception(e)
          return False
    
