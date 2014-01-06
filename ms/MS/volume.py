@@ -391,7 +391,7 @@ class Volume( storagetypes.Object ):
       volume_metadata.num_files = kwargs.get( 'num_files', Volume.get_num_files( volume_metadata.volume_id ) )
       volume_metadata.archive = kwargs.get( 'archive', self.archive )
       volume_metadata.private = kwargs.get( 'private', self.private )
-      volume_metadata.allow_anon = kwargs.get( 'allow_anin', self.allow_anon )
+      volume_metadata.allow_anon = kwargs.get( 'allow_anon', self.allow_anon )
       
       # sign it
       volume_metadata.signature = ""

@@ -122,8 +122,8 @@ def load_config( config_str, config_data, arg_opts ):
    return ret
    
 # -------------------
-def usage( progname ):
-   parser = build_parser( progname )
+def usage( progname, description, opts ):
+   parser = build_parser( progname, description, opts )
    parser.print_help()
    sys.exit(1)
    

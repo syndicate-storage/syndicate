@@ -91,8 +91,11 @@ if __name__ == "__main__":
          missing = True
    
    if missing:
-      conf.usage( sys.argv[0] )
+      conf.usage( sys.argv[0], "SyndicateMail Endpoint", CONFIG_OPTIONS )
    
+   if config['test']:
+      session.do_test_volume( config['volume_storage_root'] )
+      
    rc = main_common.setup_storage( config )
    if not rc:
       raise Exception("Failed to set up storage")

@@ -378,7 +378,7 @@ def read_incoming_message( privkey_str, msg_timestamp, msg_id ):
 def read_message( privkey_str, folder, msg_timestamp, msg_id ):
    # is this an incoming message?
    mpath = incoming_message_path( msg_timestamp, msg_id )
-   if os.path.exists( mpath ):
+   if storage.path_exists( mpath ):
       # get the incoming message record
       incoming_message = read_incoming_message( privkey_str, msg_timestamp, msg_id )
       

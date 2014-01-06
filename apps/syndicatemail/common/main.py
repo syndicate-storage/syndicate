@@ -32,14 +32,7 @@ def set_storage_root( storage_root ):
 
 #-------------------------
 def setup_storage( config ):
-   # if we're testing, put everything into /tmp
-   root_dir = None
-   if config['test']:
-      root_dir = "/tmp"
-   else:
-      root_dir = config['local_storage_root']
-   
-   rc = storage.setup_storage( root_dir, [contact, message, storage, keys] )
+   rc = storage.setup_storage( config['volume_storage_root'], config['local_storage_root'], [contact, message, storage, keys] )
    if not rc:
       log.error("Failed to set up storage directories")
       return False 
