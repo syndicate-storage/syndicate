@@ -2220,7 +2220,6 @@ int md_init_begin( int gateway_type,
                    char const* gateway_name,
                    char const* oid_username,
                    char const* oid_password,
-                   char const* volume_key_path,
                    char const* my_key_path,
                    char const* tls_pkey_file,
                    char const* tls_cert_file ) {
@@ -2287,7 +2286,7 @@ int md_init_begin( int gateway_type,
 
 
 // finish initialization
-int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, char const* volume_name ) {
+int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, char const* volume_name, char const* volume_key_file ) {
    
    int rc = 0;
    
@@ -2297,19 +2296,59 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       errorf("ERR: md_check_conf rc = %d\n", rc );
       return rc;
    }
-
+   
    // setup the client
    rc = ms_client_init( client, conf->gateway_type, conf );
    if( rc != 0 ) {
       errorf("ms_client_init rc = %d\n", rc );
       return rc;
    }
-
-   // register the gateway
-   rc = ms_client_gateway_register( client, conf->gateway_name, conf->ms_username, conf->ms_password );
-   if( rc != 0 ) {
-      errorf("ms_client_register rc = %d\n", rc );
-      return rc;
+   
+   // load public key, if given
+   char* volume_pubkey_pem = NULL;
+   size_t volume_pubkey_pem_len = 0;
+   if( volume_key_file != NULL ) {
+      volume_pubkey_pem = md_load_file_as_string( volume_key_file, &volume_pubkey_pem_len );
+      if( volume_pubkey_pem == NULL ) {
+         errorf("Failed to load public key from %s\n", volume_key_file );
+         
+         ms_client_destroy( client );;
+         return -ENODATA;
+      }
+   }
+   
+   if( conf->gateway_name != NULL && conf->ms_username != NULL && conf->ms_password != NULL ) {
+      // register the gateway
+      rc = ms_client_gateway_register( client, conf->gateway_name, conf->ms_username, conf->ms_password, volume_pubkey_pem );
+      if( rc != 0 ) {
+         errorf("ms_client_gateway_register rc = %d\n", rc );
+         
+         ms_client_destroy( client );
+         
+         if(volume_pubkey_pem != NULL)
+            free( volume_pubkey_pem );
+         
+         return rc;
+      }
+   }
+   else {
+      // anonymous register
+      conf->gateway_name = strdup("<anonymous>");
+      conf->ms_username = strdup("<anonymous>");
+      conf->ms_password = strdup("<anonymous>");
+      conf->owner = USER_ANON;
+      conf->gateway = GATEWAY_ANON;
+      rc = ms_client_anonymous_gateway_register( client, volume_name, volume_pubkey_pem );
+      
+      if( rc != 0 ) {
+         errorf("ms_client_anonymous_gateway_register(%s) rc = %d\n", volume_name, rc );
+         
+         ms_client_destroy( client );
+         if(volume_pubkey_pem != NULL)
+            free( volume_pubkey_pem );
+         
+         return -ENOTCONN;
+      }  
    }
 
    // if this is a UG, verify that we bound to the right volume
@@ -2357,7 +2396,7 @@ int md_init( int gateway_type,
              char const* storage_root
            ) {
 
-   int rc = md_init_begin( gateway_type, config_file, conf, client, ms_url, volume_name, gateway_name, oid_username, oid_password, volume_key_file, my_key_file, tls_pkey_file, tls_cert_file );
+   int rc = md_init_begin( gateway_type, config_file, conf, client, ms_url, volume_name, gateway_name, oid_username, oid_password, my_key_file, tls_pkey_file, tls_cert_file );
 
    if( rc != 0 ) {
       errorf("md_init_begin() rc = %d\n", rc );
@@ -2380,7 +2419,7 @@ int md_init( int gateway_type,
       return rc;
    }
    
-   return md_init_finish( conf, client, volume_name );
+   return md_init_finish( conf, client, volume_name, volume_key_file );
 }
 
 
@@ -2400,7 +2439,7 @@ int md_init_client( int gateway_type,
                   ) {
    
    
-   int rc = md_init_begin( gateway_type, config_file, conf, client, ms_url, volume_name, gateway_name, oid_username, oid_password, volume_key_path, my_key_path, NULL, NULL );
+   int rc = md_init_begin( gateway_type, config_file, conf, client, ms_url, volume_name, gateway_name, oid_username, oid_password, my_key_path, NULL, NULL );
 
    if( rc != 0 ) {
       errorf("md_init_begin() rc = %d\n", rc );
@@ -2414,7 +2453,7 @@ int md_init_client( int gateway_type,
       return rc;
    }
    
-   return md_init_finish( conf, client, volume_name );   
+   return md_init_finish( conf, client, volume_name, volume_key_path );   
 }
 
 
@@ -2485,16 +2524,13 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
       fprintf(stderr, err_fmt, METADATA_URL_KEY );
    }
    if( conf->ms_username == NULL ) {
-      rc = -EINVAL;
-      fprintf(stderr, err_fmt, METADATA_USERNAME_KEY );
+      fprintf(stderr, warn_fmt, METADATA_USERNAME_KEY );
    }
    if( conf->ms_password == NULL ) {
-      rc = -EINVAL;
-      fprintf(stderr, err_fmt, METADATA_PASSWORD_KEY );
+      fprintf(stderr, warn_fmt, METADATA_PASSWORD_KEY );
    }
    if( conf->gateway_name == NULL ) {
-      rc = -EINVAL;
-      fprintf(stderr, err_fmt, GATEWAY_NAME_KEY );
+      fprintf(stderr, warn_fmt, GATEWAY_NAME_KEY );
    }
    if( conf->gateway_key == NULL ) {
       rc = -EINVAL;

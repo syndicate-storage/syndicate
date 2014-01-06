@@ -170,9 +170,10 @@ message ms_volume_metadata {
    required string volume_public_key = 9;
    required bool archive = 10;
    required bool private = 11;
-   optional ms_entry root = 12;             // root directory
+   required bool allow_anon = 12;
+   optional ms_entry root = 13;             // root directory
    
-   required string signature = 13;              // base64-encoded Volume signature of this message
+   required string signature = 14;              // base64-encoded Volume signature of this message
 }
 
 

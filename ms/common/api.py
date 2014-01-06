@@ -840,9 +840,9 @@ def update_gateway( g_name_or_id, **attrs ):
    return storage.update_gateway( g_name_or_id, **attrs )
 
 
-@Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID] )
-@UpdateAPIGuard( Gateway, target_object_name="g_name_or_id", parse_args=Gateway.ParseArgs )
-def set_gateway_caps( g_name_or_id, caps ):
+@Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="gateway", verify_key_id="g_name_or_id" )
+@UpdateAPIGuard( Gateway, target_object_name="g_name_or_id", parse_args=Gateway.ParseArgs, pass_caller_user="caller_user" )
+def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
    """
    Set a gateway's capabilities.
    
@@ -886,7 +886,7 @@ def set_gateway_caps( g_name_or_id, caps ):
       different capabilities will silently fail.
    """
       
-   return storage.set_gateway_caps( g_name_or_id, caps )
+   return storage.set_gateway_caps( g_name_or_id, caps, **caller_user_dict )
 
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], revoke_key_type="gateway", revoke_key_id="g_name_or_id" )

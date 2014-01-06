@@ -52,9 +52,9 @@ class VolumeAccessRequest( storagetypes.Object ):
    request_message = storagetypes.Text()                # message to the owner 
    volume_id = storagetypes.Integer()                   # ID of volume to join 
    gateway_caps = storagetypes.Integer( indexed=False )  # gateway capabilities requested
-   nonce = storagetypes.Integer( indexed=False )
-   request_timestamp = storagetypes.Integer()
-   status = storagetypes.Integer()
+   nonce = storagetypes.Integer( indexed=False )         # detect collision with another one of these
+   request_timestamp = storagetypes.Integer()           # when was the request made?
+   status = storagetypes.Integer()                      # granted or pending?
    
    required_attrs = [
       "requester_owner_id",
@@ -216,11 +216,12 @@ class Volume( storagetypes.Object ):
    owner_id = storagetypes.Integer()
    volume_id = storagetypes.Integer()
    
-   version = storagetypes.Integer( default=1, indexed=False )                 # version of this Volume's metadata
-   cert_version = storagetypes.Integer( default=1, indexed=False )            # certificate bundle version
+   version = storagetypes.Integer( indexed=False )                 # version of this Volume's metadata
+   cert_version = storagetypes.Integer( indexed=False )            # certificate bundle version
    
-   private = storagetypes.Boolean()
-   archive = storagetypes.Boolean(default=False)                # only an AG can write to this Volume
+   private = storagetypes.Boolean()                             # if True, then this Volume won't be listed
+   archive = storagetypes.Boolean()                # only an authenticated AG owned by the same user that owns this Volume can write to this Volume
+   allow_anon = storagetypes.Boolean()             # if True, then anonymous users can access this Volume (i.e. users who don't have to log in)
    
    num_shards = storagetypes.Integer(default=20, indexed=False)    # number of shards per entry in this volume
 
@@ -232,11 +233,11 @@ class Volume( storagetypes.Object ):
    verify_public_key = storagetypes.Text()                 # public/private key pair for signing API replies
    verify_private_key = storagetypes.Text()
 
-   file_quota = storagetypes.Integer( default=-1 )                 # maximum number of files allowed here (-1 means unlimited)
+   file_quota = storagetypes.Integer()                 # maximum number of files allowed here (-1 means unlimited)
    
-   deleted = storagetypes.Boolean( default=False )      # is this Volume deleted?
+   deleted = storagetypes.Boolean()      # is this Volume deleted?
    
-   default_gateway_caps = storagetypes.Integer( default=0, indexed=False )
+   default_gateway_caps = storagetypes.Integer( indexed=False )
 
    # for RPC
    key_type = "volume"
@@ -275,8 +276,11 @@ class Volume( storagetypes.Object ):
       "cert_version": (lambda cls, attrs: 1),
       "private": (lambda cls, attrs: True),
       "archive": (lambda cls, attrs: False),
+      "allow_anon": (lambda cls, attrs: False),
       "active": (lambda cls, attrs: True),
       "file_quota": (lambda cls, attrs: -1),
+      "deleted": (lambda cls, attrs: False),
+      "num_shards": (lambda cls, attrs: 20),
       "default_gateway_caps": (lambda cls, attrs: GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA )           # read only
    }
    
@@ -289,6 +293,7 @@ class Volume( storagetypes.Object ):
       "cert_version",
       "private",
       "archive",
+      "allow_anon",
       "file_quota",
       "default_gateway_caps"
    ]
@@ -298,7 +303,7 @@ class Volume( storagetypes.Object ):
       "description",
       "owner_id",
       "metadata_public_key",
-      "verify_public_key"
+      "verify_public_key",
    ] + read_attrs_api_required
    
    write_attrs = [
@@ -307,7 +312,8 @@ class Volume( storagetypes.Object ):
       "private",
       "archive",
       "file_quota",
-      "default_gateway_caps"
+      "default_gateway_caps",
+      "allow_anon"
    ]
    
    write_attrs_api_required = write_attrs
@@ -361,8 +367,9 @@ class Volume( storagetypes.Object ):
    def need_gateway_auth( self ):
       """
       Do we require an authentic gateway to interact with us?
+      (i.e. do we forbid anonymous users)?
       """
-      if self.private or not self.archive:
+      if not self.allow_anon:
          return True
       
       return False
@@ -384,6 +391,7 @@ class Volume( storagetypes.Object ):
       volume_metadata.num_files = kwargs.get( 'num_files', Volume.get_num_files( volume_metadata.volume_id ) )
       volume_metadata.archive = kwargs.get( 'archive', self.archive )
       volume_metadata.private = kwargs.get( 'private', self.private )
+      volume_metadata.allow_anon = kwargs.get( 'allow_anin', self.allow_anon )
       
       # sign it
       volume_metadata.signature = ""
@@ -465,7 +473,7 @@ class Volume( storagetypes.Object ):
       If the Volume is not private, then it "belongs" by default.
       """
       
-      if not self.private:
+      if self.allow_anon:
          return True
 
       return gateway.volume_id == self.volume_id
@@ -560,6 +568,7 @@ class Volume( storagetypes.Object ):
                                                 cert_version=1,
                                                 private=kwargs['private'],
                                                 archive=kwargs['archive'],
+                                                allow_anon = kwargs['allow_anon'],
                                                 metadata_public_key = kwargs['metadata_public_key'],
                                                 metadata_private_key = kwargs['metadata_private_key'],
                                                 signing_public_key = kwargs['signing_public_key'],

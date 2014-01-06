@@ -25,6 +25,10 @@ handlers:
   script: msapp.app
   secure: always
 
+- url: /VOLUME.*
+  script: msapp.app
+  secure: always
+
 - url: .*
   script: msapp.app
   secure: always

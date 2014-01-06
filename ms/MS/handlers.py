@@ -112,19 +112,9 @@ def response_load_gateway_by_type_and_id( gateway_type, gateway_id ):
 
 def response_load_volume( request_handler, volume_name_or_id ):
 
-   volume_id = -1
-   try:
-      volume_id = int( volume_name_or_id )
-   except:
-      pass
-
    volume_read_start = storagetypes.get_time()
 
-   volume = None
-   if volume_id > 0:
-      volume = storage.read_volume( volume_id )
-   else:
-      volume = storage.read_volume_by_name( volume_name_or_id )
+   volume = storage.read_volume( volume_name_or_id )
 
    volume_read_time = storagetypes.get_time() - volume_read_start
 
@@ -240,12 +230,13 @@ def response_begin( request_handler, volume_name_or_id ):
 
    gateway_read_time = 0
    gateway = None
-   
-   # authenticate the gateway
-   gateway, status, gateway_read_time = response_load_gateway( request_handler )
 
-   if volume.need_gateway_auth() and (status != 200 or gateway == None):
-      return (None, None, None)
+   if volume.need_gateway_auth():
+      # authenticate the gateway
+      gateway, status, gateway_read_time = response_load_gateway( request_handler )
+
+      if (status != 200 or gateway == None):
+         return (None, None, None)
    
    # make sure this gateway is allowed to access this Volume
    valid_gateway = volume.is_gateway_in_volume( gateway )
@@ -290,8 +281,9 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
    Volume metadata request handler.
    """
 
-   def get( self, volume_id_str ):
-      gateway, volume, timing = response_begin( self, volume_id_str )
+   def get( self, volume_name_or_id_str ):
+   
+      gateway, volume, timing = response_begin( self, volume_name_or_id_str )
       if volume == None:
          return
 
@@ -299,9 +291,19 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
          response_user_error( self, 403 )
          return 
       
+   
+      root = storage.get_volume_root( volume )
+      
+      if root == None:
+         response_user_error( self, 404 )
+         return
+
       # request for volume metadata
       volume_metadata = ms_pb2.ms_volume_metadata();
+      
+      root.protobuf( volume_metadata.root )
       volume.protobuf( volume_metadata )
+      
       data = volume_metadata.SerializeToString()
 
       response_end( self, 200, data, "application/octet-stream", timing )

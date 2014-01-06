@@ -322,8 +322,13 @@ def update_gateway( g_name_or_id, **fields):
    Gateway.Update( g_name_or_id, **fields )
    return True
 
-def set_gateway_caps( g_name_or_id, caps ):
-   gateway = storage.read_gateway( g_name_or_id )
+def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
+   caller_user = caller_user_dict.get("caller_user")
+   
+   if caller_user == None:
+      raise Exception("Anonymous user is not allowed to set the capabilities of a Gateway")
+   
+   gateway = read_gateway( g_name_or_id )
    
    if gateway == None:
       raise Exception("No such Gateway '%s'" % g_name_or_id )
@@ -333,15 +338,19 @@ def set_gateway_caps( g_name_or_id, caps ):
    if user == None:
       raise Exception("No user with ID '%s'" % gateway.owner_id )
    
-   if gateway == None:
+   if volume == None or volume.deleted:
       raise Exception("No volume with ID '%s'" % gateway.volume_id )
+   
+   if user.owner_id != caller_user.owner_id and not caller_user.is_admin:
+      raise Exception("User '%s' does not own this Gateway" % caller_user.email)
    
    # verify that the user has the capability to do this
    if not user.is_admin and user.owner_id != volume.owner_id:
       raise Exception("User '%s' is not allowed to set the capabilities of Gateway '%s'" % user.email, gateway.name )
    
-   Gateway.SetCaps( g_name_or_id )
+   Gateway.SetCaps( g_name_or_id, caps )
    return True
+
 
 def list_gateways( attrs=None, **q_opts):
    return Gateway.ListAll(attrs, **q_opts)
@@ -409,7 +418,10 @@ def set_gateway_public_signing_key( g_name_or_id, new_key, **caller_user_dict ):
    
    return Gateway.SetPublicSigningKey( g_id, new_key )
 
-def set_gateway_caps( g_name_or_id, caps, caller_user=None ):
+"""
+def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
+   caller_user = caller_user_dict.get("caller_user")
+   
    # get the gateway
    gateway = read_gateway( g_name_or_id )
    if gateway == None:
@@ -443,7 +455,7 @@ def set_gateway_caps( g_name_or_id, caps, caller_user=None ):
       raise Exception("User '%s' cannot set Gateway '%s' capabilities" % (user.email, gateway.name))
    
    return Gateway.SetCaps( g_name_or_id, caps )
-
+"""
 
 # ----------------------------------
 def get_volume_root( volume ):

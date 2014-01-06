@@ -668,20 +668,24 @@ def main( argv ):
    
    # will we trust verifying keys automatically for this method?
    if trust_verify_key:
+      do_trust = True
+      
       trust_key_type = api.trust_key_type_from_method_name( method_name )
       trust_key_name = api.trust_key_name_from_method_args( method_name, args, kw )
 
       if trust_key_type == None or trust_key_name == None:
-         raise Exception("Could not determine which key to trust")
+         log.warning("No key to trust for this method")
+         do_trust = False
       
-      # get the key 
-      result_verify_key = verify_key_from_method_result( ret )
-      if result_verify_key is not None:
-         # and trust it
-         storage.store_object_public_key( CONFIG, trust_key_type, "verifying", trust_key_name, result_verify_key )
-         
-      else:
-         raise Exception("Server error: expected verify key in response")
+      if do_trust:
+         # get the key 
+         result_verify_key = verify_key_from_method_result( ret )
+         if result_verify_key is not None:
+            # and trust it
+            storage.store_object_public_key( CONFIG, trust_key_type, "verifying", trust_key_name, result_verify_key )
+            
+         else:
+            raise Exception("Server error: expected verify key in response")
       
 
    # do we need to store a signing key?

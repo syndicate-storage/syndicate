@@ -218,6 +218,8 @@ struct md_syndicate_conf {
    int gateway_type;
 };
 
+#define USER_ANON               0xFFFFFFFFFFFFFFFF
+#define GATEWAY_ANON            0xFFFFFFFFFFFFFFF
 
 #define COMMENT_KEY                 '#'
 

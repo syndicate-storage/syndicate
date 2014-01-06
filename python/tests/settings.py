@@ -13,3 +13,10 @@ settings_kw = {
       "my_key_filename" : os.path.expanduser("~/.syndicate/gateway_keys/runtime/%s.pkey" % gateway_name),
       "storage_root" : "/tmp/test-syndicate-python-volume"
 }
+
+anonymous_settings_kw = {
+      "volume_name" : "testvolume",
+      "ms_url" : "http://localhost:8080",
+      "my_key_filename" : os.path.expanduser("~/.syndicate/gateway_keys/runtime/%s.pkey" % gateway_name),
+      "storage_root" : "/tmp/test-syndicate-python-volume-anonymous"
+}

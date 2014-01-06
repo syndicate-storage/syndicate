@@ -21,7 +21,7 @@ static int ms_client_view_change_callback_default( struct ms_client* client, voi
 static void* ms_client_uploader_thread( void* arg );
 static void* ms_client_view_thread( void* arg );
 static void ms_client_uploader_signal( struct ms_client* client );
-int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadata* volume_md );
+int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem );
 static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void *userdata);
 char* ms_client_cert_url( struct ms_client* client, uint64_t volume_id, uint64_t volume_cert_version, int gateway_type, uint64_t gateway_id, uint64_t gateway_cert_version );
 
@@ -405,6 +405,18 @@ char* ms_client_volume_url( struct ms_client* client, uint64_t volume_id ) {
    return url;
 }
 
+
+char* ms_client_volume_url_by_name( struct ms_client* client, char const* name ) {
+   char* volume_md_path = md_fullpath( "/VOLUME/", name, NULL );
+
+   ms_client_rlock( client );
+   char* url = md_fullpath( client->url, volume_md_path, NULL );
+   ms_client_unlock( client );
+
+   free( volume_md_path );
+
+   return url;
+}
 
 char* ms_client_register_url( struct ms_client* client ) {
    // build the /REGISTER/ url
@@ -1420,6 +1432,44 @@ int ms_client_reload_certs( struct ms_client* client ) {
 }
 
 
+// download a volume's metadata by name
+int ms_client_download_volume_by_name( struct ms_client* client, char const* volume_name, struct ms_volume* vol, char const* volume_pubkey_pem ) {
+   ms::ms_volume_metadata volume_md;
+   char* buf = NULL;
+   ssize_t len = 0;
+   int rc = 0;
+
+   char* volume_url = ms_client_volume_url_by_name( client, volume_name );
+
+   rc = ms_client_download_volume_metadata( client, volume_url, &buf, &len );
+
+   free( volume_url );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_download_volume_metadata rc = %d\n", rc );
+
+      return rc;
+   }
+
+   // extract the message
+   bool valid = volume_md.ParseFromString( string(buf, len) );
+   free( buf );
+   
+   if( !valid ) {
+      errorf("Invalid data for Volume %s\n", volume_name );
+      return -EINVAL;
+   }
+   
+   rc = ms_client_load_volume_metadata( vol, &volume_md, volume_pubkey_pem );
+   if( rc != 0 ) {
+      errorf("ms_client_load_volume_metadata rc = %d\n", rc );
+      return rc;
+   }
+   
+   return 0;
+}
+
+
 // reload volume metadata
 // client must NOT be locked.
 int ms_client_reload_volume( struct ms_client* client ) {
@@ -1495,7 +1545,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
    
    if( new_version > old_version ) {
       // have new data--load it in
-      rc = ms_client_load_volume_metadata( vol, &volume_md );
+      rc = ms_client_load_volume_metadata( vol, &volume_md, NULL );
    }
    else {
       rc = 0;
@@ -1613,16 +1663,20 @@ int ms_client_load_cert( uint64_t my_gateway_id, struct ms_gateway_cert* cert, c
 
 
 // populate a Volume structure with the volume metadata
-int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadata* volume_md ) {
+int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem ) {
 
    int rc = 0;
    
    // get the new public key
-   if( vol->reload_volume_key || vol->volume_public_key == NULL ) {
+   if( vol->reload_volume_key || vol->volume_public_key == NULL || volume_pubkey_pem != NULL ) {
       vol->reload_volume_key = false;
       
       // trust it this time, but not in the future
-      rc = md_load_pubkey( &vol->volume_public_key, volume_md->volume_public_key().c_str() );
+      if( volume_pubkey_pem != NULL )
+         rc = md_load_pubkey( &vol->volume_public_key, volume_pubkey_pem );
+      else
+         rc = md_load_pubkey( &vol->volume_public_key, volume_md->volume_public_key().c_str() );
+      
       if( rc != 0 ) {
          errorf("md_load_pubkey rc = %d\n", rc );
          return -ENOTCONN;
@@ -1689,7 +1743,7 @@ int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadat
 
 
 // load a registration message
-int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_registration_metadata* registration_md ) {
+int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_registration_metadata* registration_md, char const* volume_pubkey_pem ) {
 
    int rc = 0;
 
@@ -1727,7 +1781,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    ms::ms_volume_metadata* vol_md = registration_md->mutable_volume();
 
    // load the Volume information
-   rc = ms_client_load_volume_metadata( volume, vol_md );
+   rc = ms_client_load_volume_metadata( volume, vol_md, volume_pubkey_pem );
    if( rc != 0 ) {
       errorf("ms_client_load_volume_metadata(%s) rc = %d\n", vol_md->name().c_str(), rc );
       
@@ -2155,7 +2209,7 @@ int ms_client_complete_register( CURL* curl, char const* return_to_method, char 
    
 
 // register this gateway with the MS, using the SyndicateUser's OpenID username and password
-int ms_client_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password ) {
+int ms_client_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password, char const* volume_pubkey_pem ) {
 
    int rc = 0;
    char* register_url = ms_client_register_url( client );
@@ -2214,7 +2268,7 @@ int ms_client_gateway_register( struct ms_client* client, char const* gateway_na
    curl_easy_cleanup( curl );
    
    // load up the registration information, including our set of Volumes
-   rc = ms_client_load_registration_metadata( client, &registration_md );
+   rc = ms_client_load_registration_metadata( client, &registration_md, volume_pubkey_pem );
    if( rc != 0 ) {
       errorf("ms_client_load_registration_metadata rc = %d\n", rc );
       return rc;
@@ -2223,6 +2277,63 @@ int ms_client_gateway_register( struct ms_client* client, char const* gateway_na
    // load the certificate bundle   
    rc = ms_client_reload_certs( client );
    
+   return rc;
+}
+
+
+// anonymously register with a (public) volume
+int ms_client_anonymous_gateway_register( struct ms_client* client, char const* volume_name, char const* volume_public_key_pem ) {
+   int rc = 0;
+
+   struct ms_gateway_cert cert;
+   memset( &cert, 0, sizeof(cert) );
+
+   struct ms_volume* volume = CALLOC_LIST( struct ms_volume, 1 );
+   
+   if( volume_public_key_pem != NULL ) {
+      // attempt to load the public key 
+      rc = md_load_pubkey( &volume->volume_public_key, volume_public_key_pem );
+      if( rc != 0 ) {
+         errorf("md_load_pubkey rc = %d\n", rc );
+         return -EINVAL;
+      }
+   }
+   else {  
+      volume->reload_volume_key = true;         // get the public key
+   }
+
+   rc = ms_client_download_volume_by_name( client, volume_name, volume, volume_public_key_pem );
+   if( rc != 0 ) {
+      errorf("ms_client_download_volume_by_name(%s) rc = %d\n", volume_name, rc );
+      ms_volume_free( volume );
+      free( volume );
+      return -ENOTCONN;
+   }
+   
+   dbprintf("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
+
+   ms_client_view_wlock( client );
+   client->volume = volume;
+   ms_client_view_unlock( client );
+
+   ms_client_wlock( client );
+   
+   // fill in sane defaults
+   curl_easy_setopt( client->ms_read, CURLOPT_USERPWD, NULL );
+   curl_easy_setopt( client->ms_write, CURLOPT_USERPWD, NULL );
+   curl_easy_setopt( client->ms_view, CURLOPT_USERPWD, NULL );
+
+   if( client->session_password )
+      free( client->session_password );
+   
+   client->session_password = NULL;
+   client->session_expires = -1;
+   client->gateway_type = client->conf->gateway_type;
+   client->owner_id = client->conf->owner;
+   client->gateway_id = client->conf->gateway;
+   
+   ms_client_unlock( client );
+
    return rc;
 }
 
