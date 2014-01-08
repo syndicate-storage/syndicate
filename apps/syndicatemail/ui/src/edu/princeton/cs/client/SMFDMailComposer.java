@@ -14,7 +14,9 @@ import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.gwt.event.shared.HasHandlers;
 import com.google.gwt.http.client.RequestException;
 import com.google.gwt.user.client.Element;
+import com.google.gwt.user.client.Event;
 import com.google.gwt.user.client.Window;
+import com.google.gwt.user.client.Event.NativePreviewEvent;
 import com.google.gwt.user.client.ui.Button;
 import com.google.gwt.user.client.ui.CellPanel;
 import com.google.gwt.user.client.ui.DialogBox;
@@ -55,60 +57,6 @@ public class SMFDMailComposer {
 		elem.click();
 	}-*/;
 	
-	public interface AttachmentAddedEventHandler extends EventHandler {
-	    void onAttachmentAdded(AttachmentAddedEvent event);
-	}
-	
-	public static class AttachmentAddedEvent extends GwtEvent<AttachmentAddedEventHandler> {
-
-	    public static Type<AttachmentAddedEventHandler> evType = new Type<AttachmentAddedEventHandler>();
-
-	    private final String attachmentHandle;
-
-	    public AttachmentAddedEvent(String message) {
-	        this.attachmentHandle = message;
-	    }
-
-	    @Override
-	    public Type<AttachmentAddedEventHandler> getAssociatedType() {
-	        return evType;
-	    }
-
-	    @Override
-	    protected void dispatch(AttachmentAddedEventHandler handler) {
-	        handler.onAttachmentAdded(this);
-	    }
-
-	    public String getMessage() {
-	        return attachmentHandle;
-	    }
-	}
-	
-	public class AttachmentHandler implements HasHandlers {
-
-	    private HandlerManager handlerManager;
-
-	    public AttachmentHandler() {
-	        handlerManager = new HandlerManager(this);
-	    }
-
-	    @Override
-	    public void fireEvent(GwtEvent<?> event) {
-	        handlerManager.fireEvent(event);
-	    }
-
-	    public HandlerRegistration addMessageReceivedEventHandler(
-	            AttachmentAddedEventHandler handler) {
-	        return handlerManager.addHandler(AttachmentAddedEvent.evType, handler);
-	    }
-	    
-	    public void newAttachmentAdded() {
-	        String attachmentHandle = "";
-	        AttachmentAddedEvent event = new AttachmentAddedEvent(attachmentHandle);
-	        fireEvent(event);
-	    }
-
-	}
 	
 	public SMFDMailComposer() {
 		displayWidth = Window.getClientWidth();
@@ -153,6 +101,14 @@ public class SMFDMailComposer {
 				dlgBox.show();
 			}
 		});
+		
+		/*Event.addNativePreviewHandler(new NativePreviewHandler() {
+			
+			@Override
+			public void onPreviewNativeEvent(NativePreviewEvent event) {
+				event.get
+			}
+		});*/
 	}
 	
 	private void dialogClose() {
@@ -280,6 +236,8 @@ public class SMFDMailComposer {
 				uploaderNames.removeAllElements();
 				uploaders.clear();
 				try {
+					if (rcptAddrs.length == 0)
+						return;
 					mm.sendMessage(rcptAddrs, ccList, bccList, subject, msgBody, attachments, sendAsync);
 				} catch (RequestException e) {
 					Window.alert("Sending Failed...\nSorry, we don't have a Drafts box yet!\n"+e.getMessage());

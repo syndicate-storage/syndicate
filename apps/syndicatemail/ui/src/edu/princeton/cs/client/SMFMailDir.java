@@ -168,11 +168,23 @@ public class SMFMailDir {
 			chkBox.getElement().setClassName("box-item-checkbox");
 			boxTbl.setWidget(i, MAIL_SELECT_COL, chkBox);
 			//Set sender email in 2nd column.
-			boxTbl.setWidget(i, MAIL_SENDER_COL, new Label(page[i].getSndrAddr()));
+			Label lbl = new Label(page[i].getSndrAddr());
+			if (page[i].isRead()) {
+				lbl.setStyleName("mail-read-font");
+			}
+			boxTbl.setWidget(i, MAIL_SENDER_COL, lbl);
 			//Set subject email in 3rd column.
-			boxTbl.setWidget(i, MAIL_SUBJECT_COL, new Label(page[i].getSubject()));
+			lbl = new Label(page[i].getSubject());
+			if (page[i].isRead()) {
+				lbl.setStyleName("mail-read-font");
+			}
+			boxTbl.setWidget(i, MAIL_SUBJECT_COL, lbl);
 			//Set sent time in 4th column
-			boxTbl.setWidget(i, MAIL_TIME_COL, new Label(getDisplayDate(page[i].getMsgts())));
+			lbl = new Label(getDisplayDate(page[i].getMsgts()));
+			if (page[i].isRead()) {
+				lbl.setStyleName("mail-read-font");
+			}
+			boxTbl.setWidget(i, MAIL_TIME_COL, lbl);
 			//Set mail attachment indicator
 			Label attLbl = new Label();
 			boxTbl.setWidget(i, MAIL_ATT_COL, attLbl);

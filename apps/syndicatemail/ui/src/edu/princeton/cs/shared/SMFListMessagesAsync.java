@@ -37,7 +37,7 @@ public class SMFListMessagesAsync implements RequestCallback {
 		          +"\"subject\":\"This is the subject\","
 		          +"\"timestamp\":1388793600,"
 		          +"\"handle\":\"8011d599ed984edb9115dd71b68402be\","
-		          +"\"is_read\":true,"
+		          +"\"is_read\":false,"
 		          +"\"has_attachments\":true,"
 		          +"\"attachment_names\":[\"79e54e60bcf2142a4d7c3131e2ebeef774be7dceb643f83ae2d16ee31e3e3dee\"]}";
 		jsonResp += ",";

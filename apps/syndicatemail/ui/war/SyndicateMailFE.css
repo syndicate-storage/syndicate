@@ -373,3 +373,7 @@ button.mail-display-reply-btn:hover {
 	color: grey;
 	cursor: pointer;
 }
+
+.mail-read-font {
+	font-weight: normal;
+}
