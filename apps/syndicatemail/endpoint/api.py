@@ -67,7 +67,7 @@ class API( object ):
    @classmethod
    @session_required
    def read_contact( cls, email_addr ):
-      contact_tuple = contact.read_contact( cls.privateKeyStr(), email_addr )
+      contact_tuple = contact.read_contact( cls.publicKeyStr(), cls.privateKeyStr(), email_addr )
       if contact_tuple != None:
          contact_dict = storage.tuple_to_dict( contact_tuple )
          return contact_dict
@@ -92,7 +92,7 @@ class API( object ):
    @classmethod
    @session_required
    def delete_contact( cls, email_addr ):
-      return contact.delete_contact( email_addr )
+      return contact.delete_contact( cls.publicKeyStr(), email_addr )
 
    # ------------------------------------------------
    @classmethod
@@ -131,7 +131,7 @@ class API( object ):
    @classmethod
    @session_required
    def read_attachment( cls, attachment_name ):
-      fake_attachment = message.SyndicateAttachment( name="79e54e60bcf2142a4d7c3131e2ebeef774be7dceb643f83ae2d16ee31e3e3dee", data="NOT IMPLEMENTED" )
+      fake_attachment = message.SyndicateAttachment( name=attachment_name, data="NOT IMPLEMENTED" )
       return storage.tuple_to_dict( fake_attachment )
 
    @classmethod
