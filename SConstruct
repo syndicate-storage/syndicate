@@ -43,7 +43,7 @@ LIBPATH = [
 ]
 
 # default CPPFLAGS
-CPPFLAGS = "-g -Wall -D__STDC_FORMAT_MACROS -D_FORTIFY_SOURCE"
+CPPFLAGS = "-g -Wall -D__STDC_FORMAT_MACROS"
 
 # parse options
 devel = False
