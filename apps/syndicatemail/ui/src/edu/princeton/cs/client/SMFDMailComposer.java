@@ -1,20 +1,19 @@
 package edu.princeton.cs.client;
 
-import java.util.Map;
 import java.util.TreeMap;
 import java.util.Vector;
 
-import com.gargoylesoftware.htmlunit.Page;
-import com.gargoylesoftware.htmlunit.attachment.Attachment;
-import com.gargoylesoftware.htmlunit.attachment.AttachmentHandler;
 import com.google.gwt.event.dom.client.BlurEvent;
 import com.google.gwt.event.dom.client.BlurHandler;
 import com.google.gwt.event.dom.client.ClickEvent;
 import com.google.gwt.event.dom.client.ClickHandler;
+import com.google.gwt.event.shared.EventHandler;
+import com.google.gwt.event.shared.GwtEvent;
+import com.google.gwt.event.shared.HandlerManager;
+import com.google.gwt.event.shared.HandlerRegistration;
+import com.google.gwt.event.shared.HasHandlers;
 import com.google.gwt.http.client.RequestException;
-import com.google.gwt.user.client.DOM;
 import com.google.gwt.user.client.Element;
-import com.google.gwt.user.client.Event;
 import com.google.gwt.user.client.Window;
 import com.google.gwt.user.client.ui.Button;
 import com.google.gwt.user.client.ui.CellPanel;
@@ -23,14 +22,11 @@ import com.google.gwt.user.client.ui.FileUpload;
 import com.google.gwt.user.client.ui.FormPanel;
 import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.HorizontalPanel;
-import com.google.gwt.user.client.ui.RootPanel;
 import com.google.gwt.user.client.ui.TextArea;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.VerticalPanel;
-import com.google.gwt.dom.client.Node;
 
 import edu.princeton.cs.shared.FieldVerifier;
-import edu.princeton.cs.shared.SMFEMail;
 import edu.princeton.cs.shared.SMFEMailManager;
 import edu.princeton.cs.shared.SMFEUuid;
 import edu.princeton.cs.shared.SMFSendMessageAsync;
@@ -58,6 +54,61 @@ public class SMFDMailComposer {
 	public static final native void clickElement(Element elem) /*-{
 		elem.click();
 	}-*/;
+	
+	public interface AttachmentAddedEventHandler extends EventHandler {
+	    void onAttachmentAdded(AttachmentAddedEvent event);
+	}
+	
+	public static class AttachmentAddedEvent extends GwtEvent<AttachmentAddedEventHandler> {
+
+	    public static Type<AttachmentAddedEventHandler> evType = new Type<AttachmentAddedEventHandler>();
+
+	    private final String attachmentHandle;
+
+	    public AttachmentAddedEvent(String message) {
+	        this.attachmentHandle = message;
+	    }
+
+	    @Override
+	    public Type<AttachmentAddedEventHandler> getAssociatedType() {
+	        return evType;
+	    }
+
+	    @Override
+	    protected void dispatch(AttachmentAddedEventHandler handler) {
+	        handler.onAttachmentAdded(this);
+	    }
+
+	    public String getMessage() {
+	        return attachmentHandle;
+	    }
+	}
+	
+	public class AttachmentHandler implements HasHandlers {
+
+	    private HandlerManager handlerManager;
+
+	    public AttachmentHandler() {
+	        handlerManager = new HandlerManager(this);
+	    }
+
+	    @Override
+	    public void fireEvent(GwtEvent<?> event) {
+	        handlerManager.fireEvent(event);
+	    }
+
+	    public HandlerRegistration addMessageReceivedEventHandler(
+	            AttachmentAddedEventHandler handler) {
+	        return handlerManager.addHandler(AttachmentAddedEvent.evType, handler);
+	    }
+	    
+	    public void newAttachmentAdded() {
+	        String attachmentHandle = "";
+	        AttachmentAddedEvent event = new AttachmentAddedEvent(attachmentHandle);
+	        fireEvent(event);
+	    }
+
+	}
 	
 	public SMFDMailComposer() {
 		displayWidth = Window.getClientWidth();
@@ -186,7 +237,7 @@ public class SMFDMailComposer {
 		return bodyPanel;
 	}
 	
-	public CellPanel getButtonPanel() {
+	public CellPanel getButtonPanel() {		
 		final FormPanel form = new FormPanel();
 		form.setAction("http://127.0.0.1/cgi-bin/test.sh");
 		form.setVisible(false);
@@ -224,7 +275,10 @@ public class SMFDMailComposer {
 					//Window.alert(name+" -> "+fu.getFilename());
 					attachments[i][0] = name;
 					attachments[i][1] = fu.getFilename();
+					form.remove(fu);
 				}
+				uploaderNames.removeAllElements();
+				uploaders.clear();
 				try {
 					mm.sendMessage(rcptAddrs, ccList, bccList, subject, msgBody, attachments, sendAsync);
 				} catch (RequestException e) {

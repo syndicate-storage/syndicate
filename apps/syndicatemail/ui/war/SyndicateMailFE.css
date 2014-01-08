@@ -130,7 +130,12 @@ button.delete-button:hover {
 .button-panel {
 	background-color: white;
 	padding: 2px;	
-	vertical-align: middle;
+	vertical-align: left;
+}
+
+.button-panel td{
+	float: left;
+	padding: 5px;
 }
 
 .gwt-HTML.compose-caption {
@@ -308,23 +313,20 @@ button.mail-display-reply-btn:hover {
     background-position: center;
     background-color: transparent;
     background-size: 25px 25px;
-    font-weight: bold;
-	font-size: 13px;
-	font-family: sans-serif;
 	color: white;
 	background-color: white;
 	border-radius: 2px;
 	width: 30px;
 	height: 30px;
 	box-shadow: none;
-	text-align: center;
 	outline: 0px;
 	padding: 0 8px;
 	border: 2px solid transparent;
+	float: left;
  }
  
  .attach-button:hover {
- 	background-color: grey;
+ 	background-color: #CCCCCC;
  }
 
 .attach-indicator-lbl{
