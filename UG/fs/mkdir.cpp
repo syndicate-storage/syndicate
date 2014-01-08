@@ -108,7 +108,7 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_
       free( path_basename );
       free( path_dirname );
       free( parent_name );
-      return -1;
+      return err;
    }
 
    else {

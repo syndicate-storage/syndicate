@@ -31,6 +31,8 @@ import syndicate.client.common.log as Log
 import syndicate.client.common.msconfig as msconfig
 import syndicate.client.common.api as api
 
+from syndicate.client.common.object_stub import StubObject 
+
 import traceback
 
 from Crypto.Hash import SHA256 as HashAlg
@@ -160,7 +162,7 @@ def ask_trust_verify_key( config, method_result, method_name, args, kw ):
       trust = prompt_trust_verify_key( verify_key_type, verify_key_name, verify_key )
       if trust:
          print "Trusting MS verification public key for %s %s" % (verify_key_type, verify_key_name)
-         storage.store_object_public_key( config, verify_key_type, "verifying", verify_key_name, verify_key )
+         storage.store_object_public_key( config, verify_key_type, StubObject.VERIFYING_KEY_TYPE, verify_key_name, verify_key )
          return True 
       else:
          return False
@@ -219,7 +221,7 @@ def api_call_verifier( config, pubkey, method_name, args, kw, data, syndicate_da
 
 
 # -------------------
-def make_rpc_client( config, verifying_pubkey, signing_pkey, key_type, key_name, trust_verify_key, verify_reply=True ):
+def make_rpc_client( config, verifying_pubkey, signing_pkey, signing_key_type, signing_key_name, trust_verify_key, verify_reply=True ):
    ms_url = config["MSAPI"]
    
    if not ms_url.lower().startswith("https://"):
@@ -232,7 +234,7 @@ def make_rpc_client( config, verifying_pubkey, signing_pkey, key_type, key_name,
       verifier = None 
    
    json_client = jsonrpc.Client( ms_url, msconfig.JSON_MS_API_VERSION, signer=signer, verifier=verifier )
-   json_client.set_key_info( key_type, key_name )
+   json_client.set_key_info( signing_key_type, signing_key_name )
    
    return json_client
 
@@ -240,6 +242,28 @@ def make_rpc_client( config, verifying_pubkey, signing_pkey, key_type, key_name,
 # -------------------
 def get_signing_and_verifying_keys( config, user_id, method_name, args, kw, force_user_key_name=None ):
    
+   signing_pkey = None
+   verifying_pubkey = None
+   if config.has_key('signing_pkey_pem') and config.has_key('signing_key_type') and config.has_key('signing_key_name'):
+      try:
+         signing_pkey = CryptoKey.importKey( config['signing_pkey_pem'] )
+         assert signing_pkey.has_private()
+      except Exception, e:
+         raise Exception("Not a private key")
+      
+      if config.get('verifying_pubkey_pem', None) is not None:
+         try:
+            verifying_pubkey = CryptoKey.importKey( config.get('verifying_pubkey_pem', None) )
+            assert not verifying_pubkey.has_private()
+         except Exception, e:
+            raise Exception("Not a public key")
+            
+      loaded_key_type = config['signing_key_type']
+      loaded_key_name = config['signing_key_name']
+      
+      return (verifying_pubkey, signing_pkey, loaded_key_type, loaded_key_name)
+   
+      
    key_types = api.signing_key_types_from_method_name( method_name )
    key_names = api.signing_key_names_from_method_args( method_name, args, kw, default_user_id=config['user_id'] )
    
@@ -252,8 +276,8 @@ def get_signing_and_verifying_keys( config, user_id, method_name, args, kw, forc
          key_name = force_user_key_name 
          
       try:
-         verifying_pubkey = storage.load_object_public_key( config, key_type, "verifying", key_name )
-         signing_pkey = storage.load_object_private_key( config, key_type, "signing", key_name )
+         verifying_pubkey = storage.load_object_public_key( config, key_type, StubObject.VERIFYING_KEY_TYPE, key_name )
+         signing_pkey = storage.load_object_private_key( config, key_type, StubObject.SIGNING_KEY_TYPE, key_name )
          
          loaded_key_type = key_type 
          loaded_key_name = key_name 
@@ -290,7 +314,7 @@ def need_verifying_key( config, method_name, signing_key_type ):
 def call_method( config, client, method_name, args, kw ):
    # which key do we use?
    # what object signing key are we working on?
-   log.debug("With %s: call %s( args=%s, kw=%s )" % (api.signing_key_types_from_method_name( method_name ), method_name, args, kw) )
+   log.debug("With %s (as %s): call %s( args=%s, kw=%s )" % (api.signing_key_types_from_method_name( method_name ), config['user_id'], method_name, args, kw) )
    
    method = getattr( client, method_name )
    
@@ -464,7 +488,7 @@ def do_untrust( config, all_params ):
    if key_type not in conf.KEY_DIR_NAMES.keys():
       raise Exception("Usage: %s untrust <%s> <name>" % (sys.argv[0], "|".join( conf.KEY_DIR_NAMES.keys() )))
    
-   storage.revoke_object_public_key( config, key_type, "verifying", key_name )
+   storage.revoke_object_public_key( config, key_type, StubObject.VERIFYING_KEY_TYPE, key_name )
    
    sys.exit(0)
    
@@ -485,8 +509,8 @@ def do_revoke( config, all_params ):
    
    revoke = prompt_revoke_signing_key( key_type, key_name )
    if revoke:
-      storage.revoke_object_public_key( config, key_type, "verifying", key_name )
-      storage.revoke_object_private_key( config, key_type, "signing", key_name )
+      storage.revoke_object_public_key( config, key_type, StubObject.VERIFYING_KEY_TYPE, key_name )
+      storage.revoke_object_private_key( config, key_type, StubObject.SIGNING_KEY_TYPE, key_name )
    
    sys.exit(0)
 
@@ -532,7 +556,7 @@ gateway_keys=%s
    
    # we're good.  Store the key information
    try:
-      storage.store_object_private_key( config, "user", "signing", config['user_id'], privkey_pem )
+      storage.store_object_private_key( config, "user", StubObject.SIGNING_KEY_TYPE, config['user_id'], privkey_pem )
    except Exception, e:
       log.exception(e)
       print >> sys.stderr, "Failed to write private key"
@@ -576,46 +600,34 @@ def check_trust_verify_key( config, method_name, args, kw ):
          trust_verify_key = True
 
    return trust_verify_key
-   
+
 
 # -------------------   
-def main( argv ):
-   # read the config
-   global TRUST_VERIFY_KEY
+def make_conf( user_id, ms_api, trust_verify_key=False, setup_dirs=False, **defaults ):
+   config = {}
+   conf.fill_defaults( config )
    
-   CONFIG = load_options( argv )
+   config['user_id'] = user_id
+   config['MSAPI'] = ms_api
+   config['trust_verify_key'] = trust_verify_key
+   config['force_user_key_name'] = user_id
    
-   for opt in CONFIG.keys():
-      log.debug( "%s = %s" % (opt, CONFIG[opt] ) )
+   for (k, v) in defaults.items():
+      config[k] = v
    
-   if not CONFIG.has_key("user_id") or not CONFIG.has_key("params"):
-      print >> sys.stderr, "Missing user ID or method"
-      conf.usage( argv[0] )
+   # set up the key directories
+   if( setup_dirs ):
+      setup_key_directories( config )
    
-   # calling user...
-   user_id = CONFIG["user_id"]
-   force_user_key_name = None 
+   return config
+
+
+# -------------------   
+def client_call( CONFIG, method_name, *args, **kw ):
    
-   if "user_id" in CONFIG['_in_argv']:
-      # override user_id
-      force_user_key_name = user_id
-   
-   # method parameters
-   all_params = CONFIG["params"]
-   method_name, args, kw = read_params( all_params )
-   
-   # special case?
-   if method_name == "help":
-      do_method_help( CONFIG, all_params )
-   
-   elif method_name == "untrust":
-      do_untrust( CONFIG, all_params )
-   
-   elif method_name == "revoke":
-      do_revoke( CONFIG, all_params )
-   
-   elif method_name == "setup":
-      do_setup( CONFIG, all_params )
+   user_id = CONFIG.get('user_id', None)
+   if user_id is None:
+      raise Exception("Invalid config: no user_id")
    
    # parse arguments; get extra data and hold onto it for now
    lib = conf.ArgLib()
@@ -629,18 +641,27 @@ def main( argv ):
    if not valid:
       raise Exception("Invalid arguments for %s" % method_name)
    
+   force_user_key_name = None 
+   
+   if "user_id" in CONFIG['_in_argv']:
+      # override user_id
+      force_user_key_name = user_id
+   
+   if CONFIG.has_key('force_user_key_name'):
+      force_user_key_name = CONFIG['force_user_key_name']
+      
    # load the key information
-   verifying_pubkey, signing_pkey, key_type, key_name = get_signing_and_verifying_keys( CONFIG, user_id, method_name, args, kw, force_user_key_name=force_user_key_name )
+   verifying_pubkey, signing_pkey, signing_key_type, signing_key_name = get_signing_and_verifying_keys( CONFIG, user_id, method_name, args, kw, force_user_key_name = force_user_key_name )
    
    # is a verifying key required in advance?
-   if need_verifying_key( CONFIG, method_name, key_type ) and verifying_pubkey is None:
+   if need_verifying_key( CONFIG, method_name, signing_key_type ) and verifying_pubkey is None:
       raise Exception("No verifying key found")
    
    # will we trust the verify key?
    trust_verify_key = check_trust_verify_key( CONFIG, method_name, args, kw )
    
    # create the RPC client
-   client = make_rpc_client( CONFIG, verifying_pubkey, signing_pkey, key_type, key_name, trust_verify_key )
+   client = make_rpc_client( CONFIG, verifying_pubkey, signing_pkey, signing_key_type, signing_key_name, trust_verify_key )
    
    # call the method
    ret = call_method( CONFIG, client, method_name, args, kw ) 
@@ -654,12 +675,12 @@ def main( argv ):
    revoke_key_name = api.revoke_key_name_from_method_args( method_name, args, kw )
    
    if revoke_key_type != None and revoke_key_name != None:
-      storage.revoke_object_public_key( CONFIG, revoke_key_type, "verifying", revoke_key_name )
-      storage.revoke_object_private_key( CONFIG, revoke_key_type, "signing", revoke_key_name )
+      storage.revoke_object_public_key( CONFIG, revoke_key_type, StubObject.VERIFYING_KEY_TYPE, revoke_key_name )
+      storage.revoke_object_private_key( CONFIG, revoke_key_type, StubObject.SIGNING_KEY_TYPE, revoke_key_name )
       
       # revoke any other keys as well
       for internal_key_type in api.KEY_TYPE_TO_CLS[revoke_key_type].internal_keys:
-         if internal_key_type not in ["verifying", "signing"]:
+         if internal_key_type not in [StubObject.VERIFYING_KEY_TYPE, StubObject.SIGNING_KEY_TYPE]:
             storage.revoke_object_public_key( CONFIG, revoke_key_type, internal_key_type, revoke_key_name )
             storage.revoke_object_private_key( CONFIG, revoke_key_type, internal_key_type, revoke_key_name )
       
@@ -682,10 +703,10 @@ def main( argv ):
          result_verify_key = verify_key_from_method_result( ret )
          if result_verify_key is not None:
             # and trust it
-            storage.store_object_public_key( CONFIG, trust_key_type, "verifying", trust_key_name, result_verify_key )
+            storage.store_object_public_key( CONFIG, trust_key_type, StubObject.VERIFYING_KEY_TYPE, trust_key_name, result_verify_key )
             
          else:
-            raise Exception("Server error: expected verify key in response")
+            raise Exception("MS error: expected verify key in response")
       
 
    # do we need to store a signing key?
@@ -701,7 +722,7 @@ def main( argv ):
       
       # save the object's signing private key 
       if new_signing_private_key is not None and new_signing_private_key != result_verify_key:
-         storage.store_object_private_key( CONFIG, verify_key_type, "signing", verify_key_name, new_signing_private_key )
+         storage.store_object_private_key( CONFIG, verify_key_type, StubObject.SIGNING_KEY_TYPE, verify_key_name, new_signing_private_key )
          
       else:
          raise Exception("Unable to determine which keys to store!")
@@ -710,8 +731,42 @@ def main( argv ):
    # process object-specific extras
    for (_, object_cls) in api.KEY_TYPE_TO_CLS.items():
       object_cls.ProcessExtras( extras, CONFIG, method_name, args, kw, ret, storage )
+
+   return ret
+
+
+# -------------------   
+def main( argv ):
+   # read the config
+   global TRUST_VERIFY_KEY
    
-   return ret 
+   CONFIG = load_options( argv )
+   
+   for opt in CONFIG.keys():
+      log.debug( "%s = %s" % (opt, CONFIG[opt] ) )
+   
+   if not CONFIG.has_key("user_id") or not CONFIG.has_key("params"):
+      print >> sys.stderr, "Missing user ID or method"
+      conf.usage( argv[0] )
+      
+   # method parameters
+   all_params = CONFIG["params"]
+   method_name, args, kw = read_params( all_params )
+   
+   # special case?
+   if method_name == "help":
+      do_method_help( CONFIG, all_params )
+   
+   elif method_name == "untrust":
+      do_untrust( CONFIG, all_params )
+   
+   elif method_name == "revoke":
+      do_revoke( CONFIG, all_params )
+   
+   elif method_name == "setup":
+      do_setup( CONFIG, all_params )
+   
+   return client_call( CONFIG, method_name, *args, **kw )
 
 
 if __name__ == "__main__":

@@ -98,9 +98,13 @@ def response_load_gateway_by_type_and_id( gateway_type, gateway_id ):
    gateway_read_start = storagetypes.get_time()
    gateway = Gateway.Read( gateway_id )
    
+   if gateway is None:
+      # not present
+      return (None, 404, None)
+   
    if GATEWAY_TYPE_TO_STR.get( gateway.gateway_type ) == None:
       # bad type (shouldn't happen)
-      return (None, 500, None)
+      return (None, 400, None)
    
    if GATEWAY_TYPE_TO_STR[ gateway.gateway_type ] != gateway_type:
       # caller has the wrong type
@@ -189,30 +193,34 @@ def response_user_error( request_handler, status, message=None ):
    return
 
 
-def response_load_gateway( request_handler ):
+def response_load_gateway( request_handler, vol ):
    # get the gateway's credentials
    gateway_type_str, g_id, password = read_gateway_basic_auth( request_handler.request.headers )
 
-   if gateway_type_str == None or g_id == None or password == None:
+   if (gateway_type_str == None or g_id == None or password == None) and vol.need_gateway_auth():
       response_user_error( request_handler, 401 )
       return (None, 401, None)
 
    # look up the requesting gateway
    gateway, status, gateway_read_time = response_load_gateway_by_type_and_id( gateway_type_str, g_id )
 
-   if status != 200:
-      response_user_error( request_handler, status )
-      return (None, status, None)
+   if vol.need_gateway_auth():
+      if status != 200:
+         response_user_error( request_handler, status )
+         return (None, status, None)
 
-   # make sure this gateway is legit
-   valid_gateway = gateway.authenticate_session( password )
+      # make sure this gateway is legit
+      valid_gateway = gateway.authenticate_session( password )
 
-   if not valid_gateway:
-      # invalid credentials
-      logging.error("Invalid session credentials")
-      response_user_error( request_handler, 403 )
-      return (None, 403, None)
+      if not valid_gateway and vol.need_gateway_auth():
+         # invalid credentials
+         logging.error("Invalid session credentials")
+         response_user_error( request_handler, 403 )
+         return (None, 403, None)
 
+   else:
+      status = 200
+      
    return (gateway, status, gateway_read_time)
    
 
@@ -231,20 +239,26 @@ def response_begin( request_handler, volume_name_or_id ):
    gateway_read_time = 0
    gateway = None
 
-   if volume.need_gateway_auth():
-      # authenticate the gateway
-      gateway, status, gateway_read_time = response_load_gateway( request_handler )
+   # try to authenticate the gateway
+   gateway, status, gateway_read_time = response_load_gateway( request_handler, volume )
 
-      if (status != 200 or gateway == None):
-         return (None, None, None)
-   
-   # make sure this gateway is allowed to access this Volume
-   valid_gateway = volume.is_gateway_in_volume( gateway )
-   if not valid_gateway:
-      # gateway does not belong to this Volume
-      logging.error("Not in this Volume")
-      response_user_error( request_handler, 403 )
+   if (status != 200 or gateway == None):
       return (None, None, None)
+
+   # make sure this gateway is allowed to access this Volume
+   if volume.need_gateway_auth():
+      if gateway is not None:
+         valid_gateway = volume.is_gateway_in_volume( gateway )
+         if not valid_gateway:
+            # gateway does not belong to this Volume
+            logging.error("Not in this Volume")
+            response_user_error( request_handler, 403 )
+            return (None, None, None)
+      
+      else:
+         logging.error("No gateway, but we required authentication")
+         response_user_error( request_handler, 403 )
+         return (None, None, None)
 
    # if we're still here, we're good to go
 
@@ -432,7 +446,7 @@ class MSUserRequestHandler( webapp2.RequestHandler ):
       return
       
       
-class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
+class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
    """
    Generate a session certificate from a SyndicateUser account for a gateway.
    """
@@ -513,7 +527,7 @@ class MSRegisterRequestHandler( GAEOpenIDRequestHandler ):
          
          # reply with the redirect URL
          trust_root = OPENID_HOST_URL
-         return_to = self.buildURL( "/REGISTER/%s/%s/%s/complete" % (gateway_type_str, gateway_name, username) )
+         return_to = self.buildURL( "/OPENID/%s/%s/%s/complete" % (gateway_type_str, gateway_name, username) )
          immediate = self.IMMEDIATE_MODE in self.query
 
          redirect_url = oid_request.redirectURL( trust_root, return_to, immediate=immediate )

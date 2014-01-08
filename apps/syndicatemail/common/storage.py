@@ -20,7 +20,7 @@ import syndicate.client.common.log as Log
 import syndicate.syndicate as c_syndicate
 from syndicate.volume import Volume
 
-import session
+import singleton
 
 import os 
 import errno
@@ -42,6 +42,10 @@ PATH_SALT = None  # loaded at runtime
 PATH_SALT_FILENAME = "/config/salt"
 
 GET_FROM_SESSION=True
+
+VOLUME_STORAGE_DIRS = [
+   "/config"
+]
 
 # -------------------------------------
 def path_join( a, *b ):
@@ -125,9 +129,10 @@ def volume_makedirs( volume, dir_abspath, mode=0700 ):
    prefix = "/"
    for piece in pieces:
       prefix = os.path.join( prefix, piece )
-      rc = volume.mkdir( prefix, mode )
-      if rc != 0 and rc != -errno.EEXIST:
-         raise Exception("Volume mkdir rc = %s"  % rc )
+      if not path_exists( prefix, volume=volume ):
+         rc = volume.mkdir( prefix, mode )
+         if rc != 0 and rc != -errno.EEXIST:
+            raise Exception("Volume mkdir rc = %s"  % rc )
    
    return True
    
@@ -135,7 +140,7 @@ def volume_makedirs( volume, dir_abspath, mode=0700 ):
 # -------------------------------------
 def setup_dirs( dir_names, prefix="/", volume=GET_FROM_SESSION ):
    if volume == GET_FROM_SESSION:
-      volume = session.get_volume()
+      volume = singleton.get_volume()
       
    if prefix is None:
       raise Exception("Invalid argument: paseed None as prefix")
@@ -182,7 +187,7 @@ def volume_listdir( volume, dir_path ):
 # -------------------------------------
 def listdir( path, volume=GET_FROM_SESSION ):
    if volume == GET_FROM_SESSION:
-      volume = session.get_volume()
+      volume = singleton.get_volume()
       
    if volume is None:
       return os.listdir(path)
@@ -201,11 +206,14 @@ def volume_rmtree( volume, dir_abspath ):
    
    dents = volume.readdir( dfd )
    if dents is None or dents < 0:
-      raise Exception("Could not read %s" % dir_abspath)
+      raise Exception("Could not read %s, rc = %s" % (dir_abspath, dents))
    
    volume.closedir( dfd )
    
    for dent in dents:
+      if dent.name in [".", ".."]:
+         continue
+      
       if dent.type == volume.ENT_TYPE_DIR:
          child_dir_path = os.path.join( dir_abspath, dent.name )
          volume_rmtree( volume, child_dir_path )
@@ -213,12 +221,14 @@ def volume_rmtree( volume, dir_abspath ):
       elif dent.type == volume.ENT_TYPE_FILE:
          child_ent_path = os.path.join( dir_abspath, dent.name )
          volume.unlink( child_ent_path )
+         
+   return True
             
    
 # -------------------------------------
 def delete_dirs( dirs, prefix="/", remove_contents=True, volume=GET_FROM_SESSION ):
    if volume == GET_FROM_SESSION:
-      volume = session.get_volume()
+      volume = singleton.get_volume()
       
    for dirname in dirs:
       if volume is None:
@@ -255,56 +265,29 @@ def delete_dirs( dirs, prefix="/", remove_contents=True, volume=GET_FROM_SESSION
 
 
 # -------------------------------------
-def setup_storage( volume_root_dir, local_dir, modules, volume=GET_FROM_SESSION ):
-   if volume == GET_FROM_SESSION:
-      volume = session.get_volume()
-      
+def setup_volume_storage( volume_root_dir, modules, volume ):
+   global VOLUME_ROOT_DIR
    global PATH_SALT
    global PATH_SALT_FILENAME
-   global VOLUME_ROOT_DIR
-   global LOCAL_ROOT_DIR
-   global CACHE_DIR
-   global MY_VOLUME
-   
-   # set this here so the following will work
-   VOLUME_ROOT_DIR = volume_root_dir 
-   LOCAL_ROOT_DIR = local_dir
    
    all_volume_dirs = []
-   all_local_dirs = []
+   VOLUME_ROOT_DIR = volume_root_dir 
+   
    for mod in modules:
       volume_dirs = getattr(mod, "VOLUME_STORAGE_DIRS", None)
       if volume_dirs is not None:
          all_volume_dirs += volume_dirs
-         
-      local_dirs = getattr(mod, "LOCAL_STORAGE_DIRS", None)
-      if local_dirs is not None:
-         all_local_dirs += local_dirs
+
    
    # set up volume directories
-   rc = setup_dirs( ["/"] + all_volume_dirs, volume=volume )
-   if not rc:
-      log.error("Volume setup_dirs failed")
-      return rc
+   if volume_root_dir is not None:
+      rc = setup_dirs( ["/"] + all_volume_dirs, volume=volume )
+      if not rc:
+         log.error("Volume setup_dirs failed")
+         return rc
    
-   # set up local directories
-   rc = setup_dirs( ["/"] + all_local_dirs, volume=None )
-   if not rc:
-      log.error("Local setup_dirs failed")
-      return rc
-               
-   # set up cache
-   rc = setup_dirs( ["/"] + [".syndicatemail.cache"], volume=None )
-   if not rc:
-      log.error("Local cache setup failed")
-      return rc
    
-   salt_path = None
-   
-   if volume is None:
-      salt_path = local_path( PATH_SALT_FILENAME )
-   else:
-      salt_path = volume_path( PATH_SALT_FILENAME )
+   salt_path = volume_path( PATH_SALT_FILENAME )
       
    if not path_exists( salt_path, volume=volume ):
       salt_dirname = os.path.dirname(PATH_SALT_FILENAME)
@@ -331,7 +314,53 @@ def setup_storage( volume_root_dir, local_dir, modules, volume=GET_FROM_SESSION 
          return False
    
       PATH_SALT = salt
+      
+   return True
+
+
+# -------------------------------------
+def setup_local_storage( local_dir, modules ):
+   global LOCAL_ROOT_DIR
+   global CACHE_DIR
    
+   if local_dir is not None:
+      LOCAL_ROOT_DIR = local_dir
+   
+   all_local_dirs = []
+   for mod in modules:
+      local_dirs = getattr(mod, "LOCAL_STORAGE_DIRS", None)
+      if local_dirs is not None:
+         all_local_dirs += local_dirs
+
+   # set up local directories
+   rc = setup_dirs( ["/"] + all_local_dirs, volume=None )
+   if not rc:
+      log.error("Local setup_dirs failed")
+      return rc
+   
+   # set up cache
+   rc = setup_dirs( ["/"] + [".syndicatemail.cache"], volume=None )
+   if not rc:
+      log.error("Local cache setup failed")
+      return rc
+
+   return True
+   
+# -------------------------------------
+def setup_storage( volume_root_dir, local_dir, modules, volume=GET_FROM_SESSION ):
+   if volume == GET_FROM_SESSION:
+      volume = singleton.get_volume()
+      
+   rc = setup_local_storage( local_dir, modules )
+   if not rc:
+      log.error("Failed to set up local storage")
+      return False
+   
+   rc = setup_volume_storage( volume_root_dir, modules, volume )
+   if not rc:
+      log.error("Failed to set up volume storage")
+      return False
+      
    return True
 
 
@@ -353,7 +382,7 @@ def salt_string( name, iterations=10000 ):
 # -------------------------------------
 def read_file( file_path, volume=GET_FROM_SESSION ):
    if volume == GET_FROM_SESSION:
-      volume = session.get_volume()
+      volume = singleton.get_volume()
       
    if volume is None:
       try:
@@ -406,7 +435,7 @@ def read_file( file_path, volume=GET_FROM_SESSION ):
 # -------------------------------------
 def write_file( file_path, data, volume=GET_FROM_SESSION, create_mode=0600 ):
    if volume == GET_FROM_SESSION:
-      volume = session.get_volume()
+      volume = singleton.get_volume()
       
    if volume is None:
       try:
@@ -456,20 +485,41 @@ def write_file( file_path, data, volume=GET_FROM_SESSION, create_mode=0600 ):
          
          rc = volume.write( fd, data ) 
          if rc != len(data):
-            raise Exception("Volume write rc = %d (expected %s)" % (rc, len(data)))
+            raise Exception("Volume write rc = %s (expected %s)" % (rc, len(data)))
          
-         volume.close( fd )
+         rc = volume.close( fd )
+         if rc != 0:
+            raise Exception("Volume cloe rc = %s" % rc)
+         
          return True
       except Exception, e:
          log.exception(e)
          log.error("Failed to write Volume file %s" % file_path )
          return False
       
+   
+# -------------------------------------
+def encrypt_data( pubkey_pem, data ):
+   rc, enc_data = c_syndicate.encrypt_data( pubkey_pem, data )
+   if rc != 0:
+      log.error("encrypt_data rc = %s" % rc)
+      return None
+   
+   return enc_data
+   
+# -------------------------------------
+def decrypt_data( privkey_pem, enc_data ):
+   rc, data = c_syndicate.decrypt_data( privkey_pem, enc_data )
+   if rc != 0:
+      log.error("decrypt_data rc = %s" % rc)
+      return None
+   
+   return data
       
 # -------------------------------------
 def read_encrypted_file( privkey_pem, file_path, volume=GET_FROM_SESSION ):
    if volume == GET_FROM_SESSION:
-      volume = session.get_volume()
+      volume = singleton.get_volume()
       
    # get file data
    try:
@@ -483,23 +533,16 @@ def read_encrypted_file( privkey_pem, file_path, volume=GET_FROM_SESSION ):
       log.exception(e)
       return None
    
-   # decrypt it
-   rc, data = c_syndicate.decrypt_data( privkey_pem, enc_data )
-   if rc != 0:
-      log.error("decrypt_data rc = %s" % rc)
-      return None
-   
-   return data
+   return decrypt_data( privkey_pem, enc_data )
 
 # -------------------------------------
 def write_encrypted_file( pubkey_pem, file_path, data, volume=GET_FROM_SESSION ):
    if volume == GET_FROM_SESSION:
-      volume = session.get_volume()
+      volume = singleton.get_volume()
       
-   # encrypt data first
-   rc, enc_data = c_syndicate.encrypt_data( pubkey_pem, data )
-   if rc != 0:
-      log.error("encrypt_data rc = %s" % rc)
+   enc_data = encrypt_data( pubkey_pem, data )
+   if enc_data is None:
+      log.error("encrypt_data returned None")
       return False
    
    try:
@@ -519,7 +562,7 @@ def write_encrypted_file( pubkey_pem, file_path, data, volume=GET_FROM_SESSION )
 # -------------------------------------
 def delete_file( file_path, volume=GET_FROM_SESSION ):
    if volume == GET_FROM_SESSION:
-      volume = session.get_volume()
+      volume = singleton.get_volume()
       
    if volume is None:
       try:
@@ -547,9 +590,40 @@ def delete_file( file_path, volume=GET_FROM_SESSION ):
 
 
 # -------------------------------------
+def erase_file( file_path, volume=GET_FROM_SESSION ):
+   # unlike delete_file, overwrite the file data with random bits a few times if local 
+   if volume == GET_FROM_SESSION:
+      volume = singleton.get_volume()
+   
+   if volume is None:
+      try:
+         size = os.stat(file_path).st_size
+         fd = open(file_path, "w")
+         
+         for i in xrange(0,10):
+            fd.seek(0)
+            
+            # overwrite with junk
+            buf = ''.join(chr(random.randint(0,255)) for i in xrange(0,size))
+            fd.write( buf )
+            fd.flush()
+
+         fd.close()
+         
+         # now safe to unlink
+         os.unlink( file_path )
+         return True 
+      except Exception, e:
+         log.exception(e)
+         return False
+      
+   else:
+      return delete_file( file_path, volume=volume )
+
+# -------------------------------------
 def path_exists( file_path, volume=GET_FROM_SESSION ):
    if volume == GET_FROM_SESSION:
-      volume = session.get_volume()
+      volume = singleton.get_volume()
       
    if volume is None:
       return os.path.exists( file_path )
@@ -562,6 +636,7 @@ def path_exists( file_path, volume=GET_FROM_SESSION ):
          elif isinstance(statbuf, int) and statbuf < 0:
             return False
          else:
+            print "stat of %s is %s" % (file_path, str(statbuf))
             return True
       except Exception, e:
          return False
@@ -626,7 +701,8 @@ def get_cached_data( privkey_str, cache_name ):
 if __name__ == "__main__":
    
    fake_module = collections.namedtuple( "FakeModule", ["VOLUME_STORAGE_DIRS", "LOCAL_STORAGE_DIRS"] )
-   session.do_test_volume( "/tmp/storage-test/volume" )
+   fake_vol = singleton.do_test_volume( "/tmp/storage-test/volume" )
+   singleton.set_volume( fake_vol )
    
    print "------- setup --------"
    fake_mod = fake_module( LOCAL_STORAGE_DIRS=['/testroot-local'], VOLUME_STORAGE_DIRS=['/testroot-volume'] )

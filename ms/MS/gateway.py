@@ -516,9 +516,9 @@ class Gateway( storagetypes.Object ):
             g = g_key.get( use_memcache=False )
             
          if not g:
-            logging.error("Gateway not found at all!")
+            logging.error("Gateway %s not found at all!" % g_id)
             
-         if use_memcache:
+         elif use_memcache:
             storagetypes.memcache.set( key_name, g )
 
       elif async:
@@ -528,6 +528,11 @@ class Gateway( storagetypes.Object ):
 
 
    @classmethod
+   def Read_ByName_name_cache_key( cls, gateway_name ):
+      g_name_to_id_cache_key = "Read_ByName: Gateway: %s" % gateway_name
+      return g_name_to_id_cache_key
+   
+   @classmethod
    def Read_ByName( cls, gateway_name, async=False, use_memcache=True ):
       """
       Given a gateway name, look it up and optionally cache it.
@@ -536,7 +541,7 @@ class Gateway( storagetypes.Object ):
       g_name_to_id_cache_key = None 
       
       if use_memcache:
-         g_name_to_id_cache_key = "Read_ByName: Gateway: %s" % gateway_name
+         g_name_to_id_cache_key = Gateway.Read_ByName_name_cache_key( gateway_name )
          g_id = storagetypes.memcache.get( g_name_to_id_cache_key )
          
          if g_id != None and isinstance( g_id, int ):
@@ -670,7 +675,7 @@ class Gateway( storagetypes.Object ):
          storagetypes.deferred.defer( Gateway.delete_all, [gateway_nameholder_old_key] )
          
          # make sure Read_ByName uses the right name
-         g_name_to_id_cache_key = "Read_ByName: Gateway: %s" % old_name
+         g_name_to_id_cache_key = Gateway.Read_ByName_name_cache_key( old_name )
          storagetypes.memcache.delete( g_name_to_id_cache_key )
          
       return gateway_key
@@ -745,8 +750,11 @@ class Gateway( storagetypes.Object ):
       g_delete_fut = g_key.delete_async()
       g_name_delete_fut = g_name_key.delete_async()
             
-      storagetypes.memcache.delete(key_name)
-
+      Gateway.FlushCache( g_id )
+      
+      g_name_to_id_cache_key = Gateway.Read_ByName_name_cache_key( g_name_or_id )
+      storagetypes.memcache.delete( g_name_to_id_cache_key )
+      
       storagetypes.wait_futures( [g_delete_fut, g_name_delete_fut] )
       
       return True

@@ -29,16 +29,17 @@ from Crypto.Hash import HMAC
 from Crypto.PublicKey import RSA as CryptoKey
 from Crypto.Protocol.KDF import PBKDF2
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
+from Crypto import Random
 
 import syndicate.client.common.log as Log
 
-import session 
+import singleton 
 
 log = Log.get_logger()
 
-PRIVATE_STORAGE_DIR = ".keys"
+PRIVATE_STORAGE_DIR = "/keys"
 
-STORAGE_DIR = "/public_keys"
+STORAGE_DIR = "/keys"
 
 VOLUME_STORAGE_DIRS = [
    STORAGE_DIR
@@ -55,7 +56,7 @@ SignedPublicKey = collections.namedtuple( "SignedPublicKey", ["pubkey_str", "sig
 #-------------------------
 KEY_SIZE = 4096
 
-def generate_key_pair( key_size ):
+def generate_key_pair( key_size=KEY_SIZE ):
    rng = Random.new().read
    key = CryptoKey.generate(key_size, rng)
 
@@ -143,10 +144,10 @@ def load_private_key_from_path( key_path, password, local ):
 
 
 #-------------------------
-def load_private_key( key_name, password ):
+def load_private_key( key_name, password, check_volume=True ):
    key_path = make_key_local_path( key_name )
    local = True
-   if not os.path.exists( key_path ):
+   if not storage.path_exists( key_path, volume=None ) and check_volume:
       # load it from the Volume
       key_path = make_key_volume_path( key_name )
       local = False
@@ -160,7 +161,7 @@ def load_private_key_from_volume( key_name, password ):
 
 
 #-------------------------
-def store_private_key_to_path( key_path, privkey, password, local ):
+def store_private_key_to_path( key_path, privkey, password, volume ):
    privkey_str = privkey.exportKey()
    
    encrypted_private_key = encrypt_private_key( privkey_str, password )
@@ -171,13 +172,8 @@ def store_private_key_to_path( key_path, privkey, password, local ):
       log.error("Failed to serialize encrypted private key")
       return False
    
-   rc = False
+   rc = storage.write_file( key_path, encrypted_privkey_json, volume=volume )
    
-   if local:
-      rc = storage.write_file( key_path, encrypted_privkey_json, volume=None )
-   else:
-      rc = storage.write_file( key_path, encrypted_privkey_json )
-      
    return rc
    
    
@@ -185,29 +181,23 @@ def store_private_key_to_path( key_path, privkey, password, local ):
 def store_private_key( key_name, privkey, password ):
    # ensure the path exists...
    global PRIVATE_STORAGE_DIR
-   
-   rc = storage.setup_dirs( [PRIVATE_STORAGE_DIR], volume=None )
-   if not rc:
-      log.error("Failed to set up key directory")
-      return False
-   
    key_path = make_key_local_path( key_name )
-   return store_private_key_to_path( key_path, privkey, password, True )
+   return store_private_key_to_path( key_path, privkey, password, None )
 
 
 #-------------------------
-def store_private_key_to_volume( key_name, privkey, password, num_downloads, duration ):
+def store_private_key_to_volume( key_name, privkey, password, num_downloads, duration, volume ):
    # ensure the path exists...
-   key_path = make_key_local_path( key_name )
+   key_path = make_key_volume_path( key_name )
    
    # TODO: use num_downloads, duration to limit key lifetime on the Volume
-   return store_private_key_to_path( key_path, privkey, password, False )
+   return store_private_key_to_path( key_path, privkey, password, volume )
 
 
 #-------------------------
-def delete_private_key_from_volume( key_name ):
+def delete_private_key_from_volume( key_name, volume=None ):
    key_path = make_key_volume_path( key_name )
-   rc = storage.delete_file( key_path )
+   rc = storage.delete_file( key_path, volume=volume )
    return rc
 
 #-------------------------
@@ -247,8 +237,8 @@ def store_public_key( key_name, pubkey, syndicate_user_privkey ):
       log.exception(e)
       return False
    
-   key_path = make_key_volume_path( key_name + ".pub" )
-   return storage.write_file( key_path, pubkey_json )
+   key_path = make_key_local_path( key_name + ".pub" )
+   return storage.write_file( key_path, pubkey_json, volume=None )
 
 
 #-------------------------   
@@ -274,6 +264,10 @@ def load_public_key( key_name, syndicate_user_pubkey ):
    
    return CryptoKey.importKey( pubkey.pubkey_str )
 
+#-------------------------   
+def delete_public_key( key_name ):
+   key_path = make_key_local_path( key_name + ".pub" )
+   return storage.delete_file( key_path, volume=None )
 
 #-------------------------   
 def secure_hash_compare(s1, s2):
@@ -286,10 +280,11 @@ def secure_hash_compare(s1, s2):
 
 
 if __name__ == "__main__":
-   
+   import session
    
    fake_module = collections.namedtuple( "FakeModule", ["VOLUME_STORAGE_DIRS", "LOCAL_STORAGE_DIRS"] )
-   session.do_test_volume( "/tmp/storage-test/volume" )
+   fake_vol = session.do_test_volume( "/tmp/storage-test/volume" )
+   singleton.set_volume( fake_vol )
    
    fake_mod = fake_module( LOCAL_STORAGE_DIRS=LOCAL_STORAGE_DIRS, VOLUME_STORAGE_DIRS=VOLUME_STORAGE_DIRS )
    assert storage.setup_storage( "/apps/syndicatemail/data", "/tmp/storage-test/local", [fake_mod] ), "setup_storage failed"

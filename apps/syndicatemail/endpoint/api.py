@@ -133,7 +133,7 @@ class API( object ):
    def read_attachment( cls, attachment_name ):
       fake_attachment = message.SyndicateAttachment( name=attachment_name, data="NOT IMPLEMENTED" )
       return storage.tuple_to_dict( fake_attachment )
-
+   
    @classmethod
    @session_required
    def list_messages( cls, folder, timestamp_start, timestamp_end, length=None ):

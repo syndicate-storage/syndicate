@@ -270,7 +270,7 @@ off_t syndicate_seek(syndicate_handle_t* fi, off_t pos, int whence) {
 }
 
 
-/** Possibly flush cached data (No-op) */
+/** Possibly flush cached data */
 int syndicate_flush(struct syndicate_state* state, syndicate_handle_t *fi) {
    
    logmsg( state->logfile, "%16lx: syndicate_flush( %p )\n", pthread_self(), fi );
@@ -353,7 +353,7 @@ int syndicate_fsync(struct syndicate_state* state, int datasync, syndicate_handl
       rc = fs_entry_fdatasync( state->core, fh );
    
    if( rc == 0 )
-      fs_entry_fsync( state->core, fh );
+      rc = fs_entry_fsync( state->core, fh );
       
    state->stats->leave( STAT_FSYNC, rc );
 
@@ -642,6 +642,7 @@ int syndicate_client_init( struct syndicate_state* state,
                            char const* ms_url,
                            char const* volume_name,
                            char const* gateway_name,
+                           int gateway_port,
                            char const* md_username,
                            char const* md_password,
                            char const* volume_pubkey_file,
@@ -652,7 +653,7 @@ int syndicate_client_init( struct syndicate_state* state,
    struct ms_client* ms = CALLOC_LIST( struct ms_client, 1 );
 
    // initialize library
-   int rc = md_init_client( SYNDICATE_UG, config_file, &state->conf, ms, ms_url, volume_name, gateway_name, md_username, md_password, volume_pubkey_file, my_key_file, storage_root );
+   int rc = md_init_client( SYNDICATE_UG, config_file, &state->conf, ms, ms_url, volume_name, gateway_name, gateway_port, md_username, md_password, volume_pubkey_file, my_key_file, storage_root );
    if( rc != 0 ) {
       errorf("md_init_client rc = %d\n", rc );
       return rc;

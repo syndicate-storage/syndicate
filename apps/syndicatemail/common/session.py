@@ -20,6 +20,8 @@ import time
 import os
 import errno
 import stat
+import contact
+import account
 
 import syndicate.client.common.log as Log
 
@@ -36,25 +38,33 @@ from syndicate.volume import Volume
 # -------------------------------------
 SESSION_LENGTH = 3600 * 24 * 7      # one week
 
-# global volume instance
-MY_VOLUME = None                # initialized on login
-
-def get_volume():
-   global MY_VOLUME
-   return MY_VOLUME
-
 # -------------------------------------
 def do_login( config, email, password ):
    global SESSION_LENGTH
    
-   # attempt to load the private key
+   try:
+      parsed_email = contact.parse_addr( email )
+   except:
+      raise Exception("Invalid email '%s'" % email)
+   
+   # attempt to load the SyndicateMail private key
    privkey = keys.load_private_key( email, password )
    if privkey is None:
       raise Exception("Invalid username/password")
-
+   
    config['privkey'] = privkey
    config['pubkey'] = privkey.publickey()
    config['session_expires'] = int(time.time()) + SESSION_LENGTH
+   config['ms_url'] = parsed_email.MS
+   config['volume_name'] = parsed_email.volume
+   
+   
+   # attempt to load the (local) gateway private key.
+   # it will be encrypted with the SyndicateMail private key
+   gateway_name = account.read_gateway_name()
+   gateway_privkey_str = account.read_gateway_privkey( config['privkey'].exportKey(), gateway_name )
+   
+   # TODO: initialize volume
    return True
 
 
@@ -63,7 +73,21 @@ def do_logout( config ):
    del config['privkey']
    del config['pubkey']
    del config['session_expires']
+   del config['ms_url']
+   del config['volume_name']
+
+# -------------------------------------
+def do_delete( config, email, password, delete_volume_and_gateway=False, syndicate_user_privkey=None ):
+   try:
+      do_login( config, email, password )
+   except Exception, e:
+      log.exception(e)
+      log.error("Invalid credentials")
+      return False
    
+   rc = account.delete_account( config['privkey'].exportKey(), email, delete_volume_and_gateway=delete_volume_and_gateway, syndicate_user_privkey=syndicate_user_privkey )
+   do_logout( config )
+   return rc
 
 # -------------------------------------
 def is_expired( config ):
@@ -263,19 +287,25 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
 -----END RSA PRIVATE KEY-----
 """.strip()
    
+   
+   try:
+      parsed_email = contact.parse_addr( email )
+   except:
+      raise Exception("Invalid email '%s'" % email)
+   
    privkey = CryptoKey.importKey( privkey_str )
    config['privkey'] = privkey
    config['pubkey'] = privkey.publickey()
    config['session_expires'] = time.time() + SESSION_LENGTH
-   
+   config['ms_url'] = parsed_email.MS
+   config['volume_name'] = parsed_email.volume
    return True
 
 
 # -------------------------------------
 def do_test_volume( storage_root ):
-   global MY_VOLUME 
-   
-   MY_VOLUME = FakeVolume( storage_root )
+   fake = FakeVolume( storage_root )
+   return fake
 
 if __name__ == "__main__":
    print "put some tests here"

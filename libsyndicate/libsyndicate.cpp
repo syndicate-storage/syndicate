@@ -80,28 +80,11 @@ static int md_init_server_info( struct md_syndicate_conf* c, bool is_client ) {
          sprintf(c->content_url, "http://%s:%d/", c->hostname, c->portnum );
          dbprintf("content URL is %s\n", c->content_url );
       }
-         
-      // load TLS credentials
-      if( c->server_key_path != NULL && c->server_cert_path != NULL ) {
-         
-         c->server_key = md_load_file_as_string( c->server_key_path, &c->server_key_len );
-         c->server_cert = md_load_file_as_string( c->server_cert_path, &c->server_cert_len );
-
-         if( c->server_key == NULL ) {
-            errorf( "Could not read TLS private key %s\n", c->server_key_path );
-            rc = -ENOENT;
-         }
-         if( c->server_cert == NULL ) {
-            errorf( "Could not read TLS certificate %s\n", c->server_cert_path );
-            rc = -ENOENT;
-         }
-      }
    }
    else {
-      // fill in defaults, but they won't be used
-      c->portnum = 32780;
+      // fill in defaults, but they won't be used except for registration
       c->hostname = strdup("localhost");
-      c->content_url = strdup("http://localhost:32780/");
+      c->content_url = strdup("http://NONE/");
       c->server_key = NULL;
       c->server_cert = NULL;
    }
@@ -110,7 +93,7 @@ static int md_init_server_info( struct md_syndicate_conf* c, bool is_client ) {
 }
 
 // initialize all global data structures
-static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char const* local_storage_root, bool is_client ) {
+static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char const* local_storage_root, char const* volume_key_file, char** volume_pubkey_pem, bool is_client ) {
 
    GOOGLE_PROTOBUF_VERIFY_VERSION;
 
@@ -146,6 +129,33 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
       }
    }
    
+   // load volume public key, if given
+   if( volume_key_file != NULL ) {
+      size_t volume_key_pem_len = 0;
+      *volume_pubkey_pem = md_load_file_as_string( volume_key_file, &volume_key_pem_len );
+      if( *volume_pubkey_pem == NULL ) {
+         errorf("Failed to load public key from %s\n", volume_key_file );
+         return -ENODATA;
+      }
+      
+   }
+
+   // load TLS credentials
+   if( c->server_key_path != NULL && c->server_cert_path != NULL ) {
+      
+      c->server_key = md_load_file_as_string( c->server_key_path, &c->server_key_len );
+      c->server_cert = md_load_file_as_string( c->server_cert_path, &c->server_cert_len );
+
+      if( c->server_key == NULL ) {
+         errorf( "Could not read TLS private key %s\n", c->server_key_path );
+         rc = -ENOENT;
+      }
+      if( c->server_cert == NULL ) {
+         errorf( "Could not read TLS certificate %s\n", c->server_cert_path );
+         rc = -ENOENT;
+      }
+   }
+
    return rc;
 }
 
@@ -2270,6 +2280,9 @@ int md_init_begin( int gateway_type,
             // not just a simple "not found" or "permission denied"
             return rc;
          }  
+         else {
+            rc = 0;
+         }
       }
    }
    
@@ -2286,7 +2299,7 @@ int md_init_begin( int gateway_type,
 
 
 // finish initialization
-int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, char const* volume_name, char const* volume_key_file ) {
+int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, char const* volume_name, char const* volume_pubkey_pem ) {
    
    int rc = 0;
    
@@ -2304,29 +2317,13 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       return rc;
    }
    
-   // load public key, if given
-   char* volume_pubkey_pem = NULL;
-   size_t volume_pubkey_pem_len = 0;
-   if( volume_key_file != NULL ) {
-      volume_pubkey_pem = md_load_file_as_string( volume_key_file, &volume_pubkey_pem_len );
-      if( volume_pubkey_pem == NULL ) {
-         errorf("Failed to load public key from %s\n", volume_key_file );
-         
-         ms_client_destroy( client );;
-         return -ENODATA;
-      }
-   }
-   
    if( conf->gateway_name != NULL && conf->ms_username != NULL && conf->ms_password != NULL ) {
-      // register the gateway
-      rc = ms_client_gateway_register( client, conf->gateway_name, conf->ms_username, conf->ms_password, volume_pubkey_pem );
+      // register the gateway via OpenID
+      rc = ms_client_openid_gateway_register( client, conf->gateway_name, conf->ms_username, conf->ms_password, volume_pubkey_pem );
       if( rc != 0 ) {
          errorf("ms_client_gateway_register rc = %d\n", rc );
          
          ms_client_destroy( client );
-         
-         if(volume_pubkey_pem != NULL)
-            free( volume_pubkey_pem );
          
          return rc;
       }
@@ -2343,9 +2340,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       if( rc != 0 ) {
          errorf("ms_client_anonymous_gateway_register(%s) rc = %d\n", volume_name, rc );
          
-         ms_client_destroy( client );
-         if(volume_pubkey_pem != NULL)
-            free( volume_pubkey_pem );
+         ms_client_destroy( client );;
          
          return -ENOTCONN;
       }  
@@ -2411,15 +2406,17 @@ int md_init( int gateway_type,
       errorf("invalid port number: conf's is %d, caller's is %d\n", conf->portnum, portnum);
       return -EINVAL;
    }
+   
+   char* volume_key_pem = NULL;
 
    // set up libsyndicate runtime information
-   rc = md_runtime_init( gateway_type, conf, storage_root, false );
+   rc = md_runtime_init( gateway_type, conf, storage_root, volume_key_file, &volume_key_pem, false );
    if( rc != 0 ) {
       errorf("md_runtime_init() rc = %d\n", rc );
       return rc;
    }
    
-   return md_init_finish( conf, client, volume_name, volume_key_file );
+   return md_init_finish( conf, client, volume_name, volume_key_pem );
 }
 
 
@@ -2431,29 +2428,35 @@ int md_init_client( int gateway_type,
                     char const* ms_url,
                     char const* volume_name, 
                     char const* gateway_name,
+                    int gateway_port,           // FIXME: remove this
                     char const* oid_username,
                     char const* oid_password,
-                    char const* volume_key_path,
-                    char const* my_key_path,
+                    char const* volume_key_pem,
+                    char const* my_key_pem,
                     char const* storage_root
                   ) {
    
    
-   int rc = md_init_begin( gateway_type, config_file, conf, client, ms_url, volume_name, gateway_name, oid_username, oid_password, my_key_path, NULL, NULL );
+   int rc = md_init_begin( gateway_type, config_file, conf, client, ms_url, volume_name, gateway_name, oid_username, oid_password, NULL, NULL, NULL );
 
    if( rc != 0 ) {
       errorf("md_init_begin() rc = %d\n", rc );
       return rc;
    }
    
+   conf->portnum = gateway_port;
+   
+   conf->gateway_key = strdup(my_key_pem);
+   conf->gateway_key_len = strlen(my_key_pem);
+   
    // set up libsyndicate runtime information
-   rc = md_runtime_init( gateway_type, conf, storage_root, true );
+   rc = md_runtime_init( gateway_type, conf, storage_root, NULL, NULL, true );
    if( rc != 0 ) {
       errorf("md_runtime_init() rc = %d\n", rc );
       return rc;
    }
    
-   return md_init_finish( conf, client, volume_name, volume_key_path );   
+   return md_init_finish( conf, client, volume_name, volume_key_pem );   
 }
 
 

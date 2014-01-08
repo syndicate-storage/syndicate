@@ -87,3 +87,9 @@ def clear_incoming_messages( addr, timestamp ):
    # called by the endpoint
    # tell server that we have all new messages up to a timestamp
    pass
+
+
+# -------------------------------------
+def send_legacy_email( dest_addr, message, attachments ):
+   # send legacy email
+   return True
