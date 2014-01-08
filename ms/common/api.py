@@ -1071,7 +1071,7 @@ class API( object ):
       
       if not authenticated_caller:
          # failed to authenticate
-         logging.error("Failed to authenticate")
+         logging.error("Failed to authenticate %s (type %s)" % (key_name, key_type))
          return False 
       
       method.authenticated_caller = authenticated_caller

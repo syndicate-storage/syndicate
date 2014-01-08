@@ -121,6 +121,7 @@ cdef extern from "client.h":
                               char * ms_url,
                               char * volume_name,
                               char * gateway_name,
+                              int gateway_port,
                               char * md_username,
                               char * md_password,
                               char * volume_pubkey_file,
@@ -136,7 +137,7 @@ cdef extern from "client.h":
    int syndicate_read( syndicate_state* state, char *buf, size_t size, syndicate_handle_t* fi)
    int syndicate_write( syndicate_state* state, char *buf, size_t size, syndicate_handle_t *fi)
    int syndicate_seek(syndicate_handle_t* fi, off_t pos, int whence)
-   int syndicate_flush( syndicate_state* state, char *path, syndicate_handle_t *fi)
+   int syndicate_flush( syndicate_state* state, syndicate_handle_t *fi)
    int syndicate_close( syndicate_state* state, syndicate_handle_t *fi)
    int syndicate_fsync( syndicate_state* state, int datasync, syndicate_handle_t *fi)
    

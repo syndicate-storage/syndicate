@@ -25,6 +25,7 @@ import inspect
 import re 
 import sys
 import base64
+import random
 
 try:
    import pickle
@@ -74,7 +75,7 @@ class StubObject( object ):
       pass
 
    @classmethod
-   def parse_or_generate_signing_public_key( cls, signing_public_key, lib ):
+   def parse_or_generate_signing_public_key( cls, signing_public_key, lib=None ):
       """
       Check a signing public key and verify that it has the appropriate security 
       parameters.  Interpret MAKE_SIGNING_KEY as a command to generate and return one.
@@ -126,8 +127,9 @@ class StubObject( object ):
          
          return pkey.publickey().exportKey(), pkey_str
    
+   
    @classmethod
-   def parse_gateway_caps( cls, caps_str, lib ):
+   def parse_gateway_caps( cls, caps_str, lib=None ):
       """
       Interpret a bitwise OR of gateway caps as a string.
       """
@@ -176,10 +178,13 @@ class StubObject( object ):
    # which key directory stores this object's key information?
    key_dir = None
    
+   SIGNING_KEY_TYPE = "signing"
+   VERIFYING_KEY_TYPE = "verifying"
+   
    # what kinds of keys are maintained by this object?
    internal_keys = [
-      "signing",
-      "verifying"
+      SIGNING_KEY_TYPE,
+      VERIFYING_KEY_TYPE
    ]
    
    @classmethod
@@ -254,7 +259,7 @@ class StubObject( object ):
    
 class SyndicateUser( StubObject ):
    @classmethod
-   def parse_user_name_or_id( cls, user_name_or_id, lib ):
+   def parse_user_name_or_id( cls, user_name_or_id, lib=None ):
       """
       Make usre user_name_or_id is an email address.
       """
@@ -264,7 +269,9 @@ class SyndicateUser( StubObject ):
          if not email_regex.match(user_name_or_id):
             raise Exception("Not an email address: '%s'" % user_name_or_id)
          else:
-            lib.user_name = user_name_or_id
+            if lib is not None:
+               lib.user_name = user_name_or_id
+               
             return user_name_or_id, {}
       
       raise Exception("Parse error: only user emails (not IDs) are allowed")
@@ -285,7 +292,7 @@ class SyndicateUser( StubObject ):
 class Volume( StubObject ):
    
    @classmethod
-   def parse_volume_name_or_id( cls, volume_name_or_id, lib ):
+   def parse_volume_name_or_id( cls, volume_name_or_id, lib=None ):
       """
       Make sure volume_name_or_id is a volume name.
       """
@@ -298,7 +305,7 @@ class Volume( StubObject ):
 
 
    @classmethod
-   def parse_metadata_private_key( cls, metadata_private_key, lib ):
+   def parse_metadata_private_key( cls, metadata_private_key, lib=None ):
       """
       Load or generate a metadata private key.  Preserve the public key as
       extra data if we generate one.
@@ -319,8 +326,10 @@ class Volume( StubObject ):
    
    key_dir = "volume_keys"
    
+   METADATA_KEY_TYPE = "metadata"
+   
    internal_keys = StubObject.internal_keys + [
-      "metadata"
+      METADATA_KEY_TYPE
    ]
    
 
@@ -336,7 +345,7 @@ class Volume( StubObject ):
             raise Exception("Could not determine name of Volume")
          
          # store it
-         storage_stub.store_object_public_key( config, "volume", "metadata", volume_name, extras['metadata_public_key'] )
+         storage_stub.store_object_public_key( config, "volume", cls.METADATA_KEY_TYPE, volume_name, extras['metadata_public_key'] )
 
          del extras['metadata_public_key']
 
@@ -344,7 +353,7 @@ class Volume( StubObject ):
 
 class Gateway( StubObject ):
    @classmethod
-   def parse_gateway_name_or_id( cls, gateway_name_or_id, lib ):
+   def parse_gateway_name_or_id( cls, gateway_name_or_id, lib=None ):
       """
       Make usre gateway_name_or_id is a gateway name.
       """
@@ -419,7 +428,7 @@ class Gateway( StubObject ):
    
    
    @classmethod
-   def parse_gateway_closure( cls, gateway_closure_path, lib ):
+   def parse_gateway_closure( cls, gateway_closure_path, lib=None ):
       """
       Load up a gateway config (replication policy and drivers) from a set of python files.
       Transform them into a JSON-ized closure to be deployed to the recipient gateway.
@@ -474,6 +483,9 @@ class Gateway( StubObject ):
          config_dict = cls.get_dict_from_closure( closure_module, "config", "CONFIG" )
       except Exception, e:
          log.warning("No config defined")
+      
+      # pad the secrets first
+      secrets_dict[ rg_closure.SECRETS_PAD_KEY ] = ''.join(chr(random.randint(0,255)) for i in xrange(0,256))
       
       # serialize the config and secrets dictionaries 
       secrets_dict_str = None
@@ -569,8 +581,10 @@ class Gateway( StubObject ):
    
    key_dir = "gateway_keys"
    
+   RUNTIME_KEY_TYPE = "runtime"
+   
    internal_keys = StubObject.internal_keys + [
-      "runtime"
+      RUNTIME_KEY_TYPE
    ]
 
    @classmethod
@@ -585,7 +599,7 @@ class Gateway( StubObject ):
             raise Exception("Could not determine name of Gateway")
          
          # store it
-         storage_stub.store_object_private_key( config, "gateway", "runtime", gateway_name, extras['gateway_private_key'] )
+         storage_stub.store_object_private_key( config, "gateway", cls.RUNTIME_KEY_TYPE, gateway_name, extras['gateway_private_key'] )
          
          del extras['gateway_private_key']
 

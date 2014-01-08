@@ -31,29 +31,35 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
       return -EBADF;
    }
 
+   int rc = 0;
+   
    // flush replicas
    struct timespec ts, ts2;
 
    BEGIN_TIMING_DATA( ts );
    
-   int rc = fs_entry_replicate_wait( core, fh );
+   int replica_rc = fs_entry_replicate_wait( core, fh );
 
    END_TIMING_DATA( ts, ts2, "replication" );
-   
-   if( rc != 0 ) {
-      errorf("ms_client_replicate_wait(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", fh->volume, core->gateway, fh->file_id, rc );
-      fs_file_handle_unlock( fh );
       
-      return rc;
-   }
-   
-   rc = ms_client_sync_update( core->ms, fh->volume, fh->file_id );
-   if( rc != 0 ) {
-      errorf("ms_client_sync_update(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", fh->volume, core->gateway, fh->file_id, rc );
+   int sync_rc = ms_client_sync_update( core->ms, fh->volume, fh->file_id );
+   if( sync_rc != 0 ) {
+      errorf("ms_client_sync_update(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", fh->volume, core->gateway, fh->file_id, sync_rc );
 
       // ENOENT allowed because the update thread could have preempted us
-      if( rc == -ENOENT )
+      if( sync_rc == -ENOENT ) {
          rc = 0;
+      }
+      else {
+         rc = sync_rc;
+      }
+   }
+   
+   if( replica_rc != 0 ) {
+      errorf("ms_client_replicate_wait(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", fh->volume, core->gateway, fh->file_id, replica_rc );
+      fs_file_handle_unlock( fh );
+      
+      return replica_rc;
    }
    
    fs_file_handle_unlock( fh );

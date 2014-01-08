@@ -71,13 +71,14 @@ cdef class Volume:
 
    # ------------------------------------------
    def __init__( self, gateway_name=None,
+                       gateway_port=None,       # FIXME: remove this
                        config_file=None,
                        ms_url=None,
                        oid_username=None,
                        oid_password=None,
                        volume_name=None,
-                       volume_key_filename=None,
-                       my_key_filename=None,
+                       volume_key_pem=None,
+                       my_key_pem=None,
                        storage_root=None,
                        wait_replicas=-1 ):
 
@@ -92,8 +93,8 @@ cdef class Volume:
          char* c_oid_username = NULL
          char* c_oid_password = NULL
          char* c_volume_name = NULL
-         char* c_volume_key_filename = NULL
-         char* c_my_key_filename = NULL
+         char* c_volume_key_pem = NULL
+         char* c_my_key_pem = NULL
          char* c_storage_root = NULL
          
       if gateway_name != None:
@@ -114,13 +115,15 @@ cdef class Volume:
       if config_file != None:
          c_conf_filename = config_file 
       
-      if my_key_filename != None:
-         c_my_key_filename = my_key_filename
-         runtime_privkey_path = my_key_filename
+      if my_key_pem != None:
+         c_my_key_pem = my_key_pem
          
       if storage_root != None:
          c_storage_root = storage_root
 
+      if gateway_port == None:
+         gateway_port = 0
+      
       self.wait_replicas = wait_replicas
 
       rc = syndicate_client_init( &self.state_inst,
@@ -128,10 +131,11 @@ cdef class Volume:
                                   c_ms_url,
                                   c_volume_name,
                                   c_gateway_name,
+                                  gateway_port,
                                   c_oid_username,
                                   c_oid_password,
-                                  c_volume_key_filename,
-                                  c_my_key_filename,
+                                  c_volume_key_pem,
+                                  c_my_key_pem,
                                   c_storage_root )
 
       if rc != 0:
@@ -221,8 +225,17 @@ cdef class Volume:
       cpdef uintptr_t tmp = handle.Get()
       cdef syndicate_handle_t* c_handle = <syndicate_handle_t*>tmp
       
-      cdef int rc = syndicate_close( &self.state_inst, c_handle )
+      cdef int close_rc = 0
+      cdef int rc = syndicate_flush( &self.state_inst, c_handle )
       
+      if rc != 0:
+         close_rc = syndicate_close( &self.state_inst, c_handle )
+         if close_rc != 0:
+            return close_rc
+
+      else:
+         rc = syndicate_close( &self.state_inst, c_handle )
+
       return rc
 
    # ------------------------------------------
@@ -241,18 +254,23 @@ cdef class Volume:
       
       cdef int rc = syndicate_getattr( &self.state_inst, path, &statbuf )
 
-      py_stat = SyndicateStat(st_mode = statbuf.st_mode,
-                              st_ino = statbuf.st_ino,
-                              st_dev = statbuf.st_dev,
-                              st_nlink = statbuf.st_nlink,
-                              st_uid = statbuf.st_uid,
-                              st_gid = statbuf.st_gid,
-                              st_size = statbuf.st_size,
-                              st_atime = statbuf.st_atime,
-                              st_mtime = statbuf.st_mtime,
-                              st_ctime = statbuf.st_ctime )
+      if rc == 0:
+         py_stat = SyndicateStat(st_mode = statbuf.st_mode,
+                                 st_ino = statbuf.st_ino,
+                                 st_dev = statbuf.st_dev,
+                                 st_nlink = statbuf.st_nlink,
+                                 st_uid = statbuf.st_uid,
+                                 st_gid = statbuf.st_gid,
+                                 st_size = statbuf.st_size,
+                                 st_atime = statbuf.st_atime,
+                                 st_mtime = statbuf.st_mtime,
+                                 st_ctime = statbuf.st_ctime )
 
-      return py_stat
+
+         return py_stat
+
+      else:
+         return rc
 
    # ------------------------------------------
    cpdef mkdir( self, path, mode ):

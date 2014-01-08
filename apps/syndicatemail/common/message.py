@@ -16,13 +16,20 @@
    limitations under the License.
 """
 
-import collections
+
 import storage
 import network
 import contact
-import uuid
+import singleton
+
 import syndicate.client.common.log as Log
+from syndicate.volume import Volume
+
+import collections
+import uuid
 import hashlib
+import pprint
+import os
 
 log = Log.get_logger()
 
@@ -54,8 +61,10 @@ CHECK_INCOMING_FOLDERS = [
 # for setup
 VOLUME_STORAGE_DIRS = [
    STORAGE_DIR,
-   ATTACHMENTS_DIR
-] + [storage.path_join(STORAGE_DIR, x) for x in DEFAULT_FOLDERS]
+   ATTACHMENTS_DIR,
+   INCOMING_DIR,
+   FOLDERS_DIR
+] + [storage.path_join(FOLDERS_DIR, x) for x in DEFAULT_FOLDERS]
 
 LOCAL_STORAGE_DIRS = []
 
@@ -69,12 +78,17 @@ SyndicateIncomingMessage = collections.namedtuple( "SyndicateIncomingMessage", [
 # given back in a listing
 SyndicateMessageMetadata = collections.namedtuple( "SyndicateMessageMetadata", ["id", "sender_addr", "receiver_addrs", "cc_addrs", "bcc_addrs", "subject", "timestamp", "handle", "has_attachments", "is_read"] )
 
+#-------------------------
+def folder_dir_atroot( folder_name ):
+   global FOLDERS_DIR
+   
+   return storage.path_join( FOLDERS_DIR, folder_name )
 
 #-------------------------
 def folder_dir( folder_name ):
    global FOLDERS_DIR
    
-   return storage.volume_path( FOLDERS_DIR, folder )
+   return storage.volume_path( folder_dir_atroot(folder_name) )
 
 #-------------------------
 def incoming_dir():
@@ -87,14 +101,23 @@ def message_handle( message_timestamp, message_id ):
    return "%s-%s" % (str(message_timestamp), str(message_id))
 
 #-------------------------
-def stored_message_path( folder, message_timestamp, message_id ):
+def remote_message_path( folder, message_timestamp, message_id, dest_pubkey_str ):
    # message path for messages hosted on our own Volume
-   return storage.volume_path( folder_dir( folder_name ), message_handle( message_timestamp, message_id ))
+   
+   return storage.path_join( folder_dir( folder ), message_handle( message_timestamp, message_id ))
+
+#-------------------------
+def incoming_message_path( message_timestamp, message_id ):
+   # message path for remotely-hosted messages that we know about from our server
+   global INCOMING_DIR
+   
+   return storage.volume_path( INCOMING_DIR, message_handle(message_timestamp, message_id))
+
 
 #-------------------------
 def timestamp_from_message_path( message_path ):
    mp = os.path.basename( message_path )
-   mp_parts = split(mp, "-")
+   mp_parts = mp.split("-")
    
    if len(mp_parts) != 2:
       return -1
@@ -109,19 +132,12 @@ def timestamp_from_message_path( message_path ):
 #-------------------------
 def id_from_message_path( message_path ):
    mp = os.path.basename( message_path )
-   mp_parts = split(mp, "-")
+   mp_parts = mp.split("-")
    
    if len(mp_parts) != 2:
       return None
    
    return mp_parts[1]
-
-#-------------------------
-def incoming_message_path( message_timestamp, message_id ):
-   # message path for remotely-hosted messages that we know about from our server
-   global INCOMING_DIR
-   
-   return storage.volume_path( INCOMING_DIR, message_handle(message_timestamp, message_id))
 
 #-------------------------
 def attachment_storage_name( message_timestamp, message_id, attachment ):
@@ -137,10 +153,8 @@ def attachment_storage_name( message_timestamp, message_id, attachment ):
 
 #-------------------------
 def attachment_path( message_timestamp, message_id, attachment ):
-   global STORAGE_DIR
-   
    name = attachment_storage_name( message_timestamp, message_id, attachment )
-   return storage.volume_path( STORAGE_DIR, ATTACHMENTS_DIR, name )
+   return storage.volume_path( ATTACHMENTS_DIR, name )
    
 
 #-------------------------
@@ -149,13 +163,13 @@ def folder_cache_name( folder_name ):
 
 #-------------------------
 def create_folder( folder_name ):
-   return storage.setup_dirs( [folder_dir( folder_name )] )
+   return storage.setup_dirs( [folder_dir_atroot( folder_name )] )
 
 #-------------------------
 def delete_folder( folder_name ):
    global DEFAULT_FOLDERS
    if folder_name not in DEFAULT_FOLDERS:
-      return storage.delete_dirs( [folder_dir( folder_name )] )
+      return storage.delete_dirs( [folder_dir_atroot( folder_name )] )
    else:
       # can't delete built-in folder
       return False
@@ -190,7 +204,7 @@ def store_message( pubkey_str, folder, _message, _attachments=None ):
    
    # store message
    mpath = stored_message_path( folder, message.timestamp, message.id )
-   rc = storage.write_encrypted_file( pubkey_str, message_json, mpath )
+   rc = storage.write_encrypted_file( pubkey_str, mpath, message_json )
    if not rc:
       log.error("Failed to store message")
       return False
@@ -198,14 +212,14 @@ def store_message( pubkey_str, folder, _message, _attachments=None ):
    stored.append( mpath )
    
    failed = False
-   for (attachment_name, attachment_path) in attachment_paths.items():
+   for (attachment_name, att_path) in attachment_paths.items():
       attachment_data = _attachments[attachment_name]
-      rc = storage.write_encrypted_file( pubkey_str, attachment_path, attachment_data )
+      rc = storage.write_encrypted_file( pubkey_str, att_path, attachment_data )
       if not rc:
          failed = True
          break
       
-      stored.append( attachment_path )
+      stored.append( att_path )
    
    if failed:
       # roll back
@@ -215,7 +229,7 @@ def store_message( pubkey_str, folder, _message, _attachments=None ):
       return False
    
    else:
-      storage.purge_cache( STORAGE_DIR, folder_cache_name( folder_name ) )
+      storage.purge_cache( folder_cache_name( folder ) )
       return True
 
 
@@ -240,7 +254,7 @@ def read_stored_message( privkey_str, folder, msg_timestamp, msg_id ):
 #-------------------------
 def delete_message( folder, msg_timestamp, msg_id ):
    rc = storage.delete_file( stored_message_path( folder, msg_timestamp, msg_id ) )
-   storage.purge_cache( STORAGE_DIR, folder_cache_name( folder_name ) )
+   storage.purge_cache( folder_cache_name( folder ) )
    return rc
 
 
@@ -272,19 +286,37 @@ def send_message( pubkey_str, privkey_str, sender_addr, receiver_addrs, cc_addrs
    for addr in [sender_addr] + receiver_addrs + cc_addrs + bcc_addrs:
       assert isinstance(addr, str) or isinstance(addr, unicode), "Invalid address '%s'" % addr
    
-   try:
-      # parse addresses
-      sender_addr_parsed = contact.parse_addr( sender_addr )
+   # parse addresses
+   sender_addr_parsed = contact.parse_addr( sender_addr )
+   
+   parsed_addrs = {}
+   
+   contacts = []
+   new_contacts = []
+   missing = []
+   send_via_gateway = []
+   
+   for (addr_bundle_name, addrs) in [("receipient address", receiver_addrs), ("CC address", cc_addrs), ("BCC address", bcc_addrs)]:
+      if not parsed_addrs.has_key(addr_bundle_name):
+         parsed_addrs[addr_bundle_name] = []
       
-      receiver_addrs_parsed = [contact.parse_addr( x ) for x in receiver_addrs]
-      cc_addrs_parsed = [contact.parse_addr( x ) for x in cc_addrs]
-      bcc_addrs_parsed = [contact.parse_addr( x ) for x in bcc_addrs]
-      
-   except Exception, e:
-      log.error("Failed to parse addresses")
-      log.exception(e)
-      raise Exception("Invalid address")
-      
+      for addr in addrs:
+         try:
+            parsed_addr = contact.parse_addr( addr )
+            parsed_addrs[ addr_bundle_name ].append( parsed_addr )
+            
+         except Exception, e:
+            # not a SyndicateMail address.  Is it an email address?
+            if not contact.is_valid_email( addr ):
+               # not a valid email address
+               raise Exception("Invalid %s '%s'" % (addr_bundle_name, addr))
+            else:
+               # send via gateway, since this isn't a syndicate address
+               send_via_gateway.append( addr )
+               log.info("Send to %s via normal email" % addr)
+               
+            
+   # if we got this far, they're all parsed
    # construct the message
    message = SyndicateMessage( id=msg_id,
                                sender_addr=sender_addr,
@@ -297,44 +329,59 @@ def send_message( pubkey_str, privkey_str, sender_addr, receiver_addrs, cc_addrs
                                handle=handle,
                                attachment_names=attachments.keys() )
       
-   contacts = []
-   new_contacts = []
-   missing = []
-   send_via_gateway = []
    
    # get contact public keys from Volume
-   for addr in receiver_addrs_parsed + cc_addrs_parsed + bcc_addrs_parsed:
-      if contact_exists( addr.addr ):
+   all_parsed_addrs = reduce( lambda x, y: x + y, parsed_addrs.values(), [] )
+   for addr in all_parsed_addrs:
+      if contact.contact_exists( addr.addr ):
          # get the contact public key
-         contact_rec = contact.read_contact( privkey_str, addr.addr )
+         contact_rec = contact.read_contact( pubkey_str, privkey_str, addr.addr )
          if contact_rec is None:
             missing.append( addr )
          else:
+            # send to this contact
             contacts.append( contact_rec )
       
       else:
          missing.append( addr )
+         log.debug("No public key for %s" % addr)
             
-   # get remaining contact public keys from the network
+   # get remaining contact public keys from the user's MS and store them
    for missing_addr in missing:
       # new contact...
       pubkey_pem = network.download_user_pubkey( missing_addr )
       if pubkey_pem is None:
          # not on Syndicate
          send_via_gateway.append( missing_addr )
-      
+         log.debug("Send to %s via normal email" % missing_addr.addr )
+         
       else:
-         missing_contact = SyndicateContact( addr=missing_addr, pubkey_pem=pubkey_pem, extras={} )
+         missing_contact = SyndicateContact( addr=missing_addr.addr, pubkey_pem=pubkey_pem, extras={} )
          new_contacts.append( missing_contact )
+         log.debug("Saved new contact: %s" % missing_addr.addr )
          
-   # TODO: finish
-         
-   rc = store_message( pubkey_str, folder, message, attachments )
-   if not rc:
-      log.error("Failed to store message")
-      return False
+   failed = []
    
-   return True
+   # store the message for each Syndicate recipient
+   for contact_rec in contacts:
+      rc = store_message( contact_rec.pubkey_pem, SENT_FOLDER, message, attachments )
+      if not rc:
+         failed.append( contact_rec.addr )
+         log.debug("Failed to send message to %s" % contact_rec.addr )
+         
+   # send the message to the all the non-Syndicate recipients
+   for addr in send_via_gateway:
+      rc = network.send_legacy_email( addr, message, attachments )
+      if not rc:
+         failed.append( addr )
+         log.debug("Failed to send message to %s via legacy email" % addr )
+         
+         
+   if len(failed) > 0:
+      # return failed list
+      return False, failed
+   
+   return True, []
 
 #-------------------------
 def store_incoming_message( pubkey_str, message ):
@@ -347,7 +394,7 @@ def store_incoming_message( pubkey_str, message ):
    
    # store incoming message
    mpath = incoming_message_path( message.timestamp, message.id )
-   rc = storage.write_encrypted_file( pubkey_str, message_json, mpath )
+   rc = storage.write_encrypted_file( pubkey_str, mpath, message_json )
    if not rc:
       log.error("Failed to store incoming message")
       return False
@@ -372,6 +419,44 @@ def read_incoming_message( privkey_str, msg_timestamp, msg_id ):
       return None
    
    return msg
+
+
+#-------------------------
+def read_message_from_volume( privkey_str, gateway_privkey_str, incoming_message ):
+   try:
+      sender_addr_parsed = contact.parse_addr( incoming_msg.sender_addr )
+   except:
+      log.error("Could not parse email")
+      return None
+   
+   volume_MS = sender_addr_parsed.MS
+   volume_name = sender_addr_parsed.volume
+   storage_root = "/tmp/syndicate-unused"
+   
+   try:
+      vol = Volume( volume_name=volume_name, ms_url="https://" + volume_MS, my_key_pem=gateway_privkey_str, storage_root=storage_root )
+   except Exception, e:
+      log.exception(e)
+      log.error("Failed to connect to %s's Syndicate volume" % sender_addr_parsed.addr )
+      return None 
+   
+   try:
+      msg_path = stored_message_path( SENT_FOLDER, incoming_message.timestamp, incoming_message.id )
+      msg_json = storage.read_encrypted_file( privkey_str, msg_path, volume=vol )
+   except Exception, e:
+      log.exception(e)
+      log.error("Failed to read %s" % msg_path )
+      return None 
+   
+   # unserialize
+   try:
+      msg = storage.json_to_tuple( SyndicateMessage, msg_json )
+   except Exception, e:
+      log.exception(e)
+      log.error("Failed to parse %s" % msg_path )
+      return None
+   
+   return msg
    
 
 #-------------------------
@@ -382,10 +467,14 @@ def read_message( privkey_str, folder, msg_timestamp, msg_id ):
       # get the incoming message record
       incoming_message = read_incoming_message( privkey_str, msg_timestamp, msg_id )
       
-      # fetch the whole message from the remote Volume's SENT folder
-      # TODO: remote volume instance!
-      return storage.read_file( stored_message_path( SENT_FOLDER, msg_timestamp, msg_id ) )
-      
+      # get the corresponding message from the remote Volume
+      msg = read_message_from_volume( privkey_str, incoming_message )
+      if msg is not None:
+         # got a message. verify authenticity.
+         
+         pass
+         
+         # TODO
    else:
       # it's a local message
       return read_stored_message( privkey_str, folder, msg_timestamp, msg_id )
@@ -395,14 +484,14 @@ def read_message( privkey_str, folder, msg_timestamp, msg_id ):
 def list_messages( privkey_str, pubkey_str, folder_name, start_timestamp=None, end_timestamp=None, length=None ):
    global STORAGE_DIR, CHECK_INCOMING_FOLDERS
    
-   cached_items = storage.get_cached_data( privkey_str, STORAGE_DIR, folder_cache_name( folder_name ) )
+   cached_items = storage.get_cached_data( privkey_str, folder_cache_name( folder_name ) )
    if cached_items == None:
       log.info("No cached data for %s" % folder_name)
    
    try:
-      dir_ents = os.listdir( folder_dir(folder_name) )
-   except OSError, oe:
-      log.error("Failed to list folder, errno = %s" % oe.errno)
+      dir_ents = storage.listdir( folder_dir(folder_name) )
+   except Exception, oe:
+      log.error("Failed to list folder %s" % folder_name)
       log.exception(oe)
       raise Exception("Internal error")
    
@@ -415,7 +504,7 @@ def list_messages( privkey_str, pubkey_str, folder_name, start_timestamp=None, e
    if folder_name in CHECK_INCOMING_FOLDERS:
       # check incoming as well
       try:
-         incoming_dir_ents = os.listdir( incoming_dir() )
+         incoming_dir_ents = storage.listdir( incoming_dir() )
       except OSError, oe:
          log.error("Failed to list folder, errno = %s" % oe.errno)
          log.exception(oe)
@@ -457,7 +546,7 @@ def list_messages( privkey_str, pubkey_str, folder_name, start_timestamp=None, e
       if start_idx == -1:
          start_idx = i
       
-      end_idx = i
+      end_idx = i + 1
       
       if end_idx - start_idx > length:
          break
@@ -493,15 +582,18 @@ def list_messages( privkey_str, pubkey_str, folder_name, start_timestamp=None, e
       
       ret.append( metadata )
    
-   storage.cache_data( pubkey_str, STORAGE_DIR, folder_cache_name( folder_name ), ret )
+   storage.cache_data( pubkey_str, folder_cache_name( folder_name ), ret )
    return ret
 
          
          
 if __name__ == "__main__":
    
+   import session 
+   
    fake_module = collections.namedtuple( "FakeModule", ["VOLUME_STORAGE_DIRS", "LOCAL_STORAGE_DIRS"] )
-   session.do_test_volume( "/tmp/storage-test/volume" )
+   fake_vol = session.do_test_volume( "/tmp/storage-test/volume" )
+   singleton.set_volume( fake_vol )
    
    fake_mod = fake_module( LOCAL_STORAGE_DIRS=LOCAL_STORAGE_DIRS, VOLUME_STORAGE_DIRS=VOLUME_STORAGE_DIRS )
    assert storage.setup_storage( "/apps/syndicatemail/data", "/tmp/storage-test/local", [fake_mod] ), "setup_storage failed"
@@ -577,4 +669,75 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
 -----END RSA PRIVATE KEY-----
 """.strip()
 
+   print "---- create/delete folders ----"
+   for folder in DEFAULT_FOLDERS:
+      create_folder( folder )
+      
+   assert create_folder( "sniff" ), "create_folder failed"
+   assert delete_folder( "sniff" ), "delete_folder failed"
+
+   print "---- store/load incoming message ----"
+
+   msg_id1 = "a6322463ec5e4e4cb65ad88746aa832e"
+   msg_ts1 = 1388897380
+      
+   incoming_message = SyndicateIncomingMessage( msg_id1, "jude.mail.syndicate.com@example.com", ["wathsala.mailvol.syndicate.com@exmaple2.com"], [], [], "Hello world!", msg_ts1, message_handle( msg_ts1, msg_id1 ), [] )
+   
+   assert store_incoming_message( pubkey_str, incoming_message ), "store_incoming_message failed"
+   
+   incoming_message2 = read_incoming_message( privkey_str, msg_ts1, msg_id1 )
+   
+   assert incoming_message2 == incoming_message, "Messages are unequal"
+   
+   # store some more, for the listing
+   for i in xrange(0,10):
+      msg_id = uuid.uuid4().get_hex()
+      msg_ts = msg_ts1 + 3600 * i + 1
+      sm = SyndicateIncomingMessage( msg_id, "someone_%s.mail.syndicate.com@example%s.com" % (i, i), ["jude.mail.syndicate.com@example.com"], ["wathsala.mailvol.syndicate.com@example2.com"], ["muneeb.mail.syndicate.com@ali.com"],
+                             "Hello world %s" % i, msg_ts, message_handle( msg_ts, msg_id ), [] )
+      
+      assert store_incoming_message( pubkey_str, sm ), "store_incoming_message failed"
+   
+   print "---- store/load local message ----"
+   
+   msg_id2 = "8011d599ed984edb9115dd71b68402be"
+   msg_ts2 = 1388897434
+   
+   stored_message = SyndicateMessage( msg_id2, "wathsala.mailvol.syndicate.com@example2.com", ["jude.mail.syndicate.com@example.com"], [], [], "Hello again!", "This is a message body", msg_ts2, message_handle( msg_ts2, msg_id2 ), [] )
+   
+   assert store_message( pubkey_str, DRAFTS_FOLDER, stored_message, {"attachment1": "foocorp"} ), "store_message failed"
+   
+   stored_message2 = read_stored_message( privkey_str, DRAFTS_FOLDER, msg_ts2, msg_id2 )
+
+   for attr in ['id', 'sender_addr', 'receiver_addrs', 'cc_addrs', 'bcc_addrs', 'subject', 'body', 'timestamp', 'handle']:
+      if getattr(stored_message, attr) != getattr(stored_message2, attr):
+         raise Exception("Messages are unequal on %s: got %s, expected %s" % (attr, getattr(stored_message2, attr), getattr(stored_message, attr)) )
+      
+   assert stored_message2.attachment_names == ['attachment1'], "Invalid attachments: %s" % stored_message2.attachment_names
+   
+   # store some more, for the listing
+   for i in xrange(0,10):
+      msg_id = uuid.uuid4().get_hex()
+      msg_ts = msg_ts2 + 3600 * i + 1
+      sm = SyndicateMessage( msg_id, "someone_%s.mail.syndicate.com@example%s.com" % (i, i), ["jude.mail.syndicate.com@example.com"], ["wathsala.mailvol.syndicate.com@example2.com"], ["muneeb.mail.syndicate.com@ali.com"],
+                             "Hello world %s" % i, "This is message %s" % i, msg_ts, message_handle( msg_ts, msg_id ), [] )
+      
+      assert store_message( pubkey_str, SENT_FOLDER, sm, {} ), "store_message failed"
+   
+   pp = pprint.PrettyPrinter()
+   
+   print "---- list messages ----"
+   
+   print "Drafts:"
+   drafts_metadata = list_messages( privkey_str, pubkey_str, DRAFTS_FOLDER )
+   pp.pprint( drafts_metadata )
+   
+   print "Sent:"
+   sent_metadata = list_messages( privkey_str, pubkey_str, SENT_FOLDER )
+   pp.pprint( sent_metadata )
+   
+   print "Inbox:"
+   inbox_metadata = list_messages( privkey_str, pubkey_str, INBOX_FOLDER )
+   pp.pprint( inbox_metadata )
+   
    

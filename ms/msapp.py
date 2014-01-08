@@ -27,7 +27,7 @@ import logging
 from MS.user import SyndicateUser
 from common.admin_info import *
 
-from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSCertRequestHandler, MSCertManifestRequestHandler, MSRegisterRequestHandler, MSOpenIDRequestHandler, MSJSONRPCHandler, MSUserRequestHandler
+from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSCertRequestHandler, MSCertManifestRequestHandler, MSOpenIDRegisterRequestHandler, MSOpenIDRequestHandler, MSJSONRPCHandler, MSUserRequestHandler
 from tests.debughandler import MSDebugHandler
 
 app = webapp2.WSGIApplication([
@@ -39,7 +39,7 @@ app = webapp2.WSGIApplication([
     ('/FILE/([0123456789]+)/([0123456789ABCDEF]+)/([0123456789]+)/([-0123456789]+)', MSFileReadHandler),
     ('/FILE/([0123456789]+)', MSFileWriteHandler ),
     ('/VOLUME/([^/]+)', MSVolumeRequestHandler),
-    ('/REGISTER/([^/]+)/([^/]+)/([^/]+)/([^/]+)', MSRegisterRequestHandler),
+    ('/OPENID/([^/]+)/([^/]+)/([^/]+)/([^/]+)', MSOpenIDRegisterRequestHandler),
     ('/CERT/([0123456789]+)/manifest.([0123456789]+)', MSCertManifestRequestHandler),
     ('/CERT/([0123456789]+)/([0123456789]+)/(UG|RG|AG)/([0123456789]+)/([0123456789]+)', MSCertRequestHandler),
     ('/USER/([^/]+)', MSUserRequestHandler),

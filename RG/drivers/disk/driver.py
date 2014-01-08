@@ -38,6 +38,7 @@ def read_file( filename, outfile, **kw ):
 
 def write_file( filename, infile, **kw ):
    import traceback
+   import os
 
    buf = infile.read()
    

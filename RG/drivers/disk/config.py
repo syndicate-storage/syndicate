@@ -1,5 +1,5 @@
 #!/usr/bin/python
 
 CONFIG = {
-      "STORAGE_DIR": "~/.syndicate-storage"
+      "STORAGE_DIR": "/tmp/syndicate-storage"
 }

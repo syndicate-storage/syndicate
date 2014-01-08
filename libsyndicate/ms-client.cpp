@@ -235,7 +235,7 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    
    rc = ms_client_verify_key( client->my_key );
    if( rc != 0 ) {
-      errorf("ms_client_setup_and_verify_key rc = %d\n", rc );
+      errorf("ms_client_verify_key rc = %d\n", rc );
       return rc;
    }
 
@@ -418,7 +418,7 @@ char* ms_client_volume_url_by_name( struct ms_client* client, char const* name )
    return url;
 }
 
-char* ms_client_register_url( struct ms_client* client ) {
+char* ms_client_openid_register_url( struct ms_client* client ) {
    // build the /REGISTER/ url
 
    char gateway_type_str[10];
@@ -427,13 +427,13 @@ char* ms_client_register_url( struct ms_client* client ) {
    ms_client_rlock( client );
 
    char* url = CALLOC_LIST( char, strlen(client->url) + 1 +
-                                  strlen("/REGISTER/") + 1 +
+                                  strlen("/OPENID/") + 1 +
                                   strlen(client->conf->gateway_name) + 1 +
                                   strlen(client->conf->ms_username) + 1 +
                                   strlen(gateway_type_str) + 1 +
                                   strlen("/begin") + 1);
 
-   sprintf(url, "%s/REGISTER/%s/%s/%s/begin", client->url, gateway_type_str, client->conf->gateway_name, client->conf->ms_username );
+   sprintf(url, "%s/OPENID/%s/%s/%s/begin", client->url, gateway_type_str, client->conf->gateway_name, client->conf->ms_username );
 
    ms_client_unlock( client );
 
@@ -2209,10 +2209,10 @@ int ms_client_complete_register( CURL* curl, char const* return_to_method, char 
    
 
 // register this gateway with the MS, using the SyndicateUser's OpenID username and password
-int ms_client_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password, char const* volume_pubkey_pem ) {
+int ms_client_openid_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password, char const* volume_pubkey_pem ) {
 
    int rc = 0;
-   char* register_url = ms_client_register_url( client );
+   char* register_url = ms_client_openid_register_url( client );
 
    CURL* curl = curl_easy_init();
    
@@ -2333,9 +2333,14 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
    client->gateway_id = client->conf->gateway;
    
    ms_client_unlock( client );
+   
+   // load the certificate bundle   
+   rc = ms_client_reload_certs( client );
 
    return rc;
 }
+
+
 
 // read-lock a client context 
 int ms_client_rlock( struct ms_client* client ) {

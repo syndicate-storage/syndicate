@@ -219,7 +219,7 @@ struct md_syndicate_conf {
 };
 
 #define USER_ANON               0xFFFFFFFFFFFFFFFF
-#define GATEWAY_ANON            0xFFFFFFFFFFFFFFF
+#define GATEWAY_ANON            0xFFFFFFFFFFFFFFFF
 
 #define COMMENT_KEY                 '#'
 
@@ -423,10 +423,11 @@ int md_init_client( int gateway_type,
                     char const* ms_url,
                     char const* volume_name, 
                     char const* gateway_name,
+                    int gateway_port,           // FIXME: remove this
                     char const* oid_username,
                     char const* oid_password,
-                    char const* volume_key_path,
-                    char const* my_key_path,
+                    char const* volume_key_pem,
+                    char const* gateway_key_pem,
                     char const* storage_root
                   );
 
