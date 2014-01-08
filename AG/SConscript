@@ -39,6 +39,7 @@ LIBS = """
    microhttpd
    syndicate
    protobuf
+   rt
 """
 
 # add additional CPPFLAGS here
