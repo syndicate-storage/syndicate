@@ -23,6 +23,8 @@ import os
 RG_STORE = "Box"
 
 #XXX -- Work in Progress
+APP_KEY=None
+APP_SECRET=None
 
 #----------------------------
 def get_access_token(app_key=APP_KEY,app_secret=APP_SECRET):
@@ -48,40 +50,40 @@ def get_access_token(app_key=APP_KEY,app_secret=APP_SECRET):
 #----------------------------
 def get_bucket(bucket_name):
 
-	from etc.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+   from etc.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 
-	aws_id = AWS_ACCESS_KEY_ID
-	aws_key = AWS_SECRET_ACCESS_KEY
+   aws_id = AWS_ACCESS_KEY_ID
+   aws_key = AWS_SECRET_ACCESS_KEY
 
-	#from boto.s3.connection import Location
+   #from boto.s3.connection import Location
 
-	try:
+   try:
         client = dropbox.client.DropboxClient(ACCESS_TOKEN)
 
         if(DEBUG): print 'Using account: ', client.account_info()
 
-	except:
-		if(DEBUG): print "ERROR: Connection to Dropbox failed"
-	else:
-		if(DEBUG):
-			print "Connected to S3"
+   except:
+      if(DEBUG): print "ERROR: Connection to Dropbox failed"
+   else:
+      if(DEBUG):
+         print "Connected to S3"
 
-	try:
-		bucket = conn.create_bucket(bucket_name)
-	except:
-		if(DEBUG):
-			print "ERROR: Could not create/fetch bucket " + bucket_name
-	else:
-		if(DEBUG):
-			print "Fetched/created bucket: " + bucket_name
+   try:
+      bucket = conn.create_bucket(bucket_name)
+   except:
+      if(DEBUG):
+         print "ERROR: Could not create/fetch bucket " + bucket_name
+   else:
+      if(DEBUG):
+         print "Fetched/created bucket: " + bucket_name
 
-	return bucket
+   return bucket
  
 #-------------------------
 def write_file(file_name, bucket_name):
     
     if(DEBUG):
-    	print "Writing File: " + file_name
+       print "Writing File: " + file_name
 
     try:
 
@@ -93,7 +95,7 @@ def write_file(file_name, bucket_name):
         return False
     
     if(DEBUG):
-    	print "Written file to dropbox: " + file_name
+       print "Written file to dropbox: " + file_name
 
     return True
 
@@ -101,7 +103,7 @@ def write_file(file_name, bucket_name):
 def read_file(file_name, bucket_name):
     
     if(DEBUG):
-    	print "Reading File: " + file_name
+       print "Reading File: " + file_name
  
     bucket = get_bucket(bucket_name)
 
@@ -112,14 +114,14 @@ def read_file(file_name, bucket_name):
     file_name_with_path = FILE_ROOT + '/data/in/' + file_name
 
     try:
-    	k.get_contents_to_filename(file_name_with_path)
+       k.get_contents_to_filename(file_name_with_path)
     except:
-    	if(DEBUG):
-    		print "ERROR: reading"
-    	return False
-	
-	if(DEBUG):
-		print "Read data from s3 to file: " + file_name_with_path
+       if(DEBUG):
+          print "ERROR: reading"
+       return False
+   
+    if(DEBUG):
+      print "Read data from s3 to file: " + file_name_with_path
     
     return True
    
@@ -127,7 +129,7 @@ def read_file(file_name, bucket_name):
 def delete_file(file_name, bucket_name):
     
     if(DEBUG):
-    	print "Deleting File: " + file_name
+       print "Deleting File: " + file_name
     
     bucket = get_bucket(bucket_name)
 
@@ -136,12 +138,12 @@ def delete_file(file_name, bucket_name):
     k.key = file_name
 
     try:
-    	k.delete()
+       k.delete()
     except:
-    	return False
+       return False
     
     if(DEBUG):
-    	print "Deleted s3 file: " + bucket_name + '/' + file_name
+       print "Deleted s3 file: " + bucket_name + '/' + file_name
 
     return True
 
@@ -156,16 +158,16 @@ if __name__ == "__main__":
     if len(sys.argv) != 4:
         usage() 
     else:
-    	option = sys.argv[1]
-    	file_name = sys.argv[2]
-    	bucket_name = sys.argv[3]
+       option = sys.argv[1]
+       file_name = sys.argv[2]
+       bucket_name = sys.argv[3]
 
-    	if(option == '-w'):
-        	write_file(file_name,bucket_name)
-        elif(option == '-r'):
-        	read_file(file_name,bucket_name)
-        elif(option == '-d'):
-        	delete_file(file_name,bucket_name)
-        else:
-        	usage()
+       if(option == '-w'):
+           write_file(file_name,bucket_name)
+       elif(option == '-r'):
+           read_file(file_name,bucket_name)
+       elif(option == '-d'):
+           delete_file(file_name,bucket_name)
+       else:
+           usage()
 
