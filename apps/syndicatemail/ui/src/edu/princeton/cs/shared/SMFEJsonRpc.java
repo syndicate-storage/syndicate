@@ -2,7 +2,7 @@ package edu.princeton.cs.shared;
 
 import com.google.gwt.json.client.JSONObject;
 import com.google.gwt.json.client.JSONParser;
-import com.google.gwt.user.client.Window;
+import com.google.gwt.json.client.JSONValue;
 
 /**
  * This class encodes/decodes Messages in JSON format that goes through
@@ -11,6 +11,34 @@ import com.google.gwt.user.client.Window;
  *
  */
 public class SMFEJsonRpc {
+	
+	public class SMFEJsonRpcException extends Exception{
+		
+		private static final long serialVersionUID = 1L;
+		private String msg;
+		private JSONValue jsonRpcError;
+		
+		public SMFEJsonRpcException(String msg) {
+			this.msg = msg;
+			this.jsonRpcError = null;
+		}
+		
+		public String getMessage() {
+			return this.msg;
+		}
+		
+		public String toString() {
+			return this.msg;
+		}
+		
+		public void setJsonRpcError(JSONValue ev){
+			this.jsonRpcError = ev;
+		}
+		
+		public JSONValue getJsonRpcError() {
+			return this.jsonRpcError;
+		}
+	}
 	
 	private final static String json_rpc_id     = "{\"id\": \"";
 	private final static String json_rpc_method = "\", \"method\": \"";
@@ -21,17 +49,66 @@ public class SMFEJsonRpc {
 	private SMFEJsonRpc() {}
 	
 	
-	private static native String btoa(String str) /*-{return btoa(str);}-*/;
-	private static native String escape(String str) /*-{return escape(str);}-*/;
-	private static native String decodeURIComponent(String str)/*-{return decodeURIComponent(str);}-*/;
-		
+	private static native String btoa(String str) /*-{
+		try {
+			return btoa(str);
+		}
+		catch (e) {
+			return str;
+		}
+	}-*/;
+	private static native String atob(String str) /*-{
+		try {
+			return atob(str);
+		}
+		catch (e) {
+			return str;
+		}
+	}-*/;
+	private static native String escape(String str) /*-{
+		return escape(str);
+	}-*/;
+	private static native String decodeURIComponent(String str)/*-{
+		return decodeURIComponent(str);
+	}-*/;
+	private static native String encodeURIComponent(String str)/*-{
+		return encodeURIComponent(str);
+	}-*/;
+
+	
 	public static String toBase64(String str) {
-		return decodeURIComponent(escape(btoa( str )));
+		return btoa(encodeURIComponent( str ));
 	}
 	
-	public static JSONObject decodeRespose(String jsonStr) {
+	public static String fromBase64(String str) {
+		return decodeURIComponent(atob( str ));
+	}
+	
+	public static JSONValue decodeRespose(String jsonStr) throws SMFEJsonRpcException{
+		SMFEJsonRpc rpc = new SMFEJsonRpc();
+		if (jsonStr == null)
+			throw rpc.new SMFEJsonRpcException("Invalid Response");
 		JSONObject job = (JSONObject)JSONParser.parseStrict(jsonStr);
-		return job;
+		if (job == null) 
+			throw rpc.new SMFEJsonRpcException("Invalid Response ("+jsonStr+")");
+		//Read result.
+		JSONValue value = job.get("result");
+		if (value == null) {
+			//Check for error...
+			value = job.get("error");
+			if (value == null)
+				throw rpc.new SMFEJsonRpcException("Invalid Response ("+jsonStr+")");
+			if (value.isNull() == null)
+				throw rpc.new SMFEJsonRpcException("A Weird Response ("+jsonStr+")");
+			else {
+				SMFEJsonRpcException e = rpc.new SMFEJsonRpcException("A Weird Response ("+value.toString()+")");
+				e.setJsonRpcError(value);
+			}
+		}
+		if (value.isNull() != null)
+			throw rpc.new SMFEJsonRpcException("A Weird Response ("+jsonStr+")");
+		else 
+			return value;
 	}
 	
 	public static String encodeRPC(String method, String[] args, String[][] kw) {
@@ -41,6 +118,8 @@ public class SMFEJsonRpc {
 		if (args != null) {
 			len = args.length;
 			for (int i=0; i<len; i++) {
+				if (args[i] == null || args[i].equals(""))
+					continue;
 				if (isNumeric(args[i]))
 					args_str += args[i];
 				else
@@ -136,5 +215,15 @@ public class SMFEJsonRpc {
 		    return false;  
 		  }  
 		  return true; 
+	}
+	
+	public static boolean getBooleanValue(JSONValue val) throws SMFEJsonRpcException {
+		SMFEJsonRpc rpc = new SMFEJsonRpc();
+		if (val == null) 
+			throw rpc.new SMFEJsonRpcException("Invalid JSON String");
+		if (val.isBoolean() != null)
+			return val.isBoolean().booleanValue();
+		else
+			throw rpc.new SMFEJsonRpcException("Not a Boolean Value");
 	}
 }

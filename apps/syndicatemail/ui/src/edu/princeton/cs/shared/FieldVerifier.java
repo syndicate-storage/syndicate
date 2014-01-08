@@ -1,5 +1,10 @@
 package edu.princeton.cs.shared;
 
+import java.util.Vector;
+
+import com.google.gwt.regexp.shared.MatchResult;
+import com.google.gwt.regexp.shared.RegExp;
+
 /**
  * <p>
  * FieldVerifier validates that the name the user enters is valid.
@@ -33,10 +38,16 @@ public class FieldVerifier {
 	 * @param name the name to validate
 	 * @return true if valid, false if invalid
 	 */
-	public static boolean isValidName(String name) {
-		if (name == null) {
-			return false;
+	public static String[] getEmailAddrs(String emailAddre) {		
+		RegExp regExp = RegExp.compile("\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,4}\\b", "g");
+		MatchResult matcher = null;
+		Vector<String> addrVec = new Vector<String>();
+		while ((matcher = regExp.exec(emailAddre)) != null) {
+		    for(int i=0; i<matcher.getGroupCount(); i++) {
+		    	addrVec.add(matcher.getGroup(i));
+		    	regExp.setLastIndex(regExp.getLastIndex());
+		    }
 		}
-		return name.length() > 3;
+		return addrVec.toArray(new String[0]);
 	}
 }

@@ -1,18 +1,13 @@
 package edu.princeton.cs.client;
 
 import com.google.gwt.core.client.EntryPoint;
-import com.google.gwt.json.client.JSONArray;
-import com.google.gwt.json.client.JSONObject;
-import com.google.gwt.json.client.JSONString;
-import com.google.gwt.json.client.JSONValue;
-import com.google.gwt.user.client.Window;
 import com.google.gwt.user.client.ui.FlexTable;
 import com.google.gwt.user.client.ui.HorizontalPanel;
 import com.google.gwt.user.client.ui.RootPanel;
 import com.google.gwt.user.client.ui.VerticalPanel;
 
-import edu.princeton.cs.shared.SMFEJsonRpc;
 import edu.princeton.cs.shared.SMFEMailManager;
+import edu.princeton.cs.shared.SMFEStorageConnector;
 
 /**
  * Entry point classes define <code>onModuleLoad()</code>.
@@ -22,6 +17,7 @@ public class SyndicateMailFE implements EntryPoint {
 	 * This is the entry point method.
 	 */
 	private final int DEFAULT_MAIL_BOX = SMFEMailManager.INBOX_ID;
+
 	public void onModuleLoad() {
 	    loadUI();
 	}
@@ -62,7 +58,7 @@ public class SyndicateMailFE implements EntryPoint {
 		SMFDMailComposer comp = new SMFDMailComposer();
 		
 		mainCtrlPanel.add(comp.getComposeButton());
-		mainCtrlPanel.add(SMFMailDir.getDeleteButton(mainTbl));;
+		mainCtrlPanel.add(dirList.getMailDeleteButton());;
 		mainPanel.add(mainCtrlPanel);
 		mainPanel.add(mainTbl);
 		RootPanel.get().add(mainPanel);

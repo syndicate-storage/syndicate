@@ -1,20 +1,39 @@
 package edu.princeton.cs.client;
 
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.Vector;
+
+import com.gargoylesoftware.htmlunit.Page;
+import com.gargoylesoftware.htmlunit.attachment.Attachment;
+import com.gargoylesoftware.htmlunit.attachment.AttachmentHandler;
 import com.google.gwt.event.dom.client.BlurEvent;
 import com.google.gwt.event.dom.client.BlurHandler;
 import com.google.gwt.event.dom.client.ClickEvent;
 import com.google.gwt.event.dom.client.ClickHandler;
+import com.google.gwt.http.client.RequestException;
+import com.google.gwt.user.client.DOM;
+import com.google.gwt.user.client.Element;
+import com.google.gwt.user.client.Event;
 import com.google.gwt.user.client.Window;
 import com.google.gwt.user.client.ui.Button;
 import com.google.gwt.user.client.ui.CellPanel;
 import com.google.gwt.user.client.ui.DialogBox;
+import com.google.gwt.user.client.ui.FileUpload;
+import com.google.gwt.user.client.ui.FormPanel;
 import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.HorizontalPanel;
+import com.google.gwt.user.client.ui.RootPanel;
 import com.google.gwt.user.client.ui.TextArea;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.VerticalPanel;
+import com.google.gwt.dom.client.Node;
 
+import edu.princeton.cs.shared.FieldVerifier;
+import edu.princeton.cs.shared.SMFEMail;
 import edu.princeton.cs.shared.SMFEMailManager;
+import edu.princeton.cs.shared.SMFEUuid;
+import edu.princeton.cs.shared.SMFSendMessageAsync;
 
 public class SMFDMailComposer {
 	private Button composeBtn;
@@ -25,7 +44,20 @@ public class SMFDMailComposer {
 	private int dlgBoxHeight;
 	private final TextBox toTxt = new TextBox();
 	private final TextBox sbjTxt = new TextBox();
+	private final TextBox ccTxt = new TextBox();
+	private final TextBox bccTxt = new TextBox();
 	private final TextArea emailBody = new TextArea();
+	
+	private final String defaultSubjct = "Subject";
+	private final String defaultTo = "To";
+	private final String defaultCc = "Cc";
+	private final String defaultBcc = "Bcc";
+	private final static Vector<String> uploaderNames = new Vector<String>();
+	private final static TreeMap<String, FileUpload> uploaders = new TreeMap<String, FileUpload>();
+	
+	public static final native void clickElement(Element elem) /*-{
+		elem.click();
+	}-*/;
 	
 	public SMFDMailComposer() {
 		displayWidth = Window.getClientWidth();
@@ -66,6 +98,7 @@ public class SMFDMailComposer {
 			@Override
 			public void onClick(ClickEvent event) {
 				// Window.alert("Pop the Compose Window");
+				resetSendDialog();
 				dlgBox.show();
 			}
 		});
@@ -104,42 +137,42 @@ public class SMFDMailComposer {
 		headerPanel.setWidth("100%");
 		headerPanel.addStyleName("header-panel");
 		//Add to text box.
-		toTxt.setWidth(new Integer(dlgBoxWidth).toString()+"px");
-		toTxt.setText("To");
-		toTxt.addStyleName("rcpt-txt-box");
-		toTxt.addClickHandler(new ClickHandler() {
-			@Override
-			public void onClick(ClickEvent event) {
-				toTxt.setText("");
-			}
-		});
-		toTxt.addBlurHandler(new BlurHandler() {
-			@Override
-			public void onBlur(BlurEvent event) {
-				if (toTxt.getText().equals(""))
-					toTxt.setText("To");
-			}
-		});
+		initTextBox(toTxt, defaultTo);
 		headerPanel.add(toTxt);
+		
+		//CC box
+		initTextBox(ccTxt, defaultCc);
+		headerPanel.add(ccTxt);
+		
+		//BCC box
+		initTextBox(bccTxt, defaultBcc);
+		headerPanel.add(bccTxt);
+		
 		//Add subject text box.
-		sbjTxt.setWidth(new Integer(dlgBoxWidth).toString()+"px");
-		sbjTxt.addStyleName("subject-txt-box");
-		sbjTxt.setText("Subject");
-		sbjTxt.addClickHandler(new ClickHandler() {
+		initTextBox(sbjTxt, defaultSubjct);
+		headerPanel.add(sbjTxt);
+		
+		return headerPanel;
+	}
+	
+	private void initTextBox(final TextBox box, final String defaultTxt) {
+		box.setWidth(new Integer(dlgBoxWidth).toString()+"px");
+		box.addStyleName("rcpt-txt-box");
+		//sbjTxt.setText("Subject");
+		box.addClickHandler(new ClickHandler() {
 			@Override
 			public void onClick(ClickEvent event) {
-				sbjTxt.setText("");
+				if (box.getText().equals(defaultTxt))
+					box.setText("");
 			}
 		});
-		sbjTxt.addBlurHandler(new BlurHandler() {
+		box.addBlurHandler(new BlurHandler() {
 			@Override
 			public void onBlur(BlurEvent event) {
-				if (sbjTxt.getText().equals(""))
-					sbjTxt.setText("Subject");
+				if (box.getText().equals(""))
+					box.setText(defaultTxt);
 			}
 		});
-		headerPanel.add(sbjTxt);
-		return headerPanel;
 	}
 	
 	public CellPanel getBodyPanel() {
@@ -154,23 +187,121 @@ public class SMFDMailComposer {
 	}
 	
 	public CellPanel getButtonPanel() {
-		HorizontalPanel btnPanel = new HorizontalPanel();
+		final FormPanel form = new FormPanel();
+		form.setAction("http://127.0.0.1/cgi-bin/test.sh");
+		form.setVisible(false);
+		final VerticalPanel formWidgetPanel = new VerticalPanel();
+		form.add(formWidgetPanel);
+		
+		final HorizontalPanel btnPanel = new HorizontalPanel();
 		btnPanel.setWidth("100%");
 		btnPanel.addStyleName("button-panel");
 		Button sendBtn = new Button("Send");
 		sendBtn.getElement().setClassName("send-button");
+		final SMFDMailComposer composer = this;
 		sendBtn.addClickHandler(new ClickHandler() {
-			
 			@Override
 			public void onClick(ClickEvent event) {
+				if (FieldVerifier.getEmailAddrs(toTxt.getText()) == null)
+					return;
 				SMFEMailManager mm = SMFEMailManager.getMailManager();
-				String[] rcptAddrs = {toTxt.getText()};
-				String   msgBody = emailBody.getText();
-				String[] attachments = null;
-				mm.sendMessage(rcptAddrs, msgBody, attachments);		
+				String[] rcptAddrs = FieldVerifier.getEmailAddrs(toTxt.getText());
+				String[] bccList = FieldVerifier.getEmailAddrs(bccTxt.getText());
+				String[] ccList = FieldVerifier.getEmailAddrs(ccTxt.getText());
+				String msgBody = emailBody.getText();
+				String subject = sbjTxt.getText();
+				String[][] attachments = null;
+				SMFSendMessageAsync sendAsync = new SMFSendMessageAsync(composer);
+				/**
+				 * Loop through all the files and get file names...
+				 */
+				int nrAttachements = uploaderNames.size();
+				attachments = new String[nrAttachements][2];
+				form.submit();
+				for (int i=0; i<nrAttachements; i++) {
+					String name = uploaderNames.get(i);
+					FileUpload fu = uploaders.get(name);
+					//Window.alert(name+" -> "+fu.getFilename());
+					attachments[i][0] = name;
+					attachments[i][1] = fu.getFilename();
+				}
+				try {
+					mm.sendMessage(rcptAddrs, ccList, bccList, subject, msgBody, attachments, sendAsync);
+				} catch (RequestException e) {
+					Window.alert("Sending Failed...\nSorry, we don't have a Drafts box yet!\n"+e.getMessage());
+					composer.unloadSendDialog();
+				}
 			}
 		});
 		btnPanel.add(sendBtn);
+		//Add an attach button..
+		Button attachBtn = new Button();
+		attachBtn.getElement().setClassName("attach-button");
+		attachBtn.addClickHandler(new ClickHandler() {
+			String name = null;
+			@Override
+			public void onClick(ClickEvent event) {
+				//Add a file uploader with a random name...
+				name = new SMFEUuid().toString();
+				FileUpload fileUpload = new FileUpload();
+				fileUpload.setVisible(false);
+				fileUpload.getElement().setId(name);
+				//formWidgetPanel.add(fileUpload);
+				btnPanel.add(fileUpload);
+				uploaderNames.add(name);
+				uploaders.put(name, fileUpload);
+				clickElement(fileUpload.getElement());
+			}
+		});
+		btnPanel.add(attachBtn);
+		btnPanel.add(form);
 		return btnPanel;
+	}
+	
+	public void unloadSendDialog() {
+		dlgBox.hide();
+		resetSendDialog();
+	}
+	
+	public void loadSendDialog() {
+		resetSendDialog();
+		dlgBox.show();
+	}
+	
+	public void loadReplySendDialog(String sender, String[] rcptAddrs, String[] ccAddrs, String[] bccAddrs,
+			String subject, String body, long ts, String handle, String[] attachements) {
+		resetSendDialog();
+		sbjTxt.setText(subject);
+		toTxt.setText(sender);
+		emailBody.setText("\n\n\n--------ORIGINAL MESSAGE---------\n\n"+body);
+		dlgBox.show();
+	}
+	
+	private void resetSendDialog() {
+		resetSbjTxt();
+		resetBody();
+		resetToTxt();
+		resetCcTxt();
+		resetBccTxt();
+	}
+	
+	private void resetSbjTxt() {
+		sbjTxt.setText(defaultSubjct);
+	}
+	
+	private void resetToTxt() {
+		toTxt.setText(defaultTo);
+	}
+	
+	private void resetBccTxt() {
+		bccTxt.setText(defaultBcc);
+	}
+	
+	private void resetCcTxt() {
+		ccTxt.setText(defaultCc);
+	}
+	
+	private void resetBody() {
+		emailBody.setText(null);
 	}
 }
