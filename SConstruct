@@ -215,9 +215,7 @@ env.Depends( ags, libsyndicate )
 libAGcommon_out = "build/out/lib/AG/"
 libAGcommon = SConscript( "AG/drivers/common/SConscript", variant_dir=libAGcommon_out )
 env.Depends( libAGcommon, libsyndicate )
-ag_common_install = env.Install( lib_install_dir, libAGcommon )
 env.Alias( 'AG-common', libAGcommon )
-env.Alias( 'AG-common-install', [ag_common_install] )
 
 # AG disk driver
 libAGdiskdriver_out = "build/out/lib/AG/drivers/disk"
@@ -244,8 +242,9 @@ env.Alias( 'AG-shell-driver-install', [ag_driver_shell_install] )
 env.Depends( libAGshelldriver, libAGcommon )
 
 # All drivers
-env.Alias( 'AG-drivers', [libAGSQLdriver, libAGshelldriver, libAGdiskdriver] )
-env.Alias( 'AG-drivers-install', [ag_driver_shell_install, ag_driver_sql_install, ag_driver_disk_install] )
+ag_drivers = [libAGSQLdriver, libAGshelldriver, libAGdiskdriver]
+env.Alias( 'AG-drivers', ag_drivers )
+#env.Alias( 'AG-drivers-install', [ag_driver_shell_install, ag_driver_sql_install, ag_driver_disk_install] )
 
 # AG Watchdog daemon
 watchdog_daemon_out = "build/out/bin/AG/watchdog"
@@ -253,7 +252,10 @@ watchdog_daemon = SConscript( "AG/watchdog-daemon/SConscript", variant_dir=watch
 env.Alias( "AG-watchdog", watchdog_daemon )
 
 # installation
+common.install_targets( env, 'AG-common-install', lib_install_dir, libAGcommon )
 common.install_targets( env, 'AG-install', bin_install_dir, ags )
+common.install_targets( env, 'AG-install', lib_install_dir, ag_drivers )
+common.install_targets( env, 'AG-drivers-install', lib_install_dir, ag_drivers )
 
 # main targets....
 env.Alias( 'AG', [libAGcommon, libAGdiskdriver, libAGSQLdriver, libAGshelldriver, watchdog_daemon, ags] )
