@@ -265,7 +265,6 @@ public class SMFDMailComposer {
 						String fileName = getFileName(fileUpload.getFilename());
 						attachment_handler_list.add(name);
 						attachment_fname_list.put(name, fileName);
-						btnPanel.remove(fileUpload);
 						Label attLbl = new Label(fileName);
 						attLbl.setStyleName("attchment-lbl");
 						Label delAttLbl = new Label("X");
