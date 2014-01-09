@@ -262,14 +262,12 @@ public class SMFMailDisplay {
 		//Put mailControlPanel in dspPanel.
 		dspPanel.add(mailControPanel);
 		
-		//Add email body...
 		TextArea body = new TextArea();
 		body.setStyleName("mail-display-body");
-		body.setWidth("100%");
-		body.setHeight("500px");
 		body.setText(this.body);
 		body.setEnabled(false);
 		dspPanel.add(body);
+		
 		//Add hidden field for handle
 		Hidden hidden = new Hidden();
 		hidden.getElement().setId(MAIL_HANDLE_ID);

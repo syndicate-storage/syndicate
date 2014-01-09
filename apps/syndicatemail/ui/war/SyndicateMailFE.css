@@ -29,7 +29,7 @@ h1 {
 }
 
 .body-theme {
-	background-image: url(background.jpg);
+	background-image: url(background-3.jpg);
 }
 
 /** Set ids using widget.getElement().setId("idOfElement") */
@@ -224,7 +224,13 @@ button.send-button {
 
 .mail-display-panel {
 	background-color: transparent;
+	width: auto;
 }
+
+.mail-display-panel tr {
+	padding: 0px;
+}
+
 
 .mail-display-panel td {
 	padding: 0px;
@@ -235,16 +241,17 @@ button.send-button {
 	font-size: 20px;
 	color: black;
 	border-bottom: 1px solid #CCCCCC;
-	padding-bottom: 10px;
+	/*padding-bottom: 10px;*/
 	background-color: white;
 	opacity: 0.75;
+	padding: 4px;
 }
 
 .mail-display-sndrlbl {
 	font-weight: bolder;
 	font-family: sans-serif;
 	color: black;
-	padding-bottom: 10px;
+	/*padding-bottom: 10px;*/
 	padding-top:  10px
 	background-color: white;
 	opacity: 0.8;
@@ -257,6 +264,8 @@ button.send-button {
 	font-size: 13px;
 	background-color: white;
 	opacity: 0.9;
+	width: 1070px;
+	height: 500px;
 }
 
 .box-item-checkbox input {
@@ -269,6 +278,7 @@ button.send-button {
 	border-bottom: 1px solid #CCCCCC;
 	background-color: white;
 	opacity: 0.85;
+	padding: 4px;
 }
 
 .mail-display-action-panel {
