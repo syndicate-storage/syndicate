@@ -80,7 +80,7 @@ public class SMFMailDisplay {
 			return;
 		dspPanel = new VerticalPanel();
 		dspPanel.getElement().setId(UI_MODE);
-		dspPanel.getElement().setClassName("mail-display-panel");
+		dspPanel.setStyleName("mail-display-panel");
 		dspPanel.setWidth("70%");
 		//Add subject label...
 		Label sbjLbl = new Label();

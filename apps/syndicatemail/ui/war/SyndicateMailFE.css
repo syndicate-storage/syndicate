@@ -131,7 +131,8 @@ button.delete-button {
 }
 
 button.delete-button:hover {
-	background-color: red;
+	background-color: rgb(53, 39, 9);
+	color: #CCCCCC;
 }
 
 .compose-title {
@@ -222,7 +223,7 @@ button.send-button {
 }
 
 .mail-display-panel {
-	background-color: white;
+	background-color: transparent;
 }
 
 .mail-display-panel td {
@@ -235,6 +236,8 @@ button.send-button {
 	color: black;
 	border-bottom: 1px solid #CCCCCC;
 	padding-bottom: 10px;
+	background-color: white;
+	opacity: 0.75;
 }
 
 .mail-display-sndrlbl {
@@ -243,6 +246,8 @@ button.send-button {
 	color: black;
 	padding-bottom: 10px;
 	padding-top:  10px
+	background-color: white;
+	opacity: 0.8;
 }
 
 .mail-display-body {
@@ -250,6 +255,8 @@ button.send-button {
 	resize: none;
 	color: black;
 	font-size: 13px;
+	background-color: white;
+	opacity: 0.9;
 }
 
 .box-item-checkbox input {
@@ -260,6 +267,8 @@ button.send-button {
 .mail-display-control-panel {
 	width: 100%;
 	border-bottom: 1px solid #CCCCCC;
+	background-color: white;
+	opacity: 0.85;
 }
 
 .mail-display-action-panel {
