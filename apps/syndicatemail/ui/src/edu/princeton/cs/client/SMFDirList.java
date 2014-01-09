@@ -43,6 +43,7 @@ public class SMFDirList {
 		if (dirListPanel != null)
 			return dirListPanel;
 		dirListPanel = new VerticalPanel();
+		dirListPanel.setStyleName("dir-list-panel");
 		//Create a 1x2 table
 		FlexTable dirListTbl = new FlexTable();
 		dirListPanel.setWidth(new Integer(panelWidth).toString()+"px");
