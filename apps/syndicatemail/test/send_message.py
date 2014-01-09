@@ -12,19 +12,23 @@ import time
 hostname = "localhost"
 port = 33333
 
-now = int(time.time())
-
-folder = "Inbox"
+recipient_addrs = ['bob.mail.syndicate.com@example.com']
 
 if len(sys.argv) > 1:
-   folder = sys.argv[1]
+   recipient_addrs = sys.argv[1:]
+
+cc_addrs = []
+bcc_addrs = []
+subject = "Hello at %s" % time.time()
+body = "This is a time update.  It is now %s" % time.time()
+attachment_names = {}
 
 data_dict = { 
    'id': str(uuid.uuid4()),
-   'method': 'list_messages',
+   'method': 'send_message',
    'params': {
-       'args': [ folder, 1388897379, now ],
-       'kw' : { "length": 2 },
+       'args': [ recipient_addrs, cc_addrs, bcc_addrs, subject, body, attachment_names ],
+       'kw' : {},
     },
     'jsonrpc': '1.0'
 }

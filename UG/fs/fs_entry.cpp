@@ -351,7 +351,7 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    fent->max_write_freshness = core->conf->default_write_freshness;
    fent->read_stale = false;
    fent->xattrs = new fs_entry_xattrs();
-
+   
    clock_gettime( CLOCK_REALTIME, &fent->refresh_time );
    
    ts.tv_sec = mtime_sec;

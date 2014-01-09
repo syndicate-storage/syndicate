@@ -20,8 +20,11 @@ import time
 import os
 import errno
 import stat
+
+import keys
 import contact
 import account
+import singleton
 
 import syndicate.client.common.log as Log
 
@@ -39,7 +42,25 @@ from syndicate.volume import Volume
 SESSION_LENGTH = 3600 * 24 * 7      # one week
 
 # -------------------------------------
-def do_login( config, email, password ):
+def do_first_login( config, password, syndicate_oid_username, syndicate_oid_password, user_signing_privkey_pem, user_verifying_pubkey_pem, volume_pubkey_pem ):
+   
+   try:
+      parsed_email = contact.parse_addr( config['email'] )
+   except:
+      raise Exception("Invalid email '%s'" % config['email'] )
+   
+   account_privkey_pem = account.create_account( config['mail_username'], password, config['mail_server'], password, config['MS'], syndicate_oid_username, syndicate_oid_password,
+                                                 user_signing_privkey_pem, user_verifying_pubkey_pem, parsed_email.volume, volume_pubkey_pem )
+
+   if account_privkey_pem is None or account_privkey_pem == False:
+      raise Exception("Failed to create an account for %s" % config['email'] )
+   
+   return account_privkey_pem
+
+# -------------------------------------
+def do_login( config, email, password, syndicate_oid_username, syndicate_oid_password, user_signing_privkey_pem=None, user_verifying_pubkey_pem=None, volume_pubkey_pem=None, create_on_absent=False):
+   # TODO: remove need for OID login/password
+   
    global SESSION_LENGTH
    
    try:
@@ -47,37 +68,118 @@ def do_login( config, email, password ):
    except:
       raise Exception("Invalid email '%s'" % email)
    
-   # attempt to load the SyndicateMail private key
-   privkey = keys.load_private_key( email, password )
+   config['email'] = email
+   config['session_expires'] = int(time.time()) + SESSION_LENGTH
+   config['volume_name'] = parsed_email.volume
+   config['mail_username'] = parsed_email.username
+   config['mail_server'] = parsed_email.server
+   
+   privkey = None
+   
+   # attempt to get the volume public key 
+   # FIXME: remove this kludge so storage is sanely initialized
+   import storage
+   storage.LOCAL_ROOT_DIR = "/"
+   existing_volume_pubkey_pem = account.read_account_volume_pubkey( email, storage_root=account.LOCAL_STORAGE_ROOT )
+   storage.LOCAL_ROOT_DIR = None
+   
+   need_storage_setup = False
+   if existing_volume_pubkey_pem is None:
+      # no account exists 
+      log.warning("No account for %s exists" % email)
+      if create_on_absent:
+         log.info("Creating account for %s" % email)
+         
+         if user_signing_privkey_pem is None or user_verifying_pubkey_pem is None:
+            raise Exception("Need to give Syndicate user signing and verifying keys for %s" % syndicate_oid_username )
+         
+         account_privkey_pem = None
+         try:
+            account_privkey_pem = do_first_login( config, password, syndicate_oid_username, syndicate_oid_password, user_signing_privkey_pem, user_verifying_pubkey_pem, volume_pubkey_pem )
+         except Exception, e:
+            log.error("Failed to create account for %s" % email)
+            log.exception(e)
+            raise e
+         
+         privkey = CryptoKey.importKey( account_privkey_pem )
+         existing_volume_pubkey_pem = volume_pubkey_pem
+         
+      else:
+         raise Exception("No such account %s" % email )
+      
+   else:
+      # set up storage
+      need_storage_setup = True
+      
+      
+   config['volume_pubkey_pem'] = existing_volume_pubkey_pem
+   
+   # set up local storage
+   if need_storage_setup:
+      rc = storage.setup_local_storage( account.LOCAL_STORAGE_ROOT, [] )
+      if not rc:
+         do_logout( config )
+         raise Exception("Failed to set up local storage")
+   
+   # get account info
+   account_info = account.read_account( password, email )
+   if account_info is None:
+      do_logout( config )
+      raise Exception("Failed to read account information.")
+   
+   gateway_name = account_info.gateway_name
+   gateway_port = account_info.gateway_port
+   gateway_privkey_pem = account_info.gateway_privkey_pem
+   volume_pubkey_pem = account_info.volume_pubkey_pem
+   
+   # load the Volume
+   volume = Volume( gateway_name=gateway_name,
+                    gateway_port=gateway_port,
+                    ms_url=parsed_email.MS,
+                    my_key_pem=gateway_privkey_pem,
+                    volume_key_pem=volume_pubkey_pem,   # FIXME: volume_pubkey_pem consistent naming
+                    volume_name=parsed_email.volume,
+                    oid_username=syndicate_oid_username,
+                    oid_password=syndicate_oid_password )
+                    
+   
+   config['gateway_privkey_pem'] = gateway_privkey_pem
+   config['volume'] = volume
+   singleton.set_volume( volume )
+   
+   # set up volume storage
+   if need_storage_setup:
+      rc = storage.setup_storage( account.VOLUME_STORAGE_ROOT, account.LOCAL_STORAGE_ROOT, [], volume=volume )
+      if not rc:
+         do_logout( config )
+         raise Exception( "Failed to set up storage" )
+   
+   # get our account private key
    if privkey is None:
-      raise Exception("Invalid username/password")
+      # attempt to load the SyndicateMail private key
+      privkey = keys.load_private_key( email, password )
+      if privkey is None:
+         
+         raise Exception("Invalid username/password")
+   
+   privkey_str = privkey.exportKey()
    
    config['privkey'] = privkey
    config['pubkey'] = privkey.publickey()
-   config['session_expires'] = int(time.time()) + SESSION_LENGTH
-   config['ms_url'] = parsed_email.MS
-   config['volume_name'] = parsed_email.volume
    
-   
-   # attempt to load the (local) gateway private key.
-   # it will be encrypted with the SyndicateMail private key
-   gateway_name = account.read_gateway_name()
-   gateway_privkey_str = account.read_gateway_privkey( config['privkey'].exportKey(), gateway_name )
-   
-   # TODO: initialize volume
    return True
 
 
 # -------------------------------------
 def do_logout( config ):
-   del config['privkey']
-   del config['pubkey']
-   del config['session_expires']
-   del config['ms_url']
-   del config['volume_name']
+   for k in ['privkey', 'pubkey', 'session_expires', 'volume_name', 'volume', 'gateway_privkey_pem', 'email', 'volume_pubkey_pem']:
+      if config.has_key(k):
+         del config[k]
+         
+   singleton.set_volume( None )
 
 # -------------------------------------
-def do_delete( config, email, password, delete_volume_and_gateway=False, syndicate_user_privkey=None ):
+def do_delete( config, email, password, delete_gateway=False, syndicate_user_privkey_str=None, syndicate_user_pubkey_str=None ):
    try:
       do_login( config, email, password )
    except Exception, e:
@@ -85,7 +187,7 @@ def do_delete( config, email, password, delete_volume_and_gateway=False, syndica
       log.error("Invalid credentials")
       return False
    
-   rc = account.delete_account( config['privkey'].exportKey(), email, delete_volume_and_gateway=delete_volume_and_gateway, syndicate_user_privkey=syndicate_user_privkey )
+   rc = account.delete_account( config['privkey'].exportKey(), email, remove_gateway=delete_gateway, syndicate_user_privkey_str=syndicate_user_privkey_str, syndicate_user_verifykey_str=syndicate_user_pubkey_str )
    do_logout( config )
    return rc
 
@@ -94,6 +196,9 @@ def is_expired( config ):
    for session_key in ['privkey', 'session_expires']:
       if session_key not in config:
          return True
+   
+   if config['session_expires'] < 0:
+      return False
    
    if time.time() > config['session_expires']:
       return True
@@ -231,7 +336,7 @@ class FakeVolume:
          return -oe.errno
 
 # -------------------------------------
-def do_test_login( config, email, password ):
+def do_test_login( config, email, password, volume=None ):
    
    privkey_str = """
 -----BEGIN RSA PRIVATE KEY-----
@@ -297,8 +402,8 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
    config['privkey'] = privkey
    config['pubkey'] = privkey.publickey()
    config['session_expires'] = time.time() + SESSION_LENGTH
-   config['ms_url'] = parsed_email.MS
    config['volume_name'] = parsed_email.volume
+   config['volume'] = volume
    return True
 
 

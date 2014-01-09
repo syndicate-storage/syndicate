@@ -113,6 +113,16 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
       return -EAGAIN;
    }
       
+   // this block may appear to be local if we're running in client mode.
+   // if so, then don't download from ourselves.
+   bool skip_UG = false;
+   if( core->conf->is_client ) {
+      int loc = fent->manifest->is_block_local( core, block_id );
+      if( loc > 0 ) {
+         skip_UG = true;
+      }
+   }
+   
    if( gateway_type == SYNDICATE_UG )
       block_url = fs_entry_remote_block_url( core, fent->coordinator, fs_path, fent->version, block_id, block_version );
    else if( gateway_type == SYNDICATE_RG )
@@ -126,10 +136,14 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
    }
 
    char* block_buf = NULL;
-   ssize_t nr = fs_entry_download_block( core, block_url, &block_buf, block_len );
+   ssize_t nr = 0;
    
-   if( nr <= 0 ) {
-      errorf("fs_entry_download_block(%s) rc = %zd\n", block_url, nr );
+   if( !skip_UG || gateway_type != SYNDICATE_UG ) {
+      nr = fs_entry_download_block( core, block_url, &block_buf, block_len );
+      
+      if( nr <= 0 ) {
+         errorf("fs_entry_download_block(%s) rc = %zd\n", block_url, nr );
+      }
    }
    
    if( nr <= 0 && gateway_type != SYNDICATE_AG ) {
@@ -184,11 +198,18 @@ ssize_t fs_entry_do_read_block( struct fs_core* core, char const* fs_path, struc
    
    int loc = fent->manifest->is_block_local( core, block_id );
    if( loc > 0 ) {
-      dbprintf("%s.%" PRId64 "/%" PRIu64 " is local\n", fs_path, fent->version, block_id );
-      return fs_entry_read_local_block( core, fent, block_id, block_bits, block_len );
+      dbprintf("%s.%" PRId64 "/%" PRIu64 " might be local\n", fs_path, fent->version, block_id );
+      int rc = fs_entry_read_local_block( core, fent, block_id, block_bits, block_len );
+      if( rc == -ENOENT && core->conf->is_client ) {
+         // fetch from RG
+         rc = 0;
+      }
+      else {
+         return rc;
+      }
    }
 
-   else if( loc == 0 ) {
+   if( loc == 0 || core->conf->is_client ) {
       dbprintf("%s.%" PRId64 "/%" PRIu64 " is remote\n", fs_path, fent->version, block_id );
       return fs_entry_read_remote_block( core, fs_path, fent, block_id, block_bits, block_len );
    }

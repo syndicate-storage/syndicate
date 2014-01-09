@@ -96,11 +96,15 @@ def make_addr_str( uid, volume_name, MS, server ):
 def make_contact_path( pubkey_str, email_addr ):
    global STORAGE_DIR
    
-   enc_filename = storage.encrypt_data( pubkey_str, filename )
+   """
+   enc_filename = storage.encrypt_data( pubkey_str, email_addr )
    enc_filename_salted = storage.salt_string( enc_filename )
    enc_filename_b64 = base64.b64encode( enc_filename_salted )
-   
-   return storage.volume_path( STORAGE_DIR, enc_filename_b64 )
+   """
+   # TODO: make this scheme IND-CPA
+   filename_salted = storage.salt_string( email_addr )
+   filename_b64 = base64.b64encode( filename_salted )
+   return storage.volume_path( STORAGE_DIR, filename_b64 )
 
 
 # -------------------------------------
@@ -108,13 +112,13 @@ def read_contact_from_path( privkey_str, contact_path ):
    
    contact_json_str = storage.read_encrypted_file( privkey_str, contact_path )
    if contact_json_str is None:
-      log.error( "Could not read contact" )
+      log.error( "Could not read contact %s" % contact_path )
       return None
    
    try:
       contact = storage.json_to_tuple( SyndicateContact, contact_json_str )
    except Exception, e:
-      log.error("Failed to load contact" )
+      log.error("Failed to load contact %s" % contact_path )
       log.exception(e)
       return None
    
@@ -131,7 +135,11 @@ def read_contact( pubkey_str, privkey_str, email_addr ):
    
    contact_path = make_contact_path( pubkey_str, email_addr )
    
-   return read_contact_from_path( privkey_str, contact_path )
+   contact = read_contact_from_path( privkey_str, contact_path )
+   if contact is None:
+      log.error("Failed to read contact %s" % email_addr)
+   
+   return contact
 
 # -------------------------------------
 def write_contact( pubkey_str, contact ):
@@ -176,6 +184,7 @@ def add_contact( pubkey_str, email_addr, contact_pubkey_str, contact_fields ):
    contact = SyndicateContact( addr=email_addr, pubkey_pem=contact_pubkey_str, extras = contact_fields )
    if contact_exists( pubkey_str, email_addr ):
       log.error( "Contact '%s' already exists" % email_addr )
+      return None
    
    return write_contact( pubkey_str, contact )
    

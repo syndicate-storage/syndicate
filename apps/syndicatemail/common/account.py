@@ -23,11 +23,13 @@ import contact
 import message
 import singleton
 
-ALL_VOLUME_STORAGE_PACKAGES = [keys, contact, storage, message]
+import os
+
+ALL_STORAGE_PACKAGES = [keys, contact, storage, message]
 
 VOLUME_STORAGE_ROOT = "/apps/syndicatemail/data"
+LOCAL_STORAGE_ROOT = os.path.expanduser("/tmp/syndicatemail")
 
-import os
 import sys
 import tempfile
 import socket 
@@ -57,6 +59,7 @@ USER_STORAGE_DIR = "user_info"
 GATEWAY_STORAGE_DIR = "gateway_info"
 GATEWAY_RUNTIME_STORAGE = "gateway_runtime"
 VOLUME_STORAGE_DIR = "volume_info"
+LOCAL_STORAGE_DIR = os.path.expanduser("~/syndicatemail")
 LOCAL_TMP_DIR = "/tmp"
 
 DEFAULT_GATEWAY_PORT = 33334
@@ -69,7 +72,8 @@ VOLUME_STORAGE_DIRS = [
 LOCAL_STORAGE_DIRS = [
    GATEWAY_STORAGE_DIR,
    VOLUME_STORAGE_DIR,
-   LOCAL_TMP_DIR
+   LOCAL_TMP_DIR,
+   LOCAL_STORAGE_DIR
 ]
 
 CREATED = 1
@@ -97,20 +101,46 @@ def volume_pubkey_path( volume_name ):
    return storage.local_path( VOLUME_STORAGE_DIR, pubkey_basename( volume_name ) )
 
 # -------------------------------------
-def read_gateway_privkey( privkey_str, gateway_name ):
-   return storage.read_encrypted_file( privkey_str, gateway_privkey_path( gateway_name ), volume=None )
+def read_gateway_privkey( password, gateway_name ):
+   path = gateway_privkey_path( gateway_name )
+   encrypted_privkey_json = storage.read_file( path, volume=None )
+
+   try:
+      encrypted_privkey = storage.json_to_tuple( keys.EncryptedPrivateKey, encrypted_privkey_json )
+   except Exception, e:
+      log.exception(e)
+      log.error("Failed to unserialize encrypted private gateway key")
+      return None
+   
+   privkey_str = keys.decrypt_private_key( encrypted_privkey, password )
+
+   return privkey_str
 
 # -------------------------------------
-def write_gateway_privkey( pubkey_str, gateway_name, gateway_privkey_str ):
-   return storage.write_encrypted_file( pubkey_str, gateway_privkey_path( gateway_name ), gateway_privkey_str, volume=None )
+def write_gateway_privkey( password, gateway_name, gateway_privkey_str ):
+   encrypted_data = keys.encrypt_private_key( gateway_privkey_str, password )
+   try:
+      encrypted_data_json = storage.tuple_to_json( encrypted_data )
+   except Exception, e:
+      log.exception(e)
+      log.error("Failed to serialize encrypted private gateway key" )
+      return None
+   
+   path = gateway_privkey_path( gateway_name )
+   return storage.write_file( path, encrypted_data_json, volume=None )
 
 # -------------------------------------
 def delete_gateway_privkey( gateway_name ):
    return storage.erase_file( gateway_privkey_path( gateway_name ), volume=None )
 
 # -------------------------------------
-def read_volume_pubkey( volume_name ):
-   return storage.read_file( volume_pubkey_path( volume_name ), volume=None )
+def read_volume_pubkey( volume_name, prefix=None ):
+   # support prefix, since sometimes this can be called before storage is initialized
+   if prefix is None:
+      prefix = "/"
+   
+   pubkey_path = storage.path_join(prefix, volume_pubkey_path( volume_name ))
+   return storage.read_file( pubkey_path, volume=None )
 
 # -------------------------------------
 def write_volume_pubkey( volume_name, metadata_pubkey ):
@@ -218,7 +248,7 @@ def is_signature_failure( e ):
 
 
 # -------------------------------------
-def make_gateway( pubkey_str, syndicate_user_id, syndicate_user_signingkey_str, syndicate_user_verifyingkey_str, ms_url, volume_name, gateway_name, gateway_port, gateway_pkey_pem ):
+def make_gateway( pubkey_str, mail_password, syndicate_user_id, syndicate_user_signingkey_str, syndicate_user_verifyingkey_str, ms_url, volume_name, gateway_name, gateway_port, gateway_pkey_pem ):
    global CREATED, EXISTS
    
    if gateway_name is None:
@@ -300,15 +330,17 @@ def make_gateway( pubkey_str, syndicate_user_id, syndicate_user_signingkey_str, 
          return None
       
       # store the key 
-      rc = write_gateway_privkey( pubkey_str, gateway_name, gateway_pkey_pem )
+      rc = write_gateway_privkey( mail_password, gateway_name, gateway_pkey_pem )
       if not rc:
          log.error("Failed to store gateway private key")
          cleanup_syntool( cleanup_files, tmpdir )
          return False
    
    else:
-      # don't erase the keys--there's nothing to erase
+      # everything should be in place already 
       cleanup_files = []
+      cleanup_syntool( cleanup_files, tmpdir )
+      return EXISTS
       
    # store the gateway name
    rc = write_gateway_name( gateway_name )
@@ -502,11 +534,18 @@ def delete_gateway( syndicate_user_id, syndicate_user_signingkey_str, syndicate_
 
 
 # -------------------------------------
-def create_account( syndicatemail_uid, mail_server, password, ms_url, syndicate_user_id, syndicate_user_password, syndicate_user_privkey_str, syndicate_user_verifyingkey_str, existing_volume_name, existing_volume_pubkey_pem,
-                    num_downloads=1, duration=3600, existing_gateway_name=None, existing_gateway_port=None, existing_gateway_pkey_pem=None ):
+def create_account( syndicatemail_uid, syndicatemail_password, mail_server, password, ms_url, syndicate_user_id, syndicate_user_password, syndicate_user_privkey_str, syndicate_user_verifyingkey_str,
+                    existing_volume_name, existing_volume_pubkey_pem, num_downloads=1, duration=3600, existing_gateway_name=None, existing_gateway_port=None, existing_gateway_pkey_pem=None ):
    
-   global DEFAULT_GATEWAY_PORT, ALL_VOLUME_STORAGE_PACKAGES, VOLUME_STORAGE_ROOT
+   global DEFAULT_GATEWAY_PORT, ALL_STORAGE_PACKAGES, VOLUME_STORAGE_ROOT, LOCAL_STORAGE_ROOT
    
+   if storage.LOCAL_ROOT_DIR is None:
+      # FIXME: remove this kludge
+      fake_module = collections.namedtuple( "FakeModule", ["VOLUME_STORAGE_DIRS", "LOCAL_STORAGE_DIRS"] )
+      this_module = fake_module( LOCAL_STORAGE_DIRS=LOCAL_STORAGE_DIRS, VOLUME_STORAGE_DIRS=VOLUME_STORAGE_DIRS )
+      
+      rc = storage.setup_local_storage( LOCAL_STORAGE_ROOT, ALL_STORAGE_PACKAGES + [this_module] )
+      
    if existing_gateway_name is None:
       existing_gateway_name = make_default_gateway_name()
       
@@ -517,14 +556,9 @@ def create_account( syndicatemail_uid, mail_server, password, ms_url, syndicate_
    pubkey_pem, privkey_pem = keys.generate_key_pair()
    
    # create or load the gateway
-   rc = make_gateway( pubkey_pem, syndicate_user_id, syndicate_user_privkey_str, syndicate_user_verifyingkey_str, ms_url, existing_volume_name, existing_gateway_name, existing_gateway_port, existing_gateway_pkey_pem )
+   rc = make_gateway( pubkey_pem, syndicatemail_password, syndicate_user_id, syndicate_user_privkey_str, syndicate_user_verifyingkey_str, ms_url,
+                      existing_volume_name, existing_gateway_name, existing_gateway_port, existing_gateway_pkey_pem )
    if not rc:
-      # try to delete the volume, if it didn't exist already
-      if rc != EXISTS:
-         rc = delete_volume( syndicate_user_id, syndicate_user_privkey_str, syndicate_user_verifyingkey_str, ms_url, existing_volume_name, None )
-         if not rc:
-            raise Exception("Failed to create Gateway, and failed to delete Volume!")
-      
       raise Exception("Failed to create Gateway")
    
    gateway_rc = rc
@@ -536,7 +570,7 @@ def create_account( syndicatemail_uid, mail_server, password, ms_url, syndicate_
    log.info("SyndicateMail address is %s" % email )
    
    # cleanup Syndicate function
-   def cleanup_syndicate( volume ):
+   def cleanup_syndicate():
       if gateway_rc != EXISTS:
          rc = delete_gateway( syndicate_user_id, syndicate_user_privkey_str, syndicate_user_verifyingkey_str, ms_url, existing_gateway_name )
          if not rc:
@@ -544,7 +578,7 @@ def create_account( syndicatemail_uid, mail_server, password, ms_url, syndicate_
             
    
    # get the private key
-   existing_gateway_pkey_pem = read_gateway_privkey( privkey_pem, existing_gateway_name )
+   existing_gateway_pkey_pem = read_gateway_privkey( syndicatemail_password, existing_gateway_name )
    if existing_gateway_pkey_pem is None:
       log.critical("Failed to store gateway private key!")
       cleanup_syndicate()
@@ -574,7 +608,7 @@ def create_account( syndicatemail_uid, mail_server, password, ms_url, syndicate_
    fake_module = collections.namedtuple( "FakeModule", ["VOLUME_STORAGE_DIRS", "LOCAL_STORAGE_DIRS"] )
    this_module = fake_module( LOCAL_STORAGE_DIRS=LOCAL_STORAGE_DIRS, VOLUME_STORAGE_DIRS=VOLUME_STORAGE_DIRS )
    
-   rc = storage.setup_volume_storage( VOLUME_STORAGE_ROOT, ALL_VOLUME_STORAGE_PACKAGES + [this_module], vol )
+   rc = storage.setup_volume_storage( VOLUME_STORAGE_ROOT, ALL_STORAGE_PACKAGES + [this_module], volume=vol )
    if not rc:
       log.critical("Failed to set up Volume!")
       cleanup_syndicate( vol )
@@ -659,7 +693,7 @@ def create_account( syndicatemail_uid, mail_server, password, ms_url, syndicate_
 
 
 # -------------------------------------
-def read_account( privkey_str, email_addr ):
+def read_account( syndicatemail_password, email_addr ):
       
    try:
       email_addr_parsed = contact.parse_addr( email_addr )
@@ -682,11 +716,10 @@ def read_account( privkey_str, email_addr ):
       log.error("Failed to read volume public key")
       return None
    
-   gateway_privkey_pem = read_gateway_privkey( privkey_str, gateway_name )
+   gateway_privkey_pem = read_gateway_privkey( syndicatemail_password, gateway_name )
    if gateway_privkey_pem is None:
       log.error("Failed to read gateway private key")
       return None
-   
    
    account = SyndicateAccountInfo( gateway_name=gateway_name, 
                                    gateway_port=gateway_port,
@@ -742,6 +775,16 @@ def delete_account( privkey_str, email, volume, syndicate_user_id, remove_gatewa
    
    return True
 
+# -------------------------------------
+def read_account_volume_pubkey( email_addr, storage_root=None ):
+   try:
+      email_addr_parsed = contact.parse_addr( email_addr )
+   except:
+      log.error("Invalid email address %s" % email_addr)
+      return None
+                                  
+   volume_pubkey_pem = read_volume_pubkey( email_addr_parsed.volume, prefix=storage_root )
+   return volume_pubkey_pem
 
 # -------------------------------------
 if __name__ == "__main__":
@@ -843,11 +886,11 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
    
    print "------- create account --------"
    #def create_account( syndicatemail_uid, mail_server, password, ms_url, syndicate_user_id, syndicate_user_password, syndicate_user_privkey_str, syndicate_user_verifyingkey_str, num_downloads, duration,
-   account_privkey_pem = create_account( "fakeuser", "t510", "yoink", "http://localhost:8080", "testuser@gmail.com", "sniff", testuser_signing_pkey_str, testuser_verifying_pubkey_str, volume_name, volume_pubkey_pem )
+   account_privkey_pem = create_account( "fakeuser", "poop", "t510", "yoink", "http://localhost:8080", "testuser@gmail.com", "sniff", testuser_signing_pkey_str, testuser_verifying_pubkey_str, volume_name, volume_pubkey_pem )
    assert account_privkey_pem is not None and account_privkey_pem != False, "create_account failed"
    
    print "------- read account --------"
-   account_info = read_account( account_privkey_pem, "fakeuser.mail.localhost%3A8080@t510" )
+   account_info = read_account( "poop", "fakeuser.mail.localhost%3A8080@t510" )
    assert account_info is not None, "read_account failed"
    
    import pprint 

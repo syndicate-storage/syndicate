@@ -120,6 +120,7 @@ struct fs_entry {
    fs_entry_xattrs* xattrs;     // extended attributes on this file 
    
    bool write_locked;
+   bool created_in_session;     // if we're in client mode, then this is true of the file was created in this session
 };
 
 #define IS_STREAM_FILE( fent ) ((fent).size < 0)

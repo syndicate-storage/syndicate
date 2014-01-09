@@ -12,11 +12,18 @@ import time
 hostname = "localhost"
 port = 33333
 
+folder = "Inbox"
+handle = "1388897380-a6322463ec5e4e4cb65ad88746aa832e"
+
+if len(sys.argv) >= 3:
+   folder = sys.argv[1]
+   handle = sys.argv[2]
+
 data_dict = { 
    'id': str(uuid.uuid4()),
    'method': 'read_message',
    'params': {
-       'args': [ "Inbox", "1388897380-a6322463ec5e4e4cb65ad88746aa832e" ],
+       'args': [ folder, handle ],
        'kw' : {},
     },
     'jsonrpc': '1.0'

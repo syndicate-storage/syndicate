@@ -12,11 +12,16 @@ import time
 hostname = "localhost"
 port = 33333
 
+contact = "jude.mail.syndicate.com@example.py"
+
+if len(sys.argv) > 1:
+   contact = sys.argv[1]
+
 data_dict = { 
    'id': str(uuid.uuid4()),
    'method': 'delete_contact',
    'params': {
-       'args': ['jude.mail.syndicate.com@example.com'],
+       'args': [contact],
        'kw' : {},
     },
     'jsonrpc': '1.0'
