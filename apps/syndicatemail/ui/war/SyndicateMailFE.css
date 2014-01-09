@@ -28,9 +28,23 @@ h1 {
   color: red;
 }
 
+.body-theme {
+	background-image: url(background.jpg);
+}
+
 /** Set ids using widget.getElement().setId("idOfElement") */
 #closeButton {
   margin: 15px 6px 6px;
+}
+
+
+table.mainTbl {
+	background-color: transparent;
+	border-radius: 3px;
+	margin-left: 20px;
+	margin-right: 20px;
+	padding: 5px;
+	width: 100%;
 }
 
 table.mainTbl td {
@@ -39,6 +53,9 @@ table.mainTbl td {
 
 table.inboxTbl {
 	border-collapse: collapse;
+	background-color: white;
+	opacity: 0.75;
+	width:100%;
 }
 
 table.inboxTbl td {
@@ -50,6 +67,13 @@ table.inboxTbl td {
 table.inboxTbl tr:hover {
 	background-color: #F5F5F5;
 	cursor: pointer;
+}
+
+table.dir-list-panel {
+	border-collapse: collapse;
+	background-color: white;
+	opacity: 0.75;
+	padding: 0px;
 }
 
 .inbox_dir_lbl {
@@ -72,7 +96,7 @@ button.compose_button {
 	font-size: 16px;
 	font-family: sans-serif;
 	color: white;
-	background-color: #009966;
+	background-color: #C70B0B;
 	border-radius: 2px;
 	width: 120px;
 	height: 40px;
@@ -102,6 +126,7 @@ button.delete-button {
 	outline: 0px;
 	padding: 0 8px; 
 	float: right;
+	background-color: rgb(240, 173, 0);
 	border: 1px solid transparent;
 }
 
@@ -194,6 +219,14 @@ button.send-button {
 	outline: 0px;
 	padding: 0 8px;
 	border: 1px solid transparent;
+}
+
+.mail-display-panel {
+	background-color: white;
+}
+
+.mail-display-panel td {
+	padding: 0px;
 }
 
 .mail-display-sbjlbl {
@@ -413,5 +446,22 @@ button.mail-display-reply-btn:hover {
 	font-size: 12px;
 	font-weight: bolder;
 	font-family: sans-serif;
+}
+
+.glass-theme {
+	background-color: transparent;
+	border-radius: 3px;
+	margin-left:20px;
+	margin-right: 20px;
+	padding: 5px;
+}
+
+.glass-theme td {
+	padding: 2px;
+}
+
+table td {
+	padding-left:0px;
+	padding-right:0px;
 }
 

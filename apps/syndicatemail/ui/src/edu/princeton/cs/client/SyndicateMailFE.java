@@ -23,13 +23,15 @@ public class SyndicateMailFE implements EntryPoint {
 	}
 	
 	private void loadUI() {
+		RootPanel.get().setStyleName("body-theme");
 		VerticalPanel mainPanel = new VerticalPanel();
+		mainPanel.setStyleName("mainTbl");
 		HorizontalPanel mainCtrlPanel = new HorizontalPanel();
-		mainCtrlPanel.setWidth("90%");
+		mainCtrlPanel.setWidth("92%");
 		int mainPanelLen = com.google.gwt.user.client.Window.getClientWidth();
 		mainPanel.setWidth(new Integer(mainPanelLen).toString()+"px");
 		FlexTable mainTbl = new FlexTable();
-		mainTbl.getElement().setClassName("mainTbl");
+		mainTbl.setStyleName("mainTbl");
 		mainTbl.setCellPadding(5);
 		mainTbl.getColumnFormatter().setWidth(0, "10%");
 		mainTbl.getColumnFormatter().setWidth(1, "85%");
@@ -58,7 +60,8 @@ public class SyndicateMailFE implements EntryPoint {
 		SMFDMailComposer comp = new SMFDMailComposer();
 		
 		mainCtrlPanel.add(comp.getComposeButton());
-		mainCtrlPanel.add(dirList.getMailDeleteButton());;
+		mainCtrlPanel.add(dirList.getMailDeleteButton());
+		mainCtrlPanel.setStyleName("glass-theme");
 		mainPanel.add(mainCtrlPanel);
 		mainPanel.add(mainTbl);
 		RootPanel.get().add(mainPanel);
