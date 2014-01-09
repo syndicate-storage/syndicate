@@ -5,13 +5,10 @@ import java.util.Vector;
 
 import com.google.gwt.event.dom.client.BlurEvent;
 import com.google.gwt.event.dom.client.BlurHandler;
+import com.google.gwt.event.dom.client.ChangeEvent;
+import com.google.gwt.event.dom.client.ChangeHandler;
 import com.google.gwt.event.dom.client.ClickEvent;
 import com.google.gwt.event.dom.client.ClickHandler;
-import com.google.gwt.event.shared.EventHandler;
-import com.google.gwt.event.shared.GwtEvent;
-import com.google.gwt.event.shared.HandlerManager;
-import com.google.gwt.event.shared.HandlerRegistration;
-import com.google.gwt.event.shared.HasHandlers;
 import com.google.gwt.http.client.RequestException;
 import com.google.gwt.user.client.Element;
 import com.google.gwt.user.client.Window;
@@ -22,6 +19,7 @@ import com.google.gwt.user.client.ui.FileUpload;
 import com.google.gwt.user.client.ui.FormPanel;
 import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.HorizontalPanel;
+import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.TextArea;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.VerticalPanel;
@@ -48,67 +46,13 @@ public class SMFDMailComposer {
 	private final String defaultTo = "To";
 	private final String defaultCc = "Cc";
 	private final String defaultBcc = "Bcc";
-	private final static Vector<String> uploaderNames = new Vector<String>();
-	private final static TreeMap<String, FileUpload> uploaders = new TreeMap<String, FileUpload>();
+	private final Vector<String> attachment_handler_list = new Vector<String>();
+	private final TreeMap<String, String> attachment_fname_list = new TreeMap<String, String>();
+	private final VerticalPanel attachmentsPanel;
 	
 	public static final native void clickElement(Element elem) /*-{
 		elem.click();
 	}-*/;
-	
-	public interface AttachmentAddedEventHandler extends EventHandler {
-	    void onAttachmentAdded(AttachmentAddedEvent event);
-	}
-	
-	public static class AttachmentAddedEvent extends GwtEvent<AttachmentAddedEventHandler> {
-
-	    public static Type<AttachmentAddedEventHandler> evType = new Type<AttachmentAddedEventHandler>();
-
-	    private final String attachmentHandle;
-
-	    public AttachmentAddedEvent(String message) {
-	        this.attachmentHandle = message;
-	    }
-
-	    @Override
-	    public Type<AttachmentAddedEventHandler> getAssociatedType() {
-	        return evType;
-	    }
-
-	    @Override
-	    protected void dispatch(AttachmentAddedEventHandler handler) {
-	        handler.onAttachmentAdded(this);
-	    }
-
-	    public String getMessage() {
-	        return attachmentHandle;
-	    }
-	}
-	
-	public class AttachmentHandler implements HasHandlers {
-
-	    private HandlerManager handlerManager;
-
-	    public AttachmentHandler() {
-	        handlerManager = new HandlerManager(this);
-	    }
-
-	    @Override
-	    public void fireEvent(GwtEvent<?> event) {
-	        handlerManager.fireEvent(event);
-	    }
-
-	    public HandlerRegistration addMessageReceivedEventHandler(
-	            AttachmentAddedEventHandler handler) {
-	        return handlerManager.addHandler(AttachmentAddedEvent.evType, handler);
-	    }
-	    
-	    public void newAttachmentAdded() {
-	        String attachmentHandle = "";
-	        AttachmentAddedEvent event = new AttachmentAddedEvent(attachmentHandle);
-	        fireEvent(event);
-	    }
-
-	}
 	
 	public SMFDMailComposer() {
 		displayWidth = Window.getClientWidth();
@@ -119,11 +63,16 @@ public class SMFDMailComposer {
 		
 		composeBtn = new Button();
 		composeBtn.setText("COMPOSE");
-		composeBtn.getElement().setClassName("compose_button");		
+		composeBtn.getElement().setClassName("compose_button");	
+		
+		//Setup the attachments panel
+		attachmentsPanel = new VerticalPanel();
+		attachmentsPanel.setWidth("100%");
+		attachmentsPanel.setStyleName("attachments-panel");
 		
 		//Setup the dialog box
 		dlgBox = new DialogBox();
-		dlgBox.setPopupPosition(dlgBoxWidth/2, dlgBoxHeight/2);
+		dlgBox.setPopupPosition(dlgBoxWidth/2, 0/*dlgBoxHeight/2*/);
 		dlgBox.setGlassEnabled(true);
 		dlgBox.setTitle("Compose");
 		dlgBox.setStyleName("compose-dlg");	
@@ -138,6 +87,9 @@ public class SMFDMailComposer {
 		//Add Text area to contain the email body
 		CellPanel emailBodyPanel = getBodyPanel();
 		dialogPanel.add(emailBodyPanel);
+		//Add attachments panel
+		dialogPanel.add(attachmentsPanel);
+		
 		//Add a button panel
 		CellPanel btnPabel = getButtonPanel();
 		dialogPanel.add(btnPabel);
@@ -232,17 +184,21 @@ public class SMFDMailComposer {
 		bodyPanel.setWidth("100%");
 		emailBody.setStyleName("email-body");
 		emailBody.setSize(new Integer(dlgBoxWidth).toString()+"px", 
-				new Integer(dlgBoxHeight).toString()+"px");
+				new Integer(dlgBoxHeight/2).toString()+"px");
 		bodyPanel.add(emailBody);
 		return bodyPanel;
+	}
+	
+	public CellPanel getAttachmentsPanel() {
+		return this.attachmentsPanel;
 	}
 	
 	public CellPanel getButtonPanel() {		
 		final FormPanel form = new FormPanel();
 		form.setAction("http://127.0.0.1/cgi-bin/test.sh");
 		form.setVisible(false);
-		final VerticalPanel formWidgetPanel = new VerticalPanel();
-		form.add(formWidgetPanel);
+		//final VerticalPanel formWidgetPanel = new VerticalPanel();
+		//form.add(formWidgetPanel);
 		
 		final HorizontalPanel btnPanel = new HorizontalPanel();
 		btnPanel.setWidth("100%");
@@ -266,20 +222,21 @@ public class SMFDMailComposer {
 				/**
 				 * Loop through all the files and get file names...
 				 */
-				int nrAttachements = uploaderNames.size();
+				int nrAttachements = attachment_handler_list.size();
 				attachments = new String[nrAttachements][2];
 				form.submit();
 				for (int i=0; i<nrAttachements; i++) {
-					String name = uploaderNames.get(i);
-					FileUpload fu = uploaders.get(name);
+					String attachment_handler = attachment_handler_list.get(i);
+					String attachment_file_name = attachment_fname_list.get(attachment_handler);
 					//Window.alert(name+" -> "+fu.getFilename());
-					attachments[i][0] = name;
-					attachments[i][1] = fu.getFilename();
-					form.remove(fu);
+					attachments[i][0] = attachment_handler;
+					attachments[i][1] = attachment_file_name;
 				}
-				uploaderNames.removeAllElements();
-				uploaders.clear();
+				attachment_handler_list.removeAllElements();
+				attachment_fname_list.clear();
 				try {
+					if (rcptAddrs.length == 0)
+						return;
 					mm.sendMessage(rcptAddrs, ccList, bccList, subject, msgBody, attachments, sendAsync);
 				} catch (RequestException e) {
 					Window.alert("Sending Failed...\nSorry, we don't have a Drafts box yet!\n"+e.getMessage());
@@ -291,25 +248,63 @@ public class SMFDMailComposer {
 		//Add an attach button..
 		Button attachBtn = new Button();
 		attachBtn.getElement().setClassName("attach-button");
+		final VerticalPanel attPanel = (VerticalPanel) getAttachmentsPanel();
 		attachBtn.addClickHandler(new ClickHandler() {
 			String name = null;
 			@Override
 			public void onClick(ClickEvent event) {
 				//Add a file uploader with a random name...
 				name = new SMFEUuid().toString();
-				FileUpload fileUpload = new FileUpload();
+				final FileUpload fileUpload = new FileUpload();
 				fileUpload.setVisible(false);
 				fileUpload.getElement().setId(name);
-				//formWidgetPanel.add(fileUpload);
+				fileUpload.addChangeHandler(new ChangeHandler() {
+					@Override
+					public void onChange(ChangeEvent event) {
+						final HorizontalPanel attWidgetPanel = new HorizontalPanel();
+						String fileName = getFileName(fileUpload.getFilename());
+						attachment_handler_list.add(name);
+						attachment_fname_list.put(name, fileName);
+						Label attLbl = new Label(fileName);
+						attLbl.setStyleName("attchment-lbl");
+						Label delAttLbl = new Label("X");
+						delAttLbl.setStyleName("delatt-lbl");
+						delAttLbl.addClickHandler(new ClickHandler() {
+							@Override
+							public void onClick(ClickEvent event) {
+								attachment_handler_list.remove(name);
+								attachment_fname_list.remove(name);
+								attPanel.remove(attWidgetPanel);
+							}
+						});
+						attWidgetPanel.setStyleName("attachment-panle");
+						attWidgetPanel.add(attLbl);
+						attWidgetPanel.add(delAttLbl);
+						attPanel.add(attWidgetPanel);
+					}
+				});
+				form.add(fileUpload);
 				btnPanel.add(fileUpload);
-				uploaderNames.add(name);
-				uploaders.put(name, fileUpload);
 				clickElement(fileUpload.getElement());
 			}
 		});
 		btnPanel.add(attachBtn);
 		btnPanel.add(form);
 		return btnPanel;
+	}
+	
+	public String getFileName(String path) {
+		if (path == null || path.equals(""))
+			return null;
+		String fileName = null;
+		int endPos = path.length() - 1;
+		for (int i=endPos; i>=0; i--) {
+			if (path.charAt(i) == '\\') {
+				fileName = path.substring(i+1);
+				break;
+			}
+		}
+		return fileName;
 	}
 	
 	public void unloadSendDialog() {
@@ -337,6 +332,7 @@ public class SMFDMailComposer {
 		resetToTxt();
 		resetCcTxt();
 		resetBccTxt();
+		resetAttachmentsPanel();
 	}
 	
 	private void resetSbjTxt() {
@@ -357,5 +353,9 @@ public class SMFDMailComposer {
 	
 	private void resetBody() {
 		emailBody.setText(null);
+	}
+	
+	private void resetAttachmentsPanel() {
+		attachmentsPanel.clear();
 	}
 }

@@ -217,6 +217,31 @@ public class SMFEJsonRpc {
 		  return true; 
 	}
 	
+	public static String toJSONString(String key, String value) {
+		if (key == null)
+			return null;
+		if (value == null)
+			value = "";
+		String jsonStr = "{\""+key+"\":\""+value+"\"}";
+		return jsonStr;
+	}
+	
+	public static String toJSONArray(String[][] array, boolean encodeB64) {
+		int len = array.length;
+		String jsonStr = "[";
+		for (int i=0; i<len; i++) {
+			if (encodeB64)
+				jsonStr += toJSONString(array[i][0], toBase64(array[i][1]));
+			else
+				jsonStr += toJSONString(array[i][0], array[i][1]);
+			if (i + 1 != len)
+				jsonStr += ",";
+		}
+		jsonStr += "]";
+		return jsonStr;
+	}
+
+	
 	public static boolean getBooleanValue(JSONValue val) throws SMFEJsonRpcException {
 		SMFEJsonRpc rpc = new SMFEJsonRpc();
 		if (val == null) 
