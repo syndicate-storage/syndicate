@@ -377,3 +377,41 @@ button.mail-display-reply-btn:hover {
 .mail-read-font {
 	font-weight: normal;
 }
+
+.attachments-panel {
+	background-color: white;
+	padding: 3px;
+	border-spacing: 2px;
+}
+
+.attachment-panle {
+	border-radius: 5px;
+	border: 2px solid #CCCCCC;	
+	outline: 2px;
+	white-space: nowrap;
+	width: 100%;
+	padding: 3px;
+	align-vertical: center;
+	background: #F2F2F2;
+	
+}
+
+.delatt-lbl {
+	float: right;
+	cursor: pointer;
+	font-family: sans-serif;
+	font-weight: bolder;
+	align-vertical: center;
+	padding: 3px;
+	font-size: 12px;
+}
+
+.attchment-lbl {
+	float: left;
+	align-vertical: center;
+	padding: 3px;
+	font-size: 12px;
+	font-weight: bolder;
+	font-family: sans-serif;
+}
+

@@ -61,11 +61,9 @@ public final class SMFEMailManager {
 		args[4] = SMFEJsonRpc.toBase64(msgBody);
 		String[][] kw = null;
 		if (attachments != null) {
-			kw = new String[attachments.length][2];
-			for (int i=0; i<attachments.length; i++) {
-				kw[i][0] = attachments[i][0];
-				kw[i][1] = SMFEJsonRpc.toBase64(attachments[i][1]);
-			}
+			kw = new String[1][2];
+			kw[0][0] = "attachments";
+			kw[0][1] = SMFEJsonRpc.toJSONArray(attachments, true);
 		}
 		String jsonStr = SMFEJsonRpc.encodeRPC("send_message", args, kw);
 		Window.alert(jsonStr);
