@@ -17,23 +17,90 @@
 """
 
 import urllib2
+import httplib
+from urlparse import urlparse
+import json
 
 import contact
 import message
+
+from Crypto.Hash import SHA256 as HashAlg
+from Crypto.Hash import HMAC
+from Crypto.PublicKey import RSA as CryptoKey
+from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
+from Crypto import Random
+
+
+import syndicate.client.common.log as Log
+
+log = Log.get_logger()
 
 STORAGE_DIR = "/tmp"
 
 # -------------------------------------
 def download( url ):
-   pass
+   conn = None
+   host = urlparse( url ).netloc
+   path = urlparse( url ).path
+   
+   port = 80
+   
+   if ":" in host:
+      # FIXME: RFC, proxies
+      host, port = host.split(":")
+      port = int(port)
+      
+   if url.lower.startswith( "https" ):
+      conn = httplib.HTTPSConnection( host, port )
+   else:
+      conn = httplib.HTTPConnection( host, port )
+   
+   conn.request( 'GET', path )
+   resp = conn.getresponse()
+   if resp.status == 200:
+      data = resp.read()
+      resp.close()
+      return data
+   
+   else:
+      log.error("GET %s HTTP %d" % url, resp.status )
+      return None
+   
 
 # -------------------------------------
 def download_pubkey( url ):
-   pass
+   data = download( url )
+   
+   try:
+      pubkey = CryptoKey.importKey( data )
+      assert not pubkey.has_private()
+      data = pubkey.exportKey()
+      
+      return data 
+   
+   except Exception, e:
+      log.exception(e)
+      log.error("Failed to download public key from %s" % url)
+      return None
+   
 
 # -------------------------------------
-def download_user_pubkey_from_MS( addr ):
-   pass
+def download_user_pubkey_from_MS( addr, use_http=False ):
+   try:
+      parsed_addr = contact.parse_addr( addr )
+   except Exception, e:
+      log.exception(e)
+      log.error("Invalid email address %s" % addr)
+      return None
+   
+   scheme = "https://"
+   if use_http:
+      scheme = "http://"
+      
+   MS_url = scheme + parsed_addr.MS 
+   #MS_pubkey_url = os.path.join( MS_url, # how do we deal with this?
+                                
    
 # -------------------------------------
 def download_user_pubkey_from_SyndicateMail( addr ):
@@ -63,18 +130,11 @@ lPCia/UWfs9eeGgdGe+Wr4sCAwEAAQ==
    return pubkey_str
 
 # -------------------------------------
-def begin_post_message( recipient_addr ):
+def post_message( encrypted_incoming_message ):
    # called by the endpoint
    # start to inform the recipient's server that they have a new message
-   print "FIXME: begin_post_message stub"
-   pass
-
-# -------------------------------------
-def end_post_message( recipient_addr ):
-   # called by the endpoint
-   # process acknowledgement from the recipient's server
-   print "FIXME: end_post_message stub"
-   pass
+   print "FIXME: post_message stub"
+   return True
 
 # -------------------------------------
 def get_incoming_messages( addr ):

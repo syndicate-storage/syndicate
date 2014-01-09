@@ -12,6 +12,8 @@ import time
 hostname = "localhost"
 port = 33333
 
+contact_name = "jude.mail.syndicate.com@example.com"
+
 pubkey_str = """
 -----BEGIN PUBLIC KEY-----
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAxwhi2mh+f/Uxcx6RuO42
@@ -29,11 +31,14 @@ lPCia/UWfs9eeGgdGe+Wr4sCAwEAAQ==
 -----END PUBLIC KEY-----
 """.strip()
 
+if len(sys.argv) > 1:
+   contact_name = sys.argv[1]
+
 data_dict = { 
    'id': str(uuid.uuid4()),
    'method': 'add_contact',
    'params': {
-       'args': ['jude.mail.syndicate.com@example.com', pubkey_str],
+       'args': [contact_name, pubkey_str],
        'kw': {"City": "Princeton", "Github": "https://github.com/jcnelson"},
     },
     'jsonrpc': '1.0'
@@ -58,7 +63,7 @@ print "<<<<<<<<<<<<<<<<<<<<<<<<<\n"
 
 s.send( http_m )
 
-time.sleep(1.0)
+time.sleep(2.0)
 
 ret = s.recv(16384)
 

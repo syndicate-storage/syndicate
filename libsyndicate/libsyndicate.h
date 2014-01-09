@@ -216,6 +216,7 @@ struct md_syndicate_conf {
    char* hostname;                                    // what's our hostname?
    char* ag_driver;                                   // AG gatway driver that encompasses gateway callbacks
    int gateway_type;
+   bool is_client;                                      // if true for a UG, always fetch data from RGs
 };
 
 #define USER_ANON               0xFFFFFFFFFFFFFFFF

@@ -440,14 +440,16 @@ def write_file( file_path, data, volume=GET_FROM_SESSION, create_mode=0600 ):
    if volume is None:
       try:
          fd = open( file_path, "w+" )
-      except:
+      except Exception, e:
+         log.exception(e)
          log.error("Failed to open '%s' for writing" % file_path)
          return False
       
       try:
          fd.write(data)
          fd.flush()
-      except:
+      except Exception, e:
+         log.exception(e)
          log.error("Failed to write '%s'" % file_path)
          try:
             os.unlink(file_path)
@@ -489,7 +491,7 @@ def write_file( file_path, data, volume=GET_FROM_SESSION, create_mode=0600 ):
          
          rc = volume.close( fd )
          if rc != 0:
-            raise Exception("Volume cloe rc = %s" % rc)
+            raise Exception("Volume close rc = %s" % rc)
          
          return True
       except Exception, e:
@@ -636,7 +638,6 @@ def path_exists( file_path, volume=GET_FROM_SESSION ):
          elif isinstance(statbuf, int) and statbuf < 0:
             return False
          else:
-            print "stat of %s is %s" % (file_path, str(statbuf))
             return True
       except Exception, e:
          return False

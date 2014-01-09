@@ -206,6 +206,24 @@ def delete_private_key( key_name ):
    rc = storage.delete_file( key_path, volume=None )
    return rc
 
+
+#-------------------------
+def sign_data( privkey_str, data ):
+   privkey = CryptoKey.importKey( privkey_str )
+   h = HashAlg.new( data )
+   signer = CryptoSigner.new(privkey)
+   signature = signer.sign( h )
+   return signature
+
+#-------------------------   
+def verify_data( pubkey_str, data, sig ):
+   pubkey = CryptoKey.importKey( pubkey_str )
+   h = HashAlg.new( data )
+   verifier = CryptoSigner.new(pubkey)
+   ret = verifier.verify( h, base64.b64decode(sig) )
+   return ret
+
+
 #-------------------------
 def sign_public_key( pubkey_str, syndicate_user_privkey ):
    h = HashAlg.new( pubkey_str )

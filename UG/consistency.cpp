@@ -1108,9 +1108,15 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
 // FENT MUST BE WRITE-LOCKED FIRST!
 int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id ) {
    
-   if( FS_ENTRY_LOCAL( core, fent ) )
+   if( FS_ENTRY_LOCAL( core, fent ) && !core->conf->is_client )
       return 0;      // nothing to do--we automatically have the latest
-
+   
+   // if we're in client mode, and we created this file in this session and we are the coordinator, then nothing to do
+   if( core->conf->is_client && FS_ENTRY_LOCAL( core, fent ) && fent->created_in_session )
+      return 0;         // we automatically have the latest
+   
+   // otherwise, either it's remote, or we are running as a client and should check the RGs anyway
+   
    struct timespec ts, ts2;
 
    BEGIN_TIMING_DATA( ts );
@@ -1257,6 +1263,12 @@ int fs_entry_coordinate( struct fs_core* core, struct fs_entry* fent, int64_t re
    // sanity check...
    if( FS_ENTRY_LOCAL( core, fent ) )
       return 0;
+   
+   if( core->conf->is_client ) {
+      // clients can't become coordinators 
+      errorf("This gateway is in client mode; will not become coordinator for %" PRIu64 "\n", fent->file_id );
+      return -EINVAL;
+   }
    
    // which RG served?
    uint64_t rg_id = 0;

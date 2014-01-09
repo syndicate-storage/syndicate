@@ -300,6 +300,11 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
             return NULL;
          }
          else {
+            // if we're a client, mark it as created in this session 
+                     
+            if( core->conf->is_client )
+               child->created_in_session = true;
+            
             // insert it into the filesystem
             
             fs_entry_wlock( child );

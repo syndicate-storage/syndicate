@@ -2398,6 +2398,8 @@ int md_init( int gateway_type,
       return rc;
    }
    
+   conf->is_client = false;
+   
    if( portnum > 0 ) {
       conf->portnum = portnum;
    }
@@ -2445,7 +2447,7 @@ int md_init_client( int gateway_type,
    }
    
    conf->portnum = gateway_port;
-   
+   conf->is_client = true;
    conf->gateway_key = strdup(my_key_pem);
    conf->gateway_key_len = strlen(my_key_pem);
    
