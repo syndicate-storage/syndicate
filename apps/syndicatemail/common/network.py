@@ -61,15 +61,21 @@ def download( url ):
    else:
       conn = httplib.HTTPConnection( host, port )
    
-   conn.request( 'GET', path )
-   resp = conn.getresponse()
-   if resp.status == 200:
-      data = resp.read()
-      resp.close()
-      return data
-   
-   else:
-      log.error("GET %s HTTP %d" % (url, resp.status) )
+   try:
+      conn.request( 'GET', path )
+      resp = conn.getresponse()
+      if resp.status == 200:
+         data = resp.read()
+         resp.close()
+         return data
+      
+      else:
+         log.error("GET %s HTTP %d" % (url, resp.status) )
+         return None
+      
+   except Exception, e:
+      log.exception(e)
+      log.error("Download %s failed" % url)
       return None
    
 
@@ -97,17 +103,22 @@ def upload( url, forms ):
    else:
       conn = httplib.HTTPConnection( host, port )
    
-   conn.request( 'POST', path, forms_encoded, headers )
-   resp = conn.getresponse()
-   if resp.status == 200:
-      data = resp.read()
-      resp.close()
-      return data
-   
-   else:
-      data = resp.read()
-      log.error("POST %s HTTP %d (%s)" % (url, resp.status, data) )
-      return None
+   try:
+      conn.request( 'POST', path, forms_encoded, headers )
+      resp = conn.getresponse()
+      if resp.status == 200:
+         data = resp.read()
+         resp.close()
+         return data
+      
+      else:
+         data = resp.read()
+         log.error("POST %s HTTP %d (%s)" % (url, resp.status, data) )
+         return None
+      
+   except Exception, e:
+      log.exception(e)
+      log.error("Upload to %s failed" % url )
 
 # -------------------------------------
 def download_pubkey( url ):
