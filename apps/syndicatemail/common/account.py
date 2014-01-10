@@ -612,7 +612,7 @@ def create_account( syndicatemail_uid, syndicatemail_password, mail_server, pass
    rc = storage.setup_volume_storage( VOLUME_STORAGE_ROOT, ALL_STORAGE_PACKAGES + [this_module], volume=vol )
    if not rc:
       log.critical("Failed to set up Volume!")
-      cleanup_syndicate( vol )
+      cleanup_syndicate()
       return False
    
    # for clean up function...
@@ -624,7 +624,7 @@ def create_account( syndicatemail_uid, syndicatemail_password, mail_server, pass
    
    # cleanup function...
    def cleanup_on_failure():
-      cleanup_syndicate( vol )
+      cleanup_syndicate()
       
       if stored_private_key:
          keys.delete_private_key_from_volume( email, volume=vol )
