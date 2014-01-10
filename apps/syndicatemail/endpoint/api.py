@@ -151,4 +151,5 @@ class API( object ):
    @session_required
    def send_message( cls, recipient_addrs, cc_addrs, bcc_addrs, subject, msg_body, attachment_names={} ):
       attachment_data = get_attachments( attachment_names )
-      return message.send_message( cls.publicKeyStr(), cls.privateKeyStr(), cls.config['email'], recipient_addrs, cc_addrs, bcc_addrs, subject, msg_body, attachment_data )
+      status, failed = message.send_message( cls.publicKeyStr(), cls.privateKeyStr(), cls.config['email'], recipient_addrs, cc_addrs, bcc_addrs, subject, msg_body, attachment_data )
+      return {"status": status, "failed": failed}
