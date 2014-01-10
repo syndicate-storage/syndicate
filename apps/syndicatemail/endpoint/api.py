@@ -120,7 +120,7 @@ class API( object ):
       msg_ts = message.timestamp_from_message_path( msg_handle )
       msg = message.read_message( cls.config['volume'], cls.publicKeyStr(), cls.privateKeyStr(), cls.config['gateway_privkey_pem'], folder, msg_ts, msg_id )
       
-      msg_json = dict( [(attr, getattr(msg, attr)) for attr in msg._frields] )
+      msg_json = dict( [(attr, getattr(msg, attr)) for attr in msg._fields] )
       return msg_json
 
    @classmethod
