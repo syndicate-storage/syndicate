@@ -2,7 +2,7 @@
 
 import os
 
-gateway_name = "testvolume-UG-1"
+gateway_name = "mail"
 
 settings_kw = {
       "volume_name" : "testvolume",

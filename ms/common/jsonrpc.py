@@ -148,6 +148,7 @@ class Server(object):
             result_sig = None
             if self.signer:
                data_to_sign = json_stable_serialize( result )
+               print "to sign:\n\n%s\n\n" % data_to_sign
                result_sig = self.signer( method, data_to_sign )
             
             insert_syndicate_json( result, None, None, self.api_version, result_sig )
@@ -275,6 +276,7 @@ class Server(object):
            
         if self.verifier:
             data_text = json_stable_serialize( data )
+            print "to verify:\n\n%s\n\n" % data_text
             valid = self.verifier( method, method_args, method_kw, data_text, syndicate_data, data )
             if not valid:
                log.error("Verifier failed")
@@ -339,6 +341,7 @@ class Client(object):
         if self.signer != None:
             # sign this message and include it in the authentication field
             parameters_text = json_stable_serialize( parameters )
+            print "to sign:\n\n%s\n\n" % parameters_text
             sig = self.signer( self.method, str(parameters_text) )
             
         
@@ -392,6 +395,7 @@ class Client(object):
             
             if can_verify:
                result_text = json_stable_serialize( result )
+               print "to verify:\n\n%s\n\n" % result_text
                
                valid = self.verifier( self.method, self.params['args'], self.params['kw'], result_text, syndicate_data, result )
                

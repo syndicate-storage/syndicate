@@ -76,7 +76,7 @@ def api_dispatch():
    
    json_dict = request.json
    if json_dict is None:
-      app.abort(400, "JSON API Request Handler")
+      abort(400, "JSON API Request Handler")
    
    return json_server.handle( None, data=json_dict )
 

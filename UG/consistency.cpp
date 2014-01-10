@@ -97,6 +97,10 @@ static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent,
    
    // a directory is stale if the write nonce has changed
    if( fent->ftype == FTYPE_DIR ) {
+      if( fent->read_stale ) {
+         dbprintf("directory %s is stale\n", fent->name );
+         return true;
+      }
       if( fent->write_nonce != write_nonce ) {
          dbprintf("write nonce of directory %s has changed\n", fent->name);
          return true;

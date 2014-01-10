@@ -566,7 +566,7 @@ def create_account( syndicatemail_uid, syndicatemail_password, mail_server, pass
    
    # create email address
    MS_host = urlparse( ms_url ).netloc
-   email = contact.make_addr_str( syndicatemail_uid, existing_volume_name, MS_host, urllib.quote( mail_server ) )
+   email = contact.make_addr_str( syndicatemail_uid, existing_volume_name, MS_host, mail_server )
    
    log.info("SyndicateMail address is %s" % email )
    
@@ -911,7 +911,7 @@ X8H/SaEdrJv+LaA61Fy4rJS/56Qg+LSy05lISwIHBu9SmhTuY1lBrr9jMa3Q
                     storage_root=storage.local_path( GATEWAY_RUNTIME_STORAGE ) )
    
    print "------- delete account --------"
-   rc = delete_account( account_privkey_pem, "fakeuser.mail.localhost%3A8080@t510", volume, "testuser@gmail.com", remove_gateway=True,
+   rc = delete_account( account_privkey_pem, "fakeuser.mail.localhost:8080@t510", volume, "testuser@gmail.com", remove_gateway=True,
                         syndicate_user_privkey_str = testuser_signing_pkey_str, syndicate_user_verifykey_str = testuser_verifying_pubkey_str, test=True )
    
    assert rc, "delete_account failed"

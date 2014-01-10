@@ -31,6 +31,8 @@ data_dict = {
 
 data = json.dumps( data_dict )
 
+print data 
+
 s = socket.socket( socket.AF_INET, socket.SOCK_STREAM )
 s.connect( (hostname, port) )
 

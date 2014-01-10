@@ -98,7 +98,7 @@ def parse_addr( addr_str ):
    if len(host_parts) < 2:
       raise Exception("Invalid Syndicate email address: '%s'" % addr_str)
    
-   MS_host = urllib.unquote( host_parts[0] )
+   MS_host = host_parts[0]
    email_server = host_parts[1]
    
    ret = SyndicateMailAddr( addr=addr_str, volume=volume, MS=MS_host, server=email_server, username=username )
@@ -108,8 +108,7 @@ def parse_addr( addr_str ):
 # -------------------------------------
 def make_addr_str( uid, volume_name, MS, server ):
    assert '.' not in uid, "Invalid user ID %s: cannot contain '.'" % uid
-   MS_safe = urllib.quote(MS)
-   return "%s.%s.%s@%s" % (uid, volume_name, MS_safe, server)
+   return "%s.%s.%s@%s" % (uid, volume_name, MS, server)
 
 # -------------------------------------
 def make_contact_path( pubkey_str, email_addr ):
