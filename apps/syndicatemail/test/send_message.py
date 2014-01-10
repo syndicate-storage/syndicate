@@ -12,7 +12,7 @@ import time
 hostname = "localhost"
 port = 33333
 
-recipient_addrs = ['bob.mail.syndicate.com@example.com']
+recipient_addrs = ['bob.mail2.localhost:8080@localhost:33334']
 
 if len(sys.argv) > 1:
    recipient_addrs = sys.argv[1:]
@@ -52,7 +52,7 @@ print "<<<<<<<<<<<<<<<<<<<<<<<<<\n"
 
 s.send( http_m )
 
-time.sleep(2.0)
+time.sleep(5.0)
 
 ret = s.recv(16384)
 

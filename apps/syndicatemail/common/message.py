@@ -502,12 +502,12 @@ def send_message( pubkey_str, privkey_str, sender_addr, receiver_addrs, cc_addrs
       
       else:
          missing.append( addr )
-         log.debug("No public key for %s" % addr)
+         log.debug("No public key for %s" % addr.addr)
             
    # get remaining contact public keys from the user's MS and store them
    for missing_addr in missing:
       # new contact...
-      pubkey_pem = network.download_user_pubkey( missing_addr )
+      pubkey_pem = network.download_user_pubkey( missing_addr.addr )
       if pubkey_pem is None:
          # not on Syndicate
          send_via_gateway.append( missing_addr )

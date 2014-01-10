@@ -129,13 +129,13 @@ def download_pubkey( url ):
 # -------------------------------------
 def download_user_syndicate_pubkey( volume_name, MS_host, use_http=False ):
    scheme = "https://"
-   if use_http:
+   if use_http or "localhost" in MS_host:
       scheme = "http://"
    
    MS_pubkey_url = storage.path_join( scheme + MS_host, "VOLUMEOWNER", volume_name )
    user_json_str = download( MS_pubkey_url )
    if user_json_str is None:
-      log.error("Download %s returned None" % user_json)
+      log.error("Download %s returned None" % MS_pubkey_url)
       return None
    
    try:
@@ -163,7 +163,7 @@ def download_user_mail_pubkey( addr, use_http=False ):
       return None
    
    scheme = "https://"
-   if use_http:
+   if use_http or "localhost" in parsed_addr.MS:
       scheme = "http://"
    
    server_url = storage.path_join( scheme + parsed_addr.server, "/USERKEY", addr )
@@ -181,14 +181,18 @@ def download_user_mail_pubkey_sig( addr, use_http=False ):
       return None
    
    scheme = "https://"
-   if use_http:
+   if use_http or "localhost" in parsed_addr.MS:
       scheme = "http://"
    
    server_url = storage.path_join( scheme + parsed_addr.server, "/USERSIG", addr )
    sig_b64 = download( server_url )
    
-   sig = base64.b64decode( sig_b64 )
-   return sig
+   if sig_b64 != None:
+      sig = base64.b64decode( sig_b64 )
+      return sig
+   
+   else:
+      return None
 
 # -------------------------------------
 def download_user_pubkey( addr, allow_mismatch=False, use_http=False ):
@@ -262,7 +266,7 @@ def post_message( sender_privkey_pem, encrypted_incoming_message, use_http=False
    # get receiver syndicatemail
    receiver_server = parsed_receiver_addr.server
    scheme = "https://"
-   if use_http:
+   if use_http or "localhost" in receiver_server:
       scheme = "http://"
    
    server_url = storage.path_join( scheme + receiver_server, "/MAIL" )
@@ -292,7 +296,7 @@ def get_incoming_messages( addr, use_http=False ):
       return None
    
    scheme = "https://"
-   if use_http:
+   if use_http or "localhost" in parsed_addr.server:
       scheme = "http://"
       
    server_url = storage.path_join( scheme + parsed_addr.server, "/MAIL/%s" % addr )
@@ -341,7 +345,7 @@ def clear_incoming_messages( privkey_str, addr, use_http=False ):
    # send clear hint
    receiver_server = parsed_addr.server
    scheme = "https://"
-   if use_http:
+   if use_http or "localhost" in receiver_server:
       scheme = "http://"
    
    server_url = storage.path_join( scheme + receiver_server, "/CLEAR" )
