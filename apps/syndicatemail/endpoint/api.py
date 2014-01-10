@@ -143,8 +143,8 @@ class API( object ):
    @classmethod
    @session_required
    def delete_message( cls, folder, msg_handle ):
-      msg_id = msg.id_from_message_path( msg_handle )
-      msg_ts = msg.timestamp_from_message_path( msg_handle )
+      msg_id = message.id_from_message_path( msg_handle )
+      msg_ts = message.timestamp_from_message_path( msg_handle )
       return delete_message( folder, msg_ts, msg_id )
 
    @classmethod
