@@ -354,6 +354,7 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
 }
 
 
+
 static int fs_entry_build_ms_path( struct fs_core* core, char const* path, path_t* ms_path ) {
    // build up an ms_path from the actual path
    vector<char*> path_parts;
@@ -534,7 +535,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
          continue;
       
       ms_ents[i] = &(*ms_ents_vec)[i];
-      dbprintf("listing: %s.%" PRId64 " (mtime=%" PRId64 ".%d) (write_nonce=%" PRId64 ")\n", ms_ents[i]->name, ms_ents[i]->version, ms_ents[i]->mtime_sec, ms_ents[i]->mtime_nsec, ms_ents[i]->write_nonce);
+      dbprintf("listing: %" PRIX64 " %s.%" PRId64 " (mtime=%" PRId64 ".%d) (write_nonce=%" PRId64 ")\n", ms_ents[i]->file_id, ms_ents[i]->name, ms_ents[i]->version, ms_ents[i]->mtime_sec, ms_ents[i]->mtime_nsec, ms_ents[i]->write_nonce);
    }
 
    // reload this entry
@@ -693,6 +694,35 @@ static int fs_entry_path_find( path_t* ms_path, uint64_t file_id ) {
 
    if( i == ms_path->size() ) {
       // not found, so nothing to do
+      dbprintf("%" PRIX64 " not found in:\n", file_id );
+      for( i = 0; i < ms_path->size(); i++ ) {
+         dbprintf("   %" PRIX64 " %s\n", ms_path->at(i).file_id, ms_path->at(i).name );
+      }
+      
+      return -ENOENT;
+   }
+
+   return (signed)i;
+}
+
+
+static int fs_entry_path_find_by_name( path_t* ms_path, char const* name ) {
+
+   // find this directory along the path
+   unsigned int i = 0;
+   for( i = 0; i < ms_path->size(); i++ ) {
+      if( strcmp(ms_path->at(i).name, name) == 0 ) {
+         break;
+      }
+   }
+
+   if( i == ms_path->size() ) {
+      // not found, so nothing to do
+      dbprintf("%s not found in:\n", name );
+      for( i = 0; i < ms_path->size(); i++ ) {
+         dbprintf("   %" PRIX64 " %s\n", ms_path->at(i).file_id, ms_path->at(i).name );
+      }
+      
       return -ENOENT;
    }
 
@@ -799,6 +829,8 @@ static int fs_entry_reload_local_path_entries( struct fs_entry_consistency_cls* 
 
    struct fs_core* core = cls->core;
 
+   dbprintf("%s", "reload local entries\n");
+   
    int rc = fs_entry_download_path_listings( core, ms_path );
    if( rc != 0 ) {
       errorf("fs_entry_download_path_listings() rc = %d\n", rc );
@@ -847,17 +879,17 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
    path_t* ms_path = consistency_cls->path;
 
    // find this directory along the path
-   int idx = fs_entry_path_find( ms_path, fent->file_id );
+   int idx = fs_entry_path_find_by_name( ms_path, fent->name );
 
    if( idx == -ENOENT ) {
       // not found, so nothing to do
-      dbprintf( "Not found: %s\n", fent->name);
+      dbprintf( "Not found: '%s'\n", fent->name);
       return 0;
    }
 
    if( (unsigned)idx == ms_path->size() - 1 ) {
       // last entry; nothing to do
-      dbprintf("End of path: %s\n", fent->name);
+      dbprintf("End of path: '%s'\n", fent->name);
       return 0;
    }
 
@@ -913,6 +945,7 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
    child_path.push_back( child_path_ent2 );
 
    // download the listing for the child
+   dbprintf("download non-local entry %" PRIX64 " %s\n", child_fent->file_id, child_fent->name );
    rc = fs_entry_download_path_listings( core, &child_path );
    if( rc != 0 ) {
       fs_entry_unlock( child_fent );
@@ -962,6 +995,8 @@ static int fs_entry_download_and_attach_entry( struct fs_entry* fent, void* cls 
 // Path is populated with entries that are fresh if present, and is built with fs_entry_build_ms_path
 static int fs_entry_reload_remote_path_entries( struct fs_entry_consistency_cls* consistency_cls, path_t* path ) {
 
+   dbprintf("%s", "Begin downloading remote entries\n");
+   
    // get the last path
    struct fs_entry_listing_cls* listing_cls = (struct fs_entry_listing_cls*)path->at( path->size() - 1 ).cls;
    char* deepest_path = listing_cls->fs_path;

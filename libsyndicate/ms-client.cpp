@@ -3289,6 +3289,9 @@ int ms_client_perform_multi_download( struct ms_client* client, struct ms_downlo
                      
                   }
                }
+               else {
+                  dbprintf("MS HTTP download %s succeeded!\n", downloads[i].url );
+               }
             }
          }
       } while( msg != NULL );
