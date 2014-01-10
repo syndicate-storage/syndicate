@@ -118,7 +118,10 @@ class API( object ):
    def read_message( cls, folder, msg_handle ):
       msg_id = message.id_from_message_path( msg_handle )
       msg_ts = message.timestamp_from_message_path( msg_handle )
-      return message.read_message( cls.config['volume'], cls.publicKeyStr(), cls.privateKeyStr(), cls.config['gateway_privkey_pem'], folder, msg_ts, msg_id )
+      msg = message.read_message( cls.config['volume'], cls.publicKeyStr(), cls.privateKeyStr(), cls.config['gateway_privkey_pem'], folder, msg_ts, msg_id )
+      
+      msg_json = dict( [(attr, getattr(msg, attr)) for attr in msg._frields] )
+      return msg_json
 
    @classmethod
    @session_required
@@ -128,7 +131,14 @@ class API( object ):
    @classmethod
    @session_required
    def list_messages( cls, folder, timestamp_start, timestamp_end, length=None ):
-      return message.list_messages( cls.config['volume'], cls.publicKeyStr(), cls.privateKeyStr(), folder, start_timestamp=timestamp_start, end_timestamp=timestamp_end, length=length )
+      msg_list = message.list_messages( cls.config['volume'], cls.publicKeyStr(), cls.privateKeyStr(), folder, start_timestamp=timestamp_start, end_timestamp=timestamp_end, length=length )
+      
+      # turn these into JSON-esque structures
+      msg_list_json = []
+      for msg in msg_list:
+         msg_list_json.append( dict( [(attr, getattr(msg, attr)) for attr in msg._fields] ) )
+      
+      return msg_list_json
 
    @classmethod
    @session_required
