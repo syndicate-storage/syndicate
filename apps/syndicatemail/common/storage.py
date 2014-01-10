@@ -365,8 +365,11 @@ def setup_storage( volume_root_dir, local_dir, modules, volume=GET_FROM_SESSION 
 
 
 # -------------------------------------
-def salt_string( name, iterations=10000 ):
+def salt_string( name, salt=None, iterations=10000 ):
    global PATH_SALT
+   
+   if salt is None:
+      salt = PATH_SALT
    
    if not PATH_SALT:
       raise Exception("call setup_storage() first")

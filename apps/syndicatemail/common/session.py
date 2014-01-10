@@ -65,7 +65,8 @@ def do_login( config, email, password, syndicate_oid_username, syndicate_oid_pas
    
    try:
       parsed_email = contact.parse_addr( email )
-   except:
+   except Exception, e:
+      log.exception(e)
       raise Exception("Invalid email '%s'" % email)
    
    config['email'] = email

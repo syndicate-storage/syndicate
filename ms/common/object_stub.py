@@ -509,7 +509,6 @@ class Gateway( StubObject ):
             raise Exception("Failed to load runtime private key for %s" % gateway_name )
          
          # encrypt the serialized secrets dict 
-         # TODO plaintext padding
          rc = 0
          encrypted_secrets_str = None
          try:

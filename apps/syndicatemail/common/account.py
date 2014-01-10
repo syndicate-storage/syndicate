@@ -35,6 +35,7 @@ import tempfile
 import socket 
 import collections
 import uuid
+import urllib
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.Hash import HMAC
@@ -565,7 +566,7 @@ def create_account( syndicatemail_uid, syndicatemail_password, mail_server, pass
    
    # create email address
    MS_host = urlparse( ms_url ).netloc
-   email = contact.make_addr_str( syndicatemail_uid, existing_volume_name, MS_host, mail_server )
+   email = contact.make_addr_str( syndicatemail_uid, existing_volume_name, MS_host, urllib.quote( mail_server ) )
    
    log.info("SyndicateMail address is %s" % email )
    

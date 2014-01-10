@@ -395,7 +395,7 @@ def make_outbound_message( pubkey_str, privkey_str, contact_rec, message ):
 
 
 #-------------------------
-def send_message( pubkey_str, privkey_str, sender_addr, receiver_addrs, cc_addrs, bcc_addrs, subject, body, attachments={}, folder=unicode(SENT_FOLDER), fake_time=None, fake_id=None ):
+def send_message( pubkey_str, privkey_str, sender_addr, receiver_addrs, cc_addrs, bcc_addrs, subject, body, attachments={}, folder=unicode(SENT_FOLDER), fake_time=None, fake_id=None, use_http=False ):
    now = int(time.time())
    msg_id = uuid.uuid4().get_hex()
    
@@ -529,7 +529,7 @@ def send_message( pubkey_str, privkey_str, sender_addr, receiver_addrs, cc_addrs
          failed.append( contact_rec.addr )
          continue
          
-      rc = network.post_message( encrypted_outbound_message )
+      rc = network.post_message( privkey_str, encrypted_outbound_message, use_http=use_http )
       if not rc:
          log.error("Failed to send message to %s" % contact_rec.addr )
          failed.append( contact_rec.addr )
@@ -1087,15 +1087,19 @@ zTnZ0cqW+ZP7aVhUx6fjxAriawcLvV4utLZmMDLDxjS12T98PbxfIsKa8UJ82w==
    
    print "---- send message setup ----"
    #SyndicateContact = collections.namedtuple( "SyndicateMailContact", ["addr", "pubkey_pem", "extras"] )
-   alice = contact.SyndicateContact( addr="alice.mail.syndicate.com@example.com", pubkey_pem = pubkey_str, extras = {"foo":"bar"} )
-   bob = contact.SyndicateContact( addr="bob.mail2.syndicate2.com@example2.com", pubkey_pem = pubkey_str2, extras={"baz": "goo"} )
+   alice = contact.SyndicateContact( addr="alice.mail.localhost:8080@localhost:33334", pubkey_pem = pubkey_str, extras = {"foo":"bar"} )
+   bob = contact.SyndicateContact( addr="bob.mail2.localhost:8080@localhost:33334", pubkey_pem = pubkey_str2, extras={"baz": "goo"} )
    
    contact.write_contact( pubkey_str, alice )
    contact.write_contact( pubkey_str, bob )
    
    print "---- send message setup ----"
    
-   def test_post_message( encrypted_incoming_message ):
+   def test_post_message( privkey_pem, encrypted_incoming_message ):
+      
+      rc = network.post_message( privkey_pem, encrypted_incoming_message )
+      if not rc:
+         return rc
       
       singleton.set_volume( fake_vol2 )
       assert storage.setup_storage( "/apps/syndicatemail/data", "/tmp/storage-test/local2", [fake_mod] ), "setup_storage 2 failed"
@@ -1120,7 +1124,7 @@ zTnZ0cqW+ZP7aVhUx6fjxAriawcLvV4utLZmMDLDxjS12T98PbxfIsKa8UJ82w==
    msg_id3 = "4ae26634ccaf401fbd4114a252ffa2a5"
    msg_ts3 = 1389238627
    
-   rc, failed = send_message( pubkey_str, privkey_str, alice.addr, [bob.addr], [], [], "Hello Bob", "This is a test of SyndicateMail", attachments={"poop": "poopie"}, fake_time=msg_ts1, fake_id=msg_id1 )
+   rc, failed = send_message( pubkey_str, privkey_str, alice.addr, [bob.addr], [], [], "Hello Bob", "This is a test of SyndicateMail", attachments={"poop": "poopie"}, fake_time=msg_ts1, fake_id=msg_id1, use_http=True )
    assert rc, "send message failed for %s" % failed
    
    """

@@ -82,7 +82,7 @@ def make_key_volume_path( name ):
 
 
 #-------------------------
-def encrypt_private_key( privkey_str, password ):
+def encrypt_with_password( data, password ):
    # first, make a PBKDF2 key from the password
    salt = os.urandom(64)        # 512 bits
    
@@ -90,24 +90,37 @@ def encrypt_private_key( privkey_str, password ):
    
    # second, feed this key and the private key into scrypt.
    # NOTE: scrypt uses AES256-CTR with encrypt-then-MAC
-   encrypted_key = scrypt.encrypt( str(privkey_str), key )
+   enc_data = scrypt.encrypt( str(data), key )
    
+   return salt, enc_data
+
+
+#-------------------------
+def decrypt_with_password( encrypted_data, password, salt ):
+   # reproduce the password for decryption...
+   key = PBKDF2( unicode(password), salt, dkLen=64 )
+   
+   try:
+      data = scrypt.decrypt( encrypted_data, key )
+   except:
+      log.error( "Failed to decrypt data.  Wrong password?")
+      return None
+   
+   return data
+   
+#-------------------------
+def encrypt_private_key( privkey_str, password ):
+   salt, encrypted_key = encrypt_with_password( privkey_str, password )
    return EncryptedPrivateKey( salt=base64.b64encode(salt), data=base64.b64encode( encrypted_key ) )
 
 
 #-------------------------
 def decrypt_private_key( encrypted_private_key, password ):
-   # reproduce the password for decryption...
-   key = PBKDF2( unicode(password), base64.b64decode( encrypted_private_key.salt ), dkLen=64 )
+   pkey_str = decrypt_with_password( base64.b64decode( encrypted_private_key.data ), password, base64.b64decode( encrypted_private_key.salt ) )
+   if pkey_str is None:
+      log.error("Failed to decrypt private key")
    
-   try:
-      privkey_str = scrypt.decrypt( base64.b64decode( encrypted_private_key.data ), key )
-   except:
-      log.error( "Failed to decrypt private key.  Wrong password?")
-      return None
-   
-   return str(privkey_str)
-
+   return pkey_str
 
 #-------------------------
 def load_private_key_from_path( key_path, password, local ):
@@ -220,7 +233,7 @@ def verify_data( pubkey_str, data, sig ):
    pubkey = CryptoKey.importKey( pubkey_str )
    h = HashAlg.new( data )
    verifier = CryptoSigner.new(pubkey)
-   ret = verifier.verify( h, base64.b64decode(sig) )
+   ret = verifier.verify( h, sig )
    return ret
 
 

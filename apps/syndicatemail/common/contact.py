@@ -58,9 +58,28 @@ def is_valid_email( addr_str ):
    return email_regex.match( addr_str )
 
 # -------------------------------------
+def quote_addr( addr_str ):
+   addr_parts = addr_str.split(".")
+   
+   
+   if len(addr_parts) < 3:
+      raise Exception("Invalid Syndicate email address: '%s'" % addr_str)
+   
+   username = addr_parts[0]
+   volume = addr_parts[1]
+   
+   host_parts = (".".join(addr_parts[2:])).split("@")
+   
+   if len(host_parts) < 2:
+      raise Exception("Invalid Syndicate email address: '%s'" % addr_str)
+   
+   return make_addr_str( urllib.quote(username), urllib.quote(volume), urllib.quote(host_parts[0]), urllib.quote(host_parts[1]))
+
+# -------------------------------------
 def parse_addr( addr_str ):
+   addr_str_quoted = quote_addr( addr_str )
    # does it match?
-   if not is_valid_email( addr_str ):
+   if not is_valid_email( addr_str_quoted ):
       raise Exception("Invalid email address: '%s'" % addr_str)
    
    # syndicatemail format:

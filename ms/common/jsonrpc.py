@@ -107,12 +107,12 @@ def json_stable_serialize( json_data ):
       key_order = [k for k in json_serialized_dict.keys()]
       key_order.sort()
       
-      return "{" + ", ".join( ["%s: %s" % (k, json_serialized_dict[k]) for k in key_order] ) + "}"
+      return "{" + ", ".join( ['"%s": %s' % (k, json_serialized_dict[k]) for k in key_order] ) + "}"
    
    elif isinstance( json_data, str ) or isinstance( json_data, unicode ):
       return '"' + json_data + '"'
    
-   return str(json_data)
+   return '"' + str(json_data) + '"'
 
 
 # ----------------------------------

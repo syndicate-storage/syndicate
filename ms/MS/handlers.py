@@ -446,6 +446,36 @@ class MSUserRequestHandler( webapp2.RequestHandler ):
       return
       
       
+class MSVolumeOwnerRequestHandler( webapp2.RequestHandler ):
+   """
+   Get the certificate of the user that owns a particular Volume.
+   GET returns a user certificate, as JSON
+   """
+   
+   def get( self, volume_name ):
+      # get the volume
+      try:
+         volume = storage.read_volume( volume_name )
+      except:
+         response_end( self, 404, "No such volume", "text/plain")
+         return
+      
+      # get the owner
+      try:
+         user = storage.read_user( volume.owner_id )
+      except:
+         response_end( self, 404, "No such user", "text/plain")
+         return 
+      
+      if user == None:
+         response_end( self, 404, "No such user", "text/plain")
+         
+      user_cert_dict = user.makeCert()
+      user_cert_txt = json.dumps( user_cert_dict )
+      response_end( self, 200, user_cert_txt, "application/json" )
+      return
+      
+      
 class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
    """
    Generate a session certificate from a SyndicateUser account for a gateway.
