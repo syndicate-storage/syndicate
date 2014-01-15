@@ -187,8 +187,11 @@ cdef class Volume:
          stdlib.free( c_buf )
          raise Exception("syndicate_read rc = %d" % c_read)
       
-      py_buf = c_buf[:c_read]
-      stdlib.free( c_buf )
+      # NOTE: this can cause a MemoryError if the buffer is really big
+      try:
+         py_buf = c_buf[:c_read]
+      finally:
+         stdlib.free( c_buf )
 
       return py_buf
 

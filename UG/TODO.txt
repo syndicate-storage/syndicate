@@ -1,8 +1,16 @@
-* UG block encryption/decryption
-* contact API
-* message API
-* front/back-end integration (by January 8)
-* search API
+* get everything to compile in FC12 for Nirav and for testing SyndicateMail
+* have draft of SyndicateMail ready by week's end
+* get automatic build working (investigate existing systems) for nightly 
+* get RG drivers working
+* get AG block hash working
+* get xattrs working
+* principles paper!  use example systems to describe why
+
+For SyndicateMail:
+* ATC paper: need implementation and evaluation ideas!
+* per-Volume OpenID provider information (or built-in authentication)
+* clean Python Volume interface
+* clean syntool module interface
 
 READING:
 // http://www1.icsi.berkeley.edu/~barath/papers/icn-hotnets11.pdf
