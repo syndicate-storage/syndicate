@@ -39,7 +39,6 @@ LIBPATH = """
 
 # add libraries here
 LIBS = """
-    AGcommon
     syndicate
     pthread
     rt

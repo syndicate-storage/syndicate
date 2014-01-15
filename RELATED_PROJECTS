@@ -1,5 +1,9 @@
 SYNDICATE RELATED PROJECTS:
 
+- Syndicate Mail
+Provides end-to-end email confidentiality, integrity, and authenticity checks with the semantics of webmail.
+https://github.com/jcnelson/syndicatemail
+
 - HSynth
 Provides an interface for Syndicate on Hadoop. Originally this project was in "UG-shared".
 https://github.com/iychoi/HSynth

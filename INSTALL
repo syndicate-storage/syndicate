@@ -1,4 +1,4 @@
-To install Syndicate, you need to install your distro's versions of the following packages.
+To build and install Syndicate, you need to install your distro's versions of the following packages.
 
 Fedora 12:
    gnutls-devel
@@ -10,7 +10,6 @@ Fedora 12:
    fuse
    fuse-devel
    libgcrypt-devel
-   uriparser-devel
    protobuf
    protobuf-devel
    protobuf-compiler
@@ -26,13 +25,16 @@ Ubuntu/Debian:
    fuse
    libfuse-dev
    libgcrypt-dev
-   liburiparser-dev
    libprotobuf-c0
    libprotobuf-dev
    protobuf-compiler
    libboost-thread-dev 
    libboost-system-dev
    libxerces-c-dev
+   libmicrohttpd-dev
+   python-daemon
+   unixodbc-dev
+   libconfig++8-dev
 
 You will also need a recent version of libmicrohttpd.  At least version 0.9.27 should work.
 

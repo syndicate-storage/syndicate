@@ -84,7 +84,6 @@ cpdef encrypt_closure_secrets( gateway_pubkey_str, closure_secrets ):
    try:
       closure_secrets_serialized = pickle.dumps( closure_secrets )
    except Exception, e:
-      raise e
       return (-errno.EINVAL, None)
 
    return encrypt_data( gateway_pubkey_str, closure_secrets_serialized )
@@ -107,7 +106,6 @@ cpdef decrypt_closure_secrets( gateway_privkey_str, closure_secrets ):
          secrets_dict = pickle.loads( py_serialized_secrets )
          return (0, secrets_dict)
       except Exception, e:
-         raise e
          return (-errno.ENODATA, None)
 
 

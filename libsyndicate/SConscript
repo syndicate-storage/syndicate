@@ -45,6 +45,7 @@ BASE_LIBS = """
    protobuf
    pthread
    crypto
+   ssl
    rt
    m
 """
