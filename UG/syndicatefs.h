@@ -27,11 +27,11 @@
 #include "collator.h"
 #include "syndicate.h"
 #include "server.h"
+#include "opts.h"
 
 #define FUSE_USE_VERSION 28
 
 #include <signal.h>
-#include <getopt.h>
 
 #include <fuse.h>
 

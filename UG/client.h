@@ -23,7 +23,8 @@
 #include "fs_entry.h"
 #include "log.h"
 #include "state.h"
-
+   
+// file handle wrapper 
 typedef struct _syndicate_handle {
    int type;
    off_t offset;
@@ -72,7 +73,6 @@ int syndicate_client_init( struct syndicate_state* state,
                            char const* ms_url,
                            char const* volume_name,
                            char const* gateway_name,
-                           int gateway_port,                    // FIXME: remove this
                            char const* md_username,
                            char const* md_password,
                            char const* volume_pubkey_file,

@@ -132,7 +132,6 @@ cdef class Syndicate:
 
    def __init__( self, gateway_type=0,
                        gateway_name=None,
-                       portnum=0,
                        ms_url=None,
                        oid_username=None,
                        oid_password=None,
@@ -202,11 +201,11 @@ cdef class Syndicate:
       if storage_root != None:
          c_storage_root = storage_root
 
-      rc = md_init(  gateway_type,
-                     c_gateway_name,
-                     &self.conf_inst,
+      # initialize configuration first
+      md_default_conf( &self.conf_inst, gateway_type )
+
+      rc = md_init(  &self.conf_inst,
                      &self.client_inst,
-                     portnum,
                      c_ms_url,
                      c_volume_name,
                      c_gateway_name,
@@ -227,7 +226,6 @@ cdef class Syndicate:
    @classmethod
    def getinstance( self,  gateway_type=0,
                            gateway_name=None,
-                           portnum=0,
                            ms_url=None,
                            oid_username=None,
                            oid_password=None,
@@ -250,7 +248,6 @@ cdef class Syndicate:
       if syndicate_ref == None:
          syndicate_ref = Syndicate( gateway_type=gateway_type,
                                     gateway_name=gateway_name,
-                                    portnum=portnum,
                                     ms_url=ms_url,
                                     oid_username=oid_username,
                                     oid_password=oid_password,

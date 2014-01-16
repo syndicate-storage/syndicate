@@ -200,8 +200,11 @@ struct ms_client {
 
    char* url;                 // MS URL
    char* userpass;            // HTTP username:password string.  Username is the gateway ID; password is the session password
+   
+   // NOTE: the following 3 fields are filled in at runtime
    uint64_t owner_id;         // ID of the User account running this ms_client
    uint64_t gateway_id;       // ID of the Gateway running this ms_client
+   int portnum;               // port we listen on
 
    pthread_t uploader_thread;
    bool running;        // set to true if the uploader thread is running
@@ -278,6 +281,7 @@ uint64_t ms_client_cert_version( struct ms_client* client );
 uint64_t ms_client_get_volume_id( struct ms_client* client );
 uint64_t ms_client_get_volume_blocksize( struct ms_client* client );
 char* ms_client_get_volume_name( struct ms_client* client );
+int ms_client_get_portnum( struct ms_client* client );
 int ms_client_get_closure_text( struct ms_client* client, char** closure_text, uint64_t* closure_len );
 int ms_client_set_view_change_callback( struct ms_client* client, ms_client_view_change_callback clb, void* cls );
 void* ms_client_set_view_change_callback_cls( struct ms_client* client, void* cls );

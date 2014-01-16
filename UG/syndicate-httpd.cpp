@@ -847,11 +847,55 @@ int daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
 }
 
 
+struct extra_opts {
+   char* logfile_path;
+   char* pidfile_path;
+   bool foreground;
+};
+
+static struct extra_opts g_extra_opts;
+
+int grab_extra_opts( int c, char* arg ) {
+   int rc = 0;
+   switch( c ) {
+      case 'f': {
+         g_extra_opts.foreground = true;
+         break;
+      }
+      case 'L': {
+         g_extra_opts.logfile_path = arg;
+         break;
+      }
+      case 'i': {
+         g_extra_opts.pidfile_path = arg;
+         break;
+      }
+      default: {
+         rc = -1;
+         break;
+      }
+   }
+   
+   return rc;
+}
+
+
+void extra_usage(void) {
+   fprintf(stderr, "\
+Gateway-specific arguments:\n\
+   -f\n\
+            Run in the foreground\n\
+   -L LOGFILE_PATH\n\
+            Path to a logfile\n\
+   -i PIDFILE_PATH\n\
+            Path to a pidfile\n\
+\n");
+}
+
+
 // daemon execution starts here!
 int main( int argc, char** argv ) {
 
-   int c;
-   char* config_file = (char*)CLIENT_DEFAULT_CONFIG;
    int portnum = 0;
    bool foreground = false;
    
@@ -859,115 +903,41 @@ int main( int argc, char** argv ) {
    char* pidfile = NULL;
 
    struct md_HTTP syndicate_http;
-   char* username = NULL;
-   char* password = NULL;
-   char* volume_name = NULL;
-   char* ms_url = NULL;
-   char* gateway_name = NULL;
-   char* volume_pubkey_path = NULL;
-   char* gateway_pkey_path = NULL;
-   char* tls_pkey_path = NULL;
-   char* tls_cert_path = NULL;
-   bool flush_replicas = true;
-  
-   static struct option syndicate_options[] = {
-      {"config-file",     required_argument,   0, 'c'},
-      {"volume-name",     required_argument,   0, 'v'},
-      {"gateway",         required_argument,   0, 'g'},
-      {"username",        required_argument,   0, 'u'},
-      {"password",        required_argument,   0, 'p'},
-      {"port",            required_argument,   0, 'P'},
-      {"foreground",      no_argument,         0, 'f'},
-      {"MS",              required_argument,   0, 'm'},
-      {"volume-pubkey",   required_argument,   0, 'V'},
-      {"gateway-pkey",    required_argument,   0, 'G'},
-      {"tls-pkey",        required_argument,   0, 'S'},
-      {"tls-cert",        required_argument,   0, 'C'},
-      {"no-flush-replicas", no_argument,       0, 'F'},
-      {0, 0, 0, 0}
-   };
-
-   int opt_index = 0;
    
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:Ffm:V:G:S:C:", syndicate_options, &opt_index)) != -1) {
-      switch( c ) {
-         case 'v': {
-            volume_name = optarg;
-            break;
-         }
-         case 'c': {
-            config_file = optarg;
-            break;
-         }
-         case 'g': {
-            gateway_name = optarg;
-            break;
-         }
-         case 'u': {
-            username = optarg;
-            break;
-         }
-         case 'p': {
-            password = optarg;
-            break;
-         }
-         case 'P': {
-            portnum = strtol(optarg, NULL, 10);
-            break;
-         }
-         case 'm': {
-            ms_url = optarg;
-            break;
-         }
-         case 'f': {
-            foreground = true;
-            break;
-         }
-         case 'F': {
-            flush_replicas = false;
-         }
-         case 'V': {
-            volume_pubkey_path = optarg;
-            break;
-         }
-         case 'G': {
-            gateway_pkey_path = optarg;
-            break;
-         }
-         case 'S': {
-            tls_pkey_path = optarg;
-            break;
-         }
-         case 'C': {
-            tls_cert_path = optarg;
-            break;
-         }
-         default: {
-            break;
-         }
-      }
-   }
+   struct syndicate_opts opts;
+   syndicate_default_opts( &opts );
+   memset( &g_extra_opts, 0, sizeof(g_extra_opts) );
+   
+   int rc = 0;
 
-   // start core services
-   int rc = syndicate_init( config_file, portnum, ms_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path );
-   if( rc != 0 )
+   rc = syndicate_parse_opts( &opts, argc, argv, NULL, "fl:i:", grab_extra_opts );
+   if( rc != 0 ) {
+      syndicate_common_usage( argv[0] );
+      extra_usage();
       exit(1);
+   }
+   
+   // start core services
+   rc = syndicate_init( opts.config_file, opts.ms_url, opts.volume_name, opts.gateway_name, opts.username, opts.password, opts.volume_pubkey_path, opts.gateway_pkey_path, opts.tls_pkey_path, opts.tls_cert_path );
+   if( rc != 0 ) {
+      fprintf(stderr, "Failed to initialize Syndicate\n");
+      exit(1);
+   }
    
    
    struct syndicate_state* state = syndicate_get_state();
 
    // start back-end HTTP server
    rc = server_init( state, &syndicate_http );
-   if( rc != 0 )
+   if( rc != 0 ) {
+      fprintf(stderr, "Failed to start HTTP server\n");
       exit(1);
+   }
    
    // finish initialization
    syndicate_finish_init( state );
 
-   
    struct md_syndicate_conf* conf = syndicate_get_conf();
-   if( portnum == 0 )
-      portnum = conf->httpd_portnum;
    
    // create our HTTP server
    memset( &g_http, 0, sizeof(g_http) );
@@ -1001,6 +971,7 @@ int main( int argc, char** argv ) {
       rc = daemonize( logfile, pidfile, NULL );
       if( rc < 0 ) {
          errorf( "md_daemonize rc = %d\n", rc );
+         fprintf(stderr, "Failed to become a daemon\n");
          exit(1);
       }
    }
@@ -1014,7 +985,7 @@ int main( int argc, char** argv ) {
    server_shutdown( &syndicate_http );
 
    int wait_replicas = 0;
-   if( flush_replicas )
+   if( opts.flush_replicas )
       wait_replicas = -1;
       
    syndicate_destroy( wait_replicas );

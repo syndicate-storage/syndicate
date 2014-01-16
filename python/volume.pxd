@@ -121,7 +121,6 @@ cdef extern from "client.h":
                               char * ms_url,
                               char * volume_name,
                               char * gateway_name,
-                              int gateway_port,
                               char * md_username,
                               char * md_password,
                               char * volume_pubkey_file,

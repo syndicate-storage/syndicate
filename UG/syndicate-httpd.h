@@ -23,8 +23,7 @@
 #include "http-common.h"
 #include "fs_entry.h"
 #include "server.h"
-
-#include <getopt.h>
+#include "opts.h"
 
 #include <map>
 #include <sys/types.h>

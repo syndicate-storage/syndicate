@@ -21,37 +21,28 @@
 static int _signals = 1;
 
 // initialize server information
-static int md_init_server_info( struct md_syndicate_conf* c, bool is_client ) {
+static int md_init_server_info( struct md_syndicate_conf* c ) {
    
    int rc = 0;
    
-   // sanity check
-   if( !is_client && c->portnum <= 0 ) {
-      errorf("Invalid portnum %d\n", c->portnum);
-      return -EINVAL;
-   }
-   
-   if( !is_client ) {
+   if( !c->is_client ) {
    #ifndef _SYNDICATE_NACL_
       // get hostname
       struct addrinfo hints;
       memset( &hints, 0, sizeof(hints) );
       hints.ai_family = AF_UNSPEC;
       hints.ai_socktype = SOCK_STREAM;
-      hints.ai_flags = AI_NUMERICSERV | AI_CANONNAME;
+      hints.ai_flags = AI_CANONNAME;
       hints.ai_protocol = 0;
       hints.ai_canonname = NULL;
       hints.ai_addr = NULL;
       hints.ai_next = NULL;
 
-      char portnum_buf[10];
-      sprintf(portnum_buf, "%d", c->portnum);
-
       struct addrinfo *result = NULL;
       char hostname[HOST_NAME_MAX+1];
       gethostname( hostname, HOST_NAME_MAX );
 
-      rc = getaddrinfo( hostname, portnum_buf, &hints, &result );
+      rc = getaddrinfo( hostname, NULL, &hints, &result );
       if( rc != 0 ) {
          // could not get addr info
          errorf("getaddrinfo: %s\n", gai_strerror( rc ) );
@@ -69,22 +60,14 @@ static int md_init_server_info( struct md_syndicate_conf* c, bool is_client ) {
       dbprintf("canonical hostname is %s\n", hn);
 
       c->hostname = strdup(hn);
-
-   #else   
+   #else
       c->hostname = strdup("localhost");
    #endif
          
-      // create a public url, if it does not exist
-      if( c->content_url == NULL ) {
-         c->content_url = CALLOC_LIST( char, strlen(c->hostname) + 20 );
-         sprintf(c->content_url, "http://%s:%d/", c->hostname, c->portnum );
-         dbprintf("content URL is %s\n", c->content_url );
-      }
    }
    else {
       // fill in defaults, but they won't be used except for registration
       c->hostname = strdup("localhost");
-      c->content_url = strdup("http://NONE/");
       c->server_key = NULL;
       c->server_cert = NULL;
    }
@@ -93,7 +76,7 @@ static int md_init_server_info( struct md_syndicate_conf* c, bool is_client ) {
 }
 
 // initialize all global data structures
-static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char const* local_storage_root, char const* volume_key_file, char** volume_pubkey_pem, bool is_client ) {
+static int md_runtime_init( struct md_syndicate_conf* c ) {
 
    GOOGLE_PROTOBUF_VERIFY_VERSION;
 
@@ -103,17 +86,15 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
    mode_t um = get_umask();
    c->usermask = um;
    
-   c->gateway_type = gateway_type;
-   
    int rc = 0;
    
-   rc = md_init_local_storage( c, local_storage_root );
+   rc = md_init_local_storage( c );
    if( rc != 0 ) {
-      errorf("md_init_local_storage(%s) rc = %d\n", local_storage_root, rc );
+      errorf("md_init_local_storage(%s) rc = %d\n", c->storage_root, rc );
       return rc;
    }
    
-   rc = md_init_server_info( c, is_client );
+   rc = md_init_server_info( c );
    if( rc != 0 ) {
       errorf("md_init_server_info() rc = %d\n", rc );
       return rc;
@@ -130,11 +111,10 @@ static int md_runtime_init( int gateway_type, struct md_syndicate_conf* c, char 
    }
    
    // load volume public key, if given
-   if( volume_key_file != NULL ) {
-      size_t volume_key_pem_len = 0;
-      *volume_pubkey_pem = md_load_file_as_string( volume_key_file, &volume_key_pem_len );
-      if( *volume_pubkey_pem == NULL ) {
-         errorf("Failed to load public key from %s\n", volume_key_file );
+   if( c->volume_pubkey_path != NULL ) {
+      c->volume_pubkey = md_load_file_as_string( c->volume_pubkey_path, &c->volume_pubkey_len );
+      if( c->volume_pubkey == NULL ) {
+         errorf("Failed to load public key from %s\n", c->volume_pubkey );
          return -ENODATA;
       }
       
@@ -622,6 +602,8 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->gateway_key,
       (void*)conf->gateway_key_path,
       (void*)conf->replica_logfile,
+      (void*)conf->volume_name,
+      (void*)conf->volume_pubkey,
       (void*)conf
    };
 
@@ -2205,26 +2187,11 @@ size_t response_buffer_size( response_buffer_t* rb ) {
 
 
 
-// merge command-line options with the config....
-#define MD_INIT_MERGE_OPT( conf, optname, value ) \
-   do { \
-     if( (value) ) { \
-        if( (conf).optname ) { \
-           free( (conf).optname ); \
-        } \
-        \
-        (conf).optname = strdup( value ); \
-      } \
-   } while( 0 );
-
 
 static bool _already_inited = false;
 
 // basic Syndicate initialization
-int md_init_begin( int gateway_type,
-                   char const* config_file,
-                   struct md_syndicate_conf* conf,
-                   struct ms_client* client,
+int md_init_begin( struct md_syndicate_conf* conf,
                    char const* ms_url,
                    char const* volume_name,
                    char const* gateway_name,
@@ -2269,42 +2236,26 @@ int md_init_begin( int gateway_type,
       _already_inited = true;
    }
    
-   md_default_conf( conf );
-   
-   // read the config file
-   if( config_file != NULL ) {
-      rc = md_read_conf( config_file, conf );
-      if( rc != 0 ) {
-         dbprintf("ERR: failed to read %s, rc = %d\n", config_file, rc );
-         if( !(rc == -ENOENT || rc == -EACCES || rc == -EPERM) ) {
-            // not just a simple "not found" or "permission denied"
-            return rc;
-         }  
-         else {
-            rc = 0;
-         }
-      }
-   }
-   
-   MD_INIT_MERGE_OPT( *conf, metadata_url, ms_url );
-   MD_INIT_MERGE_OPT( *conf, ms_username, oid_username );
-   MD_INIT_MERGE_OPT( *conf, ms_password, oid_password );
-   MD_INIT_MERGE_OPT( *conf, gateway_name, gateway_name );
-   MD_INIT_MERGE_OPT( *conf, server_cert_path, tls_cert_file );
-   MD_INIT_MERGE_OPT( *conf, server_key_path, tls_pkey_file );
-   MD_INIT_MERGE_OPT( *conf, gateway_key_path, my_key_path );
+   MD_SYNDICATE_CONF_OPT( *conf, volume_name, volume_name );
+   MD_SYNDICATE_CONF_OPT( *conf, metadata_url, ms_url );
+   MD_SYNDICATE_CONF_OPT( *conf, ms_username, oid_username );
+   MD_SYNDICATE_CONF_OPT( *conf, ms_password, oid_password );
+   MD_SYNDICATE_CONF_OPT( *conf, gateway_name, gateway_name );
+   MD_SYNDICATE_CONF_OPT( *conf, server_cert_path, tls_cert_file );
+   MD_SYNDICATE_CONF_OPT( *conf, server_key_path, tls_pkey_file );
+   MD_SYNDICATE_CONF_OPT( *conf, gateway_key_path, my_key_path );
    
    return rc;
 }
 
 
 // finish initialization
-int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, char const* volume_name, char const* volume_pubkey_pem ) {
+int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client ) {
    
    int rc = 0;
    
    // validate the config
-   rc = md_check_conf( conf->gateway_type, conf );
+   rc = md_check_conf( conf );
    if( rc != 0 ) {
       errorf("ERR: md_check_conf rc = %d\n", rc );
       return rc;
@@ -2319,7 +2270,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    
    if( conf->gateway_name != NULL && conf->ms_username != NULL && conf->ms_password != NULL ) {
       // register the gateway via OpenID
-      rc = ms_client_openid_gateway_register( client, conf->gateway_name, conf->ms_username, conf->ms_password, volume_pubkey_pem );
+      rc = ms_client_openid_gateway_register( client, conf->gateway_name, conf->ms_username, conf->ms_password, conf->volume_pubkey );
       if( rc != 0 ) {
          errorf("ms_client_gateway_register rc = %d\n", rc );
          
@@ -2335,10 +2286,10 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       conf->ms_password = strdup("<anonymous>");
       conf->owner = USER_ANON;
       conf->gateway = GATEWAY_ANON;
-      rc = ms_client_anonymous_gateway_register( client, volume_name, volume_pubkey_pem );
+      rc = ms_client_anonymous_gateway_register( client, conf->volume_name, conf->volume_pubkey );
       
       if( rc != 0 ) {
-         errorf("ms_client_anonymous_gateway_register(%s) rc = %d\n", volume_name, rc );
+         errorf("ms_client_anonymous_gateway_register(%s) rc = %d\n", conf->volume_name, rc );
          
          ms_client_destroy( client );;
          
@@ -2349,36 +2300,42 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    // if this is a UG, verify that we bound to the right volume
    if( conf->gateway_type == SYNDICATE_UG ) {
       
-      char* volname = ms_client_get_volume_name( client );
+      char* ms_volume_name = ms_client_get_volume_name( client );
 
-      if( volname == NULL ) {
+      if( ms_volume_name == NULL ) {
          errorf("%s", "This gateway does not appear to be bound to any volumes!\n");
          return -EINVAL;
       }
       
-      if( strcmp(volname, volume_name) != 0 ) {
-         errorf("ERR: This UG is not registered to Volume '%s'\n", volume_name );
-         free( volname );
+      if( strcmp(ms_volume_name, conf->volume_name) != 0 ) {
+         errorf("ERR: This UG is not registered to Volume '%s'\n", conf->volume_name );
+         free( ms_volume_name );
          return rc;
       }
-      free( volname );
+      free( ms_volume_name );
    }
-
+   
+   // get the portnum
+   conf->portnum = ms_client_get_portnum( client );
+   
+   // FIXME: DRY this up
    ms_client_wlock( client );
    conf->owner = client->owner_id;
    conf->gateway = client->gateway_id;
    ms_client_unlock( client );
+   
+   // create a public url, now that we know the port number
+   conf->content_url = CALLOC_LIST( char, strlen(conf->hostname) + 20 );
+   sprintf(conf->content_url, "http://%s:%d/", conf->hostname, conf->portnum );
+   dbprintf("content URL is %s\n", conf->content_url );
    
    return rc;
 }
    
    
 // initialize Syndicate
-int md_init( int gateway_type,
-             char const* config_file,
-             struct md_syndicate_conf* conf,
+int md_init( struct md_syndicate_conf* conf,
              struct ms_client* client,
-             int portnum,
              char const* ms_url,
              char const* volume_name,
              char const* gateway_name,
@@ -2391,7 +2348,7 @@ int md_init( int gateway_type,
              char const* storage_root
            ) {
 
-   int rc = md_init_begin( gateway_type, config_file, conf, client, ms_url, volume_name, gateway_name, oid_username, oid_password, my_key_file, tls_pkey_file, tls_cert_file );
+   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, my_key_file, tls_pkey_file, tls_cert_file );
 
    if( rc != 0 ) {
       errorf("md_init_begin() rc = %d\n", rc );
@@ -2400,37 +2357,26 @@ int md_init( int gateway_type,
    
    conf->is_client = false;
    
-   if( portnum > 0 ) {
-      conf->portnum = portnum;
-   }
-
-   if( conf->portnum <= 0 ) {
-      errorf("invalid port number: conf's is %d, caller's is %d\n", conf->portnum, portnum);
-      return -EINVAL;
-   }
+   MD_SYNDICATE_CONF_OPT( *conf, storage_root, storage_root );
    
-   char* volume_key_pem = NULL;
 
    // set up libsyndicate runtime information
-   rc = md_runtime_init( gateway_type, conf, storage_root, volume_key_file, &volume_key_pem, false );
+   rc = md_runtime_init( conf );
    if( rc != 0 ) {
       errorf("md_runtime_init() rc = %d\n", rc );
       return rc;
    }
    
-   return md_init_finish( conf, client, volume_name, volume_key_pem );
+   return md_init_finish( conf, client );
 }
 
 
 // initialize syndicate as a client only
-int md_init_client( int gateway_type,
-                    char const* config_file,
-                    struct md_syndicate_conf* conf,
+int md_init_client( struct md_syndicate_conf* conf,
                     struct ms_client* client,
                     char const* ms_url,
                     char const* volume_name, 
                     char const* gateway_name,
-                    int gateway_port,           // FIXME: remove this
                     char const* oid_username,
                     char const* oid_password,
                     char const* volume_key_pem,
@@ -2439,32 +2385,40 @@ int md_init_client( int gateway_type,
                   ) {
    
    
-   int rc = md_init_begin( gateway_type, config_file, conf, client, ms_url, volume_name, gateway_name, oid_username, oid_password, NULL, NULL, NULL );
+   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, NULL, NULL, NULL );
 
    if( rc != 0 ) {
       errorf("md_init_begin() rc = %d\n", rc );
       return rc;
    }
    
-   conf->portnum = gateway_port;
    conf->is_client = true;
-   conf->gateway_key = strdup(my_key_pem);
-   conf->gateway_key_len = strlen(my_key_pem);
+   
+   MD_SYNDICATE_CONF_OPT( *conf, storage_root, storage_root );
+   MD_SYNDICATE_CONF_OPT( *conf, gateway_key, my_key_pem );
+   MD_SYNDICATE_CONF_OPT( *conf, volume_pubkey, volume_key_pem );
+   
+   if( conf->gateway_key ) {
+      conf->gateway_key_len = strlen(conf->gateway_key);
+   }
+   if( conf->volume_pubkey ) {
+      conf->volume_pubkey_len = strlen(conf->volume_pubkey);
+   }
    
    // set up libsyndicate runtime information
-   rc = md_runtime_init( gateway_type, conf, storage_root, NULL, NULL, true );
+   rc = md_runtime_init( conf );
    if( rc != 0 ) {
       errorf("md_runtime_init() rc = %d\n", rc );
       return rc;
    }
    
-   return md_init_finish( conf, client, volume_name, volume_key_pem );   
+   return md_init_finish( conf, client );   
 }
 
 
 
 // default configuration
-int md_default_conf( struct md_syndicate_conf* conf ) {
+int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
 
    memset( conf, 0, sizeof(struct md_syndicate_conf) );
    
@@ -2498,6 +2452,8 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
    conf->usermask = 0377;
 
    conf->view_reload_freq = 3600;  // once an hour at minimum
+   
+   conf->gateway_type = gateway_type;
 
    return 0;
 }
@@ -2505,7 +2461,7 @@ int md_default_conf( struct md_syndicate_conf* conf ) {
 
 // check a configuration structure to see that it has everything we need.
 // print warnings too
-int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
+int md_check_conf( struct md_syndicate_conf* conf ) {
    char const* warn_fmt = "WARN: missing configuration parameter: %s\n";
    char const* err_fmt = "ERR: missing configuration parameter: %s\n";
 
@@ -2520,9 +2476,6 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
    }
    if( conf->proxy_url == NULL ) {
       fprintf(stderr, warn_fmt, PROXY_URL_KEY );
-   }
-   if( conf->content_url == NULL ) {
-      fprintf(stderr, err_fmt, CONTENT_URL_KEY );
    }
    if( conf->metadata_url == NULL ) {
       rc = -EINVAL;
@@ -2542,7 +2495,7 @@ int md_check_conf( int gateway_type, struct md_syndicate_conf* conf ) {
       fprintf(stderr, err_fmt, GATEWAY_KEY_KEY );
    }
    
-   if( gateway_type == SYNDICATE_UG ) {
+   if( conf->gateway_type == SYNDICATE_UG ) {
       // UG-specific warnings and errors
       if( conf->data_root == NULL ) {
          rc = -EINVAL;

@@ -158,6 +158,19 @@ struct md_gateway_request_data {
    bool staging;
 };
 
+// merge command-line options with the config....
+#define MD_SYNDICATE_CONF_OPT( conf, optname, value ) \
+   do { \
+     if( (value) ) { \
+        if( (conf).optname ) { \
+           free( (conf).optname ); \
+        } \
+        \
+        (conf).optname = strdup( value ); \
+      } \
+   } while( 0 );
+
+
 // server configuration
 struct md_syndicate_conf {
    // UG fields
@@ -166,11 +179,12 @@ struct md_syndicate_conf {
    char* logfile_path;                                // path to the logfile
    bool gather_stats;                                 // gather statistics or not?
    char* content_url;                                 // what is the URL under which published files can be accessed?
-   char* data_root;                                   // root of the path where we store local file blocks
-   char* staging_root;                                // root of the path where we store locally-written rmeote file blocks 
+   char* storage_root;                                // toplevel directory that stores local syndicate state
    int num_replica_threads;                           // how many replica threads?
    char* replica_logfile;                             // path on disk to replica log
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
+   char* volume_name;                                 // name of the volume we're connected to
+   char* volume_pubkey_path;                          // path on disk to find Volume metadata public key
    
    // RG/AG servers
    unsigned int num_http_threads;                     // how many HTTP threads to create
@@ -203,20 +217,26 @@ struct md_syndicate_conf {
    uint64_t gateway;                                  // what is the gateway ID in Syndicate?
    uint64_t view_reload_freq;                         // how often do we check for new Volume/UG/RG metadata?
 
-   // security fields
-   char* gateway_key;
+   // security fields (loaded at runtime)
+   char* gateway_key;                                 // gateway private key (PEM format)
    size_t gateway_key_len;
-   char* server_key;
+   char* server_key;                                  // TLS private key (PEM format)
    size_t server_key_len;
-   char* server_cert;
+   char* server_cert;                                 // TLS certificate (PEM format)
    size_t server_cert_len;
+   char* volume_pubkey;                               // volume metadata public key (PEM format)
+   size_t volume_pubkey_len;
 
-   // misc
+   // set at runtime
+   char* data_root;                                   // root of the path where we store local file blocks
+   char* staging_root;                                // root of the path where we store locally-written rmeote file blocks 
    mode_t usermask;                                   // umask of the user running this program
    char* hostname;                                    // what's our hostname?
+   
+   // misc
    char* ag_driver;                                   // AG gatway driver that encompasses gateway callbacks
-   int gateway_type;
-   bool is_client;                                      // if true for a UG, always fetch data from RGs
+   int gateway_type;                                  // type of gateway 
+   bool is_client;                                    // if true for a UG, always fetch data from RGs
 };
 
 #define USER_ANON               0xFFFFFFFFFFFFFFFF
@@ -398,43 +418,37 @@ void response_buffer_free( response_buffer_t* rb );
 void md_gateway_request_data_free( struct md_gateway_request_data* reqdat );
 
 // top-level initialization
-int md_init(int gateway_type,
-            char const* config_file,
-            struct md_syndicate_conf* conf,
-            struct ms_client* client,
-            int portnum,
-            char const* ms_url,
-            char const* volume_name,
-            char const* gateway_name,
-            char const* md_username,
-            char const* md_password,
-            char const* volume_key_file,
-            char const* my_key_file,
-            char const* tls_key_file,
-            char const* tls_cert_file,
-            char const* storage_root
-         );
+int md_init( struct md_syndicate_conf* conf,
+             struct ms_client* client,
+             char const* ms_url,
+             char const* volume_name,
+             char const* gateway_name,
+             char const* oid_username,
+             char const* oid_password,
+             char const* volume_key_file,
+             char const* my_key_file,
+             char const* tls_pkey_file,
+             char const* tls_cert_file,
+             char const* storage_root
+           );
 
 
 // initialize syndicate as a client only
-int md_init_client( int gateway_type,
-                    char const* config_file,
-                    struct md_syndicate_conf* conf,
+int md_init_client( struct md_syndicate_conf* conf,
                     struct ms_client* client,
                     char const* ms_url,
                     char const* volume_name, 
                     char const* gateway_name,
-                    int gateway_port,           // FIXME: remove this
                     char const* oid_username,
                     char const* oid_password,
                     char const* volume_key_pem,
-                    char const* gateway_key_pem,
+                    char const* my_key_pem,
                     char const* storage_root
                   );
 
 int md_shutdown(void);
-int md_default_conf( struct md_syndicate_conf* conf );
-int md_check_conf( int gateway_type, struct md_syndicate_conf* conf );
+int md_default_conf( struct md_syndicate_conf* conf, int gateway_type );
+int md_check_conf( struct md_syndicate_conf* conf );
 
 }
 

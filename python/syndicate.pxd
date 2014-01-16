@@ -58,15 +58,12 @@ cdef extern from "libsyndicate.h":
 
    # ------------------------------------------
    # init and shutdown
-   int md_default_conf( md_syndicate_conf* conf )
+   int md_default_conf( md_syndicate_conf* conf, int gateway_type )
 
    int md_free_conf( md_syndicate_conf* conf )
 
-   int md_init(int gateway_type,
-               char* config_file,
-               md_syndicate_conf* conf,
+   int md_init(md_syndicate_conf* conf,
                ms_client* client,
-               int portnum,
                char* ms_url,
                char* volume_name,
                char* gateway_name,

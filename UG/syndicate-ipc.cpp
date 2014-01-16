@@ -22,6 +22,7 @@
 #include "collator.h"
 #include "syndicate.h"
 #include "server.h"
+#include "opts.h"
 
 #include <boost/bind.hpp>
 #include <boost/asio.hpp>
@@ -1411,6 +1412,32 @@ private:
     tcp::acceptor acceptor_;
 };
 
+
+// gather extra arguments 
+static int ipcportnum = -1;
+
+int grab_extra_args( int c, char* arg ) {
+   int rc = 0;
+   switch( c ) {
+      case 'O': {
+         ipcportnum = strtol(optarg, NULL, 10 );
+         break;
+      }
+      default: {
+         rc = -1;
+      }
+   }
+   return rc;
+}
+
+void extra_usage(void) {
+   fprintf(stderr, "\
+Gateway-specific arguments:\n\
+   -O PORTNUM\n\
+            IPC port number\n\
+\n");
+}
+
 int main(int argc, char* argv[]) {
 
     curl_global_init(CURL_GLOBAL_ALL);
@@ -1424,124 +1451,20 @@ int main(int argc, char* argv[]) {
         perror("Running SyndicateIPC as root opens unnacceptable security holes\n");
         return 1;
     }
-
-    char* config_file = (char*) CLIENT_DEFAULT_CONFIG;
-    char* username = NULL;
-    char* password = NULL;
-    char* volume_name = NULL;
-    char* ms_url = NULL;
-    char* gateway_name = NULL;
-    int portnum = -1;
-    char* volume_pubkey_path = NULL;
-    char* gateway_pkey_path = NULL;
-    char* tls_pkey_path = NULL;
-    char* tls_cert_path = NULL;
-    int ipcportnum = -1;
-    bool flush_replicas = true;
     
-    static struct option syndicate_options[] = {
-        {"config-file", required_argument, 0, 'c'},
-        {"volume-name", required_argument, 0, 'v'},
-        {"username", required_argument, 0, 'u'},
-        {"password", required_argument, 0, 'p'},
-        {"gateway", required_argument, 0, 'g'},
-        {"port", required_argument, 0, 'P'},
-        {"ipcport", required_argument, 0, 'O'},
-        {"MS", required_argument, 0, 'm'},
-        {"volume-pubkey", required_argument, 0, 'V'},
-        {"gateway-pkey", required_argument, 0, 'G'},
-        {"tls-pkey", required_argument, 0, 'S'},
-        {"tls-cert", required_argument, 0, 'C'},
-        {"no-flush-replicas", no_argument, 0, 'F'},
-        {0, 0, 0, 0}
-    };
-
-    int opt_index = 0;
-    int c = 0;
-    while ((c = getopt_long(argc, argv, "c:v:u:p:P:O:m:g:V:G:S:C:F", syndicate_options, &opt_index)) != -1) {
-        switch (c) {
-            case 'v':
-            {
-                volume_name = optarg;
-                break;
-            }
-            case 'c':
-            {
-                config_file = optarg;
-                break;
-            }
-            case 'u':
-            {
-                username = optarg;
-                break;
-            }
-            case 'p':
-            {
-                password = optarg;
-                break;
-            }
-            case 'P':
-            {
-                portnum = strtol(optarg, NULL, 10);
-                break;
-            }
-            case 'O':
-            {
-                ipcportnum = strtol(optarg, NULL, 10);
-                break;
-            }
-            case 'm':
-            {
-                ms_url = optarg;
-                break;
-            }
-            case 'g':
-            {
-                gateway_name = optarg;
-                break;
-            }
-            case 'V':
-            {
-                volume_pubkey_path = optarg;
-                break;
-            }
-            case 'G':
-            {
-                gateway_pkey_path = optarg;
-                break;
-            }
-            case 'S':
-            {
-                tls_pkey_path = optarg;
-                break;
-            }
-            case 'C':
-            {
-                tls_cert_path = optarg;
-                break;
-            }
-            case 'F':
-            {
-                 flush_replicas = false;
-                 break;
-            }
-            default:
-            {
-                break;
-            }
-        }
-    }
-
-    // we need a mountpoint, and possibly other options
-    if (argv[argc - 1][0] == '-') {
-        errorf("Usage: %s [-n] [-c CONF_FILE] [-m MS_URL] [-u USERNAME] [-p PASSWORD] [-v VOLUME] [-g GATEWAY_NAME] [-P PORTNUM] [-O IPC_PORTNUM] [-G GATEWAY_PKEY] [-V VOLUME_PUBKEY] [-S TLS_PKEY] [-C TLS_CERT]\n", argv[0]);
-        exit(1);
+    struct syndicate_opts opts;
+    syndicate_default_opts( &opts );
+    
+    rc = syndicate_parse_opts( &opts, argc, argv, NULL, "O:", grab_extra_args );
+    if( rc != 0 ) {
+       syndicate_common_usage( argv[0] );
+       exit(1);
     }
 
     struct md_HTTP syndicate_http;
 
     // start core services
-    rc = syndicate_init(config_file, portnum, ms_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path);
+    rc = syndicate_init(opts.config_file, opts.ms_url, opts.volume_name, opts.gateway_name, opts.username, opts.password, opts.volume_pubkey_path, opts.gateway_pkey_path, opts.tls_pkey_path, opts.tls_cert_path);
     if (rc != 0)
         exit(1);
     
@@ -1575,7 +1498,7 @@ int main(int argc, char* argv[]) {
     server_shutdown( &syndicate_http );
 
     int wait_replicas = -1;
-    if( !flush_replicas )
+    if( !opts.flush_replicas )
        wait_replicas = 0;
     
     syndicate_destroy( wait_replicas );

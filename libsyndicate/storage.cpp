@@ -33,12 +33,12 @@ char* md_load_file_as_string( char const* path, size_t* size ) {
 
 
 // initialize local storage
-int md_init_local_storage( struct md_syndicate_conf* c, char const* root_dir ) {
+int md_init_local_storage( struct md_syndicate_conf* c ) {
    
    char cwd[PATH_MAX + 1];
    int rc = 0;
    
-   if( root_dir == NULL ) {
+   if( c->storage_root == NULL ) {
       // make a PID-named directory
       pid_t my_pid = 0;
       
@@ -51,12 +51,12 @@ int md_init_local_storage( struct md_syndicate_conf* c, char const* root_dir ) {
       sprintf(cwd, "/tmp/syndicate.%d", my_pid );
    }
    else {
-      if( strlen(root_dir) >= PATH_MAX - 20 ) {
-         errorf("Directory '%s' too long\n", root_dir );
+      if( strlen(c->storage_root) >= PATH_MAX - 20 ) {
+         errorf("Directory '%s' too long\n", c->storage_root );
          return -EINVAL;
       }
       
-      strncpy( cwd, root_dir, PATH_MAX );
+      strncpy( cwd, c->storage_root, PATH_MAX );
    }
    
    char* data_root = md_fullpath( cwd, "data/", NULL );

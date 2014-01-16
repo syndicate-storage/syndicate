@@ -71,7 +71,6 @@ cdef class Volume:
 
    # ------------------------------------------
    def __init__( self, gateway_name=None,
-                       gateway_port=None,       # FIXME: remove this
                        config_file=None,
                        ms_url=None,
                        oid_username=None,
@@ -120,9 +119,6 @@ cdef class Volume:
          
       if storage_root != None:
          c_storage_root = storage_root
-
-      if gateway_port == None:
-         gateway_port = 0
       
       self.wait_replicas = wait_replicas
 
@@ -131,7 +127,6 @@ cdef class Volume:
                                   c_ms_url,
                                   c_volume_name,
                                   c_gateway_name,
-                                  gateway_port,
                                   c_oid_username,
                                   c_oid_password,
                                   c_volume_key_pem,

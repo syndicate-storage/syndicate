@@ -637,8 +637,6 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    char* logfile = NULL;
    char* pidfile = NULL;
    char* metadata_url = NULL;
-   int portnum = 0;
-   char* portnum_str = NULL;
    char* username = NULL;
    char* password = NULL;
    char* volume_name = NULL;
@@ -659,7 +657,6 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
       {"volume-name\0Name of the volume to join",           required_argument,   0, 'v'},
       {"username\0User authentication identity",             required_argument,   0, 'u'},
       {"password\0User authentication secret",               required_argument,   0, 'p'},
-      {"port\0Syndicate port number",                       required_argument,   0, 'P'},
       {"MS\0Metadata Service URL",                          required_argument,   0, 'm'},
       {"foreground\0Run in the foreground",                 no_argument,         0, 'f'},
       {"overwrite\0Overwrite previous upload on conflict",  no_argument,         0, 'w'},
@@ -696,10 +693,6 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
          }
          case 'p': {
             password = optarg;
-            break;
-         }
-         case 'P': {
-            portnum_str = optarg;
             break;
          }
          case 'm': {
@@ -804,20 +797,25 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
        exit(0);
    }
    
-   if( portnum_str != NULL ) {
-      portnum = strtol( portnum_str, NULL, 10 );
-
-      if( portnum == 0 ) {
-         fprintf(stderr, "Invalid port number\n");
-         gateway_usage( argv[0], gateway_options, 1 );
-      }
-   }
-
    // set up Syndicate
    struct ms_client client;
    struct md_syndicate_conf conf;
+   
+   
+   // load config file
+   md_default_conf( &conf, gateway_type );
+   
+   // read the config file
+   if( config_file != NULL ) {
+      rc = md_read_conf( config_file, &conf );
+      if( rc != 0 ) {
+         dbprintf("ERR: failed to read %s, rc = %d\n", config_file, rc );
+         return rc;
+      }
+   }
+   
  
-   rc = md_init( gateway_type, config_file, &conf, &client, portnum, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path, NULL );
+   rc = md_init( &conf, &client, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path, NULL );
    if( rc != 0 ) {
       exit(1);
    }

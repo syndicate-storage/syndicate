@@ -21,7 +21,7 @@
 #include "util.h"
 
 // initialize local storage
-int md_init_local_storage( struct md_syndicate_conf* c, char const* root_dir );
+int md_init_local_storage( struct md_syndicate_conf* c );
 
 // file I/O
 char* md_load_file_as_string( char const* path, size_t* size );

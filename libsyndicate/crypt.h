@@ -41,6 +41,20 @@
 #define MD_THREAD_ID pthread_self( )
 
 extern "C" {
+   
+struct md_envelope {
+   char* ek;            // symmetric key encrypted with recipient's public key
+   size_t ek_len;
+   
+   char* iv;            // initialization vector
+   size_t iv_len;
+   
+   char* hmac;          // HMAC, using the symmetric key as shared secret
+   size_t hmac_len;
+   
+   char* ciphertext;    // encrypted data
+   size_t ciphertext_len;
+};
 
 int md_openssl_thread_setup(void);
 int md_openssl_thread_cleanup(void);
@@ -53,9 +67,9 @@ long md_dump_pubkey( EVP_PKEY* pkey, char** buf );
 int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len );
 int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len );
 int md_encrypt( EVP_PKEY* pubkey, char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
-int md_encrypt_pem( char const* pubkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for syntool
+int md_encrypt_pem( char const* pubkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for python
 int md_decrypt( EVP_PKEY* privkey, char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
-int md_decrypt_pem( char const* privkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for syntool
+int md_decrypt_pem( char const* privkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for python
    
 }
 

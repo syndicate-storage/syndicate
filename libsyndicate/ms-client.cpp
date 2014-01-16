@@ -1761,7 +1761,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    ms_client_rlock( client );
 
    // verify that our host and port match the MS's record
-   if( strcmp( cert.hostname, client->conf->hostname ) != 0 || cert.portnum != client->conf->portnum ) {
+   if( strcmp( cert.hostname, client->conf->hostname ) != 0 ) {
       // wrong host
       errorf("ERR: This gateway is running on %s:%d, but the MS says it should be running on %s:%d.  Please update the Gateway record on the MS.\n", client->conf->hostname, client->conf->portnum, cert.hostname, cert.portnum );
       ms_client_unlock( client );
@@ -1832,6 +1832,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
 
    client->owner_id = cert.user_id;
    client->gateway_id = cert.gateway_id;
+   client->portnum = cert.portnum;
    
    // sanity check...
    if( client->session_expires > 0 && client->session_expires < currentTimeSeconds() ) {
@@ -3488,6 +3489,17 @@ char* ms_client_get_volume_name( struct ms_client* client ) {
    ms_client_view_unlock( client );
    return ret;
 }
+
+// get the port num
+int ms_client_get_portnum( struct ms_client* client ) {
+   ms_client_view_rlock( client );
+   
+   int ret = client->portnum;
+   
+   ms_client_view_unlock( client );
+   return ret;
+}
+
 
 // get the blocking factor
 uint64_t ms_client_get_volume_blocksize( struct ms_client* client ) {

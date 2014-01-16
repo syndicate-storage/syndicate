@@ -28,6 +28,7 @@ common_source_files = """
    storage.cpp
    network.cpp
    state.cpp
+   opts.cpp
 """
 
 # HTTP backend

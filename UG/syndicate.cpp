@@ -21,7 +21,6 @@ struct syndicate_state *global_state = NULL;
 
 // initialize
 int syndicate_init( char const* config_file,
-                    int portnum,
                     char const* ms_url,
                     char const* volume_name,
                     char const* gateway_name,
@@ -36,9 +35,20 @@ int syndicate_init( char const* config_file,
 
    struct syndicate_state* state = CALLOC_LIST( struct syndicate_state, 1 );
    struct ms_client* ms = CALLOC_LIST( struct ms_client, 1 );
-
+   
+   // load config file
+   md_default_conf( &state->conf, SYNDICATE_UG );
+   
+   // read the config file
+   if( config_file != NULL ) {
+      int rc = md_read_conf( config_file, &state->conf );
+      if( rc != 0 ) {
+         dbprintf("ERR: failed to read %s, rc = %d\n", config_file, rc );
+      }
+   }
+   
    // initialize library
-   int rc = md_init( SYNDICATE_UG, config_file, &state->conf, ms, portnum, ms_url, volume_name, gateway_name, md_username, md_password, volume_pubkey_file, my_key_file, tls_key_file, tls_cert_file, NULL );
+   int rc = md_init( &state->conf, ms, ms_url, volume_name, gateway_name, md_username, md_password, volume_pubkey_file, my_key_file, tls_key_file, tls_cert_file, NULL );
    if( rc != 0 ) {
       errorf("md_init rc = %d\n", rc );
       return rc;

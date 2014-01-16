@@ -651,9 +651,27 @@ int syndicate_client_init( struct syndicate_state* state,
                          ) {
    
    struct ms_client* ms = CALLOC_LIST( struct ms_client, 1 );
-
+   
+   // load config file
+   md_default_conf( &state->conf, SYNDICATE_UG );
+   
+   // read the config file
+   if( config_file != NULL ) {
+      int rc = md_read_conf( config_file, &state->conf );
+      if( rc != 0 ) {
+         dbprintf("ERR: failed to read %s, rc = %d\n", config_file, rc );
+         if( !(rc == -ENOENT || rc == -EACCES || rc == -EPERM) ) {
+            // not just a simple "not found" or "permission denied"
+            return rc;
+         }  
+         else {
+            rc = 0;
+         }
+      }
+   }
+   
    // initialize library
-   int rc = md_init_client( SYNDICATE_UG, config_file, &state->conf, ms, ms_url, volume_name, gateway_name, gateway_port, md_username, md_password, volume_pubkey_file, my_key_file, storage_root );
+   int rc = md_init_client( &state->conf, ms, ms_url, volume_name, gateway_name, md_username, md_password, volume_pubkey_file, my_key_file, storage_root );
    if( rc != 0 ) {
       errorf("md_init_client rc = %d\n", rc );
       return rc;

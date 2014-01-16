@@ -27,7 +27,6 @@
 #include "state.h"
 
 int syndicate_init( char const* config_file,
-                    int portnum,
                     char const* ms_url,
                     char const* volume_name,
                     char const* gateway_name,
