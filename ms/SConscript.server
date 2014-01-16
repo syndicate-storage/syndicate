@@ -65,6 +65,7 @@ if env["devel"]:
    ms_files.extend( Glob("tests/__init__.py") )
    ms_files.extend( Glob("tests/test_syntool.py") )
    ms_files.extend( Glob("tests/user_test_key.pem") )
+   ms_files.extend( Glob("tests/user_test_key.pub") )
    ms_files.extend( Glob("tests/local_setup.sh") )
 
 # openid
@@ -190,6 +191,9 @@ env['BUILDERS']['YamlTemplate'] = yaml_bld
 admin_info = env.PyTemplate( "common/admin_info.pyin" )
 app_info = env.YamlTemplate( "app.yamlin" )
 
+# make sure these always build
+env.AlwaysBuild( admin_info )
+env.AlwaysBuild( app_info )
 
 pypb_cmds = []
 for pypb in protobuf_py_files:
