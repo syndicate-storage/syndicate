@@ -19,7 +19,6 @@
 import webapp2
 
 import MS.handlers
-import tests.debughandler
 import openid.gaeopenid
 
 import logging
@@ -29,14 +28,19 @@ from common.admin_info import *
 
 from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSCertRequestHandler, MSCertManifestRequestHandler, MSOpenIDRegisterRequestHandler, MSOpenIDRequestHandler, MSJSONRPCHandler, MSUserRequestHandler, MSVolumeOwnerRequestHandler
 
-from tests.debughandler import MSDebugHandler
+have_debug = False
 
-app = webapp2.WSGIApplication([
+try:
+   from tests.debughandler import MSDebugHandler
+   have_debug = True
+except:
+   pass
+
+handlers = [
     ('/', MSOpenIDRequestHandler),
     ('/verify', MSOpenIDRequestHandler),
     ('/process', MSOpenIDRequestHandler),
     ('/affiliate', MSOpenIDRequestHandler),
-    ('/debug/([^/]+)/(.*)', MSDebugHandler),
     ('/FILE/([0123456789]+)/([0123456789ABCDEF]+)/([0123456789]+)/([-0123456789]+)', MSFileReadHandler),
     ('/FILE/([0123456789]+)', MSFileWriteHandler ),
     ('/VOLUME/([^/]+)', MSVolumeRequestHandler),
@@ -46,8 +50,12 @@ app = webapp2.WSGIApplication([
     ('/USER/([^/]+)', MSUserRequestHandler),
     ('/VOLUMEOWNER/([^/]+)', MSVolumeOwnerRequestHandler),
     ('/api', MSJSONRPCHandler)
-], debug=True)
+]
 
+if have_debug:
+   handlers.append(('/debug/([^/]+)/(.*)', MSDebugHandler))
+
+app = webapp2.WSGIApplication( handlers, debug=have_debug )
 
 def ms_initialize():
    """
