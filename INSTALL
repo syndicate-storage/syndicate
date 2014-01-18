@@ -15,10 +15,12 @@ Fedora 12 (PlanetLab)
    protobuf-devel
    protobuf-compiler
    xerces-c-devel
-   libmicrohttpd-devel (> 0.9)
+   libmicrohttpd-devel (>= 0.9)
    python-daemon
    unixODBC-devel
    libconfig-devel
+   Cython (>= 0.19)
+   python-devel
 
 Fedora 12 users will need Apache Thrift 0.8 installed.
    
@@ -43,10 +45,13 @@ Ubuntu/Debian:
    unixodbc-dev
    libconfig++-dev
    thrift-compiler (0.8)
+   cython
 
 You will need a version of Apache Thrift (0.8.x) installed to build the AG.  This dependency is transient and will be removed soon.
 
-You will also need a recent version of libmicrohttpd.  At least version 0.9.27 should work.  Debian and Ubuntu should have it via APT; Fedora 12 users will need an out-of-repository RPM or will need to compile it themselves.
+You will also need a recent version of libmicrohttpd.  At least version 0.9.27 should work.
+
+Fedora 12 users may need to build a recent version of libmicrohttpd and Cython themselves, or find an RPM that works.
 
 We have a Syndicate package repository at http://vcoblitz-cmi.cs.princeton.edu/syndicate-nightly/RPMS.  To use, do the following:
    $ sudo curl http://vcoblitz-cmi.cs.princeton.edu/yum/Syndicate-nightly.repo > /etc/yum.repos.d/Syndicate.repo

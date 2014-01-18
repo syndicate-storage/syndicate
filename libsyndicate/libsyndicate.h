@@ -239,8 +239,8 @@ struct md_syndicate_conf {
    bool is_client;                                    // if true for a UG, always fetch data from RGs
 };
 
-#define USER_ANON               0xFFFFFFFFFFFFFFFF
-#define GATEWAY_ANON            0xFFFFFFFFFFFFFFFF
+#define USER_ANON               (uint64_t)0xFFFFFFFFFFFFFFFFLL
+#define GATEWAY_ANON            (uint64_t)0xFFFFFFFFFFFFFFFFLL
 
 #define COMMENT_KEY                 '#'
 
