@@ -64,6 +64,8 @@ $ sudo scons syndicate-python-install
 Finally, to build and install the various Syndicate components, issue the following commands:
 
 ```
+$ scons AG-common
+$ sudo scons AG-common-install
 $ scons syndicate
 $ sudo scons syndicate-install
 ```
