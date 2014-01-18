@@ -41,21 +41,9 @@
 #define MD_THREAD_ID pthread_self( )
 
 extern "C" {
-   
-struct md_envelope {
-   char* ek;            // symmetric key encrypted with recipient's public key
-   size_t ek_len;
-   
-   char* iv;            // initialization vector
-   size_t iv_len;
-   
-   char* hmac;          // HMAC, using the symmetric key as shared secret
-   size_t hmac_len;
-   
-   char* ciphertext;    // encrypted data
-   size_t ciphertext_len;
-};
 
+int md_crypt_init();
+int md_crypt_shutdown();
 int md_openssl_thread_setup(void);
 int md_openssl_thread_cleanup(void);
 void md_init_OpenSSL(void);
@@ -65,11 +53,13 @@ int md_load_privkey( EVP_PKEY** key, char const* privkey_str );
 int md_generate_key( EVP_PKEY** key );
 long md_dump_pubkey( EVP_PKEY* pkey, char** buf );
 int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len );
+int md_sign_message_raw( EVP_PKEY* pkey, char const* data, size_t len, char** sig, size_t* siglen );
 int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len );
-int md_encrypt( EVP_PKEY* pubkey, char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
-int md_encrypt_pem( char const* pubkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for python
-int md_decrypt( EVP_PKEY* privkey, char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
-int md_decrypt_pem( char const* privkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for python
+int md_verify_signature_raw( EVP_PKEY* public_key, char const* data, size_t len, char* sig, size_t sig_len );
+int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
+int md_encrypt_pem( char const* sender_pkey_pem, char const* receiver_pubkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for python
+int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
+int md_decrypt_pem( char const* sender_pubkey_pem, char const* receiver_pkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for python
    
 }
 

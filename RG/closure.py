@@ -86,7 +86,8 @@ DRIVER_WRITE_SIGNATURE = inspect.ArgSpec( args=['filename', 'infile'], varargs=N
 DRIVER_DELETE_SIGNATURE = inspect.ArgSpec( args=['filename'], varargs=None, defaults=None, keywords='kw' )
 
 #-------------------------
-RUNTIME_PRIVKEY_PATH = None
+GATEWAY_PRIVKEY_PEM = None
+USER_PUBKEY_PEM = None
 
 #-------------------------
 log = rg_common.get_logger()
@@ -155,12 +156,12 @@ def validate_closure( closure_data ):
 
 
 #-------------------------
-def decrypt_secrets( privkey_pem, encrypted_secrets_str ):
+def decrypt_secrets( sender_pubkey_pem, receiver_privkey_pem, encrypted_secrets_str ):
    '''
       Given a secrets dictionary, decrypt it (with this gateway's private key)
    '''
    
-   rc, secrets_str = c_syndicate.decrypt_closure_secrets( privkey_pem, encrypted_secrets_str )
+   rc, secrets_str = c_syndicate.decrypt_closure_secrets( sender_pubkey_pem, receiver_privkey_pem, encrypted_secrets_str )
    if rc != 0:
       raise Exception("decrypt_closure_secrets rc = %d", rc )
    
@@ -175,7 +176,7 @@ def decrypt_secrets( privkey_pem, encrypted_secrets_str ):
       del secrets[SECRETS_PAD_KEY]
       
    return secrets
-   
+
    
 #-------------------------
 def load_closure( python_text_b64, config_text_b64, encrypted_secrets_b64 ):
@@ -186,9 +187,10 @@ def load_closure( python_text_b64, config_text_b64, encrypted_secrets_b64 ):
    
    global REQUIRED_CLOSURE_FIELDS
    global ALL_CLOSURE_FIELDS
-   global RUNTIME_PRIVKEY_PATH
+   global GATEWAY_PRIVKEY_PEM
+   global USER_PUBKEY_PEM
    
-   if encrypted_secrets_b64 != None and RUNTIME_PRIVKEY_PATH == None:
+   if encrypted_secrets_b64 != None and (GATEWAY_PRIVKEY_PEM is None or USER_PUBKEY_PEM is None):
       log.error("No private key set")
       return None
    
@@ -234,35 +236,13 @@ def load_closure( python_text_b64, config_text_b64, encrypted_secrets_b64 ):
       except Exception, e:
          log.exception( e )
          return None 
-      
-      # decrypt secrets
-      # TODO: plaintext padding
-      privkey_pem = None
-      try:
-         fd = open(RUNTIME_PRIVKEY_PATH, "r")
-         privkey_pem = fd.read()
-         fd.close()
-      except Exception, e:
-         log.exception( e )
-         
-         # clear this byte by byte
-         if privkey_pem != None:
-            # TODO: thoroughly erase
-            privkey_pem = ""
-         
-         return None
    
       try:
-         secrets_dict = decrypt_secrets( privkey_pem, encrypted_secrets )
+         secrets_dict = decrypt_secrets( USER_PUBKEY_PEM, GATEWAY_PRIVKEY_PEM, encrypted_secrets )
       except Exception, e:
          log.exception( e )
          return None
       
-      finally:      
-         # clear this byte by byte
-         if privkey_pem != None:
-            # TODO: thoroughly erase
-            privkey_pem = ""
    
    closure_module.CONFIG = config_dict 
    closure_module.SECRETS = secrets_dict 
@@ -609,18 +589,28 @@ def call_closure_delete( request, filename ):
 
 
 #-------------------------
-def init( libsyndicate, gateway_key_path ):
+def init( libsyndicate, gateway_key_path, user_pubkey_path ):
    '''
       Initialize this module.
    '''
    
-   global RUNTIME_PRIVKEY_PATH
-   
-   # record the location of our private key (so we can load it later)
-   RUNTIME_PRIVKEY_PATH = gateway_key_path
+   global GATEWAY_PRIVKEY_PEM
+   global USER_PUBKEY_PEM
    
    # disable core dumps (don't want our private key to get leaked)
    resource.setrlimit( resource.RLIMIT_CORE, (0, 0) )
+   
+   # load keys
+   fd = open( user_pubkey_path, "r" )
+   user_pubkey_pem = fd.read()
+   fd.close()
+   
+   fd = open( gateway_key_path, "r" )
+   gateway_privkey_pem = fd.read()
+   fd.close()
+
+   USER_PUBKEY_PEM = user_pubkey_pem 
+   GATEWAY_PRIVKEY_PEM = gateway_privkey_pem
    
    # set up our storage
    view_change_callback()
@@ -796,8 +786,6 @@ if __name__ == "__main__":
    from Crypto import Random
    from Crypto.Signature import PKCS1_PSS as CryptoSigner
    
-   RUNTIME_PRIVKEY_PATH = "/tmp/test.pem"
-   
    def generate_key_pair( key_size ):
       rng = Random.new().read
       key = CryptoKey.generate(key_size, rng)
@@ -807,14 +795,17 @@ if __name__ == "__main__":
 
       return (public_key_pem, private_key_pem)
    
-   pubkey_pem, privkey_pem = generate_key_pair( 4096 )
+   print "generating fake user keys"
+   user_pubkey_pem, user_privkey_pem = generate_key_pair( 4096 )
    
-   fd = open(RUNTIME_PRIVKEY_PATH, "w")
-   fd.write( privkey_pem )
-   fd.close()
+   print "generating fake gateway keys"
+   gateway_pubkey_pem, gateway_privkey_pem = generate_key_pair( 4096 )
+   
+   GATEWAY_PRIVKEY_PEM = gateway_privkey_pem
+   USER_PUBKEY_PEM = user_pubkey_pem 
    
    # encrypt the secrets
-   rc, encrypted_secrets_str = c_syndicate.encrypt_closure_secrets( pubkey_pem, secrets_str )
+   rc, encrypted_secrets_str = c_syndicate.encrypt_closure_secrets( user_privkey_pem, gateway_pubkey_pem, secrets_str )
    
    if rc != 0:
       raise Exception("encrypt_closure_secrets rc = %d", rc )

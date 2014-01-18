@@ -43,7 +43,9 @@ LIBPATH = [
 ]
 
 # default CPPFLAGS
-CPPFLAGS = "-g -Wall -D__STDC_FORMAT_MACROS"
+CPPFLAGS = "-g -Wall -D__STDC_FORMAT_MACROS -fstack-protector -fstack-protector-all"
+LIBS = ""
+LINK_FLAGS = ""
 
 # parse options
 devel = False
@@ -115,6 +117,8 @@ env = Environment(
    CPPFLAGS = Split(CPPFLAGS),
    CPPPATH = CPPPATH,
    LIBPATH = LIBPATH,
+   LIBS = LIBS,
+   LINK_FLAGS = LINK_FLAGS,
    toolpath = ['build/tools'],
    tools = ['default', 'protoc'],
    devel = devel

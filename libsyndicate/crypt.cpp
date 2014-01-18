@@ -81,6 +81,74 @@ int md_openssl_thread_cleanup(void)
 
 ////////////////////////////////////////////////////////////////////////////////
 
+static int urandom_fd = -1;     // /dev/urandom
+static int inited = 0;
+
+// initialize crypto libraries and set up state
+int md_crypt_init() {
+   dbprintf("%s\n", "starting up");
+   
+   md_init_OpenSSL();
+   
+   urandom_fd = open("/dev/urandom", O_RDONLY );
+   if( urandom_fd < 0 ) {
+      int errsv = -errno;
+      errorf("open(/dev/urandom) rc = %d\n", errsv);
+      return errsv;
+   }
+   
+   inited = 1;
+   
+   return 0;
+}
+
+// shut down crypto libraries and free state
+int md_crypt_shutdown() {
+   dbprintf("%s\n", "shutting down");
+   
+   if( urandom_fd >= 0 ) {
+      close( urandom_fd );
+      urandom_fd = -1;
+   }
+   
+   // shut down OpenSSL
+   ERR_free_strings();
+   md_openssl_thread_cleanup();
+   
+   return 0;
+}
+
+
+// check initialization
+int md_crypt_check_init() {
+   if( inited == 0 )
+      return 0;
+   else
+      return 1;
+}
+
+// read bytes from /dev/urandom
+int md_read_urandom( char* buf, size_t len ) {
+   if( urandom_fd < 0 ) {
+      errorf("%s", "crypto is not initialized\n");
+      return -EINVAL;
+   }
+   
+   ssize_t nr = 0;
+   size_t num_read = 0;
+   while( num_read < len ) {
+      nr = read( urandom_fd, buf + num_read, len - num_read );
+      if( nr < 0 ) {
+         int errsv = -errno;
+         errorf("read(/dev/urandom) errno %d\n", errsv);
+         return errsv;
+      }
+      num_read += nr;
+   }
+   
+   return 0;
+}
+
 
 // print a crypto error message
 int md_openssl_error() {
@@ -93,23 +161,14 @@ int md_openssl_error() {
 }
 
 // verify a message, given a base64-encoded signature
-int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len ) {
-   char* sig_bin = NULL;
-   size_t sig_bin_len = 0;
-
-   int rc = Base64Decode( sigb64, sigb64len, &sig_bin, &sig_bin_len );
-   if( rc != 0 ) {
-      errorf("Base64Decode rc = %d\n", rc );
-      return -EINVAL;
-   }
-
-   dbprintf("VERIFY: message len = %zu, strlen(sigb64) = %zu, sigb64 = %s\n", len, strlen(sigb64), sigb64 );
-   
+int md_verify_signature_raw( EVP_PKEY* public_key, char const* data, size_t len, char* sig_bin, size_t sig_bin_len ) {
+      
    const EVP_MD* sha256 = EVP_sha256();
 
    EVP_MD_CTX *mdctx = EVP_MD_CTX_create();
    EVP_PKEY_CTX* pkey_ctx = NULL;
-
+   int rc = 0;
+   
    rc = EVP_DigestVerifyInit( mdctx, &pkey_ctx, sha256, NULL, public_key );
    if( rc <= 0 ) {
       errorf("EVP_DigestVerifyInit_ex rc = %d\n", rc);
@@ -157,15 +216,32 @@ int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, cha
 
    EVP_MD_CTX_destroy( mdctx );
    
-   free( sig_bin );
-
    return 0;
+}
+
+// verify a message with base64 signature
+int md_verify_signature( EVP_PKEY* pubkey, char const* data, size_t len, char* sigb64, size_t sigb64_len ) {
+   // safety for external clients
+   if( !md_crypt_check_init() )
+      md_crypt_init();
+      
+   char* sig_bin = NULL;
+   size_t sig_bin_len = 0;
+
+   dbprintf("VERIFY: message len = %zu, strlen(sigb64) = %zu, sigb64 = %s\n", len, strlen(sigb64), sigb64 );
+
+   int rc = Base64Decode( sigb64, sigb64_len, &sig_bin, &sig_bin_len );
+   if( rc != 0 ) {
+      errorf("Base64Decode rc = %d\n", rc );
+      return -EINVAL;
+   }
+   
+   return md_verify_signature_raw( pubkey, data, len, sig_bin, sig_bin_len );
 }
 
 
 // sign a message
-// on success, populate sigb64 and sigb64len with the base64-encoded signature and length, respectively
-int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len ) {
+int md_sign_message_raw( EVP_PKEY* pkey, char const* data, size_t len, char** sig, size_t* siglen ) {
 
    // sign this with SHA256
    const EVP_MD* sha256 = EVP_sha256();
@@ -224,6 +300,10 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
 
    // allocate the signature
    unsigned char* sig_bin = CALLOC_LIST( unsigned char, sig_bin_len );
+   if( sig_bin == NULL ) {
+      EVP_MD_CTX_destroy( mdctx );
+      return -ENOMEM;
+   }
 
    rc = EVP_DigestSignFinal( mdctx, sig_bin, &sig_bin_len );
    if( rc <= 0 ) {
@@ -232,22 +312,40 @@ int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64
       EVP_MD_CTX_destroy( mdctx );
       return -EINVAL;
    }
+   
+   *sig = (char*)sig_bin;
+   *siglen = sig_bin_len;
+   return 0;
+}
 
+   
+// sign a message, producing the base64 signature
+int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64_len ) {
+   // safety for external clients
+   if( !md_crypt_check_init() )
+      md_crypt_init();
+      
+   unsigned char* sig_bin = NULL;
+   size_t sig_bin_len = 0;
+   
+   int rc = md_sign_message_raw( pkey, data, len, (char**)&sig_bin, &sig_bin_len );
+   if( rc != 0 ) {
+      errorf("md_sign_message_raw rc = %d\n", rc );
+      return -1;
+   }
+   
    // convert to base64
    char* b64 = NULL;
    rc = Base64Encode( (char*)sig_bin, sig_bin_len, &b64 );
    if( rc != 0 ) {
       errorf("Base64Encode rc = %d\n", rc );
       md_openssl_error();
-      EVP_MD_CTX_destroy( mdctx );
       free( sig_bin );
       return rc;
    }
 
-   EVP_MD_CTX_destroy( mdctx );
-
    *sigb64 = b64;
-   *sigb64len = strlen(b64);
+   *sigb64_len = strlen(b64);
    
    dbprintf("SIGN: message len = %zu, sigb64_len = %zu, sigb64 = %s\n", len, strlen(b64), b64 );
 
@@ -363,51 +461,40 @@ long md_dump_pubkey( EVP_PKEY* pkey, char** buf ) {
 }
 
 
-// encrypt data with a public key, using the EVP_Seal API.
-// use AES256 with Galois/Counter Mode, and a 256-bit IV
-int md_encrypt( EVP_PKEY* pubkey, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
-   const EVP_CIPHER* cipher = EVP_aes_256_gcm();
+// Seal data with a given public key, using AES256 in CBC mode.
+// Sign the encrypted data with the given public key.
+int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
    
-   // set up an encryption cipher
+   // use AES256 in CBC mode
+   const EVP_CIPHER* cipher = EVP_aes_256_cbc();
+   size_t block_size = EVP_CIPHER_block_size( cipher );
+   
+   
+   // initialization vector
+   int iv_len = EVP_CIPHER_iv_length( cipher );
+   unsigned char* iv = (unsigned char*)alloca( iv_len );
+   
+   if( iv == NULL ) {
+      return -ENOMEM;
+   }
+   
+   // fill the iv with random data
+   int rc = md_read_urandom( (char*)iv, iv_len );
+   if( rc != 0 ) {
+      errorf("md_read_urandom rc = %d\n", rc);
+      return rc;
+   }
+   
+   // set up cipher 
    EVP_CIPHER_CTX ctx;
    EVP_CIPHER_CTX_init( &ctx );
    
-   // choose the cipher
-   int rc = EVP_SealInit( &ctx, cipher, NULL, 0, NULL, NULL, 0 );
-   if( rc == 0 ) {
-      errorf("EVP_SealInit rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
-   // set IV length 
-   int iv_len = 256 / 8;
-   unsigned char* iv = (unsigned char*)alloca( iv_len );
-   
-   rc = EVP_CIPHER_CTX_ctrl( &ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL );
-   if( rc == 0 ) {
-      errorf("EVP_CIPHER_CTX_ctrl rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
-   // get block size 
-   int block_size = EVP_CIPHER_block_size( cipher );
-   
-   // allocate encrypted key and IV
-   unsigned char* ek = CALLOC_LIST( unsigned char, EVP_PKEY_size( pubkey ) );
+   // encrypted symmetric key for sealing the ciphertext
+   unsigned char* ek = CALLOC_LIST( unsigned char, EVP_PKEY_size( receiver_pubkey ) );
    int ek_len = 0;
    
-   // allocate the tag
-   int tag_len = 16;
-   unsigned char* tag = (unsigned char*)alloca( tag_len );
-   
-   // begin
-   rc = EVP_SealInit( &ctx, NULL, &ek, &ek_len, iv, &pubkey, 1 );
+   // set up EVP Sealing
+   rc = EVP_SealInit( &ctx, cipher, &ek, &ek_len, iv, &receiver_pubkey, 1 );
    if( rc == 0 ) {
       errorf("EVP_SealInit rc = %d\n", rc );
       md_openssl_error();
@@ -417,238 +504,190 @@ int md_encrypt( EVP_PKEY* pubkey, char const* in_data, size_t in_data_len, char*
       return -1;
    }
    
-   // copy in the key length, the (encrypted) key, the IV length, and the IV
-   int ek_len_n = htonl( ek_len );
-   int iv_len_n = htonl( iv_len );
-   int tag_len_n = htonl( tag_len );
-   int ciphertext_size = 0;
-   
    // allocate the output buffer
-   size_t output_len = sizeof(ek_len_n) + ek_len + sizeof(iv_len_n) + iv_len + sizeof(tag_len_n) + tag_len + sizeof(ciphertext_size) + (in_data_len + 2 * block_size);
-   unsigned char* output_data = CALLOC_LIST( unsigned char, output_len );
-   int output_begin = 0;
+   // final output format:
+   //    signature_len || iv_len || ek_len || ciphertext_len || iv || ek || ciphertext || signature
    
-   // key length
-   memcpy( output_data + output_begin, &ek_len_n, sizeof(ek_len_n) );
-   output_begin += sizeof(ek_len_n);
+   // allocate all but the signature for now, since we don't know yet how big it will be.
+   // allocate space for its length, however!
+   int output_len = sizeof(int) + sizeof(iv_len) + sizeof(ek_len) + sizeof(int) + iv_len + ek_len + (in_data_len + block_size);
+   unsigned char* output_buf = CALLOC_LIST( unsigned char, output_len );
+   if( output_buf == NULL ) {
+      free( ek );
+      EVP_CIPHER_CTX_cleanup( &ctx );
+      return -ENOMEM;
+   }
    
-   // encrypted key 
-   memcpy( output_data + output_begin, ek, ek_len );
-   output_begin += ek_len;
+   size_t signature_len_offset  = 0;
+   size_t iv_len_offset         = signature_len_offset + sizeof(int);
+   size_t ek_len_offset         = iv_len_offset + sizeof(int);
+   size_t ciphertext_len_offset = ek_len_offset + sizeof(int);
+   size_t iv_offset             = ciphertext_len_offset + sizeof(int);
+   size_t ek_offset             = iv_offset + iv_len;
+   size_t ciphertext_offset     = ek_offset + ek_len;
    
-   // IV length
-   memcpy( output_data + output_begin, &iv_len_n, sizeof(iv_len_n) );
-   output_begin += sizeof(iv_len_n);
+   unsigned char* ciphertext = output_buf + ciphertext_offset;
+   int ciphertext_len = 0;
    
-   // IV
-   memcpy( output_data + output_begin, iv, iv_len );
-   output_begin += iv_len;
-   
-   // leave room for the tag size
-   unsigned char* tag_size_p = output_data + output_begin;
-   output_begin += sizeof(tag_len_n);
-   
-   // leave room for the tag
-   unsigned char* tag_p = output_data + output_begin;
-   output_begin += tag_len;
-   
-   // leave room for a payload size
-   unsigned char* ciphertext_size_p = output_data + output_begin;
-   output_begin += sizeof(ciphertext_size);
-   
-   // encrypt the data 
-   int output_written = 0;
-   rc = EVP_SealUpdate( &ctx, output_data + output_begin, &output_written, (unsigned char*)in_data, in_data_len );
+   // encrypt!
+   rc = EVP_SealUpdate( &ctx, ciphertext, &ciphertext_len, (unsigned char const*)in_data, in_data_len );
    if( rc == 0 ) {
       errorf("EVP_SealUpdate rc = %d\n", rc );
       md_openssl_error();
       
       free( ek );
-      free( output_data );
+      free( output_buf );
       EVP_CIPHER_CTX_cleanup( &ctx );
       return -1;
    }
    
-   output_begin += output_written;
-   
-   // finalize...
-   int final_len = 0;
-   rc = EVP_SealFinal( &ctx, output_data + output_begin, &final_len );
+   // finalize
+   int tmplen = 0;
+   rc = EVP_SealFinal( &ctx, ciphertext + ciphertext_len, &tmplen );
    if( rc == 0 ) {
       errorf("EVP_SealFinal rc = %d\n", rc );
       md_openssl_error();
       
       free( ek );
-      free( output_data );
+      free( output_buf );
       EVP_CIPHER_CTX_cleanup( &ctx );
       return -1;
    }
    
-   output_begin += final_len;
+   ciphertext_len += tmplen;
    
-   // get the tag
-   rc = EVP_CIPHER_CTX_ctrl( &ctx, EVP_CTRL_GCM_GET_TAG, tag_len, tag );
-   if( rc == 0 ) {
-      errorf("EVP_CIPHER_CTX_ctrl rc = %d\n", rc );
-      md_openssl_error();
+   // clean up
+   EVP_CIPHER_CTX_cleanup( &ctx );
+   
+   // populate the output buffer with the encrypted key, iv, and their sizes.  Then sign everything.
+   int iv_len_n = htonl( iv_len );
+   int ek_len_n = htonl( ek_len );
+   int ciphertext_len_n = htonl( ciphertext_len );
+   
+   memcpy( output_buf + iv_len_offset, &iv_len_n, sizeof(iv_len_n) );
+   memcpy( output_buf + ek_len_offset, &ek_len_n, sizeof(ek_len_n) );
+   memcpy( output_buf + ciphertext_len_offset, &ciphertext_len_n, sizeof(ciphertext_len_n) );
+   
+   memcpy( output_buf + iv_offset, iv, iv_len );
+   memcpy( output_buf + ek_offset, ek, ek_len );
+   // NOTE: ciphertext is already in place
+   
+   // sign:  iv_len || ek_len || ciphertext_len || iv || ek || ciphertext
+   size_t sig_payload_len = sizeof(iv_len) + sizeof(ek_len) + sizeof(ciphertext_len) + iv_len + ek_len + ciphertext_len;
+   size_t sig_payload_offset = iv_len_offset;
+   
+   unsigned char* sig = NULL;
+   size_t sig_len = 0;
+   rc = md_sign_message_raw( sender_pkey, (char*)(output_buf + sig_payload_offset), sig_payload_len, (char**)&sig, &sig_len );
+   if( rc != 0 ) {
+      errorf("md_sign_message rc = %d\n", rc );
       
       free( ek );
-      free( output_data );
-      EVP_CIPHER_CTX_cleanup( &ctx );
+      free( output_buf );
       return -1;
    }
    
-   // set the tag length
-   memcpy( tag_size_p, &tag_len_n, sizeof(tag_len_n) );
+   // add space for the signature
+   int full_output_len = sizeof(int) + sizeof(iv_len) + sizeof(ek_len) + sizeof(ciphertext_len) + iv_len + ek_len + ciphertext_len + sig_len;
+   unsigned char* signed_output = (unsigned char*)realloc( output_buf, full_output_len );
+   if( signed_output == NULL ) {
+      // out of memory
+      free( ek );
+      free( output_buf );
+      return -ENOMEM;
+   }
    
-   // set the tag
-   memcpy( tag_p, tag, tag_len );
+   // add the signature and its length
+   int sig_len_n = htonl( sig_len );
+   size_t signature_offset = ciphertext_offset + ciphertext_len;        // signature goes after ciphertext
    
-   // set the ciphertext size
-   ciphertext_size = htonl( output_written + final_len );
-   memcpy( ciphertext_size_p, &ciphertext_size, sizeof(ciphertext_size));
+   memcpy( signed_output + signature_len_offset, &sig_len_n, sizeof(sig_len_n) );
+   memcpy( signed_output + signature_offset, sig, sig_len );
    
-   // reply data
-   *out_data = (char*)output_data;
-   *out_data_len = (size_t)output_begin;
-   
-   // clean up 
-   free( ek );
-   EVP_CIPHER_CTX_cleanup( &ctx );
+   // return data
+   *out_data = (char*)signed_output;
+   *out_data_len = full_output_len;
    
    return 0;
 }
 
-// helper function for md_encrypt, when we can't deal with EVP_PKEY (i.e. from a python script)
-int md_encrypt_pem( char const* pubkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
-   // load the key
-   EVP_PKEY* pubkey = NULL;
-   int rc = md_load_pubkey( &pubkey, pubkey_pem );
-   if( rc != 0 ) {
-      errorf("md_load_pubkey rc = %d\n", rc );
+
+// decrypt data with a given private key, generated from md_encrypt
+// check the signature BEFORE decrypting!
+int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in_data, size_t in_data_len, char** plaintext, size_t* plaintext_len ) {
+   int iv_len = 0;
+   int ek_len = 0;
+   int ciphertext_len = 0;
+   int signature_len = 0;
+   
+   // use AES256 in CBC mode
+   const EVP_CIPHER* cipher = EVP_aes_256_cbc();
+   
+   // data must have these four values
+   size_t header_len = sizeof(iv_len) + sizeof(ek_len) + sizeof(ciphertext_len) + sizeof(signature_len);
+   if( header_len > in_data_len ) {
       return -EINVAL;
    }
    
-   rc = md_encrypt( pubkey, in_data, in_data_len, out_data, out_data_len );
+   // read each of them
+   size_t signature_len_offset  = 0;
+   size_t iv_len_offset         = signature_len_offset + sizeof(int);
+   size_t ek_len_offset         = iv_len_offset + sizeof(int);
+   size_t ciphertext_len_offset = ek_len_offset + sizeof(int);
    
-   EVP_PKEY_free( pubkey );
-   return rc;
-}
-
-// decrypt data, given a private key
-// use AES256 with Galois/Counter mode
-int md_decrypt( EVP_PKEY* privkey, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
-   int ek_len = 0, ek_len_n = 0;
-   int iv_len = 0, iv_len_n = 0;
-   int tag_len = 0, tag_len_n = 0;
-   int ciphertext_len = 0, ciphertext_len_n = 0;
-   unsigned char* ek = NULL;
-   unsigned char* iv = NULL;
-   unsigned char* tag = NULL;
-   unsigned char* ciphertext = NULL;
-   int input_begin = 0;
+   memcpy( &signature_len, in_data + signature_len_offset, sizeof(int) );
+   memcpy( &iv_len, in_data + iv_len_offset, sizeof(int) );
+   memcpy( &ek_len, in_data + ek_len_offset, sizeof(int) );
+   memcpy( &ciphertext_len, in_data + ciphertext_len_offset, sizeof(int) );
    
-   // sanity check: need a key length
-   if( in_data_len < (size_t)(input_begin + sizeof(ek_len_n)) )
-      return -EINVAL;
-
-   // get the key length
-   memcpy( &ek_len_n, in_data + input_begin, sizeof(ek_len_n) );
-   input_begin += sizeof(ek_len_n);
+   // convert to host byte order
+   iv_len = ntohl( iv_len );
+   ek_len = ntohl( ek_len );
+   ciphertext_len = ntohl( ciphertext_len );
+   signature_len = ntohl( signature_len );
    
-   ek_len = ntohl( ek_len_n );
+   // remaining offsets
+   size_t iv_offset             = ciphertext_len_offset + sizeof(int);
+   size_t ek_offset             = iv_offset + iv_len;
+   size_t ciphertext_offset     = ek_offset + ek_len;
    
-   // sanity check: need a key
-   if( in_data_len < (size_t)(input_begin + ek_len) )
+   // sanity check--too short?
+   if( iv_len <= 0 || ek_len <= 0 || ciphertext_len <= 0 || signature_len <= 0 )
       return -EINVAL;
    
-   // get the encrypted key
-   ek = (unsigned char*)(in_data + input_begin);
-   input_begin += ek_len;
-   
-   // sanity check: need an IV size 
-   if( in_data_len < input_begin + sizeof(iv_len_n) )
+   // sanity check--too long?
+   uint64_t total_len = (uint64_t)iv_len + (uint64_t)ek_len + (uint64_t)ciphertext_len + (uint64_t)signature_len +
+                        sizeof(iv_len) + sizeof(ek_len) + sizeof(ciphertext_len) + sizeof(signature_len);
+                        
+   if( total_len > in_data_len )
       return -EINVAL;
    
-   // get the IV length
-   memcpy( &iv_len_n, in_data + input_begin, sizeof(iv_len_n) );
-   input_begin += sizeof(iv_len_n);
+   // seems okay...
+   size_t signature_offset = ciphertext_offset + ciphertext_len;
+   unsigned char* ek            = (unsigned char*)in_data + ek_offset;
+   unsigned char* iv            = (unsigned char*)in_data + iv_offset;
+   unsigned char* ciphertext    = (unsigned char*)in_data + ciphertext_offset;
+   unsigned char* signature     = (unsigned char*)in_data + signature_offset;
    
-   iv_len = ntohl( iv_len_n );
+   // verify: iv_len || ek_len || ciphertext_len || iv || ek || ciphertext
    
-   // sanity check: need the IV
-   if( in_data_len < (size_t)(input_begin + iv_len) )
-      return -EINVAL;
+   size_t verify_offset = iv_len_offset;
+   size_t verify_len = sizeof(iv_len) + sizeof(ek_len) + sizeof(ciphertext_len) + iv_len + ek_len + ciphertext_len;
    
-   // get the IV
-   iv = (unsigned char*)(in_data + input_begin);
-   input_begin += iv_len;
+   int rc = md_verify_signature_raw( sender_pubkey, in_data + verify_offset, verify_len, (char*)signature, signature_len );
+   if( rc != 0 ) {
+      errorf("md_verify_signature rc = %d\n", rc );
+      return -1;
+   }
    
-   // sanity check: need the tag length
-   if( in_data_len < input_begin + sizeof(tag_len_n) )
-      return -EINVAL;
-   
-   // get the tag length
-   memcpy( &tag_len_n, in_data + input_begin, sizeof(tag_len_n) );
-   input_begin += sizeof(tag_len_n);
-   
-   tag_len = ntohl( tag_len_n );
-   
-   // sanity check: need the tag
-   if( in_data_len < (size_t)(input_begin + tag_len) )
-      return -EINVAL;
-   
-   // get the tag
-   tag = (unsigned char*)(in_data + input_begin);
-   input_begin += tag_len;
-   
-   // sanity check: need the ciphertext size
-   if( in_data_len < input_begin + sizeof(ciphertext_len_n) )
-      return -EINVAL;
-   
-   // get the ciphertext size
-   memcpy( &ciphertext_len_n, in_data + input_begin, sizeof(ciphertext_len_n) );
-   input_begin += sizeof(ciphertext_len_n);
-   
-   ciphertext_len = ntohl( ciphertext_len_n );
-   
-   // sanity check: need the ciphertext
-   if( in_data_len < (size_t)(input_begin + ciphertext_len) )
-      return -EINVAL;
-   
-   // get the ciphertext
-   ciphertext = (unsigned char*)(in_data + input_begin);
-   input_begin += ciphertext_len;
-   
-   // begin to decrypt it
-   const EVP_CIPHER* cipher = EVP_aes_256_gcm();
+   // verified!  now we can decrypt
    
    // set up an encryption cipher
    EVP_CIPHER_CTX ctx;
    EVP_CIPHER_CTX_init( &ctx );
    
-   // initialize the context
-   int rc = EVP_OpenInit( &ctx, cipher, NULL, 0, NULL, NULL );
-   if( rc == 0 ) {
-      errorf("EVP_OpenInit rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
-   // set the IV
-   rc = EVP_CIPHER_CTX_ctrl( &ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL );
-   if( rc == 0 ) {
-      errorf("EVP_CIPHER_CTX_ctrl rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      return -1;
-   }
-   
    // initialize the cipher and start decrypting
-   rc = EVP_OpenInit( &ctx, NULL, ek, ek_len, iv, privkey );
+   rc = EVP_OpenInit( &ctx, cipher, ek, ek_len, iv, receiver_pkey );
    if( rc == 0 ) {
       errorf("EVP_OpenInit rc = %d\n", rc );
       md_openssl_error();
@@ -671,17 +710,6 @@ int md_decrypt( EVP_PKEY* privkey, char const* in_data, size_t in_data_len, char
       free( output_buf );
       return -1;
    }
-   
-   // set the expected tag
-   rc = EVP_CIPHER_CTX_ctrl( &ctx, EVP_CTRL_GCM_SET_TAG, tag_len, tag );
-   if( rc == 0 ) {
-      errorf("EVP_CIPHER_CTX_ctrl rc = %d\n", rc );
-      md_openssl_error();
-      
-      EVP_CIPHER_CTX_cleanup( &ctx );
-      free( output_buf );
-      return -1;
-   }
       
    // finalize 
    int output_written_final = 0;
@@ -694,28 +722,76 @@ int md_decrypt( EVP_PKEY* privkey, char const* in_data, size_t in_data_len, char
       free( output_buf );
       return -1;
    }
-   
+      
    // reply decrypted data
-   *out_data = (char*)output_buf;
-   *out_data_len = output_buf_written + output_written_final;
+   *plaintext = (char*)output_buf;
+   *plaintext_len = output_buf_written + output_written_final;
    
    EVP_CIPHER_CTX_cleanup( &ctx );
+   
    return 0;
 }
 
 
+// helper function for md_encrypt, when we can't deal with EVP_PKEY (i.e. from a python script)
+int md_encrypt_pem( char const* sender_pkey_pem, char const* receiver_pubkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
+   // safety for external clients
+   if( !md_crypt_check_init() )
+      md_crypt_init();
+      
+   // load the keys
+   EVP_PKEY* pkey = NULL;
+   EVP_PKEY* pubkey = NULL;
+   
+   int rc = md_load_pubkey( &pubkey, receiver_pubkey_pem );
+   if( rc != 0 ) {
+      errorf("md_load_pubkey rc = %d\n", rc );
+      return -EINVAL;
+   }
+   
+   rc = md_load_privkey( &pkey, sender_pkey_pem );
+   if( rc != 0 ) {
+      errorf("md_load_privkey rc = %d\n", rc );
+      
+      EVP_PKEY_free( pubkey );
+      return -EINVAL;
+   }
+   
+   rc = md_encrypt( pkey, pubkey, in_data, in_data_len, out_data, out_data_len );
+   
+   EVP_PKEY_free( pkey );
+   EVP_PKEY_free( pubkey );
+   return rc;
+}
+
+
 // helper function for md_decrypt, when we can't deal with EVP_PKEY (i.e. from a python script)
-int md_decrypt_pem( char const* privkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
-   // load the key
+int md_decrypt_pem( char const* sender_pubkey_pem, char const* receiver_privkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
+   // safety for external clients
+   if( !md_crypt_check_init() )
+      md_crypt_init();
+      
+   // load the keys
+   EVP_PKEY* pubkey = NULL;
    EVP_PKEY* privkey = NULL;
-   int rc = md_load_privkey( &privkey, privkey_pem );
+   
+   int rc = md_load_privkey( &privkey, receiver_privkey_pem );
    if( rc != 0 ) {
       errorf("md_load_privkey rc = %d\n", rc );
       return -EINVAL;
    }
    
-   rc = md_decrypt( privkey, in_data, in_data_len, out_data, out_data_len );
+   rc = md_load_pubkey( &pubkey, sender_pubkey_pem );
+   if( rc != 0 ) {
+      errorf("md_load_pubkey rc = %d\n", rc );
+      
+      EVP_PKEY_free( privkey );
+      return -EINVAL;
+   }
+   
+   rc = md_decrypt( pubkey, privkey, in_data, in_data_len, out_data, out_data_len );
    
    EVP_PKEY_free( privkey );
+   EVP_PKEY_free( pubkey );
    return rc;
 }

@@ -36,7 +36,7 @@ cdef int py_view_change_callback_springboard( ms_client* client, void* cls ):
    return 0
 
 # ------------------------------------------
-cpdef encrypt_data( pubkey_str, data_str ):
+cpdef encrypt_data( sender_privkey_str, receiver_pubkey_str, data_str ):
 
    cdef char* c_data_str = data_str
    cdef size_t c_data_str_len = len(data_str)
@@ -44,7 +44,7 @@ cpdef encrypt_data( pubkey_str, data_str ):
    cdef char* c_encrypted_data = NULL
    cdef size_t c_encrypted_data_len = 0
    
-   rc = md_encrypt_pem( pubkey_str, c_data_str, c_data_str_len, &c_encrypted_data, &c_encrypted_data_len )
+   rc = md_encrypt_pem( sender_privkey_str, receiver_pubkey_str, c_data_str, c_data_str_len, &c_encrypted_data, &c_encrypted_data_len )
    if rc != 0:
       return (rc, None)
    
@@ -56,7 +56,7 @@ cpdef encrypt_data( pubkey_str, data_str ):
 
 
 # ------------------------------------------
-cpdef decrypt_data( privkey_str, encrypted_data_str ):
+cpdef decrypt_data( sender_pubkey_str, receiver_privkey_str, encrypted_data_str ):
    
    cdef char* c_encrypted_data_str = encrypted_data_str
    cdef size_t c_encrypted_data_str_len = len(encrypted_data_str)
@@ -64,7 +64,7 @@ cpdef decrypt_data( privkey_str, encrypted_data_str ):
    cdef char* c_data_str = NULL
    cdef size_t c_data_str_len = 0
    
-   rc = md_decrypt_pem( privkey_str, c_encrypted_data_str, c_encrypted_data_str_len, &c_data_str, &c_data_str_len )
+   rc = md_decrypt_pem( sender_pubkey_str, receiver_privkey_str, c_encrypted_data_str, c_encrypted_data_str_len, &c_data_str, &c_data_str_len )
    if rc != 0:
       return (rc, None)
    
@@ -76,7 +76,7 @@ cpdef decrypt_data( privkey_str, encrypted_data_str ):
       
 
 # ------------------------------------------
-cpdef encrypt_closure_secrets( gateway_pubkey_str, closure_secrets ):
+cpdef encrypt_closure_secrets( user_privkey_str, gateway_pubkey_str, closure_secrets ):
    '''
       Encrypt a string with a gateway's public key.
    '''
@@ -86,16 +86,16 @@ cpdef encrypt_closure_secrets( gateway_pubkey_str, closure_secrets ):
    except Exception, e:
       return (-errno.EINVAL, None)
 
-   return encrypt_data( gateway_pubkey_str, closure_secrets_serialized )
+   return encrypt_data( user_privkey_str, gateway_pubkey_str, closure_secrets_serialized )
 
 
 # ------------------------------------------
-cpdef decrypt_closure_secrets( gateway_privkey_str, closure_secrets ):
+cpdef decrypt_closure_secrets( user_pubkey_str, gateway_privkey_str, closure_secrets ):
    '''
       Decrypt a string with a gateway's public key.
    '''
    
-   rc, py_serialized_secrets = decrypt_data( gateway_privkey_str, closure_secrets )
+   rc, py_serialized_secrets = decrypt_data( user_pubkey_str, gateway_privkey_str, closure_secrets )
 
    if rc != 0:
       return (rc, None)
@@ -136,7 +136,7 @@ cdef class Syndicate:
                        oid_username=None,
                        oid_password=None,
                        volume_name=None,
-                       volume_key_filename=None,
+                       volume_pubkey_filename=None,
                        conf_filename=None,
                        my_key_filename=None,
                        tls_pkey_filename=None,
@@ -160,7 +160,7 @@ cdef class Syndicate:
          char *c_oid_username = NULL
          char *c_oid_password = NULL
          char *c_volume_name = NULL
-         char *c_volume_key_filename = NULL
+         char *c_volume_pubkey_filename = NULL
          char *c_conf_filename = NULL
          char *c_my_key_filename = NULL
          char *c_tls_pkey_filename = NULL
@@ -185,8 +185,8 @@ cdef class Syndicate:
       if conf_filename != None:
          c_conf_filename = conf_filename 
 
-      if volume_key_filename != None:
-         c_volume_key_filename = volume_key_filename
+      if volume_pubkey_filename != None:
+         c_volume_pubkey_filename = volume_pubkey_filename
       
       if my_key_filename != None:
          c_my_key_filename = my_key_filename
@@ -211,7 +211,7 @@ cdef class Syndicate:
                      c_gateway_name,
                      c_oid_username,
                      c_oid_password,
-                     c_volume_key_filename,
+                     c_volume_pubkey_filename,
                      c_my_key_filename,
                      c_tls_pkey_filename,
                      c_tls_cert_filename,
@@ -230,7 +230,7 @@ cdef class Syndicate:
                            oid_username=None,
                            oid_password=None,
                            volume_name=None,
-                           volume_key_filename=None,
+                           volume_pubkey_filename=None,
                            conf_filename=None,
                            my_key_filename=None,
                            tls_pkey_filename=None,
@@ -252,7 +252,7 @@ cdef class Syndicate:
                                     oid_username=oid_username,
                                     oid_password=oid_password,
                                     volume_name=volume_name,
-                                    volume_key_filename=volume_key_filename,
+                                    volume_pubkey_filename=volume_pubkey_filename,
                                     conf_filename=conf_filename,
                                     my_key_filename=my_key_filename,
                                     tls_pkey_filename=tls_pkey_filename,
@@ -264,21 +264,27 @@ cdef class Syndicate:
    
    def gateway_id( self ):
       '''
-         Get our gateway ID
+         Get the gateway ID
       '''
       return self.client_inst.gateway_id
    
    
    def owner_id( self ):
       '''
-         Get our user ID
+         Get the user ID
       '''
       return self.client_inst.owner_id
    
    
+   def portnum( self ):
+      '''
+         Get the portnum this gateway should listen on.
+      '''
+      return ms_client_get_portnum( &self.client_inst )
+
    cpdef sign_message( self, data ):
       '''
-         Sign a message with our private key.
+         Sign a message with the gateway's private key.
          Return a base64-encoded string containing the signature.
          Raises an exception on error.
       '''

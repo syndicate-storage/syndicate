@@ -91,14 +91,13 @@ def validate_fields( data, required_fields, optional_fields=None ):
 
 #-------------------------
 def syndicate_init( gateway_name=None,
-                    portnum=None,
                     ms_url=None, 
                     volume_name=None,
                     oid_username=None,
                     oid_password=None,
                     conf_filename=None,
                     my_key_filename=None,
-                    volume_key_filename=None,
+                    volume_pubkey_filename=None,
                     tls_pkey_filename=None,
                     tls_cert_filename=None):
    
@@ -112,7 +111,6 @@ def syndicate_init( gateway_name=None,
       libsyndicate = Syndicate.getinstance(  gateway_type=Syndicate.GATEWAY_TYPE_RG,
                                              gateway_name=gateway_name,
                                              volume_name=volume_name,
-                                             portnum=portnum,
                                              ms_url=ms_url,
                                              oid_username=oid_username,
                                              oid_password=oid_password,
@@ -120,7 +118,7 @@ def syndicate_init( gateway_name=None,
                                              my_key_filename=my_key_filename,
                                              tls_pkey_filename=tls_pkey_filename,
                                              tls_cert_filename=tls_cert_filename,
-                                             volume_key_filename=volume_key_filename )
+                                             volume_pubkey_filename=volume_pubkey_filename )
          
    else:
       raise Exception("libsyndicate already initialized!")

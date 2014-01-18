@@ -633,6 +633,7 @@ def client_call( CONFIG, method_name, *args, **kw ):
    lib = conf.ArgLib()
    lib.config = CONFIG
    lib.storage = storage
+   lib.user_id = user_id
    
    args, kw, extras = conf.parse_args( method_name, args, kw, lib )
    

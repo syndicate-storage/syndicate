@@ -42,6 +42,7 @@ cdef extern from "ms-client.h":
 
    int ms_client_init( ms_client* client, int gateway_type, md_syndicate_conf* conf )
    int ms_client_destroy( ms_client* client )
+   int ms_client_get_portnum( ms_client* client )
 
 # ------------------------------------------
 cdef extern from "libsyndicate.h":
@@ -69,7 +70,7 @@ cdef extern from "libsyndicate.h":
                char* gateway_name,
                char* md_username,
                char* md_password,
-               char* volume_key_file,
+               char* volume_pubkey_file,
                char* my_key_file,
                char* tls_key_file,
                char* tls_cert_file,
@@ -83,8 +84,8 @@ cdef extern from "libsyndicate.h":
    
    int md_sign_message( EVP_PKEY* pkey, const char* data, size_t len, char** sigb64, size_t* sigb64len )
    int ms_client_verify_gateway_message( ms_client* client, uint64_t volume_id, uint64_t gateway_id, const char* msg, size_t msg_len, char* sigb64, size_t sigb64_len )
-   int md_encrypt_pem( const char* pubkey_pem, const char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len )
-   int md_decrypt_pem( const char* privkey_pem, const char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len )
+   int md_encrypt_pem( const char* sender_privkey_pem, const char* receiver_pubkey_pem, const char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len )
+   int md_decrypt_pem( const char* sender_pubkey_pem, const char* receiver_privkey_pepm, const char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len )
    
    # ------------------------------------------
    # config

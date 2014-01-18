@@ -80,13 +80,15 @@ static int md_runtime_init( struct md_syndicate_conf* c ) {
 
    GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-   md_init_OpenSSL();
+   int rc = md_crypt_init();
+   if( rc != 0 ) {
+      errorf("md_crypt_init rc = %d\n", rc );
+      return rc;
+   }
    
    // get the umask
    mode_t um = get_umask();
    c->usermask = um;
-   
-   int rc = 0;
    
    rc = md_init_local_storage( c );
    if( rc != 0 ) {
@@ -159,10 +161,7 @@ int md_shutdown() {
    // shut down protobufs
    google::protobuf::ShutdownProtobufLibrary();
 
-   // shut down OpenSSL
-   ERR_free_strings();
-   md_openssl_thread_cleanup();
-
+   md_crypt_shutdown();
    return 0;
 }
 
@@ -2341,7 +2340,7 @@ int md_init( struct md_syndicate_conf* conf,
              char const* gateway_name,
              char const* oid_username,
              char const* oid_password,
-             char const* volume_key_file,
+             char const* volume_pubkey_file,
              char const* my_key_file,
              char const* tls_pkey_file,
              char const* tls_cert_file,
@@ -2379,7 +2378,7 @@ int md_init_client( struct md_syndicate_conf* conf,
                     char const* gateway_name,
                     char const* oid_username,
                     char const* oid_password,
-                    char const* volume_key_pem,
+                    char const* volume_pubkey_pem,
                     char const* my_key_pem,
                     char const* storage_root
                   ) {
@@ -2396,7 +2395,7 @@ int md_init_client( struct md_syndicate_conf* conf,
    
    MD_SYNDICATE_CONF_OPT( *conf, storage_root, storage_root );
    MD_SYNDICATE_CONF_OPT( *conf, gateway_key, my_key_pem );
-   MD_SYNDICATE_CONF_OPT( *conf, volume_pubkey, volume_key_pem );
+   MD_SYNDICATE_CONF_OPT( *conf, volume_pubkey, volume_pubkey_pem );
    
    if( conf->gateway_key ) {
       conf->gateway_key_len = strlen(conf->gateway_key);

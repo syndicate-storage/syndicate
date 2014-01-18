@@ -439,6 +439,7 @@ class Gateway( StubObject ):
        * gateway name
        * syntool config
        * storage API
+       * user_id
       """
       
       try:
@@ -453,6 +454,7 @@ class Gateway( StubObject ):
          gateway_name = lib.gateway_name 
          config = lib.config
          storage = lib.storage
+         user_id = lib.user_id
       except Exception, e:
          log.exception(e)
          raise Exception("Missing required data for argument parsing")
@@ -499,6 +501,17 @@ class Gateway( StubObject ):
       
       
       if len(secrets_dict.keys()) > 0:
+         
+         # attempt to get the user's private key
+         user_privkey_pem = None
+         try:
+            user_privkey = storage.load_object_private_key( config, "user", "signing", user_id )
+            user_privkey_pem = user_privkey.exportKey()
+         except Exception, e:
+            log.exception(e)
+            raise Exception("Failed to load user signing key for %s" % user_id )
+         
+         
          # get the gateway public key 
          gateway_pubkey_pem = None
          try:
@@ -513,7 +526,7 @@ class Gateway( StubObject ):
          encrypted_secrets_str = None
          try:
             log.info("Encrypting secrets...")
-            rc, encrypted_secrets_str = c_syndicate.encrypt_closure_secrets( gateway_pubkey_pem, secrets_dict_str )
+            rc, encrypted_secrets_str = c_syndicate.encrypt_closure_secrets( user_privkey_pem, gateway_pubkey_pem, secrets_dict_str )
          except Exception, e:
             log.exception( e )
             raise Exception("Failed to encrypt secrets")

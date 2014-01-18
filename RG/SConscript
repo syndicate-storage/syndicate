@@ -24,5 +24,6 @@ env = env.Clone()
 rg_files = Glob("syndicate-rg")
 
 targets = rg_files
+env.AlwaysBuild( targets )
 
 Return( 'targets' )

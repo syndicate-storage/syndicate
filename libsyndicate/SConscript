@@ -77,6 +77,9 @@ env.Append(CPPPATH = "#" + protobuf_out)
 env.Append(CPPFLAGS = CPPFLAGS)
 env.Append(CPPDEFINES = CPPDEFINES)
 
+global_LIBS = env['LIBS']
+global_LINK = env['LINK_FLAGS']
+
 def create_sobjs(SRCS, path="", this_env=None):
    if this_env is None:
       this_env = env
@@ -93,7 +96,7 @@ def create_objs(SRCS, path="", this_env=None):
 protobuf_objs = [env.SharedObject(x) for x in protobuf_cc_files]
 
 # full library
-libsyndicate = env.SharedLibrary( "libsyndicate.so", protobuf_objs + create_sobjs( Split(source_files) ), LIBS=Split(LIBS) )
+libsyndicate = env.SharedLibrary( "libsyndicate.so", protobuf_objs + create_sobjs( Split(source_files) ), LIBS=Split(LIBS + global_LIBS), LINKFLAGS=global_LINK)
 
 # Native Client library
 env_nacl = env.Clone()
@@ -114,4 +117,3 @@ if nacl_env is not None:
 header_paths = [os.path.join( x.path ) for x in Split(headers)]
 source_paths = [os.path.join( x ) for x in Split(source_files)] 
 Return( 'libsyndicate libsyndicate_nacl header_paths source_paths' )
-
