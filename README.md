@@ -10,7 +10,7 @@ Today, when people think of cloud storage, they think of cloud storage providers
 
 In a similar vein, [content delivery network](https://en.wikipedia.org/wiki/Content_delivery_network) providers such as [Akamai](http://www.akamai.com) and [CloudFlare](https://www.cloudflare.com/) will sell you edge caching capacity, allowing your applications to serve lots of data to lots users at once.  However, a well-known limitation of Web caches (including CDNs) is that they can serve your clients stale data.  Worse, Web cache operators ultimately decide what constitutes "stale" data, regardless of your [HTTP cache-control directives](https://en.wikipedia.org/wiki/Cache-Control#Controlling_Web_caches).
 
-Syndicate solves both problems by implementing a layer of abstraction around both cloud storage and Web cache providers.  Syndicate organizes your data into one or more filesystem-like volumes, and lets you control how fresh file and directory data must be *independent of cache controls*.  By enforcing consistency itself, **Syndicate lets you use unmodified, already-deployed clouds and caches to help your applications scale**.
+Syndicate solves both problems by implementing a layer of abstraction around both cloud storage and Web cache providers.  Syndicate organizes your data into one or more filesystem-like volumes, and lets you control how fresh file and directory data must be *independent of cache controls*.  By enforcing consistency itself, *Syndicate lets you use unmodified, already-deployed clouds and caches to help your applications scale*.
 
 Syndicate is easily extensible and programmable.  You can make Syndicate use your favorate storage systems for hosting data, and define storage-level data management policies with only a few lines of Python code.  Syndicate comes with support for local disk, [Amazon S3](https://aws.amazon.com/s3/), [Dropbox](http://www.dropbox.com), [Box.net](http://www.box.net), [Google Cloud Storage](https://cloud.google.com/products/cloud-storage/), and [Amazon Glacier](https://aws.amazon.com/glacier/).
 
@@ -23,7 +23,7 @@ Here are a few examples of how we are currently using Syndicate:
 * Augmenting [Hadoop](http://hadoop.apache.com) with CDNs, so computing clusters across the world can automatically access and locally cache scientific data without having to manually download and install local copies, and without having to worry about receiving stale data.  See the [HSynth](https://github.com/iychoi/hsynth) project for details.
 * Adding [HIPPA](https://en.wikipedia.org/wiki/HIPAA) compliance on top of Amazon S3.
 * Creating a decentralized video streaming service.
-* Creating in-browser webmail with transparent end-to-end encryption, automatic key management, and backwards compatibility with email.  Email data gets stored encrypted to cloud storage of your choice, so webmail providers like [Gmail](https://mail.google.com) can't snoop.
+* Creating webmail with transparent end-to-end encryption, automatic key management, and backwards compatibility with email.  Email data gets stored encrypted to cloud storage of your choice, so webmail providers like [Gmail](https://mail.google.com) can't snoop.  See the [SyndicateMail](https://github.com/jcnelson/syndicatemail) project for details.
 * Implementing scalable secure VDI, using both in-house and external storage and caches.
 * Implementing vendor-agnostic [cloud storage gateways](https://en.wikipedia.org/wiki/Cloud_storage_gateway) on top of commodity hardware.
 
