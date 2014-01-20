@@ -87,6 +87,10 @@ LIBS_IPC = """
    boost_system
 """
 
+LIBS_IPC_OLD_BOOST = """
+   boost_system
+"""
+
 LIBS_HTTPD = """
    gnutls
    microhttpd
@@ -112,6 +116,10 @@ env.Append(LIBPATH = Split(LIBPATH))
 env.Append(CPPPATH = Split(CPPPATH))
 env.Append(CPPFLAGS = Split(CPPFLAGS))
 env.Append(CPPDEFINES = CPPDEFINES)
+
+# if we're using an old Boost library (like on PlanetLab, switch the library flags)
+if env['old_boost']:
+   LIBS_IPC = LIBS_IPC_OLD_BOOST
 
 def create_objs(SRCS, path="", this_env=None):
    if this_env is None:
@@ -140,7 +148,7 @@ common_full = common + server
 syndicatefs = env.Program("syndicatefs", common_full + create_objs( Split(syndicatefs_source) ), LIBS=Split(LIBS_COMMON + LIBS_FS) )
 syndicate_httpd = env.Program("syndicate-httpd", common_full + create_objs( Split(syndicate_httpd_source) ), LIBS=Split(LIBS_COMMON + LIBS_HTTPD) )
 syndicate_ipc = env.Program("syndicate-ipc", common_full + create_objs( Split(syndicate_ipc_source) ), LIBS=Split(LIBS_COMMON + LIBS_IPC) )
-syndicate_client_lib = env.SharedLibrary( "libsyndicate_volume.so", shared_common + create_sobjs( Split(syndicate_client_source) ), LIBS=Split(LIBS_COMMON))
+syndicate_client_lib = env.SharedLibrary( "libsyndicateUG.so", shared_common + create_sobjs( Split(syndicate_client_source) ), LIBS=Split(LIBS_COMMON))
 
 syndicate_common_objs_nacl = None
 
