@@ -55,8 +55,8 @@ $ sudo scons libsyndicate-install
 To build and install the Syndicate Python library, issue the following commands:
 
 ```
-$ scons libUG
-$ sudo scons libUG-install
+$ scons libsyndicateUG
+$ sudo scons libsyndicateUG-install
 $ scons syndicate-python
 $ sudo scons syndicate-python-install
 ```
@@ -66,14 +66,14 @@ Finally, to build and install the various Syndicate components, issue the follow
 ```
 $ scons AG-common
 $ sudo scons AG-common-install
-$ scons syndicate
-$ sudo scons syndicate-install
+$ scons UG RG AG
+$ sudo scons UG-install RG-install AG-install
 ```
 
 By default, everything will be installed to /usr/local.  You can override this by passing DESTDIR=.  For example:
 
 ```
-$ sudo scons DESTDIR=/usr syndicate-install
+$ sudo scons DESTDIR=/usr UG-install
 ```
 
 Alternatively, you can get nightly RPMs from our [build server](http://vcoblitz-cmi.cs.princeton.edu/syndicate-nightly/RPMS/).  They're compiled for Fedora 12, since that's what we use to run it on [PlanetLab](http://www.planet-lab.org).
