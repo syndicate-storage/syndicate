@@ -76,6 +76,7 @@ LIBS_COMMON = """
    pthread
    syndicate
    protobuf
+   rt
 """
 
 LIBS_FS = """
