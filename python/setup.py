@@ -55,7 +55,7 @@ ext_modules=[
     
     Extension("volume",
               sources=["volume.pyx"],
-              libraries=["syndicate", "syndicate_volume"],
+              libraries=["syndicate", "syndicateUG"],
               library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "bin/UG")],             # local build
               include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"),
                             os.path.join(source_root, build_dir, "protobufs"),

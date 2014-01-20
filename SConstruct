@@ -49,16 +49,27 @@ LINK_FLAGS = ""
 
 # parse options
 devel = False
+old_boost = False
 extra_args = {}
+
 for key, value in ARGLIST:
    if key == "DESTDIR":
       install_prefix = value
+
    elif key == "CPPFLAGS":
       CPPFLAGS = value
+   
+   # development flag
    elif key == "devel":
       if value == "true":
          CPPFLAGS += " -D_DEVELOPMENT"
          devel = True
+
+   # PlanetLab (Fedora 12) flag
+   elif key == "old_boost":
+      if value == "true":
+         old_boost = True
+
    else:
       extra_args[key] = value
 
@@ -121,7 +132,9 @@ env = Environment(
    LINK_FLAGS = LINK_FLAGS,
    toolpath = ['build/tools'],
    tools = ['default', 'protoc'],
-   devel = devel
+   devel = devel,
+   old_boost = old_boost,   # for the UG
+   install_prefix = install_prefix
 )
 
 common.setup_env( env )
@@ -186,27 +199,27 @@ env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_i
 # ----------------------------------------
 # UG build
 ug_out = "build/out/bin/UG"
-syndicatefs, syndicate_httpd, syndicate_ipc, libUG, UG_nacl = SConscript( "UG/SConscript", variant_dir=ug_out )
+syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUG, UG_nacl = SConscript( "UG/SConscript", variant_dir=ug_out )
 
 ugs_bin = [syndicatefs, syndicate_httpd, syndicate_ipc]
-ugs_lib = [libUG]
-ug_aliases = [syndicatefs, syndicate_httpd, syndicate_ipc, libUG]
+ugs_lib = [libsyndicateUG]
+ug_aliases = [syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUG]
 
 env.Depends( syndicatefs, libsyndicate )
 env.Depends( syndicate_ipc, libsyndicate )
 env.Depends( syndicate_httpd, libsyndicate )
-env.Depends( libUG, libsyndicate )
+env.Depends( libsyndicateUG, libsyndicate )
 env.Depends( UG_nacl, libsyndicate_nacl )
 
 env.Alias("syndicatefs", syndicatefs)
 env.Alias("UG-httpd", syndicate_httpd)
-env.Alias("libUG", libUG)
+env.Alias("libsyndicateUG", libsyndicateUG)
 env.Alias("UG-ipc", syndicate_ipc)
 env.Alias("UG-nacl", UG_nacl)
 
 # UG installation 
 common.install_targets( env, 'UG-install', bin_install_dir, ugs_bin )
-common.install_targets( env, 'libUG-install', lib_install_dir, ugs_lib )
+common.install_targets( env, 'libsyndicateUG-install', lib_install_dir, ugs_lib )
 env.Alias("UG", ug_aliases )
 
 # ----------------------------------------
@@ -302,7 +315,7 @@ common.install_targets( env, "RG-install", bin_install_dir, rg_server )
 
 syndicate_python_out = "build/out/python"
 python_target, python_install, python_files = SConscript("python/SConscript", variant_dir=syndicate_python_out)
-env.Depends(python_target, [python_files, protobuf_py_files, libsyndicate, libUG])
+env.Depends(python_target, [python_files, protobuf_py_files, libsyndicate, libsyndicateUG])
 
 env.Alias("syndicate-python", python_target)
 env.Alias("syndicate-python-install", python_install)
