@@ -29,7 +29,9 @@ client_python_bin = Glob("clients/python/bin/*.py")
 
 client_cmds = []
 for client_python_file in client_python_bin:
-   cmd = env.Command( "%s" % (os.path.basename(client_python_file.path)), "#" + client_python_file.path, Move( "$TARGET", "$SOURCE" ) )
+   cmd = env.Command( "%s" % (os.path.basename(client_python_file.path)), "#" + client_python_file.path, Copy( "$TARGET", "$SOURCE" ) )
    client_cmds.append( cmd )
 
-Return( 'client_cmds' )
+client_python_bin_install = Glob("clients/python/bin/syntool.py")
+
+Return( 'client_cmds client_python_bin_install' )

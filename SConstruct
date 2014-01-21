@@ -289,15 +289,13 @@ if "MS" in COMMAND_LINE_TARGETS:
 
    env.Alias( "MS-server", ms_server )
 
-   # MS clients build
-   ms_clients_bin_out = "build/out/bin/ms"
-   ms_client_bin = SConscript( "ms/SConscript.client", variant_dir=ms_clients_bin_out )
+# MS clients build
+ms_clients_bin_out = "build/out/bin/ms"
+ms_client_bin, ms_client_bin_install = SConscript( "ms/SConscript.client", variant_dir=ms_clients_bin_out )
 
-   env.Alias( "MS-clients", [ms_client_bin] )
+env.Alias( "MS-clients", [ms_client_bin] )
 
-   # main targets....
-   env.Alias( "MS", [ms_server, ms_client_bin] )
-   env.Alias( "ms", [ms_server, ms_client_bin] )
+common.install_targets( env, 'MS-clients-install', bin_install_dir, ms_client_bin_install )
 
 # ----------------------------------------
 # RG build
