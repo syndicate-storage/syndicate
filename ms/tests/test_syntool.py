@@ -43,7 +43,7 @@ user_keys=user_keys/
 
 TEST_ADMIN_PKEY_PATH = "./user_test_key.pem"
 
-USER_ATTRS = ["email", "openid_url", "max_UGs", "max_RGs", "max_AGs", "max_volumes", "signing_public_key", "verify_public_key"]
+USER_ATTRS = ["email", "openid_url", "max_UGs", "max_RGs", "max_AGs", "max_volumes", "signing_public_key", "verifying_public_key"]
 
 CONFIG_PATH = None
 

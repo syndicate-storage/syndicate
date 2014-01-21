@@ -497,7 +497,7 @@ class BindAPIGuard:
             if source_object == None:
                raise Exception("Source object '%s' does not exist" % source_object_id )
             
-            if not source_object.owned_by( caller_user ):
+            if not source_object.owned_by( caller_user ) and not caller_user.is_admin:
                raise Exception("Source object '%s' is not owned by '%s'" % (source_object_id, caller_user.email) )
             
          if self.caller_owns_target:
@@ -510,7 +510,7 @@ class BindAPIGuard:
             if target_object == None:
                raise Exception("Target object '%s' does not exist" % target_object_id )
             
-            if not target_object.owned_by( caller_user ):
+            if not target_object.owned_by( caller_user ) and not caller_user.is_admin:
                raise Exception("Target object '%s' is not owned by '%s'" % (target_object_id, caller_user.email))
             
          if self.pass_caller_user:

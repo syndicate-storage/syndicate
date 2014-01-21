@@ -647,6 +647,37 @@ class Object( Model ):
    
    
    @classmethod
+   def load_keys( cls, privkey_str ):
+      """
+      Load a public and private key pair from a private key string
+      """
+      try:
+         key = CryptoKey.importKey( privkey_str )
+      except Exception, e:
+         logging.error("importKey %s", traceback.format_exc() )
+         return None, None
+      
+      return key.publickey().exportKey(), key.exportKey()
+      
+      
+   
+   @classmethod
+   def extract_keys( cls, pubkey_name, privkey_name, kwargs, keysize ):
+      """
+      Extract the public part of a private key, and put it into the given kwargs dict under pubkey_name.
+      """
+      
+      if kwargs.has_key(privkey_name) and not kwargs.has_key(pubkey_name):
+         # extract the public key
+         if not cls.is_valid_key( kwargs[privkey_name], keysize ):
+            raise Exception("Invalid private key")
+         else:
+            kwargs[pubkey_name], kwargs[privkey_name] = cls.load_keys( kwargs[privkey_name] )
+            if kwargs[pubkey_name] is None or kwargs[privkey_name] is None:
+               raise Exception("Unable to load private keys")
+            
+   
+   @classmethod
    def set_atomic( cls, read_func, **attrs ):
       """
       Set attributes atomically, in a transaction.

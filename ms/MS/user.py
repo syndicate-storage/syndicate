@@ -117,8 +117,8 @@ class SyndicateUser( storagetypes.Object ):
    signing_public_key_expiration = storagetypes.Integer( default=-1 )           # seconds since the epoch
    
    # keys for signing responses to remote callers
-   verify_public_key = storagetypes.Text()
-   verify_private_key = storagetypes.Text()
+   verifying_public_key = storagetypes.Text()
+   verifying_private_key = storagetypes.Text()
    
    # for RPC
    key_type = "user"
@@ -147,8 +147,8 @@ class SyndicateUser( storagetypes.Object ):
    validators = {
       "email" : (lambda cls, value: valid_email(cls, value)),
       "signing_public_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE )),
-      "verify_public_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE )),
-      "verify_private_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE )),
+      "verifying_public_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE )),
+      "verifying_private_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE )),
       "openid_url": (lambda cls, value: len(value) < 4096)              # not much of a check here...
    }
 
@@ -162,7 +162,7 @@ class SyndicateUser( storagetypes.Object ):
       "max_AGs",
       "signing_public_key",
       "signing_public_key_expiration",
-      "verify_public_key"
+      "verifying_public_key"
    ]
    
    read_attrs = read_attrs_api_required
@@ -216,7 +216,7 @@ class SyndicateUser( storagetypes.Object ):
    @classmethod
    def Sign( cls, user, data ):
       # Sign an API response
-      return SyndicateUser.auth_sign( user.verify_private_key, data )
+      return SyndicateUser.auth_sign( user.verifying_private_key, data )
    
 
    @classmethod
@@ -234,6 +234,10 @@ class SyndicateUser( storagetypes.Object ):
       
       # sanity check
       SyndicateUser.fill_defaults( kwargs )
+      
+      # extract public keys from private ones 
+      SyndicateUser.extract_keys( 'verifying_public_key', 'verifying_private_key', kwargs, USER_RSA_KEYSIZE )
+      
       missing = SyndicateUser.find_missing_attrs( kwargs )
       if len(missing) != 0:
          raise Exception( "Missing attributes: %s" % (", ".join( missing )))
@@ -252,11 +256,6 @@ class SyndicateUser( storagetypes.Object ):
             
             # do not allow admin privileges
             kwargs['is_admin'] = False
-            
-            # generate API keys if the caller didn't supply any
-            if not kwargs.has_key("verify_public_key") or not kwargs.has_key("verify_private_key"):
-               kwargs['verify_public_key'], kwargs['verify_private_key'] = SyndicateUser.generate_keys( USER_RSA_KEYSIZE )
-            
             kwargs['owner_id'] = random.randint( 1, 2**63 - 1 )
             user_key_name = SyndicateUser.make_key_name( email=email )
             
@@ -296,9 +295,9 @@ class SyndicateUser( storagetypes.Object ):
             logging.info("Generating admin '%s'" % email)
             
             # generate API keys
-            verify_public_key_str, verify_private_key_str = SyndicateUser.generate_keys( USER_RSA_KEYSIZE )
-            attrs['verify_public_key'] = verify_public_key_str
-            attrs['verify_private_key'] = verify_private_key_str
+            verifying_public_key_str, verifying_private_key_str = SyndicateUser.generate_keys( USER_RSA_KEYSIZE )
+            attrs['verifying_public_key'] = verifying_public_key_str
+            attrs['verifying_private_key'] = verifying_private_key_str
          
             # fill defaults
             SyndicateUser.fill_defaults( attrs )
@@ -349,11 +348,15 @@ class SyndicateUser( storagetypes.Object ):
 
       user = storagetypes.memcache.get( user_key_name )
       if user == None:
-         user = user_key.get( use_memcache=False )
-         if not user:
-            return None
+         if async:
+            return user_key.get_async( use_memcache=False )
+         
          else:
-            storagetypes.memcache.set( user_key_name, user )
+            user = user_key.get( use_memcache=False )
+            if not user:
+               return None
+            else:
+               storagetypes.memcache.set( user_key_name, user )
 
       elif async:
          user = storagetypes.FutureWrapper( user )

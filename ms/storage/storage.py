@@ -40,6 +40,7 @@ import random
 
 from common.msconfig import *
 
+# ----------------------------------
 def _read_user_and_volume( email, volume_name_or_id ):
    user_fut = SyndicateUser.Read( email, async=True )
    volume_fut = Volume.Read( volume_name_or_id, async=True )
@@ -57,8 +58,7 @@ def _read_user_and_volume( email, volume_name_or_id ):
    
    return user, volume
 
-
-
+# ----------------------------------
 def _get_volume_id( volume_name_or_id ):
    try:
       volume_id = int(volume_name_or_id)
@@ -76,19 +76,24 @@ def create_user( email, openid_url, **fields ):
    user_key = SyndicateUser.Create( email, openid_url=openid_url, **fields )
    return user_key.get()
 
+# ----------------------------------
 def read_user( email ):
    return SyndicateUser.Read( email )
 
+# ----------------------------------
 def update_user( email, **fields ):
    SyndicateUser.Update( email, **fields )
    return True
 
+# ----------------------------------
 def delete_user( email ):
    return SyndicateUser.Delete( email )
 
+# ----------------------------------
 def list_users( attrs=None, **q_opts ):
    return SyndicateUser.ListAll( attrs, **q_opts )
    
+# ----------------------------------
 def set_user_public_signing_key( email, pubkey ):
    return SyndicateUser.SetPublicSigningKey( email, pubkey )
 
@@ -99,6 +104,7 @@ def list_user_access_requests( email, **q_opts ):
       raise Exception("No such user '%s'" % email)
    return VolumeAccessRequest.ListUserAccessRequests( user.owner_id, **q_opts )
 
+# ----------------------------------
 def request_volume_access( email, volume_name_or_id, caps, message ):
    user, volume = _read_user_and_volume( email, volume_name_or_id )
    if user == None:
@@ -106,10 +112,11 @@ def request_volume_access( email, volume_name_or_id, caps, message ):
    if volume == None or volume.deleted:
       raise Exception("No such volume '%s'" % volume_name_or_id )
    
-   return VolumeAccessRequest.RequestAccess( user.owner_id, volume.volume_id, caps, message )
+   return VolumeAccessRequest.RequestAccess( user.owner_id, volume.volume_id, volume.name, caps, message )
 
-def remove_volume_access_request( email, volume_name_or_id ):
-   user, volume = _read_user_and_volume( email, volume_id )
+# ----------------------------------
+def remove_volume_access( email, volume_name_or_id ):
+   user, volume = _read_user_and_volume( email, volume_name_or_id )
    if user == None:
       raise Exception("No such user '%s'" % email)
    if volume == None or volume.deleted:
@@ -117,6 +124,7 @@ def remove_volume_access_request( email, volume_name_or_id ):
    
    return VolumeAccessRequest.RemoveAccessRequest( user.owner_id, volume.volume_id )
 
+# ----------------------------------
 def list_volume_access_requests( volume_name_or_id, **q_opts ):
    caller_user = q_opts.get("caller_user")
    if caller_user != None:
@@ -125,14 +133,32 @@ def list_volume_access_requests( volume_name_or_id, **q_opts ):
       if volume == None or volume.deleted:
          raise Exception("No such volume '%s'" % volume_name_or_id )
       
-      if volume.owner_id != caller_user.owner_id:
+      if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
          raise Exception("User '%s' cannot read Volume '%s'" % (caller_user.email, volume.name))
    
    else:
       raise Exception("Anonymous user is insufficiently privileged")
    
-   return VolumeAccessRequest.ListAccessRequests( volume_id, **q_opts )
+   return VolumeAccessRequest.ListVolumeAccessRequests( volume.volume_id, **q_opts )
 
+# ----------------------------------
+def list_volume_access( volume_name_or_id, **q_opts ):
+   caller_user = q_opts.get("caller_user")
+   if caller_user != None:
+      # verify ownership
+      volume = read_volume( volume_name_or_id )
+      if volume == None or volume.deleted:
+         raise Exception("No such volume '%s'" % volume_name_or_id )
+      
+      if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
+         raise Exception("User '%s' cannot read Volume '%s'" % (caller_user.email, volume.name))
+   
+   else:
+      raise Exception("Anonymous user is insufficiently privileged")
+   
+   return VolumeAccessRequest.ListVolumeAccess( volume.volume_id, **q_opts )
+
+# ----------------------------------
 def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
    caller_user = caller_user_dict.get("caller_user")
    if caller_user != None:
@@ -141,7 +167,7 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
       if volume == None or volume.deleted:
          raise Exception("No such volume '%s'" % volume_name_or_id )
       
-      if volume.owner_id != caller_user.owner_id:
+      if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
          raise Exception("User '%s' cannot read Volume '%s'" % (caller_user.email, volume.name))
       
    else:
@@ -151,7 +177,7 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
    if user == None:
       raise Exception("No such user '%s'" % email)
    
-   return VolumeAccessRequest.GrantAccess( user.owner_id, volume.volume_id, caps )
+   return VolumeAccessRequest.GrantAccess( user.owner_id, volume.volume_id, volume.name, caps )
 
 # ----------------------------------
 def list_volume_user_ids( volume_name_or_id, **q_opts ):
@@ -192,18 +218,21 @@ def create_volume( email, name, description, blocksize, **attrs ):
    else:
       raise Exception("No such user '%s'" % email)
    
-   
+
+# ----------------------------------
 def read_volume( volume_name_or_id ):
    return Volume.Read( volume_name_or_id )
 
+# ----------------------------------
 def volume_update_shard_count( volume_id, num_shards ):
    return Volume.update_shard_count( volume_id, num_shards )
    
+# ----------------------------------
 def update_volume( volume_name_or_id, **fields ):
    Volume.Update( volume_name_or_id, **fields )
    return True
 
-   
+# ----------------------------------
 def delete_volume( volume_name_or_id ):
    volume = Volume.Read( volume_name_or_id )
    if volume == None:
@@ -216,19 +245,19 @@ def delete_volume( volume_name_or_id ):
    
    return ret
    
-
+# ----------------------------------
 def list_volumes( attrs=None, **q_opts ):
    return Volume.ListAll( attrs, **q_opts )
 
-
+# ----------------------------------
 def list_public_volumes( **q_opts ):
    return list_volumes( {"Volume.private ==": False}, **q_opts )
 
-
+# ----------------------------------
 def list_archive_volumes( **q_opts ):
    return list_volumes( {"Volume.archive ==": True, "Volume.private ==": False}, **q_opts )
 
-
+# ----------------------------------
 def list_accessible_volumes( email, **q_opts ):
    user = read_user( email )
    if user == None:
@@ -250,7 +279,29 @@ def list_accessible_volumes( email, **q_opts ):
    ret = filter( lambda x: x != None, vols )
    return ret
 
+# ----------------------------------
+def list_pending_volumes( email, **q_opts ):
+   user = read_user( email )
+   if user == None:
+      raise Exception("No such user '%s'" % email)
+   
+   if 'caller_user' in q_opts.keys():
+      caller_user = q_opts['caller_user']
+      if user.owner_id != caller_user.owner_id and not caller_user.is_admin:
+         raise Exception("User '%s' is not sufficiently privileged" % caller_user.email)
+   else:
+      raise Exception("Anonymous user is not sufficiently privileged")
+      
+   def __volume_from_access_request( var ):
+      return Volume.Read( var.volume_id, async=True )
+   
+   q_opts["map_func"] = __volume_from_access_request
+   vols = VolumeAccessRequest.ListAll( {"VolumeAccessRequest.requester_owner_id ==": user.owner_id, "VolumeAccessRequest.status ==": VolumeAccessRequest.STATUS_PENDING}, **q_opts )
+   
+   ret = filter( lambda x: x != None, vols )
+   return ret
 
+# ----------------------------------
 def set_volume_public_signing_key( volume_id, new_key, **attrs ):
    caller_user = attrs.get("caller_user")
    if caller_user != None:
@@ -313,15 +364,16 @@ def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **
    gateway_key = Gateway.Create( user, volume, gateway_type=gateway_type, name=gateway_name, host=host, port=port, **kwargs )
    return gateway_key.get()
 
-
+# ----------------------------------
 def read_gateway( g_name_or_id ):
    return Gateway.Read( g_name_or_id )
 
-
+# ----------------------------------
 def update_gateway( g_name_or_id, **fields):
    Gateway.Update( g_name_or_id, **fields )
    return True
 
+# ----------------------------------
 def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
    caller_user = caller_user_dict.get("caller_user")
    
@@ -351,11 +403,12 @@ def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
    Gateway.SetCaps( g_name_or_id, caps )
    return True
 
-
+# ----------------------------------
 def list_gateways( attrs=None, **q_opts):
    return Gateway.ListAll(attrs, **q_opts)
 
 
+# ----------------------------------
 def list_gateways_by_volume( volume_name_or_id, **q_opts ):
    volume = storage.read_volume( volume_name_or_id )
    
@@ -372,10 +425,11 @@ def list_gateways_by_volume( volume_name_or_id, **q_opts ):
    return Gateway.ListAll( {"Gateway.volume_id ==" : volume_id}, **q_opts )
 
 
+# ----------------------------------
 def list_gateways_by_host( hostname, **q_opts ):
    return Gateway.ListAll( {"Gateway.host ==" : hostname}, **q_opts )
 
-
+# ----------------------------------
 def list_gateways_by_user( email, **q_opts ):
    user = read_user( email )
    if user == None:
@@ -391,6 +445,7 @@ def list_gateways_by_user( email, **q_opts ):
    
    return Gateway.ListAll( {"Gateway.owner_id ==": user.owner_id}, **q_opts )
    
+# ----------------------------------
 def count_user_gateways( email, **q_opts ):
    user = read_user( email )
    if user == None:
@@ -398,10 +453,12 @@ def count_user_gateways( email, **q_opts ):
    
    qry = Gateway
 
+# ----------------------------------
 def delete_gateway( g_id ):
    # TODO: when deleting an AG, delete all of its files and directories as well
    return Gateway.Delete( g_id )
 
+# ----------------------------------
 def set_gateway_public_signing_key( g_name_or_id, new_key, **caller_user_dict ):
    caller_user = caller_user_dict.get("caller_user")
    if caller_user != None:
@@ -418,99 +475,7 @@ def set_gateway_public_signing_key( g_name_or_id, new_key, **caller_user_dict ):
    
    return Gateway.SetPublicSigningKey( g_id, new_key )
 
-"""
-def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
-   caller_user = caller_user_dict.get("caller_user")
-   
-   # get the gateway
-   gateway = read_gateway( g_name_or_id )
-   if gateway == None:
-      raise Exception("No such Gateway '%s'" % g_name_or_id )
-   
-   # get its user and volume
-   user_fut = None 
-   volume = None
-   user = caller_user
-   futs = []
-   if caller_user == None:
-      raise Exception("Anonymous user is not sufficiently privileged")
-   
-   volume_fut = Volume.Read( gateway.volume_id, async=True )
-   futs.append( volume_fut )
-   
-   storagetypes.wait_futures( futs )
-   
-   volume = volume_fut.get_result()
-   if user_fut != None:
-      user = user_fut.get_result()
-   
-   if volume == None or volume.deleted:
-      raise Exception("No such Volume with ID %s" % gateway.volume_id )
-   
-   if user == None:
-      raise Exception("No such User with ID %s" % gateway.owner_id )
-   
-   # user must be an admin or a volume owner
-   if not user.is_admin and user.owner_id != volume.owner_id:
-      raise Exception("User '%s' cannot set Gateway '%s' capabilities" % (user.email, gateway.name))
-   
-   return Gateway.SetCaps( g_name_or_id, caps )
-"""
 
 # ----------------------------------
 def get_volume_root( volume ):
    return MSEntry.Read( volume, 0 )
-
-"""
-def __msentry_get_user_and_volume( email, volume_id ):
-   user_fut = SyndicateUser.Read( email, async=True )
-   volume_fut = Volume.Read( volume_id, async=True )
-   
-   storagtypes.wait_futures( [user_fut, volume_fut] )
-   
-   user = user_fut.get_result()
-   volume = volume_fut.get_result()
-   
-   return (user, volume)
-   
-def msentry_op( email, volume_id, func, **ent_attrs ):
-   user, volume = __msentry_get_user_and_volume( email, volume_id )
-   
-   if user == None or volume == None:
-      return -errno.ENOENT 
-   
-   return func( user.owner_id, volume, **ent_attrs )
-
-   
-def create_msentry( email, volume_id, **ent_attrs ):
-   return msentry_op( email, volume_id, MSEntry.Create, **ent_attrs )
-   
-   
-def read_msentry( email, volume_id, file_id ):
-   user, volume = __msentry_get_user_and_volume( email, volume_id )
-   
-   if user == None or volume == None:
-      return -errno.ENOENT 
-   
-   ent = MSEntry.Read( volume.volume_id, file_id )
-   if ent != None:
-      if not entry.is_readable( user.owner_id, volume.owner_id, ent.owner_id, ent.mode ):
-         return -errno.EACCES
-   
-   return ent
-
-def update_msentry( email, volume_id, **ent_attrs ):
-   return msentry_op( email, volume_id, MSEntry.Update, **ent_attrs )
-
-def delete_msentry( email, volume_id, **ent_attrs ):
-   return msentry_op( email, volume_id, MSEntry.Delete, **ent_attrs )
-
-   
-def list_msentry_children( volume_id, file_id ):
-   volume = Volume.Read( volume_id )
-   if volume == None:
-      return -errno.ENOENT
-   
-   return MSEntry.ListAll( volume, file_id )
-"""
-
