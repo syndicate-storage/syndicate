@@ -77,7 +77,7 @@ KEY_TYPE_TO_CLS = dict( [(cls.key_type, cls) for cls in [Volume, SyndicateUser, 
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="user", verify_key_id="email", trust_key_type="user", trust_key_id="email" )
 @CreateAPIGuard( SyndicateUser, admin_only=True, parse_args=SyndicateUser.ParseArgs )
-def create_user( email, openid_url, signing_public_key="MAKE_SIGNING_KEY", **attrs ):
+def create_user( email, openid_url, signing_public_key="MAKE_SIGNING_KEY", verifying_private_key="MAKE_VERIFYING_KEY", **attrs ):
    """
    Create a user.
    
@@ -131,7 +131,7 @@ def create_user( email, openid_url, signing_public_key="MAKE_SIGNING_KEY", **att
       Only an administrator can create new users.
    """
    
-   return storage.create_user( email, openid_url, signing_public_key=signing_public_key, **attrs )
+   return storage.create_user( email, openid_url, signing_public_key=signing_public_key, verifying_private_key=verifying_private_key, **attrs )
 
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="user", verify_key_id="email" )
@@ -314,7 +314,7 @@ def list_volume_user_ids( volume_name_or_id, **attrs ):
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="volume", verify_key_id="name", trust_key_type="volume", trust_key_id="name" )
 @CreateAPIGuard( Volume, pass_caller_user="caller_user", parse_args=Volume.ParseArgs )
-def create_volume( email, name, description, blocksize, signing_public_key="MAKE_SIGNING_KEY", metadata_private_key="MAKE_METADATA_KEY", **attrs ):
+def create_volume( email, name, description, blocksize, signing_public_key="MAKE_SIGNING_KEY", metadata_private_key="MAKE_METADATA_KEY", verifying_private_key="MAKE_VERIFYING_KEY", **attrs ):
    """
    Create a Volume.  It will be owned by the calling user, or, if the caller is an admin, the user identified by the given email address.
    
@@ -407,7 +407,7 @@ def create_volume( email, name, description, blocksize, signing_public_key="MAKE
       An administrator can create an unlimited number of volumes.
       A user can only create as many as allowed by its max_volumes value.
    """
-   return storage.create_volume( email, name, description, blocksize, signing_public_key=signing_public_key, metadata_private_key=metadata_private_key, **attrs )
+   return storage.create_volume( email, name, description, blocksize, signing_public_key=signing_public_key, metadata_private_key=metadata_private_key, verifying_private_key=verifying_private_key, **attrs )
 
 
 @Authenticate( object_authenticator=Volume.Authenticate, object_response_signer=Volume.Sign,
@@ -571,6 +571,29 @@ def list_accessible_volumes( email, **caller_user_dict ):
 
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="volume", verify_key_id="name" )
+@ListAPIGuard( Volume, parse_args=Volume.ParseArgs, pass_caller_user="caller_user" )
+def list_pending_volumes( email, **caller_user_dict ):   
+   """
+   List the Volumes that a given user has requested to join, but the Volume owner
+   or administrator has not yet acted upon.
+   
+   Positional arguments:
+      email (str):
+         The email address of the user.
+   
+   Returns:
+      On success, a list of Volumes that the identified user has requested to access.
+      Raises an exception on error.
+   
+   Authorization:
+      An administrator can list any user's access requests.
+      A user can only his/her their own access requests.
+   """
+      
+   return storage.list_pending_volumes( email, **caller_user_dict )
+
+
+@Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="volume", verify_key_id="name" )
 @ListAPIGuard( Volume, parse_args=Volume.ParseArgs )
 def list_public_volumes():
    """
@@ -647,35 +670,199 @@ def set_volume_public_signing_key( volume_name_or_id, signing_public_key, **call
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"])
 @BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_target=False, parse_args=VolumeAccessRequest.ParseArgs )
-def remove_volume_access_request( email, volume_name_or_id ):
-   return storage.remove_volume_access_request( email, volume_name_or_id )
+def remove_volume_access( email, volume_name_or_id ):
+   """
+   Remove a given user's access capabilities from a given volume.
+   
+   Positional arguments:
+      email (str):
+         Email address of the user
+      
+      volume_name_or_id (str or int):
+         Name or ID of the volume
+      
+   Returns:
+      True on success
+      Raises an exception on error
+   
+   Authorization:
+      The administrator can remove any user from any volume.
+      A volume owner can remove any user from any volume he/she owns.
+      A user cannot remove him/herself.
+   
+   Remarks:
+      This method is idempotent.  It will succeed even if the user
+      is not present in the volume.
+   """
+   return storage.remove_volume_access( email, volume_name_or_id )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"])
 @BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_target=False, parse_args=VolumeAccessRequest.ParseArgs )
 def request_volume_access( email, volume_name_or_id, caps, message ):
+   """
+   Send a request for Volume access.  The Volume owner will be able
+   to read the request, and decide whether or not to add or remove 
+   the user.
+   
+   Positional arguments:
+      email (str):
+         Email address of the user
+      
+      volume_name_or_id (str or int):
+         Name or ID of the volume to join
+      
+      caps (str or int)
+         Capabilities desired in the volume.
+         Expressed as a bitwise OR'ing of:
+            GATEWAY_CAP_COORDINATE
+            GATEWAY_CAP_READ_DATA
+            GATEWAY_CAP_READ_METADATA
+            GATEWAY_CAP_WRITE_DATA
+            GATEWAY_CAP_WRITE_METADATA
+         
+         Or, as one of the following aliases
+            READONLY
+               same as GATEWAY_CAP_READ_DATA | GATEWAY_CAP_READ_METADATA
+            
+            READWRITE
+               same as GATEWAY_CAP_READ_DATA | GATEWAY_CAP_READ_METADATA |
+               GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA
+            
+            ALL
+               Set all capability bits.
+
+      message (str)
+         Message to the volume owner, explaining the nature of the request.
+         
+   Returns:
+      True on success.
+      Raises an exception on error.
+   
+   Authorization:
+      Any user can request to join any volume.
+      FIXME: users are limited in the number of outstanding requests they may have
+      FIXME: requests expire after a time if they are not acted upon.
+   """   
    return storage.request_volume_access( email, volume_name_or_id, caps, message )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID])
 @ListAPIGuard( VolumeAccessRequest, pass_caller_user="caller_user", parse_args=VolumeAccessRequest.ParseArgs )
 def list_volume_access_requests( volume_name_or_id, **attrs ):
+   """
+   List the set of pending access requests on a particular volume.
+   
+   Positional arguments:
+      volume_name_or_id (str or int):
+         Name or ID of the Volume to query
+   
+   Returns:
+      A list of pending access requests on success.
+      Raises an exception on error.
+   
+   Authorization:
+      An administrator can list access requests for any volume.
+      A volume owner can only list access requests for his/her volume.
+      Normal users cannot list volume access requests.
+   """
    return storage.list_volume_access_requests( volume_name_or_id, **attrs )
+
+@Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID])
+@ListAPIGuard( VolumeAccessRequest, pass_caller_user="caller_user", parse_args=VolumeAccessRequest.ParseArgs )
+def list_volume_access( volume_name_or_id, **attrs ):
+   """
+   List the set of users that can access a particular volume.
+   
+   Positional arguments:
+      volume_name_or_id (str or int):
+         Name or ID of the volume to query
+      
+   Returns:
+      A list of users that can access the givne volume.
+      Raises an exception on error.
+   
+   Authorization:
+      An administrator can list the users of any volume.
+      A volume owner can list the users of his/her volumes.
+      Normal users cannot list volume users.
+   """
+   return storage.list_volume_access( volume_name_or_id, **attrs )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID])
 @ListAPIGuard( VolumeAccessRequest, parse_args=VolumeAccessRequest.ParseArgs )
 def list_user_access_requests( email ):
+   """
+   List the set of requests this user has issued, that have not been revoked.
+   This includes both pending requests and granted requests.
+   
+   Positional arguments:
+      email (str):
+         Email address of the user
+    
+   Returns:
+      A list of pending and granted volume requests.
+      Raises an exception on error.
+   
+   Authorization:
+      An administrator can list any users' requests.
+      A user may only list his/her own requests.
+   """
    return storage.list_user_access_requests( email )
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID])
-@BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", parse_args=VolumeAccessRequest.ParseArgs )
-def set_volume_access( email, volume_name_or_id, caps ):
-   return storage.set_volume_access( email, volume_name_or_id, caps )
+@BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_source=False, parse_args=VolumeAccessRequest.ParseArgs, pass_caller_user="caller_user" )
+def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
+   """
+   Set the access capabilities for a user in a volume.
+   
+   Positional arguments:
+      email (str):
+         Email address of the user
+      
+      volume_name_or_id (str or int):
+         Name or ID of the volume to add the user to
+      
+      caps (str or int):
+         Capabilities the user will have in the volume.
+         Expressed as a bitwise OR'ing of:
+            GATEWAY_CAP_COORDINATE
+            GATEWAY_CAP_READ_DATA
+            GATEWAY_CAP_READ_METADATA
+            GATEWAY_CAP_WRITE_DATA
+            GATEWAY_CAP_WRITE_METADATA
+         
+         Or, as one of the following aliases
+            READONLY
+               same as GATEWAY_CAP_READ_DATA | GATEWAY_CAP_READ_METADATA
+            
+            READWRITE
+               same as GATEWAY_CAP_READ_DATA | GATEWAY_CAP_READ_METADATA |
+               GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA
+            
+            ALL
+               Set all capability bits.
+
+   Returns:
+      True on success.
+      Raises an exception on error.
+   
+   Authorization:
+      An administrator can set the capabilities of any user in any volume.
+      A volume owner can set the capabilities of any user in the volumes he/she owns.
+      A user cannot set their own capabilities.
+   
+   Remarks:
+      This method is idempotent.
+   """
+      
+   return storage.set_volume_access( email, volume_name_or_id, caps, **caller_user_dict )
+
 
 # ----------------------------------
 # The Gateway API
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="gateway", verify_key_id="name", trust_key_type="gateway", trust_key_id="gateway_name" )
 @CreateAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
-def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, signing_public_key="MAKE_SIGNING_KEY", gateway_public_key="MAKE_GATEWAY_KEY", **attrs ):
+def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, signing_public_key="MAKE_SIGNING_KEY", gateway_public_key="MAKE_GATEWAY_KEY", verifying_private_key="MAKE_VERIFYING_KEY", **attrs ):
    """
    Create a Gateway.  It will be owned by the calling user, or, if the caller user is an admin, a user identified by the given email address.
    
@@ -752,7 +939,7 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
       A user may be subject to a quota enforced for each type of Gateway.
    """
    
-   return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, signing_public_key=signing_public_key, gateway_public_key=gateway_public_key, **attrs )
+   return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, signing_public_key=signing_public_key, gateway_public_key=gateway_public_key, verifying_private_key=verifying_private_key, **attrs )
 
 
 @Authenticate( object_authenticator=Gateway.Authenticate, object_response_signer=Gateway.Sign,

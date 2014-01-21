@@ -56,11 +56,15 @@ class VolumeAccessRequest( storagetypes.Object ):
    request_timestamp = storagetypes.Integer()           # when was the request made?
    status = storagetypes.Integer()                      # granted or pending?
    
+   # purely for readability
+   volume_name = storagetypes.String()
+   
    required_attrs = [
       "requester_owner_id",
       "nonce",
       "request_timestamp",
-      "status"
+      "status",
+      "volume_name"
    ]
    
    read_attrs = [
@@ -69,7 +73,8 @@ class VolumeAccessRequest( storagetypes.Object ):
       "volume_id",
       "gateway_caps",
       "request_timestamp",
-      "status"
+      "status",
+      "volume_name"
    ]
    
    read_attrs_api_required = read_attrs
@@ -82,7 +87,7 @@ class VolumeAccessRequest( storagetypes.Object ):
       return "VolumeAccessRequest: owner_id=%s,volume_id=%s" % (requester_owner_id, volume_id)
    
    @classmethod
-   def create_async( cls, _requester_owner_id, _volume_id, _nonce, _status, **attrs ):
+   def create_async( cls, _requester_owner_id, _volume_id, _volume_name, _nonce, _status, **attrs ):
       ts = int(storagetypes.get_time())
       return VolumeAccessRequest.get_or_insert_async( VolumeAccessRequest.make_key_name( _requester_owner_id, _volume_id ),
                                                       requester_owner_id = _requester_owner_id,
@@ -90,11 +95,12 @@ class VolumeAccessRequest( storagetypes.Object ):
                                                       nonce=_nonce,
                                                       request_timestamp=ts,
                                                       status=_status,
+                                                      volume_name=_volume_name,
                                                       **attrs )
    
 
    @classmethod
-   def RequestAccess( cls, owner_id, volume_id, gateway_caps, message ):
+   def RequestAccess( cls, owner_id, volume_id, volume_name, gateway_caps, message ):
       """
       Create a request that a particular user be granted certain capabilities to access a particular Volume.
       Include a message that the Volume owner will be able to read.
@@ -104,31 +110,32 @@ class VolumeAccessRequest( storagetypes.Object ):
       """
       
       nonce = random.randint( -2**63, 2**63 - 1 )
-      req_fut = VolumeAccessRequest.create_async( owner_id, volume_id, nonce, VolumeAccessRequest.STATUS_PENDING, requester_message=message, gateway_caps=gateway_caps )
+      req_fut = VolumeAccessRequest.create_async( owner_id, volume_id, volume_name, nonce, VolumeAccessRequest.STATUS_PENDING, request_message=message, gateway_caps=gateway_caps )
       req = req_fut.get_result()
       
       # duplicate?
       if req.nonce != nonce:
-         raise Exception( "User '%s' already attempted to join Volume '%s'" % (owner_id, volume_id) )
+         raise Exception( "User already attempted to join Volume '%s'" % (owner_id, volume_name) )
       
-      return req.key
+      return True
    
    @classmethod
-   def GrantAccess( cls, owner_id, volume_id, gateway_caps=None ):
+   def GrantAccess( cls, owner_id, volume_id, volume_name, gateway_caps=None ):
+      
+      nonce = random.randint( -2**63, 2**63 - 1 )
+      req_fut = VolumeAccessRequest.create_async( owner_id, volume_id, volume_name, nonce, VolumeAccessRequest.STATUS_GRANTED, request_message="", gateway_caps=gateway_caps )
+      req = req_fut.get_result()
+      
+      if req.nonce != nonce:
+         # Request existed. update and put
+               
+         if gateway_caps != None:
+            req.gateway_caps = gateway_caps 
+         
+         req.status = VolumeAccessRequest.STATUS_GRANTED
+         req.put()
+      
       req_key_name = VolumeAccessRequest.make_key_name( owner_id, volume_id )
-      req_key = storagetypes.make_key( VolumeAccessRequest, req_key_name )
-      
-      req = req_key.get() 
-      
-      if req == None:
-         raise Exception("No such request")
-      
-      if gateway_caps != None:
-         req.gateway_caps = gateway_caps 
-      
-      req.status = STATUS_GRANTED
-      req.put()
-      
       storagetypes.memcache.delete( req_key_name )
       
       return True
@@ -171,8 +178,12 @@ class VolumeAccessRequest( storagetypes.Object ):
    @classmethod
    def ListVolumeAccessRequests( cls, volume_id, **q_opts ):
       
-      return VolumeAccessRequest.ListAll( {"volume_id ==": volume_id}, **q_opts )
+      return VolumeAccessRequest.ListAll( {"volume_id ==": volume_id, "status ==": VolumeAccessRequest.STATUS_PENDING}, **q_opts )
 
+   @classmethod
+   def ListVolumeAccess( cls, volume_id, **q_opts ):
+      
+      return VolumeAccessRequest.ListAll( {"volume_id ==": volume_id, "status ==": VolumeAccessRequest.STATUS_GRANTED}, **q_opts )
 
 
 
@@ -230,8 +241,8 @@ class Volume( storagetypes.Object ):
    
    signing_public_key = storagetypes.Text()               # public key, in PEM format, for authenticating API requests
    
-   verify_public_key = storagetypes.Text()                 # public/private key pair for signing API replies
-   verify_private_key = storagetypes.Text()
+   verifying_public_key = storagetypes.Text()                 # public/private key pair for signing API replies
+   verifying_private_key = storagetypes.Text()
 
    file_quota = storagetypes.Integer()                 # maximum number of files allowed here (-1 means unlimited)
    
@@ -257,7 +268,9 @@ class Volume( storagetypes.Object ):
       "private",
       "metadata_private_key",
       "signing_public_key",
-      "default_gateway_caps"
+      "default_gateway_caps",
+      "verifying_private_key",
+      "verifying_public_key"
    ]
 
    key_attrs = [
@@ -267,7 +280,10 @@ class Volume( storagetypes.Object ):
    validators = {
       "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")) ) == 0 and not is_int(value) ),
       "metadata_public_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE )),
-      "metadata_private_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE ))
+      "metadata_private_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE )),
+      "verifying_public_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE )),
+      "verifying_private_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE )),
+      "signing_public_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE ))
    }
 
    default_values = {
@@ -303,7 +319,7 @@ class Volume( storagetypes.Object ):
       "description",
       "owner_id",
       "metadata_public_key",
-      "verify_public_key",
+      "verifying_public_key",
    ] + read_attrs_api_required
    
    write_attrs = [
@@ -361,7 +377,7 @@ class Volume( storagetypes.Object ):
    @classmethod
    def Sign( cls, volume, data ):
       # Sign an API response
-      return Volume.auth_sign( volume.verify_private_key, data )
+      return Volume.auth_sign( volume.verifying_private_key, data )
    
    
    def need_gateway_auth( self ):
@@ -519,17 +535,10 @@ class Volume( storagetypes.Object ):
       kwargs['owner_id'] = 0     # will look up user and fill with owner ID once we validate input.
       Volume.fill_defaults( kwargs )
 
-      # generate keys if they're not given 
-      if kwargs.get('metadata_private_key') == None:
-         kwargs['metadata_public_key'], kwargs['metadata_private_key'] = Volume.generate_metadata_keys()
-      else:
-         # extract the public key
-         try:
-            metadata_private_key = CryptoKey.importKey( kwargs['metadata_private_key'] )
-            kwargs['metadata_public_key'] = metadata_private_key.publickey().exportKey()
-         except:
-            raise Exception("Invalid metadata private key")
-
+      # extract public key from private key if needed
+      Volume.extract_keys( 'metadata_public_key', 'metadata_private_key', kwargs, VOLUME_RSA_KEYSIZE )
+      Volume.extract_keys( 'verifying_public_key', 'verifying_private_key', kwargs, VOLUME_RSA_KEYSIZE )
+            
       # Validate
       missing = Volume.find_missing_attrs( kwargs )
       if len(missing) != 0:
@@ -553,8 +562,7 @@ class Volume( storagetypes.Object ):
       volume_key_name = Volume.make_key_name( volume_id=volume_id )
       volume_key = storagetypes.make_key( Volume, volume_key_name )
       
-      verify_public_key_str, verify_private_key_str = Volume.generate_keys( VOLUME_RSA_KEYSIZE )
-      
+         
       # put the Volume and nameholder at the same time---there's a good chance we'll succeed
       volume_nameholder_fut = VolumeNameHolder.create_async( kwargs['name'], volume_id )
       volume_fut = Volume.get_or_insert_async(  volume_key_name,
@@ -572,8 +580,8 @@ class Volume( storagetypes.Object ):
                                                 metadata_public_key = kwargs['metadata_public_key'],
                                                 metadata_private_key = kwargs['metadata_private_key'],
                                                 signing_public_key = kwargs['signing_public_key'],
-                                                verify_public_key = verify_public_key_str,
-                                                verify_private_key = verify_private_key_str,
+                                                verifying_public_key = kwargs['verifying_public_key'],
+                                                verifying_private_key = kwargs['verifying_private_key'],
                                                 default_gateway_caps = kwargs['default_gateway_caps']
                                              )
       
@@ -594,7 +602,8 @@ class Volume( storagetypes.Object ):
          raise Exception( "Volume ID collision.  Please try again" )
       
       # set permissions
-      req = VolumeAccessRequest.create_async( user.owner_id, volume_id, random.randint(-2**63, 2**63 - 1), VolumeAccessRequest.STATUS_GRANTED, gateway_caps=kwargs['default_gateway_caps'], request_message="Created").get_result()
+      req = VolumeAccessRequest.create_async( user.owner_id, volume_id, kwargs['name'], random.randint(-2**63, 2**63 - 1), VolumeAccessRequest.STATUS_GRANTED,
+                                              gateway_caps=kwargs['default_gateway_caps'], request_message="Created").get_result()
       return volume_key
          
 
@@ -623,32 +632,22 @@ class Volume( storagetypes.Object ):
       volume_key_name = Volume.make_key_name( volume_id=volume_id )
       volume_key = storagetypes.make_key( Volume, volume_key_name )
 
-      volume = None
-      
-      if use_memcache:
-         volume = storagetypes.memcache.get( volume_key_name )
-         
+      volume = storagetypes.memcache.get( volume_key_name )
       if volume == None:
-         if not async:
-            volume = volume_key.get( use_memcache=False )
-         else:
+         if async:
             return volume_key.get_async( use_memcache=False )
          
-         if volume != None and use_memcache and not volume.deleted:
-            storagetypes.memcache.set( volume_key_name, volume )
+         else:
+            volume = volume_key.get( use_memcache=False )
+            if not volume:
+               return None
+            else:
+               storagetypes.memcache.set( volume_key_name, volume )
 
-      if async:
-         if not volume or volume.deleted:
-            return storagetypes.FutureWrapper(None)
-         else:
-            return storagetypes.FutureWrapper( volume )
-      
-      else:
-         if volume and volume.deleted:
-            return None
+      elif async:
+         volume = storagetypes.FutureWrapper( volume )
          
-         else:
-            return volume
+      return volume
 
 
    @classmethod

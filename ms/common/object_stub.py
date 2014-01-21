@@ -102,6 +102,33 @@ class StubObject( object ):
    
    
    @classmethod
+   def parse_or_generate_verifying_private_key( cls, verifying_private_key, lib=None ):
+      """
+      Check a verifying private key key and verify that it has the appropriate security 
+      parameters.  Interpret MAKE_VERIFYING_KEY as a command to generate and return one.
+      Return pubkey, extras
+      """
+      extra = {}
+      
+      if verifying_private_key == "MAKE_VERIFYING_KEY":
+         pubkey_pem, privkey_pem = api.generate_key_pair( OBJECT_KEY_SIZE )
+         extra['verifying_public_key'] = pubkey_pem
+         extra['verifying_private_key'] = privkey_pem
+         
+         verifying_private_key = privkey_pem
+      
+      else:
+         # try validating the given one
+         try:
+            pubkey = CryptoKey.importKey( verifying_private_key )
+         except Exception, e:
+            log.exception(e)
+            raise Exception("Failed to parse public key")
+         
+      return verifying_private_key, extra
+   
+   
+   @classmethod
    def parse_or_generate_private_key( cls, pkey_str, pkey_generate_arg, key_size ):
       """
       Check a private key (pkey_str) and verify that it has the appopriate security 
@@ -169,7 +196,8 @@ class StubObject( object ):
    
    # Map an argument name to a function that parses and validates it.
    arg_parsers = {
-      "signing_public_key": (lambda cls, arg, lib: cls.parse_or_generate_signing_public_key(arg, lib))
+      "signing_public_key": (lambda cls, arg, lib: cls.parse_or_generate_signing_public_key(arg, lib)),
+      "verifying_private_key": (lambda cls, arg, lib: cls.parse_or_generate_verifying_private_key(arg, lib))
    }
    
    # what type of key does this object require?
@@ -617,5 +645,7 @@ class Gateway( StubObject ):
 
 
 class VolumeAccessRequest( StubObject ):
-   pass
+   arg_parsers = dict( StubObject.arg_parsers.items() + {
+      "caps":                   (lambda cls, arg, lib: cls.parse_gateway_caps(arg, lib)),
+   }.items() )
 

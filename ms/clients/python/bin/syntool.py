@@ -49,8 +49,8 @@ TRUST_VERIFY_KEY = False
 # -------------------
 def verify_key_from_method_result( method_result ):
    if isinstance(method_result, dict):
-      if 'verify_public_key' in method_result:
-         return method_result['verify_public_key']
+      if 'verifying_public_key' in method_result:
+         return method_result['verifying_public_key']
       
    return None
 
@@ -488,7 +488,9 @@ def do_untrust( config, all_params ):
    if key_type not in conf.KEY_DIR_NAMES.keys():
       raise Exception("Usage: %s untrust <%s> <name>" % (sys.argv[0], "|".join( conf.KEY_DIR_NAMES.keys() )))
    
-   storage.revoke_object_public_key( config, key_type, StubObject.VERIFYING_KEY_TYPE, key_name )
+   deleted = storage.revoke_object_public_key( config, key_type, StubObject.VERIFYING_KEY_TYPE, key_name )
+   if not deleted:
+      log.error("%s %s it was not trusted to begin with" % (key_type, key_name))
    
    sys.exit(0)
    
@@ -509,8 +511,29 @@ def do_revoke( config, all_params ):
    
    revoke = prompt_revoke_signing_key( key_type, key_name )
    if revoke:
-      storage.revoke_object_public_key( config, key_type, StubObject.VERIFYING_KEY_TYPE, key_name )
-      storage.revoke_object_private_key( config, key_type, StubObject.SIGNING_KEY_TYPE, key_name )
+      deleted = storage.revoke_object_public_key( config, key_type, StubObject.VERIFYING_KEY_TYPE, key_name )
+      if not deleted:
+         log.error("No public key to revoke for %s %s" % (key_type, key_name))
+         
+      deleted = storage.revoke_object_private_key( config, key_type, StubObject.SIGNING_KEY_TYPE, key_name )
+      if not deleted:
+         log.error("No private key to revoke for %s %s" % (key_type, key_name))
+         
+      # delete any remaining keys
+      cls = api.KEY_TYPE_TO_CLS[key_type]
+      for internal_key_type in cls.internal_keys:
+         # ignore the public/private keys we just deleted
+         if internal_key_type in [StubObject.VERIFYING_KEY_TYPE, StubObject.SIGNING_KEY_TYPE]:
+            continue
+         
+         log.info("Delete %s %s key" % (cls.key_type, internal_key_type))
+         
+         # not sure which this is...so do both
+         deleted_public = storage.revoke_object_public_key( config, key_type, internal_key_type, key_name )
+         deleted_private = storage.revoke_object_private_key( config, key_type, internal_key_type, key_name )
+         if not deleted_public and not deleted_private:
+            log.error("Failed to delete %s %s key" % (cls.key_type, internal_key_type))
+            
    
    sys.exit(0)
 
@@ -625,6 +648,11 @@ def make_conf( user_id, ms_api, trust_verify_key=False, setup_dirs=False, **defa
 # -------------------   
 def client_call( CONFIG, method_name, *args, **kw ):
    
+   called_from_main = False 
+   if kw.has_key('__from_main__'):
+      called_from_main = kw['__from_main__']
+      del kw['__from_main__']
+   
    user_id = CONFIG.get('user_id', None)
    if user_id is None:
       raise Exception("Invalid config: no user_id")
@@ -650,6 +678,10 @@ def client_call( CONFIG, method_name, *args, **kw ):
    
    if CONFIG.has_key('force_user_key_name'):
       force_user_key_name = CONFIG['force_user_key_name']
+      
+   if called_from_main and force_user_key_name is None:
+      # called from the commandline.  Use the config file option if an alternative was not explicitly stated in argv.
+      force_user_key_name = user_id
       
    # load the key information
    verifying_pubkey, signing_pkey, signing_key_type, signing_key_name = get_signing_and_verifying_keys( CONFIG, user_id, method_name, args, kw, force_user_key_name = force_user_key_name )
@@ -767,6 +799,8 @@ def main( argv ):
    elif method_name == "setup":
       do_setup( CONFIG, all_params )
    
+   # called from main 
+   kw["__from_main__"] = True
    return client_call( CONFIG, method_name, *args, **kw )
 
 

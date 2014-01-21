@@ -229,9 +229,13 @@ def revoke_object_key( config, key_type, internal_type, object_id, public=False 
 
       # now safe to unlink
       os.unlink( key_path )
+      return True
+   
    except OSError, oe:
       if oe.errno != errno.ENOENT:
          raise oe
+      
+      return False
    
 # -------------------   
 def revoke_object_public_key( config, key_type, internal_type, object_id ):
