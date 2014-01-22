@@ -551,8 +551,8 @@ def do_revoke( config, all_params ):
 
 
 # -------------------   
-def do_setup( config, all_params ):
-   print "Setting up syntool..."
+def do_admin_setup( config, all_params ):
+   print "Setting up syntool for admin..."
    
    # if the config file already exists, then bail
    if os.path.exists( conf.CONFIG_FILENAME ):
@@ -625,6 +625,47 @@ gateway_keys=%s
    
    log.debug("Storing config...")
    
+   # store config
+   try:
+      storage.write_file( conf.CONFIG_FILENAME, config_str )
+   except Exception, e:
+      log.exception(e)
+      print >> sys.stderr, "Failed to write configuration"
+      sys.exit(1)
+      
+   sys.exit(0)
+   
+   
+# -------------------   
+def do_setup( config, all_params ):
+   print "Setting up syntool..."
+   
+   # if the config file already exists, then bail
+   if os.path.exists( conf.CONFIG_FILENAME ):
+      raise Exception("Syntool is already set up (in %s)" % conf.CONFIG_DIR)
+   
+   # check args...
+   for required_key in ['MSAPI', 'user_id']:
+      if config.get(required_key, None) == None:
+         print >> sys.stderr, "Missing argument: %s" % required_key
+         sys.exit(1)
+   
+   key_dirs = {}
+   for key_type, object_cls in api.KEY_TYPE_TO_CLS.items():
+      key_dirname = conf.KEY_DIR_NAMES.get(key_type)
+      key_dirs[key_type] = key_dirname + "/"
+   
+   config_str = """
+[syndicate]
+MSAPI=%s
+user_id=%s
+volume_keys=%s
+user_keys=%s
+gateway_keys=%s
+""" % (config['MSAPI'], config['user_id'], key_dirs['volume'], key_dirs['user'], key_dirs['gateway'])
+
+   config_str = config_str.strip() + "\n"
+
    # store config
    try:
       storage.write_file( conf.CONFIG_FILENAME, config_str )
@@ -873,6 +914,9 @@ def main( argv ):
    elif method_name == "revoke":
       do_revoke( CONFIG, all_params )
    
+   elif method_name == "admin-setup":
+      do_admin_setup( CONFIG, all_params )
+      
    elif method_name == "setup":
       do_setup( CONFIG, all_params )
    

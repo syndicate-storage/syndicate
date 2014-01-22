@@ -311,7 +311,6 @@ def register_account( email, password, signing_public_key="MAKE_SIGNING_KEY", **
          Password to change the signing key.
 
    Optional keyword arguments:
-   
       signing_public_key (default: "MAKE_SIGNING_KEY"):
          The PEM-encoded public key that the MS will
          use to authenticate a client program that wishes
@@ -342,7 +341,7 @@ def register_account( email, password, signing_public_key="MAKE_SIGNING_KEY", **
       just after having their account created (i.e. "password" can be used 
       to construct a one-time registration URL).  In the event of a key
       compromise, the administrator can unset the key and change the
-      password (reset_public_signing_key()).
+      password (see reset_account_credentials).
    """
    return storage.register_account( email, password, signing_public_key=signing_public_key, **caller_user_dict )
 
