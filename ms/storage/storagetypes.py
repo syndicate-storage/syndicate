@@ -422,13 +422,16 @@ class Object( Model ):
 
          
    @classmethod
-   def validate_fields( cls, attrdict ):
+   def validate_fields( cls, attrdict, skip=[] ):
       """
       Apply the associated validators to this dictionary of attributes.
       Return the list of attribute keys to INVALID values
       """
       invalid = []
       for (attr, value) in attrdict.items():
+         if attr in skip:
+            continue
+         
          if cls.validators.has_key( attr ):
             valid = cls.validators[attr]( cls, value )
             if not valid:
@@ -683,7 +686,7 @@ class Object( Model ):
       Set attributes atomically, in a transaction.
       Use read_func() to get the object.
       """
-      def set_atomic_txn( read_func, **attrs ):
+      def set_atomic_txn( **attrs ):
          obj = read_func()
          if not obj:
             raise Exception("No such object")
@@ -731,3 +734,4 @@ class Object( Model ):
    def ParseArgs( cls, *args, **kw ):
       # used by python clients, but not the MS
       pass
+   

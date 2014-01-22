@@ -93,13 +93,7 @@ ms_files.extend( Glob("common/*.py") )
 # generate admin info
 Import("extra_args")
 
-def load_pubkey_file( path ):
-   path = os.path.expanduser( path )
-   fd = open(path, "r")
-   buf = fd.read()
-   fd.close()
-   buf = buf.strip()
-
+def load_key( buf ):
    # validate key
    try:
       from Crypto.PublicKey import RSA as CryptoKey
@@ -113,14 +107,52 @@ def load_pubkey_file( path ):
       print >> sys.stderr, "\nCould not parse key from %s\n" % path
       raise e
 
+   return key
+
+def load_pubkey_file( path ):
+   path = os.path.expanduser( path )
+   fd = open(path, "r")
+   buf = fd.read()
+   fd.close()
+   buf = buf.strip()
+
+   key = load_key( buf )
    assert not key.has_private(), "%s is not a public key" % path
 
    return key.publickey().exportKey()
+
+def load_or_make_verifying_key( path ):
+   if path is not None:
+      path = os.path.expanduser( path )
+      fd = open(path, "r")
+      buf = fd.read()
+      fd.close()
+      buf = buf.strip()
+         
+      # got a key. Try to load it
+      key = load_key( buf )
+      assert key.has_private(), "%s is not a private key" % path
+      
+      return key.exportKey()
+
+   # no key given.  Make one
+   print "Generating verifying key for admin"
+   try:
+      from Crypto.PublicKey import RSA as CryptoKey
+      from Crypto import Random 
+   except ImportError, ie:
+      print >> sys.stderr, "\nERR: PyCrypto module could not be loaded.  Please check your installation and try again.\n"
+      raise ie
+
+   rng = Random.new().read
+   key = CryptoKey.generate(4096, rng)
+   return key.exportKey()
 
 
 # validate and translate the particular keyword arguments
 arg_handlers = {
    "pubkey": load_pubkey_file,
+   "verifying_private_key": load_or_make_verifying_key,
    "appname": None,
    "openid_url": None,
    "user_id": None
@@ -134,7 +166,8 @@ default_args = {
    "pubkey": lambda: raise_("No public key given.  Pass pubkey=/path/to/your/public/key.pub"),
    "appname": lambda: raise_("No application name given.  Please pass appname=YOUR-APP-NAME"),
    "openid_url": lambda: "",
-   "user_id": lambda: raise_("No admin user ID given.  Please pass user_id=YOUR.ADMIN.EMAIL@EXAMPLE.COM")
+   "user_id": lambda: raise_("No admin user ID given.  Please pass user_id=YOUR.ADMIN.EMAIL@EXAMPLE.COM"),
+   "verifying_private_key": lambda: None,
 }
 
 

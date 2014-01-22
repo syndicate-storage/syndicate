@@ -94,8 +94,21 @@ def list_users( attrs=None, **q_opts ):
    return SyndicateUser.ListAll( attrs, **q_opts )
    
 # ----------------------------------
-def set_user_public_signing_key( email, pubkey ):
-   return SyndicateUser.SetPublicSigningKey( email, pubkey )
+def register_account( email, password, **attrs ):
+   if not 'signing_public_key' in attrs:
+      raise Exception("No signing public key given")
+   
+   # admin can set anyone's key
+   override = False
+   if 'caller_user' in attrs:
+      if attrs['caller_user'] != None and attrs['caller_user'].is_admin:
+         override = True
+         
+   return SyndicateUser.SetPublicSigningKey( email, attrs['signing_public_key'], password, override=override )
+
+# ----------------------------------
+def reset_account_credentials( email, password_salt, password_hash ):
+   return SyndicateUser.ResetPublicSigningKey( email, password_salt, password_hash )
 
 # ----------------------------------
 def list_user_access_requests( email, **q_opts ):

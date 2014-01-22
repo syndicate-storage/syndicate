@@ -31,6 +31,7 @@ try:
    import storage.storage as storage
 except Exception, e:
    # in syntool
+   log.warning("Using storage stub")
    from storage_stub import StorageStub as storage
    
 try:
@@ -40,6 +41,7 @@ try:
    from MS.gateway import Gateway
 except Exception, e:
    # in syntool
+   log.warning("Using object stubs")
    from object_stub import *
 
 try:
@@ -47,6 +49,7 @@ try:
    from MS.auth import *
 except Exception, e:   
    # in syntool
+   log.warning("Using authentication stub")
    from auth_stub import *
 
 # ----------------------------------
@@ -54,6 +57,10 @@ from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
 from Crypto import Random
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
+
+import hashlib
+import binascii
+from itertools import izip
 
 # ----------------------------------
 def generate_key_pair( key_size ):
@@ -75,9 +82,9 @@ KEY_TYPE_TO_CLS = dict( [(cls.key_type, cls) for cls in [Volume, SyndicateUser, 
 # ----------------------------------
 # The User API.
 
-@Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="user", verify_key_id="email", trust_key_type="user", trust_key_id="email" )
+@Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="user", verify_key_id="email" )
 @CreateAPIGuard( SyndicateUser, admin_only=True, parse_args=SyndicateUser.ParseArgs )
-def create_user( email, openid_url, signing_public_key="MAKE_SIGNING_KEY", verifying_private_key="MAKE_VERIFYING_KEY", **attrs ):
+def create_user( email, openid_url, registration_password, registration_password_hash=None, registration_password_salt=None, signing_public_key="unset", verifying_private_key="MAKE_VERIFYING_KEY", **attrs ):
    """
    Create a user.
    
@@ -88,10 +95,18 @@ def create_user( email, openid_url, signing_public_key="MAKE_SIGNING_KEY", verif
          be unique.
                    
       openid_url (str):
-         The URL to the OpenID provider to use to 
-         authenticate this user using password
-         authentication.
+         URL to your OpenID identity page.
          
+         FIXME: do something with this, since it's not used.
+      
+      registration_password (str):
+         A one-time-use password the user will use to call
+         set_user_public_signing_key().
+         
+         Your client will use this argument to generate values for
+         registration_password_hash and registration_password_salt
+         (see below).
+      
    Optional keyword arguments:
       max_volumes=int: (default: 10)
          Maximum number of Volumes this user may own.
@@ -104,11 +119,39 @@ def create_user( email, openid_url, signing_public_key="MAKE_SIGNING_KEY", verif
       max_RGs=int: (default: 10)
          Maximum number of Replica Gateways this user may own.
          -1 means infinite.
-      
+         
+      registration_password_hash (default: None):
+         Do not pass anything for this unless you know what 
+         you're doing.  Your client will fill this in automatically
+         from the 'registration_password' argument.
+         
+         This is the iterated SHA256 hash of the registration 
+         salt concatenated with the password (iterated for
+         MS.common.PASSWORD_HASH_ITERS times).  It must be 
+         a hexadecimal string for encoding purposes.
+         
+      registration_password_salt (default: None):
+         Do not pass anything for this unless you know what
+         you're doing.  Your client will fill this in automatically
+         from the 'registration_password' argument.
+         
+         This is a salt to be used to generate the value for 
+         registration_password_hash.  It must be 32 bytes, but
+         represented as a hexadecimal string (64 characters) for
+         encoding purposes.
+         
       is_admin=bool: (default: False)
          Whether or not this user will be a Syndicate admin.
       
-      signing_public_key=str (default: automatically generated):
+      verifying_private_key=str (default: MAKE_VERIFYING_KEY)
+         The PEM-encoded private key that the MS will use to 
+         sign messages sent from it regarding this user account.
+         Currently, this must be a 4096-bit RSA key.
+         
+         If you pass "MAKE_VERIFYING_KEY" (the default),
+         your client will automatically generate a suitable key.
+   
+      signing_public_key=str (default: None):
          The PEM-encoded public key that the MS will
          use to authenticate a client program that wishes
          to access this user.  The client program must use 
@@ -118,10 +161,9 @@ def create_user( email, openid_url, signing_public_key="MAKE_SIGNING_KEY", verif
          owner of this user account.  Currently, this must be 
          a 4096-bit RSA key.
          
-         If you do not pass a value for this argument, a key
-         pair will be generated for you.  The public key will 
-         be passed as this argument, and the private key will 
-         be stored locally for future use.
+         If you do not pass a value for this argument, the user
+         or admin must call set_user_public_signing_key() on 
+         this user account before the user can access it.
          
    Returns:
       A SyndicateUser object on success, or an exception
@@ -131,10 +173,13 @@ def create_user( email, openid_url, signing_public_key="MAKE_SIGNING_KEY", verif
       Only an administrator can create new users.
    """
    
-   return storage.create_user( email, openid_url, signing_public_key=signing_public_key, verifying_private_key=verifying_private_key, **attrs )
+   return storage.create_user( email, openid_url, set_signing_public_key_password_hash=registration_password_hash,
+                                                  set_signing_public_key_password_salt=registration_password_salt,
+                                                  verifying_private_key=verifying_private_key,
+                                                  **attrs )
 
 
-@Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="user", verify_key_id="email" )
+@Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="user", verify_key_id="email", trust_key_type="user", trust_key_id="email" )
 @ReadAPIGuard( SyndicateUser, parse_args=SyndicateUser.ParseArgs )
 def read_user( email ):
    """
@@ -154,6 +199,7 @@ def read_user( email ):
       A user can only read itself.
    """
    return storage.read_user( email )
+
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"] )
 @UpdateAPIGuard( SyndicateUser, target_object_name="email", parse_args=SyndicateUser.ParseArgs )
@@ -198,6 +244,7 @@ def update_user( email, **attrs ):
       
    return storage.update_user( email, **attrs )
 
+
 @Authenticate( signing_key_types=["user"], signing_key_ids=["email"], revoke_key_type="user", revoke_key_id="email" )
 @DeleteAPIGuard( SyndicateUser, target_object_name="email", parse_args=SyndicateUser.ParseArgs )
 def delete_user( email ):
@@ -218,6 +265,7 @@ def delete_user( email ):
       A user can only delete itself.
    """
    return storage.delete_user( email )
+
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID], verify_key_type="user", verify_key_id="email" )
 @ListAPIGuard( SyndicateUser, admin_only=True, parse_args=SyndicateUser.ParseArgs )
@@ -247,18 +295,24 @@ def list_users( query_attrs ):
    """
    return storage.list_users( query_attrs )
 
-@Authenticate( signing_key_types=["user"], signing_key_ids=["email"], revoke_key_type="user", revoke_key_id="email" )
-@UpdateAPIGuard( SyndicateUser, target_object_name="email", parse_args=SyndicateUser.ParseArgs )
-def set_user_public_signing_key( email, signing_public_key, **attrs ):
+
+@Authenticate( signing_key_types=[], signing_key_ids=[], need_verifying_key=False, default_object_key_type="user", default_object_key_id="email",
+               revoke_key_type="user", revoke_key_id="email", revoke_verify_key=False, verify_key_type="user", verify_key_id="email" )
+@UpdateAPIGuard( SyndicateUser, target_object_name="email", parse_args=SyndicateUser.ParseArgs, pass_caller_user="caller_user", check_write_attrs=False )
+def register_account( email, password, signing_public_key="MAKE_SIGNING_KEY", **caller_user_dict ):
    """
-   Set a user's public signing key, used by the MS to
-   authenticate calls that affect this user account.
+   Register a recently-created user account.
    
    Positional arguments:
       email (str):
          The email of the desired user. 
-      
-      signing_public_key (str):
+         
+      password (str):
+         Password to change the signing key.
+
+   Optional keyword arguments:
+   
+      signing_public_key (default: "MAKE_SIGNING_KEY"):
          The PEM-encoded public key that the MS will
          use to authenticate a client program that wishes
          to access this user.  The client program must use 
@@ -272,7 +326,7 @@ def set_user_public_signing_key( email, signing_public_key, **attrs ):
          generate one for you, in which case the private 
          signing key will be stored to your user key directory
          on successful return of this method.
-   
+         
    Returns:
       True on success, or an exception if the user does 
       not exist or the caller is not authorized to set 
@@ -281,8 +335,64 @@ def set_user_public_signing_key( email, signing_public_key, **attrs ):
    Authorization:
       An administrator can set any user's public signing key.
       A user can only set its own public signing key.
+      
+   Remarks:
+      For a normal user, this method can only be called successfully once.
+      Any subsequent calls will fail.  Usually, the user calls this method
+      just after having their account created (i.e. "password" can be used 
+      to construct a one-time registration URL).  In the event of a key
+      compromise, the administrator can unset the key and change the
+      password (reset_public_signing_key()).
    """
-   return storage.set_user_public_signing_key( email, signing_public_key, **attrs )
+   return storage.register_account( email, password, signing_public_key=signing_public_key, **caller_user_dict )
+
+
+@Authenticate( signing_key_types=["user"], signing_key_ids=["email"] )
+@UpdateAPIGuard( SyndicateUser, admin_only=True, target_object_name="email", parse_args=SyndicateUser.ParseArgs, caller_user="caller_user" )
+def reset_account_credentials( email, registration_password, registration_password_hash=None, registration_password_salt=None ):
+   """
+   Reset a user's account credentials.  Set a new one-time-use registration key,
+   so the user can re-upload a public signing key.
+   
+   Positional arguments:
+      email (str):
+         The email of the desired user. 
+      
+      registration_password (str):
+         A one-time-use password the user will use to 
+         register a new signing public key.
+         
+   Optional keyword arguments:
+      registration_password_hash (default: None):
+         Do not pass anything for this unless you know what 
+         you're doing.  Your client will fill this in automatically
+         from the 'registration_password' argument.
+         
+         This is the iterated SHA256 hash of the registration 
+         salt concatenated with the password (iterated for
+         MS.common.PASSWORD_HASH_ITERS times).  It must be 
+         a hexadecimal string for encoding purposes.
+         
+      registration_password_salt (default: None):
+         Do not pass anything for this unless you know what
+         you're doing.  Your client will fill this in automatically
+         from the 'registration_password' argument.
+         
+         This is a salt to be used to generate the value for 
+         registration_password_hash.  It must be 32 bytes, but
+         represented as a hexadecimal string (64 characters) for
+         encoding purposes.
+         
+   Returns:
+      True on success, or an exception if the user does 
+      not exist or the caller is not authorized to set 
+      the API field.
+   
+   Authorization:
+      Only an administrator can call this method.
+   """
+   return storage.reset_account_credentials( email, registration_password_salt, registration_password_hash )
+
 
 @Authenticate( signing_key_types=["user"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID] )
 @ListAPIGuard( SyndicateUser, pass_caller_user="caller_user", parse_args=SyndicateUser.ParseArgs )
@@ -312,7 +422,7 @@ def list_volume_user_ids( volume_name_or_id, **attrs ):
 # ----------------------------------
 # The Volume API.
 
-@Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="volume", verify_key_id="name", trust_key_type="volume", trust_key_id="name" )
+@Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="volume", verify_key_id="name" )
 @CreateAPIGuard( Volume, pass_caller_user="caller_user", parse_args=Volume.ParseArgs )
 def create_volume( email, name, description, blocksize, signing_public_key="MAKE_SIGNING_KEY", metadata_private_key="MAKE_METADATA_KEY", verifying_private_key="MAKE_VERIFYING_KEY", **attrs ):
    """
@@ -342,13 +452,12 @@ def create_volume( email, name, description, blocksize, signing_public_key="MAKE
          will not be able to request access to it.  This value
          is True by default.
          
-      metadata_private_key=str (default: automatically generated)
+      metadata_private_key=str (default: MAKE_METADATA_KEY)
          The PEM-encoded private key the Volume will use to sign 
          metadata served to User Gateways.  It must be a 4096-bit
-         RSA key.  It will be automatically generated by the MS
-         if not given.
+         RSA key.
          
-         If you do not pass a value for this argument, a key
+         If pass "MAKE_METADATA_KEY" (the default), a key
          pair will be generated for you.  The private key will 
          be passed as this argument, and the public key will 
          be stored locally for future use.
@@ -362,7 +471,7 @@ def create_volume( email, name, description, blocksize, signing_public_key="MAKE
          If True, this Volume will be accessible by gateways immediately.
          If False, it will not be.
       
-      signing_public_key=str (default: automatically generated):
+      signing_public_key=str (default: MAKE_SIGNING_KEY):
          The PEM-encoded public key that the MS will
          use to authenticate a client program that wishes
          to access this user.  The client program must use 
@@ -372,10 +481,18 @@ def create_volume( email, name, description, blocksize, signing_public_key="MAKE
          owner of this user account.  Currently, this must be 
          a 4096-bit RSA key.
          
-         If you do not pass a value for this argument, a key
+         If you "MAKE_SIGNING_KEY" (the default), a key
          pair will be generated for you.  The public key will 
          be passed as this argument, and the private key will 
          be stored locally for future use.
+         
+      verifying_private_key=str (default: MAKE_VERIFYING_KEY)
+         The PEM-encoded private key that the MS will use to 
+         sign messages sent from it regarding this user account.
+         Currently, this must be a 4096-bit RSA key.
+         
+         If you pass "MAKE_VERIFYING_KEY" (the default),
+         your client will automatically generate a suitable key.
          
       default_gateway_caps=(str or int)
          Default capability bits for User Gateways when they are 
@@ -412,7 +529,8 @@ def create_volume( email, name, description, blocksize, signing_public_key="MAKE
 
 @Authenticate( object_authenticator=Volume.Authenticate, object_response_signer=Volume.Sign,
                signing_key_types=["user", "volume"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID, "volume_name_or_id"],
-               verify_key_type="volume", verify_key_id="name" )
+               verify_key_type="volume", verify_key_id="name",
+               trust_key_type="volume", trust_key_id="name" )
 @ReadAPIGuard( Volume, parse_args=Volume.ParseArgs )
 def read_volume( volume_name_or_id ):
    """
@@ -648,7 +766,7 @@ def set_volume_public_signing_key( volume_name_or_id, signing_public_key, **call
          owner of this user account.  Currently, this must be 
          a 4096-bit RSA key.
          
-         Pass MAKE_SIGNING_KEY if you want your client to 
+         Pass "MAKE_SIGNING_KEY" if you want your client to 
          generate one for you, in which case the private 
          signing key will be stored to your user key directory
          on successful return of this method.
@@ -712,24 +830,26 @@ def request_volume_access( email, volume_name_or_id, caps, message ):
          Name or ID of the volume to join
       
       caps (str or int)
-         Capabilities desired in the volume.
-         Expressed as a bitwise OR'ing of:
-            GATEWAY_CAP_COORDINATE
-            GATEWAY_CAP_READ_DATA
-            GATEWAY_CAP_READ_METADATA
-            GATEWAY_CAP_WRITE_DATA
-            GATEWAY_CAP_WRITE_METADATA
+         Default capability bits for User Gateways when they are 
+         added to this Volume.  By default, User Gateways are 
+         given read-only access to data and metadata.
          
-         Or, as one of the following aliases
-            READONLY
-               same as GATEWAY_CAP_READ_DATA | GATEWAY_CAP_READ_METADATA
-            
-            READWRITE
-               same as GATEWAY_CAP_READ_DATA | GATEWAY_CAP_READ_METADATA |
-               GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA
-            
-            ALL
-               Set all capability bits.
+         Valid capability bits are:
+            GATEWAY_CAP_READ_METADATA
+            GATEWAY_CAP_WRITE_METADATA
+            GATEWAY_CAP_READ_DATA
+            GATEWAY_CAP_WRITE_DATA
+            GATEWAY_CAP_COORDINATE
+      
+         You can pass capability bits by name and bitwise OR them
+         together (e.g. "GATEWAY_CAP_COORDINATE | GATEWAY_CAP_WRITE_DATA").
+         
+         You can also pass one of these aliases to common sets of
+         capability bits.  These are:
+         
+         ALL            Set all capabilities
+         READWRITE      Set all but GATEWAY_CAP_COORDINATE
+         READONLY       GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA
 
       message (str)
          Message to the volume owner, explaining the nature of the request.
@@ -822,24 +942,26 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
          Name or ID of the volume to add the user to
       
       caps (str or int):
-         Capabilities the user will have in the volume.
-         Expressed as a bitwise OR'ing of:
-            GATEWAY_CAP_COORDINATE
-            GATEWAY_CAP_READ_DATA
-            GATEWAY_CAP_READ_METADATA
-            GATEWAY_CAP_WRITE_DATA
-            GATEWAY_CAP_WRITE_METADATA
+         Default capability bits for User Gateways when they are 
+         added to this Volume.  By default, User Gateways are 
+         given read-only access to data and metadata.
          
-         Or, as one of the following aliases
-            READONLY
-               same as GATEWAY_CAP_READ_DATA | GATEWAY_CAP_READ_METADATA
-            
-            READWRITE
-               same as GATEWAY_CAP_READ_DATA | GATEWAY_CAP_READ_METADATA |
-               GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA
-            
-            ALL
-               Set all capability bits.
+         Valid capability bits are:
+            GATEWAY_CAP_READ_METADATA
+            GATEWAY_CAP_WRITE_METADATA
+            GATEWAY_CAP_READ_DATA
+            GATEWAY_CAP_WRITE_DATA
+            GATEWAY_CAP_COORDINATE
+      
+         You can pass capability bits by name and bitwise OR them
+         together (e.g. "GATEWAY_CAP_COORDINATE | GATEWAY_CAP_WRITE_DATA").
+         
+         You can also pass one of these aliases to common sets of
+         capability bits.  These are:
+         
+         ALL            Set all capabilities
+         READWRITE      Set all but GATEWAY_CAP_COORDINATE
+         READONLY       GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA
 
    Returns:
       True on success.
@@ -860,9 +982,9 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
 # ----------------------------------
 # The Gateway API
 
-@Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="gateway", verify_key_id="name", trust_key_type="gateway", trust_key_id="gateway_name" )
+@Authenticate( signing_key_types=["user"], signing_key_ids=["email"], verify_key_type="gateway", verify_key_id="name" )
 @CreateAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
-def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, signing_public_key="MAKE_SIGNING_KEY", gateway_public_key="MAKE_GATEWAY_KEY", verifying_private_key="MAKE_VERIFYING_KEY", **attrs ):
+def create_gateway( volume_name_or_id, email, gateway_type, name, host, port, signing_public_key="MAKE_SIGNING_KEY", gateway_public_key="MAKE_GATEWAY_KEY", verifying_private_key="MAKE_VERIFYING_KEY", **attrs ):
    """
    Create a Gateway.  It will be owned by the calling user, or, if the caller user is an admin, a user identified by the given email address.
    
@@ -880,7 +1002,7 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
          Pass RG for replica gateway.
          Pass AG for acquisition gateway.
       
-      gateway_name (str):
+      name (str):
          The human-readable name of this Gateway.
       
       host (str):
@@ -900,7 +1022,7 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
          closure from a Python module, pass the path to the
          directory containing the module's files.
 
-      signing_public_key=str (default: automatically generated):
+      signing_public_key=str (default: MAKE_SIGNING_KEY):
          The PEM-encoded public key that the MS will
          use to authenticate a client program that wishes
          to access this user.  The client program must use 
@@ -910,22 +1032,30 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
          owner of this user account.  Currently, this must be 
          a 4096-bit RSA key.
          
-         If you do not pass a value for this argument, a key
+         If you pass "MAKE_SIGNING_KEY" (the default), a key
          pair will be generated for you.  The public key will 
          be passed as this argument, and the private key will 
          be stored locally for future use.
          
-      gateway_public_key=str (default: automatically generated):
+      gateway_public_key=str (default: MAKE_GATEWAY_KEY):
          This Gateway's PEM-encoded public key.  The MS will
          distribute this public key to all other Gateways in
          the Volume, so they can use to authenticate messages sent 
          from this particular Gateway.  You will need to give
          the Gateway the corresponding private key at runtime.
          
-         If you do not pass a value for this argument, a key
+         If you pass "MAKE_GATEWAY_KEY" (the default), a key
          pair will be generated for you.  The public key will 
          be passed as this argument, and the private key will 
          be stored locally for future use.
+         
+      verifying_private_key=str (default: MAKE_VERIFYING_KEY)
+         The PEM-encoded private key that the MS will use to 
+         sign messages sent from it regarding this user account.
+         Currently, this must be a 4096-bit RSA key.
+         
+         If you pass "MAKE_VERIFYING_KEY" (the default),
+         your client will automatically generate a suitable key.
          
    Returns:
       On success, this method returns a Gateway.  On failure, it 
@@ -944,7 +1074,8 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
 
 @Authenticate( object_authenticator=Gateway.Authenticate, object_response_signer=Gateway.Sign,
                signing_key_types=["user", "gateway"], signing_key_ids=[SIGNING_KEY_DEFAULT_USER_ID, "g_name_or_id"],
-               verify_key_type="gateway", verify_key_id="g_name_or_id" )
+               verify_key_type="gateway", verify_key_id="g_name_or_id",
+               trust_key_type="gateway", trust_key_id="gateway_name" )
 @ReadAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
 def read_gateway( g_name_or_id ):
    """
@@ -1244,20 +1375,33 @@ class API( object ):
       key_name = syndicate_data.get("key_name")
       sig = syndicate_data.get("signature")
       
-      if sig == None:
-         logging.error("No signature")
-         # no signature
-         return False
-      
+      # get object class
       cls = KEY_TYPE_TO_CLS.get( key_type )
       if cls == None:
          logging.error("Invalid caller type '%s'" % key_type )
          return False
       
+      # do we need to perform a cryptographic verification here?
+      if not method.method_func.need_verification:
+         # the method will perform its own authentication.  Just get the requested object
+         authenticated_caller = cls.Read( key_name )
+         if not authenticated_caller:
+            log.error("No such %s %s" % (key_type, key_name) )
+            return False
+         
+         else:
+            method.authenticated_caller = authenticated_caller
+            return True
+      
+      if sig == None:
+         logging.error("No signature")
+         # no signature
+         return False
+      
       authenticated_caller = cls.Authenticate( key_name, request_body, sig )
       
       if not authenticated_caller:
-         # failed to authenticate
+         # failed to authenticate via keys.
          logging.error("Failed to authenticate %s (type %s)" % (key_name, key_type))
          return False 
       
@@ -1334,7 +1478,7 @@ def signing_key_names_from_method_args( method_name, args, kw, default_user_id=N
       for i in xrange(0,len(names)):
          if names[i] == SIGNING_KEY_DEFAULT_USER_ID:
             names[i] = default_user_id
-      
+         
       return names 
    
    except Exception, e:
@@ -1350,7 +1494,7 @@ def verify_key_type_from_method_name( method_name ):
       raise Exception("Method '%s' has no known verify key type" % method_name)
 
 # ----------------------------------
-def verify_key_name_from_method_result( method_name, args, kw, method_result, default_user_id=None ):
+def verify_key_name_from_method( method_name, args, kw, method_result, default_user_id=None ):
    method = get_method( method_name )
    try:
       # fix up special type values
@@ -1362,6 +1506,25 @@ def verify_key_name_from_method_result( method_name, args, kw, method_result, de
       traceback.print_exc()
       raise Exception("Method '%s' has no known verify key name" % method_name)
    
+# ----------------------------------
+def verify_key_name_from_method_result( method_name, args, kw, method_result, default_user_id=None ):
+   return verify_key_name_from_method( method_name, args, kw, method_result, default_user_id=default_user_id )
+   
+# ----------------------------------
+def verify_key_name_from_method_args( method_name, args, kw, default_user_id=None ):
+   # force a look at the args, not the result
+   return verify_key_name_from_method( method_name, args, kw, None, default_user_id=default_user_id )
+
+# ----------------------------------
+def chosen_signing_key_type_from_method_name( method_name ):
+   # NOTE: this will be the same as the verify key type (since we're dealing with the same object)
+   return verify_key_type_from_method_name( method_name )
+
+# ----------------------------------
+def chosen_signing_key_name_from_method_args( method_name, args, kw, default_user_id=None ):
+   # NOTE: this will be the same as the verify key name (since we're dealing with the same object)
+   return verify_key_name_from_method_args( method_name, args, kw, default_user_id=default_user_id )
+
 # ----------------------------------
 def revoke_key_type_from_method_name( method_name ):
    method = get_method( method_name )
@@ -1376,7 +1539,7 @@ def revoke_key_name_from_method_args( method_name, args, kw ):
    try:
       return method.get_revoke_key_name( method_name, args, kw )
    except Exception, e:
-      traceback.print_exc()
+      log.exception(e)
       raise Exception("Method '%s' has no known revoke key name" % method_name)
    
 # ----------------------------------
@@ -1386,18 +1549,75 @@ def trust_key_type_from_method_name( method_name ):
       return method.trust_key_type
    except Exception, e:
       raise Exception("Method '%s' has no known trust key type" % method_name)
-
+   
 # ----------------------------------
 def trust_key_name_from_method_args( method_name, args, kw ):
    method = get_method( method_name )
    try:
       return method.get_trust_key_name( method_name, args, kw )
    except Exception, e:
-      traceback.print_exc()
+      log.exception(e)
       raise Exception("Method '%s' has no known trust key name" % method_name)
+
+# ----------------------------------
+def default_object_key_type_from_method_name( method_name ):
+   method = get_method( method_name )
+   return method.default_object_key_type
+
+# ----------------------------------
+def default_object_key_name_from_method_args( method_name, args, kw ):
+   method = get_method( method_name )
+   try:
+      return method.get_default_object_key_name( method_name, args, kw )
+   except Exception, e:
+      log.exception(e)
+      raise Exception("Method '%s' has no known default object key name" % method_name )
+
+# ----------------------------------
+def need_verifying_key( method_name ):
+   method = get_method( method_name )
+   return method.need_verifying_key
+
+# ----------------------------------
+def need_revoke_verify_key( method_name ):
+   method = get_method( method_name )
+   return method.revoke_verify_key
 
 # ----------------------------------
 def method_help_from_method_name( method_name ):
    method = get_method( method_name )
    return method.__doc__
+
+# ----------------------------------
+def need_store_signing_key( method_name ):
+   method = get_method( method_name )
+   return method.store_signing_key
+      
+# ----------------------------------
+def secure_hash_compare(s1, s2):
+   # constant-time compare
+   # see http://carlos.bueno.org/2011/10/timing.html
+   diff = 0
+   for char_a, char_b in izip(s1, s2):
+      diff |= ord(char_a) ^ ord(char_b)
+   return diff == 0
+
+# ----------------------------------
+def hash_password( password, salt ):
+   sh = hashlib.sha256()
    
+   for i in xrange(0, PASSWORD_HASH_ITERS):
+      sh.update( salt )
+      sh.update( password )
+   
+   return sh.hexdigest()
+
+# ----------------------------------
+def password_salt():
+   salt_str = os.urandom( PASSWORD_SALT_LENGTH )
+   return binascii.b2a_hex( salt_str )
+
+# ----------------------------------
+def check_password( password, salt, password_hash ):
+   challenge_hash = hash_password( password, salt )
+   return secure_hash_compare( challenge_hash, password_hash )

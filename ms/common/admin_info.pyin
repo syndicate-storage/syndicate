@@ -3,3 +3,4 @@
 ADMIN_PUBLIC_KEY = """%(pubkey)s""".strip()
 ADMIN_EMAIL = "%(user_id)s".strip()
 ADMIN_OPENID_URL = "%(openid_url)s".strip()
+ADMIN_VERIFYING_PRIVATE_KEY = """%(verifying_private_key)s""".strip()

@@ -44,7 +44,6 @@ CONFIG_OPTIONS = {
    "gateway_keys":      ("-g", 1, "Path to the directory where you store your Gateway's signing and verifying keys."),
    "user_keys":         ("-k", 1, "Path to the directory where you store your User's signing and verifying keys."),
    "config":            ("-c", 1, "Path to your config file (default is %s)." % CONFIG_FILENAME),
-   "trust_verify_key":  ("-t", 0, "Automatically trust an object's public verification key in a reply from the MS."),
    "debug":             ("-d", 0, "Verbose debugging output"),
    "params":            (None, "+", "Method name, followed by parameters (positional and keyword supported)."),
 }

@@ -284,11 +284,12 @@ class ReadAPIGuard:
 class UpdateAPIGuard:
    # updating an object requires a suitably capable user.  An unprivileged user can only write to objects it owns, and only to some fields.
    # NOTE: the decorated function must take an object's ID as its first argument!
-   def __init__(self, target_object_cls, admin_only=False, pass_caller_user=None, target_object_name=None, **kw ):
+   def __init__(self, target_object_cls, admin_only=False, pass_caller_user=None, target_object_name=None, check_write_attrs=True, **kw ):
       self.target_object_cls = target_object_cls
       self.admin_only = admin_only
       self.pass_caller_user = pass_caller_user
       self.target_object_name = target_object_name
+      self.check_write_attrs = check_write_attrs
    
    def __call__(self, func):
       def inner( caller_user, *args, **kw ):
@@ -300,7 +301,7 @@ class UpdateAPIGuard:
          if not is_user( caller_user ):
             # not a user
             raise Exception("Caller is not a user")
-         
+      
          if self.admin_only:
             assert_admin( caller_user )
             
@@ -329,13 +330,17 @@ class UpdateAPIGuard:
             else:
                write_kw[attr] = kw[attr]
          
-         # only include object-specific writable keywords that can be written by the principle
-         safe_write_kw = filter_write_attrs( caller_user, target_object, self.target_object_cls, write_kw )
-         
-         if len(safe_write_kw) != len(write_kw):
-            raise Exception("Caller is forbidden from writing the following fields: %s" % ",".join( list( set(write_kw.keys()) - set(safe_write_kw.keys()) ) ) )
-         
-         method_kw.update( safe_write_kw )
+         if self.check_write_attrs:
+            # only include object-specific writable keywords that can be written by the principle
+            safe_write_kw = filter_write_attrs( caller_user, target_object, self.target_object_cls, write_kw )
+            
+            if len(safe_write_kw) != len(write_kw):
+               raise Exception("Caller is forbidden from writing the following fields: %s" % ",".join( list( set(write_kw.keys()) - set(safe_write_kw.keys()) ) ) )
+            
+            method_kw.update( safe_write_kw )
+            
+         else:
+            method_kw.update( write_kw )
          
          if self.pass_caller_user:
             method_kw[self.pass_caller_user] = caller_user 
@@ -532,10 +537,18 @@ class Authenticate:
    def __init__(self, object_authenticator=None, object_response_signer=None, **kw ):
       self.object_authenticator = object_authenticator
       self.object_response_signer = object_response_signer
+      self.need_verification = True
+      
+      if 'signing_key_ids' in kw.keys() and 'signing_key_types' in kw.keys():
+         signing_key_ids = kw['signing_key_ids']
+         signing_key_types = kw['signing_key_types']
+         
+         if len(signing_key_ids) == 0 and len(signing_key_types) == 0:
+            self.need_verification = False
    
    def __call__(self, func):
       def inner( authenticated_user_or_object, *args, **kw ):
-         if authenticated_user_or_object is None:
+         if authenticated_user_or_object is None and self.need_verification:
             raise Exception("Unauthorized caller")
          
          return func( authenticated_user_or_object, *args, **kw )
@@ -547,6 +560,7 @@ class Authenticate:
       inner.target_object_name = getattr( func, "target_object_name", None )
       inner.source_object_name = getattr( func, "source_object_name", None )
       inner.is_public = True
+      inner.need_verification = self.need_verification
       return inner
 
 # ----------------------------------

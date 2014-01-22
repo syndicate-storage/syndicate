@@ -68,11 +68,11 @@ class StubObject( object ):
    
    @classmethod
    def Authenticate( cls, *args, **kw ):
-      pass
+      raise Exception("Called stub Authenticate method!  Looks like you have an import error somewhere.")
    
    @classmethod
    def Sign( cls, *args, **kw ):
-      pass
+      raise Exception("Called stub Sign method!  Looks like you have an import error somewhere.")
 
    @classmethod
    def parse_or_generate_signing_public_key( cls, signing_public_key, lib=None ):
@@ -89,6 +89,9 @@ class StubObject( object ):
          extra['signing_private_key'] = privkey_pem
          
          signing_public_key = pubkey_pem
+      
+      elif signing_public_key == "unset":
+         return None, extra
       
       else:
          # try validating the given one
@@ -120,7 +123,8 @@ class StubObject( object ):
       else:
          # try validating the given one
          try:
-            pubkey = CryptoKey.importKey( verifying_private_key )
+            key = CryptoKey.importKey( verifying_private_key )
+            extra['verifying_public_key'] = key.publickey().exportKey()
          except Exception, e:
             log.exception(e)
             raise Exception("Failed to parse public key")
@@ -276,14 +280,14 @@ class StubObject( object ):
          kw[arg_name], arg_extras = arg_value_func( cls, kw[arg_name], lib )
          extras.update( arg_extras )
       
-      return (args, kw, extras)
+      return (args, kw, extras)      
          
-   
    @classmethod
    def ProcessExtras( cls, extras, config, method_name, args, kw, result, storage_stub ):
       pass
-         
-         
+   
+   
+   
    
 class SyndicateUser( StubObject ):
    @classmethod
@@ -305,8 +309,47 @@ class SyndicateUser( StubObject ):
       raise Exception("Parse error: only user emails (not IDs) are allowed")
    
    
+   @classmethod
+   def generate_password_hash( cls, password, lib=None ):
+      """
+      Make a password hash and salt from a password.
+      Do NOT pass the password; it will be ignored by the MS.
+      """
+      extra = {}
+      pw_salt = api.password_salt()
+      pw_hash = api.hash_password( password, pw_salt )
+      
+      if lib is not None:
+         lib.password_salt = pw_salt
+         lib.password_hash = pw_hash
+      
+      return "", extra
+   
+   @classmethod
+   def recover_password_salt( cls, salt, lib=None ):
+      """
+      Get back the salt we made in generate_password_hash
+      """
+      if lib is not None and hasattr(lib, "password_salt"):    # got from generate_password_hash
+         return lib.password_salt, {}
+      else:
+         return None, {}
+   
+   @classmethod
+   def recover_password_hash( cls, salt, lib=None ):
+      """
+      Get back the hash we made in generate_password_hash
+      """
+      if lib is not None and hasattr(lib, "password_hash"):    # got from generate_password_hash
+         return lib.password_hash, {}
+      else:
+         return None, {}
+   
    arg_parsers = dict( StubObject.arg_parsers.items() + {
-      "email": (lambda cls, arg, lib: cls.parse_user_name_or_id(arg, lib))
+      "email": (lambda cls, arg, lib: cls.parse_user_name_or_id(arg, lib)),
+      "registration_password": (lambda cls, arg, lib: cls.generate_password_hash(arg, lib)),
+      "registration_password_hash": (lambda cls, arg, lib: cls.recover_password_hash(arg, lib)),
+      "registration_password_salt": (lambda cls, arg, lib: cls.recover_password_salt(arg, lib))
    }.items() )
    
    key_type = "user"
@@ -360,7 +403,6 @@ class Volume( StubObject ):
       METADATA_KEY_TYPE
    ]
    
-
    @classmethod
    def ProcessExtras( cls, extras, config, method_name, args, kw, result, storage_stub ):
       # process signing and verifying keys 

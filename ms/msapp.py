@@ -61,7 +61,7 @@ def ms_initialize():
    """
    Initialize the Syndicate MS
    """
-   admin_key = SyndicateUser.CreateAdmin( ADMIN_EMAIL, ADMIN_OPENID_URL, ADMIN_PUBLIC_KEY )
+   admin_key = SyndicateUser.CreateAdmin( ADMIN_EMAIL, ADMIN_OPENID_URL, ADMIN_PUBLIC_KEY, ADMIN_VERIFYING_PRIVATE_KEY )
    
    
 ms_initialize()

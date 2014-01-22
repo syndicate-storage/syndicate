@@ -282,18 +282,22 @@ env.Alias( 'AG', [libAGcommon, libAGdiskdriver, libAGSQLdriver, libAGshelldriver
 # MS build
 # Only parse the SConscript if we need to, since it performs argument validation.
 
+ms_aliases = []
+
 if "MS" in COMMAND_LINE_TARGETS:
    ms_server_out = "build/out/ms"
    ms_server = SConscript( "ms/SConscript.server", variant_dir=ms_server_out )
    env.Depends( ms_server, protobuf_py_files )  # ms requires Python protobufs to be built first
 
    env.Alias( "MS-server", ms_server )
+   ms_aliases.append( ms_server )
 
 # MS clients build
 ms_clients_bin_out = "build/out/bin/ms"
 ms_client_bin, ms_client_bin_install = SConscript( "ms/SConscript.client", variant_dir=ms_clients_bin_out )
 
 env.Alias( "MS-clients", [ms_client_bin] )
+env.Alias( "MS", ms_aliases + [ms_client_bin] )
 
 common.install_targets( env, 'MS-clients-install', bin_install_dir, ms_client_bin_install )
 
@@ -316,7 +320,10 @@ python_target, python_install, python_files = SConscript("python/SConscript", va
 env.Depends(python_target, [python_files, protobuf_py_files, libsyndicate, libsyndicateUG])
 
 env.Alias("syndicate-python", python_target)
+env.Alias("python-syndicate", "syndicate-python")
+
 env.Alias("syndicate-python-install", python_install)
+env.Alias("python-syndicate-install", "syndicate-python-install")
 
 # ----------------------------------------
 # Top-level build

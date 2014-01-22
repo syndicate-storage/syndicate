@@ -82,6 +82,11 @@ class Authenticate( StubAuth ):
    revoke_key_type = None
    trust_key_id = None
    trust_key_type = None
+   store_signing_key = True
+   revoke_verify_key = True
+   need_verifying_key = True
+   default_object_key_type = None
+   default_object_key_id = None
    
    @classmethod
    def get_signing_key_names( cls, func, signing_key_ids, method_name, args, kw ):
@@ -111,6 +116,8 @@ class Authenticate( StubAuth ):
    
    @classmethod
    def get_verify_key_name( cls, func, verify_key_id, method_name, args, kw, method_result ):
+      # NOTE: pass None for method_result to query the arguments instead of the result.
+      
       if verify_key_id == None:
          # this method does not return any keys for us to store
          return None
@@ -120,10 +127,12 @@ class Authenticate( StubAuth ):
          return verify_key_id
       
       if isinstance( method_result, dict ):
+         # get key name from method result
          if verify_key_id in method_result.keys():
             return method_result[verify_key_id]
       
       elif verify_key_id in func.argspec.args:
+         # get key name from argument list
          idx = func.argspec.args.index( verify_key_id )
          return args[idx]
       
@@ -162,12 +171,28 @@ class Authenticate( StubAuth ):
       
       raise Exception("No such key ID in method arguments: %s" % trust_key_id )
    
+   @classmethod
+   def get_default_object_key_name( cls, func, default_object_key_id, method_name, args, kw ):
+      if default_object_key_id == None:
+         return None
+      
+      if default_object_key_id in func.argspec.args:
+         idx = func.argspec.args.index( default_object_key_id )
+         return args[idx]
+      
+      elif default_object_key_id in kw.keys():
+         return kw[default_object_key_id]
+      
+      raise Exception("No such key ID in method arguments: %s" % default_object_key_id )
    
    def __init__(self, object_authenticator=None, object_response_signer=None,
                       signing_key_types=None, signing_key_ids=None,
                       verify_key_type=None, verify_key_id=None,
                       revoke_key_type=None, revoke_key_id=None,
-                      trust_key_type=None, trust_key_id=None ):
+                      trust_key_type=None, trust_key_id=None,
+                      store_signing_key=True, revoke_verify_key=True,
+                      default_object_key_type=None, default_object_key_id=None,
+                      need_verifying_key=True ):
       
       if len(signing_key_types) != len(signing_key_ids):
          raise Exception("BUG: Signing key type/id length mismatch")
@@ -178,8 +203,13 @@ class Authenticate( StubAuth ):
       self.verify_key_id = verify_key_id
       self.revoke_key_type = revoke_key_type
       self.revoke_key_id = revoke_key_id
-      self.trust_key_id = trust_key_id
       self.trust_key_type = trust_key_type
+      self.trust_key_id = trust_key_id
+      self.default_object_key_id = default_object_key_id
+      self.default_object_key_type = default_object_key_type
+      self.store_signing_key = store_signing_key
+      self.revoke_verify_key = revoke_verify_key
+      self.need_verifying_key = need_verifying_key
    
    def __call__(self, func):
       func.changes_signing_key = self.changes_signing_key
@@ -189,12 +219,18 @@ class Authenticate( StubAuth ):
       func.verify_key_id = self.verify_key_id
       func.revoke_key_type = self.revoke_key_type 
       func.revoke_key_id = self.revoke_key_id
-      func.trust_key_id = self.trust_key_id 
       func.trust_key_type = self.trust_key_type
+      func.trust_key_id = self.trust_key_id
+      func.default_object_key_type = self.default_object_key_type
+      func.default_object_key_id = self.default_object_key_id
+      func.store_signing_key = self.store_signing_key
+      func.revoke_verify_key = self.revoke_verify_key
+      func.need_verifying_key = self.need_verifying_key
       func.get_signing_key_names = lambda method_name, args, kw: Authenticate.get_signing_key_names( func, self.signing_key_ids, method_name, args, kw )
       func.get_verify_key_name = lambda method_name, args, kw, method_result: Authenticate.get_verify_key_name( func, self.verify_key_id, method_name, args, kw, method_result )
       func.get_revoke_key_name = lambda method_name, args, kw: Authenticate.get_revoke_key_name( func, self.revoke_key_id, method_name, args, kw )
       func.get_trust_key_name = lambda method_name, args, kw: Authenticate.get_trust_key_name( func, self.trust_key_id, method_name, args, kw )
+      func.get_default_object_key_name = lambda method_name, args, kw: Authenticate.get_default_object_key_name( func, self.default_object_key_id, method_name, args, kw )
       func.is_public = True
       return func
       
