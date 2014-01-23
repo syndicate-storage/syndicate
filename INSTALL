@@ -29,29 +29,27 @@ Ubuntu/Debian:
    libssl-dev
    libboost-dev
    libxml2-dev
-   attr-dev
+   libattr1-dev
    libcurl4-gnutls-dev
    fuse
    libfuse-dev
    libgcrypt-dev
-   libprotobuf-c0
    libprotobuf-dev
    protobuf-compiler
-   libboost-thread-dev 
-   libboost-system-dev
+   libboost-dev
    libxerces-c-dev
    libmicrohttpd-dev (> 0.9)
    python-daemon
    unixodbc-dev
    libconfig++-dev
    thrift-compiler (0.8)
-   cython
+   cython (>= 0.19)
 
 You will need a version of Apache Thrift (0.8.x) installed to build the AG.  This dependency is transient and will be removed soon.
 
 You will also need a recent version of libmicrohttpd.  At least version 0.9.27 should work.
 
-Fedora 12 users may need to build a recent version of libmicrohttpd and Cython themselves, or find an RPM that works.
+Fedora 12 and Ubuntu 12.04 users may need to build a recent version of libmicrohttpd and Cython themselves, or find an RPM that works.
 
 We have a Syndicate package repository at http://vcoblitz-cmi.cs.princeton.edu/syndicate-nightly/RPMS.  To use, do the following:
    $ sudo curl http://vcoblitz-cmi.cs.princeton.edu/yum/Syndicate-nightly.repo > /etc/yum.repos.d/Syndicate.repo
