@@ -4,7 +4,7 @@ ROOT=$HOME/syndicate/syndicate-AG-root
 NAME="syndicate-AG"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
-DEPS="openssl curl protobuf libsyndicate thrift0.8-vicci" 
+DEPS="openssl curl protobuf libsyndicate thrift0.8-syndicate" 
 
 DEPARGS=""
 for pkg in $DEPS; do
