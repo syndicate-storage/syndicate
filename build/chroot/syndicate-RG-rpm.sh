@@ -15,5 +15,5 @@ source /usr/local/rvm/scripts/rvm
 
 rm -f $NAME-0*.rpm
 
-fpm --force -s dir -t rpm -a x86_64 -v $VERSION -n $NAME $DEPARGS -C $ROOT --license "Apache 2.0" --vendor "Princeton University" --description "Syndicate Replica Gateway." $(ls $ROOT)
+fpm --force -s dir -t rpm -a noarch -v $VERSION -n $NAME $DEPARGS -C $ROOT --license "Apache 2.0" --vendor "Princeton University" --description "Syndicate Replica Gateway." $(ls $ROOT)
 
