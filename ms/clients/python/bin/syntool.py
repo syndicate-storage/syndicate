@@ -444,7 +444,7 @@ def load_options( argv ):
    
    if config_str == None:
       # possibly calling 'setup', so fill in empty information
-      if method_name != "setup":
+      if method_name != "setup" and method_name != "admin-setup":
          raise Exception("Failed to load configuration from %s" % config_file_path)
       
       conf.fill_defaults( config )
