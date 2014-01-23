@@ -13,5 +13,7 @@ done
 
 source /usr/local/rvm/scripts/rvm
 
+rm -f $NAME-0*.rpm
+
 fpm --force -s dir -t rpm -a noarch -v $VERSION -n $NAME $DEPARGS -C $ROOT --license "Apache 2.0" --vendor "Princeton University" --description "Syndicate MS clients.  This includes syntool.py" $(ls $ROOT)
 
