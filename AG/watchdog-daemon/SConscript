@@ -64,6 +64,7 @@ LIBS = """
     libthrift
     config++
     pthread
+    rt
 """
 
 # add additional CPPFLAGS here
