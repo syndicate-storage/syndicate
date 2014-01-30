@@ -118,7 +118,7 @@ When Alice logs in next, her endpoint “imports” her old account data by unse
 
 Deleting an account is similar to revoking the keys.  The only difference in the process is that no new keys are generated.
 
-\subsection{Sending, Receiving, and Un-Sending Email}
+\subsection{Sending, Receiving, and Un-Sending}
 Once Alice and Bob have exchanged public keys with AutoKey, they communicate with SMRP, described in this section.  In SMRP, Alice sends Bob a message by sealing it with his public key, uploading it to her cloud storage, and making it world-readable. Bob’s endpoint downloads and decrypts it, sanitizes it, and serves it to Bob’s browser for him to read. The same principle applies to attachments, which in STEAK are sent as separate files to be downloaded.
 
 If Bob expects email from Alice, he can search Alice’s cloud storage for new messages and fetch them.  The UI allows him to query individual contacts for new messages.
@@ -131,11 +131,9 @@ In SMRP, buffering message metadata records on the STEAK server is reasonable in
 
 When Bob opens an unread message from Alice, his endpoint downloads, decrypts, and verifies the authenticity and integrity of Alice's message body. Once verified, Bob reads it via the browser UI. To download an attachment, the endpoint streams it from Alice's cloud storage, verifies it, decrypts it, and delivers it to the UI as a file download.  As a performance optimization (and to assist automatic spam filtering), the endpoint prefetches message bodies as they are discovered.
 
-By default, once Bob obtains a message’s body and attachments, his endpoint automatically replicates them to his cloud storage in order to keep them available regardless of Alice's subsequent actions.  This is important, because before Bob reads a message, Alice can delete the message body and attachments from her cloud storage.
+In SMRP, Alice can “un-send” a message by erasing the body and attachments from cloud storage.  This allows her to withdraw messages sent in haste, or sent accidentally to unintended people.  Bob will discover that she deleted it (i.e. he will receive a metadata record for a message that does not exist), but Alice may prefer this to having Bob reading the entire message.  As such, once Bob obtains a message’s body and attachments, his endpoint replicates them to his cloud storage by default to keep them available.
 
-Although this is an artifact of our pull-based architecture, SMRP offers the ability to “un-send” a message by erasing the body and attachments from cloud storage.  This allows Alice to withdraw messages sent in haste, or sent accidentally to unintended people.  Bob may figure out that she deleted it after sending it (i.e. he may receive a metadata record for a message that does not exist), but Alice may prefer this to having Bob reading the entire message.
-
-\subsection{Searching, Tagging, and Filtering Email}
+\subsection{Searching, Tagging, and Filtering}
 Beyond sending and receiving email, webmail users expect automatic spam filtering, the ability to organize messages and conversations, and the ability to search them.  In traditional webmail systems, this functionality resides on the server.  The challenge providing it in STEAK is in moving it to the endpoint to preserve confidentiality, but without compromising features.
 
 Tagging messages is a matter of associating a given message with a bag of tags that Bob defines.  Bob’s endpoint incrementally builds an index that pairs each tag to a list of message metadata records (ordered by when they were tagged).  To search messages by tag, the endpoint fetches a page of the tag’s index, then the message metadata records in the page, and serves them to the UI.  The message metadata record identifies the message to download and render once Bob clicks on it.
