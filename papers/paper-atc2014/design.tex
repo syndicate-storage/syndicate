@@ -22,16 +22,16 @@ The Alice’s endpoint, STEAK server, and metadata repositories work together to
 In AutoKey, each user is given an account public/private key pair, a storage public/private key pair, and one or more signing public/private key pairs.  The private keys are stored encrypted with the user’s password, and only decrypted when the device is running a session.  The account and signing public keys are made available in the form of certificates signed by the account private key.  The use for each key pair is listed in Table~\ref{tab:keypairs}.
 
 \begin{table*}[ht!]
-\begin{tabular}{ | l | l |}
+\begin{tabular}{ | l | p{14cm} |}
 \hline
 \textbf{Key Pair Name} & \textbf{Usage} \\
 \hline
 Account key pair & Certifying and revoking other public keys. \\
-Storage key pair & Sealing, unsealing, and signing data hosted in cloud storage.  Used for message confidentiality, and account state CIA. \\
+Storage key pair & Sealing/unsealing and signing cloud-hosted data.  Used for message confidentiality and state CIA. \\
 Signing key pair & Signing email messages and attachments.  Used for message integrity and authenticity. \\
 \hline
 \end{tabular}
-\caption{\it Names and usages for a user’s key pairs used in STEAK’s AutoKey subsystem.}
+\caption{\it Names and usages for a user`s key pairs used in STEAK`s AutoKey subsystem.}
 \label{tab:keypairs}
 \end{table*}
 
@@ -66,7 +66,7 @@ Before Alice can use STEAK, she needs an account.  In creating one, she bootstra
 
 To do so, her endpoint replicates her account public key and backs up her revocation certificate to more servers than Mal can compromise.  We assume that Mal cannot alter the behavior of the servers during the registration process; if the servers do not behave correctly, the registration fails (Figure~\ref{fig:register}).
 
-From a usability standpoint, creating an account on the STEAK server is similar to doing so on a webmail server.  Alice begins by submitting a desired username and password to the STEAK server through the endpoint, as well as any number of hard-to-guess security questions and answers, and the identifier for an uncompromisable out-of-band channel to confirm the registration (e.g. a phone number or existing email address).  The STEAK-specific extra requirements are the authentication tokens are needed to access her cloud storage, and her additional metadata repositories (if needed).
+From a usability standpoint, creating an account on the STEAK server is similar to doing so on a webmail server.  Alice begins by submitting a desired username and password to the STEAK server through the endpoint, as well as any number of hard-to-guess security questions and answers, and the identifier for an uncompromisable out-of-band channel to confirm the registration (e.g. a phone number or existing email address).  The STEAK-specific extra requirements are the authentication tokens needed to access her cloud storage, and her additional metadata repositories.
 
 Once the information is entered, the endpoint uploads the username and password to the STEAK server, which replies with a one-time-use registration URL via the out-of-band channel.  Alice navigates to the URL to complete her registration.  Both the server and endpoint employ TLS-secured communication channels to prevent Eve from learning Alice’s password.  Once Alice confirms, the STEAK server remembers iterated salted hash of the out-of-band channel identifier, so Mal cannot easily learn it and so Alice can use it later to reset her password.
 
