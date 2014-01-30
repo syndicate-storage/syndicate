@@ -13,7 +13,7 @@ Users send a wide variety of information in their email messages,
 including confidential and personal information and legally-binding 
 documents. Traditional email protocols, like SMTP and IMAP, do not 
 provide adequate security guarantees and average email users are 
-sometimes not even aware that they’re communicating over a fundamentally 
+sometimes not even aware that they're communicating over a fundamentally 
 insecure channel. In a secure communication channel, when Alice sends 
 Bob a message, only Bob can read it (message confidentiality), Bob can 
 verify that the message he received was in fact sent by Alice (message 
@@ -31,7 +31,7 @@ security properties of message confidentiality, integrity, and authenticity
 (called CIA guarantees in the rest of the paper), while providing the 
 features and user experience of webmail.  This is a nontrivial problem 
 and current security approaches require running out-of-band security 
-systems ``on top’’ of email usually by leveraging public-key cryptography. 
+systems ``on top'' of email usually by leveraging public-key cryptography. 
 These include S/MIME and PGP, as well as more recent ID-based encryption 
 schemes [ref].
 
@@ -45,7 +45,7 @@ of webmail despite the security problems it introduces. Even if they
 understood the security concerns, using public-key cryptography in this 
 manner greatly increases the complexity of basic email tasks. 
 
-Our key insight is that email’s store-and-forward approach makes CIA 
+Our key insight is that email's store-and-forward approach makes CIA 
 guarantees hard to achieve. Because each email server stores and processes 
 messages, a user must either trust the server completely to not to break 
 CIA, or perform end-to-end authenticated encryption outside of the system. 
@@ -59,18 +59,18 @@ The contributions of STEAK are 1) an automatic key management system
 Request Protocol, or SMRP) that allow users to access their email using a 
 web browser on any device. STEAK enables access to email with only a 
 username/password pair and a small amount of additional logic at the 
-email client. To do so, STEAK leverages the user’s own personal cloud 
+email client. To do so, STEAK leverages the user's own personal cloud 
 storage to host sealed account state, sealed keys, and sealed messages. 
 The user devices (clients), not servers, process messages after decrypting 
 them. Within STEAK, the AutoKey system automatically distributes keys, 
-e.g., Alice’s public keys to Bob, using an array of non-colluding 
+e.g., Alice's public keys to Bob, using an array of non-colluding 
 repositories. Once keys are distributed, Bob can receive 
 messages from Alice using SMRP. Under the hood, SMRP 
-actually downloads messages from the sender’s cloud storage. All the while, 
+actually downloads messages from the sender's cloud storage. All the while, 
 STEAK remains transparently backwards-compatible with SMTP, and offers 
 a more limited CIA guarantee to non-STEAK users.
 
-The remainder of this paper is organized as follows.  In section “Motivation”, 
+The remainder of this paper is organized as follows.  In section ``Motivation'', 
 we define our usability requirements, and argue that our strategy is necessary 
 to meet them for providing CIA guarantees. Then, we present the design of STEAK 
 in section “Design”, with a focus on AutoKey and SMRP, and describe how basic 
