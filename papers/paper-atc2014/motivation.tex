@@ -62,18 +62,28 @@ their email, endpoints cannot preserve hard state across sessions.
 Thus, Alice’s endpoint must securely obtain not only Bob’s public key, 
 but also her private key each time she logs in.
 
-\begin{table*}[ht!]
-\begin{tabular}{ | l | l | l |}
+\begin{table}[ht!]
+\begin{tabular}{ | l | L{4.5cm} |}
 \hline
-\textbf{Task} & \textbf{User Expectation} & \textbf{Key Management} \\
+\textbf{Task} & \textbf{Key activity} \\
 \hline
-\textbf{insert task} & insert expectation & insert key management \\
+Log in & Unseal private keys \\
+Log out & Clear private keys \\
+\hline
+Create account & Create private keys, revocation certs; publish pubkeys \\
+Delete account & Publish revocation cert \\
+Change password & Reseal private keys \\
+Reset password & Regenerate private keys, or recover with security questions \\
+\hline
+Add contact & Obtain and verify pubkey; watch for revocation \\
+\hline
+Write email & Encrypt and sign \\
+Read email & Verify and decrypt \\
 \hline
 \end{tabular}
-\caption{Common webmail tasks and expectations, as well as the the 
-key management to perform them to gain CIA.}
+\caption{\it Common webmail tasks and the requisite key management to perform to gain CIA.}
 \label{tab:user-experience}
-\end{table*}
+\end{table}
 
 At the same time, Alice and Bob do not know how to use or manage keys. 
 They expect to submit their usernames and passwords to begin a session 

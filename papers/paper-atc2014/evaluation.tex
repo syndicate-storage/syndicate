@@ -1,8 +1,10 @@
 \section{Evaluation}
 
-Our goal has been to preserve the usability semantics of webmail with transparent end-to-end CIA.  To evaluate this, we consider the steps and information required to complete common webmail tasks affected by CIA, and compare them to how STEAK and PGP perform them.  These include setting up and destroying an account, adding and removing a contact, sending and receiving messages, and changing account passwords.
+Our usability goal has been to preserve the semantics of webmail while offerring transparent end-to-end CIA.  To evaluate this, we consider the steps and information required to complete common webmail tasks, and compare them to how STEAK and PGP perform them.  These include setting up and destroying an account, adding and removing a contact, sending and receiving messages, and changing account passwords.
 
-In evaluating against PGP, we use the user’s guide for PGP 7.0 as a baseline comparison.  We also consider approaches taken by Enigmail, Mailpile, and Mailvelope, which seek to make PGP easier to use for email.
+In evaluating against PGP for usability, we use the user’s guide for PGP 7.0 as a baseline comparison.  We also consider approaches taken by Enigmail, Mailpile, and Mailvelope, which seek to make PGP easier to use for securing email.  We show that while STEAK does not offer exact webmail semantics, it offers semantics much closer to webmail than even user-friendly PGP implementations.
+
+At the same time, our performance goal for STEAK is to avoid hindering responsiveness to user interaction.  Our preliminary evaluation shows that running AutoKey asynchronously hides the time needed to perform key distribution, and that encryption and decryption do not significantly increase latency.
 
 \subsection{Endpoint Management}
 Assuming the web browser is already installed, setting up webmail takes no effort from the user.  However, because performing encryption in server-chosen Javascript with no validation is unsafe, both PGP and STEAK require an additional software component to be installed on each endpoint.  While this can be simplified with the endpoint device's app store, a PGP user must also create a subkey for each device, and sign it with the master key.
@@ -203,6 +205,4 @@ PGP implementations can decrypt messages automatically if the key is known.  How
 \end{table}
 
 \subsection{Performance}
-===\\
-TODO \\
-===\\
+
