@@ -1,0 +1,83 @@
+\section{Evaluation}
+
+Our goal has been to preserve the usability semantics of webmail with transparent end-to-end CIA.  To evaluate this, we consider the steps and information required to complete common webmail tasks affected by CIA, and compare them to how STEAK and PGP perform them.  These include setting up and destroying an account, adding and removing a contact, sending and receiving messages, and changing account passwords.
+
+In evaluating against PGP, we use the user’s guide for PGP 7.0 as a baseline comparison.  We also consider approaches taken by Enigmail, Mailpile, and Mailvelope, which seek to make PGP easier to use for email.
+
+\subsection{Endpoint Management}
+Assuming the web browser is already installed, setting up webmail takes no effort from the user.  With STEAK and PGP, some extra software must be installed first.  Until it becomes possible to safely perform cryptography in a web browser, this will be necessary for both systems into the foreseeable future.  However, the endpoint device’s app store can facilitate this step, making STEAK and PGP equivalently easy to install.
+
+While there are some PGP implementations in Javascript that are loadable from the Web, we do not consider these valid for comparison, since they do not offer the equivalent security guarantees given our threat model.
+
+Destroying an account in webmail and STEAK are equivalent--the user navigates to the page in the UI to do so, and enters the username and password.  The rest is automated.  In PGP, the email account must be destroyed separately from the key.  The private keys must also be erased, and the public keys revoked.
+
+\subsection{Account Management}
+Registering an account in STEAK has a similar workflow to registering a webmail account; the only difference is that STEAK users must also submit cloud storage authentication tokens and additional metadata repositories (if desired).
+
+By contrast, a PGP client requires the user to create an email account before configuring it, making the task at least as difficult as webmail.  It additionally requires users to generate keys and revocation certificates, and export the public key (e.g. to a key server).  While it is possible to integrate this into the account registration process (the approach taken by Mailpile), the user is inevitably involved in the key setup process because she will need to learn how to sign and trust other users’ keys. 
+
+\begin{table*}[ht!]
+\begin{tabular}{ | l | l | l |}
+\hline
+\textbf{Webmail} & \textbf{STEAK} & \textbf{PGP} \\
+\hline
+1. Navigate to provider URL. \\ 
+2. Submit username, password, and out-of-band channel. \\ 
+3. Activate account with information sent on out-of-band channel. &
+
+1.  Navigate to provider URL. \\
+2.  Submit username, password, extra authentication tokens, extra metadata repositories, and out-of-band channel. \\
+3.  Activate account with information sent on out-of-band channel. &
+
+1.  Create email account (steps 1-3 in webmail) \\ 
+2.  Configure PGP client to use the email account \\
+3.  Generate keys \\
+4.  Encrypt keys \\
+5.  Generate revocation cert \\
+6.  Publish pubkey \\
+\hline
+\end{tabular}
+\caption{\it Creating an account}
+\label{tab:account-creation}
+\end{table*}
+
+
+Changing or resetting a password in STEAK is a matter of either submitting the old password or answering the security questions, and waiting for the account state to be re-sealed.  This is similar to webmail’s semantics.  However, while some PGP implementations offer a key recovery option using security questions, it must be manually enabled.  Moreover, the user must manually change the key password after recovering the key.
+===\\
+TODO: TABLE \\
+===\\
+Deleting an account in webmail is as simple as entering one’s password and confirming the request.  This is also the case in STEAK, where all public keys are automatically revoked once the request is confirmed.  In PGP, however, the user must not only delete the email account, but also any private keys associated with it.  The user must erase the public keys from the key servers, and publish revocation certificates for the private keys.
+
+===\\ 
+TODO: TABLE \\
+===\\
+
+\subsection{Contact Management}
+
+Adding a contact in webmail is usually a matter of filling out a form, if it is not done automatically.  The form at a minimum prompts for an email address and a name, but other fields are possible.  Similarly, deleting a contact is a matter of selecting the record from the UI for deletion.  This is also the case in STEAK.
+
+With PGP however, the user must verify and trust a public key.  Mailpile attempts to reduce this to scanning QR codes or obtaining them from email attachments automatically, but nevertheless the user must make a choice on the trustworthiness of the peers who signed it.  Applying TOFU semantics makes it easier to use but less secure than STEAK, because there is only a single source for the key.
+
+Deleting a contact in webmail, STEAK, and PGP is equivalently easy.
+===\\
+TODO: TABLE \\
+===\\
+
+\subsection{Accessing, Sending, and Receiving Email}
+
+Accessing email from multiple devices is trivial in webmail if the device has a web browser.  It is equivalently easy in STEAK once the endpoint code is installed--AutoKey obtains the private keys automatically, and automatically generates endpoint-specific signing keys.  In PGP, however, the user must manually generate and install a subkey (equivalent to a signing key).
+
+Sending a message in webmail is a matter of opening a window to compose it, selecting the recipients, and sending it.  However, PGP implementations require the user to at least click through UI elements to encrypt and sign the message.  This is because only the user knows whether or not the recipient will be capable of decrypting the ciphertext.
+
+STEAK avoids this altogether when communicating with other STEAK users or users that do not need CIA (akin to webmail’s semantics).  When CIA guarantees are needed, it offers a password-based secure communication channel.  This is also more akin to webmail semantics, where the user expects to obtain secure access via passwords.  
+
+Reading messages in webmail and STEAK is equivalently easy--a user selects the unopened message, and the UI displays it.  STEAK, through AutoKey, obtains the public key and performs the decryption automatically.  PGP implementations can decrypt messages automatically if the key is known, but the user may be prompted to obtain it and trust it if not.
+
+===\\
+TODO: TABLES \\
+===\\
+
+\subsection{Performance}
+===\\
+TODO \\
+===\\
