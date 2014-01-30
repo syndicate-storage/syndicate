@@ -30,7 +30,11 @@
 %next line.
 
 \documentclass[letterpaper,twocolumn,10pt]{article}
-\usepackage{usenix,epsfig,graphicx,float,url,longtable}
+\usepackage{usenix,epsfig,graphicx,float,url,longtable,enumitem,array}
+\setlist{nolistsep}
+
+\newcolumntype{L}[1]{>{\raggedright\let\newline\\\arraybackslash\hspace{0pt}}p{#1}}
+
 \newcommand{\comment}[1]{}
 \begin{document}
 

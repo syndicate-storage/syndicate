@@ -5,9 +5,26 @@ Our goal has been to preserve the usability semantics of webmail with transparen
 In evaluating against PGP, we use the user’s guide for PGP 7.0 as a baseline comparison.  We also consider approaches taken by Enigmail, Mailpile, and Mailvelope, which seek to make PGP easier to use for email.
 
 \subsection{Endpoint Management}
-Assuming the web browser is already installed, setting up webmail takes no effort from the user.  With STEAK and PGP, some extra software must be installed first.  Until it becomes possible to safely perform cryptography in a web browser, this will be necessary for both systems into the foreseeable future.  However, the endpoint device’s app store can facilitate this step, making STEAK and PGP equivalently easy to install.
+Assuming the web browser is already installed, setting up webmail takes no effort from the user.  However, because performing encryption in server-chosen Javascript with no validation is unsafe, both PGP and STEAK require an additional software component to be installed on each endpoint.  While this can be simplified with the endpoint device's app store, a PGP user must also create a subkey for each device, and sign it with the master key.
 
-While there are some PGP implementations in Javascript that are loadable from the Web, we do not consider these valid for comparison, since they do not offer the equivalent security guarantees given our threat model.
+\begin{table}[ht!]
+\begin{tabular}{ | L{2.0cm} | L{4.5cm} |}
+\hline
+\textbf{Webmail} & \textbf{STEAK and PGP} \\
+\hline
+(None) &
+
+\vspace{-3mm} 
+\begin{enumerate}
+  \item{Install endpoint software.}
+  \item{(PGP) generate and sign subkey.}
+\end{enumerate} \\
+
+\hline
+\end{tabular}
+\caption{\it Steps to set up an endpoint.}
+\label{tab:account-creation}
+\end{table}
 
 Destroying an account in webmail and STEAK are equivalent--the user navigates to the page in the UI to do so, and enters the username and password.  The rest is automated.  In PGP, the email account must be destroyed separately from the key.  The private keys must also be erased, and the public keys revoked.
 
@@ -16,66 +33,174 @@ Registering an account in STEAK has a similar workflow to registering a webmail 
 
 By contrast, a PGP client requires the user to create an email account before configuring it, making the task at least as difficult as webmail.  It additionally requires users to generate keys and revocation certificates, and export the public key (e.g. to a key server).  While it is possible to integrate this into the account registration process (the approach taken by Mailpile), the user is inevitably involved in the key setup process because she will need to learn how to sign and trust other users’ keys. 
 
-\begin{table*}[ht!]
-\begin{tabular}{ | l | l | l |}
+\begin{table}[ht!]
+\begin{tabular}{ | L{3.5cm} | L{3.5cm} |}
 \hline
-\textbf{Webmail} & \textbf{STEAK} & \textbf{PGP} \\
+\textbf{Webmail and STEAK} & \textbf{PGP} \\
 \hline
-1. Navigate to provider URL. \\ 
-2. Submit username, password, and out-of-band channel. \\ 
-3. Activate account with information sent on out-of-band channel. &
+\vspace{-3mm}
+\begin{enumerate}
+  \item{Navigate to provider URL.}
+  \item{Submit username, password, out-of-band channel (STEAK: also cloud storage creds and metadata repositories).} 
+  \item{Activate account with information sent on out-of-band channel.}
+\end{enumerate} 
+\vspace{-\topsep}&
 
-1.  Navigate to provider URL. \\
-2.  Submit username, password, extra authentication tokens, extra metadata repositories, and out-of-band channel. \\
-3.  Activate account with information sent on out-of-band channel. &
+\vspace{-3mm}
+\begin{enumerate}
+  \item{Create email account (steps 1-3 in webmail).}
+  \item{Configure PGP client to use the email account.}
+  \item{Generate and encrypt keys.}
+  \item{Generate revocation cert.}
+  \item{Publish pubkey.}
+\end{enumerate} 
+\vspace{-\topsep}\\
 
-1.  Create email account (steps 1-3 in webmail) \\ 
-2.  Configure PGP client to use the email account \\
-3.  Generate keys \\
-4.  Encrypt keys \\
-5.  Generate revocation cert \\
-6.  Publish pubkey \\
 \hline
 \end{tabular}
-\caption{\it Creating an account}
+\caption{\it Steps to create an account}
 \label{tab:account-creation}
-\end{table*}
+\end{table}
 
 
-Changing or resetting a password in STEAK is a matter of either submitting the old password or answering the security questions, and waiting for the account state to be re-sealed.  This is similar to webmail’s semantics.  However, while some PGP implementations offer a key recovery option using security questions, it must be manually enabled.  Moreover, the user must manually change the key password after recovering the key.
-===\\
-TODO: TABLE \\
-===\\
+Changing or resetting a password in STEAK is a matter of either submitting the old password or answering the security questions, and waiting for the account state to be re-sealed.  This is similar to webmail’s semantics.  While some PGP implementations offer a key recovery option using security questions, it must be manually enabled.  Moreover, the user must manually change the key password after recovering the key.
+
+
+\begin{table}[ht!]
+\begin{tabular}{ | L{3.5cm} | L{3.5cm} |}
+\hline
+\textbf{Webmail and STEAK} & \textbf{PGP} \\
+\hline
+\vspace{-3mm}
+\begin{enumerate}
+  \item{Go to to reset form.}
+  \item{Answer security questions.} 
+  \item{Obtain reset URL out-of-band.}
+  \item{Enter new password.}
+  \item{(STEAK) Wait for re-sealing.}
+\end{enumerate} 
+\vspace{-\topsep} &
+
+\vspace{-3mm}
+\begin{enumerate}
+  \item{Enable key recovery option.}
+  \item{Contact recovery server.}
+  \item{Answer security questions.}
+  \item{Change key password.}
+\end{enumerate} 
+\vspace{-\topsep} \\
+
+\hline
+\end{tabular}
+\caption{\it Steps to reset a password.}
+\label{tab:account-creation}
+\end{table}
+
 Deleting an account in webmail is as simple as entering one’s password and confirming the request.  This is also the case in STEAK, where all public keys are automatically revoked once the request is confirmed.  In PGP, however, the user must not only delete the email account, but also any private keys associated with it.  The user must erase the public keys from the key servers, and publish revocation certificates for the private keys.
-
-===\\ 
-TODO: TABLE \\
-===\\
 
 \subsection{Contact Management}
 
-Adding a contact in webmail is usually a matter of filling out a form, if it is not done automatically.  The form at a minimum prompts for an email address and a name, but other fields are possible.  Similarly, deleting a contact is a matter of selecting the record from the UI for deletion.  This is also the case in STEAK.
+Adding a contact in webmail is usually a matter of filling out a form, if it is not done automatically.  At a minimum it requires an email address and a name, but other fields are possible.
 
-With PGP however, the user must verify and trust a public key.  Mailpile attempts to reduce this to scanning QR codes or obtaining them from email attachments automatically, but nevertheless the user must make a choice on the trustworthiness of the peers who signed it.  Applying TOFU semantics makes it easier to use but less secure than STEAK, because there is only a single source for the key.
+With PGP, the user must obtain, verify and trust a public key as well.  Mailpile attempts to reduce this to scanning QR codes or obtaining them from email headers, but nevertheless the user must make a choice on the trustworthiness of the peers who signed it.  Applying TOFU semantics makes it easier to use but less secure than STEAK, because there is only a single source for the key.  Moroever, PGP users must periodically re-acquire keys when old ones expire.
 
-Deleting a contact in webmail, STEAK, and PGP is equivalently easy.
-===\\
-TODO: TABLE \\
-===\\
+AutoKey lets STEAK obtain keys automatically and keep them fresh.
+
+\begin{table}[ht!]
+\begin{tabular}{ | L{3.5cm} | L{3.5cm} |}
+\hline
+\textbf{Webmail and STEAK} & \textbf{PGP} \\
+\hline
+\vspace{-3mm}
+\begin{enumerate}
+  \item{Open new contact.}
+  \item{Add name, email.} 
+  \item{Save.}
+\end{enumerate} 
+\vspace{-\topsep} &
+
+\vspace{-3mm}
+\begin{enumerate}
+  \item{Open new contact.}
+  \item{Add name, email.}
+  \item{Obtain, verify, and trust pubkey.}
+  \item{Save.}
+  \item{Repeat 3-5.}
+\end{enumerate} 
+\vspace{-\topsep} \\
+
+\hline
+\end{tabular}
+\caption{\it Steps to add a contact.}
+\label{tab:account-creation}
+\end{table}
 
 \subsection{Accessing, Sending, and Receiving Email}
 
-Accessing email from multiple devices is trivial in webmail if the device has a web browser.  It is equivalently easy in STEAK once the endpoint code is installed--AutoKey obtains the private keys automatically, and automatically generates endpoint-specific signing keys.  In PGP, however, the user must manually generate and install a subkey (equivalent to a signing key).
+Accessing email from multiple devices is trivial in webmail if the device has a web browser.  It is equivalently easy in STEAK and PGP once the endpoint code is installed and set up.
 
-Sending a message in webmail is a matter of opening a window to compose it, selecting the recipients, and sending it.  However, PGP implementations require the user to at least click through UI elements to encrypt and sign the message.  This is because only the user knows whether or not the recipient will be capable of decrypting the ciphertext.
+Sending a message in webmail is a matter of opening a window to compose it, selecting the recipients, and sending it.  However, PGP implementations require the user to at least click through UI elements to encrypt and sign the message.  This is because only the user knows whether or not the recipient will be capable of decrypting the ciphertext.  STEAK's transparent backwards compatibility lets users avoid this, akin to webmail.
 
-STEAK avoids this altogether when communicating with other STEAK users or users that do not need CIA (akin to webmail’s semantics).  When CIA guarantees are needed, it offers a password-based secure communication channel.  This is also more akin to webmail semantics, where the user expects to obtain secure access via passwords.  
+\begin{table}[ht!]
+\begin{tabular}{ | L{3.5cm} | L{3.5cm} |}
+\hline
+\textbf{Webmail and STEAK} & \textbf{PGP} \\
+\hline
+\vspace{-3mm}
+\begin{enumerate}
+  \item{Open compose window.}
+  \item{Select recipients.} 
+  \item{Type body, add attachments.}
+  \item{Send message.}
+\end{enumerate} 
+\vspace{-\topsep} &
 
-Reading messages in webmail and STEAK is equivalently easy--a user selects the unopened message, and the UI displays it.  STEAK, through AutoKey, obtains the public key and performs the decryption automatically.  PGP implementations can decrypt messages automatically if the key is known, but the user may be prompted to obtain it and trust it if not.
+\vspace{-3mm}
+\begin{enumerate}
+  \item{Open compose window.}
+  \item{Select recipients.}
+  \item{Type body, add attachments.}
+  \item{Encrypt and sign.}
+  \item{Send message.}
+\end{enumerate} 
+\vspace{-\topsep} \\
 
-===\\
-TODO: TABLES \\
-===\\
+\hline
+\end{tabular}
+\caption{\it Sending a message.}
+\label{tab:account-creation}
+\end{table}
+
+
+Reading a message in webmail is a matter of selecting the unread message.  This is also the case in STEAK-to-STEAK communication, and STEAK/SMTP communication where no CIA is needed.  Even in STEAK/SMTP communication with limited CIA, submitting a shared password to access a message is not a foreign concept.
+
+PGP implementations can decrypt messages automatically if the key is known.  However, the user may be prompted to obtain and trust the key if not.
+
+\begin{table}[ht!]
+\begin{tabular}{ | L{3.5cm} | L{3.5cm} |}
+\hline
+\textbf{Webmail and STEAK} & \textbf{PGP} \\
+\hline
+\vspace{-3mm}
+\begin{enumerate}
+  \item{Select message.}
+  \item{(STEAK/SMTP): submit CIA secret.}
+\end{enumerate}
+\vspace{-3mm}
+ &
+
+\vspace{-3mm}
+\begin{enumerate}
+  \item{Select message.}
+  \item{If not trusted, obtain, verify, and trust pubkey.}
+\end{enumerate} 
+\vspace{-\topsep} \\
+
+\hline
+\end{tabular}
+\caption{\it Reading a message.}
+\label{tab:account-creation}
+\end{table}
 
 \subsection{Performance}
 ===\\
