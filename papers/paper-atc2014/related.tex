@@ -21,14 +21,12 @@ automatically vouch for it, allowing users to bootstrap trust in one another.
 However, this approach assumes the CAs are never compromised, and requires them
 to decide when to revoke keys.
 In contrast, StealthMail trusts CAs only for registration and backwards
-compatibility, and revokes keys when users believe 
-their passwords are compromised.
+compatibility, and revokes keys if passwords are possibly compromised.
 
-Another approach is ID-based cryptography, whereby system components
-derive a user's public key from her identity~\cite{id-based-cryptography}.  This 
-eliminates the need for PKI and public key distribution.  However,
+Another approach is ID-based cryptography, where the system 
+derives a user's public key from her identity~\cite{id-based-cryptography}, eliminating the need for PKI and key distribution.  However,
 revoking unexpired keys is infeasible---either the user must change 
-her identity, or the master private key (and all other public keys) must be 
+her identity, or the master private key (and all public keys) must be 
 regenerated.
 
 We consider StealthMail's architecture to be an incremental improvement on
