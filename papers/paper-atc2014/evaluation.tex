@@ -3,7 +3,7 @@
 
 Our usability goal has been to preserve the semantics of webmail while offering transparent end-to-end CIA.  To evaluate this, we consider the steps and information required to complete common webmail tasks, and compare them to how STEAK and PGP perform them.  These include setting up and destroying an account, adding and removing a contact, sending and receiving messages, and changing account passwords.
 
-In evaluating against PGP for usability, we use the user’s guide for PGP 7.0~\cite{pgp7} as a baseline comparison.  We also consider approaches taken by Enigmail~\cite{enigmail} and Mailpile~\cite{mailpile}, which seek to make PGP easier to use for securing email.  We show that while STEAK does not offer exact webmail semantics, it offers semantics much closer to webmail than even user-friendly PGP implementations.
+In evaluating against PGP for usability, we use the user's guide for PGP 7.0~\cite{pgp7} as a baseline comparison.  We also consider approaches taken by Enigmail~\cite{enigmail} and Mailpile~\cite{mailpile}, which seek to make PGP easier to use for securing email.  We show that while STEAK does not offer exact webmail semantics, it offers semantics much closer to webmail than even user-friendly PGP implementations.
 
 At the same time, our performance goal for STEAK is to remain responsive to user actions.  Our preliminary evaluation shows that the added latencies our design imposes on synchronous storage operations (including reading and writing messages, keys, and contacts) are both negligible.
 
@@ -34,7 +34,7 @@ Destroying an account in webmail and STEAK are equivalent--the user navigates to
 \subsection{Account Management}
 Registering an account in STEAK has a similar workflow to registering a webmail account; the only difference is that STEAK users must also submit cloud storage authentication tokens and additional metadata repositories (if desired).
 
-By contrast, a PGP client requires the user to create an email account before configuring it, making the task at least as difficult as webmail.  It additionally requires users to generate keys and revocation certificates, and export the public key (e.g. to a key server).  While it is possible to integrate this into the account registration process (the approach taken by Mailpile), the user is inevitably involved in the key setup process because she will need to learn how to sign and trust other users’ keys. 
+By contrast, a PGP client requires the user to create an email account before configuring it, making the task at least as difficult as webmail.  It additionally requires users to generate keys and revocation certificates, and export the public key (e.g. to a key server).  While it is possible to integrate this into the account registration process (the approach taken by Mailpile), the user is inevitably involved in the key setup process because she will need to learn how to sign and trust other users' keys. 
 
 \begin{table}[ht!]
 \begin{tabular}{ | L{3.5cm} | L{3.5cm} |}
@@ -66,7 +66,7 @@ By contrast, a PGP client requires the user to create an email account before co
 \end{table}
 
 
-Changing or resetting a password in STEAK is a matter of either submitting the old password or answering the security questions, and waiting for the account state to be re-sealed.  This is similar to webmail’s semantics.  While some PGP implementations offer a key recovery option using security questions, it must be manually enabled.  Moreover, the user must manually change the key password after recovering the key.
+Changing or resetting a password in STEAK is a matter of either submitting the old password or answering the security questions, and waiting for the account state to be re-sealed.  This is similar to webmail's semantics.  While some PGP implementations offer a key recovery option using security questions, it must be manually enabled.  Moreover, the user must manually change the key password after recovering the key.
 
 
 \begin{table}[ht!]
@@ -99,7 +99,7 @@ Changing or resetting a password in STEAK is a matter of either submitting the o
 \label{tab:account-creation}
 \end{table}
 
-Deleting an account in webmail is as simple as entering one’s password and confirming the request.  This is also the case in STEAK, where all public keys are automatically revoked once the request is confirmed.  In PGP, however, the user must not only delete the email account, but also any private keys associated with it.  The user must erase the public keys from the key servers, and publish revocation certificates for the private keys.
+Deleting an account in webmail is as simple as entering one's password and confirming the request.  This is also the case in STEAK, where all public keys are automatically revoked once the request is confirmed.  In PGP, however, the user must not only delete the email account, but also any private keys associated with it.  The user must erase the public keys from the key servers, and publish revocation certificates for the private keys.
 
 \subsection{Contact Management}
 
