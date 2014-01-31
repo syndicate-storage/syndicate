@@ -1,12 +1,10 @@
 \section{Introduction}
 
 Over the past decades, email has gained wide-spread adoption 
-and is now a core communication service for society. However, 
-some of its original design choices have had a profound impact 
-on email information security, email storage, and common email 
-tasks like search and filtering. In this paper, we revisit some 
-of these choices and propose a backwards-compatible email service, 
-called STEAK, that addresses these concerns in the context of 
+and is now a core communication mechanism for society. Millions of people rely on email as the primary means of communication for their jobs and billions of email messages are sent everyday. However, 
+some of the original design choices of email have had a profound impact 
+on email security and storage---making email a fundamentally insecure communication channel. In this paper, we revisit these design choices and propose a backwards-compatible email system, 
+called StealthMail, that addresses security limitations in the context of 
 contemporary usability expectations.
 
 Users send a wide variety of information in their email messages, 
@@ -28,7 +26,7 @@ through webmail from a variety of user devices. We believe that providing
 stronger security guarantees cannot come at an expense of reduced usability. 
 Our goal is to design an email service that provides the fundamental 
 security properties of message confidentiality, integrity, and authenticity 
-(called CIA guarantees in the rest of the paper), while providing the 
+(called \emph{CIA guarantees} in the rest of the paper), while providing the 
 features and user experience of webmail.  This is a nontrivial problem 
 and current security approaches require running out-of-band security 
 systems ``on top'' of email usually by leveraging public-key cryptography. 
@@ -40,42 +38,40 @@ reduces usability by requiring active involvement in key management.
 Users must generate, distribute, and revoke public keys with the out-of-band 
 system, and carefully guard their private keys while remaining vigilant 
 for compromises. We believe this is unreasonable because most users do 
-not understand practical information security, and want the convenience 
-of webmail despite the security problems it introduces. Even if they 
-understood the security concerns, using public-key cryptography in this 
-manner greatly increases the complexity of basic email tasks. 
+not understand practical information security. Even if they 
+understood the security concerns of using webmail, using public-key cryptography in this 
+manner greatly increases the complexity of basic email tasks. It's not surprising that a majority of users don't use security features even when they're available to them in the email client~\cite{garfinkel-email-survey}. 
 
-Our key insight is that email's store-and-forward approach makes CIA 
-guarantees hard to achieve. Because each email server stores and processes 
-messages, a user must either trust the server completely to not to break 
-CIA, or perform end-to-end authenticated encryption outside of the system. 
+Convenience of use is a critical design goal for any secure email system.
+Our goal is to provide \emph{CIA guarantees} (confidentiality, integrity, and authenticity) without hurting usability.  
+Our key insight is that email's store-and-forward approach makes \emph{CIA 
+guarantees} hard to achieve. Because each email server stores and processes 
+messages, a user must either trust the server completely or perform end-to-end authenticated encryption outside of the system. 
 The former is unrealistic, but the latter requires users to set up and 
 manage keys out-of-band. To address these challenges in this paper we 
-present a new email system called Security Transparent Email with 
-Automatically-managed Keys (STEAK). 
+present a new email system called StealthMail that enables secure email with usability semantics of webmail.
 
-The contributions of STEAK are 1) an automatic key management system 
-(called AutoKey) and 2) an email exchange protocol (called Secure Message 
+The key contributions of our work are 1) an automatic key management system 
+(called AutoKey) and 2) a pull-based email exchange protocol (called Secure Message 
 Request Protocol, or SMRP) that allow users to access their email using a 
-web browser on any device. STEAK enables access to email with only a 
+web browser on any device. StealthMail uses AutoKey and SMRP to enable email access with only a 
 username/password pair and a small amount of additional logic at the 
-email client. To do so, STEAK leverages the user's own personal cloud 
+email client. To do so, StealthMail leverages the user's own personal cloud 
 storage to host sealed account state, sealed keys, and sealed messages. 
 The user devices (clients), not servers, process messages after decrypting 
-them. Within STEAK, the AutoKey system automatically distributes keys, 
+them. Within StealthMail, the AutoKey system automatically distributes keys, 
 e.g., Alice's public keys to Bob, using an array of non-colluding 
-repositories. Once keys are distributed, Bob can receive 
+repositories. After key distribution, Bob can receive 
 messages from Alice using SMRP. Under the hood, SMRP 
 actually downloads messages from the sender's cloud storage. All the while, 
-STEAK remains transparently backwards-compatible with SMTP, and offers 
-a more limited CIA guarantee to non-STEAK users.
+StealthMail remains transparently backwards-compatible with SMTP, and offers 
+more limited security guarantees to non-StealthMail users.
 
-The remainder of this paper is organized as follows.  In section~\ref{sec:motivation}, 
-we define our usability requirements, and argue that our strategy is necessary 
-to meet them for providing CIA guarantees. Then, we present the design of STEAK 
-in section~\ref{sec:design}, with a focus on AutoKey and SMRP, and describe how basic 
-email activities are performed.  Afterward, we present our 
-implementation strategies and prototype (section~\ref{sec:implementation}), and give 
-a qualitative usability 
-analysis and a preliminary performance evaluation (section~\ref{sec:evaluation}).  
-We finish with related work (Section~\ref{sec:related-work}) and a conclusion (section~\ref{sec:conclusion}).
+The remainder of this paper is organized as follows.  In Section~\ref{sec:motivation}, 
+we define our threat model and usability requirements, and argue why our strategy is necessary 
+for meeting the usability requirements. We present the design of StealthMail, with a focus on AutoKey and SMRP,  
+in Section~\ref{sec:design} and describe how basic 
+email activities are performed. We present our implementation strategy for an 
+open-source prototype (Section~\ref{sec:implementation}), and discuss results from a qualitative usability 
+analysis and a preliminary evaluation (Section~\ref{sec:evaluation}).  
+Finally, we discuss related work (Section~\ref{sec:related-work}) and future directions (Section~\ref{sec:conclusion}).

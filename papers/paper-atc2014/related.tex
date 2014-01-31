@@ -1,9 +1,8 @@
 \section{Related Work}
 \label{sec:related-work}
 
-STEAK falls into the growing body of work relating to HCI in information security.  Barriers
-to using secure email include lack of technical aptitude~\cite{why-jonny-cant-encrypt}
-~\cite{garfinkel-email-survey}, and
+StealthMail falls into the growing body of work relating to HCI in information security.  Barriers
+to using secure email include lack of technical aptitude~\cite{garfinkel-email-survey, why-jonny-cant-encrypt}, and
 stigmatization of chronic use~\cite{crypto-adoption-criteria}.
 
 There have been several attempts to create usably secure email.
@@ -21,7 +20,7 @@ In these systems, a user's host generates a key and one or more trusted CAs
 automatically vouch for it, allowing users to bootstrap trust in one another.
 However, this approach assumes the CAs are never compromised, and requires them
 to decide when to revoke keys.
-In contrast, STEAK trusts CAs only for registration and backwards
+In contrast, StealthMail trusts CAs only for registration and backwards
 compatibility, and revokes keys when users believe 
 their passwords are compromised.
 
@@ -32,7 +31,7 @@ revoking unexpired keys is infeasible---either the user must change
 her identity, or the master private key (and all other public keys) must be 
 regenerated.
 
-We consider STEAK's architecture to be an incremental improvement on
+We consider StealthMail's architecture to be an incremental improvement on
 the Internet Mail 2000~\cite{im2k} proposal.  We take advantage of cloud storage 
 independent of the user's ISP, while also addressing security and ubiquitous
 access in addition to disincentivizing spam.

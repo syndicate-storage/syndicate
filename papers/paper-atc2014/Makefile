@@ -14,6 +14,13 @@ paper.dvi:
 osx:
 	/usr/texbin/pdflatex $(PAPER).tex
 
+osx-bib:
+	/usr/texbin/latex $(PAPER).tex
+	/usr/texbin/bibtex $(PAPER)
+	/usr/texbin/latex $(PAPER).tex
+	/usr/texbin/latex $(PAPER).tex
+	/usr/texbin/pdflatex $(PAPER).tex
+
 clean:
 	rm -f $(PAPER).pdf $(PAPER).dvi $(PAPER).aux $(PAPER).bbl $(PAPER).blg $(PAPER).log $(PAPER).ent
 

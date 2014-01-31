@@ -2,58 +2,48 @@
 \label{sec:motivation}
 
 Any secure communication protocol needs to provide three 
-fundamental security guarantees of message confidentiality 
-(only sender and receiver can read the message), message 
-authenticity (receiver can verify that the message came 
-from the correct sender), and message integrity (the message 
+fundamental security guarantees of \emph{confidentiality} 
+(only sender and receiver can read the message), 
+\emph{authenticity} (receiver can verify that the message came 
+from the correct sender), and \emph{integrity} (the message 
 was not tampered with during communication). We call these 
-CIA guarantees. Traditional email protocols like SMTP do not
-provide them.
+\emph{CIA guarantees}. Traditional email protocols like SMTP do not
+provide any of these guarantees, and yet people continue to use email every day for exchanging sensitive personal and business information like financial information, healthcare records, legal documents, etc. Further, email addresses are used to access a variety of online services (like social networks, online bank accounts, online credit reports, etc.) and insecure email implies that access to these online services can be compromised.
 
-CIA guarantees can be achieved by using an out-of-band security 
+For secure email communication, \emph{CIA guarantees} can be achieved by using an out-of-band security 
 protocol like PGP on top of email. However, this significantly 
 complicates the user experience and is not a practical approach 
 for a majority of email users. Most email users are not tech-savvy 
-and over the years they’ve become accustomed to the ease-of-use of 
-web-based email services like Gmail~\cite{GMail}. Providing CIA 
-guarantees while keeping the system as easy to use as webmail is 
-a non-trivial technical problem. 
+and over the years they've become accustomed to the ease-of-use of 
+web-based email services like Gmail~\cite{GMail}. Providing \emph{CIA 
+guarantees} without hurting usability is a non-trivial technical problem.
 
-In this paper, we focus on providing end-to-end CIA guarantees 
+Our focus is on providing end-to-end \emph{CIA guarantees} 
 with a user experience as close as possible to that of webmail. 
-Specifically, we focus on providing CIA guarantees on the message 
-contents (subject, body, and attachments) and the account state only. 
-Providing security guarantees for metadata, such as when the message 
-was sent and received and what the senders’ and recipients’ addresses 
-are, is the subject of future work.
+Specifically, we focus on the security of message 
+content (subject, body, and attachments) and account state only. We believe that security of metadata information (timestamps, senders' and recipients' addresses, etc.) is significantly less critical than security of message content and account state. 
+Providing security guarantees for metadata is the subject of future work.  
 
-We first describe our threat model and present possible adversaries 
+In this section, we first describe our threat model and present possible adversaries 
 that two webmail users Alice and Bob are likely to face. From the 
-threat model, we derive the requirements on key management. We also 
-define usability requirements of Alice and Bob for various email tasks.
- Our goal is that both the security requirements and the usability 
-requirements must be met. We then argue that to perform the required 
-key management automatically and securely, a webmail service must 
-have at least three separate non-colluding services---one for processing 
-state, one for hosting state, and one for hosting copies of the public keys. 
+threat model, we derive the requirements on key management. We show that secure and automatic key management requires at least three separate non-colluding services---one for processing 
+state, one for hosting state, and one for hosting copies of the public keys. Further, we define usability requirements for various email tasks. Our goal is that both the security and usability requirements must be met. 
 
 \subsection{Threat Model}
-Let Alice and Bob be two users that rely on webmail to communicate.  They do not understand key management, but they never divulge their passwords. They each use multiple different user devices (endpoints) to access their accounts, and have fixed expectations on how to carry out common tasks in webmail (Table~\ref{tab:user-experience}).
+For defining our threat model, we assume two users Alice and Bob that rely on webmail to communicate. They do not understand key management, but they never divulge their passwords. They each use multiple different user devices (called \emph{endpoints}) to access their accounts, and have fixed expectations on how to carry out common tasks in webmail (described in Table~\ref{tab:user-experience}).
 
-Let Eve and Mal be technically capable adversaries of Alice and Bob.  Eve wants to break message confidentiality by reading as many messages as possible.  Mal wants to break integrity and authenticity by altering or forging messages.  However, they are computationally bound, they cannot compel users to divulge information, and they want to avoid getting detected.
+Let Eve and Mal be technically capable adversaries.  Eve wants to break message confidentiality by reading as many messages as possible.  Mal wants to break integrity and authenticity by altering or forging messages.  However, they are computationally bound (their computation power is not orders of magnitude greater than the users they're attacking), they cannot compel users to divulge information, and they want to avoid getting detected. 
 
-We assume that it is more cost-effective for Eve and Mal to target email servers and communication channels than (potentially millions of) user devices i.e., attempting to compromise an email server that hosts information for $n$ users is more cost effective than trying to compromise those $n$ users individually. Also, from a practical point of view, most messages do not have much information of interest to Eve and Mal.
+We assume that it is more cost-effective for Eve and Mal to target email servers and communication channels than (potentially millions of) user devices i.e., compromising an email server that hosts information for $n$ users is more cost effective than trying to compromise those $n$ users individually. Also, practically, most messages do not have much information of interest to Eve and Mal.
 
-Eve’s main method of attack is eavesdropping.  With one exception, she can read traffic on every network link and server, as well as every bit of information exchanged between users without being detected.  She can compel any server or network link to disclose all of its information to her over any length of time, and can remember an arbitrary amount of data.  The only bit of information she cannot observe is Alice's password when she registers her account.
+Eve's main method of attack is eavesdropping.  With one exception, she can read traffic on every network link and server, as well as every bit of information exchanged between users without being detected.  She can compel any server or network link to disclose all of its information to her over any length of time, and can remember an arbitrary amount of data. The only bit of information she cannot observe is Alice's password when she registers her account. Additionally, we assume that Eve can make offline copies of any endpoint's stable storage, but she cannot observe the state of the user devices while they are in use. In other words, we assume that Eve does not have access to decrypted private keys.  
 
-Additionally, we assume that Eve can make offline copies of any endpoint’s stable storage, but she cannot observe the state of the user devices while they are in use. In other words, we assume that Eve does not have access to decrypted private keys.  
+Unless otherwise noted, we assume that at any given time, Mal can either alter the behavior of servers, or alter packet flows in communication channels, but not both at once. We assume that if Mal compromises servers, she cannot compromise at least one of the StealthMail servers Alice and Bob rely on. Similarly, if Mal compromises communication channels, she cannot alter the packets in at least one of the channels Alice and Bob use.  Alice and Bob do not know which servers or channels are uncompromised.  Further, Mal cannot cause endpoint devices to misbehave while they are in use.
 
-Unless otherwise noted, we assume that at any given time, Mal can either alter the behavior of servers, or alter packet flows in communication channels, but not both at once. We assume that if Mal compromises servers, she cannot compromise at least one of the STEAK servers Alice and Bob rely on. Similarly, if Mal compromises communication channels, she cannot alter the packets in at least one of the channels Alice and Bob use.  Alice and Bob do not know which servers or channels are uncompromised.  Further, Mal cannot cause endpoint devices to misbehave while they are in use.
-
-We will show in subsequent sections that under this threat model, STEAK provides Alice and Bob message and account state CIA.  Eve cannot feasibly learn the contents of their conversations, and Mal can only prevent the users from communicating.
+We will show in subsequent sections that under this threat model, StealthMail provides \emph{CIA guarantees} for message content and account state.  Eve cannot feasibly learn the contents of their conversations, and Mal can only prevent the users from communicating.
 
 \subsection{Key Management and Usability}
-Even though we only care about CIA guarantees on messages and account 
+Even though we only care about \emph{CIA guarantees} on messages and account 
 state, the key management necessary to provide them, given our threat 
 model, affects other necessary tasks like session management, account 
 management, and contact management in addition to basic sending and 
@@ -88,7 +78,7 @@ Read email & Verify and decrypt \\
 
 At the same time, Alice and Bob do not know how to use or manage keys. 
 They expect to submit their usernames and passwords to begin a session 
-in their web browsers, and gain CIA guarantees automatically.  They 
+in their web browsers, and gain \emph{CIA guarantees} automatically.  They 
 also expect to use any user device and always see up-to-date information.  
 This means the user endpoints must synchronize hard state across sessions, 
 including the keys, account information, and messages, with one or more 
@@ -97,28 +87,22 @@ tamper-evident way to prevent Mal from silently altering state, and
 in a privacy-preserving way to prevent Eve from reading it.
 
 If Alice and Bob communicate through a single server, Mal can trick 
-their endpoints into learning the wrong public keys if she compromises 
-the server or one of the links.  But under our threat model, Alice 
-and Bob can only use one server if they first assume that Mal does 
-not compromise anything!  Thus, exchanging public keys must involve 
-leveraging more servers and links than Mal can compromise, and in 
-practice this can be assumed to be at least 1.  This means that 
-there must be at least two sources for both public keys and and 
+them into learning the wrong public keys if she compromises 
+the server or one of the links. If Alice and Bob are not aware of Mal, then they can end up using a single server to communicate and fall for the attack. Exchanging public keys securely must involve 
+leveraging more servers and links than Mal can compromise, and we require that at least one source is not compromised. Meaning, there must be at least two sources for both public keys and 
 anti-tampering metadata.
 
 Because Eve can read any server and any network link, the endpoints 
 must necessarily implement end-to-end state encryption between Alice 
 and Bob.  This prevents the (computationally bound) servers from 
-processing messages, however, so the endpoints must work together 
-to do so instead, constituting a separate message processing subservice 
-within the email system.  Thus we need at least three components in the 
+reading messages. However, user endpoints must work together 
+to perform end-to-end encryption, constituting a separate message processing subservice 
+within StealthMail. Combining the requirements of possible attacks by both Mal and Eve implies that we need at least three components in the 
 design of our system: a trusted message processing component at the 
 endpoints, and at least two public key and anti-tampering metadata 
 repositories.
 
-Using our strategy, we reduce the problem of giving Bob Alice’s public 
-key to helping Bob’s endpoint discover which repositories can serve it.  
-We address this by embedding the names of the repositories directly into 
-Alice’s email address. We realize that embedding this extra information 
+In our approach, we reduce the problem of key distribution to helping user endpoints discover which repositories can serve the appropriate keys.  
+We address this by embedding the names of the repositories directly into email addresses. We realize that embedding this extra information 
 into the email address makes the email address harder to read/remember 
 and we plan to address this issue in future work. 
