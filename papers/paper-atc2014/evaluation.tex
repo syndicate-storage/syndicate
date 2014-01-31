@@ -206,3 +206,5 @@ PGP implementations can decrypt messages automatically if the key is known.  How
 
 \subsection{Performance}
 
+Keeping latency as low as possible is important for the user experience.  Our strategy for doing so is to perform as much work asynchronously as possible, so as to not keep the user waiting.  However, encrypting messages must occur synchronously, because the user expects messages to be sent as soon as the "send" command is given.
+
