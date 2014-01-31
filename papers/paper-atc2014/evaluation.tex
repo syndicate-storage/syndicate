@@ -4,7 +4,7 @@ Our usability goal has been to preserve the semantics of webmail while offerring
 
 In evaluating against PGP for usability, we use the user’s guide for PGP 7.0 as a baseline comparison.  We also consider approaches taken by Enigmail, Mailpile, and Mailvelope, which seek to make PGP easier to use for securing email.  We show that while STEAK does not offer exact webmail semantics, it offers semantics much closer to webmail than even user-friendly PGP implementations.
 
-At the same time, our performance goal for STEAK is to avoid hindering responsiveness to user interaction.  Our preliminary evaluation shows that running AutoKey asynchronously hides the time needed to perform key distribution, and that encryption and decryption do not significantly increase latency.
+At the same time, our performance goal for STEAK is to remain responsive to user actions.  Our preliminary evaluation shows that the added latencies our design imposes on synchronous storage operations (including reading and writing messages, keys, and contacts) are both negligible.
 
 \subsection{Endpoint Management}
 Assuming the web browser is already installed, setting up webmail takes no effort from the user.  However, because performing encryption in server-chosen Javascript with no validation is unsafe, both PGP and STEAK require an additional software component to be installed on each endpoint.  While this can be simplified with the endpoint device's app store, a PGP user must also create a subkey for each device, and sign it with the master key.
@@ -206,5 +206,10 @@ PGP implementations can decrypt messages automatically if the key is known.  How
 
 \subsection{Performance}
 
-Keeping latency as low as possible is important for the user experience.  Our strategy for doing so is to perform as much work asynchronously as possible, so as to not keep the user waiting.  However, encrypting messages must occur synchronously, because the user expects messages to be sent as soon as the "send" command is given.
+Keeping latency low is critical for a smooth user experience.  To do so, our implementation reads and writes state asynchronously, and displays a UI element to indicate its status.  Nevertheless, we seek to minimize the latency our design introduces on top of cloud storage access.
 
+Writing a record entails both encrypting the record, and replicating storage signatures.  To understand how much latency this adds, we used a four-year-old Core i7-620M laptop to encrypt a 26KB message with a 4096-bit RSA key pair 100 times.  We employed constant-time encryption, so the particular key would not affect the timings.  We chose 26KB because it was the average email message size without attachments in 2013, according to one market research firm~\cite{email-statistics-report}.  We found that on average, it took only 0.27 seconds to encrypt the message (with a standard deviation of 0.005 seconds).  This is almost beneath notice.
+
+When reading or writing a record, our prototype additionally gathers and scatters storage signatures.  To measure the latency this can add for a medium-sized organization, we deployed the Syndicate Metadata Service (which served as our metadata repository) on Google AppEngine~\cite{google-appengine}, and used the Princeton VICCI~\cite{VICCI} cluster for cloud storage.  Both handled signature requests over HTTPS.
+
+We used 300 PlanetLab~\cite{PlanetLab} nodes to simulate the organization by reading and writing signatures simultaneously.  Half of them received the signatures in less than 0.25 seconds, and 90 percent in less than 0.5 seconds.  Half of them wrote new signatures in less than 1.5 seconds, and 90 percent in less than 2.5 seconds.  We believe this is acceptable, since in practice many minutes pass between storage operations.

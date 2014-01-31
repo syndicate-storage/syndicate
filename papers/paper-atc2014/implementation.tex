@@ -1,6 +1,6 @@
 \section{Implementation}
 
-The individual technologies needed to implement STEAK already exist.  For storage, STEAK relies on Syndicate to provide an abstraction layer across arbitrary cloud storage providers while providing common consistency, integrity, authenticity, and authorization semantics.  For running the endpoint code, STEAK relies on now-ubiquitous virtual machine technology to achieve portability and isolation from the browser and underlying OS.
+The individual technologies needed to implement STEAK already exist.  For storage, STEAK relies on Syndicate to provide an abstraction layer over storage providers while implementing common consistency, integrity, authenticity, and authorization semantics.  For running the endpoint code, STEAK relies on now-ubiquitous virtual machine technology to achieve portability and isolation from the browser and underlying OS.
 
 The two usability challenges the implementation must help the user overcome are setting up the endpoint VM and getting access to the user’s cloud storage.  To address the former, we deliver endpoint code as an “app” that the user installs via a device-specific app store.  Once installed, it does not have to be accessed directly, and the app store will keep it up-to-date.  We believe users are already used to installing software from app stores, and thus we do not believe this extra step poses a significant usability barrier.
 

@@ -119,7 +119,7 @@ When Alice logs in next, her endpoint “imports” her old account data by unse
 Deleting an account is similar to revoking the keys.  The only difference in the process is that no new keys are generated.
 
 \subsection{Sending, Receiving, and Un-Sending}
-Once Alice and Bob have exchanged public keys with AutoKey, they communicate with SMRP, described in this section.  In SMRP, Alice sends Bob a message by sealing it with his storage public key, uploading it to her cloud storage, and making it world-readable. Bob’s endpoint downloads and decrypts it, sanitizes it, and serves it to Bob’s browser for him to read. The same principle applies to attachments, which in STEAK are sent as separate files to be downloaded.
+Once Alice and Bob have exchanged public keys with AutoKey, they communicate with SMRP, described in this section.  In SMRP, Alice sends Bob a message by sealing it with his storage public key, uploading it to her cloud storage, and making it world-readable. Bob’s endpoint downloads and decrypts it, sanitizes it, and serves it to Bob’s browser for him to read. The same principle applies to attachments, which in STEAK are sent as separate files to be downloaded.  Alice makes a copy for herself in her "sent" folder, if desired.
 
 If Bob expects email from Alice, he can search Alice’s cloud storage for new messages and fetch them.  The UI allows him to query individual contacts for new messages.
 
