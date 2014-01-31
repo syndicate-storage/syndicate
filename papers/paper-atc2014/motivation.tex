@@ -14,7 +14,7 @@ protocol like PGP on top of email. However, this significantly
 complicates the user experience and is not a practical approach 
 for a majority of email users. Most email users are not tech-savvy 
 and over the years they’ve become accustomed to the ease-of-use of 
-web-based email services like Gmail [ref] and Hotmail [ref]. Providing CIA 
+web-based email services like Gmail~\cite{GMail} and Hotmail~\cite{hotmail}. Providing CIA 
 guarantees while keeping the system as easy to use as webmail is 
 a non-trivial technical problem. 
 
@@ -37,15 +37,17 @@ have at least three separate non-colluding services---one for processing
 state, one for hosting state, and one for hosting copies of the public keys. 
 
 \subsection{Threat Model}
-Let Alice and Bob be two users that rely on webmail to communicate.  They do not understand key management, but they never divulge their passwords. They each use multiple different user devices (called endpoints) to access their accounts, and have fixed expectations on how to carry out common tasks in webmail (Table 1).
+Let Alice and Bob be two users that rely on webmail to communicate.  They do not understand key management, but they never divulge their passwords. They each use multiple different user devices (endpoints) to access their accounts, and have fixed expectations on how to carry out common tasks in webmail (Table~\ref{tab:user-experience}).
 
 Let Eve and Mal be technically capable adversaries of Alice and Bob.  Eve wants to break message confidentiality by reading as many messages as possible.  Mal wants to break integrity and authenticity by altering or forging messages.  However, they are computationally bound, they cannot compel users to divulge information, and they want to avoid getting detected.
 
-We assume that it is more cost-effective for Eve and Mal to target email servers and communication channels than (potentially millions of) user devices i.e., attempting to compromise an email server that hosts information for n users is more cost effective than trying to compromise those n users individually. Also, from a practical point of view, most users do not have much information of interest to Eve and Mal, and recent improvements in endpoint security [ref] make it difficult to remotely exploit devices at scale.
+We assume that it is more cost-effective for Eve and Mal to target email servers and communication channels than (potentially millions of) user devices i.e., attempting to compromise an email server that hosts information for $n$ users is more cost effective than trying to compromise those $n$ users individually. Also, from a practical point of view, most messages do not have much information of interest to Eve and Mal.
 
-We assume that Eve’s main method of attack is eavesdropping. She can read traffic on every network link and server, as well as every bit of information exchanged between users without being detected.  She can compel any server or network link to disclose all of its information to her over any length of time, and can remember an arbitrary amount of data. Additionally, we assume that Eve can make offline copies of any endpoint’s stable storage, but she cannot observe the state of the user devices while they are in use. In other words, we assume that Eve doesn’t have access to decrypted private keys.  
+Eve’s main method of attack is eavesdropping.  With one exception, she can read traffic on every network link and server, as well as every bit of information exchanged between users without being detected.  She can compel any server or network link to disclose all of its information to her over any length of time, and can remember an arbitrary amount of data.  The only bit of information she cannot observe is Alice's password when she registers her account.
 
-Unless otherwise noted, we assume that at any given time, Mal can either compromise servers, or alter packet flows in communication channels, but not both at once. We assume that if Mal compromises servers, she cannot compromise at least one of the STEAK servers Alice and Bob rely on. Similarly, if Mal compromises communication channels, she can alter the packets in all but one of the channels Alice and Bob use. Further, Mal cannot cause endpoint devices to misbehave while they are in use.
+Additionally, we assume that Eve can make offline copies of any endpoint’s stable storage, but she cannot observe the state of the user devices while they are in use. In other words, we assume that Eve doesn’t have access to decrypted private keys.  
+
+Unless otherwise noted, we assume that at any given time, Mal can either alter the behavior of servers, or alter packet flows in communication channels, but not both at once. We assume that if Mal compromises servers, she cannot compromise at least one of the STEAK servers Alice and Bob rely on. Similarly, if Mal compromises communication channels, she cannot alter the packets in at least one of the channels Alice and Bob use.  Alice and Bob do not know which servers or channels are uncompromised.  Further, Mal cannot cause endpoint devices to misbehave while they are in use.
 
 We will show in subsequent sections that under this threat model, STEAK provides Alice and Bob message and account state CIA.  Eve cannot feasibly learn the contents of their conversations, and Mal can only prevent the users from communicating.
 
@@ -54,10 +56,8 @@ Even though we only care about CIA guarantees on messages and account
 state, the key management necessary to provide them, given our threat 
 model, affects other necessary tasks like session management, account 
 management, and contact management in addition to basic sending and 
-receiving of email (Table~\ref{tab:user-experience}. This is due to how
-public-key cryptography is used to thwart Eve and Mal---to send and
-receive messages, Alice’s endpoint needs her private key and Bob’s
-public key.  But because Alice expects to use any endpoint to access
+receiving of email (Table~\ref{tab:user-experience}). However, Alice
+expects to use any endpoint to access
 their email, endpoints cannot preserve hard state across sessions.  
 Thus, Alice’s endpoint must securely obtain not only Bob’s public key, 
 but also her private key each time she logs in.
@@ -111,7 +111,7 @@ and Bob.  This prevents the (computationally bound) servers from
 processing messages, however, so the endpoints must work together 
 to do so instead, constituting a separate message processing subservice 
 within the email system.  Thus we need at least three components in the 
-design of our system: trusted message processing component at the 
+design of our system: a trusted message processing component at the 
 endpoints, and at least two public key and anti-tampering metadata 
 repositories.
 
