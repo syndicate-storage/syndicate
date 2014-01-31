@@ -33,7 +33,7 @@ features and user experience of webmail.  This is a nontrivial problem
 and current security approaches require running out-of-band security 
 systems ``on top'' of email usually by leveraging public-key cryptography. 
 These include S/MIME and PGP, as well as more recent ID-based encryption 
-schemes [ref].
+schemes~\cite{id-based-cryptography}.
 
 The problem with out-of-band security approaches is that it significantly 
 reduces usability by requiring active involvement in key management. 
@@ -70,12 +70,12 @@ actually downloads messages from the sender's cloud storage. All the while,
 STEAK remains transparently backwards-compatible with SMTP, and offers 
 a more limited CIA guarantee to non-STEAK users.
 
-The remainder of this paper is organized as follows.  In section ``Motivation'', 
+The remainder of this paper is organized as follows.  In section~\ref{sec:motivation}, 
 we define our usability requirements, and argue that our strategy is necessary 
 to meet them for providing CIA guarantees. Then, we present the design of STEAK 
-in section “Design”, with a focus on AutoKey and SMRP, and describe how basic 
-email activities are performed.  Afterward, we present our prototype 
-implementation (Section “Implementation”), and give a qualitative usability 
-analysis and a preliminary performance evaluation (Section “Evaluation”).  
-We finish by discussing related and future work (Section “Related and Future 
-Work”), and presenting concluding remarks (Section “Conclusion”).
+in section~\ref{sec:design}, with a focus on AutoKey and SMRP, and describe how basic 
+email activities are performed.  Afterward, we present our 
+implementation strategies and prototype (section~\ref{sec:implementation}), and give 
+a qualitative usability 
+analysis and a preliminary performance evaluation (section~\ref{sec:evaluation}).  
+We finish with related work (Section~\ref{sec:related-work}) and a conclusion (section~\ref{sec:conclusion}).

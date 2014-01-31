@@ -1,4 +1,5 @@
 \section{Motivation}
+\label{sec:motivation}
 
 Any secure communication protocol needs to provide three 
 fundamental security guarantees of message confidentiality 
@@ -14,7 +15,7 @@ protocol like PGP on top of email. However, this significantly
 complicates the user experience and is not a practical approach 
 for a majority of email users. Most email users are not tech-savvy 
 and over the years they’ve become accustomed to the ease-of-use of 
-web-based email services like Gmail~\cite{GMail} and Hotmail~\cite{hotmail}. Providing CIA 
+web-based email services like Gmail~\cite{GMail}. Providing CIA 
 guarantees while keeping the system as easy to use as webmail is 
 a non-trivial technical problem. 
 
@@ -45,7 +46,7 @@ We assume that it is more cost-effective for Eve and Mal to target email servers
 
 Eve’s main method of attack is eavesdropping.  With one exception, she can read traffic on every network link and server, as well as every bit of information exchanged between users without being detected.  She can compel any server or network link to disclose all of its information to her over any length of time, and can remember an arbitrary amount of data.  The only bit of information she cannot observe is Alice's password when she registers her account.
 
-Additionally, we assume that Eve can make offline copies of any endpoint’s stable storage, but she cannot observe the state of the user devices while they are in use. In other words, we assume that Eve doesn’t have access to decrypted private keys.  
+Additionally, we assume that Eve can make offline copies of any endpoint’s stable storage, but she cannot observe the state of the user devices while they are in use. In other words, we assume that Eve does not have access to decrypted private keys.  
 
 Unless otherwise noted, we assume that at any given time, Mal can either alter the behavior of servers, or alter packet flows in communication channels, but not both at once. We assume that if Mal compromises servers, she cannot compromise at least one of the STEAK servers Alice and Bob rely on. Similarly, if Mal compromises communication channels, she cannot alter the packets in at least one of the channels Alice and Bob use.  Alice and Bob do not know which servers or channels are uncompromised.  Further, Mal cannot cause endpoint devices to misbehave while they are in use.
 

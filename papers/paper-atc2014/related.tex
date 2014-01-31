@@ -1,12 +1,12 @@
 \section{Related Work}
+\label{sec:related-work}
 
-STEAK falls into the growing body of work relating to HCI-SEC~\cite{hci-sec},
-in that it seeks to improve the usability of existing security features.  Barriers
+STEAK falls into the growing body of work relating to HCI in information security.  Barriers
 to using secure email include lack of technical aptitude~\cite{why-jonny-cant-encrypt}
 ~\cite{garfinkel-email-survey}, and
 stigmatization of chronic use~\cite{crypto-adoption-criteria}.
 
-There have been several attempts to create useably secure email.
+There have been several attempts to create usably secure email.
 The simplest approach is incorporating key management functions into the 
 UIs of existing email clients, as done by Enigmail~\cite{enigmail}.
 More sophisticated variants of this approach perform automatic decryption
@@ -17,22 +17,22 @@ trusting, verifying, generating, distributing, and revoking keys.
 
 A more sophisticated approach is to automate key generation and distribution,
 as seen in systems like ESCAPE~\cite{escape} and ePOST~\cite{epost}.
-In these systems, one or more trusted CAs vouch for each user's public key,
-allowing them to bootstrap trust in one another.  However, this assumes
-the CAs are never compromised, and requires them to decide when to revoke keys.
-Under our threat model, STEAK is more secure because it trusts
-CAs only for registration and backwards compatibility, and revokes keys when users believe 
+In these systems, a user's host generates a key and one or more trusted CAs
+automatically vouch for it, allowing users to bootstrap trust in one another.
+However, this approach assumes the CAs are never compromised, and requires them
+to decide when to revoke keys.
+In contrast, STEAK trusts CAs only for registration and backwards
+compatibility, and revokes keys when users believe 
 their passwords are compromised.
 
 Another approach is ID-based cryptography, whereby system components
-derive a user's public key from her identity~\cite{id-cryptography}.  This 
+derive a user's public key from her identity~\cite{id-based-cryptography}.  This 
 eliminates the need for PKI and public key distribution.  However,
-revoking keys is infeasible in such systems---either the user must change 
+revoking unexpired keys is infeasible---either the user must change 
 her identity, or the master private key (and all other public keys) must be 
 regenerated.
 
 We consider STEAK's architecture to be an incremental improvement on
-the Internet Mail 2000~\cite{im2k} proposal.  Unlike prior implementations
-(such as ~\cite{stubmail}), we take advantage of cloud storage 
+the Internet Mail 2000~\cite{im2k} proposal.  We take advantage of cloud storage 
 independent of the user's ISP, while also addressing security and ubiquitous
 access in addition to disincentivizing spam.

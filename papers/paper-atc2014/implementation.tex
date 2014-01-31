@@ -1,10 +1,11 @@
 \section{Implementation}
+\label{sec:implementation}
 
-The individual technologies needed to implement STEAK already exist.  For storage, STEAK relies on Syndicate to provide an abstraction layer over storage providers while implementing common consistency, integrity, authenticity, and authorization semantics.  For running the endpoint code, STEAK relies on now-ubiquitous virtual machine technology to achieve portability and isolation from the browser and underlying OS.
+The individual technologies needed to implement STEAK already exist.  For storage, STEAK relies on Syndicate~\cite{syndicate} to provide an abstraction layer over storage providers while implementing common consistency, integrity, authenticity, and authorization semantics.  For running the endpoint code, STEAK relies on now-ubiquitous virtual machine technology to achieve portability and isolation from the browser and underlying OS.
 
 The two usability challenges to overcome are setting up the endpoint VM and getting access to the user’s cloud storage.  To address the former, we deliver endpoint code as an “app” that the user installs via a device-specific app store.  Once installed, it does not have to be accessed directly, and the app store will keep it up-to-date.  We believe users are already used to installing software from app stores, and thus we do not believe this extra step poses a significant usability barrier.
 
-Our endpoint’s runtime requirements are flexible.  While a full-blown virtual machine is sufficient, the endpoint can also run in an OS container, a user-mode Linux~\cite{usermode-linux} instance, or a Portable Native Client (PNaCl)~\cite{pnacl} browser plugin.  Our prototype supports all but the last option, which is under development.
+Our endpoint’s runtime requirements are flexible.  While a full-blown virtual machine is sufficient, the endpoint can also run in an OS container, a user-mode Linux instance, or a Portable Native Client (PNaCl)~\cite{pnacl} browser plugin.  Our prototype supports all but the last option, which is under development.
 
 We leverage Syndicate to make it easy to access cloud storage, and to simplify our storage layer’s implementation.  To set up STEAK, the endpoint and Syndicate execute a protocol similar to OpenID whereby Alice authorizes STEAK to create and access a Syndicate volume.  The metadata repository implementation employs a similar strategy.
 

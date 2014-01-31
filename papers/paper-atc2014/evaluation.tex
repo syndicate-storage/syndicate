@@ -1,8 +1,9 @@
 \section{Evaluation}
+\label{sec:evaluation}
 
-Our usability goal has been to preserve the semantics of webmail while offerring transparent end-to-end CIA.  To evaluate this, we consider the steps and information required to complete common webmail tasks, and compare them to how STEAK and PGP perform them.  These include setting up and destroying an account, adding and removing a contact, sending and receiving messages, and changing account passwords.
+Our usability goal has been to preserve the semantics of webmail while offering transparent end-to-end CIA.  To evaluate this, we consider the steps and information required to complete common webmail tasks, and compare them to how STEAK and PGP perform them.  These include setting up and destroying an account, adding and removing a contact, sending and receiving messages, and changing account passwords.
 
-In evaluating against PGP for usability, we use the user’s guide for PGP 7.0 as a baseline comparison.  We also consider approaches taken by Enigmail, Mailpile, and Mailvelope, which seek to make PGP easier to use for securing email.  We show that while STEAK does not offer exact webmail semantics, it offers semantics much closer to webmail than even user-friendly PGP implementations.
+In evaluating against PGP for usability, we use the user’s guide for PGP 7.0~\cite{pgp7} as a baseline comparison.  We also consider approaches taken by Enigmail~\cite{enigmail} and Mailpile~\cite{mailpile}, which seek to make PGP easier to use for securing email.  We show that while STEAK does not offer exact webmail semantics, it offers semantics much closer to webmail than even user-friendly PGP implementations.
 
 At the same time, our performance goal for STEAK is to remain responsive to user actions.  Our preliminary evaluation shows that the added latencies our design imposes on synchronous storage operations (including reading and writing messages, keys, and contacts) are both negligible.
 
@@ -104,9 +105,7 @@ Deleting an account in webmail is as simple as entering one’s password and con
 
 Adding a contact in webmail is usually a matter of filling out a form, if it is not done automatically.  At a minimum it requires an email address and a name, but other fields are possible.
 
-With PGP, the user must obtain, verify and trust a public key as well.  Mailpile attempts to reduce this to scanning QR codes or obtaining them from email headers, but nevertheless the user must make a choice on the trustworthiness of the peers who signed it.  Applying TOFU semantics makes it easier to use but less secure than STEAK, because there is only a single source for the key.  Moroever, PGP users must periodically re-acquire keys when old ones expire.
-
-AutoKey lets STEAK obtain keys automatically and keep them fresh.
+With PGP, the user must obtain, verify and trust a public key as well.  Mailpile attempts to reduce this to scanning QR codes or obtaining them from email headers, but nevertheless the user must make a choice on the trustworthiness of the peers who signed it.  Applying TOFU semantics makes it easier to use but less secure than STEAK, because there is only a single source for the key.  Moreover, PGP users must periodically re-acquire keys when old ones expire.
 
 \begin{table}[ht!]
 \begin{tabular}{ | L{3.5cm} | L{3.5cm} |}
@@ -137,7 +136,7 @@ AutoKey lets STEAK obtain keys automatically and keep them fresh.
 \label{tab:account-creation}
 \end{table}
 
-\subsection{Accessing, Sending, and Receiving Email}
+\subsection{Accessing, Sending, Receiving}
 
 Accessing email from multiple devices is trivial in webmail if the device has a web browser.  It is equivalently easy in STEAK and PGP once the endpoint code is installed and set up.
 
