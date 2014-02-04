@@ -979,15 +979,19 @@ class MSJSONRPCHandler(webapp2.RequestHandler):
    JSON RPC request handler 
    """
    
-   def post( self ):
+   def handle( self ):
       # pass on to JSON RPC server
       json_text = self.request.body
       server = jsonrpc.Server( api.API(), JSON_MS_API_VERSION, signer=api.API.signer, verifier=api.API.verifier )
-      server.handle( json_text, self.response )
+      result = server.handle( json_text, self.response )
+      
+      # save the UUID of this request, to prevent replays
+      uuids = server.get_result_uuids( result )
+      
+      
+   def post( self ):
+      return self.handle()
    
    def get( self ):
-      # pass on to JSON RPC server
-      json_text = self.request.body
-      server = jsonrpc.Server( api.API(), JSON_MS_API_VERSION, signer=api.API.signer, verifier=api.API.verifier )
-      server.handle( json_text, self.response )
+      return self.handle()
    

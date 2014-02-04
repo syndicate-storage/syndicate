@@ -18,11 +18,13 @@ gateway_keys=gateway_keys/
 volume_keys=volume_keys/
 user_keys=user_keys/" > $SYNCONF/syndicate.conf
 
-$SYNTOOL -t create_user testuser@gmail.com http://www.vicci.org/id/testuser@gmail.com
+$SYNTOOL create_user testuser@gmail.com http://www.vicci.org/id/testuser@gmail.com letmein
 
-$SYNTOOL -t -u testuser@gmail.com create_volume testuser@gmail.com testvolume "Test Volume" 61440 default_gateway_caps=ALL
+$SYNTOOL register_account testuser@gmail.com letmein
 
-$SYNTOOL -t -u testuser@gmail.com create_gateway testvolume testuser@gmail.com UG testvolume-UG-1 t510 32780 
-$SYNTOOL -t -u testuser@gmail.com create_gateway testvolume testuser@gmail.com UG testvolume-UG-2 t510 32781
+$SYNTOOL -u testuser@gmail.com create_volume testuser@gmail.com testvolume "Test Volume" 61440 default_gateway_caps=ALL
 
-$SYNTOOL -t -u testuser@gmail.com create_gateway testvolume testuser@gmail.com RG testvolume-RG-1 t510 32800
+$SYNTOOL -u testuser@gmail.com create_gateway testvolume testuser@gmail.com UG testvolume-UG-1 t510 32780 
+$SYNTOOL -u testuser@gmail.com create_gateway testvolume testuser@gmail.com UG testvolume-UG-2 t510 32781
+
+$SYNTOOL -u testuser@gmail.com create_gateway testvolume testuser@gmail.com RG testvolume-RG-1 t510 32800

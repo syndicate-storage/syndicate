@@ -170,6 +170,23 @@ class Server(object):
                 self.response.headers['Content-Type'] = 'application/json'
             if hasattr(self.response, 'write'):
                 self.response.write(json.dumps(result))
+        
+        return result
+     
+    def get_result_uuids( self, result ):
+       if isinstance(result, list):
+          ret = []
+          for r in result:
+             ret.append( r['id'] )
+          
+          return ret
+       
+       elif isinstance(result, dict):
+          return [result['id']]
+       
+       else:
+          return None
+       
 
     def handle(self, json_text, response=None, data=None):
         self.response = response
