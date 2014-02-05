@@ -405,7 +405,7 @@ class MSCertRequestHandler( webapp2.RequestHandler ):
       
       # request only the right version
       if volume_cert_version != volume.cert_version or gateway_cert_version != gateway.cert_version:
-         hdr = "%s/CERT/%s/%s/%s/%s/%s" % (MS_URL, volume_id_str, volume.cert_version, gateway_type_str, gateway_id_str, gateway.cert_version)
+         hdr = "%s/CERT/%s/%s/%s/%s/%s" % (MS_URL, volume_id_str, volume.cert_version, gateway_type_str, gateway_name_or_id, gateway.cert_version)
          self.response.headers['Location'] = hdr
          response_end( self, 302, "Location: %s" % hdr, "text/plain" )
          return
