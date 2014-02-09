@@ -36,6 +36,7 @@ Ubuntu/Debian:
    libgcrypt-dev
    libprotobuf-dev
    protobuf-compiler
+   python-protobuf 
    libboost-dev
    libxerces-c-dev
    libmicrohttpd-dev (> 0.9)
