@@ -33,6 +33,12 @@ import traceback
 
 import syndicate.syndicate as c_syndicate
 
+from Crypto.Hash import SHA256 as HashAlg
+from Crypto.PublicKey import RSA as CryptoKey
+from Crypto import Random
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
+
+
 #-------------------------
 StorageDriver = collections.namedtuple("StorageDriver", ["name", "module", "read_file", "write_file", "delete_file"])
 StorageClosure = collections.namedtuple("StorageClosure", ["module", "replica_read", "replica_write", "replica_delete"])
@@ -87,7 +93,7 @@ DRIVER_DELETE_SIGNATURE = inspect.ArgSpec( args=['filename'], varargs=None, defa
 
 #-------------------------
 GATEWAY_PRIVKEY_PEM = None
-USER_PUBKEY_PEM = None
+SENDER_PUBKEY_PEM = None
 
 #-------------------------
 log = rg_common.get_logger()
@@ -179,7 +185,7 @@ def decrypt_secrets( sender_pubkey_pem, receiver_privkey_pem, encrypted_secrets_
 
    
 #-------------------------
-def load_closure( python_text_b64, config_text_b64, encrypted_secrets_b64 ):
+def load_closure( python_text_b64, config_text_b64, encrypted_secrets_b64, sender_pubkey_pem=None, gateway_privkey_pem=None ):
    '''
       Given a string containing Python statements defining the closure,
       load it in.
@@ -188,9 +194,15 @@ def load_closure( python_text_b64, config_text_b64, encrypted_secrets_b64 ):
    global REQUIRED_CLOSURE_FIELDS
    global ALL_CLOSURE_FIELDS
    global GATEWAY_PRIVKEY_PEM
-   global USER_PUBKEY_PEM
+   global SENDER_PUBKEY_PEM
    
-   if encrypted_secrets_b64 != None and (GATEWAY_PRIVKEY_PEM is None or USER_PUBKEY_PEM is None):
+   if sender_pubkey_pem is None:
+      sender_pubkey_pem = SENDER_PUBKEY_PEM
+      
+   if gateway_privkey_pem is None:
+      gateway_privkey_pem = GATEWAY_PRIVKEY_PEM
+   
+   if encrypted_secrets_b64 != None and (gateway_privkey_pem is None or sender_pubkey_pem is None):
       log.error("No private key set")
       return None
    
@@ -238,7 +250,7 @@ def load_closure( python_text_b64, config_text_b64, encrypted_secrets_b64 ):
          return None 
    
       try:
-         secrets_dict = decrypt_secrets( USER_PUBKEY_PEM, GATEWAY_PRIVKEY_PEM, encrypted_secrets )
+         secrets_dict = decrypt_secrets( sender_pubkey_pem, gateway_privkey_pem, encrypted_secrets )
       except Exception, e:
          log.exception( e )
          return None
@@ -589,27 +601,48 @@ def call_closure_delete( request, filename ):
 
 
 #-------------------------
-def init( libsyndicate, gateway_key_path, user_pubkey_path ):
+def init( libsyndicate, gateway_key_path, sender_pubkey_path ):
    '''
       Initialize this module.
    '''
    
    global GATEWAY_PRIVKEY_PEM
-   global USER_PUBKEY_PEM
+   global SENDER_PUBKEY_PEM
    
    # disable core dumps (don't want our private key to get leaked)
    resource.setrlimit( resource.RLIMIT_CORE, (0, 0) )
    
-   # load keys
-   fd = open( user_pubkey_path, "r" )
-   user_pubkey_pem = fd.read()
-   fd.close()
+   sender_pubkey_pem = None 
+   
+   if sender_pubkey_path is not None:
+      try:
+         # load keys
+         fd = open( sender_pubkey_path, "r" )
+         sender_pubkey_pem = fd.read()
+         fd.close()
+      except OSError, oe:
+         log.exception(oe)
+         log.error("Failed to read sender public key %s" % sender_pubkey_path)
+         return -1
    
    fd = open( gateway_key_path, "r" )
    gateway_privkey_pem = fd.read()
    fd.close()
+   
+   # verify
+   try:
+      gateway_privkey = CryptoKey.importKey( gateway_privkey_pem )
+      assert gateway_privkey.has_private(), "Not a private key"
+   except Exception, e:
+      log.exception(e)
+      log.error("Failed to load Gateway private key %s" % gateway_key_path )
+      return -1
+   
+   if sender_pubkey_pem is None:
+      log.warning("Using Gateway public key to verify closures")
+      sender_pubkey_pem = gateway_privkey.publickey().exportKey()
 
-   USER_PUBKEY_PEM = user_pubkey_pem 
+   SENDER_PUBKEY_PEM = sender_pubkey_pem 
    GATEWAY_PRIVKEY_PEM = gateway_privkey_pem
    
    # set up our storage
@@ -802,7 +835,7 @@ if __name__ == "__main__":
    gateway_pubkey_pem, gateway_privkey_pem = generate_key_pair( 4096 )
    
    GATEWAY_PRIVKEY_PEM = gateway_privkey_pem
-   USER_PUBKEY_PEM = user_pubkey_pem 
+   SENDER_PUBKEY_PEM = user_pubkey_pem 
    
    # encrypt the secrets
    rc, encrypted_secrets_str = c_syndicate.encrypt_closure_secrets( user_privkey_pem, gateway_pubkey_pem, secrets_str )

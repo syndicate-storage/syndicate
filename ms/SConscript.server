@@ -110,6 +110,9 @@ def load_key( buf ):
    return key
 
 def load_pubkey_file( path ):
+   if path is None:
+      return ""
+   
    path = os.path.expanduser( path )
    fd = open(path, "r")
    buf = fd.read()
@@ -121,7 +124,7 @@ def load_pubkey_file( path ):
 
    return key.publickey().exportKey()
 
-def load_or_make_verifying_key( path ):
+def load_or_make_syndicate_key( path ):
    if path is not None:
       path = os.path.expanduser( path )
       fd = open(path, "r")
@@ -136,7 +139,7 @@ def load_or_make_verifying_key( path ):
       return key.exportKey()
 
    # no key given.  Make one
-   print "Generating verifying key for admin"
+   print "Generating Syndicate keys..."
    try:
       from Crypto.PublicKey import RSA as CryptoKey
       from Crypto import Random 
@@ -152,24 +155,55 @@ def load_or_make_verifying_key( path ):
 # validate and translate the particular keyword arguments
 arg_handlers = {
    "pubkey": load_pubkey_file,
-   "verifying_private_key": load_or_make_verifying_key,
-   "appname": None,
+   "syndicate_private_key": load_or_make_syndicate_key,
+   "syndicate_public_key": None,
+   "syndicate_name": None,
    "openid_url": None,
-   "user_id": None
+   "user_id": None,
+   "register_password": None
 }
 
 def raise_(msg):
-   print "\n%s\n" % msg
+   print "\nERROR: %s\n" % msg
    raise Exception(msg)
 
+def warn_(msg):
+   print "WARNING: %s" % msg
+
+def warn_and_value(msg, value):
+   print "WARNING: %s" % msg
+   return value
+
+default_register_password = "letmein"
+
 default_args = {
-   "pubkey": lambda: raise_("No public key given.  Pass pubkey=/path/to/your/public/key.pub"),
-   "appname": lambda: raise_("No application name given.  Please pass appname=YOUR-APP-NAME"),
+   "pubkey": lambda: warn_("No administrator public key given.  You can set it later with syntool.py"),
+   "syndicate_name": lambda: raise_("No application name given.  Please pass syndicate_name=YOUR-SYNDICATE-NAME"),
    "openid_url": lambda: "",
    "user_id": lambda: raise_("No admin user ID given.  Please pass user_id=YOUR.ADMIN.EMAIL@EXAMPLE.COM"),
-   "verifying_private_key": lambda: None,
+   "syndicate_private_key": lambda: None,
+   "syndicate_public_key": lambda: None,
+   "register_password": lambda: warn_and_value("No administrator public key activation password set.  Using the default: '%s'" % default_register_password, default_register_password)
 }
 
+
+def public_key_from_private_key( privkey_str ):
+   if privkey_str is None or len(privkey_str) == 0:
+      return ""
+
+   try:
+      from Crypto.PublicKey import RSA as CryptoKey
+   except ImportError, ie:
+      print >> sys.stderr, "\nERR: PyCrypto module could not be loaded.  Please check your installation and try again.\n"
+      raise ie
+
+   key = CryptoKey.importKey( privkey_str )
+   pubkey_str = key.publickey().exportKey()
+   return pubkey_str
+
+post_process_args = {
+   "syndicate_public_key": lambda args: public_key_from_private_key( args.get("syndicate_private_key") )
+}
 
 # install defaults
 for (argname, default_func) in default_args.items():
@@ -190,6 +224,10 @@ for (argname, argvalue) in extra_args.items():
 
    arg = arg_handler( argvalue )
    validated_args[argname] = arg
+
+# post-process args
+for (argname, argfunc) in post_process_args.items():
+   validated_args[argname] = argfunc( validated_args )
 
 
 def build_template( target, source, env ):

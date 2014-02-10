@@ -110,11 +110,6 @@ class Gateway( storagetypes.Object ):
 
    gateway_public_key = storagetypes.Text()             # PEM-encoded RSA public key to verify control-plane messages (metadata) sent from this gateway.
    
-   signing_public_key = storagetypes.Text()         # PEM-encoded RSA public key for authenticating API requests from this gateway
-   
-   verifying_public_key = storagetypes.Text()         # PEM-encoded keypair for signing API replies to this gateway
-   verifying_private_key = storagetypes.Text()
-
    caps = storagetypes.Integer(default=0)                # capabilities
    
    session_password_hash = storagetypes.Text()
@@ -139,9 +134,7 @@ class Gateway( storagetypes.Object ):
       "port",
       "name",
       "gateway_type",
-      "caps",
-      "signing_public_key",
-      "gateway_public_key"
+      "caps"
    ]
    
    read_attrs_api_required = [
@@ -149,21 +142,19 @@ class Gateway( storagetypes.Object ):
       "host",
       "port",
       "owner_id",
-      "name",
       "g_id",
       "volume_id",
       "session_timeout",
       "session_expires",
       "cert_version",
       "cert_expires",
-      "verifying_public_key",
-      "signing_public_key",
       "gateway_blocksize",
       "caps"
    ]
    
    read_attrs = [
-      "gateway_public_key"
+      "gateway_public_key",
+      "name"
    ] + read_attrs_api_required
    
    
@@ -198,9 +189,6 @@ class Gateway( storagetypes.Object ):
       "session_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
       "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.: ")) ) == 0 and not is_int(value) ),
       "gateway_public_key": (lambda cls, value: Gateway.is_valid_key( value, GATEWAY_RSA_KEYSIZE ) ),
-      "signing_public_key": (lambda cls, value: Gateway.is_valid_key( value, GATEWAY_RSA_KEYSIZE ) ),
-      "verifying_public_key": (lambda cls, value: Gateway.is_valid_key( value, GATEWAY_RSA_KEYSIZE ) ),
-      "verifying_private_key": (lambda cls, value: Gateway.is_valid_key( value, GATEWAY_RSA_KEYSIZE ) )
    }
    
    @classmethod 
@@ -230,49 +218,6 @@ class Gateway( storagetypes.Object ):
       pw_hash = Gateway.generate_password_hash( password, self.session_password_salt )
       return pw_hash == self.session_password_hash
 
-
-   @classmethod 
-   def Authenticate( cls, gateway_name_or_id, data, data_signature ):
-      """
-      Load a gateway and then use its admin public key to verify the authenticity of the given data.
-      Return the Gateway instance on success; False if found but bad signature; None if not found
-      """
-      
-      # id or name?
-      gateway_id = None
-      gateway_name = None
-      
-      try:
-         gateway_id = int( gateway_name_or_id )
-      except:
-         gateway_name = gateway_name_or_id
-         pass
-      
-      g = None 
-      if gateway_id != None:
-         g = cls.Read( gateway_id )
-      
-      else:
-         g = cls.Read_ByName( gateway_name )
-      
-      if g == None:
-         # not found
-         return None
-      
-      ret = cls.auth_verify( g.signing_public_key, data, data_signature )
-      if not ret:
-         logging.error("Verification failed")
-         return False
-      
-      else:
-         return g
-
-
-   @classmethod
-   def Sign( self, gateway, data ):
-      # Sign an API response
-      return Gateway.auth_sign( gateway.verifying_private_key, data )
-   
       
    @classmethod
    def generate_password_hash( cls, pw, salt ):
@@ -311,7 +256,7 @@ class Gateway( storagetypes.Object ):
       Generate a password, password hash, and salt for this gateway
       """
       password = cls.generate_session_password()
-      salt = cls.generate_password( GATEWAY_SALT_LENGTH )
+      salt = cls.generate_password( GATEWAY_SESSION_SALT_LENGTH )
       pw_hash = Gateway.generate_password_hash( password, salt )
 
       return ( password, pw_hash, salt )  
@@ -430,9 +375,6 @@ class Gateway( storagetypes.Object ):
 
       # populate kwargs with default values for missing attrs
       cls.fill_defaults( kwargs )
-      
-      # extract any keys 
-      Gateway.extract_keys( 'verifying_public_key', 'verifying_private_key', kwargs, GATEWAY_RSA_KEYSIZE )
       
       # sanity check: do we have everything we need?
       missing = cls.find_missing_attrs( kwargs )
@@ -679,23 +621,6 @@ class Gateway( storagetypes.Object ):
          storagetypes.memcache.delete( g_name_to_id_cache_key )
          
       return gateway_key
-   
-   
-   @classmethod
-   def SetPublicSigningKey( cls, g_name_or_id, new_auth_key ):
-      """
-      Set the authenticator public key for this gateway
-      """
-      if not cls.is_valid_key( new_auth_key, GATEWAY_RSA_KEYSIZE ):
-         raise Exception("Invalid authentication key")
-      
-      gateway = cls.set_atomic( lambda: cls.Read( g_name_or_id ), verifying_public_key=new_auth_key )
-      
-      if gateway is not None:
-         Gateway.FlushCache( gateway.g_id )
-         return True
-      else:
-         return False
    
    
    @classmethod

@@ -359,7 +359,7 @@ class Session(object):
         memcache.set(self.sid, pdump, namespace='', time=self.get_expiration())  # may fail if memcache is down
 
         # persist the session to the datastore
-        if dirty is Session.DIRTY_BUT_DONT_PERSIST_TO_DB or self.no_datastore:
+        if not persist_even_if_using_cookie and (dirty is Session.DIRTY_BUT_DONT_PERSIST_TO_DB or self.no_datastore):
             return
         try:
             SessionModel(key_name=self.sid, pdump=pdump).put()

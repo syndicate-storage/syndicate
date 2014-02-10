@@ -239,11 +239,6 @@ class Volume( storagetypes.Object ):
    metadata_public_key = storagetypes.Text()          # Volume public key, in PEM format, for verifying metadata
    metadata_private_key = storagetypes.Text()         # Volume private key, in PEM format, for signing metadata
    
-   signing_public_key = storagetypes.Text()               # public key, in PEM format, for authenticating API requests
-   
-   verifying_public_key = storagetypes.Text()                 # public/private key pair for signing API replies
-   verifying_private_key = storagetypes.Text()
-
    file_quota = storagetypes.Integer()                 # maximum number of files allowed here (-1 means unlimited)
    
    deleted = storagetypes.Boolean()      # is this Volume deleted?
@@ -267,10 +262,7 @@ class Volume( storagetypes.Object ):
       "owner_id",
       "private",
       "metadata_private_key",
-      "signing_public_key",
       "default_gateway_caps",
-      "verifying_private_key",
-      "verifying_public_key"
    ]
 
    key_attrs = [
@@ -280,10 +272,7 @@ class Volume( storagetypes.Object ):
    validators = {
       "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")) ) == 0 and not is_int(value) ),
       "metadata_public_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE )),
-      "metadata_private_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE )),
-      "verifying_public_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE )),
-      "verifying_private_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE )),
-      "signing_public_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE ))
+      "metadata_private_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE ))
    }
 
    default_values = {
@@ -301,7 +290,6 @@ class Volume( storagetypes.Object ):
    }
    
    read_attrs_api_required = [
-      "signing_public_key",
       "blocksize",
       "active",
       "volume_id",
@@ -319,7 +307,6 @@ class Volume( storagetypes.Object ):
       "description",
       "owner_id",
       "metadata_public_key",
-      "verifying_public_key",
    ] + read_attrs_api_required
    
    write_attrs = [
@@ -337,47 +324,6 @@ class Volume( storagetypes.Object ):
    
    def owned_by( self, user ):
       return user.owner_id == self.owner_id
-   
-   
-   @classmethod
-   def Authenticate( cls, volume_name_or_id, data, data_signature ):
-      """
-      Authenticate a Volume, given some identifying data and its signature.
-      Verify that it was signed by the admin's private key.
-      Use RSA PSS for security.
-      Return the Volume if authenticated; None if no such Volume; False if signature failed
-      """
-      
-      volume_id = None
-      volume_name = None
-      volume = None
-      
-      try:
-         volume_id = int( volume_name_or_id )
-      except:
-         volume_name = volume_name_or_id
-      
-      if volume_id:
-         volume = Volume.Read( volume_id )
-      else:
-         volume = Volume.Read_ByName( volume_name )
-      
-      if volume == None:
-         return None
-      
-      ret = cls.auth_verify( volume.signing_public_key, data, data_signature )
-      if not ret:
-         logging.error("Verification failed")
-         return False
-      
-      else:
-         return volume
-   
-   
-   @classmethod
-   def Sign( cls, volume, data ):
-      # Sign an API response
-      return Volume.auth_sign( volume.verifying_private_key, data )
    
    
    def need_gateway_auth( self ):
@@ -520,7 +466,6 @@ class Volume( storagetypes.Object ):
       blocksize         -- size of the Volume's blocks in bytes (int)
       description       -- description of the Volume (str)
       private           -- whether or not this Volume is visible to other users (bool)
-      signing_public_key           -- PEM-encoded RSA public key, 4096 bits (str)
       
       Optional keyword arguments:
       metadata_private_key       -- PEM-encoded RSA private key, 4096 bits (str)
@@ -537,7 +482,6 @@ class Volume( storagetypes.Object ):
 
       # extract public key from private key if needed
       Volume.extract_keys( 'metadata_public_key', 'metadata_private_key', kwargs, VOLUME_RSA_KEYSIZE )
-      Volume.extract_keys( 'verifying_public_key', 'verifying_private_key', kwargs, VOLUME_RSA_KEYSIZE )
             
       # Validate
       missing = Volume.find_missing_attrs( kwargs )
@@ -550,7 +494,7 @@ class Volume( storagetypes.Object ):
          raise Exception( "Invalid values for fields: %s" % (", ".join( invalid )) )
       
       # vet the keys
-      for key_field in ['metadata_public_key', 'metadata_private_key', 'signing_public_key']:
+      for key_field in ['metadata_public_key', 'metadata_private_key']:
          key_str = kwargs[key_field]
          valid = cls.is_valid_key( key_str, VOLUME_RSA_KEYSIZE )
          if not valid:
@@ -579,9 +523,6 @@ class Volume( storagetypes.Object ):
                                                 allow_anon = kwargs['allow_anon'],
                                                 metadata_public_key = kwargs['metadata_public_key'],
                                                 metadata_private_key = kwargs['metadata_private_key'],
-                                                signing_public_key = kwargs['signing_public_key'],
-                                                verifying_public_key = kwargs['verifying_public_key'],
-                                                verifying_private_key = kwargs['verifying_private_key'],
                                                 default_gateway_caps = kwargs['default_gateway_caps']
                                              )
       
@@ -907,18 +848,6 @@ class Volume( storagetypes.Object ):
          
       return volume_key
          
-
-   @classmethod
-   def SetPublicSigningKey( cls, volume_name_or_id, new_public_key ):
-      """
-      Set the authenticator public key for this Volume.
-      """
-      if not cls.is_valid_key( new_public_key ):
-         raise Exception("Invalid authentication key")
-      
-      cls.set_atomic( lambda: Volume.Read( volume_name_or_id ), signing_public_key=new_public_key )
-      return True
-
 
    @classmethod
    def delete_volume_and_friends( cls, volume_id, volume_name ):

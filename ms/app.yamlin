@@ -1,4 +1,4 @@
-application: %(appname)s
+application: %(syndicate_name)s
 version: 1
 runtime: python27
 api_version: 1

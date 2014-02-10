@@ -49,7 +49,7 @@ ERROR_MESSAGE = {
 }
 
 # ----------------------------------
-def insert_syndicate_json( json_data, key_type, key_name, api_version, sig ):
+def insert_syndicate_json( json_data, api_version, username, sig ):
    data = {
       "api_version": str(api_version)
    }
@@ -57,11 +57,8 @@ def insert_syndicate_json( json_data, key_type, key_name, api_version, sig ):
    if sig:
       data['signature'] = base64.b64encode( sig )
    
-   if key_type:
-      data['key_type'] = str(key_type)
-   
-   if key_name:
-      data['key_name'] = str(key_name)
+   if username:
+      data['username'] = str(username)
    
    json_data['Syndicate'] = data
 
@@ -133,7 +130,7 @@ def is_error_response( result ):
 class Server(object):
     response = None
 
-    def __init__(self, obj, api_version, signer=None, verifier=None):
+    def __init__(self, obj, api_version, signer=None, verifier=None ):
         self.obj = obj
         self.api_version = api_version
         self.signer = signer
@@ -161,7 +158,7 @@ class Server(object):
                
                result_sig = self.signer( method, data_to_sign )
             
-            insert_syndicate_json( result, None, None, self.api_version, result_sig )
+            insert_syndicate_json( result, self.api_version, None, result_sig )
          
         if self.response is None:
             return result
@@ -173,6 +170,7 @@ class Server(object):
         
         return result
      
+    # get the list of RPC UUIDs from a result
     def get_result_uuids( self, result ):
        if isinstance(result, list):
           ret = []
@@ -188,7 +186,7 @@ class Server(object):
           return None
        
 
-    def handle(self, json_text, response=None, data=None):
+    def handle(self, json_text, response=None, data=None, **verifier_kw):
         self.response = response
 
         if not data:
@@ -215,12 +213,13 @@ class Server(object):
         if syndicate_data == None:
            return self.error(id, -32600)
         
+        """
         # verify that we have a signature
         if self.verifier:
           if not syndicate_data.has_key( 'signature' ):
             log.error("No signature field")
             return self.error(id, -32400)
-        
+        """
         
         # get the rest of the fields...
         if data.get('jsonrpc') != '2.0':
@@ -312,7 +311,7 @@ class Server(object):
             print "to verify:\n\n%s\n\nHash: %s\n\n" % (data_text, json_hash)
             """
             
-            valid = self.verifier( method, method_args, method_kw, data_text, syndicate_data, data )
+            valid = self.verifier( method, method_args, method_kw, data_text, syndicate_data, data, **verifier_kw )
             if not valid:
                log.error("Verifier failed")
                return self.error(id, -32400)
@@ -330,20 +329,19 @@ class Server(object):
 
 # ----------------------------------
 class Client(object):
-
-    def __init__(self, uri, api_version, signer=None, verifier=None, headers={}):
+    # NOTE: this class will not be used on the MS.
+    # only used in client endpoints.
+    
+    def __init__(self, uri, api_version, username=None, password=None, signer=None, verifier=None, headers={}):
         self.uri = uri
         self.api_version = api_version
         self.headers = headers
         self.signer = signer
         self.verifier = verifier
-        self.key_type = None 
-        self.key_name = None
+        self.username = username
+        self.password = password
+        self.syndicate_data = None      # stores syndicate data from the last call
 
-    def set_key_info( self, key_type, key_name ):
-       self.key_type = key_type
-       self.key_name = key_name
-       
     def set_signer( self, signer ):
       self.signer = signer
     
@@ -365,12 +363,18 @@ class Client(object):
         return self.default
      
     def request(self):
+        # sanity check: need a signer OR a username/password combo
+        if self.signer is None and (self.username is None or self.password is None):
+           raise Exception("Need either an RPC signing callback or a username/password pair!")
+        
         parameters = {
             'id': str(uuid.uuid4()),
             'method': self.method,
             'params': self.params,
             'jsonrpc': VERSION
         }
+        
+        self.syndicate_data = None
         
         sig = None
         if self.signer != None:
@@ -388,7 +392,7 @@ class Client(object):
             sig = self.signer( self.method, str(parameters_text) )
             
         
-        insert_syndicate_json( parameters, self.key_type, self.key_name, self.api_version, sig )
+        insert_syndicate_json( parameters, self.api_version, self.username, sig )
         
         data = json.dumps(parameters)
         
@@ -396,10 +400,23 @@ class Client(object):
             "Content-Type": "application/json"
         }
         
-        headers = dict(headers.items() + self.headers.items())
-        req = urllib2.Request(self.uri, data, headers)
+        response = None
+        if self.username is not None and self.password is not None:
+           # openid authentication!
+           import syndicate.syndicate as c_syndicate
+           
+           rc, response = c_syndicate.openid_rpc( self.uri, self.username, self.password, "json", data )
+        
+           if rc != 0:
+              log.error("MS OpenID RPC rc = %s" % rc)
+              return None
+        
+        else:
+           # public-key authentication!
+           headers = dict(headers.items() + self.headers.items())
+           req = urllib2.Request(self.uri, data, headers)
 
-        response = urllib2.urlopen(req).read()
+           response = urllib2.urlopen(req).read()
         
         try:
             result = json.loads(response)
@@ -425,41 +442,38 @@ class Client(object):
         
         # check signature
         if self.verifier:
-            can_verify = True
-            if 'signature' not in syndicate_data:
-               
-               # result or error?
-               if is_error_response( result ):
-                  log.warning("Server did not sign reply")
-                  can_verify = False
-               else:
-                  log.error("Server did not sign reply")
-                  return None 
+            result_text = json_stable_serialize( result )
             
-            if can_verify:
-               result_text = json_stable_serialize( result )
+            """
+            sh = hashlib.sha1()
+            sh.update( result_text )
+            json_hash = sh.hexdigest()
+            
+            print "to verify:\n\n%s\n\nHash: %s\n\n" % (result_text, json_hash)
+            """
+            
+            valid = self.verifier( self.method, self.params['args'], self.params['kw'], result_text, syndicate_data, result )
+            
+            if not valid:
+               if is_error_response( result ):
+                  log.warning("Server did not sign error reply")
                
-               """
-               sh = hashlib.sha1()
-               sh.update( result_text )
-               json_hash = sh.hexdigest()
-               
-               print "to verify:\n\n%s\n\nHash: %s\n\n" % (result_text, json_hash)
-               """
-               
-               valid = self.verifier( self.method, self.params['args'], self.params['kw'], result_text, syndicate_data, result )
-               
-               if not valid:
+               else:
                   log.error("Signature verification failure")
                   return None
-           
+         
+         
         if is_error_response( result ):   
             data = None
             if "data" in result['error']:
                data = result['error']['data']
             raise Exception('%s Code: %s, Data: %s' % (result['error']['message'], result['error']['code'], data))
          
+         
         if parameters['id'] == result['id'] and 'result' in result:
+           
+            # store syndicate data for later
+            self.syndicate_data = syndicate_data
             return result['result']
         else:
             return None

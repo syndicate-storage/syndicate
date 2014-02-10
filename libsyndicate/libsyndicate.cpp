@@ -1620,6 +1620,117 @@ char* md_cdn_url( char const* cdn_prefix, char const* url ) {
 }
 
 
+// split a url into the url+path and query string
+int md_split_url_qs( char const* url, char** url_and_path, char** qs ) {
+   if( strstr( url, "?" ) != NULL ) {
+      char* url2 = strdup( url );
+      char* qs_start = strstr( url2, "?" );
+      *qs_start = '\0';
+
+      *qs = strdup( qs_start + 1 );
+      *url_and_path = url2;
+      return 0;
+   }
+   else {
+      return -EINVAL;
+   }
+}
+
+
+// get the offset at which the value starts in a header
+off_t md_header_value_offset( char* header_buf, size_t header_len, char const* header_name ) {
+
+   if( strlen(header_name) >= header_len )
+      return -1;      // header is too short
+
+   if( strncasecmp(header_buf, header_name, MIN( header_len, strlen(header_name) ) ) != 0 )
+      return -1;      // not found
+
+   size_t off = strlen(header_name);
+
+   // find :
+   while( off < header_len ) {
+      if( header_buf[off] == ':' )
+         break;
+
+      off++;
+   }
+
+   if( off == header_len )
+      return -1;      // no value
+
+   off++;
+
+   // find value
+   while( off < header_len ) {
+      if( header_buf[off] != ' ' )
+         break;
+
+      off++;
+   }
+
+   if( off == header_len )
+      return -1;      // no value
+
+   return off;
+}
+
+// parse one value in a header
+uint64_t md_parse_header_uint64( char* hdr, off_t offset, size_t size ) {
+   char* value = hdr + offset;
+   size_t value_len = size - offset;
+
+   char* value_str = CALLOC_LIST( char, value_len + 1 );
+   
+   strncpy( value_str, value, value_len );
+
+   uint64_t data = (uint64_t)strtoll( value_str, NULL, 10 );
+
+   free( value_str );
+   
+   return data;
+}
+
+// read a csv of values
+uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t* ret_len ) {
+   char* value = hdr + offset;
+   size_t value_len = size - offset;
+
+   char* value_str = (char*)alloca( value_len + 1 );
+   strcpy( value_str, value );
+
+   // how many commas?
+   int num_values = 1;
+   for( size_t i = offset; i < size; i++ ) {
+      if( hdr[i] == ',' )
+         num_values++;
+   }
+   
+   char* tmp = value_str;
+   char* tmp2 = NULL;
+   
+   uint64_t* ret = CALLOC_LIST( uint64_t, num_values );
+   int i = 0;
+   
+   while( 1 ) {
+      char* tok = strtok_r( tmp, ", \r\n", &tmp2 );
+      if( tok == NULL )
+         break;
+
+      tmp = NULL;
+
+      uint64_t data = (uint64_t)strtoll( value_str, NULL, 10 );
+      ret[i] = data;
+      i++;
+   }
+
+   *ret_len = num_values;
+   return ret;
+}
+
+
+
+
 // Read the path version from a given path.
 // The path version is the number attached to the end of the path by a period.
 // returns a nonnegative number on success.
@@ -1856,10 +1967,10 @@ ssize_t md_metadata_update_text3( struct md_syndicate_conf* conf, char** buf, st
    return (ssize_t)text.size();
 }
 
-// default callback function to be used when posting to a server
-size_t md_default_post_callback(void *ptr, size_t size, size_t nmemb, void *userp) {
+// default callback function to be used when uploading to a server
+size_t md_default_upload_callback(void *ptr, size_t size, size_t nmemb, void *userp) {
    size_t realsize = size * nmemb;
-   struct md_post_buf* post = (struct md_post_buf*)userp;
+   struct md_upload_buf* post = (struct md_upload_buf*)userp;
    size_t writesize = min( post->len - post->offset, (int)realsize );
    
    if( post->offset >= post->len )
@@ -1902,6 +2013,11 @@ void md_free_download_buf( struct md_download_buf* buf ) {
 
 // initialze a curl handle
 void md_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl_h, char const* url, time_t query_timeout ) {
+   md_init_curl_handle2( curl_h, url, query_timeout, conf->verify_peer );
+}
+
+// initialze a curl handle
+void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, bool ssl_verify_peer ) {
    curl_easy_setopt( curl_h, CURLOPT_NOPROGRESS, 1L );   // no progress bar
    curl_easy_setopt( curl_h, CURLOPT_USERAGENT, "Syndicate-Gateway/1.0");
    curl_easy_setopt( curl_h, CURLOPT_URL, url );
@@ -1912,7 +2028,7 @@ void md_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl_h, char con
    
    if( url != NULL && strncasecmp( url, "https", 5 ) == 0 ) {
       curl_easy_setopt( curl_h, CURLOPT_USE_SSL, CURLUSESSL_ALL );
-      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, conf->verify_peer ? 1L : 0L );
+      curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYPEER, ssl_verify_peer ? 1L : 0L );
       curl_easy_setopt( curl_h, CURLOPT_SSL_VERIFYHOST, 2L );
    }
    else {
