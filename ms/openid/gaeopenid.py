@@ -194,12 +194,12 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         return consumer.Consumer(self.getSession(), store)
 
         
-    def getSession(self):
+    def getSession(self, expiration_ts=gaesession.DEFAULT_LIFETIME):
       """Return the existing session or a new session"""
       session = gaesession.get_current_session()
 
       if not session.has_key( 'id' ):
-         session.start( ssl_only=OPENID_SESSION_SSL_ONLY )
+         session.start( ssl_only=OPENID_SESSION_SSL_ONLY, expiration_ts=expiration_ts )
          sid = randomString(16, '0123456789abcdef')
          session['id'] = sid
       
@@ -295,7 +295,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
       """
 
       # First, make sure that the user entered something
-      openid_url = urlparse.urljoin( OPENID_PROVIDER_URL, self.query.get('openid_username') )
+      openid_url = urlparse.urljoin( OPENID_PROVIDER_URL, self.query.get(OPENID_POST_USERNAME) )
       if not openid_url:
          logging.error("No OpenID URL given")
          return (None, -errno.EINVAL)
@@ -342,7 +342,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         """
         Initiating OpenID verification.
         """
-        openid_url = urlparse.urljoin( OPENID_PROVIDER_URL, self.query.get('openid_username') )
+        openid_url = urlparse.urljoin( OPENID_PROVIDER_URL, self.query.get(OPENID_POST_USERNAME) )
         rc = 0
         
         try:
@@ -371,7 +371,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
 
            if rc == 0:
                # success!
-               trust_root = "http://" + OPENID_TRUST_ROOT_HOST
+               trust_root = OPENID_HOST_URL
                return_to = self.buildURL( "process" )
                immediate = self.IMMEDIATE_MODE in self.query
 
@@ -468,7 +468,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
 
         # Ask the library to check the response that the server sent
         # us.  Status is a code indicating the response type. info is
-        # either None or a string containing more information about
+        # either None or a Response subclass with more information about
         # the return type.
         url = "http://" + self.request.headers.get("Host") + self.request.path
         info = oidconsumer.complete(self.query, url)
@@ -517,7 +517,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         """Render a page with a 404 return code and a message."""
         fmt = 'The path <q>%s</q> was not understood by this server.'
         msg = fmt % (self.path,)
-        openid_url = urlparse.urljoin( OPENID_PROVIDER_URL, self.query.get('openid_username') )
+        openid_url = urlparse.urljoin( OPENID_PROVIDER_URL, self.query.get(OPENID_POST_USERNAME) )
         self.render(msg, 'error', openid_url, status=404)
 
     def renderSREG(self, sreg_data):
@@ -650,7 +650,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
     <div id="verify-form">
       <form method="get" accept-charset="UTF-8" action=%s>
         VICCI e-mail address:
-        <input type="text" name="openid_username" value=%s />
+        <input type="text" name="%s" value=%s />
         <input type="submit" value="Verify" /><br />
         <input type="checkbox" name="immediate" id="immediate" /><label for="immediate">Use immediate mode</label>
         <input type="checkbox" name="use_sreg" id="use_sreg" checked /><label for="use_sreg">Request registration data</label>
@@ -660,7 +660,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
     </div>
   </body>
 </html>
-''' % (quoteattr(self.buildURL('verify')), quoteattr(form_contents)))
+''' % (quoteattr(self.buildURL('verify')), OPENID_POST_USERNAME, (form_contents)))
 
             
 

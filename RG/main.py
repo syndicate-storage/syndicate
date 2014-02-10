@@ -35,7 +35,7 @@ CONFIG_OPTIONS = {
    "username":          ("-u", 1, "Syndicate username of the owner of this RG"),
    "password":          ("-p", 1, "If authenticating via OpenID, the Syndicate user's OpenID password"),
    "MS":                ("-m", 1, "Syndicate MS URL"),
-   "user_pubkey":       ("-U", 1, "Path to the PEM-encoded public key of the user that owns this RG"),
+   "sender_pubkey":     ("-U", 1, "Path to the PEM-encoded public key to verify closures for this RG"),
    "volume_pubkey":     ("-V", 1, "Path to the PEM-encoded Volume public key"),
    "gateway_pkey":      ("-G", 1, "Path to the PEM-encoded RG private key"),
    "tls_pkey":          ("-S", 1, "Path to the PEM-encoded RG TLS private key.  Use if you want TLS for data transfers (might cause breakage if your HTTP caches do not expect TLS)."),
@@ -105,14 +105,14 @@ def build_parser( progname ):
 def validate_args( config ):
    
    # required arguments
-   required = ['user_pubkey', 'gateway_pkey', 'gateway', 'MS', 'volume']
+   required = ['gateway_pkey', 'gateway', 'MS', 'volume']
    for req in required:
       if config.get( req, None ) == None:
          raise Exception("Missing required argument: %s" % req )
    
    # check types...
    paths = []
-   for path_type in ['user_pubkey', 'volume_pubkey', 'gateway_pkey', 'tls_pkey', 'tls_cert']:
+   for path_type in ['volume_pubkey', 'gateway_pkey', 'tls_pkey', 'tls_cert']:
       if config.get( path_type, None ) != None:
          paths.append( config[path_type] )
    
@@ -173,10 +173,10 @@ def run( config, syndicate ):
    
    # get our key files
    my_key_file = config.get("gateway_pkey", None )
-   user_pubkey_file = config.get("user_pubkey", None )
+   sender_pubkey_file = config.get("sender_pubkey", None )
    
    # get our configuration from the MS and start keeping it up to date 
-   rg_closure.init( syndicate, my_key_file, user_pubkey_file )
+   rg_closure.init( syndicate, my_key_file, sender_pubkey_file )
 
    # start serving
    httpd = make_server( hostname, syndicate.portnum(), rg_server.wsgi_application )
@@ -196,14 +196,14 @@ def debug():
    rg_password = "nya!"
    ms_url = "http://localhost:8080/"
    my_key_file = "../../../replica_manager/test/replica_manager_key.pem"
-   user_pubkey_file = "../../../../ms/tests/user_test_key.pub"
+   sender_pubkey_file = "../../../../ms/tests/user_test_key.pub"
    volume_name = "testvolume-jcnelson-cs.princeton.edu"
    
    # start up libsyndicate
    syndicate = rg_common.syndicate_init( ms_url=ms_url, gateway_name=gateway_name, volume_name=volume_name, oid_username=rg_username, oid_password=rg_password, my_key_filename=my_key_file )
    
    # start up config
-   rg_closure.init( syndicate, my_key_file, user_pubkey_file )
+   rg_closure.init( syndicate, my_key_file, sender_pubkey_file )
    
    # start serving!
    httpd = make_server( "t510", syndicate.portnum(), rg_server.wsgi_application )

@@ -33,18 +33,35 @@ log = Log.get_logger()
 CONFIG_DIR = os.path.expanduser( "~/.syndicate" )
 CONFIG_FILENAME = os.path.join(CONFIG_DIR, "syndicate.conf")
 
-# map key type to the object's key directory
-KEY_DIR_NAMES = dict( [(key_type, object_cls.key_dir) for (key_type, object_cls) in api.KEY_TYPE_TO_CLS.items()] )
+KEY_DIR_NAMES = {
+   "volume": "volume_keys",
+   "user": "user_keys",
+   "gateway": "gateway_keys",
+   "syndicate": "syndicate_keys"
+}
+
+CONFIG_DEFAULTS = {
+   "syndicate_port": 443,
+   'trust_public_key': False,
+   'no_verify_result': False,
+   'debug': False,
+   'no_tls': False
+}
 
 CONFIG_OPTIONS = {
-   "MSAPI":             ("-M", 1, "URL to your Syndicate MS's API handler (e.g. https://www.foo.com/api)."),
-   "user_id":           ("-u", 1, "The email address of the user to act as (overrides 'user_id' in the config file).  You must have the user's corresponding signing key!"),
-   'privkey':           ("-P", 1, "Path to the private key associated with the user you're running as (should only be passed for the 'setup' method)."),
-   "volume_keys":       ("-v", 1, "Path to the directory where you store your Volume's signing and verifying keys."),
-   "gateway_keys":      ("-g", 1, "Path to the directory where you store your Gateway's signing and verifying keys."),
-   "user_keys":         ("-k", 1, "Path to the directory where you store your User's signing and verifying keys."),
+   "syndicate_host":    ("-s", 1, "Hostname of your Syndicate instance."),
+   "syndicate_port":    ("-p", 1, "Port number your Syndicate instance listens on (default=%s)." % CONFIG_DEFAULTS['syndicate_port']),
+   "no_tls":            ("-T", 0, "If set, do not securely connect (via TLS) to Syndicate.  INSECURE!"),
+   "user_id":           ("-u", 1, "The ID of the Syndicate user to run as."),
+   "volume_keys":       ("-V", 1, "Path to the directory where you store your Volume's public keys."),
+   "gateway_keys":      ("-G", 1, "Path to the directory where you store your Gateway's private keys."),
+   "user_keys":         ("-K", 1, "Path to the directory where you store your User's private keys."),
+   "syndicate_keys":    ("-S", 1, "Path to the directory where you store your Syndicate public keys."),
    "config":            ("-c", 1, "Path to your config file (default is %s)." % CONFIG_FILENAME),
    "debug":             ("-d", 0, "Verbose debugging output"),
+   "trust_public_key":  ("-t", 0, "If set, automatically trust the Syndicate public key if it is not yet trusted."),
+   "no_verify_result":  ("-n", 0, "If set, do not cryptographically verify data returned from Syndicate.  INSECURE!"),
+   "url":               ("-l", 1, "URL to your Syndicate instance (overrides syndicate_host, syndicate_port, and no_verify_result)"),
    "params":            (None, "+", "Method name, followed by parameters (positional and keyword supported)."),
 }
 
@@ -52,6 +69,48 @@ CONFIG_OPTIONS = {
 class ArgLib(object):
    def __init__(self):
       pass
+
+
+# -------------------
+def default_syndicate_port( syndicate_host, no_tls ):
+   default_port = 80
+   if no_tls:
+      default_port = 443
+   
+   return default_port
+
+# -------------------
+def make_ms_url( syndicate_host, syndicate_port, no_tls, urlpath="API/" ):
+   scheme = "https://"
+   default_port = 80
+   
+   if no_tls:
+      default_port = 443
+      scheme = "http://"
+      
+   if syndicate_port != default_port:
+      return scheme + os.path.join( syndicate_host.strip("/") + ":%s" % syndicate_port, urlpath )
+   else:
+      return scheme + os.path.join( syndicate_host.strip("/"), urlpath )
+
+
+# -------------------
+def make_syndicate_pubkey_name( syndicate_host, syndicate_port, no_tls ):
+   default_port = 80
+   
+   if no_tls:
+      default_port = 443
+      
+   if syndicate_port != default_port:
+      return syndicate_host.strip("/") + (":%s" % syndicate_port) + ".pub"
+   else:
+      return syndicate_host.strip("/") + ".pub"
+   
+   
+   
+# -------------------   
+def make_config_str( config_data ):
+   return "[syndicate]\n" + "\n".join( ["%s=%s" % (config_key, config_value) for (config_key, config_value) in config_data.items()] )
 
 # -------------------
 def build_config( config ):
@@ -84,15 +143,18 @@ def build_parser( progname ):
    return parser
 
 # -------------------
-def object_key_path( config, key_type, internal_type, object_id, public=False ):
+def object_key_path( config, key_type, object_id, public=False, no_suffix=False ):
    suffix = ".pkey"
    if public:
       suffix = ".pub"
       
+   if no_suffix:
+      suffix = ""
+      
    key_dir = config.get( KEY_DIR_NAMES.get( key_type, None ) )
    if key_dir == None:
       raise Exception("Could not get key directory for '%s'" % key_type)
-   return os.path.join( os.path.join( key_dir, internal_type), str(object_id) + suffix )
+   return os.path.join( key_dir, str(object_id) + suffix )
 
 # -------------------
 def parse_args( method_name, args, kw, lib ):
@@ -128,7 +190,7 @@ def extend_paths( config, base_dir ):
    for (_, keydir) in KEY_DIR_NAMES.items():
       path = config.get( keydir, None )
       if path == None:
-         raise Exception("Missing key directory: %s" % keydir)
+         path = keydir
       
       if not os.path.isabs( path ):
          # not absolute, so append with base dir 
@@ -195,16 +257,9 @@ def load_config( config_path, config_str, opts ):
 # -------------------
 def fill_defaults( config ):
    
-   global KEY_DIR_NAMES 
+   global KEY_DIR_NAMES, CONFIG_DEFAULTS
    
-   key_dirs = {}
-   for key_type, object_cls in api.KEY_TYPE_TO_CLS.items():
-      key_dirname = KEY_DIR_NAMES.get(key_type)
-      key_dirs[key_type] = key_dirname
-   
-   config['user_keys'] = key_dirs['user'] + '/'
-   config['volume_keys'] = key_dirs['volume'] + '/'
-   config['gateway_keys'] = key_dirs['gateway'] + '/'
+   config.update( CONFIG_DEFAULTS )
    
    extend_paths( config, CONFIG_DIR )
    

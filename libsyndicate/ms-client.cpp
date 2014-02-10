@@ -418,7 +418,7 @@ char* ms_client_volume_url_by_name( struct ms_client* client, char const* name )
    return url;
 }
 
-char* ms_client_openid_register_url( struct ms_client* client ) {
+char* ms_client_openid_register_url( struct ms_client* client, char const* gateway_name, char const* username ) {
    // build the /REGISTER/ url
 
    char gateway_type_str[10];
@@ -427,13 +427,28 @@ char* ms_client_openid_register_url( struct ms_client* client ) {
    ms_client_rlock( client );
 
    char* url = CALLOC_LIST( char, strlen(client->url) + 1 +
-                                  strlen("/OPENID/") + 1 +
-                                  strlen(client->conf->gateway_name) + 1 +
-                                  strlen(client->conf->ms_username) + 1 +
+                                  strlen("/REGISTER/") + 1 +
+                                  strlen(gateway_name) + 1 +
+                                  strlen(username) + 1 +
                                   strlen(gateway_type_str) + 1 +
                                   strlen("/begin") + 1);
 
-   sprintf(url, "%s/OPENID/%s/%s/%s/begin", client->url, gateway_type_str, client->conf->gateway_name, client->conf->ms_username );
+   sprintf(url, "%s/REGISTER/%s/%s/%s/begin", client->url, gateway_type_str, gateway_name, username );
+
+   ms_client_unlock( client );
+
+   return url;
+}
+
+char* ms_client_openid_rpc_url( struct ms_client* client ) {
+   // build the /API/ url for OpenID
+   
+   ms_client_rlock( client );
+
+   char* url = CALLOC_LIST( char, strlen(client->url) + 1 +
+                                  strlen("/API/begin") + 1);
+
+   sprintf(url, "%s/API/begin", client->url );
 
    ms_client_unlock( client );
 
@@ -548,99 +563,6 @@ static void* ms_client_view_thread( void* arg ) {
    return NULL;
 }
 
-
-
-// get the offset at which the value starts
-static off_t ms_client_find_header_value( char* header_buf, size_t header_len, char const* header_name ) {
-
-   if( strlen(header_name) >= header_len )
-      return -1;      // header is too short
-
-   if( strncasecmp(header_buf, header_name, MIN( header_len, strlen(header_name) ) ) != 0 )
-      return -1;      // not found
-
-   size_t off = strlen(header_name);
-
-   // find :
-   while( off < header_len ) {
-      if( header_buf[off] == ':' )
-         break;
-
-      off++;
-   }
-
-   if( off == header_len )
-      return -1;      // no value
-
-   off++;
-
-   // find value
-   while( off < header_len ) {
-      if( header_buf[off] != ' ' )
-         break;
-
-      off++;
-   }
-
-   if( off == header_len )
-      return -1;      // no value
-
-   return off;
-}
-
-// parse one value
-static uint64_t ms_client_read_one_value( char* hdr, off_t offset, size_t size ) {
-   char* value = hdr + offset;
-   size_t value_len = size - offset;
-
-   char* value_str = CALLOC_LIST( char, value_len + 1 );
-   
-   strncpy( value_str, value, value_len );
-
-   uint64_t data = (uint64_t)strtoll( value_str, NULL, 10 );
-
-   free( value_str );
-   
-   return data;
-}
-
-// read a csv of values
-static uint64_t* ms_client_read_multi_values( char* hdr, off_t offset, size_t size, size_t* ret_len ) {
-   char* value = hdr + offset;
-   size_t value_len = size - offset;
-
-   char* value_str = (char*)alloca( value_len + 1 );
-   strcpy( value_str, value );
-
-   // how many commas?
-   int num_values = 1;
-   for( size_t i = offset; i < size; i++ ) {
-      if( hdr[i] == ',' )
-         num_values++;
-   }
-   
-   char* tmp = value_str;
-   char* tmp2 = NULL;
-   
-   uint64_t* ret = CALLOC_LIST( uint64_t, num_values );
-   int i = 0;
-   
-   while( 1 ) {
-      char* tok = strtok_r( tmp, ", \r\n", &tmp2 );
-      if( tok == NULL )
-         break;
-
-      tmp = NULL;
-
-      uint64_t data = (uint64_t)strtoll( value_str, NULL, 10 );
-      ret[i] = data;
-      i++;
-   }
-
-   *ret_len = num_values;
-   return ret;
-}
-
 // header parser
 static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void *userdata) {
    struct ms_client_timing* times = (struct ms_client_timing*)userdata;
@@ -655,89 +577,56 @@ static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void 
 
    // is this one of our headers?  Find each of them
    
-   off_t off = ms_client_find_header_value( data_str, len, HTTP_VOLUME_TIME );
+   off_t off = md_header_value_offset( data_str, len, HTTP_VOLUME_TIME );
    if( off > 0 ) {
-      times->volume_time = ms_client_read_one_value( data_str, off, len );
+      times->volume_time = md_parse_header_uint64( data_str, off, len );
       free( data_str );
       return len;
    }
    
-   off = ms_client_find_header_value( data_str, len, HTTP_GATEWAY_TIME );
+   off = md_header_value_offset( data_str, len, HTTP_GATEWAY_TIME );
    if( off > 0 ) {
-      times->ug_time = ms_client_read_one_value( data_str, off, len );
+      times->ug_time = md_parse_header_uint64( data_str, off, len );
       free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data_str, len, HTTP_TOTAL_TIME );
+   off = md_header_value_offset( data_str, len, HTTP_TOTAL_TIME );
    if( off > 0 ) {
-      times->total_time = ms_client_read_one_value( data_str, off, len );
+      times->total_time = md_parse_header_uint64( data_str, off, len );
       free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data_str, len, HTTP_RESOLVE_TIME );
+   off = md_header_value_offset( data_str, len, HTTP_RESOLVE_TIME );
    if( off > 0 ) {
-      times->resolve_time = ms_client_read_one_value( data_str, off, len );
+      times->resolve_time = md_parse_header_uint64( data_str, off, len );
       free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data_str, len, HTTP_CREATE_TIMES );
+   off = md_header_value_offset( data_str, len, HTTP_CREATE_TIMES );
    if( off > 0 ) {
-      times->create_times = ms_client_read_multi_values( data_str, off, len, &times->num_create_times );
+      times->create_times = md_parse_header_uint64v( data_str, off, len, &times->num_create_times );
       free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data_str, len, HTTP_UPDATE_TIMES );
+   off = md_header_value_offset( data_str, len, HTTP_UPDATE_TIMES );
    if( off > 0 ) {
-      times->update_times = ms_client_read_multi_values( data_str, off, len, &times->num_update_times );
+      times->update_times = md_parse_header_uint64v( data_str, off, len, &times->num_update_times );
       free( data_str );
       return len;
    }
 
-   off = ms_client_find_header_value( data_str, len, HTTP_DELETE_TIMES );
+   off = md_header_value_offset( data_str, len, HTTP_DELETE_TIMES );
    if( off > 0 ) {
-      times->delete_times = ms_client_read_multi_values( data_str, off, len, &times->num_delete_times );
+      times->delete_times = md_parse_header_uint64v( data_str, off, len, &times->num_delete_times );
       free( data_str );
       return len;
    }
 
    free( data_str );
-   return len;
-}
-
-
-// redirect parser
-static size_t ms_client_redirect_header_func( void *ptr, size_t size, size_t nmemb, void *userdata) {
-   response_buffer_t* rb = (response_buffer_t*)userdata;
-
-   size_t len = size * nmemb;
-
-   char* data = (char*)ptr;
-
-   // only get one Location header
-   if( rb->size() > 0 )
-      return len;
-
-   char* data_str = CALLOC_LIST( char, len + 1 );
-   strncpy( data_str, data, len );
-
-   off_t off = ms_client_find_header_value( data_str, len, "Location" );
-   if( off > 0 ) {
-
-      char* value = data_str + off;
-      size_t value_len = len - off;
-      
-      char* value_str = CALLOC_LIST(char, value_len );
-      strncpy( value_str, value, value_len - 2 );     // strip off '\n\r'
-
-      rb->push_back( buffer_segment_t( value_str, value_len ) );
-   }
-
-   free( data_str );
-   
    return len;
 }
 
@@ -1846,439 +1735,66 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
 
    return rc;
 }
-
-// dummy CURL read
-size_t ms_client_dummy_read( void *ptr, size_t size, size_t nmemb, void *userdata ) {
-   return size * nmemb;
-}
-
-// dummy CURL write
-size_t ms_client_dummy_write( char *ptr, size_t size, size_t nmemb, void *userdata) {
-   return size * nmemb;
-}
-
-// read an OpenID reply from the MS
-int ms_client_load_openid_reply( ms::ms_openid_provider_reply* oid_reply, char* openid_redirect_reply_bits, size_t openid_redirect_reply_bits_len ) {
-   // get back the OpenID provider reply
-   string openid_redirect_reply_bits_str = string( openid_redirect_reply_bits, openid_redirect_reply_bits_len );
-
-   bool valid = oid_reply->ParseFromString( openid_redirect_reply_bits_str );
-   if( !valid ) {
-      errorf("%s", "Invalid MS OpenID provider reply\n");
-      return -EINVAL;
-   }
-
-   return 0;
-}
-
-
-// begin the registration process.  Ask to be securely redirected from the MS to the OpenID provider
-int ms_client_begin_register( CURL* curl, char const* username, char const* register_url, ms::ms_openid_provider_reply* oid_reply ) {
-
-   // url-encode the username
-   char* username_encoded = url_encode( username, strlen(username) );
-   
-   // post arguments
-   char* post = CALLOC_LIST( char, strlen("openid_username") + 1 + strlen(username_encoded) + 1 );
-   sprintf( post, "openid_username=%s", username_encoded );
-   
-   free( username_encoded );
-
-   response_buffer_t rb;      // will hold the OpenID provider reply
-   response_buffer_t header_rb;
-   
-   curl_easy_setopt( curl, CURLOPT_URL, register_url );
-   curl_easy_setopt( curl, CURLOPT_POST, 1L );
-   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, post );
-   curl_easy_setopt( curl, CURLOPT_WRITEDATA, (void*)&rb );
-   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );
-   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_redirect_header_func );
-   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, (void*)&header_rb );
-
-   int rc = curl_easy_perform( curl );
-
-   long http_response = 0;
-   
-   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
-   curl_easy_setopt( curl, CURLOPT_URL, NULL );
-   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, NULL );
-   curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
-   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, NULL );
-
-   free( post );
-
-   if( rc != 0 ) {
-      long err = 0;
-   
-      // get the errno
-      curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &err );
-      err = -abs(err);
-      
-      errorf("curl_easy_perform rc = %d, err = %ld\n", rc, err );
-      return err;
-   }
-
-   if( http_response != 200 ) {
-      errorf("curl_easy_perform HTTP status = %ld\n", http_response );
-      return -http_response;
-   }
-
-   if( rb.size() == 0 ) {
-      errorf("%s", "no response\n");
-      response_buffer_free( &rb );
-      return -ENODATA;
-   }
-
-   char* response = response_buffer_to_string( &rb );
-   size_t len = response_buffer_size( &rb );
-
-   rc = ms_client_load_openid_reply( oid_reply, response, len );
-
-   free( response );
-   response_buffer_free( &rb );
-
-   return rc;
-}
-
-
-int ms_client_split_url_qs( char const* url, char** url_and_path, char** qs ) {
-   if( strstr( url, "?" ) != NULL ) {
-      char* url2 = strdup( url );
-      char* qs_start = strstr( url2, "?" );
-      *qs_start = '\0';
-
-      *qs = strdup( qs_start + 1 );
-      *url_and_path = url2;
-      return 0;
-   }
-   else {
-      return -EINVAL;
-   }
-}
-
-int ms_client_set_method( CURL* curl, char const* method, char const* url, char const* qs ) {
-
-   curl_easy_setopt( curl, CURLOPT_URL, url );
-   
-   if( strcmp(method, "POST") == 0 ) {
-      curl_easy_setopt( curl, CURLOPT_POST, 1L );
-
-      if( qs )
-         curl_easy_setopt( curl, CURLOPT_POSTFIELDS, qs );
-   }
-   else if( strcmp(method, "GET") == 0 ) {
-      curl_easy_setopt( curl, CURLOPT_HTTPGET, 1L );
-   }
-   else {
-      errorf("Invalid HTTP method '%s'\n", method );
-      return -EINVAL;
-   }
-   return 0;
-}
-
-// authenticate to the OpenID provider.
-// populate the return_to URL
-// client must be read-locked
-int ms_client_auth_op( char const* ms_username, char const* ms_password, CURL* curl, ms::ms_openid_provider_reply* oid_reply, char** return_to_method, char** return_to ) {
-
-   char* post = NULL;
-   char const* openid_redirect_url = oid_reply->redirect_url().c_str();
-   long http_response = 0;
-   
-   // how we ask the OID provider to challenge us
-   char const* challenge_method = oid_reply->challenge_method().c_str();
-
-   // how we respond to the OID provider challenge
-   char const* response_method = oid_reply->response_method().c_str();
-
-   // how we redirect to the OID RP
-   char const* redirect_method = oid_reply->redirect_method().c_str();
-
-   dbprintf("%s challenge to %s\n", challenge_method, openid_redirect_url );
-
-   response_buffer_t header_rb;
-   
-   // inform the OpenID provider that we have been redirected by the RP by fetching the authentication page.
-   // The OpenID provider may then redirect us back.
-   curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 0L );     // catch 302
-   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_redirect_header_func );
-   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, (void*)&header_rb );
-   curl_easy_setopt( curl, CURLOPT_READFUNCTION, ms_client_dummy_read );
-   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, ms_client_dummy_write );
-   curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
-   curl_easy_setopt( curl, CURLOPT_READDATA, NULL );
-   //curl_easy_setopt( curl, CURLOPT_VERBOSE, 1L );
-
-   char* url_and_path = NULL;
-   char* url_qs = NULL;
-   int rc = ms_client_split_url_qs( openid_redirect_url, &url_and_path, &url_qs );
-   if( rc != 0 ) {
-      // no query string
-      url_and_path = strdup( openid_redirect_url );
-   }
-   
-   rc = ms_client_set_method( curl, challenge_method, url_and_path, url_qs );
-   if( rc != 0 ) {
-      errorf("ms_client_set_method(%s) rc = %d\n", challenge_method, rc );
-      return rc;
-   }
-
-   rc = curl_easy_perform( curl );
-
-   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
-   curl_easy_setopt( curl, CURLOPT_URL, NULL );
-   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, NULL );
-   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, NULL );
-   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, NULL );
-
-   free( url_and_path );
-   if( url_qs )
-      free( url_qs );
-
-   if( rc != 0 ) {
-      
-      long err = 0;
-      
-      // get the errno
-      curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &err );
-      err = -abs(err);
-      
-      errorf("curl_easy_perform rc = %d, err = %ld\n", rc, err );
-      
-      response_buffer_free( &header_rb );
-      return -abs(rc);
-   }
-
-   if( http_response != 200 && http_response != 302 ) {
-      errorf("curl_easy_perform HTTP status = %ld\n", http_response );
-      response_buffer_free( &header_rb );
-      return -http_response;
-   }
-
-   if( http_response == 302 ) {
-      // authenticated already; we're being sent back
-      char* url = response_buffer_to_string( &header_rb );
-
-      dbprintf("return to %s", url );
-      
-      *return_to = url;
-      *return_to_method = strdup( redirect_method );
-      
-      response_buffer_free( &header_rb );
-
-      return 0;
-   }
-
-   response_buffer_free( &header_rb );
-
-   // authenticate to the OpenID provider
-   char const* extra_args = oid_reply->extra_args().c_str();
-   char const* username_field = oid_reply->username_field().c_str();
-   char const* password_field = oid_reply->password_field().c_str();
-   char const* auth_handler = oid_reply->auth_handler().c_str();
-
-   char* username_urlencoded = url_encode( ms_username, strlen(ms_username) );
-   char* password_urlencoded = url_encode( ms_password, strlen(ms_password) );
-   post = CALLOC_LIST( char, strlen(username_field) + 1 + strlen(username_urlencoded) + 1 +
-                             strlen(password_field) + 1 + strlen(password_urlencoded) + 1 +
-                             strlen(extra_args) + 1);
-
-   sprintf(post, "%s=%s&%s=%s&%s", username_field, username_urlencoded, password_field, password_urlencoded, extra_args );
-
-   free( username_urlencoded );
-   free( password_urlencoded );
-
-   dbprintf("%s authenticate to %s?%s\n", response_method, auth_handler, post );
-
-   rc = ms_client_set_method( curl, response_method, auth_handler, post );
-   if( rc != 0 ) {
-      errorf("ms_client_set_method(%s) rc = %d\n", response_method, rc );
-      return rc;
-   }
-
-   // send the authentication request
-   curl_easy_setopt( curl, CURLOPT_FOLLOWLOCATION, 0L );
-   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, ms_client_redirect_header_func );
-   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, (void*)&header_rb );
-   curl_easy_setopt( curl, CURLOPT_READFUNCTION, ms_client_dummy_read );
-   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, ms_client_dummy_write );
-   curl_easy_setopt( curl, CURLOPT_WRITEDATA, NULL );
-   curl_easy_setopt( curl, CURLOPT_READDATA, NULL );
-
-   rc = curl_easy_perform( curl );
-
-   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
-   curl_easy_setopt( curl, CURLOPT_URL, NULL );
-   curl_easy_setopt( curl, CURLOPT_WRITEHEADER, NULL );
-   curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, NULL );
-   curl_easy_setopt( curl, CURLOPT_POSTFIELDS, NULL );
-
-   free( post );
-
-   if( rc != 0 ) {
-      long err = 0;
-      
-      curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &err );
-      err = -abs(err);
-      
-      errorf("curl_easy_perform rc = %d, err = %ld\n", rc, err );
-      response_buffer_free( &header_rb );
-      return -abs(rc);
-   }
-
-   if( http_response != 302 ) {
-      errorf("curl_easy_perform HTTP status = %ld\n", http_response );
-      response_buffer_free( &header_rb );
-      return -http_response;
-   }
-
-   // authenticated! we're being sent back
-   char* url = response_buffer_to_string( &header_rb );
-   response_buffer_free( &header_rb );
-   
-   *return_to = url;
-   *return_to_method = strdup( redirect_method );
-   return 0;
-}
-
-// complete the registration
-// client must not be locked
-int ms_client_complete_register( CURL* curl, char const* return_to_method, char const* return_to, ms::ms_registration_metadata* registration_md ) {
-
-   dbprintf("%s return to %s\n", return_to_method, return_to );
-
-   char* return_to_url_and_path = NULL;
-   char* return_to_qs = NULL;
-
-   char* bits = NULL;
-   ssize_t len = 0;
-   long http_response = 0;
-
-   int rc = ms_client_split_url_qs( return_to, &return_to_url_and_path, &return_to_qs );
-   if( rc != 0 ) {
-      // no qs
-      return_to_url_and_path = strdup( return_to );
-   }
-   
-   rc = ms_client_set_method( curl, return_to_method, return_to_url_and_path, return_to_qs );
-   if( rc != 0 ) {
-      errorf("ms_client_set_method(%s) rc = %d\n", return_to_method, rc );
-      free( return_to_url_and_path );
-      if( return_to_qs )
-         free( return_to_qs );
-      
-      return rc;
-   }
-
-   // get the registration data
-   len = md_download_file5( curl, &bits );
-
-   curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
-
-   if( len < 0 ) {
-      errorf("md_download_file5 rc = %zd\n", len );
-      free( return_to_url_and_path );
-      if( return_to_qs )
-         free( return_to_qs );
-      return (int)len;
-   }
-
-   if( http_response != 200 ) {
-      errorf("md_download_file5 HTTP status = %ld\n", http_response );
-      free( return_to_url_and_path );
-      if( return_to_qs )
-         free( return_to_qs );
-      return -abs( (int)http_response );
-   }
-
-   // got the data
-   bool valid = registration_md->ParseFromString( string(bits, len) );
-   free( bits );
-
-   free( return_to_url_and_path );
-   if( return_to_qs )
-      free( return_to_qs );
-
-   if( !valid ) {
-      errorf( "%s", "invalid registration metadata\n" );
-      return -EINVAL;
-   }
-
-   return 0;
-}
-   
    
 
 // register this gateway with the MS, using the SyndicateUser's OpenID username and password
 int ms_client_openid_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password, char const* volume_pubkey_pem ) {
 
    int rc = 0;
-   char* register_url = ms_client_openid_register_url( client );
 
    CURL* curl = curl_easy_init();
    
-   ms::ms_openid_provider_reply oid_reply;
+   char* registration_md_buf = NULL;
+   size_t registration_md_buf_len = 0;
    ms::ms_registration_metadata registration_md;
 
-   dbprintf("register at %s\n", register_url );
-
-   // enable the cookie parser
-   curl_easy_setopt( curl, CURLOPT_COOKIEFILE, "/COOKIE" );
-   
    ms_client_rlock( client );
-   
+
+   char* register_url = ms_client_openid_register_url( client, gateway_name, username );
    md_init_curl_handle( client->conf, curl, NULL, client->conf->connect_timeout );
 
-   // get info for the OpenID provider
-   rc = ms_client_begin_register( curl, username, register_url, &oid_reply );
-
+   ms_client_unlock( client );
+   
+   dbprintf("register at %s\n", register_url );
+   
+   // open an OpenID-authenticated session, to get the registration data
+   rc = ms_client_openid_session( curl, register_url, username, password, &registration_md_buf, &registration_md_buf_len );
+   
+   // ... and close it, since we only needed to get the registration data
+   curl_easy_cleanup( curl );
    free( register_url );
    
    if( rc != 0 ) {
-      errorf("ms_client_begin_register rc = %d\n", rc);
-      ms_client_unlock( client );
+      errorf("ms_client_openid_session rc = %d\n", rc );
       curl_easy_cleanup( curl );
-      return rc;
+      return -ENOTCONN;
    }
-
-   // authenticate to the OpenID provider
-   char* return_to = NULL;
-   char* return_to_method = NULL;
-   rc = ms_client_auth_op( client->conf->ms_username, client->conf->ms_password, curl, &oid_reply, &return_to_method, &return_to );
-   if( rc != 0 ) {
-      errorf("ms_client_auth_op rc = %d\n", rc);
-      ms_client_unlock( client );
-      curl_easy_cleanup( curl );
-      return rc;
+   
+   // got the data
+   bool valid = registration_md.ParseFromString( string(registration_md_buf, registration_md_buf_len) );
+   
+   free( registration_md_buf );
+  
+   if( !valid ) {
+      errorf( "%s", "invalid registration metadata\n" );
+      return -EINVAL;
    }
-
-   // complete the registration 
-   rc = ms_client_complete_register( curl, return_to_method, return_to, &registration_md );
-   if( rc != 0 ) {
-      errorf("ms_client_complete_register rc = %d\n", rc);
-      ms_client_unlock( client );
-      curl_easy_cleanup( curl );
-      return rc;
-   }
-
-   ms_client_unlock( client );
-
-   free( return_to );
-   free( return_to_method );
-
-   curl_easy_cleanup( curl );
    
    // load up the registration information, including our set of Volumes
    rc = ms_client_load_registration_metadata( client, &registration_md, volume_pubkey_pem );
    if( rc != 0 ) {
       errorf("ms_client_load_registration_metadata rc = %d\n", rc );
-      return rc;
+      return -ENODATA;
    }
    
    // load the certificate bundle   
    rc = ms_client_reload_certs( client );
+   if( rc != 0 ) {
+      errorf("ms_client_reload_certs rc = %d\n", rc );
+      return -ENODATA;
+   }
    
-   return rc;
+   return 0;
 }
 
 
@@ -2341,6 +1857,81 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
    return rc;
 }
 
+
+// do a one-off RPC call via OpenID
+// rpc_type can be "json" or "xml"
+int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char const* password, char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len ) {
+   CURL* curl = curl_easy_init();
+   
+   // TODO: elegant way to avoid hard constants?
+   md_init_curl_handle2( curl, NULL, 30, true );
+   
+   char* ms_openid_url_begin = CALLOC_LIST( char, strlen(ms_openid_url) + strlen("/begin") + 1 );
+   sprintf(ms_openid_url_begin, "%s/begin", ms_openid_url );
+   
+   int rc = ms_client_openid_session( curl, ms_openid_url_begin, username, password, response_buf, response_len );
+   
+   curl_easy_setopt( curl, CURLOPT_URL, NULL );
+   free( ms_openid_url_begin );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_openid_session(%s) rc = %d\n", ms_openid_url, rc );
+      curl_easy_cleanup( curl );
+      return rc;
+   }
+   
+   // set the body contents
+   struct md_upload_buf upload;
+   memset( &upload, 0, sizeof(upload) );
+      
+   upload.text = request_buf;
+   upload.len = request_len;
+   upload.offset = 0;
+   
+   curl_easy_setopt(curl, CURLOPT_POST, 1L );
+   curl_easy_setopt(curl, CURLOPT_URL, ms_openid_url);
+   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request_buf);
+   curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, request_len);
+   
+   struct curl_slist* headers = NULL;
+   
+   // what kind of RPC?
+   if( strcasecmp( rpc_type, "json" ) == 0 ) {
+      // json rpc 
+      headers = curl_slist_append( headers, "content-type: application/json" );
+   }
+   else if( strcasecmp( rpc_type, "xml" ) == 0 ) {
+      // xml rpc
+      headers = curl_slist_append( headers, "content-type: application/xml" );
+   }
+   
+   if( headers != NULL ) {
+      curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
+   }
+   
+   char* tmp_response = NULL;
+   ssize_t tmp_response_len = md_download_file5( curl, &tmp_response );
+   if( tmp_response_len < 0 ) {
+      errorf("md_download_file5(%s) rc = %zd\n", ms_openid_url, tmp_response_len );
+      rc = -ENODATA;
+   }
+   
+   // clear headers
+   curl_easy_setopt( curl, CURLOPT_HTTPHEADER, NULL );
+   
+   if( headers ) {
+      curl_slist_free_all( headers );
+   }
+   
+   curl_easy_cleanup( curl );
+   
+   if( rc == 0 ) {
+      *response_buf = tmp_response;
+      *response_len = tmp_response_len;
+   }
+   
+   return rc;
+}
 
 
 // read-lock a client context 

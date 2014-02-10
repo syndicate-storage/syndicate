@@ -139,9 +139,9 @@ struct md_bound_response_buffer {
    response_buffer_t* rb;
 };
 
-// POST buffer
-struct md_post_buf {
-   char* text;
+// upload buffer
+struct md_upload_buf {
+   char const* text;
    int offset;
    int len;
 };
@@ -382,6 +382,7 @@ pthread_t md_start_thread( void* (*thread_func)(void*), void* args, bool detach 
 
 // downloads
 void md_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char const* url, time_t query_time );
+void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, bool ssl_verify_peer );
 ssize_t md_download_file4( struct md_syndicate_conf* conf, char const* url, char** buf, char const* username, char const* password, char const* proxy, void (*curl_extractor)( CURL*, int, void* ), void* arg );
 ssize_t md_download_file5( CURL* curl_h, char** buf );
 ssize_t md_download_file6( CURL* curl_h, char** buf, ssize_t max_len );
@@ -395,7 +396,7 @@ size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t 
 size_t md_default_get_callback_ram(void *stream, size_t size, size_t count, void *user_data);
 size_t md_default_get_callback_disk(void *stream, size_t size, size_t count, void *user_data);
 size_t md_get_callback_response_buffer( void* stream, size_t size, size_t count, void* user_data );
-size_t md_default_post_callback(void *ptr, size_t size, size_t nmemb, void *userp);
+size_t md_default_upload_callback(void *ptr, size_t size, size_t nmemb, void *userp);
 
 // URL parsing
 char** md_parse_cgi_args( char* query_string );
@@ -408,6 +409,12 @@ int md_portnum_from_url( char const* url );
 char* md_strip_protocol( char const* url );
 char* md_flatten_path( char const* path );
 char* md_cdn_url( char const* cdn_prefix, char const* url );
+int md_split_url_qs( char const* url, char** url_and_path, char** qs );
+
+// header parsing
+off_t md_header_value_offset( char* header_buf, size_t header_len, char const* header_name );
+uint64_t md_parse_header_uint64( char* hdr, off_t offset, size_t size );
+uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t* ret_len );
 
 // response buffers
 char* response_buffer_to_string( response_buffer_t* rb );

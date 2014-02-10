@@ -31,6 +31,7 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/crypt.h"
+#include "libsyndicate/openid.h"
 
 #define HTTP_VOLUME_TIME   "X-Volume-Time"
 #define HTTP_GATEWAY_TIME  "X-Gateway-Time"
@@ -251,6 +252,8 @@ int ms_client_reload_certs( struct ms_client* client );
 int ms_client_reload_volume( struct ms_client* client );
 
 int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len );
+
+int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char const* password, char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len );
 
 int ms_client_rlock( struct ms_client* client );
 int ms_client_wlock( struct ms_client* client );

@@ -52,7 +52,6 @@ def is_user( caller_user_or_object ):
    else:
       return False
    
-   
 # ----------------------------------
 def is_admin( caller_user ):
    if caller_user != None and is_user( caller_user ) and caller_user.is_admin:
@@ -262,18 +261,18 @@ class ReadAPIGuard:
       self.admin_only = admin_only
    
    def __call__(self, func):
-      def inner(caller_user_or_object, *args, **kw):
+      def inner(caller_user, *args, **kw):
          
-         if caller_user_or_object == None:
+         if caller_user == None:
             # authentication failed
             raise Exception("Caller has insufficient privileges")
          
          if self.admin_only:
-            assert_admin( caller_user_or_object )
+            assert_admin( caller_user )
          
          ret = func( *args, **kw )
          
-         return filter_result( caller_user_or_object, self.object_cls, ret )
+         return filter_result( caller_user, self.object_cls, ret )
       
       inner.__name__ = func.__name__
       inner.object_id_attrs = self.object_cls.key_attrs
@@ -534,64 +533,42 @@ class BindAPIGuard:
 # ----------------------------------
 class Authenticate:
    
-   def __init__(self, object_authenticator=None, object_response_signer=None, **kw ):
-      self.object_authenticator = object_authenticator
-      self.object_response_signer = object_response_signer
-      self.need_verification = True
+   def __init__(self, auth_methods=[], **kw ):
+      self.need_authentication = True
+      self.auth_methods = auth_methods
       
-      if 'signing_key_ids' in kw.keys() and 'signing_key_types' in kw.keys():
-         signing_key_ids = kw['signing_key_ids']
-         signing_key_types = kw['signing_key_types']
+      if len(auth_methods) == 0:
+         raise Exception("INTERNAL ERROR: No authentication methods given")
+      
+      if AUTH_METHOD_NONE in self.auth_methods:
+         self.need_authentication = False
          
-         if len(signing_key_ids) == 0 and len(signing_key_types) == 0:
-            self.need_verification = False
    
    def __call__(self, func):
-      def inner( authenticated_user_or_object, *args, **kw ):
-         if authenticated_user_or_object is None and self.need_verification:
-            raise Exception("Unauthorized caller")
+      def inner( authenticated_user, *args, **kw ):
+         if authenticated_user is None and self.need_authentication:
+            raise Exception("Unauthorized user")
          
-         return func( authenticated_user_or_object, *args, **kw )
+         return func( authenticated_user, *args, **kw )
       
       inner.__name__ = func.__name__
-      inner.object_authenticator = self.object_authenticator
-      inner.object_response_signer = self.object_response_signer
       inner.object_id_attrs = getattr( func, "object_id_attrs", None )
       inner.target_object_name = getattr( func, "target_object_name", None )
       inner.source_object_name = getattr( func, "source_object_name", None )
       inner.is_public = True
-      inner.need_verification = self.need_verification
+      inner.auth_methods = self.auth_methods
+      inner.need_authentication = self.need_authentication
       return inner
 
 # ----------------------------------
 class AuthMethod( object ):
-   def __init__(self, method_func, authenticated_caller ):
+   def __init__(self, method_func, authenticated_user ):
       # make sure this is decorated with Authenticate
       assert_public_method( method_func )
-      self.authenticated_caller = authenticated_caller
+      self.authenticated_user = authenticated_user
       self.method_func = method_func
    
    def __call__(self, *args, **kw ):
-      ret = self.method_func( self.authenticated_caller, *args, **kw )
+      ret = self.method_func( self.authenticated_user, *args, **kw )
       return ret
-   
-   def authenticate_object( self, object_id, request_body, sig ):
-      return self.method_func.object_authenticator( object_id, request_body, sig )
-   
-   def sign_reply( self, data, authenticated_caller=None ):
-      if authenticated_caller == None:
-         authenticated_caller = self.authenticated_caller 
-      
-      if authenticated_caller == None:
-         raise Exception("Caller is not authenticated")
-      
-      if is_user( authenticated_caller ):
-         return SyndicateUser.Sign( authenticated_caller, data )
-      
-      elif self.method_func.object_response_signer:
-         return self.method_func.object_response_signer( authenticated_caller, data )
-      
-      else:
-         # no way to sign
-         raise Exception("No method for signing reply from '%s'" % (self.method_func.__name__))
-   
+         

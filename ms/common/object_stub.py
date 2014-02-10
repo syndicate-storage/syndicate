@@ -105,34 +105,6 @@ class StubObject( object ):
    
    
    @classmethod
-   def parse_or_generate_verifying_private_key( cls, verifying_private_key, lib=None ):
-      """
-      Check a verifying private key key and verify that it has the appropriate security 
-      parameters.  Interpret MAKE_VERIFYING_KEY as a command to generate and return one.
-      Return pubkey, extras
-      """
-      extra = {}
-      
-      if verifying_private_key == "MAKE_VERIFYING_KEY":
-         pubkey_pem, privkey_pem = api.generate_key_pair( OBJECT_KEY_SIZE )
-         extra['verifying_public_key'] = pubkey_pem
-         extra['verifying_private_key'] = privkey_pem
-         
-         verifying_private_key = privkey_pem
-      
-      else:
-         # try validating the given one
-         try:
-            key = CryptoKey.importKey( verifying_private_key )
-            extra['verifying_public_key'] = key.publickey().exportKey()
-         except Exception, e:
-            log.exception(e)
-            raise Exception("Failed to parse public key")
-         
-      return verifying_private_key, extra
-   
-   
-   @classmethod
    def parse_or_generate_private_key( cls, pkey_str, pkey_generate_arg, key_size ):
       """
       Check a private key (pkey_str) and verify that it has the appopriate security 
@@ -200,8 +172,7 @@ class StubObject( object ):
    
    # Map an argument name to a function that parses and validates it.
    arg_parsers = {
-      "signing_public_key": (lambda cls, arg, lib: cls.parse_or_generate_signing_public_key(arg, lib)),
-      "verifying_private_key": (lambda cls, arg, lib: cls.parse_or_generate_verifying_private_key(arg, lib))
+      "signing_public_key": (lambda cls, arg, lib: cls.parse_or_generate_signing_public_key(arg, lib))
    }
    
    # what type of key does this object require?
@@ -210,14 +181,8 @@ class StubObject( object ):
    # which key directory stores this object's key information?
    key_dir = None
    
-   SIGNING_KEY_TYPE = "signing"
-   VERIFYING_KEY_TYPE = "verifying"
-   
    # what kinds of keys are maintained by this object?
-   internal_keys = [
-      SIGNING_KEY_TYPE,
-      VERIFYING_KEY_TYPE
-   ]
+   internal_keys = []
    
    @classmethod
    def ParseArgs( cls, argspec, args, kw, lib ):
@@ -290,6 +255,10 @@ class StubObject( object ):
    
    
 class SyndicateUser( StubObject ):
+   
+   USER_KEY_UNSET = "unset"
+   USER_KEY_UNUSED = "unused"
+   
    @classmethod
    def parse_user_name_or_id( cls, user_name_or_id, lib=None ):
       """
@@ -347,17 +316,21 @@ class SyndicateUser( StubObject ):
    
    arg_parsers = dict( StubObject.arg_parsers.items() + {
       "email": (lambda cls, arg, lib: cls.parse_user_name_or_id(arg, lib)),
-      "registration_password": (lambda cls, arg, lib: cls.generate_password_hash(arg, lib)),
-      "registration_password_hash": (lambda cls, arg, lib: cls.recover_password_hash(arg, lib)),
-      "registration_password_salt": (lambda cls, arg, lib: cls.recover_password_salt(arg, lib))
+      "activate_password": (lambda cls, arg, lib: cls.generate_password_hash(arg, lib)),
+      "activate_password_hash": (lambda cls, arg, lib: cls.recover_password_hash(arg, lib)),
+      "activate_password_salt": (lambda cls, arg, lib: cls.recover_password_salt(arg, lib))
    }.items() )
    
    key_type = "user"
    
    key_dir = "user_keys"
-            
-            
-            
+   
+   
+   SIGNING_KEY_TYPE = "signing"
+   
+   internal_keys = StubObject.internal_keys + [
+      SIGNING_KEY_TYPE
+   ]
             
 
 class Volume( StubObject ):
@@ -415,7 +388,7 @@ class Volume( StubObject ):
             raise Exception("Could not determine name of Volume")
          
          # store it
-         storage_stub.store_object_public_key( config, "volume", cls.METADATA_KEY_TYPE, volume_name, extras['metadata_public_key'] )
+         storage_stub.store_public_key( config, "volume", volume_name, extras['metadata_public_key'] )
 
          del extras['metadata_public_key']
 
@@ -572,31 +545,23 @@ class Gateway( StubObject ):
       
       if len(secrets_dict.keys()) > 0:
          
-         # attempt to get the user's private key
-         user_privkey_pem = None
+         # attempt to get the gateway's private key
+         gateway_privkey_pem = None
          try:
-            user_privkey = storage.load_object_private_key( config, "user", "signing", user_id )
-            user_privkey_pem = user_privkey.exportKey()
+            gateway_privkey = storage.load_private_key( config, "gateway", gateway_name )
+            gateway_privkey_pem = gateway_privkey.exportKey()
          except Exception, e:
             log.exception(e)
-            raise Exception("Failed to load user signing key for %s" % user_id )
+            raise Exception("Failed to load Gateway private key for %s" % gateway_name )
          
-         
-         # get the gateway public key 
-         gateway_pubkey_pem = None
-         try:
-            gateway_privkey = storage.load_object_private_key( config, "gateway", "runtime", gateway_name )
-            gateway_pubkey_pem = gateway_privkey.publickey().exportKey()
-         except Exception, e:
-            log.exception( e )
-            raise Exception("Failed to load runtime private key for %s" % gateway_name )
+         gateway_pubkey_pem = gateway_privkey.publickey().exportKey()
          
          # encrypt the serialized secrets dict 
          rc = 0
          encrypted_secrets_str = None
          try:
             log.info("Encrypting secrets...")
-            rc, encrypted_secrets_str = c_syndicate.encrypt_closure_secrets( user_privkey_pem, gateway_pubkey_pem, secrets_dict_str )
+            rc, encrypted_secrets_str = c_syndicate.encrypt_closure_secrets( gateway_privkey_pem, gateway_pubkey_pem, secrets_dict_str )
          except Exception, e:
             log.exception( e )
             raise Exception("Failed to encrypt secrets")
@@ -681,7 +646,7 @@ class Gateway( StubObject ):
             raise Exception("Could not determine name of Gateway")
          
          # store it
-         storage_stub.store_object_private_key( config, "gateway", cls.RUNTIME_KEY_TYPE, gateway_name, extras['gateway_private_key'] )
+         storage_stub.store_private_key( config, "gateway", gateway_name, extras['gateway_private_key'] )
          
          del extras['gateway_private_key']
 
@@ -691,3 +656,5 @@ class VolumeAccessRequest( StubObject ):
       "caps":                   (lambda cls, arg, lib: cls.parse_gateway_caps(arg, lib)),
    }.items() )
 
+
+object_classes = [SyndicateUser, Volume, Gateway, VolumeAccessRequest]

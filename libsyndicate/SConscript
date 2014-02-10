@@ -18,6 +18,7 @@ BASE_FILES = """
    ms-client.cpp
    util.cpp
    storage.cpp
+   openid.cpp
 """
 
 HTTPD_FILES = """

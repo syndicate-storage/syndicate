@@ -26,7 +26,7 @@ import logging
 from MS.user import SyndicateUser
 from common.admin_info import *
 
-from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSCertRequestHandler, MSCertManifestRequestHandler, MSOpenIDRegisterRequestHandler, MSOpenIDRequestHandler, MSJSONRPCHandler, MSUserRequestHandler, MSVolumeOwnerRequestHandler
+from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSCertRequestHandler, MSCertManifestRequestHandler, MSOpenIDRegisterRequestHandler, MSJSONRPCHandler, MSUserRequestHandler, MSVolumeOwnerRequestHandler, MSPubkeyHandler
 
 have_debug = False
 
@@ -37,19 +37,17 @@ except:
    pass
 
 handlers = [
-    ('/', MSOpenIDRequestHandler),
-    ('/verify', MSOpenIDRequestHandler),
-    ('/process', MSOpenIDRequestHandler),
-    ('/affiliate', MSOpenIDRequestHandler),
-    ('/FILE/([0123456789]+)/([0123456789ABCDEF]+)/([0123456789]+)/([-0123456789]+)', MSFileReadHandler),
-    ('/FILE/([0123456789]+)', MSFileWriteHandler ),
-    ('/VOLUME/([^/]+)', MSVolumeRequestHandler),
-    ('/OPENID/([^/]+)/([^/]+)/([^/]+)/([^/]+)', MSOpenIDRegisterRequestHandler),
-    ('/CERT/([0123456789]+)/manifest.([0123456789]+)', MSCertManifestRequestHandler),
-    ('/CERT/([0123456789]+)/([0123456789]+)/(UG|RG|AG)/([0123456789]+)/([0123456789]+)', MSCertRequestHandler),
-    ('/USER/([^/]+)', MSUserRequestHandler),
-    ('/VOLUMEOWNER/([^/]+)', MSVolumeOwnerRequestHandler),
-    ('/api', MSJSONRPCHandler)
+    ('[/]+FILE[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([0123456789]+)[/]+([-0123456789]+)[/]*', MSFileReadHandler),
+    ('[/]+FILE[/]+([0123456789]+)[/]*', MSFileWriteHandler ),
+    ('[/]+VOLUME[/]+([^/]+)[/]*', MSVolumeRequestHandler),
+    ('[/]+REGISTER[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]*', MSOpenIDRegisterRequestHandler),
+    ('[/]+CERT[/]+([0123456789]+)[/]+manifest.([0123456789]+)[/]*', MSCertManifestRequestHandler),
+    ('[/]+CERT[/]+([0123456789]+)[/]+([0123456789]+)[/]+(UG|RG|AG)[/]+([0123456789]+)[/]+([0123456789]+)[/]*', MSCertRequestHandler),
+    ('[/]+USER[/]+([^/]+)[/]*', MSUserRequestHandler),
+    ('[/]+VOLUMEOWNER[/]+([^/]+)[/]*', MSVolumeOwnerRequestHandler),
+    ('[/]+API[/]+([^/]+)[/]*', MSJSONRPCHandler),
+    ('[/]+API[/]*', MSJSONRPCHandler),
+    ('[/]+PUBKEY[/]*', MSPubkeyHandler)
 ]
 
 if have_debug:
@@ -61,7 +59,7 @@ def ms_initialize():
    """
    Initialize the Syndicate MS
    """
-   admin_key = SyndicateUser.CreateAdmin( ADMIN_EMAIL, ADMIN_OPENID_URL, ADMIN_PUBLIC_KEY, ADMIN_VERIFYING_PRIVATE_KEY )
+   admin_key = SyndicateUser.CreateAdmin( ADMIN_EMAIL, ADMIN_OPENID_URL, ADMIN_PUBLIC_KEY, ADMIN_REGISTER_PASSWORD )
    
    
 ms_initialize()

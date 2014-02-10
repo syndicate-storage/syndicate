@@ -29,6 +29,7 @@ import logging
 import hashlib
 
 from common.msconfig import *
+from common.admin_info import *
 
 valid_email = None
 
@@ -103,6 +104,9 @@ class SyndicateUserNameHolder( storagetypes.Object ):
 
 class SyndicateUser( storagetypes.Object ):
    
+   USER_KEY_UNSET = "unset"
+   USER_KEY_UNUSED = "unused"
+   
    email = storagetypes.String()         # used as the username
    owner_id = storagetypes.Integer()     # UID field in Syndicate
    openid_url = storagetypes.Text()      # OpenID identifying URL
@@ -115,16 +119,15 @@ class SyndicateUser( storagetypes.Object ):
    
    is_admin = storagetypes.Boolean( default=False, indexed=False )      # is this user an administrator?
    
-   signing_public_key = storagetypes.Text()     # PEM-encoded public key for authenticating this user, or "unset" if it is not set.
+   signing_public_key = storagetypes.Text()     # PEM-encoded public key for authenticating this user, or USER_KEY_UNSET if it is not set, or USER_KEY_UNUSED if it will not be used
    signing_public_key_expiration = storagetypes.Integer( default=-1 )           # seconds since the epoch
    
-   # keys for signing responses to remote callers
-   verifying_public_key = storagetypes.Text()
-   verifying_private_key = storagetypes.Text()
+   active = storagetypes.Boolean(default=False)         # is this account active?
+   allow_password_auth = storagetypes.Boolean(default=True)    # allow password-based authentication? 
    
    # one-time password for setting the signing public key
-   set_signing_public_key_password_salt = storagetypes.String()         # 32 bytes, but encoded as a hex string
-   set_signing_public_key_password_hash = storagetypes.String()         # SHA256
+   activate_password_salt = storagetypes.String()         # 32 bytes, but encoded as a hex string
+   activate_password_hash = storagetypes.String()         # SHA256
    
    # for RPC
    key_type = "user"
@@ -146,19 +149,19 @@ class SyndicateUser( storagetypes.Object ):
       "max_AGs": (lambda cls, attrs: 10),
       "is_admin": (lambda cls, attrs: False),
       "openid_url": (lambda cls, attrs: ""),
-      "signing_public_key_expiration": (lambda cls, attrs: -1)
+      "signing_public_key_expiration": (lambda cls, attrs: -1),
+      "active": (lambda cls, attrs: False),
+      "allow_password_auth": (lambda cls, attrs: True)
    }
 
    validators = {
       "email" : (lambda cls, value: valid_email(cls, value)),
-      "signing_public_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE )),
-      "verifying_public_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE )),
-      "verifying_private_key": (lambda cls, value: cls.is_valid_key( value, USER_RSA_KEYSIZE )),
+      "signing_public_key": (lambda cls, value: not cls.is_signing_public_key_set( value ) or cls.is_valid_key( value, USER_RSA_KEYSIZE )),
       "openid_url": (lambda cls, value: len(value) < 4096),              # not much of a check here...
-      "set_signing_public_key_password_salt": (lambda cls, value: len(str(value).translate( None, "0123456789abcdefABCDEF" )) == 0 and
+      "activate_password_salt": (lambda cls, value: len(str(value).translate( None, "0123456789abcdefABCDEF" )) == 0 and
                                                                   len(str(value)) == 64),      # 32-byte salt, encoded as a hex number
       
-      "set_signing_public_key_password_hash": (lambda cls, value: len(str(value).translate( None, "0123456789abcdefABCDEF" )) == 0 and
+      "activate_password_hash": (lambda cls, value: len(str(value).translate( None, "0123456789abcdefABCDEF" )) == 0 and
                                                                   len(str(value)) == 64)      # SHA256: 32-byte hash, encoded as a hex number
    }
 
@@ -172,14 +175,15 @@ class SyndicateUser( storagetypes.Object ):
       "max_AGs",
       "signing_public_key",
       "signing_public_key_expiration",
-      "verifying_public_key"
    ]
    
    read_attrs = read_attrs_api_required
    
    
    write_attrs_api_required = [
-      "openid_url"
+      "openid_url",
+      "signing_public_key",
+      "allow_password_auth"
    ]
    
    write_attrs_admin_required = [
@@ -198,12 +202,16 @@ class SyndicateUser( storagetypes.Object ):
    @classmethod
    def Authenticate( cls, email, data, data_signature ):
       """
-      Authenticate a user, given some identifying data and its signature.
-      Verify that it was signed by the user's private key.
-      Use RSA PSS for security.
+      Authenticate a user via public-key cryptography.
+      Verify that data was signed by the user's private key, given the signature and data.
+      (use RSA PSS for security).
       """
       user = SyndicateUser.Read( email )
       if user == None:
+         return None
+      
+      if not SyndicateUser.is_signing_public_key_set( user.signing_public_key ):
+         log.error("Key for %s is not set or unused" % email)
          return None
       
       ret = cls.auth_verify( user.signing_public_key, data, data_signature )
@@ -224,12 +232,6 @@ class SyndicateUser( storagetypes.Object ):
       return ret
 
    @classmethod
-   def Sign( cls, user, data ):
-      # Sign an API response
-      return SyndicateUser.auth_sign( user.verifying_private_key, data )
-   
-
-   @classmethod
    def Create( cls, email, **kwargs ):
       """
       Create a SyndicateUser.
@@ -237,7 +239,6 @@ class SyndicateUser( storagetypes.Object ):
       Required arguments:
       email                 -- Email address of the user.  Serves as the username (str)
       openid_url            -- OpenID identifier for authenticating this user (str)
-      verifying_private_key -- PEM-encoded RSA-4096 private key (str)
       """
       
       kwargs['email'] = email
@@ -245,16 +246,13 @@ class SyndicateUser( storagetypes.Object ):
       # sanity check
       SyndicateUser.fill_defaults( kwargs )
       
-      # extract public keys from private ones 
-      SyndicateUser.extract_keys( 'verifying_public_key', 'verifying_private_key', kwargs, USER_RSA_KEYSIZE )
-      
       # if we're given a signing public key, then set it. 
       # otherwise, use the given salted password hash.
       skip_verify = []
-      if kwargs.has_key('set_signing_public_key_password_hash') and kwargs.has_key('set_signing_public_key_password_salt'):
+      if kwargs.has_key('activate_password_hash') and kwargs.has_key('activate_password_salt'):
          # don't check for this
          skip_verify = ['signing_public_key']
-         kwargs['signing_public_key'] = "unset"
+         kwargs['signing_public_key'] = cls.USER_KEY_UNSET
       
       elif kwargs.has_key('signing_public_key'):
          # this had better be a valid key
@@ -262,11 +260,11 @@ class SyndicateUser( storagetypes.Object ):
             raise Exception("Invalid field: %s" % 'signing_public_key')
          
          # don't check for password hash and salt
-         skip_verify = ['set_signing_public_key_password_hash', 'set_signing_public_key_password_salt']
+         skip_verify = ['activate_password_hash', 'activate_password_salt']
          
       else:
          # need either of these...
-         raise Exception("Need either signing_public_key or (set_signing_public_key_password_hash, set_signing_public_key_password_salt)")
+         raise Exception("Need either signing_public_key or (activate_password_hash, activate_password_salt)")
          
       missing = SyndicateUser.find_missing_attrs( kwargs )
       if len(missing) != 0:
@@ -307,10 +305,11 @@ class SyndicateUser( storagetypes.Object ):
       
       
    @classmethod
-   def CreateAdmin( cls, email, openid_url, signing_public_key, verifying_private_key ):
+   def CreateAdmin( cls, email, openid_url, signing_public_key, activate_password ):
       """
       Create the Admin user.  NOTE: this will be called repeatedly, so use memcache
       """
+      
       user_key_name = SyndicateUser.make_key_name( email=email )
       user = storagetypes.memcache.get( user_key_name )
       
@@ -324,10 +323,6 @@ class SyndicateUser( storagetypes.Object ):
             
             logging.info("Generating admin '%s'" % email)
             
-            # extract verifying keys
-            attrs['verifying_private_key'] = verifying_private_key
-            SyndicateUser.extract_keys( 'verifying_public_key', 'verifying_private_key', attrs, USER_RSA_KEYSIZE )
-            
             # fill defaults
             SyndicateUser.fill_defaults( attrs )
             
@@ -335,6 +330,19 @@ class SyndicateUser( storagetypes.Object ):
             attrs['openid_url'] = openid_url
             attrs['owner_id'] = random.randint( 1, 2**63 - 1 )
             attrs['is_admin'] = True
+            
+            # generate password hash and salt
+            import common.api as api
+            pw_salt = api.password_salt()
+            pw_hash = api.hash_password( activate_password, pw_salt )
+            
+            attrs['activate_password_hash'] = pw_hash
+            attrs['activate_password_salt'] = pw_salt
+            
+            # possible that we haven't set the public key yet
+            if not signing_public_key or len(signing_public_key) == 0:
+               signing_public_key = cls.USER_KEY_UNSET
+               
             attrs['signing_public_key'] = signing_public_key
             
             invalid = SyndicateUser.validate_fields( attrs )
@@ -449,12 +457,31 @@ class SyndicateUser( storagetypes.Object ):
       Positionl arguments:
       email             -- Email address of the user to update (str)
       
-      Keyword arguments:
-      openid_url        -- OpenID URL to authenticate this user (str)
       '''
       
+      def verify_auth_change( user, attrs ):
+         if not user.active:
+            raise Exception("Account for %s is not active.  Please activate it." % user.email )
+         
+         if attrs.has_key['allow_password_auth']:
+            # this can only be disabled
+            if attrs['allow_password_auth']:
+               raise Exception("For security reasons, re-enabling password authentication is forbidden.  Reset the account for %s instead." % user.email)
+            
+         if attrs.has_key['signing_public_key']:
+            # can't unset this if password auth is disabled
+            if not user.allow_password_auth and not SyndicateUser.is_signing_public_key_set( attrs['signing_public_key'] ):
+               raise Exception("Cannot disable public-key authentication once password authentication is disabled.")
+            
+         return True
+         
       def update_txn( email, **fields ):
          user = SyndicateUser.Read(email)
+         if user is None:
+            raise Exception("No such user %s" % email)
+         
+         verify_auth_change( email, fields )
+         
          user_key_name = SyndicateUser.make_key_name( email=email)
          storagetypes.memcache.delete( user_key_name )
 
@@ -474,33 +501,39 @@ class SyndicateUser( storagetypes.Object ):
       return storagetypes.transaction( lambda: update_txn( email, **fields ) )
       
       
-   def is_signing_public_key_set( self ):
-      return self.signing_public_key != "unset"
+   @classmethod
+   def is_signing_public_key_set( cls, signing_public_key ):
+      return signing_public_key not in [cls.USER_KEY_UNSET, cls.USER_KEY_UNUSED]
 
 
    @classmethod
-   def SetPublicSigningKey( cls, email, new_public_key, set_signing_public_key_password, override=False ):
+   def Register( cls, email, activate_password, signing_public_key=USER_KEY_UNSET ):
       """
       Set the authenticator public key for this user
       """
-      if not cls.is_valid_key( new_public_key, USER_RSA_KEYSIZE ):
-         raise Exception("Invalid signing public key")
       
-      # the key can only be set *once*
+      if signing_public_key is None:
+         signing_public_key = cls.USER_KEY_UNSET
+         
+      if cls.is_signing_public_key_set( signing_public_key ) and not cls.is_valid_key( signing_public_key, USER_RSA_KEYSIZE ):
+         raise Exception("Invalid signing public key: %s" % signing_public_key)
+      
+      # can only activate once
       user = SyndicateUser.Read( email )
       if user is None:
          raise Exception("No such user %s" % email)
       
-      if not override and user.is_signing_public_key_set():
-         raise Exception("Signing public key is already set.  Contact the administrator to clear it.")
+      if user.active:
+         raise Exception("User is already active")
       
       # verify password
       import common.api as api
-      rc = api.check_password( set_signing_public_key_password, user.set_signing_public_key_password_salt, user.set_signing_public_key_password_hash )
+      rc = api.check_password( activate_password, user.activate_password_salt, user.activate_password_hash )
       if not rc:
          raise Exception("Invalid password")
       
-      user.signing_public_key = new_public_key
+      user.signing_public_key = signing_public_key
+      user.active = True
       user.put()
       
       user_key_name = SyndicateUser.make_key_name( email=email )
@@ -510,22 +543,23 @@ class SyndicateUser( storagetypes.Object ):
       
 
    @classmethod
-   def ResetPublicSigningKey( cls, email, password_salt, password_hash ):
+   def Reset( cls, email, password_salt, password_hash ):
       """
-      Reset a user's public signing key.
+      Reset a user's account credentials
       """
       
       user = SyndicateUser.Read( email )
       if user is None:
          raise Exception("No such user %s" % email)
       
-      invalid = SyndicateUser.validate_fields( {"set_signing_public_key_password_hash": password_hash, "set_signing_public_key_password_salt": password_salt} )
+      invalid = SyndicateUser.validate_fields( {"activate_password_hash": password_hash, "activate_password_salt": password_salt} )
       if len(invalid) != 0:
          raise Exception( "Invalid arguments: %s" % (", ".join( invalid )) )
       
-      user.signing_public_key = "unset"
-      user.set_signing_public_key_password_hash = password_hash
-      user.set_signing_public_key_password_salt = password_salt
+      user.signing_public_key = cls.USER_KEY_UNSET
+      user.activate_password_hash = password_hash
+      user.activate_password_salt = password_salt
+      user.active = False
    
       user.put()
       
@@ -543,6 +577,10 @@ class SyndicateUser( storagetypes.Object ):
       Arguments:
       email             -- Email of the user to delete (str)
       '''
+      
+      # can't delete the original admin account 
+      if email == ADMIN_EMAIL:
+         raise Exception("Cannot delete Syndicate owner")
       
       user_key_name = SyndicateUser.make_key_name( email=email)
       user_key = storagetypes.make_key( SyndicateUser, user_key_name )

@@ -34,6 +34,7 @@ from entry import MSEntry
 from volume import Volume
 from gateway import *
 from common.msconfig import *
+from common.admin_info import *
 
 import errno
 import logging
@@ -446,6 +447,20 @@ class MSUserRequestHandler( webapp2.RequestHandler ):
       return
       
       
+
+   
+class MSPubkeyHandler( webapp2.RequestHandler ):
+   """
+   Serve the MS's public key
+   """
+   
+   def get( self ):
+      
+      response_end( self, 200, SYNDICATE_PUBKEY, "text/plain" )
+      return
+   
+   
+      
 class MSVolumeOwnerRequestHandler( webapp2.RequestHandler ):
    """
    Get the certificate of the user that owns a particular Volume.
@@ -476,12 +491,33 @@ class MSVolumeOwnerRequestHandler( webapp2.RequestHandler ):
       return
       
       
+def make_openid_reply( oid_request, return_method, return_to, query ):
+
+   # reply with the redirect URL
+   trust_root = OPENID_HOST_URL
+   immediate = GAEOpenIDRequestHandler.IMMEDIATE_MODE in query
+
+   redirect_url = oid_request.redirectURL( trust_root, return_to, immediate=immediate )
+
+   openid_reply = ms_pb2.ms_openid_provider_reply()
+   openid_reply.redirect_url = redirect_url
+   openid_reply.auth_handler = OPENID_PROVIDER_AUTH_HANDLER
+   openid_reply.username_field = OPENID_PROVIDER_USERNAME_FIELD
+   openid_reply.password_field = OPENID_PROVIDER_PASSWORD_FIELD
+   openid_reply.extra_args = urllib.urlencode( OPENID_PROVIDER_EXTRA_ARGS )
+   openid_reply.challenge_method = OPENID_PROVIDER_CHALLENGE_METHOD
+   openid_reply.response_method = OPENID_PROVIDER_RESPONSE_METHOD
+   openid_reply.redirect_method = return_method
+   
+   return openid_reply
+
+      
 class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
    """
    Generate a session certificate from a SyndicateUser account for a gateway.
    """
 
-   OPENID_RP_REDIRECT_METHOD = "POST"     # POST to us for authentication, since we need to send the public key (which doesn't fit into a GET)
+   OPENID_RP_REDIRECT_METHOD = "POST"     # POST to us for authentication
 
    def load_objects( self, gateway_type_str, gateway_name, username ):
 
@@ -525,8 +561,10 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
    get = None
    
    def post( self, gateway_type_str, gateway_name, username, operation ):
+      # process a registration request...
+      
       self.load_query()
-      session = self.getSession()
+      session = self.getSession( expiration_ts=(time.time() + 60))  # expire in 1 minute, if new session
       self.setSessionCookie(session)
 
       gateway, user = self.load_objects( gateway_type_str, gateway_name, username )
@@ -556,25 +594,14 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
             return
          
          # reply with the redirect URL
-         trust_root = OPENID_HOST_URL
-         return_to = self.buildURL( "/OPENID/%s/%s/%s/complete" % (gateway_type_str, gateway_name, username) )
-         immediate = self.IMMEDIATE_MODE in self.query
+         return_to = self.buildURL( "/REGISTER/%s/%s/%s/complete" % (gateway_type_str, gateway_name, username) )
 
-         redirect_url = oid_request.redirectURL( trust_root, return_to, immediate=immediate )
-
-         openid_reply = ms_pb2.ms_openid_provider_reply()
-         openid_reply.redirect_url = redirect_url
-         openid_reply.auth_handler = OPENID_PROVIDER_AUTH_HANDLER
-         openid_reply.username_field = OPENID_PROVIDER_USERNAME_FIELD
-         openid_reply.password_field = OPENID_PROVIDER_PASSWORD_FIELD
-         openid_reply.extra_args = urllib.urlencode( OPENID_PROVIDER_EXTRA_ARGS )
-         openid_reply.challenge_method = OPENID_PROVIDER_CHALLENGE_METHOD
-         openid_reply.response_method = OPENID_PROVIDER_RESPONSE_METHOD
-         openid_reply.redirect_method = self.OPENID_RP_REDIRECT_METHOD
-         
+         openid_reply = make_openid_reply( oid_request, self.OPENID_RP_REDIRECT_METHOD, return_to, self.query )
+      
+         # TODO: sign
          data = openid_reply.SerializeToString()
 
-         session.save()
+         session.save()         # it's okay to save this to memcache only
          
          response_end( self, 200, data, "application/octet-stream", None )
          return
@@ -585,9 +612,8 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
          info, _, _ = self.complete_openid_auth()
          if info.status != consumer.SUCCESS:
             # failed
-            response_user_error( self, 401 )
+            response_user_error( self, 403 )
             return
-         
          
          # generate a session password
          # TODO: lock this operation, so we put the gateway and generate the password atomically?
@@ -619,6 +645,9 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
 
          data = registration_metadata.SerializeToString()
 
+         # clear this OpenID session, since we're registered
+         session.terminate()
+         
          # save the gateway
          storage.wait_futures( futs )
          
@@ -947,51 +976,136 @@ class MSFileWriteHandler(webapp2.RequestHandler):
       return
 
 
-class MSOpenIDRequestHandler(GAEOpenIDRequestHandler):
-
-   def auth_redirect( self, **kwargs ):
-      """
-      What to do if the user is already authenticated
-      """
-      session = self.getSession()
-      if 'login_email' not in session:
-         # invalid session
-         response_user_error( self, 400, "Invalid or missing session cookie" )
-         return 
-
-      self.setRedirect('/syn/')
-      return 0
-      
-
-   def verify_success( self, request, openid_url ):
-      session = self.getSession()
-      session['login_email'] = self.query.get('openid_username')
-      return 0
-
-
-   def process_success( self, info, sreg_resp, pape_resp ):
-      self.auth_redirect()
-      return 0
-      
-
-class MSJSONRPCHandler(webapp2.RequestHandler):
+class MSJSONRPCHandler(GAEOpenIDRequestHandler):
    """
-   JSON RPC request handler 
+   JSON RPC request handler.
+   Authenticates via OpenID or via public-key signatures.
+   Takes an 'operation' that indicates either the OpenID step, or that the caller expects public-key authorization
    """
    
-   def handle( self ):
+   API_AUTH_PUBKEY = "pubkey"
+   API_AUTH_OPENID_BEGIN = "begin"
+   API_AUTH_OPENID_COMPLETE = "complete"
+   API_AUTH_OPENID = "openid"
+   API_AUTH_SESSION = "session"
+   
+   OPENID_RP_REDIRECT_METHOD = "POST"     # POST to us for authentication
+   
+   def call_method( self, auth_method, username=None ):
       # pass on to JSON RPC server
       json_text = self.request.body
-      server = jsonrpc.Server( api.API(), JSON_MS_API_VERSION, signer=api.API.signer, verifier=api.API.verifier )
-      result = server.handle( json_text, self.response )
+      api_call_verifier = None
       
-      # save the UUID of this request, to prevent replays
-      uuids = server.get_result_uuids( result )
+      if auth_method == self.API_AUTH_PUBKEY:
+         api_call_verifier = api.API.pubkey_verifier            # performs crypto verification
+         
+      elif auth_method == self.API_AUTH_OPENID:
+         api_call_verifier = api.API.openid_verifier            # ensures username in session matches username in RPC
+         
+      server = jsonrpc.Server( api.API(), JSON_MS_API_VERSION, signer=api.API.signer, verifier=api_call_verifier )
       
-      
-   def post( self ):
-      return self.handle()
+      # NOTE: This writes the response
+      result = server.handle( json_text, response=self.response, username=username )
    
-   def get( self ):
-      return self.handle()
+      # TODO: save the UUID of this request, to prevent replays
+      uuids = server.get_result_uuids( result )
+   
+   
+   def handle( self, action ):
+      self.load_query()
+      
+      if action is None:
+         # in a session.  Check the session cookie to authenticate.
+         session = self.getSession( expiration_ts=int(time.time() + 60) )      # expire in 1 minute
+         if not session.get("authenticated"):
+            # unauthorized
+            logging.error("Unauthorized session")
+            response_user_error( self, 403 )
+            return 
+         
+         username = session.get("username")
+         if username is None:
+            # no username given
+            logging.error("No username given")
+            response_user_error( self, 403 )
+            return 
+         
+         self.call_method( self.API_AUTH_OPENID, username=username )
+         return
+      
+      elif action == self.API_AUTH_PUBKEY:
+         self.call_method( action )
+         
+         
+      elif action == self.API_AUTH_OPENID_BEGIN:
+         # start an API call, using OpenID to authenticate the caller
+         
+         # get the username
+         username = self.query.get( OPENID_POST_USERNAME )
+         if username is None:
+            logging.error("No username given")
+            response_user_error( self, 401 )
+            return
+         
+         # get the user
+         user = storage.read_user( username )
+         if user == None:
+            logging.error("No such user '%s'" % username)
+            response_user_error( self, 401 )
+            return
+
+         # start a session
+         session = self.getSession( expiration_ts=int(time.time() + 60) )      # expire in 1 minute
+         
+         # begin the OpenID authentication
+         try:
+            oid_request, rc = self.begin_openid_auth()
+         except consumer.DiscoveryFailure, exc:
+
+            fetch_error_string = 'Error in discovery: %s' % (cgi.escape(str(exc[0])))
+
+            response_server_error( self, 500, fetch_error_string )
+            return
+
+         if rc != 0:
+            response_server_error( self, 500, "OpenID error %s" % rc )
+            return
+         
+         # reply with the redirect URL
+         return_to = self.buildURL( "/API/%s" % (self.API_AUTH_OPENID_COMPLETE) )
+
+         openid_reply = make_openid_reply( oid_request, self.OPENID_RP_REDIRECT_METHOD, return_to, self.query )
+      
+         # TODO: sign
+         data = openid_reply.SerializeToString()
+
+         # save this for the 'complete' operation
+         session['username'] = username
+         self.setSessionCookie(session)
+         session.save( persist_even_if_using_cookie=True )
+         
+         response_end( self, 200, data, "application/octet-stream", None )
+         return
+
+
+      elif action == self.API_AUTH_OPENID_COMPLETE:
+         # complete the authentication
+         info, _, _ = self.complete_openid_auth()
+         if info.status != consumer.SUCCESS:
+            # failed
+            response_user_error( self, 403 )
+            return
+         
+         session = self.getSession( expiration_ts=int(time.time() + 60) )      # expire in 1 minute
+         self.setSessionCookie(session)
+         response_end( self, 200, "OK", "text/plain", None )
+         
+         return
+      
+      
+   def post( self, action=None ):
+      return self.handle( action )
+   
+   def get( self, action=None ):
+      return self.handle( action )
    

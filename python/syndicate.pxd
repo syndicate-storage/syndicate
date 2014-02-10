@@ -94,3 +94,8 @@ cdef extern from "libsyndicate.h":
    int ms_client_set_view_change_callback( ms_client* client, ms_client_view_change_callback clb, void* cls )
    int ms_client_sched_volume_reload( ms_client* client )
    
+
+   # ------------------------------------------
+   # OpenID RPC
+   
+   int ms_client_openid_rpc( const char* ms_openid_url, const char* username, const char* password, const char* request_type, const char* request_buf, size_t request_len, char** response_buf, size_t* response_len )

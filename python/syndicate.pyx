@@ -49,10 +49,15 @@ cpdef encrypt_data( sender_privkey_str, receiver_pubkey_str, data_str ):
       return (rc, None)
    
    else:
-      py_encrypted_data = c_encrypted_data[:c_encrypted_data_len]
-      stdlib.free( c_encrypted_data )
+      try:
+         py_encrypted_data = c_encrypted_data[:c_encrypted_data_len]
+      except MemoryError:
+         py_encrypted_data = None
+         rc = -errno.ENOMEM
+      finally:
+         stdlib.free( c_encrypted_data )
       
-      return (0, py_encrypted_data)
+      return (rc, py_encrypted_data)
 
 
 # ------------------------------------------
@@ -69,14 +74,19 @@ cpdef decrypt_data( sender_pubkey_str, receiver_privkey_str, encrypted_data_str 
       return (rc, None)
    
    else:
-      py_data_str = c_data_str[:c_data_str_len]
-      stdlib.free( c_data_str )
+      try:
+         py_data_str = c_data_str[:c_data_str_len]
+      except MemoryError:
+         py_data_str = None
+         rc = -errno.ENOMEM
+      finally:
+         stdlib.free( c_data_str )
 
-      return (0, py_data_str)
+      return (rc, py_data_str)
       
 
 # ------------------------------------------
-cpdef encrypt_closure_secrets( user_privkey_str, gateway_pubkey_str, closure_secrets ):
+cpdef encrypt_closure_secrets( sender_privkey_str, gateway_pubkey_str, closure_secrets ):
    '''
       Encrypt a string with a gateway's public key.
    '''
@@ -86,16 +96,16 @@ cpdef encrypt_closure_secrets( user_privkey_str, gateway_pubkey_str, closure_sec
    except Exception, e:
       return (-errno.EINVAL, None)
 
-   return encrypt_data( user_privkey_str, gateway_pubkey_str, closure_secrets_serialized )
+   return encrypt_data( sender_privkey_str, gateway_pubkey_str, closure_secrets_serialized )
 
 
 # ------------------------------------------
-cpdef decrypt_closure_secrets( user_pubkey_str, gateway_privkey_str, closure_secrets ):
+cpdef decrypt_closure_secrets( sender_pubkey_str, gateway_privkey_str, closure_secrets ):
    '''
       Decrypt a string with a gateway's public key.
    '''
    
-   rc, py_serialized_secrets = decrypt_data( user_pubkey_str, gateway_privkey_str, closure_secrets )
+   rc, py_serialized_secrets = decrypt_data( sender_pubkey_str, gateway_privkey_str, closure_secrets )
 
    if rc != 0:
       return (rc, None)
@@ -107,6 +117,33 @@ cpdef decrypt_closure_secrets( user_pubkey_str, gateway_privkey_str, closure_sec
          return (0, secrets_dict)
       except Exception, e:
          return (-errno.ENODATA, None)
+
+# ------------------------------------------
+cpdef openid_rpc( ms_openid_url, username, password, rpc_type, request_buf ):
+   '''
+      Perform an RPC call to the MS, via OpenID
+   '''
+
+   cdef char* c_request_buf = request_buf
+   cdef size_t c_request_buf_len = len(request_buf)
+
+   cdef char* c_response_buf = NULL
+   cdef size_t c_response_buf_len = 0
+
+   rc = ms_client_openid_rpc( ms_openid_url, username, password, rpc_type, c_request_buf, c_request_buf_len, &c_response_buf, &c_response_buf_len )
+   if rc != 0:
+      return (rc, None)
+
+   else:
+      try:
+         py_response_buf = c_response_buf[:c_response_buf_len]
+      except MemoryError:
+         py_response_buf = None
+         rc = -errno.ENOMEM
+      finally:
+         stdlib.free( c_response_buf )
+
+      return (rc, py_response_buf)
 
 
 # ------------------------------------------

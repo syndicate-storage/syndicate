@@ -5,6 +5,7 @@ SYNTOOL=$BIN/syntool.py
 SYNCONF=$HOME/.syndicate
 
 USER_ID="judecn@gmail.com"
+HOSTNAME="t510"
 
 rm -rf $SYNCONF
 mkdir $SYNCONF
