@@ -113,6 +113,8 @@ int md_crypt_shutdown() {
    
    // shut down OpenSSL
    ERR_free_strings();
+   
+   dbprintf("%s\n", "crypto thread shutdown" );
    md_openssl_thread_cleanup();
    
    return 0;

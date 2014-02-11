@@ -242,6 +242,7 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    client->view_change_callback = ms_client_view_change_callback_default;
    client->view_change_callback_cls = NULL;
 
+   client->inited = true;               // safe to destroy later
    client->running = true;
    
    client->uploader_thread = md_start_thread( ms_client_uploader_thread, client, false );
@@ -261,6 +262,9 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
 // destroy an MS client context 
 int ms_client_destroy( struct ms_client* client ) {
    if( client == NULL )
+      return 0;
+   
+   if( !client->inited )
       return 0;
    
    // shut down the uploader thread
@@ -323,13 +327,12 @@ int ms_client_destroy( struct ms_client* client ) {
 
    if( client->my_key )
       EVP_PKEY_free( client->my_key );
+ 
+   client->inited = false;
    
    ms_client_unlock( client );
    pthread_rwlock_destroy( &client->lock );
-
-   // free OpenSSL memory
-   ERR_free_strings();
-   
+ 
    dbprintf("%s", "MS client shutdown\n");
    
    return 0;

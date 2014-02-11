@@ -185,6 +185,8 @@ struct ms_volume {
 typedef int (*ms_client_view_change_callback)( struct ms_client*, void* );
 
 struct ms_client {
+   bool inited;         // set to true if this structure was initialized
+   
    int gateway_type;
    
    pthread_rwlock_t lock;
