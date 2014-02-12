@@ -1053,17 +1053,6 @@ def update_gateway( g_name_or_id, **attrs ):
       session_expires=int:
          Date when this gateway's current session with the Volume expires,
          in seconds since the epoch.
-      
-      gateway_public_key=str:
-         The gateway's runtime public key.  The gateway uses the
-         corresponding private key to sign messages to other gateways.
-         This key is included in the gateway's certificate; other 
-         gateways in the same Volume use it to authenticate messages
-         from this gateway.
-         
-         Currently, this must be a 4096-bit RSA public key.  To generate
-         one automatically and store the corresponding private key, pass
-         MAKE_GATEWAY_KEY for this argument.
    
    Returns:
       On success, this method returns True.

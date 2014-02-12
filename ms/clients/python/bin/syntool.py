@@ -332,7 +332,7 @@ def setup_key_directories( config ):
 
 
 # -------------------
-def load_options( argv ):
+def load_options( argv, setup_methods=[], builtin_methods=[] ):
    
    parser = conf.build_parser( argv[0] )
    opts = parser.parse_args( argv[1:] )
@@ -351,7 +351,6 @@ def load_options( argv ):
    
    config = {}
    method_name, args, kw = read_params( getattr(opts, 'params', [] ) )
-   setup_methods = ['setup']
    
    if config_str == None:
       
@@ -433,11 +432,16 @@ def load_options( argv ):
       
    # what do we need for authentication?
    auth_opts = None
-   if method_name not in setup_methods:
-      auth_opts = api.method_auth_options( method_name )
-   else:
+   if method_name in setup_methods:
       # setup methods need password
       auth_opts = [msconfig.AUTH_METHOD_PASSWORD]
+      
+   elif method_name in builtin_methods:
+      # builtin methods that don't do setup need no password
+      auth_opts = [msconfig.AUTH_METHOD_NONE]
+   
+   else:
+      auth_opts = api.method_auth_options( method_name )
       
    have_auth_tokens = False
    
@@ -677,7 +681,7 @@ def client_call( CONFIG, method_name, *args, **kw ):
 # -------------------   
 def main( argv ):
    # read the config
-   CONFIG = load_options( argv )
+   CONFIG = load_options( argv, setup_methods=['setup'], builtin_methods=['setup', 'help'] )
    
    for opt in CONFIG.keys():
       log.debug( "%s = %s" % (opt, CONFIG[opt] ) )

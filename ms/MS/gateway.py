@@ -167,8 +167,7 @@ class Gateway( storagetypes.Object ):
       "closure",
       "cert_expires",
       "session_expires",
-      "session_timeout",
-      "gateway_public_key"
+      "session_timeout"
    ]
    
    write_attrs_api_required = write_attrs

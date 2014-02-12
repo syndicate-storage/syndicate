@@ -275,7 +275,7 @@ class SyndicateUser( StubObject ):
             if lib is not None:
                lib.user_name = user_name_or_id
                
-            return user_name_or_id, {}
+            return user_name_or_id, {"username": user_name_or_id}
       
       raise Exception("Parse error: only user emails (not IDs) are allowed")
    
@@ -334,6 +334,22 @@ class SyndicateUser( StubObject ):
    internal_keys = StubObject.internal_keys + [
       SIGNING_KEY_TYPE
    ]
+   
+   @classmethod
+   def ProcessExtras( cls, extras, config, method_name, args, kw, result, storage_stub ):
+      super( SyndicateUser, cls ).ProcessExtras( extras, config, method_name, args, kw, result, storage_stub )
+      
+      # if we deleted the user, remove the private key as well
+      if method_name == "delete_user":
+         if not extras.has_key('username'):
+            log.error("Could not determine username.  Please delete the user's private key from your Syndicate keys directory!")
+         
+         else:
+            log.info("Erasing private key for %s" % extras['username'] )
+            storage_stub.erase_private_key( config, "user", extras['username'] )
+            
+   
+   
             
 
 class Volume( StubObject ):
@@ -420,7 +436,16 @@ class Volume( StubObject ):
          storage_stub.store_private_key( config, "volume", volume_name, extras['metadata_private_key'] )
 
          del extras['metadata_private_key']
-
+         
+      # delete public key?
+      if method_name == "delete_volume":
+         volume_name = extras.get("volume_name", None )
+         if volume_name == None:
+            log.error("Could not determine name of Volume.  You will need to manaully delete its public key from your Syndicate key directory.")
+         
+         else:
+            storage_stub.erase_public_key( config, "volume", volume_name )
+         
 
 class Gateway( StubObject ):
    
@@ -777,6 +802,15 @@ class Gateway( StubObject ):
          storage_stub.store_private_key( config, "gateway", gateway_name, extras['gateway_private_key'] )
          
          del extras['gateway_private_key']
+      
+      # erase private key if deleted
+      if method_name == "delete_gateway":
+         gateway_name = extras.get("gateway_name", None)
+         if gateway_name == None:
+            log.error("Failed to determine the name of the gateway.  You will need to remove the gateway's private key manually")
+         
+         else:
+            storage_stub.erase_private_key( config, "gateway", gateway_name )
 
 
 class VolumeAccessRequest( StubObject ):

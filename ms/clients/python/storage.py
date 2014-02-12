@@ -181,3 +181,42 @@ def store_public_key( config, key_type, object_id, key_data ):
 def store_private_key( config, key_type, object_id, key_data ):
    key_path = conf.object_key_path( config, key_type, object_id, public=False )
    return write_key( key_path, key_data )
+
+# -------------------   
+def erase_key( config, key_type, object_id, public=False ):
+   key_path = conf.object_key_path( config, key_type, object_id, public=public )
+   
+   try:
+      size = os.stat( key_path ).st_size
+   except OSError, oe:
+      log.error("Failed to stat %s" % key_path)
+      return False
+   
+   try:
+      fd = open(key_path, "a")
+      fd.seek(0)
+      
+      # erase with random data
+      for i in xrange(0,10):
+         rnd = os.urandom(size)
+         fd.write(rnd)
+         fd.flush()
+         
+         fd.seek(0)
+      
+      # and unlink
+      fd.close()
+      os.unlink( key_path )
+   except OSError, oe:
+      log.error("Failed to securely erase %s" % key_path)
+      return False
+   
+   return True
+   
+# -------------------   
+def erase_public_key( config, key_type, object_id ):
+   return erase_key( config, key_type, object_id, public=True )
+
+def erase_private_key( config, key_type, object_id ):
+   return erase_key( config, key_type, object_id, public=False )
+
