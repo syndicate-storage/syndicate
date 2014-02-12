@@ -447,8 +447,12 @@ def create_volume( email, name, description, blocksize, metadata_private_key="MA
          If pass "MAKE_METADATA_KEY" (the default), a key
          pair will be generated for you.  The private key will 
          be passed as this argument, and the public key will 
-         be stored locally for future use.
+         be stored locally to validate Volume data.
       
+      store_private_key=bool (default: False)
+         If True, store the metadata private key to the local 
+         key directory.
+         
       archive=bool (default: False)
          If True, only an Acquisition Gateway owned by the given 
          user may write metadata to this Volume.  It will be read-
@@ -906,7 +910,11 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
 @CreateAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
-def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, gateway_public_key="MAKE_GATEWAY_KEY", **attrs ):
+# NOTE: due to lexigraphically-ordered handling of keyword arguments, and the fact that if we're going to generate keys we must have before we can
+# encrypt and host them, the argument for obtaining the public key must lexigraphically proceed the argument for indicating whether or not we should host the private key.
+# For this reason, it's *e*ncrypt_gateway_key_password, *g*ateway_public_key, *h*ost_private_key.
+# NOTE: encrypt_gateway_key_password and host_gateway_key are NOT passed to the MS.  These are interpreted by syntool.
+def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, encrypt_gateway_key_password=None, gateway_public_key="MAKE_AND_HOST_GATEWAY_KEY", host_gateway_key=None, **attrs ):
    """
    Create a Gateway.  It will be owned by the calling user, or, if the caller user is an admin, a user identified by the given email address.
    
@@ -944,17 +952,31 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
          closure from a Python module, pass the path to the
          directory containing the module's files.
          
-      gateway_public_key=str (default: MAKE_GATEWAY_KEY):
-         This Gateway's PEM-encoded public key.  The MS will
+      gateway_public_key=str (default: MAKE_AND_HOST_GATEWAY_KEY):
+         Path to this Gateway's PEM-encoded public key.  The MS will
          distribute this public key to all other Gateways in
          the Volume, so they can use to authenticate messages sent 
          from this particular Gateway.  You will need to give
          the Gateway the corresponding private key at runtime.
          
-         If you pass "MAKE_GATEWAY_KEY" (the default), a key
-         pair will be generated for you.  The public key will 
-         be passed as this argument, and the private key will 
-         be stored locally for future use.
+         If you pass "MAKE_AND_HOST_GATEWAY_KEY" (the default), a key
+         pair will be generated for you.  The private key will 
+         be sealed with your current password and uploaded to the MS.
+         The key will also be stored to your local Syndicate key directory.
+         This gives you the convenience of not having to distribute 
+         Gateway private keys yourself, but carries the risks of 
+         disclosing the ciphertext to unauthorized readers and 
+         of making your keys inaccessible if you forget your password.
+         
+         If you pass "MAKE_GATEWAY_KEY" instead, a key pair will
+         be generated for you, but the private key will be written 
+         to your local Syndicate key directory.
+         
+      host_private_key=str (default: None)
+         If set, this is the path to the corresponding gateway public key.
+         The private key will be sealed with your password and uploaded
+         to the MS, so your Gateway can download and unseal it when it 
+         starts.
          
    Returns:
       On success, this method returns a Gateway.  On failure, it 
@@ -968,7 +990,7 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
       A user may be subject to a quota enforced for each type of Gateway.
    """
    
-   return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, gateway_public_key=gateway_public_key, **attrs )
+   return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, gateway_public_key=gateway_public_key, encrypted_gateway_private_key=host_gateway_key, **attrs )
 
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )

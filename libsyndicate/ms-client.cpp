@@ -167,7 +167,63 @@ int ms_client_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char
    curl_easy_setopt( curl, CURLOPT_SSL_CIPHER_LIST, MS_CIPHER_SUITES );
    return 0;
 }
+
+
+// start internal threads (only safe to do so after we have a private key)
+int ms_client_start_threads( struct ms_client* client ) {
+   
+   dbprintf("%s\n", "Starting MS client threads" );
+   
+   if( client->running ) {
+      return -EALREADY;
+   }
+   
+   ms_client_wlock( client );
+   
+   client->running = true;
+   
+   client->uploader_thread = md_start_thread( ms_client_uploader_thread, client, false );
+   if( client->uploader_thread < 0 ) {
+      ms_client_unlock( client );
+      return -errno;
+   }
+
+   client->view_thread = md_start_thread( ms_client_view_thread, client, false );
+   if( client->view_thread < 0 ) {
+      ms_client_unlock( client );
+      return -errno;  
+   }
+
+   return 0;
+}
+
+// stop internal threads
+int ms_client_stop_threads( struct ms_client* client ) {
+   
+   dbprintf("%s\n", "Stopping MS client threads" );
+   
+   // shut down the uploader and view threads
+   bool was_running = client->running;
+   
+   client->running = false;
+
+   if( was_running ) {
+      ms_client_uploader_signal( client );
+      pthread_cancel( client->view_thread );
+
+      dbprintf("%s", "wait for write uploads to finish...\n");
+
+      if( client->uploader_thread != 0 )
+         pthread_join( client->uploader_thread, NULL );
+
+      dbprintf("%s", "wait for view change thread to finish...\n");
       
+      if( client->view_thread != 0 )
+         pthread_join( client->view_thread, NULL );
+   }
+   
+   return 0;
+}
 
 // create an MS client context
 int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndicate_conf* conf ) {
@@ -227,34 +283,32 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
          errorf("md_load_privkey rc = %d\n", rc );
          return rc;
       }
+      
+      rc = ms_client_verify_key( client->my_key );
+      if( rc != 0 ) {
+         errorf("ms_client_verify_key rc = %d\n", rc );
+         return rc;
+      }
+
+      // hold onto the PEM form
+      client->my_key_pem = strdup( conf->gateway_key );
    }
    else {
-      errorf("%s: Missing public key\n", conf->gateway_name );
-      return -EINVAL;
+      dbprintf("%s: Will need to donwload gateway private key\n", conf->gateway_name );
    }
    
-   rc = ms_client_verify_key( client->my_key );
-   if( rc != 0 ) {
-      errorf("ms_client_verify_key rc = %d\n", rc );
-      return rc;
-   }
-
    client->view_change_callback = ms_client_view_change_callback_default;
    client->view_change_callback_cls = NULL;
 
    client->inited = true;               // safe to destroy later
-   client->running = true;
    
-   client->uploader_thread = md_start_thread( ms_client_uploader_thread, client, false );
-   if( client->uploader_thread < 0 ) {
-      return -errno;
+   if( client->my_key != NULL ) {
+      rc = ms_client_start_threads( client );
+      if( rc != 0 ) {
+         errorf("ms_client_start_threads rc = %d\n", rc );
+      }
    }
-
-   client->view_thread = md_start_thread( ms_client_view_thread, client, false );
-   if( client->view_thread < 0 ) {
-      return -errno;  
-   }
-
+   
    return rc;
 }
 
@@ -267,25 +321,12 @@ int ms_client_destroy( struct ms_client* client ) {
    if( !client->inited )
       return 0;
    
-   // shut down the uploader thread
-   client->running = false;
-
-   ms_client_uploader_signal( client );
-   pthread_cancel( client->view_thread );
-
-   dbprintf("%s", "wait for write uploads to finish...\n");
-
-   pthread_join( client->uploader_thread, NULL );
-
-   dbprintf("%s", "wait for view change thread to finish...\n");
+   ms_client_stop_threads( client );
    
-   pthread_join( client->view_thread, NULL );
-
    ms_client_wlock( client );
 
    pthread_mutex_destroy( &client->uploader_lock );
    pthread_cond_destroy( &client->uploader_cv );
-
 
    // clean up CURL
    curl_easy_cleanup( client->ms_read );
@@ -550,13 +591,13 @@ static void* ms_client_view_thread( void* arg ) {
             ms_client_unlock( client );
          }
 
-         pthread_setcancelstate( PTHREAD_CANCEL_ENABLE, NULL );
-         
          ms_client_view_wlock( client );
          
          client->early_reload = false;
          
          ms_client_view_unlock( client );
+         
+         pthread_setcancelstate( PTHREAD_CANCEL_ENABLE, NULL );
       }
    }
 
@@ -1273,7 +1314,7 @@ int ms_client_reload_certs( struct ms_client* client ) {
       
       // load!
       struct ms_gateway_cert* new_cert = CALLOC_LIST( struct ms_gateway_cert, 1 );
-      rc = ms_client_load_cert( my_gateway_id, new_cert, &ms_cert );
+      rc = ms_client_load_cert( client, my_gateway_id, new_cert, &ms_cert );
       if( rc != 0 ) {
          ms_client_view_unlock( client );
          
@@ -1499,7 +1540,8 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_
 
 // (re)load a gateway certificate.
 // If my_gateway_id matches the ID in the cert, then load the closure as well (since we'll need it)
-int ms_client_load_cert( uint64_t my_gateway_id, struct ms_gateway_cert* cert, const ms::ms_gateway_cert* ms_cert ) {
+// client cannot be write-locked! (but volume/view data can be)
+int ms_client_load_cert( struct ms_client* client, uint64_t my_gateway_id, struct ms_gateway_cert* cert, const ms::ms_gateway_cert* ms_cert ) {
    cert->user_id = ms_cert->owner_id();
    cert->gateway_id = ms_cert->gateway_id();
    cert->gateway_type = ms_cert->gateway_type();
@@ -1512,6 +1554,7 @@ int ms_client_load_cert( uint64_t my_gateway_id, struct ms_gateway_cert* cert, c
    cert->volume_id = ms_cert->volume_id();
    
    // NOTE: closure information is base64-encoded
+   // only store the closure if its for us
    if( my_gateway_id == cert->gateway_id && ms_cert->closure_text().size() > 0 ) {
       cert->closure_text_len = ms_cert->closure_text().size();
       cert->closure_text = CALLOC_LIST( char, cert->closure_text_len + 1 );
@@ -1635,7 +1678,7 @@ int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadat
 
 
 // load a registration message
-int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_registration_metadata* registration_md, char const* volume_pubkey_pem ) {
+int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_registration_metadata* registration_md, char const* volume_pubkey_pem, char const* password ) {
 
    int rc = 0;
 
@@ -1644,7 +1687,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
 
    // load cert
    const ms::ms_gateway_cert& my_cert = registration_md->cert();
-   rc = ms_client_load_cert( 0, &cert, &my_cert );
+   rc = ms_client_load_cert( client, 0, &cert, &my_cert );
    if( rc != 0 ) {
       errorf("ms_client_load_cert rc = %d\n", rc );
       return rc;
@@ -1732,6 +1775,72 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
       rc = -EINVAL;
    }
    
+   // possibly received our private key...
+   if( client->my_key == NULL && registration_md->has_encrypted_gateway_private_key() ) {
+      
+      if( password == NULL ) {
+         errorf("%s\n", "No private key loaded, but no password to decrypt one with.");
+         rc = -ENOTCONN;
+      }
+      else {
+         char const* encrypted_gateway_private_key_b64 = registration_md->encrypted_gateway_private_key().c_str();
+         size_t encrypted_gateway_private_key_b64_len = registration_md->encrypted_gateway_private_key().size();
+         
+         size_t encrypted_gateway_private_key_len = 0;
+         char* encrypted_gateway_private_key = NULL;
+         
+         int decode_rc = Base64Decode( encrypted_gateway_private_key_b64, encrypted_gateway_private_key_b64_len, &encrypted_gateway_private_key, &encrypted_gateway_private_key_len );
+         if( decode_rc != 0 ) {
+            errorf("%s\n", "Failed to decode private key.  No gateway private key given!" );
+            rc = -ENOTCONN;
+         }
+         else {
+            char* gateway_private_key_str = NULL;
+            size_t gateway_private_key_str_len = 0;
+            
+            dbprintf("%s\n", "Unsealing gateway private key...");
+            
+            decode_rc = md_password_unseal( encrypted_gateway_private_key, encrypted_gateway_private_key_len, password, strlen(password), &gateway_private_key_str, &gateway_private_key_str_len );
+            if( decode_rc != 0 ) {
+               errorf("Failed to unseal gateway private key, rc = %d\n", decode_rc );
+               rc = -ENOTCONN;
+            }
+            else {
+               // validate and import it
+               EVP_PKEY* pkey = NULL;
+               
+               decode_rc = md_load_privkey( &pkey, gateway_private_key_str );
+               if( decode_rc != 0 ) {
+                  errorf("md_load_privkey rc = %d\n", decode_rc );
+               }
+               else {
+                  decode_rc = ms_client_verify_key( pkey );
+                  if( decode_rc != 0 ) {
+                     errorf("ms_client_verify_key rc = %d\n", rc );
+                  }
+                  else {
+                     // we're good!  We can start the threads up!
+                     client->my_key = pkey;
+                     client->my_key_pem = strdup( gateway_private_key_str );
+                     
+                     int rc = ms_client_start_threads( client );
+                     if( rc != 0 && rc != -EALREADY ) {
+                        errorf("ms_client_start_threads rc = %d\n", rc );
+                     }
+                  }
+               }
+            }
+            
+            if( gateway_private_key_str )
+               free( gateway_private_key_str );
+            
+         }
+         
+         if( encrypted_gateway_private_key )
+            free( encrypted_gateway_private_key );
+      }
+   }
+   
    ms_client_unlock( client );
 
    ms_client_gateway_cert_free( &cert );
@@ -1769,7 +1878,6 @@ int ms_client_openid_gateway_register( struct ms_client* client, char const* gat
    
    if( rc != 0 ) {
       errorf("ms_client_openid_session rc = %d\n", rc );
-      curl_easy_cleanup( curl );
       return -ENOTCONN;
    }
    
@@ -1784,7 +1892,7 @@ int ms_client_openid_gateway_register( struct ms_client* client, char const* gat
    }
    
    // load up the registration information, including our set of Volumes
-   rc = ms_client_load_registration_metadata( client, &registration_md, volume_pubkey_pem );
+   rc = ms_client_load_registration_metadata( client, &registration_md, volume_pubkey_pem, password );
    if( rc != 0 ) {
       errorf("ms_client_load_registration_metadata rc = %d\n", rc );
       return -ENODATA;
@@ -2253,6 +2361,10 @@ ssize_t ms_client_update_set_to_string( ms::ms_updates* ms_updates, char** updat
 
 // sign an update set
 static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) {
+   if( pkey == NULL ) {
+      errorf("%s\n", "Private key is NULL!");
+      return -EINVAL;
+   }
    return md_sign<ms::ms_updates>( pkey, ms_updates );
 }
 
@@ -3441,3 +3553,21 @@ int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint
    return rc;
 }
 
+// get my private key as a PEM-encoded string
+int ms_client_my_key_pem( struct ms_client* client, char** buf, size_t* len ) {
+   ms_client_rlock( client );
+   
+   int rc = 0;
+   
+   if( client->my_key_pem != NULL ) {
+      char* ret = strdup( client->my_key_pem );
+      *buf = ret;
+      *len = strlen(ret);
+   }
+   else {
+      rc = -ENODATA;
+   }
+   
+   ms_client_unlock( client );
+   return rc;
+}

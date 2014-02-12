@@ -146,6 +146,7 @@ struct ms_gateway_cert {
    char* closure_text;          // closure information (only retained for our gateway)
    uint64_t closure_text_len;
    EVP_PKEY* pubkey;
+   EVP_PKEY* privkey;           // decrypted from MS (only retained for our gateway)
    uint64_t caps;
    uint64_t expires;
    uint64_t version;
@@ -237,6 +238,7 @@ struct ms_client {
    // NOTE: this field does not change over the course of the ms_client structure's lifetime.
    // you can use it without locking, as long as you don't destroy it.
    EVP_PKEY* my_key;
+   char* my_key_pem;
 
    // reference to syndicate config 
    struct md_syndicate_conf* conf;
@@ -249,13 +251,15 @@ int ms_client_destroy( struct ms_client* client );
 
 int ms_client_openid_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password, char const* volume_pubkey_pem );
 int ms_client_anonymous_gateway_register( struct ms_client* client, char const* volume_name, char const* volume_public_key_pem );
-int ms_client_load_cert( uint64_t my_gateway_id, struct ms_gateway_cert* cert, const ms::ms_gateway_cert* ms_cert );
+int ms_client_load_cert( struct ms_client* client, uint64_t my_gateway_id, struct ms_gateway_cert* cert, const ms::ms_gateway_cert* ms_cert );
 int ms_client_reload_certs( struct ms_client* client );
 int ms_client_reload_volume( struct ms_client* client );
 
 int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len );
 
 int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char const* password, char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len );
+
+int ms_client_my_key_pem( struct ms_client* client, char** buf, size_t* len );
 
 int ms_client_rlock( struct ms_client* client );
 int ms_client_wlock( struct ms_client* client );

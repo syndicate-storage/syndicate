@@ -49,7 +49,7 @@ ext_modules=[
               sources=["syndicate.pyx"],
               libraries=["syndicate"],
               library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate")],             # libsyndicate local build
-              include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "protobufs"), "/usr/local/include/syndicate"],
+              include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "protobufs"), "/usr/local/include/syndicate", os.path.join(source_root, build_dir, "lib")],
               extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON", "-fstack-protector", "-fstack-protector-all"],
               language="c++"),
     
@@ -58,6 +58,7 @@ ext_modules=[
               libraries=["syndicate", "syndicateUG"],
               library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "bin/UG")],             # local build
               include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"),
+                            os.path.join(source_root, build_dir, "lib/"),
                             os.path.join(source_root, build_dir, "protobufs"),
                             os.path.join(source_root, build_dir, "bin/UG"),
                             os.path.join(source_root, build_dir, "bin/UG/fs"), 

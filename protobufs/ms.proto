@@ -183,6 +183,8 @@ message ms_registration_metadata {
    required string session_password = 2;      // session password
    required int64 session_expires = 3;        // when the session password expires
    required ms_volume_metadata volume = 4;    // the Volume we're subscribed to
+   required string signature = 5;               // (base64) signed by Volume public key
+   optional string encrypted_gateway_private_key = 6;   // Gateway's private key, previously sealed on upload
 }
 
 

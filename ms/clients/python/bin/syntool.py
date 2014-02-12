@@ -459,7 +459,7 @@ def load_options( argv ):
             pass
          
       if not have_auth_tokens and not config.has_key('password') and msconfig.AUTH_METHOD_PASSWORD in auth_opts:
-         config['password'] = getpass.getpass("OpenID password: ")
+         config['password'] = getpass.getpass("Syndicate password: ")
          have_auth_tokens = True
       
    if not have_auth_tokens:

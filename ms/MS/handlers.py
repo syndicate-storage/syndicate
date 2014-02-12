@@ -641,8 +641,20 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
             response_user_error( self, 404 )
             return
 
+         # add volume and contents
          self.protobuf_volume( registration_metadata.volume, volume, root )
 
+         # add sealed private key, if given earlier 
+         if gateway.encrypted_gateway_private_key != None:
+            registration_metadata.encrypted_gateway_private_key = gateway.encrypted_gateway_private_key
+            
+         # sign and serialize!
+         registration_metadata.signature = ""
+         
+         data = registration_metadata.SerializeToString()
+         
+         registration_metadata.signature = volume.sign_message( data )
+         
          data = registration_metadata.SerializeToString()
 
          # clear this OpenID session, since we're registered

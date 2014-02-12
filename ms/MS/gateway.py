@@ -109,6 +109,7 @@ class Gateway( storagetypes.Object ):
    volume_id = storagetypes.Integer(default=-1)
 
    gateway_public_key = storagetypes.Text()             # PEM-encoded RSA public key to verify control-plane messages (metadata) sent from this gateway.
+   encrypted_gateway_private_key = storagetypes.Text()  # optional: corresponding RSA private key, sealed with user's password.  Can only be set on creation.
    
    caps = storagetypes.Integer(default=0)                # capabilities
    
@@ -124,6 +125,7 @@ class Gateway( storagetypes.Object ):
    closure = storagetypes.Json()                # gateway-specific configuration
    
    gateway_blocksize = storagetypes.Integer( default=0 )        # (AG only) advertized blocksize
+   
    
    # for RPC
    key_type = "gateway"
@@ -149,7 +151,8 @@ class Gateway( storagetypes.Object ):
       "cert_version",
       "cert_expires",
       "gateway_blocksize",
-      "caps"
+      "caps",
+      "encrypted_gateway_private_key"
    ]
    
    read_attrs = [
@@ -178,7 +181,8 @@ class Gateway( storagetypes.Object ):
       "cert_version": (lambda cls, attrs: 1),
       "cert_expires": (lambda cls, attrs: -1),
       "gateway_blocksize": (lambda cls, attrs: 61440 if attrs.get('gateway_type') == GATEWAY_TYPE_AG else 0),
-      "caps": (lambda cls, attrs: 0)
+      "caps": (lambda cls, attrs: 0),
+      "encrypted_gateway_private_key": (lambda cls, attrs: None)
    }
 
    key_attrs = [
@@ -188,7 +192,7 @@ class Gateway( storagetypes.Object ):
    validators = {
       "session_password_hash": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "0123456789abcdef")) ) == 0),
       "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.: ")) ) == 0 and not is_int(value) ),
-      "gateway_public_key": (lambda cls, value: Gateway.is_valid_key( value, GATEWAY_RSA_KEYSIZE ) ),
+      "gateway_public_key": (lambda cls, value: Gateway.is_valid_key( value, GATEWAY_RSA_KEYSIZE ) )
    }
    
    @classmethod 
@@ -335,7 +339,7 @@ class Gateway( storagetypes.Object ):
          cert_pb.public_key = self.gateway_public_key
       else:
          cert_pb.public_key = "NONE"
-
+         
 
    def check_caps( self, caps ):
       """

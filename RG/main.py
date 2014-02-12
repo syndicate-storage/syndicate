@@ -105,7 +105,7 @@ def build_parser( progname ):
 def validate_args( config ):
    
    # required arguments
-   required = ['gateway_pkey', 'gateway', 'MS', 'volume']
+   required = ['gateway', 'MS', 'volume']
    for req in required:
       if config.get( req, None ) == None:
          raise Exception("Missing required argument: %s" % req )

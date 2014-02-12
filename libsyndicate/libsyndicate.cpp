@@ -2606,8 +2606,7 @@ int md_check_conf( struct md_syndicate_conf* conf ) {
       fprintf(stderr, warn_fmt, GATEWAY_NAME_KEY );
    }
    if( conf->gateway_key == NULL ) {
-      rc = -EINVAL;
-      fprintf(stderr, err_fmt, GATEWAY_KEY_KEY );
+      fprintf(stderr, warn_fmt, GATEWAY_KEY_KEY );
    }
    
    if( conf->gateway_type == SYNDICATE_UG ) {

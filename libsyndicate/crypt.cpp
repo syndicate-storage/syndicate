@@ -797,3 +797,48 @@ int md_decrypt_pem( char const* sender_pubkey_pem, char const* receiver_privkey_
    EVP_PKEY_free( pubkey );
    return rc;
 }
+
+// seal something with a password
+int md_password_seal( char const* data, size_t data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
+   // implementation: use scrypt
+   size_t outbuf_len = data_len + 128;                  // +128 from scryptenc.h
+   uint8_t* outbuf = CALLOC_LIST( uint8_t, outbuf_len );
+   
+   if( outbuf == NULL )
+      return -ENOMEM;
+   
+   int rc = scryptenc_buf( (uint8_t*)data, data_len, outbuf, (const uint8_t*)password, password_len, 1024000000, 0.0, 5.0 );  // five seconds; 100MB minimum
+   if( rc != 0 ) {
+      errorf("scryptenc_buf rc = %d\n", rc );
+      
+      free( outbuf );
+      return rc;
+   }
+   
+   *output = (char*)outbuf;
+   *output_len = outbuf_len;
+   return 0;
+}
+
+// unseal something with a password 
+int md_password_unseal( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
+   // implementation: use scrypt
+   size_t outbuf_len = encrypted_data_len;
+   uint8_t* outbuf = CALLOC_LIST( uint8_t, outbuf_len );
+   
+   if( outbuf == NULL )
+      return -ENOMEM;
+   
+   int rc = scryptdec_buf( (uint8_t*)encrypted_data, encrypted_data_len, outbuf, &outbuf_len, (const uint8_t*)password, password_len, 1024000000, 0.0, 5000.0 );       // 5000 seconds, 100MB minimum
+   if( rc != 0 ) {
+      errorf("scryptdec_buf rc = %d\n", rc );
+      
+      free( outbuf );
+      return rc;
+   }
+   
+   *output = (char*)outbuf;
+   *output_len = outbuf_len;
+   
+   return 0;
+}

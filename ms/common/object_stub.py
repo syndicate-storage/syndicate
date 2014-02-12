@@ -37,6 +37,8 @@ from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
 from Crypto import Random
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
+from Crypto.Protocol.KDF import PBKDF2
+import scrypt
 
 try:
    import syndicate.client.common.log as Log
@@ -73,45 +75,15 @@ class StubObject( object ):
    @classmethod
    def Sign( cls, *args, **kw ):
       raise Exception("Called stub Sign method!  Looks like you have an import error somewhere.")
-
-   @classmethod
-   def parse_or_generate_signing_public_key( cls, signing_public_key, lib=None ):
-      """
-      Check a signing public key and verify that it has the appropriate security 
-      parameters.  Interpret MAKE_SIGNING_KEY as a command to generate and return one.
-      Return pubkey, extras
-      """
-      extra = {}
-      
-      if signing_public_key == "MAKE_SIGNING_KEY":
-         pubkey_pem, privkey_pem = api.generate_key_pair( OBJECT_KEY_SIZE )
-         extra['signing_public_key'] = pubkey_pem
-         extra['signing_private_key'] = privkey_pem
-         
-         signing_public_key = pubkey_pem
-      
-      elif signing_public_key == "unset":
-         return None, extra
-      
-      else:
-         # try validating the given one
-         try:
-            pubkey = CryptoKey.importKey( signing_public_key )
-         except Exception, e:
-            log.exception(e)
-            raise Exception("Failed to parse public key")
-         
-      return signing_public_key, extra
-   
    
    @classmethod
-   def parse_or_generate_private_key( cls, pkey_str, pkey_generate_arg, key_size ):
+   def parse_or_generate_private_key( cls, pkey_str, pkey_generate_args, key_size ):
       """
       Check a private key (pkey_str) and verify that it has the appopriate security 
-      parameters.  If pkey_str == pkey_generate_arg, then generate a public/private key pair.
+      parameters.  If pkey_str is in pkey_generate_args, then generate a public/private key pair.
       Return the key pair.
       """
-      if pkey_str == pkey_generate_arg:
+      if pkey_str in pkey_generate_args:
          # generate one
          pubkey_str, pkey_str = api.generate_key_pair( key_size )
          return pubkey_str, pkey_str
@@ -171,9 +143,7 @@ class StubObject( object ):
    
    
    # Map an argument name to a function that parses and validates it.
-   arg_parsers = {
-      "signing_public_key": (lambda cls, arg, lib: cls.parse_or_generate_signing_public_key(arg, lib))
-   }
+   arg_parsers = {}
    
    # what type of key does this object require?
    key_type = None
@@ -211,8 +181,9 @@ class StubObject( object ):
          
          parsed.append( argname )
       
-      # parse the keyword arguments
+      # parse the keyword arguments, in lexigraphical order
       unparsed = list( set(cls.arg_parsers.keys()) - set(parsed) )
+      unparsed.sort()
       
       for argname in unparsed:
          arg_func = cls.arg_parsers[argname]
@@ -258,6 +229,35 @@ class SyndicateUser( StubObject ):
    
    USER_KEY_UNSET = "unset"
    USER_KEY_UNUSED = "unused"
+   
+   @classmethod
+   def parse_or_generate_signing_public_key( cls, signing_public_key, lib=None ):
+      """
+      Check a signing public key and verify that it has the appropriate security 
+      parameters.  Interpret MAKE_SIGNING_KEY as a command to generate and return one.
+      Return pubkey, extras
+      """
+      extra = {}
+      
+      if signing_public_key == "MAKE_SIGNING_KEY":
+         pubkey_pem, privkey_pem = api.generate_key_pair( OBJECT_KEY_SIZE )
+         extra['signing_public_key'] = pubkey_pem
+         extra['signing_private_key'] = privkey_pem
+         
+         signing_public_key = pubkey_pem
+      
+      elif signing_public_key == "unset":
+         return None, extra
+      
+      else:
+         # try validating the given one
+         try:
+            pubkey = CryptoKey.importKey( signing_public_key )
+         except Exception, e:
+            log.exception(e)
+            raise Exception("Failed to parse public key")
+         
+      return signing_public_key, extra
    
    @classmethod
    def parse_user_name_or_id( cls, user_name_or_id, lib=None ):
@@ -318,7 +318,8 @@ class SyndicateUser( StubObject ):
       "email": (lambda cls, arg, lib: cls.parse_user_name_or_id(arg, lib)),
       "activate_password": (lambda cls, arg, lib: cls.generate_password_hash(arg, lib)),
       "activate_password_hash": (lambda cls, arg, lib: cls.recover_password_hash(arg, lib)),
-      "activate_password_salt": (lambda cls, arg, lib: cls.recover_password_salt(arg, lib))
+      "activate_password_salt": (lambda cls, arg, lib: cls.recover_password_salt(arg, lib)),
+      "signing_public_key": (lambda cls, arg, lib: cls.parse_or_generate_signing_public_key(arg, lib))
    }.items() )
    
    key_type = "user"
@@ -354,16 +355,31 @@ class Volume( StubObject ):
       Load or generate a metadata private key.  Preserve the public key as
       extra data if we generate one.
       """
-      pubkey, privkey = cls.parse_or_generate_private_key( metadata_private_key, "MAKE_METADATA_KEY", OBJECT_KEY_SIZE )
-      extra = {'metadata_public_key': pubkey}
+      pubkey, privkey = cls.parse_or_generate_private_key( metadata_private_key, ["MAKE_METADATA_KEY"], OBJECT_KEY_SIZE )
+      extra = {'metadata_public_key': pubkey, "metadata_private_key": privkey}
       
       return privkey, extra
+
+   @classmethod
+   def parse_store_private_key( cls, value, lib=None ):
+      """
+      Store or do not store metadata private key.
+      """
+      extra = {}
+      try:
+         extra['store_private_key'] = bool(value)
+      except Exception, e:
+         log.error("Failed to parse storage_private_key = '%s'" % value)
+         raise e
+      
+      return value, extra
 
    arg_parsers = dict( StubObject.arg_parsers.items() + {
       "name":                   (lambda cls, arg, lib: cls.parse_volume_name_or_id(arg, lib)),
       "volume_name_or_id":      (lambda cls, arg, lib: cls.parse_volume_name_or_id(arg, lib)),
       "metadata_private_key":   (lambda cls, arg, lib: cls.parse_metadata_private_key(arg, lib)),
-      "default_gateway_caps":   (lambda cls, arg, lib: cls.parse_gateway_caps(arg, lib))
+      "default_gateway_caps":   (lambda cls, arg, lib: cls.parse_gateway_caps(arg, lib)),
+      "store_private_key":      (lambda cls, arg, lib: cls.parse_store_private_key(arg, lib))
    }.items() )
    
    key_type = "volume"
@@ -381,7 +397,7 @@ class Volume( StubObject ):
       # process signing and verifying keys 
       super( Volume, cls ).ProcessExtras( extras, config, method_name, args, kw, result, storage_stub )
       
-      # process metadata key
+      # process metadata public key
       if extras.get("metadata_public_key", None) != None:
          volume_name = extras.get("volume_name", None)
          if volume_name == None:
@@ -392,9 +408,34 @@ class Volume( StubObject ):
 
          del extras['metadata_public_key']
 
+      # process metadata private key
+      if extras.get("metadata_private_key", None) != None and extras.get("store_private_key", False):
+         volume_name = extras.get("volume_name", None)
+         if volume_name == None:
+            raise Exception("Could not determine name of Volume")
+         
+         # store it
+         storage_stub.store_private_key( config, "volume", volume_name, extras['metadata_private_key'] )
+
+         del extras['metadata_private_key']
 
 
 class Gateway( StubObject ):
+   
+   @classmethod 
+   def seal_private_key( cls, key_str, password ):
+      """
+      Seal data with the password
+      """
+      import syndicate.syndicate as c_syndicate
+      
+      rc, sealed_data = c_syndicate.password_seal( key_str, password )
+      if rc != 0:
+         raise Exception("Failed to seal data with password: rc = %s" % rc)
+      
+      return sealed_data
+
+   
    @classmethod
    def parse_gateway_name_or_id( cls, gateway_name_or_id, lib=None ):
       """
@@ -434,17 +475,87 @@ class Gateway( StubObject ):
          return (gtype, extras)
       raise Exception("Unknown Gateway type '%s'" % type_str)
    
+   
    @classmethod
    def parse_gateway_public_key( cls, gateway_public_key, lib ):
       """
       Load or generate a gateway public key.  Preserve the private key 
       as extra data if we generate one.
       """
-      pubkey, privkey = cls.parse_or_generate_private_key( gateway_public_key, "MAKE_GATEWAY_KEY", OBJECT_KEY_SIZE )
-      extra = {'gateway_private_key': privkey}
+      pubkey_str, privkey_str = cls.parse_or_generate_private_key( gateway_public_key, ["MAKE_GATEWAY_KEY", "MAKE_AND_HOST_GATEWAY_KEY"], OBJECT_KEY_SIZE )
       
-      return pubkey, extra
+      host_private_key = (gateway_public_key == "MAKE_AND_HOST_GATEWAY_KEY")
+      
+      if host_private_key:
+         # seal the key with the password
+         if lib is None:
+            raise Exception("No password given.  Needed for gateway_public_key == MAKE_AND_HOST_GATEWAY_KEY.")
+         
+         if not lib.config.has_key("password"):
+            raise Exception("No password given.  Needed for gateway_public_key == MAKE_AND_HOST_GATEWAY_KEY.")
+         
+         encrypted_key_str = Gateway.seal_private_key( privkey_str, lib.config['password'] )
+         
+         # save for later, to be recovered as keyword arguments
+         lib.encrypted_gateway_key_str = encrypted_key_str
+      
+      extra = {'gateway_private_key': privkey_str}
+      lib.gateway_public_key_str = pubkey_str           # validate against private key, if we need to load it
+      
+      return pubkey_str, extra
    
+   
+   @classmethod
+   def recover_or_load_private_key( cls, gateway_private_key_path, lib ):
+      """
+      Load a private key from disk, or recover one previously generated from parsing the public key argument.
+      """
+      if gateway_private_key_path is not None:
+         if lib is None:
+            raise Exception("No password given.  Needed for host_private_key.")
+         
+         if not lib.config.has_key("password"):
+            raise Exception("No password given.  Needed for host_private_key.")
+               
+         try:
+            fd = open(gateway_private_key_path, "r")
+            privkey_str = fd.read()
+            fd.close()
+         except OSError, oe:
+            log.error("Failed to read private key from %s" % gateway_private_key_path)
+            raise oe
+         
+         try:
+            # verify it's valid
+            privkey = CryptoKey.importKey( privkey_str )
+            assert privkey.has_private(), "Not a private key"
+         except Exception, e:
+            log.error("Failed to parse private key")
+            raise e
+         
+         if hasattr(lib, "gateway_public_key_str" ):
+            try:
+               # ensure it matches the public key, if given 
+               pubkey_str = CryptoKey.importKey( gateway_public_key_str ).exportKey()
+            except Exception, e:
+               log.error("Failed to parse previously-loaded public key")
+               raise e
+            
+            assert pubkey_str == privkey.publickey().exportKey(), "Public key does not match private key"
+            
+            
+         # seal with password
+         encrypted_key_str = Gateway.seal_private_key( privkey.exportKey(), lib.config['password'] )
+         
+         return base64.b64encode( encrypted_privkey_str ), {}
+            
+      elif lib is not None:
+         if hasattr( lib, "encrypted_gateway_key_str" ):
+            # recover from lib--was generated earlier
+            return base64.b64encode( lib.encrypted_gateway_key_str ), {}
+         else:
+            raise Exception("BUG: don't know how to handle gateway private key")
+         
    
    @classmethod
    def get_dict_from_closure( cls, config_module, dict_module_name, dict_name ):
@@ -621,7 +732,8 @@ class Gateway( StubObject ):
       "caps":                   (lambda cls, arg, lib: cls.parse_gateway_caps(arg, lib)),
       "gateway_type":           (lambda cls, arg, lib: cls.parse_gateway_type(arg, lib)),
       "gateway_public_key":     (lambda cls, arg, lib: cls.parse_gateway_public_key(arg, lib)),
-      "closure":                (lambda cls, arg, lib: cls.parse_gateway_closure(arg, lib))
+      "closure":                (lambda cls, arg, lib: cls.parse_gateway_closure(arg, lib)),
+      "host_gateway_key":       (lambda cls, arg, lib: cls.recover_or_load_private_key(arg, lib))
    }.items() )
    
    key_type = "gateway"

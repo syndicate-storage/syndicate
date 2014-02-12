@@ -44,8 +44,6 @@
 #include <string>
 #include <iostream>
 #include <sys/socket.h>
-//#include <sys/un.h>
-//#include <attr/xattr.h>
 #include <pthread.h>
 #include <pwd.h>
 #include <math.h>
@@ -54,7 +52,6 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <inttypes.h>
-//#include <endian.h>
 #include <sys/resource.h>
 
 using namespace std;

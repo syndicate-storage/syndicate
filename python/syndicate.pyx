@@ -49,6 +49,7 @@ cpdef encrypt_data( sender_privkey_str, receiver_pubkey_str, data_str ):
       return (rc, None)
    
    else:
+      py_encrypted_data = None
       try:
          py_encrypted_data = c_encrypted_data[:c_encrypted_data_len]
       except MemoryError:
@@ -74,6 +75,7 @@ cpdef decrypt_data( sender_pubkey_str, receiver_privkey_str, encrypted_data_str 
       return (rc, None)
    
    else:
+      py_data_str = None
       try:
          py_data_str = c_data_str[:c_data_str_len]
       except MemoryError:
@@ -135,6 +137,7 @@ cpdef openid_rpc( ms_openid_url, username, password, rpc_type, request_buf ):
       return (rc, None)
 
    else:
+      py_response_buf = None
       try:
          py_response_buf = c_response_buf[:c_response_buf_len]
       except MemoryError:
@@ -144,6 +147,69 @@ cpdef openid_rpc( ms_openid_url, username, password, rpc_type, request_buf ):
          stdlib.free( c_response_buf )
 
       return (rc, py_response_buf)
+
+
+# ------------------------------------------
+cpdef password_seal( input_buf, password ):
+   '''
+      Seal data with a password
+   '''
+   cdef char* c_input_buf = input_buf 
+   cdef size_t c_input_buf_len = len(input_buf)
+
+   cdef char* c_password = password 
+   cdef size_t c_password_len = len(password)
+
+   cdef char* c_output_buf = NULL
+   cdef size_t c_output_buf_len = 0
+
+   rc = md_password_seal( c_input_buf, c_input_buf_len, c_password, c_password_len, &c_output_buf, &c_output_buf_len)
+   if rc != 0:
+      return (rc, None)
+
+   else:
+      py_sealed_data = None
+      try:
+         py_sealed_data = c_output_buf[:c_output_buf_len]
+      except MemoryError:
+         py_sealed_data = None
+         rc = -errno.ENOMEM
+      finally:
+         stdlib.free( c_output_buf )
+
+      return (rc, py_sealed_data)
+   
+
+# ------------------------------------------
+cpdef password_unseal( input_buf, password ):
+   '''
+      Unseal data with a password 
+   '''
+
+   cdef char* c_input_buf = input_buf 
+   cdef size_t c_input_buf_len = len(input_buf)
+
+   cdef char* c_password = password 
+   cdef size_t c_password_len = len(password)
+
+   cdef char* c_output_buf = NULL
+   cdef size_t c_output_buf_len = 0
+   
+   rc = md_password_unseal( c_input_buf, c_input_buf_len, c_password, c_password_len, &c_output_buf, &c_output_buf_len )
+   if rc != 0:
+      return (rc, None)
+
+   else:
+      py_output = None
+      try:
+         py_output = c_output_buf[:c_output_buf_len]
+      except MemoryError:
+         py_output = None
+         rc = -errno.ENOMEM
+      finally:
+         stdlib.free( c_output_buf )
+
+      return (rc, py_output)
 
 
 # ------------------------------------------
@@ -431,3 +497,25 @@ cdef class Syndicate:
       
       return None
    
+   cpdef get_gateway_private_key_pem( self ):
+      '''
+         Get the gateway private key (PEM-encoded).
+      '''
+
+      cdef char* c_privkey_pem = NULL
+      cdef size_t c_privkey_len = 0
+
+      rc = ms_client_my_key_pem( &self.client_inst, &c_privkey_pem, &c_privkey_len );
+      if rc == 0:
+         py_privkey_pem = None
+         try:
+            py_privkey_pem = c_privkey_pem[:c_privkey_len]
+         except MemoryError, e:
+            rc = -errno.ENOMEM
+         finally:
+            stdlib.free( c_privkey_pem )
+
+         return (rc, py_privkey_pem)
+      
+      else:
+         return (rc, None)

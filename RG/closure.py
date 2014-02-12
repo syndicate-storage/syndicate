@@ -625,19 +625,31 @@ def init( libsyndicate, gateway_key_path, sender_pubkey_path ):
          log.error("Failed to read sender public key %s" % sender_pubkey_path)
          return -1
    
-   fd = open( gateway_key_path, "r" )
-   gateway_privkey_pem = fd.read()
-   fd.close()
+   gateway_privkey_pem = None 
    
-   # verify
-   try:
+   if gateway_key_path is not None:
+      fd = open( gateway_key_path, "r" )
+      gateway_privkey_pem = fd.read()
+      fd.close()
+      
+      # verify
+      try:
+         gateway_privkey = CryptoKey.importKey( gateway_privkey_pem )
+         assert gateway_privkey.has_private(), "Not a private key"
+      except Exception, e:
+         log.exception(e)
+         log.error("Failed to load Gateway private key %s" % gateway_key_path )
+         return -1
+      
+   else:
+      # get the private key from libsyndicate
+      rc, gateway_privkey_pem = libsyndicate.get_gateway_private_key_pem()
+      if rc != 0:
+         log.error("Failed to get gateway private key, rc = %s" % rc)
+         return -1
+      
       gateway_privkey = CryptoKey.importKey( gateway_privkey_pem )
-      assert gateway_privkey.has_private(), "Not a private key"
-   except Exception, e:
-      log.exception(e)
-      log.error("Failed to load Gateway private key %s" % gateway_key_path )
-      return -1
-   
+      
    if sender_pubkey_pem is None:
       log.warning("Using Gateway public key to verify closures")
       sender_pubkey_pem = gateway_privkey.publickey().exportKey()
