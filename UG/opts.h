@@ -30,6 +30,7 @@ struct syndicate_opts {
    char* gateway_name;
    char* volume_pubkey_path;
    char* gateway_pkey_path;
+   char* gateway_pkey_decryption_password;
    char* tls_pkey_path;
    char* tls_cert_path;
    char* CDN_prefix;

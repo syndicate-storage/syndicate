@@ -34,6 +34,7 @@ CONFIG_OPTIONS = {
    "config":            ("-c", 1, "Path to the Syndicate configuration file for this RG"),
    "username":          ("-u", 1, "Syndicate username of the owner of this RG"),
    "password":          ("-p", 1, "If authenticating via OpenID, the Syndicate user's OpenID password"),
+   "key_password":      ("-K", 1, "Gateway private key decryption password"),
    "MS":                ("-m", 1, "Syndicate MS URL"),
    "sender_pubkey":     ("-U", 1, "Path to the PEM-encoded public key to verify closures for this RG"),
    "volume_pubkey":     ("-V", 1, "Path to the PEM-encoded Volume public key"),
@@ -143,6 +144,7 @@ def setup_syndicate( config ):
    gateway_name = config.get('gateway', None)
    rg_username = config.get('username', None)
    rg_password = config.get('password', None)
+   key_password = config.get('key_password', None)
    ms_url = config.get('MS', None)
    my_key_file = config.get('gateway_pkey', None)
    volume_name = config.get('volume', None)
@@ -157,6 +159,7 @@ def setup_syndicate( config ):
                                          volume_name=volume_name,
                                          oid_username=rg_username,
                                          oid_password=rg_password,
+                                         my_key_password=key_password,
                                          my_key_filename=my_key_file,
                                          conf_filename=config_file,
                                          volume_pubkey_filename=volume_pubkey,

@@ -645,7 +645,8 @@ int syndicate_client_init( struct syndicate_state* state,
                            char const* md_username,
                            char const* md_password,
                            char const* volume_pubkey_pem,
-                           char const* my_key_pem,
+                           char const* my_key_str,
+                           char const* my_key_password,
                            char const* storage_root
                          ) {
    
@@ -670,7 +671,7 @@ int syndicate_client_init( struct syndicate_state* state,
    }
    
    // initialize library
-   int rc = md_init_client( &state->conf, ms, ms_url, volume_name, gateway_name, md_username, md_password, volume_pubkey_pem, my_key_pem, storage_root );
+   int rc = md_init_client( &state->conf, ms, ms_url, volume_name, gateway_name, md_username, md_password, volume_pubkey_pem, my_key_str, my_key_password, storage_root );
    if( rc != 0 ) {
       errorf("md_init_client rc = %d\n", rc );
       return rc;

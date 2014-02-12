@@ -38,7 +38,9 @@ from Crypto.PublicKey import RSA as CryptoKey
 from Crypto import Random
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
 from Crypto.Protocol.KDF import PBKDF2
+
 import scrypt
+import getpass
 
 try:
    import syndicate.client.common.log as Log
@@ -477,6 +479,16 @@ class Gateway( StubObject ):
    
    
    @classmethod
+   def parse_encryption_password( cls, passwd, lib ):
+      """
+      Hold on to the password in lib.
+      """
+      lib.encryption_passwrod = passwd
+   
+      return passwd, {}
+   
+   
+   @classmethod
    def parse_gateway_public_key( cls, gateway_public_key, lib ):
       """
       Load or generate a gateway public key.  Preserve the private key 
@@ -491,10 +503,11 @@ class Gateway( StubObject ):
          if lib is None:
             raise Exception("No password given.  Needed for gateway_public_key == MAKE_AND_HOST_GATEWAY_KEY.")
          
-         if not lib.config.has_key("password"):
-            raise Exception("No password given.  Needed for gateway_public_key == MAKE_AND_HOST_GATEWAY_KEY.")
+         if not hasattr(lib, "encryption_password"):
+            password = getpass.getpass("Gateway private key password: ")
+            lib.encryption_password = password
          
-         encrypted_key_str = Gateway.seal_private_key( privkey_str, lib.config['password'] )
+         encrypted_key_str = Gateway.seal_private_key( privkey_str, lib.encryption_password )
          
          # save for later, to be recovered as keyword arguments
          lib.encrypted_gateway_key_str = encrypted_key_str
@@ -511,11 +524,14 @@ class Gateway( StubObject ):
       Load a private key from disk, or recover one previously generated from parsing the public key argument.
       """
       if gateway_private_key_path is not None:
+         # need an encryption password
          if lib is None:
             raise Exception("No password given.  Needed for host_private_key.")
          
-         if not lib.config.has_key("password"):
-            raise Exception("No password given.  Needed for host_private_key.")
+         if not hasattr(lib, "encryption_password"):
+            # prompt for it
+            password = getpass.getpass("Gateway private key password: ")
+            lib.encryption_password = password
                
          try:
             fd = open(gateway_private_key_path, "r")
@@ -545,7 +561,7 @@ class Gateway( StubObject ):
             
             
          # seal with password
-         encrypted_key_str = Gateway.seal_private_key( privkey.exportKey(), lib.config['password'] )
+         encrypted_key_str = Gateway.seal_private_key( privkey.exportKey(), lib.encryption_password )
          
          return base64.b64encode( encrypted_privkey_str ), {}
             

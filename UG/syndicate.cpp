@@ -28,6 +28,7 @@ int syndicate_init( char const* config_file,
                     char const* md_password,
                     char const* volume_pubkey_file,
                     char const* my_key_file,
+                    char const* my_key_password,
                     char const* tls_key_file,
                     char const* tls_cert_file
                   ) {
@@ -48,7 +49,7 @@ int syndicate_init( char const* config_file,
    }
    
    // initialize library
-   int rc = md_init( &state->conf, ms, ms_url, volume_name, gateway_name, md_username, md_password, volume_pubkey_file, my_key_file, tls_key_file, tls_cert_file, NULL );
+   int rc = md_init( &state->conf, ms, ms_url, volume_name, gateway_name, md_username, md_password, volume_pubkey_file, my_key_file, my_key_password, tls_key_file, tls_cert_file, NULL );
    if( rc != 0 ) {
       errorf("md_init rc = %d\n", rc );
       return rc;

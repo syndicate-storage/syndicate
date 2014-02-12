@@ -912,9 +912,9 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
 @CreateAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
 # NOTE: due to lexigraphically-ordered handling of keyword arguments, and the fact that if we're going to generate keys we must have before we can
 # encrypt and host them, the argument for obtaining the public key must lexigraphically proceed the argument for indicating whether or not we should host the private key.
-# For this reason, it's *e*ncrypt_gateway_key_password, *g*ateway_public_key, *h*ost_private_key.
-# NOTE: encrypt_gateway_key_password and host_gateway_key are NOT passed to the MS.  These are interpreted by syntool.
-def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, encrypt_gateway_key_password=None, gateway_public_key="MAKE_AND_HOST_GATEWAY_KEY", host_gateway_key=None, **attrs ):
+# For this reason, it's *e*ncryption_password, *g*ateway_public_key, *h*ost_private_key.
+# NOTE: ncryption_password and host_gateway_key are NOT passed to the MS.  These are interpreted by syntool.
+def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, encryption_password=None, gateway_public_key="MAKE_AND_HOST_GATEWAY_KEY", host_gateway_key=None, **attrs ):
    """
    Create a Gateway.  It will be owned by the calling user, or, if the caller user is an admin, a user identified by the given email address.
    

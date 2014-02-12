@@ -431,6 +431,7 @@ int md_init( struct md_syndicate_conf* conf,
              char const* oid_password,
              char const* volume_pubkey_file,
              char const* my_key_file,
+             char const* my_key_password,
              char const* tls_pkey_file,
              char const* tls_cert_file,
              char const* storage_root
@@ -446,7 +447,8 @@ int md_init_client( struct md_syndicate_conf* conf,
                     char const* oid_username,
                     char const* oid_password,
                     char const* volume_pubkey_pem,
-                    char const* my_key_pem,
+                    char const* my_key_str,
+                    char const* my_key_password,
                     char const* storage_root
                   );
 

@@ -34,6 +34,7 @@ int syndicate_init( char const* config_file,
                     char const* md_password,
                     char const* volume_pubkey_file,
                     char const* my_key_file,
+                    char const* my_key_password,
                     char const* tls_key_file,
                     char const* tls_cert_file );
 

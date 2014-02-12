@@ -76,7 +76,8 @@ int syndicate_client_init( struct syndicate_state* state,
                            char const* md_username,
                            char const* md_password,
                            char const* volume_pubkey_pem,
-                           char const* my_key_pem,
+                           char const* my_key_str,
+                           char const* my_key_password,
                            char const* storage_root
                          );
 

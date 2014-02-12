@@ -808,7 +808,7 @@ int main(int argc, char** argv) {
    
    // start core services
    rc = syndicate_init( syn_opts.config_file, syn_opts.ms_url, syn_opts.volume_name, syn_opts.gateway_name, syn_opts.username, 
-                        syn_opts.password, syn_opts.volume_pubkey_path, syn_opts.gateway_pkey_path, syn_opts.tls_pkey_path, syn_opts.tls_cert_path );
+                        syn_opts.password, syn_opts.volume_pubkey_path, syn_opts.gateway_pkey_path, syn_opts.gateway_pkey_decryption_password, syn_opts.tls_pkey_path, syn_opts.tls_cert_path );
    if( rc != 0 ) {
       fprintf(stderr, "Syndicate failed to initialize\n");
       exit(1);

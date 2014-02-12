@@ -1678,7 +1678,7 @@ int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadat
 
 
 // load a registration message
-int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_registration_metadata* registration_md, char const* volume_pubkey_pem, char const* password ) {
+int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_registration_metadata* registration_md, char const* volume_pubkey_pem, char const* key_password ) {
 
    int rc = 0;
 
@@ -1778,7 +1778,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    // possibly received our private key...
    if( client->my_key == NULL && registration_md->has_encrypted_gateway_private_key() ) {
       
-      if( password == NULL ) {
+      if( key_password == NULL ) {
          errorf("%s\n", "No private key loaded, but no password to decrypt one with.");
          rc = -ENOTCONN;
       }
@@ -1800,7 +1800,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
             
             dbprintf("%s\n", "Unsealing gateway private key...");
             
-            decode_rc = md_password_unseal( encrypted_gateway_private_key, encrypted_gateway_private_key_len, password, strlen(password), &gateway_private_key_str, &gateway_private_key_str_len );
+            decode_rc = md_password_unseal( encrypted_gateway_private_key, encrypted_gateway_private_key_len, key_password, strlen(key_password), &gateway_private_key_str, &gateway_private_key_str_len );
             if( decode_rc != 0 ) {
                errorf("Failed to unseal gateway private key, rc = %d\n", decode_rc );
                rc = -ENOTCONN;
@@ -1850,7 +1850,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    
 
 // register this gateway with the MS, using the SyndicateUser's OpenID username and password
-int ms_client_openid_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password, char const* volume_pubkey_pem ) {
+int ms_client_openid_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password, char const* volume_pubkey_pem, char const* key_password ) {
 
    int rc = 0;
 
@@ -1892,7 +1892,7 @@ int ms_client_openid_gateway_register( struct ms_client* client, char const* gat
    }
    
    // load up the registration information, including our set of Volumes
-   rc = ms_client_load_registration_metadata( client, &registration_md, volume_pubkey_pem, password );
+   rc = ms_client_load_registration_metadata( client, &registration_md, volume_pubkey_pem, key_password );
    if( rc != 0 ) {
       errorf("ms_client_load_registration_metadata rc = %d\n", rc );
       return -ENODATA;

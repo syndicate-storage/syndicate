@@ -43,6 +43,7 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
       {"MS",              required_argument,   0, 'm'},
       {"volume-pubkey",   required_argument,   0, 'V'},
       {"gateway-pkey",    required_argument,   0, 'G'},
+      {"gateway-pkey-decryption-password", required_argument, 0, 'K'},
       {"tls-pkey",        required_argument,   0, 'S'},
       {"tls-cert",        required_argument,   0, 'C'},
       {"no-flush-replicas", no_argument,       0, 'F'},
@@ -54,7 +55,7 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
    int opt_index = 0;
    int c = 0;
    
-   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:C:x:X:";
+   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:C:x:X:K:";
    
    char* optstr = NULL;
    if( special_opts != NULL ) {
@@ -124,6 +125,10 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
             opts->storage_root = optarg;
             break;
          }
+         case 'K': {
+            opts->gateway_pkey_decryption_password = optarg;
+            break;
+         }
          default: {
             rc = -1;
             if( special_opt_handler ) {
@@ -165,8 +170,6 @@ Required arguments:\n\
             Name of the Volume you are going to access\n\
    -g, --gateway GATEWAY_NAME\n\
             Name of this gateway\n\
-   -G, --gateway-pkey GATEWAY_PRIVATE_KEY_PATH\n\
-            Path to this gateway's private key\n\
 \n\
 Optional arguments:\n\
    -V, --volume-pubkey VOLUME_PUBLIC_KEY_PATH\n\
@@ -183,6 +186,11 @@ Optional arguments:\n\
             If given, flush all ongoing replicas before exiting\n\
    -r, --storage-root STORAGE_ROOT\n\
             Cache local state at a particular location\n\
+   -G, --gateway-pkey GATEWAY_PRIVATE_KEY_PATH\n\
+            Path to this gateway's private key.  If no private key\n\
+            is given, then it will be downloaded from the MS.\n\
+   -K, --gateway-pkey-decryption-password DECRYPTION_PASSWORD\n\
+            Password to decrypt the private key.\
 \n", progname );
 }
 

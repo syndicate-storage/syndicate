@@ -76,7 +76,7 @@ static int md_init_server_info( struct md_syndicate_conf* c ) {
 }
 
 // initialize all global data structures
-static int md_runtime_init( struct md_syndicate_conf* c ) {
+static int md_runtime_init( struct md_syndicate_conf* c, char const* key_password ) {
 
    GOOGLE_PROTOBUF_VERIFY_VERSION;
 
@@ -109,6 +109,24 @@ static int md_runtime_init( struct md_syndicate_conf* c ) {
       if( c->gateway_key == NULL ) {
          errorf("Could not read Gateway key %s\n", c->gateway_key_path );
          rc = -ENOENT;
+      }
+      
+      if( key_password ) {
+         // need to decrypt
+         char* unencrypted_key = NULL;
+         size_t unencrypted_key_len = 0;
+         
+         rc = md_password_unseal( c->gateway_key, c->gateway_key_len, key_password, strlen(key_password), &unencrypted_key, &unencrypted_key_len );
+         if( rc != 0 ) {
+            errorf("md_password_unseal rc = %d\n", rc );
+            
+            free( c->gateway_key );
+            c->gateway_key = NULL;
+         }
+         else {
+            free( c->gateway_key );
+            c->gateway_key = unencrypted_key;
+         }
       }
    }
    
@@ -2365,7 +2383,7 @@ int md_init_begin( struct md_syndicate_conf* conf,
 
 
 // finish initialization
-int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client ) {
+int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, char const* key_password ) {
    
    int rc = 0;
    
@@ -2385,7 +2403,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client ) {
    
    if( conf->gateway_name != NULL && conf->ms_username != NULL && conf->ms_password != NULL ) {
       // register the gateway via OpenID
-      rc = ms_client_openid_gateway_register( client, conf->gateway_name, conf->ms_username, conf->ms_password, conf->volume_pubkey );
+      rc = ms_client_openid_gateway_register( client, conf->gateway_name, conf->ms_username, conf->ms_password, conf->volume_pubkey, key_password );
       if( rc != 0 ) {
          errorf("ms_client_gateway_register rc = %d\n", rc );
          
@@ -2458,6 +2476,7 @@ int md_init( struct md_syndicate_conf* conf,
              char const* oid_password,
              char const* volume_pubkey_file,
              char const* my_key_file,
+             char const* my_key_password,
              char const* tls_pkey_file,
              char const* tls_cert_file,
              char const* storage_root
@@ -2476,13 +2495,13 @@ int md_init( struct md_syndicate_conf* conf,
    
 
    // set up libsyndicate runtime information
-   rc = md_runtime_init( conf );
+   rc = md_runtime_init( conf, my_key_password );
    if( rc != 0 ) {
       errorf("md_runtime_init() rc = %d\n", rc );
       return rc;
    }
    
-   return md_init_finish( conf, client );
+   return md_init_finish( conf, client, my_key_password );
 }
 
 
@@ -2495,7 +2514,8 @@ int md_init_client( struct md_syndicate_conf* conf,
                     char const* oid_username,
                     char const* oid_password,
                     char const* volume_pubkey_pem,
-                    char const* my_key_pem,
+                    char const* my_key_str,
+                    char const* my_key_password,
                     char const* storage_root
                   ) {
    
@@ -2510,7 +2530,7 @@ int md_init_client( struct md_syndicate_conf* conf,
    conf->is_client = true;
    
    MD_SYNDICATE_CONF_OPT( *conf, storage_root, storage_root );
-   MD_SYNDICATE_CONF_OPT( *conf, gateway_key, my_key_pem );
+   MD_SYNDICATE_CONF_OPT( *conf, gateway_key, my_key_str );
    MD_SYNDICATE_CONF_OPT( *conf, volume_pubkey, volume_pubkey_pem );
    
    if( conf->gateway_key ) {
@@ -2521,13 +2541,13 @@ int md_init_client( struct md_syndicate_conf* conf,
    }
    
    // set up libsyndicate runtime information
-   rc = md_runtime_init( conf );
+   rc = md_runtime_init( conf, my_key_password );
    if( rc != 0 ) {
       errorf("md_runtime_init() rc = %d\n", rc );
       return rc;
    }
    
-   return md_init_finish( conf, client );   
+   return md_init_finish( conf, client, my_key_password );   
 }
 
 

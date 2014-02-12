@@ -249,7 +249,7 @@ extern "C" {
 int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndicate_conf* conf );
 int ms_client_destroy( struct ms_client* client );
 
-int ms_client_openid_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password, char const* volume_pubkey_pem );
+int ms_client_openid_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password, char const* volume_pubkey_pem, char const* key_password );
 int ms_client_anonymous_gateway_register( struct ms_client* client, char const* volume_name, char const* volume_public_key_pem );
 int ms_client_load_cert( struct ms_client* client, uint64_t my_gateway_id, struct ms_gateway_cert* cert, const ms::ms_gateway_cert* ms_cert );
 int ms_client_reload_certs( struct ms_client* client );

@@ -77,7 +77,8 @@ cdef class Volume:
                        oid_password=None,
                        volume_name=None,
                        volume_key_pem=None,
-                       my_key_pem=None,
+                       my_key_str=None,
+                       my_key_password=None,
                        storage_root=None,
                        wait_replicas=-1 ):
 
@@ -93,7 +94,8 @@ cdef class Volume:
          char* c_oid_password = NULL
          char* c_volume_name = NULL
          char* c_volume_key_pem = NULL
-         char* c_my_key_pem = NULL
+         char* c_my_key_str = NULL
+         char* c_my_key_password = NULL
          char* c_storage_root = NULL
          
       if gateway_name != None:
@@ -114,9 +116,12 @@ cdef class Volume:
       if config_file != None:
          c_conf_filename = config_file 
       
-      if my_key_pem != None:
-         c_my_key_pem = my_key_pem
-         
+      if my_key_str != None:
+         c_my_key_str = my_key_str
+       
+      if my_key_password != None:
+         c_my_key_password = my_key_password
+
       if storage_root != None:
          c_storage_root = storage_root
       
@@ -130,7 +135,8 @@ cdef class Volume:
                                   c_oid_username,
                                   c_oid_password,
                                   c_volume_key_pem,
-                                  c_my_key_pem,
+                                  c_my_key_str,
+                                  c_my_key_password,
                                   c_storage_root )
 
       if rc != 0:

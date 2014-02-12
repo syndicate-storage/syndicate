@@ -238,6 +238,7 @@ cdef class Syndicate:
                        ms_url=None,
                        oid_username=None,
                        oid_password=None,
+                       my_key_password=None,
                        volume_name=None,
                        volume_pubkey_filename=None,
                        conf_filename=None,
@@ -262,6 +263,7 @@ cdef class Syndicate:
          char *c_ms_url = NULL
          char *c_oid_username = NULL
          char *c_oid_password = NULL
+         char* c_key_password = NULL
          char *c_volume_name = NULL
          char *c_volume_pubkey_filename = NULL
          char *c_conf_filename = NULL
@@ -281,6 +283,9 @@ cdef class Syndicate:
          
       if oid_password != None:
          c_oid_password = oid_password
+
+      if my_key_password != None:
+         c_key_password = my_key_password
          
       if volume_name != None:
          c_volume_name = volume_name 
@@ -316,6 +321,7 @@ cdef class Syndicate:
                      c_oid_password,
                      c_volume_pubkey_filename,
                      c_my_key_filename,
+                     c_key_password,
                      c_tls_pkey_filename,
                      c_tls_cert_filename,
                      c_storage_root )
@@ -332,6 +338,7 @@ cdef class Syndicate:
                            ms_url=None,
                            oid_username=None,
                            oid_password=None,
+                           my_key_password=None,
                            volume_name=None,
                            volume_pubkey_filename=None,
                            conf_filename=None,
@@ -358,6 +365,7 @@ cdef class Syndicate:
                                     volume_pubkey_filename=volume_pubkey_filename,
                                     conf_filename=conf_filename,
                                     my_key_filename=my_key_filename,
+                                    my_key_password=my_key_password,
                                     tls_pkey_filename=tls_pkey_filename,
                                     tls_cert_filename=tls_cert_filename,
                                     storage_root=storage_root)

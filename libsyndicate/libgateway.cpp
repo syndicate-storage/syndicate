@@ -646,6 +646,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    bool pub_mode = false;
    char* volume_pubkey_path = NULL;
    char* gateway_pkey_path = NULL;
+   char* gateway_pkey_decryption_password = NULL;
    char* tls_pkey_path = NULL;
    char* tls_cert_path = NULL;
    pid_t gateway_daemon_pid = 0;
@@ -667,6 +668,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
       {"gateway-name\0Name of this gateway",                required_argument,   0, 'g'},
       {"volume-pubkey\0Volume public key path (PEM)",       required_argument,   0, 'V'},
       {"gateway-pkey\0Gateway private key path (PEM)",      required_argument,   0, 'G'},
+      {"gateway-pkey-password\0Gateway private key decryption password", required_argument, 0, 'K'},
       {"tls-pkey\0Server TLS private key path (PEM)",       required_argument,   0, 'S'},
       {"tls-cert\0Server TLS certificate path (PEM)",       required_argument,   0, 'C'},
       {"stop\0Stop the gateway daemon",                     required_argument,   0, 't'},
@@ -677,7 +679,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:D:hg:V:G:S:C:t:r:", gateway_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:D:hg:V:G:S:C:t:r:K:", gateway_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -758,6 +760,10 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
 	    rmap = true;
             break;
          }
+         case 'K': {
+            gateway_pkey_decryption_password = optarg;
+            break;
+         }
          default: {
             break;
          }
@@ -815,7 +821,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    }
    
  
-   rc = md_init( &conf, &client, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, tls_pkey_path, tls_cert_path, NULL );
+   rc = md_init( &conf, &client, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, gateway_pkey_decryption_password, tls_pkey_path, tls_cert_path, NULL );
    if( rc != 0 ) {
       exit(1);
    }

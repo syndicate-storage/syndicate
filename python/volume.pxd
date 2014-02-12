@@ -124,7 +124,8 @@ cdef extern from "client.h":
                               char * md_username,
                               char * md_password,
                               char * volume_pubkey_pem,
-                              char * my_key_pem,
+                              char * my_key_str,
+                              char * my_key_password,
                               char * storage_root
                              )
 

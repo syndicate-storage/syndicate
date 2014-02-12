@@ -1464,7 +1464,8 @@ int main(int argc, char* argv[]) {
     struct md_HTTP syndicate_http;
 
     // start core services
-    rc = syndicate_init(opts.config_file, opts.ms_url, opts.volume_name, opts.gateway_name, opts.username, opts.password, opts.volume_pubkey_path, opts.gateway_pkey_path, opts.tls_pkey_path, opts.tls_cert_path);
+    rc = syndicate_init(opts.config_file, opts.ms_url, opts.volume_name, opts.gateway_name, opts.username, opts.password,
+                        opts.volume_pubkey_path, opts.gateway_pkey_path, opts.gateway_pkey_decryption_password, opts.tls_pkey_path, opts.tls_cert_path);
     if (rc != 0)
         exit(1);
     

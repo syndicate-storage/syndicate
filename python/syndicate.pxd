@@ -72,6 +72,7 @@ cdef extern from "libsyndicate.h":
                char* md_password,
                char* volume_pubkey_file,
                char* my_key_file,
+               char* my_key_password,
                char* tls_key_file,
                char* tls_cert_file,
                char* storage_root
