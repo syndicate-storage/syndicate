@@ -30,7 +30,7 @@ Ubuntu/Debian:
    libboost-dev
    libxml2-dev
    libattr1-dev
-   libcurl4-gnutls-dev
+   libcurl4-gnutls-dev (>= 7.28)
    fuse
    libfuse-dev
    libgcrypt-dev
@@ -39,11 +39,11 @@ Ubuntu/Debian:
    python-protobuf 
    libboost-dev
    libxerces-c-dev
-   libmicrohttpd-dev (> 0.9)
+   libmicrohttpd-dev (>= 0.9)
    python-daemon
    unixodbc-dev
    libconfig++-dev
-   thrift-compiler (0.8)
+   thrift-compiler (>= 0.8)
    cython (>= 0.19)
 
 You will need a version of Apache Thrift (0.8.x) installed to build the AG.  This dependency is transient and will be removed soon.
