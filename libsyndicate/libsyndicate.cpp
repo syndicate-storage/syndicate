@@ -470,16 +470,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          }
       }
 
-      else if( strcmp( key, STAGING_ROOT_KEY ) == 0 ) {
-         // data root
-         conf->staging_root = strdup( values[0] );
-         if( conf->staging_root[ strlen(conf->staging_root)-1 ] != '/' ) {
-            char* tmp = md_prepend( conf->staging_root, "/", NULL );
-            free( conf->staging_root );
-            conf->staging_root = tmp;
-         }
-      }
-
       else if( strcmp( key, SSL_PKEY_KEY ) == 0 ) {
          // server private key
          conf->server_key_path = strdup( values[0] );
@@ -607,7 +597,6 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->logfile_path,
       (void*)conf->content_url,
       (void*)conf->data_root,
-      (void*)conf->staging_root,
       (void*)conf->cdn_prefix,
       (void*)conf->proxy_url,
       (void*)conf->ms_username,
@@ -2058,224 +2047,6 @@ void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, 
    //curl_easy_setopt( curl_h, CURLOPT_VERBOSE, 1L );
 }
 
-static int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out ) {
-   uint64_t ret = 0;
-   int rc = sscanf( id_str, fmt, &ret );
-   if( rc == 0 )
-      return -EINVAL;
-   else
-      *out = ret;
-   
-   return 0;
-}
-
-static int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* manifest_timestamp ) {
-   long tv_sec = -1;
-   long tv_nsec = -1;
-   
-   int num_read = sscanf( _manifest_str, "manifest.%ld.%ld", &tv_sec, &tv_nsec );
-   if( num_read != 2 )
-      return -EINVAL;
-
-   if( tv_sec < 0 || tv_nsec < 0 )
-      return -EINVAL;
-   
-   manifest_timestamp->tv_sec = tv_sec;
-   manifest_timestamp->tv_nsec = tv_nsec;
-
-   return 0;
-}
-
-
-static int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t* _block_id, int64_t* _block_version ) {
-   uint64_t block_id = INVALID_BLOCK_ID;
-   int64_t block_version = -1;
-
-   int num_read = sscanf( _block_id_version_str, "%" PRIu64 ".%" PRId64, &block_id, &block_version );
-   if( num_read != 2 )
-      return -EINVAL;
-
-   if( block_version < 0 )
-      return -EINVAL;
-
-   *_block_id = block_id;
-   *_block_version = block_version;
-
-   return 0;
-}
-
-static int md_parse_file_version( char* _name_and_version_str, int64_t* _file_version ) {
-   char* version_ptr = rindex( _name_and_version_str, '.' );
-   if( version_ptr == NULL )
-      return -EINVAL;
-
-   int64_t file_version = -1;
-   int num_read = sscanf( version_ptr, ".%" PRId64, &file_version );
-   if( num_read != 1 )
-      return -EINVAL;
-
-   *_file_version = file_version;
-
-   return 0;
-}
-
-
-// parse a URL in the format of:
-// /$PREFIX/$volume_id/$file_path.$file_version/($block_id.$block_version || manifest.$mtime_sec.$mtime_nsec)
-int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_timestamp, bool* _staging ) {
-   char* url_path = strdup( _url_path );
-
-   // temporary values
-   uint64_t volume_id = INVALID_VOLUME_ID;
-   char* file_path = NULL;
-   int64_t file_version = -1;
-   uint64_t block_id = INVALID_BLOCK_ID;
-   int64_t block_version = -1;
-   struct timespec manifest_timestamp;
-   bool staging = false;
-   manifest_timestamp.tv_sec = -1;
-   manifest_timestamp.tv_nsec = -1;
-   int rc = 0;
-
-
-   int num_parts = 0;
-   char* prefix = NULL;
-   char* volume_id_str = NULL;
-
-   bool is_manifest = false;
-   int file_name_and_version_part = 0;
-   size_t file_path_len = 0;
-
-   char** parts = NULL;
-   char* tmp = NULL;
-   char* cursor = NULL;
-
-   
-   // break url_path into tokens, by /
-   int num_seps = 0;
-   for( unsigned int i = 0; i < strlen(url_path); i++ ) {
-      if( url_path[i] == '/' ) {
-         num_seps++;
-         while( url_path[i] == '/' && i < strlen(url_path) ) {
-            i++;
-         }
-      }
-   }
-
-   // minimum number of parts: local/staging, volume_id, name.version, (block.version || manifest.tv_sec.tv_nsec)
-   if( num_seps < 4 ) {
-      rc = -EINVAL;
-      dbprintf("num_seps = %d\n", num_seps );
-      goto _md_HTTP_parse_url_path_finish;
-   }
-
-   num_parts = num_seps;
-   parts = CALLOC_LIST( char*, num_seps + 1 );
-   tmp = NULL;
-   cursor = url_path;
-   
-   for( int i = 0; i < num_seps; i++ ) {
-      char* tok = strtok_r( cursor, "/", &tmp );
-      cursor = NULL;
-
-      if( tok == NULL ) {
-         break;
-      }
-
-      parts[i] = tok;
-   }
-   
-   prefix = parts[0];
-   volume_id_str = parts[1];
-   file_name_and_version_part = num_parts-2;
-
-   if( strcmp(prefix, SYNDICATE_DATA_PREFIX) != 0 && strcmp(prefix, SYNDICATE_STAGING_PREFIX) != 0 ) {
-      // invalid prefix
-      free( parts );
-      rc = -EINVAL;
-      dbprintf("prefix = '%s'\n", prefix);
-      goto _md_HTTP_parse_url_path_finish;
-   }
-   else {
-      if( strcmp(prefix, SYNDICATE_DATA_PREFIX) == 0 )
-         staging = false;
-      else
-         staging = true;
-   }
-
-   // volume ID?
-   rc = md_parse_uint64( volume_id_str, "%" PRIu64, &volume_id );
-   if( rc < 0 ) {
-      free( parts );
-      rc = -EINVAL;
-      dbprintf("could not parse '%s'\n", volume_id_str);
-      goto _md_HTTP_parse_url_path_finish;
-   }
-   
-   // is this a manifest request?
-   if( strncmp( parts[num_parts-1], "manifest", strlen("manifest") ) == 0 ) {
-      rc = md_parse_manifest_timestamp( parts[num_parts-1], &manifest_timestamp );
-      if( rc == 0 ) {
-         // success!
-         is_manifest = true;
-      }
-   }
-
-   if( !is_manifest ) {
-      // not a manifest request, so we must have a block ID and block version 
-      rc = md_parse_block_id_and_version( parts[num_parts-1], &block_id, &block_version );
-      if( rc != 0 ) {
-         // invalid request--neither a manifest nor a block ID
-         dbprintf("could not parse '%s'\n", parts[num_parts-1]);
-         free( parts );
-         rc = -EINVAL;
-         goto _md_HTTP_parse_url_path_finish;
-      }
-   }
-   
-   // parse file version
-   rc = md_parse_file_version( parts[file_name_and_version_part], &file_version );
-   if( rc != 0 ) {
-      // invalid 
-      dbprintf("could not parse '%s'\n", parts[file_name_and_version_part] );
-      free( parts );
-      rc = -EINVAL;
-      goto _md_HTTP_parse_url_path_finish;
-   }
-
-   // clear file version
-   md_clear_version( parts[file_name_and_version_part] );
-
-   // assemble the path
-   for( int i = 2; i <= file_name_and_version_part; i++ ) {
-      file_path_len += strlen(parts[i]) + 2;
-   }
-
-   file_path = CALLOC_LIST( char, file_path_len + 1 );
-   for( int i = 2; i <= file_name_and_version_part; i++ ) {
-      strcat( file_path, "/" );
-      strcat( file_path, parts[i] );
-   }
-
-   *_volume_id = volume_id;
-   *_file_path = file_path;
-   *_file_version = file_version;
-   *_block_id = block_id;
-   *_block_version = block_version;
-   _manifest_timestamp->tv_sec = manifest_timestamp.tv_sec;
-   _manifest_timestamp->tv_nsec = manifest_timestamp.tv_nsec;
-   *_staging = staging;
-
-   free( parts );
-
-_md_HTTP_parse_url_path_finish:
-
-   free( url_path );
-
-   return rc;
-}
-
-
 // flatten a response buffer into a byte string
 char* response_buffer_to_string( response_buffer_t* rb ) {
    size_t total_len = 0;
@@ -2317,8 +2088,6 @@ size_t response_buffer_size( response_buffer_t* rb ) {
    }
    return ret;
 }
-
-
 
 
 static bool _already_inited = false;
@@ -2634,10 +2403,6 @@ int md_check_conf( struct md_syndicate_conf* conf ) {
       if( conf->data_root == NULL ) {
          rc = -EINVAL;
          fprintf(stderr, err_fmt, DATA_ROOT_KEY );
-      }
-      if( conf->staging_root == NULL ) {
-         rc = -EINVAL;
-         fprintf(stderr, err_fmt, STAGING_ROOT_KEY );
       }
    }
 

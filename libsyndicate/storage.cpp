@@ -60,15 +60,11 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
    }
    
    char* data_root = md_fullpath( cwd, "data/", NULL );
-   char* staging_root = md_fullpath( cwd, "staging/", NULL );
    char* logfile_path = md_fullpath( cwd, "access.log", NULL );
    char* replica_logfile_path = md_fullpath( cwd, "replica.log", NULL );
    
    if( c->data_root == NULL )
       c->data_root = strdup( data_root );
-
-   if( c->staging_root == NULL )
-      c->staging_root = strdup( staging_root );
 
    if( c->logfile_path == NULL )
       c->logfile_path = strdup( logfile_path );
@@ -77,13 +73,11 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
       c->replica_logfile = strdup( replica_logfile_path );
 
    free( data_root );
-   free( staging_root );
    free( logfile_path );
    free( replica_logfile_path );
 
    if( c->gateway_type == SYNDICATE_UG ) {
       dbprintf("data root:     %s\n", c->data_root );
-      dbprintf("staging root:  %s\n", c->staging_root );
       dbprintf("replica log:   %s\n", c->replica_logfile );
    }
 
@@ -93,7 +87,6 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
    if( rc == 0 ) {
       const char* dirs[] = {
          c->data_root,
-         c->staging_root,
          NULL
       };
 

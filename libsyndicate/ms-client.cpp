@@ -170,6 +170,7 @@ int ms_client_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char
 
 
 // start internal threads (only safe to do so after we have a private key)
+// client must be write-locked!
 int ms_client_start_threads( struct ms_client* client ) {
    
    dbprintf("%s\n", "Starting MS client threads" );
@@ -178,22 +179,18 @@ int ms_client_start_threads( struct ms_client* client ) {
       return -EALREADY;
    }
    
-   ms_client_wlock( client );
-   
    client->running = true;
    
    client->uploader_thread = md_start_thread( ms_client_uploader_thread, client, false );
    if( client->uploader_thread < 0 ) {
-      ms_client_unlock( client );
       return -errno;
    }
 
    client->view_thread = md_start_thread( ms_client_view_thread, client, false );
    if( client->view_thread < 0 ) {
-      ms_client_unlock( client );
       return -errno;  
    }
-
+   
    return 0;
 }
 
@@ -369,6 +366,9 @@ int ms_client_destroy( struct ms_client* client ) {
    if( client->my_key )
       EVP_PKEY_free( client->my_key );
  
+   if( client->my_key_pem )
+      free( client->my_key_pem );
+   
    client->inited = false;
    
    ms_client_unlock( client );
@@ -1840,7 +1840,9 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
             free( encrypted_gateway_private_key );
       }
    }
-   
+
+   dbprintf("Registered with %s\n", client->url );
+            
    ms_client_unlock( client );
 
    ms_client_gateway_cert_free( &cert );
@@ -2046,38 +2048,38 @@ int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char 
 
 
 // read-lock a client context 
-int ms_client_rlock( struct ms_client* client ) {
-   //dbprintf("ms_client_rlock %p\n", client);
+int ms_client_rlock2( struct ms_client* client, char const* from_str, int lineno ) {
+   //dbprintf("ms_client_rlock %p (from %s:%d)\n", client, from_str, lineno);
    return pthread_rwlock_rdlock( &client->lock );
 }
 
 // write-lock a client context 
-int ms_client_wlock( struct ms_client* client ) {
-   //dbprintf("ms_client_wlock %p\n", client);
+int ms_client_wlock2( struct ms_client* client, char const* from_str, int lineno ) {
+   //dbprintf("ms_client_wlock %p (from %s:%d)\n", client, from_str, lineno);
    return pthread_rwlock_wrlock( &client->lock );
 }
 
 // unlock a client context 
-int ms_client_unlock( struct ms_client* client ) {
-   //dbprintf("ms_client_unlock %p\n", client);
+int ms_client_unlock2( struct ms_client* client, char const* from_str, int lineno ) {
+   //dbprintf("ms_client_unlock %p (from %s:%d)\n", client, from_str, lineno);
    return pthread_rwlock_unlock( &client->lock );
 }
 
 // read-lock a client context's view
-int ms_client_view_rlock( struct ms_client* client ) {
-   //dbprintf("ms_client_view_rlock %p\n", client);
+int ms_client_view_rlock2( struct ms_client* client, char const* from_str, int lineno ) {
+   //dbprintf("ms_client_view_rlock %p (from %s:%d)\n", client, from_str, lineno);
    return pthread_rwlock_rdlock( &client->view_lock );
 }
 
 // write-lock a client context's view
-int ms_client_view_wlock( struct ms_client* client ) {
-   //dbprintf("ms_client_view_wlock %p\n", client);
+int ms_client_view_wlock2( struct ms_client* client, char const* from_str, int lineno  ) {
+   //dbprintf("ms_client_view_wlock %p (from %s:%d)\n", client, from_str, lineno);
    return pthread_rwlock_wrlock( &client->view_lock );
 }
 
 // unlock a client context's view
-int ms_client_view_unlock( struct ms_client* client ) {
-   //dbprintf("ms_client_view_unlock %p\n", client);
+int ms_client_view_unlock2( struct ms_client* client, char const* from_str, int lineno ) {
+   //dbprintf("ms_client_view_unlock %p (from %s:%d)\n", client, from_str, lineno);
    return pthread_rwlock_unlock( &client->view_lock );
 }
 

@@ -261,13 +261,24 @@ int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char 
 
 int ms_client_my_key_pem( struct ms_client* client, char** buf, size_t* len );
 
-int ms_client_rlock( struct ms_client* client );
-int ms_client_wlock( struct ms_client* client );
-int ms_client_unlock( struct ms_client* client );
 
-int ms_client_view_rlock( struct ms_client* client );
-int ms_client_view_wlock( struct ms_client* client );
-int ms_client_view_unlock( struct ms_client* client );
+// lock a client context structure
+int ms_client_rlock2( struct ms_client* client, char const* from_str, int lineno );
+int ms_client_wlock2( struct ms_client* client, char const* from_str, int lineno );
+int ms_client_unlock2( struct ms_client* client, char const* from_str, int lineno );
+
+// lock a client context's view of the Volume
+int ms_client_view_rlock2( struct ms_client* client, char const* from_str, int lineno );
+int ms_client_view_wlock2( struct ms_client* client, char const* from_str, int lineno  );
+int ms_client_view_unlock2( struct ms_client* client, char const* from_str, int lineno );
+
+#define ms_client_rlock( fent ) ms_client_rlock2( fent, __FILE__, __LINE__ )
+#define ms_client_wlock( fent ) ms_client_wlock2( fent, __FILE__, __LINE__ )
+#define ms_client_unlock( fent ) ms_client_unlock2( fent, __FILE__, __LINE__ )
+
+#define ms_client_view_rlock( fent ) ms_client_view_rlock2( fent, __FILE__, __LINE__ )
+#define ms_client_view_wlock( fent ) ms_client_view_wlock2( fent, __FILE__, __LINE__ )
+#define ms_client_view_unlock( fent ) ms_client_view_unlock2( fent, __FILE__, __LINE__ )
 
 int ms_client_queue_update( struct ms_client* client, struct md_entry* update, uint64_t deadline_ms, uint64_t deadline_delta_ms );
 int ms_client_clear_update( struct ms_client* client, uint64_t volume_id, uint64_t file_id );

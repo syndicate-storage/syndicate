@@ -125,6 +125,7 @@ struct thread_args {
    struct sigaction act;
 };
 
+
 extern "C" {
 
 void block_all_signals();

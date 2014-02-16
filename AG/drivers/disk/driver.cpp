@@ -294,6 +294,8 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 	char* dataset ) {
     if (!initialized)
 	init();
+    
+    dbprintf("publish %s\n", dataset );
     int flags = FTW_PHYS;
     mc = client;
     datapath = dataset;

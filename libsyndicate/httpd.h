@@ -257,7 +257,7 @@ void md_free_HTTP_header( struct md_HTTP_header* header );
 void md_free_download_buf( struct md_download_buf* buf );
 char const* md_find_HTTP_header( struct md_HTTP_header** headers, char const* header );
 int md_HTTP_add_header( struct md_HTTP_response* resp, char const* header, char const* value );
-int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_timestamp, bool* _staging );
+int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_timestamp );
 void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data );
 
 #endif

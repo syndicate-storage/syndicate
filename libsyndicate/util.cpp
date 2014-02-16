@@ -526,4 +526,3 @@ double now_ns(void) {
    
    return timespec_to_double( &ts );
 }
-

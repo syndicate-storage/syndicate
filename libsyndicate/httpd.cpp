@@ -642,3 +642,213 @@ int md_HTTP_unlock( struct md_HTTP* http ) {
    return pthread_rwlock_unlock( &http->lock );
 }
 
+static int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out ) {
+   uint64_t ret = 0;
+   int rc = sscanf( id_str, fmt, &ret );
+   if( rc == 0 )
+      return -EINVAL;
+   else
+      *out = ret;
+   
+   return 0;
+}
+
+static int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* manifest_timestamp ) {
+   long tv_sec = -1;
+   long tv_nsec = -1;
+   
+   int num_read = sscanf( _manifest_str, "manifest.%ld.%ld", &tv_sec, &tv_nsec );
+   if( num_read != 2 )
+      return -EINVAL;
+
+   if( tv_sec < 0 || tv_nsec < 0 )
+      return -EINVAL;
+   
+   manifest_timestamp->tv_sec = tv_sec;
+   manifest_timestamp->tv_nsec = tv_nsec;
+
+   return 0;
+}
+
+
+static int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t* _block_id, int64_t* _block_version ) {
+   uint64_t block_id = INVALID_BLOCK_ID;
+   int64_t block_version = -1;
+
+   int num_read = sscanf( _block_id_version_str, "%" PRIu64 ".%" PRId64, &block_id, &block_version );
+   if( num_read != 2 )
+      return -EINVAL;
+
+   if( block_version < 0 )
+      return -EINVAL;
+
+   *_block_id = block_id;
+   *_block_version = block_version;
+
+   return 0;
+}
+
+static int md_parse_file_version( char* _name_and_version_str, int64_t* _file_version ) {
+   char* version_ptr = rindex( _name_and_version_str, '.' );
+   if( version_ptr == NULL )
+      return -EINVAL;
+
+   int64_t file_version = -1;
+   int num_read = sscanf( version_ptr, ".%" PRId64, &file_version );
+   if( num_read != 1 )
+      return -EINVAL;
+
+   *_file_version = file_version;
+
+   return 0;
+}
+
+
+
+// parse a URL in the format of:
+// /$PREFIX/$volume_id/$file_path.$file_version/($block_id.$block_version || manifest.$mtime_sec.$mtime_nsec)
+int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_timestamp ) {
+   char* url_path = strdup( _url_path );
+
+   // temporary values
+   uint64_t volume_id = INVALID_VOLUME_ID;
+   char* file_path = NULL;
+   int64_t file_version = -1;
+   uint64_t block_id = INVALID_BLOCK_ID;
+   int64_t block_version = -1;
+   struct timespec manifest_timestamp;
+   manifest_timestamp.tv_sec = -1;
+   manifest_timestamp.tv_nsec = -1;
+   int rc = 0;
+
+
+   int num_parts = 0;
+   char* prefix = NULL;
+   char* volume_id_str = NULL;
+
+   bool is_manifest = false;
+   int file_name_and_version_part = 0;
+   size_t file_path_len = 0;
+
+   char** parts = NULL;
+   char* tmp = NULL;
+   char* cursor = NULL;
+
+   
+   // break url_path into tokens, by /
+   int num_seps = 0;
+   for( unsigned int i = 0; i < strlen(url_path); i++ ) {
+      if( url_path[i] == '/' ) {
+         num_seps++;
+         while( url_path[i] == '/' && i < strlen(url_path) ) {
+            i++;
+         }
+      }
+   }
+
+   // minimum number of parts: data prefix, volume_id, name.version, (block.version || manifest.tv_sec.tv_nsec)
+   if( num_seps < 4 ) {
+      rc = -EINVAL;
+      dbprintf("num_seps = %d\n", num_seps );
+      goto _md_HTTP_parse_url_path_finish;
+   }
+
+   num_parts = num_seps;
+   parts = CALLOC_LIST( char*, num_seps + 1 );
+   tmp = NULL;
+   cursor = url_path;
+   
+   for( int i = 0; i < num_seps; i++ ) {
+      char* tok = strtok_r( cursor, "/", &tmp );
+      cursor = NULL;
+
+      if( tok == NULL ) {
+         break;
+      }
+
+      parts[i] = tok;
+   }
+   
+   prefix = parts[0];
+   volume_id_str = parts[1];
+   file_name_and_version_part = num_parts-2;
+
+   if( strcmp(prefix, SYNDICATE_DATA_PREFIX) != 0 ) {
+      // invalid prefix
+      free( parts );
+      rc = -EINVAL;
+      dbprintf("prefix = '%s'\n", prefix);
+      goto _md_HTTP_parse_url_path_finish;
+   }
+
+   // volume ID?
+   rc = md_parse_uint64( volume_id_str, "%" PRIu64, &volume_id );
+   if( rc < 0 ) {
+      free( parts );
+      rc = -EINVAL;
+      dbprintf("could not parse '%s'\n", volume_id_str);
+      goto _md_HTTP_parse_url_path_finish;
+   }
+   
+   // is this a manifest request?
+   if( strncmp( parts[num_parts-1], "manifest", strlen("manifest") ) == 0 ) {
+      rc = md_parse_manifest_timestamp( parts[num_parts-1], &manifest_timestamp );
+      if( rc == 0 ) {
+         // success!
+         is_manifest = true;
+      }
+   }
+
+   if( !is_manifest ) {
+      // not a manifest request, so we must have a block ID and block version 
+      rc = md_parse_block_id_and_version( parts[num_parts-1], &block_id, &block_version );
+      if( rc != 0 ) {
+         // invalid request--neither a manifest nor a block ID
+         dbprintf("could not parse '%s'\n", parts[num_parts-1]);
+         free( parts );
+         rc = -EINVAL;
+         goto _md_HTTP_parse_url_path_finish;
+      }
+   }
+   
+   // parse file version
+   rc = md_parse_file_version( parts[file_name_and_version_part], &file_version );
+   if( rc != 0 ) {
+      // invalid 
+      dbprintf("could not parse '%s'\n", parts[file_name_and_version_part] );
+      free( parts );
+      rc = -EINVAL;
+      goto _md_HTTP_parse_url_path_finish;
+   }
+
+   // clear file version
+   md_clear_version( parts[file_name_and_version_part] );
+
+   // assemble the path
+   for( int i = 2; i <= file_name_and_version_part; i++ ) {
+      file_path_len += strlen(parts[i]) + 2;
+   }
+
+   file_path = CALLOC_LIST( char, file_path_len + 1 );
+   for( int i = 2; i <= file_name_and_version_part; i++ ) {
+      strcat( file_path, "/" );
+      strcat( file_path, parts[i] );
+   }
+
+   *_volume_id = volume_id;
+   *_file_path = file_path;
+   *_file_version = file_version;
+   *_block_id = block_id;
+   *_block_version = block_version;
+   _manifest_timestamp->tv_sec = manifest_timestamp.tv_sec;
+   _manifest_timestamp->tv_nsec = manifest_timestamp.tv_nsec;
+
+   free( parts );
+
+_md_HTTP_parse_url_path_finish:
+
+   free( url_path );
+
+   return rc;
+}
+

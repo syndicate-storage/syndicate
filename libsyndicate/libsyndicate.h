@@ -152,7 +152,6 @@ struct md_gateway_request_data {
    uint64_t block_id;
    int64_t block_version;
    struct timespec manifest_timestamp;
-   bool staging;
 };
 
 // merge command-line options with the config....
@@ -226,7 +225,6 @@ struct md_syndicate_conf {
 
    // set at runtime
    char* data_root;                                   // root of the path where we store local file blocks
-   char* staging_root;                                // root of the path where we store locally-written rmeote file blocks 
    mode_t usermask;                                   // umask of the user running this program
    char* hostname;                                    // what's our hostname?
    
@@ -259,7 +257,6 @@ struct md_syndicate_conf {
 #define METADATA_PASSWORD_KEY       "METADATA_PASSWORD"
 #define METADATA_UID_KEY            "METADATA_UID"
 #define DATA_ROOT_KEY               "DATA_ROOT"
-#define STAGING_ROOT_KEY            "STAGING_ROOT"
 
 #define METADATA_CONNECT_TIMEOUT_KEY   "METADATA_CONNECT_TIMEOUT"
 
@@ -302,7 +299,6 @@ struct md_syndicate_conf {
 #define SYNDICATEFS_LOCAL_PROTO     "file://"
 
 #define SYNDICATE_DATA_PREFIX "SYNDICATE-DATA"
-#define SYNDICATE_STAGING_PREFIX "SYNDICATE-STAGING"
 
 // maximum length of a single line of metadata
 #define MD_MAX_LINE_LEN       65536
@@ -321,6 +317,9 @@ struct md_syndicate_conf {
 
 // is this a directory path?
 #define IS_DIR_PATH( path ) ((strlen(path) == 1 && (path)[0] == '/') || (path)[strlen(path)-1] == '/')
+
+// in-line function
+#define LAMBDA( return_type, function_body ) struct { return_type operator() function_body }
 
 // map a string to an md_entry
 typedef struct map<string, struct md_entry*> md_entmap;

@@ -117,19 +117,12 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
    struct md_gateway_request_data reqdat;
    memset( &reqdat, 0, sizeof(reqdat) );
    
-   int rc = md_HTTP_parse_url_path( md_con_data->url_path, &reqdat.volume_id, &reqdat.fs_path, &reqdat.file_version, &reqdat.block_id, &reqdat.block_version, &reqdat.manifest_timestamp, &reqdat.staging );
+   int rc = md_HTTP_parse_url_path( md_con_data->url_path, &reqdat.volume_id, &reqdat.fs_path, &reqdat.file_version, &reqdat.block_id, &reqdat.block_version, &reqdat.manifest_timestamp );
    if( rc != 0 ) {
       errorf( "failed to parse '%s', rc = %d\n", md_con_data->url_path, rc );
       
       return NULL;
    }
-   
-   if( reqdat.staging ) {
-      errorf("Invalid request: '%s' cannot be staging\n", md_con_data->url_path );
-      md_gateway_request_data_free( &reqdat );
-      return NULL;
-   }
-   
    
    struct gateway_connection_data* con_data = CALLOC_LIST( struct gateway_connection_data, 1 );
    
@@ -376,9 +369,8 @@ static int gateway_default_blockinfo( char const* url_path, struct gateway_conne
    struct timespec manifest_timestamp;
    manifest_timestamp.tv_sec = 0;
    manifest_timestamp.tv_nsec = 0;
-   bool staging = false;
    
-   int rc = md_HTTP_parse_url_path( url_path, &volume_id, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp, &staging );
+   int rc = md_HTTP_parse_url_path( url_path, &volume_id, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp );
    if( rc != 0 ) {
       errorf( "failed to parse '%s', rc = %d\n", url_path, rc );
       free( file_path );
@@ -624,7 +616,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    GOOGLE_PROTOBUF_VERIFY_VERSION;
 
    int rc = 0;
-   char* config_file = strdup( GATEWAY_DEFAULT_CONFIG );
+   char* config_file = NULL;
 
    //Initialize global config struct
    global_conf = ( struct md_syndicate_conf* )
@@ -815,16 +807,16 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    if( config_file != NULL ) {
       rc = md_read_conf( config_file, &conf );
       if( rc != 0 ) {
-         dbprintf("ERR: failed to read %s, rc = %d\n", config_file, rc );
+         errorf("WARN: failed to read %s, rc = %d\n", config_file, rc );
          return rc;
       }
    }
    
- 
    rc = md_init( &conf, &client, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, gateway_pkey_decryption_password, tls_pkey_path, tls_cert_path, NULL );
    if( rc != 0 ) {
       exit(1);
    }
+   
    // override ag_driver provided in conf file if driver is 
    // specified as a command line argument.
    if ( gw_driver ) {
@@ -840,10 +832,18 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    memcpy( global_ms, &client, sizeof( struct ms_client ) );
    
    // load AG driver
-   if ( conf.ag_driver && gateway_type == SYNDICATE_AG) {
-      if ( load_AG_driver( conf.ag_driver ) < 0)
-	 exit(1);
+   if( gateway_type == SYNDICATE_AG ) {
+      if ( conf.ag_driver ) {
+         dbprintf("Load driver %s\n", conf.ag_driver );
+         if ( load_AG_driver( conf.ag_driver ) < 0)
+            exit(1);
+      }
+      else {
+         errorf("%s", "No driver given!  Pass -D\n");
+         exit(1);
+      }
    }
+         
    if (pub_mode) {
        if ( publish_callback ) {
 	   if ( ( rc = publish_callback( NULL, &client, dataset ) ) !=0 )
