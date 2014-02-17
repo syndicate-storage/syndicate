@@ -37,7 +37,6 @@ Ubuntu/Debian:
    libprotobuf-dev
    protobuf-compiler
    python-protobuf 
-   libboost-dev
    libxerces-c-dev
    libmicrohttpd-dev (>= 0.9)
    python-daemon
@@ -49,6 +48,8 @@ Ubuntu/Debian:
 You will need a version of Apache Thrift (0.8.x) installed to build the AG.  This dependency is transient and will be removed soon.
 
 You will also need a recent version of libmicrohttpd.  At least version 0.9.27 should work.
+
+On ubuntu, you will need to manually install libcurl. Old version of it will cause SSL handshake problem.
 
 Fedora 12 and Ubuntu 12.04 users may need to build a recent version of libmicrohttpd and Cython themselves, or find an RPM that works.
 
