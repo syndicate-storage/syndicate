@@ -181,6 +181,8 @@ struct md_syndicate_conf {
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
    char* volume_name;                                 // name of the volume we're connected to
    char* volume_pubkey_path;                          // path on disk to find Volume metadata public key
+   size_t cache_soft_limit;                           // soft limit on the size of the cache (in bytes)
+   size_t cache_hard_limit;                           // hard limit on the size of the cache (in bytes)
    
    // RG/AG servers
    unsigned int num_http_threads;                     // how many HTTP threads to create
@@ -317,9 +319,6 @@ struct md_syndicate_conf {
 
 // is this a directory path?
 #define IS_DIR_PATH( path ) ((strlen(path) == 1 && (path)[0] == '/') || (path)[strlen(path)-1] == '/')
-
-// in-line function
-#define LAMBDA( return_type, function_body ) struct { return_type operator() function_body }
 
 // map a string to an md_entry
 typedef struct map<string, struct md_entry*> md_entmap;

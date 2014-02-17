@@ -16,14 +16,14 @@
 
 
 #include "trunc.h"
-#include "storage.h"
 #include "manifest.h"
 #include "url.h"
 #include "network.h"
 #include "stat.h"
 #include "read.h"
+#include "write.h"
 #include "replication.h"
-#include "collator.h"
+#include "cache.h"
 
 // make a truncate message
 // fent must be at least read-locked
@@ -99,9 +99,9 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
          // truncate the last block
          char* block = CALLOC_LIST( char, core->blocking_factor );
 
-         ssize_t nr = fs_entry_do_read_block( core, fs_path, fent, trunc_block_id, block, core->blocking_factor );
+         ssize_t nr = fs_entry_read_block( core, fs_path, fent, trunc_block_id, block, core->blocking_factor );
          if( nr < 0 ) {
-            errorf( "fs_entry_do_read_block(%s[%" PRIu64 "]) rc = %zd\n", fs_path, trunc_block_id, nr );
+            errorf( "fs_entry_read_block(%s[%" PRIu64 "]) rc = %zd\n", fs_path, trunc_block_id, nr );
             err = nr;
          }
          else {
@@ -112,7 +112,7 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
             
             unsigned char* hash = BLOCK_HASH_DATA( block, core->blocking_factor );
             
-            int rc = fs_entry_put_block_data( core, fent, trunc_block_id, block, core->blocking_factor, hash, !local );
+            int rc = fs_entry_write_block( core, fent, trunc_block_id, block, core->blocking_factor, hash );
             if( rc != 0 ) {
                errorf("fs_entry_put_block(%s[%" PRId64 "]) rc = %d\n", fs_path, trunc_block_id, rc );
                err = rc;
@@ -156,9 +156,9 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
                garbage_blocks[ i ] = erase_binfo;
             }
             
-            int rc = fs_entry_remove_block( core, fent, i, fent->manifest->is_block_staging( i ) );
+            int rc = fs_entry_cache_evict_block( core, core->cache, fent->file_id, fent->version, i, fent->manifest->get_block_version(i) );
             if( rc != 0 && rc != -ENOENT ) {
-               errorf("fs_entry_remove_block(%s.%" PRId64 "[%" PRIu64 "]) rc = %d\n", fs_path, fent->version, i, rc );
+               errorf("fs_entry_cache_evict_block(%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s)) rc = %d\n", fent->file_id, fent->version, i, fent->manifest->get_block_version(i), fs_path, rc );
             }
          }
 

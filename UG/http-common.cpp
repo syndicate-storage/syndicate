@@ -329,7 +329,7 @@ int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp,
    // parse the url_path into its constituent components
    memset( &reqdat->manifest_timestamp, 0, sizeof(reqdat->manifest_timestamp) );
 
-   int rc = md_HTTP_parse_url_path( url_path, &reqdat->volume_id, &reqdat->fs_path, &reqdat->file_version, &reqdat->block_id, &reqdat->block_version, &reqdat->manifest_timestamp, &reqdat->staging );
+   int rc = md_HTTP_parse_url_path( url_path, &reqdat->volume_id, &reqdat->fs_path, &reqdat->file_version, &reqdat->block_id, &reqdat->block_version, &reqdat->manifest_timestamp );
    if( rc != 0 && rc != -EISDIR ) {
       char buf[200];
       snprintf(buf, 200, "http_GET_parse_request: md_HTTP_parse_url_path rc = %d\n", rc );
@@ -343,12 +343,12 @@ int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp,
    }
 
    if( reqdat->block_id != INVALID_BLOCK_ID )
-      dbprintf("volume_id = %" PRIu64 ", fs_path = '%s', file_version = %" PRId64 ", block_id = %" PRIu64 ", block_version = %" PRId64 ", manifest_timestamp = %ld.%ld, staging = %d\n",
-               reqdat->volume_id, reqdat->fs_path, reqdat->file_version, reqdat->block_id, reqdat->block_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, reqdat->staging );
+      dbprintf("volume_id = %" PRIu64 ", fs_path = '%s', file_version = %" PRId64 ", block_id = %" PRIu64 ", block_version = %" PRId64 ", manifest_timestamp = %ld.%ld",
+               reqdat->volume_id, reqdat->fs_path, reqdat->file_version, reqdat->block_id, reqdat->block_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec );
    
    else
-      dbprintf("volume_id = %" PRIu64 ", fs_path = '%s', file_version = %" PRId64 ", block_id = (none), block_version = %" PRId64 ", manifest_timestamp = %ld.%ld, staging = %d\n",
-               reqdat->volume_id, reqdat->fs_path, reqdat->file_version, reqdat->block_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec, reqdat->staging );
+      dbprintf("volume_id = %" PRIu64 ", fs_path = '%s', file_version = %" PRId64 ", block_id = (none), block_version = %" PRId64 ", manifest_timestamp = %ld.%ld",
+               reqdat->volume_id, reqdat->fs_path, reqdat->file_version, reqdat->block_version, reqdat->manifest_timestamp.tv_sec, reqdat->manifest_timestamp.tv_nsec );
 
    if( reqdat->fs_path == NULL) {
       // nothing to do

@@ -14,10 +14,9 @@
    limitations under the License.
 */
 
-#include "collator.h"
+#include "cache.h"
 #include "read.h"
 #include "manifest.h"
-#include "storage.h"
 #include "network.h"
 #include "url.h"
 #include "fs_entry.h"
@@ -40,57 +39,10 @@ int fs_entry_verify_block( struct fs_core* core, struct fs_entry* fent, uint64_t
    }
 }
 
-// read a block known to be local
-ssize_t fs_entry_read_local_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len ) {
-
-   if( block_id * block_len >= (unsigned)fent->size ) {
-      return 0;      // EOF
-   }
-
-   // get the URL (must be local)
-   char* block_url = fent->manifest->get_block_url( core, NULL, fent, block_id );
-
-   if( block_url == NULL ) {
-      // something's wrong
-      errorf( "no URL for data at %" PRId64 "\n", block_id );
-      return -ENODATA;
-   }
-
-   // this is a locally-hosted block--get its bits
-   int fd = open( GET_PATH( block_url ), O_RDONLY );
-   if( fd < 0 ) {
-      fd = -errno;
-      errorf( "could not open %s, errno = %d\n", GET_PATH( block_url ), fd );
-      free( block_url );
-      return fd;
-   }
-
-   ssize_t nr = fs_entry_get_block_local( core, fd, block_bits, block_len );
-   if( nr < 0 ) {
-      errorf("fs_entry_get_block_local(%d) rc = %zd\n", fd, nr );
-      free( block_url );
-      close( fd );
-      return nr;
-   }
-   
-   close( fd );
-   free( block_url );
-   
-   // verify
-   int rc = fs_entry_verify_block( core, fent, block_id, block_bits, block_len );
-   if( rc != 0 )
-      nr = rc;
-
-   else
-      dbprintf("read %zd bytes locally\n", nr );
-   
-   return nr;
-}
-
 
 // read a block known to be remote
 // fent must be read-locked
-ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len ) {
+ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, uint64_t block_version, char* block_bits, size_t block_len ) {
 
    if( block_id * block_len >= (unsigned)fent->size ) {
       return 0;      // EOF
@@ -101,7 +53,6 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
    }
 
    // this is a remotely-hosted block--get its bits
-   uint64_t block_version = fent->manifest->get_block_version( block_id );
    char* block_url = NULL;
    
    int gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
@@ -190,35 +141,54 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
 
 // Given an offset, get the corresponding block's data
 // fent must be at least read-locked first
-ssize_t fs_entry_do_read_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len ) {
+ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len ) {
 
    if( block_id * block_len >= (unsigned)fent->size ) {
       return 0;      // EOF
    }
    
-   int loc = fent->manifest->is_block_local( core, block_id );
-   if( loc > 0 ) {
-      dbprintf("%s.%" PRId64 "/%" PRIu64 " might be local\n", fs_path, fent->version, block_id );
-      int rc = fs_entry_read_local_block( core, fent, block_id, block_bits, block_len );
-      if( rc == -ENOENT && core->conf->is_client ) {
-         // fetch from RG
-         rc = 0;
+   bool local = false;
+   ssize_t rc = 0;
+   
+   uint64_t block_version = fent->manifest->get_block_version( block_id );
+   
+   // local?
+   int block_fd = fs_entry_cache_open_block( core, core->cache, fent->file_id, fent->version, block_id, block_version, O_RDONLY );
+   if( block_fd < 0 ) {
+      if( block_fd != -ENOENT ) {
+         errorf("WARN: fs_entry_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, block_fd );
+      }
+   }
+   else {
+      ssize_t read_len = fs_entry_cache_read_block( core, core->cache, fent->file_id, fent->version, block_id, block_version, block_fd, block_bits, block_len );
+      if( read_len < 0 ) {
+         errorf("fs_entry_cache_read_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, (int)read_len );
       }
       else {
-         return rc;
+         // done!
+         local = true;
+         rc = read_len;
       }
-   }
-
-   if( loc == 0 || core->conf->is_client ) {
-      dbprintf("%s.%" PRId64 "/%" PRIu64 " is remote\n", fs_path, fent->version, block_id );
-      return fs_entry_read_remote_block( core, fs_path, fent, block_id, block_bits, block_len );
+      
+      close( block_fd );
    }
    
-   else {
-      // likely due to a truncate, or this file belongs to an AG
-      errorf("Block %s.%" PRId64 "/%" PRIu64 " does not exist\n", fs_path, fent->version, block_id);
-      return -ENOENT;
+   if( !local ) {
+      // get it remotely
+      ssize_t read_len = fs_entry_read_remote_block( core, fs_path, fent, block_id, block_version, block_bits, block_len );
+      if( read_len < 0 ) {
+         errorf("fs_entry_read_remote_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s)) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, (int)read_len );
+      }
+      else {
+         // done!
+         rc = read_len;
+         
+         // cache this
+         fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, block_version, block_bits, block_len );
+      }
    }
+   
+   return rc;
 }
 
 // read a block, given a path and block ID
@@ -229,7 +199,7 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, uint64_t
       return err;
    }
 
-   ssize_t ret = fs_entry_do_read_block( core, fs_path, fent, block_id, block_bits, block_len );
+   ssize_t ret = fs_entry_read_block( core, fs_path, fent, block_id, block_bits, block_len );
 
    fs_entry_unlock( fent );
 
@@ -288,8 +258,6 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
 
    char* block = CALLOC_LIST( char, block_len );
 
-   vector<uint64_t> collated_blocks;
-
    bool done = false;
    while( (size_t)total_read < count && ret >= 0 && !done ) {
       // read the next block
@@ -305,7 +273,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
 
       // TODO: unlock fent somehow while we're reading/downloading
       uint64_t block_id = fs_entry_block_id( block_len, offset + total_read );
-      ssize_t tmp = fs_entry_do_read_block( core, fh->path, fh->fent, block_id, block, block_len );
+      ssize_t tmp = fs_entry_read_block( core, fh->path, fh->fent, block_id, block, block_len );
       
       if( tmp > 0 ) {
          size_t read_if_not_eof = (unsigned)MIN( (size_t)(tmp - block_offset), count - total_read );
@@ -324,21 +292,6 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
             
             memcpy( buf + total_read, block + block_offset, total_copy );
 
-            if( !IS_STREAM_FILE( *(fh->fent) ) ) {
-               // did we re-integrate this block?
-               // if so, store it
-               int64_t block_id = fs_entry_block_id( block_len, offset + total_read );
-               if( FS_ENTRY_LOCAL( core, fh->fent ) && !fh->fent->manifest->is_block_local( core, block_id ) ) {
-                  int rc = fs_entry_collate( core, fh->fent, block_id, fh->fent->manifest->get_block_version( block_id ), block, block_len, fh->parent_id, fh->parent_name );
-                  if( rc != 0 ) {
-                     errorf("WARN: fs_entry_collate_block(%s, %" PRId64 ") rc = %d\n", fh->path, block_id, rc );
-                  }
-                  else {
-                     collated_blocks.push_back( block_id );
-                  }
-               }
-            }
-            
             total_read += total_copy;
          }
       }
@@ -370,18 +323,6 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
 
    if( ret >= 0 ) {
       ret = total_read;
-
-      // release
-      if( collated_blocks.size() > 0 ) {
-         uint64_t start_id = collated_blocks[0];
-         for( unsigned int i = 0; i < collated_blocks.size(); i++ ) {
-            if( start_id + i < collated_blocks[i] ) {
-               // new range...
-               fs_entry_release_remote_blocks( core, fh->path, fh->fent, start_id, start_id + i + 1 );
-               start_id = collated_blocks[i];
-            }
-         }
-      }
    }
    
    fs_file_handle_unlock( fh );

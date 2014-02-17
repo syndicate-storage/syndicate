@@ -30,23 +30,22 @@ block_url_set::block_url_set() {
    this->block_versions = NULL;
    this->file_version = -1;
    this->block_hashes = NULL;
-   this->staging = false;
 }
 
 // value constructor
-block_url_set::block_url_set( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, unsigned char* hashes, bool staging ) {
-   this->init( volume_id, gateway_id, file_id, file_version, start, end, bv, hashes, staging );
+block_url_set::block_url_set( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, unsigned char* hashes ) {
+   this->init( volume_id, gateway_id, file_id, file_version, start, end, bv, hashes );
 }
 
 
 // copy constructor
 block_url_set::block_url_set( block_url_set& bus ) {
-   this->init( bus.volume_id, bus.gateway_id, bus.file_id, bus.file_version, bus.start_id, bus.end_id, bus.block_versions, bus.block_hashes, bus.staging );
+   this->init( bus.volume_id, bus.gateway_id, bus.file_id, bus.file_version, bus.start_id, bus.end_id, bus.block_versions, bus.block_hashes );
 }
 
 
 // initialization
-void block_url_set::init( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, unsigned char* hashes, bool staging ) {
+void block_url_set::init( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, unsigned char* hashes ) {
    this->file_id = file_id;
    this->gateway_id = gateway_id;
    this->volume_id = volume_id;
@@ -58,10 +57,6 @@ void block_url_set::init( uint64_t volume_id, uint64_t gateway_id, uint64_t file
    
    this->block_hashes = CALLOC_LIST( unsigned char, (end - start) * BLOCK_HASH_LEN() );
    memcpy( this->block_hashes, hashes, (end - start) * BLOCK_HASH_LEN() );
-   
-   this->staging = staging;
-   
-   //dbprintf( "%" PRIu64 "/%" PRIu64 ": %" PRIu64 ".%" PRId64 "[%" PRIu64 "-%" PRIu64 "] (staging = %d)\n", volume_id, gateway_id, file_id, file_version, start, end, staging );
 }
 
 
@@ -126,21 +121,21 @@ unsigned char* block_url_set::hash_dup( uint64_t block_id ) {
 bool block_url_set::in_range( uint64_t block_id ) { return (block_id >= this->start_id && block_id < this->end_id); }
 
 // is a block appendable?
-bool block_url_set::is_appendable( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, bool staging ) {
-   return this->volume_id == vid && this->gateway_id == gid && this->file_id == fid && block_id == this->end_id && this->staging == staging;
+bool block_url_set::is_appendable( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id ) {
+   return this->volume_id == vid && this->gateway_id == gid && this->file_id == fid && block_id == this->end_id;
 }
 
 // is a block prependable?
-bool block_url_set::is_prependable( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id,  bool staging ) {
-   return this->volume_id == vid && this->gateway_id == gid && this->file_id == fid && block_id + 1 == this->start_id && this->staging == staging;
+bool block_url_set::is_prependable( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id ) {
+   return this->volume_id == vid && this->gateway_id == gid && this->file_id == fid && block_id + 1 == this->start_id;
 }
 
 // size of a block range
 uint64_t block_url_set::size() { return this->end_id - this->start_id; }
 
 // append a block to a set
-bool block_url_set::append( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash, bool staging ) {
-   if( this->is_appendable( vid, gid, fid, block_id, staging ) ) {
+bool block_url_set::append( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash ) {
+   if( this->is_appendable( vid, gid, fid, block_id ) ) {
       this->end_id++;
       
       int64_t* new_versions = (int64_t*)realloc( this->block_versions, (this->end_id - this->start_id) * sizeof(int64_t) );
@@ -161,8 +156,8 @@ bool block_url_set::append( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t b
 
 
 // prepend a block to a set
-bool block_url_set::prepend( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash, bool staging ) {
-   if( this->is_prependable( vid, gid, fid, block_id, staging ) ) {
+bool block_url_set::prepend( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash ) {
+   if( this->is_prependable( vid, gid, fid, block_id ) ) {
       // shift everyone down
       this->start_id--;
       
@@ -248,7 +243,7 @@ bool block_url_set::shrink_right() {
 
 // split to the left
 block_url_set* block_url_set::split_left( uint64_t block_id ) {
-   block_url_set* ret = new block_url_set( this->volume_id, this->gateway_id, this->file_id, this->file_version, this->start_id, block_id, this->block_versions, this->block_hashes, this->staging );
+   block_url_set* ret = new block_url_set( this->volume_id, this->gateway_id, this->file_id, this->file_version, this->start_id, block_id, this->block_versions, this->block_hashes );
    return ret;
 }
 
@@ -256,7 +251,7 @@ block_url_set* block_url_set::split_left( uint64_t block_id ) {
 // split to the right
 block_url_set* block_url_set::split_right( uint64_t block_id ) {
    int64_t off = (int64_t)(block_id) - this->start_id + 1;
-   block_url_set* ret = new block_url_set( this->volume_id, this->gateway_id, this->file_id, this->file_version, block_id+1, this->end_id, this->block_versions + off, hash_at( this->block_hashes, off ), this->staging );
+   block_url_set* ret = new block_url_set( this->volume_id, this->gateway_id, this->file_id, this->file_version, block_id+1, this->end_id, this->block_versions + off, hash_at( this->block_hashes, off ) );
    return ret;
 }
 
@@ -335,8 +330,8 @@ void file_manifest::set_file_version(struct fs_core* core, int64_t version) {
    pthread_rwlock_wrlock( &this->manifest_lock );
 
    for( block_map::iterator itr = this->block_urls.begin(); itr != this->block_urls.end(); itr++ ) {
-      // if local and not staging...
-      if( core->gateway == itr->second->gateway_id && !itr->second->staging )
+      // only for blocks we host 
+      if( core->gateway == itr->second->gateway_id )
          itr->second->file_version = version;
    }
 
@@ -371,7 +366,6 @@ char* file_manifest::get_block_url( struct fs_core* core, char const* fs_path, s
    }
    else {
       int64_t block_version = itr->second->lookup_version( block_id );
-      bool staging = itr->second->staging;
       bool local = (itr->second->gateway_id == core->gateway);
       
       pthread_rwlock_unlock( &this->manifest_lock );
@@ -382,11 +376,8 @@ char* file_manifest::get_block_url( struct fs_core* core, char const* fs_path, s
          return NULL;
       }
 
-      if( local && !staging ) {
+      if( local ) {
          return fs_entry_local_block_url( core, fent->file_id, fent->version, block_id, block_version );
-      }
-      else if( local && staging ) {
-         return fs_entry_local_staging_block_url( core, fent->file_id, fent->version, block_id, block_version );
       }
       else {
          // not hosted here
@@ -526,7 +517,6 @@ void file_manifest::set_block_hosts( uint64_t gateway_id, uint64_t start_id, uin
       }
       
       itr->second->gateway_id = gateway_id;
-      itr->second->staging = false;
       
       start_id = itr->second->end_id + 1;
    }
@@ -543,7 +533,7 @@ int file_manifest::is_block_local( struct fs_core* core, uint64_t block_id ) {
 
    block_map::iterator itr = this->find_block_set( block_id );
    if( itr != this->block_urls.end() ) {
-      ret = (core->gateway == itr->second->gateway_id || itr->second->staging ? 1 : 0);
+      ret = (core->gateway == itr->second->gateway_id ? 1 : 0);
    }
    else {
       ret = -ENOENT;
@@ -553,24 +543,6 @@ int file_manifest::is_block_local( struct fs_core* core, uint64_t block_id ) {
    return ret;
 }
 
-
-// is a block stored in the staging directory?
-int file_manifest::is_block_staging( uint64_t block_id ) {
-   bool ret = 0;
-
-   pthread_rwlock_rdlock( &this->manifest_lock );
-
-   block_map::iterator itr = this->find_block_set( block_id );
-   if( itr != this->block_urls.end() ) {
-      ret = (itr->second->staging ? 1 : 0);
-   }
-   else {
-      ret = -ENOENT;
-   }
-
-   pthread_rwlock_unlock( &this->manifest_lock );
-   return ret;
-}
 
 // find a block set for a block URL
 // NEED TO LOCK FIRST!
@@ -612,8 +584,7 @@ bool file_manifest::merge_adjacent( uint64_t block_id ) {
    if( left->gateway_id == right->gateway_id &&
        left->volume_id == right->volume_id &&
        left->file_id == right->file_id &&
-       left->file_version == right->file_version &&
-       left->staging == right->staging ) {
+       left->file_version == right->file_version) {
       
       // these block URL sets refer to blocks on the same host.  merge them
       int64_t *bvec = CALLOC_LIST( int64_t, right->end_id - left->start_id );
@@ -635,7 +606,7 @@ bool file_manifest::merge_adjacent( uint64_t block_id ) {
          i++;
       }
       
-      block_url_set* merged = new block_url_set( left->volume_id, left->gateway_id, left->file_id, left->file_version, left->start_id, right->end_id, bvec, hashes, left->staging );
+      block_url_set* merged = new block_url_set( left->volume_id, left->gateway_id, left->file_id, left->file_version, left->start_id, right->end_id, bvec, hashes );
 
       free( bvec );
       free( hashes );
@@ -677,7 +648,7 @@ int file_manifest::get_range( uint64_t block_id, uint64_t* start_id, uint64_t* e
 
 // insert a URL into a file manifest
 // fent must be at least read-locked
-int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash, bool staging ) {
+int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash ) {
    pthread_rwlock_wrlock( &this->manifest_lock );
 
    // sanity check
@@ -701,10 +672,10 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
          block_map::reverse_iterator last_range_itr = this->block_urls.rbegin();
          block_url_set* last_range = last_range_itr->second;
 
-         bool rc = last_range->append( core->volume, gateway, fent->file_id, block_id, block_version, block_hash, staging );
+         bool rc = last_range->append( core->volume, gateway, fent->file_id, block_id, block_version, block_hash );
          if( !rc ) {
             //printf("// could not append to the last block range, so we'll need to make a new one\n");
-            this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
+            this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash );
          }
          else {
             //printf("// successfully appended this block to the last range!\n");
@@ -712,7 +683,7 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
       }
       else {
          //printf("// we don't have any blocks yet.  put the first one\n");
-         this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
+         this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash );
       }
    }
 
@@ -727,8 +698,7 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
       if( existing->volume_id == core->volume &&
           existing->gateway_id == gateway &&
           existing->file_id == fent->file_id &&
-          existing->file_version == fent->version &&
-          existing->staging == staging ) {
+          existing->file_version == fent->version) {
          
          //printf("// this block URL belongs to this url set.\n");
          //printf("// insert the version\n");
@@ -750,19 +720,19 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
                itr--;
                block_url_set* prev_existing = itr->second;
 
-               bool rc = prev_existing->append( core->volume, gateway, fent->file_id, block_id, block_version, block_hash, staging );
+               bool rc = prev_existing->append( core->volume, gateway, fent->file_id, block_id, block_version, block_hash );
                if( !rc ) {
                   //printf("// could not append to the previous block URL set.\n");
                   //printf("// Make a new block URL set and insert it (replacing existing)\n");
                   
-                  block_url_set* bus = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
+                  block_url_set* bus = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash );
                   this->block_urls[ block_id ] = bus;
                }
             }
             else {
                //printf("// need to insert this block URL set at the beginning (replacing existing)\n");
                
-               block_url_set* bus = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
+               block_url_set* bus = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash );
                this->block_urls[ block_id ] = bus;
                
                need_clear = false;
@@ -795,13 +765,13 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
                block_url_set* next_existing = itr->second;
 
                if( itr != this->block_urls.end() ) {
-                  rc = next_existing->prepend( core->volume, gateway, fent->file_id, block_id, block_version, block_hash, staging );
+                  rc = next_existing->prepend( core->volume, gateway, fent->file_id, block_id, block_version, block_hash );
                }
 
                if( !rc ) {
                   //printf("// could not prepend to the next block URL set.\n");
                   //printf("// Make a new block URL set and insert it.\n");
-                  this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
+                  this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash );
                }
                else {
                   //printf("// adjust and shift next_existing into its new place.\n");
@@ -812,7 +782,7 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
             }
             else {
                //printf("// need to insert this block URL at the end\n");
-               this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
+               this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash );
             }
 
             //printf("// will need to shrink existing\n");
@@ -831,7 +801,7 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
             //printf("// split up this URL set\n");
             block_url_set* left = existing->split_left( block_id );
             block_url_set* right = existing->split_right( block_id );
-            block_url_set* given = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash, staging );
+            block_url_set* given = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash );
 
             delete existing;
 
@@ -1002,9 +972,7 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
 
       uint64_t gateway_id = busmsg.gateway_id();
 
-      bool staging = (core->gateway == gateway_id && !FS_ENTRY_LOCAL( core, fent ));
-
-      m->block_urls[ busmsg.start_id() ] = new block_url_set( core->volume, gateway_id, fent->file_id, mmsg->file_version(), busmsg.start_id(), busmsg.end_id(), block_versions, block_hashes, staging );
+      m->block_urls[ busmsg.start_id() ] = new block_url_set( core->volume, gateway_id, fent->file_id, mmsg->file_version(), busmsg.start_id(), busmsg.end_id(), block_versions, block_hashes );
 
       free( block_versions );
       free( block_hashes );
@@ -1019,11 +987,11 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
 
 // put a single block into a manifest
 // fent must be write-locked
-int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash, bool staging ) {
+int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash ) {
    
-   int rc = fent->manifest->put_block( core, gateway_id, fent, block_id, block_version, block_hash, staging );
+   int rc = fent->manifest->put_block( core, gateway_id, fent, block_id, block_version, block_hash );
    if( rc != 0 ) {
-      errorf("manifest::put_block(%" PRId64 ".%" PRIu64 ", staging=%d) rc = %d\n", block_id, block_version, staging, rc );
+      errorf("manifest::put_block(%" PRId64 ".%" PRIu64 ") rc = %d\n", block_id, block_version, rc );
       return rc;
    }
    

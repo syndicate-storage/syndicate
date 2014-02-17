@@ -16,13 +16,13 @@
 
 #include "unlink.h"
 #include "storage.h"
-#include "collator.h"
+#include "cache.h"
 #include "replication.h"
 
 // lowlevel unlink operation--given an fs_entry and the name of an entry
 // PARENT MUST BE LOCKED FIRST!
 // CHILD MUST NOT BE LOCKED!
-int fs_entry_detach_lowlevel( struct fs_core* core, struct fs_entry* parent, struct fs_entry* child, bool remove_data ) {
+int fs_entry_detach_lowlevel( struct fs_core* core, struct fs_entry* parent, struct fs_entry* child ) {
 
    if( parent == child ) {
       // tried to detach .
@@ -61,14 +61,13 @@ int fs_entry_detach_lowlevel( struct fs_core* core, struct fs_entry* parent, str
    int rc = 0;
 
    if( child->open_count == 0 ) {
-      if( remove_data ) {
-         // do the removal if the file is coordinated locally
-         if( child->ftype == FTYPE_FILE && FS_ENTRY_LOCAL( core, child ) ) {
-            rc = fs_entry_remove_local_file( core, child->file_id, child->version );
-            if( rc == -ENOENT ) {
-               // not a problem
-               rc = 0;
-            }
+      
+      // evict blocks
+      if( child->ftype == FTYPE_FILE ) {
+         rc = fs_entry_cache_evict_file( core, core->cache, child->file_id, child->version );
+         if( rc == -ENOENT ) {
+            // not a problem
+            rc = 0;
          }
       }
       
@@ -141,7 +140,7 @@ int fs_entry_detach( struct fs_core* core, char const* path, uint64_t user, uint
       return -ENOENT;
    }
 
-   int rc = fs_entry_detach_lowlevel( core, parent, child, true );
+   int rc = fs_entry_detach_lowlevel( core, parent, child );
 
    fs_entry_unlock( parent );
 
@@ -290,7 +289,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    fs_entry_unlock( fent );
 
    if( rc == 0 ) {
-      rc = fs_entry_detach_lowlevel( core, parent, fent, true );
+      rc = fs_entry_detach_lowlevel( core, parent, fent );
       if( rc != 0 ) {
          errorf( "fs_entry_detach_lowlevel rc = %d\n", rc );
       }

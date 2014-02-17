@@ -15,7 +15,6 @@
 */
 
 #include "rmdir.h"
-#include "storage.h"
 #include "unlink.h"
 
 // remove a directory, if it is empty
@@ -90,7 +89,7 @@ int fs_entry_rmdir( struct fs_core* core, char const* path, uint64_t user, uint6
       fs_entry_unlock( dent );
 
       // detach from the filesystem 
-      rc = fs_entry_detach_lowlevel( core, parent, dent, true );
+      rc = fs_entry_detach_lowlevel( core, parent, dent );
       if( rc != 0 ) {
          errorf("fs_entry_detach_lowlevel(%s) rc = %d\n", path, rc );
       }

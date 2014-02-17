@@ -25,6 +25,8 @@
 #include "network.h"
 
 #include <map>
+
+/*
 using namespace std;
 
 struct release_entry {
@@ -75,5 +77,6 @@ private:
 
 // asynchronously release remote blocks
 int fs_entry_release_remote_blocks( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t start_block_id, uint64_t end_block_id );
+*/
 
 #endif

@@ -16,7 +16,6 @@
 
 #include "rename.h"
 #include "url.h"
-#include "storage.h"
 #include "network.h"
 #include "replication.h"
 #include "unlink.h"
@@ -381,11 +380,11 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
          fs_entry_garbage_collect_file( core, fent_new );
          
          fs_entry_unlock( fent_new );
-         err = fs_entry_detach_lowlevel( core, dest_parent, fent_new, true );
+         err = fs_entry_detach_lowlevel( core, dest_parent, fent_new );
          
          if( err != 0 ) {
             // technically, it's still safe to access fent_new since dest_parent is write-locked
-            errorf("fs_entry_detach_lowelevel(%s from %s) rc = %d\n", fent_new->name, dest_parent->name, err );
+            errorf("fs_entry_detach_lowlevel(%s from %s) rc = %d\n", fent_new->name, dest_parent->name, err );
          }
       }
    }

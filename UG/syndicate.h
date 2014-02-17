@@ -20,7 +20,7 @@
 #define _SYNDICATE_H_
 
 #include "libsyndicate/libsyndicate.h"
-#include "collator.h"
+#include "cache.h"
 #include "stats.h"
 #include "replication.h"
 #include "fs.h"

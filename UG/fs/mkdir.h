@@ -19,7 +19,6 @@
 
 #include "fs_entry.h"
 #include "url.h"
-#include "storage.h"
 #include "unlink.h"
 #include "consistency.h"
 

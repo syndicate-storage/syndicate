@@ -292,15 +292,7 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
 int replica_context_block( struct fs_core* core, struct replica_context* rctx, struct fs_entry* fent, uint64_t block_id, struct fs_entry_block_info* block_info, bool replicate_sync ) {
    
    // attempt to open the file
-   char* local_block_url = NULL;
-   bool staging = !FS_ENTRY_LOCAL( core, fent );
-
-   if( staging ) {
-      local_block_url = fs_entry_local_staging_block_url( core, fent->file_id, fent->version, block_id, block_info->version );
-   }
-   else {
-      local_block_url = fs_entry_local_block_url( core, fent->file_id, fent->version, block_id, block_info->version );
-   }
+   char* local_block_url = fs_entry_local_block_url( core, fent->file_id, fent->version, block_id, block_info->version );
 
    char* local_path = GET_PATH( local_block_url );
    

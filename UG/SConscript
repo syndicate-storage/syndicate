@@ -19,13 +19,12 @@ import os
 
 # source files common to all UGs
 common_source_files = """
-   collator.cpp
+   cache.cpp 
    consistency.cpp
    log.cpp
    replication.cpp
    stats.cpp
    syndicate.cpp
-   storage.cpp
    network.cpp
    state.cpp
    opts.cpp

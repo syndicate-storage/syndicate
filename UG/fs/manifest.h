@@ -25,19 +25,18 @@ public:
    //char* file_url;            // base URL (no version) to the host and file for the represented blocks
    uint64_t volume_id;        // ID of the Volume this file is in
    uint64_t file_id;          // ID of the file
-   uint64_t gateway_id;       // ID of the gateway that hosts them
+   uint64_t gateway_id;       // ID of the UG that wrote them last
    uint64_t start_id;         // starting block ID
    uint64_t end_id;           // ending block ID
    int64_t file_version;      // version of this file
    int64_t* block_versions;   // versions of the blocks in this set
    unsigned char* block_hashes;       // hashes of the blocks in this set, interpreted as intervals of BLOCK_HASH_LEN()
-   bool staging;              // is this block set in staging?
-
+   
    block_url_set();
    block_url_set( block_url_set& bus );
-   block_url_set( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, unsigned char* hashes, bool staging );
+   block_url_set( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, unsigned char* hashes );
 
-   void init( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, unsigned char* hashes, bool staging );
+   void init( uint64_t volume_id, uint64_t gateway_id, uint64_t file_id, int64_t file_version, uint64_t start, uint64_t end, int64_t* bv, unsigned char* hashes );
 
    ~block_url_set();
 
@@ -62,16 +61,16 @@ public:
    bool in_range( uint64_t block_id );
 
    // is this block appendable?
-   bool is_appendable( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, bool staging );
+   bool is_appendable( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id );
 
    // is this block prependable?
-   bool is_prependable( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, bool staging );
+   bool is_prependable( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id );
 
    // append the block to end of this url set
-   bool append( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash, bool staging );
+   bool append( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash );
 
    // prepend the block to the beginning of this url set
-   bool prepend( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash, bool staging );
+   bool prepend( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash );
 
    // remove blocks from the end of this URL set.  return true if blocks were removed
    bool truncate( uint64_t new_end_id );
@@ -142,7 +141,7 @@ public:
    uint64_t get_block_host( struct fs_core* core, uint64_t block_id );
 
    // put a block URL.
-   int put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash, bool staging );
+   int put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash );
 
    // directly put a url set
    void put_url_set( block_url_set* bus );
@@ -161,9 +160,6 @@ public:
 
    // is a block local?
    int is_block_local( struct fs_core* core, uint64_t block_id );
-
-   // is a block staging?
-   int is_block_staging( uint64_t block_id );
 
    // mark the manifest as stale
    void mark_stale() {
@@ -209,7 +205,7 @@ private:
    pthread_rwlock_t manifest_lock;
 };
 
-int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash, bool staging );
+int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash );
 
 int fs_entry_manifest_error( Serialization::ManifestMsg* mmsg, int error, char const* errormsg );
 

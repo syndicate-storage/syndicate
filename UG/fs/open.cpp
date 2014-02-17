@@ -18,10 +18,9 @@
 #include "link.h"
 #include "manifest.h"
 #include "network.h"
-#include "storage.h"
 #include "unlink.h"
 #include "url.h"
-#include "collator.h"
+#include "cache.h"
 
 // create a file handle from an fs_entry
 struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_entry* ent, char const* opened_path, uint64_t parent_id, char const* parent_name ) {
@@ -144,19 +143,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
 
          child->open_count = 0;
          fs_entry_unlock( child );
-         fs_entry_detach_lowlevel( core, parent, child, false );
-      }
-      else {
-         rc = fs_entry_create_local_file( core, child->file_id, child->version, mode );
-         if( rc != 0 ) {
-            // revert
-            errorf("fs_entry_create_local_file(%s /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", path, child->volume, child->coordinator, child->file_id, rc );
-            rc = ms_client_delete( core->ms, &data );
-         }
-
-         child->open_count = 0;
-         fs_entry_unlock( child );
-         fs_entry_detach_lowlevel( core, parent, child, false );
+         fs_entry_detach_lowlevel( core, parent, child );
       }
       
       md_entry_free( &data );
@@ -398,7 +385,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
       child->size = 0;
       
       if( FS_ENTRY_LOCAL( core, child ) ) {
-         fs_entry_clear_local_file( core, child->file_id, child->version );
+         fs_entry_cache_evict_file( core, core->cache, child->file_id, child->version );
       }
       else {
          // send a truncate request to the owner
@@ -481,26 +468,10 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
 
          // NOTE: parent will still exist--we can't remove a non-empty directory
          fs_entry_wlock( parent );
-         fs_entry_detach_lowlevel( core, parent, child, true );
+         fs_entry_detach_lowlevel( core, parent, child );
          fs_entry_unlock( parent );
 
          child = NULL;
-      }
-      else {
-         // success on MS!  create locally
-         rc = fs_entry_create_local_file( core, child->file_id, child->version, 0600 );
-         if( rc != 0 ) {
-            errorf("fs_entry_create_local_file(%s /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", path, child->volume, child->coordinator, child->file_id, rc );
-            *err = -EIO;
-
-            // revert
-            child->open_count = 0;
-
-            // NOTE: parent will still exist--we can't remove a non-empty directory
-            fs_entry_wlock( parent );
-            fs_entry_detach_lowlevel( core, parent, child, true );
-            fs_entry_unlock( parent );
-         }
       }
       
       md_entry_free( &data );

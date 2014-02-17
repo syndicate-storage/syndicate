@@ -20,6 +20,4 @@
 #include "fs_entry.h"
 #include "libsyndicate/libsyndicate.h"
 
-int fs_entry_restore_files( struct fs_core* core );
-
 #endif

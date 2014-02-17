@@ -599,14 +599,7 @@ void server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
             errorf( "ACCEPTED error %d (%s)\n", msg->errorcode(), msg->errortxt().c_str() );
             break;
          }
-         else {
-            // we're allowed to withdraw all of these blocks from the staging area
-            rc = fs_entry_release_staging( state->core, msg );
-            if( rc != 0 ) {
-               errorf( "fs_entry_release_staging(%s.%" PRId64 ") rc = %d\n", fs_path, file_version, rc );
-            }
-         }
-
+         
          no_ack = true;
          break;
       }

@@ -24,8 +24,13 @@ def read_file( filename, outfile, **kw ):
    context = kw['context'] 
    STORAGE_DIR = context.config['STORAGE_DIR']
    
+   if not os.path.exists( STORAGE_DIR ):
+      os.mkdir( STORAGE_DIR )
+   
+   storage_path = os.path.join(STORAGE_DIR, filename)
+   
    try:
-      fd = open( os.path.join(STORAGE_DIR, filename), "r" )
+      fd = open( storage_path, "r" )
       outfile.write( fd.read() )
       fd.close()
    except Exception, e:
@@ -45,8 +50,13 @@ def write_file( filename, infile, **kw ):
    context = kw['context']
    STORAGE_DIR = context.config['STORAGE_DIR']
    
+   if not os.path.exists( STORAGE_DIR ):
+      os.mkdir( STORAGE_DIR )
+   
+   storage_path = os.path.join(STORAGE_DIR, filename)
+   
    try:
-      fd = open( os.path.join(STORAGE_DIR, filename), "w" )
+      fd = open( storage_path, "w" )
       fd.write( buf )
       fd.close()
    except Exception, e:
@@ -62,6 +72,11 @@ def delete_file( filename, **kw ):
 
    context = kw['context']   
    STORAGE_DIR = context.config['STORAGE_DIR']
+   
+   if not os.path.exists( STORAGE_DIR ):
+      os.mkdir( STORAGE_DIR )
+   
+   storage_path = os.path.join(STORAGE_DIR, filename)
    
    try:
       os.unlink( os.path.join(STORAGE_DIR, filename) )

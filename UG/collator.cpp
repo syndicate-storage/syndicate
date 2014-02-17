@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-
+/*
 #include "collator.h"
 
 // create a Collator
@@ -247,3 +247,4 @@ int fs_entry_release_remote_blocks( struct fs_core* core, char const* fs_path, s
    dbprintf("release %s.%" PRId64 "[%" PRIu64 "-%" PRIu64 "]\n", fs_path, fent->version, start_block_id, end_block_id);
    return core->col->release_blocks( core, fs_path, fent, start_block_id, end_block_id );
 }
+*/

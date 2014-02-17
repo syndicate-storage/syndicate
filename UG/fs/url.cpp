@@ -40,34 +40,22 @@ char* fs_entry_path_from_file_id( uint64_t file_id ) {
 }
 
 
-char* fs_entry_block_url( struct fs_core* core, uint64_t volume_id, char const* base_url, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, bool local, bool staging ) {
+char* fs_entry_block_url( struct fs_core* core, uint64_t volume_id, char const* base_url, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, bool local ) {
 
    int base_len = 25 + 1 + 25 + 1 + strlen(fs_path) + 1 + 25 + 1 + 25 + 1 + 25 + 1;
    char* ret = NULL;
 
-   if( local && staging ) {
-      // local staging block
-      ret = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->staging_root) + 1 + base_len );
-      sprintf(ret, "%s%s%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64,
-            SYNDICATEFS_LOCAL_PROTO, core->conf->staging_root, volume_id, fs_path, file_version, block_id, block_version );
-   }
-   else if( local && !staging ) {
-      // local, not-staging block
+   if( local ) {
+      // local
       ret = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->data_root) + 1 + base_len );
       sprintf(ret, "%s%s%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64,
             SYNDICATEFS_LOCAL_PROTO, core->conf->data_root, volume_id, fs_path, file_version, block_id, block_version );
    }
-   else if( !local && !staging ) {
+   else {
       // remote data block
       ret = CALLOC_LIST( char, strlen(base_url) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
       sprintf(ret, "%s/%s/%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64,
             base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, file_version, block_id, block_version );
-   }
-   else if( !local && staging ) {
-      // remote staging block
-      ret = CALLOC_LIST( char, strlen(base_url) + 1 + strlen(SYNDICATE_STAGING_PREFIX) + 1 + base_len );
-      sprintf(ret, "%s/%s/%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64,
-            base_url, SYNDICATE_STAGING_PREFIX, volume_id, fs_path, file_version, block_id, block_version );
    }
 
    return ret;  
@@ -77,28 +65,17 @@ char* fs_entry_block_url( struct fs_core* core, uint64_t volume_id, char const* 
 char* fs_entry_local_block_url( struct fs_core* core, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    // file:// URL to a locally-hosted block in a locally-coordinated file
    char* fs_path = fs_entry_path_from_file_id( file_id );
-   char* ret = fs_entry_block_url( core, core->volume, NULL, fs_path, file_version, block_id, block_version, true, false );
+   char* ret = fs_entry_block_url( core, core->volume, NULL, fs_path, file_version, block_id, block_version, true );
    free( fs_path );
    return ret;
 }
 
-char* fs_entry_local_staging_block_url( struct fs_core* core, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
-   // file:// URL to a locally-hosted block in a remotely-coordinated file
-   char* fs_path = fs_entry_path_from_file_id( file_id );
-   char* ret = fs_entry_block_url( core, core->volume, NULL, fs_path, file_version, block_id, block_version, true, true );
-   free( fs_path );
-   return ret;
-}
 
 char* fs_entry_public_block_url( struct fs_core* core, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    // http:// URL to a locally-hosted block in a locally-coordinated file
-   return fs_entry_block_url( core, core->volume, core->conf->content_url, fs_path, file_version, block_id, block_version, false, false );
+   return fs_entry_block_url( core, core->volume, core->conf->content_url, fs_path, file_version, block_id, block_version, false );
 }
 
-char* fs_entry_public_staging_block_url( struct fs_core* core, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
-   // http:// URL to a locally-hosted block in a remotely-coordinated file
-   return fs_entry_block_url( core, core->volume, core->conf->content_url, fs_path, file_version, block_id, block_version, false, true );
-}
 
 char* fs_entry_remote_block_url( struct fs_core* core, uint64_t gateway_id, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    // http:// URL to a remotely-hosted block
@@ -106,7 +83,7 @@ char* fs_entry_remote_block_url( struct fs_core* core, uint64_t gateway_id, char
    if( content_url == NULL )
       return NULL;
 
-   char* ret = fs_entry_block_url( core, core->volume, content_url, fs_path, file_version, block_id, block_version, false, false );
+   char* ret = fs_entry_block_url( core, core->volume, content_url, fs_path, file_version, block_id, block_version, false );
    free( content_url );
    return ret;
 }
@@ -157,64 +134,39 @@ char* fs_entry_RG_block_url( struct fs_core* core, uint64_t rg_id, uint64_t volu
    return ret;
 }
 
-char* fs_entry_file_url( struct fs_core* core, uint64_t volume_id, char const* base_url, char const* fs_path, int64_t file_version, bool local, bool staging ) {
+char* fs_entry_file_url( struct fs_core* core, uint64_t volume_id, char const* base_url, char const* fs_path, int64_t file_version, bool local ) {
    
    int base_len = 25 + 1 + 25 + 1 + strlen(fs_path) + 25 + 1 + 1;
    char* ret = NULL;
 
-   if( local && staging ) {
-      // local staging block
-      ret = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->staging_root) + 1 + base_len );
-      sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRId64,
-              SYNDICATEFS_LOCAL_PROTO, core->conf->staging_root, volume_id, fs_path, file_version );
-   }
-   else if( local && !staging ) {
-      // local, not-staging block
+   if( local ) {
+      // local block
       ret = CALLOC_LIST( char, strlen(SYNDICATEFS_LOCAL_PROTO) + 1 + strlen(core->conf->data_root) + 1 + base_len );
       sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRId64,
               SYNDICATEFS_LOCAL_PROTO, core->conf->data_root, volume_id, fs_path, file_version );
    }
-   else if( !local && !staging ) {
+   else {
       // remote data block
       ret = CALLOC_LIST( char, strlen(core->conf->content_url) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
       sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRId64,
               base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, file_version );
    }
-   else if( !local && staging ) {
-      // remote staging block
-      ret = CALLOC_LIST( char, strlen(core->conf->content_url) + 1 + strlen(SYNDICATE_STAGING_PREFIX) + 1 + base_len );
-      sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRId64,
-              base_url, SYNDICATE_STAGING_PREFIX, volume_id, fs_path, file_version );
-   }
-
+   
    return ret;
 }
 
 
 char* fs_entry_local_file_url( struct fs_core* core, uint64_t file_id, int64_t file_version) {
    char* fs_path = fs_entry_path_from_file_id( file_id );
-   char* ret = fs_entry_file_url( core, core->volume, NULL, fs_path, file_version, true, false );
-   free( fs_path );
-   return ret;
-}
-
-char* fs_entry_local_staging_file_url( struct fs_core* core, uint64_t file_id, int64_t file_version ) {
-   char* fs_path = fs_entry_path_from_file_id( file_id );
-   char* ret = fs_entry_file_url( core, core->volume, NULL, fs_path, file_version, true, true );
+   char* ret = fs_entry_file_url( core, core->volume, NULL, fs_path, file_version, true );
    free( fs_path );
    return ret;
 }
 
 char* fs_entry_public_file_url( struct fs_core* core, char const* fs_path, int64_t file_version ) {
-   char* ret = fs_entry_file_url( core, core->volume, core->conf->content_url, fs_path, file_version, false, false );
+   char* ret = fs_entry_file_url( core, core->volume, core->conf->content_url, fs_path, file_version, false );
    return ret;
 }
-
-char* fs_entry_public_staging_file_url( struct fs_core* core, char const* fs_path, int64_t file_version ) {
-   char* ret = fs_entry_file_url( core, core->volume, core->conf->content_url, fs_path, file_version, false, true );
-   return ret;
-}
-
 
 char* fs_entry_manifest_url( struct fs_core* core, char const* gateway_base_url, uint64_t volume_id, char const* fs_path, int64_t version, struct timespec* ts ) {
    char* ret = CALLOC_LIST( char, strlen(SYNDICATE_DATA_PREFIX) + 1 + strlen(gateway_base_url) + 1 + strlen(fs_path) + 1 + 82 );

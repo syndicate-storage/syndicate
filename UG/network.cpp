@@ -17,7 +17,7 @@
 #include "network.h"
 #include "manifest.h"
 #include "url.h"
-#include "collator.h"
+#include "cache.h"
 #include "replication.h"
 
 // download and verify a manifest

@@ -20,10 +20,10 @@
 #define _STATE_H_
 
 #include "libsyndicate/libsyndicate.h"
-#include "collator.h"
 #include "stats.h"
 #include "replication.h"
 #include "fs.h"
+#include "cache.h"
 
 class Collator;
 
@@ -33,7 +33,7 @@ struct syndicate_state {
    
    struct ms_client* ms;   // metadata service client
    struct fs_core* core;   // core of the system
-   Collator* col;          // collator
+   struct syndicate_cache cache;        // local cache
    struct syndicate_replication replication;            // replication context
    struct syndicate_replication garbage_collector;      // garbage collector context
 

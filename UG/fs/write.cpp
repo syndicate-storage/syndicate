@@ -18,6 +18,7 @@
 #include "replication.h"
 #include "read.h"
 #include "consistency.h"
+#include "cache.h"
 
 // expand a file (e.g. if we write to it beyond the end of the file).
 // record the blocks added.
@@ -40,7 +41,6 @@ int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_e
       return 0;
    }
    
-   bool local = FS_ENTRY_LOCAL( core, fent );
    char* block = CALLOC_LIST( char, core->blocking_factor );
 
    // preserve the last block, if there is one
@@ -48,7 +48,7 @@ int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_e
       
       uint64_t block_version = fent->manifest->get_block_version( start_id );
       
-      int block_fd = fs_entry_open_block( core, fent, start_id, block_version, !local, false );
+      int block_fd = fs_entry_cache_open_block( core, core->cache, fent->file_id, fent->version, start_id, block_version, O_CREAT | O_WRONLY | O_TRUNC );
       if( block_fd < 0 ) {
          errorf("fs_entry_open_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRId64 ".%" PRIu64 ") rc = %d\n", core->volume, core->gateway, fent->file_id, fent->version, start_id, block_version, block_fd );
          free( block );
@@ -73,7 +73,7 @@ int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_e
       
       unsigned char* hash = BLOCK_HASH_DATA( block, core->blocking_factor );
 
-      rc = fs_entry_put_block_data( core, fent, id, block, core->blocking_factor, hash, !local );
+      rc = fs_entry_write_block( core, fent, id, block, core->blocking_factor, hash );
       if( rc < 0 ) {
          errorf("fs_entry_put_block_data(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "[%" PRIu64 "]) rc = %d\n", core->volume, core->gateway, fent->file_id, fent->version, id, rc );
          err = rc;
@@ -189,6 +189,52 @@ int fs_entry_replace_manifest( struct fs_core* core, struct fs_file_handle* fh, 
    
    return rc;
 }
+
+
+// write a block to a file, hosting it on underlying storage, and updating the filesystem entry's manifest to refer to it.
+// fent MUST BE WRITE LOCKED, SINCE WE MODIFY THE MANIFEST
+ssize_t fs_entry_write_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, size_t len, unsigned char* block_hash ) {
+   
+   int64_t old_block_version = fent->manifest->get_block_version( block_id );
+   int64_t new_block_version = fs_entry_next_block_version();
+   
+   // evict the old block
+   int rc = fs_entry_cache_evict_block( core, core->cache, fent->file_id, fent->version, block_id, old_block_version );
+   if( rc != 0 ) {
+      errorf("WARN: failed to evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", fent->file_id, fent->version, block_id, old_block_version, rc );
+   }
+   
+   char prefix[21];
+   memset( prefix, 0, 21 );
+   memcpy( prefix, block_data, MIN( 20, core->blocking_factor ) );
+   
+   // cache the new block
+   rc = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, new_block_version, block_data, len );
+   if( rc != 0 ) {
+      errorf("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", fent->file_id, fent->version, block_id, new_block_version, rc );
+   }
+   else {
+      dbprintf("cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]: data: '%s'...\n", fent->file_id, fent->version, block_id, new_block_version, prefix );
+   }
+
+   // update the manifest
+   rc = fs_entry_manifest_put_block( core, core->gateway, fent, block_id, new_block_version, block_hash );
+   if( rc != 0 ) {
+      errorf("fs_entry_manifest_put_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
+               fent->file_id, fent->version, block_id, new_block_version, rc );
+      return rc;
+   }
+   
+   // update our modtime
+   struct timespec ts;
+   clock_gettime( CLOCK_REALTIME, &ts );
+
+   fent->mtime_sec = ts.tv_sec;
+   fent->mtime_nsec = ts.tv_nsec;
+   
+   rc = (ssize_t)len;
+   return rc;
+}
                   
 
 
@@ -301,9 +347,9 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       if( block_write_offset != 0 ) {
          // need to fill this block with the contents of the current block first, since we're writing unaligned
          
-         ssize_t read_rc = fs_entry_do_read_block( core, fh->path, fh->fent, block_id, block, core->blocking_factor );
+         ssize_t read_rc = fs_entry_read_block( core, fh->path, fh->fent, block_id, block, core->blocking_factor );
          if( read_rc < 0 ) {
-            errorf("fs_entry_do_read_block( %s ) rc = %d\n", fh->path, (int)read_rc );
+            errorf("fs_entry_read_block( %s ) rc = %d\n", fh->path, (int)read_rc );
             rc = (int)read_rc;
             break;
          }
@@ -332,7 +378,7 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       unsigned char* hash = BLOCK_HASH_DATA( block, core->blocking_factor );
       
       // write the data...
-      ssize_t write_size = fs_entry_put_block_data( core, fh->fent, block_id, block, block_put_len, hash, !local );
+      ssize_t write_size = fs_entry_write_block( core, fh->fent, block_id, block, block_put_len, hash );
       
       if( (unsigned)write_size != block_put_len ) {
          errorf("fs_entry_put_block_data(%s/%" PRId64 ", len=%zu) rc = %zd\n", fh->path, block_id, block_put_len, write_size );
@@ -474,8 +520,8 @@ ssize_t fs_entry_write_real( struct fs_core* core, struct fs_file_handle* fh, ch
       }
       
       if( ret >= 0 ) {
-         // garbage-collect written blocks
          
+         // garbage-collect written blocks
          rc = fs_entry_garbage_collect_blocks( core, &fent_snapshot, &overwritten_blocks );
          if( rc != 0 ) {
             errorf("fs_entry_garbage_collect_blocks(%s) rc = %d\n", fh->path, rc );
@@ -683,7 +729,6 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       // back up old version and gateway, in case we have to restore it
       int64_t old_version = fent->manifest->get_block_version( block_id );
       uint64_t old_gateway_id = fent->manifest->get_block_host( core, block_id );
-      bool old_staging_status = fent->manifest->is_block_staging( block_id );
       unsigned char* old_block_hash = fent->manifest->hash_dup( block_id );
       
       struct fs_entry_block_info binfo;
@@ -691,13 +736,12 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       
       binfo.version = old_version;
       binfo.gateway_id = old_gateway_id;
-      binfo.staging = old_staging_status;
       binfo.hash = old_block_hash;
       
       old_block_info[ block_id ] = binfo;
       
       // put the new version into the manifest
-      fs_entry_manifest_put_block( core, gateway_id, fent, block_id, new_version, block_hash, false );
+      fs_entry_manifest_put_block( core, gateway_id, fent, block_id, new_version, block_hash );
    }
    
    off_t old_size = fent->size;
@@ -799,7 +843,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
          
          struct fs_entry_block_info* old_binfo = &itr->second;
          
-         fs_entry_manifest_put_block( core, old_binfo->gateway_id, fent, block_id, old_binfo->version, old_binfo->hash, old_binfo->staging );
+         fs_entry_manifest_put_block( core, old_binfo->gateway_id, fent, block_id, old_binfo->version, old_binfo->hash );
       }
       
       fs_entry_unlock( fent );

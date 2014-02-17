@@ -25,7 +25,7 @@ int syndicate_init_state( struct syndicate_state* state, struct ms_client* ms ) 
    
    // get the volume
    uint64_t volume_id = ms_client_get_volume_id( state->ms );
-   uint64_t blocking_factor = ms_client_get_volume_blocksize( state->ms );
+   uint64_t block_size = ms_client_get_volume_blocksize( state->ms );
 
    if( volume_id == 0 ) {
       errorf("%s", "Volume not found\n");
@@ -61,28 +61,25 @@ int syndicate_init_state( struct syndicate_state* state, struct ms_client* ms ) 
 
    // initialize the filesystem core
    struct fs_core* core = CALLOC_LIST( struct fs_core, 1 );
-   fs_core_init( core, &state->conf, root.owner, root.coordinator, root.volume, root.mode, blocking_factor );
+   fs_core_init( core, &state->conf, root.owner, root.coordinator, root.volume, root.mode, block_size );
 
    md_entry_free( &root );
 
    fs_entry_set_config( &state->conf );
 
-   state->core = core;
-   state->col = new Collator( core );
+   // initialize and start caching
+   rc = fs_entry_cache_init( core, &state->cache, state->conf.cache_soft_limit / block_size, state->conf.cache_hard_limit / block_size );
+   if( rc != 0 ) {
+      errorf("fs_entry_cache_init rc = %d\n", rc );
+      return rc;  
+   }
    
-   fs_core_use_collator( core, state->col );
+   state->core = core;
+   
+   fs_core_use_cache( core, &state->cache );
    fs_core_use_ms( core, state->ms );
    fs_core_use_state( core, state );
 
-   // restore local files
-   rc = fs_entry_restore_files( core );
-   if( rc != 0 ) {
-      errorf("fs_entry_restore_files rc = %d\n", rc );
-      exit(1);
-   }
-
-   state->col->start();
-   
    state->uid = getuid();
    state->gid = getgid();
    
@@ -106,8 +103,8 @@ int syndicate_destroy_state( struct syndicate_state* state, int wait_replicas ) 
    dbprintf("%s", "stopping replication\n");
    replication_shutdown( state, wait_replicas );
    
-   dbprintf("%s", "destroy collation\n");
-   delete state->col;
+   dbprintf("%s", "destroy caching\n");
+   fs_entry_cache_destroy( &state->cache );
 
    dbprintf("%s", "destory MS client\n");
    ms_client_destroy( state->ms );

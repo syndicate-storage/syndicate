@@ -73,16 +73,16 @@ struct fs_entry_block_info {
    unsigned char* hash;
    size_t hash_len;
    uint64_t gateway_id;
-   bool staging;
 };
 
 typedef map<uint64_t, struct fs_entry_block_info> modification_map;
 
 // pre-declare these
-class Collator;
+//class Collator;
 class file_manifest;
 struct replica_context;
 struct syndicate_state;
+class syndicate_cache;
 
 // Syndicate filesystem entry
 struct fs_entry {
@@ -119,8 +119,10 @@ struct fs_entry {
    
    fs_entry_xattrs* xattrs;     // extended attributes on this file 
    
-   bool write_locked;
+   bool busy;                   // if true, this structure is in use somewhere and can't be freed
    bool created_in_session;     // if we're in client mode, then this is true of the file was created in this session
+   
+   
 };
 
 #define IS_STREAM_FILE( fent ) ((fent).size < 0)
@@ -173,7 +175,7 @@ struct fs_core {
    struct fs_entry* root;              // root FS entry
    struct md_syndicate_conf* conf;     // Syndicate configuration structure
    struct ms_client* ms;               // link to the MS
-   Collator* col;                   // Collator interface
+   struct syndicate_cache* cache;        // index over on-disk cache
    struct syndicate_state* state;   // state 
    uint64_t volume;                 // Volume we're bound to
    uint64_t gateway;                // gateway ID
@@ -192,7 +194,7 @@ int fs_entry_set_config( struct md_syndicate_conf* conf );
 int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t owner_id, uint64_t gateway_id, uint64_t volume, mode_t mode, uint64_t blocking_factor );
 int fs_core_destroy(struct fs_core* core);
 int fs_core_use_ms( struct fs_core* core, struct ms_client* ms );
-int fs_core_use_collator( struct fs_core* core, Collator* iop );
+int fs_core_use_cache( struct fs_core* core, struct syndicate_cache* cache );
 int fs_core_use_state( struct fs_core* core, struct syndicate_state* state );
 
 // destroy

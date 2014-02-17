@@ -16,10 +16,9 @@
 
 #include "fs_entry.h"
 #include "manifest.h"
-#include "storage.h"
 #include "url.h"
 #include "ms-client.h"
-#include "collator.h"
+#include "cache.h"
 #include "consistency.h"
 #include "replication.h"
 
@@ -171,12 +170,6 @@ int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t
    return 0;
 }
 
-// make use of a collator
-int fs_core_use_collator( struct fs_core* core, Collator* col ) {
-   core->col = col;
-   return 0;
-}
-
 // make use of an MS context
 int fs_core_use_ms( struct fs_core* core, struct ms_client* ms ) {
    core->ms = ms;
@@ -187,10 +180,14 @@ int fs_core_use_state( struct fs_core* core, struct syndicate_state* state ) {
    core->state = state;
    return 0;
 }
+
+int fs_core_use_cache( struct fs_core* core, struct syndicate_cache* cache ) {
+   core->cache = cache;
+   return 0;
+}
    
 // destroy the core of the FS
 int fs_core_destroy( struct fs_core* core ) {
-   //delete core->dtp;
 
    pthread_rwlock_destroy( &core->lock );
    pthread_rwlock_destroy( &core->fs_lock );
@@ -259,7 +256,7 @@ int fs_unlink_children( struct fs_core* core, fs_entry_set* dir_children, bool r
       if( old_type == FTYPE_FILE || old_type == FTYPE_FIFO ) {
          if( fent->open_count == 0 ) {
             if( FS_ENTRY_LOCAL( core, fent ) && remove_data ) {
-               fs_entry_remove_local_file( core, fent->file_id, fent->version );
+               fs_entry_cache_evict_file( core, core->cache, fent->file_id, fent->version );
             }
             
             fs_entry_destroy( fent, false );
@@ -534,8 +531,6 @@ int fs_entry_wlock2( struct fs_entry* fent, char const* from_str, int line_no ) 
       return -ENOENT;
    
    if( rc == 0 ) {
-      fent->write_locked = true;
-   
       if( _debug_locks ) {
          dbprintf( "%p: %s, from %s:%d\n", fent, fent->name, from_str, line_no );
       }
@@ -549,7 +544,6 @@ int fs_entry_wlock2( struct fs_entry* fent, char const* from_str, int line_no ) 
 
 // unlock a file
 int fs_entry_unlock2( struct fs_entry* fent, char const* from_str, int line_no ) {
-   fent->write_locked = false;
    int rc = pthread_rwlock_unlock( &fent->lock );
    if( rc == 0 ) {
       if( _debug_locks ) {
@@ -607,7 +601,6 @@ int fs_core_wlock( struct fs_core* core ) {
 int fs_core_unlock( struct fs_core* core ) {
    return pthread_rwlock_unlock( &core->lock );
 }
-
 
 // resolve an absolute path, running a given function on each entry as the path is walked
 // returns the locked fs_entry at the end of the path on success
@@ -959,7 +952,7 @@ int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct f
    }
    
    // reversion the data locally
-   int rc = fs_entry_reversion_local_file( core, fent, new_version );
+   int rc = fs_entry_cache_reversion_file( core, core->cache, fent->file_id, fent->version, new_version );
    if( rc != 0 ) {
       return rc;
    }
