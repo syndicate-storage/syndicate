@@ -242,6 +242,14 @@ env.Alias( 'AG-disk-driver', libAGdiskdriver )
 env.Alias( 'AG-disk-driver-install', [ag_driver_disk_install] )
 env.Depends( libAGdiskdriver, libAGcommon  )
 
+# AG disk-polling driver
+libAGdiskpollingdriver_out = "build/out/lib/AG/drivers/disk_polling"
+libAGdiskpollingdriver = SConscript( "AG/drivers/disk_polling/SConscript", variant_dir=libAGdiskpollingdriver_out )
+ag_driver_disk_polling_install = env.Install( lib_install_dir, libAGdiskpollingdriver )
+env.Alias( 'AG-disk-polling-driver', libAGdiskpollingdriver )
+env.Alias( 'AG-disk-polling-driver-install', [ag_driver_disk_polling_install] )
+env.Depends( libAGdiskpollingdriver, libAGcommon  )
+
 # AG SQL driver
 libAGSQLdriver_out = "build/out/lib/AG/drivers/sql"
 libAGSQLdriver = SConscript( "AG/drivers/sql/SConscript", variant_dir=libAGSQLdriver_out )
@@ -259,9 +267,9 @@ env.Alias( 'AG-shell-driver-install', [ag_driver_shell_install] )
 env.Depends( libAGshelldriver, libAGcommon )
 
 # All drivers
-ag_drivers = [libAGSQLdriver, libAGshelldriver, libAGdiskdriver]
+ag_drivers = [libAGSQLdriver, libAGshelldriver, libAGdiskdriver, libAGdiskpollingdriver]
 env.Alias( 'AG-drivers', ag_drivers )
-#env.Alias( 'AG-drivers-install', [ag_driver_shell_install, ag_driver_sql_install, ag_driver_disk_install] )
+#env.Alias( 'AG-drivers-install', [ag_driver_shell_install, ag_driver_sql_install, ag_driver_disk_install, ag_driver_disk_polling_install] )
 
 # AG Watchdog daemon
 watchdog_daemon_out = "build/out/bin/AG/watchdog"
@@ -275,7 +283,7 @@ common.install_targets( env, 'AG-install', lib_install_dir, ag_drivers )
 common.install_targets( env, 'AG-drivers-install', lib_install_dir, ag_drivers )
 
 # main targets....
-env.Alias( 'AG', [libAGcommon, libAGdiskdriver, libAGSQLdriver, libAGshelldriver, watchdog_daemon, ags] )
+env.Alias( 'AG', [libAGcommon, libAGdiskdriver, libAGdiskpollingdriver, libAGSQLdriver, libAGshelldriver, watchdog_daemon, ags] )
 
 
 # ----------------------------------------
