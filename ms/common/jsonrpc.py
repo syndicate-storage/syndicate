@@ -421,7 +421,7 @@ class Client(object):
         try:
             result = json.loads(response)
         except:
-            log.error("Invalid response: Body: '%s'" % (self.response))
+            log.error("Invalid response: Body: '%s'" % (response))
             return None
         
         # check fields

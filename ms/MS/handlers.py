@@ -1110,6 +1110,8 @@ class MSJSONRPCHandler(GAEOpenIDRequestHandler):
          
          session = self.getSession( expiration_ts=int(time.time() + 60) )      # expire in 1 minute
          self.setSessionCookie(session)
+         session.save( persist_even_if_using_cookie=True )
+         
          response_end( self, 200, "OK", "text/plain", None )
          
          return

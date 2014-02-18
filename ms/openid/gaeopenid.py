@@ -493,7 +493,10 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
                   session[field_name] = value
 
             session.regenerate_id()
-            
+        
+        else:
+           logging.error("failed to complete authentication: status = %s" % info.status )
+        
         return (info, sreg_resp, pape_resp)
 
 
