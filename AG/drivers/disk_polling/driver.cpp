@@ -308,7 +308,7 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     }
 
     if (set_timeout_event(REFRESH_ENTRIES_TIMEOUT, &timeout_handler) < 0) {
-        dbprintf("set_timeout_event error : %d\n", rc);
+        dbprintf("%s\n", "set_timeout_event error");
         return pfunc_exit_code;
     }
 
