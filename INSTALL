@@ -28,6 +28,8 @@ Ubuntu/Debian:
    libgnutls-dev
    libssl-dev
    libboost-dev
+   libboost-thread-dev
+   libboost-system-dev
    libxml2-dev
    libattr1-dev
    libcurl4-gnutls-dev (>= 7.28)
