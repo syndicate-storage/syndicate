@@ -43,6 +43,7 @@ int set_timeout_event(int timeout, PFN_TIMEOUT_USER_EVENT_HANDLER handler) {
     g_current_timeout_event.running = true;
     
     alarm(timeout);
+    return 0;
 }
 
 static void handle_timeout_event(int sig_no) {
