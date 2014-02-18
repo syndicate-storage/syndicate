@@ -31,7 +31,13 @@
 #include <libsyndicate.h>
 #include <AG-util.h>
 
+#include "directory_monitor.h"
+#include "timeout_event.h"
+
 using namespace std;
+
+#define REFRESH_ENTRIES_TIMEOUT	60
+
 
 #define GATEWAY_REQUEST_TYPE_NONE 0
 #define GATEWAY_REQUEST_TYPE_LOCAL_FILE 1
@@ -62,6 +68,8 @@ static int publish(const char *fpath, const struct stat *sb,
 	int tflag, struct FTW *ftwbuf, uint64_t volume_id);
 void init();
 void* term_handler(void *cls);
+void timeout_handler(int sig_no, struct timeout_event* event);
+void entry_modified_handler(int flag, string spath, struct filestat_cache *cache);
 
 #endif //_DISK_DRIVER_H_
 

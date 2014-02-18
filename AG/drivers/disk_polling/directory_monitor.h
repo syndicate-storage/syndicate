@@ -23,8 +23,8 @@
 #define MAX_NUM_DIRECTORY_OPENED        20
 
 struct filestat_cache {
-    __off_t     file_size;
-    struct timespec file_mtim;
+    char        *fpath;
+    struct stat *sb;
     // tflag == FTW_D : directory
     // tflag == FTW_F : file
     int         tflag;
@@ -34,7 +34,7 @@ struct filestat_cache {
 #define DIR_ENTRY_MODIFIED_FLAG_MODIFIED    1
 #define DIR_ENTRY_MODIFIED_FLAG_REMOVED     2
 
-typedef void (*PFN_DIR_ENTRY_MODIFIED_HANDLER)(int flag, std::string spath, struct filestat_cache cache);
+typedef void (*PFN_DIR_ENTRY_MODIFIED_HANDLER)(int flag, std::string spath, struct filestat_cache *cache);
 
 void init_monitor();
 int check_modified(const char *fpath, PFN_DIR_ENTRY_MODIFIED_HANDLER handler);

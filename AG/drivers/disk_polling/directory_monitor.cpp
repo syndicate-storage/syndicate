@@ -26,24 +26,24 @@
 
 using namespace std;
 
-static map<string, struct filestat_cache> cached_entry_map;
-static map<string, struct filestat_cache> current_entry_map;
+static map<string, struct filestat_cache*> cached_entry_map;
+static map<string, struct filestat_cache*> current_entry_map;
 
 static int check_current_entries(const char* parentDir);
 static int current_entry_found(const char *fpath, const struct stat *sb, int tflag, struct FTW *ftwbuf);
 
-static struct filestat_cache make_stat_cache(const struct stat *sb, int tflag);
+static struct filestat_cache* make_stat_cache(const char *fpath, const struct stat *sb, int tflag);
 
-static void add_cached_entry(const char *fpath, struct filestat_cache entry);
-static void add_cached_entry(string spath, struct filestat_cache entry);
+static void add_cached_entry(const char *fpath, struct filestat_cache *pentry);
+static void add_cached_entry(string spath, struct filestat_cache *pentry);
 static void clear_cached_entries();
 
-static void add_current_entry(const char *fpath, struct filestat_cache entry);
-static void add_current_entry(string spath, struct filestat_cache entry);
+static void add_current_entry(const char *fpath, struct filestat_cache *pentry);
+static void add_current_entry(string spath, struct filestat_cache *pentry);
 static void clear_current_entries();
 
 static void make_all_current_entries_cached();
-static bool is_same_entry(struct filestat_cache entry1, struct filestat_cache entry2);
+static bool is_same_entry(struct filestat_cache *pentry1, struct filestat_cache *pentry2);
 
 static int check_current_entries(const char* root) {
     int flags = FTW_PHYS;
@@ -60,68 +60,106 @@ static int check_current_entries(const char* root) {
     return 0;
 }
 
-static struct filestat_cache make_stat_cache(const struct stat *sb, int tflag) {
-    struct filestat_cache cache;
+static struct filestat_cache* make_stat_cache(const char *fpath, const struct stat *sb, int tflag) {
+    struct filestat_cache *pcache = (struct filestat_cache*)malloc(sizeof(struct filestat_cache));
     
-    memset(&cache, 0, sizeof(struct filestat_cache));
+    memset(pcache, 0, sizeof(struct filestat_cache));
     
-    cache.file_size = sb->st_size;
-    cache.file_mtim = sb->st_mtim;
-    cache.tflag = tflag;
+    pcache->fpath = strdup(fpath);
+    pcache->sb = (struct stat*)malloc(sizeof(struct stat));
+    memcpy(pcache->sb, sb, sizeof(struct stat));
+    pcache->tflag = tflag;
     
-    return cache;
+    return pcache;
 }
 
-static void add_cached_entry(const char *fpath, struct filestat_cache entry) {
+static void add_cached_entry(const char *fpath, struct filestat_cache *pentry) {
     string spath(fpath);
-    cached_entry_map[spath] = entry;
+    cached_entry_map[spath] = pentry;
 }
 
-static void add_cached_entry(string spath, struct filestat_cache entry) {
-    cached_entry_map[spath] = entry;
+static void add_cached_entry(string spath, struct filestat_cache *pentry) {
+    cached_entry_map[spath] = pentry;
 }
 
 static void clear_cached_entries() {
+    std::map<string, struct filestat_cache*>::iterator iter;
+    for(iter=cached_entry_map.begin();iter!=cached_entry_map.end();iter++) {
+        // free all
+        if(iter->second != NULL) {
+            if(iter->second->fpath != NULL) {
+                free(iter->second->fpath);
+            }
+
+            if(iter->second->sb != NULL) {
+                free(iter->second->sb);
+            }
+            
+            free(iter->second);
+        }
+    }
     cached_entry_map.clear();
 }
 
-static void add_current_entry(const char *fpath, struct filestat_cache entry) {
+static void add_current_entry(const char *fpath, struct filestat_cache *pentry) {
     string spath(fpath);
-    current_entry_map[spath] = entry;
+    current_entry_map[spath] = pentry;
 }
 
-static void add_current_entry(string spath, struct filestat_cache entry) {
-    current_entry_map[spath] = entry;
+static void add_current_entry(string spath, struct filestat_cache *pentry) {
+    current_entry_map[spath] = pentry;
 }
 
 static void clear_current_entries() {
+    std::map<string, struct filestat_cache*>::iterator iter;
+    for(iter=current_entry_map.begin();iter!=current_entry_map.end();iter++) {
+        // free all
+        if(iter->second != NULL) {
+            if(iter->second->fpath != NULL) {
+                free(iter->second->fpath);
+            }
+
+            if(iter->second->sb != NULL) {
+                free(iter->second->sb);
+            }
+            
+            free(iter->second);
+        }
+    }
     current_entry_map.clear();
 }
 
 static void make_all_current_entries_cached() {
     clear_cached_entries();
-    std::map<string, struct filestat_cache>::iterator iter;
+    std::map<string, struct filestat_cache*>::iterator iter;
     for(iter=current_entry_map.begin();iter!=current_entry_map.end();iter++) {
         add_cached_entry(iter->first, iter->second);
     }
-    clear_current_entries();
+    // must not free entries.
+    current_entry_map.clear();
 }
 
 static int current_entry_found(const char *fpath, const struct stat *sb, int tflag, struct FTW *ftwbuf) {
     if(tflag == FTW_D || tflag == FTW_F) {
-        struct filestat_cache cache = make_stat_cache(sb, tflag);
-        add_current_entry(fpath, cache);
+        struct filestat_cache *pcache = make_stat_cache(fpath, sb, tflag);
+        add_current_entry(fpath, pcache);
     }
     
     return 0;
 }
 
-static bool is_same_entry(struct filestat_cache entry1, struct filestat_cache entry2) {
-    if(entry1.file_mtim.tv_sec != entry2.file_mtim.tv_sec
-                    || entry1.file_size != entry2.file_size) {
+static bool is_same_entry(struct filestat_cache *pentry1, struct filestat_cache *pentry2) {
+    if(pentry1 == NULL || pentry2 == NULL) {
         return false;
     }
-    return true;
+    
+    if(pentry1->sb != NULL && pentry2->sb != NULL) {
+        if((pentry1->sb->st_size == pentry2->sb->st_size) 
+                && (pentry1->sb->st_mtim.tv_sec == pentry2->sb->st_mtim.tv_sec)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void init_monitor() {
@@ -137,9 +175,9 @@ int check_modified(const char *fpath, PFN_DIR_ENTRY_MODIFIED_HANDLER handler) {
     check_current_entries(fpath);
     
     // find new entry
-    std::map<string, struct filestat_cache>::iterator current_map_iter;
+    std::map<string, struct filestat_cache*>::iterator current_map_iter;
     for(current_map_iter=current_entry_map.begin();current_map_iter!=current_entry_map.end();current_map_iter++) {
-        std::map<string, struct filestat_cache>::iterator found = cached_entry_map.find(current_map_iter->first);
+        std::map<string, struct filestat_cache*>::iterator found = cached_entry_map.find(current_map_iter->first);
         if(found == cached_entry_map.end()) {
             // not found
             if(handler != NULL) {
@@ -156,9 +194,9 @@ int check_modified(const char *fpath, PFN_DIR_ENTRY_MODIFIED_HANDLER handler) {
     }
     
     // find stale entry
-    std::map<string, struct filestat_cache>::iterator cached_map_iter;
+    std::map<string, struct filestat_cache*>::iterator cached_map_iter;
     for(cached_map_iter=cached_entry_map.begin();cached_map_iter!=cached_entry_map.end();cached_map_iter++) {
-        std::map<string, struct filestat_cache>::iterator found = current_entry_map.find(cached_map_iter->first);
+        std::map<string, struct filestat_cache*>::iterator found = current_entry_map.find(cached_map_iter->first);
         if(found == current_entry_map.end()) {
             // not found
             if(handler != NULL) {

@@ -301,10 +301,20 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
     datapath = dataset;
     datapath_len = strlen(datapath); 
     if ( datapath[datapath_len - 1] == '/')
-	   datapath_len--;	
-    if (nftw(dataset, publish_to_volumes, 20, flags) == -1) {
-	return pfunc_exit_code;
+	   datapath_len--;
+
+    if (check_modified(datapath, entry_modified_handler) < 0) {
+        return pfunc_exit_code;        
     }
+
+    if (set_timeout_event(REFRESH_ENTRIES_TIMEOUT, &timeout_handler) < 0) {
+        dbprintf("set_timeout_event error : %d\n", rc);
+        return pfunc_exit_code;
+    }
+
+    //if (nftw(dataset, publish_to_volumes, 20, flags) == -1) {
+    //    return pfunc_exit_code;
+    //}
     return 0;
 }
 
@@ -312,8 +322,8 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 static int publish_to_volumes(const char *fpath, const struct stat *sb,
 	int tflag, struct FTW *ftwbuf) {
    
-   uint64_t volume_id = ms_client_get_volume_id(mc);
-   publish(fpath, sb, tflag, ftwbuf, volume_id);
+    uint64_t volume_id = ms_client_get_volume_id(mc);
+    publish(fpath, sb, tflag, ftwbuf, volume_id);
    
     return 0;
 }
@@ -394,10 +404,36 @@ void init() {
 	initialized = true;
     else
 	return;
+
+    init_timeout();
+    init_monitor();
+
     add_driver_event_handler(DRIVER_TERMINATE, term_handler, NULL);
     driver_event_start();
 }
 
+void timeout_handler(int sig_no, struct timeout_event* event) {
+    check_modified(datapath, entry_modified_handler);
+    
+    int rc = set_timeout_event(event->timeout, event->handler);
+    if(rc < 0) {
+        errorf("set timeout event error : %d", rc);
+    }
+}
+
+void entry_modified_handler(int flag, string spath, struct filestat_cache *pcache) {
+    if(flag == DIR_ENTRY_MODIFIED_FLAG_NEW) {
+        publish_to_volumes(pcache->fpath, pcache->sb, pcache->tflag, NULL);
+    } else if(flag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
+        publish_to_volumes(pcache->fpath, pcache->sb, pcache->tflag, NULL);
+    } else if(flag == DIR_ENTRY_MODIFIED_FLAG_REMOVED) {
+        // TODO: Need to remove MS registered entry?
+	
+    }
+
+    //cout << "flag : " << flag << " path : " << spath << endl;
+    
+}
 
 void* term_handler(void *cls) {
     //Nothing to do here.
