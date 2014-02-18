@@ -194,7 +194,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         return consumer.Consumer(self.getSession(), store)
 
         
-    def getSession(self, expiration_ts=gaesession.DEFAULT_LIFETIME):
+    def getSession(self, expiration_ts=gaesession.DEFAULT_LIFETIME_SEC):
       """Return the existing session or a new session"""
       session = gaesession.get_current_session()
 
