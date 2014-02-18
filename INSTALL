@@ -46,6 +46,7 @@ Ubuntu/Debian:
    libconfig++-dev
    thrift-compiler (>= 0.8)
    cython (>= 0.19)
+   scrypt (python scrypt)
 
 You will need a version of Apache Thrift (0.8.x) installed to build the AG.  This dependency is transient and will be removed soon.
 
