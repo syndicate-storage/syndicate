@@ -79,6 +79,7 @@ struct cache_block_future {
    int write_rc;
    
    sem_t sem_ongoing;
+   bool detached;       // if true, reap this future once the write finishes
 };
 
 
@@ -128,6 +129,7 @@ struct syndicate_cache {
    promote_buffer_t* promotes_1;
    promote_buffer_t* promotes_2;
    
+   // thread for processing writes and evictions
    pthread_t thread;
    bool running;
    
@@ -156,7 +158,11 @@ int fs_entry_cache_init( struct fs_core* core, struct syndicate_cache* cache, si
 int fs_entry_cache_destroy( struct syndicate_cache* cache );
 
 // asynchronous writes
-struct cache_block_future* fs_entry_cache_write_block_async( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char* data, size_t data_len );
+struct cache_block_future* fs_entry_cache_write_block_async( struct fs_core* core, struct syndicate_cache* cache,
+                                                             uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version,
+                                                             char* data, size_t data_len,
+                                                             bool detached );
+
 int fs_entry_cache_block_future_wait( struct cache_block_future* f );
 int fs_entry_cache_block_future_free( struct cache_block_future* f );
 int fs_entry_cache_block_future_release_fd( struct cache_block_future* f );

@@ -201,7 +201,7 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, str
    
    // evict the old block
    int rc = fs_entry_cache_evict_block( core, core->cache, fent->file_id, fent->version, block_id, old_block_version );
-   if( rc != 0 ) {
+   if( rc != 0 && rc != -ENOENT ) {
       errorf("WARN: failed to evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", fent->file_id, fent->version, block_id, old_block_version, rc );
    }
    
@@ -209,8 +209,8 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, str
    memset( prefix, 0, 21 );
    memcpy( prefix, block_data, MIN( 20, core->blocking_factor ) );
    
-   // cache the new block.  Get back the fd
-   struct cache_block_future* f = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, new_block_version, block_data, len );
+   // cache the new block.  Get back the future (caller will manage it).
+   struct cache_block_future* f = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, new_block_version, block_data, len, false );
    if( f == NULL ) {
       errorf("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], failed\n", fent->file_id, fent->version, block_id, new_block_version );
       return NULL;

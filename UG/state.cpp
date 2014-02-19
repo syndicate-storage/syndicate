@@ -103,7 +103,7 @@ int syndicate_destroy_state( struct syndicate_state* state, int wait_replicas ) 
    dbprintf("%s", "stopping replication\n");
    replication_shutdown( state, wait_replicas );
    
-   dbprintf("%s", "destroy caching\n");
+   dbprintf("%s", "destroy cache\n");
    fs_entry_cache_destroy( &state->cache );
 
    dbprintf("%s", "destory MS client\n");

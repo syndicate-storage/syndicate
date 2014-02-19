@@ -293,6 +293,14 @@ int fs_entry_cache_evict_block( struct fs_core* core, struct syndicate_cache* ca
    if( rc == 0 || rc == -ENOENT ) {
       // let another block get queued
       sem_post( &cache->sem_write_hard_limit );
+      
+      char* local_file_url = fs_entry_local_file_url( core, file_id, file_version );
+      char* local_file_path = GET_PATH( local_file_url );
+      
+      // remove the file's empty directories
+      md_rmdirs( local_file_path );
+      
+      free( local_file_url );
    }
    
    free( block_url );
@@ -494,6 +502,8 @@ int fs_entry_cache_init( struct fs_core* core, struct syndicate_cache* cache, si
       pthread_rwlock_init( locks[i], NULL );
    }
    
+   dbprintf("Soft limit: %zu blocks.  Hard limit: %zu blocks\n", soft_limit, hard_limit );
+   
    cache->hard_max_size = hard_limit;
    cache->soft_max_size = soft_limit;
    
@@ -626,7 +636,11 @@ int fs_entry_cache_destroy( struct syndicate_cache* cache ) {
 
 // create an ongoing write
 // NOTE: the future will need to hold onto data, so the caller shouldn't free it!
-int cache_block_future_init( struct fs_core* core, struct syndicate_cache* cache, struct cache_block_future* f, uint64_t file_id, int64_t file_version, int block_id, int block_version, int block_fd, char* data, size_t data_len ) {
+int cache_block_future_init( struct fs_core* core, struct syndicate_cache* cache, struct cache_block_future* f,
+                             uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int block_fd,
+                             char* data, size_t data_len,
+                             bool detached ) {
+   
    memset( f, 0, sizeof( struct cache_block_future ) );
    
    f->key.file_id = file_id;
@@ -637,6 +651,7 @@ int cache_block_future_init( struct fs_core* core, struct syndicate_cache* cache
    f->block_fd = block_fd;
    f->block_data = data;
    f->data_len = data_len;
+   f->detached = detached;
    
    // fill in aio structure
    f->aio.aio_fildes = block_fd;
@@ -801,16 +816,24 @@ void fs_entry_cache_complete_writes( struct fs_core* core, struct syndicate_cach
             write_lru->push_back( *c );
          }
          
-         write_count += 1;
+         write_count ++;
       }
+      
+      bool detached = f->detached;
       
       // wake up anyone waiting on this
       sem_post( &f->sem_ongoing );
+      
+      // are we supposed to reap it?
+      if( detached || !cache->running ) {
+         fs_entry_cache_block_future_free( f );
+      }
    }
    
    // successfully cached blocks
    __sync_fetch_and_add( &cache->num_blocks_written, write_count );
    
+   dbprintf("Cache now has %d blocks\n", cache->num_blocks_written );
    completed->clear();
 }
 
@@ -874,14 +897,12 @@ void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* 
          
          if( rc != 0 ) {
             // if it wasn't there, then it was already evicted.
-            if( rc != -ENOENT ) {
-               // otherwise, we have a problem.
-               errorf("WARN: failed to evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", c.file_id, c.file_version, c.block_id, c.block_version, rc );
-            }
+            errorf("WARN: failed to evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", c.file_id, c.file_version, c.block_id, c.block_version, rc );
          }
          
          else {
             // successfully evicted a block
+            dbprintf("Cache EVICT %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", c.file_id, c.file_version, c.block_id, c.block_version );
             blocks_removed ++;
          }
          
@@ -889,6 +910,8 @@ void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* 
       
       // blocks evicted!
       __sync_fetch_and_sub( &cache->num_blocks_written, blocks_removed );
+      
+      dbprintf("Cache now has %d blocks\n", cache->num_blocks_written );
    }
    
    fs_entry_cache_lru_unlock( cache );
@@ -968,7 +991,10 @@ static int cache_entry_key_init( struct cache_entry_key* c, uint64_t file_id, in
 // add a block to the cache, to be written asynchronously.
 // return a future that can be waited on.
 // NOTE: the given data will be referenced!  Do NOT free it!
-struct cache_block_future* fs_entry_cache_write_block_async( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char* data, size_t data_len ) {
+struct cache_block_future* fs_entry_cache_write_block_async( struct fs_core* core, struct syndicate_cache* cache,
+                                                             uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version,
+                                                             char* data, size_t data_len,
+                                                             bool detached ) {
    
    if( !cache->running )
       return NULL;
@@ -984,7 +1010,7 @@ struct cache_block_future* fs_entry_cache_write_block_async( struct fs_core* cor
    }
    
    struct cache_block_future* f = CALLOC_LIST( struct cache_block_future, 1 );
-   cache_block_future_init( core, cache, f, file_id, file_version, block_id, block_version, block_fd, data, data_len );
+   cache_block_future_init( core, cache, f, file_id, file_version, block_id, block_version, block_fd, data, data_len, detached );
    
    fs_entry_cache_pending_wlock( cache );
    
@@ -1054,6 +1080,3 @@ ssize_t fs_entry_cache_read_block( struct fs_core* core, struct syndicate_cache*
    
    return nr;
 }
-
-
-

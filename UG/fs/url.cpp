@@ -35,7 +35,7 @@ char* fs_entry_path_from_file_id( uint64_t file_id ) {
    fs_entry_split_uint64( file_id, file_id_parts );
 
    char* ret = CALLOC_LIST( char, 21 );
-   sprintf(ret, "/%X/%X/%X/%X", file_id_parts[0], file_id_parts[1], file_id_parts[2], file_id_parts[3] );
+   sprintf(ret, "/%04X/%04X/%04X/%04X", file_id_parts[0], file_id_parts[1], file_id_parts[2], file_id_parts[3] );
    return ret;
 }
 

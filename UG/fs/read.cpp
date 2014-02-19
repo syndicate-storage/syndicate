@@ -147,7 +147,7 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
       return 0;      // EOF
    }
    
-   bool local = false;
+   bool hit_cache = false;
    ssize_t rc = 0;
    
    uint64_t block_version = fent->manifest->get_block_version( block_id );
@@ -166,7 +166,7 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
       }
       else {
          // done!
-         local = true;
+         hit_cache = true;
          rc = read_len;
          
          // promote!
@@ -174,9 +174,11 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
       }
       
       close( block_fd );
+      
+      dbprintf("Cache HIT on %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, block_version );
    }
    
-   if( !local ) {
+   if( !hit_cache ) {
       // get it remotely
       ssize_t read_len = fs_entry_read_remote_block( core, fs_path, fent, block_id, block_version, block_bits, block_len );
       if( read_len < 0 ) {
@@ -186,8 +188,14 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
          // done!
          rc = read_len;
          
-         // cache this
-         fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, block_version, block_bits, block_len );
+         // cache this, but don't wait for it to finish
+         // do NOT free the future--it'll get freed by the cache.
+         struct cache_block_future* fut = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, block_version, block_bits, block_len, true );
+         if( fut != NULL ) {
+            errorf("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, block_version );
+         }
+         
+         dbprintf("Cache MISS on %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "],\n", fent->file_id, fent->version, block_id, block_version );
       }
    }
    
