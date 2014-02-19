@@ -1696,6 +1696,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    ms_client_rlock( client );
 
    // verify that our host and port match the MS's record
+#ifndef _FIREWALL
    if( strcmp( cert.hostname, client->conf->hostname ) != 0 ) {
       // wrong host
       errorf("ERR: This gateway is running on %s:%d, but the MS says it should be running on %s:%d.  Please update the Gateway record on the MS.\n", client->conf->hostname, client->conf->portnum, cert.hostname, cert.portnum );
@@ -1704,6 +1705,9 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
       ms_client_gateway_cert_free( &cert );
       return -ENOTCONN;
    }
+#else
+   // skip verifying -- virtual ip and real ip will be different
+#endif
 
    ms_client_unlock( client );
 
