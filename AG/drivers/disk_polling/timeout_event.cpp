@@ -15,13 +15,33 @@
 */
 
 #include <string.h>
-#include <signal.h>
-
 #include "timeout_event.h"
+
+// use linux signal 
+#ifdef SIGNAL_MODE
+#include <signal.h>
+#endif
+
+// use pthread
+#ifdef THREAD_MODE
+#include <pthread.h>
+#endif
+
+
 
 static struct timeout_event g_current_timeout_event;
 
+#ifdef THREAD_MODE
+static pthread_t g_timeout_event_generator;
+#endif
+
+#ifdef SIGNAL_MODE
 static void handle_timeout_event(int sig_no);
+#endif
+
+#ifdef THREAD_MODE
+static void* handle_timeout_event_generator_thread(void* param);
+#endif
 
 void init_timeout() {
     memset(&g_current_timeout_event, 0, sizeof(struct timeout_event));
@@ -33,19 +53,29 @@ int set_timeout_event(int timeout, PFN_TIMEOUT_USER_EVENT_HANDLER handler) {
         return -1;
     }
     
+#ifdef SIGNAL_MODE
     g_current_timeout_event.timeout_handler_backup = signal(SIGALRM, handle_timeout_event);
     if(g_current_timeout_event.timeout_handler_backup == SIG_ERR) {
         return -1;
     }
+#endif
     
     g_current_timeout_event.timeout = timeout;
     g_current_timeout_event.handler = handler;
     g_current_timeout_event.running = true;
     
+#ifdef SIGNAL_MODE
     alarm(timeout);
+#endif
+    
+#ifdef THREAD_MODE
+    pthread_create(&g_timeout_event_generator, NULL, &handle_timeout_event_generator_thread, &g_current_timeout_event);
+#endif
+
     return 0;
 }
 
+#ifdef SIGNAL_MODE
 static void handle_timeout_event(int sig_no) {
     alarm(0);
     struct timeout_event event_backup = g_current_timeout_event;
@@ -56,3 +86,17 @@ static void handle_timeout_event(int sig_no) {
     
     (*event_backup.handler)(sig_no, &event_backup);
 }
+#endif
+
+#ifdef THREAD_MODE
+static void* handle_timeout_event_generator_thread(void* param) {
+    struct timeout_event event_backup;
+    memcpy(&event_backup, (struct timeout_event*)param, sizeof(struct timeout_event));
+    sleep(event_backup.timeout);
+    
+    // waiting...
+    
+    memset(&g_current_timeout_event, 0, sizeof(struct timeout_event));
+    (*event_backup.handler)(0, &event_backup);
+}
+#endif

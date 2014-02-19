@@ -19,6 +19,10 @@
 
 #include <unistd.h>
 
+#define THREAD_MODE
+//#define SIGNAL_MODE
+
+
 typedef void (*PFN_TIMEOUT_EVENT_HANDLER)(int sig_no);
 struct timeout_event;
 typedef void (*PFN_TIMEOUT_USER_EVENT_HANDLER)(int sig_no, struct timeout_event* event);

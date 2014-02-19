@@ -37,7 +37,9 @@ LIBPATH = """
 
 # add libraries here
 LIBS = """
+   AGcommon
    syndicate
+   pthread
 """
 
 # add additional CPPFLAGS here
@@ -52,6 +54,7 @@ env.Append(LIBS = Split(LIBS))
 env.Append(CPPPATH = Split(CPPPATH))
 env.Append(CPPFLAGS = CPPFLAGS)
 env.Append(LIBPATH = Split(LIBPATH))
+env.Append(LINKFLAGS = ['-Wl,--export-dynamic'])
 
 # generate the shared library
 libAGdiskdriver = env.SharedLibrary( target="libAGdiskdriver.so", source=[Split(source_files)] )

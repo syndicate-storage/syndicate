@@ -50,6 +50,7 @@ LINK_FLAGS = ""
 # parse options
 devel = False
 old_boost = False
+firewall = False
 extra_args = {}
 
 for key, value in ARGLIST:
@@ -64,6 +65,12 @@ for key, value in ARGLIST:
       if value == "true":
          CPPFLAGS += " -D_DEVELOPMENT"
          devel = True
+
+   # firewall flag - set true if this system works behind firewall
+   elif key == "firewall":
+      if value == "true":
+         CPPFLAGS += " -D_FIREWALL"
+         firewall = True
 
    # PlanetLab (Fedora 12) flag
    elif key == "old_boost":
@@ -133,6 +140,7 @@ env = Environment(
    toolpath = ['build/tools'],
    tools = ['default', 'protoc'],
    devel = devel,
+   firewall = firewall,
    old_boost = old_boost,   # for the UG
    install_prefix = install_prefix
 )
