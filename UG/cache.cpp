@@ -322,7 +322,7 @@ static int fs_entry_cache_file_blocks_apply( char const* local_path, int (*block
 
    int dirent_sz = offsetof(struct dirent, d_name) + pathconf(local_path, _PC_NAME_MAX) + 1;
 
-   struct dirent* dent = (struct dirent*)malloc( dirent_sz );;
+   struct dirent* dent = (struct dirent*)malloc( dirent_sz );
    struct dirent* result = NULL;
    char block_path[PATH_MAX+1];
    int rc = 0;

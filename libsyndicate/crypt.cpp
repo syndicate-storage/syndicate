@@ -238,7 +238,10 @@ int md_verify_signature( EVP_PKEY* pubkey, char const* data, size_t len, char* s
       return -EINVAL;
    }
    
-   return md_verify_signature_raw( pubkey, data, len, sig_bin, sig_bin_len );
+   rc = md_verify_signature_raw( pubkey, data, len, sig_bin, sig_bin_len );
+   
+   free( sig_bin );
+   return rc;
 }
 
 
@@ -317,6 +320,8 @@ int md_sign_message_raw( EVP_PKEY* pkey, char const* data, size_t len, char** si
    
    *sig = (char*)sig_bin;
    *siglen = sig_bin_len;
+   
+   EVP_MD_CTX_destroy( mdctx );
    return 0;
 }
 

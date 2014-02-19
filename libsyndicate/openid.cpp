@@ -396,6 +396,10 @@ int ms_client_openid_complete( CURL* curl, char const* return_to_method, char co
    *response_body = bits;
    *response_body_len = len;
    
+   free( return_to_url_and_path );
+   if( return_to_qs )
+      free( return_to_qs );
+
    return 0;
 }
 
@@ -433,6 +437,8 @@ int ms_client_openid_session( CURL* curl, char const* ms_openid_url, char const*
    
    // complete the authentication with the MS 
    rc = ms_client_openid_complete( curl, return_to_method, return_to, response_buf, response_len );
+   free( return_to );
+   
    if( rc != 0 ) {
       errorf("ms_client_openid_complete(%s) rc = %d\n", ms_openid_url, rc);
       return rc;
