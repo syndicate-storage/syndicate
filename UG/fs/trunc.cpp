@@ -82,6 +82,9 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
    // which blocks do we garbage-collect?
    modification_map garbage_blocks;
    
+   // block futures
+   list<struct cache_block_future*> futures;
+   
    // did we replicate successfully?
    bool replicated = false;
    
@@ -112,10 +115,9 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
             
             unsigned char* hash = BLOCK_HASH_DATA( block, core->blocking_factor );
             
-            int rc = fs_entry_write_block( core, fent, trunc_block_id, block, core->blocking_factor, hash );
-            if( rc != 0 ) {
-               errorf("fs_entry_put_block(%s[%" PRId64 "]) rc = %d\n", fs_path, trunc_block_id, rc );
-               err = rc;
+            struct cache_block_future* f = fs_entry_write_block_async( core, fent, trunc_block_id, block, core->blocking_factor, hash );
+            if( f == NULL ) {
+               errorf("fs_entry_put_block(%s[%" PRId64 "]) failed\n", fs_path, trunc_block_id );
                free( hash );
             }
             else {
@@ -123,9 +125,7 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
                struct fs_entry_block_info binfo;
                memset( &binfo, 0, sizeof(binfo) );
 
-               binfo.version = fent->manifest->get_block_version( trunc_block_id );
-               binfo.hash = hash;
-               binfo.hash_len = BLOCK_HASH_LEN();
+               fs_entry_block_info_init( &binfo, fent->manifest->get_block_version( trunc_block_id ), hash, BLOCK_HASH_LEN(), core->gateway, f->block_fd );
                
                modified_blocks[ trunc_block_id ] = binfo;
                
@@ -133,11 +133,13 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
                struct fs_entry_block_info erase_binfo;
                memset( &erase_binfo, 0, sizeof(erase_binfo) );
                
-               erase_binfo.version = old_version;
+               fs_entry_block_info_init( &binfo, old_version, NULL, 0, core->gateway, -1 );
                
                garbage_blocks[ trunc_block_id ] = erase_binfo;
                
             }
+            
+            futures.push_back( f );
          }
 
          free( block );
@@ -151,7 +153,7 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
                struct fs_entry_block_info erase_binfo;
                memset( &erase_binfo, 0, sizeof(erase_binfo) );
                
-               erase_binfo.version = fent->manifest->get_block_version( i );
+               fs_entry_block_info_init( &erase_binfo, fent->manifest->get_block_version(i), NULL, 0, 0, -1 );
                
                garbage_blocks[ i ] = erase_binfo;
             }
@@ -172,11 +174,33 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
    else if( size > fent->size ) {
       // truncate to expand the file
       
-      int rc = fs_entry_expand_file( core, fs_path, fent, size, &modified_blocks );
+      int rc = fs_entry_expand_file( core, fs_path, fent, size, &modified_blocks, &futures );
       if( rc != 0 ) {
          errorf("fs_entry_expand_file(%s) rc = %d\n", fs_path, rc );
          err = rc;
       }
+   }
+   
+   // wait for all cache writes to finish
+   for( list<struct cache_block_future*>::iterator itr = futures.begin(); itr != futures.end(); itr++ ) {
+      struct cache_block_future* f = *itr;
+      
+      int frc = fs_entry_cache_block_future_wait( f );
+      if( frc != 0 ) {
+         errorf("WARN: fs_entry_cach_block_future_wait rc = %d\n", frc );
+      }
+      
+      if( f->write_rc != 0 ) {
+         errorf("WARN: write %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", f->key.file_id, f->key.file_version, f->key.block_id, f->key.block_version, f->write_rc );
+         err = f->write_rc;
+      }
+      else {
+         // don't close the fd (we'll close it ourselves in replication)
+         fs_entry_cache_block_future_release_fd( f );
+      }
+      
+      // free memory
+      fs_entry_cache_block_future_free( f );
    }
 
    if( err == 0 && !local ) {
@@ -311,10 +335,17 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
       fent->version = fent_snapshot.file_version;
    }
 
-   if( err == 0 && modified_blocks.size() > 0 ) {
+   if( modified_blocks.size() > 0 ) {
       // free memory
       for( modification_map::iterator itr = modified_blocks.begin(); itr != modified_blocks.end(); itr++ ) {
-         free( itr->second.hash );
+         if( itr->second.hash )
+            free( itr->second.hash );
+         
+         // if we're exiting due to error, then clean up the blocks we wrote to the cache.
+         if( err < 0 ) {
+            close( itr->second.block_fd );
+            fs_entry_cache_evict_block( core, core->cache, fent->file_id, fent->version, itr->first, itr->second.version );
+         }
       }
    }
    

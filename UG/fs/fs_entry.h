@@ -73,6 +73,9 @@ struct fs_entry_block_info {
    unsigned char* hash;
    size_t hash_len;
    uint64_t gateway_id;
+   
+   // already-opened block
+   int block_fd;
 };
 
 typedef map<uint64_t, struct fs_entry_block_info> modification_map;
@@ -82,7 +85,7 @@ typedef map<uint64_t, struct fs_entry_block_info> modification_map;
 class file_manifest;
 struct replica_context;
 struct syndicate_state;
-class syndicate_cache;
+struct syndicate_cache;
 
 // Syndicate filesystem entry
 struct fs_entry {
@@ -286,6 +289,7 @@ int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct f
 
 // misc
 unsigned int fs_entry_num_children( struct fs_entry* fent );
+void fs_entry_block_info_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id, int block_fd );
 
 // cython compatibility
 uint64_t fs_dir_entry_type( struct fs_dir_entry* dirent );

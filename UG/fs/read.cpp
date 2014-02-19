@@ -168,6 +168,9 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
          // done!
          local = true;
          rc = read_len;
+         
+         // promote!
+         fs_entry_cache_promote_block( core, core->cache, fent->file_id, fent->version, block_id, block_version );
       }
       
       close( block_fd );

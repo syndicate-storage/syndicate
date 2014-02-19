@@ -48,72 +48,65 @@ struct cache_entry_key {
    int64_t file_version;
    uint64_t block_id;
    int64_t block_version;
-   size_t data_len;
 };
 
+// "lexigraphic" comparison between cache_entry_keys
+bool cache_entry_key_comp_func( const struct cache_entry_key& c1, const struct cache_entry_key& c2 );
+
 struct cache_entry_key_comp {
-   // "lexigraphic" comparison between cache_entry_keys
+   
    bool operator()( const struct cache_entry_key& c1, const struct cache_entry_key& c2 ) {
-      if( c1.file_id < c2.file_id ) {
-         return true;
-      }
-      else if( c1.file_id > c2.file_id ) {
-         return false;
-      }
-      else {
-         if( c1.file_version < c2.file_version ) {
-            return true;
-         }
-         else if( c1.file_version > c2.file_version) {
-            return false;
-         }
-         else {
-            if( c1.block_id < c2.block_id ) {
-               return true;
-            }
-            else if( c1.block_id > c2.block_id ) {
-               return false;
-            }
-            else {
-               if( c1.block_version < c2.block_version ) {
-                  return true;
-               }
-               else {
-                  return false;
-               }
-            }
-         }
-      }
+      return cache_entry_key_comp_func( c1, c2 );
+   }
+   
+   // equality test
+   static bool equal( const struct cache_entry_key& c1, const struct cache_entry_key& c2 ) {
+      return c1.file_id == c2.file_id && c1.file_version == c2.file_version && c1.block_id == c2.block_id && c1.block_version == c2.block_version;
    }
 };
 
-// ongoing write
-struct cache_write_ctx {
+// ongoing cache write for a file
+struct cache_block_future {
+   struct cache_entry_key key;
+   
+   char* block_data;
+   size_t data_len;
+   
+   int block_fd;
+   
    struct aiocb aio;
    int aio_rc;
    int write_rc;
    
-   struct cache_entry_key key;
+   sem_t sem_ongoing;
 };
 
-typedef map<struct cache_entry_key, char*, struct cache_entry_key_comp> block_buffer_t;
-typedef list<struct cache_write_ctx> completion_buffer_t;
+
+typedef list<struct cache_block_future*> block_buffer_t;
+typedef block_buffer_t completion_buffer_t;
+typedef set<struct cache_block_future*> ongoing_writes_t;
 typedef list<struct cache_entry_key> cache_lru_t;
+
+typedef cache_lru_t promote_buffer_t;
 
 struct syndicate_cache {
    // size limits (in blocks, not bytes!)
    size_t hard_max_size;
    size_t soft_max_size;
    
-   int num_aio_writes;                      // how many ongoing aio writes are there?
    int num_blocks_written;                  // how many blocks have been successfully written to disk?
    
-   block_buffer_t* pending;             // data to cache that is scheduled to be written to disk 
+   // data to cache that is scheduled to be written to disk 
+   block_buffer_t* pending;
    pthread_rwlock_t pending_lock;
    
    // pending refers to one of these...
    block_buffer_t* pending_1;
    block_buffer_t* pending_2;
+   
+   // data that is being asynchronously written to disk
+   ongoing_writes_t* ongoing_writes;
+   pthread_rwlock_t ongoing_writes_lock;
    
    // completed writes, to be reaped 
    completion_buffer_t* completed;
@@ -123,8 +116,17 @@ struct syndicate_cache {
    completion_buffer_t* completed_1;
    completion_buffer_t* completed_2;
    
-   cache_lru_t* cache_lru;              // order in which blocks were added
+   // order in which blocks were added
+   cache_lru_t* cache_lru;
    pthread_rwlock_t cache_lru_lock;
+   
+   // blocks to be promoted in the current lru 
+   promote_buffer_t* promotes;
+   pthread_rwlock_t promotes_lock;
+   
+   // promotes refers to one of these
+   promote_buffer_t* promotes_1;
+   promote_buffer_t* promotes_2;
    
    pthread_t thread;
    bool running;
@@ -132,8 +134,9 @@ struct syndicate_cache {
    // semaphore to block writes once the hard limit is met
    sem_t sem_write_hard_limit;
    
-   // semaphore to count the number of pending write requests
-   sem_t sem_blocks_pending;
+   // semaphore to indicate that there is work to be done
+   sem_t sem_blocks_writing;
+   
 };
 
 // arguments to the main thread 
@@ -146,14 +149,19 @@ struct syndicate_cache_thread_args {
 struct syndicate_cache_aio_write_args {
    struct fs_core* core;
    struct syndicate_cache* cache;
-   struct cache_write_ctx* write;
+   struct cache_block_future* future;
 };
 
 int fs_entry_cache_init( struct fs_core* core, struct syndicate_cache* cache, size_t soft_max_size, size_t hard_max_size );
 int fs_entry_cache_destroy( struct syndicate_cache* cache );
 
-// access on-disk cached data 
-int fs_entry_cache_write_block_async( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char* data, size_t data_len );
+// asynchronous writes
+struct cache_block_future* fs_entry_cache_write_block_async( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char* data, size_t data_len );
+int fs_entry_cache_block_future_wait( struct cache_block_future* f );
+int fs_entry_cache_block_future_free( struct cache_block_future* f );
+int fs_entry_cache_block_future_release_fd( struct cache_block_future* f );
+
+// synchronous block I/O
 int fs_entry_cache_open_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int flags );
 ssize_t fs_entry_cache_read_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int block_fd, char* buf, size_t len );
 
@@ -163,6 +171,9 @@ int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cac
 // allow external client to evict data
 int fs_entry_cache_evict_file( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version );
 int fs_entry_cache_evict_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
+
+// allow external client to promote data in the cache (i.e. move it up the LRU)
+int fs_entry_cache_promote_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
 
 // allow external client to reversion a file 
 int fs_entry_cache_reversion_file( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t old_file_version, int64_t new_file_version );

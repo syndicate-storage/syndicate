@@ -16,6 +16,40 @@
 
 #include "cache.h"
 
+bool cache_entry_key_comp_func( const struct cache_entry_key& c1, const struct cache_entry_key& c2 ) {
+   if( c1.file_id < c2.file_id ) {
+      return true;
+   }
+   else if( c1.file_id > c2.file_id ) {
+      return false;
+   }
+   else {
+      if( c1.file_version < c2.file_version ) {
+         return true;
+      }
+      else if( c1.file_version > c2.file_version) {
+         return false;
+      }
+      else {
+         if( c1.block_id < c2.block_id ) {
+            return true;
+         }
+         else if( c1.block_id > c2.block_id ) {
+            return false;
+         }
+         else {
+            if( c1.block_version < c2.block_version ) {
+               return true;
+            }
+            else {
+               return false;
+            }
+         }
+      }
+   }
+}
+
+
 void* fs_entry_cache_main_loop( void* arg );
 void cache_aio_write_completion( sigval_t sigval );
 
@@ -58,6 +92,35 @@ int fs_entry_cache_lru_unlock( struct syndicate_cache* cache ) {
    return pthread_rwlock_unlock( &cache->cache_lru_lock );
 }
 
+
+// lock primitives for the promotion buffer
+int fs_entry_cache_promotes_rlock( struct syndicate_cache* cache ) {
+   return pthread_rwlock_rdlock( &cache->promotes_lock );
+}
+
+int fs_entry_cache_promotes_wlock( struct syndicate_cache* cache ) {
+   return pthread_rwlock_wrlock( &cache->promotes_lock );
+}
+
+int fs_entry_cache_promotes_unlock( struct syndicate_cache* cache ) {
+   return pthread_rwlock_unlock( &cache->promotes_lock );
+}
+
+
+// lock primitives on the ongoing writes buffer
+int fs_entry_cache_ongoing_writes_rlock( struct syndicate_cache* cache ) {
+   return pthread_rwlock_rdlock( &cache->ongoing_writes_lock );
+}
+
+int fs_entry_cache_ongoing_writes_wlock( struct syndicate_cache* cache ) {
+   return pthread_rwlock_wrlock( &cache->ongoing_writes_lock );
+}
+
+int fs_entry_cache_ongoing_writes_unlock( struct syndicate_cache* cache ) {
+   return pthread_rwlock_unlock( &cache->ongoing_writes_lock );
+}
+
+
 // arguments to the cb below
 struct cache_cb_add_lru_args {
    cache_lru_t* cache_lru;
@@ -94,7 +157,6 @@ static int cache_cb_add_lru( char const* block_path, void* cls ) {
       lru_key.file_version = file_version;
       lru_key.block_id = block_id;
       lru_key.block_version = block_version;
-      lru_key.data_len = 0;
       
       cache_lru->push_back( lru_key );
       
@@ -106,27 +168,36 @@ static int cache_cb_add_lru( char const* block_path, void* cls ) {
    return rc;
 }
 
-// clean up a cache_write_ctx structure
-static int cache_write_ctx_clean( struct cache_write_ctx* w ) {
-   if( w->aio.aio_buf ) {
-      void* tmp = (void*)w->aio.aio_buf;
-      free( tmp );
-      w->aio.aio_buf = NULL;
+// clean up a future
+static int cache_block_future_clean( struct cache_block_future* f ) {
+   if( f->block_fd > 0 ) {
+      close( f->block_fd );
+      f->block_fd = -1;
    }
    
-   if( w->aio.aio_sigevent.sigev_value.sival_ptr ) {
-      free( w->aio.aio_sigevent.sigev_value.sival_ptr );
-      w->aio.aio_sigevent.sigev_value.sival_ptr = NULL;
+   if( f->block_data ) {
+      free( f->block_data );
+      f->block_data = NULL;
    }
    
-   if( w->aio.aio_fildes >= 0 ) {
-      close( w->aio.aio_fildes );
-      w->aio.aio_fildes = -1;
+   if( f->aio.aio_sigevent.sigev_value.sival_ptr ) {
+      free( f->aio.aio_sigevent.sigev_value.sival_ptr );
+      f->aio.aio_sigevent.sigev_value.sival_ptr = NULL;
    }
+   
+   memset( &f->aio, 0, sizeof(f->aio) );
+   
+   sem_destroy( &f->sem_ongoing );
    
    return 0;
 }
 
+// free a future
+int fs_entry_cache_block_future_free( struct cache_block_future* f ) {
+   cache_block_future_clean( f );
+   free( f );
+   return 0;
+}
 
 // set up a file's cache directory.
 static int fs_entry_cache_file_setup( struct fs_core* core, uint64_t file_id, int64_t version, mode_t mode ) {
@@ -166,7 +237,7 @@ int fs_entry_cache_open_block( struct fs_core* core, struct syndicate_cache* cac
       }
    }
    
-   fd = open( block_path, flags );
+   fd = open( block_path, flags, 0600 );
    if( fd < 0 ) {
       fd = -errno;
    }
@@ -257,7 +328,7 @@ static int fs_entry_cache_file_blocks_apply( char const* local_path, int (*block
 
          md_fullpath( local_path, result->d_name, block_path );
          
-         rc = (*block_func)( local_path, cls );
+         rc = (*block_func)( block_path, cls );
          if( rc != 0 ) {
             // could not unlink
             rc = -errno;
@@ -390,12 +461,13 @@ int fs_entry_cache_reversion_file( struct fs_core* core, struct syndicate_cache*
    rc = fs_entry_cache_file_blocks_apply( new_local_path, cache_cb_add_lru, &lru_args );
    
    if( rc == 0 ) {
-      // splice the LRU list in
-      fs_entry_cache_lru_wlock( cache );
+      // promote these blocks in the cache
+      fs_entry_cache_promotes_wlock( cache );
       
-      cache->cache_lru->splice( cache->cache_lru->end(), lru );
+      for( cache_lru_t::iterator itr = lru.begin(); itr != lru.end(); itr++ ) 
+         cache->promotes->push_back( *itr );
       
-      fs_entry_cache_lru_unlock( cache );
+      fs_entry_cache_promotes_unlock( cache );
    }
    
    free( cur_local_url );
@@ -413,6 +485,8 @@ int fs_entry_cache_init( struct fs_core* core, struct syndicate_cache* cache, si
       &cache->pending_lock,
       &cache->completed_lock,
       &cache->cache_lru_lock,
+      &cache->promotes_lock,
+      &cache->ongoing_writes_lock,
       NULL
    };
    
@@ -424,7 +498,7 @@ int fs_entry_cache_init( struct fs_core* core, struct syndicate_cache* cache, si
    cache->soft_max_size = soft_limit;
    
    sem_init( &cache->sem_write_hard_limit, 0, hard_limit );
-   sem_init( &cache->sem_blocks_pending, 0, 0 );
+   sem_init( &cache->sem_blocks_writing, 0, 0 );
    
    cache->pending_1 = new block_buffer_t();
    cache->pending_2 = new block_buffer_t();
@@ -434,7 +508,13 @@ int fs_entry_cache_init( struct fs_core* core, struct syndicate_cache* cache, si
    cache->completed_2 = new completion_buffer_t();
    cache->completed = cache->completed_1;
    
-   cache->cache_lru = new cache_lru_t;
+   cache->cache_lru = new cache_lru_t();
+   
+   cache->promotes_1 = new cache_lru_t();
+   cache->promotes_2 = new cache_lru_t();
+   cache->promotes = cache->promotes_1;
+   
+   cache->ongoing_writes = new ongoing_writes_t();
    
    // start the thread up 
    struct syndicate_cache_thread_args* args = CALLOC_LIST( struct syndicate_cache_thread_args, 1 );
@@ -461,7 +541,7 @@ int fs_entry_cache_destroy( struct syndicate_cache* cache ) {
    cache->running = false;
    
    // wake up the writer
-   sem_post( &cache->sem_blocks_pending );
+   sem_post( &cache->sem_blocks_writing );
    
    // wait for cache thread to finish 
    pthread_join( cache->thread, NULL );
@@ -477,8 +557,8 @@ int fs_entry_cache_destroy( struct syndicate_cache* cache ) {
    
    for( int i = 0; pendings[i] != NULL; i++ ) {
       for( block_buffer_t::iterator itr = pendings[i]->begin(); itr != pendings[i]->end(); itr++ ) {
-         if( itr->second ) {
-            free( itr->second );
+         if( *itr ) {
+            free( *itr );
          }
       }
       
@@ -493,11 +573,22 @@ int fs_entry_cache_destroy( struct syndicate_cache* cache ) {
    
    for( int i = 0; completeds[i] != NULL; i++ ) {
       for( completion_buffer_t::iterator itr = completeds[i]->begin(); itr != completeds[i]->end(); itr++ ) {
-         struct cache_write_ctx wctx = *itr;
-         cache_write_ctx_clean( &wctx );
+         struct cache_block_future* f = *itr;
+         fs_entry_cache_block_future_free( f );
       }
       
       delete completeds[i];
+   }
+   
+   cache_lru_t* lrus[] = {
+      cache->cache_lru,
+      cache->promotes_1,
+      cache->promotes_2,
+      NULL
+   };
+   
+   for( int i = 0; lrus[i] != NULL; i++ ) {
+      delete lrus[i];
    }
    
    cache->pending_1 = NULL;
@@ -506,52 +597,86 @@ int fs_entry_cache_destroy( struct syndicate_cache* cache ) {
    cache->completed_1 = NULL;
    cache->completed_2 = NULL;
    
-   delete cache->cache_lru;
    cache->cache_lru = NULL;
+   cache->promotes_1 = NULL;
+   cache->promotes_2 = NULL;
    
-   pthread_rwlock_destroy( &cache->pending_lock );
-   pthread_rwlock_destroy( &cache->completed_lock );
-   pthread_rwlock_destroy( &cache->cache_lru_lock );
+   delete cache->ongoing_writes;
+   cache->ongoing_writes = NULL;
    
-   sem_destroy( &cache->sem_blocks_pending );
+   pthread_rwlock_t* locks[] = {
+      &cache->pending_lock,
+      &cache->completed_lock,
+      &cache->cache_lru_lock,
+      &cache->promotes_lock,
+      &cache->ongoing_writes_lock,
+      NULL
+   };
+   
+   for( int i = 0; locks[i] != NULL; i++ ) {
+      pthread_rwlock_destroy( locks[i] );
+   }
+   
+   sem_destroy( &cache->sem_blocks_writing );
    sem_destroy( &cache->sem_write_hard_limit );
    
    return 0;
 }
 
 
-// asynchronously write a block 
-static int cache_aio_write( struct fs_core* core, struct syndicate_cache* cache, const struct cache_entry_key* c, char* data, struct cache_write_ctx* w ) {
+// create an ongoing write
+// NOTE: the future will need to hold onto data, so the caller shouldn't free it!
+int cache_block_future_init( struct fs_core* core, struct syndicate_cache* cache, struct cache_block_future* f, uint64_t file_id, int64_t file_version, int block_id, int block_version, int block_fd, char* data, size_t data_len ) {
+   memset( f, 0, sizeof( struct cache_block_future ) );
    
-   int block_fd = fs_entry_cache_open_block( core, cache, c->file_id, c->file_version, c->block_id, c->block_version, O_CREAT | O_WRONLY | O_TRUNC );
-   if( block_fd < 0 ) {
-      errorf("fs_entry_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, block_fd );
-      return block_fd;
-   }
+   f->key.file_id = file_id;
+   f->key.file_version = file_version;
+   f->key.block_id = block_id;
+   f->key.block_version = block_version;
    
-   memset( w, 0, sizeof(struct cache_write_ctx) );
+   f->block_fd = block_fd;
+   f->block_data = data;
+   f->data_len = data_len;
    
    // fill in aio structure
-   w->aio.aio_fildes = block_fd;
-   w->aio.aio_buf = data;
-   w->aio.aio_nbytes = c->data_len;
-   w->aio.aio_offset = 0;
+   f->aio.aio_fildes = block_fd;
+   f->aio.aio_buf = data;
+   f->aio.aio_nbytes = data_len;
+   f->aio.aio_offset = 0;
    
    // set up callback
-   w->aio.aio_sigevent.sigev_notify = SIGEV_THREAD;
-   w->aio.aio_sigevent.sigev_notify_function = cache_aio_write_completion;
-   w->aio.aio_sigevent.sigev_notify_attributes = NULL;
+   f->aio.aio_sigevent.sigev_notify = SIGEV_THREAD;
+   f->aio.aio_sigevent.sigev_notify_function = cache_aio_write_completion;
+   f->aio.aio_sigevent.sigev_notify_attributes = NULL;
    
    // set up completion args
    struct syndicate_cache_aio_write_args* wargs = CALLOC_LIST( struct syndicate_cache_aio_write_args, 1 );
    
    wargs->core = core;
    wargs->cache = cache;
-   wargs->write = w;
+   wargs->future = f;
    
-   w->aio.aio_sigevent.sigev_value.sival_ptr = (void*)wargs;
+   f->aio.aio_sigevent.sigev_value.sival_ptr = (void*)wargs;
    
-   int rc = aio_write( &w->aio );
+   sem_init( &f->sem_ongoing, 0, 0 );
+   return 0;
+}
+
+// asynchronously write a block 
+static int cache_aio_write( struct fs_core* core, struct syndicate_cache* cache, struct cache_block_future* f ) {
+   
+   // allow external clients to keep track of pending writes for this file
+   fs_entry_cache_ongoing_writes_wlock( cache );
+   
+   int rc = aio_write( &f->aio );
+   
+   if( rc == 0 ) {
+      // put one new block
+      cache->ongoing_writes->insert( f );   
+   }
+   
+   fs_entry_cache_ongoing_writes_unlock( cache );
+   
    return rc;
 }
 
@@ -562,29 +687,36 @@ void cache_aio_write_completion( sigval_t sigval ) {
    struct syndicate_cache_aio_write_args* wargs = (struct syndicate_cache_aio_write_args*)sigval.sival_ptr;
    
    struct syndicate_cache* cache = wargs->cache;
-   struct cache_write_ctx* write = wargs->write;
+   struct cache_block_future* future = wargs->future;
    
    // successful completion?
    int write_rc = 0;
-   int aio_rc = aio_error( &write->aio );
+   int aio_rc = aio_error( &future->aio );
    if( aio_rc == 0 ) {
       // yup!
-      write_rc = aio_return( &write->aio );
+      write_rc = aio_return( &future->aio );
+      
+      if( write_rc == -1 )
+         write_rc = -errno;
+   }
+   else {
+      write_rc = -aio_rc;
    }
    
-   write->aio_rc = aio_rc;
-   write->write_rc = write_rc;
+   future->aio_rc = aio_rc;
+   future->write_rc = write_rc;
    
    // enqueue for reaping
    fs_entry_cache_completed_wlock( cache );
    
-   cache->completed->push_back( *write );
+   cache->completed->push_back( future );
    
    fs_entry_cache_completed_unlock( cache );
 }
 
 
 // start pending writes
+// NOTE: we assume that only one thread calls this, for a given cache
 void fs_entry_cache_begin_writes( struct fs_core* core, struct syndicate_cache* cache ) {
    
    // get the pending set, and switch the cache over to the other one
@@ -600,26 +732,16 @@ void fs_entry_cache_begin_writes( struct fs_core* core, struct syndicate_cache* 
    
    fs_entry_cache_pending_unlock( cache );
    
-   // now we have exclusive access to this pending writes buffer
+   // safe to use pending as long as no one else performs the above swap
    
    // start pending writes
    for( block_buffer_t::iterator itr = pending->begin(); itr != pending->end(); itr++ ) {
-      const struct cache_entry_key* c = &itr->first;
-      char* block = itr->second;
+      struct cache_block_future* f = *itr;
+      struct cache_entry_key* c = &f->key;
       
-      struct cache_write_ctx w;
-      memset( &w, 0, sizeof(w) );
-      
-      int rc = cache_aio_write( core, cache, c, block, &w );
+      int rc = cache_aio_write( core, cache, f );
       if( rc < 0 ) {
          errorf("cache_aio_write( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ), rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, rc );
-         
-         free( block );
-         itr->second = NULL;
-      }
-      else {
-         // count this write 
-         __sync_fetch_and_add( &cache->num_aio_writes, 1 );
       }
    }
    
@@ -628,10 +750,12 @@ void fs_entry_cache_begin_writes( struct fs_core* core, struct syndicate_cache* 
 
 
 // reap completed writes
+// NOTE: we assume that only one thread calls this at a time, for a given cache
 void fs_entry_cache_complete_writes( struct fs_core* core, struct syndicate_cache* cache, cache_lru_t* write_lru ) {
    
    completion_buffer_t* completed = NULL;
    
+   // get the current completed buffer, and switch to the other
    fs_entry_cache_completed_wlock( cache );
    
    completed = cache->completed;
@@ -642,24 +766,30 @@ void fs_entry_cache_complete_writes( struct fs_core* core, struct syndicate_cach
    
    fs_entry_cache_completed_unlock( cache );
    
-   // now we have exclusive access to this completed writes buffer
+   // safe to use completed as long as no one else performs the above swap
    
-   int reap_count = 0;
    int write_count = 0;
    
    // reap completed writes
    for( completion_buffer_t::iterator itr = completed->begin(); itr != completed->end(); itr++ ) {
-      struct cache_write_ctx write = *itr;
-      struct cache_entry_key* c = &write.key;
+      struct cache_block_future* f = *itr;
+      struct cache_entry_key* c = &f->key;
       
-      if( write.aio_rc != 0 ) {
-         errorf("WARN: write aio %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, write.aio_rc );
+      // finished an aio write
+      fs_entry_cache_ongoing_writes_wlock( cache );
+      
+      cache->ongoing_writes->erase( f );
+      
+      fs_entry_cache_ongoing_writes_unlock( cache );
+      
+      if( f->aio_rc != 0 ) {
+         errorf("WARN: write aio %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, f->aio_rc );
          
          // clean up 
          fs_entry_cache_evict_block( core, cache, c->file_id, c->file_version, c->block_id, c->block_version );
       }
-      else if( write.write_rc != 0 ) {
-         errorf("WARN: write %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, write.write_rc );
+      else if( f->write_rc < 0 ) {
+         errorf("WARN: write %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, f->write_rc );
          
          // clean up 
          fs_entry_cache_evict_block( core, cache, c->file_id, c->file_version, c->block_id, c->block_version );
@@ -669,19 +799,14 @@ void fs_entry_cache_complete_writes( struct fs_core* core, struct syndicate_cach
          if( write_lru ) {
             // log this as written
             write_lru->push_back( *c );
-         } 
+         }
          
          write_count += 1;
       }
       
-      reap_count += 1;
-      
-      // clean up
-      cache_write_ctx_clean( &write );
+      // wake up anyone waiting on this
+      sem_post( &f->sem_ongoing );
    }
-   
-   // finished aio writes
-   __sync_fetch_and_sub( &cache->num_aio_writes, reap_count );
    
    // successfully cached blocks
    __sync_fetch_and_add( &cache->num_blocks_written, write_count );
@@ -691,7 +816,23 @@ void fs_entry_cache_complete_writes( struct fs_core* core, struct syndicate_cach
 
 
 // evict blocks
+// NOTE: we assume that only one thread calls this at a time, for a given cache
 void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* cache, cache_lru_t* new_writes ) {
+   
+   promote_buffer_t* promotes = NULL;
+   
+   // swap promotes
+   fs_entry_cache_promotes_wlock( cache );
+   
+   promotes = cache->promotes;
+   if( cache->promotes == cache->promotes_1 )
+      cache->promotes = cache->promotes_2;
+   else
+      cache->promotes = cache->promotes_1;
+   
+   fs_entry_cache_promotes_unlock( cache );
+   
+   // safe access to the promote buffer, as long as no one performs the above swap
    
    fs_entry_cache_lru_wlock( cache );
    
@@ -699,7 +840,27 @@ void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* 
    if( new_writes )
       cache->cache_lru->splice( cache->cache_lru->end(), *new_writes );
    
-   int num_blocks_written = __sync_fetch_and_add( &cache->num_blocks_written, 0 );
+   // process promotions
+   // we can (probably) afford to be linear here, since we won't have millions of entries.
+   // TODO: investigate boost biamp if not
+   for( promote_buffer_t::iterator pitr = promotes->begin(); pitr != promotes->end(); pitr++ ) {
+      // search from the back first, since we might be hitting blocks that were recently read.
+      for( cache_lru_t::reverse_iterator citr = cache->cache_lru->rbegin(); citr != cache->cache_lru->rend(); citr++ ) {
+         
+         if( cache_entry_key_comp::equal( *pitr, *citr ) ) {
+            // promote this entry
+            struct cache_entry_key p = *citr;
+            
+            cache_lru_t::reverse_iterator old_citr = citr;
+            citr++;
+            
+            cache->cache_lru->erase( old_citr.base() );
+            cache->cache_lru->push_back( p );
+         }
+      }
+   }
+   
+   int num_blocks_written = cache->num_blocks_written;
    int blocks_removed = 0;
    
    // work to do?
@@ -731,6 +892,9 @@ void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* 
    }
    
    fs_entry_cache_lru_unlock( cache );
+   
+   // done with this
+   promotes->clear();
 }
 
 
@@ -748,8 +912,9 @@ void* fs_entry_cache_main_loop( void* arg ) {
    
    while( cache->running ) {
       
-      // wait for there to be blocks
-      sem_wait( &cache->sem_blocks_pending );
+      // wait for there to be blocks, if there are none
+      if( cache->ongoing_writes->size() == 0 )
+         sem_wait( &cache->sem_blocks_writing );
       
       // waken up to die?
       if( !cache->running )
@@ -768,11 +933,17 @@ void* fs_entry_cache_main_loop( void* arg ) {
    }
    
    // wait for remaining writes to finish 
-   while( cache->num_aio_writes > 0 ) {
-      dbprintf("Waiting for %d writes...\n", cache->num_aio_writes );
+   // TODO: aio cancellations
+   while( cache->ongoing_writes->size() > 0 ) {
+      dbprintf("Waiting for %zu blocks to sync...\n", cache->ongoing_writes->size() );
+      
+      cache_lru_t new_writes;
       
       // reap completed writes
-      fs_entry_cache_complete_writes( core, cache, NULL );
+      fs_entry_cache_complete_writes( core, cache, &new_writes );
+      
+      // evict blocks 
+      fs_entry_cache_evict_blocks( core, cache, &new_writes );
       
       sleep(1);
    }
@@ -786,39 +957,83 @@ void* fs_entry_cache_main_loop( void* arg ) {
 
 
 // make a cache entry
-static int cache_entry_key_init( struct cache_entry_key* c, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, size_t data_len ) {
+static int cache_entry_key_init( struct cache_entry_key* c, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    c->file_id = file_id;
    c->file_version = file_version;
    c->block_id = block_id;
    c->block_version = block_version;
-   c->data_len = data_len;
    return 0;
 }
 
-// add a block to the cache, to be written asynchronously
-int fs_entry_cache_write_block_async( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char* data, size_t data_len ) {
+// add a block to the cache, to be written asynchronously.
+// return a future that can be waited on.
+// NOTE: the given data will be referenced!  Do NOT free it!
+struct cache_block_future* fs_entry_cache_write_block_async( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char* data, size_t data_len ) {
+   
+   if( !cache->running )
+      return NULL;
+   
+   // reserve the right to cache this block
+   sem_wait( &cache->sem_write_hard_limit );
+   
+   // create the block to cache
+   int block_fd = fs_entry_cache_open_block( core, cache, file_id, file_version, block_id, block_version, O_CREAT | O_RDWR | O_TRUNC );
+   if( block_fd < 0 ) {
+      errorf("fs_entry_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", file_id, file_version, block_id, block_version, block_fd );
+      return NULL;
+   }
+   
+   struct cache_block_future* f = CALLOC_LIST( struct cache_block_future, 1 );
+   cache_block_future_init( core, cache, f, file_id, file_version, block_id, block_version, block_fd, data, data_len );
+   
+   fs_entry_cache_pending_wlock( cache );
+   
+   cache->pending->push_back( f );
+   
+   // wake up the thread--we have another block
+   sem_post( &cache->sem_blocks_writing );
+   
+   fs_entry_cache_pending_unlock( cache );
+   
+   return f;
+}
+
+// wait for a write to finish
+int fs_entry_cache_block_future_wait( struct cache_block_future* f ) {
+   return sem_wait( &f->sem_ongoing );
+}
+
+// extract the block file descriptor from a future.
+// caller must close and clean up.
+// NOTE: only call this after the future has finished!
+int fs_entry_cache_block_future_release_fd( struct cache_block_future* f ) {
+   int fd = f->block_fd;
+   f->block_fd = -1;
+   
+   // rewind...
+   lseek( fd, 0, SEEK_SET );
+   return fd;
+}
+
+// promote a cached block, so it doesn't get evicted
+int fs_entry_cache_promote_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    int rc = 0;
    
    if( !cache->running )
       return -EAGAIN;
    
-   // reserve the right to cache this block
-   sem_wait( &cache->sem_write_hard_limit );
-   
-   fs_entry_cache_pending_wlock( cache );
-   
    struct cache_entry_key c;
-   cache_entry_key_init( &c, file_id, file_version, block_id, block_version, data_len );
+   cache_entry_key_init( &c, file_id, file_version, block_id, block_version );
    
-   (*cache->pending)[ c ] = data;
+   fs_entry_cache_promotes_wlock( cache );
    
-   // wake up the thread--we have another block
-   sem_post( &cache->sem_blocks_pending );
+   cache->promotes->push_back( c );
    
-   fs_entry_cache_pending_unlock( cache );
+   fs_entry_cache_promotes_unlock( cache );
    
    return rc;
 }
+
 
 // read a block from the cache, in its entirety
 ssize_t fs_entry_cache_read_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int block_fd, char* buf, size_t len ) {
@@ -837,7 +1052,8 @@ ssize_t fs_entry_cache_read_block( struct fs_core* core, struct syndicate_cache*
       nr += tmp;
    }
    
-   // TODO: promote in the cache
    return nr;
 }
+
+
 

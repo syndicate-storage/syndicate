@@ -291,20 +291,12 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
 // fent must be read-locked
 int replica_context_block( struct fs_core* core, struct replica_context* rctx, struct fs_entry* fent, uint64_t block_id, struct fs_entry_block_info* block_info, bool replicate_sync ) {
    
-   // attempt to open the file
-   char* local_block_url = fs_entry_local_block_url( core, fent->file_id, fent->version, block_id, block_info->version );
-
-   char* local_path = GET_PATH( local_block_url );
-   
-   FILE* f = fopen( local_path, "r" );
+   FILE* f = fdopen( block_info->block_fd, "r" );
    if( f == NULL ) {
       int errsv = -errno;
-      errorf( "fopen(%s) errno = %d\n", local_path, errsv );
-      free( local_block_url );
+      errorf( "fdopen(%d) errno = %d\n", block_info->block_fd, errsv );
       return errsv;
    }
-   
-   free( local_block_url );
 
    // stat this to get its size
    struct stat sb;

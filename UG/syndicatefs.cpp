@@ -320,6 +320,7 @@ int syndicatefs_write(const char *path, const char *buf, size_t size, off_t offs
    SYNDICATEFS_DATA->stats->enter( STAT_WRITE );
    
    struct fs_file_handle* fh = (struct fs_file_handle*)fi->fh;
+   
    ssize_t rc = fs_entry_write( SYNDICATEFS_DATA->core, fh, buf, size, offset );
    
    SYNDICATEFS_DATA->stats->leave( STAT_WRITE, (rc >= 0 ? 0 : rc)  );

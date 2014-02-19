@@ -925,15 +925,6 @@ int fs_file_handle_destroy( struct fs_file_handle* fh ) {
       fh->parent_name = NULL;
    }
    if( fh->rctxs ) {
-      /*
-      for( unsigned int i = 0; i < fh->rctxs->size(); i++ ) {
-         if( fh->rctxs->at(i) == NULL )
-            continue;
-         
-         replica_context_free( fh->rctxs->at(i) );
-         free( fh->rctxs->at(i) );
-      }
-      */
       delete fh->rctxs;
    }
    pthread_rwlock_unlock( &fh->lock );
@@ -983,6 +974,15 @@ unsigned int fs_entry_num_children( struct fs_entry* fent ) {
       return 0;
    
    return fent->children->size() - 2;
+}
+
+// initialize an fs_entry_block_info_structure 
+void fs_entry_block_info_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id, int block_fd ) {
+   binfo->version = version;
+   binfo->hash = hash;
+   binfo->hash_len = hash_len;
+   binfo->gateway_id = gateway_id;
+   binfo->block_fd = block_fd;
 }
 
 uint64_t fs_dir_entry_type( struct fs_dir_entry* dirent ) {
