@@ -413,6 +413,7 @@ void init() {
 }
 
 void timeout_handler(int sig_no, struct timeout_event* event) {
+    cout << "waiting is over - start disk check" << endl;
     check_modified(datapath, entry_modified_handler);
     
     int rc = set_timeout_event(event->timeout, event->handler);
