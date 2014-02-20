@@ -18,6 +18,8 @@
 #define _SYNDICATE_OPTS_H_
 
 #include "syndicate.h"
+#include "cache.h"
+
 #include <getopt.h>
 
 // command-line options
@@ -31,12 +33,16 @@ struct syndicate_opts {
    char* volume_pubkey_path;
    char* gateway_pkey_path;
    char* gateway_pkey_decryption_password;
+   char* volume_pubkey_pem;     // alternative to volume_pubkey_path
+   char* gateway_pkey_str;      // alternative to gateway_pkey_path
    char* tls_pkey_path;
    char* tls_cert_path;
    char* CDN_prefix;
    char* proxy_url;
    char* storage_root;
    bool flush_replicas;
+   size_t cache_soft_limit;
+   size_t cache_hard_limit;
 };
 
 int syndicate_default_opts( struct syndicate_opts* opts );

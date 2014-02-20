@@ -23,7 +23,24 @@ int syndicate_default_opts( struct syndicate_opts* opts ) {
    opts->config_file = (char*)CLIENT_DEFAULT_CONFIG;
    opts->flush_replicas = true;
    
+   opts->cache_soft_limit = CACHE_DEFAULT_SOFT_LIMIT;
+   opts->cache_hard_limit = CACHE_DEFAULT_HARD_LIMIT;
+   
    return 0;
+}
+
+// parse a long 
+int syndicate_parse_long( int c, char* opt, long* result ) {
+   char* tmp = NULL;
+   int rc = 0;
+   
+   *result = strtol( opt, &tmp, 10 );
+   
+   if( tmp == opt ) {
+      fprintf(stderr, "Invalid value for option -%c", c );
+      rc = -1;
+   }
+   return rc;
 }
 
 // parse opts from argv.
@@ -48,6 +65,8 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
       {"tls-cert",        required_argument,   0, 'C'},
       {"no-flush-replicas", no_argument,       0, 'F'},
       {"storage-root",    required_argument,   0, 'r'},
+      {"cache-soft-limit", required_argument,  0, 'l'},
+      {"cache-hard-limit", required_argument,  0, 'L'},
       {0, 0, 0, 0}
    };
 
@@ -55,7 +74,7 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
    int opt_index = 0;
    int c = 0;
    
-   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:C:x:X:K:";
+   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:C:x:X:K:l:L:";
    
    char* optstr = NULL;
    if( special_opts != NULL ) {
@@ -129,6 +148,24 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
             opts->gateway_pkey_decryption_password = optarg;
             break;
          }
+         case 'l': {
+            long lim = 0;
+            rc = syndicate_parse_long( c, optarg, &lim );
+            if( rc == 0 )
+               opts->cache_soft_limit = (size_t)lim;
+            
+            break;
+         }
+         
+         case 'L': {
+            long lim = 0;
+            rc = syndicate_parse_long( c, optarg, &lim );
+            if( rc == 0 )
+               opts->cache_soft_limit = (size_t)lim;
+            
+            break;
+         }
+         
          default: {
             rc = -1;
             if( special_opt_handler ) {
@@ -191,6 +228,10 @@ Optional arguments:\n\
             is given, then it will be downloaded from the MS.\n\
    -K, --gateway-pkey-decryption-password DECRYPTION_PASSWORD\n\
             Password to decrypt the private key.\
+   -l, --cache-soft-limit LIMIT\n\
+            Soft limit on the size of the local cache (bytes).\n\
+   -L, --cache-hard-limit LIMIT\n\
+            Hard limit on the size of the local cache (bytes).\n\
 \n", progname );
 }
 

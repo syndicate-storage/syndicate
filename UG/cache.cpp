@@ -170,7 +170,8 @@ static int cache_cb_add_lru( char const* block_path, void* cls ) {
 
 // clean up a future
 static int cache_block_future_clean( struct cache_block_future* f ) {
-   if( f->block_fd > 0 ) {
+   if( f->block_fd >= 0 ) {
+      fsync( f->block_fd );
       close( f->block_fd );
       f->block_fd = -1;
    }
@@ -206,8 +207,6 @@ static int fs_entry_cache_file_setup( struct fs_core* core, uint64_t file_id, in
 
    char* local_file_url = fs_entry_local_file_url( core, file_id, version );
    char* local_path = GET_PATH( local_file_url );
-
-   dbprintf("create %s. mode %o\n", local_path, mode);
 
    int rc = md_mkdirs3( local_path, mode | 0700 );
    if( rc < 0 )
@@ -711,8 +710,16 @@ void cache_aio_write_completion( sigval_t sigval ) {
       // yup!
       write_rc = aio_return( &future->aio );
       
-      if( write_rc == -1 )
+      if( write_rc == -1 ) {
          write_rc = -errno;
+      }
+      else {
+         // sync and rewind file handle
+         fsync( future->block_fd );
+         lseek( future->block_fd, 0, SEEK_SET );
+         
+         dbprintf("wrote %d bytes to %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", write_rc, future->key.file_id, future->key.file_version, future->key.block_id, future->key.block_version );
+      }
    }
    else {
       write_rc = -aio_rc;
@@ -833,7 +840,9 @@ void fs_entry_cache_complete_writes( struct fs_core* core, struct syndicate_cach
    // successfully cached blocks
    __sync_fetch_and_add( &cache->num_blocks_written, write_count );
    
-   dbprintf("Cache now has %d blocks\n", cache->num_blocks_written );
+   if( write_count != 0 )
+      dbprintf("Cache now has %d blocks\n", cache->num_blocks_written );
+   
    completed->clear();
 }
 
@@ -842,7 +851,7 @@ void fs_entry_cache_complete_writes( struct fs_core* core, struct syndicate_cach
 // NOTE: we assume that only one thread calls this at a time, for a given cache
 void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* cache, cache_lru_t* new_writes ) {
    
-   promote_buffer_t* promotes = NULL;
+   cache_lru_t* promotes = NULL;
    
    // swap promotes
    fs_entry_cache_promotes_wlock( cache );
@@ -866,22 +875,23 @@ void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* 
    // process promotions
    // we can (probably) afford to be linear here, since we won't have millions of entries.
    // TODO: investigate boost biamp if not
-   for( promote_buffer_t::iterator pitr = promotes->begin(); pitr != promotes->end(); pitr++ ) {
+   for( cache_lru_t::iterator pitr = promotes->begin(); pitr != promotes->end(); pitr++ ) {
       // search from the back first, since we might be hitting blocks that were recently read.
       for( cache_lru_t::reverse_iterator citr = cache->cache_lru->rbegin(); citr != cache->cache_lru->rend(); citr++ ) {
          
          if( cache_entry_key_comp::equal( *pitr, *citr ) ) {
             // promote this entry
-            struct cache_entry_key p = *citr;
+            //struct cache_entry_key p = *citr;
             
             cache_lru_t::reverse_iterator old_citr = citr;
             citr++;
             
             cache->cache_lru->erase( old_citr.base() );
-            cache->cache_lru->push_back( p );
          }
       }
    }
+   
+   cache->cache_lru->splice( cache->cache_lru->end(), *promotes );
    
    int num_blocks_written = cache->num_blocks_written;
    int blocks_removed = 0;
@@ -1035,9 +1045,6 @@ int fs_entry_cache_block_future_wait( struct cache_block_future* f ) {
 int fs_entry_cache_block_future_release_fd( struct cache_block_future* f ) {
    int fd = f->block_fd;
    f->block_fd = -1;
-   
-   // rewind...
-   lseek( fd, 0, SEEK_SET );
    return fd;
 }
 

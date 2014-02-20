@@ -157,14 +157,14 @@ def setup_syndicate( config ):
    syndicate = rg_common.syndicate_init( ms_url=ms_url,
                                          gateway_name=gateway_name,
                                          volume_name=volume_name,
-                                         oid_username=rg_username,
-                                         oid_password=rg_password,
-                                         my_key_password=key_password,
-                                         my_key_filename=my_key_file,
-                                         conf_filename=config_file,
-                                         volume_pubkey_filename=volume_pubkey,
-                                         tls_pkey_filename=tls_pkey,
-                                         tls_cert_filename=tls_cert )
+                                         username=rg_username,
+                                         password=rg_password,
+                                         gateway_pkey_decryption_password=key_password,
+                                         gateway_pkey_path=my_key_file,
+                                         config_file=config_file,
+                                         volume_pubkey_path=volume_pubkey,
+                                         tls_pkey_path=tls_pkey,
+                                         tls_cert_path=tls_cert )
    
    return syndicate 
 
@@ -203,7 +203,7 @@ def debug():
    volume_name = "testvolume-jcnelson-cs.princeton.edu"
    
    # start up libsyndicate
-   syndicate = rg_common.syndicate_init( ms_url=ms_url, gateway_name=gateway_name, volume_name=volume_name, oid_username=rg_username, oid_password=rg_password, my_key_filename=my_key_file )
+   syndicate = rg_common.syndicate_init( ms_url=ms_url, gateway_name=gateway_name, volume_name=volume_name, username=rg_username, password=rg_password, gateway_pkey_path=my_key_file )
    
    # start up config
    rg_closure.init( syndicate, my_key_file, sender_pubkey_file )

@@ -637,18 +637,7 @@ int syndicate_fgetattr(struct syndicate_state* state, struct stat *statbuf, synd
 }
 
 // initialize syndicate
-int syndicate_client_init( struct syndicate_state* state, 
-                           char const* config_file,
-                           char const* ms_url,
-                           char const* volume_name,
-                           char const* gateway_name,
-                           char const* md_username,
-                           char const* md_password,
-                           char const* volume_pubkey_pem,
-                           char const* my_key_str,
-                           char const* my_key_password,
-                           char const* storage_root
-                         ) {
+int syndicate_client_init( struct syndicate_state* state, struct syndicate_opts* opts ) {
    
    struct ms_client* ms = CALLOC_LIST( struct ms_client, 1 );
    
@@ -656,10 +645,10 @@ int syndicate_client_init( struct syndicate_state* state,
    md_default_conf( &state->conf, SYNDICATE_UG );
    
    // read the config file
-   if( config_file != NULL ) {
-      int rc = md_read_conf( config_file, &state->conf );
+   if( opts->config_file != NULL ) {
+      int rc = md_read_conf( opts->config_file, &state->conf );
       if( rc != 0 ) {
-         dbprintf("ERR: failed to read %s, rc = %d\n", config_file, rc );
+         dbprintf("ERR: failed to read %s, rc = %d\n", opts->config_file, rc );
          if( !(rc == -ENOENT || rc == -EACCES || rc == -EPERM) ) {
             // not just a simple "not found" or "permission denied"
             return rc;
@@ -671,7 +660,8 @@ int syndicate_client_init( struct syndicate_state* state,
    }
    
    // initialize library
-   int rc = md_init_client( &state->conf, ms, ms_url, volume_name, gateway_name, md_username, md_password, volume_pubkey_pem, my_key_str, my_key_password, storage_root );
+   int rc = md_init_client( &state->conf, ms, opts->ms_url, opts->volume_name, opts->gateway_name, opts->username, opts->password,
+                                              opts->volume_pubkey_pem, opts->gateway_pkey_str, opts->gateway_pkey_decryption_password, opts->storage_root );
    if( rc != 0 ) {
       errorf("md_init_client rc = %d\n", rc );
       return rc;

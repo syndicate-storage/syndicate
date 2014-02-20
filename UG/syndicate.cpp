@@ -19,19 +19,15 @@
 
 struct syndicate_state *global_state = NULL;
 
+// add extra information into global syndicate conf that isn't covered by the normal initialization step
+void syndicate_add_extra_config( struct md_syndicate_conf* conf, struct syndicate_opts* opts ) {
+   // add in extra information not covered by md_init
+   conf->cache_soft_limit = opts->cache_soft_limit;
+   conf->cache_hard_limit = opts->cache_hard_limit;
+}
+
 // initialize
-int syndicate_init( char const* config_file,
-                    char const* ms_url,
-                    char const* volume_name,
-                    char const* gateway_name,
-                    char const* md_username,
-                    char const* md_password,
-                    char const* volume_pubkey_file,
-                    char const* my_key_file,
-                    char const* my_key_password,
-                    char const* tls_key_file,
-                    char const* tls_cert_file
-                  ) {
+int syndicate_init( struct syndicate_opts* opts ) {
 
 
    struct syndicate_state* state = CALLOC_LIST( struct syndicate_state, 1 );
@@ -41,19 +37,23 @@ int syndicate_init( char const* config_file,
    md_default_conf( &state->conf, SYNDICATE_UG );
    
    // read the config file
-   if( config_file != NULL ) {
-      int rc = md_read_conf( config_file, &state->conf );
+   if( opts->config_file != NULL ) {
+      int rc = md_read_conf( opts->config_file, &state->conf );
       if( rc != 0 ) {
-         dbprintf("ERR: failed to read %s, rc = %d\n", config_file, rc );
+         dbprintf("ERR: failed to read %s, rc = %d\n", opts->config_file, rc );
       }
    }
    
    // initialize library
-   int rc = md_init( &state->conf, ms, ms_url, volume_name, gateway_name, md_username, md_password, volume_pubkey_file, my_key_file, my_key_password, tls_key_file, tls_cert_file, NULL );
+   int rc = md_init( &state->conf, ms, opts->ms_url, opts->volume_name, opts->gateway_name, opts->username, opts->password,
+                                       opts->volume_pubkey_path, opts->gateway_pkey_path, opts->gateway_pkey_decryption_password,
+                                       opts->tls_pkey_path, opts->tls_cert_path, opts->storage_root );
    if( rc != 0 ) {
       errorf("md_init rc = %d\n", rc );
       return rc;
    }
+   
+   syndicate_add_extra_config( &state->conf, opts );
    
    // initialize state
    rc = syndicate_init_state( state, ms );
@@ -92,6 +92,6 @@ struct md_syndicate_conf* syndicate_get_conf() {
    return &global_state->conf;
 }
 
-void syndicate_finish_init( struct syndicate_state* state ) {
-   syndicate_set_running( state, 1 );
+void syndicate_finish_init() {
+   syndicate_set_running( global_state, 1 );
 }

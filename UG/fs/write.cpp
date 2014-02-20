@@ -148,6 +148,10 @@ static bool fs_entry_is_garbage_collectable_block( struct fs_core* core, struct 
    if( block_id > ((uint64_t)fent_old_size / core->blocking_factor) && fent_old_size > 0 )
       return false;
    
+   // block is just on the edge of the file, so guaranteed new
+   if( block_id >= ((uint64_t)fent_old_size / core->blocking_factor) && fent_old_size > 0 && (fent_old_size % core->blocking_factor == 0) )
+      return false;
+   
    // has an older copy to be removed
    return true;
 }
@@ -216,7 +220,7 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, str
       return NULL;
    }
    else {
-      dbprintf("cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]: data: '%s'...\n", fent->file_id, fent->version, block_id, new_block_version, prefix );
+      dbprintf("cache %zu bytes for %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]: data: '%s'...\n", len, fent->file_id, fent->version, block_id, new_block_version, prefix );
       
       // update the manifest
       fs_entry_manifest_put_block( core, core->gateway, fent, block_id, new_block_version, block_hash );
@@ -330,7 +334,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    while( (size_t)num_written < count ) {
       
       // generate a block to be pushed into the cache.
-      // TODO: move to zero-copy version
+      // TODO: move to zero-copy implementation
       char* block = CALLOC_LIST( char, core->blocking_factor );
       
       // which block are we about to write?
@@ -371,8 +375,8 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       
       uint64_t old_version = fh->fent->manifest->get_block_version( block_id );
       
-      // hash the data
-      unsigned char* hash = BLOCK_HASH_DATA( block, core->blocking_factor );
+      // hash the contents of this block, including anything read with fs_entry_read_block
+      unsigned char* hash = BLOCK_HASH_DATA( block, block_fill_offset + block_write_len );
       
       // write the data...
       struct cache_block_future* block_fut = fs_entry_write_block_async( core, fh->fent, block_id, block, block_put_len, hash );

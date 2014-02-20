@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-// core state and control for Syndicate
+// simple interface for a Syndicate UG.
 
 #ifndef _SYNDICATE_H_
 #define _SYNDICATE_H_
@@ -25,20 +25,11 @@
 #include "replication.h"
 #include "fs.h"
 #include "state.h"
+#include "opts.h"
 
-int syndicate_init( char const* config_file,
-                    char const* ms_url,
-                    char const* volume_name,
-                    char const* gateway_name,
-                    char const* md_username,
-                    char const* md_password,
-                    char const* volume_pubkey_file,
-                    char const* my_key_file,
-                    char const* my_key_password,
-                    char const* tls_key_file,
-                    char const* tls_cert_file );
+int syndicate_init( struct syndicate_opts* opts );
 
-void syndicate_finish_init( struct syndicate_state* state );
+void syndicate_finish_init();
 
 struct syndicate_state* syndicate_get_state();
 struct md_syndicate_conf* syndicate_get_conf();

@@ -25,8 +25,6 @@
 #include "fs.h"
 #include "cache.h"
 
-class Collator;
-
 struct syndicate_state {
    FILE* logfile;
    FILE* replica_logfile;

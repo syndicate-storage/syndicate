@@ -23,6 +23,7 @@
 #include "fs_entry.h"
 #include "log.h"
 #include "state.h"
+#include "opts.h"
    
 // file handle wrapper 
 typedef struct _syndicate_handle {
@@ -68,18 +69,7 @@ int syndicate_getxattr(struct syndicate_state* state, const char *path, const ch
 int syndicate_listxattr(struct syndicate_state* state, const char *path, char *list, size_t size);
 int syndicate_removexattr(struct syndicate_state* state, const char *path, const char *name);
 
-int syndicate_client_init( struct syndicate_state* state,
-                           char const* config_file,
-                           char const* ms_url,
-                           char const* volume_name,
-                           char const* gateway_name,
-                           char const* md_username,
-                           char const* md_password,
-                           char const* volume_pubkey_pem,
-                           char const* my_key_str,
-                           char const* my_key_password,
-                           char const* storage_root
-                         );
+int syndicate_client_init( struct syndicate_state* state, struct syndicate_opts* opts );
 
 int syndicate_client_shutdown( struct syndicate_state* state, int wait_replicas );
 

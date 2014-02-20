@@ -806,10 +806,10 @@ int main(int argc, char** argv) {
    char* mountpoint = realpath( argv[mountpoint_ind], NULL );
 
    struct md_HTTP syndicate_http;
+   memset( &syndicate_http, 0, sizeof(struct md_HTTP) );
    
    // start core services
-   rc = syndicate_init( syn_opts.config_file, syn_opts.ms_url, syn_opts.volume_name, syn_opts.gateway_name, syn_opts.username, 
-                        syn_opts.password, syn_opts.volume_pubkey_path, syn_opts.gateway_pkey_path, syn_opts.gateway_pkey_decryption_password, syn_opts.tls_pkey_path, syn_opts.tls_cert_path );
+   rc = syndicate_init( &syn_opts );
    if( rc != 0 ) {
       fprintf(stderr, "Syndicate failed to initialize\n");
       exit(1);
@@ -823,7 +823,7 @@ int main(int argc, char** argv) {
       exit(1);
    
    // finish initialization
-   syndicate_finish_init( state );
+   syndicate_finish_init();
       
    printf("\n\nSyndicateFS starting up\n\n");
 

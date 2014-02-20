@@ -236,15 +236,15 @@ cdef class Syndicate:
    def __init__( self, gateway_type=0,
                        gateway_name=None,
                        ms_url=None,
-                       oid_username=None,
-                       oid_password=None,
-                       my_key_password=None,
+                       username=None,
+                       password=None,
+                       gateway_pkey_decryption_password=None,
                        volume_name=None,
-                       volume_pubkey_filename=None,
-                       conf_filename=None,
-                       my_key_filename=None,
-                       tls_pkey_filename=None,
-                       tls_cert_filename=None,
+                       volume_pubkey_path=None,
+                       config_file=None,
+                       gateway_pkey_path=None,
+                       tls_pkey_path=None,
+                       tls_cert_path=None,
                        storage_root=None ):
 
       '''
@@ -261,15 +261,15 @@ cdef class Syndicate:
       cdef:
          char *c_gateway_name = NULL
          char *c_ms_url = NULL
-         char *c_oid_username = NULL
-         char *c_oid_password = NULL
-         char* c_key_password = NULL
+         char *c_username = NULL
+         char *c_password = NULL
+         char* c_gateway_pkey_decryption_password = NULL
          char *c_volume_name = NULL
-         char *c_volume_pubkey_filename = NULL
-         char *c_conf_filename = NULL
-         char *c_my_key_filename = NULL
-         char *c_tls_pkey_filename = NULL
-         char *c_tls_cert_filename = NULL
+         char *c_volume_pubkey_path = NULL
+         char *c_config_file = NULL
+         char *c_gateway_pkey_path = NULL
+         char *c_tls_pkey_path = NULL
+         char *c_tls_cert_path = NULL
          char* c_storage_root = NULL
 
       if gateway_name != None:
@@ -278,33 +278,33 @@ cdef class Syndicate:
       if ms_url != None:
          c_ms_url = ms_url
 
-      if oid_username != None:
-         c_oid_username = oid_username 
+      if username != None:
+         c_username = username 
          
-      if oid_password != None:
-         c_oid_password = oid_password
+      if password != None:
+         c_password = password
 
-      if my_key_password != None:
-         c_key_password = my_key_password
+      if gateway_pkey_decryption_password != None:
+         c_gateway_pkey_decryption_password = gateway_pkey_decryption_password
          
       if volume_name != None:
          c_volume_name = volume_name 
          
-      if conf_filename != None:
-         c_conf_filename = conf_filename 
+      if config_file != None:
+         c_config_file = config_file 
 
-      if volume_pubkey_filename != None:
-         c_volume_pubkey_filename = volume_pubkey_filename
+      if volume_pubkey_path != None:
+         c_volume_pubkey_path = volume_pubkey_path
       
-      if my_key_filename != None:
-         c_my_key_filename = my_key_filename
-         runtime_privkey_path = my_key_filename
+      if gateway_pkey_path != None:
+         c_gateway_pkey_path = gateway_pkey_path
+         runtime_privkey_path = gateway_pkey_path
          
-      if tls_pkey_filename != None:
-         c_tls_pkey_filename = tls_pkey_filename
+      if tls_pkey_path != None:
+         c_tls_pkey_path = tls_pkey_path
       
-      if tls_cert_filename != None:
-         c_tls_cert_filename = tls_cert_filename
+      if tls_cert_path != None:
+         c_tls_cert_path = tls_cert_path
 
       if storage_root != None:
          c_storage_root = storage_root
@@ -317,13 +317,13 @@ cdef class Syndicate:
                      c_ms_url,
                      c_volume_name,
                      c_gateway_name,
-                     c_oid_username,
-                     c_oid_password,
-                     c_volume_pubkey_filename,
-                     c_my_key_filename,
-                     c_key_password,
-                     c_tls_pkey_filename,
-                     c_tls_cert_filename,
+                     c_username,
+                     c_password,
+                     c_volume_pubkey_path,
+                     c_gateway_pkey_path,
+                     c_gateway_pkey_decryption_password,
+                     c_tls_pkey_path,
+                     c_tls_cert_path,
                      c_storage_root )
       
       if rc != 0:
@@ -336,15 +336,15 @@ cdef class Syndicate:
    def getinstance( self,  gateway_type=0,
                            gateway_name=None,
                            ms_url=None,
-                           oid_username=None,
-                           oid_password=None,
-                           my_key_password=None,
+                           username=None,
+                           password=None,
+                           gateway_pkey_decryption_password=None,
                            volume_name=None,
-                           volume_pubkey_filename=None,
-                           conf_filename=None,
-                           my_key_filename=None,
-                           tls_pkey_filename=None,
-                           tls_cert_filename=None,
+                           volume_pubkey_path=None,
+                           config_file=None,
+                           gateway_pkey_path=None,
+                           tls_pkey_path=None,
+                           tls_cert_path=None,
                            storage_root=None):
       
       '''
@@ -359,15 +359,15 @@ cdef class Syndicate:
          syndicate_ref = Syndicate( gateway_type=gateway_type,
                                     gateway_name=gateway_name,
                                     ms_url=ms_url,
-                                    oid_username=oid_username,
-                                    oid_password=oid_password,
+                                    username=username,
+                                    password=password,
                                     volume_name=volume_name,
-                                    volume_pubkey_filename=volume_pubkey_filename,
-                                    conf_filename=conf_filename,
-                                    my_key_filename=my_key_filename,
-                                    my_key_password=my_key_password,
-                                    tls_pkey_filename=tls_pkey_filename,
-                                    tls_cert_filename=tls_cert_filename,
+                                    volume_pubkey_path=volume_pubkey_path,
+                                    config_file=config_file,
+                                    gateway_pkey_path=gateway_pkey_path,
+                                    gateway_pkey_decryption_password=gateway_pkey_decryption_password,
+                                    tls_pkey_path=tls_pkey_path,
+                                    tls_cert_path=tls_cert_path,
                                     storage_root=storage_root)
          
       return syndicate_ref

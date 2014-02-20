@@ -16,7 +16,7 @@
 """
 
 from libc.stdint cimport int32_t, uint32_t, int64_t, uint64_t, uintptr_t
-
+   
 # ------------------------------------------
 cdef extern from "sys/types.h":
    ctypedef int bool
@@ -31,6 +31,12 @@ cdef extern from "sys/types.h":
    ctypedef unsigned int blksize_t
    ctypedef unsigned long long blkcnt_t
    ctypedef long int time_t
+
+
+# ------------------------------------------
+cdef extern from "string.h":
+   void* memset( void*, int, size_t )
+
 
 # ------------------------------------------
 cdef extern from "sys/stat.h":
@@ -107,6 +113,28 @@ cdef extern from "state.h":
    cdef struct syndicate_state:
       pass
 
+# ------------------------------------------   
+cdef extern from "opts.h":
+   cdef struct syndicate_opts:
+      char* config_file
+      char* username
+      char* password
+      char* volume_name
+      char* ms_url
+      char* gateway_name
+      char* volume_pubkey_path
+      char* gateway_pkey_path
+      char* gateway_pkey_decryption_password
+      char* volume_pubkey_pem
+      char* gateway_pkey_str
+      char* tls_pkey_path
+      char* tls_cert_path
+      char* CDN_prefix
+      char* proxy_url
+      char* storage_root
+      bool flush_replicas
+      size_t cache_soft_limit
+      size_t cache_hard_limit
 
 # ------------------------------------------   
 cdef extern from "client.h":
@@ -116,18 +144,7 @@ cdef extern from "client.h":
    ctypedef syndicate_handle_t_TAG syndicate_handle_t
    ctypedef fs_dir_entry** syndicate_dir_listing_t
 
-   int syndicate_client_init( syndicate_state* state,
-                              char * config_file,
-                              char * ms_url,
-                              char * volume_name,
-                              char * gateway_name,
-                              char * md_username,
-                              char * md_password,
-                              char * volume_pubkey_pem,
-                              char * my_key_str,
-                              char * my_key_password,
-                              char * storage_root
-                             )
+   int syndicate_client_init( syndicate_state* state, syndicate_opts* opts )
 
    int syndicate_client_shutdown( syndicate_state* state, int wait_replicas )
 

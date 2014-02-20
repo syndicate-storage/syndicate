@@ -38,7 +38,8 @@
 #include "fs.h"
 #include "url.h"
 
-#define MAX_CACHE_FDS 250               // don't starve the rest of the system of file descriptors!
+#define CACHE_DEFAULT_SOFT_LIMIT        50000000        // 50 MB
+#define CACHE_DEFAULT_HARD_LIMIT       100000000        // 100 MB
 
 using namespace std;
 
@@ -88,8 +89,6 @@ typedef block_buffer_t completion_buffer_t;
 typedef set<struct cache_block_future*> ongoing_writes_t;
 typedef list<struct cache_entry_key> cache_lru_t;
 
-typedef cache_lru_t promote_buffer_t;
-
 struct syndicate_cache {
    // size limits (in blocks, not bytes!)
    size_t hard_max_size;
@@ -122,12 +121,12 @@ struct syndicate_cache {
    pthread_rwlock_t cache_lru_lock;
    
    // blocks to be promoted in the current lru 
-   promote_buffer_t* promotes;
+   cache_lru_t* promotes;
    pthread_rwlock_t promotes_lock;
    
    // promotes refers to one of these
-   promote_buffer_t* promotes_1;
-   promote_buffer_t* promotes_2;
+   cache_lru_t* promotes_1;
+   cache_lru_t* promotes_2;
    
    // thread for processing writes and evictions
    pthread_t thread;

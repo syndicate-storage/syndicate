@@ -18,6 +18,7 @@ from syndicate cimport *
 from volume cimport *
 
 cimport libc.stdlib as stdlib
+
 cimport cython
 
 import types
@@ -73,12 +74,12 @@ cdef class Volume:
    def __init__( self, gateway_name=None,
                        config_file=None,
                        ms_url=None,
-                       oid_username=None,
-                       oid_password=None,
+                       username=None,
+                       password=None,
                        volume_name=None,
                        volume_key_pem=None,
-                       my_key_str=None,
-                       my_key_password=None,
+                       gateway_pkey_str=None,
+                       gateway_pkey_decryption_password=None,
                        storage_root=None,
                        wait_replicas=-1 ):
 
@@ -90,13 +91,14 @@ cdef class Volume:
          char* c_gateway_name = NULL
          char* c_config_file = NULL
          char* c_ms_url = NULL
-         char* c_oid_username = NULL
-         char* c_oid_password = NULL
+         char* c_username = NULL
+         char* c_password = NULL
          char* c_volume_name = NULL
          char* c_volume_key_pem = NULL
-         char* c_my_key_str = NULL
-         char* c_my_key_password = NULL
+         char* c_gateway_pkey_str = NULL
+         char* c_gateway_pkey_decryption_password = NULL
          char* c_storage_root = NULL
+         syndicate_opts opts
          
       if gateway_name != None:
          c_gateway_name = gateway_name
@@ -104,40 +106,44 @@ cdef class Volume:
       if ms_url != None:
          c_ms_url = ms_url
 
-      if oid_username != None:
-         c_oid_username = oid_username 
+      if username != None:
+         c_username = username 
          
-      if oid_password != None:
-         c_oid_password = oid_password
+      if password != None:
+         c_password = password
          
       if volume_name != None:
          c_volume_name = volume_name 
          
       if config_file != None:
-         c_conf_filename = config_file 
+         c_config_file = config_file 
       
-      if my_key_str != None:
-         c_my_key_str = my_key_str
+      if gateway_pkey_str != None:
+         c_gateway_pkey_str = gateway_pkey_str
        
-      if my_key_password != None:
-         c_my_key_password = my_key_password
+      if gateway_pkey_decryption_password != None:
+         c_gateway_pkey_decryption_password = gateway_pkey_decryption_password
 
       if storage_root != None:
          c_storage_root = storage_root
       
       self.wait_replicas = wait_replicas
 
-      rc = syndicate_client_init( &self.state_inst,
-                                  c_config_file,
-                                  c_ms_url,
-                                  c_volume_name,
-                                  c_gateway_name,
-                                  c_oid_username,
-                                  c_oid_password,
-                                  c_volume_key_pem,
-                                  c_my_key_str,
-                                  c_my_key_password,
-                                  c_storage_root )
+
+      memset( &opts, 0, sizeof(opts) )
+      
+      opts.gateway_name = gateway_name
+      opts.ms_url = ms_url
+      opts.username = username
+      opts.password = password
+      opts.volume_name = volume_name
+      opts.config_file = config_file
+      opts.gateway_pkey_str = gateway_pkey_str
+      opts.gateway_pkey_decryption_password = gateway_pkey_decryption_password
+      opts.storage_root = storage_root
+      opts.wait_replicas = wait_replicas
+
+      rc = syndicate_client_init( &self.state_inst, &opts )
 
       if rc != 0:
          raise Exception("syndicate_client_init rc = %s" % rc )

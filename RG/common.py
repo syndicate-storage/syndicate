@@ -93,14 +93,14 @@ def validate_fields( data, required_fields, optional_fields=None ):
 def syndicate_init( gateway_name=None,
                     ms_url=None, 
                     volume_name=None,
-                    oid_username=None,
-                    oid_password=None,
-                    conf_filename=None,
-                    my_key_filename=None,
-                    my_key_password=None,
-                    volume_pubkey_filename=None,
-                    tls_pkey_filename=None,
-                    tls_cert_filename=None):
+                    username=None,
+                    password=None,
+                    config_file=None,
+                    gateway_pkey_path=None,
+                    gateway_pkey_decryption_password=None,
+                    volume_pubkey_path=None,
+                    tls_pkey_path=None,
+                    tls_cert_path=None):
    
    '''
       Initialize libsyndicate library, but only once
@@ -113,14 +113,14 @@ def syndicate_init( gateway_name=None,
                                              gateway_name=gateway_name,
                                              volume_name=volume_name,
                                              ms_url=ms_url,
-                                             oid_username=oid_username,
-                                             oid_password=oid_password,
-                                             conf_filename=conf_filename,
-                                             my_key_filename=my_key_filename,
-                                             my_key_password=my_key_password,
-                                             tls_pkey_filename=tls_pkey_filename,
-                                             tls_cert_filename=tls_cert_filename,
-                                             volume_pubkey_filename=volume_pubkey_filename )
+                                             username=username,
+                                             password=password,
+                                             config_file=config_file,
+                                             gateway_pkey_path=gateway_pkey_path,
+                                             gateway_pkey_decryption_password=gateway_pkey_decryption_password,
+                                             tls_pkey_path=tls_pkey_path,
+                                             tls_cert_path=tls_cert_path,
+                                             volume_pubkey_path=volume_pubkey_path )
          
    else:
       raise Exception("libsyndicate already initialized!")
