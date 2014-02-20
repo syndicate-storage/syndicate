@@ -36,7 +36,7 @@
 
 using namespace std;
 
-#define REFRESH_ENTRIES_TIMEOUT	60
+#define REFRESH_ENTRIES_TIMEOUT	10
 
 
 #define GATEWAY_REQUEST_TYPE_NONE 0

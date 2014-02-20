@@ -15,6 +15,7 @@
 */
 
 #include <string.h>
+#include <stdio.h>
 #include "timeout_event.h"
 
 // use linux signal 
@@ -27,7 +28,7 @@
 #include <pthread.h>
 #endif
 
-
+using namespace std;
 
 static struct timeout_event g_current_timeout_event;
 
@@ -69,6 +70,7 @@ int set_timeout_event(int timeout, PFN_TIMEOUT_USER_EVENT_HANDLER handler) {
 #endif
     
 #ifdef THREAD_MODE
+    printf("creating timeout thread\n");
     pthread_create(&g_timeout_event_generator, NULL, &handle_timeout_event_generator_thread, &g_current_timeout_event);
 #endif
 
@@ -90,12 +92,13 @@ static void handle_timeout_event(int sig_no) {
 
 #ifdef THREAD_MODE
 static void* handle_timeout_event_generator_thread(void* param) {
+    printf("timeout thread started\n");
     struct timeout_event event_backup;
     memcpy(&event_backup, (struct timeout_event*)param, sizeof(struct timeout_event));
     sleep(event_backup.timeout);
     
     // waiting...
-    
+    printf("timeout thread woke up\n");
     memset(&g_current_timeout_event, 0, sizeof(struct timeout_event));
     (*event_backup.handler)(0, &event_backup);
 }
