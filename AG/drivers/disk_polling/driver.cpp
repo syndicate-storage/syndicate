@@ -16,6 +16,7 @@
 
 #include <driver.h>
 #include <libgateway.h>
+#include <pthread.h>
 
 // server config 
 extern struct md_syndicate_conf *global_conf;
@@ -40,6 +41,9 @@ bool initialized = false;
 
 // Disk driver's data_root
 char* data_root = NULL;
+
+// timeout pulse gen thread
+pthread_t timeout_pulse_gen_tid;
 
 // generate a manifest for an existing file, putting it into the gateway context
 extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
@@ -304,11 +308,13 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 	   datapath_len--;
 
     if (check_modified(datapath, entry_modified_handler) < 0) {
+        errorf("%s", "check_modified failed\n");
         return pfunc_exit_code;        
     }
 
-    if (set_timeout_event(REFRESH_ENTRIES_TIMEOUT, &timeout_handler) < 0) {
-        dbprintf("%s\n", "set_timeout_event error");
+    dbprintf("set timeout schedule - %dseconds\n", REFRESH_ENTRIES_TIMEOUT);
+    if (set_timeout_event(REFRESH_ENTRIES_TIMEOUT, timeout_handler) < 0) {
+        errorf("%s", "set_timeout_event error\n");
         return pfunc_exit_code;
     }
 
@@ -433,7 +439,6 @@ void entry_modified_handler(int flag, string spath, struct filestat_cache *pcach
     }
 
     //cout << "flag : " << flag << " path : " << spath << endl;
-    
 }
 
 void* term_handler(void *cls) {

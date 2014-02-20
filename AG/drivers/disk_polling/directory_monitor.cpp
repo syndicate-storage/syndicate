@@ -181,13 +181,13 @@ int check_modified(const char *fpath, PFN_DIR_ENTRY_MODIFIED_HANDLER handler) {
         if(found == cached_entry_map.end()) {
             // not found
             if(handler != NULL) {
-                (*handler)(DIR_ENTRY_MODIFIED_FLAG_NEW, current_map_iter->first, current_map_iter->second);
+                handler(DIR_ENTRY_MODIFIED_FLAG_NEW, current_map_iter->first, current_map_iter->second);
             }
         } else {
             if(!is_same_entry(found->second, current_map_iter->second)) {
                 // modified
                 if(handler != NULL) {
-                    (*handler)(DIR_ENTRY_MODIFIED_FLAG_MODIFIED, current_map_iter->first, current_map_iter->second);
+                    handler(DIR_ENTRY_MODIFIED_FLAG_MODIFIED, current_map_iter->first, current_map_iter->second);
                 }
             }
         }
@@ -200,7 +200,7 @@ int check_modified(const char *fpath, PFN_DIR_ENTRY_MODIFIED_HANDLER handler) {
         if(found == current_entry_map.end()) {
             // not found
             if(handler != NULL) {
-                (*handler)(DIR_ENTRY_MODIFIED_FLAG_REMOVED, cached_map_iter->first, cached_map_iter->second);
+                handler(DIR_ENTRY_MODIFIED_FLAG_REMOVED, cached_map_iter->first, cached_map_iter->second);
             }
         }
     }
