@@ -525,7 +525,8 @@ void file_manifest::set_block_hosts( uint64_t gateway_id, uint64_t start_id, uin
    return;
 }
 
-// is a block stored in local storage
+// is a block potentially cached locally?
+// as in, are we the last known writer of this block?
 int file_manifest::is_block_local( struct fs_core* core, uint64_t block_id ) {
    int ret = 0;
    

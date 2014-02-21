@@ -310,7 +310,7 @@ int fs_entry_cache_evict_block( struct fs_core* core, struct syndicate_cache* ca
 
 
 // apply a function over a file's cached blocks
-static int fs_entry_cache_file_blocks_apply( char const* local_path, int (*block_func)( char const*, void* ), void* cls ) {
+int fs_entry_cache_file_blocks_apply( char const* local_path, int (*block_func)( char const*, void* ), void* cls ) {
    
    DIR* dir = opendir( local_path );
    if( dir == NULL ) {
@@ -356,7 +356,7 @@ static int fs_entry_cache_file_blocks_apply( char const* local_path, int (*block
 int fs_entry_cache_evict_file( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version ) {
    struct local {
       // lambda function for deleting a block and evicting it 
-      static int evict_block( char const* block_path, void* cls ) {
+      static int cache_evict_block( char const* block_path, void* cls ) {
          struct syndicate_cache* c = (struct syndicate_cache*)cls;
          
          int rc = unlink( block_path );
@@ -387,7 +387,7 @@ int fs_entry_cache_evict_file( struct fs_core* core, struct syndicate_cache* cac
    char* local_file_url = fs_entry_local_file_url( core, file_id, file_version );
    char* local_file_path = GET_PATH( local_file_url );
    
-   int rc = fs_entry_cache_file_blocks_apply( local_file_path, local::evict_block, cache );
+   int rc = fs_entry_cache_file_blocks_apply( local_file_path, local::cache_evict_block, cache );
    
    if( rc == 0 ) {
       // remove this file's directories
@@ -877,16 +877,14 @@ void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* 
    // TODO: investigate boost biamp if not
    for( cache_lru_t::iterator pitr = promotes->begin(); pitr != promotes->end(); pitr++ ) {
       // search from the back first, since we might be hitting blocks that were recently read.
-      for( cache_lru_t::reverse_iterator citr = cache->cache_lru->rbegin(); citr != cache->cache_lru->rend(); citr++ ) {
+      cache_lru_t::iterator citr = cache->cache_lru->end();
+      citr--;
+      for( ; citr != cache->cache_lru->begin(); citr-- ) {
          
          if( cache_entry_key_comp::equal( *pitr, *citr ) ) {
             // promote this entry
             //struct cache_entry_key p = *citr;
-            
-            cache_lru_t::reverse_iterator old_citr = citr;
-            citr++;
-            
-            cache->cache_lru->erase( old_citr.base() );
+            citr = cache->cache_lru->erase( citr );
          }
       }
    }
@@ -908,6 +906,11 @@ void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* 
          if( rc != 0 ) {
             // if it wasn't there, then it was already evicted.
             errorf("WARN: failed to evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", c.file_id, c.file_version, c.block_id, c.block_version, rc );
+            
+            if( rc == -ENOENT ) {
+               // something removed it...
+               blocks_removed ++;
+            }
          }
          
          else {

@@ -183,4 +183,7 @@ int fs_entry_cache_promote_block( struct fs_core* core, struct syndicate_cache* 
 // allow external client to reversion a file 
 int fs_entry_cache_reversion_file( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t old_file_version, int64_t new_file_version );
 
+// allow external client to scan a file's cached blocks
+int fs_entry_cache_file_blocks_apply( char const* local_path, int (*block_func)( char const*, void* ), void* cls );
+
 #endif

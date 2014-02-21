@@ -64,24 +64,21 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
       return -EAGAIN;
    }
       
-   // this block may appear to be local if we're running in client mode.
-   // if so, then don't download from ourselves.
+   // this file may be locally coordinated, so don't download from ourselves.
    bool skip_UG = false;
-   if( core->conf->is_client ) {
-      int loc = fent->manifest->is_block_local( core, block_id );
-      if( loc > 0 ) {
-         skip_UG = true;
-      }
+   int loc = fent->manifest->is_block_local( core, block_id );
+   if( loc > 0 ) {
+      skip_UG = true;
    }
    
-   if( gateway_type == SYNDICATE_UG )
+   if( gateway_type == SYNDICATE_UG && !skip_UG )
       block_url = fs_entry_remote_block_url( core, fent->coordinator, fs_path, fent->version, block_id, block_version );
    else if( gateway_type == SYNDICATE_RG )
       block_url = fs_entry_RG_block_url( core, fent->coordinator, fent->volume, fent->file_id, fent->version, block_id, block_version );
    else if( gateway_type == SYNDICATE_AG )
       block_url = fs_entry_AG_block_url( core, fent->coordinator, fs_path, fent->version, block_id, block_version );
    
-   if( block_url == NULL ) {
+   if( block_url == NULL && (!skip_UG || gateway_type != SYNDICATE_UG) ) {
       errorf("Failed to compute block URL for Gateway %" PRIu64 "\n", fent->coordinator);
       return -ENODATA;
    }
@@ -89,7 +86,7 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
    char* block_buf = NULL;
    ssize_t nr = 0;
    
-   if( !skip_UG || gateway_type != SYNDICATE_UG ) {
+   if( !skip_UG ) {
       nr = fs_entry_download_block( core, block_url, &block_buf, block_len );
       
       if( nr <= 0 ) {
@@ -97,7 +94,7 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
       }
    }
    
-   if( nr <= 0 && gateway_type != SYNDICATE_AG ) {
+   if( skip_UG || (nr <= 0 && gateway_type != SYNDICATE_AG) ) {
       // try from an RG
       uint64_t rg_id = 0;
       
@@ -134,7 +131,8 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
       free( block_buf );
    }
 
-   free( block_url );
+   if( block_url )
+      free( block_url );
    return nr;
 }
 
@@ -188,10 +186,14 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
          // done!
          rc = read_len;
          
+         // need to dup this, since the cache will free it separately
+         char* block_bits_dup = CALLOC_LIST( char, read_len );
+         memcpy( block_bits_dup, block_bits, read_len );
+         
          // cache this, but don't wait for it to finish
          // do NOT free the future--it'll get freed by the cache.
-         struct cache_block_future* fut = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, block_version, block_bits, block_len, true );
-         if( fut != NULL ) {
+         struct cache_block_future* fut = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, block_version, block_bits_dup, read_len, true );
+         if( fut == NULL ) {
             errorf("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, block_version );
          }
          

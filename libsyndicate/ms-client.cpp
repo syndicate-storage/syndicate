@@ -3242,6 +3242,32 @@ int ms_client_get_gateway_type( struct ms_client* client, uint64_t g_id ) {
    return ret;
 }
 
+// get the name of the gateway
+int ms_client_get_gateway_name( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, char** gateway_name ) {
+   ms_client_view_rlock( client );
+   
+   int ret = 0;
+   
+   if( client->volume != NULL ) {
+      ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1];
+      ms_client_cert_bundles( client->volume, cert_bundles );
+      
+      ms_cert_bundle::iterator itr = cert_bundles[ gateway_type ]->find( gateway_id );
+      if( itr != cert_bundles[ gateway_type ]->end() ) {
+         *gateway_name = strdup( itr->second->name );
+      }
+      else {
+         ret = -ENOENT;
+      }
+   }
+   else {
+      ret = -ENOTCONN;
+   }
+   
+   ms_client_view_unlock( client );
+   return ret;
+}
+
 // is this ID an AG ID?
 bool ms_client_is_AG( struct ms_client* client, uint64_t ag_id ) {
    ms_client_view_rlock( client );
