@@ -69,7 +69,15 @@ def _get_volume_id( volume_name_or_id ):
          raise Exception("No such Volume '%s'" % volume_name_or_id )
       else:
          return volume.volume_id
+
+# ----------------------------------
+def _assert_authenticated( kw ):
+   # check a method's kw dict for caller_user, and verify it's there 
+   caller_user = kw.get("caller_user", None)
+   if caller_user is None:
+      raise Exception("Anonymous user is insufficiently privileged")
    
+   return True
 
 # ----------------------------------
 def create_user( email, openid_url, **fields ):
@@ -111,6 +119,8 @@ def list_user_access_requests( email, **q_opts ):
 # ----------------------------------
 def request_volume_access( email, volume_name_or_id, caps, message ):
    user, volume = _read_user_and_volume( email, volume_name_or_id )
+   
+   # defensive checks...
    if user == None:
       raise Exception("No such user '%s'" % email)
    if volume == None or volume.deleted:
@@ -121,6 +131,8 @@ def request_volume_access( email, volume_name_or_id, caps, message ):
 # ----------------------------------
 def remove_volume_access( email, volume_name_or_id ):
    user, volume = _read_user_and_volume( email, volume_name_or_id )
+   
+   # defensive checks...
    if user == None:
       raise Exception("No such user '%s'" % email)
    if volume == None or volume.deleted:
@@ -130,61 +142,52 @@ def remove_volume_access( email, volume_name_or_id ):
 
 # ----------------------------------
 def list_volume_access_requests( volume_name_or_id, **q_opts ):
-   caller_user = q_opts.get("caller_user")
-   if caller_user != None:
-      # verify ownership
-      volume = read_volume( volume_name_or_id )
-      if volume == None or volume.deleted:
-         raise Exception("No such volume '%s'" % volume_name_or_id )
-      
-      if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
-         raise Exception("User '%s' cannot read Volume '%s'" % (caller_user.email, volume.name))
+   _assert_authenticated( q_opts )
    
-   else:
-      raise Exception("Anonymous user is insufficiently privileged")
+   # volume must exist (we need its ID)
+   volume = read_volume( volume_name_or_id )
+   if volume == None or volume.deleted:
+      raise Exception("No such volume '%s'" % volume_name_or_id )
+   
+   # verify volume ownership
+   if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
+      raise Exception("User '%s' cannot read Volume '%s'" % (caller_user.email, volume.name))
    
    return VolumeAccessRequest.ListVolumeAccessRequests( volume.volume_id, **q_opts )
 
 # ----------------------------------
 def list_volume_access( volume_name_or_id, **q_opts ):
-   caller_user = q_opts.get("caller_user")
-   if caller_user != None:
-      # verify ownership
-      volume = read_volume( volume_name_or_id )
-      if volume == None or volume.deleted:
-         raise Exception("No such volume '%s'" % volume_name_or_id )
-      
-      if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
-         raise Exception("User '%s' cannot read Volume '%s'" % (caller_user.email, volume.name))
+   _assert_authenticated( q_opts )
    
-   else:
-      raise Exception("Anonymous user is insufficiently privileged")
+   # volume must exist (we need its ID)
+   volume = read_volume( volume_name_or_id )
+   if volume == None or volume.deleted:
+      raise Exception("No such volume '%s'" % volume_name_or_id )
    
+   if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
+      raise Exception("User '%s' cannot read Volume '%s'" % (caller_user.email, volume.name))
+
    return VolumeAccessRequest.ListVolumeAccess( volume.volume_id, **q_opts )
 
 # ----------------------------------
 def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
-   caller_user = caller_user_dict.get("caller_user")
-   if caller_user != None:
-      # verify ownership
-      volume = read_volume( volume_name_or_id )
-      if volume == None or volume.deleted:
-         raise Exception("No such volume '%s'" % volume_name_or_id )
-      
-      if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
-         raise Exception("User '%s' cannot read Volume '%s'" % (caller_user.email, volume.name))
-      
-   else:
-      raise Exception("Anonymous user is insufficiently privileged")
+   _assert_authenticated( caller_user_dict )
    
-   user = read_user( email )
-   if user == None:
+   user, volume = _read_user_and_volume( email, volume_name_or_id )
+   if user is None:
+      # defensive check
       raise Exception("No such user '%s'" % email)
+   
+   if volume is None or volume.deleted:
+      # defensive check 
+      raise Exception("No such Volume '%s'" % volume_name_or_id)
    
    return VolumeAccessRequest.GrantAccess( user.owner_id, volume.volume_id, volume.name, caps )
 
 # ----------------------------------
 def list_volume_user_ids( volume_name_or_id, **q_opts ):
+   _assert_authenticated( q_opts )
+   
    volume_id = _get_volume_id( volume_name_or_id )
    
    def __user_from_access_request( req ):
@@ -200,27 +203,31 @@ def list_volume_user_ids( volume_name_or_id, **q_opts ):
 
 # ----------------------------------
 def create_volume( email, name, description, blocksize, **attrs ):
+   _assert_authenticated( attrs )
+   
+   # user must exist
    user = read_user( email )
-   if user != None:
-      caller_user = attrs.get("caller_user")
-      if caller_user != None:
-         if caller_user.owner_id != user.owner_id and not caller_user.is_admin:
-            raise Exception("Caller user cannot create Volumes for other users")
-         
-      # check quota
-      user_volume_ids = list_accessible_volumes( email, caller_user=caller_user, projection=['volume_id'] )
-      if len(user_volume_ids) > user.get_volume_quota():
-         raise Exception("User '%s' has exceeded Volume quota" % email )
-      
-      new_volume_key = Volume.Create( user, blocksize=blocksize, name=name, description=description, **attrs )
-      if new_volume_key != None:
-         # create succeed.  Make a root directory
-         volume = new_volume_key.get()
-         MSEntry.MakeRoot( user.owner_id, volume )
-         return new_volume_key.get()
-         
-   else:
+   if user is None:
       raise Exception("No such user '%s'" % email)
+   
+   # a user can only create volumes for herself (admin can for anyone)
+   if caller_user.owner_id != user.owner_id and not caller_user.is_admin:
+      raise Exception("Caller cannot create Volumes for other users")
+   
+   # check quota for this user
+   user_volume_ids = list_accessible_volumes( email, caller_user=caller_user, projection=['volume_id'] )
+   if len(user_volume_ids) > user.get_volume_quota():
+      raise Exception("User '%s' has exceeded Volume quota" % email )
+   
+   new_volume_key = Volume.Create( user, blocksize=blocksize, name=name, description=description, **attrs )
+   if new_volume_key != None:
+      # create succeed.  Make a root directory
+      volume = new_volume_key.get()
+      MSEntry.MakeRoot( user.owner_id, volume )
+      return new_volume_key.get()
+      
+   else:
+      raise Exception("Failed to create Volume")
    
 
 # ----------------------------------
@@ -263,16 +270,16 @@ def list_archive_volumes( **q_opts ):
 
 # ----------------------------------
 def list_accessible_volumes( email, **q_opts ):
+   _assert_authenticated( q_opts )
+   
+   # queried user must exist
    user = read_user( email )
    if user == None:
       raise Exception("No such user '%s'" % email)
    
-   if 'caller_user' in q_opts.keys():
-      caller_user = q_opts['caller_user']
-      if user.owner_id != caller_user.owner_id and not caller_user.is_admin:
-         raise Exception("User '%s' is not sufficiently privileged" % caller_user.email)
-   else:
-      raise Exception("Anonymous user is not sufficiently privileged")
+   # privilege check...
+   if user.owner_id != caller_user.owner_id and not caller_user.is_admin:
+      raise Exception("User '%s' is not sufficiently privileged" % caller_user.email)
       
    def __volume_from_access_request( var ):
       return Volume.Read( var.volume_id, async=True )
@@ -285,17 +292,17 @@ def list_accessible_volumes( email, **q_opts ):
 
 # ----------------------------------
 def list_pending_volumes( email, **q_opts ):
+   _assert_authenticated( q_opts )
+   
+   # user must exist
    user = read_user( email )
    if user == None:
       raise Exception("No such user '%s'" % email)
    
-   if 'caller_user' in q_opts.keys():
-      caller_user = q_opts['caller_user']
-      if user.owner_id != caller_user.owner_id and not caller_user.is_admin:
-         raise Exception("User '%s' is not sufficiently privileged" % caller_user.email)
-   else:
-      raise Exception("Anonymous user is not sufficiently privileged")
-      
+   # privilege check--only admin can list other users' pending volumes
+   if user.owner_id != caller_user.owner_id and not caller_user.is_admin:
+      raise Exception("User '%s' is not sufficiently privileged" % caller_user.email)
+   
    def __volume_from_access_request( var ):
       return Volume.Read( var.volume_id, async=True )
    
@@ -307,24 +314,15 @@ def list_pending_volumes( email, **q_opts ):
 
 # ----------------------------------
 def set_volume_public_signing_key( volume_id, new_key, **attrs ):
-   caller_user = attrs.get("caller_user")
-   if caller_user != None:
-      # verify that this user owns this volume
-      volume = storage.read_volume( volume_id )
-      if volume == None or volume.deleted:
-         raise Exception("Volume '%s' does not exist" % volume_id )
-      
-      if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
-         raise Exception("Caller does not own Volume '%s'" % volume_id )
-
-   else:
-      raise Exception("Anonymous user is not sufficiently privileged")
-   
+   _assert_authenticated( attrs )   
    return Volume.SetPublicSigningKey( volume_id, new_key )
    
 
 # ----------------------------------
 def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **kwargs ):
+   _assert_authenticated( kwargs )
+   
+   # user and volume must both exist
    user, volume = _read_user_and_volume( email, volume_id )
    
    if user == None:
@@ -379,16 +377,15 @@ def update_gateway( g_name_or_id, **fields):
 
 # ----------------------------------
 def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
-   caller_user = caller_user_dict.get("caller_user")
+   _assert_authenticated( caller_user_dict )
    
-   if caller_user == None:
-      raise Exception("Anonymous user is not allowed to set the capabilities of a Gateway")
-   
+   # gateway must exist...(defensive check)
    gateway = read_gateway( g_name_or_id )
    
    if gateway == None:
       raise Exception("No such Gateway '%s'" % g_name_or_id )
    
+   # user and volume must exist...(defensive check)
    user, volume = _read_user_and_volume( gateway.owner_id, gateway.volume_id )
    
    if user == None:
@@ -397,11 +394,8 @@ def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
    if volume == None or volume.deleted:
       raise Exception("No volume with ID '%s'" % gateway.volume_id )
    
-   if user.owner_id != caller_user.owner_id and not caller_user.is_admin:
-      raise Exception("User '%s' does not own this Gateway" % caller_user.email)
-   
-   # verify that the user has the capability to do this
-   if not user.is_admin and user.owner_id != volume.owner_id:
+   # caller must own the volume or be admin to do this
+   if not caller_user.is_admin and caller_user.owner_id != volume.owner_id:
       raise Exception("User '%s' is not allowed to set the capabilities of Gateway '%s'" % user.email, gateway.name )
    
    Gateway.SetCaps( g_name_or_id, caps )
@@ -414,17 +408,16 @@ def list_gateways( attrs=None, **q_opts):
 
 # ----------------------------------
 def list_gateways_by_volume( volume_name_or_id, **q_opts ):
-   volume = storage.read_volume( volume_name_or_id )
+   _assert_authenticated( q_opts )
    
+   # volume must exist
+   volume = storage.read_volume( volume_name_or_id )
    if volume == None or volume.deleted:
       raise Exception("No such Volume '%s'" % volume_name_or_id )
    
-   caller_user = q_opts.get("caller_user", None)
-   if caller_user:
-      if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
-         raise Exception("User '%s' is not sufficiently privileged" % caller_user.email)
-   else:
-      raise Exception("Anonymous user is not sufficiently privileged")
+   # only admin can list gateways of volumes she doesn't own
+   if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
+      raise Exception("User '%s' is not sufficiently privileged" % caller_user.email)
    
    return Gateway.ListAll( {"Gateway.volume_id ==" : volume_id}, **q_opts )
 
@@ -435,49 +428,24 @@ def list_gateways_by_host( hostname, **q_opts ):
 
 # ----------------------------------
 def list_gateways_by_user( email, **q_opts ):
+   _assert_authenticated( q_opts )
+   
+   # user must exist
    user = read_user( email )
    if user == None:
       raise Exception("No such user '%s'" % email )
    
-   caller_user = q_opts.get("caller_user", None)
-   if caller_user:
-      if caller_user.owner_id != user.owner_id and not caller_user.is_admin:
-         raise Exception("User '%s' is not sufficiently privileged" % caller_user.email )
-      
-   else:
-      raise Exception("Anonymous user is not sufficiently privileged")
+   # only admin can list other users' gateways
+   if caller_user.owner_id != user.owner_id and not caller_user.is_admin:
+      raise Exception("User '%s' is not sufficiently privileged" % caller_user.email )
    
    return Gateway.ListAll( {"Gateway.owner_id ==": user.owner_id}, **q_opts )
-   
-# ----------------------------------
-def count_user_gateways( email, **q_opts ):
-   user = read_user( email )
-   if user == None:
-      raise Exception("No such user '%s'" % email )
-   
-   qry = Gateway
+
 
 # ----------------------------------
 def delete_gateway( g_id ):
    # TODO: when deleting an AG, delete all of its files and directories as well
    return Gateway.Delete( g_id )
-
-# ----------------------------------
-def set_gateway_public_signing_key( g_name_or_id, new_key, **caller_user_dict ):
-   caller_user = caller_user_dict.get("caller_user")
-   if caller_user != None:
-      # verify that this user owns this gateway
-      gateway = storage.read_gateway( g_name_or_id )
-      if gateway == None:
-         raise Exception("Gateway '%s' does not exist" % g_name_or_id )
-      
-      if gateway.owner_id != caller_user.owner_id:
-         raise Exception("Caller user does not own Gateway '%s'" % g_name_or_id )
-
-   else:
-      raise Exception("Anonymous user is not sufficiently privileged")
-   
-   return Gateway.SetPublicSigningKey( g_id, new_key )
 
 
 # ----------------------------------

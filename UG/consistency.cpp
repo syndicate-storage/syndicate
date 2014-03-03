@@ -56,7 +56,7 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
    }
    
    if( replica_rc != 0 ) {
-      errorf("ms_client_replicate_wait(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", fh->volume, core->gateway, fh->file_id, replica_rc );
+      errorf("fs_entry_replicate_wait(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", fh->volume, core->gateway, fh->file_id, replica_rc );
       fs_file_handle_unlock( fh );
       
       return replica_rc;
@@ -213,7 +213,9 @@ static struct fs_entry* fs_entry_attach_ms_directory( struct fs_core* core, stru
    if( new_dir->ftype != FTYPE_DIR ) {
       // invalid MS data
       errorf("not a directory: /%" PRIu64 "/%" PRIu64 "/%" PRIX64 "\n", ms_record->volume, ms_record->coordinator, ms_record->file_id );
+      
       fs_entry_destroy( new_dir, true );
+      
       free( new_dir );
       return NULL;
    }
@@ -523,6 +525,8 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
    if( listing->type != ms::ms_entry::MS_ENTRY_TYPE_DIR )
       return -EINVAL;
    
+   dbprintf("Reload directory %" PRIX64 " (%s) with new data\n", dent->file_id, dent->name );
+   
    vector<struct md_entry>* ms_ents_vec = listing->entries;
 
    // convert to list, so we don't have to modify the listing
@@ -564,17 +568,28 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
 
    if( !reloaded_dent ) {
       // this listing indicates that the entry does not exist.  Remove all children.
-      errorf("Directory entry /%" PRIu64 "/%" PRIX64 " not found in listing\n", dent->volume, dent->file_id );
+      errorf("Directory entry %" PRIX64 " (%s) not found in listing\n", dent->file_id, dent->name );
 
       int rc = fs_unlink_children( consistency_cls->core, dent->children, true );
       if( rc != 0 ) {
+         // NOTE: this should never happen in practice, but here for defensive purposes
          errorf("fs_unlink_children(%" PRIX64 " (%s)) rc = %d\n", dent->file_id, dent->name, rc );
          rc = -EIO;
       }
 
       // delete this entry
-      fs_entry_destroy( dent, false );
-
+      uint64_t file_id = dent->file_id;
+      dent->link_count = 0;
+      rc = fs_entry_try_destroy( consistency_cls->core, dent );
+      if( rc > 0 ) {
+         // entry was destroyed
+         dbprintf("Destroyed %" PRIX64 "\n", file_id);
+      }
+      else {
+         // last closedir() will destroy this
+         fs_entry_unlock( dent );
+      }
+      
       consistency_cls->err = -EUNATCH;    // this is guaranteed not to be returned by fs_entry_resolve_path_cls, and indicates "detachment"
 
       free( ms_ents );
@@ -670,6 +685,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
    // delete them.
    rc = fs_unlink_children( consistency_cls->core, children, true );
    if( rc != 0 ) {
+      // NOTE: this should never happen in practice, but here for defensive purposes
       errorf("fs_unlink_children(%" PRIX64 " (%s)) rc = %d\n", dent->file_id, dent->name, rc );
    }
 
@@ -736,16 +752,21 @@ static int fs_entry_load_listing( struct fs_entry_consistency_cls* consistency_c
    
    if( listing->status == MS_LISTING_NOCHANGE ) {
       // nothing to do
+      dbprintf("No change: %" PRIX64 " (%s)\n", fent->file_id, fent->name );
       return 0;
    }
 
    else if( listing->status == MS_LISTING_NONE ) {
       // nothing on the MS
-      consistency_cls->err = -ENOENT;
+      dbprintf("Removed: %" PRIX64 " (%s)\n", fent->file_id, fent->name );
+      consistency_cls->err = MS_LISTING_NONE;
       return -ENOENT;
    }
 
    else if( listing->status == MS_LISTING_NEW ) {
+      
+      dbprintf("New data: %" PRIX64 " (%s)\n", fent->file_id, fent->name );
+      
       // verify the types are still the same
       int rc = 0;
       if( fent->ftype == FTYPE_DIR && listing->type == ms::ms_entry::MS_ENTRY_TYPE_DIR ) {
@@ -773,6 +794,7 @@ static int fs_entry_load_listing( struct fs_entry_consistency_cls* consistency_c
 }
 
 
+// NOTE: fent must be write-locked
 static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
    // reload this particular directory
    struct fs_entry_consistency_cls* consistency_cls = (struct fs_entry_consistency_cls*)cls;
@@ -783,7 +805,7 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
    int i = fs_entry_path_find( ms_path, fent->file_id );
    
    if( i == -ENOENT ) {
-      // not found, so nothing to do
+      // not found in this portion of the path, so nothing to do
       return 0;
    }
 
@@ -794,8 +816,38 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
    int rc = fs_entry_load_listing( consistency_cls, fent, listing );
    if( rc != 0 ) {
       errorf("fs_entry_load_listing(%s) rc = %d\n", fent->name, rc );
+      
+      if( rc == -ENOENT && consistency_cls->err == MS_LISTING_NONE ) {
+         // we found an entry that is no longer on the MS.  Destroy it locally.
+         
+         uint64_t file_id = fent->file_id;
+         dbprintf("remove %" PRIX64 " (%s) locally, since it is no longer on the MS\n", fent->file_id, fent->name );
+         
+         if( fent->ftype == FTYPE_DIR ) {
+            // destroy all children beneath us
+            rc = fs_unlink_children( consistency_cls->core, fent->children, true );
+            if( rc != 0 ) {
+               // NOTE: this should never happen in practice, but here for defensive purposes
+               errorf("fs_unlink_children(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
+               rc = 0;
+            }
+         }
+         
+         fent->link_count = 0;
+         rc = fs_entry_try_destroy( consistency_cls->core, fent );
+         if( rc > 0 ) {
+            // entry was destroyed
+            // do NOT free it; fs_entry_resolve_path_cls() will do it for us.
+            dbprintf("Destroyed %" PRIX64 "\n", file_id);
+         }
+         
+         // stop searching
+         rc = -ENOENT;
+      }
+      
       consistency_cls->err = rc;
    }
+   
    return rc;
 }
 
@@ -824,7 +876,8 @@ static int fs_entry_download_path_listings( struct fs_core* core, path_t* to_dow
 }
 
 
-// given the list of path entries that exist locally, reload them
+// given the list of path entries that exist locally, reload them.
+// if one of them no longer exists on the MS, then unlink all of the children beneath it.
 static int fs_entry_reload_local_path_entries( struct fs_entry_consistency_cls* cls, path_t* ms_path ) {
 
    struct fs_core* core = cls->core;
@@ -1109,7 +1162,7 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
    }
 
    if( missing_local ) {
-      // get missing path components
+      // get missing path components, if all stale path components were successfully reloaded
       rc = fs_entry_reload_remote_path_entries( &consistency_cls, &ms_path );
       if( rc != 0 ) {
          errorf("fs_entry_reload_remote_path_entries(%s) rc = %d\n", path, rc );

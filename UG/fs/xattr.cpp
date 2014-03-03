@@ -18,7 +18,7 @@
 #include "cache.h"
 
 // general purpose handlers...
-ssize_t xattr_set_undefined( struct fs_core* core, struct fs_entry* fent, char const* buf, size_t buf_len, int flags ) {
+int xattr_set_undefined( struct fs_core* core, struct fs_entry* fent, char const* buf, size_t buf_len, int flags ) {
    return -ENOTSUP;
 }
 
@@ -27,13 +27,20 @@ int xattr_del_undefined( struct fs_core* core, struct fs_entry* fent ) {
 }
 
 
-// prototype xattr handlers...
+// prototype special xattr handlers...
 static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len );
 static ssize_t xattr_get_coordinator( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len );
+static ssize_t xattr_get_read_ttl( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len );
+static ssize_t xattr_get_write_ttl( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len );
+
+static int xattr_set_read_ttl( struct fs_core* core, struct fs_entry* fent, char const* buf, size_t buf_len, int flags );
+static int xattr_set_write_ttl( struct fs_core* core, struct fs_entry* fent, char const* buf, size_t buf_len, int flags );
 
 static struct syndicate_xattr_handler xattr_handlers[] = {
-   {SYNDICATE_XATTR_COORDINATOR,        xattr_get_coordinator,          xattr_set_undefined,    xattr_del_undefined},      // TODO: set by gateway name?
+   {SYNDICATE_XATTR_COORDINATOR,        xattr_get_coordinator,          xattr_set_undefined,    xattr_del_undefined},      // TODO: set coordinator by gateway name?
    {SYNDICATE_XATTR_CACHED_BLOCKS,      xattr_get_cached_blocks,        xattr_set_undefined,    xattr_del_undefined},
+   {SYNDICATE_XATTR_READ_TTL,           xattr_get_read_ttl,             xattr_set_read_ttl,     xattr_del_undefined},
+   {SYNDICATE_XATTR_WRITE_TTL,          xattr_get_write_ttl,            xattr_set_write_ttl,    xattr_del_undefined},
    {NULL,                               NULL,                           NULL,                   NULL}
 };
 
@@ -176,6 +183,113 @@ static ssize_t xattr_get_coordinator( struct fs_core* core, struct fs_entry* fen
    }
 }
 
+// get the read ttl 
+static ssize_t xattr_get_read_ttl( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len ) {
+   uint32_t read_ttl = fent->max_read_freshness;
+   
+   // how many bytes needed?
+   ssize_t len = 2;
+   if( read_ttl > 0 )
+      len = (ssize_t)(log( (double)read_ttl )) + 1;
+   
+   if( buf == NULL || buf_len == 0 ) {
+      // size query
+      return len;
+   }
+   
+   if( (size_t)len > buf_len ) {
+      // not big enough
+      return -ERANGE;
+   }
+   
+   sprintf( buf, "%u", read_ttl );
+   
+   return len;
+}
+
+
+// get the write ttl 
+static ssize_t xattr_get_write_ttl( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len ) {
+   uint32_t write_ttl = fent->max_write_freshness;
+   
+   // how many bytes needed?
+   ssize_t len = 2;
+   if( write_ttl > 0 )
+      len = (ssize_t)(log( (double)write_ttl )) + 1;
+   
+   if( buf == NULL || buf_len == 0 ) {
+      // size query
+      return len;
+   }
+   
+   if( (size_t)len > buf_len ) {
+      // not big enough
+      return -ERANGE;
+   }
+   
+   sprintf( buf, "%u", write_ttl );
+   
+   return len;
+}
+
+
+// set the read ttl 
+static int xattr_set_read_ttl( struct fs_core* core, struct fs_entry* fent, char const* buf, size_t buf_len, int flags ) {
+   // this attribute always exists...
+   if( (flags & XATTR_CREATE) )
+      return -EEXIST;
+   
+   // parse this
+   char* tmp = NULL;
+   uint32_t read_ttl = (uint32_t)strtoll( buf, &tmp, 10 );
+   if( tmp == buf ) {
+      // invalid 
+      return -EINVAL;
+   }
+   
+   fent->max_read_freshness = read_ttl;
+   return 0;
+}
+
+
+// set the write ttl 
+static int xattr_set_write_ttl( struct fs_core* core, struct fs_entry* fent, char const* buf, size_t buf_len, int flags ) {
+   // this attribute always exists...
+   if( (flags & XATTR_CREATE) )
+      return -EEXIST;
+   
+   // parse this
+   char* tmp = NULL;
+   uint32_t write_ttl = (uint32_t)strtoll( buf, &tmp, 10 );
+   if( tmp == buf ) {
+      // invalid 
+      return -EINVAL;
+   }
+   
+   fent->max_write_freshness = write_ttl;
+   return 0;
+}
+
+
+// download an extended attribute
+static int fs_entry_download_xattr( struct fs_core* core, struct fs_entry* fent, char const* name, char** value ) {
+   char* val = NULL;
+   size_t val_len = 0;
+   int ret = 0;
+   ret = ms_client_getxattr( core->ms, fent->volume, fent->file_id, name, &val, &val_len );
+   if( ret < 0 ) {
+      errorf("ms_client_getxattr( %s ) rc = %d\n", name, ret );
+      ret = -ENOATTR;
+   }
+   else {
+      *value = val;
+      
+      ret = (int)val_len;
+   }
+   
+   return ret;
+}
+
 
 // getxattr
 ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *name, char *value, size_t size, uint64_t user, uint64_t volume ) {
@@ -190,27 +304,29 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
    }
    
    ssize_t ret = 0;
+   char* val = NULL;
    
    // find the xattr handler for this attribute
    struct syndicate_xattr_handler* xattr_handler = xattr_lookup_handler( name );
    if( xattr_handler == NULL ) {
-      // check directly 
-      string name_str( name );
-      fs_entry_xattrs::iterator itr = fent->xattrs->find( name_str );
-      if( itr == fent->xattrs->end() ) {
-         ret = -ENOATTR;
-      }
-      else {
-         const string& val = itr->second;
-         if( val.size() > size ) {
-            ret = -ERANGE;      // buffer isn't big enough
+      ret = (ssize_t)fs_entry_download_xattr( core, fent, name, &val );
+      if( ret >= 0 ) {
+         // success!
+         if( value != NULL && size > 0 ) {
+            // wanted the attribute, not just the size
+            if( size >= (unsigned)ret ) {
+               ret = -ERANGE;
+            }
+            else {
+               memcpy( value, val, ret );
+            }
          }
-         else {
-            memcpy( value, val.data(), val.size() );
-         }
+         
+         free( val );
       }
    }
    else {
+      // built-in handler
       ret = (*xattr_handler->get)( core, fent, value, size );
    }
    
@@ -236,36 +352,22 @@ int fs_entry_setxattr( struct fs_core* core, char const* path, char const *name,
    // find the xattr handler for this attribute
    struct syndicate_xattr_handler* xattr_handler = xattr_lookup_handler( name );
    if( xattr_handler == NULL ) {
-      // check directly
-      string name_str( name );
       
-      // creating the attr?  verify it doesn't exist
-      if( (flags & XATTR_CREATE) ) {
-         fs_entry_xattrs::iterator itr = fent->xattrs->find( name_str );
-         if( itr != fent->xattrs->end() ) {
-            ret = -EEXIST;
-         }
+      struct md_entry ent;
+      fs_entry_to_md_entry( core, &ent, fent, 0, NULL );        // parent information not needed
+      
+      ret = ms_client_setxattr( core->ms, &ent, name, value, size, flags );
+      if( ret < 0 ) {
+         errorf("ms_client_setxattr( %s = %s ) rc = %zd\n", name, value, ret );
       }
       
-      // replacing the attr?  verify that it exists
-      if( (flags & XATTR_REPLACE) ) {
-         fs_entry_xattrs::iterator itr = fent->xattrs->find( name_str );
-         if( itr == fent->xattrs->end() ) {
-            ret = -ENOATTR;
-         }
-      }
-      
-      // are we good?
-      if( ret == 0 ) {
-         string value_str( value, size );
-         (*fent->xattrs)[ name_str ] = value_str;
-      }
+      md_entry_free( &ent );
+   
    }
    else {
+      // built-in handler
       ret = (*xattr_handler->set)( core, fent, value, size, flags );
    }
-   
-   // TODO: synchronize xattrs with MS
    
    fs_entry_unlock( fent );
 
@@ -306,22 +408,20 @@ int fs_entry_removexattr( struct fs_core* core, char const* path, char const *na
    // find the xattr handler for this attribute
    struct syndicate_xattr_handler* xattr_handler = xattr_lookup_handler( name );
    if( xattr_handler == NULL ) {
-      // check directly
-      string name_str( name );
+   
+      struct md_entry ent;
+      fs_entry_to_md_entry( core, &ent, fent, 0, NULL );        // parent information not needed
+   
+      ret = ms_client_removexattr( core->ms, &ent, name );
+      if( ret < 0 ) {
+         errorf("ms_client_removexattr( %s ) rc = %zd\n", name, ret );
+      }
       
-      fs_entry_xattrs::iterator itr = fent->xattrs->find( name_str );
-      if( itr != fent->xattrs->end() ) {
-         fent->xattrs->erase( itr );
-      }
-      else {
-         ret = -ENOATTR;
-      }
+      md_entry_free( &ent );
    }
    else {
       ret = (*xattr_handler->del)( core, fent );
    }
-   
-   // TODO: synchronize xattrs with MS
    
    fs_entry_unlock( fent );
 

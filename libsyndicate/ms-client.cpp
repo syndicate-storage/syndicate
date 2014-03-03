@@ -401,9 +401,10 @@ char* ms_client_file_url( struct ms_client* client, uint64_t volume_id ) {
    char volume_id_str[50];
    sprintf( volume_id_str, "%" PRIu64, volume_id );
 
+   
+   ms_client_rlock( client );
    char* volume_file_path = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/FILE/") + 1 + strlen(volume_id_str) + 1 );
 
-   ms_client_rlock( client );
    sprintf( volume_file_path, "%s/FILE/%s", client->url, volume_id_str);
    ms_client_unlock( client );
    
@@ -411,7 +412,7 @@ char* ms_client_file_url( struct ms_client* client, uint64_t volume_id ) {
 }
 
 // GET for a file
-char* ms_client_file_url( struct ms_client* client, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce ) {
+char* ms_client_file_read_url( struct ms_client* client, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce ) {
 
    char volume_id_str[50];
    sprintf( volume_id_str, "%" PRIu64, volume_id );
@@ -425,14 +426,52 @@ char* ms_client_file_url( struct ms_client* client, uint64_t volume_id, uint64_t
    char write_nonce_str[60];
    sprintf( write_nonce_str, "%" PRId64, write_nonce );
 
-   char* volume_file_path = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/FILE/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 + strlen(version_str) + 1 + strlen(write_nonce_str) + 1 );
-
+   
    ms_client_rlock( client );
-   sprintf( volume_file_path, "%s/FILE/%s/%s/%s/%s", client->url, volume_id_str, file_id_str, version_str, write_nonce_str );
+   char* volume_file_path = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/FILE/RESOLVE/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 + strlen(version_str) + 1 + strlen(write_nonce_str) + 1 );
+
+   sprintf( volume_file_path, "%s/FILE/RESOLVE/%s/%s/%s/%s", client->url, volume_id_str, file_id_str, version_str, write_nonce_str );
    ms_client_unlock( client );
 
    return volume_file_path;
 }
+
+// GETXATTR url 
+char* ms_client_getxattr_url( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char const* xattr_name ) {
+   
+   char volume_id_str[50];
+   sprintf( volume_id_str, "%" PRIu64, volume_id );
+
+   char file_id_str[50];
+   sprintf( file_id_str, "%" PRIX64, file_id );
+
+   ms_client_rlock( client );
+   char* getxattr_path = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/FILE/GETXATTR/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 + strlen(xattr_name) + 1 );
+   
+   sprintf( getxattr_path, "%s/FILE/GETXATTR/%s/%s/%s", client->url, volume_id_str, file_id_str, xattr_name );
+   ms_client_unlock( client );
+   
+   return getxattr_path;
+}
+
+// LISTXATTR url 
+char* ms_client_listxattr_url( struct ms_client* client, uint64_t volume_id, uint64_t file_id ) {
+   
+   char volume_id_str[50];
+   sprintf( volume_id_str, "%" PRIu64, volume_id );
+
+   char file_id_str[50];
+   sprintf( file_id_str, "%" PRIX64, file_id );
+
+   ms_client_rlock( client );
+   char* listxattr_path = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/FILE/LISTXATTR/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 );
+   
+   sprintf( listxattr_path, "%s/FILE/LISTXATTR/%s/%s", client->url, volume_id_str, file_id_str );
+   ms_client_unlock( client );
+   
+   return listxattr_path;
+}
+   
 
 char* ms_client_volume_url( struct ms_client* client, uint64_t volume_id ) {
    char buf[50];
@@ -2334,6 +2373,12 @@ static int ms_client_serialize_update_set( update_set* updates, ms::ms_updates* 
          ms::ms_entry* dest_ent = ms_up->mutable_dest();
          md_entry_to_ms_entry( dest_ent, &update->dest );
       }
+      
+      // if this is a SETXATTR, then set the flags 
+      if( update->op == ms::ms_update::SETXATTR ) {
+         ms_up->set_xattr_create( (update->flags & XATTR_CREATE) ? true : false );
+         ms_up->set_xattr_replace( (update->flags & XATTR_REPLACE) ? true : false );
+      }
    }
 
    ms_updates->set_signature( string("") );
@@ -2377,12 +2422,13 @@ static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) 
 
 // post a record on the MS, synchronously.
 // Get back a new file ID and/or coordinator ID, depending on the operation
-static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t* coordinator_id, uint64_t volume_id, int op, struct md_entry* ent, struct md_entry* dest ) {
+static int ms_client_file_post( struct ms_client* client, uint64_t* file_id, uint64_t* coordinator_id, uint64_t volume_id, int op, struct md_entry* ent, struct md_entry* dest, int flags ) {
    
    // pack the first entry
    struct md_update up;
    memset( &up, 0, sizeof(up) );
    up.op = op;
+   up.flags = flags;
    memcpy( &up.ent, ent, sizeof(struct md_entry) );
 
    update_set updates;
@@ -2422,7 +2468,7 @@ static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t
 
    // do we need to verify the authenticity of the reply?  That is, will the reply contain 
    // information beyond a positive or negative ACK?
-   bool need_verify = (op == ms::ms_update::CREATE || op == ms::ms_update::CHOWN);
+   bool need_verify = (op == ms::ms_update::CREATE || op == ms::ms_update::CHOWN );
    
    ms::ms_reply reply;
    
@@ -2461,6 +2507,7 @@ static int ms_client_post( struct ms_client* client, uint64_t* file_id, uint64_t
 }
 
 
+// random 64-bit number
 uint64_t ms_client_make_file_id() {
    uint64_t lower = CMWC4096();
    uint64_t upper = CMWC4096();
@@ -2479,7 +2526,7 @@ int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, struct md
    
    dbprintf("desired file_id: %" PRIX64 "\n", file_id );
    
-   int rc = ms_client_post( client, &file_id, NULL, ent->volume, ms::ms_update::CREATE, ent, NULL );
+   int rc = ms_client_file_post( client, &file_id, NULL, ent->volume, ms::ms_update::CREATE, ent, NULL, 0 );
    
    if( rc == 0 ) {
       *file_id_ret = file_id;
@@ -2501,7 +2548,7 @@ int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, struct md_
    ent->file_id = file_id;
    
    dbprintf("desired file_id: %" PRIX64 "\n", file_id );
-   int rc = ms_client_post( client, &file_id, NULL, ent->volume, ms::ms_update::CREATE, ent, NULL );
+   int rc = ms_client_file_post( client, &file_id, NULL, ent->volume, ms::ms_update::CREATE, ent, NULL, 0 );
    
    if( rc == 0 ) {
       *file_id_ret = file_id;
@@ -2515,17 +2562,17 @@ int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, struct md_
 
 // delete a record on the MS, synchronously
 int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
-   return ms_client_post( client, NULL, NULL, ent->volume, ms::ms_update::DELETE, ent, NULL );
+   return ms_client_file_post( client, NULL, NULL, ent->volume, ms::ms_update::DELETE, ent, NULL, 0 );
 }
 
 // update a record on the MS, synchronously
 int ms_client_update( struct ms_client* client, struct md_entry* ent ) {
-   return ms_client_post( client, NULL, NULL, ent->volume, ms::ms_update::UPDATE, ent, NULL );
+   return ms_client_file_post( client, NULL, NULL, ent->volume, ms::ms_update::UPDATE, ent, NULL, 0 );
 }
 
 // change coordinator ownership of a file on the MS, synchronously
 int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, struct md_entry* ent ) {
-   return ms_client_post( client, NULL, new_coordinator, ent->volume, ms::ms_update::CHOWN, ent, NULL );
+   return ms_client_file_post( client, NULL, new_coordinator, ent->volume, ms::ms_update::CHOWN, ent, NULL, 0 );
 }
 
 // rename from src to dest 
@@ -2533,7 +2580,7 @@ int ms_client_rename( struct ms_client* client, struct md_entry* src, struct md_
    if( src->volume != dest->volume )
       return -EXDEV;
       
-   return ms_client_post( client, NULL, NULL, src->volume, ms::ms_update::RENAME, src, dest );
+   return ms_client_file_post( client, NULL, NULL, src->volume, ms::ms_update::RENAME, src, dest, 0 );
 }
 
 // send a batch of updates.
@@ -2811,7 +2858,7 @@ void ms_client_free_response( ms_response_t* ms_response ) {
 
 // initialize a download context
 int ms_client_init_download( struct ms_client* client, struct ms_download_context* download, uint64_t volume_id, uint64_t file_id, int64_t file_version, int64_t write_nonce ) {
-   download->url = ms_client_file_url( client, volume_id, file_id, file_version, write_nonce );
+   download->url = ms_client_file_read_url( client, volume_id, file_id, file_version, write_nonce );
    download->curl = curl_easy_init();
    download->rb = new response_buffer_t();
 
@@ -3078,11 +3125,22 @@ int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_
          break;
       }
       
+      /*
       // check errors
       int err = reply.error();
       if( err != 0 ) {
          errorf("MS reply error %d from %s\n", err, path_downloads[di].url );
          rc = err;
+         ms_client_free_response( ms_response );
+         free( buf );
+         break;
+      }
+      */
+      
+      // verify that we have the listing 
+      if( !reply.has_listing() ) {
+         errorf("%s", "MS reply does not contain a listing\n" );
+         rc = -ENODATA;
          ms_client_free_response( ms_response );
          free( buf );
          break;
@@ -3602,4 +3660,172 @@ int ms_client_my_key_pem( struct ms_client* client, char** buf, size_t* len ) {
    
    ms_client_unlock( client );
    return rc;
+}
+
+// get an xattr value.
+// fails with -ENOENT if the file doesn't exist or isn't readable.
+int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char const* xattr_name, char** xattr_value, size_t* xattr_value_len ) {
+   char* getxattr_url = ms_client_getxattr_url( client, volume_id, file_id, xattr_name );
+   int rc = 0;
+   ssize_t len = 0;
+   char* buf = NULL;
+   
+   ms_client_begin_downloading( client, getxattr_url, NULL );
+   
+   memset( &client->read_times, 0, sizeof(client->read_times) );
+   len = md_download_file5( client->ms_read, &buf );
+   
+   int http_response = ms_client_end_downloading( client );
+   
+   free( getxattr_url );
+   
+   if( len <= 0 ) {
+      errorf("md_download_file5 rc = %zd\n", len );   
+      return (int)len;
+   }
+   
+   if( http_response == 200 ) {
+      // success!
+      // parse and verify
+      ms::ms_reply reply;
+      rc = ms_client_parse_reply( client, &reply, buf, len, true );
+      if( rc != 0 ) {
+         errorf("ms_client_parse_reply(getxattr) rc = %d\n", rc );
+         free( buf );
+         return -ENODATA;
+      }
+      
+      free( buf );
+      
+      // check errors
+      int err = reply.error();
+      if( err != 0 ) {
+         errorf("MS getxattr reply error %d\n", err );
+         return err;
+      }
+      
+      // check for the value 
+      if( !reply.has_xattr_value() ) {
+         errorf("MS did not reply a value for %s\n", xattr_name );
+         return -ENODATA;
+      }
+      
+      // extract versioning information from the reply
+      ms_client_process_header( client, volume_id, reply.volume_version(), reply.cert_version() );
+      
+      // get the xattr 
+      char* val = strdup( reply.xattr_value().c_str() );
+      *xattr_value = val;
+      *xattr_value_len = reply.xattr_value().size();
+      
+      return 0;
+   }
+   else {
+      // error 
+      errorf("MS HTTP status %d\n", http_response );
+      
+      if( http_response == 0 ) {
+         errorf("%s", "MS bug: HTTP response is zero!\n");
+         
+         http_response = -EIO;
+      }
+      
+      return -http_response;
+   }
+}
+
+// get the list of xattrs for this file.
+// fails with -ENOENT if the file doesn't exist or isn't readable
+// on success, populate xattr_names with a '\0'-separated list of xattr names (size stored to xattr_names_len).
+int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char** xattr_names, size_t* xattr_names_len ) {
+   char* listxattr_url = ms_client_listxattr_url( client, volume_id, file_id );
+   int rc = 0;
+   ssize_t len = 0;
+   char* buf = NULL;
+   
+   ms_client_begin_downloading( client, listxattr_url, NULL );
+   
+   memset( &client->read_times, 0, sizeof(client->read_times) );
+   len = md_download_file5( client->ms_read, &buf );
+   
+   int http_response = ms_client_end_downloading( client );
+   
+   free( listxattr_url );
+   
+   if( len <= 0 ) {
+      errorf("md_download_file5 rc = %zd\n", len );
+      return (int)len;
+   }
+   
+   if( http_response == 200 ) {
+      // success!
+      // parse and verify
+      ms::ms_reply reply;
+      rc = ms_client_parse_reply( client, &reply, buf, len, true );
+      if( rc != 0 ) {
+         errorf("ms_client_parse_reply(listxattr) rc = %d\n", rc );
+         free( buf );
+         return -ENODATA;
+      }
+      
+      free( buf );
+      
+      // check errors
+      int err = reply.error();
+      if( err != 0 ) {
+         errorf("MS listxattr reply error %d\n", err );
+         return err;
+      }
+      
+      // extract versioning information from the reply
+      ms_client_process_header( client, volume_id, reply.volume_version(), reply.cert_version() );
+      
+      // get the total size...
+      size_t names_len = 0;
+      for( int i = 0; i < reply.xattr_names_size(); i++ ) {
+         const string& xattr_name = reply.xattr_names(i);
+         names_len += xattr_name.size() + 1;
+      }
+      
+      // get the values 
+      char* names = CALLOC_LIST( char, names_len + 1 );
+      off_t offset = 0;
+      for( int i = 0; i < reply.xattr_names_size(); i++ ) {
+         const string& xattr_name = reply.xattr_names(i);
+         strcpy( names + offset, xattr_name.c_str() );
+         
+         offset += xattr_name.size() + 1;
+      }
+      
+      *xattr_names = names;
+      *xattr_names_len = names_len;
+      
+      return 0;
+   }
+   else {
+      // error 
+      errorf("MS HTTP status %d\n", http_response );
+      
+      if( http_response == 0 ) {
+         errorf("%s", "MS bug: HTTP response is zero!\n");
+         
+         http_response = -EIO;
+      }
+      
+      return -http_response;
+   }
+}
+
+// set a file's xattr.
+// flags is either 0, XATTR_CREATE, or XATTR_REPLACE (see setxattr(2))
+// fails with -ENOENT if the file doesn't exist or either isn't readable or writable.  Fails with -ENODATA if the semantics in flags can't be met.
+int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, int flags ) {
+   return ms_client_file_post( client, NULL, NULL, ent->volume, ms::ms_update::SETXATTR, ent, NULL, flags );
+}
+
+// remove an xattr.
+// fails if the file isn't readable or writable.
+// succeeds even if the xattr doesn't exist (i.e. idempotent)
+int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name ) {
+   return ms_client_file_post( client, NULL, NULL, ent->volume, ms::ms_update::REMOVEXATTR, ent, NULL, 0 );
 }

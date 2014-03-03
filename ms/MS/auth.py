@@ -468,18 +468,16 @@ class BindAPIGuard:
          target_object_fut = None
          futs = []
          
-         if self.caller_owns_source:
-            # verify that the caller user owns the source object
-            source_object_id = object_id_from_name( self.source_object_name, func, args, kw )
-            source_object_fut = self.source_object_cls.Read( source_object_id, async=True )
-            futs.append( source_object_fut )
+         # get the source object
+         source_object_id = object_id_from_name( self.source_object_name, func, args, kw )
+         source_object_fut = self.source_object_cls.Read( source_object_id, async=True )
+         futs.append( source_object_fut )
          
-         if self.caller_owns_target:
-            # verify that the caller user owns the target object
-            target_object_id = object_id_from_name( self.target_object_name, func, args, kw )
-            target_object_fut = self.target_object_cls.Read( target_object_id, async=True )
-            futs.append( target_object_fut )
-         
+         # get the target object
+         target_object_id = object_id_from_name( self.target_object_name, func, args, kw )
+         target_object_fut = self.target_object_cls.Read( target_object_id, async=True )
+         futs.append( target_object_fut )
+      
          storagetypes.wait_futures( futs )
          
          source_object = None
@@ -490,32 +488,30 @@ class BindAPIGuard:
          
          if target_object_fut != None:
             target_object = target_object_fut.get_result()
+      
+         # check the source object...
+         source_object_id = object_id_from_name( self.source_object_name, func, args, kw )
          
-         if self.caller_owns_source:
-            # get the source object ID 
-            source_object_id = object_id_from_name( self.source_object_name, func, args, kw )
+         if source_object_id is None:
+            raise Exception("BUG: No %s ID given" % self.source_object_cls.__name__)
+         
+         if source_object == None:
+            raise Exception("Source object '%s' does not exist" % source_object_id )
+         
+         if self.caller_owns_source and not source_object.owned_by( caller_user ) and not caller_user.is_admin:
+            raise Exception("Source object '%s' is not owned by '%s'" % (source_object_id, caller_user.email) )
             
-            if source_object_id is None:
-               raise Exception("No %s ID given" % self.source_object_cls.__name__)
-            
-            if source_object == None:
-               raise Exception("Source object '%s' does not exist" % source_object_id )
-            
-            if not source_object.owned_by( caller_user ) and not caller_user.is_admin:
-               raise Exception("Source object '%s' is not owned by '%s'" % (source_object_id, caller_user.email) )
-            
-         if self.caller_owns_target:
-            # get the target object ID 
-            target_object_id = object_id_from_name( self.target_object_name, func, args, kw )
-            
-            if target_object_id is None:
-               raise Exception("No %s ID given" % self.target_object_cls.__name__)
-            
-            if target_object == None:
-               raise Exception("Target object '%s' does not exist" % target_object_id )
-            
-            if not target_object.owned_by( caller_user ) and not caller_user.is_admin:
-               raise Exception("Target object '%s' is not owned by '%s'" % (target_object_id, caller_user.email))
+         # check the target object...
+         target_object_id = object_id_from_name( self.target_object_name, func, args, kw )
+         
+         if target_object_id is None:
+            raise Exception("No %s ID given" % self.target_object_cls.__name__)
+         
+         if target_object == None:
+            raise Exception("Target object '%s' does not exist" % target_object_id )
+         
+         if self.caller_owns_target and not target_object.owned_by( caller_user ) and not caller_user.is_admin:
+            raise Exception("Target object '%s' is not owned by '%s'" % (target_object_id, caller_user.email))
             
          if self.pass_caller_user:
             kw[self.pass_caller_user] = caller_user 

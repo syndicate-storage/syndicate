@@ -28,7 +28,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* path, ui
 int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t dev, uint64_t user, uint64_t vol );
 
 // filehandles
-struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_entry* ent, char const* opened_path );
+struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_entry* ent, char const* opened_path, uint64_t parent_id, char const* parent_name );
 int fs_file_handle_open( struct fs_file_handle* fh, int flags, mode_t mode );
 
 #endif

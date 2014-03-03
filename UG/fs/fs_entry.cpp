@@ -347,7 +347,6 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    fent->max_read_freshness = core->conf->default_read_freshness;
    fent->max_write_freshness = core->conf->default_write_freshness;
    fent->read_stale = false;
-   fent->xattrs = new fs_entry_xattrs();
    
    clock_gettime( CLOCK_REALTIME, &fent->refresh_time );
    
@@ -457,7 +456,7 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
 int fs_entry_destroy( struct fs_entry* fent, bool needlock ) {
 
    dbprintf("destroy %" PRIX64 " (%s) (%p)\n", fent->file_id, fent->name, fent );
-   
+
    // free common fields
    if( needlock )
       fs_entry_wlock( fent );
@@ -477,15 +476,44 @@ int fs_entry_destroy( struct fs_entry* fent, bool needlock ) {
       fent->children = NULL;
    }
    
-   if( fent->xattrs ) {
-      delete fent->xattrs;
-      fent->xattrs = NULL;
-   }
-
    fent->ftype = FTYPE_DEAD;      // next thread to hold this lock knows this is a dead entry
+   
    fs_entry_unlock( fent );
    pthread_rwlock_destroy( &fent->lock );
    return 0;
+}
+
+// destroy an fs_entry if it is no longer referenced.
+// fent must be write-locked
+// return 0 on success
+// return 1 if the fent was completely unreferenced (and destroyed)
+// return negative on error
+// this method does NOT free fent if it is destroyed; the caller must check the return code to know when to do this
+int fs_entry_try_destroy( struct fs_core* core, struct fs_entry* fent ) {
+   // decrement reference count on the fs_entry itself
+   int rc = 0;
+   
+   if( fent->link_count <= 0 && fent->open_count <= 0 ) {
+      
+      if( fent->ftype == FTYPE_FILE ) {
+         // file is unlinked and no one is manipulating it--safe to destroy
+         rc = fs_entry_cache_evict_file( core, core->cache, fent->file_id, fent->version );
+         if( rc == -ENOENT ) {
+            // not a problem
+            rc = 0;
+         }
+         else {
+            errorf("WARN: fs_entry_cache_evict_file(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
+            rc = 0;
+         }
+      }
+      
+      fs_entry_destroy( fent, false );
+      
+      rc = 1;
+   }
+   
+   return rc;
 }
 
 // free an fs_dir_entry
@@ -518,7 +546,7 @@ int fs_entry_rlock2( struct fs_entry* fent, char const* from_str, int line_no ) 
       }
    }
    else {
-      errorf("pthread_rwlock_rdlock(%p) rc = %d\n", fent, rc );
+      errorf("pthread_rwlock_rdlock(%p) rc = %d (from %s:%d)\n", fent, rc, from_str, line_no );
    }
 
    return rc;
@@ -536,7 +564,7 @@ int fs_entry_wlock2( struct fs_entry* fent, char const* from_str, int line_no ) 
       }
    }
    else {
-      errorf("pthread_rwlock_wrlock(%p) rc = %d\n", fent, rc );
+      errorf("pthread_rwlock_wrlock(%p) rc = %d (from %s:%d)\n", fent, rc, from_str, line_no );
    }
 
    return rc;
@@ -551,7 +579,7 @@ int fs_entry_unlock2( struct fs_entry* fent, char const* from_str, int line_no )
       }
    }
    else {
-      errorf("pthread_rwlock_unlock nlock(%p) rc = %d\n", fent, rc );
+      errorf("pthread_rwlock_unlock(%p) rc = %d (from %s:%d)\n", fent, rc, from_str, line_no );
    }
 
    return rc;
@@ -602,6 +630,39 @@ int fs_core_unlock( struct fs_core* core ) {
    return pthread_rwlock_unlock( &core->lock );
 }
 
+// run the eval function on cur_ent.
+// prev_ent must be write-locked, in case cur_ent gets deleted.
+// return the eval function's return code.
+// if th eval functio fails, both cur_ent and prev_ent will be unlocked
+static int fs_entry_ent_eval( struct fs_entry* prev_ent, struct fs_entry* cur_ent, int (*ent_eval)( struct fs_entry*, void* ), void* cls ) {
+   long name_hash = md_hash( cur_ent->name );
+   char* name_dup = strdup( cur_ent->name );
+   
+   int eval_rc = (*ent_eval)( cur_ent, cls );
+   if( eval_rc != 0 ) {
+      
+      dbprintf("ent_eval(%" PRIX64 " (%s)) rc = %d\n", cur_ent->file_id, name_dup, eval_rc );
+      
+      // cur_ent might not even exist anymore....
+      if( cur_ent->ftype != FTYPE_DEAD ) {
+         fs_entry_unlock( cur_ent );
+      }
+      else {
+         free( cur_ent );
+         
+         if( prev_ent ) {
+            dbprintf("Remove %s from %s\n", name_dup, prev_ent->name );
+            fs_entry_set_remove_hash( prev_ent->children, name_hash );
+            fs_entry_unlock( prev_ent );
+         }
+      }
+   }
+   
+   free( name_dup );
+   
+   return eval_rc;
+}
+
 // resolve an absolute path, running a given function on each entry as the path is walked
 // returns the locked fs_entry at the end of the path on success
 struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, bool writelock, int* err, int (*ent_eval)( struct fs_entry*, void* ), void* cls ) {
@@ -649,6 +710,16 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
    struct fs_entry* cur_ent = core->root;
    struct fs_entry* prev_ent = NULL;
 
+   // run our evaluator on the root entry
+   if( ent_eval ) {
+      int eval_rc = fs_entry_ent_eval( prev_ent, cur_ent, ent_eval, cls );
+      if( eval_rc != 0 ) {
+         *err = eval_rc;
+         free( fpath );
+         return NULL;
+      }
+   }
+   
    do {
        
        // if this isn't a directory, then invalid path
@@ -660,8 +731,6 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
 
          free( fpath );
          fs_entry_unlock( cur_ent );
-         if( prev_ent )
-            fs_entry_unlock( prev_ent );
 
          return NULL;
       }
@@ -675,27 +744,6 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
          fs_entry_unlock( cur_ent );
 
          return NULL;
-      }
-      
-      // run our evaluator on this entry, if it exists
-      if( ent_eval ) {
-         long name_hash = md_hash( cur_ent->name );
-         int eval_rc = (*ent_eval)( cur_ent, cls );
-         if( eval_rc != 0 ) {
-            *err = eval_rc;
-            free( fpath );
-
-            // cur_ent might not even exist anymore....
-            if( cur_ent->ftype != FTYPE_DEAD ) {
-               fs_entry_unlock( cur_ent );
-            }
-            else {
-               free( cur_ent );
-               fs_entry_set_remove_hash( prev_ent->children, name_hash );
-            }
-
-            return NULL;  
-         }
       }
       
       if( name == NULL )
@@ -725,14 +773,28 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
          while( name != NULL && strcmp(name, ".") == 0 ) {
             name = strtok_r( NULL, "/", &tmp );
          }
-
+         
+         /*
          // attempt to lock.  If this is the last step of the path,
          // then write-lock it if needed
          if( name == NULL && writelock )
             fs_entry_wlock( cur_ent );
          else
             fs_entry_rlock( cur_ent );
-
+         */
+         
+         fs_entry_wlock( cur_ent );
+         
+         // before unlocking the previous ent, run our evaluator (if we have one)
+         if( ent_eval ) {
+            int eval_rc = fs_entry_ent_eval( prev_ent, cur_ent, ent_eval, cls );
+            if( eval_rc != 0 ) {
+               *err = eval_rc;
+               free( fpath );
+               return NULL;
+            }
+         }
+         
          fs_entry_unlock( prev_ent );
 
          if( cur_ent->link_count == 0 || cur_ent->ftype == FTYPE_DEAD ) {
@@ -974,15 +1036,6 @@ unsigned int fs_entry_num_children( struct fs_entry* fent ) {
       return 0;
    
    return fent->children->size() - 2;
-}
-
-// initialize an fs_entry_block_info_structure 
-void fs_entry_block_info_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id, int block_fd ) {
-   binfo->version = version;
-   binfo->hash = hash;
-   binfo->hash_len = hash_len;
-   binfo->gateway_id = gateway_id;
-   binfo->block_fd = block_fd;
 }
 
 uint64_t fs_dir_entry_type( struct fs_dir_entry* dirent ) {

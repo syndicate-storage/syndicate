@@ -1318,6 +1318,21 @@ ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char cons
       return ret;
    }
    
+   if( status_code != 200 ) {
+      errorf("md_download_cached(%s) HTTP status %d\n", block_url, status_code );
+      if( block_buf ) {
+         free( block_buf );
+      }
+      int err = md_HTTP_status_code_to_error_code( status_code );
+      if( err == status_code ) {
+         return -EREMOTEIO;
+      }
+      else {
+         return -abs(err);
+      }
+   }
+   
+   /*
    if( nr != (signed)block_len ) {
       // got back an error code.  Attempt to parse it
       
@@ -1355,6 +1370,7 @@ ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char cons
       *block_bits = NULL;
       return nr;
    }
+   */
    
    // got back data!
    *block_bits = block_buf;

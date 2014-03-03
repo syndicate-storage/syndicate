@@ -66,7 +66,6 @@ using namespace std;
 
 typedef pair<long, struct fs_entry*> fs_dirent;
 typedef vector<fs_dirent> fs_entry_set;
-typedef map<string, string> fs_entry_xattrs;
 
 struct fs_entry_block_info {
    int64_t version;
@@ -81,7 +80,6 @@ struct fs_entry_block_info {
 typedef map<uint64_t, struct fs_entry_block_info> modification_map;
 
 // pre-declare these
-//class Collator;
 class file_manifest;
 struct replica_context;
 struct syndicate_state;
@@ -119,8 +117,6 @@ struct fs_entry {
    pthread_rwlock_t lock;     // lock to control access to this structure
 
    fs_entry_set* children;    // used only for directories--set of children
-   
-   fs_entry_xattrs* xattrs;     // extended attributes on this file 
    
    bool busy;                   // if true, this structure is in use somewhere and can't be freed
    bool created_in_session;     // if we're in client mode, then this is true of the file was created in this session
@@ -225,6 +221,7 @@ int64_t fs_entry_next_block_version(void);
 
 // fs_entry cleanup 
 int fs_entry_destroy( struct fs_entry* fent, bool needlock );
+int fs_entry_try_destroy( struct fs_core* core, struct fs_entry* fent );
 
 // fs_file_handle cleanup
 int fs_file_handle_destroy( struct fs_file_handle* fh );
@@ -289,7 +286,6 @@ int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct f
 
 // misc
 unsigned int fs_entry_num_children( struct fs_entry* fent );
-void fs_entry_block_info_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id, int block_fd );
 
 // cython compatibility
 uint64_t fs_dir_entry_type( struct fs_dir_entry* dirent );

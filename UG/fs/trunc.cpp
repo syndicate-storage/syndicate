@@ -123,17 +123,15 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
             else {
                // record that we've written this block
                struct fs_entry_block_info binfo;
-               memset( &binfo, 0, sizeof(binfo) );
-
-               fs_entry_block_info_init( &binfo, fent->manifest->get_block_version( trunc_block_id ), hash, BLOCK_HASH_LEN(), core->gateway, f->block_fd );
+               
+               fs_entry_block_info_replicate_init( &binfo, fent->manifest->get_block_version( trunc_block_id ), hash, BLOCK_HASH_LEN(), core->gateway, f->block_fd );
                
                modified_blocks[ trunc_block_id ] = binfo;
                
                // garbage collect the old version
                struct fs_entry_block_info erase_binfo;
-               memset( &erase_binfo, 0, sizeof(erase_binfo) );
                
-               fs_entry_block_info_init( &binfo, old_version, NULL, 0, core->gateway, -1 );
+               fs_entry_block_info_garbage_init( &binfo, old_version, core->gateway );
                
                garbage_blocks[ trunc_block_id ] = erase_binfo;
                
@@ -153,7 +151,7 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
                struct fs_entry_block_info erase_binfo;
                memset( &erase_binfo, 0, sizeof(erase_binfo) );
                
-               fs_entry_block_info_init( &erase_binfo, fent->manifest->get_block_version(i), NULL, 0, 0, -1 );
+               fs_entry_block_info_garbage_init( &erase_binfo, fent->manifest->get_block_version(i), fent->manifest->get_block_host( core, i ) );
                
                garbage_blocks[ i ] = erase_binfo;
             }

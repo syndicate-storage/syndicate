@@ -38,6 +38,7 @@ from common.msconfig import *
 
 MSENTRY_TYPE_FILE = ms_pb2.ms_entry.MS_ENTRY_TYPE_FILE
 MSENTRY_TYPE_DIR = ms_pb2.ms_entry.MS_ENTRY_TYPE_DIR
+MSENTRY_TYPE_NONE = ms_pb2.ms_entry.MS_ENTRY_TYPE_NONE
 
 def is_readable( user_id, volume_owner_id, ent_owner_id, ent_mode ):
    return ent_owner_id == user_id or volume_owner_id == user_id or (ent_mode & 0044) != 0
@@ -137,7 +138,8 @@ class MSEntryShard(storagetypes.Object):
 
    @classmethod
    def get_size_from_shards( cls, ent, shards ):
-      # NOTE: size can never decrease for a given version 
+      # NOTE: size can never decrease for a given version.
+      # truncate() will re-version a file
       sz = None
       latest_version = ent.version
       for shard in shards:
@@ -155,10 +157,20 @@ class MSEntryShard(storagetypes.Object):
 
       return sz.size
    
+   @classmethod 
+   def Delete_Deferred_ByVolume( cls, volume_id ):
+      
+      def __delete_shard_mapper( ent_shard_key ):
+         storagetypes.deferred.defer( MSEntryShard.delete_all, [ent_shard_key] )
+         
+      MSEntryShard.ListAll( {"MSEntryShard.msentry_volume_id ==": volume_id}, keys_only=True, map_func=__delete_shard_mapper )
+   
+   
    
 class MSEntryNameHolder( storagetypes.Object ):
    """
-   Exists to prove that an MSEntry record exists in a parent under a given name
+   Exists to prove that an MSEntry record exists in a parent under a given name.
+   There is one of these per MSEntry.
    """
    volume_id = storagetypes.Integer( default=-1 )
    parent_id = storagetypes.String( default="None", indexed=False )
@@ -173,8 +185,197 @@ class MSEntryNameHolder( storagetypes.Object ):
    def create_async( cls, _volume_id, _parent_id, _file_id, _name ):
       return MSEntryNameHolder.get_or_insert_async( MSEntryNameHolder.make_key_name( _volume_id, _parent_id, _name ), volume_id=_volume_id, parent_id=_parent_id, file_id=_file_id, name=_name )
    
-   
+   @classmethod
+   def Delete_Deferred_ByVolume( cls, volume_id ):
+      """
+      Asynchronously delete by volume
+      """
+      def __delete_nameholder_mapper( ent_nameholder_key ):
+         storagetypes.deferred.defer( MSEntryNameHolder.delete_all, [ent_nameholder_key] )
          
+      MSEntryNameHolder.ListAll( {"MSEntryNameHolder.volume_id ==": volume_id}, keys_only=True, map_func=__delete_nameholder_mapper )
+      
+   
+   
+class MSEntryXAttr( storagetypes.Object ):
+   """
+   A single extended attribute for an MSEntry.
+   There are many of these per MSEntry.
+   """
+   
+   file_id = storagetypes.String( default="None" )              # has to be a string, since this is an unsigned 64-bit int (and GAE only supports signed 64-bit int)
+   volume_id = storagetypes.Integer( default=-1 )
+   
+   xattr_name = storagetypes.String( default="None", indexed=False )
+   xattr_value = storagetypes.Text()
+   
+   nonce = storagetypes.Integer( default=0 )
+   
+   @classmethod 
+   def make_key_name( cls, volume_id, file_id, name ):
+      return "MSEntryXAttr: volume_id=%s,file_id=%s,name=%s" % (volume_id, file_id, name)
+   
+   @classmethod 
+   def cache_listing_key_name( cls, volume_id, file_id ):
+      return "MSEntryXAttr: volume_id=%s,file_id=%s" % (volume_id, file_id)
+   
+   @classmethod
+   def ListXAttrs( cls, msent ):
+      """
+      Get the names of the xattrs for this MSEntry.
+      """
+      cached_listing_name = MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id )
+      names = storagetypes.memcache.get( cached_listing_name )
+      if names == None:
+         names = cls.ListAll( {"MSEntryXAttr.file_id ==", msent.file_id, "MSEntryXAttr.volume_id ==", msent.volume_id}, projection=["xattr_name"] )
+      
+         storagetypes.memcache.set( MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id ), names );
+      
+      return 0, names
+   
+   @classmethod
+   def GetXAttr( cls, msent, xattr_name ):
+      """
+      Get an extended attribute's value.
+      Fail with ENOATTR (ENODATA) if there is no such attribute.
+      """
+      xattr_key_name = MSEntryXAttr.make_key_name( msent.volume_id, msent.file_id, xattr_name )
+      xattr = storagetypes.memcache.get( xattr_key_name )
+      rc = 0
+     
+      if xattr == None:
+         xattr_key = storagetypes.make_key( xattr_key_name )
+         xattr = xattr.get()
+         
+         if xattr != None:
+            # cache for later 
+            storagetypes.memcache.set( xattr_key_name, xattr )
+            
+      
+      value = None
+      
+      if xattr == None:
+         # not found 
+         rc = -errno.ENODATA
+         
+      else:
+         value = xattr.xattr_value
+      
+      return (rc, xattr.value)
+   
+   
+   @classmethod 
+   def SetXAttr( cls, msent, xattr_name, xattr_value, create=False, replace=False ):
+      """
+      Set an extended attribute for the MSEntry msent.
+      If create == True, then replace only if it does NOT exist.  Otherwise fail with EEXIST.
+      If replace == True, then replace only if it already exists.  Otherwise fail with ENOATTR (ENODATA)
+      Setting create = replace = True fails with EINVAL.
+      """
+      
+      if create == replace and create == True:
+         return -errno.EINVAL
+      
+      xattr_key_name = MSEntryXAttr.make_key_name( msent.volume_id, msent.file_id, xattr_name )
+      rc = 0
+      
+      if create:
+         # the xattr must not exist beforehand
+         nonce = random.randint( -2**63, 2**63 - 1 )
+         xattr = MSEntryXAttr.get_or_insert( xattr_key_name, file_id=msent.file_id, volume_id=msent.volume_id, xattr_name=xattr_nme, xattr_value = xattr_value, nonce = nonce )
+         
+         if xattr.nonce != nonce:
+            # already existed
+            rc = -errno.EEXIST
+         
+         else:
+            # added an attribute.  invalidate cached listing
+            storagetypes.memcache.delete( MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id ) )
+         
+      elif replace:
+         # only replace if it exists
+         def put_if_exists():
+            xattr_key = storagetypes.make_key( xattr_key_name )
+            xattr = xattr_key.get()
+            
+            put_rc = 0
+            
+            if xattr != None:
+               xattr.xattr_value = xattr_value 
+               xattr.put()
+               
+            else:
+               put_rc = -errno.ENODATA              # NOTE: ENOATTR is not defined in errno
+            
+            return put_rc
+         
+         try:
+            rc = storagetypes.transaction( lambda: put_if_exists() )
+         except Exception, e:
+            log.exception(e)
+            rc = -errno.EAGAIN
+
+      else:
+         # put it regardles 
+         xattr = MSEntryXAttr( file_id=msent.file_id, volume_id=msent.volume_id, xattr_name=xattr_name, xattr_value = xattr_value )
+         xattr.put()
+         
+         # potentially added an attribute.  invalidate cached listing
+         storagetypes.memcache.delete( MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id ) )
+      
+      if rc == 0:
+         storagetypes.memcache.delete( xattr_key_name )
+         
+      return rc
+      
+      
+   @classmethod 
+   def delete_and_uncache( cls, volume_id, file_id, name ):
+      xattr_key_name = MSEntryXAttr.make_key_name( msent.volume_id, msent.file_id, xattr_name )
+      xattr_key = storagetypes.make_key( xattr_key_name )
+      xattr_key.delete()
+      storagetypes.memcache.delete( xattr_key_name )
+      
+      listing_key = MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id )
+      storagetypes.memcache.delete( listing_key )
+      
+   
+   @classmethod 
+   def RemoveXAttr( cls, msent, xattr_name ):
+      """
+      Delete an extended attribute from the MSEntry msent.
+      Unlike removexattr(2), this does not ever fail, and runs asynchronously
+      """
+      
+      storagetypes.deferred.defer( MSEntryXAttr.delete_and_uncache, (msent.volume_id, msent.file_id, xattr_name) )
+      
+      return 0
+      
+   
+   @classmethod
+   def Delete_Deferred_ByFile( cls, volume_id, file_id ):
+      """
+      Delete all xattrs for a given file
+      """
+      
+      def __xattr_deferred_delete( cls, xattr ):
+         storagetypes.deferred.defer( MSEntryXAttr.delete_and_uncache( xattr.volume_id, xattr.file_id, xattr.xattr_name ) )
+         
+      cls.ListAll( {"MSEntryXAttr.file_id ==": file_id, "MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name', 'volume_id', 'file_id'], map_func=__xattr_deferred_delete )
+   
+   
+   @classmethod
+   def Delete_Deferred_ByVolume( cls, volume_id ):
+      """
+      Delete all xattrs for a given volume
+      """
+      def __xattr_deferred_delete( cls, xattr ):
+         storagetypes.deferred.defer( MSEntryXAttr.delete_and_uncache( xattr.volume_id, xattr.file_id, xattr.xattr_name ) )
+      
+      cls.ListAll( {"MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name', 'volume_id', 'file_id'], map_func=__xattr_deferred_delete )
+
+
+
 class MSEntry( storagetypes.Object ):
    """
    Syndicate metadata entry.
@@ -184,7 +385,7 @@ class MSEntry( storagetypes.Object ):
 
    # stuff that can't be encrypted
    ftype = storagetypes.Integer( default=-1, indexed=False )
-   file_id = storagetypes.String( default="None" )
+   file_id = storagetypes.String( default="None" )              # has to be a string, not an int, since file IDs are *unsigned* 64-bit numbers
    owner_id = storagetypes.Integer( default=-1 )
    coordinator_id = storagetypes.Integer( default=1 )
    volume_id = storagetypes.Integer( default=-1 )
@@ -1153,7 +1354,7 @@ class MSEntry( storagetypes.Object ):
    def __delete_finish_async( cls, volume, parent_ent, ent ):
       """
       Finish deleting an entry.
-      Remove it and its nameholder, update its parent's shard, and flush the cached entry, the cached parent entry, and the cached listing entry.
+      Remove it and its nameholder and xattrs, update its parent's shard, and flush the cached entry, the cached parent entry, and the cached listing entry.
       """
 
       if not ent.deleted:
@@ -1170,12 +1371,15 @@ class MSEntry( storagetypes.Object ):
       yield MSEntry.update_shard_async( volume.num_shards, parent_ent )
       
       # delete any listings of this parent
-      storagetypes.memcache.delete_multi( [MSEntry.cache_listing_key_name( volume_id, parent_id), ent_cache_key_name] )
+      storagetypes.memcache.delete_multi( [MSEntry.cache_listing_key_name( volume_id, parent_id), MSEntry.cache_key_name( volume_id, parent_id ), ent_cache_key_name] )
 
-      # delete this entry, its shards, and its nameholder
+      # delete this entry, its shards, its nameholder, and its xattrs
       ent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( volume_id, ent.file_id ) )
       nh_key = storagetypes.make_key( MSEntryNameHolder, MSEntryNameHolder.make_key_name( volume_id, parent_id, ent.name ) )
+      
       storagetypes.deferred.defer( MSEntry.delete_all, [nh_key, ent_key] + ent_shard_keys )
+      
+      MSEntryXAttr.Delete_Deferred_ByFile( volume_id, ent.file_id )
       
       # decrease number of files
       storagetypes.deferred.defer( Volume.decrease_file_count, volume_id )
@@ -1299,19 +1503,14 @@ class MSEntry( storagetypes.Object ):
       storagetypes.memcache.delete( cached_root_key_name )
       
       
-      def __delete_entry_mapper( ent ):
-         storagetypes.deferred.defer( MSEntry.delete_all, [ent.key] )
+      def __delete_entry_mapper( ent_key ):
+         storagetypes.deferred.defer( MSEntry.delete_all, [ent_key] )
          
-      def __delete_shard_mapper( ent_shard ):
-         storagetypes.deferred.defer( MSEntryShard.delete_all, [ent_shard.key] )
-         
-      def __delete_nameholder_mapper( ent_nameholder ):
-         storagetypes.deferred.defer( MSEntryNameHolder.delete_all, [ent_nameholder.key] )                 
+      MSEntry.ListAll( {"MSEntry.volume_id ==": volume.volume_id}, keys_only=True, map_func=__delete_entry_mapper )
       
-      MSEntry.ListAll( {"MSEntry.volume_id ==": volume.volume_id}, map_func=__delete_entry_mapper )
-      MSEntryShard.ListAll( {"MSEntryShard.msentry_volume_id ==": volume.volume_id}, map_func=__delete_shard_mapper )
-      MSEntryNameHolder.ListAll( {"MSEntryNameHolder.volume_id ==": volume.volume_id}, map_func=__delete_nameholder_mapper )
-      
+      MSEntryShard.Delete_Deferred_ByVolume( volume.volume_id )
+      MSEntryNameHolder.Delete_Deferred_ByVolume( volume.volume_id )
+      MSEntryXAttr.Delete_Deferred_ByVolume( volume.volume_id )
       return 0
       
    
@@ -1566,4 +1765,5 @@ class MSEntry( storagetypes.Object ):
          ret.append( ent )
 
       return ret
+   
    

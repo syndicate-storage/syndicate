@@ -20,8 +20,10 @@ import webapp2
 import urlparse
 
 import MS
-from MS.methods.resolve import Resolve
-import MS.methods.common
+from MS.methods.benchmark import *
+from MS.methods.register import *
+from MS.methods.response import *
+from MS.methods.file import *
 
 import protobufs.ms_pb2 as ms_pb2
 import protobufs.serialization_pb2 as serialization_pb2
@@ -30,7 +32,7 @@ from storage import storage
 import storage.storagetypes as storagetypes
 
 import common.api as api
-from entry import MSEntry
+from entry import MSEntry, MSEntryXAttr
 from volume import Volume
 from gateway import *
 from common.msconfig import *
@@ -50,247 +52,9 @@ import common.jsonrpc as jsonrpc
 from openid.gaeopenid import GAEOpenIDRequestHandler
 from openid.consumer import consumer
 import openid.oidutil
-
-HTTP_MS_LASTMOD = "X-MS-LastMod"
-
-def get_client_lastmod( headers ):
-   lastmod = headers.get( HTTP_MS_LASTMOD )
-   if lastmod == None:
-      return None
-
-   try:
-      lastmod_f = float( lastmod )
-      return lastmod_f
-   except:
-      return None
-
    
 
-def read_gateway_basic_auth( headers ):
-   basic_auth = headers.get("Authorization")
-   if basic_auth == None:
-      logging.info("no authorization header")
-      return (None, None, None)
-
-   # basic auth format:
-   # ${gateway_type}_${gateway_id}:${password}
-   # example:
-   # UG_3:01234567890abcdef
-
-   gateway_type, gateway_id, password = '', '', ''
-   try:
-      user_info = base64.decodestring( basic_auth[6:] )
-      gateway, password = user_info.split(":")
-      gateway_type, gateway_id = gateway.split("_")
-      gateway_id = int(gateway_id)
-   except:
-      logging.info("incomprehensible Authorization header: '%s'" % basic_auth )
-      return (None, None, None)
-
-   return gateway_type, gateway_id, password
-
-
-
-def response_load_gateway_by_type_and_id( gateway_type, gateway_id ):
-   if gateway_id == None:
-      # invalid header
-      return (None, 403, None)
-
-   gateway_read_start = storagetypes.get_time()
-   gateway = Gateway.Read( gateway_id )
-   
-   if gateway is None:
-      # not present
-      return (None, 404, None)
-   
-   if GATEWAY_TYPE_TO_STR.get( gateway.gateway_type ) == None:
-      # bad type (shouldn't happen)
-      return (None, 400, None)
-   
-   if GATEWAY_TYPE_TO_STR[ gateway.gateway_type ] != gateway_type:
-      # caller has the wrong type
-      return (None, 401, None)
-      
-   gateway_read_time = storagetypes.get_time() - gateway_read_start
-   return (gateway, 200, gateway_read_time)
-
-
-def response_load_volume( request_handler, volume_name_or_id ):
-
-   volume_read_start = storagetypes.get_time()
-
-   volume = storage.read_volume( volume_name_or_id )
-
-   volume_read_time = storagetypes.get_time() - volume_read_start
-
-   if volume == None:
-      # no volume
-      response_volume_error( request_handler, 404 )
-      return (None, 404, None)
-
-   if not volume.active:
-      # inactive volume
-      response_volume_error( request_handler, 503 )
-      return (None, 503, None)
-
-   return (volume, 200, volume_read_time)
-
-
-def response_volume_error( request_handler, status ):
-
-   request_handler.response.status = status
-   request_handler.response.headers['Content-Type'] = "text/plain"
-   
-   if status == 404:
-      # no volume
-      request_handler.response.write("No such volume\n")
-
-   elif status == 503:
-      # inactive volume
-      request_handler.response.write("Service Not Available\n")
-
-   return
-   
-
-def response_server_error( request_handler, status, msg=None ):
-   
-   request_handler.response.status = status
-   request_handler.response.headers['Content-Type'] = "text/plain"
-
-   if status == 500:
-      # server error
-      if msg == None:
-         msg = "Internal Server Error"
-      request_handler.response.write( msg )
-
-   return
-   
-
-def response_user_error( request_handler, status, message=None ):
-
-   request_handler.response.status = status
-   request_handler.response.headers['Content-Type'] = "text/plain"
-
-   if status == 400:
-      if message == None:
-         messsage = "Invalid Request\n"
-      request_handler.response.write(message)
-      
-   elif status == 404:
-      if message == None:
-         messsage = "No such gateway\n"
-      request_handler.response.write(message)
-      
-   elif status == 401:
-      if message == None:
-         message = "Authentication required\n"
-      request_handler.response.write(message)
-
-   elif status == 403:
-      if message == None:
-         message = "Authorization Failed\n"
-      request_handler.response.write(message)
-
-   return
-
-
-def response_load_gateway( request_handler, vol ):
-   # get the gateway's credentials
-   gateway_type_str, g_id, password = read_gateway_basic_auth( request_handler.request.headers )
-
-   if (gateway_type_str == None or g_id == None or password == None) and vol.need_gateway_auth():
-      response_user_error( request_handler, 401 )
-      return (None, 401, None)
-
-   # look up the requesting gateway
-   gateway, status, gateway_read_time = response_load_gateway_by_type_and_id( gateway_type_str, g_id )
-
-   if vol.need_gateway_auth():
-      if status != 200:
-         response_user_error( request_handler, status )
-         return (None, status, None)
-
-      # make sure this gateway is legit
-      valid_gateway = gateway.authenticate_session( password )
-
-      if not valid_gateway and vol.need_gateway_auth():
-         # invalid credentials
-         logging.error("Invalid session credentials")
-         response_user_error( request_handler, 403 )
-         return (None, 403, None)
-
-   else:
-      status = 200
-      
-   return (gateway, status, gateway_read_time)
-   
-
-def response_begin( request_handler, volume_name_or_id ):
-   
-   timing = {}
-   
-   timing['request_start'] = storagetypes.get_time()
-
-   # get the Volume
-   volume, status, volume_read_time = response_load_volume( request_handler, volume_name_or_id )
-
-   if status != 200:
-      return (None, None, None)
-
-   gateway_read_time = 0
-   gateway = None
-
-   # try to authenticate the gateway
-   gateway, status, gateway_read_time = response_load_gateway( request_handler, volume )
-
-   if (status != 200 or gateway == None):
-      return (None, None, None)
-
-   # make sure this gateway is allowed to access this Volume
-   if volume.need_gateway_auth():
-      if gateway is not None:
-         valid_gateway = volume.is_gateway_in_volume( gateway )
-         if not valid_gateway:
-            # gateway does not belong to this Volume
-            logging.error("Not in this Volume")
-            response_user_error( request_handler, 403 )
-            return (None, None, None)
-      
-      else:
-         logging.error("No gateway, but we required authentication")
-         response_user_error( request_handler, 403 )
-         return (None, None, None)
-
-   # if we're still here, we're good to go
-
-   timing['X-Volume-Time'] = str(volume_read_time)
-   timing['X-Gateway-Time'] = str(gateway_read_time)
-   
-   return (gateway, volume, timing)
-
-
-   
-def response_end( request_handler, status, data, content_type=None, timing=None ):
-   if content_type == None:
-      content_type = "application/octet-stream"
-
-   if timing != None:
-      request_total = storagetypes.get_time() - timing['request_start']
-      timing['X-Total-Time'] = str(request_total)
-      
-      del timing['request_start']
-      
-      for (time_header, time) in timing.items():
-         request_handler.response.headers[time_header] = time
-
-   request_handler.response.headers['Content-Type'] = content_type
-   request_handler.response.status = status
-   request_handler.response.write( data )
-   return
-   
-   
-   
-
+# ----------------------------------
 class MSVolumeRequestHandler(webapp2.RequestHandler):
    """
    Volume metadata request handler.
@@ -325,6 +89,8 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
       return
 
 
+
+# ----------------------------------
 class MSCertManifestRequestHandler( webapp2.RequestHandler ):
    """
    Certificate bundle manifest request handler
@@ -362,7 +128,7 @@ class MSCertManifestRequestHandler( webapp2.RequestHandler ):
       return
       
       
-
+# ----------------------------------
 class MSCertRequestHandler( webapp2.RequestHandler ):
    """
    Certificate bundle request handler.
@@ -422,6 +188,7 @@ class MSCertRequestHandler( webapp2.RequestHandler ):
       return
    
    
+# ----------------------------------
 class MSUserRequestHandler( webapp2.RequestHandler ):
    """
    User certificate request handler.
@@ -446,9 +213,8 @@ class MSUserRequestHandler( webapp2.RequestHandler ):
       response_end( self, 200, user_cert_txt, "application/json" )
       return
       
-      
-
    
+# ----------------------------------
 class MSPubkeyHandler( webapp2.RequestHandler ):
    """
    Serve the MS's public key
@@ -460,7 +226,7 @@ class MSPubkeyHandler( webapp2.RequestHandler ):
       return
    
    
-      
+# ----------------------------------
 class MSVolumeOwnerRequestHandler( webapp2.RequestHandler ):
    """
    Get the certificate of the user that owns a particular Volume.
@@ -489,29 +255,9 @@ class MSVolumeOwnerRequestHandler( webapp2.RequestHandler ):
       user_cert_txt = json.dumps( user_cert_dict )
       response_end( self, 200, user_cert_txt, "application/json" )
       return
-      
-      
-def make_openid_reply( oid_request, return_method, return_to, query ):
-
-   # reply with the redirect URL
-   trust_root = OPENID_HOST_URL
-   immediate = GAEOpenIDRequestHandler.IMMEDIATE_MODE in query
-
-   redirect_url = oid_request.redirectURL( trust_root, return_to, immediate=immediate )
-
-   openid_reply = ms_pb2.ms_openid_provider_reply()
-   openid_reply.redirect_url = redirect_url
-   openid_reply.auth_handler = OPENID_PROVIDER_AUTH_HANDLER
-   openid_reply.username_field = OPENID_PROVIDER_USERNAME_FIELD
-   openid_reply.password_field = OPENID_PROVIDER_PASSWORD_FIELD
-   openid_reply.extra_args = urllib.urlencode( OPENID_PROVIDER_EXTRA_ARGS )
-   openid_reply.challenge_method = OPENID_PROVIDER_CHALLENGE_METHOD
-   openid_reply.response_method = OPENID_PROVIDER_RESPONSE_METHOD
-   openid_reply.redirect_method = return_method
    
-   return openid_reply
-
       
+# ----------------------------------
 class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
    """
    Generate a session certificate from a SyndicateUser account for a gateway.
@@ -519,36 +265,6 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
 
    OPENID_RP_REDIRECT_METHOD = "POST"     # POST to us for authentication
 
-   def load_objects( self, gateway_type_str, gateway_name, username ):
-
-      # get the gateway
-      if gateway_type_str not in ["UG", "RG", "AG"]:
-         logging.error("Invalid gateway type '%s'" % gateway_type_str )
-         response_user_error( self, 401 )
-         return (None, None)
-         
-         
-      gateway = storage.read_gateway( gateway_name )
-      if gateway == None:
-         logging.error("No such Gateway named %s" % (gateway_name))
-         response_user_error( self, 404 )
-         return (None, None)
-      
-      for type_str, type_id in zip( ["UG", "RG", "AG"], [GATEWAY_TYPE_UG, GATEWAY_TYPE_RG, GATEWAY_TYPE_AG] ):
-         if gateway_type_str == type_str and gateway.gateway_type != type_id:
-            logging.error("No such %s named %s" % (gateway_type_str, gateway_name))
-            response_user_error( self, 404 )
-            return (None, None)
-
-      user = storage.read_user( username )
-      if user == None:
-         logging.error("No such user '%s'" % username)
-         response_user_error( self, 401 )
-         return (None, None)
-
-      return (gateway, user)
-
-      
    def protobuf_volume( self, volume_metadata, volume, root=None ):
       if root != None:
          root.protobuf( volume_metadata.root )
@@ -556,7 +272,6 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
       volume.protobuf( volume_metadata )
 
       return
-      
       
    get = None
    
@@ -567,9 +282,10 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
       session = self.getSession( expiration_ts=(time.time() + 60))  # expire in 1 minute, if new session
       self.setSessionCookie(session)
 
-      gateway, user = self.load_objects( gateway_type_str, gateway_name, username )
+      status, gateway, user = register_load_objects( gateway_type_str, gateway_name, username )
 
-      if gateway == None or user == None:
+      if gateway == None or user == None or status != 200:
+         response_user_error( self, status )
          return
 
       # this SyndicateUser must own this Gateway
@@ -596,11 +312,8 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
          # reply with the redirect URL
          return_to = self.buildURL( "/REGISTER/%s/%s/%s/complete" % (gateway_type_str, gateway_name, username) )
 
-         openid_reply = make_openid_reply( oid_request, self.OPENID_RP_REDIRECT_METHOD, return_to, self.query )
+         data = register_make_openid_reply( oid_request, self.OPENID_RP_REDIRECT_METHOD, return_to, self.query )
       
-         # TODO: sign
-         data = openid_reply.SerializeToString()
-
          session.save()         # it's okay to save this to memcache only
          
          response_end( self, 200, data, "application/octet-stream", None )
@@ -615,379 +328,202 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
             response_user_error( self, 403 )
             return
          
-         # generate a session password
-         # TODO: lock this operation, so we put the gateway and generate the password atomically?
-         session_pass = gateway.regenerate_session_password()
-         gateway_fut = gateway.put_async()
-         futs = [gateway_fut]
-
-         registration_metadata = ms_pb2.ms_registration_metadata()
-
-         # registration information
-         registration_metadata.session_password = session_pass
-         registration_metadata.session_expires = gateway.session_expires
-         gateway.protobuf_cert( registration_metadata.cert )
+         status, data = register_complete( gateway )
+         if status != 200:
+            # failed 
+            response_user_error( self, 200 )
          
-         # find all Volumes
-         volume = storage.read_volume( gateway.volume_id )
-         
-         if volume == None:
-            response_user_error( self, 404 )
-            return 
-         
-         root = storage.get_volume_root( volume )
-         
-         if root == None:
-            response_user_error( self, 404 )
-            return
-
-         # add volume and contents
-         self.protobuf_volume( registration_metadata.volume, volume, root )
-
-         # add sealed private key, if given earlier 
-         if gateway.encrypted_gateway_private_key != None:
-            registration_metadata.encrypted_gateway_private_key = gateway.encrypted_gateway_private_key
-            
-         # sign and serialize!
-         registration_metadata.signature = ""
-         
-         data = registration_metadata.SerializeToString()
-         
-         registration_metadata.signature = volume.sign_message( data )
-         
-         data = registration_metadata.SerializeToString()
-
          # clear this OpenID session, since we're registered
          session.terminate()
-         
-         # save the gateway
-         storage.wait_futures( futs )
-         
-         gateway.FlushCache( gateway.g_id )
-         volume.FlushCache( volume.volume_id )
          
          response_end( self, 200, data, "application/octet-stream", None )
          
          return
 
 
-class MSFileReadHandler(webapp2.RequestHandler):
-
+# ----------------------------------
+class MSFileHandler(webapp2.RequestHandler):
+   
    """
-   Volume file request handler.
-   It will read and list metadata entries via GET.
+   File metadata handler for the Volume (calls the File Metadata API).
+   It will create, read, update, and delete metadata entries (files or directories), as well as get, update, list, and delete extended attributes.
+   It does so via the GET and POST handlers only--GET for accessing data (read, get, list, resolve), and POST for mutating data (create, update, delete)
    """
+   
+   # these return a serialized response
+   get_api_calls = {
+      "GETXATTR":       lambda gateway, volume, file_id, args: file_xattr_getxattr( gateway, volume, file_id, *args ),    # args == [xattr_name]
+      "LISTXATTR":      lambda gateway, volume, file_id, args: file_xattr_listxattr( gateway, volume, file_id, *args ),   # args == []
+      "RESOLVE":        lambda gateway, volume, file_id, args: file_resolve( gateway, volume, file_id, *args )            # args == [file_version_str, write_nonce_str]
+   }
+   
+   get_benchmark_headers = {
+      "GETXATTR":               "X-Getxattr-Time",
+      "LISTXATTR":              "X-Listxattr-Time",
+      "RESOLVE":                "X-Resolve-Time"
+   }
+   
+   # ensure that the posted data has all of the requisite optional fields
+   # return (boolean validation check, failure status)
+   post_validators = {
+      ms_pb2.ms_update.CREATE:          lambda gateway, update: (True, 200),
+      ms_pb2.ms_update.UPDATE:          lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_WRITE_DATA ), 403),
+      ms_pb2.ms_update.DELETE:          lambda gateway, update: (True, 200),
+      ms_pb2.ms_update.CHOWN:           lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_COORDINATE ), 403),
+      ms_pb2.ms_update.RENAME:          lambda gateway, update: (update.HasField("dest"), 400),
+      ms_pb2.ms_update.SETXATTR:        lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_value"), 400),
+      ms_pb2.ms_update.REMOVEXATTR:     lambda gateway, update: (update.HasField("xattr_name"), 400),
+   }
+   
+   # Map update values onto handlers
+   post_api_calls = {
+      ms_pb2.ms_update.CREATE:          lambda reply, gateway, volume, update: file_create( reply, gateway, volume, update ),
+      ms_pb2.ms_update.UPDATE:          lambda reply, gateway, volume, update: file_update( reply, gateway, volume, update ),
+      ms_pb2.ms_update.DELETE:          lambda reply, gateway, volume, update: file_delete( reply, gateway, volume, update ),
+      ms_pb2.ms_update.RENAME:          lambda reply, gateway, volume, update: file_rename( reply, gateway, volume, update ),
+      ms_pb2.ms_update.CHOWN:           lambda reply, gateway, volume, update: file_chcoord( reply, gateway, volume, update ),
+      ms_pb2.ms_update.SETXATTR:        lambda reply, gateway, volume, update: file_xattr_setxattr( reply, gateway, volume, update ),
+      ms_pb2.ms_update.REMOVEXATTR:     lambda reply, gateway, volume, update: file_xattr_removexattr( reply, gateway, volume, update ),
+   }
+   
+   
+   # Map update values onto benchmark headers
+   post_benchmark_headers = {
+      ms_pb2.ms_update.CREATE:          "X-Create-Times",
+      ms_pb2.ms_update.UPDATE:          "X-Update-Times",
+      ms_pb2.ms_update.DELETE:          "X-Delete-Times",
+      ms_pb2.ms_update.CHOWN:           "X-Chcoord-Times",
+      ms_pb2.ms_update.RENAME:          "X-Rename-Times",
+      ms_pb2.ms_update.SETXATTR:        "X-Setxattr-Times",
+      ms_pb2.ms_update.REMOVEXATTR:     "X-Removexattr-Times",
+   }
+   
+   
+   @storagetypes.toplevel 
+   def get( self, operation, volume_id_str, file_id_str, *args ):
 
-   def get( self, volume_id_str, file_id_str, file_version_str, write_nonce_str ):
-
-      file_request_start = storagetypes.get_time()
-
+      if operation not in MSFileHandler.get_api_calls.keys():
+         response_user_error( self, 401 )
+         return 
+      
       file_id = -1
-      file_version = -1
-      write_nonce = 0
       try:
          file_id = MSEntry.unserialize_id( int( file_id_str, 16 ) )
-         file_version = int( file_version )
-         write_nonce = int( write_nonce_str )
       except:
-         response_end( self, 400, "BAD REQUEST", "text/plain", None )
+         response_user_error( self, 400 )
          return
       
-      gateway, volume, timing = response_begin( self, volume_id_str )
+      gateway, volume, response_timing = response_begin( self, volume_id_str )
       if volume == None:
          return
       
-      if volume.need_gateway_auth() and gateway == None:
-         print "no gateway"
-         response_user_error( self, 403 )
-         return
-
-      # this must be a User Gateway, if there is a specific gateway
-      if gateway != None and gateway.gateway_type != GATEWAY_TYPE_UG:
-         print "not UG"
-         response_user_error( self, 403 )
-         return
-      
-      # this gateway must be allowed to read metadata
-      if gateway != None and not gateway.check_caps( GATEWAY_CAP_READ_METADATA ):
-         print "bad caps: %x" % gateway.caps
+      allowed = file_read_auth( gateway, volume )
+      if not allowed:
          response_user_error( self, 403 )
          return 
-
-      logging.info("resolve /%s/%s" % (volume.volume_id, file_id) )
       
-      # request a file or directory
-      resolve_start = storagetypes.get_time()
-
-      owner_id = volume.owner_id
-      if gateway != None:
-         owner_id = gateway.owner_id
-         
-      reply = Resolve( owner_id, volume, file_id, file_version, write_nonce )
+      benchmark_header = MSFileHandler.get_benchmark_headers[ operation ]
+      api_call = MSFileHandler.get_api_calls[ operation ]
       
-      resolve_time = storagetypes.get_time() - resolve_start
+      timing = {}
       
-      logging.info("resolve /%s/%s rc = %d" % (volume.volume_id, file_id, reply.error) )
-
-      timing['X-Resolve-Time'] = str(resolve_time)
-
-      data = reply.SerializeToString()
-
-      response_end( self, 200, data, "application/octet-stream", timing )
+      try:
+         data = benchmark( benchmark_header, timing, lambda: api_call( gateway, volume, file_id, args ) )
+      except Exception, e:
+         logging.exception(e)
+         response_user_error( self, 500 )
+         return
+      
+      timing_headers = benchmark_headers( timing )
+      timing_headers.update( response_timing )
+      
+      response_end( self, 200, data, "application/octet-stream", timing_headers )
       return
-      
-
-class MSFileWriteHandler(webapp2.RequestHandler):
    
-   """
-   Volume file request handler.
-   It will create, delete, and update metadata entries via POST.
-   """
+   
    
    @storagetypes.toplevel
    def post(self, volume_id_str ):
 
       file_post_start = storagetypes.get_time()
       
-      # will have gotten metadata updates
-      updates_field = self.request.POST.get( 'ms-metadata-updates' )
-
-      if updates_field == None:
-         # no valid data given (malformed)
-         self.response.status = 202
-         self.response.headers['Content-Type'] = "text/plain"
-         self.response.write("%s\n" % -errno.EINVAL)
+      update_set = file_update_parse( self )
+      if update_set == None:
+         # malformed data
+         response_user_error( self, 202, "%s\n" % (-errno.EINVAL) )
          return
-
-      # extract the data
-      data = updates_field.file.read()
       
-      # parse it 
-      updates_set = ms_pb2.ms_updates()
-
-      try:
-         updates_set.ParseFromString( data )
-      except:
-         self.response.status = 202
-         self.response.headers['Content-Type'] = "text/plain"
-         self.response.write("%s\n" % -errno.EINVAL)
-         return
-
       # begin the response
-      gateway, volume, timing = response_begin( self, volume_id_str )
+      gateway, volume, response_timing = response_begin( self, volume_id_str )
       if volume == None:
          return
 
-      # gateway must be known
-      if gateway == None:
-         logging.error("Unknown gateway")
-         response_user_error( self, 403 )
-         return 
-      
-      # this can only be a User Gateway or an Acquisition Gateway
-      if gateway.gateway_type != GATEWAY_TYPE_UG and gateway.gateway_type != GATEWAY_TYPE_AG:
-         logging.error("Not a UG or RG")
+      allowed = file_update_auth( gateway, volume )
+      if not allowed:
          response_user_error( self, 403 )
          return
-      
-      # if this is an archive, on an AG owned by the same person as the Volume can write to it
-      if volume.archive:
-         if gateway.gateway_type != GATEWAY_TYPE_AG or gateway.owner_id != volume.owner_id:
-            logging.error("Not an AG, or not the Volume owner")
-            response_user_error( self, 403 )
-            return 
-      
-      # if this is not an archive, then the gateway must have CAP_WRITE_METADATA
-      elif not gateway.check_caps( GATEWAY_CAP_WRITE_METADATA ):
-         logging.error("Write metadata is forbidden to this Gateway")
-         response_user_error( self, 403 )
-         return
-       
 
       # validate the message
-      if not gateway.verify_ms_update( updates_set ):
+      if not gateway.verify_ms_update( update_set ):
          # authentication failure
-         self.response.status = 401
-         self.response.headers['Content-Type'] = "text/plain"
-         self.response.write( "Signature validation failed\n" )
+         response_user_error( self, 401, "Signature verification failed")
          return
-
-      # benchmarking information...
-      create_times = []
-      update_times = []
-      delete_times = []
-      chown_times = []
-      rename_times = []
-
-      reply = MS.methods.common.make_ms_reply( volume, 0 )
-      reply.listing.status = 0
-      reply.listing.ftype = 0
-      reply.error = 0
-      status = 200
-      sign = False
       
-      # validate operations
-      for update in updates_set.updates:
+      # populate the reply
+      reply = file_update_init_response( volume )
+      status = 200
+      
+      # validate requests before processing them 
+      for update in update_set.updates:
+         if update.type not in MSFileHandler.post_validators.keys():
+            logging.error("Unrecognized update %s" % update.type)
+            response_user_error( self, 501 )
+            return 
          
-         # valid operation?
-         if update.type not in [ms_pb2.ms_update.CREATE, ms_pb2.ms_update.UPDATE, ms_pb2.ms_update.DELETE, ms_pb2.ms_update.CHOWN, ms_pb2.ms_update.RENAME]:
-            # nope
-            response_end( self, 501, "Method not supported", "text/plain", None )
-            return
          
-         # if the gateway sent an UPDATE, it must be allowed to write data
-         if update.type in [ms_pb2.ms_update.UPDATE] and not gateway.check_caps( GATEWAY_CAP_WRITE_DATA ):
-            response_user_error( self, 403 )
-            return
-         
-         # if the gateway sent a CHOWN request, it must have that capability
-         if update.type == ms_pb2.ms_update.CHOWN and not gateway.check_caps( GATEWAY_CAP_COORDINATE ):
-            response_user_error( self, 403 )
-            return
-         
-         # if the operation is a RENAME request, then we must have two entries
-         if update.type == ms_pb2.ms_update.RENAME and not update.HasField("dest"):
-            logging.error("Update is for RENAME, but has no 'dest' field")
-            response_user_error( self, 400 )
-            return
-         
+         valid, failure_status = MSFileHandler.post_validators[update.type]( gateway, update )
+         if not valid:
+            response_user_error( self, failure_status )
+            return 
+      
+      timing = {}
       
       # carry out the operation(s)
-      for update in updates_set.updates:
+      for update in update_set.updates:
 
-         # extract
-         attrs = MSEntry.unprotobuf_dict( update.entry )
-
-         rc = 0
-         ent = None
-
-         # create?
-         if update.type == ms_pb2.ms_update.CREATE:
-            logging.info("create /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
+         # these are guaranteed to be non-None...
+         api_call = MSFileHandler.post_api_calls.get( update.type, None )
+         benchmark_header = MSFileHandler.post_benchmark_headers.get( update.type, None )
             
-            create_start = storagetypes.get_time()
-            
-            rc, ent = MSEntry.Create( gateway.owner_id, volume, **attrs )
-            
-            create_time = storagetypes.get_time() - create_start
-            create_times.append( create_time )
-            
-            # giving back information, so need to sign
-            sign = True
-            
-            logging.info("create /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
-            
-               
-         # update?
-         elif update.type == ms_pb2.ms_update.UPDATE:
-            logging.info("update /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
-            
-            update_start = storagetypes.get_time()
-            
-            rc, ent = MSEntry.Update( gateway.owner_id, volume, **attrs )
-            
-            update_time = storagetypes.get_time() - update_start
-            update_times.append( update_time )
-            
-            logging.info("update /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
-
-         # delete?
-         elif update.type == ms_pb2.ms_update.DELETE:
-            logging.info("delete /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
-            
-            delete_start = storagetypes.get_time()
-            
-            rc = MSEntry.Delete( gateway.owner_id, volume, **attrs )
-            ent = None
-            
-            delete_time = storagetypes.get_time() - delete_start
-            delete_times.append( delete_time )
-            
-            logging.info("delete /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
-
-         # change coordinator? 
-         elif update.type == ms_pb2.ms_update.CHOWN:
-            
-            logging.info("chcoord /%s/%s (%s) to %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], gateway.g_id) )
-            
-            chown_start = storagetypes.get_time()
-            
-            rc, ent = MSEntry.Chcoord( gateway.owner_id, volume, gateway, **attrs )
-            
-            chown_time = storagetypes.get_time() - chown_start
-            chown_times.append( chown_time )
-            
-            # giving back information, so need to sign
-            sign = True 
-            
-            logging.info("chcoord /%s/%s (%s) rc = %d" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
-            
-         # rename?
-         elif update.type == ms_pb2.ms_update.RENAME:
-            src_attrs = attrs
-            dest_attrs = MSEntry.unprotobuf_dict( update.dest )
-            
-            logging.info("rename /%s/%s (name=%s, parent=%s) to (name=%s, parent=%s)" % 
-                         (src_attrs['volume_id'], src_attrs['file_id'], src_attrs['name'], src_attrs['parent_id'], dest_attrs['name'], dest_attrs['parent_id']) )
-            
-            rename_start = storagetypes.get_time()
-            
-            rc = MSEntry.Rename( gateway.owner_id, volume, src_attrs, dest_attrs )
-            ent = None
-            
-            rename_time = storagetypes.get_time() - rename_start
-            rename_times.append( rename_time )
-            
-            logging.info("rename /%s/%s (name=%s, parent=%s) to (name=%s, parent=%s) rc = %s" % 
-                         (src_attrs['volume_id'], src_attrs['file_id'], src_attrs['name'], src_attrs['parent_id'], dest_attrs['name'], dest_attrs['parent_id'], rc) )
-            
-         else:
-            # not a valid method (shouldn't ever reach here...)
-            response_end( self, 501, "Method not supported", "text/plain", None )
-            return
+         # run the API call, but benchmark it too
+         try:
+            rc = benchmark( benchmark_header, timing, lambda: api_call( reply, gateway, volume, update ) )
+         except Exception, e:
+            logging.exception(e)
+            rc = -errno.EREMOTEIO
+            status = 500
+            break
          
-         if rc >= 0 and ent != None:
-            # success
-            ent_pb = reply.listing.entries.add()
-            ent.protobuf( ent_pb )
-         elif rc < 0:
+         if rc < 0:
             # error
             reply.error = rc
             break
 
-
-      if len(create_times) > 0:
-         timing['X-Create-Times'] = ",".join( [str(t) for t in create_times] )
-
-      if len(update_times) > 0:
-         timing['X-Update-Times'] = ",".join( [str(t) for t in update_times] )
-
-      if len(delete_times) > 0:
-         timing['X-Delete-Times'] = ",".join( [str(t) for t in delete_times] )
-
-      if len(chown_times) > 0:
-         timing['X-Chcoord-Times'] = ",".join( [str(t) for t in chown_times] )
-         
-      if len(rename_times) > 0:
-         timing['X-Rename-Times'] = ",".join( [str(t) for t in rename_times] )
-         
-      # sign the response
-      reply.signature = ""
-
-      reply_str = reply.SerializeToString()
       
-      if sign:
-         sig = volume.sign_message( reply_str )
-
-         reply.signature = sig
-
-         reply_str = reply.SerializeToString()
-         
-      response_end( self, status, reply_str, "application/octet-stream", timing )
+      # generate the response
+      reply_str = file_update_complete_response( volume, reply )
+      
+      # turn our timing data into headers
+      timing_headers = benchmark_headers( timing )
+      timing_headers.update( response_timing )
+      
+      response_end( self, status, reply_str, "application/octet-stream", timing_headers )
          
       return
 
 
+
+# ----------------------------------
 class MSJSONRPCHandler(GAEOpenIDRequestHandler):
    """
    JSON RPC request handler.
@@ -1086,11 +622,8 @@ class MSJSONRPCHandler(GAEOpenIDRequestHandler):
          # reply with the redirect URL
          return_to = self.buildURL( "/API/%s" % (self.API_AUTH_OPENID_COMPLETE) )
 
-         openid_reply = make_openid_reply( oid_request, self.OPENID_RP_REDIRECT_METHOD, return_to, self.query )
-      
-         # TODO: sign
-         data = openid_reply.SerializeToString()
-
+         data = register_make_openid_reply( oid_request, self.OPENID_RP_REDIRECT_METHOD, return_to, self.query )
+         
          # save this for the 'complete' operation
          session['username'] = username
          self.setSessionCookie(session)

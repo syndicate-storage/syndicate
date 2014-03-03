@@ -62,8 +62,8 @@ int fs_entry_detach_lowlevel( struct fs_core* core, struct fs_entry* parent, str
 
    if( child->open_count == 0 ) {
       
-      // evict blocks
-      if( child->ftype == FTYPE_FILE ) {
+      // evict blocks, if there is a file to begin with
+      if( child->ftype == FTYPE_FILE && child->file_id != 0 ) {
          rc = fs_entry_cache_evict_file( core, core->cache, child->file_id, child->version );
          if( rc == -ENOENT ) {
             // not a problem

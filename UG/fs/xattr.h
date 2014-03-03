@@ -29,9 +29,11 @@
 
 #define SYNDICATE_XATTR_COORDINATOR       "user.syndicate_coordinator"
 #define SYNDICATE_XATTR_CACHED_BLOCKS     "user.syndicate_cached_blocks"
+#define SYNDICATE_XATTR_READ_TTL          "user.syndicate_read_ttl"
+#define SYNDICATE_XATTR_WRITE_TTL         "user.syndicate_write_ttl"
 
 typedef ssize_t (*xattr_get_handler)( struct fs_core*, struct fs_entry*, char*, size_t );
-typedef ssize_t (*xattr_set_handler)( struct fs_core*, struct fs_entry*, char const*, size_t, int );
+typedef int (*xattr_set_handler)( struct fs_core*, struct fs_entry*, char const*, size_t, int );
 typedef int (*xattr_delete_handler)( struct fs_core*, struct fs_entry* );
 
 struct syndicate_xattr_handler {

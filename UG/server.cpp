@@ -513,7 +513,7 @@ void server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
          
          else {
             // update this file's manifest (republishing it in the process)
-            rc = fs_entry_remote_write( state->core, fs_path, file_id, coordinator_id, msg );
+            rc = fs_entry_remote_write( state->core, fs_path, file_id, file_version, coordinator_id, msg );
             if( rc == 0 ) {
                // create a PROMISE request--ask the remote writer to hold on to the blocks so we can collate them later
                syndicate_make_promise_msg( &ack );

@@ -26,7 +26,7 @@ import logging
 from MS.user import SyndicateUser
 from common.admin_info import *
 
-from MS.handlers import MSFileWriteHandler, MSFileReadHandler, MSVolumeRequestHandler, MSCertRequestHandler, MSCertManifestRequestHandler, MSOpenIDRegisterRequestHandler, MSJSONRPCHandler, MSUserRequestHandler, MSVolumeOwnerRequestHandler, MSPubkeyHandler
+from MS.handlers import *
 
 have_debug = False
 
@@ -37,8 +37,11 @@ except:
    pass
 
 handlers = [
-    ('[/]+FILE[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([0123456789]+)[/]+([-0123456789]+)[/]*', MSFileReadHandler),
-    ('[/]+FILE[/]+([0123456789]+)[/]*', MSFileWriteHandler ),
+    ('[/]+FILE[/]+(RESOLVE)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([0123456789]+)[/]+([-0123456789]+)[/]*', MSFileHandler ),   # GET: for reading/resolving file metadata.
+    ('[/]+FILE[/]+(GETXATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+(\w+)[/]*', MSFileHandler),                                 # GET: for getting xattrs.
+    ('[/]+FILE[/]+(LISTXATTR)[/]+([0123456789]+)[/]*', MSFileHandler ),                                                                 # GET: for listing xattrs.
+    ('[/]+FILE[/]+([0123456789]+)[/]*', MSFileHandler ),                          # POST: for creating, updating, deleting, renaming, changing coordinator, setting, and deleting xattrs.
+                                                                                  # The specific operation is encoded in the posted data.  This handler dispatches the call to the appropriate objects.
     ('[/]+VOLUME[/]+([^/]+)[/]*', MSVolumeRequestHandler),
     ('[/]+REGISTER[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]*', MSOpenIDRegisterRequestHandler),
     ('[/]+CERT[/]+([0123456789]+)[/]+manifest.([0123456789]+)[/]*', MSCertManifestRequestHandler),

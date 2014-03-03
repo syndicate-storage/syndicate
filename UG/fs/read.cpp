@@ -32,7 +32,7 @@ int fs_entry_verify_block( struct fs_core* core, struct fs_entry* fent, uint64_t
    
    if( rc != 0 ) {
       errorf("Hash mismatch (rc = %d)\n", rc );
-      return -EINVAL;
+      return -EPROTO;
    }
    else {
       return 0;
@@ -65,10 +65,11 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
    }
       
    // this file may be locally coordinated, so don't download from ourselves.
-   bool skip_UG = false;
+   bool skip_UG = true;
    int loc = fent->manifest->is_block_local( core, block_id );
-   if( loc > 0 ) {
-      skip_UG = true;
+   if( loc <= 0 ) {
+      // definitely not local
+      skip_UG = false;
    }
    
    if( gateway_type == SYNDICATE_UG && !skip_UG )
@@ -118,7 +119,7 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
       // verify the block
       // TODO: do this for AGs as well, once AGs hash blocks
       if( gateway_type != SYNDICATE_AG ) {
-         int rc = fs_entry_verify_block( core, fent, block_id, block_buf, block_len );
+         int rc = fs_entry_verify_block( core, fent, block_id, block_buf, nr );
          if( rc != 0 ) {
             nr = rc;
          }
@@ -181,6 +182,7 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
       ssize_t read_len = fs_entry_read_remote_block( core, fs_path, fent, block_id, block_version, block_bits, block_len );
       if( read_len < 0 ) {
          errorf("fs_entry_read_remote_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s)) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, (int)read_len );
+         rc = (int)read_len;
       }
       else {
          // done!

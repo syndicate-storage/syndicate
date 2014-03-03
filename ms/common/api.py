@@ -23,8 +23,7 @@ Front-end API
 
 from msconfig import *
 
-import log as Log
-log = Log.get_logger()
+in_client = False
 
 try:
    # in the MS
@@ -33,6 +32,7 @@ except ImportError, e:
    # in syntool
    log.warning("Using storage stub")
    from storage_stub import StorageStub as storage
+   in_client = True
    
 try:
    # in the MS
@@ -43,6 +43,7 @@ except ImportError, e:
    # in syntool
    log.warning("Using object stubs")
    from object_stub import *
+   in_client = True
 
 try:
    # in the MS
@@ -51,6 +52,7 @@ except ImportError, e:
    # in syntool
    log.warning("Using authentication stub")
    from auth_stub import *
+   in_client = True
 
 try:
    # in the MS
@@ -58,6 +60,15 @@ try:
 except ImportError, e:
    # in syntool
    SYNDICATE_PRIVKEY = "Syndicate's private key is only available to the MS!"
+   in_client = True
+   
+   
+# use the appropriate logging facility
+if in_client:
+   import log as Log
+   log = Log.get_logger()
+else:
+   import logging as log
 
 # ----------------------------------
 from Crypto.Hash import SHA256 as HashAlg
@@ -84,7 +95,7 @@ def sign_data( private_key_str, data ):
    try:
       key = CryptoKey.importKey( private_key_str )
    except Exception, e:
-      logging.error("importKey %s", traceback.format_exc() )
+      log.error("importKey %s", traceback.format_exc() )
       return False
    
    h = HashAlg.new( data )
@@ -913,7 +924,7 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
 # NOTE: due to lexigraphically-ordered handling of keyword arguments, and the fact that if we're going to generate keys we must have before we can
 # encrypt and host them, the argument for obtaining the public key must lexigraphically proceed the argument for indicating whether or not we should host the private key.
 # For this reason, it's *e*ncryption_password, *g*ateway_public_key, *h*ost_private_key.
-# NOTE: ncryption_password and host_gateway_key are NOT passed to the MS.  These are interpreted by syntool.
+# NOTE: encryption_password and host_gateway_key are NOT passed to the MS.  These are interpreted by syntool.
 def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, encryption_password=None, gateway_public_key="MAKE_AND_HOST_GATEWAY_KEY", host_gateway_key=None, **attrs ):
    """
    Create a Gateway.  It will be owned by the calling user, or, if the caller user is an admin, a user identified by the given email address.
@@ -1238,8 +1249,6 @@ class API( object ):
       """
       Verify a request from a user, using public-key signature verification.
       """
-      import logging 
-      
       if not isinstance( method, AuthMethod ):
          raise Exception("Invalid method")
       
@@ -1263,7 +1272,7 @@ class API( object ):
          
          if not authenticated_user:
             # failed to authenticate via keys.
-            logging.error("Failed to authenticate user %s" % (username))
+            log.error("Failed to authenticate user %s" % (username))
             return False 
          
          method.authenticated_user = authenticated_user
@@ -1275,7 +1284,6 @@ class API( object ):
       """
       Verify an OpenID request.  This is really a matter of ensuring the OpenID user matches the user that sent the request.
       """
-      import logging 
       
       if not isinstance( method, AuthMethod ):
          raise Exception("Invalid method")
@@ -1308,7 +1316,7 @@ class API( object ):
       Sign the result of a method with the private key of this Syndicate drive.
       """
       if method == None:
-         # no method means error code.  Use the "error" signer
+         # no method means error code.
          return sign_data( SYNDICATE_PRIVKEY, data )
       
       if not isinstance( method, AuthMethod ):

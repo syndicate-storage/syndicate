@@ -109,6 +109,7 @@ struct md_update {
    struct md_entry ent;
    struct md_entry dest;        // only used by RENAME
    int error;             // error information
+   int flags;           // op-specific flags
 };
 
 // metadata update operations
