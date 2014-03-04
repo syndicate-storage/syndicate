@@ -271,46 +271,42 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
 
 // get a replicated block from an RG
 // NOTE: this does NOT verify the authenticity of the block!
-int fs_entry_download_block_replica( struct fs_core* core, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char** block_buf, size_t block_len, uint64_t* successful_RG_id ) {
+ssize_t fs_entry_download_block_replica( struct fs_core* core, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char** block_buf, size_t block_len, uint64_t* successful_RG_id ) {
    
    uint64_t* rg_ids = ms_client_RG_ids( core->ms );
    
    ssize_t nr = 0;
    
-   int rc = 0;
    int i = -1;
    
    // try a replica
    if( rg_ids != NULL ) {
       for( i = 0; rg_ids[i] != 0; i++ ) {
          
-         rc = 0;
-         
          char* replica_url = fs_entry_RG_block_url( core, rg_ids[i], volume_id, file_id, file_version, block_id, block_version );
          
          nr = fs_entry_download_block( core, replica_url, block_buf, block_len );
 
          if( nr > 0 ) {
-            rc = 0;
             free( replica_url );
             break;
          }
          else {
             errorf("fs_entry_download_block(%s) rc = %zd\n", replica_url, nr );
-            rc = -ENODATA;
+            nr = -ENODATA;
          }
          
          free( replica_url );
       }
 
-      if( rc == 0 && successful_RG_id && i >= 0 ) {
+      if( nr > 0 && successful_RG_id && i >= 0 ) {
          *successful_RG_id = rg_ids[i];
       }
       
       free( rg_ids);
    }
    
-   return rc;
+   return nr;
 }
 
 

@@ -95,10 +95,24 @@ uint64_t block_url_set::lookup_gateway( uint64_t block_id ) {
 int block_url_set::hash_cmp( uint64_t block_id, unsigned char* hash ) {
    if( this->in_range( block_id ) ) {
       int rc = memcmp( hash_at( this->block_hashes, block_id - this->start_id ), hash, BLOCK_HASH_LEN() );
-      if( rc != 0 )
+      if( rc != 0 ) {
+         unsigned char* expected_hash = CALLOC_LIST( unsigned char, BLOCK_HASH_LEN() );
+         memcpy( expected_hash, hash_at( this->block_hashes, block_id - this->start_id ), BLOCK_HASH_LEN() );
+         
+         char* expected_hash_printable = sha256_printable( expected_hash );
+         char* got_hash_printable = sha256_printable( hash );
+         
+         errorf("hash mismatch for %" PRIX64 "[%" PRId64 "]: expected %s, got %s\n", this->file_id, block_id, expected_hash_printable, got_hash_printable );
+         
+         free( expected_hash );
+         free( expected_hash_printable );
+         free( got_hash_printable );
+         
          return 1;
-      else
+      }
+      else {
          return 0;
+      }
    }
    else {
       return -ENOENT;

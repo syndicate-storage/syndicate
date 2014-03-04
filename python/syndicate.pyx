@@ -221,6 +221,13 @@ cdef class Syndicate:
    GATEWAY_TYPE_UG = SYNDICATE_UG
    GATEWAY_TYPE_RG = SYNDICATE_RG
    GATEWAY_TYPE_AG = SYNDICATE_AG
+
+   CAP_READ_DATA        = GATEWAY_CAP_READ_DATA
+   CAP_WRITE_DATA       = GATEWAY_CAP_WRITE_DATA
+   CAP_READ_METADATA    = GATEWAY_CAP_READ_METADATA
+   CAP_WRITE_METADATA   = GATEWAY_CAP_WRITE_METADATA
+   CAP_COORDINATE       = GATEWAY_CAP_COORDINATE
+
    
    cdef md_syndicate_conf conf_inst
    cdef ms_client client_inst
@@ -527,3 +534,18 @@ cdef class Syndicate:
       
       else:
          return (rc, None)
+
+   cpdef get_gateway_type( self, gw_id ):
+      '''
+         Get the type of gateway, given its ID.
+      '''
+
+      return ms_client_get_gateway_type( &self.client_inst, gw_id )
+
+   cpdef check_gateway_caps( self, gw_type, gw_id, caps ):
+      '''
+         Check a gateway's capabilities.
+         Return 0 if the capabilities (caps, a bit field) match those in the cert.
+      '''
+
+      return ms_client_check_gateway_caps( &self.client_inst, gw_type, gw_id, caps )

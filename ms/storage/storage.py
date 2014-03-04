@@ -71,13 +71,14 @@ def _get_volume_id( volume_name_or_id ):
          return volume.volume_id
 
 # ----------------------------------
-def _assert_authenticated( kw ):
+def _check_authenticated( kw ):
    # check a method's kw dict for caller_user, and verify it's there 
    caller_user = kw.get("caller_user", None)
    if caller_user is None:
       raise Exception("Anonymous user is insufficiently privileged")
    
-   return True
+   del kw['caller_user']
+   return caller_user
 
 # ----------------------------------
 def create_user( email, openid_url, **fields ):
@@ -142,7 +143,7 @@ def remove_volume_access( email, volume_name_or_id ):
 
 # ----------------------------------
 def list_volume_access_requests( volume_name_or_id, **q_opts ):
-   _assert_authenticated( q_opts )
+   caller_user = _check_authenticated( q_opts )
    
    # volume must exist (we need its ID)
    volume = read_volume( volume_name_or_id )
@@ -157,7 +158,7 @@ def list_volume_access_requests( volume_name_or_id, **q_opts ):
 
 # ----------------------------------
 def list_volume_access( volume_name_or_id, **q_opts ):
-   _assert_authenticated( q_opts )
+   caller_user = _check_authenticated( q_opts )
    
    # volume must exist (we need its ID)
    volume = read_volume( volume_name_or_id )
@@ -171,7 +172,7 @@ def list_volume_access( volume_name_or_id, **q_opts ):
 
 # ----------------------------------
 def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
-   _assert_authenticated( caller_user_dict )
+   caller_user = _check_authenticated( caller_user_dict )
    
    user, volume = _read_user_and_volume( email, volume_name_or_id )
    if user is None:
@@ -186,7 +187,7 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
 
 # ----------------------------------
 def list_volume_user_ids( volume_name_or_id, **q_opts ):
-   _assert_authenticated( q_opts )
+   caller_user = _check_authenticated( q_opts )
    
    volume_id = _get_volume_id( volume_name_or_id )
    
@@ -203,7 +204,7 @@ def list_volume_user_ids( volume_name_or_id, **q_opts ):
 
 # ----------------------------------
 def create_volume( email, name, description, blocksize, **attrs ):
-   _assert_authenticated( attrs )
+   caller_user = _check_authenticated( attrs )
    
    # user must exist
    user = read_user( email )
@@ -270,7 +271,7 @@ def list_archive_volumes( **q_opts ):
 
 # ----------------------------------
 def list_accessible_volumes( email, **q_opts ):
-   _assert_authenticated( q_opts )
+   caller_user = _check_authenticated( q_opts )
    
    # queried user must exist
    user = read_user( email )
@@ -292,7 +293,7 @@ def list_accessible_volumes( email, **q_opts ):
 
 # ----------------------------------
 def list_pending_volumes( email, **q_opts ):
-   _assert_authenticated( q_opts )
+   caller_user = _check_authenticated( q_opts )
    
    # user must exist
    user = read_user( email )
@@ -311,16 +312,11 @@ def list_pending_volumes( email, **q_opts ):
    
    ret = filter( lambda x: x != None, vols )
    return ret
-
-# ----------------------------------
-def set_volume_public_signing_key( volume_id, new_key, **attrs ):
-   _assert_authenticated( attrs )   
-   return Volume.SetPublicSigningKey( volume_id, new_key )
    
 
 # ----------------------------------
 def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **kwargs ):
-   _assert_authenticated( kwargs )
+   caller_user = _check_authenticated( kwargs )
    
    # user and volume must both exist
    user, volume = _read_user_and_volume( email, volume_id )
@@ -331,10 +327,14 @@ def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **
    if (volume == None or volume.deleted):
       raise Exception("No such volume '%s'" % volume_id)
       
-   # if the user doesn't own this Volume (or isn't an admin), (s)he must have a valid access request
-   if not user.is_admin and user.owner_id != volume.owner_id:
+   # if the caller user doesn't own this Volume (or isn't an admin), (s)he must have a valid access request
+   if not caller_user.is_admin and caller_user.owner_id != volume.owner_id:
+      
+      # caller user must be the same as the user 
+      if caller_user.owner_id != user.owner_id:
+         raise Exception("Caller can only create gateways for itself.")
          
-      # user must either own this volume, or be allowed to create gateways in it
+      # check access status
       access_request = VolumeAccessRequest.GetAccess( user.owner_id, volume.volume_id )
       
       if access_request == None:
@@ -346,7 +346,7 @@ def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **
          raise Exception("User '%s' is not allowed to create a Gateway in Volume '%s'" % (email, volume.name))
       
       else:
-         if not user.is_admin:
+         if not caller_user.is_admin:
             # admins can set caps to whatever they want, but not users 
             kwargs['caps'] = access_request.gateway_caps
          elif kwargs.has_hey('caps') and kwargs['caps'] != access_request.gateway_caps:
@@ -377,7 +377,7 @@ def update_gateway( g_name_or_id, **fields):
 
 # ----------------------------------
 def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
-   _assert_authenticated( caller_user_dict )
+   caller_user = _check_authenticated( caller_user_dict )
    
    # gateway must exist...(defensive check)
    gateway = read_gateway( g_name_or_id )
@@ -408,7 +408,7 @@ def list_gateways( attrs=None, **q_opts):
 
 # ----------------------------------
 def list_gateways_by_volume( volume_name_or_id, **q_opts ):
-   _assert_authenticated( q_opts )
+   caller_user = _check_authenticated( q_opts )
    
    # volume must exist
    volume = storage.read_volume( volume_name_or_id )
@@ -428,7 +428,7 @@ def list_gateways_by_host( hostname, **q_opts ):
 
 # ----------------------------------
 def list_gateways_by_user( email, **q_opts ):
-   _assert_authenticated( q_opts )
+   caller_user = _check_authenticated( q_opts )
    
    # user must exist
    user = read_user( email )

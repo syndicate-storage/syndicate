@@ -31,7 +31,7 @@ int fs_entry_verify_block( struct fs_core* core, struct fs_entry* fent, uint64_t
    free( block_hash );
    
    if( rc != 0 ) {
-      errorf("Hash mismatch (rc = %d)\n", rc );
+      errorf("Hash mismatch (rc = %d, len = %zu)\n", rc, block_len );
       return -EPROTO;
    }
    else {
@@ -99,17 +99,15 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
       // try from an RG
       uint64_t rg_id = 0;
       
-      int rc = fs_entry_download_block_replica( core, fent->volume, fent->file_id, fent->version, block_id, block_version, &block_buf, block_len, &rg_id );
+      nr = fs_entry_download_block_replica( core, fent->volume, fent->file_id, fent->version, block_id, block_version, &block_buf, block_len, &rg_id );
       
-      if( rc != 0 ) {
+      if( nr < 0 ) {
          // error
-         errorf("Failed to read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 " from RGs\n", fent->volume, fent->file_id, fent->version, block_id, block_version );
-         nr = -ENODATA;
+         errorf("Failed to read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 " from RGs, rc = %zd\n", fent->volume, fent->file_id, fent->version, block_id, block_version, nr );
       }
       else {
          // success!
-         dbprintf("Read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 " from RG %" PRIu64 "\n", fent->volume, fent->file_id, fent->version, block_id, block_version, rg_id );
-         nr = block_len;
+         dbprintf("Fetched %zd bytes of /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 " from RG %" PRIu64 "\n", nr, fent->volume, fent->file_id, fent->version, block_id, block_version, rg_id );
       }
    }
    if( nr < 0 ) {

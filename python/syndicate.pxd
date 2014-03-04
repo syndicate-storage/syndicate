@@ -54,6 +54,13 @@ cdef extern from "libsyndicate.h":
    cdef int SYNDICATE_UG
    cdef int SYNDICATE_RG
    cdef int SYNDICATE_AG
+
+   cdef int GATEWAY_CAP_READ_DATA
+   cdef int GATEWAY_CAP_WRITE_DATA
+   cdef int GATEWAY_CAP_READ_METADATA
+   cdef int GATEWAY_CAP_WRITE_METADATA
+   cdef int GATEWAY_CAP_COORDINATE
+
    
    ctypedef int (*ms_client_view_change_callback)( ms_client* client, void* cls )
 
@@ -97,6 +104,12 @@ cdef extern from "libsyndicate.h":
    int ms_client_set_view_change_callback( ms_client* client, ms_client_view_change_callback clb, void* cls )
    int ms_client_sched_volume_reload( ms_client* client )
    int ms_client_my_key_pem( ms_client* client, char** my_key_pem, size_t* my_key_len )
+
+   # ------------------------------------------
+   # queries 
+   
+   int ms_client_check_gateway_caps( ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t caps )
+   int ms_client_get_gateway_type( ms_client* client, uint64_t g_id )
 
    # ------------------------------------------
    # OpenID RPC

@@ -72,7 +72,14 @@ def post( metadata_field, infile ):
       log.error("could not parse uploaded request info")
       return (400, "Invalid request")
    
-   # validate
+   # validate security--the calling gateway must be a UG with CAP_WRITE_DATA
+   if rg_request.gateway_is_UG( req_info ) != 0:
+      return (400, "Invalid Request")
+   
+   if rg_request.check_post_caps( req_info ) != 0:
+      return (400, "Invalid Reqeust")
+   
+   # validate data integrity
    hf = HashFunc()
    hf.update( infile.read() )
    infile_hash = hf.hexdigest()
@@ -144,6 +151,13 @@ def delete( metadata_field ):
    if req_info == None:
       log.error("could not parse uploaded request info")
       return (400, "Invalid request")
+   
+   # validate security--the calling gateway must be a UG with CAP_COORDINATE
+   if rg_request.gateway_is_UG( req_info ) != 0:
+      return (400, "Invalid Request")
+   
+   if rg_request.check_delete_caps( req_info ) != 0:
+      return (400, "Invalid Reqeust")
    
    # delete
    rc = 0

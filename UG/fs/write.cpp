@@ -237,7 +237,7 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, str
 }
                   
 
-
+// TODO: refactor this.
 // write data to a file, either from a buffer or a file descriptor.
 // Zeroth, revalidate path and manifest and optionally expand the file if we're writing beyond the end of it.
 // First, write blocks to disk for subsequent re-read and for serving to other UGs.

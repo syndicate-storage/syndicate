@@ -29,7 +29,7 @@ int fs_entry_prepare_write_message( Serialization::WriteMsg* writeMsg, struct fs
 
 int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core, uint64_t gateway_id, Serialization::WriteMsg* sendMsg );
 
-int fs_entry_download_block_replica( struct fs_core* core, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char** block_bits, size_t block_len, uint64_t* successful_RG_id );
+ssize_t fs_entry_download_block_replica( struct fs_core* core, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char** block_bits, size_t block_len, uint64_t* successful_RG_id );
 
 int fs_entry_download_manifest_replica( struct fs_core* core, uint64_t origin,
                                         uint64_t volume_id, uint64_t file_id, int64_t file_version, int64_t mtime_sec, int32_t mtime_nsec,

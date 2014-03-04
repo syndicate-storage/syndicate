@@ -667,12 +667,6 @@ class Gateway( storagetypes.Object ):
       key_name = Gateway.make_key_name( g_id=g_id )
 
       g_key = storagetypes.make_key( cls, key_name )
-
-      # find the nameholder and delete it too
-      gateway = g_key.get()
-      if gateway == None:
-         return True
-      
       g_name_key = storagetypes.make_key( GatewayNameHolder, GatewayNameHolder.make_key_name( gateway.name ) )
       
       g_delete_fut = g_key.delete_async()

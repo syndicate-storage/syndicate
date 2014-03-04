@@ -55,6 +55,56 @@ RequestInfo.BLOCK = 2
 
 
 #-------------------------
+def gateway_is_UG( req ):
+   '''
+      Verify that the caller is a UG
+   '''
+   libsyndicate = get_libsyndicate()
+   
+   gw_type = libsyndicate.get_gateway_type( req.gateway_id )
+   if gw_type < 0:
+      log.error("Gateway %s is not recognized (get_gateway_type rc = %s)" % (req.gateway_id, gw_type) )
+      return -errno.EINVAL
+                
+   if gw_type != libsyndicate.GATEWAY_TYPE_UG:
+      log.error("Gateway %s is not a UG" % (req.gateway_id) )
+      return -errno.EINVAL
+   
+   return 0
+
+
+#-------------------------
+def check_post_caps( req ):
+   '''
+      Verify that the caller is a UG that can write data.
+   '''
+   libsyndicate = get_libsyndicate()
+   
+   allowed = libsyndicate.check_gateway_caps( libsyndicate.GATEWAY_TYPE_UG, req.gateway_id, libsyndicate.CAP_WRITE_DATA )
+   
+   if allowed < 0:
+      log.error("Gateway %s cannot write (check_gateway_caps rc = %s)" % (req.gateway_id, allowed) )
+      return -errno.EINVAL
+
+   return 0
+
+
+#-------------------------
+def check_delete_caps( req ):
+   '''
+      Verify that the caller is a UG that can delete data.
+   '''
+   libsyndicate = get_libsyndicate()
+   
+   allowed = libsyndicate.check_gateway_caps( libsyndicate.GATEWAY_TYPE_UG, req.gateway_id, libsyndicate.CAP_COORDINATE )
+   
+   if allowed < 0:
+      log.error("Gateway %s cannot delete (check_gateway_caps rc = %s)" % (req.gateway_id, allowed) )
+      return -errno.EINVAL
+   
+   return 0
+
+#-------------------------
 def verify_protobuf( gateway_id, volume_id, pb ):
    '''
       Verify the signature of a protobuf (pb)

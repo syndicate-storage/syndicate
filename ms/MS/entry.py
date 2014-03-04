@@ -1023,7 +1023,7 @@ class MSEntry( storagetypes.Object ):
 
 
    @classmethod
-   def Chcoord( cls, user_owner_id, volume, gateway, **attrs ):
+   def Chcoord( cls, user_owner_id, gateway, volume, **attrs ):
       """
       Switch coordinators.
       Performs a transaction--either the chcoord happens, or the caller learns the current coordinator.

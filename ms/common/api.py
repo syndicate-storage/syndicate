@@ -920,7 +920,7 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
 # The Gateway API
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@CreateAPIGuard( Gateway, parse_args=Gateway.ParseArgs )
+@CreateAPIGuard( Gateway, parse_args=Gateway.ParseArgs, pass_caller_user="caller_user" )
 # NOTE: due to lexigraphically-ordered handling of keyword arguments, and the fact that if we're going to generate keys we must have before we can
 # encrypt and host them, the argument for obtaining the public key must lexigraphically proceed the argument for indicating whether or not we should host the private key.
 # For this reason, it's *e*ncryption_password, *g*ateway_public_key, *h*ost_private_key.

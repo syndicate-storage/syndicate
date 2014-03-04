@@ -155,12 +155,16 @@ bool fs_entry_is_manifest_stale( struct fs_entry* fent ) {
    return false;
 }
 
-
-static int fs_entry_mark_read_fresh( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* fent ) {
-   
+static int fs_entry_mark_read_fresh( struct fs_entry* fent ) {   
    clock_gettime( CLOCK_REALTIME, &fent->refresh_time );
    fent->read_stale = false;
 
+   return 0;
+}
+
+static int fs_entry_mark_read_fresh_path( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* fent ) {
+   
+   fs_entry_mark_read_fresh( fent );
    consistency_cls->reloaded.push_back( fent->file_id );
    
    return 0;
@@ -198,7 +202,7 @@ int fs_entry_reload( struct fs_entry_consistency_cls* consistency_cls, struct fs
       
    fent->name = strdup( ent->name );
    
-   fs_entry_mark_read_fresh( consistency_cls, fent );
+   fs_entry_mark_read_fresh_path( consistency_cls, fent );
    dbprintf("reloaded %s up to (%" PRIu64 ".%d)\n", ent->name, ent->mtime_sec, ent->mtime_nsec );
    return 0;
 }
@@ -451,7 +455,7 @@ static int fs_entry_reload_file( struct fs_entry_consistency_cls* consistency_cl
    
    if( !fs_entry_should_reload( consistency_cls->core, fent, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, &consistency_cls->query_time ) ) {
       // nothing to do
-      fs_entry_mark_read_fresh( consistency_cls, fent );
+      fs_entry_mark_read_fresh_path( consistency_cls, fent );
       return 0;
    }
    return fs_entry_reload( consistency_cls, fent, ent );
@@ -557,7 +561,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
          }
          else {
             dbprintf("do not reload '%s', since we don't have to.\n", dent->name );
-            fs_entry_mark_read_fresh( consistency_cls, dent );
+            fs_entry_mark_read_fresh_path( consistency_cls, dent );
          }
 
          reloaded_dent = true;
@@ -753,6 +757,7 @@ static int fs_entry_load_listing( struct fs_entry_consistency_cls* consistency_c
    if( listing->status == MS_LISTING_NOCHANGE ) {
       // nothing to do
       dbprintf("No change: %" PRIX64 " (%s)\n", fent->file_id, fent->name );
+      fs_entry_mark_read_fresh( fent );
       return 0;
    }
 
