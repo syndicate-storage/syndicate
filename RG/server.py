@@ -67,10 +67,12 @@ def post( metadata_field, infile ):
       # verification failure
       log.exception( e )
       return (403, "Authorization Required")
-      
+   
    if req_info == None:
       log.error("could not parse uploaded request info")
       return (400, "Invalid request")
+   
+   log.info("POST %s" % rg_request.req_info_to_string( req_info ) )
    
    # validate security--the calling gateway must be a UG with CAP_WRITE_DATA
    if rg_request.gateway_is_UG( req_info ) != 0:
@@ -81,11 +83,12 @@ def post( metadata_field, infile ):
    
    # validate data integrity
    hf = HashFunc()
-   hf.update( infile.read() )
+   inbuf = infile.read()
+   hf.update( inbuf )
    infile_hash = hf.hexdigest()
    
    if req_info.data_hash != infile_hash:
-      log.error("Hash mismatch: expected '%s', got '%s'" % (req_info.data_hash, infile_hash))
+      log.error("Hash mismatch (%s bytes): expected '%s', got '%s' (data:\n%s\n)" % (len(inbuf), req_info.data_hash, infile_hash, inbuf))
       return (400, "Invalid request")
    
    infile.seek(0)
@@ -98,7 +101,7 @@ def post( metadata_field, infile ):
       log.exception( e )
       rc = (500, "Internal server error")
    
-   log.info("write_data rc = %s" % str(rc) )
+   log.info("write_data rc = %s" % (str(rc)) )
    
    return (rc, "OK")
 
@@ -147,10 +150,12 @@ def delete( metadata_field ):
       # verification failure
       log.exception( e )
       return (403, "Authorization required")
-      
+   
    if req_info == None:
       log.error("could not parse uploaded request info")
       return (400, "Invalid request")
+   
+   log.info("DELETE %s" % rg_request.req_info_to_string( req_info ) )
    
    # validate security--the calling gateway must be a UG with CAP_COORDINATE
    if rg_request.gateway_is_UG( req_info ) != 0:

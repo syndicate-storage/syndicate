@@ -282,7 +282,7 @@ int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cac
 
 
 // delete a block in the cache
-int fs_entry_cache_evict_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
+static int fs_entry_cache_evict_block_internal( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    char* block_url = fs_entry_local_block_url( core, file_id, file_version, block_id, block_version );
    char* block_path = GET_PATH( block_url );
    int rc = unlink( block_path );
@@ -307,6 +307,16 @@ int fs_entry_cache_evict_block( struct fs_core* core, struct syndicate_cache* ca
    return rc;
 }
 
+// delete a block in the cache, and decrement the number of blocks.
+// for use with external clients of this module only.
+int fs_entry_cache_evict_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
+   int rc = fs_entry_cache_evict_block_internal( core, cache, file_id, file_version, block_id, block_version );
+   if( rc == 0 ) {
+      __sync_fetch_and_sub( &cache->num_blocks_written, 1 );
+   }
+   
+   return rc;
+}
 
 
 // apply a function over a file's cached blocks
@@ -673,6 +683,7 @@ int cache_block_future_init( struct fs_core* core, struct syndicate_cache* cache
    f->aio.aio_sigevent.sigev_value.sival_ptr = (void*)wargs;
    
    sem_init( &f->sem_ongoing, 0, 0 );
+   
    return 0;
 }
 
@@ -702,6 +713,7 @@ void cache_aio_write_completion( sigval_t sigval ) {
    
    struct syndicate_cache* cache = wargs->cache;
    struct cache_block_future* future = wargs->future;
+   struct fs_core* core = wargs->core;
    
    // successful completion?
    int write_rc = 0;
@@ -715,10 +727,15 @@ void cache_aio_write_completion( sigval_t sigval ) {
       }
       else {
          // sync and rewind file handle
-         fsync( future->block_fd );
+         fdatasync( future->block_fd );
          lseek( future->block_fd, 0, SEEK_SET );
          
-         dbprintf("wrote %d bytes to %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", write_rc, future->key.file_id, future->key.file_version, future->key.block_id, future->key.block_version );
+         char prefix[21];
+         memset(prefix, 0, 21);
+         memcpy( prefix, future->block_data, MIN( core->blocking_factor, future->data_len ) );
+         
+         dbprintf("wrote %d (of %zu) bytes to %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], prefix = '%s'\n",
+                  write_rc, future->data_len, future->key.file_id, future->key.file_version, future->key.block_id, future->key.block_version, prefix );
       }
    }
    else {
@@ -808,13 +825,13 @@ void fs_entry_cache_complete_writes( struct fs_core* core, struct syndicate_cach
          errorf("WARN: write aio %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, f->aio_rc );
          
          // clean up 
-         fs_entry_cache_evict_block( core, cache, c->file_id, c->file_version, c->block_id, c->block_version );
+         fs_entry_cache_evict_block_internal( core, cache, c->file_id, c->file_version, c->block_id, c->block_version );
       }
       else if( f->write_rc < 0 ) {
          errorf("WARN: write %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", c->file_id, c->file_version, c->block_id, c->block_version, f->write_rc );
          
          // clean up 
-         fs_entry_cache_evict_block( core, cache, c->file_id, c->file_version, c->block_id, c->block_version );
+         fs_entry_cache_evict_block_internal( core, cache, c->file_id, c->file_version, c->block_id, c->block_version );
       }
       else {
          // finished!
@@ -901,7 +918,7 @@ void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* 
          struct cache_entry_key c = cache->cache_lru->front();
          cache->cache_lru->pop_front();
          
-         int rc = fs_entry_cache_evict_block( core, cache, c.file_id, c.file_version, c.block_id, c.block_version );
+         int rc = fs_entry_cache_evict_block_internal( core, cache, c.file_id, c.file_version, c.block_id, c.block_version );
          
          if( rc != 0 ) {
             // if it wasn't there, then it was already evicted.

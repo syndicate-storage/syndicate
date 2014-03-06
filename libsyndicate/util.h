@@ -37,8 +37,6 @@
 #include <stdarg.h>
 #include <sys/time.h>
 #include <sys/socket.h>
-//#include <sys/un.h>
-//#include <attr/xattr.h>
 #include <semaphore.h>
 #include <signal.h>
 #include <openssl/sha.h>
@@ -56,10 +54,10 @@
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <math.h>
-//#include <endian.h>
+#include <sys/syscall.h>        // for gettid()
 
-#define WHERESTR "%10lx: [%16s:%04u] %s: "
-#define WHEREARG (unsigned long)pthread_self(), __FILE__, __LINE__, __func__
+#define WHERESTR "%05d:%05d: [%16s:%04u] %s: "
+#define WHEREARG (int)getpid(), (int)gettid(), __FILE__, __LINE__, __func__
 
 extern int _DEBUG_MESSAGES;
 extern int _ERROR_MESSAGES;
@@ -177,8 +175,11 @@ int Base64Encode(const char* message, size_t len, char** buffer);
 // random number generator
 uint32_t CMWC4096(void);
 
+// library initialization
 int util_init(void);
 
+// linux-specific...
+pid_t gettid(void);
 }
 
 

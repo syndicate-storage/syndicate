@@ -770,11 +770,12 @@ int main(int argc, char** argv) {
 
    // prevent root from mounting this, since we don't really do much
    // in the way of checking access.
+   /*
    if( getuid() == 0 || geteuid() == 0 ) {
       perror("Running SyndicateFS as root opens unnacceptable security holes\n");
       return 1;
    }
-
+   */
    struct syndicate_opts syn_opts;
    syndicate_default_opts( &syn_opts );
    

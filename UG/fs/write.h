@@ -29,6 +29,9 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
 int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t new_size, modification_map* modified_blocks, list<struct cache_block_future*>* futures );
 
 ssize_t fs_entry_fill_block( struct fs_core* core, struct fs_entry* fent, char* block, char const* buf, int source_fd, size_t count);
+
 struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, size_t len, unsigned char* block_hash );
+
+int fs_entry_finish_writes( list<struct cache_block_future*>& block_futures, bool close_fds );
 
 #endif

@@ -235,6 +235,37 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, str
       return f;
    }
 }
+
+
+// wait for all cache writes to finish 
+int fs_entry_finish_writes( list<struct cache_block_future*>& block_futures, bool close_fds ) {
+   
+   int rc = 0;
+   
+   // wait for all cache writes to finish
+   for( list<struct cache_block_future*>::iterator itr = block_futures.begin(); itr != block_futures.end(); itr++ ) {
+      struct cache_block_future* f = *itr;
+      
+      int frc = fs_entry_cache_block_future_wait( f );
+      if( frc != 0 ) {
+         errorf("WARN: fs_entry_cach_block_future_wait rc = %d\n", frc );
+      }
+      
+      if( f->write_rc < 0 ) {
+         errorf("WARN: write %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", f->key.file_id, f->key.file_version, f->key.block_id, f->key.block_version, f->write_rc );
+         rc = f->write_rc;
+      }
+      else if( !close_fds ) {
+         // don't close the fd (we'll close it ourselves in replication)
+         fs_entry_cache_block_future_release_fd( f );
+      }
+      
+      // free memory
+      fs_entry_cache_block_future_free( f );
+   }
+   
+   return rc;
+}
                   
 
 // TODO: refactor this.
@@ -248,6 +279,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    if( count == 0 )
       return 0;
    
+   // lock handle--prevent the file from being destroyed
    fs_file_handle_rlock( fh );
    if( fh->fent == NULL || fh->open_count <= 0 ) {
       // invalid
@@ -317,7 +349,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
          return rc;
       }
       
-      // dont garbage-collect these---remember their versions
+      // dont garbage-collect these...just hang onto them so we can tell which blocks these are later on
       for( modification_map::iterator itr = modified_blocks.begin(); itr != modified_blocks.end(); itr++ ) {
          struct fs_entry_block_info new_binfo;
          memset( &new_binfo, 0, sizeof(new_binfo) );
@@ -333,7 +365,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    while( (size_t)num_written < count ) {
       
       // generate a block to be pushed into the cache.
-      // TODO: move to zero-copy implementation
       char* block = CALLOC_LIST( char, core->blocking_factor );
       
       // which block are we about to write?
@@ -385,10 +416,17 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
          ret = -EIO;
          fs_entry_unlock( fh->fent );
          free( hash );
+         free( block );
          break;
       }
       
       uint64_t new_version = fh->fent->manifest->get_block_version( block_id );
+      
+      
+      char* hash_printable = sha256_printable( hash );
+      dbprintf("hash of %" PRIX64 "[%" PRId64 ".%" PRIu64 "] is %s\n", fh->fent->file_id, block_id, new_version, hash_printable );
+      free( hash_printable );
+      
       
       fs_entry_unlock( fh->fent );
       
@@ -401,11 +439,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
          fs_entry_block_info_garbage_init( &binfo_overwritten, old_version, core->gateway );
          
          overwritten_blocks[ block_id ] = binfo_overwritten;
-      }
-      
-      // zero out the unwritten parts of the block, so we can hash it
-      if( block_write_len < core->blocking_factor ) {
-         memset( block + block_write_len, 0, core->blocking_factor - block_write_len );
       }
       
       // record that we've written this block
@@ -428,27 +461,12 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    else
       ret = count;
    
-   // wait for all cache writes to finish
-   for( list<struct cache_block_future*>::iterator itr = block_futures.begin(); itr != block_futures.end(); itr++ ) {
-      struct cache_block_future* f = *itr;
-      
-      int frc = fs_entry_cache_block_future_wait( f );
-      if( frc != 0 ) {
-         errorf("WARN: fs_entry_cach_block_future_wait rc = %d\n", frc );
-      }
-      
-      if( f->write_rc < 0 ) {
-         errorf("WARN: write %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", f->key.file_id, f->key.file_version, f->key.block_id, f->key.block_version, f->write_rc );
-         rc = f->write_rc;
-         ret = rc;
-      }
-      else {
-         // don't close the fd (we'll close it ourselves in replication)
-         fs_entry_cache_block_future_release_fd( f );
-      }
-      
-      // free memory
-      fs_entry_cache_block_future_free( f );
+   // wait for all writes to complete.
+   // do NOT close the fd's
+   rc = fs_entry_finish_writes( block_futures, false );
+   if( rc != 0 ) {
+      errorf("fs_entry_finish_writes() rc = %d\n", rc );
+      ret = rc;
    }
    
    END_TIMING_DATA( write_ts, ts2, "write data" );
@@ -537,8 +555,12 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
 
          // send a prepare message
          int64_t* versions = fh->fent->manifest->get_block_versions( start_id, end_id );
-         fs_entry_prepare_write_message( write_msg, core, fh->path, fh->fent, start_id, end_id, versions );
+         char** hashes = fh->fent->manifest->get_block_hashes( start_id, end_id );
+         
+         fs_entry_prepare_write_message( write_msg, core, fh->path, fh->fent, start_id, end_id, versions, hashes );
+         
          free( versions );
+         FREE_LIST( hashes );
          
          Serialization::WriteMsg *write_ack = new Serialization::WriteMsg();
          
@@ -616,13 +638,11 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    
    if( ret < 0 ) {
       
-      // revert uploaded data
-      fs_entry_garbage_collect_blocks( core, &fent_new_snapshot, &overwritten_blocks );
+      // cancel any ongoing replications, and erase recently-uploaded data (reverting the write)
+      fs_entry_garbage_collect_blocks( core, &fent_new_snapshot, &modified_blocks );
       
       if( replicated_manifest )
          fs_entry_garbage_collect_manifest( core, &fent_new_snapshot );
-      
-      //TODO: wait for replicas to finish, so we can garbage collect them...
       
       // revert metadata 
       fs_entry_replica_snapshot_restore( core, fh->fent, &fent_snapshot );
@@ -671,7 +691,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
          
          // if we're exiting in error, then close up and evict the blocks
          if( ret < 0 ) {
-            close( itr->second.block_fd );
             fs_entry_cache_evict_block( core, core->cache, file_id, file_version, itr->first, itr->second.version );
          }
       }
@@ -728,7 +747,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
    }
    
    // validate fields
-   unsigned int num_blocks = write_msg->blocks().end_id() - 1 - write_msg->blocks().start_id();
+   unsigned int num_blocks = write_msg->blocks().end_id() - write_msg->blocks().start_id();
    if( (unsigned)write_msg->blocks().version_size() != num_blocks ) {
       errorf("Invalid write message: number of blocks = %u, but number of versions = %u\n", num_blocks, write_msg->blocks().version_size() );
       fs_entry_unlock( fent );

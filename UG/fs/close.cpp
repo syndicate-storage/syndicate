@@ -17,6 +17,7 @@
 #include "close.h"
 #include "consistency.h"
 #include "cache.h"
+#include "replication.h"
 
 // close a file handle.
 // NOTE: make sure everything's locked first!
@@ -58,8 +59,6 @@ int fs_entry_close( struct fs_core* core, struct fs_file_handle* fh ) {
 
    if( sync ) {
       if( fh->dirty ) {
-
-         // TODO: fsync here 
          
          char* path = fh->path;
          char* parent_name = fh->parent_name;
@@ -68,14 +67,29 @@ int fs_entry_close( struct fs_core* core, struct fs_file_handle* fh ) {
          fh->parent_name = NULL;
 
          fs_entry_unlock( fh->fent );
+               
+         // flush replicas (flush data)
+         struct timespec ts, ts2;
+
+         BEGIN_TIMING_DATA( ts );
+         
+         int replica_rc = fs_entry_replicate_wait( core, fh );
+         fs_entry_replica_clean( fh );
+         
+         END_TIMING_DATA( ts, ts2, "replication" );
+         
+         if( replica_rc == 0 ) {
+            errorf("fs_entry_replicate_wait rc = %d\n", replica_rc );
+            rc = replica_rc;
+         }
 
          if( fh->open_count <= 0 )
             fs_file_handle_destroy( fh );
          else
             fs_file_handle_unlock( fh );
-
-         // synchronize outstanding updates
-         rc = ms_client_sync_update( core->ms, fh->volume, fh->file_id );
+         
+         // synchronize outstanding updates (flush metadata)
+         int metadata_rc = ms_client_sync_update( core->ms, fh->volume, fh->file_id );
 
          if( path )
             free( path );
@@ -83,9 +97,11 @@ int fs_entry_close( struct fs_core* core, struct fs_file_handle* fh ) {
          if( parent_name )
             free( parent_name );
 
-         if( rc != 0 && rc != -ENOENT ) {
-            errorf("ms_client_sync_update rc = %d\n", rc );
-            rc = -EIO;
+         if( metadata_rc != 0 && metadata_rc != -ENOENT ) {
+            errorf("ms_client_sync_update rc = %d\n", metadata_rc );
+            
+            if( rc == 0 )
+               rc = -EIO;
          }
          
          closed = true;

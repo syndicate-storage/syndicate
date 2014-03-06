@@ -99,8 +99,8 @@ int block_url_set::hash_cmp( uint64_t block_id, unsigned char* hash ) {
          unsigned char* expected_hash = CALLOC_LIST( unsigned char, BLOCK_HASH_LEN() );
          memcpy( expected_hash, hash_at( this->block_hashes, block_id - this->start_id ), BLOCK_HASH_LEN() );
          
-         char* expected_hash_printable = sha256_printable( expected_hash );
-         char* got_hash_printable = sha256_printable( hash );
+         char* expected_hash_printable = BLOCK_HASH_TO_STRING( expected_hash );
+         char* got_hash_printable = BLOCK_HASH_TO_STRING( hash );
          
          errorf("hash mismatch for %" PRIX64 "[%" PRId64 "]: expected %s, got %s\n", this->file_id, block_id, expected_hash_printable, got_hash_printable );
          
@@ -469,6 +469,41 @@ int64_t* file_manifest::get_block_versions( uint64_t start_id, uint64_t end_id )
 
       for( uint64_t j = 0; j < itr->second->end_id - itr->second->start_id && curr_id < end_id; j++ ) {
          ret[i] = itr->second->block_versions[j];
+         i++;
+         curr_id++;
+      }
+   }
+
+   pthread_rwlock_unlock( &this->manifest_lock );
+   return ret;
+}
+
+
+// get the set of block hashes
+char** file_manifest::get_block_hashes( uint64_t start_id, uint64_t end_id ) {
+   if( end_id <= start_id )
+      return NULL;
+
+   pthread_rwlock_rdlock( &this->manifest_lock );
+
+   char** ret = CALLOC_LIST( char*, end_id - start_id + 1 );
+
+   int i = 0;
+   uint64_t curr_id = start_id;
+
+   while( curr_id < end_id ) {
+      block_map::iterator itr = this->find_block_set( curr_id );
+      if( itr == this->block_urls.end() ) {
+         FREE_LIST( ret );
+         ret = NULL;
+         break;
+      }
+
+      for( uint64_t j = 0; j < itr->second->end_id - itr->second->start_id && curr_id < end_id; j++ ) {
+         char* hash = CALLOC_LIST( char, BLOCK_HASH_LEN() );
+         memcpy( hash, hash_at( itr->second->block_hashes, j ), BLOCK_HASH_LEN() );
+         
+         ret[i] = hash;
          i++;
          curr_id++;
       }

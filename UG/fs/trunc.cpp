@@ -124,6 +124,7 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
                // record that we've written this block
                struct fs_entry_block_info binfo;
                
+               // NOTE: pass in the block file descriptor, so don't close it!
                fs_entry_block_info_replicate_init( &binfo, fent->manifest->get_block_version( trunc_block_id ), hash, BLOCK_HASH_LEN(), core->gateway, f->block_fd );
                
                modified_blocks[ trunc_block_id ] = binfo;
@@ -180,27 +181,8 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
    }
    
    // wait for all cache writes to finish
-   for( list<struct cache_block_future*>::iterator itr = futures.begin(); itr != futures.end(); itr++ ) {
-      struct cache_block_future* f = *itr;
-      
-      int frc = fs_entry_cache_block_future_wait( f );
-      if( frc != 0 ) {
-         errorf("WARN: fs_entry_cach_block_future_wait rc = %d\n", frc );
-      }
-      
-      if( f->write_rc != 0 ) {
-         errorf("WARN: write %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", f->key.file_id, f->key.file_version, f->key.block_id, f->key.block_version, f->write_rc );
-         err = f->write_rc;
-      }
-      else {
-         // don't close the fd (we'll close it ourselves in replication)
-         fs_entry_cache_block_future_release_fd( f );
-      }
-      
-      // free memory
-      fs_entry_cache_block_future_free( f );
-   }
-
+   err = fs_entry_finish_writes( futures, false );
+   
    if( err == 0 && !local ) {
       // inform the remote block owner that the data must be truncated
       // build up a truncate write message
@@ -247,7 +229,8 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
       uint64_t modified_block_start = modified_blocks.begin()->first;
       uint64_t modified_block_end = modified_blocks.rbegin()->first + 1;     // exclusive
       
-      // make a file handle, but only for purposes of running both replica and block replications in parallel and blocking until completed.
+      // make a file handle, but only for purposes of replication.
+      // This lets us start all replicas concurrently, and then block until they're all done.
       struct fs_file_handle fh;
       fs_entry_replica_file_handle( core, fent, &fh );
       
@@ -287,8 +270,12 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
 
       err = fs_entry_reversion_file( core, fs_path, fent, new_version, parent_id, parent_name );
 
-      if( err != 0 ) {
+      if( err != 0 && err != -ENOENT ) {
          errorf("fs_entry_reversion_file(%s.%" PRId64 " --> %" PRId64 ") rc = %d\n", fs_path, fent->version, new_version, err );
+      }
+      else {
+         // if this was ENOENT (indicating that we couldn't rename the cache), this isn't a bug.  The cached data was evicted earlier (i.e. truncate to size 0).
+         err = 0;
       }
    }
    
@@ -319,7 +306,7 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
             errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
          }
          
-         rc = fs_entry_garbage_collect_blocks( core, &new_fent_snapshot, &garbage_blocks );
+         rc = fs_entry_garbage_collect_blocks( core, &new_fent_snapshot, &modified_blocks );
          if( rc != 0 ) {
             errorf("fs_entry_garbage_collect_blocks(%s) rc = %d\n", fs_path, rc );
          }
@@ -341,7 +328,6 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
          
          // if we're exiting due to error, then clean up the blocks we wrote to the cache.
          if( err < 0 ) {
-            close( itr->second.block_fd );
             fs_entry_cache_evict_block( core, core->cache, fent->file_id, fent->version, itr->first, itr->second.version );
          }
       }

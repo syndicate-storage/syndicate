@@ -48,11 +48,21 @@ RequestInfo = collections.namedtuple( "RequestInfo", ["type",
                                                       "size",
                                                       "kwargs"] )
 
-# TODO: write_nonce, delete list 
+# TODO: write_nonce, delete list?
 
 RequestInfo.MANIFEST = 1
 RequestInfo.BLOCK = 2
 
+#-------------------------
+def req_info_to_string( req_info ):
+   if req_info.type == RequestInfo.BLOCK:
+      return "Volume=%s, Gateway=%s, User=%s, Block=%s.%s[%s.%s]" % \
+             (req_info.volume_id, req_info.gateway_id, req_info.user_id, '{:016X}'.format(req_info.file_id), req_info.version, req_info.block_id, req_info.block_version)
+   
+   else:
+      return "Volume=%s, Gateway=%s, User=%s, Manifest=%s.%s/manifest.%s.%s" % \
+             (req_info.volume_id, req_info.gateway_id, req_info.user_id, '{:016X}'.format(req_info.file_id), req_info.version, req_info.mtime_sec, req_info.mtime_nsec)
+             
 
 #-------------------------
 def gateway_is_UG( req ):

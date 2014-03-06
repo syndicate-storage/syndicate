@@ -98,7 +98,7 @@ int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_co
 
 // set up a PREPARE message
 // NEED TO AT LEAST READ-LOCK fent
-int fs_entry_prepare_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t start_id, uint64_t end_id, int64_t* versions ) {
+int fs_entry_prepare_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t start_id, uint64_t end_id, int64_t* versions, char** hashes ) {
    
    fs_entry_init_write_message( writeMsg, core, Serialization::WriteMsg::PREPARE );
    
@@ -118,8 +118,19 @@ int fs_entry_prepare_write_message( Serialization::WriteMsg* writeMsg, struct fs
    block_list->set_start_id( start_id );
    block_list->set_end_id( end_id );
 
-   for( uint64_t i = 0; i < end_id - start_id; i++ ) {
+   uint64_t i = 0;
+   
+   for( i = 0; i < end_id - start_id; i++ ) {
       block_list->add_version( versions[i] );
+   }
+   
+   for( i = 0; i < end_id - start_id && hashes[i] != NULL; i++ ) {
+      block_list->add_hash( string(hashes[i], BLOCK_HASH_LEN()) );
+   }
+   // sanity check--number of hashes should be end_id - start_id
+   if( i != end_id - start_id ) {
+      errorf("Not enough block hashes given (expected %" PRIu64 ")\n", i);
+      return -EINVAL;
    }
 
    return 0;

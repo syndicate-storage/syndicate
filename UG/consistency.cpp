@@ -39,7 +39,8 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
    BEGIN_TIMING_DATA( ts );
    
    int replica_rc = fs_entry_replicate_wait( core, fh );
-
+   fs_entry_replica_clean( fh );
+   
    END_TIMING_DATA( ts, ts2, "replication" );
       
    int sync_rc = ms_client_sync_update( core->ms, fh->volume, fh->file_id );

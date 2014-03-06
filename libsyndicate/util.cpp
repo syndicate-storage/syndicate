@@ -526,3 +526,8 @@ double now_ns(void) {
    
    return timespec_to_double( &ts );
 }
+
+// get task ID (no glibc wrapper around this...)
+pid_t gettid(void) {
+   return syscall( __NR_gettid );
+}

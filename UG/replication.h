@@ -160,6 +160,8 @@ int fs_entry_replica_snapshot_restore( struct fs_core* core, struct fs_entry* fe
 
 int fs_entry_replicate_wait( struct fs_core* core, struct fs_file_handle* fh );
 
+int fs_entry_replica_clean( struct fs_file_handle* fh );
+
 int fs_entry_replica_file_handle( struct fs_core* core, struct fs_entry* fent, struct fs_file_handle* fh );
 int fs_entry_free_replica_file_handle( struct fs_file_handle* fh );
 

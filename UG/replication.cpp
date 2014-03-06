@@ -112,7 +112,6 @@ int replica_context_init( struct replica_context* rctx,
 
 // free a replica context
 int replica_context_free( struct replica_context* rctx ) {
-   dbprintf("free replica %p\n", rctx);
    if( rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ) {
       if( rctx->file ) {
          fclose( rctx->file );
@@ -128,7 +127,18 @@ int replica_context_free( struct replica_context* rctx ) {
    
    for( unsigned int i = 0; i < rctx->curls->size(); i++ ) {
       if( rctx->curls->at(i) != NULL ) {
+         
+         if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
+            dbprintf("curl_easy_cleanup %s %" PRIX64 "/manifest.%" PRId64 ".%d\n",
+                     (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
+         }
+         else {
+            dbprintf("curl_easy_cleanup %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n",
+                     (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+         }
+         
          curl_easy_cleanup( rctx->curls->at(i) );
+         rctx->curls->at(i) = NULL;
       }
    }
    
@@ -292,6 +302,7 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    }
    
    // set up the replica context
+   // caller will free it.
    rc = replica_context_init( rctx, &snapshot, REPLICA_CONTEXT_TYPE_MANIFEST, REPLICA_POST, NULL, manifest_data, manifest_data_len, form_data, replicate_sync, false );
    if( rc != 0 ) {
       errorf("replica_context_init(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
@@ -371,7 +382,8 @@ int replica_context_block( struct fs_core* core, struct replica_context* rctx, s
       return rc;
    }
    
-   // set up the replica context
+   // set up the replica context.
+   // caller will free it.
    rc = replica_context_init( rctx, &snapshot, REPLICA_CONTEXT_TYPE_BLOCK, REPLICA_POST, f, NULL, sb.st_size, form_data, replicate_sync, false );
    if( rc != 0 ) {
       errorf("replica_context_init(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
@@ -423,6 +435,7 @@ int replica_context_garbage_manifest( struct fs_core* core, struct replica_conte
    }
    
    // set up the replica context
+   // we'll free it internally.
    rc = replica_context_init( rctx, snapshot, REPLICA_CONTEXT_TYPE_MANIFEST, REPLICA_DELETE, NULL, NULL, 0, form_data, false, true );
    if( rc != 0 ) {
       errorf("replica_context_init(%" PRIX64 ") rc = %d\n", snapshot->file_id, rc );
@@ -473,6 +486,7 @@ int replica_context_garbage_block( struct fs_core* core, struct replica_context*
    }
    
    // set up the replica context
+   // we'll free it internally
    rc = replica_context_init( rctx, snapshot, REPLICA_CONTEXT_TYPE_BLOCK, REPLICA_DELETE, NULL, NULL, 0, form_data, false, true );
    
    if( rc != 0 ) {
@@ -493,10 +507,10 @@ static void replica_insert_upload( struct syndicate_replication* synrp, CURL* cu
    // add to running 
 
    if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-      dbprintf("%s: running %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
+      dbprintf("%s: running %p %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, curl, rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
    }
    else {
-      dbprintf("%s: running %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+      dbprintf("%s: running %p %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, curl, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
    }
    
    (*synrp->uploads)[ curl ] = rctx;
@@ -519,10 +533,10 @@ static void replica_insert_pending_upload( struct syndicate_replication* synrp, 
    
    // add to running 
    if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-      dbprintf("%s: pending %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
+      dbprintf("%s: pending %p %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, curl, rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
    }
    else {
-      dbprintf("%s: pending %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+      dbprintf("%s: pending %p %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, curl, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
    }
    
    
@@ -557,13 +571,12 @@ int replica_context_connect( struct syndicate_replication* rp, struct replica_co
       char* rg_base_url = ms_client_get_RG_content_url( rp->ms, rg_ids[i] );
       
       CURL* curl = curl_easy_init();
-      rctx->curls->push_back( curl );
       
       if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-         dbprintf("%s: %s %" PRIX64 "/manifest.%" PRId64 ".%d\n", (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rp->process_name, rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
+         dbprintf("%s: Connect (%p) %s %" PRIX64 "/manifest.%" PRId64 ".%d\n", rp->process_name, curl, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
       }
       else {
-         dbprintf("%s: %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rp->process_name, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+         dbprintf("%s: Connect (%p) %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", rp->process_name, curl, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
       }
       
       md_init_curl_handle( rp->conf, curl, rg_base_url, rp->ms->conf->replica_connect_timeout );
@@ -580,6 +593,8 @@ int replica_context_connect( struct syndicate_replication* rp, struct replica_co
       num_rgs += 1;
       
       free( rg_base_url );
+      
+      rctx->curls->push_back( curl );
    }
    
    if( num_rgs > 0 ) {
@@ -646,12 +661,41 @@ int replica_multi_upload( struct syndicate_replication* synrp ) {
    }
    
    // find out which FDs are ready
+   for( int i = 0; i < maxfd+1; i++ ) {
+      if( FD_ISSET(i, &fdread) ) {
+         int frc = fcntl( i, F_GETFL );
+         if( frc < 0 ) {
+            frc = -errno;
+            errorf("fcntl %d (fdread) errno %d\n", i, frc );
+         }
+      }
+   }
+   
+   for( int i = 0; i < maxfd+1; i++ ) {
+      if( FD_ISSET( i, &fdwrite ) ) {
+         int frc = fcntl( i, F_GETFL );
+         if( frc < 0 ) {
+            frc = -errno;
+            errorf("fcntl %d (fdwrite) errno %d\n", i, frc );
+         }
+      }
+   }
+   
+   for( int i = 0; i < maxfd+1; i++ ) {
+      if( FD_ISSET( i, &fdexcep ) ) {
+         int frc = fcntl( i, F_GETFL );
+         if( frc < 0 ) {
+            frc = -errno;
+            errorf("fcntl %d (fdexcep) errno %d\n", i, frc );
+         }
+      }
+   }
+   
    rc = select(maxfd+1, &fdread, &fdwrite, &fdexcep, &timeout);
    
    if( rc < 0 ) {
-      // we have a problem
+      // probably due to removing a handle
       errorf("%s: select rc = %d, errno = %d\n", synrp->process_name, rc, -errno );
-      return -1;
    }
    
    // let CURL do its thing
@@ -687,7 +731,7 @@ static int replica_erase_upload_context( struct syndicate_replication* synrp, co
    
    CURL* curl = itr->first;
    
-   curl_multi_remove_handle( synrp->running, itr->first );
+   curl_multi_remove_handle( synrp->running, curl );
    synrp->uploads->erase( itr );
    
    // clear this curl
@@ -695,27 +739,40 @@ static int replica_erase_upload_context( struct syndicate_replication* synrp, co
    
    for( unsigned int i = 0; i < rctx->curls->size(); i++ ) {
       if( rctx->curls->at(i) == curl ) {
+         // destroy this upload, and erase it from this context's curl handles
+         if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
+            dbprintf("%s: curl_easy_cleanup (%p) %s %" PRIX64 "/manifest.%" PRId64 ".%d\n",
+                     synrp->process_name, curl, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
+         }
+         else {
+            dbprintf("%s: curl_easy_cleanup (%p) %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n",
+                     synrp->process_name, curl, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+         }
+         
          curl_easy_cleanup( rctx->curls->at(i) );
-         rctx->curls->at(i) = NULL;
+         (*rctx->curls)[i] = NULL;
       }
       
-      if( rctx->curls->at(i) != NULL )
+      else if( rctx->curls->at(i) != NULL )
          still_processing ++;
    }
    
    // have all of this context's CURL handles finished?
-   if( still_processing == 0 ) {      
+   // and, are we supposed to free this replica context when this happens?
+   if( still_processing == 0 ) {
+      
       if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-         dbprintf("%s: Finished %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
+         dbprintf("%s: Unqueued %s %" PRIX64 "/manifest.%" PRId64 ".%d\n",
+                  synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
       }
       else {
-         dbprintf("%s: Finished %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+         dbprintf("%s: Unqueued %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n",
+                  synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
       }
-         
       
-      // record this before posting, since the waiting thread can free rctx
       bool free_on_processed = rctx->free_on_processed;
       
+      // signal anyone waiting for this to have finished
       sem_post( &rctx->processing_lock );
       
       if( free_on_processed ) {
@@ -723,7 +780,7 @@ static int replica_erase_upload_context( struct syndicate_replication* synrp, co
          replica_context_free( rctx );
          free( rctx );
       }
-   }
+   }   
    
    return rc;
 }
@@ -847,28 +904,15 @@ int replica_process_responses( struct syndicate_replication* synrp ) {
             if( msg->data.result != 0 ) {
                // curl error
                rctx->error = -ENODATA;
-               if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-                  errorf("%s: error on %" PRIX64 "/manifest.%" PRId64 ".%d, CURL rc = %d\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec, msg->data.result );
-               }
-               else {
-                  errorf("%s: error on %" PRIX64 "[%" PRIu64 ".%" PRId64 "], CURL rc = %d\n",  synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, msg->data.result );
-               }
             }
             
             // check HTTP code
             long http_status = 0;
             int crc = curl_easy_getinfo( msg->easy_handle, CURLINFO_RESPONSE_CODE, &http_status );
-            if( crc != 0 ) {
+            if( crc != 0 && rctx->error == 0 ) {
                rctx->error = -ENODATA;
             }
             else if( http_status != 200 ) {
-               
-               if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-                  errorf("%s: error on %" PRIX64 "/manifest.%" PRId64 ".%d, HTTP status = %ld\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec, http_status );
-               }
-               else {
-                  errorf("%s: error on %" PRIX64 "[%" PRIu64 ".%" PRId64 "], HTTP status = %ld\n",  synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, http_status );
-               }
                
                if( http_status == 404 ) {
                   rctx->error = -ENOENT;
@@ -883,10 +927,12 @@ int replica_process_responses( struct syndicate_replication* synrp ) {
             
          
             if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-               dbprintf("%s: Finished %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
+               dbprintf("%s: Finished %s %" PRIX64 "/manifest.%" PRId64 ".%d, rc = %d, curl rc = %d, HTTP status = %ld\n", 
+                        synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec, rctx->error, msg->data.result, http_status );
             }
             else {
-               dbprintf("%s: Finished %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+               dbprintf("%s: Finished %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "], rc = %d, curl rc = %d, HTTP status = %ld\n",
+                        synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rctx->error, msg->data.result, http_status );
             }
             
             replica_remove_upload_context( synrp, msg->easy_handle );
@@ -981,14 +1027,15 @@ void* replica_main( void* arg ) {
                   
                   struct replica_context* rctx = may_cancel->second;
                   if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-                     dbprintf("%s: cancel %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
+                     dbprintf("%s: Cancel %s %" PRIX64 "/manifest.%" PRId64 ".%d\n",
+                              synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
                   }
                   else {
-                     dbprintf("%s: cancel %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+                     dbprintf("%s: Cancel %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n",
+                              synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
                   }
-      
                   
-                  // cancel this running upload
+                  // remove this running upload, freeing it if the caller didn't intend to do so.
                   replica_erase_upload_context( synrp, may_cancel );
                }
             }
@@ -1013,16 +1060,15 @@ void* replica_main( void* arg ) {
                
                struct replica_context* rctx = rctx_itr->second;
                if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-                  dbprintf("%s: expire %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
+                  dbprintf("%s: Expire %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
                }
                else {
-                  dbprintf("%s: expire %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+                  dbprintf("%s: Expire %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
                }
-      
+
+               // remove this expired upload, freeing it if the caller didn't intend to do so.
+               replica_erase_upload_context( synrp, rctx_itr );
             }
-            
-            // remove this expired upload
-            replica_remove_upload_context( synrp, rctx_curl );
          }
          
          synrp->pending_expires->clear();
@@ -1126,7 +1172,6 @@ int replica_wait_and_remove( struct syndicate_replication* rp, struct replica_co
       
       int rc = sem_timedwait( &rctx->processing_lock, &abs_ts );
       if( rc != 0 ) {
-         rc = -errno;
          
          // remove these handles on the next loop iteration
          pthread_mutex_lock( &rp->expire_lock );
@@ -1138,6 +1183,9 @@ int replica_wait_and_remove( struct syndicate_replication* rp, struct replica_co
          rp->has_expires = true;
          
          pthread_mutex_unlock( &rp->expire_lock );
+         
+         // wait for it to have been removed from the upload set
+         rc = sem_wait( &rctx->processing_lock );
       }
       
       return rc;
@@ -1339,6 +1387,15 @@ int replication_shutdown( struct syndicate_state* state, int wait_replicas ) {
 int replica_run_manifest_context( struct fs_core* core, struct syndicate_replication* synrp, struct replica_context* manifest_rctx, bool sync, vector<struct replica_context*>* rctxs, double start_time ) {
    int rc = 0;
    
+   // sanity check: if rctxs is NULL (i.e. caller won't wait to free them),
+   // then the given context must have free_on_processed set.
+   if( rctxs == NULL ) {
+      if( !manifest_rctx->free_on_processed ) {
+         errorf("%s", "Invalid argument: caller will not free replica context, but replica context not marked to be freed internally.  This will lead to a memory leak!\n");
+         return -EINVAL;
+      }
+   }
+   
    // proceed to replicate
    rc = replica_begin( synrp, manifest_rctx, start_time );
    
@@ -1364,7 +1421,7 @@ int replica_run_manifest_context( struct fs_core* core, struct syndicate_replica
       rc = replica_wait_and_remove( synrp, manifest_rctx, tsp );
          
       if( rc != 0 ) {
-         errorf("replica_wait rc = %d\n", rc );
+         errorf("replica_wait_and_remove rc = %d\n", rc );
       }
       
       rc = manifest_rctx->error;
@@ -1378,7 +1435,7 @@ int replica_run_manifest_context( struct fs_core* core, struct syndicate_replica
       return rc;
    }
    else if( rctxs ) {
-      // wait for a call to fs_entry_replicate_wait
+      // let the caller keep track of this replica_context as well.
       rctxs->push_back( manifest_rctx );
    }
    
@@ -1387,10 +1444,24 @@ int replica_run_manifest_context( struct fs_core* core, struct syndicate_replica
 
 
 // run a set of block replications
+// if rctxs is given, this method inserts pointers to the generated contexts into it.
+// the caller can then call replica_wait (or the like) to block until all contexts have been processed.
+// in doing so, the caller must free them.
 int replica_run_block_contexts( struct fs_core* core, struct syndicate_replication* synrp, vector<struct replica_context*>* block_rctxs, bool sync, vector<struct replica_context*>* rctxs, double start_time ) {
    
    int rc = 0;
    vector<struct replica_context*> running;
+   
+   // sanity check: if rctxs is NULL (i.e. caller won't wait to free them),
+   // then the given contexts must have free_on_processed set.
+   if( rctxs == NULL ) {
+      for( unsigned int i = 0; i < block_rctxs->size(); i++ ) {
+         if( !block_rctxs->at(i)->free_on_processed ) {
+            errorf("%s", "Invalid argument: caller will not free replica context, but replica context not marked to be freed internally.  This will lead to a memory leak!\n");
+            return -EINVAL;
+         }
+      }
+   }
    
    // kick of the replicas
    for( unsigned int i = 0; i < block_rctxs->size(); i++ ) {
@@ -1422,7 +1493,7 @@ int replica_run_block_contexts( struct fs_core* core, struct syndicate_replicati
       
       else {
          if( rctxs ) {
-            // wait for a later call to fs_entry_replicate_wait
+            // let the caller keep track of these replica_contexts as well.
             for( unsigned int i = 0; i < running.size(); i++ ) {
                rctxs->push_back( running[i] );
             }
@@ -1504,13 +1575,7 @@ int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snap
    // if there are any pending uploads for this same manifest, stop them
    replica_cancel_contexts( &core->state->replication, snapshot );
    
-   struct timespec write_ttl;
-   write_ttl.tv_sec = snapshot->max_write_freshness;
-   write_ttl.tv_nsec = 0;
-   
-   double start_time = timespec_to_double( &write_ttl );
-   
-   rc = replica_run_manifest_context( core, &core->state->garbage_collector, manifest_rctx, false, NULL, start_time );
+   rc = replica_run_manifest_context( core, &core->state->garbage_collector, manifest_rctx, false, NULL, -1.0 );
       
    return rc;
 }
@@ -1548,19 +1613,13 @@ int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapsh
       block_rctxs.push_back( block_rctx );
    }
    
-   struct timespec write_ttl;
-   write_ttl.tv_sec = snapshot->max_write_freshness;
-   write_ttl.tv_nsec = 0;
-   
-   double start_time = timespec_to_double( &write_ttl );
-   
-   rc = replica_run_block_contexts( core, &core->state->garbage_collector, &block_rctxs, false, NULL, start_time );
+   rc = replica_run_block_contexts( core, &core->state->garbage_collector, &block_rctxs, false, NULL, -1.0 );
    
    return rc;
 }
 
 
-// wait for all replication to finish
+// wait for all replication to finish, and then free them if they're internal to us.
 int fs_entry_replicate_wait_and_free( struct syndicate_replication* synrp, vector<struct replica_context*>* rctxs, struct timespec* timeout ) {
    int rc = 0;
    int worst_rc = 0;
@@ -1571,7 +1630,17 @@ int fs_entry_replicate_wait_and_free( struct syndicate_replication* synrp, vecto
          continue;
       
       if( timeout != NULL ) {
-         dbprintf("wait %ld.%ld seconds for replica %p\n", (long)timeout->tv_sec, (long)timeout->tv_nsec, rctxs->at(i) );
+         
+         struct replica_context* rctx = rctxs->at(i);
+         
+         if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
+            dbprintf("%s: wait %ld.%ld seconds for %s %" PRIX64 "/manifest.%" PRId64 ".%d rc = %d\n",
+                     synrp->process_name, (long)timeout->tv_sec, (long)timeout->tv_nsec, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec, rc );
+         }
+         else {
+            dbprintf("%s: wait %ld.%ld seconds for %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
+                     synrp->process_name, (long)timeout->tv_sec, (long)timeout->tv_nsec, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rc );
+         }
          
          rctxs->at(i)->deadline.tv_sec = timeout->tv_sec;
          rctxs->at(i)->deadline.tv_nsec = timeout->tv_nsec;
@@ -1589,23 +1658,41 @@ int fs_entry_replicate_wait_and_free( struct syndicate_replication* synrp, vecto
       // wait for this replica to finish...
       rc = replica_wait_and_remove( synrp, rctxs->at(i), &rctxs->at(i)->deadline );
       
+      struct replica_context* rctx = rctxs->at(i);
+      int rrc = rctx->error;
+      if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
+         dbprintf("%s: wait and remove %s %" PRIX64 "/manifest.%" PRId64 ".%d rc = %d, rctx rc = %d\n",
+                  synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec, rc, rrc );
+      }
+      else {
+         dbprintf("%s: wait and remove %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "] rc = %d, rctx rc = %d\n",
+                  synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rc, rrc );
+      }
+      
       if( rc != 0 ) {
-         errorf("replica_wait_and_remove(%p) rc = %d\n", rctxs->at(i), rc );
          worst_rc = -EIO;
       }
       
-      dbprintf("replica %p finished\n", rctxs->at(i) );
-      
-      rc = rctxs->at(i)->error;
+      rc = rctx->error;
       if( rc != 0 ) {
-         errorf("replica %p error %d\n", rctxs->at(i), rc );
          worst_rc = rc;
       }
       
-      replica_context_free( rctxs->at(i) );
-      free( rctxs->at(i) );
+      if( rctx->free_on_processed ) {
+         if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
+            dbprintf("%s: free %s %" PRIX64 "/manifest.%" PRId64 ".%d rc = %d, rctx rc = %d\n",
+                     synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec, rc, rrc );
+         }
+         else {
+            dbprintf("%s: free %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "] rc = %d, rctx rc = %d\n",
+                     synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rc, rrc );
+         }
          
-      (*rctxs)[i] = NULL;
+         replica_context_free( rctxs->at(i) );
+         free( rctxs->at(i) );
+         
+         (*rctxs)[i] = NULL;
+      }
    }
    return worst_rc;
 }
@@ -1625,9 +1712,41 @@ int fs_entry_replicate_wait( struct fs_core* core, struct fs_file_handle* fh ) {
    
    int rc = fs_entry_replicate_wait_and_free( &core->state->replication, fh->rctxs, tsp );
    
-   fh->rctxs->clear();
    return rc;
 }
+
+// free up all replica contexts following a replication
+int fs_entry_replica_clean( struct fs_file_handle* fh ) {
+   if( fh->rctxs == NULL )
+      return 0;
+   
+   for( unsigned int i = 0; i < fh->rctxs->size(); i++ ) {
+      
+      if( fh->rctxs->at(i) == NULL )
+         continue;
+      
+      struct replica_context* rctx = fh->rctxs->at(i);
+      
+      if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
+         dbprintf("free %s %" PRIX64 "/manifest.%" PRId64 ".%d\n",
+                  (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.mtime_sec, rctx->snapshot.mtime_nsec );
+      }
+      else {
+         dbprintf("free %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n",
+                  (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+      }
+      
+      replica_context_free( fh->rctxs->at(i) );
+      free( fh->rctxs->at(i) );
+      
+      (*fh->rctxs)[i] = NULL;
+   }
+   
+   fh->rctxs->clear();
+   
+   return 0;
+}
+
 
 // make a "fake" file handle that has just enough data in it for us to process
 int fs_entry_replica_file_handle( struct fs_core* core, struct fs_entry* fent, struct fs_file_handle* fh ) {
@@ -1642,6 +1761,7 @@ int fs_entry_replica_file_handle( struct fs_core* core, struct fs_entry* fent, s
 // clean up a "fake" file handle
 int fs_entry_free_replica_file_handle( struct fs_file_handle* fh ) {
    if( fh->rctxs ) {
+      fs_entry_replica_clean( fh );
       delete fh->rctxs;
    }
    

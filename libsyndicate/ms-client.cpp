@@ -2452,7 +2452,7 @@ static int ms_client_file_post( struct ms_client* client, uint64_t* file_id, uin
    int rc = ms_client_sign_updates( client->my_key, &ms_updates );
    if( rc != 0 ) {
       errorf("ms_client_sign_updates rc = %d\n", rc );
-      return rc;
+      return -EINVAL;
    }
 
    // make it a string
@@ -2461,7 +2461,7 @@ static int ms_client_file_post( struct ms_client* client, uint64_t* file_id, uin
 
    if( update_text_len < 0 ) {
       errorf("ms_client_update_set_to_string rc = %zd\n", update_text_len );
-      return (int)update_text_len;
+      return -EINVAL;
    }
 
    char* file_url = ms_client_file_url( client, volume_id );
