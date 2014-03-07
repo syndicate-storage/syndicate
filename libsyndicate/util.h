@@ -188,5 +188,6 @@ pid_t gettid(void);
 #define BLOCK_HASH_DATA sha256_hash_data
 #define BLOCK_HASH_FD sha256_fd
 #define BLOCK_HASH_TO_STRING sha256_printable
+#define BLOCK_HASH_DUP sha256_dup
 
 #endif

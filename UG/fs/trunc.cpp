@@ -115,7 +115,7 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
             
             unsigned char* hash = BLOCK_HASH_DATA( block, core->blocking_factor );
             
-            struct cache_block_future* f = fs_entry_write_block_async( core, fent, trunc_block_id, block, core->blocking_factor, hash );
+            struct cache_block_future* f = fs_entry_write_block_async( core, fent, trunc_block_id, block, core->blocking_factor, hash, true );
             if( f == NULL ) {
                errorf("fs_entry_put_block(%s[%" PRId64 "]) failed\n", fs_path, trunc_block_id );
                free( hash );

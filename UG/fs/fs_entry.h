@@ -287,6 +287,8 @@ int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct f
 // misc
 unsigned int fs_entry_num_children( struct fs_entry* fent );
 
+int fs_entry_block_info_free( struct fs_entry_block_info* binfo );
+
 // cython compatibility
 uint64_t fs_dir_entry_type( struct fs_dir_entry* dirent );
 char* fs_dir_entry_name( struct fs_dir_entry* dirent );

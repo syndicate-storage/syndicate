@@ -1030,6 +1030,17 @@ int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct f
    return rc;
 }
 
+
+int fs_entry_block_info_free( struct fs_entry_block_info* binfo ) {
+   if( binfo->hash ) {
+      free( binfo->hash );
+      binfo->hash = NULL;
+   }
+   
+   memset(binfo, 0, sizeof(struct fs_entry_block_info) );
+   return 0;
+}
+
 // how many children (besides . and ..) are there in this fent?
 unsigned int fs_entry_num_children( struct fs_entry* fent ) {
    if( fent->ftype != FTYPE_DIR || fent->children == NULL )

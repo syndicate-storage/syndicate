@@ -30,9 +30,13 @@ try:
    import storage.storage as storage
 except ImportError, e:
    # in syntool
+   if not in_client:
+      in_client = True
+      import log as Log
+      log = Log.get_logger()
+   
    log.warning("Using storage stub")
    from storage_stub import StorageStub as storage
-   in_client = True
    
 try:
    # in the MS
@@ -41,18 +45,26 @@ try:
    from MS.gateway import Gateway
 except ImportError, e:
    # in syntool
+   if not in_client:
+      in_client = True
+      import log as Log
+      log = Log.get_logger()
+   
    log.warning("Using object stubs")
    from object_stub import *
-   in_client = True
 
 try:
    # in the MS
    from MS.auth import *
 except ImportError, e:   
    # in syntool
+   if not in_client:
+      in_client = True
+      import log as Log
+      log = Log.get_logger()
+   
    log.warning("Using authentication stub")
    from auth_stub import *
-   in_client = True
 
 try:
    # in the MS
@@ -63,13 +75,6 @@ except ImportError, e:
    in_client = True
    
    
-# use the appropriate logging facility
-if in_client:
-   import log as Log
-   log = Log.get_logger()
-else:
-   import logging as log
-
 # ----------------------------------
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
