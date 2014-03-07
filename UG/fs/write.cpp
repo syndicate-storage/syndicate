@@ -371,40 +371,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    // snapshot fent before we do anything to it
    struct replica_snapshot fent_snapshot;
    fs_entry_replica_snapshot( core, fh->fent, 0, 0, &fent_snapshot );
-   
-   /*
-   // do we first need to expand this file?
-   if( offset > fent_snapshot.size ) {
-      rc = fs_entry_expand_file( core, fh->path, fh->fent, offset, &modified_blocks, &block_futures );
-      if( rc != 0 ) {
-         // can't proceed
-         errorf( "fs_entry_expand_file(%s) to size %" PRId64 " rc = %d\n", fh->path, offset, rc );
-         fs_entry_unlock( fh->fent );
-   
-         fs_file_handle_unlock( fh );
-
-
-         if( modified_blocks.size() > 0 ) {
-            // free memory
-            for( modification_map::iterator itr = modified_blocks.begin(); itr != modified_blocks.end(); itr++ ) {
-               fs_entry_block_info_free( &itr->second );
-            }
-         }
-
-         return rc;
-      }
-      
-      // dont garbage-collect these...just hang onto them so we can tell which blocks these are later on
-      for( modification_map::iterator itr = modified_blocks.begin(); itr != modified_blocks.end(); itr++ ) {
-         struct fs_entry_block_info new_binfo;
-         memset( &new_binfo, 0, sizeof(new_binfo) );
-         
-         fs_entry_block_info_replicate_init( &new_binfo, itr->second.version, NULL, 0, itr->second.gateway_id, -1 );
-         
-         new_blocks[ itr->first ] = new_binfo;
-      }
-   }
-   */
 
    fs_entry_unlock( fh->fent );
    
@@ -438,10 +404,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
          
          // fill the rest of the block at the unaligned offset
          block_fill_offset = block_write_offset;
-         
-         // write aligned--put the whole block, but only count the logical addition
-         //block_put_len = core->blocking_factor;
-         //write_add = core->blocking_factor - block_write_offset;
            
       }
       
