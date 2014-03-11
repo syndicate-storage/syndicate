@@ -149,7 +149,14 @@ int fs_entry_mark_read_stale( struct fs_entry* fent ) {
 
 // is a manifest stale?
 bool fs_entry_is_manifest_stale( struct fs_entry* fent ) {
-
+   if( fent->manifest == NULL ) {
+      return true;
+   }
+   
+   if( !fent->manifest->is_initialized() ) {
+      return true;
+   }
+   
    if( fent->manifest->is_stale() ) {
       return true;
    }
@@ -254,7 +261,7 @@ static struct fs_entry* fs_entry_attach_ms_file( struct fs_core* core, struct fs
       return NULL;
    }
    else {
-      dbprintf("add file %p\n", new_file );
+      dbprintf("add file %" PRIX64 " (at %p)\n", new_file->file_id, new_file );
       
       fs_entry_attach_lowlevel( core, parent, new_file );
 
@@ -1184,7 +1191,7 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
 }
 
 
-// reload an fs_entry's manifest-related data
+// reload an fs_entry's manifest-related data, initializing it
 // fent must be write-locked first!
 int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg* mmsg ) {
    fent->manifest->reload( core, fent, mmsg );
@@ -1193,6 +1200,8 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
    fent->mtime_sec = mmsg->mtime_sec();
    fent->mtime_nsec = mmsg->mtime_nsec();
    fent->version = mmsg->file_version();
+   
+   fent->manifest->mark_initialized();
    
    return 0;
 }
@@ -1206,14 +1215,20 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
 // FENT MUST BE WRITE-LOCKED FIRST!
 int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id ) {
    
-   if( FS_ENTRY_LOCAL( core, fent ) && !core->conf->is_client )
-      return 0;      // nothing to do--we automatically have the latest
+   if( fent->manifest != NULL && fent->manifest->is_initialized() ) {
+      if( FS_ENTRY_LOCAL( core, fent ) && !core->conf->is_client ) {
+         dbprintf("%s is local, and not in client mode\n", fent->name);
+         return 0;      // nothing to do--we automatically have the latest
+      }
+      
+      // if we're in client mode, and we created this file in this session and we are the coordinator, then nothing to do
+      if( core->conf->is_client && FS_ENTRY_LOCAL( core, fent ) && fent->created_in_session ) {
+         dbprintf("%s is local, and was created in this client session\n", fent->name);
+         return 0;         // we automatically have the latest
+      }
+   }
    
-   // if we're in client mode, and we created this file in this session and we are the coordinator, then nothing to do
-   if( core->conf->is_client && FS_ENTRY_LOCAL( core, fent ) && fent->created_in_session )
-      return 0;         // we automatically have the latest
-   
-   // otherwise, either it's remote, or we are running as a client and should check the RGs anyway
+   // otherwise, it's remote or doesn't exist, or we are running as a client and should check the RGs anyway
    
    struct timespec ts, ts2;
 
@@ -1238,6 +1253,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
       if( successful_gateway_id )
          *successful_gateway_id = 0;
       
+      dbprintf("Manifest for %s is fresh\n", fent->name);
       return 0;
    }
 

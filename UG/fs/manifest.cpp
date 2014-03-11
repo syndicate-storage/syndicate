@@ -287,6 +287,7 @@ file_manifest::file_manifest() {
    this->lastmod.tv_nsec = 1;
    this->file_version = -1;
    this->stale = true;
+   this->initialized = false;
    pthread_rwlock_init( &this->manifest_lock, NULL );
 }
 
@@ -294,6 +295,7 @@ file_manifest::file_manifest() {
 file_manifest::file_manifest( int64_t version ) {
    this->file_version = version;
    this->stale = true;
+   this->initialized = false;
    this->lastmod.tv_sec = 1;
    this->lastmod.tv_nsec = 1;
    pthread_rwlock_init( &this->manifest_lock, NULL );
@@ -318,6 +320,7 @@ file_manifest::file_manifest( file_manifest& fm ) {
    this->lastmod = fm.lastmod;
    this->file_version = fm.file_version;
    this->stale = fm.stale;
+   this->initialized = fm.initialized;
    pthread_rwlock_init( &this->manifest_lock, NULL );
 }
 
@@ -328,6 +331,7 @@ file_manifest::file_manifest( file_manifest* fm ) {
    this->lastmod = fm->lastmod;
    this->file_version = fm->file_version;
    this->stale = fm->stale;
+   this->initialized = fm->initialized;
    pthread_rwlock_init( &this->manifest_lock, NULL );
 }
 
@@ -336,6 +340,7 @@ file_manifest::file_manifest( struct fs_core* core, struct fs_entry* fent, Seria
    this->file_version = fent->version;
    this->stale = true;
    file_manifest::parse_protobuf( core, fent, this, mmsg );
+   this->initialized = true;
 }
 
 

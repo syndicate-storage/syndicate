@@ -178,6 +178,21 @@ public:
       pthread_rwlock_unlock( &this->manifest_lock );
       return ret;
    }
+   
+   // is the manifest initialized?
+   bool is_initialized() {
+      pthread_rwlock_rdlock( &this->manifest_lock );
+      bool ret = this->initialized;
+      pthread_rwlock_unlock( &this->manifest_lock );
+      return ret;
+   }
+   
+   // mark the manifest as initialized
+   void mark_initialized() { 
+      pthread_rwlock_wrlock( &this->manifest_lock );
+      this->initialized = true;
+      pthread_rwlock_unlock( &this->manifest_lock );
+   }
 
    int64_t get_file_version() {
       pthread_rwlock_rdlock( &this->manifest_lock );
@@ -204,6 +219,7 @@ private:
    struct timespec lastmod;               // which modification time this manifest refers to
    
    bool stale;                            // this manifest is stale, and should be refreshed
+   bool initialized;                      // this manifest exists, but has not been initialized.
 
    pthread_rwlock_t manifest_lock;
 };

@@ -141,12 +141,6 @@ ssize_t fs_entry_fill_block( struct fs_core* core, struct fs_entry* fent, char* 
 // can a block be garbage-collected?
 static bool fs_entry_is_garbage_collectable_block( struct fs_core* core, struct replica_snapshot* snapshot_fent, off_t fent_old_size, uint64_t block_id ) {
    
-   /*
-   // don't collect this one 
-   if( no_garbage_collect->find( block_id ) != no_garbage_collect->end() )
-      return false;
-   */
-   
    // no blocks exist, so this is guaranteed new
    if( fent_old_size == 0 )
       return false;
@@ -353,9 +347,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    ssize_t ret = 0;
    ssize_t num_written = 0;
 
-   // record of blocks NOT to garbage-collect, since they're guaranteed new
-   modification_map new_blocks;
-   
    // record which blocks we've modified
    modification_map modified_blocks;
    
@@ -389,8 +380,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       
       // how much data are we going to write into this block?
       size_t block_write_len = MIN( core->blocking_factor - block_write_offset, count - num_written );
-      size_t block_put_len = block_write_len;
-      size_t write_add = block_write_len;
       
       if( block_write_offset != 0 ) {
          
@@ -404,7 +393,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
          
          // fill the rest of the block at the unaligned offset
          block_fill_offset = block_write_offset;
-           
       }
       
       // get the data...
@@ -466,7 +454,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       
       modified_blocks[ block_id ] = binfo;
 
-      num_written += write_add;     // not block_write_len, since physically we may have written a whole block, while logically we've written less
+      num_written += block_write_len;
       
       // preserve this, so we can synchronize later 
       block_futures.push_back( block_fut );
@@ -480,10 +468,13 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    
    // wait for all writes to complete.
    // do NOT close the fd's
-   rc = fs_entry_finish_writes( block_futures, false );
-   if( rc != 0 ) {
-      errorf("fs_entry_finish_writes() rc = %d\n", rc );
-      ret = rc;
+   int wait_rc = fs_entry_finish_writes( block_futures, false );
+   if( wait_rc != 0 ) {
+      errorf("fs_entry_finish_writes() rc = %d\n", wait_rc );
+      
+      // don't mask a previous error...
+      if( ret == 0 )
+         ret = wait_rc;
    }
    
    END_TIMING_DATA( write_ts, ts2, "write data" );
@@ -816,7 +807,6 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       fs_entry_manifest_put_block( core, gateway_id, fent, block_id, new_version, block_hash );
    }
    
-   off_t old_size = fent->size;
    fent->size = write_msg->metadata().size();
 
    clock_gettime( CLOCK_REALTIME, &mts );

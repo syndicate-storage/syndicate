@@ -128,6 +128,13 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    }
 
    if( err == 0 ) {
+      
+      // mark it as created in this session 
+      child->created_in_session = true;
+      
+      // we're creating, so this manifest is initialized (to zero blocks)
+      child->manifest->mark_initialized();
+         
       // attach the file
       fs_entry_wlock( child );
       fs_entry_attach_lowlevel( core, parent, child );
@@ -287,13 +294,13 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
             return NULL;
          }
          else {
-            // if we're a client, mark it as created in this session 
-                     
-            if( core->conf->is_client )
-               child->created_in_session = true;
+            // mark it as created in this session 
+            child->created_in_session = true;
+            
+            // we're creating, so this manifest is initialized (to zero blocks)
+            child->manifest->mark_initialized();
             
             // insert it into the filesystem
-            
             fs_entry_wlock( child );
             child->open_count++;
             
