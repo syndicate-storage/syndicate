@@ -679,7 +679,8 @@ private:
 
         SYNDICATEFS_DATA->stats->enter(STAT_RENAME);
 
-        int rc = fs_entry_versioned_rename(SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume, -1);
+        //int rc = fs_entry_versioned_rename(SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume, -1);
+        int rc = fs_entry_rename(SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume);
 
         SYNDICATEFS_DATA->stats->leave(STAT_RENAME, rc);
         return rc;
