@@ -384,7 +384,15 @@ static int publish(const char *fpath, const struct stat *sb,
 	        if ( (i = ms_client_mkdir(mc, &ment->file_id, ment)) < 0 ) {
 		    cout<<"ms client mkdir "<<i<<endl;
 	        }
-	    }
+	    } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
+	        if ( (i = ms_client_update(mc, ment)) < 0 ) {
+		    cout<<"ms client update "<<i<<endl;
+	        }
+            } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_REMOVED) {
+	        if ( (i = ms_client_delete(mc, ment)) < 0 ) {
+		    cout<<"ms client delete "<<i<<endl;
+	        }
+            }
 	    break;
 	case FTW_F:
 	    ment->type = MD_ENTRY_FILE;
@@ -392,7 +400,15 @@ static int publish(const char *fpath, const struct stat *sb,
 	        if ( (i = ms_client_create(mc, &ment->file_id, ment)) < 0 ) {
 		    cout<<"ms client create "<<i<<endl;
 		}
-	    }
+	    } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
+	        if ( (i = ms_client_update(mc, ment)) < 0 ) {
+		    cout<<"ms client update "<<i<<endl;
+	        }
+            } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_REMOVED) {
+	        if ( (i = ms_client_delete(mc, ment)) < 0 ) {
+		    cout<<"ms client delete "<<i<<endl;
+	        }
+            }
 	    break;
 	case FTW_SL:
 	    break;
