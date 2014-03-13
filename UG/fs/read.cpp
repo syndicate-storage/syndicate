@@ -64,30 +64,24 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
       return -EAGAIN;
    }
       
-   // this file may be locally coordinated, so don't download from ourselves.
-   bool skip_UG = true;
-   int loc = fent->manifest->is_block_local( core, block_id );
-   if( loc <= 0 ) {
-      // definitely not local
-      skip_UG = false;
-   }
-   
-   if( gateway_type == SYNDICATE_UG && !skip_UG )
-      block_url = fs_entry_remote_block_url( core, fent->coordinator, fs_path, fent->version, block_id, block_version );
-   else if( gateway_type == SYNDICATE_RG )
-      block_url = fs_entry_RG_block_url( core, fent->coordinator, fent->volume, fent->file_id, fent->version, block_id, block_version );
-   else if( gateway_type == SYNDICATE_AG )
-      block_url = fs_entry_AG_block_url( core, fent->coordinator, fs_path, fent->version, block_id, block_version );
-   
-   if( block_url == NULL && (!skip_UG || gateway_type != SYNDICATE_UG) ) {
-      errorf("Failed to compute block URL for Gateway %" PRIu64 "\n", fent->coordinator);
-      return -ENODATA;
-   }
-
    char* block_buf = NULL;
    ssize_t nr = 0;
    
-   if( !skip_UG ) {
+   // this file may be locally coordinated, so don't download from ourselves.
+   if( !FS_ENTRY_LOCAL( core, fent ) ) {
+      
+      if( gateway_type == SYNDICATE_UG )
+         block_url = fs_entry_remote_block_url( core, fent->coordinator, fs_path, fent->version, block_id, block_version );
+      else if( gateway_type == SYNDICATE_RG )
+         block_url = fs_entry_RG_block_url( core, fent->coordinator, fent->volume, fent->file_id, fent->version, block_id, block_version );
+      else if( gateway_type == SYNDICATE_AG )
+         block_url = fs_entry_AG_block_url( core, fent->coordinator, fs_path, fent->version, block_id, block_version );
+      
+      if( block_url == NULL ) {
+         errorf("Failed to compute block URL for Gateway %" PRIu64 "\n", fent->coordinator);
+         return -ENODATA;
+      }
+
       nr = fs_entry_download_block( core, block_url, &block_buf, block_len );
       
       if( nr <= 0 ) {
@@ -95,7 +89,7 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
       }
    }
    
-   if( skip_UG || (nr <= 0 && gateway_type != SYNDICATE_AG) ) {
+   if( FS_ENTRY_LOCAL( core, fent ) || (nr <= 0 && gateway_type != SYNDICATE_AG) ) {
       // try from an RG
       uint64_t rg_id = 0;
       

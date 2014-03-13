@@ -139,18 +139,18 @@ ssize_t fs_entry_fill_block( struct fs_core* core, struct fs_entry* fent, char* 
 }
 
 // can a block be garbage-collected?
-static bool fs_entry_is_garbage_collectable_block( struct fs_core* core, struct replica_snapshot* snapshot_fent, off_t fent_old_size, uint64_t block_id ) {
+static bool fs_entry_is_garbage_collectable_block( struct fs_core* core, off_t fent_size, uint64_t block_id ) {
    
    // no blocks exist, so this is guaranteed new
-   if( fent_old_size == 0 )
+   if( fent_size == 0 )
       return false;
    
    // block is beyond the last block in the file, so guaranteed new
-   if( block_id > ((uint64_t)fent_old_size / core->blocking_factor) && fent_old_size > 0 )
+   if( block_id > ((uint64_t)fent_size / core->blocking_factor) && fent_size > 0 )
       return false;
    
    // block is just on the edge of the file, so guaranteed new
-   if( block_id >= ((uint64_t)fent_old_size / core->blocking_factor) && fent_old_size > 0 && (fent_old_size % core->blocking_factor == 0) )
+   if( block_id >= ((uint64_t)fent_size / core->blocking_factor) && fent_size > 0 && (fent_size % core->blocking_factor == 0) )
       return false;
    
    // has an older copy to be removed
@@ -275,8 +275,8 @@ int fs_entry_finish_writes( list<struct cache_block_future*>& block_futures, boo
 }
 
 
-// reconstruct the previous file manifest
-int fs_entry_revert_manifest( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* fent_before_write, uint64_t proposed_size, modification_map* old_block_info ) {
+// revert a write, given the modified blocks and a pre-write snapshot
+int fs_entry_revert_write( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* fent_before_write, uint64_t proposed_size, modification_map* old_block_info ) {
 
    // had an error along the way.  Restore the old fs_entry's manifest
    fs_entry_replica_snapshot_restore( core, fent, fent_before_write );
@@ -360,8 +360,8 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    bool replicated_manifest = false;
    
    // snapshot fent before we do anything to it
-   struct replica_snapshot fent_snapshot;
-   fs_entry_replica_snapshot( core, fh->fent, 0, 0, &fent_snapshot );
+   struct replica_snapshot fent_old_snapshot;
+   fs_entry_replica_snapshot( core, fh->fent, 0, 0, &fent_old_snapshot );
 
    fs_entry_unlock( fh->fent );
    
@@ -401,12 +401,14 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       fs_entry_wlock( fh->fent );
       
       // need to get the old version of this block, so we can garbage-collect it 
-      bool need_garbage_collect = fs_entry_is_garbage_collectable_block( core, &fent_snapshot, fent_snapshot.size, block_id );
+      bool need_garbage_collect = fs_entry_is_garbage_collectable_block( core, fh->fent->size, block_id );
       uint64_t old_version = 0;
+      unsigned char* old_hash = NULL;
       
       if( need_garbage_collect ) {
          // this block is guaranteed to exist in the manifest...
          old_version = fh->fent->manifest->get_block_version( block_id );
+         old_hash = fh->fent->manifest->get_block_hash( block_id );
       }
       
       // hash the contents of this block, including anything read with fs_entry_read_block
@@ -426,7 +428,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       
       uint64_t new_version = fh->fent->manifest->get_block_version( block_id );
       
-      
       char* hash_printable = BLOCK_HASH_TO_STRING( hash );
       dbprintf("hash of %" PRIX64 "[%" PRId64 ".%" PRIu64 "] is %s\n", fh->fent->file_id, block_id, new_version, hash_printable );
       free( hash_printable );
@@ -441,7 +442,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
          // mark the old version of the block that we've overwritten to be garbage-collected
          struct fs_entry_block_info binfo_overwritten;
          
-         fs_entry_block_info_garbage_init( &binfo_overwritten, old_version, core->gateway );
+         fs_entry_block_info_garbage_init( &binfo_overwritten, old_version, old_hash, BLOCK_HASH_LEN(), core->gateway );
          
          overwritten_blocks[ block_id ] = binfo_overwritten;
       }
@@ -481,10 +482,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
 
    fs_entry_wlock( fh->fent );
    
-   // prepare a new snapshot with the new metadata
-   struct replica_snapshot fent_new_snapshot;
-   memcpy( &fent_new_snapshot, &fent_snapshot, sizeof(fent_new_snapshot) );
-   
    // update file metadata
    if( ret > 0 ) {
       
@@ -498,9 +495,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       
       fh->fent->mtime_sec = new_mtime.tv_sec;
       fh->fent->mtime_nsec = new_mtime.tv_nsec;
-      
-      // snapshot this for future use...
-      fs_entry_replica_snapshot( core, fh->fent, 0, 0, &fent_new_snapshot );
    }
 
    BEGIN_TIMING_DATA( replicate_ts_total );
@@ -563,7 +557,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
 
          // send a prepare message
          int64_t* versions = fh->fent->manifest->get_block_versions( start_id, end_id );
-         char** hashes = fh->fent->manifest->get_block_hashes( start_id, end_id );
+         unsigned char** hashes = fh->fent->manifest->get_block_hashes( start_id, end_id );
          
          fs_entry_prepare_write_message( write_msg, core, fh->path, fh->fent, start_id, end_id, versions, hashes );
          
@@ -572,11 +566,11 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
          
          Serialization::WriteMsg *write_ack = new Serialization::WriteMsg();
          
-         int rc = fs_entry_send_write_or_coordinate( core, fh->fent, &fent_snapshot, write_msg, write_ack );
+         int rc = fs_entry_send_write_or_coordinate( core, fh->fent, &fent_old_snapshot, write_msg, write_ack );
          
          if( rc > 0 ) {
             // we're now the coordinator.  Replicate our new manifest and remove the old one.
-            rc = fs_entry_replace_manifest( core, fh, fh->fent, &fent_snapshot );
+            rc = fs_entry_replace_manifest( core, fh, fh->fent, &fent_old_snapshot );
             if( rc == 0 ) {
                replicated_manifest = true;
             }
@@ -613,7 +607,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
          END_TIMING_DATA( remote_write_ts, ts2, "send remote write" );
       }
       
-      else {
+      if( ret >= 0 && local ) {
 
          BEGIN_TIMING_DATA( update_ts );
          
@@ -647,13 +641,13 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    if( ret < 0 ) {
       
       // cancel any ongoing replications, and erase recently-uploaded data (reverting the write)
-      fs_entry_garbage_collect_blocks( core, &fent_new_snapshot, &modified_blocks );
+      fs_entry_garbage_collect_blocks( core, &fent_old_snapshot, &modified_blocks );
       
       if( replicated_manifest )
-         fs_entry_garbage_collect_manifest( core, &fent_new_snapshot );
+         fs_entry_garbage_collect_manifest( core, &fent_old_snapshot );
       
-      // revert metadata 
-      fs_entry_replica_snapshot_restore( core, fh->fent, &fent_snapshot );
+      // revert the write
+      fs_entry_revert_write( core, fh->fent, &fent_old_snapshot, fh->fent->size, &overwritten_blocks );
    }
    else {
       
@@ -667,7 +661,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
          
          if( local ) {
             // garbage collect the old manifest
-            rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
+            rc = fs_entry_garbage_collect_manifest( core, &fent_old_snapshot );
             if( rc != 0 ) {
                errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fh->path, rc );
                rc = 0;
@@ -675,7 +669,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
          }
          
          // garbage-collect written blocks
-         rc = fs_entry_garbage_collect_blocks( core, &fent_snapshot, &overwritten_blocks );
+         rc = fs_entry_garbage_collect_blocks( core, &fent_old_snapshot, &overwritten_blocks );
          if( rc != 0 ) {
             errorf("fs_entry_garbage_collect_blocks(%s) rc = %d\n", fh->path, rc );
             rc = 0;
@@ -701,6 +695,13 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
             fs_entry_cache_evict_block( core, core->cache, file_id, file_version, itr->first, itr->second.version );
          }
          
+         fs_entry_block_info_free( &itr->second );
+      }
+   }
+   
+   if( overwritten_blocks.size() > 0 ) {
+      // free memory 
+      for( modification_map::iterator itr = overwritten_blocks.begin(); itr != overwritten_blocks.end(); itr++ ) {
          fs_entry_block_info_free( &itr->second );
       }
    }
@@ -799,7 +800,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       memset( &binfo, 0, sizeof(struct fs_entry_block_info) );
       
       // remember the old block information, in case we need to revert it
-      fs_entry_block_info_replicate_init( &binfo, old_version, old_block_hash, BLOCK_HASH_LEN(), old_gateway_id, -1 );
+      fs_entry_block_info_garbage_init( &binfo, old_version, old_block_hash, BLOCK_HASH_LEN(), old_gateway_id );
       
       old_block_info[ block_id ] = binfo;
       
@@ -881,7 +882,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       }
       
       // revert the manifest
-      fs_entry_revert_manifest( core, fent, &fent_snapshot, fent->size, &old_block_info );
+      fs_entry_revert_write( core, fent, &fent_snapshot, fent->size, &old_block_info );
       
       fs_entry_unlock( fent );
    }

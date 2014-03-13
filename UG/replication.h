@@ -64,7 +64,8 @@ struct replica_snapshot {
    int64_t mtime_sec;
    int32_t mtime_nsec;
    uint64_t owner_id;
-   uint64_t writer_id;
+   uint64_t writer_id;          // our gateway ID
+   uint64_t coordinator_id;     // file's coordinator ID
    uint64_t volume_id;
    uint32_t max_write_freshness;
    off_t size;
@@ -145,7 +146,7 @@ int replication_init( struct syndicate_state* state, uint64_t volume_id );
 int replication_shutdown( struct syndicate_state* state, int wait_replicas );
 
 void fs_entry_block_info_replicate_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id, int block_fd );
-void fs_entry_block_info_garbage_init( struct fs_entry_block_info* binfo, int64_t version, uint64_t gateway_id );
+void fs_entry_block_info_garbage_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id );
 
 int replica_context_free( struct replica_context* rctx );
 

@@ -1247,7 +1247,6 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
 
    if( !need_refresh ) {
       // we're good to go
-      clock_gettime( CLOCK_MONOTONIC, &ts );
       END_TIMING_DATA( ts, ts2, "manifest refresh (fresh)" );
    
       if( successful_gateway_id )
@@ -1268,7 +1267,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    
    int gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
    
-   if( check_coordinator ) {
+   if( check_coordinator && !FS_ENTRY_LOCAL( core, fent ) ) {
       // check the MS-listed coordinator first, instead of asking the RGs directly
       
       if( gateway_type < 0 ) {
@@ -1302,7 +1301,8 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
       }
    }
    
-   if( !check_coordinator || rc != 0 ) {
+   if( !check_coordinator || rc != 0 || FS_ENTRY_LOCAL( core, fent ) ) {
+      // either we couldn't get it from the remote UG, or its local and we don't have a copy ourselves
       
       if( rc != 0 ) {
          errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );

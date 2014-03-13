@@ -155,8 +155,11 @@ public:
    // get all the block versions
    int64_t* get_block_versions( uint64_t start_id, uint64_t end_id );
    
+   // get a block's hash
+   unsigned char* get_block_hash( uint64_t block_id );
+   
    // get the hashes of the blocks in a certain range 
-   char** get_block_hashes( uint64_t start_id, uint64_t end_id );
+   unsigned char** get_block_hashes( uint64_t start_id, uint64_t end_id );
    
    // set the host of a sequence of blocks
    void set_block_hosts( uint64_t gateway_id, uint64_t start_id, uint64_t end_id );

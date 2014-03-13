@@ -31,10 +31,12 @@ void fs_entry_block_info_replicate_init( struct fs_entry_block_info* binfo, int6
 }
 
 // initialize an fs_entry_block_info structure for garbage collection 
-void fs_entry_block_info_garbage_init( struct fs_entry_block_info* binfo, int64_t version, uint64_t gateway_id ) {
+void fs_entry_block_info_garbage_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id ) {
    memset( binfo, 0, sizeof(struct fs_entry_block_info) );
    binfo->version = version;
    binfo->gateway_id = gateway_id;
+   binfo->hash = hash;
+   binfo->hash_len = hash_len;
 }
 
 
@@ -45,6 +47,7 @@ int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_f
    snapshot->block_id = block_id;
    snapshot->block_version = block_version;
    snapshot->writer_id = core->gateway;
+   snapshot->coordinator_id = snapshot_fent->coordinator;
    snapshot->owner_id = snapshot_fent->owner;
    snapshot->mtime_sec = snapshot_fent->mtime_sec;
    snapshot->mtime_nsec = snapshot_fent->mtime_nsec;
@@ -59,7 +62,7 @@ int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_f
 int fs_entry_replica_snapshot_restore( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* snapshot ) {
    
    fent->version = snapshot->file_version;
-   fent->coordinator = snapshot->writer_id;
+   fent->coordinator = snapshot->coordinator_id;
    fent->owner = snapshot->owner_id;
    fent->mtime_sec = snapshot->mtime_sec;
    fent->mtime_nsec = snapshot->mtime_nsec;

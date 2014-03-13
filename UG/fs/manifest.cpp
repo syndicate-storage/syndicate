@@ -484,14 +484,33 @@ int64_t* file_manifest::get_block_versions( uint64_t start_id, uint64_t end_id )
 }
 
 
+
+// get one block hash
+unsigned char* file_manifest::get_block_hash( uint64_t block_id ) {
+   
+   pthread_rwlock_rdlock( &this->manifest_lock );
+
+   block_map::iterator itr = this->find_block_set( block_id );
+   if( itr == this->block_urls.end() ) {
+      pthread_rwlock_unlock( &this->manifest_lock );
+      return NULL;
+   }
+   
+   unsigned char* ret = CALLOC_LIST( unsigned char, BLOCK_HASH_LEN() );
+   memcpy( ret, hash_at( itr->second->block_hashes, block_id - itr->second->start_id ), BLOCK_HASH_LEN() );
+   
+   pthread_rwlock_unlock( &this->manifest_lock );
+   return ret;
+}
+
 // get the set of block hashes
-char** file_manifest::get_block_hashes( uint64_t start_id, uint64_t end_id ) {
+unsigned char** file_manifest::get_block_hashes( uint64_t start_id, uint64_t end_id ) {
    if( end_id <= start_id )
       return NULL;
 
    pthread_rwlock_rdlock( &this->manifest_lock );
 
-   char** ret = CALLOC_LIST( char*, end_id - start_id + 1 );
+   unsigned char** ret = CALLOC_LIST( unsigned char*, end_id - start_id + 1 );
 
    int i = 0;
    uint64_t curr_id = start_id;
@@ -505,7 +524,7 @@ char** file_manifest::get_block_hashes( uint64_t start_id, uint64_t end_id ) {
       }
 
       for( uint64_t j = 0; j < itr->second->end_id - itr->second->start_id && curr_id < end_id; j++ ) {
-         char* hash = CALLOC_LIST( char, BLOCK_HASH_LEN() );
+         unsigned char* hash = CALLOC_LIST( unsigned char, BLOCK_HASH_LEN() );
          memcpy( hash, hash_at( itr->second->block_hashes, j ), BLOCK_HASH_LEN() );
          
          ret[i] = hash;

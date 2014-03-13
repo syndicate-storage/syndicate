@@ -132,7 +132,7 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
                // garbage collect the old version
                struct fs_entry_block_info erase_binfo;
                
-               fs_entry_block_info_garbage_init( &binfo, old_version, core->gateway );
+               fs_entry_block_info_garbage_init( &binfo, old_version, NULL, 0, core->gateway );
                
                garbage_blocks[ trunc_block_id ] = erase_binfo;
                
@@ -152,7 +152,7 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
                struct fs_entry_block_info erase_binfo;
                memset( &erase_binfo, 0, sizeof(erase_binfo) );
                
-               fs_entry_block_info_garbage_init( &erase_binfo, fent->manifest->get_block_version(i), fent->manifest->get_block_host( core, i ) );
+               fs_entry_block_info_garbage_init( &erase_binfo, fent->manifest->get_block_version(i), NULL, 0, fent->manifest->get_block_host( core, i ) );
                
                garbage_blocks[ i ] = erase_binfo;
             }
