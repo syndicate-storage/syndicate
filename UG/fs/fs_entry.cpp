@@ -21,6 +21,7 @@
 #include "cache.h"
 #include "consistency.h"
 #include "replication.h"
+#include "driver.h"
 
 int _debug_locks = 0;
 
@@ -137,13 +138,18 @@ uint64_t fs_entry_block_id( size_t blocksize, off_t offset ) {
 }
 
 // set up the core of the FS
-int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t owner_id, uint64_t gateway_id, uint64_t volume, mode_t mode, uint64_t blocking_factor ) {
+int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md_syndicate_conf* conf, struct ms_client* client, struct syndicate_cache* cache,
+                  uint64_t owner_id, uint64_t gateway_id, uint64_t volume, mode_t mode, uint64_t blocking_factor ) {
+   
    if( core == NULL ) {
       return -EINVAL;
    }
 
    memset( core, 0, sizeof(struct fs_core) );
    core->conf = conf;
+   core->ms = client;
+   core->state = state;
+   core->cache = cache;
    core->volume = volume;
    core->gateway = conf->gateway;
    core->blocking_factor = blocking_factor;
@@ -167,34 +173,48 @@ int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t
    // we're stale; refresh on read
    fs_entry_mark_read_stale( core->root );
    
-   return 0;
-}
-
-// make use of an MS context
-int fs_core_use_ms( struct fs_core* core, struct ms_client* ms ) {
-   core->ms = ms;
-   return 0;
-}
-
-int fs_core_use_state( struct fs_core* core, struct syndicate_state* state ) {
-   core->state = state;
-   return 0;
-}
-
-int fs_core_use_cache( struct fs_core* core, struct syndicate_cache* cache ) {
-   core->cache = cache;
-   return 0;
-}
+   // initialize the driver
+   core->driver = CALLOC_LIST( struct storage_driver, 1 );
+   rc = driver_init( core, core->driver );
    
+   if( rc != 0 && rc != -ENOENT ) {
+      errorf("driver_init rc = %d\n", rc );
+   }
+
+   // start watching for reloads 
+   struct fs_entry_view_change_cls* cls = CALLOC_LIST( struct fs_entry_view_change_cls, 1 );
+   
+   cls->core = core;
+   cls->cert_version = 0;
+   
+   ms_client_set_view_change_callback( core->ms, fs_entry_view_change_callback, cls );
+   core->viewchange_cls = cls;
+   
+   return rc;
+}
+
 // destroy the core of the FS
 int fs_core_destroy( struct fs_core* core ) {
 
+   if( core->driver ) {
+      int rc = driver_shutdown( core, core->driver );
+      if( rc != 0 ) {
+         errorf("WARN: driver_shutdown rc = %d\n", rc );
+      }
+      
+      free( core->driver );
+      core->driver = NULL;
+   }
+   
    pthread_rwlock_destroy( &core->lock );
    pthread_rwlock_destroy( &core->fs_lock );
-
-   fs_entry_destroy( core->root, true );
-
-   free( core->root );
+   
+   ms_client_set_view_change_callback( core->ms, NULL, NULL );
+   
+   if( core->viewchange_cls != NULL ) {
+      free( core->viewchange_cls );
+      core->viewchange_cls = NULL;
+   }
 
    return 0;
 }
@@ -307,14 +327,15 @@ int fs_destroy( struct fs_core* core ) {
    
    fs_entry_wlock( core->root );
    int rc = fs_unlink_children( core, core->root->children, false );
-
-   pthread_rwlock_destroy( &core->lock );
-   pthread_rwlock_destroy( &core->fs_lock );
+   if( rc != 0 ) {
+      errorf("WARN: fs_unlink_children(/) rc = %d\n", rc );
+   }
 
    fs_entry_destroy( core->root, false );
 
    free( core->root );
-   return rc;
+   
+   return fs_core_destroy( core );
 }
 
 
@@ -1038,6 +1059,31 @@ int fs_entry_block_info_free( struct fs_entry_block_info* binfo ) {
    }
    
    memset(binfo, 0, sizeof(struct fs_entry_block_info) );
+   return 0;
+}
+
+
+// view change callback: reload the driver
+int fs_entry_view_change_callback( struct ms_client* ms, void* cls ) {
+   struct fs_entry_view_change_cls* viewchange_cls = (struct fs_entry_view_change_cls*)cls;
+   
+   struct fs_core* core = viewchange_cls->core;
+   uint64_t old_version = viewchange_cls->cert_version;
+   
+   uint64_t cert_version = ms_client_cert_version( ms );
+   
+   if( cert_version != old_version ) {
+      dbprintf("cert version was %" PRIu64 ", now is %" PRIu64 ".  Reloading driver...\n", old_version, cert_version );
+      
+      int rc = driver_reload( core, core->driver );
+      if( rc == 0 )
+         viewchange_cls->cert_version = cert_version;
+      
+   }
+   else {
+      dbprintf("%s", "cert version has not changed, so not reloading driver\n" );
+   }
+   
    return 0;
 }
 

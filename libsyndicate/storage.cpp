@@ -48,7 +48,7 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
       my_pid = (pid_t)rand();
    #endif
       
-      sprintf(cwd, "/tmp/syndicate.%d", my_pid );
+      sprintf(cwd, "/tmp/syndicate-%d", my_pid );
    }
    else {
       if( strlen(c->storage_root) >= PATH_MAX - 20 ) {
@@ -61,7 +61,6 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
    
    char* data_root = md_fullpath( cwd, "data/", NULL );
    char* logfile_path = md_fullpath( cwd, "access.log", NULL );
-   char* replica_logfile_path = md_fullpath( cwd, "replica.log", NULL );
    
    if( c->data_root == NULL )
       c->data_root = strdup( data_root );
@@ -69,18 +68,10 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
    if( c->logfile_path == NULL )
       c->logfile_path = strdup( logfile_path );
 
-   if( c->replica_logfile == NULL )
-      c->replica_logfile = strdup( replica_logfile_path );
-
    free( data_root );
    free( logfile_path );
-   free( replica_logfile_path );
 
-   if( c->gateway_type == SYNDICATE_UG ) {
-      dbprintf("data root:     %s\n", c->data_root );
-      dbprintf("replica log:   %s\n", c->replica_logfile );
-   }
-
+   dbprintf("data root:     %s\n", c->data_root );
    dbprintf("access log:    %s\n", c->logfile_path );
 
    // make sure the storage roots exist

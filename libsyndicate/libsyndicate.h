@@ -178,7 +178,6 @@ struct md_syndicate_conf {
    char* content_url;                                 // what is the URL under which published files can be accessed?
    char* storage_root;                                // toplevel directory that stores local syndicate state
    int num_replica_threads;                           // how many replica threads?
-   char* replica_logfile;                             // path on disk to replica log
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
    char* volume_name;                                 // name of the volume we're connected to
    char* volume_pubkey_path;                          // path on disk to find Volume metadata public key

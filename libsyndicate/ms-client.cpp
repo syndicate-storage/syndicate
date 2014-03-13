@@ -544,6 +544,7 @@ static int ms_client_view_change_callback_default( struct ms_client* client, voi
 }
 
 // view thread body, for synchronizing Volume metadata
+// TODO: use a semaphore
 static void* ms_client_view_thread( void* arg ) {
    struct ms_client* client = (struct ms_client*)arg;
    
@@ -590,7 +591,7 @@ static void* ms_client_view_thread( void* arg ) {
          }
 
          // hint to reload now?
-         ms_client_view_wlock( client );
+         ms_client_view_rlock( client );
          
          do_early_reload = client->early_reload;
          
@@ -625,6 +626,9 @@ static void* ms_client_view_thread( void* arg ) {
             
             if( client->view_change_callback != NULL ) {
                rc = (*client->view_change_callback)( client, client->view_change_callback_cls );
+               if( rc != 0 ) {
+                  errorf("WARN: view change callback rc = %d\n", rc );
+               }
             }
             
             ms_client_unlock( client );

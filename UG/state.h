@@ -24,10 +24,10 @@
 #include "replication.h"
 #include "fs.h"
 #include "cache.h"
+#include "driver.h"
 
 struct syndicate_state {
    FILE* logfile;
-   FILE* replica_logfile;
    
    struct ms_client* ms;   // metadata service client
    struct fs_core* core;   // core of the system
@@ -51,6 +51,7 @@ struct syndicate_state {
    // statistics
    Stats* stats;
 };
+
 
 int syndicate_init_state( struct syndicate_state* state, struct ms_client* ms );
 int syndicate_set_running( struct syndicate_state* state, int running );

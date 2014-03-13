@@ -59,13 +59,26 @@ int syndicate_init_state( struct syndicate_state* state, struct ms_client* ms ) 
       return -EINVAL;
    }
 
-   // initialize the filesystem core
+   // initialize the filesystem core (i.e. so it can reference all of the sub-components of the UG)
+   // NOTE: cache isn't initialized yet, but it doesn't have to be.
    struct fs_core* core = CALLOC_LIST( struct fs_core, 1 );
-   fs_core_init( core, &state->conf, root.owner, root.coordinator, root.volume, root.mode, block_size );
-
+   rc = fs_core_init( core, state, &state->conf, state->ms, &state->cache, root.owner, root.coordinator, root.volume, root.mode, block_size );
+   
    md_entry_free( &root );
-
-   fs_entry_set_config( &state->conf );
+   
+   if( rc != 0 ) {
+      // something went wrong...
+      errorf("fs_core_init rc = %d\n", rc );
+      return rc;
+   }
+   
+   // populate state with it (and other bits of info...)
+   
+   state->core = core;
+   state->uid = getuid();
+   state->gid = getgid();
+   
+   state->mounttime = currentTimeSeconds();
 
    // initialize and start caching
    rc = fs_entry_cache_init( core, &state->cache, state->conf.cache_soft_limit / block_size, state->conf.cache_hard_limit / block_size );
@@ -74,17 +87,6 @@ int syndicate_init_state( struct syndicate_state* state, struct ms_client* ms ) 
       return rc;  
    }
    
-   state->core = core;
-   
-   fs_core_use_cache( core, &state->cache );
-   fs_core_use_ms( core, state->ms );
-   fs_core_use_state( core, state );
-
-   state->uid = getuid();
-   state->gid = getgid();
-   
-   state->mounttime = currentTimeSeconds();
-
    // start up replication
    replication_init( state, volume_id );
 
@@ -103,6 +105,10 @@ int syndicate_destroy_state( struct syndicate_state* state, int wait_replicas ) 
    dbprintf("%s", "stopping replication\n");
    replication_shutdown( state, wait_replicas );
    
+   dbprintf("%s", "core filesystem shutdown\n");
+   fs_destroy( state->core );
+   free( state->core );
+   
    dbprintf("%s", "destroy cache\n");
    fs_entry_cache_destroy( &state->cache );
 
@@ -110,10 +116,6 @@ int syndicate_destroy_state( struct syndicate_state* state, int wait_replicas ) 
    ms_client_destroy( state->ms );
    free( state->ms );
 
-   dbprintf("%s", "core filesystem shutdown\n");
-   fs_destroy( state->core );
-   free( state->core );
-   
    if( state->stats != NULL ) {
       string statistics_str = state->stats->dump();
       printf("Statistics: \n%s\n", statistics_str.c_str() );

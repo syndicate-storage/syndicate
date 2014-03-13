@@ -21,6 +21,7 @@ import os
 common_source_files = """
    cache.cpp 
    consistency.cpp
+   driver.cpp
    log.cpp
    replication.cpp
    stats.cpp
@@ -76,6 +77,7 @@ LIBS_COMMON = """
    syndicate
    protobuf
    rt
+   dl
 """
 
 LIBS_FS = """

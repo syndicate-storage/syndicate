@@ -536,10 +536,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->num_replica_threads = (unsigned int)strtol( values[0], NULL, 10 );
       }
       
-      else if( strcmp( key, REPLICA_LOGFILE_KEY ) == 0 ) {
-         conf->replica_logfile = strdup(values[0]);
-      }
-
       else if( strcmp( key, LOCAL_STORAGE_DRIVERS_KEY ) == 0 ) {
          conf->local_sd_dir = strdup( values[0] );
       }
@@ -607,7 +603,7 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->server_cert_path,
       (void*)conf->gateway_key,
       (void*)conf->gateway_key_path,
-      (void*)conf->replica_logfile,
+      (void*)conf->gateway_name,
       (void*)conf->volume_name,
       (void*)conf->volume_pubkey,
       (void*)conf

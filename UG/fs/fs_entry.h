@@ -84,6 +84,7 @@ class file_manifest;
 struct replica_context;
 struct syndicate_state;
 struct syndicate_cache;
+struct storage_driver;
 
 // Syndicate filesystem entry
 struct fs_entry {
@@ -169,12 +170,21 @@ struct fs_dir_entry {
    struct md_entry data;
 };
 
+
+// view change callback state
+struct fs_entry_view_change_cls {
+   struct fs_core* core;
+   uint64_t cert_version;
+};
+
 // Syndicate core information
 struct fs_core {
    struct fs_entry* root;              // root FS entry
    struct md_syndicate_conf* conf;     // Syndicate configuration structure
    struct ms_client* ms;               // link to the MS
-   struct syndicate_cache* cache;        // index over on-disk cache
+   struct storage_driver* driver;      // storage driver
+   struct fs_entry_view_change_cls* viewchange_cls;    // passed for reloading the volume information
+   struct syndicate_cache* cache;      // index over on-disk cache
    struct syndicate_state* state;   // state 
    uint64_t volume;                 // Volume we're bound to
    uint64_t gateway;                // gateway ID
@@ -190,11 +200,9 @@ struct fs_core {
 int fs_entry_set_config( struct md_syndicate_conf* conf );
 
 // fs_core operations
-int fs_core_init( struct fs_core* core, struct md_syndicate_conf* conf, uint64_t owner_id, uint64_t gateway_id, uint64_t volume, mode_t mode, uint64_t blocking_factor );
+int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md_syndicate_conf* conf, struct ms_client* client, struct syndicate_cache* cache,
+                  uint64_t owner_id, uint64_t gateway_id, uint64_t volume, mode_t mode, uint64_t blocking_factor );
 int fs_core_destroy(struct fs_core* core);
-int fs_core_use_ms( struct fs_core* core, struct ms_client* ms );
-int fs_core_use_cache( struct fs_core* core, struct syndicate_cache* cache );
-int fs_core_use_state( struct fs_core* core, struct syndicate_state* state );
 
 // destroy
 int fs_destroy( struct fs_core* core );
@@ -288,6 +296,9 @@ int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct f
 unsigned int fs_entry_num_children( struct fs_entry* fent );
 
 int fs_entry_block_info_free( struct fs_entry_block_info* binfo );
+
+// view change
+int fs_entry_view_change_callback( struct ms_client* ms, void* cls );
 
 // cython compatibility
 uint64_t fs_dir_entry_type( struct fs_dir_entry* dirent );
