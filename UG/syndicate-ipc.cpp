@@ -1448,10 +1448,14 @@ int main(int argc, char* argv[]) {
 
     // prevent root from mounting this, since we don't really do much
     // in the way of checking access.
+#ifndef _FIREWALL
     if (getuid() == 0 || geteuid() == 0) {
         perror("Running SyndicateIPC as root opens unnacceptable security holes\n");
         return 1;
     }
+#else
+    // skip
+#endif
     
     struct syndicate_opts opts;
     syndicate_default_opts( &opts );
