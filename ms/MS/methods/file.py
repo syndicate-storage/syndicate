@@ -218,9 +218,10 @@ def file_create( reply, gateway, volume, update ):
    
    logging.info("create /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
    
-   # have an entry 
-   ent_pb = reply.listing.entries.add()
-   ent.protobuf( ent_pb )
+   # have an entry?
+   if ent is not None:
+      ent_pb = reply.listing.entries.add()
+      ent.protobuf( ent_pb )
    
    return rc
 
@@ -241,8 +242,9 @@ def file_update( reply, gateway, volume, update ):
    logging.info("update /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
    
    # have an entry 
-   ent_pb = reply.listing.entries.add()
-   ent.protobuf( ent_pb )
+   if ent is not None:
+      ent_pb = reply.listing.entries.add()
+      ent.protobuf( ent_pb )
    
    return rc
 
@@ -300,8 +302,9 @@ def file_chcoord( reply, gateway, volume, update ):
    logging.info("chcoord /%s/%s (%s) rc = %d" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
    
    # have an entry 
-   ent_pb = reply.listing.entries.add()
-   ent.protobuf( ent_pb )
+   if ent is not None:
+      ent_pb = reply.listing.entries.add()
+      ent.protobuf( ent_pb )
    
    return rc
 
