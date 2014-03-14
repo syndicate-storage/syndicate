@@ -326,16 +326,16 @@ extern "C" int publish_dataset (struct gateway_context*, ms_client *client,
 
 
 static int publish_to_volumes(const char *fpath, const struct stat *sb,
-	int tflag, struct FTW *ftwbuf) {
+	int tflag, struct FTW *ftwbuf, int mflag) {
    
     uint64_t volume_id = ms_client_get_volume_id(mc);
-    publish(fpath, sb, tflag, ftwbuf, volume_id);
+    publish(fpath, sb, tflag, ftwbuf, volume_id, mflag);
    
     return 0;
 }
 
 static int publish(const char *fpath, const struct stat *sb,
-	int tflag, struct FTW *ftwbuf, uint64_t volume_id)
+	int tflag, struct FTW *ftwbuf, uint64_t volume_id, int mflag)
 {
     int i = 0;
     struct md_entry* ment = new struct md_entry;
@@ -373,18 +373,42 @@ static int publish(const char *fpath, const struct stat *sb,
     ment->max_write_freshness = 1;
     ment->volume = volume_id;
     ment->size = sb->st_size;
+
+    cout << "publish file entry (parent) : " << ment->parent_name << endl;
+    cout << "publish file entry : " << ment->name << endl;
+
     switch (tflag) {
 	case FTW_D:
 	    ment->type = MD_ENTRY_DIR;
-	    if ( (i = ms_client_mkdir(mc, &ment->file_id, ment)) < 0 ) {
-		cout<<"ms client mkdir "<<i<<endl;
-	    }
+            if(mflag == DIR_ENTRY_MODIFIED_FLAG_NEW) {
+	        if ( (i = ms_client_mkdir(mc, &ment->file_id, ment)) < 0 ) {
+		    cout<<"ms client mkdir "<<i<<endl;
+	        }
+	    } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
+	        if ( (i = ms_client_update(mc, ment)) < 0 ) {
+		    cout<<"ms client update "<<i<<endl;
+	        }
+            } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_REMOVED) {
+	        if ( (i = ms_client_delete(mc, ment)) < 0 ) {
+		    cout<<"ms client delete "<<i<<endl;
+	        }
+            }
 	    break;
 	case FTW_F:
 	    ment->type = MD_ENTRY_FILE;
-	    if ( (i = ms_client_create(mc, &ment->file_id, ment)) < 0 ) {
-		cout<<"ms client create "<<i<<endl;
-	    }
+            if(mflag == DIR_ENTRY_MODIFIED_FLAG_NEW) {
+	        if ( (i = ms_client_create(mc, &ment->file_id, ment)) < 0 ) {
+		    cout<<"ms client create "<<i<<endl;
+		}
+	    } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
+	        if ( (i = ms_client_update(mc, ment)) < 0 ) {
+		    cout<<"ms client update "<<i<<endl;
+	        }
+            } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_REMOVED) {
+	        if ( (i = ms_client_delete(mc, ment)) < 0 ) {
+		    cout<<"ms client delete "<<i<<endl;
+	        }
+            }
 	    break;
 	case FTW_SL:
 	    break;
@@ -429,14 +453,8 @@ void timeout_handler(int sig_no, struct timeout_event* event) {
 }
 
 void entry_modified_handler(int flag, string spath, struct filestat_cache *pcache) {
-    if(flag == DIR_ENTRY_MODIFIED_FLAG_NEW) {
-        publish_to_volumes(pcache->fpath, pcache->sb, pcache->tflag, NULL);
-    } else if(flag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
-        publish_to_volumes(pcache->fpath, pcache->sb, pcache->tflag, NULL);
-    } else if(flag == DIR_ENTRY_MODIFIED_FLAG_REMOVED) {
-        // TODO: Need to remove MS registered entry?
-	
-    }
+    cout << "found changes : " << spath << endl; 
+    publish_to_volumes(pcache->fpath, pcache->sb, pcache->tflag, NULL, flag);
 
     //cout << "flag : " << flag << " path : " << spath << endl;
 }

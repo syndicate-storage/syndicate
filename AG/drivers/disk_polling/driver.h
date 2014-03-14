@@ -63,9 +63,9 @@ struct gateway_ctx {
 
 typedef map<string, struct md_entry*> content_map;
 static int publish_to_volumes(const char *fpath, const struct stat *sb,
-	int tflag, struct FTW *ftwbuf); 
+	int tflag, struct FTW *ftwbuf, int mflag); 
 static int publish(const char *fpath, const struct stat *sb,
-	int tflag, struct FTW *ftwbuf, uint64_t volume_id);
+	int tflag, struct FTW *ftwbuf, uint64_t volume_id, int mflag);
 void init();
 void* term_handler(void *cls);
 void timeout_handler(int sig_no, struct timeout_event* event);
