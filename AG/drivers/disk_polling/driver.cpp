@@ -366,12 +366,16 @@ static int publish(const char *fpath, const struct stat *sb,
         // root
     	parent_id = 0;    
     } else {
-        struct md_entry* ment_parent = DATA[ment->parent_name];
+        char* parent_full_path = md_dirname( path, NULL );
+        struct md_entry* ment_parent = DATA[parent_full_path];
+        free(parent_full_path);
         if(ment_parent == NULL) {
             errorf("cannot find parent entry : %s\n", ment->parent_name);
             pfunc_exit_code = -EINVAL;
 	    return -EINVAL;
-        }
+        } else {
+            cout << "found parent entry : " << ment->parent_name << " -> " << ment_parent->name << endl;
+        }    
         
         parent_id = ment_parent->file_id;
     }
@@ -391,15 +395,19 @@ static int publish(const char *fpath, const struct stat *sb,
     ment->size = sb->st_size;
 
     cout << "publish file entry (parent) : " << ment->parent_name << endl;
+    cout << "publish file entry (parent id) : " << ment->parent_id << endl;
     cout << "publish file entry : " << ment->name << endl;
 
     switch (tflag) {
 	case FTW_D:
 	    ment->type = MD_ENTRY_DIR;
             if(mflag == DIR_ENTRY_MODIFIED_FLAG_NEW) {
-	        if ( (i = ms_client_mkdir(mc, &ment->file_id, ment)) < 0 ) {
+                uint64_t new_file_id = 0;
+	        if ( (i = ms_client_mkdir(mc, &new_file_id, ment)) < 0 ) {
 		    cout<<"ms client mkdir "<<i<<endl;
-	        }
+	        } else {
+                    ment->file_id = new_file_id;
+                }
 	    } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
 	        if ( (i = ms_client_update(mc, ment)) < 0 ) {
 		    cout<<"ms client update "<<i<<endl;
@@ -413,9 +421,12 @@ static int publish(const char *fpath, const struct stat *sb,
 	case FTW_F:
 	    ment->type = MD_ENTRY_FILE;
             if(mflag == DIR_ENTRY_MODIFIED_FLAG_NEW) {
-	        if ( (i = ms_client_create(mc, &ment->file_id, ment)) < 0 ) {
+                uint64_t new_file_id = 0;
+	        if ( (i = ms_client_create(mc, &new_file_id, ment)) < 0 ) {
 		    cout<<"ms client create "<<i<<endl;
-		}
+		} else {
+                    ment->file_id = new_file_id;
+                }
 	    } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
 	        if ( (i = ms_client_update(mc, ment)) < 0 ) {
 		    cout<<"ms client update "<<i<<endl;
