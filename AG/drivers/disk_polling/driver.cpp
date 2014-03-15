@@ -360,8 +360,24 @@ static int publish(const char *fpath, const struct stat *sb,
     char* parent_name_tmp = md_dirname( path, NULL );
     ment->parent_name = md_basename( parent_name_tmp, NULL );
     free( parent_name_tmp );
+
+    uint64_t parent_id = 0;
+    if(strcmp(ment->parent_name, "/") == 0) {
+        // root
+    	parent_id = 0;    
+    } else {
+        struct md_entry* ment_parent = DATA[ment->parent_name];
+        if(ment_parent == NULL) {
+            errorf("cannot find parent entry : %s\n", ment->parent_name);
+            pfunc_exit_code = -EINVAL;
+	    return -EINVAL;
+        }
+        
+        parent_id = ment_parent->file_id;
+    }
     
     ment->name = md_basename( path, NULL );
+    ment->parent_id = parent_id;
     
     ment->ctime_sec = sb->st_ctime;
     ment->ctime_nsec = 0;
