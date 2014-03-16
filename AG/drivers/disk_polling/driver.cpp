@@ -151,10 +151,9 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_request_info* info, void* usercls ) {
    errorf("%s","INFO: metadata_dataset\n"); 
    
-   string fs_path( dat->reqdat.fs_path );
-   cout << "metadata_dataset : " << fs_path << endl;
-   content_map::iterator itr = DATA.find( fs_path );
-   if( itr == DATA.end() ) {
+   cout << "metadata_dataset : " << dat->reqdat.fs_path << endl;
+   struct md_entry* ent = DATA[dat->reqdat.fs_path];
+   if(ent == NULL) {
       errorf("Cannot find entry : %s\n", dat->reqdat.fs_path);
       // not here
       return -ENOENT;
@@ -163,7 +162,7 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_req
    // give back the file_id and last-mod, since that's all the disk has for now.
    // TODO: give back the block hash, maybe? 
    
-   struct md_entry* ent = itr->second;
+
    
    info->set_file_id( ent->file_id );
    info->set_file_mtime_sec( ent->mtime_sec );
@@ -181,18 +180,16 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
 
    // is there metadata for this file?
-   string fs_path( replica_ctx->reqdat.fs_path );
-   cout << "connect_dataset : " << fs_path << endl;
-   content_map::iterator itr = DATA.find( fs_path );
-   if( itr == DATA.end() ) {
+   cout << "connect_dataset : " << replica_ctx->reqdat.fs_path << endl;
+   struct md_entry* ent = DATA[replica_ctx->reqdat.fs_path];
+   
+   if(ent == NULL) {
       // no entry; nothing to do
        replica_ctx->err = -404;
        replica_ctx->http_status = 404;
        errorf("Cannot find entry : %s\n", replica_ctx->reqdat.fs_path);
        return NULL;
    }
-
-   struct md_entry* ent = DATA[ fs_path ];
 
    // is this a request for a manifest?
    if( replica_ctx->reqdat.manifest_timestamp.tv_sec > 0 ) {
@@ -230,7 +227,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
       int rc = 0;
       
       // request for local file
-      char* fp = md_fullpath( datapath, fs_path.c_str(), NULL );
+      char* fp = md_fullpath( datapath, replica_ctx->reqdat.fs_path, NULL );
       ctx->fd = open( fp, O_RDONLY );
       if( ctx->fd < 0 ) {
          rc = -errno;
@@ -291,7 +288,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 // clean up a transfer 
 extern "C" void cleanup_dataset( void* cls ) {
    
-   errorf("%s", "INFO: cleanup_dataset\n"); 
+   dbprintf("%s", "INFO: cleanup_dataset\n"); 
    struct gateway_ctx* ctx = (struct gateway_ctx*)cls;
    if (ctx) {
       close( ctx->fd );
@@ -366,6 +363,8 @@ static int publish(const char *fpath, const struct stat *sb,
     char* path = (char*)malloc( path_len );
     memset( path, 0, path_len );
     strncpy( path, fpath + datapath_len, path_len );
+
+    cout << "publish file entry : " << path << endl;
 
     char* parent_name_tmp = md_dirname( path, NULL );
     ment->parent_name = md_basename( parent_name_tmp, NULL );
