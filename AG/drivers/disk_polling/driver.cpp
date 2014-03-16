@@ -50,6 +50,10 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
    errorf("%s", "INFO: gateway_generate_manifest\n"); 
    // populate a manifest
    Serialization::ManifestMsg* mmsg = new Serialization::ManifestMsg();
+   mmsg->set_volume_id( ent->volume );
+   mmsg->set_coordinator_id( ent->coordinator );
+   mmsg->set_owner_id( ent->owner );
+   mmsg->set_file_id( ent->file_id );
    mmsg->set_size( ent->size );
    mmsg->set_file_version( 1 );
    mmsg->set_mtime_sec( ent->mtime_sec );
@@ -64,6 +68,7 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
    Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
    bbmsg->set_start_id( 0 );
    bbmsg->set_end_id( num_blocks );
+   bbmsg->set_gateway_id( ent->coordinator );
 
    for( uint64_t i = 0; i < num_blocks; i++ ) {
       bbmsg->add_block_versions( 0 );
