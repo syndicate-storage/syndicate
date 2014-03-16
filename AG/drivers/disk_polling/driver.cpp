@@ -151,7 +151,9 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
 extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_request_info* info, void* usercls ) {
    errorf("%s","INFO: metadata_dataset\n"); 
    
-   content_map::iterator itr = DATA.find( string( dat->reqdat.fs_path ) );
+   string fs_path( dat->reqdat.fs_path );
+   cout << "metadata_dataset : " << fs_path << endl;
+   content_map::iterator itr = DATA.find( fs_path );
    if( itr == DATA.end() ) {
       // not here
       return -ENOENT;
@@ -179,6 +181,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 
    // is there metadata for this file?
    string fs_path( replica_ctx->reqdat.fs_path );
+   cout << "connect_dataset : " << fs_path << endl;
    content_map::iterator itr = DATA.find( fs_path );
    if( itr == DATA.end() ) {
       // no entry; nothing to do
