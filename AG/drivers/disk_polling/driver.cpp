@@ -406,6 +406,10 @@ static int publish(const char *fpath, const struct stat *sb,
     cout << "publish file entry (parent id) : " << ment->parent_id << endl;
     cout << "publish file entry : " << ment->name << endl;
 
+    //TODO: When AG is restarted, DIR_ENTRY_MODIFIED_FLAG_NEW events will be raised.
+    // In this case, ms_client_mkdir/ms_client_create call will be failed.
+    // We need to check presence of files and get file id if exists.
+    // or create a new entry.
     switch (tflag) {
 	case FTW_D:
 	    ment->type = MD_ENTRY_DIR;
