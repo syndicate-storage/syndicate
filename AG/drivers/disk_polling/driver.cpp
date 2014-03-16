@@ -54,9 +54,11 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
    mmsg->set_file_version( 1 );
    mmsg->set_mtime_sec( ent->mtime_sec );
    mmsg->set_mtime_nsec( 0 );
-   
-   uint64_t num_blocks = ent->size / ctx->blocking_factor;
-   if( ent->size % ctx->blocking_factor != 0 )
+
+   //uint64_t blocking_factor = ms_client_get_AG_blocksize( mc, mc->gateway_id );
+   uint64_t blocking_factor = global_conf->ag_block_size;
+   uint64_t num_blocks = ent->size / blocking_factor;
+   if( ent->size % blocking_factor != 0 )
       num_blocks++;
 
    Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
@@ -85,6 +87,7 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
       return -EINVAL;
    }
 
+   ctx->blocking_factor = blocking_factor;
    ctx->data_len = mmsg_str.size();
    ctx->data = CALLOC_LIST( char, mmsg_str.size() );
    replica_ctx->last_mod = ent->mtime_sec;
@@ -211,7 +214,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
       ctx->data_offset = 0;
       ctx->block_id = 0;
       ctx->num_read = 0;
-      ctx->blocking_factor = global_conf->ag_block_size;
+      //ctx->blocking_factor = global_conf->ag_block_size;
       replica_ctx->size = ctx->data_len;
    }
    else {
@@ -410,16 +413,22 @@ static int publish(const char *fpath, const struct stat *sb,
                 uint64_t new_file_id = 0;
 	        if ( (i = ms_client_mkdir(mc, &new_file_id, ment)) < 0 ) {
 		    cout<<"ms client mkdir "<<i<<endl;
+                    pfunc_exit_code = -EINVAL;
+                    return -EINVAL;
 	        } else {
                     ment->file_id = new_file_id;
                 }
 	    } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
 	        if ( (i = ms_client_update(mc, ment)) < 0 ) {
 		    cout<<"ms client update "<<i<<endl;
+                    pfunc_exit_code = -EINVAL;
+                    return -EINVAL;
 	        }
             } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_REMOVED) {
 	        if ( (i = ms_client_delete(mc, ment)) < 0 ) {
 		    cout<<"ms client delete "<<i<<endl;
+                    pfunc_exit_code = -EINVAL;
+                    return -EINVAL;
 	        }
             }
 	    break;
@@ -431,14 +440,20 @@ static int publish(const char *fpath, const struct stat *sb,
 		    cout<<"ms client create "<<i<<endl;
 		} else {
                     ment->file_id = new_file_id;
+                    pfunc_exit_code = -EINVAL;
+                    return -EINVAL;
                 }
 	    } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
 	        if ( (i = ms_client_update(mc, ment)) < 0 ) {
 		    cout<<"ms client update "<<i<<endl;
+                    pfunc_exit_code = -EINVAL;
+                    return -EINVAL;
 	        }
             } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_REMOVED) {
 	        if ( (i = ms_client_delete(mc, ment)) < 0 ) {
 		    cout<<"ms client delete "<<i<<endl;
+                    pfunc_exit_code = -EINVAL;
+                    return -EINVAL;
 	        }
             }
 	    break;
