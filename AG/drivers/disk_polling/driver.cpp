@@ -92,6 +92,8 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
       return -EINVAL;
    }
 
+   cout << "serialize manifest msg : " << mmsg_str << endl;
+
    ctx->blocking_factor = blocking_factor;
    ctx->data_len = mmsg_str.size();
    ctx->data = CALLOC_LIST( char, mmsg_str.size() );
@@ -110,9 +112,9 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
    ssize_t ret = 0;
    struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
 
+   cout << "get_dataset : dat size - " << dat->size << endl;
+
    if (ctx == NULL && dat->size == 0)
-       return 0;
-   else
        return -EINVAL;
 
    if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
@@ -138,6 +140,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
          ret = num_read;
    }
    else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
+      cout << "get_dataset (manifest) : reading - " << MIN( len, ctx->data_len - ctx->data_offset ) << endl;
       // read from RAM
       memcpy( buf, ctx->data + ctx->data_offset, MIN( len, ctx->data_len - ctx->data_offset ) );
       ctx->data_offset += len;
