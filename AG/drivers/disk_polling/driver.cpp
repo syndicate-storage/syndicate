@@ -211,6 +211,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
       ctx->data_offset = 0;
       ctx->block_id = 0;
       ctx->num_read = 0;
+      ctx->blocking_factor = global_conf->ag_block_size;
       replica_ctx->size = ctx->data_len;
    }
    else {
@@ -272,6 +273,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
       ctx->num_read = 0;
       ctx->block_id = replica_ctx->reqdat.block_id;
       ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
+      ctx->blocking_factor = global_conf->ag_block_size;
    }
 
    return ctx;
