@@ -182,7 +182,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
    // is there metadata for this file?
    cout << "connect_dataset : " << replica_ctx->reqdat.fs_path << endl;
    struct md_entry* ent = DATA[replica_ctx->reqdat.fs_path];
-   
+   cout << "search DATA map(" << DATA.size() << ")" << endl;
    if(ent == NULL) {
       // no entry; nothing to do
        replica_ctx->err = -404;
@@ -446,10 +446,10 @@ static int publish(const char *fpath, const struct stat *sb,
                 uint64_t new_file_id = 0;
 	        if ( (i = ms_client_create(mc, &new_file_id, ment)) < 0 ) {
 		    cout<<"ms client create "<<i<<endl;
-		} else {
-                    ment->file_id = new_file_id;
                     pfunc_exit_code = -EINVAL;
                     return -EINVAL;
+		} else {
+                    ment->file_id = new_file_id;
                 }
 	    } else if(mflag == DIR_ENTRY_MODIFIED_FLAG_MODIFIED) {
 	        if ( (i = ms_client_update(mc, ment)) < 0 ) {
