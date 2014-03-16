@@ -155,6 +155,7 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_req
    cout << "metadata_dataset : " << fs_path << endl;
    content_map::iterator itr = DATA.find( fs_path );
    if( itr == DATA.end() ) {
+      errorf("Cannot find entry : %s\n", dat->reqdat.fs_path);
       // not here
       return -ENOENT;
    }
@@ -187,6 +188,7 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
       // no entry; nothing to do
        replica_ctx->err = -404;
        replica_ctx->http_status = 404;
+       errorf("Cannot find entry : %s\n", replica_ctx->reqdat.fs_path);
        return NULL;
    }
 
