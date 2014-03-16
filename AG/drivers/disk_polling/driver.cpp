@@ -381,7 +381,10 @@ static int publish(const char *fpath, const struct stat *sb,
     }
     
     ment->name = md_basename( path, NULL );
-    ment->parent_id = parent_id;
+    ment->parent_id = parent_id;    
+    
+    ment->coordinator = mc->gateway_id;
+    ment->owner = mc->owner_id;
     
     ment->ctime_sec = sb->st_ctime;
     ment->ctime_nsec = 0;
