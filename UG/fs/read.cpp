@@ -44,7 +44,7 @@ int fs_entry_verify_block( struct fs_core* core, struct fs_entry* fent, uint64_t
 // fent must be read-locked
 ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, uint64_t block_version, char* block_bits, size_t block_len ) {
 
-   if( block_id * block_len >= (unsigned)fent->size ) {
+   if( block_id * block_len >= (size_t)fent->size ) {
       return 0;      // EOF
    }
 
@@ -134,7 +134,8 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
 // fent must be at least read-locked first
 ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len ) {
 
-   if( block_id * block_len >= (unsigned)fent->size ) {
+   if( block_id * block_len >= (size_t)fent->size ) {
+      dbprintf("fs_entry_read_block EOF found! : block_id = %ld, block_len = %ld, file_size = %ld\n", block_id, block_len, fent->size);
       return 0;      // EOF
    }
    
@@ -145,6 +146,9 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
    
    // local?
    int block_fd = fs_entry_cache_open_block( core, core->cache, fent->file_id, fent->version, block_id, block_version, O_RDONLY );
+
+   dbprintf("fs_entry_read_block block_fd : file_id = %ld, version = %ld, block_id = %ld, block_fd\n", fent->file_id, fent->version, block_id, block_fd);
+
    if( block_fd < 0 ) {
       if( block_fd != -ENOENT ) {
          errorf("WARN: fs_entry_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, block_fd );
@@ -172,6 +176,9 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
    if( !hit_cache ) {
       // get it remotely
       ssize_t read_len = fs_entry_read_remote_block( core, fs_path, fent, block_id, block_version, block_bits, block_len );
+
+      dbprintf("fs_entry_read_block : block_id = %ld, block_len = %ld, read_len = %ld\n", block_id, block_len, read_len);
+
       if( read_len < 0 ) {
          errorf("fs_entry_read_remote_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s)) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, (int)read_len );
          rc = (int)read_len;
@@ -265,11 +272,13 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
 
    char* block = CALLOC_LIST( char, block_len );
 
+   dbprintf("fs_entry_read : blockLen = %ld, offset = %ld, readLen = %ld, filesize = %ld\n", block_len, offset, count, file_size);
+
    bool done = false;
    while( (size_t)total_read < count && ret >= 0 && !done ) {
       // read the next block
       fs_entry_rlock( fh->fent );
-      bool eof = ((unsigned)(offset + total_read) >= fh->fent->size && !IS_STREAM_FILE( *(fh->fent) ));
+      bool eof = ((size_t)(offset + total_read) >= fh->fent->size && !IS_STREAM_FILE( *(fh->fent) ));
 
       if( eof ) {
          dbprintf("EOF after reading %zd bytes\n", total_read);
@@ -281,9 +290,11 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
       // TODO: unlock fent somehow while we're reading/downloading
       uint64_t block_id = fs_entry_block_id( block_len, offset + total_read );
       ssize_t tmp = fs_entry_read_block( core, fh->path, fh->fent, block_id, block, block_len );
-      
+     
+      dbprintf("fs_entry_read : block_id = %ld, block_read_size = %ld\n", block_id, tmp);
+ 
       if( tmp > 0 ) {
-         size_t read_if_not_eof = (unsigned)MIN( (size_t)(tmp - block_offset), count - total_read );
+         size_t read_if_not_eof = (size_t)MIN( (size_t)(tmp - block_offset), count - total_read );
          size_t read_if_eof = file_size - (total_read + offset);
          
          ssize_t total_copy = IS_STREAM_FILE( *(fh->fent) ) ? read_if_not_eof : MIN( read_if_eof, read_if_not_eof );
