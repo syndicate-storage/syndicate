@@ -730,12 +730,12 @@ void cache_aio_write_completion( sigval_t sigval ) {
          fdatasync( future->block_fd );
          lseek( future->block_fd, 0, SEEK_SET );
          
-         char prefix[21];
-         memset(prefix, 0, 21);
-         memcpy( prefix, future->block_data, MIN( core->blocking_factor, future->data_len ) );
+         //char prefix[21];
+         //memset(prefix, 0, 21);
+         //memcpy( prefix, future->block_data, MIN( core->blocking_factor, future->data_len ) );
          
-         dbprintf("wrote %d (of %zu) bytes to %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], prefix = '%s'\n",
-                  write_rc, future->data_len, future->key.file_id, future->key.file_version, future->key.block_id, future->key.block_version, prefix );
+         //dbprintf("wrote %d (of %zu) bytes to %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], prefix = '%s'\n",
+         //         write_rc, future->data_len, future->key.file_id, future->key.file_version, future->key.block_id, future->key.block_version, prefix );
       }
    }
    else {

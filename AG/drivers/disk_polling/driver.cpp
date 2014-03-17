@@ -91,7 +91,7 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
       delete mmsg;
       return -EINVAL;
    }
-   
+
    ctx->blocking_factor = blocking_factor;
    ctx->data_len = mmsg_str.size();
    ctx->data = CALLOC_LIST( char, mmsg_str.size() );
@@ -117,6 +117,8 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
    
    dbprintf("request type %d\n", ctx->request_type );
 
+   cout << "get_dataset : dat size - " << dat->size << endl;
+
    if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
       // read from disk
       ssize_t nr = 0;
@@ -140,6 +142,7 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
          ret = num_read;
    }
    else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
+      cout << "get_dataset (manifest) : reading - " << MIN( len, ctx->data_len - ctx->data_offset ) << endl;
       // read from RAM
       size_t copy_len = MIN( len, ctx->data_len - ctx->data_offset );
       
