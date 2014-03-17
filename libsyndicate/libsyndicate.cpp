@@ -930,7 +930,7 @@ size_t md_default_get_callback_ram(void *stream, size_t size, size_t count, void
    
    if( dlbuf->data_len > 0 ) {
       // have an upper bound on how much data to copy
-      if( dlbuf->len + realsize > (unsigned)dlbuf->data_len ) {
+      if( dlbuf->len + realsize > (size_t)dlbuf->data_len ) {
          realsize = dlbuf->data_len - dlbuf->len;
       }
       dbprintf("receive %zu to offset %zd of %zd\n", realsize, dlbuf->len, dlbuf->data_len);
@@ -978,7 +978,7 @@ size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t 
    struct md_bound_response_buffer* brb = (struct md_bound_response_buffer*)user_data;
    
    size_t realsize = size * count;
-   if( brb->size + realsize > (unsigned)brb->max_size ) {
+   if( brb->size + realsize > (size_t)brb->max_size ) {
       realsize = brb->max_size - brb->size;
    }
    

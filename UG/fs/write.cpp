@@ -119,7 +119,7 @@ ssize_t fs_entry_fill_block( struct fs_core* core, struct fs_entry* fent, char* 
    else if( source_fd > 0 ) {
       // source is the fd.  Read the block
       ssize_t fd_read = 0;
-      while( (unsigned)fd_read < count ) {
+      while( fd_read < (ssize_t)count ) {
          ssize_t fd_nr = read( source_fd, block + fd_read, count - fd_read);
          if( fd_nr < 0 ) {
             fd_nr = -errno;
@@ -487,7 +487,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       
       // update size
       // NOTE: size may have changed due to expansion, but it shouldn't affect this computation
-      fh->fent->size = MAX( fh->fent->size, (unsigned)(offset + count) );
+      fh->fent->size = MAX( fh->fent->size, offset + count );
       
       // update mtime
       struct timespec new_mtime;

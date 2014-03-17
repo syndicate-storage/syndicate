@@ -108,7 +108,7 @@ static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* f
          int64_t id = (int64_t)strtoll( block_name, &tmp, 10 );
          if( tmp != block_name ) {
             // parsed!  This block is present
-            if( (unsigned)id < num_blocks ) {
+            if( (size_t)id < num_blocks ) {
                *(block_vector + id) = '1';
             }
          }
@@ -120,7 +120,7 @@ static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* f
    };
    
    off_t num_blocks = (fent->size / core->blocking_factor) + ((fent->size % core->blocking_factor) == 0 ? 0 : 1);
-   if( (unsigned)num_blocks >= buf_len + 1 ) {
+   if( (size_t)num_blocks >= buf_len + 1 ) {
       if( buf_len == 0 || buf == NULL ) {
          // size query
          return num_blocks + 1;         // NULL-terminated
@@ -314,7 +314,7 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
          // success!
          if( value != NULL && size > 0 ) {
             // wanted the attribute, not just the size
-            if( size >= (unsigned)ret ) {
+            if( size >= (size_t)ret ) {
                ret = -ERANGE;
             }
             else {
