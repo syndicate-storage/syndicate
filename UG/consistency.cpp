@@ -143,6 +143,7 @@ static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent,
 // make a fent read stale
 int fs_entry_mark_read_stale( struct fs_entry* fent ) {
    fent->read_stale = true;
+   fent->write_nonce = 0;       // make sure that when we read next, we get a listing
    return 0;
 }
 
@@ -1301,7 +1302,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
       }
    }
    
-   if( !check_coordinator || rc != 0 || FS_ENTRY_LOCAL( core, fent ) ) {
+   if( gateway_type != SYNDICATE_AG && (!check_coordinator || rc != 0 || FS_ENTRY_LOCAL( core, fent )) ) {
       // either we couldn't get it from the remote UG, or its local and we don't have a copy ourselves
       
       if( rc != 0 ) {

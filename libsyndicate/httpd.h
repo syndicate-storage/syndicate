@@ -117,7 +117,7 @@ struct md_HTTP_connection_data {
    struct MHD_PostProcessor* pp;
    struct md_HTTP_response* resp;
    struct md_HTTP_header** headers;
-   char const* remote_host;
+   char* remote_host;
    char const* method;
    size_t content_length;
    

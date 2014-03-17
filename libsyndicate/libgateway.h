@@ -42,8 +42,8 @@ struct gateway_context {
    char const* method;
    struct md_gateway_request_data reqdat;
    
-   size_t size;         // for PUT, this is the length of the uploaded data.  for GET, this is the expected length of the data to be fetched
-   time_t last_mod;     // for GET, this is the last-mod time of the file to be served
+   size_t size;         // this is the expected length of the data to be fetched
+   time_t last_mod;     // this is the last-mod time of the file to be served
    char** args;
    int err;
    int http_status;
@@ -72,9 +72,9 @@ int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *cli
 // NOTE: on GET, the passed method should set the size field in the given gateway_context structure.
 // NOTE: the passed method should return NULL on error, and non-NULL on success
 void gateway_connect_func( void* (*connect_func)( struct gateway_context* ) );
-void gateway_put_func( ssize_t (*put_func)(struct gateway_context*, char const* data, size_t len, void* usercls) );
+//void gateway_put_func( ssize_t (*put_func)(struct gateway_context*, char const* data, size_t len, void* usercls) );
 void gateway_get_func( ssize_t (*get_func)(struct gateway_context*, char* buf, size_t len, void* usercls) );
-void gateway_delete_func( int (*delete_func)(struct gateway_context*, void* usercls) );
+//void gateway_delete_func( int (*delete_func)(struct gateway_context*, void* usercls) );
 void gateway_cleanup_func( void (*cleanup_func)(void* usercls) );
 void gateway_metadata_func( int (*metadata_func)(struct gateway_context*, ms::ms_gateway_request_info* info, void* usercls) );
 void gateway_publish_func( int (*publish_func)(struct gateway_context*, struct ms_client*, char* dataset ) );

@@ -29,20 +29,13 @@ struct ms_client *global_ms = NULL;
 // gateway driver
 static void* driver = NULL;
 
-// callbacks to be filled in by an RG implementation
-static ssize_t (*put_callback)( struct gateway_context*, char const* data, size_t len, void* usercls ) = NULL;
+// callbacks to be filled in by an AG implementation
 static ssize_t (*get_callback)( struct gateway_context*, char* data, size_t len, void* usercls ) = NULL;
-static int (*delete_callback)( struct gateway_context*, void* usercls ) = NULL;
 static void* (*connect_callback)( struct gateway_context* ) = NULL;
 static void (*cleanup_callback)( void* usercls ) = NULL;
 static int (*metadata_callback)( struct gateway_context*, ms::ms_gateway_request_info*, void* ) = NULL;
 static int (*publish_callback)( struct gateway_context*, ms_client*, char* ) = NULL;
 int (*controller_callback)(pid_t pid, int ctrl_flag);
-
-// set the PUT callback
-void gateway_put_func( ssize_t (*put_func)(struct gateway_context*, char const* data, size_t len, void* usercls) ) {
-   put_callback = put_func;
-}
 
 // set the GET callback
 void gateway_get_func( ssize_t (*get_func)(struct gateway_context*, char* buf, size_t len, void* usercls) ) {
@@ -52,11 +45,6 @@ void gateway_get_func( ssize_t (*get_func)(struct gateway_context*, char* buf, s
 // set the CGI argument parser callback
 void gateway_connect_func( void* (*connect_func)( struct gateway_context* ) ) {
    connect_callback = connect_func;
-}
-
-// set the delete func
-void gateway_delete_func( int (*delete_func)(struct gateway_context*, void* usercls) ) {
-   delete_callback = delete_func;
 }
 
 // set up the cleanup func
@@ -109,10 +97,42 @@ int gateway_key_value( char* arg, char* key, char* value ) {
    return eq_off;
 }
 
+// free a gateway_connection_data
+static void gateway_connection_data_free( struct gateway_connection_data* con_data ) {
+   
+   if( con_data == NULL )
+      return;
+
+   // free memory
+   if( con_data->rb ) {
+      response_buffer_free( con_data->rb );
+      delete con_data->rb;
+   }
+
+   if( con_data->ctx.block_info ) {
+      delete con_data->ctx.block_info;
+   }
+
+   if( con_data->ctx.args )
+      free( con_data->ctx.args );
+
+   if( cleanup_callback ) {
+      (*cleanup_callback)( con_data->user_cls );
+   }
+   
+   free( con_data );
+}
+
 static char const* CONNECT_ERROR = "CONNECT ERROR";
 
 // connection handler
 static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
+   
+   // sanity check...
+   if( strcmp(md_con_data->method, "GET") != 0 ) {
+      md_con_data->status = 501;
+      return NULL;
+   }
    
    struct md_gateway_request_data reqdat;
    memset( &reqdat, 0, sizeof(reqdat) );
@@ -137,7 +157,7 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
    
    memcpy( &con_data->ctx.reqdat, &reqdat, sizeof(reqdat) );
    con_data->ctx.block_info = new ms::ms_gateway_request_info();
-   con_data->ctx.hostname = md_con_data->remote_host;
+   con_data->ctx.hostname = md_con_data->remote_host;           // WARNING: not a copy; don't free this!
    con_data->ctx.method = md_con_data->method;
    con_data->ctx.size = global_conf->ag_block_size;
    con_data->ctx.err = 0;
@@ -149,146 +169,24 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
 
       void* cls = (*connect_callback)( &con_data->ctx );
       if( cls == NULL ) {
-         md_con_data->status = -abs( get_http_status( &con_data->ctx, 500 ) );
+         md_con_data->status = get_http_status( &con_data->ctx, 500 );
       }
 
       con_data->user_cls = cls;
    }
 
-   if( md_con_data->status == 200 ) {
-      // sanity checks
-      if( strcmp( con_data->ctx.method, "POST" ) == 0 && put_callback == NULL ) {
-         md_con_data->status = -501;
-      }
-
-      if( strcmp( con_data->ctx.method, "GET" ) == 0 && get_callback == NULL ) {
-         md_con_data->status = -501;
-      }
-
-      if( strcmp( con_data->ctx.method, "DELETE" ) == 0 && delete_callback == NULL ) {
-         md_con_data->status = -501;
-      }
-   }
-
    if( md_con_data->status != 200 ) {
+      // error occurred above... make an error response for it.
+      
       md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
       md_create_HTTP_response_ram_static( md_con_data->resp, "text/plain", abs(md_con_data->status), CONNECT_ERROR, strlen(CONNECT_ERROR) + 1 );
+      
+      gateway_connection_data_free( con_data );
+      con_data = NULL;
    }
    
    return (void*)con_data;
 }
-
-
-// POST metadata handler
-// NOTE: we need to ensure that the "metadata" section comes before the "data" section
-static int gateway_POST_iterator(void *coninfo_cls, enum MHD_ValueKind kind,
-                                 const char *key,
-                                 const char *filename, const char *content_type,
-                                 const char *transfer_encoding, const char *data,
-                                 uint64_t off, size_t size) {
-
-
-   struct md_HTTP_connection_data* md_con_data = (struct md_HTTP_connection_data*)coninfo_cls;
-   struct gateway_connection_data *con_data = (struct gateway_connection_data*)md_con_data->cls;
-
-   if( md_con_data->status < -1 ) {
-      return MHD_NO;
-   }
-
-   md_con_data->status = 200;
-
-   dbprintf( "[%p] got data for '%s'\n", con_data, key );
-
-   if( strcmp( key, "metadata" ) == 0 ) {
-      if( !con_data->has_gateway_md ) {
-         // haven't started getting data yet
-         char* data_dup = CALLOC_LIST( char, size );
-         memcpy( data_dup, data, size );
-         con_data->rb->push_back( buffer_segment_t( data_dup, size ) );
-      }
-      else {
-         // driver in progress--no more metadata allowed
-         errorf("%s", " cannot accept metadata now\n");
-         md_con_data->status = -400;
-         return MHD_NO;
-      }
-   }
-   else if( strcmp( key, "data" ) == 0 ) {
-      // this is file block data
-      if( size > 0 ) {
-
-         dbprintf( "[%p] data; size = %zu, off = %" PRIu64 "\n", con_data, size, off );
-
-         if( !con_data->has_gateway_md ) {
-            // attempt to parse our metadata before doing anything with it
-            char* buf = response_buffer_to_string( con_data->rb );
-            size_t buf_len = response_buffer_size( con_data->rb );
-
-            bool parse_rc = con_data->ctx.block_info->ParseFromString( string(buf, buf_len) );
-            free( buf );
-
-            if( !parse_rc ) {
-               // failed to parse
-               errorf("%s", "failed to parse metadata\n");
-               md_con_data->status = -400;
-               con_data->err = -EINVAL;
-               return MHD_NO;
-            }
-            else {
-               // got data that was useful!
-               con_data->has_gateway_md = true;
-            }
-         }
-
-         if( con_data->has_gateway_md && con_data->err == 0 && md_con_data->status == 200 ) {
-            // feed the data to the callback
-            if( put_callback ) {
-               ssize_t num_put = (*put_callback)( &con_data->ctx, data, size, con_data->user_cls );
-               if( num_put != (signed)size ) {
-                  errorf( "user PUT returned %zd\n", num_put );
-
-                  md_con_data->status = -abs( get_http_status( &con_data->ctx, 500 ) );
-                  con_data->err = num_put;
-                  return MHD_NO;
-               }
-            }
-            else {
-               con_data->err = -ENOSYS;
-               md_con_data->status = -501;
-               return MHD_NO;
-            }
-         }
-      }
-   }
-   else {
-      errorf( "unknown field '%s'\n", key );
-      md_con_data->status = -400;
-      return MHD_NO;
-   }
-
-   return MHD_YES;
-}
-
-// finish posting
-static void gateway_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
-   struct gateway_connection_data* rpc = (struct gateway_connection_data*)md_con_data->cls;
-
-   md_con_data->resp = CALLOC_LIST( struct md_HTTP_response, 1 );
-
-   if( md_con_data->status < -1 || rpc->err != 0 ) {
-      // problem
-      char buf[15];
-      sprintf(buf, "%d", rpc->err );
-      md_create_HTTP_response_ram( md_con_data->resp, "text/plain", abs(md_con_data->status), buf, strlen(buf) + 1 );
-   }
-   else {
-      // we're good
-      md_create_HTTP_response_ram_static( md_con_data->resp, "text/plain", 200, MD_HTTP_200_MSG, strlen(MD_HTTP_200_MSG) + 1 );
-   }
-   md_HTTP_add_header( md_con_data->resp, "Connection", "keep-alive" );
-   return;
-}
-
 
 // MHD callback for streaming data from the gateway server implementation
 static ssize_t gateway_HTTP_read_callback( void* cls, uint64_t pos, char* buf, size_t max ) {
@@ -296,7 +194,6 @@ static ssize_t gateway_HTTP_read_callback( void* cls, uint64_t pos, char* buf, s
 
    ssize_t ret = -1;
    if( get_callback ) {
-      // TODO: encrypt this as we send it back
       ret = (*get_callback)( &rpc->ctx, buf, max, rpc->user_cls );
       if( ret == 0 ) {
          // NOTE: return 0 can indicate to try again!
@@ -461,7 +358,7 @@ static struct md_HTTP_response* gateway_HEAD_handler( struct md_HTTP_connection_
    return resp;
 }
 
-
+/*
 // DELETE handler
 static struct md_HTTP_response* gateway_DELETE_handler( struct md_HTTP_connection_data* md_con_data, int depth ) {
 
@@ -494,33 +391,14 @@ static struct md_HTTP_response* gateway_DELETE_handler( struct md_HTTP_connectio
    md_HTTP_add_header( md_con_data->resp, "Connection", "keep-alive" );
    return resp;
 }
-
+*/
 
 // clean up
 static void gateway_cleanup( struct MHD_Connection *connection, void *user_cls, enum MHD_RequestTerminationCode term) {
 
    struct gateway_connection_data *con_data = (struct gateway_connection_data*)(user_cls);
-   if( con_data == NULL )
-      return;
-
-   // free memory
-   if( con_data->rb ) {
-      response_buffer_free( con_data->rb );
-      delete con_data->rb;
-   }
-
-   if( con_data->ctx.block_info ) {
-      delete con_data->ctx.block_info;
-   }
-
-   if( con_data->ctx.args )
-      free( con_data->ctx.args );
-
-   if( cleanup_callback ) {
-      (*cleanup_callback)( con_data->user_cls );
-   }
    
-   free( con_data );
+   gateway_connection_data_free( con_data );
 }
 
 
@@ -544,15 +422,10 @@ int gateway_verify_manifest( EVP_PKEY* pkey, Serialization::ManifestMsg* mmsg ) 
 // start up server
 static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf, struct ms_client* ms ) {
    
-   //md_path_locks_create( &gateway_md_locks );
-
    md_HTTP_init( http, MHD_USE_SELECT_INTERNALLY | MHD_USE_POLL | MHD_USE_DEBUG, conf, ms );
    md_HTTP_connect( *http, gateway_HTTP_connect );
    md_HTTP_GET( *http, gateway_GET_handler );
    md_HTTP_HEAD( *http, gateway_HEAD_handler );
-   md_HTTP_POST_iterator( *http, gateway_POST_iterator );
-   md_HTTP_POST_finish( *http, gateway_POST_finish );
-   md_HTTP_DELETE( *http, gateway_DELETE_handler );
    md_HTTP_close( *http, gateway_cleanup );
 
    md_signals( 0 );        // no signals

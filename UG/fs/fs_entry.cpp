@@ -23,7 +23,7 @@
 #include "replication.h"
 #include "driver.h"
 
-int _debug_locks = 0;
+int _debug_locks = 1;
 
 int fs_entry_set_config( struct md_syndicate_conf* conf ) {
    _debug_locks = conf->debug_lock;
@@ -654,7 +654,7 @@ int fs_core_unlock( struct fs_core* core ) {
 // run the eval function on cur_ent.
 // prev_ent must be write-locked, in case cur_ent gets deleted.
 // return the eval function's return code.
-// if th eval functio fails, both cur_ent and prev_ent will be unlocked
+// if th eval function fails, both cur_ent and prev_ent will be unlocked
 static int fs_entry_ent_eval( struct fs_entry* prev_ent, struct fs_entry* cur_ent, int (*ent_eval)( struct fs_entry*, void* ), void* cls ) {
    long name_hash = md_hash( cur_ent->name );
    char* name_dup = strdup( cur_ent->name );
@@ -667,6 +667,9 @@ static int fs_entry_ent_eval( struct fs_entry* prev_ent, struct fs_entry* cur_en
       // cur_ent might not even exist anymore....
       if( cur_ent->ftype != FTYPE_DEAD ) {
          fs_entry_unlock( cur_ent );
+         if( prev_ent != cur_ent ) {
+            fs_entry_unlock( prev_ent );
+         }
       }
       else {
          free( cur_ent );
@@ -731,7 +734,7 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
    struct fs_entry* cur_ent = core->root;
    struct fs_entry* prev_ent = NULL;
 
-   // run our evaluator on the root entry
+   // run our evaluator on the root entry (which is already locked)
    if( ent_eval ) {
       int eval_rc = fs_entry_ent_eval( prev_ent, cur_ent, ent_eval, cls );
       if( eval_rc != 0 ) {
@@ -795,15 +798,6 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
             name = strtok_r( NULL, "/", &tmp );
          }
          
-         /*
-         // attempt to lock.  If this is the last step of the path,
-         // then write-lock it if needed
-         if( name == NULL && writelock )
-            fs_entry_wlock( cur_ent );
-         else
-            fs_entry_rlock( cur_ent );
-         */
-         
          fs_entry_wlock( cur_ent );
          
          // before unlocking the previous ent, run our evaluator (if we have one)
@@ -814,6 +808,14 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
                free( fpath );
                return NULL;
             }
+         }
+         
+         
+         // If this is the last step of the path,
+         // downgrade to a read lock if requested
+         if( name == NULL && !writelock ) {
+            fs_entry_unlock( cur_ent );
+            fs_entry_rlock( cur_ent );
          }
          
          fs_entry_unlock( prev_ent );

@@ -932,7 +932,7 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
 # NOTE: encryption_password and host_gateway_key are NOT passed to the MS.  These are interpreted by syntool.
 def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, encryption_password=None, gateway_public_key="MAKE_AND_HOST_GATEWAY_KEY", host_gateway_key=None, **attrs ):
    """
-   Create a Gateway.  It will be owned by the calling user, or, if the caller user is an admin, a user identified by the given email address.
+   Create a Gateway.  It will be owned by the given user (which must be the same as the calling user, if the calling user is not admin).
    
    Positional arguments:
       volume_name_or_id (str or int):

@@ -1328,46 +1328,6 @@ ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char cons
       }
    }
    
-   /*
-   if( nr != (signed)block_len ) {
-      // got back an error code.  Attempt to parse it
-      
-      int err = md_HTTP_status_code_to_error_code( status_code );
-      
-      if( err == status_code ) {
-         if( block_buf != NULL ) {
-            // try to parse the error 
-            char errorbuf[50];
-            memcpy( errorbuf, block_buf, MIN( 49, nr ) );
-            
-            char* tmp = NULL;
-            long error = strtol( block_buf, &tmp, 10 );
-            if( tmp == block_buf ) {
-               // failed to parse
-               errorf("%s", "Incomprehensible error code\n");
-               nr = -EREMOTEIO;
-            }
-            else {
-               errorf("block error %ld\n", error );
-               nr = -abs(error);
-            }
-         }
-         else {
-            // no data given
-            nr = -EREMOTEIO;
-         }
-      }
-      else if( err == 0 ) {
-         // not strictly an error, but an EOF
-         nr = 0;
-      }
-      
-      free( block_buf );
-      *block_bits = NULL;
-      return nr;
-   }
-   */
-   
    // got back data!
    *block_bits = block_buf;
    

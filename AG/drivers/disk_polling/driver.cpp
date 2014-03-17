@@ -91,7 +91,7 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
       delete mmsg;
       return -EINVAL;
    }
-
+   
    ctx->blocking_factor = blocking_factor;
    ctx->data_len = mmsg_str.size();
    ctx->data = CALLOC_LIST( char, mmsg_str.size() );
@@ -109,11 +109,13 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
    errorf("%s", "INFO: get_dataset\n"); 
    ssize_t ret = 0;
    struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
-
-   if (ctx == NULL && dat->size == 0)
-       return 0;
-   else
-       return -EINVAL;
+   
+   if (ctx == NULL || dat->size == 0) {
+      dbprintf("ctx = %p, dat->size = %zu\n", ctx, dat->size );
+      return -1;
+   }
+   
+   dbprintf("request type %d\n", ctx->request_type );
 
    if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
       // read from disk
@@ -139,14 +141,21 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
    }
    else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
       // read from RAM
-      memcpy( buf, ctx->data + ctx->data_offset, MIN( len, ctx->data_len - ctx->data_offset ) );
-      ctx->data_offset += len;
-      ret = (ssize_t)len;
+      size_t copy_len = MIN( len, ctx->data_len - ctx->data_offset );
+      
+      dbprintf("memcpy from +%ld %zu bytes\n", ctx->data_offset, copy_len );
+      memcpy( buf, ctx->data + ctx->data_offset, copy_len );
+      ctx->data_offset += copy_len;
+      ret = (ssize_t)copy_len;
    }
    else {
       // invalid structure
       ret = -EINVAL;
    }
+   
+   // ret can't be 0
+   if( ret == 0 )
+      ret = -1;
    
    return ret;
 }
@@ -157,12 +166,15 @@ extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_req
    errorf("%s","INFO: metadata_dataset\n"); 
    
    cout << "metadata_dataset : " << dat->reqdat.fs_path << endl;
-   struct md_entry* ent = DATA[dat->reqdat.fs_path];
-   if(ent == NULL) {
+   
+   content_map::iterator itr = DATA.find( string(dat->reqdat.fs_path) );
+   if( itr == DATA.end() ) {
       errorf("Cannot find entry : %s\n", dat->reqdat.fs_path);
       // not here
       return -ENOENT;
    }
+   
+   struct md_entry* ent = itr->second;
    
    // give back the file_id and last-mod, since that's all the disk has for now.
    // TODO: give back the block hash, maybe? 
@@ -186,15 +198,17 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
 
    // is there metadata for this file?
    cout << "connect_dataset : " << replica_ctx->reqdat.fs_path << endl;
-   struct md_entry* ent = DATA[replica_ctx->reqdat.fs_path];
-   cout << "search DATA map(" << DATA.size() << ")" << endl;
-   if(ent == NULL) {
-      // no entry; nothing to do
+   
+   content_map::iterator itr = DATA.find( string(replica_ctx->reqdat.fs_path) );
+   if( itr == DATA.end() ) {
+       // no entry; nothing to do
        replica_ctx->err = -404;
        replica_ctx->http_status = 404;
        errorf("Cannot find entry : %s\n", replica_ctx->reqdat.fs_path);
        return NULL;
    }
+   
+   struct md_entry* ent = itr->second;
 
    // is this a request for a manifest?
    if( replica_ctx->reqdat.manifest_timestamp.tv_sec > 0 ) {
@@ -223,6 +237,8 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
       ctx->num_read = 0;
       //ctx->blocking_factor = global_conf->ag_block_size;
       replica_ctx->size = ctx->data_len;
+      
+      dbprintf("manifest size: %zu, blocksize: %zu\n", replica_ctx->size, global_conf->ag_block_size );
    }
    else {
       if ( !datapath) {
@@ -381,15 +397,19 @@ static int publish(const char *fpath, const struct stat *sb,
     	parent_id = 0;    
     } else {
         char* parent_full_path = md_dirname( path, NULL );
-        struct md_entry* ment_parent = DATA[parent_full_path];
+        
+        content_map::iterator itr = DATA.find( string(parent_full_path) );
         free(parent_full_path);
-        if(ment_parent == NULL) {
+        
+        if( itr == DATA.end() ) {
             errorf("cannot find parent entry : %s\n", ment->parent_name);
             pfunc_exit_code = -EINVAL;
 	    return -EINVAL;
-        } else {
-            cout << "found parent entry : " << ment->parent_name << " -> " << ment_parent->name << endl;
-        }    
+        }
+        
+        
+        struct md_entry* ment_parent = itr->second;
+        cout << "found parent entry : " << ment->parent_name << " -> " << ment_parent->name << endl;
         
         parent_id = ment_parent->file_id;
     }
@@ -479,7 +499,8 @@ static int publish(const char *fpath, const struct stat *sb,
 	default:
 	    break;
     }
-    DATA[path] = ment;
+    dbprintf("DATA[ '%s' ] = %p\n", path, ment);
+    DATA[ string(path) ] = ment;
     //delete ment;
     pfunc_exit_code = 0;
     return 0;  

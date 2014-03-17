@@ -100,7 +100,8 @@ static int driver_load( struct fs_core* core, struct storage_driver* driver, cha
    struct driver_symtable_entry driver_symtable[] = {
       {"init",                  (void*)(driver->init)                   },
       {"shutdown",              (void*)(driver->shutdown)               },
-      {"connect_cache",         (void*)(driver->connect_cache)          },
+      {"connect_cache_manifest",(void*)(driver->connect_cache_manifest) },
+      {"connect_cache_block",   (void*)(driver->connect_cache_block)    },
       {"write_preup",           (void*)(driver->write_preup)            },
       {"read_postdown",         (void*)(driver->read_postdown)          },
       {"chcoord_begin",         (void*)(driver->chcoord_begin)          },
@@ -217,7 +218,8 @@ int driver_reload( struct fs_core* core, struct storage_driver* driver ) {
          // copy over the new callbacks
          driver->init = new_driver.init;
          driver->shutdown = new_driver.shutdown;
-         driver->connect_cache = new_driver.connect_cache;
+         driver->connect_cache_manifest = new_driver.connect_cache_manifest;
+         driver->connect_cache_block = new_driver.connect_cache_block;
          driver->write_preup = new_driver.write_preup;
          driver->read_postdown = new_driver.read_postdown;
          driver->chcoord_begin = new_driver.chcoord_begin;
@@ -237,7 +239,8 @@ int driver_reload( struct fs_core* core, struct storage_driver* driver ) {
       // no driver found on reload.
       driver->init = NULL;
       driver->shutdown = NULL;
-      driver->connect_cache = NULL;
+      driver->connect_cache_block = NULL;
+      driver->connect_cache_manifest = NULL;
       driver->write_preup = NULL;
       driver->read_postdown = NULL;
       driver->chcoord_begin = NULL;
@@ -292,14 +295,29 @@ int driver_shutdown( struct fs_core* core, struct storage_driver* driver ) {
    return rc;
 }
 
-// connect to the caches
-char* driver_connect_cache( struct fs_core* core, struct storage_driver* driver, struct fs_entry* fent, char const* fs_path, uint64_t block_id, uint64_t block_version ) {
+// connect to the cache to fetch a manifest 
+char* driver_connect_cache_manifest( struct fs_core* core, struct storage_driver* driver, CURL* curl, struct fs_entry* fent, char const* fs_path, int64_t mtime_sec, int32_t mtime_nsec ) {
    pthread_rwlock_rdlock( &driver->reload_lock );
    
    char* ret = NULL;
    
-   if( driver->connect_cache ) {
-      ret = (*driver->connect_cache)( core, driver->cls, fent, fs_path, block_id, block_version );
+   if( driver->connect_cache_manifest ) {
+      ret = (*driver->connect_cache_manifest)( core, driver->cls, curl, fent, fs_path, mtime_sec, mtime_nsec );
+   }
+   
+   pthread_rwlock_unlock( &driver->reload_lock );
+   return ret;
+}
+
+
+// connect to the cache to fetch a block 
+char* driver_connect_cache_block( struct fs_core* core, struct storage_driver* driver, CURL* curl, struct fs_entry* fent, char const* fs_path, uint64_t block_id, int64_t block_version ) {
+   pthread_rwlock_rdlock( &driver->reload_lock );
+   
+   char* ret = NULL;
+   
+   if( driver->connect_cache_block ) {
+      ret = (*driver->connect_cache_block)( core, driver->cls, curl, fent, fs_path, block_id, block_version );
    }
    
    pthread_rwlock_unlock( &driver->reload_lock );

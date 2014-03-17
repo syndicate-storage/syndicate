@@ -114,6 +114,8 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce ):
          storagetypes.memcache.set_multi( cacheable )
 
    if file_data != None:
+      logging.info("%s has type %s" % (file_data.name, file_data.ftype))
+      
       # do we need to actually send this?
       if file_data.version == file_version and file_data.write_nonce == write_nonce:
          need_refresh = False
@@ -125,6 +127,8 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce ):
             else:
                all_ents = [file_data]
          
+            logging.info("listing of %s: %s" % (file_data.file_id, listing))
+            
          else:
             all_ents = [file_data]
 

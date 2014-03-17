@@ -230,6 +230,42 @@ int md_response_buffer_upload_iterator(void *coninfo_cls, enum MHD_ValueKind kin
    return MHD_YES;
 }
 
+// convert a sockaddr to a string containing the hostname:port
+static int md_sockaddr_to_string( struct sockaddr* addr, char** buf ) {
+   socklen_t addr_len = 0;
+   switch( addr->sa_family ) {
+      case AF_INET:
+         addr_len = sizeof(struct sockaddr_in);
+         break;
+         
+      case AF_INET6:
+         addr_len = sizeof(struct sockaddr_in6);
+         break;
+      
+      default:
+         errorf("Address is not IPv4 or IPv6 (%d)\n", addr->sa_family);
+         return -EINVAL;
+   }
+   
+   *buf = CALLOC_LIST( char, HOST_NAME_MAX + 10 );
+   char portbuf[10];
+   
+   // prefix with :
+   portbuf[0] = ':';
+   
+   // write hostname to buf,and portnum to portbuf + 1 (i.e. preserve the colon)
+   int rc = getnameinfo( addr, addr_len, *buf, HOST_NAME_MAX + 1, portbuf + 1, 10, NI_NUMERICSERV );
+   if( rc != 0 ) {
+      errorf("getnameinfo rc = %d (%s)\n", rc, gai_strerror(rc) );
+      rc = -ENODATA;
+   }
+   
+   // append port
+   strcat( *buf, portbuf );
+   
+   return rc;
+}
+
 
 
 // HTTP connection handler
@@ -329,6 +365,35 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
          return md_HTTP_send_response( connection, resp );
       }
       
+      // get remote host 
+      const union MHD_ConnectionInfo* con_info = MHD_get_connection_info( connection, MHD_CONNECTION_INFO_CLIENT_ADDRESS );
+      if( con_info == NULL ) {
+         // internal error
+         struct md_HTTP_response* resp = CALLOC_LIST(struct md_HTTP_response, 1);
+         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
+         free( con_data );
+         
+         errorf("No connection info from daemon on '%s'\n", method);
+         
+         return md_HTTP_send_response( connection, resp );
+      }
+      
+      struct sockaddr* client_addr = con_info->client_addr;
+      char* remote_host = NULL;
+      
+      int rc = md_sockaddr_to_string( client_addr, &remote_host );
+      if( rc != 0 ) {
+         
+         struct md_HTTP_response* resp = CALLOC_LIST(struct md_HTTP_response, 1);
+         md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
+         free( con_data );
+         
+         errorf("md_sockaddr_to_string rc = %d\n", rc );
+         
+         return md_HTTP_send_response( connection, resp );
+      }
+         
+      
       // build up con_data from what we know
       con_data->conf = http_ctx->conf;
       con_data->http = http_ctx;
@@ -336,7 +401,7 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       con_data->version = strdup(version);
       con_data->query_string = (char*)index( con_data->url_path, '?' );
       con_data->rb = new response_buffer_t();
-      con_data->remote_host = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_HOST );
+      con_data->remote_host = remote_host;
       con_data->method = method;
       con_data->mode = mode;
       con_data->cls = NULL;
@@ -371,6 +436,8 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
 
       dbprintf("%s %s, query=%s, requester=%s\n", method, con_data->url_path, con_data->query_string, con_data->remote_host );
       
+      *con_cls = con_data;
+      
       // perform connection setup
       if( http_ctx->HTTP_connect != NULL ) {
          con_data->cls = (*http_ctx->HTTP_connect)( con_data );
@@ -378,12 +445,15 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
          if( con_data->status >= 300 ) {
             // not going to serve data
             errorf("connect status = %d\n", con_data->status );
+            
+            if( con_data->resp == NULL ) {
+               md_create_HTTP_response_ram_static( con_data->resp, "text/plain", con_data->status, "connection error", strlen("connection error") + 1 );
+            }
+            
             return md_HTTP_send_response( connection, con_data->resp );
          }
       }
 
-      *con_cls = con_data;
-      
       return MHD_YES;
    }
 
@@ -511,6 +581,10 @@ void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data ) {
    if( con_data->query_string ) {
       free( con_data->query_string );
       con_data->query_string = NULL;
+   }
+   if( con_data->remote_host ) {
+      free( con_data->remote_host );
+      con_data->remote_host = NULL;
    }
    if( con_data->version ) {
       free( con_data->version );
