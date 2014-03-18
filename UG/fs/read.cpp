@@ -147,7 +147,7 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
    // local?
    int block_fd = fs_entry_cache_open_block( core, core->cache, fent->file_id, fent->version, block_id, block_version, O_RDONLY );
 
-   dbprintf("fs_entry_read_block block_fd : file_id = %ld, version = %ld, block_id = %ld, block_fd\n", fent->file_id, fent->version, block_id, block_fd);
+   dbprintf("fs_entry_read_block block_fd : file_id = %ld, version = %ld, block_id = %ld, block_fd = %d\n", fent->file_id, fent->version, block_id, block_fd);
 
    if( block_fd < 0 ) {
       if( block_fd != -ENOENT ) {
@@ -257,7 +257,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
    
    BEGIN_TIMING_DATA( read_ts );
    
-   ssize_t total_read = 0;
+   off_t total_read = 0;
 
    // if we're reading from an AG, then the blocksize is different...
    size_t block_len = 0;
@@ -266,7 +266,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
    else
       block_len = core->blocking_factor;
    
-   ssize_t block_offset = offset % block_len;
+   off_t block_offset = offset % block_len;
    ssize_t ret = 0;
    
 
@@ -278,7 +278,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
    while( (size_t)total_read < count && ret >= 0 && !done ) {
       // read the next block
       fs_entry_rlock( fh->fent );
-      bool eof = ((size_t)(offset + total_read) >= fh->fent->size && !IS_STREAM_FILE( *(fh->fent) ));
+      bool eof = (offset + total_read >= fh->fent->size && !IS_STREAM_FILE( *(fh->fent) ));
 
       if( eof ) {
          dbprintf("EOF after reading %zd bytes\n", total_read);
@@ -294,10 +294,10 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
       dbprintf("fs_entry_read : block_id = %ld, block_read_size = %ld\n", block_id, tmp);
  
       if( tmp > 0 ) {
-         size_t read_if_not_eof = (size_t)MIN( (size_t)(tmp - block_offset), count - total_read );
-         size_t read_if_eof = file_size - (total_read + offset);
+         off_t read_if_not_eof = (off_t)MIN( (off_t)(tmp - block_offset), (off_t)count - total_read );
+         off_t read_if_eof = file_size - (total_read + offset);
          
-         ssize_t total_copy = IS_STREAM_FILE( *(fh->fent) ) ? read_if_not_eof : MIN( read_if_eof, read_if_not_eof );
+         off_t total_copy = IS_STREAM_FILE( *(fh->fent) ) ? read_if_not_eof : MIN( read_if_eof, read_if_not_eof );
          
          if( total_copy == 0 ) {
             // EOF
@@ -306,7 +306,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
          }
          
          else {
-            dbprintf("file_size = %ld, total_read = %zd, tmp = %zd, block_offset = %jd, count = %zu, total_copy = %zd\n", (long)file_size, total_read, tmp, (intmax_t)block_offset, count, total_copy);
+            dbprintf("file_size = %ld, total_read = %ld, tmp = %zd, block_offset = %ld, count = %zu, total_copy = %ld\n", (long)file_size, (long)total_read, tmp, (long)block_offset, count, (long)total_copy);
             
             memcpy( buf + total_read, block + block_offset, total_copy );
 

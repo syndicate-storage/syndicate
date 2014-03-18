@@ -713,7 +713,6 @@ void cache_aio_write_completion( sigval_t sigval ) {
    
    struct syndicate_cache* cache = wargs->cache;
    struct cache_block_future* future = wargs->future;
-   struct fs_core* core = wargs->core;
    
    // successful completion?
    int write_rc = 0;
