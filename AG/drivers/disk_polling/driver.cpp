@@ -46,39 +46,14 @@ char* data_root = NULL;
 pthread_t timeout_pulse_gen_tid;
 
 // generate a manifest for an existing file, putting it into the gateway context
-extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
-   errorf("%s", "INFO: gateway_generate_manifest\n"); 
-   // populate a manifest
-   Serialization::ManifestMsg* mmsg = new Serialization::ManifestMsg();
-   mmsg->set_volume_id( ent->volume );
-   mmsg->set_coordinator_id( ent->coordinator );
-   mmsg->set_owner_id( ent->owner );
-   mmsg->set_file_id( ent->file_id );
-   mmsg->set_size( ent->size );
-   mmsg->set_file_version( 1 );
-   mmsg->set_mtime_sec( ent->mtime_sec );
-   mmsg->set_mtime_nsec( 0 );
-
-   //uint64_t blocking_factor = ms_client_get_AG_blocksize( mc, mc->gateway_id );
-   uint64_t blocking_factor = global_conf->ag_block_size;
-   uint64_t num_blocks = ent->size / blocking_factor;
-   if( ent->size % blocking_factor != 0 )
-      num_blocks++;
-
-   Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
-   bbmsg->set_start_id( 0 );
-   bbmsg->set_end_id( num_blocks );
-   bbmsg->set_gateway_id( ent->coordinator );
-
-   for( uint64_t i = 0; i < num_blocks; i++ ) {
-      bbmsg->add_block_versions( 0 );
-   }
+extern "C" int generate_manifest( struct gateway_context* ag_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
+   errorf("%s", "INFO: generate_manifest\n"); 
    
-   // sign the message
-   int rc = gateway_sign_manifest( mc->my_key, mmsg );
+   // populate and sign a manifest
+   Serialization::ManifestMsg* mmsg = new Serialization::ManifestMsg();
+   int rc = gateway_manifest( ent, mmsg );
    if( rc != 0 ) {
-      errorf("gateway_sign_manifest rc = %d\n", rc );
-      delete mmsg;
+      errorf("gateway_manifest rc = %d\n", rc );
       return rc;
    }
    
@@ -92,12 +67,13 @@ extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, s
       return -EINVAL;
    }
 
-   ctx->blocking_factor = blocking_factor;
+   ctx->blocking_factor = global_conf->ag_block_size;
    ctx->data_len = mmsg_str.size();
    ctx->data = CALLOC_LIST( char, mmsg_str.size() );
-   replica_ctx->last_mod = ent->mtime_sec;
    memcpy( ctx->data, mmsg_str.data(), mmsg_str.size() );
-
+   
+   ag_ctx->last_mod = ent->mtime_sec;
+   
    delete mmsg;
    
    return 0;
@@ -163,71 +139,42 @@ extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t l
    return ret;
 }
 
-
-// get metadata for a dataset
-extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_request_info* info, void* usercls ) {
-   errorf("%s","INFO: metadata_dataset\n"); 
-   
-   cout << "metadata_dataset : " << dat->reqdat.fs_path << endl;
-   
-   content_map::iterator itr = DATA.find( string(dat->reqdat.fs_path) );
-   if( itr == DATA.end() ) {
-      errorf("Cannot find entry : %s\n", dat->reqdat.fs_path);
-      // not here
-      return -ENOENT;
-   }
-   
-   struct md_entry* ent = itr->second;
-   
-   // give back the file_id and last-mod, since that's all the disk has for now.
-   // TODO: give back the block hash, maybe? 
-   
-
-   
-   info->set_file_id( ent->file_id );
-   info->set_file_mtime_sec( ent->mtime_sec );
-   info->set_file_mtime_nsec( ent->mtime_nsec );
-   
-   return 0;
-}
-
-
 // interpret an inbound GET request
-extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
+extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
 
    errorf("%s", "INFO: connect_dataset\n");  
    struct stat stat_buff;
    struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
 
    // is there metadata for this file?
-   cout << "connect_dataset : " << replica_ctx->reqdat.fs_path << endl;
+   cout << "connect_dataset : " << ag_ctx->reqdat.fs_path << endl;
    
-   content_map::iterator itr = DATA.find( string(replica_ctx->reqdat.fs_path) );
+   content_map::iterator itr = DATA.find( string(ag_ctx->reqdat.fs_path) );
    if( itr == DATA.end() ) {
        // no entry; nothing to do
-       replica_ctx->err = -404;
-       replica_ctx->http_status = 404;
-       errorf("Cannot find entry : %s\n", replica_ctx->reqdat.fs_path);
+       ag_ctx->err = -404;
+       ag_ctx->http_status = 404;
+       errorf("Cannot find entry : %s\n", ag_ctx->reqdat.fs_path);
        return NULL;
    }
    
    struct md_entry* ent = itr->second;
 
    // is this a request for a manifest?
-   if( replica_ctx->reqdat.manifest_timestamp.tv_sec > 0 ) {
+   if( AG_IS_MANIFEST_REQUEST( *ag_ctx ) ) {
       // request for a manifest
-      int rc = gateway_generate_manifest( replica_ctx, ctx, ent );
+      int rc = generate_manifest( ag_ctx, ctx, ent );
       if( rc != 0 ) {
          // failed
-         errorf( "gateway_generate_manifest rc = %d\n", rc );
+         errorf( "generate_manifest rc = %d\n", rc );
 
          // meaningful error code
          if( rc == -ENOENT )
-            replica_ctx->err = -404;
+            ag_ctx->err = -404;
          else if( rc == -EACCES )
-            replica_ctx->err = -403;
+            ag_ctx->err = -403;
          else
-            replica_ctx->err = -500;
+            ag_ctx->err = -500;
 
          free( ctx );
 
@@ -238,10 +185,9 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
       ctx->data_offset = 0;
       ctx->block_id = 0;
       ctx->num_read = 0;
-      //ctx->blocking_factor = global_conf->ag_block_size;
-      replica_ctx->size = ctx->data_len;
+      ag_ctx->size = ctx->data_len;
       
-      dbprintf("manifest size: %zu, blocksize: %zu\n", replica_ctx->size, global_conf->ag_block_size );
+      dbprintf("manifest size: %zu, blocksize: %zu\n", ag_ctx->size, global_conf->ag_block_size );
    }
    else {
       if ( !datapath) {
@@ -251,56 +197,56 @@ extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
       int rc = 0;
       
       // request for local file
-      char* fp = md_fullpath( datapath, replica_ctx->reqdat.fs_path, NULL );
+      char* fp = md_fullpath( datapath, ag_ctx->reqdat.fs_path, NULL );
       ctx->fd = open( fp, O_RDONLY );
       if( ctx->fd < 0 ) {
          rc = -errno;
          errorf( "open(%s) errno = %d\n", fp, rc );
          free( fp );
          free( ctx );
-	 replica_ctx->err = -404;
-	 replica_ctx->http_status = 404;
+	 ag_ctx->err = -404;
+	 ag_ctx->http_status = 404;
          return NULL;
       }
       else {
-	 // Set blocking factor for this volume from replica_ctx
+	 // Set blocking factor for this volume from ag_ctx
 	 ctx->blocking_factor = global_conf->ag_block_size;
 	  if ((rc = stat(fp, &stat_buff)) < 0) {
 	      errorf( "stat errno = %d\n", rc );
 	      perror("stat");
 	      free( fp );
 	      free( ctx );
-	      replica_ctx->err = -404;
-	      replica_ctx->http_status = 404;
+	      ag_ctx->err = -404;
+	      ag_ctx->http_status = 404;
 	      return NULL;
 	 }
          free( fp );
-	 if ((size_t)stat_buff.st_size < ctx->blocking_factor * replica_ctx->reqdat.block_id) {
+	 if ((size_t)stat_buff.st_size < ctx->blocking_factor * ag_ctx->reqdat.block_id) {
 	     free( ctx );
-	     replica_ctx->size = 0;
+	     ag_ctx->size = 0;
 	     return NULL;
 	 }
-	 else if ((stat_buff.st_size - (ctx->blocking_factor * replica_ctx->reqdat.block_id))
+	 else if ((stat_buff.st_size - (ctx->blocking_factor * ag_ctx->reqdat.block_id))
 		 <= (size_t)ctx->blocking_factor) {
-	     replica_ctx->size = stat_buff.st_size - (ctx->blocking_factor * replica_ctx->reqdat.block_id);
+	     ag_ctx->size = stat_buff.st_size - (ctx->blocking_factor * ag_ctx->reqdat.block_id);
 	 }
 	 else {
-	     replica_ctx->size = ctx->blocking_factor;
+	     ag_ctx->size = ctx->blocking_factor;
 	 }
          // set up for reading
-         off_t offset = ctx->blocking_factor * replica_ctx->reqdat.block_id;
+         off_t offset = ctx->blocking_factor * ag_ctx->reqdat.block_id;
          rc = lseek( ctx->fd, offset, SEEK_SET );
 	 if( rc < 0 ) {
             rc = -errno;
             errorf( "lseek errno = %d\n", rc );
             free( ctx );
-	    replica_ctx->err = -404;
-	    replica_ctx->http_status = 404;
+	    ag_ctx->err = -404;
+	    ag_ctx->http_status = 404;
             return NULL;
          }
       }
       ctx->num_read = 0;
-      ctx->block_id = replica_ctx->reqdat.block_id;
+      ctx->block_id = ag_ctx->reqdat.block_id;
       ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
       ctx->blocking_factor = global_conf->ag_block_size;
    }

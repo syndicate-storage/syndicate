@@ -2390,11 +2390,3 @@ int md_check_conf( struct md_syndicate_conf* conf ) {
 
    return rc;
 }
-
-// free a gateway_request_data
-void md_gateway_request_data_free( struct md_gateway_request_data* reqdat ) {
-   if( reqdat->fs_path ) {
-      free( reqdat->fs_path );
-   }
-   memset( reqdat, 0, sizeof(struct md_gateway_request_data) );
-}

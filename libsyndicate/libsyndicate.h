@@ -145,16 +145,6 @@ struct md_upload_buf {
 };
 
 
-// gateway request structure
-struct md_gateway_request_data {
-   uint64_t volume_id;
-   char* fs_path;
-   int64_t file_version;
-   uint64_t block_id;
-   int64_t block_version;
-   struct timespec manifest_timestamp;
-};
-
 // merge command-line options with the config....
 #define MD_SYNDICATE_CONF_OPT( conf, optname, value ) \
    do { \
@@ -416,8 +406,6 @@ char* response_buffer_to_string( response_buffer_t* rb );
 size_t response_buffer_size( response_buffer_t* rb );
 void response_buffer_free( response_buffer_t* rb );
 
-// request data
-void md_gateway_request_data_free( struct md_gateway_request_data* reqdat );
 
 // top-level initialization
 int md_init( struct md_syndicate_conf* conf,

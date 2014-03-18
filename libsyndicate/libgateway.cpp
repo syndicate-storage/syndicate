@@ -123,6 +123,43 @@ static void gateway_connection_data_free( struct gateway_connection_data* con_da
    free( con_data );
 }
 
+
+// generate a signed manifest from an md_entry
+int gateway_manifest( struct md_entry* ent, Serialization::ManifestMsg* mmsg ) {
+   // populate the manifest
+   mmsg->set_volume_id( ent->volume );
+   mmsg->set_coordinator_id( global_ms->gateway_id );        // we're always the coordinator
+   mmsg->set_owner_id( ent->owner );
+   mmsg->set_file_id( ent->file_id );
+   mmsg->set_size( ent->size );
+   mmsg->set_file_version( ent->version );
+   mmsg->set_mtime_sec( ent->mtime_sec );
+   mmsg->set_mtime_nsec( ent->mtime_nsec );
+
+   uint64_t blocking_factor = global_conf->ag_block_size;
+   uint64_t num_blocks = ent->size / blocking_factor;
+   if( ent->size % blocking_factor != 0 )
+      num_blocks++;
+
+   Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
+   bbmsg->set_start_id( 0 );
+   bbmsg->set_end_id( num_blocks );
+   bbmsg->set_gateway_id( global_ms->gateway_id );   // we're always the coordinator
+
+   for( uint64_t i = 0; i < num_blocks; i++ ) {
+      bbmsg->add_block_versions( 1 );
+   }
+   
+   // sign the message
+   int rc = gateway_sign_manifest( global_ms->my_key, mmsg );
+   if( rc != 0 ) {
+      errorf("gateway_sign_manifest rc = %d\n", rc );
+      return rc;
+   }
+   
+   return 0;
+}
+
 static char const* CONNECT_ERROR = "CONNECT ERROR";
 
 // connection handler
@@ -296,103 +333,6 @@ static int gateway_default_blockinfo( char const* url_path, struct gateway_conne
    return 0;
 }
 
-
-// gateway HEAD handler
-static struct md_HTTP_response* gateway_HEAD_handler( struct md_HTTP_connection_data* md_con_data ) {
-   
-   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
-
-   struct gateway_connection_data* rpc = (struct gateway_connection_data*)md_con_data->cls;
-
-   if( rpc == NULL ) {
-      md_create_HTTP_response_ram_static( resp, "text/plain", md_con_data->status, GATEWAY_GET_INVALID, strlen(GATEWAY_GET_INVALID) + 1);
-      return resp;
-   }
-   
-   // do we have metadata for this?
-   int rc = 0;
-   ms::ms_gateway_request_info info;
-   
-   if( metadata_callback == NULL ) {
-      md_create_HTTP_response_ram_static( resp, "text/plain", 501, MD_HTTP_501_MSG, strlen(MD_HTTP_501_MSG) + 1 );
-      rc = -501;
-   }
-   else {
-      rc = gateway_default_blockinfo( md_con_data->url_path, rpc, &info );
-      
-      if( rc == 0 ) {   
-         rc = (*metadata_callback)( &rpc->ctx, &info, rpc->user_cls );
-      }
-      
-      if( rc != 0 ) {
-         int http_status = get_http_status( &rpc->ctx, 404 );
-
-         char const* msg = "Unable to read metadata";
-         
-         md_create_HTTP_response_ram_static( resp, "text/plain", http_status, msg, strlen(msg) + 1 );
-      }
-      else {
-         // sign this...
-         rc = gateway_sign_blockinfo( global_ms->my_key, &info );
-         if( rc != 0 ) {
-            md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-         }
-         else {
-            // serialize and return 
-            string info_str;
-            bool src = info.SerializeToString( &info_str );
-            if( !src ) {
-               errorf( "could not serialize metadata for %s\n", md_con_data->url_path );
-               md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
-            }
-            else {
-               int http_status = get_http_status( &rpc->ctx, 200 );
-               md_create_HTTP_response_ram( resp, "text/plain", http_status, info_str.c_str(), info_str.size() );
-               add_last_mod_header( resp );
-            }
-         }
-      }
-   }
-
-   md_HTTP_add_header( md_con_data->resp, "Connection", "keep-alive" );
-   return resp;
-}
-
-/*
-// DELETE handler
-static struct md_HTTP_response* gateway_DELETE_handler( struct md_HTTP_connection_data* md_con_data, int depth ) {
-
-   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
-
-   struct gateway_connection_data* rpc = (struct gateway_connection_data*)md_con_data->cls;
-
-   if( rpc == NULL ) {
-      md_create_HTTP_response_ram_static( resp, "text/plain", md_con_data->status, GATEWAY_GET_INVALID, strlen(GATEWAY_GET_INVALID) + 1);
-      return resp;
-   }
-
-   if( delete_callback ) {
-      // delete our record
-      int rc = (*delete_callback)( &rpc->ctx, rpc->user_cls );
-      if( rc != 0 ) {
-         errorf( "DELETE callback rc = %d\n", rc );
-
-         char buf[15];
-         sprintf(buf, "%d", rc );
-         int http_status = get_http_status( &rpc->ctx, 500 );
-         
-         md_create_HTTP_response_ram( resp, "text/plain", http_status, buf, strlen(buf) + 1 );
-      }
-   }
-   else {
-      md_create_HTTP_response_ram_static( resp, "text/plain", 501, MD_HTTP_501_MSG, strlen(MD_HTTP_501_MSG) + 1 );
-   }
-
-   md_HTTP_add_header( md_con_data->resp, "Connection", "keep-alive" );
-   return resp;
-}
-*/
-
 // clean up
 static void gateway_cleanup( struct MHD_Connection *connection, void *user_cls, enum MHD_RequestTerminationCode term) {
 
@@ -425,7 +365,6 @@ static int gateway_init( struct md_HTTP* http, struct md_syndicate_conf* conf, s
    md_HTTP_init( http, MHD_USE_SELECT_INTERNALLY | MHD_USE_POLL | MHD_USE_DEBUG, conf, ms );
    md_HTTP_connect( *http, gateway_HTTP_connect );
    md_HTTP_GET( *http, gateway_GET_handler );
-   md_HTTP_HEAD( *http, gateway_HEAD_handler );
    md_HTTP_close( *http, gateway_cleanup );
 
    md_signals( 0 );        // no signals
@@ -475,14 +414,9 @@ static void gateway_usage( char* name, struct option* opts, int exitcode ) {
    exit(exitcode);
 }
 
-
-int AG_main( int argc, char** argv ) {
-   return gateway_main( SYNDICATE_AG, argc, argv );
-}
-
 // main method
 // usage: driver SERVER_IP SERVER_PORT
-int gateway_main( int gateway_type, int argc, char** argv ) {
+int AG_main( int argc, char** argv ) {
    curl_global_init(CURL_GLOBAL_ALL);
 
    // start up protocol buffers
@@ -492,11 +426,9 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    char* config_file = NULL;
 
    //Initialize global config struct
-   global_conf = ( struct md_syndicate_conf* )
-		malloc( sizeof ( struct md_syndicate_conf ) );
-                
+   global_conf = CALLOC_LIST( struct md_syndicate_conf, 1 );
    global_ms = CALLOC_LIST( struct ms_client, 1 );
-
+   
    // process command-line options
    bool make_daemon = true;
    char* logfile = NULL;
@@ -643,7 +575,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
        }
 
        // load AG driver
-       if ( controller_conf.ag_driver && gateway_type == SYNDICATE_AG) {
+       if ( controller_conf.ag_driver ) {
 	   if (gw_driver != NULL)
 	       controller_conf.ag_driver = gw_driver;
 	   if (controller_conf.ag_driver == NULL) {
@@ -668,24 +600,19 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
        exit(0);
    }
    
-   // set up Syndicate
-   struct ms_client client;
-   struct md_syndicate_conf conf;
-   
-   
    // load config file
-   md_default_conf( &conf, gateway_type );
+   md_default_conf( global_conf, SYNDICATE_AG );
    
    // read the config file
    if( config_file != NULL ) {
-      rc = md_read_conf( config_file, &conf );
+      rc = md_read_conf( config_file, global_conf );
       if( rc != 0 ) {
          errorf("WARN: failed to read %s, rc = %d\n", config_file, rc );
          return rc;
       }
    }
    
-   rc = md_init( &conf, &client, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, gateway_pkey_decryption_password, tls_pkey_path, tls_cert_path, NULL );
+   rc = md_init( global_conf, global_ms, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, gateway_pkey_decryption_password, tls_pkey_path, tls_cert_path, NULL );
    if( rc != 0 ) {
       exit(1);
    }
@@ -693,33 +620,27 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
    // override ag_driver provided in conf file if driver is 
    // specified as a command line argument.
    if ( gw_driver ) {
-       if (gateway_type == SYNDICATE_AG)
-	   conf.ag_driver = gw_driver;
+       global_conf->ag_driver = gw_driver;
    }
    
    // get the block size from the ms cert
-   conf.ag_block_size = ms_client_get_AG_blocksize( &client, client.gateway_id );
-   dbprintf("blocksize will be %" PRIu64 "\n", conf.ag_block_size );
-   
-   memcpy( global_conf, &conf, sizeof( struct md_syndicate_conf ) );
-   memcpy( global_ms, &client, sizeof( struct ms_client ) );
+   global_conf->ag_block_size = ms_client_get_AG_blocksize( global_ms, global_ms->gateway_id );
+   dbprintf("blocksize will be %" PRIu64 "\n", global_conf->ag_block_size );
    
    // load AG driver
-   if( gateway_type == SYNDICATE_AG ) {
-      if ( conf.ag_driver ) {
-         dbprintf("Load driver %s\n", conf.ag_driver );
-         if ( load_AG_driver( conf.ag_driver ) < 0)
-            exit(1);
-      }
-      else {
-         errorf("%s", "No driver given!  Pass -D\n");
+   if ( global_conf->ag_driver ) {
+      dbprintf("Load driver %s\n", global_conf->ag_driver );
+      if ( load_AG_driver( global_conf->ag_driver ) < 0)
          exit(1);
-      }
    }
-         
+   else {
+      errorf("%s", "No driver given!  Pass -D\n");
+      exit(1);
+   }
+      
    if (pub_mode) {
        if ( publish_callback ) {
-	   if ( ( rc = publish_callback( NULL, &client, dataset ) ) !=0 )
+	   if ( ( rc = publish_callback( NULL, global_ms, dataset ) ) !=0 )
 	       errorf("publish_callback rc = %d\n", rc);
        }
        else {
@@ -727,7 +648,7 @@ int gateway_main( int gateway_type, int argc, char** argv ) {
            exit(1);
        }
    }
-   if ( (rc = start_gateway_service( &conf, &client, logfile, pidfile, make_daemon )) ) {
+   if ( (rc = start_gateway_service( global_conf, global_ms, logfile, pidfile, make_daemon )) ) {
        errorf( "start_gateway_service rc = %d\n", rc);	
    } 
 
@@ -910,11 +831,6 @@ int load_AG_driver( char *lib )
    }
    *(void **) (&cleanup_callback) = dlsym( driver, "cleanup_dataset" );
    if ( cleanup_callback == NULL ) {
-      errorf( "load_AG_gateway_driver = %s\n", dlerror() );
-      return -ENXIO;
-   }
-   *(void **) (&metadata_callback) = dlsym( driver, "metadata_dataset" );
-   if ( metadata_callback == NULL ) {
       errorf( "load_AG_gateway_driver = %s\n", dlerror() );
       return -ENXIO;
    }

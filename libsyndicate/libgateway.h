@@ -32,8 +32,6 @@
 
 #define AG_DEFAULT_BLOCK_SIZE  61440
 
-#define REQUEST_IS_MANIFEST( reqdat ) ((reqdat).manifest_timestamp.tv_sec > 0)
-
 extern struct md_syndicate_conf *global_conf;
 
 struct gateway_context {
@@ -63,18 +61,19 @@ struct gateway_connection_data {
 };
 
 
+#define AG_IS_MANIFEST_REQUEST( agctx ) ((agctx).reqdat.manifest_timestamp.tv_sec > 0)
+#define AG_IS_BLOCK_REQUEST( agctx ) (!AG_IS_MANIFEST_REQUEST(agctx))
+
 BEGIN_EXTERN_C
 
 int AG_main( int argc, char** argv );
-int gateway_main( int gateway_type, int argc, char** argv );
 int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *client, char* logfile, char* pidfile, bool make_daemon );
 
 // NOTE: on GET, the passed method should set the size field in the given gateway_context structure.
 // NOTE: the passed method should return NULL on error, and non-NULL on success
+int gateway_manifest( struct md_entry* ent, Serialization::ManifestMsg* mmsg );
 void gateway_connect_func( void* (*connect_func)( struct gateway_context* ) );
-//void gateway_put_func( ssize_t (*put_func)(struct gateway_context*, char const* data, size_t len, void* usercls) );
 void gateway_get_func( ssize_t (*get_func)(struct gateway_context*, char* buf, size_t len, void* usercls) );
-//void gateway_delete_func( int (*delete_func)(struct gateway_context*, void* usercls) );
 void gateway_cleanup_func( void (*cleanup_func)(void* usercls) );
 void gateway_metadata_func( int (*metadata_func)(struct gateway_context*, ms::ms_gateway_request_info* info, void* usercls) );
 void gateway_publish_func( int (*publish_func)(struct gateway_context*, struct ms_client*, char* dataset ) );

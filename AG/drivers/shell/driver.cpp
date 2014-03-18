@@ -230,7 +230,7 @@ extern "C" void* connect_dataset( struct gateway_context* dataset_ctx ) {
    struct md_entry* ent = itr->second;
 
    // is this a request for a manifest?
-   if( REQUEST_IS_MANIFEST( dataset_ctx->reqdat ) ) {
+   if( AG_IS_MANIFEST_REQUEST( *dataset_ctx ) ) {
        
        // request for a manifest
        int rc = gateway_generate_manifest( dataset_ctx, ctx, ent );

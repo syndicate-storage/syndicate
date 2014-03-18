@@ -132,6 +132,16 @@ struct md_HTTP_connection_data {
    response_buffer_t* rb;     // response buffer for small messages
 };
 
+// gateway request structure
+struct md_gateway_request_data {
+   uint64_t volume_id;
+   char* fs_path;
+   int64_t file_version;
+   uint64_t block_id;
+   int64_t block_version;
+   struct timespec manifest_timestamp;
+};
+
 // HTTP callbacks and control code
 struct md_HTTP {
 
@@ -259,5 +269,6 @@ char const* md_find_HTTP_header( struct md_HTTP_header** headers, char const* he
 int md_HTTP_add_header( struct md_HTTP_response* resp, char const* header, char const* value );
 int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_timestamp );
 void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data );
+void md_gateway_request_data_free( struct md_gateway_request_data* reqdat );
 
 #endif
