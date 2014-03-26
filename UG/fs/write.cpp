@@ -114,7 +114,7 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, cha
       // evict the old block
       rc = fs_entry_cache_evict_block( core, core->cache, fent->file_id, fent->version, block_id, old_block_version );
       if( rc != 0 && rc != -ENOENT ) {
-         errorf("WARN: failed to evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", fent->file_id, fent->version, block_id, old_block_version, rc );
+         errorf("fs_entry_cache_evict_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fent->file_id, fent->version, block_id, old_block_version, rc );
       }
       
       rc = 0;
@@ -456,7 +456,10 @@ int fs_entry_revert_write( struct fs_core* core, struct fs_entry* fent, struct r
    // evict newly-written blocks
    if( new_block_info ) {
       for( modification_map::iterator itr = new_block_info->begin(); itr != new_block_info->end(); itr++ ) {
-         fs_entry_cache_evict_block( core, core->cache, fent->file_id, fent->version, itr->first, itr->second.version );
+         int evict_rc = fs_entry_cache_evict_block( core, core->cache, fent->file_id, fent->version, itr->first, itr->second.version );
+         if( evict_rc != 0 && evict_rc != -ENOENT ) {
+            errorf("fs_entry_cache_evict_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fent->file_id, fent->version, itr->first, itr->second.version, evict_rc );
+         }
       }
    }
    
@@ -819,6 +822,9 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       fs_entry_to_md_entry( core, &data, fent, parent_id, parent_name );
       
       uint64_t max_write_freshness = fent->max_write_freshness;
+      uint64_t file_id = fent->file_id;
+      int64_t file_version = fent->version;
+      
       fs_entry_unlock( fent );
       
       // NOTE: this will send the update immediately if max_write_freshness == 0
@@ -831,30 +837,38 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       md_entry_free( &data );      
       
       END_TIMING_DATA( update_ts, ts2, "MS update" );
-   }
-
-   free( parent_name );
-   
-   // garbage-collect the old manifest
-   if( err == 0 ) {
       
-      BEGIN_TIMING_DATA( garbage_collect_ts );
-      
-      int rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
-      if( rc != 0 ) {
-         errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
-         rc = -EIO;
+      if( err == 0 ) {
+         // metadata update succeeded!
+         // garbage-collect the old manifest
+         
+         BEGIN_TIMING_DATA( garbage_collect_ts );
+         
+         int rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
+         if( rc != 0 ) {
+            errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
+            rc = -EIO;
+         }
+         
+         END_TIMING_DATA( garbage_collect_ts, ts2, "garbage collect manifest" );
+         
+         // evict cached blocks 
+         for( modification_map::iterator itr = old_block_info.begin(); itr != old_block_info.end(); itr++ ) {
+            int evict_rc = fs_entry_cache_evict_block( core, core->cache, file_id, file_version, itr->first, itr->second.version );
+            if( evict_rc != 0 && evict_rc != -ENOENT ) {
+               errorf("fs_entry_cache_evict_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", file_id, file_version, itr->first, itr->second.version, evict_rc );
+            }
+         }
       }
-      
-      END_TIMING_DATA( garbage_collect_ts, ts2, "garbage collect manifest" );
    }
-   
    else {
       // revert the write
       fs_entry_revert_write( core, fent, &fent_snapshot, fent->size, NULL, &old_block_info, true );
       
       fs_entry_unlock( fent );
    }
+   
+   free( parent_name );
    
    // free memory
    fs_entry_free_modification_map( &old_block_info );
