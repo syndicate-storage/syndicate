@@ -19,124 +19,7 @@
 #include "read.h"
 #include "consistency.h"
 #include "cache.h"
-
-// expand a file to a new size (e.g. if we write to it beyond the end of the file).
-// record the blocks newly-added, and the blocks that were modified.  Also, fill in all the write futures for these blocks
-// fent must be write-locked
-int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t new_size, modification_map* modified_blocks, list<struct cache_block_future*>* futures ) {
-   off_t old_size = fent->size;
-
-   fent->size = new_size;
-   
-   if( new_size <= old_size ) {
-      return 0;
-   }
-
-   int err = 0;
-   uint64_t start_id = fs_entry_block_id( core, old_size );
-   uint64_t end_id = fs_entry_block_id( core, new_size );
-   
-   if( start_id == end_id ) {
-      // nothing to do here
-      return 0;
-   }
-   
-   char* block = CALLOC_LIST( char, core->blocking_factor );
-   bool first_block_is_modified = false;
-
-   // preserve the last block, if there is one
-   if( old_size > 0 && (old_size % core->blocking_factor) > 0 ) {
-      
-      uint64_t block_version = fent->manifest->get_block_version( start_id );
-      
-      int block_fd = fs_entry_cache_open_block( core, core->cache, fent->file_id, fent->version, start_id, block_version, O_CREAT | O_WRONLY | O_TRUNC );
-      if( block_fd < 0 ) {
-         errorf("fs_entry_open_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRId64 ".%" PRIu64 ") rc = %d\n", core->volume, core->gateway, fent->file_id, fent->version, start_id, block_version, block_fd );
-         free( block );
-         return block_fd;
-      }
-      
-      // read the tail of this block in
-      ssize_t nr = fs_entry_fill_block( core, fent, block, NULL, block_fd, old_size - start_id * core->blocking_factor );
-      
-      close( block_fd );
-      
-      if( nr < 0 ) {
-         errorf("fs_entry_fill_block( /%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRId64 ".%" PRIu64 ") rc = %zd\n", core->volume, core->gateway, fent->file_id, fent->version, start_id, block_version, nr );
-         free( block );
-         
-         return (int)nr;
-      }  
-      
-      first_block_is_modified = true;   // evict the old version 
-   }
-
-   bool cleared = false;
-   
-   for( uint64_t id = start_id; id <= end_id; id++ ) {
-      
-      unsigned char* hash = BLOCK_HASH_DATA( block, core->blocking_factor );
-
-      struct cache_block_future* f = fs_entry_write_block_async( core, fent, id, block, core->blocking_factor, hash, (first_block_is_modified && id == start_id) );
-      if( f == NULL ) {
-         errorf("fs_entry_write_block_async(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ".%" PRId64 "[%" PRIu64 "]) failed\n", core->volume, core->gateway, fent->file_id, fent->version, id );
-         err = -EIO;
-         free( hash );
-         break;
-      }
-
-      // record that we have modified this block this...
-      struct fs_entry_block_info binfo;
-      memset( &binfo, 0, sizeof(binfo) );
-
-      fs_entry_block_info_replicate_init( &binfo, fent->manifest->get_block_version( id ), hash, BLOCK_HASH_LEN(), core->gateway, f->block_fd );
-      
-      // record that this block is new
-      (*modified_blocks)[ id ] = binfo;
-      
-      // give back this future
-      futures->push_back( f );
-
-      if( !cleared )
-         memset( block, 0, core->blocking_factor );
-      
-      cleared = true;
-   }
-   
-   return err;
-}
-
-// fill in a block of data, using either a memory buffer or a file descriptor
-ssize_t fs_entry_fill_block( struct fs_core* core, struct fs_entry* fent, char* block, char const* buf, int source_fd, size_t count ) {
-   ssize_t rc = count;
-   
-   if( buf != NULL ) {
-      // source is the buffer
-      memcpy( block, buf, count );
-      return rc;
-   }
-   
-   else if( source_fd > 0 ) {
-      // source is the fd.  Read the block
-      ssize_t fd_read = 0;
-      while( fd_read < (ssize_t)count ) {
-         ssize_t fd_nr = read( source_fd, block + fd_read, count - fd_read);
-         if( fd_nr < 0 ) {
-            fd_nr = -errno;
-            errorf( "read(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") errno = %zd\n", core->volume, core->gateway, fent->file_id, fd_nr );
-            rc = -errno;
-            break;
-         }
-
-         if( fd_nr == 0 )
-            break;
-
-         fd_read += fd_nr;
-      }
-   }
-
-   return rc;
-}
+#include "driver.h"
 
 // can a block be garbage-collected?
 static bool fs_entry_is_garbage_collectable_block( struct fs_core* core, off_t fent_size, uint64_t block_id ) {
@@ -196,19 +79,40 @@ int fs_entry_replace_manifest( struct fs_core* core, struct fs_file_handle* fh, 
 }
 
 
-// write a block to a file, asynchronously putting it on underlying storage, but updating the filesystem entry's manifest to refer to it.
-// return the file descriptor to it.
+// write a block to a file (processing it first), asynchronously putting it on underlying storage, and updating the filesystem entry's manifest to refer to it.
+// this will update the modtime of the fs_entry on success.
+// return a cache_write_future for it.
 // fent MUST BE WRITE LOCKED, SINCE WE MODIFY THE MANIFEST
-struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_data, size_t len, unsigned char* block_hash, bool evict_old_block ) {
+struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char* block_data, size_t write_len, bool evict_old_block, int* _rc ) {
    
-   int64_t new_block_version = fs_entry_next_block_version();
    int64_t old_block_version = -1;
+   int64_t new_block_version = fs_entry_next_block_version();
+   
+   *_rc = 0;
+   
+   int rc = 0;
+   
+   // do pre-upload write processing...
+   char* processed_block = NULL;
+   size_t processed_block_len = 0;
+   
+   rc = driver_write_block_preup( core->driver, fs_path, fent, block_id, new_block_version, block_data, write_len, &processed_block, &processed_block_len );
+   if( rc != 0 ) {
+      errorf("driver_write_block_preup(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, new_block_version, rc );
+      *_rc = rc;
+      return NULL;
+   }
+   
+   // hash the contents of this block and the processed block, including anything read with fs_entry_read_block
+   unsigned char* block_hash = BLOCK_HASH_DATA( processed_block, processed_block_len );
    
    if( evict_old_block ) {
       old_block_version = fent->manifest->get_block_version( block_id );
    
+      dbprintf("evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, old_block_version );
+      
       // evict the old block
-      int rc = fs_entry_cache_evict_block( core, core->cache, fent->file_id, fent->version, block_id, old_block_version );
+      rc = fs_entry_cache_evict_block( core, core->cache, fent->file_id, fent->version, block_id, old_block_version );
       if( rc != 0 && rc != -ENOENT ) {
          errorf("WARN: failed to evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", fent->file_id, fent->version, block_id, old_block_version, rc );
       }
@@ -216,18 +120,21 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, str
       rc = 0;
    }
    
+   // for debugging...
    char prefix[21];
    memset( prefix, 0, 21 );
-   memcpy( prefix, block_data, MIN( 20, core->blocking_factor ) );
+   memcpy( prefix, processed_block, MIN( 20, processed_block_len ) );
    
    // cache the new block.  Get back the future (caller will manage it).
-   struct cache_block_future* f = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, new_block_version, block_data, len, false );
+   struct cache_block_future* f = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, new_block_version, processed_block, processed_block_len, false, &rc );
    if( f == NULL ) {
-      errorf("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], failed\n", fent->file_id, fent->version, block_id, new_block_version );
+      errorf("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %dn", fent->file_id, fent->version, block_id, new_block_version, rc );
+      *_rc = rc;
+      free( block_hash );
       return NULL;
    }
    else {
-      dbprintf("cache %zu bytes for %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]: data: '%s'...\n", len, fent->file_id, fent->version, block_id, new_block_version, prefix );
+      dbprintf("cache %zu bytes for %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]: data: '%s'...\n", processed_block_len, fent->file_id, fent->version, block_id, new_block_version, prefix );
       
       // update the manifest
       fs_entry_manifest_put_block( core, core->gateway, fent, block_id, new_block_version, block_hash );
@@ -235,12 +142,75 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, str
       // update our modtime
       struct timespec ts;
       clock_gettime( CLOCK_REALTIME, &ts );
-
+      
       fent->mtime_sec = ts.tv_sec;
       fent->mtime_nsec = ts.tv_nsec;
       
+      free( block_hash );
+      
       return f;
    }
+}
+
+
+// write one block of data 
+// fh must be write-locked
+// fh->fent must be write-locked
+struct cache_block_future* fs_entry_write_one_block( struct fs_core* core, struct fs_file_handle* fh, uint64_t block_id, char* block, size_t num_affected_bytes,
+                                                     modification_map* modified_blocks, modification_map* overwritten_blocks, int* ret ) {
+
+   *ret = 0;
+   
+   // need to get the old version of this block, so we can garbage-collect it 
+   bool need_garbage_collect = fs_entry_is_garbage_collectable_block( core, fh->fent->size, block_id );
+   int64_t old_version = 0;
+   unsigned char* old_hash = NULL;
+   
+   if( need_garbage_collect ) {
+      // this block is guaranteed to exist in the manifest...
+      old_version = fh->fent->manifest->get_block_version( block_id );
+      old_hash = fh->fent->manifest->get_block_hash( block_id );
+   }
+   
+   // write the data and update the manifest...
+   int rc = 0;
+   struct cache_block_future* block_fut = fs_entry_write_block_async( core, fh->path, fh->fent, block_id, block, num_affected_bytes, need_garbage_collect, &rc );
+   
+   if( block_fut == NULL ) {
+      errorf("fs_entry_write_block_async(%s/%" PRId64 ", num_affected_bytes=%zu) failed, rc = %d\n", fh->path, block_id, num_affected_bytes, rc );
+      *ret = -EIO;
+      return NULL;
+   }
+   
+   // get the hash of the newly-written block...
+   unsigned char* new_hash = fh->fent->manifest->get_block_hash( block_id );
+   int64_t new_version = fh->fent->manifest->get_block_version( block_id );
+   
+   char* hash_printable = BLOCK_HASH_TO_STRING( new_hash );
+   dbprintf("hash of %" PRIX64 "[%" PRId64 ".%" PRIu64 "] is %s, num_affected_bytes=%zu\n", fh->fent->file_id, block_id, new_version, hash_printable, num_affected_bytes );
+   free( hash_printable );
+   
+   // is this a block to garbage collect?
+   if( need_garbage_collect ) {
+      
+      // writing this block succeeded.
+      // mark the old version of the block that we've overwritten to be garbage-collected
+      struct fs_entry_block_info binfo_overwritten;
+      
+      fs_entry_block_info_garbage_init( &binfo_overwritten, old_version, old_hash, BLOCK_HASH_LEN(), core->gateway );
+      
+      (*overwritten_blocks)[ block_id ] = binfo_overwritten;
+   }
+   
+   // record that we've written this block
+   struct fs_entry_block_info binfo;
+   
+   // NOTE: we're passing the block_fd into the fs_entry_block_info structure from the cache_block_future.  DO NOT CLOSE IT!
+   fs_entry_block_info_replicate_init( &binfo, new_version, new_hash, BLOCK_HASH_LEN(), core->gateway, block_fut->block_fd );
+   
+   (*modified_blocks)[ block_id ] = binfo;
+   
+   return block_fut;
 }
 
 
@@ -263,7 +233,7 @@ int fs_entry_finish_writes( list<struct cache_block_future*>& block_futures, boo
          rc = f->write_rc;
       }
       else if( !close_fds ) {
-         // don't close the fd (we'll close it ourselves in replication)
+         // don't close the fd (replication subsystem takes care of this)
          fs_entry_cache_block_future_release_fd( f );
       }
       
@@ -275,40 +245,226 @@ int fs_entry_finish_writes( list<struct cache_block_future*>& block_futures, boo
 }
 
 
-// revert a write, given the modified blocks and a pre-write snapshot
-int fs_entry_revert_write( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* fent_before_write, uint64_t proposed_size, modification_map* old_block_info ) {
+// replicate all data from a write.
+// fh must be write-locked.
+// fh->fent must be write-locked
+int fs_entry_replicate_write( struct fs_core* core, struct fs_file_handle* fh, modification_map* modified_blocks ) {
+   
+   int ret = 0;
+   
+   struct timespec replicate_ts, ts2;
+   
+   // if we wrote data, replicate the manifest and blocks.
+   if( modified_blocks->size() > 0 ) {
+      
+      if( FS_ENTRY_LOCAL( core, fh->fent ) ) {
+         BEGIN_TIMING_DATA( replicate_ts );
+   
+         // replicate the new manifest
+         int rc = fs_entry_replicate_manifest( core, fh->fent, false, fh );
+         if( rc != 0 ) {
+            errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fh->path, rc );
+            ret = -EIO;
+         }
+         
+         END_TIMING_DATA( replicate_ts, ts2, "replicate manifest" );
+      }
 
+      if( ret >= 0 ) {
+         // replicate written blocks
+         BEGIN_TIMING_DATA( replicate_ts );
+         
+         int rc = fs_entry_replicate_blocks( core, fh->fent, modified_blocks, false, fh );
+         if( rc != 0 ) {
+            errorf("fs_entry_replicate_write(%s) rc = %d\n", fh->path, rc );
+            ret = -EIO;
+         }
+         
+         END_TIMING_DATA( replicate_ts, ts2, "replicate block data" );
+      }
+      
+      if( fh->flags & O_SYNC ) {
+         // wait for all replicas to finish, since we're synchronous
+         fs_entry_replicate_wait( core, fh );
+      }
+   }
+   
+   return ret;
+}
+
+
+// send a remote gateway our write message for the file, possibly becoming coordinator in the process.
+// file handle fh must be write-locked.
+// fh->fent must be write-locked.
+// return 0 on success, 1 if we succeeded AND became the coordinator, or negative on error.
+int fs_entry_remote_write_or_coordinate( struct fs_core* core, struct fs_file_handle* fh, struct replica_snapshot* fent_old_snapshot, uint64_t start_id, uint64_t end_id ) {
+   int ret = 0;
+   
+   // tell the remote owner about our write
+   Serialization::WriteMsg *write_msg = new Serialization::WriteMsg();
+
+   // send a prepare message
+   int64_t* versions = fh->fent->manifest->get_block_versions( start_id, end_id );
+   unsigned char** hashes = fh->fent->manifest->get_block_hashes( start_id, end_id );
+   
+   fs_entry_prepare_write_message( write_msg, core, fh->path, fh->fent, start_id, end_id, versions, hashes );
+   
+   free( versions );
+   FREE_LIST( hashes );
+   
+   Serialization::WriteMsg *write_ack = new Serialization::WriteMsg();
+   
+   int rc = fs_entry_send_write_or_coordinate( core, fh->path, fh->fent, fent_old_snapshot, write_msg, write_ack );
+   
+   if( rc > 0 ) {
+      // we're the coordinator!
+      ret = 1;
+   }
+   
+   if( rc >= 0 && write_ack->type() != Serialization::WriteMsg::PROMISE ) {
+      // got something back, but not a PROMISE
+      if( write_ack->type() == Serialization::WriteMsg::ERROR ) {
+         if( write_ack->errorcode() == -ESTALE ) {
+            // crucial file metadata changed out from under us.
+            // we're going to have to try this again.
+            dbprintf("file metadata mismatch; can't write to old version of %s\n", fh->path );
+            
+            fs_entry_mark_read_stale( fh->fent );
+            ret = -EAGAIN;
+         }
+         else {
+            errorf( "remote write error = %d (%s)\n", write_ack->errorcode(), write_ack->errortxt().c_str() );
+            ret = -abs( write_ack->errorcode() );
+         }
+      }
+      else {
+         errorf( "remote write invalid message %d\n", write_ack->type() );
+         ret = -EIO;
+      }
+   }
+
+   delete write_ack;
+   delete write_msg;
+   
+   return ret;
+}
+
+
+// send the MS the new file metadata
+// fh must be at least read-locked
+// fh->fent must be at least read-locked
+int fs_entry_send_metadata_update( struct fs_core* core, struct fs_file_handle* fh ) {
+
+   int ret = 0;
+   
+   // synchronize the new modifications with the MS
+   struct md_entry ent;
+   fs_entry_to_md_entry( core, &ent, fh->fent, fh->parent_id, fh->parent_name );
+
+   int up_rc = 0;
+   char const* errstr = NULL;
+   
+   if( fh->fent->max_write_freshness > 0 && !(fh->flags & O_SYNC) ) {
+      up_rc = ms_client_queue_update( core->ms, &ent, currentTimeMillis() + fh->fent->max_write_freshness, 0 );
+      errstr = "ms_client_queue_update";
+   }
+   else {
+      up_rc = ms_client_update( core->ms, &ent );
+      errstr = "ms_client_update";
+   }
+   
+   md_entry_free( &ent );
+
+   if( up_rc != 0 ) {
+      errorf("%s(%s) rc = %d\n", errstr, fh->path, up_rc );
+      ret = -EREMOTEIO;
+   }
+   
+   return ret;
+}
+
+
+// garbage collect a file's old manifest and blocks
+int fs_entry_garbage_collect_overwritten_data( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* fent_before_write, modification_map* overwritten_blocks ) {
+
+   int rc = 0;
+   
+   if( FS_ENTRY_LOCAL( core, fent ) ) {
+      // garbage collect the old manifest
+      rc = fs_entry_garbage_collect_manifest( core, fent_before_write );
+      if( rc != 0 ) {
+         errorf("fs_entry_garbage_collect_manifest(%" PRIX64 ".%" PRId64 " (%s)) rc = %d\n", fent->file_id, fent->version, fent->name, rc );
+         rc = 0;
+      }
+   }
+   
+   // garbage-collect written blocks
+   if( overwritten_blocks->size() > 0 ) {
+      rc = fs_entry_garbage_collect_blocks( core, fent_before_write, overwritten_blocks );
+      if( rc != 0 ) {
+         errorf("fs_entry_garbage_collect_blocks(%" PRIX64 ".%" PRId64 " (%s)) rc = %d\n", fent->file_id, fent->version, fent->name, rc );
+         rc = 0;
+      }
+   }
+   
+   return 0;
+}
+
+
+// revert a write, given the modified blocks and a pre-write snapshot.
+// fent must be write-locked
+int fs_entry_revert_write( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* fent_before_write, uint64_t new_size,
+                           modification_map* new_block_info, modification_map* old_block_info, bool garbage_collect_manifest ) {
+
+   
+   struct replica_snapshot fent_after_write;
+   fs_entry_replica_snapshot( core, fent, 0, 0, &fent_after_write );
+   
+   // cancel any ongoing replications, and erase recently-uploaded data (reverting the write)
+   if( new_block_info )
+      fs_entry_garbage_collect_blocks( core, &fent_after_write, new_block_info );
+   
+   if( garbage_collect_manifest )
+      fs_entry_garbage_collect_manifest( core, &fent_after_write );
+   
    // had an error along the way.  Restore the old fs_entry's manifest
    fs_entry_replica_snapshot_restore( core, fent, fent_before_write );
    
    uint64_t old_end_block = fent_before_write->size / core->blocking_factor;
-   uint64_t proposed_end_block = proposed_size / core->blocking_factor;
+   uint64_t proposed_end_block = new_size / core->blocking_factor;
    
    if( old_end_block < proposed_end_block ) {
       // truncate the manifest back to its original size
       fent->manifest->truncate( old_end_block );
    }
    
-   // restore gateway ownership and versions
-   for( modification_map::iterator itr = old_block_info->begin(); itr != old_block_info->end(); itr++ ) {
-      uint64_t block_id = itr->first;
-      
-      // skip blocks written beyond the end of the original manifest
-      if( block_id > old_end_block )
-         continue;
-      
-      struct fs_entry_block_info* old_binfo = &itr->second;
-      
-      fs_entry_manifest_put_block( core, old_binfo->gateway_id, fent, block_id, old_binfo->version, old_binfo->hash );
+   // restore old block information
+   if( old_block_info ) {
+      for( modification_map::iterator itr = old_block_info->begin(); itr != old_block_info->end(); itr++ ) {
+         uint64_t block_id = itr->first;
+         
+         // skip blocks written beyond the end of the original manifest
+         if( block_id > old_end_block )
+            continue;
+         
+         struct fs_entry_block_info* old_binfo = &itr->second;
+         
+         fs_entry_manifest_put_block( core, old_binfo->gateway_id, fent, block_id, old_binfo->version, old_binfo->hash );
+      }
+   }
+   
+   // evict newly-written blocks
+   if( new_block_info ) {
+      for( modification_map::iterator itr = new_block_info->begin(); itr != new_block_info->end(); itr++ ) {
+         fs_entry_cache_evict_block( core, core->cache, fent->file_id, fent->version, itr->first, itr->second.version );
+      }
    }
    
    return 0;
 }
 
                   
-
-// TODO: refactor this.
-// write data to a file, either from a buffer or a file descriptor.
+// write data to a file
 // Zeroth, revalidate path and manifest and optionally expand the file if we're writing beyond the end of it.
 // First, write blocks to disk for subsequent re-read and for serving to other UGs.
 // Second, replicate blocks to all RGs.
@@ -327,7 +483,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    }
 
    struct timespec ts, ts2;
-   struct timespec write_ts, replicate_ts, replicate_ts_total, garbage_collect_ts, remote_write_ts, update_ts;
+   struct timespec write_ts, replicate_ts_total, garbage_collect_ts, remote_write_ts, update_ts;
 
    BEGIN_TIMING_DATA( ts );
    
@@ -340,8 +496,6 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    
    fs_entry_wlock( fh->fent );
    
-   bool local = FS_ENTRY_LOCAL( core, fh->fent );
-   
    BEGIN_TIMING_DATA( write_ts );
 
    ssize_t ret = 0;
@@ -350,14 +504,14 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    // record which blocks we've modified
    modification_map modified_blocks;
    
-   // record of which blocks we've overwritten and can safely garbage-collect
+   // record the blocks we're garbage-collecting (i.e. old block info)
    modification_map overwritten_blocks;
+   
+   // did we replicate the manifest?
+   bool replicated_manifest = false;
    
    // list of futures created when writing to the cache
    list<struct cache_block_future*> block_futures;
-   
-   // did we replicate a manifest?
-   bool replicated_manifest = false;
    
    // snapshot fent before we do anything to it
    struct replica_snapshot fent_old_snapshot;
@@ -365,10 +519,10 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
 
    fs_entry_unlock( fh->fent );
    
+   // generate a block to be pushed into the cache.
+   char* block = CALLOC_LIST( char, core->blocking_factor );
+   
    while( (size_t)num_written < count ) {
-      
-      // generate a block to be pushed into the cache.
-      char* block = CALLOC_LIST( char, core->blocking_factor );
       
       // which block are we about to write?
       uint64_t block_id = fs_entry_block_id( core, offset + num_written );
@@ -378,8 +532,8 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       off_t block_write_offset = (offset + num_written) % core->blocking_factor;
       off_t block_fill_offset = 0;
       
-      // how much data are we going to write into this block?
-      size_t block_write_len = MIN( core->blocking_factor - block_write_offset, count - num_written );
+      // how much data are we going to consume from the write buffer and write into this block?
+      size_t consume_len = MIN( core->blocking_factor - block_write_offset, count - num_written );
       
       if( block_write_offset != 0 ) {
          
@@ -396,85 +550,43 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       }
       
       // get the data...
-      memcpy( block + block_fill_offset, buf + num_written, block_write_len );
+      memcpy( block + block_fill_offset, buf + num_written, consume_len );
+      
+      // how much of this block is affected by this write?  Include both the number of bytes consumed, as well as bytes pulled in from reading unaligned
+      size_t num_affected_bytes = block_fill_offset + consume_len;
       
       fs_entry_wlock( fh->fent );
       
-      // need to get the old version of this block, so we can garbage-collect it 
-      bool need_garbage_collect = fs_entry_is_garbage_collectable_block( core, fh->fent->size, block_id );
-      uint64_t old_version = 0;
-      unsigned char* old_hash = NULL;
-      
-      if( need_garbage_collect ) {
-         // this block is guaranteed to exist in the manifest...
-         old_version = fh->fent->manifest->get_block_version( block_id );
-         old_hash = fh->fent->manifest->get_block_hash( block_id );
-      }
-      
-      // hash the contents of this block, including anything read with fs_entry_read_block
-      unsigned char* hash = BLOCK_HASH_DATA( block, block_fill_offset + block_write_len );
-      
-      // write the data and update the manifest...
-      struct cache_block_future* block_fut = fs_entry_write_block_async( core, fh->fent, block_id, block, block_fill_offset + block_write_len, hash, need_garbage_collect );
-      
-      if( block_fut == NULL ) {
-         errorf("fs_entry_write_block_async(%s/%" PRId64 ", len=%zu) failed\n", fh->path, block_id, block_fill_offset + block_write_len );
-         ret = -EIO;
-         fs_entry_unlock( fh->fent );
-         free( hash );
-         free( block );
-         break;
-      }
-      
-      uint64_t new_version = fh->fent->manifest->get_block_version( block_id );
-      
-      char* hash_printable = BLOCK_HASH_TO_STRING( hash );
-      dbprintf("hash of %" PRIX64 "[%" PRId64 ".%" PRIu64 "] is %s\n", fh->fent->file_id, block_id, new_version, hash_printable );
-      free( hash_printable );
-      
+      struct cache_block_future* block_fut = fs_entry_write_one_block( core, fh, block_id, block, num_affected_bytes, &modified_blocks, &overwritten_blocks, &rc );
       
       fs_entry_unlock( fh->fent );
       
-      // is this a block to garbage collect?
-      if( need_garbage_collect ) {
-         
-         // writing this block succeeded.
-         // mark the old version of the block that we've overwritten to be garbage-collected
-         struct fs_entry_block_info binfo_overwritten;
-         
-         fs_entry_block_info_garbage_init( &binfo_overwritten, old_version, old_hash, BLOCK_HASH_LEN(), core->gateway );
-         
-         overwritten_blocks[ block_id ] = binfo_overwritten;
+      if( rc != 0 ) {
+         ret = -EIO;
+         break;
       }
       
-      // record that we've written this block
-      struct fs_entry_block_info binfo;
-      
-      // NOTE: we're passing the block_fd into the fs_entry_block_info structure from the cache_block_future.  DO NOT CLOSE IT!
-      fs_entry_block_info_replicate_init( &binfo, new_version, hash, BLOCK_HASH_LEN(), core->gateway, block_fut->block_fd );
-      
-      modified_blocks[ block_id ] = binfo;
-
-      num_written += block_write_len;
+      num_written += consume_len;
       
       // preserve this, so we can synchronize later 
       block_futures.push_back( block_fut );
+      
+      // next block 
+      memset( block, 0, core->blocking_factor );
    }
-
-   if( rc != 0 )
-      ret = rc;
    
-   else
+   free( block );
+
+   if( ret >= 0 )
       ret = count;
    
-   // wait for all writes to complete.
-   // do NOT close the fd's
+   // wait for all writes to the cache to complete.
    int wait_rc = fs_entry_finish_writes( block_futures, false );
    if( wait_rc != 0 ) {
       errorf("fs_entry_finish_writes() rc = %d\n", wait_rc );
       
       // don't mask a previous error...
-      if( ret == 0 )
+      if( ret > 0 )
          ret = wait_rc;
    }
    
@@ -484,10 +596,9 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    
    // update file metadata
    if( ret > 0 ) {
-      
       // update size
       // NOTE: size may have changed due to expansion, but it shouldn't affect this computation
-      fh->fent->size = MAX( fh->fent->size, offset + count );
+      fh->fent->size = MAX( (off_t)fh->fent->size, offset + (off_t)count );
       
       // update mtime
       struct timespec new_mtime;
@@ -499,217 +610,88 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
 
    BEGIN_TIMING_DATA( replicate_ts_total );
    
-   // if we wrote data, replicate the manifest and blocks.
-   if( ret > 0 && modified_blocks.size() > 0 ) {
-      
-      if( local ) {
-         BEGIN_TIMING_DATA( replicate_ts );
-   
-         // replicate the new manifest
-         int rc = fs_entry_replicate_manifest( core, fh->fent, false, fh );
-         if( rc != 0 ) {
-            errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fh->path, rc );
-            ret = -EIO;
-         }
-         else {
-            replicated_manifest = true;
-         }
-         
-         END_TIMING_DATA( replicate_ts, ts2, "replicate manifest" );
-      }
-
-      if( ret >= 0 ) {
-         // replicate written blocks
-         BEGIN_TIMING_DATA( replicate_ts );
-         
-         uint64_t start_id = modified_blocks.begin()->first;
-         uint64_t end_id = modified_blocks.rbegin()->first + 1;      // exclusive
-
-         int rc = fs_entry_replicate_blocks( core, fh->fent, &modified_blocks, false, fh );
-         if( rc != 0 ) {
-            errorf("fs_entry_replicate_write(%s[%" PRId64 "-%" PRId64 "]) rc = %d\n", fh->path, start_id, end_id, rc );
-            ret = -EIO;
-         }
-         
-         END_TIMING_DATA( replicate_ts, ts2, "replicate block data" );
-      }
-      
-      if( fh->flags & O_SYNC ) {
-         // wait for all replicas to finish, since we're synchronous
-         fs_entry_replicate_wait( core, fh );
+   // begin replicating the manifest and blocks (wait till they complete if the file is opened with O_SYNC).
+   rc = fs_entry_replicate_write( core, fh, &modified_blocks );
+   if( rc != 0 ) {
+      errorf("fs_Entry_replicate_write rc = %d\n", rc );
+      ret = rc;
+   }
+   else {
+      if( FS_ENTRY_LOCAL( core, fh->fent ) ) {
+         // we will have replicated the manifest 
+         replicated_manifest = true;
       }
    }
 
    END_TIMING_DATA( replicate_ts_total, ts2, "replicate data" );
    
+   // send the remote gateway our new block versions and hashes, or become the coordinator.
+   // If we're the coordinator, finish the write by uploading the new metadata.
    if( ret > 0 ) {
-
-      // SUCCESS!
-
-      uint64_t start_id = modified_blocks.begin()->first;
-      uint64_t end_id = modified_blocks.rbegin()->first + 1;      // exclusive
-
-      if( !local ) {
+      if( !FS_ENTRY_LOCAL( core, fh->fent ) ) {
+         // send the remote gateway our write request 
+         
          BEGIN_TIMING_DATA( remote_write_ts );
-      
-         // tell the remote owner about our write
-         Serialization::WriteMsg *write_msg = new Serialization::WriteMsg();
 
-         // send a prepare message
-         int64_t* versions = fh->fent->manifest->get_block_versions( start_id, end_id );
-         unsigned char** hashes = fh->fent->manifest->get_block_hashes( start_id, end_id );
-         
-         fs_entry_prepare_write_message( write_msg, core, fh->path, fh->fent, start_id, end_id, versions, hashes );
-         
-         free( versions );
-         FREE_LIST( hashes );
-         
-         Serialization::WriteMsg *write_ack = new Serialization::WriteMsg();
-         
-         int rc = fs_entry_send_write_or_coordinate( core, fh->fent, &fent_old_snapshot, write_msg, write_ack );
-         
+         rc = fs_entry_remote_write_or_coordinate( core, fh, &fent_old_snapshot, modified_blocks.begin()->first, modified_blocks.rbegin()->first + 1 );
          if( rc > 0 ) {
+            
             // we're now the coordinator.  Replicate our new manifest and remove the old one.
             rc = fs_entry_replace_manifest( core, fh, fh->fent, &fent_old_snapshot );
             if( rc == 0 ) {
                replicated_manifest = true;
             }
-            
-            local = true;
-         }
-         
-         if( rc >= 0 && write_ack->type() != Serialization::WriteMsg::PROMISE ) {
-            // got something back, but not a PROMISE
-            if( write_ack->type() == Serialization::WriteMsg::ERROR ) {
-               if( write_ack->errorcode() == -ESTALE ) {
-                  // crucial file metadata changed out from under us.
-                  // we're going to have to try this again.
-                  dbprintf("file metadata mismatch; can't write to old version of %s\n", fh->path );
-                  
-                  fs_entry_mark_read_stale( fh->fent );
-                  ret = -EAGAIN;
-               }
-               else {
-                  errorf( "remote write error = %d (%s)\n", write_ack->errorcode(), write_ack->errortxt().c_str() );
-                  ret = -abs( write_ack->errorcode() );
-               }
-            }
             else {
-               errorf( "remote write invalid message %d\n", write_ack->type() );
+               // failed to replicate!
+               errorf("fs_entry_replicate_manifest(%s (%" PRId64 ".%d)) rc = %d\n", fh->path, fh->fent->mtime_sec, fh->fent->mtime_nsec, rc );
                ret = -EIO;
             }
          }
-
-         delete write_ack;
-         delete write_msg;
-         
          
          END_TIMING_DATA( remote_write_ts, ts2, "send remote write" );
       }
       
-      if( ret >= 0 && local ) {
-
+      // last step: do we need to send an update to the MS?
+      // either we were local all along, or we just became the coordinator
+      if( ret > 0 && FS_ENTRY_LOCAL( core, fh->fent ) ) {
+         
          BEGIN_TIMING_DATA( update_ts );
          
-         // synchronize the new modifications with the MS
-         struct md_entry ent;
-         fs_entry_to_md_entry( core, &ent, fh->fent, fh->parent_id, fh->parent_name );
-
-         int up_rc = 0;
-         char const* errstr = NULL;
-         
-         if( fh->fent->max_write_freshness > 0 && !(fh->flags & O_SYNC) ) {
-            up_rc = ms_client_queue_update( core->ms, &ent, currentTimeMillis() + fh->fent->max_write_freshness, 0 );
-            errstr = "ms_client_queue_update";
-         }
-         else {
-            up_rc = ms_client_update( core->ms, &ent );
-            errstr = "ms_client_update";
+         int rc = fs_entry_send_metadata_update( core, fh );
+         if( rc != 0 ) {
+            errorf("fs_entry_send_metadata_update(%s) rc = %d\n", fh->path, rc );
+            ret = rc;
          }
          
-         md_entry_free( &ent );
-
-         if( up_rc != 0 ) {
-            errorf("%s(%s) rc = %d\n", errstr, fh->path, rc );
-            ret = -EREMOTEIO;
-         }
-
          END_TIMING_DATA( update_ts, ts2, "MS update" );
       }
    }
    
    if( ret < 0 ) {
-      
-      // cancel any ongoing replications, and erase recently-uploaded data (reverting the write)
-      fs_entry_garbage_collect_blocks( core, &fent_old_snapshot, &modified_blocks );
-      
-      if( replicated_manifest )
-         fs_entry_garbage_collect_manifest( core, &fent_old_snapshot );
-      
       // revert the write
-      fs_entry_revert_write( core, fh->fent, &fent_old_snapshot, fh->fent->size, &overwritten_blocks );
+      fs_entry_revert_write( core, fh->fent, &fent_old_snapshot, fh->fent->size, &modified_blocks, &overwritten_blocks, replicated_manifest );
    }
    else {
       
-      // if we modified data, then garbage-collect old data
-      
+      // begin garbage-collecting overwritten data.
       BEGIN_TIMING_DATA( garbage_collect_ts );
       
-      if( overwritten_blocks.size() > 0 ) {
-         
-         int rc = 0;
-         
-         if( local ) {
-            // garbage collect the old manifest
-            rc = fs_entry_garbage_collect_manifest( core, &fent_old_snapshot );
-            if( rc != 0 ) {
-               errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fh->path, rc );
-               rc = 0;
-            }
-         }
-         
-         // garbage-collect written blocks
-         rc = fs_entry_garbage_collect_blocks( core, &fent_old_snapshot, &overwritten_blocks );
-         if( rc != 0 ) {
-            errorf("fs_entry_garbage_collect_blocks(%s) rc = %d\n", fh->path, rc );
-            rc = 0;
-         }
-      }
-
+      fs_entry_garbage_collect_overwritten_data( core, fh->fent, &fent_old_snapshot, &overwritten_blocks );
+      
       END_TIMING_DATA( garbage_collect_ts, ts2, "garbage collect data" );
    }
    
-   // copy these before unlocking, since we'll need them below.
-   uint64_t file_id = fh->fent->file_id;
-   int64_t file_version = fh->fent->version;
-   
    fs_entry_unlock( fh->fent );
    fs_file_handle_unlock( fh );
-
-   if( modified_blocks.size() > 0 ) {
-      // free memory
-      for( modification_map::iterator itr = modified_blocks.begin(); itr != modified_blocks.end(); itr++ ) {
-         
-         // if we're exiting in error, then close up and evict the blocks
-         if( ret < 0 ) {
-            fs_entry_cache_evict_block( core, core->cache, file_id, file_version, itr->first, itr->second.version );
-         }
-         
-         fs_entry_block_info_free( &itr->second );
-      }
-   }
    
-   if( overwritten_blocks.size() > 0 ) {
-      // free memory 
-      for( modification_map::iterator itr = overwritten_blocks.begin(); itr != overwritten_blocks.end(); itr++ ) {
-         fs_entry_block_info_free( &itr->second );
-      }
-   }
-
+   fs_entry_free_modification_map( &overwritten_blocks );
+   fs_entry_free_modification_map( &modified_blocks );
+   
    END_TIMING_DATA( ts, ts2, "write" );
 
    return ret;
 }
+
 
 ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, int source_fd, size_t count, off_t offset ) {
    // TODO
@@ -868,29 +850,14 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
    }
    
    else {
-      errorf("roll back manifest of %s\n", fs_path );
-      
-      // some manifests may have succeeded in replicating.
-      // Destroy them.
-      
-      struct replica_snapshot new_fent_snapshot;
-      fs_entry_replica_snapshot( core, fent, 0, 0, &new_fent_snapshot );
-      
-      int rc = fs_entry_garbage_collect_manifest( core, &new_fent_snapshot );
-      if( rc != 0 ) {
-         errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
-      }
-      
-      // revert the manifest
-      fs_entry_revert_write( core, fent, &fent_snapshot, fent->size, &old_block_info );
+      // revert the write
+      fs_entry_revert_write( core, fent, &fent_snapshot, fent->size, NULL, &old_block_info, true );
       
       fs_entry_unlock( fent );
    }
    
    // free memory
-   for( modification_map::iterator itr = old_block_info.begin(); itr != old_block_info.end(); itr++ ) {
-      fs_entry_block_info_free( &itr->second );
-   }
+   fs_entry_free_modification_map( &old_block_info );
    
    END_TIMING_DATA( ts, ts2, "write, remote" );
    return err;

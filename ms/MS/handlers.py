@@ -180,7 +180,7 @@ class MSCertRequestHandler( webapp2.RequestHandler ):
       # generate the certificate
       gateway_cert = ms_pb2.ms_gateway_cert()
       
-      volume.protobuf_gateway_cert( gateway_cert, gateway )
+      volume.protobuf_gateway_cert( gateway_cert, gateway, need_closure=True )
       
       data = gateway_cert.SerializeToString()
       

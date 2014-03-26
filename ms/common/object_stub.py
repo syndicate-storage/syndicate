@@ -26,6 +26,8 @@ import re
 import sys
 import base64
 import random
+import json
+import ctypes
 
 try:
    import pickle
@@ -622,19 +624,129 @@ class Gateway( StubObject ):
       return ret_dict 
    
    
-   @classmethod
+   @classmethod 
+   def is_RG_closure( cls, gateway_closure_path, required_files=['__init__.py', 'driver.py', 'replica.py', 'config.py', 'secrets.py'] ):
+      """
+      Does the given path refer to structurally-valid RG closure?
+      """
+      try:
+         if not os.path.isdir( gateway_closure_path ):
+            return False
+      
+      except Exception, e:
+         log.exception(e)
+         return False
+      
+      files = os.listdir( gateway_closure_path )
+      
+      for required_file in required_files:
+         try:
+            if not os.path.exists( os.path.join( gateway_closure_path, required_file ) ):
+               return False
+         except Exception, e:
+            log.exception(e)
+            return False
+         
+      return True
+   
+   
+   @classmethod 
+   def is_valid_binary_closure( cls, gateway_closure_path, required_syms ):
+      """
+      Does a given path refer to a binary closure with the given symbols?
+      """
+      try:
+         closure = ctypes.CDLL( gateway_closure_path )
+      except Exception, e:
+         log.exception(e)
+         return False
+      
+      # check symbols
+      for required_sym in required_syms:
+         try:
+            f = getattr( closure, required_sym )
+         except:
+            # not present 
+            return False
+         
+      return True
+   
+   @classmethod 
+   def is_UG_closure( cls, gateway_closure_path ):
+      """
+      Does a given path refer to a UG binary closure?
+      """
+      return cls.is_valid_binary_closure( gateway_closure_path, ["connect_cache", "write_block_preup", "write_manifest_preup", "read_block_postdown", "read_manifest_postdown", "chcoord_begin", "chcoord_end"] )
+   
+   
+   @classmethod 
+   def is_AG_closure( cls, gateway_closure_path ):
+      """
+      Does a given path refer to an AG binary closure?
+      """
+      return cls.is_valid_binary_closure( gateway_closure_path, ["get_dataset", "cleanup_dataset", "publish_dataset", "connect_dataset", "controller"] )
+   
+   
+   @classmethod 
    def parse_gateway_closure( cls, gateway_closure_path, lib=None ):
       """
-      Load up a gateway config (replication policy and drivers) from a set of python files.
-      Transform them into a JSON-ized closure to be deployed to the recipient gateway.
+      Parse the gateway closure.  Figure out what kind of closure it is, and load it.
       
-      NOTE: you're limited to one driver.py file.
+      NOTE: we don't check to see if the closure matches the type of gateway.
       
       NOTE: lib must have:
        * gateway name
        * syntool config
        * storage API
-       * user_id
+      """
+      
+      if cls.is_RG_closure( gateway_closure_path ):
+         return cls.parse_RG_closure( gateway_closure_path, lib )
+      
+      elif cls.is_UG_closure( gateway_closure_path ):
+         return cls.parse_UG_closure( gateway_closure_path, lib )
+      
+      elif cls.is_AG_closure( gateway_closure_path ):
+         return cls.parse_AG_closure( gateway_closure_path, lib )
+   
+   
+   @classmethod
+   def parse_binary_closure( cls, gateway_closure_path, lib=None ):
+      """
+      Parse a binary closure.  Turn it into a base64-encoded string.
+      NOTE: we don't do any architecture checks here.
+      """
+      try:
+         f = open(gateway_closure_path, "r")
+      except Exception, e:
+         log.exception(e)
+         return None, {}
+      
+      buf = f.read()
+      f.close()
+      
+      buf_b64 = base64.b64encode( buf )
+      
+      return buf_b64, {}
+      
+   @classmethod 
+   def parse_UG_closure( cls, gateway_closure_path, lib=None ):
+      return cls.parse_binary_closure( cls, gateway_closure_path, lib=lib )
+   
+   @classmethod 
+   def parse_AG_closure( cls, gateway_closure_path, lib=None ):
+      return cls.parse_binary_closure( cls, gateway_closure_path, lib=lib )
+   
+   @classmethod
+   def parse_RG_closure( cls, gateway_closure_path, lib=None ):
+      """
+      Load up a gateway config (replication policy and drivers) from a set of python files.
+      Transform them into a JSON-ized closure to be deployed to the recipient gateway.
+      
+      NOTE: lib must have:
+       * gateway name
+       * syntool config
+       * storage API
       """
       
       try:
@@ -649,7 +761,6 @@ class Gateway( StubObject ):
          gateway_name = lib.gateway_name 
          config = lib.config
          storage = lib.storage
-         user_id = lib.user_id
       except Exception, e:
          log.exception(e)
          raise Exception("Missing required data for argument parsing")

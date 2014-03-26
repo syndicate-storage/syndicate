@@ -19,12 +19,26 @@
 #include "url.h"
 #include "cache.h"
 #include "replication.h"
+#include "driver.h"
 
 // download and verify a manifest
-int fs_entry_download_manifest( struct fs_core* core, uint64_t origin, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
+int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
    CURL* curl = curl_easy_init();
    
-   int rc = md_download_manifest( core->conf, curl, manifest_url, mmsg );
+   // connect to the cache...
+   struct driver_connect_cache_cls driver_cls;
+   driver_cls.driver = core->driver;
+   driver_cls.client = core->ms;
+   
+   // process the manifest 
+   struct driver_read_manifest_postdown_cls manifest_cls;
+   manifest_cls.driver = core->driver;
+   manifest_cls.fs_path = fs_path;
+   manifest_cls.fent = fent;
+   manifest_cls.mtime_sec = mtime_sec;
+   manifest_cls.mtime_nsec = mtime_nsec;
+   
+   int rc = md_download_manifest( core->conf, curl, manifest_url, mmsg, driver_connect_cache, &driver_cls, driver_read_manifest_postdown, &manifest_cls );
    if( rc != 0 ) {
       
       errorf("md_download_manifest(%s) rc = %d\n", manifest_url, rc );
@@ -34,10 +48,20 @@ int fs_entry_download_manifest( struct fs_core* core, uint64_t origin, char cons
    
    curl_easy_cleanup( curl );
    
+   uint64_t origin = mmsg->coordinator_id();
+   
    int gateway_type = ms_client_get_gateway_type( core->ms, origin );
    if( gateway_type < 0 ) {
       errorf("ms_client_get_gateway_type( %" PRIu64 " ) rc = %d\n", origin, gateway_type );
-      return -EINVAL;
+      
+      if( gateway_type == -ENOENT ) {
+         // schedule a reload of this volume...there seems to be a missing gateway 
+         ms_client_sched_volume_reload( core->ms );
+         return -EAGAIN;
+      }
+      else {
+         return -EINVAL;
+      }
    }
    
    // verify it
@@ -59,16 +83,22 @@ int fs_entry_download_manifest( struct fs_core* core, uint64_t origin, char cons
 
 
 // download a block 
-ssize_t fs_entry_download_block( struct fs_core* core, char const* block_url, char** block_bits, size_t block_len ) {
+ssize_t fs_entry_download_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char const* block_url, char** block_bits ) {
 
    CURL* curl = curl_easy_init();
    
+   // connect to the cache...
    char* block_buf = NULL;
    
-   ssize_t download_len = md_download_block( core->conf, curl, block_url, &block_buf, block_len );
+   struct driver_connect_cache_cls driver_cls;
+   driver_cls.driver = core->driver;
+   driver_cls.client = core->ms;
+   
+   // grab the block
+   ssize_t download_len = md_download_block( core->conf, curl, block_url, &block_buf, -1, driver_connect_cache, &driver_cls );
    if( download_len < 0 ) {
       
-      errorf("md_download_block(%s) rc = %zd\n", block_url,download_len );
+      errorf("md_download_block(%s) rc = %zd\n", block_url, download_len );
       curl_easy_cleanup( curl );
       return download_len;
    }
@@ -281,8 +311,10 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
 }
 
 // get a replicated block from an RG
+// fent must be at least read-locked
 // NOTE: this does NOT verify the authenticity of the block!
-ssize_t fs_entry_download_block_replica( struct fs_core* core, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, char** block_buf, size_t block_len, uint64_t* successful_RG_id ) {
+ssize_t fs_entry_download_block_replica( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
+                                         char** block_bits, uint64_t* successful_RG_id ) {
    
    uint64_t* rg_ids = ms_client_RG_ids( core->ms );
    
@@ -294,9 +326,9 @@ ssize_t fs_entry_download_block_replica( struct fs_core* core, uint64_t volume_i
    if( rg_ids != NULL ) {
       for( i = 0; rg_ids[i] != 0; i++ ) {
          
-         char* replica_url = fs_entry_RG_block_url( core, rg_ids[i], volume_id, file_id, file_version, block_id, block_version );
+         char* replica_url = fs_entry_RG_block_url( core, rg_ids[i], fent->volume, fent->file_id, fent->version, block_id, block_version );
          
-         nr = fs_entry_download_block( core, replica_url, block_buf, block_len );
+         nr = fs_entry_download_block( core, fs_path, fent, block_id, block_version, replica_url, block_bits );
 
          if( nr > 0 ) {
             free( replica_url );
@@ -322,19 +354,11 @@ ssize_t fs_entry_download_block_replica( struct fs_core* core, uint64_t volume_i
 
 
 // download a manifest from an RG.
-int fs_entry_download_manifest_replica( struct fs_core* core,
-                                        uint64_t origin,
-                                        uint64_t volume_id,
-                                        uint64_t file_id,
-                                        int64_t file_version,
-                                        int64_t mtime_sec,
-                                        int32_t mtime_nsec,
-                                        Serialization::ManifestMsg* mmsg,
-                                        uint64_t* successful_RG_id ) {
+// fent must be at least read-locked
+int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec,
+                                        Serialization::ManifestMsg* mmsg, uint64_t* successful_RG_id ) {
    
    uint64_t* rg_ids = ms_client_RG_ids( core->ms );
-   
-   ssize_t nr = 0;
    
    int rc = -ENOTCONN;
    int i = -1;
@@ -350,16 +374,16 @@ int fs_entry_download_manifest_replica( struct fs_core* core,
          ts.tv_sec = mtime_sec;
          ts.tv_nsec = mtime_nsec;
          
-         char* replica_url = fs_entry_RG_manifest_url( core, rg_ids[i], volume_id, file_id, file_version, &ts );
+         char* replica_url = fs_entry_RG_manifest_url( core, rg_ids[i], fent->volume, fent->file_id, fent->version, &ts );
          
-         rc = fs_entry_download_manifest( core, origin, replica_url, mmsg );
+         rc = fs_entry_download_manifest( core, fs_path, fent, mtime_sec, mtime_nsec, replica_url, mmsg );
 
          if( rc == 0 ) {
             free( replica_url );
             break;
          }
          else {
-            errorf("fs_entry_download_manifest(%s) rc = %zd\n", replica_url, nr );
+            errorf("fs_entry_download_manifest(%s) rc = %d\n", replica_url, rc );
             rc = -ENODATA;
          }
          
@@ -399,7 +423,7 @@ int fs_entry_download_manifest_replica( struct fs_core* core,
 // return 0 if the send was successful.
 // return 1 if we're now the coordinator.
 // return negative on error.
-int fs_entry_send_write_or_coordinate( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* fent_snapshot_prewrite, Serialization::WriteMsg* write_msg, Serialization::WriteMsg* write_ack ) {
+int fs_entry_send_write_or_coordinate( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct replica_snapshot* fent_snapshot_prewrite, Serialization::WriteMsg* write_msg, Serialization::WriteMsg* write_ack ) {
 
    int ret = 0;
    
@@ -413,12 +437,12 @@ int fs_entry_send_write_or_coordinate( struct fs_core* core, struct fs_entry* fe
       // process the write message acknowledgement--hopefully it's a PROMISE
       if( rc != 0 ) {
          // failed to post
-         errorf( "fs_entry_post_write(/%" PRIu64 "/%" PRIX64 " (%s)) to %" PRIu64 " rc = %d\n", fent->volume, fent->file_id, fent->name, fent->coordinator, rc );
+         errorf( "fs_entry_post_write(%s /%" PRIu64 "/%" PRIX64 " (%s)) to %" PRIu64 " rc = %d\n", fs_path, fent->volume, fent->file_id, fent->name, fent->coordinator, rc );
          
          if( rc == -ENODATA ) {
             // curl couldn't connect--this is maybe a partition.
             // Try to become the coordinator.
-            rc = fs_entry_coordinate( core, fent, fent_snapshot_prewrite->file_version, fent_snapshot_prewrite->mtime_sec, fent_snapshot_prewrite->mtime_nsec );
+            rc = fs_entry_coordinate( core, fs_path, fent, fent_snapshot_prewrite->file_version, fent_snapshot_prewrite->mtime_sec, fent_snapshot_prewrite->mtime_nsec );
             
             if( rc == 0 ) {
                // we're now the coordinator, and the MS has the latest metadata.
@@ -431,13 +455,13 @@ int fs_entry_send_write_or_coordinate( struct fs_core* core, struct fs_entry* fe
             else if( rc == -EAGAIN ) {
                // the coordinator changed to someone else.  Try again.
                // fent->coordinator refers to the current coordinator.
-               dbprintf("coordinator of /%" PRIu64 "/%" PRIX64 " is now %" PRIu64 "\n", fent->volume, fent->file_id, fent->coordinator );
+               dbprintf("coordinator of %s /%" PRIu64 "/%" PRIX64 " is now %" PRIu64 "\n", fs_path, fent->volume, fent->file_id, fent->coordinator );
                rc = 0;
                continue;
             }
             else {
                // some other (fatal) error
-               errorf("fs_entry_coordinate(/%" PRIu64 "/%" PRIX64 ") rc = %d\n", fent->volume, fent->file_id, rc );
+               errorf("fs_entry_coordinate(%s /%" PRIu64 "/%" PRIX64 ") rc = %d\n", fs_path, fent->volume, fent->file_id, rc );
                break;
             }
          }

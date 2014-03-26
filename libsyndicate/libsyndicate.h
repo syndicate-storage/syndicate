@@ -85,6 +85,7 @@ struct md_entry {
    int64_t mtime_sec;   // last-modified time (seconds)
    int32_t mtime_nsec;  // last-modified time (nanoseconds)
    int64_t write_nonce; // last-write nonce 
+   int64_t xattr_nonce; // xattr write nonce
    int64_t version;     // file version
    int32_t max_read_freshness;      // how long is this entry fresh until it needs revalidation?
    int32_t max_write_freshness;     // how long can we delay publishing this entry?
@@ -102,14 +103,15 @@ typedef list<struct md_entry*> md_entry_list;
 
 
 // metadata update
-// line looks like:
-// [command] [timestamp] [entry text]
 struct md_update {
    char op;               // update operation
    struct md_entry ent;
-   struct md_entry dest;        // only used by RENAME
+   struct md_entry dest;  // only used by RENAME
    int error;             // error information
-   int flags;           // op-specific flags
+   int flags;             // op-specific flags
+   char* xattr_name;      // xattr name (setxattr, removexattr)
+   char* xattr_value;     // xattr value (setxattr)
+   size_t xattr_value_len;
 };
 
 // metadata update operations
@@ -124,17 +126,27 @@ struct md_update {
 
 // download buffer
 struct md_download_buf {
-   ssize_t len;         // amount of data
-   ssize_t data_len;    // size of data (if data was preallocated)
+   off_t len;         // amount of data
+   off_t data_len;    // size of data (if data was preallocated)
    char* data;    // NOT null-terminated
 };
 
 
 // bounded response buffer
 struct md_bound_response_buffer {
-   ssize_t max_size;
-   ssize_t size;
+   off_t max_size;
+   off_t size;
    response_buffer_t* rb;
+};
+
+typedef size_t (*md_download_continuation_func)(void*, size_t, size_t, void*);
+
+// driver continuation, for calling libsyndicate download-handling code along with user-given driver code when downloading something
+struct md_download_continuation { 
+   struct md_bound_response_buffer brb;
+   
+   void* user_cls;
+   md_download_continuation_func cont;
 };
 
 // upload buffer
@@ -204,6 +216,7 @@ struct md_syndicate_conf {
    uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
    uint64_t gateway;                                  // what is the gateway ID in Syndicate?
    uint64_t view_reload_freq;                         // how often do we check for new Volume/UG/RG metadata?
+   char* syndicate_pubkey_path;                       // location on disk where the syndicate public key can be found.
 
    // security fields (loaded at runtime)
    char* gateway_key;                                 // gateway private key (PEM format)
@@ -214,6 +227,8 @@ struct md_syndicate_conf {
    size_t server_cert_len;
    char* volume_pubkey;                               // volume metadata public key (PEM format)
    size_t volume_pubkey_len;
+   char* syndicate_pubkey;                            // Syndicate-specific public key
+   size_t syndicate_pubkey_len;
 
    // set at runtime
    char* data_root;                                   // root of the path where we store local file blocks
@@ -225,6 +240,9 @@ struct md_syndicate_conf {
    int gateway_type;                                  // type of gateway 
    bool is_client;                                    // if true for a UG, always fetch data from RGs
 };
+
+typedef int (*md_cache_connector_func)(struct md_syndicate_conf*, CURL*, char const*, void*);
+typedef int (*md_manifest_processor_func)(struct md_syndicate_conf*, char*, size_t, char**, size_t*, void*);
 
 #define USER_ANON               (uint64_t)0xFFFFFFFFFFFFFFFFLL
 #define GATEWAY_ANON            (uint64_t)0xFFFFFFFFFFFFFFFFLL
@@ -266,6 +284,7 @@ struct md_syndicate_conf {
 #define SSL_CERT_KEY                "TLS_CERT"
 #define GATEWAY_KEY_KEY             "GATEWAY_KEY"
 #define VOLUME_PUBKEY_KEY           "VOLUME_PUBKEY"
+#define SYNDICATE_PUBKEY_KEY        "SYNDICATE_PUBKEY"
 #define VOLUME_NAME_KEY             "VOLUME_NAME"
 #define GATEWAY_NAME_KEY            "GATEWAY_NAME"
 
@@ -368,13 +387,15 @@ pthread_t md_start_thread( void* (*thread_func)(void*), void* args, bool detach 
 // downloads
 void md_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char const* url, time_t query_time );
 void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, bool ssl_verify_peer );
-ssize_t md_download_file4( struct md_syndicate_conf* conf, char const* url, char** buf, char const* username, char const* password, char const* proxy, void (*curl_extractor)( CURL*, int, void* ), void* arg );
-ssize_t md_download_file5( CURL* curl_h, char** buf );
-ssize_t md_download_file6( CURL* curl_h, char** buf, ssize_t max_len );
-int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len, int* status_code );
-int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len, int* status_code );
-int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg );
-ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char const* block_url, char** block_bits, size_t block_len );
+off_t md_download_file( CURL* curl_h, char** buf );
+off_t md_download_file2( CURL* curl_h, char** buf, off_t max_len );
+int md_download_with_continuation( CURL* curl, char** bits, off_t* ret_len, int* _status_code, struct md_download_continuation* cont );
+int md_download_from_caches( struct md_syndicate_conf* conf, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls );
+int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls );
+int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg,
+                          md_cache_connector_func cache_func, void* cache_func_cls,
+                          md_manifest_processor_func manifest_func, void* manifest_func_cls );
+off_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char const* block_url, char** block_bits, size_t block_len, md_cache_connector_func cache_func, void* cache_func_cls );
 
 // download/upload callbacks
 size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t count, void* user_data );
@@ -403,7 +424,7 @@ uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t*
 
 // response buffers
 char* response_buffer_to_string( response_buffer_t* rb );
-size_t response_buffer_size( response_buffer_t* rb );
+off_t response_buffer_size( response_buffer_t* rb );
 void response_buffer_free( response_buffer_t* rb );
 
 
@@ -420,7 +441,8 @@ int md_init( struct md_syndicate_conf* conf,
              char const* my_key_password,
              char const* tls_pkey_file,
              char const* tls_cert_file,
-             char const* storage_root
+             char const* storage_root,
+             char const* syndicate_pubkey_path
            );
 
 
@@ -433,9 +455,10 @@ int md_init_client( struct md_syndicate_conf* conf,
                     char const* oid_username,
                     char const* oid_password,
                     char const* volume_pubkey_pem,
-                    char const* my_key_str,
+                    char const* my_key_pem,
                     char const* my_key_password,
-                    char const* storage_root
+                    char const* storage_root,
+                    char const* syndicate_pubkey_pem
                   );
 
 int md_shutdown(void);

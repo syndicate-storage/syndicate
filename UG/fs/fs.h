@@ -23,7 +23,6 @@
 #include "link.h"
 #include "manifest.h"
 #include "mkdir.h"
-#include "mkfs.h"
 #include "open.h"
 #include "opendir.h"
 #include "read.h"

@@ -26,6 +26,7 @@ from common.admin_info import *
 
 import logging
 import urllib
+import base64
 
 from openid.gaeopenid import GAEOpenIDRequestHandler
 
@@ -55,8 +56,14 @@ def register_make_openid_reply( oid_request, return_method, return_to, query ):
    openid_reply.challenge_method = OPENID_PROVIDER_CHALLENGE_METHOD
    openid_reply.response_method = OPENID_PROVIDER_RESPONSE_METHOD
    openid_reply.redirect_method = return_method
-
-   # TODO: sign?
+   openid_reply.signature = ""
+   
+   data = openid_reply.SerializeToString()
+   
+   signature = storagetypes.Object.auth_sign( SYNDICATE_PRIVKEY, data );
+   
+   openid_reply.signature = base64.b64encode( signature )
+   
    data = openid_reply.SerializeToString()
 
    return data
@@ -127,7 +134,7 @@ def register_complete( gateway ):
    # registration information
    registration_metadata.session_password = session_pass
    registration_metadata.session_expires = gateway.session_expires
-   gateway.protobuf_cert( registration_metadata.cert )
+   gateway.protobuf_cert( registration_metadata.cert, need_closure=True )
    
    # find all Volumes
    volume = storage.read_volume( gateway.volume_id )

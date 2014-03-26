@@ -41,7 +41,7 @@ cdef class SyndicateFileHandle:
       return self.handle_ptr
 
 # ------------------------------------------
-SyndicateEntry = collections.namedtuple( "SyndicateEntry", ["type", "name", "file_id", "ctime", "mtime", "write_nonce", "version",
+SyndicateEntry = collections.namedtuple( "SyndicateEntry", ["type", "name", "file_id", "ctime", "mtime", "write_nonce", "xattr_nonce", "version",
                                                              "max_read_freshness", "max_write_freshness", "owner", "coordinator", "volume", "mode", "size"] )
 
 SyndicateStat = collections.namedtuple( "SyndicateStat", ["st_mode", "st_ino", "st_dev", "st_nlink", "st_uid", "st_gid", "st_size", "st_atime", "st_mtime", "st_ctime"] )
@@ -78,7 +78,7 @@ cdef class Volume:
                        password=None,
                        volume_name=None,
                        volume_key_pem=None,
-                       gateway_pkey_str=None,
+                       gateway_pkey_pem=None,
                        gateway_pkey_decryption_password=None,
                        storage_root=None,
                        wait_replicas=-1 ):
@@ -95,7 +95,7 @@ cdef class Volume:
          char* c_password = NULL
          char* c_volume_name = NULL
          char* c_volume_key_pem = NULL
-         char* c_gateway_pkey_str = NULL
+         char* c_gateway_pkey_pem = NULL
          char* c_gateway_pkey_decryption_password = NULL
          char* c_storage_root = NULL
          syndicate_opts opts
@@ -118,8 +118,8 @@ cdef class Volume:
       if config_file != None:
          c_config_file = config_file 
       
-      if gateway_pkey_str != None:
-         c_gateway_pkey_str = gateway_pkey_str
+      if gateway_pkey_pem != None:
+         c_gateway_pkey_pem = gateway_pkey_pem
        
       if gateway_pkey_decryption_password != None:
          c_gateway_pkey_decryption_password = gateway_pkey_decryption_password
@@ -138,7 +138,7 @@ cdef class Volume:
       opts.password = password
       opts.volume_name = volume_name
       opts.config_file = config_file
-      opts.gateway_pkey_str = gateway_pkey_str
+      opts.gateway_pkey_pem = gateway_pkey_pem
       opts.gateway_pkey_decryption_password = gateway_pkey_decryption_password
       opts.storage_root = storage_root
       opts.wait_replicas = wait_replicas
@@ -343,6 +343,7 @@ cdef class Volume:
                                     ctime = (fs_dir_entry_ctime_sec( c_dirs[i] ), fs_dir_entry_ctime_nsec( c_dirs[i] )),
                                     mtime = (fs_dir_entry_mtime_sec( c_dirs[i] ), fs_dir_entry_mtime_nsec( c_dirs[i] )),
                                     write_nonce = fs_dir_entry_write_nonce( c_dirs[i] ),
+                                    xattr_nonce = fs_dir_entry_xattr_nonce( c_dirs[i] ),
                                     version = fs_dir_entry_version( c_dirs[i] ),
                                     max_read_freshness = fs_dir_entry_max_read_freshness( c_dirs[i] ),
                                     max_write_freshness = fs_dir_entry_max_write_freshness( c_dirs[i] ),

@@ -18,46 +18,57 @@
 #define _DRIVER_H_
 
 #include "libsyndicate.h"
+#include "libsyndicate/closure.h"
 #include "fs_entry.h"
 
 #include <dlfcn.h>
 
-#define DRIVER_TMPFILE_NAME "closure-XXXXXX"
+// driver callback signatures
+typedef int (*driver_connect_cache_func)( struct md_syndicate_conf*, CURL*, char const*, void* );
+typedef int (*driver_write_block_preup_func)( char const*, struct fs_entry*, uint64_t, int64_t, char*, size_t, char**, size_t*, void* );
+typedef int (*driver_write_manifest_preup_func)( char const*, struct fs_entry*, int64_t, int32_t, char*, size_t, char**, size_t*, void* );
+typedef ssize_t (*driver_read_block_postdown_func)( char const*, struct fs_entry*, uint64_t, int64_t, char*, size_t, char*, size_t, void* );
+typedef int (*driver_read_manifest_postdown_func)( char const*, struct fs_entry*, int64_t, int32_t, char*, size_t, char**, size_t*, void* );
+typedef int (*driver_chcoord_begin_func)( char const*, struct fs_entry*, int64_t, void* );
+typedef int (*driver_chcoord_end_func)( char const*, struct fs_entry*, int64_t, int, void* );
 
-
-// driver construct for the UG
-struct storage_driver {
-   void* driver;        // dynamic driver library handle
-   char* so_path;       // path to the driver so file
-   
-   void* cls;           // driver-specific state
-   
-   int running;         // set to non-zero of this driver is initialized
-   
-   pthread_rwlock_t reload_lock;                // if write-locked, no method can be called here (i.e. the UG is reloading)
-   
-   int (*init)( struct fs_core* core, void** cls );
-   int (*shutdown)( struct fs_core* core, void* cls );
-   
-   char* (*connect_cache_manifest)( struct fs_core* core, void* cls, CURL* curl, struct fs_entry* fent, char const* fs_path, int64_t mtime_sec, int32_t mtime_nsec );
-   char* (*connect_cache_block)( struct fs_core* core, void* cls, CURL* curl, struct fs_entry* fent, char const* fs_path, uint64_t block_id, int64_t block_version );
-   int (*write_preup)( struct fs_core* core, void* cls, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* block_data, size_t block_data_len );
-   int (*read_postdown)( struct fs_core* core, void* cls, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* block_data, size_t block_data_len );
-   int (*chcoord_begin)( struct fs_core* core, void* cls, struct fs_entry* fent );
-   int (*chcoord_end)( struct fs_core* core, void* cls, struct fs_entry* fent, int chcoord_status );
+// for connecting to the cache providers
+struct driver_connect_cache_cls {
+   struct md_closure* driver;
+   struct ms_client* client;
 };
 
-// driver interface 
-int driver_init( struct fs_core* core, struct storage_driver* driver );
-int driver_reload( struct fs_core* core, struct storage_driver* driver );
-int driver_shutdown( struct fs_core* core, struct storage_driver* driver );
+// for reading a manifest 
+struct driver_read_manifest_postdown_cls {
+   struct md_closure* driver;
+   char const* fs_path;
+   struct fs_entry* fent;
+   int64_t mtime_sec;
+   int32_t mtime_nsec;
+};
 
-// UG calls these methods to access the driver
-char* driver_connect_cache_manifest( struct fs_core* core, struct storage_driver* driver, CURL* curl, struct fs_entry* fent, char const* fs_path, int64_t mtime_sec, int32_t mtime_nsec );
-char* driver_connect_cache_block( struct fs_core* core, struct storage_driver* driver, CURL* curl, struct fs_entry* fent, char const* fs_path, uint64_t block_id, int64_t block_version );
-int driver_write_preup( struct fs_core* core, struct storage_driver* driver, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* block_data, size_t block_data_len );
-int driver_read_postdown( struct fs_core* core, struct storage_driver* driver, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char* block_data, size_t block_data_len );
-int driver_chcoord_begin( struct fs_core* core, struct storage_driver* driver, struct fs_entry* fent );
-int driver_chcoord_end( struct fs_core* core, struct storage_driver* driver, struct fs_entry* fent, int chcoord_status );
+// driver control API
+int driver_init( struct fs_core* core, struct md_closure** driver );
+int driver_reload( struct fs_core* core, struct md_closure* driver );
+int driver_shutdown( struct md_closure* driver );
+
+// UG calls these methods to access the driver...
+
+int driver_connect_cache( struct md_syndicate_conf* conf, CURL* curl, char const* url, void* cls );
+
+// called by read(), write(), and trunc()
+int driver_write_block_preup( struct md_closure* driver, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
+                              char* in_block_data, size_t in_block_data_len, char** out_block_data, size_t* out_block_data_len );
+int driver_write_manifest_preup( struct md_closure* driver, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec,
+                                 char* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len, void* user_cls );
+ssize_t driver_read_block_postdown( struct md_closure* driver, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
+                                    char* in_block_data, size_t in_block_data_len, char* out_block_data, size_t out_block_data_len );
+int driver_read_manifest_postdown( struct md_syndicate_conf* conf, char* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len, void* user_cls );
+
+// called by chown()
+int driver_chcoord_begin( struct md_closure* driver, char const* fs_path, struct fs_entry* fent, int64_t replica_version );
+int driver_chcoord_end( struct md_closure* driver, char const* fs_path, struct fs_entry* fent, int64_t replica_version, int chcoord_status );
+
+extern struct md_closure_callback_entry UG_CLOSURE_PROTOTYPE[];
 
 #endif

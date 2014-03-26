@@ -244,6 +244,8 @@ class Volume( storagetypes.Object ):
    deleted = storagetypes.Boolean()      # is this Volume deleted?
    
    default_gateway_caps = storagetypes.Integer( indexed=False )
+   
+   cache_closure = storagetypes.Text()          # base64-encoded closure for connecting to the cache providers
 
    # for RPC
    key_type = "volume"
@@ -355,6 +357,9 @@ class Volume( storagetypes.Object ):
       volume_metadata.private = kwargs.get( 'private', self.private )
       volume_metadata.allow_anon = kwargs.get( 'allow_anon', self.allow_anon )
       
+      if kwargs.get('cache_closure', self.cache_closure) is not None:
+         volume_metadata.cache_closure = kwargs.get( 'cache_closure', self.cache_closure )
+      
       # sign it
       volume_metadata.signature = ""
 
@@ -366,13 +371,13 @@ class Volume( storagetypes.Object ):
       return
       
    
-   def protobuf_gateway_cert( self, gateway_cert, gateway, sign=True ):
+   def protobuf_gateway_cert( self, gateway_cert, gateway, sign=True, need_closure=True ):
       """
       Given an ms_gateway_cert protobuf and a gateway record, have the gateway populate the 
       cert protobuf and then have the Volume optionally sign it with its private key.
       """
       
-      gateway.protobuf_cert( gateway_cert )
+      gateway.protobuf_cert( gateway_cert, need_closure=need_closure )
       
       gateway_cert.signature = ""
       

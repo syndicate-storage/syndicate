@@ -52,6 +52,12 @@ indexes:
   - name: mode
   - name: file_id
 
+- kind: MSEntryXAttr
+  properties:
+  - name: file_id
+  - name: volume_id
+  - name: xattr_name
+
 - kind: OpenIDAssociation
   properties:
   - name: server_url_hash

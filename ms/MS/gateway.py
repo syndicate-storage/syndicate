@@ -122,7 +122,7 @@ class Gateway( storagetypes.Object ):
    
    cert_version = storagetypes.Integer( default=1 )   # certificate-related version of this gateway
    
-   closure = storagetypes.Json()                # gateway-specific configuration
+   closure = storagetypes.Text()                # gateway-specific configuration
    
    gateway_blocksize = storagetypes.Integer( default=0 )        # (AG only) advertized blocksize
    
@@ -311,7 +311,7 @@ class Gateway( storagetypes.Object ):
       return 0
       
    
-   def protobuf_cert( self, cert_pb ):
+   def protobuf_cert( self, cert_pb, need_closure=True ):
       """
       Populate an ms_volume_gateway_cred structure
       """
@@ -327,9 +327,10 @@ class Gateway( storagetypes.Object ):
       cert_pb.volume_id = self.volume_id
       cert_pb.blocksize = self.gateway_blocksize
       
-      if self.closure == None:
+      if self.closure == None or not need_closure:
          cert_pb.closure_text = ""
-      else:
+         
+      elif self.closure is not None:
          cert_pb.closure_text = str( self.closure )
          
       cert_pb.signature = ""

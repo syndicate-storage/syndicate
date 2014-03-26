@@ -21,6 +21,7 @@
 #include "unlink.h"
 #include "network.h"
 #include "replication.h"
+#include "driver.h"
 
 
 // sync a file's metadata with the MS and flush replicas
@@ -140,6 +141,12 @@ static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent,
    }
 }
 
+
+// determine whether or not we need to clear the cached xattrs 
+static bool fs_entry_xattr_cache_stale( struct fs_entry* fent, int64_t xattr_nonce ) {
+   return fent->xattr_nonce != xattr_nonce;
+}
+
 // make a fent read stale
 int fs_entry_mark_read_stale( struct fs_entry* fent ) {
    fent->read_stale = true;
@@ -205,6 +212,7 @@ int fs_entry_reload( struct fs_entry_consistency_cls* consistency_cls, struct fs
    fent->file_id = ent->file_id;
    fent->version = ent->version;
    fent->write_nonce = ent->write_nonce;
+   fent->xattr_nonce = ent->xattr_nonce;
    
    if( fent->name )
       free( fent->name );
@@ -441,6 +449,7 @@ static int fs_entry_zip_path_listing( path_t* ms_path, ms_response_t* ms_respons
 }
 
 
+// fent should be write-locked
 static int fs_entry_reload_file( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* fent, struct ms_listing* listing ) {
    // sanity check
    if( fent->ftype != FTYPE_FILE )
@@ -460,6 +469,11 @@ static int fs_entry_reload_file( struct fs_entry_consistency_cls* consistency_cl
       // nothing to load
       errorf("No data for '%s'\n", fent->name );
       return -ENODATA;
+   }
+   
+   // xattr cache stale?
+   if( fs_entry_xattr_cache_stale( fent, ent->xattr_nonce ) ) {
+      fs_entry_clear_cached_xattrs( fent, ent->xattr_nonce );
    }
    
    if( !fs_entry_should_reload( consistency_cls->core, fent, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, &consistency_cls->query_time ) ) {
@@ -564,6 +578,11 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
          continue;
 
       if( ms_ent->file_id == dent->file_id ) {
+         // check cached xattrs 
+         if( fs_entry_xattr_cache_stale( dent, ms_ent->xattr_nonce ) ) {
+            fs_entry_clear_cached_xattrs( dent, ms_ent->xattr_nonce );
+         }
+         
          if( fs_entry_should_reload( consistency_cls->core, dent, ms_ent->mtime_sec, ms_ent->mtime_nsec, ms_ent->write_nonce, &consistency_cls->query_time ) ) {
             dbprintf("reload '%s' ('%s')\n", dent->name, ms_ent->name );
             fs_entry_reload( consistency_cls, dent, ms_ent );
@@ -639,6 +658,11 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
 
          if( ms_ent->file_id == child->file_id ) {
 
+            // check cached xattrs 
+            if( fs_entry_xattr_cache_stale( child, ms_ent->xattr_nonce ) ) {
+               fs_entry_clear_cached_xattrs( child, ms_ent->xattr_nonce );
+            }
+            
             // do the reload (if we need to)
             if( fs_entry_should_reload( consistency_cls->core, child, ms_ent->mtime_sec, ms_ent->mtime_nsec, ms_ent->write_nonce, &consistency_cls->query_time ) ) {
                // keep directories marked as read-stale if they were before, since we want to later refresh their children if they were modified
@@ -1294,7 +1318,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    
       dbprintf("Reload manifest from Gateway %" PRIu64 " at %s\n", fent->coordinator, manifest_url );
   
-      rc = fs_entry_download_manifest( core, fent->coordinator, manifest_url, &manifest_msg );
+      rc = fs_entry_download_manifest( core, fs_path, fent, mtime_sec, mtime_nsec, manifest_url, &manifest_msg );
       
       if( rc == 0 && successful_gateway_id ) {
          // got it from the coordinator
@@ -1312,7 +1336,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
       // try the RGs
       uint64_t rg_id = 0;
       
-      rc = fs_entry_download_manifest_replica( core, fent->coordinator, fent->volume, fent->file_id, version, mtime_sec, mtime_nsec, &manifest_msg, &rg_id );
+      rc = fs_entry_download_manifest_replica( core, fs_path, fent, mtime_sec, mtime_nsec, &manifest_msg, &rg_id );
       
       if( rc != 0 ) {
          // error
@@ -1373,7 +1397,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
 
 // become the coordinator for a fent
 // fent must be write-locked!
-int fs_entry_coordinate( struct fs_core* core, struct fs_entry* fent, int64_t replica_version, int64_t replica_manifest_mtime_sec, int32_t replica_manifest_mtime_nsec ) {
+int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t replica_version, int64_t replica_manifest_mtime_sec, int32_t replica_manifest_mtime_nsec ) {
    
    // sanity check...
    if( FS_ENTRY_LOCAL( core, fent ) )
@@ -1397,6 +1421,13 @@ int fs_entry_coordinate( struct fs_core* core, struct fs_entry* fent, int64_t re
    }
    
    
+   // run the pre-chcoord driver code...
+   rc = driver_chcoord_begin( core->driver, fs_path, fent, replica_version );
+   if( rc != 0 ) {
+      errorf("driver_chcoord_begin(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, replica_version, rc );
+      return rc;
+   }
+   
    struct md_entry ent;
    fs_entry_to_md_entry( core, &ent, fent, 0, NULL );
    
@@ -1417,6 +1448,12 @@ int fs_entry_coordinate( struct fs_core* core, struct fs_entry* fent, int64_t re
          rc = -EAGAIN;
       }
       fent->coordinator = current_coordinator;
+   }
+   
+   // run the post-chcoord driver code...
+   int driver_rc = driver_chcoord_end( core->driver, fs_path, fent, replica_version, rc );
+   if( driver_rc != 0 ) {
+      errorf("driver_chcoord_end(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, replica_version, driver_rc );
    }
    
    md_entry_free( &ent );

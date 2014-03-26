@@ -99,6 +99,7 @@ cdef extern from "fs/fs_entry.h":
    int64_t fs_dir_entry_ctime_sec( fs_dir_entry* dirent )
    int32_t fs_dir_entry_ctime_nsec( fs_dir_entry* dirent )
    int64_t fs_dir_entry_write_nonce( fs_dir_entry* dirent )
+   int64_t fs_dir_entry_xattr_nonce( fs_dir_entry* dirent )
    int64_t fs_dir_entry_version( fs_dir_entry* dirent )
    int32_t fs_dir_entry_max_read_freshness( fs_dir_entry* dirent )
    int32_t fs_dir_entry_max_write_freshness( fs_dir_entry* dirent )
@@ -126,11 +127,11 @@ cdef extern from "opts.h":
       char* gateway_pkey_path
       char* gateway_pkey_decryption_password
       char* volume_pubkey_pem
-      char* gateway_pkey_str
+      char* gateway_pkey_pem
+      char* syndicate_pubkey_path,
+      char* syndicate_pubkey_pem,
       char* tls_pkey_path
       char* tls_cert_path
-      char* CDN_prefix
-      char* proxy_url
       char* storage_root
       bool flush_replicas
       size_t cache_soft_limit

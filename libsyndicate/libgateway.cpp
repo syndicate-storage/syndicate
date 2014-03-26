@@ -446,6 +446,7 @@ int AG_main( int argc, char** argv ) {
    char* gateway_pkey_decryption_password = NULL;
    char* tls_pkey_path = NULL;
    char* tls_cert_path = NULL;
+   char* syndicate_pubkey_path = NULL;
    pid_t gateway_daemon_pid = 0;
    bool rmap = false;
    bool stop = false;
@@ -466,8 +467,9 @@ int AG_main( int argc, char** argv ) {
       {"volume-pubkey\0Volume public key path (PEM)",       required_argument,   0, 'V'},
       {"gateway-pkey\0Gateway private key path (PEM)",      required_argument,   0, 'G'},
       {"gateway-pkey-password\0Gateway private key decryption password", required_argument, 0, 'K'},
-      {"tls-pkey\0Server TLS private key path (PEM)",       required_argument,   0, 'S'},
+      {"tls-pkey\0Server TLS private key path (PEM)",       required_argument,   0, 'T'},
       {"tls-cert\0Server TLS certificate path (PEM)",       required_argument,   0, 'C'},
+      {"syndicate-pubkey\0Syndicate public key path (PEM)", required_argument,   0, 'S'},
       {"stop\0Stop the gateway daemon",                     required_argument,   0, 't'},
       {"remap\0Remap file mapping",			    required_argument,   0, 'r'},
       {"help\0Print this message",                          no_argument,         0, 'h'},
@@ -476,7 +478,7 @@ int AG_main( int argc, char** argv ) {
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:D:hg:V:G:S:C:t:r:K:", gateway_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:D:hg:V:G:S:T:C:t:r:K:", gateway_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -539,8 +541,12 @@ int AG_main( int argc, char** argv ) {
             gateway_pkey_path = optarg;
             break;
          }
-         case 'S': {
+         case 'T': {
             tls_pkey_path = optarg;
+            break;
+         }
+         case 'S': {
+            syndicate_pubkey_path = optarg;
             break;
          }
          case 'C': {
@@ -612,7 +618,7 @@ int AG_main( int argc, char** argv ) {
       }
    }
    
-   rc = md_init( global_conf, global_ms, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, gateway_pkey_decryption_password, tls_pkey_path, tls_cert_path, NULL );
+   rc = md_init( global_conf, global_ms, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, gateway_pkey_decryption_password, tls_pkey_path, tls_cert_path, NULL, syndicate_pubkey_path );
    if( rc != 0 ) {
       exit(1);
    }

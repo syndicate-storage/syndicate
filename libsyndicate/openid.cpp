@@ -15,6 +15,7 @@
 */
 
 #include "openid.h"
+#include "crypt.h"
 
 
 // set a CURL handle's HTTP method, as well as its URL and query string
@@ -40,7 +41,7 @@ int ms_client_set_method( CURL* curl, char const* method, char const* url, char 
 
 
 // read an OpenID reply from the MS
-int ms_client_load_openid_reply( ms::ms_openid_provider_reply* oid_reply, char* openid_redirect_reply_bits, size_t openid_redirect_reply_bits_len ) {
+int ms_client_load_openid_reply( ms::ms_openid_provider_reply* oid_reply, char* openid_redirect_reply_bits, size_t openid_redirect_reply_bits_len, EVP_PKEY* syndicate_public_key ) {
    // get back the OpenID provider reply
    string openid_redirect_reply_bits_str = string( openid_redirect_reply_bits, openid_redirect_reply_bits_len );
 
@@ -50,8 +51,17 @@ int ms_client_load_openid_reply( ms::ms_openid_provider_reply* oid_reply, char* 
       return -EINVAL;
    }
    
-   // TODO: check signature
-
+   if( syndicate_public_key != NULL ) {
+      int rc = md_verify< ms::ms_openid_provider_reply >( syndicate_public_key, oid_reply );
+      if( rc != 0 ) {
+         errorf("%s", "Signature mismatch in OpenID provider reply\n");
+         return -EINVAL;
+      }
+   }
+   else {
+      errorf("%s", "WARN: No Syndicate public key given.  Relying on TLS to guarantee authenticity of OpenID reply from MS\n" );
+   }
+   
    return 0;
 }
 
@@ -114,7 +124,7 @@ size_t ms_client_dummy_write( char *ptr, size_t size, size_t nmemb, void *userda
 
 // begin the authentication process.  Ask to be securely redirected from the MS to the OpenID provider.
 // on success, populate the ms_openid_provider_reply structure with the information needed to proceed with the OpenID authentication
-int ms_client_openid_begin( CURL* curl, char const* username, char const* begin_url, ms::ms_openid_provider_reply* oid_reply ) {
+int ms_client_openid_begin( CURL* curl, char const* username, char const* begin_url, ms::ms_openid_provider_reply* oid_reply, EVP_PKEY* syndicate_public_key ) {
 
    // url-encode the username
    char* username_encoded = url_encode( username, strlen(username) );
@@ -173,7 +183,7 @@ int ms_client_openid_begin( CURL* curl, char const* username, char const* begin_
    char* response = response_buffer_to_string( &rb );
    size_t len = response_buffer_size( &rb );
 
-   rc = ms_client_load_openid_reply( oid_reply, response, len );
+   rc = ms_client_load_openid_reply( oid_reply, response, len, syndicate_public_key );
 
    free( response );
    response_buffer_free( &rb );
@@ -372,12 +382,12 @@ int ms_client_openid_complete( CURL* curl, char const* return_to_method, char co
    }
    
    // perform
-   len = md_download_file5( curl, &bits );
+   len = md_download_file( curl, &bits );
 
    curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
 
    if( len < 0 ) {
-      errorf("md_download_file5 rc = %zd\n", len );
+      errorf("md_download_file rc = %zd\n", len );
       free( return_to_url_and_path );
       if( return_to_qs )
          free( return_to_qs );
@@ -385,7 +395,7 @@ int ms_client_openid_complete( CURL* curl, char const* return_to_method, char co
    }
 
    if( http_response != 200 ) {
-      errorf("md_download_file5 HTTP status = %ld\n", http_response );
+      errorf("md_download_file HTTP status = %ld\n", http_response );
       free( return_to_url_and_path );
       if( return_to_qs )
          free( return_to_qs );
@@ -407,7 +417,7 @@ int ms_client_openid_complete( CURL* curl, char const* return_to_method, char co
 // open a session with the MS, authenticating via OpenID.
 // an optional initial request (request_buf, request_len) will be sent on the "complete" leg of the OpenID authentication.
 // an optional download buffer (response_buf, response_len) will hold the MS's initial response from the OpenID authentication (from the "complete" leg).
-int ms_client_openid_session( CURL* curl, char const* ms_openid_url, char const* username, char const* password, char** response_buf, size_t* response_len ) {
+int ms_client_openid_session( CURL* curl, char const* ms_openid_url, char const* username, char const* password, char** response_buf, size_t* response_len, EVP_PKEY* syndicate_public_key ) {
    
    int rc = 0;
    
@@ -417,7 +427,7 @@ int ms_client_openid_session( CURL* curl, char const* ms_openid_url, char const*
    curl_easy_setopt( curl, CURLOPT_COOKIEFILE, "/COOKIE" );
    
    // get info for the OpenID provider
-   rc = ms_client_openid_begin( curl, username, ms_openid_url, &oid_reply );
+   rc = ms_client_openid_begin( curl, username, ms_openid_url, &oid_reply, syndicate_public_key );
    
    if( rc != 0 ) {
       errorf("ms_client_openid_begin(%s) rc = %d\n", ms_openid_url, rc);

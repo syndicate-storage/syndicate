@@ -160,7 +160,7 @@ int fs_entry_cache_destroy( struct syndicate_cache* cache );
 struct cache_block_future* fs_entry_cache_write_block_async( struct fs_core* core, struct syndicate_cache* cache,
                                                              uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version,
                                                              char* data, size_t data_len,
-                                                             bool detached );
+                                                             bool detached, int* rc);
 
 int fs_entry_cache_block_future_wait( struct cache_block_future* f );
 int fs_entry_cache_block_future_free( struct cache_block_future* f );
@@ -168,7 +168,7 @@ int fs_entry_cache_block_future_release_fd( struct cache_block_future* f );
 
 // synchronous block I/O
 int fs_entry_cache_open_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int flags );
-ssize_t fs_entry_cache_read_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int block_fd, char* buf, size_t len );
+ssize_t fs_entry_cache_read_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int block_fd, char** buf );
 
 int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, struct stat* sb );
 int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cache, char const* fs_path, uint64_t block_id, int64_t block_version, struct stat* sb );

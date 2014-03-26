@@ -20,4 +20,6 @@
 #include "fs_entry.h"
 #include "libsyndicate/libsyndicate.h"
 
+// TODO: recover partially-completed writes 
+
 #endif

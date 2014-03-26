@@ -71,7 +71,6 @@ int md_password_unseal( char const* encrypted_data, size_t encrypted_data_len, c
 // signature verifier
 // have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
 // NOTE:  class T should be a protobuf, and should have a string signature field
-// TODO: verify the signature of the hash of the message, not the whole message?
 template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
    // get the signature
    size_t sigb64_len = protobuf->signature().size();
@@ -119,7 +118,6 @@ template <class T> int md_verify( EVP_PKEY* pkey, T* protobuf ) {
 // signature generator
 // have to put this here, since C++ forbids separating the declaration and definition of template functions across multiple files???
 // NOTE: class T should be a protobuf, and should have a string signature field 
-// TODO: sign the hash of the message, not the whole message?
 template <class T> int md_sign( EVP_PKEY* pkey, T* protobuf ) {
    protobuf->set_signature( "" );
 

@@ -1023,10 +1023,14 @@ static int cache_entry_key_init( struct cache_entry_key* c, uint64_t file_id, in
 struct cache_block_future* fs_entry_cache_write_block_async( struct fs_core* core, struct syndicate_cache* cache,
                                                              uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version,
                                                              char* data, size_t data_len,
-                                                             bool detached ) {
+                                                             bool detached, int* _rc ) {
    
-   if( !cache->running )
+   *_rc = 0;
+   
+   if( !cache->running ) {
+      *_rc = -ENOTCONN;
       return NULL;
+   }
    
    // reserve the right to cache this block
    sem_wait( &cache->sem_write_hard_limit );
@@ -1034,6 +1038,7 @@ struct cache_block_future* fs_entry_cache_write_block_async( struct fs_core* cor
    // create the block to cache
    int block_fd = fs_entry_cache_open_block( core, cache, file_id, file_version, block_id, block_version, O_CREAT | O_RDWR | O_TRUNC );
    if( block_fd < 0 ) {
+      *_rc = block_fd;
       errorf("fs_entry_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", file_id, file_version, block_id, block_version, block_fd );
       return NULL;
    }
@@ -1088,12 +1093,25 @@ int fs_entry_cache_promote_block( struct fs_core* core, struct syndicate_cache* 
 
 
 // read a block from the cache, in its entirety
-ssize_t fs_entry_cache_read_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int block_fd, char* buf, size_t len ) {
+ssize_t fs_entry_cache_read_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int block_fd, char** buf ) {
    ssize_t nr = 0;
-   while( nr < (signed)len ) {
-      ssize_t tmp = read( block_fd, buf + nr, len - nr );
+   
+   struct stat sb;
+   int rc = fstat( block_fd, &sb );
+   if( rc != 0 ) {
+      rc = -errno;
+      errorf("fstat(%d (%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "])) rc = %d\n", block_fd, file_id, file_version, block_id, block_version, rc );
+      return rc;
+   }
+   
+   ssize_t len = sb.st_size;
+   char* block_buf = CALLOC_LIST( char, len );
+   
+   while( nr < len ) {
+      ssize_t tmp = read( block_fd, block_buf + nr, len - nr );
       if( tmp < 0 ) {
          ssize_t rc = -errno;
+         free( block_buf );
          return rc;
       }
 
@@ -1103,6 +1121,8 @@ ssize_t fs_entry_cache_read_block( struct fs_core* core, struct syndicate_cache*
 
       nr += tmp;
    }
+   
+   *buf = block_buf;
    
    return nr;
 }

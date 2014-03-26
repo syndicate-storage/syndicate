@@ -394,7 +394,7 @@ def file_read_auth( gateway, volume ):
    
    # this gateway must be allowed to read metadata
    if gateway != None and not gateway.check_caps( GATEWAY_CAP_READ_METADATA ):
-      print "bad caps: %x" % gateway.caps
+      print "bad caps: %s" % gateway.caps
       return False
    
    return True
@@ -485,7 +485,7 @@ def file_xattr_listxattr_response( volume, rc, xattr_names ):
    if rc == 0:
       
       for name in xattr_names:
-         reply.xattr_names.add( name )
+         reply.xattr_names.append( name )
       
    return file_update_complete_response( volume, reply )
 
@@ -504,7 +504,7 @@ def file_xattr_getxattr( gateway, volume, file_id, xattr_name ):
    
    if rc == 0 and msent != None:
       # get the xattr
-      rc, xattr_value = MSEntryXAttr.GetXAttr( msent, xattr_name )
+      rc, xattr_value = MSEntryXAttr.GetXAttr( volume, msent, xattr_name )
    
    logging.info("getxattr /%s/%s/%s rc = %d" % (volume.volume_id, file_id, xattr_name, rc) )
 
@@ -527,7 +527,7 @@ def file_xattr_listxattr( gateway, volume, file_id, unused=None ):
    
    if rc == 0 and msent != None:
       # get the xattr
-      rc, xattr_names = MSEntryXAttr.ListXAttr( msent )
+      rc, xattr_names = MSEntryXAttr.ListXAttrs( volume, msent )
    
    logging.info("listxattr /%s/%s rc = %d" % (volume.volume_id, file_id, rc) )
 
@@ -552,17 +552,19 @@ def file_xattr_setxattr( reply, gateway, volume, update ):
    
    if update.HasField( 'xattr_replace' ):
       xattr_replace = update.xattr_replace 
-      
+   
+   attrs = MSEntry.unprotobuf_dict( update.entry )
+   
    logging.info("setxattr /%s/%s (name=%s, parent=%s) %s = %s (create=%s, replace=%s)" % 
                   (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace))
       
-   rc, msent = xattr_get_and_check_msentry_writeable( gateway, volume, attrs['file_id'] )
+   rc, msent = file_xattr_get_and_check_msentry_writeable( gateway, volume, attrs['file_id'] )
    
    if rc == 0:
       # allowed!
-      rc = MSEntryXAttr.SetXAttr( msent, update.xattr_name, update.xattr_value, xattr_create=xattr_create, xattr_replace=xattr_replace )
+      rc = MSEntryXAttr.SetXAttr( volume, msent, update.xattr_name, update.xattr_value, create=xattr_create, replace=xattr_replace )
       
-   logging.info("setxattr /%s/%s (name=%s, parent=%s) %x = %x (create=%s, replace=%s) rc = %s" % 
+   logging.info("setxattr /%s/%s (name=%s, parent=%s) %s = %s (create=%s, replace=%s) rc = %s" % 
                   (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace, rc) )
          
    return rc
@@ -576,16 +578,18 @@ def file_xattr_removexattr( reply, gateway, volume, update ):
    This is part of the File Metadata API.
    """
 
+   attrs = MSEntry.unprotobuf_dict( update.entry )
+   
    logging.info("removexattr /%s/%s (name=%s, parent=%s) %s" % 
                   (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name))
       
-   rc, msent = xattr_get_and_check_msentry_writeable( gateway, volume, attrs['file_id'] )
+   rc, msent = file_xattr_get_and_check_msentry_writeable( gateway, volume, attrs['file_id'] )
    
    if rc == 0:
       # allowed!
-      rc = MSEntryXAttr.RemoveXAttr( msent, update.xattr_name )
+      rc = MSEntryXAttr.RemoveXAttr( volume, msent, update.xattr_name )
    
-   logging.info("removexattr /%s/%s (name=%s, parent=%s) %x rc = %s" % 
+   logging.info("removexattr /%s/%s (name=%s, parent=%s) %s rc = %s" % 
                   (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, rc) )
    
    

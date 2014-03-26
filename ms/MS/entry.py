@@ -69,6 +69,7 @@ class MSEntryShard(storagetypes.Object):
    mtime_nsec = storagetypes.Integer(default=0, indexed=False)
    size = storagetypes.Integer(default=0, indexed=False )
    write_nonce = storagetypes.Integer( default=0, indexed=False )
+   xattr_nonce = storagetypes.Integer( default=0, indexed=False )
    
    # version of the MSEntry we're associated with
    msentry_version = storagetypes.Integer(default=0, indexed=False )
@@ -206,7 +207,7 @@ class MSEntryXAttr( storagetypes.Object ):
    file_id = storagetypes.String( default="None" )              # has to be a string, since this is an unsigned 64-bit int (and GAE only supports signed 64-bit int)
    volume_id = storagetypes.Integer( default=-1 )
    
-   xattr_name = storagetypes.String( default="None", indexed=False )
+   xattr_name = storagetypes.String( default="None" )
    xattr_value = storagetypes.Text()
    
    nonce = storagetypes.Integer( default=0 )
@@ -220,21 +221,23 @@ class MSEntryXAttr( storagetypes.Object ):
       return "MSEntryXAttr: volume_id=%s,file_id=%s" % (volume_id, file_id)
    
    @classmethod
-   def ListXAttrs( cls, msent ):
+   def ListXAttrs( cls, volume, msent ):
       """
       Get the names of the xattrs for this MSEntry.
       """
       cached_listing_name = MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id )
       names = storagetypes.memcache.get( cached_listing_name )
       if names == None:
-         names = cls.ListAll( {"MSEntryXAttr.file_id ==", msent.file_id, "MSEntryXAttr.volume_id ==", msent.volume_id}, projection=["xattr_name"] )
+         name_proj = cls.ListAll( {"MSEntryXAttr.file_id ==": msent.file_id, "MSEntryXAttr.volume_id ==": msent.volume_id}, projection=["xattr_name"] )
+         
+         names = [x.xattr_name for x in name_proj]
       
          storagetypes.memcache.set( MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id ), names );
       
       return 0, names
    
    @classmethod
-   def GetXAttr( cls, msent, xattr_name ):
+   def GetXAttr( cls, volume, msent, xattr_name ):
       """
       Get an extended attribute's value.
       Fail with ENOATTR (ENODATA) if there is no such attribute.
@@ -244,8 +247,8 @@ class MSEntryXAttr( storagetypes.Object ):
       rc = 0
      
       if xattr == None:
-         xattr_key = storagetypes.make_key( xattr_key_name )
-         xattr = xattr.get()
+         xattr_key = storagetypes.make_key( MSEntryXAttr, xattr_key_name )
+         xattr = xattr_key.get()
          
          if xattr != None:
             # cache for later 
@@ -261,11 +264,11 @@ class MSEntryXAttr( storagetypes.Object ):
       else:
          value = xattr.xattr_value
       
-      return (rc, xattr.value)
+      return (rc, value)
    
    
    @classmethod 
-   def SetXAttr( cls, msent, xattr_name, xattr_value, create=False, replace=False ):
+   def SetXAttr( cls, volume, msent, xattr_name, xattr_value, create=False, replace=False ):
       """
       Set an extended attribute for the MSEntry msent.
       If create == True, then replace only if it does NOT exist.  Otherwise fail with EEXIST.
@@ -288,14 +291,10 @@ class MSEntryXAttr( storagetypes.Object ):
             # already existed
             rc = -errno.EEXIST
          
-         else:
-            # added an attribute.  invalidate cached listing
-            storagetypes.memcache.delete( MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id ) )
-         
       elif replace:
          # only replace if it exists
          def put_if_exists():
-            xattr_key = storagetypes.make_key( xattr_key_name )
+            xattr_key = storagetypes.make_key( MSEntryXAttr, xattr_key_name )
             xattr = xattr_key.get()
             
             put_rc = 0
@@ -317,37 +316,63 @@ class MSEntryXAttr( storagetypes.Object ):
 
       else:
          # put it regardles 
-         xattr = MSEntryXAttr( file_id=msent.file_id, volume_id=msent.volume_id, xattr_name=xattr_name, xattr_value = xattr_value )
+         xattr = MSEntryXAttr( key=storagetypes.make_key( MSEntryXAttr, xattr_key_name ), file_id=msent.file_id, volume_id=msent.volume_id, xattr_name=xattr_name, xattr_value = xattr_value )
          xattr.put()
          
-         # potentially added an attribute.  invalidate cached listing
-         storagetypes.memcache.delete( MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id ) )
-      
       if rc == 0:
-         storagetypes.memcache.delete( xattr_key_name )
+         # successfully put xattr
+         # update the xattr_nonce in the msentry
+         new_shard = MSEntry.update_shard( volume.num_shards, msent, xattr_nonce=random.randint( -2**63, 2**63 - 1 ) )
+         new_shard.put()
+         
+         # clear cached xattr value, xattr listing, msentry, and msentry listing
+         ent_cache_key_name = MSEntry.cache_key_name( msent.volume_id, msent.file_id )
+         storagetypes.memcache.delete_multi( [xattr_key_name, MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id ), ent_cache_key_name] )
          
       return rc
       
       
    @classmethod 
-   def delete_and_uncache( cls, volume_id, file_id, name ):
-      xattr_key_name = MSEntryXAttr.make_key_name( msent.volume_id, msent.file_id, xattr_name )
-      xattr_key = storagetypes.make_key( xattr_key_name )
-      xattr_key.delete()
-      storagetypes.memcache.delete( xattr_key_name )
+   def remove_and_uncache( cls, volume, msent, xattr_name ):
+      # get the xattr
+      xattr_key_name = MSEntryXAttr.make_key_name( volume.volume_id, msent.file_id, xattr_name )
+      xattr_key = storagetypes.make_key( MSEntryXAttr, xattr_key_name )
       
+      # get a new shard 
+      new_shard = MSEntry.update_shard( volume.num_shards, msent, xattr_nonce=random.randint( -2**63, 2**63 - 1 ) )
+      
+      # delete the xattr and put the new shard
+      delete_fut = xattr_key.delete_async()
+      shard_fut = new_shard.put_async()
+      
+      storagetypes.wait_futures( [delete_fut, shard_fut] )
+      
+      # clear caches
       listing_key = MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id )
-      storagetypes.memcache.delete( listing_key )
+      ent_cache_key_name = MSEntry.cache_key_name( msent.volume_id, msent.file_id )
+      storagetypes.memcache.delete_multi( [xattr_key_name, listing_key, ent_cache_key_name] )
       
    
    @classmethod 
-   def RemoveXAttr( cls, msent, xattr_name ):
+   def delete_and_uncache( cls, volume_id, file_id, xattr_name ):
+      # get the xattr
+      xattr_key_name = MSEntryXAttr.make_key_name( volume.volume_id, msent.file_id, xattr_name )
+      xattr_key = storagetypes.make_key( MSEntryXAttr, xattr_key_name )
+      
+      # delete the xattr
+      xattr_key.delete()
+      
+      # clear caches
+      storagetypes.memcache.delete( xattr_key_name )
+      
+   @classmethod 
+   def RemoveXAttr( cls, volume, msent, xattr_name ):
       """
       Delete an extended attribute from the MSEntry msent.
       Unlike removexattr(2), this does not ever fail, and runs asynchronously
       """
       
-      storagetypes.deferred.defer( MSEntryXAttr.delete_and_uncache, (msent.volume_id, msent.file_id, xattr_name) )
+      storagetypes.deferred.defer( MSEntryXAttr.remove_and_uncache, volume, msent, xattr_name )
       
       return 0
       
@@ -359,7 +384,7 @@ class MSEntryXAttr( storagetypes.Object ):
       """
       
       def __xattr_deferred_delete( cls, xattr ):
-         storagetypes.deferred.defer( MSEntryXAttr.delete_and_uncache( xattr.volume_id, xattr.file_id, xattr.xattr_name ) )
+         storagetypes.deferred.defer( MSEntryXAttr.delete_and_uncache, xattr.volume_id, xattr.file_id, xattr.xattr_name )
          
       cls.ListAll( {"MSEntryXAttr.file_id ==": file_id, "MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name', 'volume_id', 'file_id'], map_func=__xattr_deferred_delete )
    
@@ -370,7 +395,7 @@ class MSEntryXAttr( storagetypes.Object ):
       Delete all xattrs for a given volume
       """
       def __xattr_deferred_delete( cls, xattr ):
-         storagetypes.deferred.defer( MSEntryXAttr.delete_and_uncache( xattr.volume_id, xattr.file_id, xattr.xattr_name ) )
+         storagetypes.deferred.defer( MSEntryXAttr.delete_and_uncache, xattr.volume_id, xattr.file_id, xattr.xattr_name )
       
       cls.ListAll( {"MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name', 'volume_id', 'file_id'], map_func=__xattr_deferred_delete )
 
@@ -408,6 +433,7 @@ class MSEntry( storagetypes.Object ):
    mtime_nsec = storagetypes.Integer( default=-1, indexed=False )
    size = storagetypes.Integer( default=0, indexed=False )
    write_nonce = storagetypes.Integer( default=0, indexed=False )
+   xattr_nonce = storagetypes.Integer( default=0, indexed=False )
 
    # attributes that must be supplied on creation
    required_attrs = [
@@ -464,7 +490,8 @@ class MSEntry( storagetypes.Object ):
       "size",
       "max_read_freshness",
       "max_write_freshness",
-      "write_nonce"
+      "write_nonce",
+      "xattr_nonce"
    ]
 
    # publicly writable attributes, sharded or not
@@ -489,7 +516,8 @@ class MSEntry( storagetypes.Object ):
       "size",
       "msentry_version",
       "msentry_volume_id",
-      "write_nonce"
+      "write_nonce",
+      "xattr_nonce"
    ]
 
    # functions that read a sharded value from shards for an instance of this ent
@@ -497,7 +525,8 @@ class MSEntry( storagetypes.Object ):
       "mtime_sec": (lambda ent, shards: MSEntryShard.get_mtime_from_shards( ent, shards )[0]),
       "mtime_nsec": (lambda ent, shards: MSEntryShard.get_mtime_from_shards( ent, shards )[1]),
       "size": (lambda ent, shards: MSEntryShard.get_size_from_shards( ent, shards )),
-      "write_nonce": (lambda ent, shards: MSEntryShard.get_latest_attr( ent, shards, "write_nonce" ))
+      "write_nonce": (lambda ent, shards: MSEntryShard.get_latest_attr( ent, shards, "write_nonce" )),
+      "xattr_nonce": (lambda ent, shards: MSEntryShard.get_latest_attr( ent, shards, "xattr_nonce" ))
    }
 
    # functions that write a sharded value, given this ent
@@ -505,7 +534,8 @@ class MSEntry( storagetypes.Object ):
       "msentry_version": (lambda ent: ent.version),
       "msentry_volume_id": (lambda ent: ent.volume_id),
       "size": (lambda ent: ent.size),
-      "write_nonce": (lambda ent: ent.write_nonce)
+      "write_nonce": (lambda ent: ent.write_nonce),
+      "xattr_nonce": (lambda ent: ent.xattr_nonce)
    }
    
    @classmethod 
@@ -542,6 +572,7 @@ class MSEntry( storagetypes.Object ):
       pbent.max_read_freshness = kwargs.get( 'max_read_freshness', self.max_read_freshness )
       pbent.max_write_freshness = kwargs.get( 'max_write_freshness', self.max_write_freshness )
       pbent.write_nonce = kwargs.get( 'write_nonce', self.write_nonce )
+      pbent.xattr_nonce = kwargs.get( 'xattr_nonce', self.xattr_nonce )
 
       pbent.parent_id = MSEntry.serialize_id( kwargs.get('parent_id', '0000000000000000') )
       pbent.file_id = MSEntry.serialize_id( kwargs.get( 'file_id', self.file_id ) )
@@ -574,6 +605,7 @@ class MSEntry( storagetypes.Object ):
       ret.max_read_freshness = ent.max_read_freshness
       ret.max_write_freshness = ent.max_write_freshness
       ret.write_nonce = ent.write_nonce
+      ret.xattr_nonce = ent.xattr_nonce
 
       if ent.HasField('parent_id'): # and ent.HasField('parent_name'):
          #ret.parent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( ent.volume, ent.parent_id ) )
@@ -716,26 +748,28 @@ class MSEntry( storagetypes.Object ):
       
    
    @classmethod
-   def update_shard( cls, num_shards, ent ):
+   def update_shard( cls, num_shards, ent, **extra_shard_attrs ):
       
-      # put the parent shard, updating the number of children
-      parent_attrs = {}
-      parent_attrs.update( ent.to_dict() )
+      # generate attributes to put
+      attrs = {}
+      attrs.update( ent.to_dict() )
+      attrs.update( extra_shard_attrs )
 
       now_sec, now_nsec = storagetypes.clock_gettime()
 
       # verify that the clock advances
-      if now_sec < parent_attrs['mtime_sec'] or (now_sec == parent_attrs['mtime_sec'] and now_nsec < parent_attrs['mtime_nsec']):
-         now_sec = max( now_sec, parent_attrs['mtime_sec'] )
-         now_nsec = max( now_nsec, parent_attrs['mtime_nsec'] ) + 1
+      if now_sec < attrs['mtime_sec'] or (now_sec == attrs['mtime_sec'] and now_nsec < attrs['mtime_nsec']):
+         now_sec = max( now_sec, attrs['mtime_sec'] )
+         now_nsec = max( now_nsec, attrs['mtime_nsec'] ) + 1
          
          if now_nsec >= 1000000000:
             now_nsec = 0
             now_sec += 1
          
-      parent_attrs['mtime_sec'] = now_sec
-      parent_attrs['mtime_nsec'] = now_nsec
-      parent_attrs['write_nonce'] = random.randint( -2**63, 2**63 - 1 )
+      attrs['mtime_sec'] = now_sec
+      attrs['mtime_nsec'] = now_nsec
+      
+      attrs['write_nonce'] = random.randint( -2**63, 2**63 - 1 )
       
       key_name = MSEntry.make_key_name( ent.volume_id, ent.file_id )
       shard_key = MSEntry.get_shard_key( key_name, random.randint( 0, num_shards-1 ) )
@@ -744,7 +778,7 @@ class MSEntry( storagetypes.Object ):
       if shard == None:
          shard = MSEntry.shard_class( key=shard_key )
       
-      MSEntry.populate_shard_inst( ent, shard, **parent_attrs )
+      MSEntry.populate_shard_inst( ent, shard, **attrs )
       
       ent.write_shard = shard
       
@@ -752,8 +786,8 @@ class MSEntry( storagetypes.Object ):
    
    
    @classmethod
-   def update_shard_async( cls, num_shards, ent ):
-      shard = MSEntry.update_shard( num_shards, ent )
+   def update_shard_async( cls, num_shards, ent, **extra_shard_attrs ):
+      shard = MSEntry.update_shard( num_shards, ent, **extra_shard_attrs )
 
       shard_fut = shard.put_async()
       return shard_fut
@@ -1379,7 +1413,7 @@ class MSEntry( storagetypes.Object ):
       
       storagetypes.deferred.defer( MSEntry.delete_all, [nh_key, ent_key] + ent_shard_keys )
       
-      MSEntryXAttr.Delete_Deferred_ByFile( volume_id, ent.file_id )
+      MSEntryXAttr.Delete_Deferred_ByFile( volume.volume_id, ent.file_id )
       
       # decrease number of files
       storagetypes.deferred.defer( Volume.decrease_file_count, volume_id )

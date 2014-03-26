@@ -68,7 +68,7 @@ static size_t xattr_len_all(void) {
 
 
 // get concatenated names of all xattrs (delimited by '\0')
-static ssize_t xattr_get_names( char* buf, size_t buf_len ) {
+static ssize_t xattr_get_builtin_names( char* buf, size_t buf_len ) {
    size_t needed_len = xattr_len_all();
    if( needed_len >= buf_len ) {
       return -ERANGE;
@@ -294,6 +294,13 @@ static int fs_entry_download_xattr( struct fs_core* core, struct fs_entry* fent,
 // getxattr
 ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *name, char *value, size_t size, uint64_t user, uint64_t volume ) {
    
+   // revalidate this path--make sure the ent exists
+   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
+   if( revalidate_rc != 0 ) {
+      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
+      return revalidate_rc;
+   }
+   
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, false, &err );
    if( !fent || err ) {
@@ -303,21 +310,56 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
       return err;
    }
    
+   int64_t cur_xattr_nonce = fent->xattr_nonce;
+   
    ssize_t ret = 0;
    char* val = NULL;
    
    // find the xattr handler for this attribute
    struct syndicate_xattr_handler* xattr_handler = xattr_lookup_handler( name );
    if( xattr_handler == NULL ) {
-      ret = (ssize_t)fs_entry_download_xattr( core, fent, name, &val );
+      // it's user-set.  check the cache 
+      size_t vallen = 0;
+      int cache_status = fs_entry_get_cached_xattr( fent, name, &val, &vallen );
+      
+      // don't need fent to be around anymore...
+      fs_entry_unlock( fent );
+      
+      if( cache_status < 0 ) {
+         // cache miss 
+         ret = (ssize_t)fs_entry_download_xattr( core, fent, name, &val );
+      }
+      else {
+         // cache hit
+         ret = vallen;
+      }
+      
       if( ret >= 0 ) {
          // success!
          if( value != NULL && size > 0 ) {
             // wanted the attribute, not just the size
-            if( size >= (size_t)ret ) {
+            if( size < (size_t)ret ) {
                ret = -ERANGE;
             }
             else {
+               // cache this?
+               if( cache_status < 0 ) {
+                  
+                  // write-lock this time, so we can put the downloaded data in
+                  fent = fs_entry_resolve_path( core, path, user, volume, true, &err );
+                  if( !fent || err ) {
+                     if( !err )
+                        err = -ENOMEM;
+
+                     free( val );
+                     return err;
+                  }
+      
+                  fs_entry_put_cached_xattr( fent, name, val, ret, cur_xattr_nonce );
+                  
+                  fs_entry_unlock( fent );
+               }
+               
                memcpy( value, val, ret );
             }
          }
@@ -328,15 +370,21 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
    else {
       // built-in handler
       ret = (*xattr_handler->get)( core, fent, value, size );
+      fs_entry_unlock( fent );
    }
-   
-   fs_entry_unlock( fent );
    
    return ret;
 }
 
 // setxattr
 int fs_entry_setxattr( struct fs_core* core, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume ) {
+   
+   // bring the metadata up to date
+   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
+   if( revalidate_rc != 0 ) {
+      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
+      return revalidate_rc;
+   }
    
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, true, &err );
@@ -358,7 +406,16 @@ int fs_entry_setxattr( struct fs_core* core, char const* path, char const *name,
       
       ret = ms_client_setxattr( core->ms, &ent, name, value, size, flags );
       if( ret < 0 ) {
-         errorf("ms_client_setxattr( %s = %s ) rc = %zd\n", name, value, ret );
+         char* value_buf = CALLOC_LIST( char, size + 1 );
+         memcpy( value_buf, value, size );
+         
+         errorf("ms_client_setxattr( %s = %s ) rc = %zd\n", name, value_buf, ret );
+         
+         free( value_buf );
+      }
+      else {
+         // cache this 
+         fs_entry_put_cached_xattr( fent, name, value, size, fent->xattr_nonce );
       }
       
       md_entry_free( &ent );
@@ -373,9 +430,18 @@ int fs_entry_setxattr( struct fs_core* core, char const* path, char const *name,
 
    return ret;
 }
+   
 
 // listxattr
 ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, size_t size, uint64_t user, uint64_t volume ) {
+   // bring the metadata up to date
+   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
+   if( revalidate_rc != 0 ) {
+      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
+      return revalidate_rc;
+   }
+   
+   // resolve the entry
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, false, &err );
    if( !fent || err ) {
@@ -384,13 +450,45 @@ ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, 
 
       return err;
    }
-
-   ssize_t rc = xattr_get_names( list, size );
+   
+   // copy these values, so we can unlock fent
+   uint64_t file_id = fent->file_id;
+   uint64_t volume_id = fent->volume;
    
    fs_entry_unlock( fent );
+   
+   char* remote_xattr_names = NULL;
+   size_t remote_xattr_names_len = 0;
 
+   // get data from the MS
+   int remote_rc = ms_client_listxattr( core->ms, volume_id, file_id, &remote_xattr_names, &remote_xattr_names_len );
+   
+   if( remote_rc != 0 ) {
+      errorf("ms_client_listxattr(%s %" PRIX64 ") rc = %d\n", path, file_id, remote_rc );
+      
+      return (ssize_t)remote_rc;
+   }
+   
+   ssize_t rc = 0;
+   
+   // get the built-in attributes, and copy them into list
+   ssize_t builtin_len = xattr_get_builtin_names( list, size );
+
+   // range check 
+   if( remote_xattr_names_len + builtin_len >= size ) {
+      free( remote_xattr_names );
+      return -ERANGE;
+   }
+   
+   // combine them 
+   memcpy( list + builtin_len, remote_xattr_names, remote_xattr_names_len );
+   rc = builtin_len + remote_xattr_names_len;
+   
+   free( remote_xattr_names );
+   
    return rc;
 }
+
 
 // removexattr
 int fs_entry_removexattr( struct fs_core* core, char const* path, char const *name, uint64_t user, uint64_t volume ) {
@@ -421,6 +519,11 @@ int fs_entry_removexattr( struct fs_core* core, char const* path, char const *na
    }
    else {
       ret = (*xattr_handler->del)( core, fent );
+   }
+   
+   if( ret == 0 ) {
+      // successfully removed; uncache 
+      fs_entry_evict_cached_xattr( fent, name );
    }
    
    fs_entry_unlock( fent );

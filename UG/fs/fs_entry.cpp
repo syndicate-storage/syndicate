@@ -174,8 +174,8 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    fs_entry_mark_read_stale( core->root );
    
    // initialize the driver
-   core->driver = CALLOC_LIST( struct storage_driver, 1 );
-   rc = driver_init( core, core->driver );
+   core->driver = CALLOC_LIST( struct md_closure, 1 );
+   rc = driver_init( core, &core->driver );
    
    if( rc != 0 && rc != -ENOENT ) {
       errorf("driver_init rc = %d\n", rc );
@@ -197,7 +197,7 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
 int fs_core_destroy( struct fs_core* core ) {
 
    if( core->driver ) {
-      int rc = driver_shutdown( core, core->driver );
+      int rc = driver_shutdown( core->driver );
       if( rc != 0 ) {
          errorf("WARN: driver_shutdown rc = %d\n", rc );
       }
@@ -368,6 +368,7 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    fent->max_read_freshness = core->conf->default_read_freshness;
    fent->max_write_freshness = core->conf->default_write_freshness;
    fent->read_stale = false;
+   fent->xattr_cache = new xattr_cache_t();
    
    clock_gettime( CLOCK_REALTIME, &fent->refresh_time );
    
@@ -384,6 +385,7 @@ static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, in
    memset( fent, 0, sizeof(struct fs_entry) );
    fs_entry_init_data( core, fent, type, name, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
    pthread_rwlock_init( &fent->lock, NULL );
+   pthread_rwlock_init( &fent->xattr_lock, NULL );
    
    return 0;
 }
@@ -468,6 +470,7 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
 
    fent->file_id = ent->file_id;
    fent->write_nonce = ent->write_nonce;
+   fent->xattr_nonce = ent->xattr_nonce;
    
    return 0;
 }
@@ -497,10 +500,16 @@ int fs_entry_destroy( struct fs_entry* fent, bool needlock ) {
       fent->children = NULL;
    }
    
+   if( fent->xattr_cache ) {
+      delete fent->xattr_cache;
+      fent->xattr_cache = NULL;
+   }
+   
    fent->ftype = FTYPE_DEAD;      // next thread to hold this lock knows this is a dead entry
    
    fs_entry_unlock( fent );
    pthread_rwlock_destroy( &fent->lock );
+   pthread_rwlock_destroy( &fent->xattr_lock );
    return 0;
 }
 
@@ -557,6 +566,171 @@ int fs_dir_entry_destroy_all( struct fs_dir_entry** dents ) {
 long fs_entry_name_hash( char const* name ) {
    return md_hash( name );
 }
+
+
+// cache an xattr, but only if the caller knows the current xattr_nonce
+// fent must be read-locked
+int fs_entry_put_cached_xattr( struct fs_entry* fent, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, int64_t last_known_xattr_nonce ) {
+   string xattr_name_s( xattr_name );
+   
+   pthread_rwlock_wrlock( &fent->xattr_lock );
+   
+   if( fent->xattr_nonce != last_known_xattr_nonce ) {
+      // stale 
+      pthread_rwlock_unlock( &fent->xattr_lock );
+      
+      dbprintf("xattr_nonce = %" PRId64 ", but caller thought it was %" PRId64 "\n", fent->xattr_nonce, last_known_xattr_nonce );
+      return -ESTALE;
+   }
+   
+   xattr_cache_t::iterator itr = fent->xattr_cache->find( xattr_name_s );
+   if( itr != fent->xattr_cache->end() ) {
+      // erase this 
+      fent->xattr_cache->erase( itr );
+   }
+   
+   (*fent->xattr_cache)[ xattr_name_s ] = string( xattr_value, xattr_value_len );
+   
+   pthread_rwlock_unlock( &fent->xattr_lock );
+   
+   return 0;
+}
+
+// get a cached xattr
+// fent must be read-locked
+int fs_entry_get_cached_xattr( struct fs_entry* fent, char const* xattr_name, char** xattr_value, size_t* xattr_value_len ) {
+   string xattr_name_s( xattr_name );
+   
+   pthread_rwlock_rdlock( &fent->xattr_lock );
+   
+   xattr_cache_t::iterator itr = fent->xattr_cache->find( xattr_name_s );
+   if( itr != fent->xattr_cache->end() ) {
+      
+      size_t retlen = itr->second.size();
+      if( retlen > 0 ) {
+         char* ret = CALLOC_LIST( char, retlen );
+      
+         memcpy( ret, itr->second.data(), retlen );
+      
+         *xattr_value = ret;
+         *xattr_value_len = retlen;
+         
+         pthread_rwlock_unlock( &fent->xattr_lock );
+      
+         return 0;
+      }
+      else {
+         pthread_rwlock_unlock( &fent->xattr_lock );
+         return -ENODATA;
+      }
+   }
+   
+   pthread_rwlock_unlock( &fent->xattr_lock );
+   
+   // not found 
+   return -ENODATA;
+}
+
+// evict a cached xattr
+// fent must be read-locked
+int fs_entry_evict_cached_xattr( struct fs_entry* fent, char const* xattr_name ) {
+   string xattr_name_s( xattr_name );
+   
+   pthread_rwlock_wrlock( &fent->xattr_lock );
+   
+   xattr_cache_t::iterator itr = fent->xattr_cache->find( xattr_name_s );
+   if( itr != fent->xattr_cache->end() ) {
+      // erase this 
+      fent->xattr_cache->erase( itr );
+      
+      pthread_rwlock_unlock( &fent->xattr_lock );
+      
+      return 0;
+   }
+   
+   pthread_rwlock_unlock( &fent->xattr_lock );
+   
+   return -ENODATA;
+}
+
+// clear all cached xattrs, and update the xattr_nonce
+// fent must be write-locked 
+int fs_entry_clear_cached_xattrs( struct fs_entry* fent, int64_t new_xattr_nonce ) {
+   
+   int rc = 0;
+   
+   pthread_rwlock_wrlock( &fent->xattr_lock );
+
+   fent->xattr_cache->clear();
+
+   fent->xattr_nonce = new_xattr_nonce;
+   
+   dbprintf("xattr nonce for %" PRIX64 " (%s) is now %" PRId64 "\n", fent->file_id, fent->name, new_xattr_nonce );
+   
+   pthread_rwlock_unlock( &fent->xattr_lock );
+   
+   return rc;
+}
+
+// get a list of cached xattrs, but only if the caller knows the current xattr_nonce for fent.
+// fent must be read-locked 
+int fs_entry_list_cached_xattrs( struct fs_entry* fent, char** xattr_list, size_t* xattr_list_len, int64_t last_known_xattr_nonce ) {
+   
+   pthread_rwlock_rdlock( &fent->xattr_lock );
+   
+   if( fent->xattr_nonce != last_known_xattr_nonce ) {
+      // stale
+      pthread_rwlock_unlock( &fent->xattr_lock );
+      
+      dbprintf("xattr_nonce = %" PRId64 ", but caller thought it was %" PRId64 "\n", fent->xattr_nonce, last_known_xattr_nonce );
+      return -ESTALE;
+   }
+      
+   size_t total_len = 0;
+   
+   for( xattr_cache_t::iterator itr = fent->xattr_cache->begin(); itr != fent->xattr_cache->end(); itr++ ) {
+      total_len += itr->first.size() + 1;
+   }
+   
+   char* ret = CALLOC_LIST( char, total_len );
+   size_t offset = 0;
+   
+   for( xattr_cache_t::iterator itr = fent->xattr_cache->begin(); itr != fent->xattr_cache->end(); itr++ ) {
+      strcpy( ret + offset, itr->first.c_str() );
+      offset += itr->first.size() + 1;
+   }
+   
+   *xattr_list = ret;
+   *xattr_list_len = offset;
+   
+   pthread_rwlock_unlock( &fent->xattr_lock );
+   return 0;
+}
+
+
+// cache a list of xattr names, if the caller's last known xattr_nonce is fresh (i.e. CAS semantics)
+int fs_entry_cache_xattr_list( struct fs_entry* fent, xattr_cache_t* new_listing, int64_t last_known_xattr_nonce ) {
+   
+   pthread_rwlock_wrlock( &fent->xattr_lock );
+   
+   if( fent->xattr_nonce != last_known_xattr_nonce ) {
+      // can't swap--caller has stale information 
+      pthread_rwlock_unlock( &fent->xattr_lock );
+      
+      dbprintf("xattr_nonce = %" PRId64 ", but caller thought it was %" PRId64 "\n", fent->xattr_nonce, last_known_xattr_nonce );
+      return -ESTALE;
+   }
+   
+   xattr_cache_t* old_listing = fent->xattr_cache;
+   fent->xattr_cache = new_listing;
+   
+   pthread_rwlock_unlock( &fent->xattr_lock );
+   
+   delete old_listing;
+   
+   return 0;
+}
+
 
 // lock a file for reading
 int fs_entry_rlock2( struct fs_entry* fent, char const* from_str, int line_no ) {
@@ -667,7 +841,7 @@ static int fs_entry_ent_eval( struct fs_entry* prev_ent, struct fs_entry* cur_en
       // cur_ent might not even exist anymore....
       if( cur_ent->ftype != FTYPE_DEAD ) {
          fs_entry_unlock( cur_ent );
-         if( prev_ent != cur_ent ) {
+         if( prev_ent != cur_ent && prev_ent != NULL ) {
             fs_entry_unlock( prev_ent );
          }
       }
@@ -969,6 +1143,7 @@ int fs_entry_to_md_entry( struct fs_core* core, struct md_entry* dest, struct fs
    dest->max_write_freshness = fent->max_write_freshness;
    dest->parent_id = parent_id;
    dest->write_nonce = fent->write_nonce;
+   dest->xattr_nonce = fent->xattr_nonce;
 
    if( parent_name )
       dest->parent_name = strdup( parent_name );
@@ -1027,10 +1202,13 @@ int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct f
       return -EINVAL;
    }
    
-   // reversion the data locally
+   // reversion the data locally.  ENOENT here is fine, since it means that the data wasn't cached
    int rc = fs_entry_cache_reversion_file( core, core->cache, fent->file_id, fent->version, new_version );
    if( rc != 0 ) {
-      return rc;
+      if( rc != -ENOENT ) {
+         errorf("fs_entry_cache_reversion_file(%s (%" PRIX64 ".%" PRId64 " --> %" PRId64 ")) rc = %d\n", fs_path, fent->file_id, fent->version, new_version, rc );
+         return rc;
+      }
    }
 
    // set the version on local data, since the local reversioning succeeded
@@ -1065,6 +1243,16 @@ int fs_entry_block_info_free( struct fs_entry_block_info* binfo ) {
 }
 
 
+int fs_entry_free_modification_map( modification_map* m ) {
+   if( m->size() > 0 ) {
+      for( modification_map::iterator itr = m->begin(); itr != m->end(); itr++ ) {
+         fs_entry_block_info_free( &itr->second );
+      }
+   }
+   m->clear();
+   return 0;
+}
+
 // view change callback: reload the driver
 int fs_entry_view_change_callback( struct ms_client* ms, void* cls ) {
    struct fs_entry_view_change_cls* viewchange_cls = (struct fs_entry_view_change_cls*)cls;
@@ -1078,9 +1266,9 @@ int fs_entry_view_change_callback( struct ms_client* ms, void* cls ) {
       dbprintf("cert version was %" PRIu64 ", now is %" PRIu64 ".  Reloading driver...\n", old_version, cert_version );
       
       int rc = driver_reload( core, core->driver );
-      if( rc == 0 )
+      if( rc == 0 ) {
          viewchange_cls->cert_version = cert_version;
-      
+      }
    }
    else {
       dbprintf("%s", "cert version has not changed, so not reloading driver\n" );
@@ -1127,6 +1315,10 @@ int32_t fs_dir_entry_ctime_nsec( struct fs_dir_entry* dirent ) {
 
 int64_t fs_dir_entry_write_nonce( struct fs_dir_entry* dirent ) {
    return dirent->data.write_nonce;
+}
+
+int64_t fs_dir_entry_xattr_nonce( struct fs_dir_entry* dirent ) {
+   return dirent->data.xattr_nonce;
 }
 
 int64_t fs_dir_entry_version( struct fs_dir_entry* dirent ) {

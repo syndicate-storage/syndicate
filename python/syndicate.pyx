@@ -120,6 +120,7 @@ cpdef decrypt_closure_secrets( sender_pubkey_str, gateway_privkey_str, closure_s
       except Exception, e:
          return (-errno.ENODATA, None)
 
+
 # ------------------------------------------
 cpdef openid_rpc( ms_openid_url, username, password, rpc_type, request_buf ):
    '''
@@ -148,6 +149,36 @@ cpdef openid_rpc( ms_openid_url, username, password, rpc_type, request_buf ):
 
       return (rc, py_response_buf)
 
+
+# ------------------------------------------
+cpdef openid_auth_rpc( ms_openid_url, username, password, rpc_type, request_buf, syndicate_pubkey_pem ):
+   '''
+      Perform an RPC call to the MS, via OpenID.  Verify the call with the Syndicate public key.
+   '''
+
+   cdef char* c_request_buf = request_buf
+   cdef size_t c_request_buf_len = len(request_buf)
+
+   cdef char* c_response_buf = NULL
+   cdef size_t c_response_buf_len = 0
+
+   cdef char* c_syndicate_pubkey_pem = syndicate_pubkey_pem
+
+   rc = ms_client_openid_auth_rpc( ms_openid_url, username, password, rpc_type, c_request_buf, c_request_buf_len, &c_response_buf, &c_response_buf_len, c_syndicate_pubkey_pem )
+   if rc != 0:
+      return (rc, None)
+
+   else:
+      py_response_buf = None
+      try:
+         py_response_buf = c_response_buf[:c_response_buf_len]
+      except MemoryError:
+         py_response_buf = None
+         rc = -errno.ENOMEM
+      finally:
+         stdlib.free( c_response_buf )
+
+      return (rc, py_response_buf)
 
 # ------------------------------------------
 cpdef password_seal( input_buf, password ):
@@ -252,7 +283,8 @@ cdef class Syndicate:
                        gateway_pkey_path=None,
                        tls_pkey_path=None,
                        tls_cert_path=None,
-                       storage_root=None ):
+                       storage_root=None,
+                       syndicate_pubkey_path=None):
 
       '''
          Initialize libsyndicate.
@@ -278,6 +310,7 @@ cdef class Syndicate:
          char *c_tls_pkey_path = NULL
          char *c_tls_cert_path = NULL
          char* c_storage_root = NULL
+         char* c_syndicate_pubkey_path = NULL
 
       if gateway_name != None:
          c_gateway_name = gateway_name
@@ -316,6 +349,9 @@ cdef class Syndicate:
       if storage_root != None:
          c_storage_root = storage_root
 
+      if syndicate_pubkey_path != None:
+         c_syndicate_pubkey_path = syndicate_pubkey_path
+
       # initialize configuration first
       md_default_conf( &self.conf_inst, gateway_type )
 
@@ -331,7 +367,8 @@ cdef class Syndicate:
                      c_gateway_pkey_decryption_password,
                      c_tls_pkey_path,
                      c_tls_cert_path,
-                     c_storage_root )
+                     c_storage_root,
+                     c_syndicate_pubkey_path)
       
       if rc != 0:
          raise Exception( "md_init rc = %d" % rc )
@@ -352,7 +389,8 @@ cdef class Syndicate:
                            gateway_pkey_path=None,
                            tls_pkey_path=None,
                            tls_cert_path=None,
-                           storage_root=None):
+                           storage_root=None,
+                           syndicate_pubkey_path=None):
       
       '''
          Get the current Syndicate instance,
@@ -375,7 +413,8 @@ cdef class Syndicate:
                                     gateway_pkey_decryption_password=gateway_pkey_decryption_password,
                                     tls_pkey_path=tls_pkey_path,
                                     tls_cert_path=tls_cert_path,
-                                    storage_root=storage_root)
+                                    storage_root=storage_root,
+                                    syndicate_pubkey_path=syndicate_pubkey_path)
          
       return syndicate_ref
    

@@ -234,7 +234,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
       Serialization::WriteMsg* detach_ack = new Serialization::WriteMsg();
       
       // send the write message, or coordinate
-      rc = fs_entry_send_write_or_coordinate( core, fent, &fent_snapshot, detach_request, detach_ack );
+      rc = fs_entry_send_write_or_coordinate( core, path, fent, &fent_snapshot, detach_request, detach_ack );
       
       if( rc < 0 ) {
          errorf( "fs_entry_send_write_or_coordinate(%s) rc = %d\n", path, rc );

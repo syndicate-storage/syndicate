@@ -123,15 +123,17 @@ def get( url_path, outfile ):
    
    # fetch
    rc = 0
+   status = "OK"
    try:
       rc = rg_storage.read_data( req_info, outfile )
    except Exception, e:
       log.exception( e )
-      rc = (500, "Internal server error")
+      rc = 500
+      status = "Internal server error"
    
    log.info("read_data rc = %s" % str(rc) )
    
-   return (rc, "OK")
+   return (rc, status)
 
 
 #-------------------------

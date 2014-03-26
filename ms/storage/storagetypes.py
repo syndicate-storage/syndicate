@@ -42,6 +42,7 @@ Text = backend.Text
 Key = backend.Key
 Boolean = backend.Boolean
 Json = backend.Json
+Blob = backend.Blob
 
 # aliases for keys
 make_key = backend.make_key

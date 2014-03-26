@@ -46,7 +46,7 @@ StorageConfig = collections.namedtuple("StorageConfig", ["closure", "drivers"] )
 StorageContext = collections.namedtuple("StorageContext", ["config", "drivers", "secrets", "log"] )
 
 #-------------------------
-STORAGE_CONFIG = {}
+STORAGE_CONFIG = None
 storage_closure_lock = threading.Lock()
 
 SECRETS_PAD_KEY = "__syndicate_pad__"
@@ -530,6 +530,9 @@ def call_closure_read( request, filename, outfile ):
    global STORAGE_CONFIG
    global storage_closure_lock
    
+   if STORAGE_CONFIG is None:
+      return 501
+   
    storage_closure_lock.acquire()
    
    context = make_context_from_storage_struct( STORAGE_CONFIG )
@@ -556,6 +559,9 @@ def call_closure_write( request, filename, infile ):
    global STORAGE_CONFIG
    global storage_closure_lock
    
+   if STORAGE_CONFIG is None:
+      return 501
+   
    storage_closure_lock.acquire()
    
    
@@ -579,6 +585,10 @@ def call_closure_delete( request, filename ):
    '''
       Call the global storage closure's delete_replica() closure function.
    '''
+   
+   
+   if STORAGE_CONFIG is None:
+      return 501
    
    global STORAGE_CONFIG
    global storage_closure_lock
@@ -820,7 +830,6 @@ if __name__ == "__main__":
                                           block_version=357,
                                           mtime_sec=2,
                                           mtime_nsec=3,
-                                          data_hash="abcdef",
                                           size=4,
                                           kwargs={"asdf": "jkl;"} )
    

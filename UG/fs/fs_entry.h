@@ -69,15 +69,16 @@ typedef vector<fs_dirent> fs_entry_set;
 
 struct fs_entry_block_info {
    int64_t version;
+   uint64_t gateway_id;
    unsigned char* hash;
    size_t hash_len;
-   uint64_t gateway_id;
    
    // already-opened block
    int block_fd;
 };
 
 typedef map<uint64_t, struct fs_entry_block_info> modification_map;
+typedef map<string, string> xattr_cache_t;
 
 // pre-declare these
 class file_manifest;
@@ -108,6 +109,7 @@ struct fs_entry {
    int32_t ctime_nsec;        // creation time (nanoseconds)
    int64_t atime;             // access time (seconds)
    int64_t write_nonce;       // nonce generated at last write by the MS
+   int64_t xattr_nonce;       // nonce generated on setxattr/removexattr by the MS
    
    struct timespec refresh_time;    // time of last refresh from the ms
    uint32_t max_read_freshness;     // how long since last refresh, in ms, this fs_entry is to be considered fresh for reading (negative means always fresh)
@@ -119,10 +121,10 @@ struct fs_entry {
 
    fs_entry_set* children;    // used only for directories--set of children
    
-   bool busy;                   // if true, this structure is in use somewhere and can't be freed
+   pthread_rwlock_t xattr_lock;
+   xattr_cache_t* xattr_cache;  // cached xattrs
+   
    bool created_in_session;     // if we're in client mode, then this is true of the file was created in this session
-   
-   
 };
 
 #define IS_STREAM_FILE( fent ) ((fent).size < 0)
@@ -171,7 +173,6 @@ struct fs_dir_entry {
 };
 
 
-// view change callback state
 struct fs_entry_view_change_cls {
    struct fs_core* core;
    uint64_t cert_version;
@@ -182,10 +183,11 @@ struct fs_core {
    struct fs_entry* root;              // root FS entry
    struct md_syndicate_conf* conf;     // Syndicate configuration structure
    struct ms_client* ms;               // link to the MS
-   struct storage_driver* driver;      // storage driver
-   struct fs_entry_view_change_cls* viewchange_cls;    // passed for reloading the volume information
+   struct md_closure* driver;          // UG storage driver
    struct syndicate_cache* cache;      // index over on-disk cache
    struct syndicate_state* state;   // state 
+   struct fs_entry_view_change_cls* viewchange_cls;     // pass to view change callback
+   
    uint64_t volume;                 // Volume we're bound to
    uint64_t gateway;                // gateway ID
    uint64_t blocking_factor;        // block size
@@ -241,6 +243,13 @@ void fs_dir_handle_destroy( struct fs_dir_handle* dh );
 int fs_dir_entry_destroy( struct fs_dir_entry* dent );
 int fs_dir_entry_destroy_all( struct fs_dir_entry** dents );
 
+// cache xattrs 
+int fs_entry_put_cached_xattr( struct fs_entry* fent, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, int64_t last_known_xattr_nonce );
+int fs_entry_get_cached_xattr( struct fs_entry* fent, char const* xattr_name, char** xattr_value, size_t* xattr_value_len );
+int fs_entry_evict_cached_xattr( struct fs_entry* fent, char const* xattr_name );
+int fs_entry_clear_cached_xattrs( struct fs_entry* fent, int64_t new_xattr_nonce );
+int fs_entry_list_cached_xattrs( struct fs_entry* fent, char** xattr_list, size_t* xattr_list_len, int64_t last_known_xattr_nonce );
+int fs_entry_cache_xattr_list( struct fs_entry* fent, xattr_cache_t* new_listing, int64_t last_known_xattr_nonce );
 
 // fs_entry locking
 int fs_entry_rlock2( struct fs_entry* fent, char const* from_str, int lineno );
@@ -296,8 +305,7 @@ int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct f
 unsigned int fs_entry_num_children( struct fs_entry* fent );
 
 int fs_entry_block_info_free( struct fs_entry_block_info* binfo );
-
-// view change
+int fs_entry_free_modification_map( modification_map* m );
 int fs_entry_view_change_callback( struct ms_client* ms, void* cls );
 
 // cython compatibility
@@ -309,6 +317,7 @@ int32_t fs_dir_entry_mtime_nsec( struct fs_dir_entry* dirent );
 int64_t fs_dir_entry_ctime_sec( struct fs_dir_entry* dirent );
 int32_t fs_dir_entry_ctime_nsec( struct fs_dir_entry* dirent );
 int64_t fs_dir_entry_write_nonce( struct fs_dir_entry* dirent );
+int64_t fs_dir_entry_xattr_nonce( struct fs_dir_entry* dirent );
 int64_t fs_dir_entry_version( struct fs_dir_entry* dirent );
 int32_t fs_dir_entry_max_read_freshness( struct fs_dir_entry* dirent );
 int32_t fs_dir_entry_max_write_freshness( struct fs_dir_entry* dirent );

@@ -39,8 +39,9 @@ CONFIG_OPTIONS = {
    "sender_pubkey":     ("-U", 1, "Path to the PEM-encoded public key to verify closures for this RG"),
    "volume_pubkey":     ("-V", 1, "Path to the PEM-encoded Volume public key"),
    "gateway_pkey":      ("-G", 1, "Path to the PEM-encoded RG private key"),
-   "tls_pkey":          ("-S", 1, "Path to the PEM-encoded RG TLS private key.  Use if you want TLS for data transfers (might cause breakage if your HTTP caches do not expect TLS)."),
+   "tls_pkey":          ("-T", 1, "Path to the PEM-encoded RG TLS private key.  Use if you want TLS for data transfers (might cause breakage if your HTTP caches do not expect TLS)."),
    "tls_cert":          ("-C", 1, "Path to the PEM-encoded RG TLS certificate.  Use if you want TLS for data transfers (might cause breakage if your HTTP caches do not expect TLS)."),
+   "syndicate_pubkey":  ("-S", 1, "Path to the PEM-encoded Syndicate public key"),
    "foreground":        ("-f", 0, "Run in the foreground"),
    "logdir":            ("-L", 1, "Directory to contain the log files.  If not given, then write to stdout and stderr."),
    "pidfile":           ("-l", 1, "Path to the desired PID file.")
@@ -113,7 +114,7 @@ def validate_args( config ):
    
    # check types...
    paths = []
-   for path_type in ['volume_pubkey', 'gateway_pkey', 'tls_pkey', 'tls_cert']:
+   for path_type in ['volume_pubkey', 'gateway_pkey', 'tls_pkey', 'tls_cert', "syndicate_pubkey"]:
       if config.get( path_type, None ) != None:
          paths.append( config[path_type] )
    
@@ -151,6 +152,7 @@ def setup_syndicate( config ):
    volume_pubkey = config.get('volume_pubkey', None)
    tls_pkey = config.get('tls_pkey', None)
    tls_cert = config.get('tls_cert', None)
+   syndicate_pubkey = config.get('syndicate_pubkey', None)
    config_file = config.get('config_file', None)
    
    # start up libsyndicate
@@ -164,7 +166,8 @@ def setup_syndicate( config ):
                                          config_file=config_file,
                                          volume_pubkey_path=volume_pubkey,
                                          tls_pkey_path=tls_pkey,
-                                         tls_cert_path=tls_cert )
+                                         tls_cert_path=tls_cert,
+                                         syndicate_pubkey_path=syndicate_pubkey )
    
    return syndicate 
 

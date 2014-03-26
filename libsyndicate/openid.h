@@ -23,11 +23,11 @@
 
 extern "C" {
    
-int ms_client_openid_begin( CURL* curl, char const* username, char const* begin_url, ms::ms_openid_provider_reply* oid_reply );
+int ms_client_openid_begin( CURL* curl, char const* username, char const* begin_url, ms::ms_openid_provider_reply* oid_reply, EVP_PKEY* syndicate_public_key );
 int ms_client_openid_auth( CURL* curl, char const* username, char const* password, ms::ms_openid_provider_reply* oid_reply, char** return_to );
 int ms_client_openid_complete( CURL* curl, char const* return_to_method, char const* return_to, char** response_body, size_t* response_body_len );
 
-int ms_client_openid_session( CURL* curl, char const* openid_url, char const* username, char const* password, char** response_buf, size_t* response_len );
+int ms_client_openid_session( CURL* curl, char const* openid_url, char const* username, char const* password, char** response_buf, size_t* response_len, EVP_PKEY* syndicate_public_key );
 }
 
 #endif

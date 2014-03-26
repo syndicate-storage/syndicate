@@ -20,6 +20,7 @@
 #include "network.h"
 #include "url.h"
 #include "fs_entry.h"
+#include "driver.h"
 
 // verify the integrity of a block, given the fent (and its manifest).
 // fent must be at least read-locked
@@ -40,13 +41,9 @@ int fs_entry_verify_block( struct fs_core* core, struct fs_entry* fent, uint64_t
 }
 
 
-// read a block known to be remote
+// download a block from a remote host.
 // fent must be read-locked
-ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, uint64_t block_version, char* block_bits, size_t block_len ) {
-
-   if( block_id * block_len >= (size_t)fent->size ) {
-      return 0;      // EOF
-   }
+ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, uint64_t block_version, char** block_bits ) {
 
    if( fs_path == NULL ) {
       return -EINVAL;
@@ -82,7 +79,7 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
          return -ENODATA;
       }
 
-      nr = fs_entry_download_block( core, block_url, &block_buf, block_len );
+      nr = fs_entry_download_block( core, fs_path, fent, block_id, block_version, block_url, &block_buf );
       
       if( nr <= 0 ) {
          errorf("fs_entry_download_block(%s) rc = %zd\n", block_url, nr );
@@ -93,7 +90,7 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
       // try from an RG
       uint64_t rg_id = 0;
       
-      nr = fs_entry_download_block_replica( core, fent->volume, fent->file_id, fent->version, block_id, block_version, &block_buf, block_len, &rg_id );
+      nr = fs_entry_download_block_replica( core, fs_path, fent, block_id, block_version, &block_buf, &rg_id );
       
       if( nr < 0 ) {
          // error
@@ -117,11 +114,9 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
          }
       }
       if( nr >= 0 ) {
-         memcpy( block_bits, block_buf, nr );
+         *block_bits = block_buf;
          dbprintf("read %ld bytes remotely\n", (long)nr);
       }
-      
-      free( block_buf );
    }
 
    if( block_url )
@@ -130,24 +125,27 @@ ssize_t fs_entry_read_remote_block( struct fs_core* core, char const* fs_path, s
 }
 
 
-// Given an offset, get the corresponding block's data
+// Given an offset, get the corresponding block's data.
+// return the number of bytes actually read (up to block_len, but can be less)
 // fent must be at least read-locked first
 ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len ) {
 
    if( block_id * block_len >= (size_t)fent->size ) {
-      dbprintf("fs_entry_read_block EOF found! : block_id = %ld, block_len = %ld, file_size = %ld\n", block_id, block_len, fent->size);
+      dbprintf("EOF found! : block_id = %ld, block_len = %ld, file_size = %ld\n", block_id, block_len, fent->size);
       return 0;      // EOF
    }
    
    bool hit_cache = false;
-   ssize_t rc = 0;
+   
+   char* block_buf = NULL;
+   ssize_t read_len = 0;
    
    uint64_t block_version = fent->manifest->get_block_version( block_id );
    
    // local?
    int block_fd = fs_entry_cache_open_block( core, core->cache, fent->file_id, fent->version, block_id, block_version, O_RDONLY );
 
-   dbprintf("fs_entry_read_block block_fd : file_id = %ld, version = %ld, block_id = %ld, block_fd = %d\n", fent->file_id, fent->version, block_id, block_fd);
+   dbprintf("file_id = %ld, version = %ld, block_id = %ld, block_fd = %d\n", fent->file_id, fent->version, block_id, block_fd);
 
    if( block_fd < 0 ) {
       if( block_fd != -ENOENT ) {
@@ -155,14 +153,13 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
       }
    }
    else {
-      ssize_t read_len = fs_entry_cache_read_block( core, core->cache, fent->file_id, fent->version, block_id, block_version, block_fd, block_bits, block_len );
+      read_len = fs_entry_cache_read_block( core, core->cache, fent->file_id, fent->version, block_id, block_version, block_fd, &block_buf );
       if( read_len < 0 ) {
          errorf("fs_entry_cache_read_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, (int)read_len );
       }
       else {
          // done!
          hit_cache = true;
-         rc = read_len;
          
          // promote!
          fs_entry_cache_promote_block( core, core->cache, fent->file_id, fent->version, block_id, block_version );
@@ -173,36 +170,49 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
       dbprintf("Cache HIT on %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, block_version );
    }
    
+   bool cache_result = false;
+   
    if( !hit_cache ) {
       // get it remotely
-      ssize_t read_len = fs_entry_read_remote_block( core, fs_path, fent, block_id, block_version, block_bits, block_len );
-
-      dbprintf("fs_entry_read_block : block_id = %ld, block_len = %ld, read_len = %ld\n", block_id, block_len, read_len);
+      read_len = fs_entry_read_remote_block( core, fs_path, fent, block_id, block_version, &block_buf );
 
       if( read_len < 0 ) {
          errorf("fs_entry_read_remote_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s)) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, (int)read_len );
-         rc = (int)read_len;
       }
       else {
-         // done!
-         rc = read_len;
-         
-         // need to dup this, since the cache will free it separately
-         char* block_bits_dup = CALLOC_LIST( char, read_len );
-         memcpy( block_bits_dup, block_bits, read_len );
-         
-         // cache this, but don't wait for it to finish
-         // do NOT free the future--it'll get freed by the cache.
-         struct cache_block_future* fut = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, block_version, block_bits_dup, read_len, true );
-         if( fut == NULL ) {
-            errorf("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, block_version );
+         // cache result on successful post-download processing 
+         cache_result = true;
+      }
+   }
+   
+   // process the block 
+   ssize_t processed_len = driver_read_block_postdown( core->driver, fs_path, fent, block_id, block_version, block_buf, read_len, block_bits, block_len );
+   
+   if( processed_len < 0 ) {
+      free( block_buf );
+      errorf("driver_read_postdown(%s = %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %zd\n", fs_path, fent->file_id, fent->version, block_id, block_version, processed_len );
+      return (ssize_t)processed_len;
+   }
+   else {
+      if( cache_result ) {
+         // successful post-download processing.  Cache the result.
+         // NOTE: the cache will free the downloaded buffer.
+         // NOTE: don't wait for it to finish (i.e. do NOT free the future)--it'll get freed by the cache.
+         int cache_rc = 0;
+         struct cache_block_future* fut = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, block_version, block_buf, read_len, true, &cache_rc );
+         if( fut == NULL || cache_rc != 0 ) {
+            errorf("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n", fent->file_id, fent->version, block_id, block_version, cache_rc );
          }
          
          dbprintf("Cache MISS on %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "],\n", fent->file_id, fent->version, block_id, block_version );
       }
+      else {
+         // will not cache
+         free( block_buf );
+      }
+      
+      return (ssize_t)processed_len;
    }
-   
-   return rc;
 }
 
 // read a block, given a path and block ID
@@ -287,7 +297,6 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
          break;
       }
 
-      // TODO: unlock fent somehow while we're reading/downloading
       uint64_t block_id = fs_entry_block_id( block_len, offset + total_read );
       ssize_t tmp = fs_entry_read_block( core, fh->path, fh->fent, block_id, block, block_len );
      

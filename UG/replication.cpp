@@ -407,6 +407,7 @@ int replica_context_garbage_manifest( struct fs_core* core, struct replica_conte
    
    // put random bits into the hash field, for some cryptographic padding
    unsigned char fake_hash[256];
+   memset( fake_hash, 0, 256 );
    for( unsigned int i = 0; i < (256 / sizeof(uint32_t)); i++ ) {
       uint32_t random_bits = CMWC4096();
       memcpy( fake_hash + (i * sizeof(uint32_t)), &random_bits, sizeof(uint32_t) );
@@ -458,6 +459,7 @@ int replica_context_garbage_block( struct fs_core* core, struct replica_context*
    
    // put random bits into the hash field, for some cryptographic padding
    unsigned char fake_hash[256];
+   memset( fake_hash, 0, 256 );
    for( unsigned int i = 0; i < (256 / sizeof(uint32_t)); i++ ) {
       uint32_t random_bits = CMWC4096();
       memcpy( fake_hash + (i * sizeof(uint32_t)), &random_bits, sizeof(uint32_t) );
@@ -1752,11 +1754,13 @@ int fs_entry_replica_clean( struct fs_file_handle* fh ) {
 
 
 // make a "fake" file handle that has just enough data in it for us to process
-int fs_entry_replica_file_handle( struct fs_core* core, struct fs_entry* fent, struct fs_file_handle* fh ) {
+int fs_entry_replica_file_handle( struct fs_core* core, struct fs_entry* fent, struct fs_file_handle* fh, int flags ) {
    memset( fh, 0, sizeof( struct fs_file_handle ) );
    
    fh->rctxs = new vector<struct replica_context*>();
    fh->transfer_timeout_ms = core->conf->transfer_timeout * 1000L;
+   fh->flags = flags;
+   fh->fent = fent;
    
    return 0;
 }

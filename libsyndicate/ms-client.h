@@ -33,6 +33,7 @@
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/crypt.h"
 #include "libsyndicate/openid.h"
+#include "libsyndicate/closure.h"
 
 // benchmarking HTTP headers
 #define HTTP_VOLUME_TIME   "X-Volume-Time"
@@ -68,7 +69,6 @@ typedef map<uint64_t, long> deadline_queue;
 // Use at least 256-bit keys in the data encryption
 // Use at least 256-bit MACs
 #define MS_CIPHER_SUITES "ECDHE:EDH:SHA256:SHA384:SHA512:AES256:!DH:!eNULL:!aNULL:!MD5:!DES:!DES3:!LOW:!EXP:!SRP:!DSS:!RC4:!PSK:!SHA1:!SHA2:!AES128"
-
 
 // directory listing
 struct ms_listing {
@@ -190,6 +190,8 @@ struct ms_volume {
    uint64_t num_files;           // number of files in this Volume
 
    bool loading;                 // set to true if the Volume is in the process of being reloaded
+   
+   struct md_closure* cache_closure;    // closure for connecting to the cache providers
 };
 
 typedef int (*ms_client_view_change_callback)( struct ms_client*, void* );
@@ -253,6 +255,10 @@ struct ms_client {
 
    // reference to syndicate config 
    struct md_syndicate_conf* conf;
+   
+   // syndicate public key 
+   EVP_PKEY* syndicate_public_key;
+   char* syndicate_public_key_pem;
 };
 
 extern "C" {
@@ -272,7 +278,12 @@ int ms_client_reload_volume( struct ms_client* client );
 int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_id, uint64_t gateway_id, char const* msg, size_t msg_len, char* sigb64, size_t sigb64_len );
 
 // generic access to MS RPC via OpenID
-int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char const* password, char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len );
+int ms_client_openid_auth_rpc( char const* ms_openid_url, char const* username, char const* password,
+                               char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len,
+                               char* syndicate_public_key_pem );
+
+int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char const* password,
+                          char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len );
 
 // lock a client context structure
 int ms_client_rlock2( struct ms_client* client, char const* from_str, int lineno );
@@ -353,6 +364,10 @@ void ms_client_free_path_ent( struct ms_path_ent* path_ent, void (*free_cls)(voi
 void ms_client_free_path( path_t* path, void (*free_cls)(void*) );
 void ms_client_free_response( ms_response_t* ms_response );
 void ms_client_free_listing( struct ms_listing* listing );
+
+// closure prototype 
+extern struct md_closure_callback_entry MS_CLIENT_CACHE_CLOSURE_PROTOTYPE[];
+int ms_client_connect_cache( struct md_syndicate_conf* conf, CURL* curl, char const* url, void* cls );
 
 }
 

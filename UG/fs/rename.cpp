@@ -287,7 +287,7 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
          
          Serialization::WriteMsg* ack = new Serialization::WriteMsg();
          
-         rc = fs_entry_send_write_or_coordinate( core, fent_old, &fent_old_snapshot, rename_request, ack );
+         rc = fs_entry_send_write_or_coordinate( core, old_path, fent_old, &fent_old_snapshot, rename_request, ack );
          if( rc < 0 ) {
             errorf( "fs_entry_post_write(%s) rc = %d\n", old_path, rc );
 

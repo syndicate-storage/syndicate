@@ -1,5 +1,5 @@
 """
-   Copyright 2013 The Trustees of Princeton University
+   Copyright 2014 The Trustees of Princeton University
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -14,43 +14,29 @@
    limitations under the License.
 """
 
+# build UG drivers
+import os
 
-# add additional source files here
-source_files = """
-   close.cpp
-   closedir.cpp
-   fs_entry.cpp
-   link.cpp
-   manifest.cpp
-   mkdir.cpp
-   open.cpp
-   opendir.cpp
-   read.cpp
-   readdir.cpp
-   recover.cpp
-   rename.cpp
-   rmdir.cpp
-   stat.cpp
-   trunc.cpp
-   unlink.cpp
-   url.cpp
-   write.cpp
-   xattr.cpp
-"""
+# driver files 
+driver_files = Glob("*.cpp")
 
-# add source file search paths here
+# source search paths
 CPPPATH = """
-   #UG/
-   #libsyndicate/
+   #build/out/bin/UG/fs/
+   #
    #build/out/protobufs/
+   /usr/local/include/libsyndicate
 """
 
-# add library paths here
-LIBPATH = """
-"""
-
-# add libraries here
+# libraries 
 LIBS = """
+   libsyndicate
+   libsyndicateUG
+"""
+
+# library search paths
+LIBPATH = """
+   #build/out/lib/libsyndicate/
 """
 
 # add additional CPPFLAGS here
@@ -65,29 +51,20 @@ CPPDEFINES = [
 
 # get our environment
 Import('env')
-Import("nacl_env")
 Import("extra_args")
 
 env = env.Clone()
-
-env.Append(LIBS = Split(LIBS))
+env.Append(LIBPATH = Split(LIBPATH))
 env.Append(CPPPATH = Split(CPPPATH))
 env.Append(CPPFLAGS = Split(CPPFLAGS))
 env.Append(CPPDEFINES = CPPDEFINES)
 
-fs_src = Split(source_files)
-fs_objs = [env.Object( "%s.o" % x, x ) for x in fs_src]
-fs_sobjs = [env.SharedObject( "%s.so" % x, x ) for x in fs_src]
+def create_sobjs(SRCS, path="", this_env=None):
+   if this_env is None:
+      this_env=env
+   return [this_env.SharedObject(path+src) for src in SRCS]
 
-fs_nacl_objs = None
+driver_sos = create_sobjs( [x.path for x in Split(driver_files)] )
 
-if nacl_env is not None:
-   # Native Client library
-   nacl_env = nacl_env.Clone()
-   nacl_env.Append(CPPPATH = Split(CPPPATH))
-
-   fs_nacl_objs = [nacl_env.Object("%s.nacl.o" % x, x ) for x in fs_src]
-
-Return( 'fs_objs fs_sobjs fs_nacl_objs' )
-
+Return( 'driver_sos' )
 

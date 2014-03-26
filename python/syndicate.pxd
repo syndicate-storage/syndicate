@@ -82,7 +82,8 @@ cdef extern from "libsyndicate.h":
                char* my_key_password,
                char* tls_key_file,
                char* tls_cert_file,
-               char* storage_root
+               char* storage_root,
+               char* syndicate_pubkey_path
             ) 
 
    int md_shutdown()
@@ -115,3 +116,6 @@ cdef extern from "libsyndicate.h":
    # OpenID RPC
    
    int ms_client_openid_rpc( const char* ms_openid_url, const char* username, const char* password, const char* request_type, const char* request_buf, size_t request_len, char** response_buf, size_t* response_len )
+   int ms_client_openid_auth_rpc( const char* ms_openid_url, const char* username, const char* password,
+                                  const char* request_type, const char* request_buf, size_t request_len, char** response_buf, size_t* response_len,
+                                  char* syndicate_pubkey_pem )

@@ -83,6 +83,7 @@ Text = ndb.TextProperty
 Key = ndb.KeyProperty
 Boolean = ndb.BooleanProperty
 Json = ndb.JsonProperty
+Blob = ndb.BlobProperty
 
 # aliases for keys
 make_key = ndb.Key

@@ -134,8 +134,8 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
    if( c->volume_pubkey_path != NULL ) {
       c->volume_pubkey = md_load_file_as_string( c->volume_pubkey_path, &c->volume_pubkey_len );
       if( c->volume_pubkey == NULL ) {
-         errorf("Failed to load public key from %s\n", c->volume_pubkey );
-         return -ENODATA;
+         errorf("Failed to load public key from %s\n", c->volume_pubkey_path );
+         return -ENOENT;
       }
       
    }
@@ -155,7 +155,16 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
          rc = -ENOENT;
       }
    }
-
+   
+   // load syndicate public key, if given 
+   if( c->syndicate_pubkey_path != NULL ) {
+      c->syndicate_pubkey = md_load_file_as_string( c->syndicate_pubkey_path, &c->syndicate_pubkey_len );
+      if( c->syndicate_pubkey == NULL ) {
+         errorf("Failed to load public key from %s\n", c->syndicate_pubkey_path );
+         return -ENOENT;
+      }
+   }
+   
    return rc;
 }
 
@@ -484,6 +493,11 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          // user-given public/private key
          conf->gateway_key_path = strdup( values[0] );
       }
+      
+      else if( strcmp( key, SYNDICATE_PUBKEY_KEY ) == 0 ) {
+         // user-given syndicate public key 
+         conf->syndicate_pubkey_path = strdup( values[0] );
+      }
 
       else if( strcmp( key, PORTNUM_KEY ) == 0 ) {
          char *end;
@@ -606,6 +620,7 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->gateway_name,
       (void*)conf->volume_name,
       (void*)conf->volume_pubkey,
+      (void*)conf->syndicate_pubkey,
       (void*)conf
    };
 
@@ -977,8 +992,10 @@ size_t md_get_callback_response_buffer( void* stream, size_t size, size_t count,
 size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t count, void* user_data ) {
    struct md_bound_response_buffer* brb = (struct md_bound_response_buffer*)user_data;
    
-   size_t realsize = size * count;
-   if( brb->size + realsize > (size_t)brb->max_size ) {
+   //dbprintf("size = %zu, count = %zu, max_size = %ld, size = %ld\n", size, count, brb->max_size, brb->size );
+   
+   off_t realsize = size * count;
+   if( brb->max_size >= 0 && (off_t)(brb->size + realsize) > brb->max_size ) {
       realsize = brb->max_size - brb->size;
    }
    
@@ -989,6 +1006,25 @@ size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t 
    brb->size += realsize;
    
    return realsize;
+}
+
+
+// download via a continuation
+size_t md_get_callback_driver_continuation( void* stream, size_t size, size_t count, void* user_data ) {
+   struct md_download_continuation* cont = (struct md_download_continuation*)user_data;
+   
+   size_t processed = md_get_callback_bound_response_buffer( stream, size, count, (void*)&cont->brb );
+   if( processed != size * count ) {
+      // not all processed
+      return processed;
+   }
+   
+   // call the continuation 
+   if( cont->cont ) {
+      processed = (*cont->cont)( stream, size, count, cont->user_cls );
+   }
+   
+   return processed;
 }
 
 
@@ -1011,71 +1047,8 @@ int md_signals( int use_signals ) {
    return tmp;
 }
 
-// download a file.  put the contents in buf
-// return the size of the downloaded file (or negative on error)
-ssize_t md_download_file4( struct md_syndicate_conf* conf, char const* url, char** buf, char const* username, char const* password, char const* proxy, void (*curl_extractor)( CURL*, int, void* ), void* arg ) {
-   CURL* curl_h;
-
-   response_buffer_t rb;
-   
-   curl_h = curl_easy_init();
-   
-   curl_easy_setopt( curl_h, CURLOPT_NOPROGRESS, 1L );   // no progress bar
-   curl_easy_setopt( curl_h, CURLOPT_USERAGENT, "Syndicate-agent/1.0");
-   curl_easy_setopt( curl_h, CURLOPT_URL, url );
-   curl_easy_setopt( curl_h, CURLOPT_FOLLOWLOCATION, 1L );
-   curl_easy_setopt( curl_h, CURLOPT_FILETIME, 1L );
-
-   if( proxy != NULL ) {
-      curl_easy_setopt( curl_h, CURLOPT_PROXY, proxy );
-   }
-   
-   char* userpass = NULL;
-   if( username && password ) {
-      curl_easy_setopt( curl_h, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC );
-      userpass = (char*)calloc( strlen(username) + 1 + strlen(password) + 1, 1 );
-      sprintf( userpass, "%s:%s", username, password );
-      curl_easy_setopt( curl_h, CURLOPT_USERPWD, userpass );
-   }
-   if( !_signals )
-      curl_easy_setopt( curl_h, CURLOPT_NOSIGNAL, 1L );
-   
-   curl_easy_setopt( curl_h, CURLOPT_WRITEDATA, (void*)&rb );
-   curl_easy_setopt( curl_h, CURLOPT_CONNECTTIMEOUT, conf->connect_timeout );
-   curl_easy_setopt( curl_h, CURLOPT_TIMEOUT, conf->transfer_timeout );
-   curl_easy_setopt( curl_h, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );
-   
-   int rc = curl_easy_perform( curl_h );
-   if( curl_extractor != NULL ) {
-      (*curl_extractor)( curl_h, rc, arg );
-   }
-   
-   if( rc != 0 ) {
-      response_buffer_free( &rb );
-      
-      curl_easy_cleanup( curl_h );
-      
-      if( userpass )
-         free( userpass );
-      
-      return -abs(rc);
-   }
-
-   size_t len = response_buffer_size( &rb );
-   *buf = response_buffer_to_string( &rb );
-
-   response_buffer_free( &rb );
-   
-   curl_easy_cleanup( curl_h );
-   
-   if( userpass )
-      free( userpass );
-
-   return len;
-}
-
 // download straight from an existing curl handle
-ssize_t md_download_file6( CURL* curl_h, char** buf, ssize_t max_len ) {
+off_t md_download_file2( CURL* curl_h, char** buf, off_t max_len ) {
    struct md_download_buf dlbuf;
    dlbuf.len = 0;
    
@@ -1108,34 +1081,48 @@ ssize_t md_download_file6( CURL* curl_h, char** buf, ssize_t max_len ) {
    return dlbuf.len;
 }
 
-ssize_t md_download_file5( CURL* curl_h, char** buf ) {
-   return md_download_file6( curl_h, buf, -1 );
+off_t md_download_file( CURL* curl_h, char** buf ) {
+   return md_download_file2( curl_h, buf, -1 );
 }
 
-// download data from a remote gateway via local proxy and CDN
+// initialize a download continuation 
+int md_download_continuation_init( struct md_download_continuation* cont, off_t max_len, md_download_continuation_func cont_func, void* cls ) {
+   memset( cont, 0, sizeof(struct md_download_continuation) );
+   
+   cont->brb.max_size = max_len;
+   cont->brb.size = 0;
+   cont->brb.rb = new response_buffer_t();
+   
+   cont->user_cls = cls;
+   cont->cont = cont_func;
+   
+   return 0;
+}
+
+// free a continuation 
+void md_download_continuation_free( struct md_download_continuation* cont ) {
+   if( cont->brb.rb ) {
+      response_buffer_free( cont->brb.rb );
+      delete cont->brb.rb;
+      cont->brb.rb = NULL;
+   }
+}
+
+
+// download data using a continuation
+// the curl handle must already have been initialized.
 // return 0 on success
 // return negative on irrecoverable error
-int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len, int* _status_code ) {
+int md_download_with_continuation( CURL* curl, char** bits, off_t* ret_len, int* _status_code, struct md_download_continuation* cont ) {
    
-   ssize_t len = 0;
+   off_t len = 0;
    long status_code = 0;
    int rc = 0;
 
-   md_init_curl_handle( conf, curl, url, conf->connect_timeout );
-
-   if( proxy ) {
-      curl_easy_setopt( curl, CURLOPT_PROXY, proxy );
-   }
-
-   struct md_bound_response_buffer brb;
-   brb.max_size = max_len;
-   brb.size = 0;
-   brb.rb = new response_buffer_t();
-   
    char* tmpbuf = NULL;
    
-   curl_easy_setopt( curl, CURLOPT_WRITEDATA, (void*)&brb );
-   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, md_get_callback_bound_response_buffer );
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, (void*)cont );
+   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, md_get_callback_driver_continuation );
    
    rc = curl_easy_perform( curl );
    
@@ -1146,7 +1133,11 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
       curl_easy_getinfo( curl, CURLINFO_OS_ERRNO, &err );
       err = -abs(err);
       
-      errorf("curl_easy_perform(%p, %s, proxy=%s) rc = %d, err = %ld\n", curl, url, proxy, rc, err );
+      // get the effective URL 
+      char* url = NULL;
+      curl_easy_getinfo( curl, CURLINFO_EFFECTIVE_URL, &url );
+      
+      errorf("curl_easy_perform(%p, %s) rc = %d, err = %ld\n", curl, url, rc, err );
       
       rc = -EREMOTEIO;
       *_status_code = 0;
@@ -1160,15 +1151,20 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
       if( status_code == 200 ) {
          // everything was okay
          
-         tmpbuf = response_buffer_to_string( brb.rb );
-         len = response_buffer_size( brb.rb );
+         tmpbuf = response_buffer_to_string( cont->brb.rb );
+         len = response_buffer_size( cont->brb.rb );
          
          *bits = tmpbuf;
          *ret_len = len;
       }
       else {
+            
+         // get the effective URL 
+         char* url = NULL;
+         curl_easy_getinfo( curl, CURLINFO_EFFECTIVE_URL, &url );
+         
          // HTTP protocol error
-         errorf("curl_easy_perform(%p, %s, proxy=%s) HTTP status = %ld\n", curl, url, proxy, status_code );
+         errorf("curl_easy_perform(%p, %s) HTTP status = %ld\n", curl, url, status_code );
          
          *bits = NULL;
          *ret_len = 0;
@@ -1176,71 +1172,71 @@ int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* proxy, 
       }
    }
    
-   response_buffer_free( brb.rb );
-   delete brb.rb;
-
    return rc;
 }
 
-// download data, trying in order:
-// * both CDN and proxy
-// * from CDN
-// * from gateway
+// download data from one or more CDNs.
+// cache_func will initialize the curl handle.
 // return 0 on success.
-// return HTTP status code if not 200
-// return negative on error
-int md_download_cached( struct md_syndicate_conf* conf, CURL* curl, char const* url, char** bits, ssize_t* ret_len, ssize_t max_len, int* status_code ) {
+// return negative on error.
+// fill in the HTTP satus code
+int md_download_from_caches( struct md_syndicate_conf* conf, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls ) {
    int rc = 0;
 
-   char* cdn_url = md_cdn_url( conf->cdn_prefix, url );
-   char* proxy_url = conf->proxy_url;
-   
-   char const* proxy_urls[10];
-   memset( proxy_urls, 0, sizeof(char const*) * 10 );
-
-   if( conf->proxy_url ) {
-      // try CDN and Proxy
-      proxy_urls[0] = cdn_url;
-      proxy_urls[1] = proxy_url;
-
-      // try CDN only
-      proxy_urls[2] = cdn_url;
-      proxy_urls[3] = NULL;
-
-      // try direct
-      proxy_urls[4] = url;
-      proxy_urls[5] = NULL;
+   if( cache_func ) {
+      rc = (*cache_func)( conf, curl, base_url, cache_func_cls );
+      if( rc != 0 ) {
+         errorf("cache connector function rc = %d\n", rc );
+         return rc;
+      }
    }
    else {
-      // try CDN only
-      proxy_urls[0] = cdn_url;
-      proxy_urls[1] = NULL;
-
-      // try direct
-      proxy_urls[2] = url;
-      proxy_urls[3] = NULL;
+      // need a cache connector...
+      return -EINVAL;
    }
+   
+   // set up our continuation...
+   struct md_download_continuation download_cont;
+   md_download_continuation_init( &download_cont, max_len, NULL, NULL );
+   
+   rc = md_download_with_continuation( curl, bits, ret_len, status_code, &download_cont );
 
-   for( int i = 0; true; i++ ) {
-      char const* target_url = proxy_urls[2*i];
-      char const* target_proxy = proxy_urls[2*i + 1];
+   md_download_continuation_free( &download_cont );
+   
+   return rc;
+}
 
-      if( target_url == NULL && target_proxy == NULL )
-         break;
 
-      rc = md_download( conf, curl, target_proxy, target_url, bits, ret_len, max_len, status_code );
+// download data from one or more CDNs, and then fall back to a direct download if that fails.
+// return 0 on success.
+// return negative on error.
+// fill in the HTTP status code 
+int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls ) {
+   int rc = 0;
+   
+   if( cache_func ) {
+      rc = md_download_from_caches( conf, curl, base_url, bits, ret_len, max_len, status_code, cache_func, cache_func_cls );
       if( rc == 0 ) {
-         // HTTP indicates success
-         break;
+         return 0;
       }
       else {
-         // try again
-         errorf("md_download_cached(%p, %s, CDN_url=%s, proxy=%s) rc = %d, status code = %d\n", curl, url, target_url, target_proxy, rc, *status_code );
-         rc = 0;
+         errorf("WARN: md_download_from_caches(%s) rc = %d\n", base_url, rc);
       }
    }
+   
+   // download directly if we get here...
+   md_init_curl_handle( conf, curl, base_url, conf->connect_timeout );
+   
+   struct md_download_continuation download_cont;
+   md_download_continuation_init( &download_cont, max_len, NULL, NULL );
+   
+   rc = md_download_with_continuation( curl, bits, ret_len, status_code, &download_cont );
 
-   free( cdn_url );
+   md_download_continuation_free( &download_cont );
+   
+   if( rc != 0 ) {
+      errorf("md_download_with_continuation(%s) rc = %d, HTTP status = %d\n", base_url, rc, *status_code );
+   }
    
    return rc;
 }
@@ -1260,29 +1256,53 @@ static int md_HTTP_status_code_to_error_code( int status_code ) {
 
 // download a manifest and parse it.
 // Do not attempt to check it for errors, or verify its authenticity
-int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
+int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg,
+                          md_cache_connector_func cache_func, void* cache_func_cls,
+                          md_manifest_processor_func manifest_func, void* manifest_func_cls ) {
 
    char* manifest_data = NULL;
    int status_code = 0;
-   ssize_t manifest_data_len = 0;
+   off_t manifest_data_len = 0;
    int rc = 0;
 
-   rc = md_download_cached( conf, curl, manifest_url, &manifest_data, &manifest_data_len, SYNDICATE_MAX_MANIFEST_LEN, &status_code );
+   rc = md_download( conf, curl, manifest_url, &manifest_data, &manifest_data_len, SYNDICATE_MAX_MANIFEST_LEN, &status_code, cache_func, cache_func_cls );
    
    if( rc != 0 ) {
-      errorf( "md_download_cached(%s) rc = %d\n", manifest_url, rc );
+      errorf( "md_download(%s) rc = %d\n", manifest_url, rc );
       return rc;
    }
    
    if( status_code != 200 ) {
       // bad HTTP status
-      errorf( "md_download_cached(%s) HTTP status %d\n", manifest_url, status_code );
+      errorf( "md_download(%s) HTTP status %d\n", manifest_url, status_code );
       
       int err = md_HTTP_status_code_to_error_code( status_code );
       if( err == 0 || err == status_code )
          return -EREMOTEIO;
       else
          return err;
+   }
+   
+   // process the manifest...
+   if( manifest_func ) {
+      char* processed_manifest_data = NULL;
+      size_t processed_manifest_data_len = 0;
+      
+      rc = (*manifest_func)( conf, manifest_data, manifest_data_len, &processed_manifest_data, &processed_manifest_data_len, manifest_func_cls );
+      if( rc != 0 ) {
+         errorf("manifest_func rc = %d\n", rc );
+         
+         free( manifest_data );
+         return rc;
+      }
+      
+      if( processed_manifest_data != NULL && processed_manifest_data != manifest_data ) {
+         // driver transformed the data
+         free( manifest_data );
+      
+         manifest_data = processed_manifest_data;
+         manifest_data_len = processed_manifest_data_len;
+      }
    }
 
    rc = md_parse< Serialization::ManifestMsg >( mmsg, manifest_data, manifest_data_len );
@@ -1299,7 +1319,7 @@ int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const
 
 
 // download a block 
-ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char const* block_url, char** block_bits, size_t block_len ) {
+off_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char const* block_url, char** block_bits, size_t block_len, md_cache_connector_func cache_func, void* cache_func_cls ) {
 
    ssize_t nr = 0;
    char* block_buf = NULL;
@@ -1307,15 +1327,15 @@ ssize_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char cons
    
    dbprintf("fetch at most %zu bytes from '%s'\n", block_len, block_url );
    
-   int ret = md_download_cached( conf, curl, block_url, &block_buf, &nr, block_len, &status_code );
+   int ret = md_download( conf, curl, block_url, &block_buf, &nr, block_len, &status_code, cache_func, cache_func_cls );
    
    if( ret != 0 ) {
-      errorf("md_download_cached(%s) ret = %d\n", block_url, ret );
+      errorf("md_download(%s) ret = %d\n", block_url, ret );
       return ret;
    }
    
    if( status_code != 200 ) {
-      errorf("md_download_cached(%s) HTTP status %d\n", block_url, status_code );
+      errorf("md_download(%s) HTTP status %d\n", block_url, status_code );
       if( block_buf ) {
          free( block_buf );
       }
@@ -1874,6 +1894,7 @@ int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent ) {
    msent->set_max_write_freshness( ent->max_write_freshness );
    msent->set_name( string( ent->name ) );
    msent->set_write_nonce( ent->write_nonce );
+   msent->set_xattr_nonce( ent->xattr_nonce );
    return 0;
 }
 
@@ -1898,7 +1919,8 @@ int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent ) {
    ent->size = msent.size();
    ent->name = strdup( msent.name().c_str() );
    ent->write_nonce = msent.write_nonce();
-
+   ent->xattr_nonce = msent.xattr_nonce();
+   
    if( msent.has_parent_id() )
       ent->parent_id = msent.parent_id();
    else
@@ -1970,12 +1992,38 @@ size_t md_default_upload_callback(void *ptr, size_t size, size_t nmemb, void *us
 // free a metadata update
 void md_update_free( struct md_update* update ) {
    md_entry_free( &update->ent );
+   
+   if( update->xattr_name )
+      free( update->xattr_name );
+      
+   if( update->xattr_value )
+      free( update->xattr_value );
+
+   memset( update, 0, sizeof(struct md_update) );
 }
 
 
 // duplicate an update
 void md_update_dup2( struct md_update* src, struct md_update* dest ) {
    dest->op = src->op;
+   dest->flags = src->flags;
+   dest->error = src->error;
+   
+   if( src->xattr_name ) {
+      dest->xattr_name = strdup( src->xattr_name );
+   }
+   else {
+      dest->xattr_name = NULL;
+   }
+   
+   if( src->xattr_value ) {
+      dest->xattr_value = CALLOC_LIST( char, src->xattr_value_len );
+      memcpy( dest->xattr_value, src->xattr_value, src->xattr_value_len );
+      dest->xattr_value_len = src->xattr_value_len;
+   }
+   else {
+      dest->xattr_value = NULL;
+   }
    md_entry_dup2( &src->ent, &dest->ent );
 }
 
@@ -2036,7 +2084,6 @@ char* response_buffer_to_string( response_buffer_t* rb ) {
    return msg_buf;
 }
 
-
 // free a response buffer
 void response_buffer_free( response_buffer_t* rb ) {
    if( rb == NULL )
@@ -2053,8 +2100,8 @@ void response_buffer_free( response_buffer_t* rb ) {
 }
 
 // size of a response buffer
-size_t response_buffer_size( response_buffer_t* rb ) {
-   size_t ret = 0;
+off_t response_buffer_size( response_buffer_t* rb ) {
+   off_t ret = 0;
    for( unsigned int i = 0; i < rb->size(); i++ ) {
       ret += rb->at(i).second;
    }
@@ -2073,7 +2120,9 @@ int md_init_begin( struct md_syndicate_conf* conf,
                    char const* oid_password,
                    char const* my_key_path,
                    char const* tls_pkey_file,
-                   char const* tls_cert_file ) {
+                   char const* tls_cert_file,
+                   char const* syndicate_pubkey_path
+                 ) {
    
  
    int rc = 0;
@@ -2118,6 +2167,7 @@ int md_init_begin( struct md_syndicate_conf* conf,
    MD_SYNDICATE_CONF_OPT( *conf, server_cert_path, tls_cert_file );
    MD_SYNDICATE_CONF_OPT( *conf, server_key_path, tls_pkey_file );
    MD_SYNDICATE_CONF_OPT( *conf, gateway_key_path, my_key_path );
+   MD_SYNDICATE_CONF_OPT( *conf, syndicate_pubkey_path, syndicate_pubkey_path );
    
    return rc;
 }
@@ -2171,22 +2221,19 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       }  
    }
 
-   // if this is a UG, verify that we bound to the right volume
-   if( conf->gateway_type == SYNDICATE_UG ) {
-      
-      char* ms_volume_name = ms_client_get_volume_name( client );
+   // verify that we bound to the right volume
+   
+   char* ms_volume_name = ms_client_get_volume_name( client );
 
-      if( ms_volume_name == NULL ) {
-         errorf("%s", "This gateway does not appear to be bound to any volumes!\n");
-         return -EINVAL;
-      }
-      
-      if( strcmp(ms_volume_name, conf->volume_name) != 0 ) {
-         errorf("ERR: This UG is not registered to Volume '%s'\n", conf->volume_name );
-         free( ms_volume_name );
-         return rc;
-      }
+   if( ms_volume_name == NULL ) {
+      errorf("%s", "This gateway does not appear to be bound to any volumes!\n");
+      return -EINVAL;
+   }
+   
+   if( strcmp(ms_volume_name, conf->volume_name) != 0 ) {
+      errorf("ERR: This UG is not registered to Volume '%s'\n", conf->volume_name );
       free( ms_volume_name );
+      return rc;
    }
    
    // get the portnum
@@ -2202,6 +2249,8 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    conf->content_url = CALLOC_LIST( char, strlen(conf->hostname) + 20 );
    sprintf(conf->content_url, "http://%s:%d/", conf->hostname, conf->portnum );
    dbprintf("content URL is %s\n", conf->content_url );
+   
+   free( ms_volume_name );
    
    return rc;
 }
@@ -2220,10 +2269,11 @@ int md_init( struct md_syndicate_conf* conf,
              char const* my_key_password,
              char const* tls_pkey_file,
              char const* tls_cert_file,
-             char const* storage_root
+             char const* storage_root,
+             char const* syndicate_pubkey_path
            ) {
 
-   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, my_key_file, tls_pkey_file, tls_cert_file );
+   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, my_key_file, tls_pkey_file, tls_cert_file, syndicate_pubkey_path );
 
    if( rc != 0 ) {
       errorf("md_init_begin() rc = %d\n", rc );
@@ -2255,13 +2305,14 @@ int md_init_client( struct md_syndicate_conf* conf,
                     char const* oid_username,
                     char const* oid_password,
                     char const* volume_pubkey_pem,
-                    char const* my_key_str,
+                    char const* my_key_pem,
                     char const* my_key_password,
-                    char const* storage_root
+                    char const* storage_root,
+                    char const* syndicate_pubkey_pem
                   ) {
    
    
-   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, NULL, NULL, NULL );
+   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, NULL, NULL, NULL, NULL );
 
    if( rc != 0 ) {
       errorf("md_init_begin() rc = %d\n", rc );
@@ -2271,14 +2322,18 @@ int md_init_client( struct md_syndicate_conf* conf,
    conf->is_client = true;
    
    MD_SYNDICATE_CONF_OPT( *conf, storage_root, storage_root );
-   MD_SYNDICATE_CONF_OPT( *conf, gateway_key, my_key_str );
+   MD_SYNDICATE_CONF_OPT( *conf, gateway_key, my_key_pem );
    MD_SYNDICATE_CONF_OPT( *conf, volume_pubkey, volume_pubkey_pem );
+   MD_SYNDICATE_CONF_OPT( *conf, syndicate_pubkey, syndicate_pubkey_pem );
    
    if( conf->gateway_key ) {
       conf->gateway_key_len = strlen(conf->gateway_key);
    }
    if( conf->volume_pubkey ) {
       conf->volume_pubkey_len = strlen(conf->volume_pubkey);
+   }
+   if( conf->syndicate_pubkey ) {
+      conf->syndicate_pubkey_len = strlen(conf->syndicate_pubkey);
    }
    
    // set up libsyndicate runtime information

@@ -100,7 +100,8 @@ def syndicate_init( gateway_name=None,
                     gateway_pkey_decryption_password=None,
                     volume_pubkey_path=None,
                     tls_pkey_path=None,
-                    tls_cert_path=None):
+                    tls_cert_path=None,
+                    syndicate_pubkey_path=None):
    
    '''
       Initialize libsyndicate library, but only once
@@ -120,7 +121,8 @@ def syndicate_init( gateway_name=None,
                                              gateway_pkey_decryption_password=gateway_pkey_decryption_password,
                                              tls_pkey_path=tls_pkey_path,
                                              tls_cert_path=tls_cert_path,
-                                             volume_pubkey_path=volume_pubkey_path )
+                                             volume_pubkey_path=volume_pubkey_path,
+                                             syndicate_pubkey_path=syndicate_pubkey_path)
          
    else:
       raise Exception("libsyndicate already initialized!")

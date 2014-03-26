@@ -51,8 +51,6 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
    
    static struct option syndicate_options[] = {
       {"config-file",     required_argument,   0, 'c'},
-      {"cdn-prefix",      required_argument,   0, 'x'},
-      {"http-proxy",      required_argument,   0, 'X'},
       {"volume-name",     required_argument,   0, 'v'},
       {"username",        required_argument,   0, 'u'},
       {"password",        required_argument,   0, 'p'},
@@ -60,8 +58,9 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
       {"MS",              required_argument,   0, 'm'},
       {"volume-pubkey",   required_argument,   0, 'V'},
       {"gateway-pkey",    required_argument,   0, 'G'},
+      {"syndicate-pubkey", required_argument,  0, 'S'},
       {"gateway-pkey-decryption-password", required_argument, 0, 'K'},
-      {"tls-pkey",        required_argument,   0, 'S'},
+      {"tls-pkey",        required_argument,   0, 'T'},
       {"tls-cert",        required_argument,   0, 'C'},
       {"no-flush-replicas", no_argument,       0, 'F'},
       {"storage-root",    required_argument,   0, 'r'},
@@ -74,7 +73,7 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
    int opt_index = 0;
    int c = 0;
    
-   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:C:x:X:K:l:L:";
+   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:T:C:K:l:L:";
    
    char* optstr = NULL;
    if( special_opts != NULL ) {
@@ -125,19 +124,15 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
             break;
          }
          case 'S': {
+            opts->syndicate_pubkey_path = optarg;
+            break;
+         }
+         case 'T': {
             opts->tls_pkey_path = optarg;
             break;
          }
          case 'C': {
             opts->tls_cert_path = optarg;
-            break;
-         }
-         case 'x': {
-            opts->CDN_prefix = optarg;
-            break;
-         }
-         case 'X': {
-            opts->proxy_url = optarg;
             break;
          }
          case 'r': {
@@ -156,7 +151,6 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
             
             break;
          }
-         
          case 'L': {
             long lim = 0;
             rc = syndicate_parse_long( c, optarg, &lim );
@@ -211,14 +205,14 @@ Required arguments:\n\
 Optional arguments:\n\
    -V, --volume-pubkey VOLUME_PUBLIC_KEY_PATH\n\
             Path to the Volume's metadata public key\n\
-   -S, --tls-pkey TLS_PRIVATE_KEY_PATH\n\
+   -S, --syndicate-pubkey SYNDICATE_PUBLIC_KEY_PATH\n\
+            Path to the Syndicate public key.  If not given,\n\
+            it will be downloaded and logged when the gateway\n\
+            starts.\n\
+   -T, --tls-pkey TLS_PRIVATE_KEY_PATH\n\
             Path to this gateway's TLS private key\n\
    -C, --tls-cert TLS_CERTIFICATE_PATH\n\
             Path to this gateway's TLS certificate\n\
-   -x, --cdn-prefix CDN_PREFIX\n\
-            CDN prefix to use (e.g. http://vcoblitz.vicci.org:8008)\n\
-   -X, --http-proxy HTTP_PROXY\n\
-            HTTP proxy URL to use\n\
    -F, --no-flush-replicas\n\
             If given, flush all ongoing replicas before exiting\n\
    -r, --storage-root STORAGE_ROOT\n\

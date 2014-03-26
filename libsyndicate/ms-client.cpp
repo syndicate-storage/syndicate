@@ -16,15 +16,20 @@
 
 #include "libsyndicate/ms-client.h"
 
+struct md_closure_callback_entry MS_CLIENT_CACHE_CLOSURE_PROTOTYPE[] = {
+   MD_CLOSURE_CALLBACK( "connect_cache" ),
+   MD_CLOSURE_CALLBACK( "max_block_size" ),
+};
+
 static int ms_client_view_change_callback_default( struct ms_client* client, void* cls );
 
 static void* ms_client_uploader_thread( void* arg );
 static void* ms_client_view_thread( void* arg );
 static void ms_client_uploader_signal( struct ms_client* client );
-int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem );
+int ms_client_load_volume_metadata( struct md_syndicate_conf* conf, struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem );
 static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void *userdata);
 char* ms_client_cert_url( struct ms_client* client, uint64_t volume_id, uint64_t volume_cert_version, int gateway_type, uint64_t gateway_id, uint64_t gateway_cert_version );
-
+static int ms_client_send_updates( struct ms_client* client, update_set* all_updates, ms::ms_reply* reply, bool verify_response );
 int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char const* buf, size_t buf_len, bool verify );
 
 static void ms_client_cert_bundles( struct ms_volume* volume, ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1] ) {
@@ -107,6 +112,11 @@ static void ms_volume_free( struct ms_volume* vol ) {
       md_entry_free( vol->root );
       free( vol->root );
    }
+      
+   if( vol->cache_closure ) {
+      md_closure_shutdown( vol->cache_closure );
+      free( vol->cache_closure );
+   }
 
    memset( vol, 0, sizeof(struct ms_volume) );
 }
@@ -157,6 +167,7 @@ static int ms_client_gateway_type_str( int gateway_type, char* gateway_type_str 
    return 0;
 }
 
+
 // set up secure CURL handle 
 int ms_client_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char const* url ) {
    md_init_curl_handle( conf, curl, url, conf->connect_timeout);
@@ -168,6 +179,26 @@ int ms_client_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char
    return 0;
 }
 
+
+// download from the caches...
+int ms_client_connect_cache( struct md_syndicate_conf* conf, CURL* curl, char const* url, void* cls ) {
+   
+   int ret = -1;
+   struct md_closure* closure = (struct md_closure*)cls;
+   
+   if( md_closure_find_callback( closure, "connect_cache" ) != NULL ) {
+      MD_CLOSURE_CALL( ret, closure, "connect_cache", md_cache_connector_func, conf, curl, url, closure->cls );
+   }
+   else {
+      
+      // download manually...
+      errorf("%s", "WARN: connect_cache stub\n" );
+      md_init_curl_handle( conf, curl, url, conf->connect_timeout );
+      ret = 0;
+   }
+   
+   return ret;
+}
 
 // start internal threads (only safe to do so after we have a private key)
 // client must be write-locked!
@@ -222,6 +253,45 @@ int ms_client_stop_threads( struct ms_client* client ) {
    return 0;
 }
 
+// load up a key, storing its OpenSSL form and optionally a duplicate of its PEM-encoded value
+int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char** key_pem_dup, char const* key_pem, bool is_public ) {
+   int rc = 0;
+   
+   if( key_pem != NULL ) {
+      // we were given a key.  Load it
+      char const* method = NULL;
+      if( is_public ) {
+         rc = md_load_pubkey( key, key_pem );
+         method = "md_load_pubkey";
+      }
+      else {
+         rc = md_load_privkey( key, key_pem );
+         method = "md_load_privkey";
+      }
+      
+      if( rc != 0 ) {
+         errorf("%s rc = %d\n", method, rc );
+         return rc;
+      }
+      
+      rc = ms_client_verify_key( *key );
+      if( rc != 0 ) {
+         errorf("ms_client_verify_key rc = %d\n", rc );
+         return rc;
+      }
+
+      // hold onto the PEM form
+      if( key_pem_dup )
+         *key_pem_dup = strdup( key_pem );
+   }
+   else {
+      dbprintf("%s\n", "WARN: No key given" );
+   }
+   
+   return 0;
+}
+   
+
 // create an MS client context
 int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndicate_conf* conf ) {
 
@@ -273,25 +343,16 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
 
    int rc = 0;
 
-   if( conf->gateway_key != NULL ) {
-      // we were given Gateway keys.  Load them
-      rc = md_load_privkey( &client->my_key, conf->gateway_key );
-      if( rc != 0 ) {
-         errorf("md_load_privkey rc = %d\n", rc );
-         return rc;
-      }
-      
-      rc = ms_client_verify_key( client->my_key );
-      if( rc != 0 ) {
-         errorf("ms_client_verify_key rc = %d\n", rc );
-         return rc;
-      }
-
-      // hold onto the PEM form
-      client->my_key_pem = strdup( conf->gateway_key );
+   rc = ms_client_try_load_key( conf, &client->my_key, &client->my_key_pem, conf->gateway_key, false );
+   if( rc != 0 ) {
+      errorf("ms_client_try_load_key rc = %d\n", rc );
+      return rc;
    }
-   else {
-      dbprintf("%s: Will need to donwload gateway private key\n", conf->gateway_name );
+   
+   rc = ms_client_try_load_key( conf, &client->syndicate_public_key, &client->syndicate_public_key_pem, conf->syndicate_pubkey, true );
+   if( rc != 0 ) {
+      errorf("ms_client_try_load_key rc = %d\n", rc );
+      return rc;
    }
    
    client->view_change_callback = ms_client_view_change_callback_default;
@@ -368,6 +429,12 @@ int ms_client_destroy( struct ms_client* client ) {
  
    if( client->my_key_pem )
       free( client->my_key_pem );
+   
+   if( client->syndicate_public_key_pem )
+      free( client->syndicate_public_key_pem );
+   
+   if( client->syndicate_public_key )
+      EVP_PKEY_free( client->syndicate_public_key );
    
    client->inited = false;
    
@@ -535,6 +602,19 @@ char* ms_client_openid_rpc_url( struct ms_client* client ) {
 
    ms_client_unlock( client );
 
+   return url;
+}
+
+char* ms_client_syndicate_pubkey_url( struct ms_client* client ) {
+   // build the /PUBKEY url 
+   ms_client_rlock( client );
+   
+   char* url = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/PUBKEY") + 1 );
+   
+   sprintf(url, "%s/PUBKEY", client->url );
+   
+   ms_client_unlock( client );
+   
    return url;
 }
 
@@ -820,6 +900,7 @@ static void* ms_client_uploader_thread( void* arg ) {
 
 
 // exponential back-off
+// TODO: use a semaphore; properly queue up threads instead of making them spin
 static void ms_client_wlock_backoff( struct ms_client* client, bool* downloading ) {
    // if another download is pending, wait, using random exponential back-off
    ms_client_wlock( client );
@@ -983,17 +1064,17 @@ int ms_client_download_volume_metadata( struct ms_client* client, char const* ur
 
    // do the download
    memset( &client->read_times, 0, sizeof(client->read_times) );
-   len = md_download_file5( client->ms_view, &bits );
+   len = md_download_file( client->ms_view, &bits );
 
    http_response = ms_client_end_downloading_view( client );
 
    if( len < 0 ) {
-      errorf("md_download_file5(%s) rc = %zd\n", url, len );
+      errorf("md_download_file(%s) rc = %zd\n", url, len );
       return (int)len;
    }
 
    if( http_response != 200 ) {
-      errorf("md_download_file5(%s) HTTP status = %d\n", url, http_response );
+      errorf("md_download_file(%s) HTTP status = %d\n", url, http_response );
 
       if( http_response == 0 ) {
          // really bad--MS bug
@@ -1017,7 +1098,7 @@ int ms_client_download_cert_bundle_manifest( struct ms_client* client, uint64_t 
    
    ms_client_begin_downloading_view( client, url, NULL );
    
-   int rc = md_download_manifest( client->conf, client->ms_view, url, mmsg );
+   int rc = md_download_manifest( client->conf, client->ms_view, url, mmsg, ms_client_connect_cache, client->volume->cache_closure, NULL, NULL );
    
    int http_response = ms_client_end_downloading_view( client );
    
@@ -1169,7 +1250,7 @@ int ms_client_download_cert( struct ms_client* client, CURL* curl, char const* u
    ssize_t buf_len = 0;
    int http_status = 0;
    
-   int rc = md_download_cached( client->conf, curl, url, &buf, &buf_len, MS_MAX_CERT_SIZE, &http_status );
+   int rc = md_download( client->conf, curl, url, &buf, &buf_len, MS_MAX_CERT_SIZE, &http_status, ms_client_connect_cache, client->volume->cache_closure );
    
    if( rc != 0 ) {
       errorf("md_download_cached(%s) rc = %d\n", url, rc );
@@ -1436,7 +1517,7 @@ int ms_client_download_volume_by_name( struct ms_client* client, char const* vol
       return -EINVAL;
    }
    
-   rc = ms_client_load_volume_metadata( vol, &volume_md, volume_pubkey_pem );
+   rc = ms_client_load_volume_metadata( client->conf, vol, &volume_md, volume_pubkey_pem );
    if( rc != 0 ) {
       errorf("ms_client_load_volume_metadata rc = %d\n", rc );
       return rc;
@@ -1521,7 +1602,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
    
    if( new_version > old_version ) {
       // have new data--load it in
-      rc = ms_client_load_volume_metadata( vol, &volume_md, NULL );
+      rc = ms_client_load_volume_metadata( client->conf, vol, &volume_md, NULL );
    }
    else {
       rc = 0;
@@ -1581,6 +1662,12 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_
 }
 
 
+// does a certificate have a public key set?
+int ms_client_cert_has_public_key( const ms::ms_gateway_cert* ms_cert ) {
+   return (strcmp( ms_cert->public_key().c_str(), "NONE" ) != 0);
+}
+
+
 // (re)load a gateway certificate.
 // If my_gateway_id matches the ID in the cert, then load the closure as well (since we'll need it)
 // client cannot be write-locked! (but volume/view data can be)
@@ -1616,7 +1703,7 @@ int ms_client_load_cert( struct ms_client* client, uint64_t my_gateway_id, struc
 
    int rc = 0;
    
-   if( strcmp( ms_cert->public_key().c_str(), "NONE" ) == 0 ) {
+   if( !ms_client_cert_has_public_key( ms_cert ) ) {
       // no public key for this gateway on the MS
       dbprintf("WARN: No public key for Gateway %s\n", cert->name );
       cert->pubkey = NULL;
@@ -1641,7 +1728,7 @@ int ms_client_load_cert( struct ms_client* client, uint64_t my_gateway_id, struc
 
 
 // populate a Volume structure with the volume metadata
-int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem ) {
+int ms_client_load_volume_metadata( struct md_syndicate_conf* conf, struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem ) {
 
    int rc = 0;
    
@@ -1685,10 +1772,18 @@ int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadat
    }
    
    struct md_entry* root = NULL;
+   
    if( volume_md->has_root() ) {
       root = CALLOC_LIST( struct md_entry, 1 );
       ms_entry_to_md_entry( volume_md->root(), root );
    }
+   
+   if( vol->root ) {
+      md_entry_free( vol->root );
+      free( vol->root );
+   }
+   
+   vol->root = root;
    
    if( vol->UG_certs == NULL )
       vol->UG_certs = new ms_cert_bundle();
@@ -1706,16 +1801,20 @@ int ms_client_load_volume_metadata( struct ms_volume* vol, ms::ms_volume_metadat
    vol->volume_version = volume_md->volume_version();
    vol->num_files = volume_md->num_files();
    
-   if( vol->root ) {
-      md_entry_free( vol->root );
-      free( vol->root );
-   }
-   
-   vol->root = root;
-
    if( vol->name == NULL )
       vol->name = strdup( volume_md->name().c_str() );
 
+   if( volume_md->has_cache_closure_text() ) {
+      // decode and install
+      char const* closure_text_b64 = volume_md->cache_closure_text().c_str();
+      size_t closure_text_len_b64 = volume_md->cache_closure_text().size();
+      
+      int rc = md_install_binary_closure( conf, &vol->cache_closure, MS_CLIENT_CACHE_CLOSURE_PROTOTYPE, closure_text_b64, closure_text_len_b64 );
+      if( rc != 0 ) {
+         errorf("ms_install_binary_closure rc = %d\n", rc );
+      }
+   }
+   
    return 0;
 }
 
@@ -1763,7 +1862,7 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    ms::ms_volume_metadata* vol_md = registration_md->mutable_volume();
 
    // load the Volume information
-   rc = ms_client_load_volume_metadata( volume, vol_md, volume_pubkey_pem );
+   rc = ms_client_load_volume_metadata( client->conf, volume, vol_md, volume_pubkey_pem );
    if( rc != 0 ) {
       errorf("ms_client_load_volume_metadata(%s) rc = %d\n", vol_md->name().c_str(), rc );
       
@@ -1897,6 +1996,84 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    return rc;
 }
    
+   
+// get the Syndicate public key and load it 
+static ssize_t ms_client_download_syndicate_public_key( struct ms_client* client, char** syndicate_public_key_pem ) {
+   char* url = ms_client_syndicate_pubkey_url( client );
+   
+   char* bits = NULL;
+   ssize_t len = 0;
+   
+   ms_client_begin_downloading_view( client, url, NULL );
+   
+   // do the download
+   memset( &client->read_times, 0, sizeof(client->read_times) );
+   len = md_download_file( client->ms_view, &bits );
+
+   int http_status = ms_client_end_downloading_view( client );
+   
+   if( len < 0 ) {
+      errorf("md_download_file(%s) rc = %zd, HTTP status = %d\n", url, len, http_status );
+      len = -ENODATA;
+   }
+   else {
+      // add a \0 at the end...
+      char* tmp = (char*) realloc( bits, len + 1 );
+      if( tmp == NULL ) {
+         free( bits );
+         free( url );
+         return -ENOMEM;
+      }
+
+      bits = tmp;
+      bits[len] = 0;
+      *syndicate_public_key_pem = bits;
+   }
+   
+   free( url );
+   return len;
+}
+
+
+// download and install the syndicate public key into the ms_client 
+static int ms_client_reload_syndicate_public_key( struct ms_client* client ) {
+   char* syndicate_public_key_pem = NULL;
+   ssize_t pubkey_len = ms_client_download_syndicate_public_key( client, &syndicate_public_key_pem );
+   
+   if( pubkey_len < 0 ) {
+      errorf("ms_client_download_syndicate_public_key rc = %zd\n", pubkey_len );
+   }
+   
+   EVP_PKEY* new_public_key = NULL;
+   
+   int rc = ms_client_try_load_key( client->conf, &new_public_key, NULL, syndicate_public_key_pem, true );
+   if( rc != 0 ) {
+      errorf("ms_client_try_load_key rc = %d\n", rc );
+      free( syndicate_public_key_pem );
+      return -ENODATA;
+   }
+   
+   ms_client_wlock( client );
+   
+   if( client->syndicate_public_key ) {
+      EVP_PKEY_free( client->syndicate_public_key );
+   }
+   
+   if( client->syndicate_public_key_pem ) {
+      free( client->syndicate_public_key_pem );
+   }
+   
+   client->syndicate_public_key = new_public_key;
+   client->syndicate_public_key_pem = syndicate_public_key_pem;
+   
+   dbprintf("Trusting new Syndicate public key:\n\n%s\n\n", syndicate_public_key_pem );
+   
+   ms_client_unlock( client );
+   
+   return 0;
+}
+
+   
 
 // register this gateway with the MS, using the SyndicateUser's OpenID username and password
 int ms_client_openid_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* password, char const* volume_pubkey_pem, char const* key_password ) {
@@ -1918,8 +2095,20 @@ int ms_client_openid_gateway_register( struct ms_client* client, char const* gat
    
    dbprintf("register at %s\n", register_url );
    
+   // if we don't have the public key, grab it 
+   if( client->syndicate_public_key == NULL ) {
+      dbprintf("%s\n", "WARN: no Syndicate public key given.");
+      rc = ms_client_reload_syndicate_public_key( client );
+      if( rc != 0 ) {
+         errorf("ms_client_reload_syndicate_public_key rc = %d\n", rc );
+         
+         free( register_url );
+         return -ENODATA;
+      }
+   }
+   
    // open an OpenID-authenticated session, to get the registration data
-   rc = ms_client_openid_session( curl, register_url, username, password, &registration_md_buf, &registration_md_buf_len );
+   rc = ms_client_openid_session( curl, register_url, username, password, &registration_md_buf, &registration_md_buf_len, client->syndicate_public_key );
    
    // ... and close it, since we only needed to get the registration data
    curl_easy_cleanup( curl );
@@ -2020,8 +2209,23 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
 
 // do a one-off RPC call via OpenID
 // rpc_type can be "json" or "xml"
-int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char const* password, char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len ) {
+int ms_client_openid_auth_rpc( char const* ms_openid_url, char const* username, char const* password,
+                               char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len,
+                               char* syndicate_public_key_pem ) {
+   
    CURL* curl = curl_easy_init();
+   
+   EVP_PKEY* pubkey = NULL;
+   int rc = 0;
+   
+   if( syndicate_public_key_pem != NULL ) {
+      rc = md_load_pubkey( &pubkey, syndicate_public_key_pem );
+   
+      if( rc != 0 ) {
+         errorf("Failed to load Syndicate public key, md_load_pubkey rc = %d\n", rc );
+         return -EINVAL;
+      }
+   }
    
    // TODO: elegant way to avoid hard constants?
    md_init_curl_handle2( curl, NULL, 30, true );
@@ -2029,10 +2233,13 @@ int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char 
    char* ms_openid_url_begin = CALLOC_LIST( char, strlen(ms_openid_url) + strlen("/begin") + 1 );
    sprintf(ms_openid_url_begin, "%s/begin", ms_openid_url );
    
-   int rc = ms_client_openid_session( curl, ms_openid_url_begin, username, password, response_buf, response_len );
+   rc = ms_client_openid_session( curl, ms_openid_url_begin, username, password, response_buf, response_len, pubkey );
    
    curl_easy_setopt( curl, CURLOPT_URL, NULL );
    free( ms_openid_url_begin );
+   
+   if( pubkey )
+      EVP_PKEY_free( pubkey );
    
    if( rc != 0 ) {
       errorf("ms_client_openid_session(%s) rc = %d\n", ms_openid_url, rc );
@@ -2070,9 +2277,9 @@ int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char 
    }
    
    char* tmp_response = NULL;
-   ssize_t tmp_response_len = md_download_file5( curl, &tmp_response );
+   ssize_t tmp_response_len = md_download_file( curl, &tmp_response );
    if( tmp_response_len < 0 ) {
-      errorf("md_download_file5(%s) rc = %zd\n", ms_openid_url, tmp_response_len );
+      errorf("md_download_file(%s) rc = %zd\n", ms_openid_url, tmp_response_len );
       rc = -ENODATA;
    }
    
@@ -2093,6 +2300,13 @@ int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char 
    return rc;
 }
 
+// OpenID RPC, but don't verify 
+int ms_client_openid_rpc( char const* ms_openid_url, char const* username, char const* password,
+                          char const* rpc_type, char const* request_buf, size_t request_len, char** response_buf, size_t* response_len ) {
+   
+   errorf("%s", "WARN: will not verify RPC result from Syndicate MS\n");
+   return ms_client_openid_auth_rpc( ms_openid_url, username, password, rpc_type, request_buf, request_len, response_buf, response_len, NULL );
+}
 
 // read-lock a client context 
 int ms_client_rlock2( struct ms_client* client, char const* from_str, int lineno ) {
@@ -2378,10 +2592,29 @@ static int ms_client_serialize_update_set( update_set* updates, ms::ms_updates* 
          md_entry_to_ms_entry( dest_ent, &update->dest );
       }
       
-      // if this is a SETXATTR, then set the flags 
-      if( update->op == ms::ms_update::SETXATTR ) {
+      // if this is a SETXATTR, then set the flags, attr name, and attr value
+      else if( update->op == ms::ms_update::SETXATTR ) {
+         // sanity check...
+         if( update->xattr_name == NULL || update->xattr_value == NULL ) {
+            return -EINVAL;
+         }
+         
+         // set flags 
          ms_up->set_xattr_create( (update->flags & XATTR_CREATE) ? true : false );
          ms_up->set_xattr_replace( (update->flags & XATTR_REPLACE) ? true : false );
+       
+         // set names
+         ms_up->set_xattr_name( string(update->xattr_name) );
+         ms_up->set_xattr_value( string(update->xattr_value, update->xattr_value_len) );
+      }
+      
+      // if this is a REMOVEXATTR, then set the attr nam
+      else if( update->op == ms::ms_update::REMOVEXATTR ) {
+         // sanity check ...
+         if( update->xattr_name == NULL )
+            return -EINVAL;
+         
+         ms_up->set_xattr_name( string(update->xattr_name) );
       }
    }
 
@@ -2424,92 +2657,30 @@ static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) 
 }
 
 
-// post a record on the MS, synchronously.
-// Get back a new file ID and/or coordinator ID, depending on the operation
-static int ms_client_file_post( struct ms_client* client, uint64_t* file_id, uint64_t* coordinator_id, uint64_t volume_id, int op, struct md_entry* ent, struct md_entry* dest, int flags ) {
-   
-   // pack the first entry
-   struct md_update up;
-   memset( &up, 0, sizeof(up) );
-   up.op = op;
-   up.flags = flags;
-   memcpy( &up.ent, ent, sizeof(struct md_entry) );
-
-   update_set updates;
-   
-   // do we have a second entry?  We need one for rename
-   if( op == ms::ms_update::RENAME ) {
-      if( dest != NULL ) {
-         memcpy( &up.dest, dest, sizeof(struct md_entry) );
-      }
-      else {
-         return -EINVAL;
-      }
-   }
-   
-   updates[ ms_client_hash( ent->volume, ent->file_id ) ] = up;
-
-   ms::ms_updates ms_updates;
-   ms_client_serialize_update_set( &updates, &ms_updates );
-
-   // sign it
-   int rc = ms_client_sign_updates( client->my_key, &ms_updates );
-   if( rc != 0 ) {
-      errorf("ms_client_sign_updates rc = %d\n", rc );
-      return -EINVAL;
-   }
-
-   // make it a string
-   char* update_text = NULL;
-   ssize_t update_text_len = ms_client_update_set_to_string( &ms_updates, &update_text );
-
-   if( update_text_len < 0 ) {
-      errorf("ms_client_update_set_to_string rc = %zd\n", update_text_len );
-      return -EINVAL;
-   }
-
-   char* file_url = ms_client_file_url( client, volume_id );
-
-   // do we need to verify the authenticity of the reply?  That is, will the reply contain 
-   // information beyond a positive or negative ACK?
-   bool need_verify = (op == ms::ms_update::CREATE || op == ms::ms_update::CHOWN );
-   
-   ms::ms_reply reply;
-   
-   // send it off
-   rc = ms_client_send( client, file_url, update_text, update_text_len, &reply, need_verify );
-   
-   free( update_text );
-
-   free( file_url );
-   
-   if( rc == 0 ) {
-      // success
-      
-      // did the caller expect a file ID?
-      if( file_id ) {
-         if( reply.listing().entries_size() > 0 ) {
-            *file_id = reply.listing().entries(0).file_id();
-         }
-         else {
-            rc = -ENODATA;
-         }
-      }
-      
-      // did the caller expect a coordinator ID?
-      if( coordinator_id ) {
-         if( reply.listing().entries_size() > 0 ) {
-            *coordinator_id = reply.listing().entries(0).coordinator();
-         }
-         else {
-            rc = -ENODATA;
-         }
-      }
-   }
-      
-   return rc;
+// populate an ms_update 
+static int ms_client_populate_update( struct md_update* up, int op, int flags, struct md_entry* ent ) {
+   memset( up, 0, sizeof(struct md_update) );
+   up->op = op;
+   up->flags = flags;
+   memcpy( &up->ent, ent, sizeof(struct md_entry) );
+   return 0;
 }
 
+// add an update to an update set
+static int ms_client_add_update( update_set* updates, struct md_update* up ) {
+   (*updates)[ ms_client_hash( up->ent.volume, up->ent.file_id ) ] = *up;
+   return 0;
+}
+
+// post a record on the MS, synchronously.
+static int ms_client_file_post( struct ms_client* client, struct md_update* up, ms::ms_reply* reply ) {
+   
+   // put it into the update set
+   update_set updates;
+   ms_client_add_update( &updates, up );
+   
+   return ms_client_send_updates( client, &updates, reply, true );
+}
 
 // random 64-bit number
 uint64_t ms_client_make_file_id() {
@@ -2519,6 +2690,7 @@ uint64_t ms_client_make_file_id() {
    uint64_t ret = (upper) << 32 | lower;
    return ret;
 }
+
 
 // create a file record on the MS, synchronously
 int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, struct md_entry* ent ) {
@@ -2530,11 +2702,24 @@ int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, struct md
    
    dbprintf("desired file_id: %" PRIX64 "\n", file_id );
    
-   int rc = ms_client_file_post( client, &file_id, NULL, ent->volume, ms::ms_update::CREATE, ent, NULL, 0 );
+   // generate our update
+   struct md_update up;
+   ms_client_populate_update( &up, ms::ms_update::CREATE, 0, ent );
+   
+   // reply buffer
+   ms::ms_reply reply;
+   
+   int rc = ms_client_file_post( client, &up, &reply );
    
    if( rc == 0 ) {
-      *file_id_ret = file_id;
-      dbprintf("output file_id: %" PRIX64 "\n", file_id );
+      // did we get back a file_id?
+      if( reply.listing().entries_size() > 0 ) {
+         *file_id_ret = reply.listing().entries(0).file_id();
+         dbprintf("output file_id: %" PRIX64 "\n", *file_id_ret );
+      }
+      else {
+         rc = -ENODATA;
+      }
    }
 
    ent->file_id = old_file_id;
@@ -2552,11 +2737,29 @@ int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, struct md_
    ent->file_id = file_id;
    
    dbprintf("desired file_id: %" PRIX64 "\n", file_id );
-   int rc = ms_client_file_post( client, &file_id, NULL, ent->volume, ms::ms_update::CREATE, ent, NULL, 0 );
+   
+   // generate our update
+   struct md_update up;
+   ms_client_populate_update( &up, ms::ms_update::CREATE, 0, ent );
+
+   // put it into the update set
+   update_set updates;
+   ms_client_add_update( &updates, &up );
+   
+   // reply buffer
+   ms::ms_reply reply;
+   
+   int rc = ms_client_file_post( client, &up, &reply );
    
    if( rc == 0 ) {
-      *file_id_ret = file_id;
-      dbprintf("output file_id: %" PRIX64 "\n", file_id );
+      // did we get back a file_id?
+      if( reply.listing().entries_size() > 0 ) {
+         *file_id_ret = reply.listing().entries(0).file_id();
+         dbprintf("output file_id: %" PRIX64 "\n", *file_id_ret );
+      }
+      else {
+         rc = -ENODATA;
+      }
    }
 
    ent->file_id = old_file_id;
@@ -2566,30 +2769,69 @@ int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, struct md_
 
 // delete a record on the MS, synchronously
 int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
-   return ms_client_file_post( client, NULL, NULL, ent->volume, ms::ms_update::DELETE, ent, NULL, 0 );
+   
+   // generate our update
+   struct md_update up;
+   ms_client_populate_update( &up, ms::ms_update::DELETE, 0, ent );
+   
+   return ms_client_file_post( client, &up, NULL );
 }
 
 // update a record on the MS, synchronously
 int ms_client_update( struct ms_client* client, struct md_entry* ent ) {
-   return ms_client_file_post( client, NULL, NULL, ent->volume, ms::ms_update::UPDATE, ent, NULL, 0 );
+   
+   // generate our update
+   struct md_update up;
+   ms_client_populate_update( &up, ms::ms_update::UPDATE, 0, ent );
+   
+   return ms_client_file_post( client, &up, NULL );
 }
 
 // change coordinator ownership of a file on the MS, synchronously
 int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, struct md_entry* ent ) {
-   return ms_client_file_post( client, NULL, new_coordinator, ent->volume, ms::ms_update::CHOWN, ent, NULL, 0 );
+   
+   // generate our update
+   struct md_update up;
+   ms_client_populate_update( &up, ms::ms_update::CHOWN, 0, ent );
+   
+   // reply buffer 
+   ms::ms_reply reply;
+   
+   int rc = ms_client_file_post( client, &up, &reply );
+   
+   if( rc == 0 ) {
+      // got back a coordinator?
+      if( reply.listing().entries_size() > 0 ) {
+         *new_coordinator = reply.listing().entries(0).coordinator();
+         dbprintf("New coordinator of %" PRIX64 " is %" PRIu64 "\n", ent->file_id, *new_coordinator );
+      }
+      else {
+         rc = -ENODATA;
+      }
+   }
+   
+   return rc;
 }
 
 // rename from src to dest 
 int ms_client_rename( struct ms_client* client, struct md_entry* src, struct md_entry* dest ) {
    if( src->volume != dest->volume )
       return -EXDEV;
-      
-   return ms_client_file_post( client, NULL, NULL, src->volume, ms::ms_update::RENAME, src, dest, 0 );
+   
+   if( dest == NULL )
+      return -EINVAL;
+   
+   // generate our update
+   struct md_update up;
+   ms_client_populate_update( &up, ms::ms_update::UPDATE, 0, src );
+   memcpy( &up.dest, dest, sizeof(struct md_entry) );
+   
+   return ms_client_file_post( client, &up, NULL );
 }
 
 // send a batch of updates.
 // client must NOT be locked in any way.
-static int ms_client_send_updates( struct ms_client* client, update_set* all_updates ) {
+static int ms_client_send_updates( struct ms_client* client, update_set* all_updates, ms::ms_reply* reply, bool verify_response ) {
 
    int rc = 0;
    
@@ -2599,55 +2841,50 @@ static int ms_client_send_updates( struct ms_client* client, update_set* all_upd
       return 0;
    }
 
-   // group updates by volume
-   map< uint64_t, update_set > updates_by_volume;
+   // pack the updates into a protobuf
+   ms::ms_updates ms_updates;
+   ms_client_serialize_update_set( all_updates, &ms_updates );
 
-   for( update_set::iterator itr = all_updates->begin(); itr != all_updates->end(); itr++ ) {
-      updates_by_volume[ itr->second.ent.volume ][ itr->first ] = itr->second;
+   // sign it
+   rc = ms_client_sign_updates( client->my_key, &ms_updates );
+   if( rc != 0 ) {
+      errorf("ms_client_sign_updates rc = %d\n", rc );
+      return rc;
    }
 
-   // send by Volume
-   // TODO: do this in parallel?
-   for( map< uint64_t, update_set >::iterator itr = updates_by_volume.begin(); itr != updates_by_volume.end(); itr++ ) {
-      update_set* updates = &itr->second;
-      
-      // pack the updates into a protobuf
-      ms::ms_updates ms_updates;
-      ms_client_serialize_update_set( updates, &ms_updates );
+   // make it a string
+   char* update_text = NULL;
+   ssize_t update_text_len = ms_client_update_set_to_string( &ms_updates, &update_text );
 
-      // sign it
-      rc = ms_client_sign_updates( client->my_key, &ms_updates );
-      if( rc != 0 ) {
-         errorf("ms_client_sign_updates rc = %d\n", rc );
-         return rc;
-      }
+   if( update_text_len < 0 ) {
+      errorf("ms_client_update_set_to_string rc = %zd\n", update_text_len );
+      return (int)update_text_len;
+   }
+   
+   uint64_t volume_id = ms_client_get_volume_id( client );
 
-      // make it a string
-      char* update_text = NULL;
-      ssize_t update_text_len = ms_client_update_set_to_string( &ms_updates, &update_text );
+   // which Volumes are we sending off to?
+   char* file_url = ms_client_file_url( client, volume_id );
 
-      if( update_text_len < 0 ) {
-         errorf("ms_client_update_set_to_string rc = %zd\n", update_text_len );
-         return (int)update_text_len;
-      }
+   // send it off
+   if( reply != NULL ) {
+      rc = ms_client_send( client, file_url, update_text, update_text_len, reply, verify_response );
+   }
+   else {
+      // internal reply buffer 
+      ms::ms_reply internal_reply;
+      rc = ms_client_send( client, file_url, update_text, update_text_len, &internal_reply, verify_response );
+   }
 
-      // which Volumes are we sending off to?
-      char* file_url = ms_client_file_url( client, itr->first );
+   free( update_text );
 
-      // send it off
-      ms::ms_reply reply;
-      rc = ms_client_send( client, file_url, update_text, update_text_len, &reply, false );
-
-      free( update_text );
-
-      if( rc != 0 ) {
-         errorf("ms_client_send(%s) rc = %d\n", file_url, rc );
-         free( file_url );
-         return rc;
-      }
-
+   if( rc != 0 ) {
+      errorf("ms_client_send(%s) rc = %d\n", file_url, rc );
       free( file_url );
+      return rc;
    }
+
+   free( file_url );
    
    return rc;
 }
@@ -2688,7 +2925,7 @@ int ms_client_sync_update( struct ms_client* client, uint64_t volume_id, uint64_
    update_set updates;
    memcpy( &(updates[ path_hash ]), &update, sizeof(struct md_update) );
    
-   rc = ms_client_send_updates( client, &updates );
+   rc = ms_client_send_updates( client, &updates, NULL, true );
 
    // if we failed, then put the updates back and try again later
    if( rc != 0 ) {
@@ -2748,7 +2985,7 @@ int ms_client_sync_updates( struct ms_client* client, uint64_t freshness_ms ) {
    ms_client_unlock( client );
 
    if( updates.size() > 0 ) {
-      rc = ms_client_send_updates( client, &updates );
+      rc = ms_client_send_updates( client, &updates, NULL, true );
    }
 
    // if we failed, then put the updates back and try again later
@@ -3128,18 +3365,6 @@ int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_
          free( buf );
          break;
       }
-      
-      /*
-      // check errors
-      int err = reply.error();
-      if( err != 0 ) {
-         errorf("MS reply error %d from %s\n", err, path_downloads[di].url );
-         rc = err;
-         ms_client_free_response( ms_response );
-         free( buf );
-         break;
-      }
-      */
       
       // verify that we have the listing 
       if( !reply.has_listing() ) {
@@ -3677,14 +3902,14 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
    ms_client_begin_downloading( client, getxattr_url, NULL );
    
    memset( &client->read_times, 0, sizeof(client->read_times) );
-   len = md_download_file5( client->ms_read, &buf );
+   len = md_download_file( client->ms_read, &buf );
    
    int http_response = ms_client_end_downloading( client );
    
    free( getxattr_url );
    
    if( len <= 0 ) {
-      errorf("md_download_file5 rc = %zd\n", len );   
+      errorf("md_download_file rc = %zd\n", len );   
       return (int)len;
    }
    
@@ -3734,6 +3959,9 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
          http_response = -EIO;
       }
       
+      if( buf )
+         free( buf );
+      
       return -http_response;
    }
 }
@@ -3750,14 +3978,18 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
    ms_client_begin_downloading( client, listxattr_url, NULL );
    
    memset( &client->read_times, 0, sizeof(client->read_times) );
-   len = md_download_file5( client->ms_read, &buf );
+   len = md_download_file( client->ms_read, &buf );
    
    int http_response = ms_client_end_downloading( client );
    
    free( listxattr_url );
    
    if( len <= 0 ) {
-      errorf("md_download_file5 rc = %zd\n", len );
+      errorf("md_download_file rc = %zd\n", len );
+      
+      if( len == 0 )
+         len = -ENODATA;
+      
       return (int)len;
    }
    
@@ -3791,7 +4023,7 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
          names_len += xattr_name.size() + 1;
       }
       
-      // get the values 
+      // get the names, separating them with '\0'
       char* names = CALLOC_LIST( char, names_len + 1 );
       off_t offset = 0;
       for( int i = 0; i < reply.xattr_names_size(); i++ ) {
@@ -3816,6 +4048,9 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
          http_response = -EIO;
       }
       
+      if( buf )
+         free( buf );
+      
       return -http_response;
    }
 }
@@ -3824,12 +4059,32 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
 // flags is either 0, XATTR_CREATE, or XATTR_REPLACE (see setxattr(2))
 // fails with -ENOENT if the file doesn't exist or either isn't readable or writable.  Fails with -ENODATA if the semantics in flags can't be met.
 int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, int flags ) {
-   return ms_client_file_post( client, NULL, NULL, ent->volume, ms::ms_update::SETXATTR, ent, NULL, flags );
+   // sanity check...can't have both XATTR_CREATE and XATTR_REPLACE
+   if( (flags & (XATTR_CREATE | XATTR_REPLACE)) == (XATTR_CREATE | XATTR_REPLACE) )
+      return -EINVAL;
+   
+   // generate our update
+   struct md_update up;
+   ms_client_populate_update( &up, ms::ms_update::SETXATTR, flags, ent );
+   
+   // add the xattr information (these won't be free'd, so its safe to cast)
+   up.xattr_name = (char*)xattr_name;
+   up.xattr_value = (char*)xattr_value;
+   up.xattr_value_len = xattr_value_len;
+   
+   return ms_client_file_post( client, &up, NULL );
 }
 
 // remove an xattr.
 // fails if the file isn't readable or writable.
 // succeeds even if the xattr doesn't exist (i.e. idempotent)
 int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name ) {
-   return ms_client_file_post( client, NULL, NULL, ent->volume, ms::ms_update::REMOVEXATTR, ent, NULL, 0 );
+   // generate our update 
+   struct md_update up;
+   ms_client_populate_update( &up, ms::ms_update::REMOVEXATTR, 0, ent );
+   
+   // add the xattr information (these won't be free'd, so its safe to cast)
+   up.xattr_name = (char*)xattr_name;
+   
+   return ms_client_file_post( client, &up, NULL );
 }
