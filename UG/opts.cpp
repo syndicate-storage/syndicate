@@ -161,7 +161,7 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
             long lim = 0;
             rc = syndicate_parse_long( c, optarg, &lim );
             if( rc == 0 )
-               opts->cache_soft_limit = (size_t)lim;
+               opts->cache_hard_limit = (size_t)lim;
             
             break;
          }
