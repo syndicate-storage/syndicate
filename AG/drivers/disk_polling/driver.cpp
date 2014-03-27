@@ -200,7 +200,7 @@ extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
         dbprintf("setting file descriptor - old : %d\n", ctx->fd);
         ctx->fd = open( fp, O_RDONLY );
         dbprintf("setting file descriptor - new : %d\n", ctx->fd);
-        if( ctx->fd < 0 ) {
+        if( ctx->fd <= 2 ) {
             rc = -errno;
             errorf( "open(%s) errno = %d\n", fp, rc );
             free( fp );
@@ -237,6 +237,7 @@ extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
 
             // set up for reading
             off_t offset = ctx->blocking_factor * ag_ctx->reqdat.block_id;
+            dbprintf("seek file descriptor %d, offset %ld\n", ctx->fd, offset);
             rc = lseek( ctx->fd, offset, SEEK_SET );
             if( rc < 0 ) {
                 rc = -errno;
@@ -264,7 +265,7 @@ extern "C" void cleanup_dataset( void* cls ) {
     dbprintf("%s", "INFO: cleanup_dataset\n"); 
     struct gateway_ctx* ctx = (struct gateway_ctx*)cls;
     if (ctx) {
-        if( ctx->fd >= 0) {
+        if( ctx->fd > 2) {
             dbprintf("closing file descriptor %d\n", ctx->fd);
             close( ctx->fd );
         }
