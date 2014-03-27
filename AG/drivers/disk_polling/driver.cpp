@@ -238,8 +238,8 @@ extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
             // set up for reading
             off_t offset = ctx->blocking_factor * ag_ctx->reqdat.block_id;
             dbprintf("seek file descriptor %d, offset %ld\n", ctx->fd, offset);
-            rc = lseek( ctx->fd, offset, SEEK_SET );
-            if( rc < 0 ) {
+            off_t seekrc = lseek( ctx->fd, offset, SEEK_SET );
+            if( seekrc < 0 ) {
                 rc = -errno;
                 errorf( "lseek errno = %d\n", rc );
                 free( ctx );
