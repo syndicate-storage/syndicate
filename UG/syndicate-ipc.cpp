@@ -560,7 +560,7 @@ public:
         char* value = new char[MAX_XATTR_INITIAL_VALUE_SIZE];
 
         // call
-        int returncode = syndicatefs_getxattr(path, name, value, MAX_XATTR_VALUE_SIZE);
+        int returncode = syndicatefs_getxattr(path, name, value, MAX_XATTR_INITIAL_VALUE_SIZE);
         
         size_t value_size = MAX_XATTR_INITIAL_VALUE_SIZE;
         while(returncode == -ERANGE) {
@@ -590,7 +590,7 @@ public:
             writeString(outBuffer, value, attrLen, &bufferNext);
         }
 
-        delete list;
+        delete value;
 
         *data_out_size = toWriteSize;
     }
