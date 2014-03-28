@@ -46,7 +46,7 @@ syndicateipc_context native_context;
  */
 const int MAX_PATH_SIZE = 1024;
 const int MAX_XATTR_NAME_SIZE = 1024;
-const int MAX_XATTR_VALUE_SIZE = 1024;
+const int MAX_XATTR_INITIAL_VALUE_SIZE = 1024;
 const int MAX_XATTR_LIST_INITIAL_SIZE = 1024;
 
 struct IPCFileInfo {
@@ -557,11 +557,22 @@ public:
         char name[MAX_XATTR_NAME_SIZE];
         readString(bytes_ptr2, name, &bytes_ptr3);
         
-        char value[MAX_XATTR_VALUE_SIZE];
+        char* value = new char[MAX_XATTR_INITIAL_VALUE_SIZE];
 
         // call
         int returncode = syndicatefs_getxattr(path, name, value, MAX_XATTR_VALUE_SIZE);
         
+        size_t value_size = MAX_XATTR_INITIAL_VALUE_SIZE;
+        while(returncode == -ERANGE) {
+            // reallocate buffer by increasing size by 2
+            free(value);
+            value_size *= 2;
+            value = new char[value_size];
+
+            // call
+            returncode = syndicatefs_getxattr(path, name, value, value_size);
+	    }
+
         int attrLen = strlen(value);
 
         int toWriteSize = 16;
@@ -579,6 +590,8 @@ public:
             writeString(outBuffer, value, attrLen, &bufferNext);
         }
 
+        delete list;
+
         *data_out_size = toWriteSize;
     }
     
@@ -595,7 +608,7 @@ public:
         int returncode = syndicatefs_listxattr(path, list, MAX_XATTR_LIST_INITIAL_SIZE);
 
         size_t list_size = MAX_XATTR_LIST_INITIAL_SIZE;
-	while(returncode == -ERANGE) {
+	    while(returncode == -ERANGE) {
             // reallocate buffer by increasing size by 2
             free(list);
             list_size *= 2;
@@ -603,7 +616,7 @@ public:
 
             // call
             returncode = syndicatefs_listxattr(path, list, list_size);
-	}
+	    }
         
         std::vector<char*> entryVector;
         char* listptr = list;
