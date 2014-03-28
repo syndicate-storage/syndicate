@@ -607,14 +607,14 @@ public:
         
         std::vector<char*> entryVector;
         char* listptr = list;
-        for(int i=0;i<returncode;i++) {
+        while(returncode > 0 && listptr < (list + returncode)) {
             int entryLen = strlen(listptr);
             if(entryLen > 0) {
                 entryVector.push_back(listptr);
             }
             listptr += entryLen + 1;
         }
-        
+       
         int totalMessageSize = 0;
         int numOfEntries = entryVector.size();
 
