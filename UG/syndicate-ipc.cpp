@@ -593,6 +593,17 @@ public:
         
         // call
         int returncode = syndicatefs_listxattr(path, list, MAX_XATTR_LIST_INITIAL_SIZE);
+
+        size_t list_size = MAX_XATTR_LIST_INITIAL_SIZE;
+	while(returncode == -ERANGE) {
+            // reallocate buffer by increasing size by 2
+            free(list);
+            list_size *= 2;
+            list = new char[list_size];
+
+            // call
+            returncode = syndicatefs_listxattr(path, list, list_size);
+	}
         
         std::vector<char*> entryVector;
         char* listptr = list;
