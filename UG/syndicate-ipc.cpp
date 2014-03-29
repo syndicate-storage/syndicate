@@ -571,7 +571,7 @@ public:
 
             // call
             returncode = syndicatefs_getxattr(path, name, value, value_size);
-	    }
+	}
 
         // need to see this when returncode is negative
 
@@ -581,13 +581,19 @@ public:
         }
 
         int toWriteSize = 16;
-        toWriteSize += 4 + attrLen;
+        if (returncode >= 0) {
+            toWriteSize += 4 + attrLen;
+        }
 
         *data_out = new char[toWriteSize];
         char *outBuffer = *data_out;
         char *bufferNext;
 
-        writeHeader(outBuffer, OP_GET_EXTENDED_ATTR, returncode, 4 + attrLen, 1, &bufferNext);
+        if (returncode >= 0) {
+            writeHeader(outBuffer, OP_GET_EXTENDED_ATTR, returncode, 4 + attrLen, 1, &bufferNext);
+        } else {
+            writeHeader(outBuffer, OP_GET_EXTENDED_ATTR, returncode, 0, 1, &bufferNext);
+        }
         if (returncode >= 0) {
             outBuffer = bufferNext;
             writeString(outBuffer, value, attrLen, &bufferNext);
