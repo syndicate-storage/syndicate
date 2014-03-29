@@ -573,12 +573,15 @@ public:
             returncode = syndicatefs_getxattr(path, name, value, value_size);
 	    }
 
-        int attrLen = strlen(value);
+        // need to see this when returncode is negative
+
+        int attrLen = 0;
+        if (returncode >= 0) {
+            attrLen = returncode;
+        }
 
         int toWriteSize = 16;
-        if (returncode >= 0) {
-            toWriteSize += 4 + attrLen;
-        }
+        toWriteSize += 4 + attrLen;
 
         *data_out = new char[toWriteSize];
         char *outBuffer = *data_out;
