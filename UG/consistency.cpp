@@ -1354,8 +1354,8 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    fs_entry_reload_manifest( core, fent, &manifest_msg );
    
    // if this is an AG, then don't allow it to be considered fresh
-   if( gateway_type == SYNDICATE_AG )
-      fent->manifest->mark_stale();
+   //if( gateway_type == SYNDICATE_AG )
+   //   fent->manifest->mark_stale();
 
    char* dat = fent->manifest->serialize_str();
    dbprintf("Manifest:\n%s\n", dat);
