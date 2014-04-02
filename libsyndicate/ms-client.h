@@ -251,6 +251,7 @@ struct ms_client {
    // NOTE: this field does not change over the course of the ms_client structure's lifetime.
    // you can use it without locking, as long as you don't destroy it.
    EVP_PKEY* my_key;
+   EVP_PKEY* my_pubkey;
    char* my_key_pem;
 
    // reference to syndicate config 
@@ -367,7 +368,7 @@ void ms_client_free_listing( struct ms_listing* listing );
 
 // closure prototype 
 extern struct md_closure_callback_entry MS_CLIENT_CACHE_CLOSURE_PROTOTYPE[];
-int ms_client_connect_cache( struct md_syndicate_conf* conf, CURL* curl, char const* url, void* cls );
+int ms_client_connect_cache( struct md_closure* closure, CURL* curl, char const* url, void* cls );
 
 }
 

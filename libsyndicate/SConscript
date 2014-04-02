@@ -54,6 +54,7 @@ BASE_LIBS = """
    rt
    m
    dl
+   json-c
 """
 
 HTTPD_LIBS = """
@@ -116,7 +117,7 @@ if nacl_env is not None:
    protobuf_nacl_objs = [env_nacl.Object("%s.nacl.o" % x.path, x) for x in protobuf_cc_files]
    client_objs = [env_nacl.Object("%s.nacl.o" % x, x) for x in Split(source_files_client)]
 
-   libsyndicate_nacl = env_nacl.StaticLibrary("libsyndicate_nacl.a", protobuf_nacl_objs + + scrypt_objs + client_objs, LIBS=Split(LIBS_client) )
+   libsyndicate_nacl = env_nacl.StaticLibrary("libsyndicate_nacl.a", protobuf_nacl_objs + scrypt_objs + client_objs, LIBS=Split(LIBS_client) )
 
 
 # generate header and source paths

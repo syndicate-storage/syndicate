@@ -1180,11 +1180,12 @@ int md_download_with_continuation( CURL* curl, char** bits, off_t* ret_len, int*
 // return 0 on success.
 // return negative on error.
 // fill in the HTTP satus code
-int md_download_from_caches( struct md_syndicate_conf* conf, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls ) {
+int md_download_from_caches( struct md_closure* closure, CURL* curl, char const* base_url, char** bits, off_t* ret_len,
+                             off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls ) {
    int rc = 0;
 
    if( cache_func ) {
-      rc = (*cache_func)( conf, curl, base_url, cache_func_cls );
+      rc = (*cache_func)( closure, curl, base_url, cache_func_cls );
       if( rc != 0 ) {
          errorf("cache connector function rc = %d\n", rc );
          return rc;
@@ -1211,11 +1212,11 @@ int md_download_from_caches( struct md_syndicate_conf* conf, CURL* curl, char co
 // return 0 on success.
 // return negative on error.
 // fill in the HTTP status code 
-int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls ) {
+int md_download( struct md_syndicate_conf* conf, struct md_closure* closure, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls ) {
    int rc = 0;
    
    if( cache_func ) {
-      rc = md_download_from_caches( conf, curl, base_url, bits, ret_len, max_len, status_code, cache_func, cache_func_cls );
+      rc = md_download_from_caches( closure, curl, base_url, bits, ret_len, max_len, status_code, cache_func, cache_func_cls );
       if( rc == 0 ) {
          return 0;
       }
@@ -1256,7 +1257,7 @@ static int md_HTTP_status_code_to_error_code( int status_code ) {
 
 // download a manifest and parse it.
 // Do not attempt to check it for errors, or verify its authenticity
-int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg,
+int md_download_manifest( struct md_syndicate_conf* conf, struct md_closure* closure, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg,
                           md_cache_connector_func cache_func, void* cache_func_cls,
                           md_manifest_processor_func manifest_func, void* manifest_func_cls ) {
 
@@ -1265,7 +1266,7 @@ int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const
    off_t manifest_data_len = 0;
    int rc = 0;
 
-   rc = md_download( conf, curl, manifest_url, &manifest_data, &manifest_data_len, SYNDICATE_MAX_MANIFEST_LEN, &status_code, cache_func, cache_func_cls );
+   rc = md_download( conf, closure, curl, manifest_url, &manifest_data, &manifest_data_len, SYNDICATE_MAX_MANIFEST_LEN, &status_code, cache_func, cache_func_cls );
    
    if( rc != 0 ) {
       errorf( "md_download(%s) rc = %d\n", manifest_url, rc );
@@ -1288,7 +1289,7 @@ int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const
       char* processed_manifest_data = NULL;
       size_t processed_manifest_data_len = 0;
       
-      rc = (*manifest_func)( conf, manifest_data, manifest_data_len, &processed_manifest_data, &processed_manifest_data_len, manifest_func_cls );
+      rc = (*manifest_func)( closure, manifest_data, manifest_data_len, &processed_manifest_data, &processed_manifest_data_len, manifest_func_cls );
       if( rc != 0 ) {
          errorf("manifest_func rc = %d\n", rc );
          
@@ -1319,7 +1320,7 @@ int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const
 
 
 // download a block 
-off_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char const* block_url, char** block_bits, size_t block_len, md_cache_connector_func cache_func, void* cache_func_cls ) {
+off_t md_download_block( struct md_syndicate_conf* conf, struct md_closure* closure, CURL* curl, char const* block_url, char** block_bits, size_t block_len, md_cache_connector_func cache_func, void* cache_func_cls ) {
 
    ssize_t nr = 0;
    char* block_buf = NULL;
@@ -1327,7 +1328,7 @@ off_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char const*
    
    dbprintf("fetch at most %zu bytes from '%s'\n", block_len, block_url );
    
-   int ret = md_download( conf, curl, block_url, &block_buf, &nr, block_len, &status_code, cache_func, cache_func_cls );
+   int ret = md_download( conf, closure, curl, block_url, &block_buf, &nr, block_len, &status_code, cache_func, cache_func_cls );
    
    if( ret != 0 ) {
       errorf("md_download(%s) ret = %d\n", block_url, ret );

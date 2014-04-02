@@ -21,6 +21,7 @@ Fedora 12 (PlanetLab)
    libconfig-devel
    Cython (>= 0.19)
    python-devel
+   json-c
 
 Fedora 12 users will need Apache Thrift 0.8 installed.
    
@@ -48,6 +49,7 @@ Ubuntu/Debian:
    cython (>= 0.19)
    scrypt (python scrypt)
    requests (python requests)
+   libjson-c
 
 You will need a version of Apache Thrift (0.8.x) installed to build the AG.  This dependency is transient and will be removed soon.
 

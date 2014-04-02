@@ -31,6 +31,7 @@ char* fs_entry_block_url_path( struct fs_core* core, char const* fs_path, int64_
 char* fs_entry_file_url( struct fs_core* core, uint64_t volume_id, char const* base_url, char const* fs_path, int64_t file_version, bool local );
 char* fs_entry_local_file_url( struct fs_core* core, uint64_t file_id, int64_t file_version );
 char* fs_entry_public_file_url( struct fs_core* core, char const* fs_path, int64_t file_version );
+
 char* fs_entry_manifest_url( struct fs_core* core, char const* gateway_base_url, uint64_t volume_id, char* fs_path, int64_t version, struct timespec* ts );
 char* fs_entry_public_manifest_url( struct fs_core* core, char const* fs_path, int64_t version, struct timespec* ts );
 char* fs_entry_remote_manifest_url( struct fs_core* core, uint64_t UG_id, char const* fs_path, int64_t version, struct timespec* ts );

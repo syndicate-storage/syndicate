@@ -46,7 +46,7 @@ static bool fs_entry_is_garbage_collectable_block( struct fs_core* core, off_t f
 // fh must be write-locked
 int fs_entry_replace_manifest( struct fs_core* core, struct fs_file_handle* fh, struct fs_entry* fent, struct replica_snapshot* fent_snapshot_prewrite ) {
    // replicate our new manifest
-   int rc = fs_entry_replicate_manifest( core, fent, false, fh );
+   int rc = fs_entry_replicate_manifest( core, fh->path, fent, false, fh );
    if( rc != 0 ) {
       errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fh->path, rc );
       rc = -EIO;
@@ -96,7 +96,7 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, cha
    char* processed_block = NULL;
    size_t processed_block_len = 0;
    
-   rc = driver_write_block_preup( core->driver, fs_path, fent, block_id, new_block_version, block_data, write_len, &processed_block, &processed_block_len );
+   rc = driver_write_block_preup( core->closure, fs_path, fent, block_id, new_block_version, block_data, write_len, &processed_block, &processed_block_len );
    if( rc != 0 ) {
       errorf("driver_write_block_preup(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, new_block_version, rc );
       *_rc = rc;
@@ -261,7 +261,7 @@ int fs_entry_replicate_write( struct fs_core* core, struct fs_file_handle* fh, m
          BEGIN_TIMING_DATA( replicate_ts );
    
          // replicate the new manifest
-         int rc = fs_entry_replicate_manifest( core, fh->fent, false, fh );
+         int rc = fs_entry_replicate_manifest( core, fh->path, fh->fent, false, fh );
          if( rc != 0 ) {
             errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fh->path, rc );
             ret = -EIO;
@@ -804,7 +804,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
    // replicate the manifest, synchronously
    BEGIN_TIMING_DATA( replicate_ts );
 
-   err = fs_entry_replicate_manifest( core, fent, true, NULL );
+   err = fs_entry_replicate_manifest( core, fs_path, fent, true, NULL );
    if( err != 0 ) {
       errorf("fs_entry_replicate_manifest(%s) rc = %d\n", fs_path, err );
       err = -EIO;

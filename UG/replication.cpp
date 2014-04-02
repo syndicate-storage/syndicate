@@ -239,24 +239,35 @@ int replica_populate_request( ms::ms_gateway_request_info* replica_info, int req
 
 // create a manifest replica context
 // fent must be at least read-locked
-int replica_context_manifest( struct fs_core* core, struct replica_context* rctx, struct fs_entry* fent, bool replicate_sync ) {
+int replica_context_manifest( struct fs_core* core, char const* fs_path, struct replica_context* rctx, struct fs_entry* fent, bool replicate_sync ) {
    
    // get the manifest data
-   char* manifest_data = NULL;
-   ssize_t manifest_data_len = 0;
+   char* in_manifest_data = NULL;
+   ssize_t in_manifest_data_len = 0;
    int rc = 0;
    
-   manifest_data_len = fs_entry_serialize_manifest( core, fent, &manifest_data, true );
-   if( manifest_data_len < 0 ) {
-      errorf("fs_entry_serialize_manifest(%" PRIX64 ") rc = %zd\n", fent->file_id, manifest_data_len);
+   in_manifest_data_len = fs_entry_serialize_manifest( core, fent, &in_manifest_data, true );
+   if( in_manifest_data_len < 0 ) {
+      errorf("fs_entry_serialize_manifest(%" PRIX64 ") rc = %zd\n", fent->file_id, in_manifest_data_len);
       return -EINVAL;
+   }
+   
+   // pre-upload driver processing 
+   char* manifest_data = NULL;
+   size_t manifest_data_len = 0;
+   
+   rc = driver_write_manifest_preup( core->closure, fs_path, fent, fent->mtime_sec, fent->mtime_nsec, manifest_data, manifest_data_len, &manifest_data, &manifest_data_len );
+   free( in_manifest_data );
+   
+   if( rc != 0 ) {
+      errorf("driver_write_manifest_preup(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
+      
+      return rc;
    }
    
    // snapshot this fent
    struct replica_snapshot snapshot;
    fs_entry_replica_snapshot( core, fent, 0, 0, &snapshot );
-   
-   // TODO: encrypt manifest string
    
    // hash the manifest
    unsigned char* hash = sha256_hash_data( manifest_data, manifest_data_len );
@@ -1512,10 +1523,10 @@ int replica_run_block_contexts( struct fs_core* core, struct syndicate_replicati
 
 // replicate a manifest
 // fent must be write-locked
-int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bool sync, struct fs_file_handle* fh ) {
+int fs_entry_replicate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, bool sync, struct fs_file_handle* fh ) {
    struct replica_context* manifest_rctx = CALLOC_LIST( struct replica_context, 1 );
    
-   int rc = replica_context_manifest( core, manifest_rctx, fent, sync );
+   int rc = replica_context_manifest( core, fs_path, manifest_rctx, fent, sync );
    if( rc != 0 ) {
       errorf("replica_context_manifest rc = %d\n", rc );
       free( manifest_rctx );
@@ -1754,9 +1765,10 @@ int fs_entry_replica_clean( struct fs_file_handle* fh ) {
 
 
 // make a "fake" file handle that has just enough data in it for us to process
-int fs_entry_replica_file_handle( struct fs_core* core, struct fs_entry* fent, struct fs_file_handle* fh, int flags ) {
+int fs_entry_replica_file_handle( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int flags, struct fs_file_handle* fh ) {
    memset( fh, 0, sizeof( struct fs_file_handle ) );
    
+   fh->path = strdup(fs_path);
    fh->rctxs = new vector<struct replica_context*>();
    fh->transfer_timeout_ms = core->conf->transfer_timeout * 1000L;
    fh->flags = flags;

@@ -245,7 +245,7 @@ class Volume( storagetypes.Object ):
    
    default_gateway_caps = storagetypes.Integer( indexed=False )
    
-   cache_closure = storagetypes.Text()          # base64-encoded closure for connecting to the cache providers
+   closure = storagetypes.Text()          # base64-encoded closure for connecting to the cache providers
 
    # for RPC
    key_type = "volume"
@@ -301,7 +301,8 @@ class Volume( storagetypes.Object ):
       "archive",
       "allow_anon",
       "file_quota",
-      "default_gateway_caps"
+      "default_gateway_caps",
+      "closure"
    ]
    
    read_attrs = [
@@ -318,7 +319,8 @@ class Volume( storagetypes.Object ):
       "archive",
       "file_quota",
       "default_gateway_caps",
-      "allow_anon"
+      "allow_anon",
+      "closure"
    ]
    
    write_attrs_api_required = write_attrs
@@ -357,8 +359,8 @@ class Volume( storagetypes.Object ):
       volume_metadata.private = kwargs.get( 'private', self.private )
       volume_metadata.allow_anon = kwargs.get( 'allow_anon', self.allow_anon )
       
-      if kwargs.get('cache_closure', self.cache_closure) is not None:
-         volume_metadata.cache_closure = kwargs.get( 'cache_closure', self.cache_closure )
+      if kwargs.get('closure', self.closure) is not None:
+         volume_metadata.cache_closure_text = kwargs.get( 'closure', self.closure )
       
       # sign it
       volume_metadata.signature = ""

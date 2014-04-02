@@ -85,7 +85,6 @@ class file_manifest;
 struct replica_context;
 struct syndicate_state;
 struct syndicate_cache;
-struct storage_driver;
 
 // Syndicate filesystem entry
 struct fs_entry {
@@ -183,7 +182,7 @@ struct fs_core {
    struct fs_entry* root;              // root FS entry
    struct md_syndicate_conf* conf;     // Syndicate configuration structure
    struct ms_client* ms;               // link to the MS
-   struct md_closure* driver;          // UG storage driver
+   struct md_closure* closure;         // UG storage closure
    struct syndicate_cache* cache;      // index over on-disk cache
    struct syndicate_state* state;   // state 
    struct fs_entry_view_change_cls* viewchange_cls;     // pass to view change callback

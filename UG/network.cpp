@@ -27,18 +27,16 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
    
    // connect to the cache...
    struct driver_connect_cache_cls driver_cls;
-   driver_cls.driver = core->driver;
    driver_cls.client = core->ms;
    
    // process the manifest 
    struct driver_read_manifest_postdown_cls manifest_cls;
-   manifest_cls.driver = core->driver;
    manifest_cls.fs_path = fs_path;
    manifest_cls.fent = fent;
    manifest_cls.mtime_sec = mtime_sec;
    manifest_cls.mtime_nsec = mtime_nsec;
    
-   int rc = md_download_manifest( core->conf, curl, manifest_url, mmsg, driver_connect_cache, &driver_cls, driver_read_manifest_postdown, &manifest_cls );
+   int rc = md_download_manifest( core->conf, core->closure, curl, manifest_url, mmsg, driver_connect_cache, &driver_cls, driver_read_manifest_postdown, &manifest_cls );
    if( rc != 0 ) {
       
       errorf("md_download_manifest(%s) rc = %d\n", manifest_url, rc );
@@ -91,11 +89,10 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* fs_path, stru
    char* block_buf = NULL;
    
    struct driver_connect_cache_cls driver_cls;
-   driver_cls.driver = core->driver;
    driver_cls.client = core->ms;
    
    // grab the block
-   ssize_t download_len = md_download_block( core->conf, curl, block_url, &block_buf, -1, driver_connect_cache, &driver_cls );
+   ssize_t download_len = md_download_block( core->conf, core->closure, curl, block_url, &block_buf, -1, driver_connect_cache, &driver_cls );
    if( download_len < 0 ) {
       
       errorf("md_download_block(%s) rc = %zd\n", block_url, download_len );

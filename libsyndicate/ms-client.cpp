@@ -16,17 +16,16 @@
 
 #include "libsyndicate/ms-client.h"
 
-struct md_closure_callback_entry MS_CLIENT_CACHE_CLOSURE_PROTOTYPE[] = {
-   MD_CLOSURE_CALLBACK( "connect_cache" ),
-   MD_CLOSURE_CALLBACK( "max_block_size" ),
-};
+MD_CLOSURE_PROTOTYPE_BEGIN( MS_CLIENT_CACHE_CLOSURE_PROTOTYPE )
+   MD_CLOSURE_CALLBACK( "connect_cache" )
+MD_CLOSURE_PROTOTYPE_END
 
 static int ms_client_view_change_callback_default( struct ms_client* client, void* cls );
 
 static void* ms_client_uploader_thread( void* arg );
 static void* ms_client_view_thread( void* arg );
 static void ms_client_uploader_signal( struct ms_client* client );
-int ms_client_load_volume_metadata( struct md_syndicate_conf* conf, struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem );
+int ms_client_load_volume_metadata( struct ms_client* client, struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem );
 static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void *userdata);
 char* ms_client_cert_url( struct ms_client* client, uint64_t volume_id, uint64_t volume_cert_version, int gateway_type, uint64_t gateway_id, uint64_t gateway_cert_version );
 static int ms_client_send_updates( struct ms_client* client, update_set* all_updates, ms::ms_reply* reply, bool verify_response );
@@ -181,13 +180,13 @@ int ms_client_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char
 
 
 // download from the caches...
-int ms_client_connect_cache( struct md_syndicate_conf* conf, CURL* curl, char const* url, void* cls ) {
+int ms_client_connect_cache( struct md_closure* closure, CURL* curl, char const* url, void* cls ) {
    
    int ret = -1;
-   struct md_closure* closure = (struct md_closure*)cls;
+   struct md_syndicate_conf* conf = (struct md_syndicate_conf*)cls;
    
    if( md_closure_find_callback( closure, "connect_cache" ) != NULL ) {
-      MD_CLOSURE_CALL( ret, closure, "connect_cache", md_cache_connector_func, conf, curl, url, closure->cls );
+      MD_CLOSURE_CALL( ret, closure, "connect_cache", md_cache_connector_func, closure, curl, url, closure->cls );
    }
    else {
       
@@ -427,6 +426,9 @@ int ms_client_destroy( struct ms_client* client ) {
    if( client->my_key )
       EVP_PKEY_free( client->my_key );
  
+   if( client->my_pubkey )
+      EVP_PKEY_free( client->my_pubkey );
+   
    if( client->my_key_pem )
       free( client->my_key_pem );
    
@@ -673,7 +675,7 @@ static void* ms_client_view_thread( void* arg ) {
          // hint to reload now?
          ms_client_view_rlock( client );
          
-         do_early_reload = client->early_reload;
+         do_early_reload = (client->volume != NULL && client->early_reload);
          
          ms_client_view_unlock( client );
 
@@ -1098,7 +1100,7 @@ int ms_client_download_cert_bundle_manifest( struct ms_client* client, uint64_t 
    
    ms_client_begin_downloading_view( client, url, NULL );
    
-   int rc = md_download_manifest( client->conf, client->ms_view, url, mmsg, ms_client_connect_cache, client->volume->cache_closure, NULL, NULL );
+   int rc = md_download_manifest( client->conf, client->volume->cache_closure, client->ms_view, url, mmsg, ms_client_connect_cache, client->conf, NULL, NULL );
    
    int http_response = ms_client_end_downloading_view( client );
    
@@ -1250,7 +1252,7 @@ int ms_client_download_cert( struct ms_client* client, CURL* curl, char const* u
    ssize_t buf_len = 0;
    int http_status = 0;
    
-   int rc = md_download( client->conf, curl, url, &buf, &buf_len, MS_MAX_CERT_SIZE, &http_status, ms_client_connect_cache, client->volume->cache_closure );
+   int rc = md_download( client->conf, client->volume->cache_closure, curl, url, &buf, &buf_len, MS_MAX_CERT_SIZE, &http_status, ms_client_connect_cache, client->conf );
    
    if( rc != 0 ) {
       errorf("md_download_cached(%s) rc = %d\n", url, rc );
@@ -1517,7 +1519,7 @@ int ms_client_download_volume_by_name( struct ms_client* client, char const* vol
       return -EINVAL;
    }
    
-   rc = ms_client_load_volume_metadata( client->conf, vol, &volume_md, volume_pubkey_pem );
+   rc = ms_client_load_volume_metadata( client, vol, &volume_md, volume_pubkey_pem );
    if( rc != 0 ) {
       errorf("ms_client_load_volume_metadata rc = %d\n", rc );
       return rc;
@@ -1602,7 +1604,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
    
    if( new_version > old_version ) {
       // have new data--load it in
-      rc = ms_client_load_volume_metadata( client->conf, vol, &volume_md, NULL );
+      rc = ms_client_load_volume_metadata( client, vol, &volume_md, NULL );
    }
    else {
       rc = 0;
@@ -1728,7 +1730,7 @@ int ms_client_load_cert( struct ms_client* client, uint64_t my_gateway_id, struc
 
 
 // populate a Volume structure with the volume metadata
-int ms_client_load_volume_metadata( struct md_syndicate_conf* conf, struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem ) {
+int ms_client_load_volume_metadata( struct ms_client* client, struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem ) {
 
    int rc = 0;
    
@@ -1805,18 +1807,96 @@ int ms_client_load_volume_metadata( struct md_syndicate_conf* conf, struct ms_vo
       vol->name = strdup( volume_md->name().c_str() );
 
    if( volume_md->has_cache_closure_text() ) {
-      // decode and install
-      char const* closure_text_b64 = volume_md->cache_closure_text().c_str();
-      size_t closure_text_len_b64 = volume_md->cache_closure_text().size();
+      char const* method = NULL;
       
-      int rc = md_install_binary_closure( conf, &vol->cache_closure, MS_CLIENT_CACHE_CLOSURE_PROTOTYPE, closure_text_b64, closure_text_len_b64 );
+      if( vol->cache_closure == NULL ) {
+         method = "md_closure_init";
+         
+         vol->cache_closure = CALLOC_LIST( struct md_closure, 1 );
+         rc = md_closure_init( client, vol->cache_closure, MS_CLIENT_CACHE_CLOSURE_PROTOTYPE, volume_md->cache_closure_text().data(), volume_md->cache_closure_text().size(), false );
+      }
+      else {
+         method = "md_closure_init";
+         
+         rc = md_closure_reload( client, vol->cache_closure, volume_md->cache_closure_text().data(), volume_md->cache_closure_text().size() );
+      }
+      
       if( rc != 0 ) {
-         errorf("ms_install_binary_closure rc = %d\n", rc );
+         errorf("%s rc = %d\n", method, rc );
+         return rc;
       }
    }
    
    return 0;
 }
+
+
+// unseal and load our private key from registration metadata
+static int ms_client_unseal_and_load_keys( struct ms_client* client, ms::ms_registration_metadata* registration_md, char const* key_password ) {
+   int rc = 0;
+   if( key_password == NULL ) {
+      errorf("%s\n", "No private key loaded, but no password to decrypt one with.");
+      rc = -ENOTCONN;
+   }
+   else {
+      // base64-encoded encrypted private key
+      char const* encrypted_gateway_private_key_b64 = registration_md->encrypted_gateway_private_key().c_str();
+      size_t encrypted_gateway_private_key_b64_len = registration_md->encrypted_gateway_private_key().size();
+      
+      size_t encrypted_gateway_private_key_len = 0;
+      char* encrypted_gateway_private_key = NULL;
+      
+      int decode_rc = Base64Decode( encrypted_gateway_private_key_b64, encrypted_gateway_private_key_b64_len, &encrypted_gateway_private_key, &encrypted_gateway_private_key_len );
+      if( decode_rc != 0 ) {
+         errorf("%s\n", "Failed to decode private key.  No gateway private key given!" );
+         rc = -ENOTCONN;
+      }
+      else {
+         char* gateway_private_key_str = NULL;
+         size_t gateway_private_key_str_len = 0;
+         
+         dbprintf("%s\n", "Unsealing gateway private key...");
+         
+         decode_rc = md_password_unseal( encrypted_gateway_private_key, encrypted_gateway_private_key_len, key_password, strlen(key_password), &gateway_private_key_str, &gateway_private_key_str_len );
+         if( decode_rc != 0 ) {
+            errorf("Failed to unseal gateway private key, rc = %d\n", decode_rc );
+            rc = -ENOTCONN;
+         }
+         else {
+            // validate and import it
+            EVP_PKEY* pkey = NULL;
+            EVP_PKEY* pubkey = NULL;
+            
+            decode_rc = md_load_public_and_private_keys( &pubkey, &pkey, gateway_private_key_str );
+            if( decode_rc != 0 ) {
+               errorf("md_load_privkey rc = %d\n", decode_rc );
+            }
+            else {
+               decode_rc = ms_client_verify_key( pkey );
+               if( decode_rc != 0 ) {
+                  errorf("ms_client_verify_key rc = %d\n", rc );
+               }
+               else {
+                  // we're good!  install them
+                  client->my_key = pkey;
+                  client->my_pubkey = pubkey;
+                  client->my_key_pem = strdup( gateway_private_key_str );
+               }
+            }
+         }
+         
+         if( gateway_private_key_str )
+            free( gateway_private_key_str );
+         
+      }
+      
+      if( encrypted_gateway_private_key )
+         free( encrypted_gateway_private_key );
+   }
+   
+   return rc;
+}
+   
 
 
 // load a registration message
@@ -1853,32 +1933,8 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
 
    ms_client_unlock( client );
 
-   struct ms_volume* volume = CALLOC_LIST( struct ms_volume, 1 );
-   
    dbprintf("Registered as Gateway %s (%" PRIu64 ")\n", cert.name, cert.gateway_id );
    
-   volume->reload_volume_key = true;         // get the public key
-
-   ms::ms_volume_metadata* vol_md = registration_md->mutable_volume();
-
-   // load the Volume information
-   rc = ms_client_load_volume_metadata( client->conf, volume, vol_md, volume_pubkey_pem );
-   if( rc != 0 ) {
-      errorf("ms_client_load_volume_metadata(%s) rc = %d\n", vol_md->name().c_str(), rc );
-      
-      ms_volume_free( volume );
-      free( volume );
-      ms_client_gateway_cert_free( &cert );
-      return rc;
-   }
-
-   dbprintf("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
-
-   ms_client_view_wlock( client );
-   client->volume = volume;
-   ms_client_view_unlock( client );
-   
-
    ms_client_wlock( client );
    
    // new session password
@@ -1923,73 +1979,53 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    
    // possibly received our private key...
    if( client->my_key == NULL && registration_md->has_encrypted_gateway_private_key() ) {
+      rc = ms_client_unseal_and_load_keys( client, registration_md, key_password );
+      if( rc != 0 ) {
+         errorf("ms_client_unseal_and_load_keys rc = %d\n", rc );
+      }
+   }
+   
+   ms_client_unlock( client );
+   
+   if( rc != 0 ) {
+      // failed to initialize 
+      return rc;
+   }
+   
+   // load the volume up
+   struct ms_volume* volume = CALLOC_LIST( struct ms_volume, 1 );
+   
+   volume->reload_volume_key = true;         // get the public key
+
+   ms::ms_volume_metadata* vol_md = registration_md->mutable_volume();
+
+   // load the Volume information
+   rc = ms_client_load_volume_metadata( client, volume, vol_md, volume_pubkey_pem );
+   if( rc != 0 ) {
+      errorf("ms_client_load_volume_metadata(%s) rc = %d\n", vol_md->name().c_str(), rc );
       
-      if( key_password == NULL ) {
-         errorf("%s\n", "No private key loaded, but no password to decrypt one with.");
-         rc = -ENOTCONN;
-      }
-      else {
-         char const* encrypted_gateway_private_key_b64 = registration_md->encrypted_gateway_private_key().c_str();
-         size_t encrypted_gateway_private_key_b64_len = registration_md->encrypted_gateway_private_key().size();
-         
-         size_t encrypted_gateway_private_key_len = 0;
-         char* encrypted_gateway_private_key = NULL;
-         
-         int decode_rc = Base64Decode( encrypted_gateway_private_key_b64, encrypted_gateway_private_key_b64_len, &encrypted_gateway_private_key, &encrypted_gateway_private_key_len );
-         if( decode_rc != 0 ) {
-            errorf("%s\n", "Failed to decode private key.  No gateway private key given!" );
-            rc = -ENOTCONN;
-         }
-         else {
-            char* gateway_private_key_str = NULL;
-            size_t gateway_private_key_str_len = 0;
-            
-            dbprintf("%s\n", "Unsealing gateway private key...");
-            
-            decode_rc = md_password_unseal( encrypted_gateway_private_key, encrypted_gateway_private_key_len, key_password, strlen(key_password), &gateway_private_key_str, &gateway_private_key_str_len );
-            if( decode_rc != 0 ) {
-               errorf("Failed to unseal gateway private key, rc = %d\n", decode_rc );
-               rc = -ENOTCONN;
-            }
-            else {
-               // validate and import it
-               EVP_PKEY* pkey = NULL;
-               
-               decode_rc = md_load_privkey( &pkey, gateway_private_key_str );
-               if( decode_rc != 0 ) {
-                  errorf("md_load_privkey rc = %d\n", decode_rc );
-               }
-               else {
-                  decode_rc = ms_client_verify_key( pkey );
-                  if( decode_rc != 0 ) {
-                     errorf("ms_client_verify_key rc = %d\n", rc );
-                  }
-                  else {
-                     // we're good!  We can start the threads up!
-                     client->my_key = pkey;
-                     client->my_key_pem = strdup( gateway_private_key_str );
-                     
-                     int rc = ms_client_start_threads( client );
-                     if( rc != 0 && rc != -EALREADY ) {
-                        errorf("ms_client_start_threads rc = %d\n", rc );
-                     }
-                  }
-               }
-            }
-            
-            if( gateway_private_key_str )
-               free( gateway_private_key_str );
-            
-         }
-         
-         if( encrypted_gateway_private_key )
-            free( encrypted_gateway_private_key );
-      }
+      ms_volume_free( volume );
+      free( volume );
+      ms_client_gateway_cert_free( &cert );
+      return rc;
+   }
+
+   dbprintf("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
+
+   ms_client_view_wlock( client );
+   client->volume = volume;
+   ms_client_view_unlock( client );
+   
+   // start the threads
+   rc = ms_client_start_threads( client );
+   if( rc != 0 && rc != -EALREADY ) {
+      errorf("ms_client_start_threads rc = %d\n", rc );
+   }
+   else {
+      rc = 0;
    }
 
    dbprintf("Registered with %s\n", client->url );
-            
-   ms_client_unlock( client );
 
    ms_client_gateway_cert_free( &cert );
 
@@ -2168,20 +2204,6 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
       volume->reload_volume_key = true;         // get the public key
    }
 
-   rc = ms_client_download_volume_by_name( client, volume_name, volume, volume_public_key_pem );
-   if( rc != 0 ) {
-      errorf("ms_client_download_volume_by_name(%s) rc = %d\n", volume_name, rc );
-      ms_volume_free( volume );
-      free( volume );
-      return -ENOTCONN;
-   }
-   
-   dbprintf("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
-
-   ms_client_view_wlock( client );
-   client->volume = volume;
-   ms_client_view_unlock( client );
-
    ms_client_wlock( client );
    
    // fill in sane defaults
@@ -2199,6 +2221,21 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
    client->gateway_id = client->conf->gateway;
    
    ms_client_unlock( client );
+   
+   // load the volume information
+   rc = ms_client_download_volume_by_name( client, volume_name, volume, volume_public_key_pem );
+   if( rc != 0 ) {
+      errorf("ms_client_download_volume_by_name(%s) rc = %d\n", volume_name, rc );
+      ms_volume_free( volume );
+      free( volume );
+      return -ENOTCONN;
+   }
+   
+   dbprintf("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
+
+   ms_client_view_wlock( client );
+   client->volume = volume;
+   ms_client_view_unlock( client );
    
    // load the certificate bundle   
    rc = ms_client_reload_certs( client );

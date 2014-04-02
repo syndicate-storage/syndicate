@@ -1234,7 +1234,6 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
 
 // ensure that the manifest is up to date.
 // if check_coordinator is true, then ask the manifest-designated gateway before asking the RGs.
-// if check_coordinator is false, then fs_path will be ignored (since RGs don't need it).
 // if successful_gateway_id != NULL, then fill it with the ID of the gateway that served the manifest (if any). Otherwise set to 0 if given but the manifest was fresh.
 // a manifest fetched from an AG will be marked as stale, since a subsequent read can fail with HTTP 204.  The caller should mark the manifest as fresh if it succeeds in reading data.
 // FENT MUST BE WRITE-LOCKED FIRST!
@@ -1377,10 +1376,6 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    // repopulate the manifest and update the relevant metadata
    fs_entry_reload_manifest( core, fent, &manifest_msg );
    
-   // if this is an AG, then don't allow it to be considered fresh
-   if( gateway_type == SYNDICATE_AG )
-      fent->manifest->mark_stale();
-
    char* dat = fent->manifest->serialize_str();
    dbprintf("Manifest:\n%s\n", dat);
    free( dat );
@@ -1413,7 +1408,7 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
    uint64_t rg_id = 0;
    
    // revalidate the manifest 
-   int rc = fs_entry_revalidate_manifest( core, NULL, fent, replica_version, replica_manifest_mtime_sec, replica_manifest_mtime_nsec, false, &rg_id );
+   int rc = fs_entry_revalidate_manifest( core, fs_path, fent, replica_version, replica_manifest_mtime_sec, replica_manifest_mtime_nsec, false, &rg_id );
    if( rc != 0 ) {
       // failed to revalidate manifest
       errorf("fs_entry_revalidate_manifest( /%" PRIu64 "/%" PRIX64 ".%" PRId64 " (modtime=%" PRId64 ".%d) ) rc = %d\n", fent->volume, fent->file_id, replica_version, replica_manifest_mtime_sec, replica_manifest_mtime_nsec, rc );
@@ -1422,7 +1417,7 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
    
    
    // run the pre-chcoord driver code...
-   rc = driver_chcoord_begin( core->driver, fs_path, fent, replica_version );
+   rc = driver_chcoord_begin( core->closure, fs_path, fent, replica_version );
    if( rc != 0 ) {
       errorf("driver_chcoord_begin(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, replica_version, rc );
       return rc;
@@ -1451,7 +1446,7 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
    }
    
    // run the post-chcoord driver code...
-   int driver_rc = driver_chcoord_end( core->driver, fs_path, fent, replica_version, rc );
+   int driver_rc = driver_chcoord_end( core->closure, fs_path, fent, replica_version, rc );
    if( driver_rc != 0 ) {
       errorf("driver_chcoord_end(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, replica_version, driver_rc );
    }

@@ -56,11 +56,288 @@ except:
 
 log = Log.get_logger()
 
+SECRETS_PAD_KEY = "__syndicate_pad__"
+
 # RFC-822 compliant, as long as there aren't any comments in the address.
 # taken from http://chrisbailey.blogs.ilrt.org/2013/08/19/validating-email-addresses-in-python/
 email_regex_str = r"^(?=^.{1,256}$)(?=.{1,64}@)(?:[^\x00-\x20\x22\x28\x29\x2c\x2e\x3a-\x3c\x3e\x40\x5b-\x5d\x7f-\xff]+|\x22(?:[^\x0d\x22\x5c\x80-\xff]|\x5c[\x00-\x7f])*\x22)(?:\x2e(?:[^\x00-\x20\x22\x28\x29\x2c\x2e\x3a-\x3c\x3e\x40\x5b-\x5d\x7f-\xff]+|\x22(?:[^\x0d\x22\x5c\x80-\xff]|\x5c[\x00-\x7f])*\x22))*\x40(?:[^\x00-\x20\x22\x28\x29\x2c\x2e\x3a-\x3c\x3e\x40\x5b-\x5d\x7f-\xff]+|[\x5b](?:[^\x0d\x5b-\x5d\x80-\xff]|\x5c[\x00-\x7f])*[\x5d])(?:\x2e(?:[^\x00-\x20\x22\x28\x29\x2c\x2e\x3a-\x3c\x3e\x40\x5b-\x5d\x7f-\xff]+|[\x5b](?:[^\x0d\x5b-\x5d\x80-\xff]|\x5c[\x00-\x7f])*[\x5d]))*$"
 
 email_regex = re.compile( email_regex_str )
+
+
+def is_valid_binary_driver( gateway_closure_path, required_syms ):
+   """
+   Does a given path refer to a binary driver with the given symbols?
+   """
+   try:
+      driver = ctypes.CDLL( gateway_closure_path )
+   except Exception, e:
+      log.exception(e)
+      return False
+   
+   # check symbols
+   for required_sym in required_syms:
+      try:
+         f = getattr( driver, required_sym )
+      except:
+         # not present 
+         return False
+      
+   return True
+
+
+
+def get_dict_from_closure( config_module, dict_module_name, dict_name ):
+   """
+   Get a named dictionary from a module.
+   """
+   
+   # attempt to import the module with the dictionary
+   dict_module = None
+   try:
+      dict_module = __import__( config_module.__name__ + "." + dict_module_name, {}, {}, [dict_module_name], -1 )
+   except Exception, e:
+      log.exception( e )
+      raise Exception("No %s module found" % dict_module_name)
+
+   # get the dictionary 
+   ret_dict = None
+   try:
+      ret_dict = getattr(dict_module, dict_name)
+      assert isinstance( ret_dict, dict )
+   except Exception, e:
+      log.exception( e )
+      raise Exception("No %s dictionary found" % dict_name)
+   
+   return ret_dict 
+
+
+def is_valid_closure_dir( gateway_closure_path, required_files ):
+   """
+   Does the given directory contain a structurally-valid closure?
+   """
+   try:
+      if not os.path.isdir( gateway_closure_path ):
+         return False
+   
+   except Exception, e:
+      log.exception(e)
+      return False
+   
+   files = os.listdir( gateway_closure_path )
+   
+   missing = []
+   
+   for required_file in required_files:
+      try:
+         test_path = os.path.join( gateway_closure_path, required_file )
+         if not os.path.exists( test_path ):
+            missing.append( test_path )
+            
+      except Exception, e:
+         log.exception(e)
+         return False
+      
+   if len(missing) > 0:
+      log.error("%s is missing files %s" % (gateway_closure_path, ",".join(missing)) )
+      return False
+   
+   return True
+
+
+def import_closure( gateway_closure_path ):
+   """
+   Given the path to the closure directory, import it as a Python module.
+   Return the module, i.e. so we can get at the config and secrets dictionaries.
+   """
+   
+   # attempt to import the closure
+   dirname = os.path.dirname(gateway_closure_path.rstrip("/"))
+   sys.path.append( dirname )
+   config_module_name = gateway_closure_path[len(dirname) + 1:].strip("/")
+   
+   try:
+      closure_module = __import__( config_module_name, {}, {}, [], -1 )
+   except Exception, e:
+      log.exception(e)
+      raise Exception("Failed to import %s from %s" % (config_module_name, gateway_closure_path) )
+   
+   return closure_module
+
+
+
+def load_binary_driver( gateway_closure_path, storagelib ):
+   """
+   Load a binary driver into RAM, using the given storagelib.read_file() method.
+   NOTE: we don't do any architecture checks here.
+   """
+   driver_path = os.path.join( gateway_closure_path, "libdriver.so" )
+   return storagelib.read_file( driver_path )
+
+
+
+def encrypt_secrets_dict( obj_type, obj_name, secrets_dict, serializer, c_syndicate=None, config=None, storagelib=None ):
+   """
+   Encrypt a secrets dictionary, returning the serialized base64-encoded ciphertext.
+   c_syndicate must be the binary Syndicate module (containing the encrypt_closure_secrets() method)
+   storage must be a module with a load_private_key() method
+   """
+   
+   if storagelib is None:
+      storagelib = storage
+   
+   if serializer is None:
+      serializer = pickle.dumps
+      
+   # pad the secrets first
+   secrets_dict[ SECRETS_PAD_KEY ] = base64.b64encode( ''.join(chr(random.randint(0,255)) for i in xrange(0,256)) )
+   
+   try:
+      secrets_dict_str = serializer( secrets_dict )
+   except Exception, e:
+      log.exception( e )
+      raise Exception("Failed to serialize secrets")
+   
+   # attempt to get the private key
+   privkey_pem = None
+   try:
+      privkey = storagelib.load_private_key( config, obj_type, obj_name )
+      privkey_pem = privkey.exportKey()
+   except Exception, e:
+      log.exception(e)
+      raise Exception("Failed to load private key for %s" % obj_name )
+   
+   pubkey_pem = privkey.publickey().exportKey()
+   
+   # encrypt the serialized secrets dict 
+   rc = 0
+   encrypted_secrets_str = None
+   try:
+      log.info("Encrypting secrets...")
+      rc, encrypted_secrets_str = c_syndicate.encrypt_closure_secrets( privkey_pem, pubkey_pem, secrets_dict_str )
+   except Exception, e:
+      log.exception( e )
+      raise Exception("Failed to encrypt secrets")
+   
+   if rc != 0 or encrypted_secrets_str == None:
+      raise Exception("Failed to encrypt secrets, rc = %d" % rc)
+   
+   return encrypted_secrets_str
+
+
+def load_closure_config( closure_path, storagelib, serializer=None ):
+   """
+   Given the path to our closure on disk, load and serialize the config dictionary.
+   storagelib must be our storage library.
+   return serialized config
+   """
+   
+   if serializer is None:
+      serializer = pickle.dumps
+      
+   closure_module = import_closure( closure_path )
+   
+   config_dict = {}
+   
+   # get the config
+   try:
+      config_dict = get_dict_from_closure( closure_module, "config", "CONFIG" )
+   except Exception, e:
+      log.warning("No config defined")
+   
+   
+   # serialize the config and secrets dictionaries 
+   config_dict_str = ""
+   
+   # config...
+   try:
+      config_dict_str = serializer( config_dict )
+   except Exception, e:
+      log.exception( e )
+      raise Exception("Failed to serialize")
+   
+   return config_dict_str 
+
+
+def load_closure_secrets( closure_path, obj_type, obj_name, config, storagelib, serializer=None ):
+   """
+   Given the path to our closure on disk, load and serialize the secrets dictionary, encrypting it with the public key of the given object type and name.
+   storagelib must be our storage library.
+   return serialized encrypted secrets
+   """
+   
+   if serializer is None:
+      serializer = pickle.dumps
+      
+   try:
+      import syndicate.syndicate as c_syndicate
+   except Exception, e:
+      log.exception(e)
+      raise Exception("Failed to load libsyndicate")
+   
+   closure_module = import_closure( closure_path )
+   
+   secrets_dict = {}
+   
+   # get the secrets
+   try:
+      secrets_dict = get_dict_from_closure( closure_module, "secrets", "SECRETS" )
+   except Exception, e:
+      log.warning("No secrets defined")
+   
+   # secrets...
+   secrets_dict_str = encrypt_secrets_dict( obj_type, obj_name, secrets_dict, serializer, c_syndicate, config, storagelib )
+   
+   return secrets_dict_str
+   
+   
+def load_config_and_secrets( closure_path, obj_type, obj_name, config, storagelib, serializer=None ):
+   """
+   Load a closure's config and secrets.  Literall wraps load_closure_config and load_closure_secrets.
+   """
+   config_str = load_closure_config( closure_path, storagelib, serializer )
+   secrets_str = load_closure_secrets( closure_path, obj_type, obj_name, config, storagelib, serializer )
+   return (config_str, secrets_str)
+
+
+def make_closure_json( closure_dict ):
+   """
+   Given a dict containing our closure's contents,
+   convert everything to base64 and serialize it.
+   """
+   
+   closure_b64 = {}
+   
+   for (key, value) in closure_dict.items():
+      closure_b64[key] = base64.b64encode( value )
+   
+   try:
+      closure_str = json.dumps( closure_b64 )
+   except Exception, e:
+      log.exception(e)
+      raise Exception("Failed to serialize closure")
+   
+   return closure_str
+
+
+def load_binary_closure_essentials( closure_path, obj_type, obj_name, config, storagelib ):
+   """
+   Load binary driver essentials: the .so file, the config dict, and the secrets dict.
+   Generate a JSON string containing them all.
+   NOTE: don't pickle the dicts.  Serialize them as JSON instead, so we can load them in libsyndicate
+   """
+   
+   # get config and secrets data
+   config_dict_str, secrets_dict_str = load_config_and_secrets( closure_path, obj_type, obj_name, config, storagelib, json.dumps )
+   
+   # get the driver
+   driver_str = load_binary_driver( closure_path, storagelib )
+   if driver_str is None:
+      raise Exception("No driver found in %s" % closure_path)
+   
+   return {"config": config_dict_str, "secrets": secrets_dict_str, "driver": driver_str }
+
+
 
 class StubObject( object ):
    """
@@ -364,6 +641,10 @@ class Volume( StubObject ):
       try:
          vid = int(volume_name_or_id)
       except:
+         # needed for parse_closure
+         if lib is not None:
+            lib.volume_name = volume_name_or_id
+         
          return volume_name_or_id, {"volume_name": volume_name_or_id}
       
       raise Exception("Parse error: Only volume names (not IDs) are allowed")
@@ -393,13 +674,52 @@ class Volume( StubObject ):
          raise e
       
       return value, extra
+   
+   
+   @classmethod 
+   def parse_closure( cls, closure_dir, lib=None ):
+      """
+      Parse a binary closure for allowing the Volume's UGs to connect to the cache providers
+      """
+      # extract volume name and storage lib
+      try:
+         volume_name = lib.volume_name
+         storagelib = lib.storage 
+         config = lib.config
+      except Exception, e:
+         log.error("Missing parsed call information")
+         raise e
+      
+      if not is_valid_closure_dir( closure_dir, ['__init__.py', 'config.py', 'secrets.py', 'libdriver.so'] ):
+         raise Exception("Not a valid Volume closure")
+      
+      driver_path = os.path.join( closure_dir, "libdriver.so" )
+      if not is_valid_binary_driver( driver_path, ["connect_cache"] ):
+         raise Exception("%s is missing a 'connect_cache' function" % driver_path )
+      
+      # load config 
+      config_str = load_closure_config( closure_dir, storagelib, json.dumps )
+      
+      # load the driver 
+      driver_str = load_binary_driver( closure_dir, storagelib )
+      if driver_str is None:
+         raise Exception("No driver found in %s" % closure_path )
+      
+      essentials = {"driver": driver_str, "config": config_str}
+      
+      # build the JSON
+      json_str = make_closure_json( essentials )
+      
+      return json_str, {}
+      
 
    arg_parsers = dict( StubObject.arg_parsers.items() + {
       "name":                   (lambda cls, arg, lib: cls.parse_volume_name_or_id(arg, lib)),
       "volume_name_or_id":      (lambda cls, arg, lib: cls.parse_volume_name_or_id(arg, lib)),
       "metadata_private_key":   (lambda cls, arg, lib: cls.parse_metadata_private_key(arg, lib)),
       "default_gateway_caps":   (lambda cls, arg, lib: cls.parse_gateway_caps(arg, lib)),
-      "store_private_key":      (lambda cls, arg, lib: cls.parse_store_private_key(arg, lib))
+      "store_private_key":      (lambda cls, arg, lib: cls.parse_store_private_key(arg, lib)),
+      "closure":                (lambda cls, arg, lib: cls.parse_closure(arg, lib))
    }.items() )
    
    key_type = "volume"
@@ -473,7 +793,7 @@ class Gateway( StubObject ):
       try:
          vid = int(gateway_name_or_id)
       except:
-         # needed for parse_gateway_config
+         # needed for parse_gateway_closure
          if lib is not None:
             lib.gateway_name = gateway_name_or_id
          
@@ -598,93 +918,78 @@ class Gateway( StubObject ):
             return base64.b64encode( lib.encrypted_gateway_key_str ), {}
          else:
             raise Exception("BUG: don't know how to handle gateway private key")
-         
-   
-   @classmethod
-   def get_dict_from_closure( cls, config_module, dict_module_name, dict_name ):
-      
-      # successfully imported module
-      # attempt to import the module with the dictionary
-      dict_module = None
-      try:
-         dict_module = __import__( config_module.__name__ + "." + dict_module_name, {}, {}, [dict_module_name], -1 )
-      except Exception, e:
-         log.exception( e )
-         raise Exception("No %s module found" % dict_module_name)
-
-      # get the dictionary 
-      ret_dict = None
-      try:
-         ret_dict = getattr(dict_module, dict_name)
-         assert isinstance( ret_dict, dict )
-      except Exception, e:
-         log.exception( e )
-         raise Exception("No %s dictionary found" % dict_name)
-      
-      return ret_dict 
    
    
    @classmethod 
-   def is_RG_closure( cls, gateway_closure_path, required_files=['__init__.py', 'driver.py', 'replica.py', 'config.py', 'secrets.py'] ):
-      """
-      Does the given path refer to structurally-valid RG closure?
-      """
-      try:
-         if not os.path.isdir( gateway_closure_path ):
-            return False
-      
-      except Exception, e:
-         log.exception(e)
-         return False
-      
-      files = os.listdir( gateway_closure_path )
-      
-      for required_file in required_files:
-         try:
-            if not os.path.exists( os.path.join( gateway_closure_path, required_file ) ):
-               return False
-         except Exception, e:
-            log.exception(e)
-            return False
-         
-      return True
+   def is_valid_RG_closure_dir( cls, gateway_closure_path ):
+      # does the given directory have the appropriate files to be an RG closure?
+      return is_valid_closure_dir( gateway_closure_path, ['__init__.py', 'driver.py', 'replica.py', 'config.py', 'secrets.py'] );
+   
+   @classmethod 
+   def is_valid_UG_closure_dir( cls, gateway_closure_path ):
+      # does the given directory have the appropriate files to be an UG closure?
+      return is_valid_closure_dir( gateway_closure_path, ['__init__.py', 'config.py', 'secrets.py', 'libdriver.so'] )
+   
+   @classmethod 
+   def is_valid_AG_closure_dir( cls, gateway_closure_path ):
+      # does the given directory have the appropriate files to be an AG closure?
+      # TODO: come back and refine this
+      return is_valid_closure_dir( gateway_closure_path, ['__init__.py', 'spec.xml', 'config.py', 'secrets.py', 'libdriver.so'] )
    
    
    @classmethod 
-   def is_valid_binary_closure( cls, gateway_closure_path, required_syms ):
-      """
-      Does a given path refer to a binary closure with the given symbols?
-      """
-      try:
-         closure = ctypes.CDLL( gateway_closure_path )
-      except Exception, e:
-         log.exception(e)
-         return False
-      
-      # check symbols
-      for required_sym in required_syms:
-         try:
-            f = getattr( closure, required_sym )
-         except:
-            # not present 
-            return False
-         
-      return True
-   
-   @classmethod 
-   def is_UG_closure( cls, gateway_closure_path ):
+   def has_valid_UG_driver( cls, gateway_closure_path ):
       """
       Does a given path refer to a UG binary closure?
       """
-      return cls.is_valid_binary_closure( gateway_closure_path, ["connect_cache", "write_block_preup", "write_manifest_preup", "read_block_postdown", "read_manifest_postdown", "chcoord_begin", "chcoord_end"] )
+      driver_path = os.path.join( gateway_closure_path, "libdriver.so" )
+      return is_valid_binary_driver( gateway_closure_path, ["connect_cache", "write_block_preup", "write_manifest_preup", "read_block_postdown", "read_manifest_postdown", "chcoord_begin", "chcoord_end"] )
    
    
    @classmethod 
-   def is_AG_closure( cls, gateway_closure_path ):
+   def has_valid_AG_driver( cls, gateway_closure_path ):
       """
       Does a given path refer to an AG binary closure?
       """
-      return cls.is_valid_binary_closure( gateway_closure_path, ["get_dataset", "cleanup_dataset", "publish_dataset", "connect_dataset", "controller"] )
+      driver_path = os.path.join( gateway_closure_path, "libdriver.so" )
+      return is_valid_binary_driver( gateway_closure_path, ["get_dataset", "cleanup_dataset", "publish_dataset", "connect_dataset", "controller"] )
+   
+   
+   @classmethod 
+   def is_wellformed_RG_closure( cls, gateway_closure_path ):
+      """
+      Does the given directory look like a well-formed RG closure?
+      """
+      if not cls.is_valid_RG_closure_dir( gateway_closure_path ):
+         return False
+      
+      return True
+   
+   @classmethod 
+   def is_wellformed_UG_closure( cls, gateway_closure_path ):
+      """
+      Does the given directory look like a well-formed UG closure?
+      """
+      if not cls.is_valid_UG_closure_dir( gateway_closure_path ):
+         return False
+      
+      if not cls.has_valid_UG_driver( gateway_closure_path ):
+         return False
+      
+      return True
+   
+   @classmethod 
+   def is_wellformed_AG_closure( cls, gateway_closure_path ):
+      """
+      Does the given directory look like a well-formed AG closure?
+      """
+      if not cls.is_valid_AG_closure_dir( gateway_closure_path ):
+         return False
+      
+      if not cls.has_valid_AG_driver( gateway_closure_path ):
+         return False 
+      
+      return True
    
    
    @classmethod 
@@ -696,46 +1001,76 @@ class Gateway( StubObject ):
       
       NOTE: lib must have:
        * gateway name
-       * syntool config
        * storage API
       """
       
-      if cls.is_RG_closure( gateway_closure_path ):
+      if cls.is_wellformed_RG_closure( gateway_closure_path ):
          return cls.parse_RG_closure( gateway_closure_path, lib )
       
-      elif cls.is_UG_closure( gateway_closure_path ):
+      elif cls.is_wellformed_UG_closure( gateway_closure_path ):
          return cls.parse_UG_closure( gateway_closure_path, lib )
       
-      elif cls.is_AG_closure( gateway_closure_path ):
+      elif cls.is_wellformed_AG_closure( gateway_closure_path ):
          return cls.parse_AG_closure( gateway_closure_path, lib )
    
    
-   @classmethod
-   def parse_binary_closure( cls, gateway_closure_path, lib=None ):
-      """
-      Parse a binary closure.  Turn it into a base64-encoded string.
-      NOTE: we don't do any architecture checks here.
-      """
-      try:
-         f = open(gateway_closure_path, "r")
-      except Exception, e:
-         log.exception(e)
-         return None, {}
-      
-      buf = f.read()
-      f.close()
-      
-      buf_b64 = base64.b64encode( buf )
-      
-      return buf_b64, {}
-      
-   @classmethod 
-   def parse_UG_closure( cls, gateway_closure_path, lib=None ):
-      return cls.parse_binary_closure( cls, gateway_closure_path, lib=lib )
    
    @classmethod 
+   def parse_UG_closure( cls, gateway_closure_path, lib=None ):
+      """
+      Load a UG binary driver, its config, and its secrets.
+      Generate a JSON string containing them all.
+      """
+      
+      try:
+         gateway_name = lib.gateway_name
+         storagelib = lib.storage 
+         config = lib.config
+      except Exception, e:
+         log.error("Missing parsed call information")
+         raise e
+      
+      essentials = load_binary_closure_essentials( gateway_closure_path, "gateway", gateway_name, config, storagelib )
+      
+      # UG needs nothing more...
+      
+      # build the JSON
+      json_str = make_closure_json( essentials )
+      
+      return json_str, {}
+   
+      
+   @classmethod 
    def parse_AG_closure( cls, gateway_closure_path, lib=None ):
-      return cls.parse_binary_closure( cls, gateway_closure_path, lib=lib )
+      """
+      Load an AG binary driver, as well as its config, secrets, and spec file.
+      Generate a JSON string containing them all.
+      """
+      
+      # get library data
+      try:
+         gateway_name = lib.gateway_name
+         storagelib = lib.storage
+         config = lib.config
+      except Exception, e:
+         log.error("Missing parsed call information")
+         raise e
+      
+      driver_components = load_binary_closure_essentials( gateway_closure_path, "gateway", gateway_name, config, storagelib )
+      
+      # load the spec file 
+      spec_file_path = os.path.join( gateway_closure_path, "spec.xml" )
+      spec_file_str = storagelib.read_file( spec_file_path )
+      if spec_file_str is None:
+         raise Exception("Failed to load spec file from %s" % spec_file_path )
+      
+      driver_components["spec"] = spec_file_str
+      
+      # build the JSON
+      json_str = make_closure_json( driver_components )
+      
+      return json_str, {}
+   
    
    @classmethod
    def parse_RG_closure( cls, gateway_closure_path, lib=None ):
@@ -744,95 +1079,28 @@ class Gateway( StubObject ):
       Transform them into a JSON-ized closure to be deployed to the recipient gateway.
       
       NOTE: lib must have:
-       * gateway name
-       * syntool config
+       * config
        * storage API
       """
       
       try:
-         import syndicate.syndicate as c_syndicate
          import syndicate.rg.closure as rg_closure
       except Exception, e:
          log.exception(e)
-         raise Exception("Failed to load libsyndicate")
+         raise Exception("Failed to load RG closure module")
+      
       
       # get library data
       try:
          gateway_name = lib.gateway_name 
+         storagelib = lib.storage
          config = lib.config
-         storage = lib.storage
       except Exception, e:
-         log.exception(e)
-         raise Exception("Missing required data for argument parsing")
+         log.error("Missing parsed call information")
+         raise e
       
-      # attempt to import the closure
-      dirname = os.path.dirname(gateway_closure_path.rstrip("/"))
-      sys.path.append( dirname )
-      config_module_name = gateway_closure_path[len(dirname) + 1:].strip("/")
-      
-      try:
-         closure_module = __import__( config_module_name, {}, {}, [], -1 )
-      except Exception, e:
-         log.exception(e)
-         raise Exception("Failed to import %s from %s" % (config_module_name, gateway_closure_path) )
-      
-      
-      secrets_dict = {}
-      config_dict = {}
-      
-      # get the secrets
-      try:
-         secrets_dict = cls.get_dict_from_closure( closure_module, "secrets", "SECRETS" )
-      except Exception, e:
-         log.warning("No secrets defined")
-     
-      # get the config
-      try:
-         config_dict = cls.get_dict_from_closure( closure_module, "config", "CONFIG" )
-      except Exception, e:
-         log.warning("No config defined")
-      
-      # pad the secrets first
-      secrets_dict[ rg_closure.SECRETS_PAD_KEY ] = ''.join(chr(random.randint(0,255)) for i in xrange(0,256))
-      
-      # serialize the config and secrets dictionaries 
-      secrets_dict_str = None
-      config_dict_str = None
-      try:
-         config_dict_str = pickle.dumps( config_dict )
-         secrets_dict_str = pickle.dumps( secrets_dict )
-      except Exception, e:
-         log.exception( e )
-         raise Exception("Failed to serialize")
-      
-      
-      if len(secrets_dict.keys()) > 0:
-         
-         # attempt to get the gateway's private key
-         gateway_privkey_pem = None
-         try:
-            gateway_privkey = storage.load_private_key( config, "gateway", gateway_name )
-            gateway_privkey_pem = gateway_privkey.exportKey()
-         except Exception, e:
-            log.exception(e)
-            raise Exception("Failed to load Gateway private key for %s" % gateway_name )
-         
-         gateway_pubkey_pem = gateway_privkey.publickey().exportKey()
-         
-         # encrypt the serialized secrets dict 
-         rc = 0
-         encrypted_secrets_str = None
-         try:
-            log.info("Encrypting secrets...")
-            rc, encrypted_secrets_str = c_syndicate.encrypt_closure_secrets( gateway_privkey_pem, gateway_pubkey_pem, secrets_dict_str )
-         except Exception, e:
-            log.exception( e )
-            raise Exception("Failed to encrypt secrets")
-         
-         if rc != 0 or encrypted_secrets_str == None:
-            raise Exception("Failed to encrypt secrets, rc = %d" % rc)
-         
-         secrets_dict_str = encrypted_secrets_str
+      # get config and secrets data
+      config_dict_str, secrets_dict_str = load_config_and_secrets( gateway_closure_path, "gateway", gateway_name, config, storagelib )
       
       # get the replica.py and driver.py files, if they exist 
       replica_py_path = os.path.join( gateway_closure_path, "replica.py" )
@@ -855,7 +1123,7 @@ class Gateway( StubObject ):
       if driver_py:
          drivers.append( ("builtin", driver_py) )
       
-      # validate the closure
+      # validate the closure by verifying that we can deserialize and load it
       try:
          closure = rg_closure.load_closure( base64.b64encode( replica_py ), base64.b64encode( config_dict_str ), None )
          assert closure != None, "closure == None"

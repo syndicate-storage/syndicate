@@ -163,5 +163,7 @@ Export( "syndicate_common_objs_nacl" )
 
 nacl_plugin = SConscript("nacl/SConscript")
 
-Return( 'syndicatefs syndicate_httpd syndicate_ipc syndicate_client_lib nacl_plugin' )
+libsyndicateUG_headers = Glob("*.h")
+libsyndicateUG_headers.extend( Glob("fs/*.h") )
+Return( 'syndicatefs syndicate_httpd syndicate_ipc syndicate_client_lib libsyndicateUG_headers nacl_plugin' )
 

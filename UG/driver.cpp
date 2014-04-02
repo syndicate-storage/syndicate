@@ -16,7 +16,7 @@
 
 #include "driver.h"
 
-struct md_closure_callback_entry UG_CLOSURE_PROTOTYPE[] = {
+MD_CLOSURE_PROTOTYPE_BEGIN( UG_CLOSURE_PROTOTYPE )
    MD_CLOSURE_CALLBACK( "connect_cache" ),
    MD_CLOSURE_CALLBACK( "write_block_preup" ),
    MD_CLOSURE_CALLBACK( "write_manifest_preup" ),
@@ -24,101 +24,95 @@ struct md_closure_callback_entry UG_CLOSURE_PROTOTYPE[] = {
    MD_CLOSURE_CALLBACK( "read_manifest_postdown" ),
    MD_CLOSURE_CALLBACK( "chcoord_begin" ),
    MD_CLOSURE_CALLBACK( "chcoord_end" )
-};
+MD_CLOSURE_PROTOTYPE_END
 
 
-// initialize the driver
-int driver_init( struct fs_core* core, struct md_closure** driver ) {
-   int rc = 0;
+// initialize the closure
+int driver_init( struct fs_core* core, struct md_closure** _ret ) {
+   // get the closure text 
+   char* closure_text = NULL;
+   uint64_t closure_text_len = 0;
    
-   // get the base64-encoded driver text 
-   char* driver_text_b64 = NULL;
-   size_t driver_text_len_b64 = 0;
+   struct md_closure* closure = CALLOC_LIST( struct md_closure, 1 );
    
-   rc = ms_client_get_closure_text( core->ms, &driver_text_b64, &driver_text_len_b64 );
+   int rc = ms_client_get_closure_text( core->ms, &closure_text, &closure_text_len );
    if( rc != 0 ) {
       errorf("ms_client_get_closure_text rc = %d\n", rc );
       
       if( rc == -ENOENT ) {
-         // no driver is fine
-         rc = 0;
-      }
-   }
-   else {
-      // load it up!
-      rc = md_install_binary_closure( core->conf, driver, UG_CLOSURE_PROTOTYPE, driver_text_b64, driver_text_len_b64 );
-      
-      free( driver_text_b64 );
-      
-      if( rc != 0 ) {
-         errorf("md_install_binary_closure rc = %d\n", rc );
-      }
-   }
-   
-   return rc;
-}
-
-
-// reload the driver 
-int driver_reload( struct fs_core* core, struct md_closure* driver ) {
-   // get the binary closure text 
-   // get the base64-encoded driver text 
-   char* driver_text_b64 = NULL;
-   size_t driver_text_len_b64 = 0;
-   
-   int rc = ms_client_get_closure_text( core->ms, &driver_text_b64, &driver_text_len_b64 );
-   if( rc != 0 ) {
-      errorf("ms_client_get_closure_text rc = %d\n", rc );
-      rc = -ENOENT;
-   }
-   else {
-      // convert to binary 
-      char* driver_text = NULL;
-      size_t driver_text_len = 0;
-      
-      rc = Base64Decode( driver_text_b64, driver_text_len_b64, &driver_text, &driver_text_len );
-      
-      free( driver_text_b64 );
-      
-      if( rc != 0 ) {
-         errorf("Failed to decode driver, rc = %d\n", rc );
-         rc = -EINVAL;
+         // dummy closure 
+         *_ret = closure;
+         return 0;
       }
       else {
-         // load the code 
-         rc = md_closure_reload( core->conf, driver, driver_text, driver_text_len );
-         
-         if( rc != 0 ) {
-            errorf("md_closure_reload rc = %d\n", rc );
-            rc = -ENODATA;
-         }
+         // error 
+         return rc;
       }
    }
+   
+   rc = md_closure_init( core->ms, closure, UG_CLOSURE_PROTOTYPE, closure_text, closure_text_len, true );
+   
+   free( closure_text );
+   
+   if( rc != 0 ) {
+      if( rc != -ENOENT ) {
+         free( closure );
+         closure = NULL;
+         return rc;
+      }
+      else {
+         // dummy closure, since none is given
+         *_ret = closure;
+         return 0;
+      }
+   }
+   else {
+      *_ret = closure;
+      return 0;
+   }
+}
+
+
+// reload the closure 
+int driver_reload( struct fs_core* core, struct md_closure* closure ) {
+   // get the closure text 
+   char* closure_text = NULL;
+   uint64_t closure_text_len = 0;
+   
+   int rc = ms_client_get_closure_text( core->ms, &closure_text, &closure_text_len );
+   if( rc != 0 ) {
+      errorf("ms_client_get_closure_text rc = %d\n", rc );
+      return rc;
+   }
+   
+   rc = md_closure_reload( core->ms, closure, closure_text, closure_text_len );
+   
+   free( closure_text );
    
    return rc;
 }
 
 
-// shut down the driver 
-int driver_shutdown( struct md_closure* driver ) {
-   return md_closure_shutdown( driver );
+// shut down the closure 
+int driver_shutdown( struct md_closure* closure ) {
+   return md_closure_shutdown( closure );
 }
 
 // connect to the cache (libsyndicate method)
-int driver_connect_cache( struct md_syndicate_conf* conf, CURL* curl, char const* url, void* cls ) {
-   struct driver_connect_cache_cls* driver_cls = (struct driver_connect_cache_cls*)cls;
+int driver_connect_cache( struct md_closure* closure, CURL* curl, char const* url, void* cls ) {
+   struct driver_connect_cache_cls* closure_cls = (struct driver_connect_cache_cls*)cls;
    
    int ret = 0;
    
-   if( md_closure_find_callback( driver_cls->driver, "connect_cache" ) != NULL ) { 
+   if( md_closure_find_callback( closure, "connect_cache" ) != NULL ) { 
    
       // call our closure's connect_cache method
-      MD_CLOSURE_CALL( ret, driver_cls->driver, "connect_cache", driver_connect_cache_func, conf, curl, url, driver_cls->driver->cls );
+      MD_CLOSURE_CALL( ret, closure, "connect_cache", driver_connect_cache_func, closure, curl, url, closure->cls );
    
    }
    else {
       errorf("%s", "WARN: connect_cache stub\n");
-      ms_client_connect_cache( conf, curl, url, driver_cls->client->volume->cache_closure );
+      ms_client_connect_cache( closure, curl, url, closure_cls->client->conf );
       ret = 0;
    }
    
@@ -126,13 +120,13 @@ int driver_connect_cache( struct md_syndicate_conf* conf, CURL* curl, char const
 }
 
 // process data before uploading 
-int driver_write_block_preup( struct md_closure* driver, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
+int driver_write_block_preup( struct md_closure* closure, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
                         char* in_block_data, size_t in_block_data_len, char** out_block_data, size_t* out_block_data_len ) {
    
    int ret = 0;
    
-   if( md_closure_find_callback( driver, "write_block_preup" ) != NULL ) {
-      MD_CLOSURE_CALL( ret, driver, "write_block_preup", driver_write_block_preup_func, fs_path, fent, block_id, block_version, in_block_data, in_block_data_len, out_block_data, out_block_data_len, driver->cls );
+   if( md_closure_find_callback( closure, "write_block_preup" ) != NULL ) {
+      MD_CLOSURE_CALL( ret, closure, "write_block_preup", driver_write_block_preup_func, closure, fs_path, fent, block_id, block_version, in_block_data, in_block_data_len, out_block_data, out_block_data_len, closure->cls );
    }
    else {
       errorf("%s", "WARN: write_block_preup stub\n");
@@ -146,14 +140,14 @@ int driver_write_block_preup( struct md_closure* driver, char const* fs_path, st
    return ret;
 }
 
-int driver_write_manifest_preup( struct md_closure* driver, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec,
-                                 char* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len, void* user_cls ) {
+int driver_write_manifest_preup( struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec,
+                                 char* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len ) {
  
    int ret = 0;
    
-   if( md_closure_find_callback( driver, "write_manifest_preup" ) != NULL ) {
+   if( md_closure_find_callback( closure, "write_manifest_preup" ) != NULL ) {
       
-      MD_CLOSURE_CALL( ret, driver, "write_manifest_preup", driver_write_manifest_preup_func, fs_path, fent, mtime_sec, mtime_nsec, in_manifest_data, in_manifest_data_len, out_manifest_data, out_manifest_data_len, user_cls );
+      MD_CLOSURE_CALL( ret, closure, "write_manifest_preup", driver_write_manifest_preup_func, closure, fs_path, fent, mtime_sec, mtime_nsec, in_manifest_data, in_manifest_data_len, out_manifest_data, out_manifest_data_len, closure->cls );
    }
    else {
       errorf("%s", "WARN: write_manifest_preup stub\n");
@@ -169,13 +163,13 @@ int driver_write_manifest_preup( struct md_closure* driver, char const* fs_path,
 
 
 // process data after downloading 
-ssize_t driver_read_block_postdown( struct md_closure* driver, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
+ssize_t driver_read_block_postdown( struct md_closure* closure, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
                                     char* in_block_data, size_t in_block_data_len, char* out_block_data, size_t out_block_data_len ) {
    
    ssize_t ret = 0;
    
-   if( md_closure_find_callback( driver, "read_block_postdown" ) != NULL ) {
-      MD_CLOSURE_CALL( ret, driver, "read_block_postdown", driver_read_block_postdown_func, fs_path, fent, block_id, block_version, in_block_data, in_block_data_len, out_block_data, out_block_data_len, driver->cls );
+   if( md_closure_find_callback( closure, "read_block_postdown" ) != NULL ) {
+      MD_CLOSURE_CALL( ret, closure, "read_block_postdown", driver_read_block_postdown_func, closure, fs_path, fent, block_id, block_version, in_block_data, in_block_data_len, out_block_data, out_block_data_len, closure->cls );
    }
    else {
       errorf("%s", "WARN: read_block_postdown stub\n");
@@ -188,16 +182,16 @@ ssize_t driver_read_block_postdown( struct md_closure* driver, char const* fs_pa
 }
 
 
-// process a manifest after downloading 
-int driver_read_manifest_postdown( struct md_syndicate_conf* conf, char* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len, void* user_cls ) {
+// process a manifest after downloading (called by md_download_manifest())
+int driver_read_manifest_postdown( struct md_closure* closure, char* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len, void* user_cls ) {
  
    int ret = 0;
    
    struct driver_read_manifest_postdown_cls* cls = (struct driver_read_manifest_postdown_cls*)user_cls;
    
-   if( md_closure_find_callback( cls->driver, "read_manifest_postdown" ) != NULL ) {
-      MD_CLOSURE_CALL( ret, cls->driver, "read_manifest_postdown", driver_read_manifest_postdown_func, cls->fs_path, cls->fent, cls->mtime_sec, cls->mtime_nsec,
-                       in_manifest_data, in_manifest_data_len, out_manifest_data, out_manifest_data_len, cls->driver->cls );
+   if( md_closure_find_callback( closure, "read_manifest_postdown" ) != NULL ) {
+      MD_CLOSURE_CALL( ret, closure, "read_manifest_postdown", driver_read_manifest_postdown_func, closure, cls->fs_path, cls->fent, cls->mtime_sec, cls->mtime_nsec,
+                       in_manifest_data, in_manifest_data_len, out_manifest_data, out_manifest_data_len, closure->cls );
    }
    else {
       errorf("%s", "WARN: read_manifest_postdown stub\n");
@@ -213,11 +207,11 @@ int driver_read_manifest_postdown( struct md_syndicate_conf* conf, char* in_mani
 
 
 // begin changing coordinator.  This is called *before* the coordinator change request is sent.  fent->coordinator still refers to the old coordinator
-int driver_chcoord_begin( struct md_closure* driver, char const* fs_path, struct fs_entry* fent, int64_t replica_version ) {
+int driver_chcoord_begin( struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t replica_version ) {
    int ret = 0;
    
-   if( md_closure_find_callback( driver, "chcoord_begin" ) != NULL ) {
-      MD_CLOSURE_CALL( ret, driver, "chcoord_begin", driver_chcoord_begin_func, fs_path, fent, replica_version, driver->cls );
+   if( md_closure_find_callback( closure, "chcoord_begin" ) != NULL ) {
+      MD_CLOSURE_CALL( ret, closure, "chcoord_begin", driver_chcoord_begin_func, closure, fs_path, fent, replica_version, closure->cls );
    }
    else {
       errorf("%s", "WARN: chcoord_begin stub\n");
@@ -229,11 +223,11 @@ int driver_chcoord_begin( struct md_closure* driver, char const* fs_path, struct
 // end changing coordinator.  This is called *after* the coordintaor changes.
 // chcoord_status is the MS's return code (0 for success, negative for error). 
 // If chcoord_status == 0, the change succeeded
-int driver_chcoord_end( struct md_closure* driver, char const* fs_path, struct fs_entry* fent, int64_t replica_version, int chcoord_status ) {
+int driver_chcoord_end( struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t replica_version, int chcoord_status ) {
    int ret = 0;
    
-   if( md_closure_find_callback( driver, "chcoord_end" ) != NULL ) {
-      MD_CLOSURE_CALL( ret, driver, "chcoord_end", driver_chcoord_end_func, fs_path, fent, replica_version, chcoord_status, driver->cls );
+   if( md_closure_find_callback( closure, "chcoord_end" ) != NULL ) {
+      MD_CLOSURE_CALL( ret, closure, "chcoord_end", driver_chcoord_end_func, closure, fs_path, fent, replica_version, chcoord_status, closure->cls );
    }
    else {
       errorf("%s", "WARN: chcoord_end stub\n");

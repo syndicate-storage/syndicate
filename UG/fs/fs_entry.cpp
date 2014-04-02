@@ -174,8 +174,8 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    fs_entry_mark_read_stale( core->root );
    
    // initialize the driver
-   core->driver = CALLOC_LIST( struct md_closure, 1 );
-   rc = driver_init( core, &core->driver );
+   core->closure = CALLOC_LIST( struct md_closure, 1 );
+   rc = driver_init( core, &core->closure );
    
    if( rc != 0 && rc != -ENOENT ) {
       errorf("driver_init rc = %d\n", rc );
@@ -196,14 +196,14 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
 // destroy the core of the FS
 int fs_core_destroy( struct fs_core* core ) {
 
-   if( core->driver ) {
-      int rc = driver_shutdown( core->driver );
+   if( core->closure ) {
+      int rc = driver_shutdown( core->closure );
       if( rc != 0 ) {
          errorf("WARN: driver_shutdown rc = %d\n", rc );
       }
       
-      free( core->driver );
-      core->driver = NULL;
+      free( core->closure );
+      core->closure = NULL;
    }
    
    pthread_rwlock_destroy( &core->lock );
@@ -569,7 +569,7 @@ long fs_entry_name_hash( char const* name ) {
 
 
 // cache an xattr, but only if the caller knows the current xattr_nonce
-// fent must be read-locked
+// fent must be read-locked at least
 int fs_entry_put_cached_xattr( struct fs_entry* fent, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, int64_t last_known_xattr_nonce ) {
    string xattr_name_s( xattr_name );
    
@@ -1263,15 +1263,15 @@ int fs_entry_view_change_callback( struct ms_client* ms, void* cls ) {
    uint64_t cert_version = ms_client_cert_version( ms );
    
    if( cert_version != old_version ) {
-      dbprintf("cert version was %" PRIu64 ", now is %" PRIu64 ".  Reloading driver...\n", old_version, cert_version );
+      dbprintf("cert version was %" PRIu64 ", now is %" PRIu64 ".  Reloading closure...\n", old_version, cert_version );
       
-      int rc = driver_reload( core, core->driver );
+      int rc = driver_reload( core, core->closure );
       if( rc == 0 ) {
          viewchange_cls->cert_version = cert_version;
       }
    }
    else {
-      dbprintf("%s", "cert version has not changed, so not reloading driver\n" );
+      dbprintf("%s", "cert version has not changed, so not reloading closure\n" );
    }
    
    return 0;

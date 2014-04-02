@@ -241,8 +241,8 @@ struct md_syndicate_conf {
    bool is_client;                                    // if true for a UG, always fetch data from RGs
 };
 
-typedef int (*md_cache_connector_func)(struct md_syndicate_conf*, CURL*, char const*, void*);
-typedef int (*md_manifest_processor_func)(struct md_syndicate_conf*, char*, size_t, char**, size_t*, void*);
+typedef int (*md_cache_connector_func)(struct md_closure*, CURL*, char const*, void*);
+typedef int (*md_manifest_processor_func)(struct md_closure*, char*, size_t, char**, size_t*, void*);
 
 #define USER_ANON               (uint64_t)0xFFFFFFFFFFFFFFFFLL
 #define GATEWAY_ANON            (uint64_t)0xFFFFFFFFFFFFFFFFLL
@@ -391,11 +391,11 @@ off_t md_download_file( CURL* curl_h, char** buf );
 off_t md_download_file2( CURL* curl_h, char** buf, off_t max_len );
 int md_download_with_continuation( CURL* curl, char** bits, off_t* ret_len, int* _status_code, struct md_download_continuation* cont );
 int md_download_from_caches( struct md_syndicate_conf* conf, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls );
-int md_download( struct md_syndicate_conf* conf, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls );
-int md_download_manifest( struct md_syndicate_conf* conf, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg,
+int md_download( struct md_syndicate_conf* conf, struct md_closure* closure, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls );
+int md_download_manifest( struct md_syndicate_conf* conf, struct md_closure* closure, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg,
                           md_cache_connector_func cache_func, void* cache_func_cls,
                           md_manifest_processor_func manifest_func, void* manifest_func_cls );
-off_t md_download_block( struct md_syndicate_conf* conf, CURL* curl, char const* block_url, char** block_bits, size_t block_len, md_cache_connector_func cache_func, void* cache_func_cls );
+off_t md_download_block( struct md_syndicate_conf* conf, struct md_closure* closure, CURL* curl, char const* block_url, char** block_bits, size_t block_len, md_cache_connector_func cache_func, void* cache_func_cls );
 
 // download/upload callbacks
 size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t count, void* user_data );

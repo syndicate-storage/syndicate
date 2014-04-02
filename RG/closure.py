@@ -49,8 +49,6 @@ StorageContext = collections.namedtuple("StorageContext", ["config", "drivers", 
 STORAGE_CONFIG = None
 storage_closure_lock = threading.Lock()
 
-SECRETS_PAD_KEY = "__syndicate_pad__"
-
 #-------------------------
 REQUIRED_CLOSURE_FIELDS = {
    "replica_read": types.FunctionType,
@@ -178,9 +176,6 @@ def decrypt_secrets( sender_pubkey_pem, receiver_privkey_pem, encrypted_secrets_
       log.exception( e )
       raise Exception("Failed to parse secrets")
    
-   if secrets.has_key( SECRETS_PAD_KEY ):
-      del secrets[SECRETS_PAD_KEY]
-      
    return secrets
 
    

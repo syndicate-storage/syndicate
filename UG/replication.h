@@ -150,7 +150,7 @@ void fs_entry_block_info_garbage_init( struct fs_entry_block_info* binfo, int64_
 
 int replica_context_free( struct replica_context* rctx );
 
-int fs_entry_replicate_manifest( struct fs_core* core, struct fs_entry* fent, bool sync, struct fs_file_handle* fh );
+int fs_entry_replicate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, bool sync, struct fs_file_handle* fh );
 int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh );
 
 int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snapshot* snapshot );
@@ -163,7 +163,7 @@ int fs_entry_replicate_wait( struct fs_core* core, struct fs_file_handle* fh );
 
 int fs_entry_replica_clean( struct fs_file_handle* fh );
 
-int fs_entry_replica_file_handle( struct fs_core* core, struct fs_entry* fent, struct fs_file_handle* fh, int flags );
+int fs_entry_replica_file_handle( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int flags, struct fs_file_handle* fh );
 int fs_entry_free_replica_file_handle( struct fs_file_handle* fh );
 
 int fs_entry_garbage_collect_file( struct fs_core* core, struct fs_entry* fent );

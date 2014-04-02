@@ -20,6 +20,7 @@
 #include "libsyndicate.h"
 
 #include <dlfcn.h>
+#include <json-c/json.h>
 
 #define MD_CLOSURE_TMPFILE_NAME "closure-XXXXXX"
 
@@ -31,37 +32,54 @@ struct md_closure_callback_entry {
 
 #define MD_CLOSURE_CALLBACK( sym_name ) {(char*)sym_name, NULL}
 
+typedef map<string, string> md_closure_conf_t;
+typedef md_closure_conf_t md_closure_secrets_t;
+
 struct md_closure {
    void* so_handle;     // dynamic driver library handle
    char* so_path;       // path to the driver so file
    
-   void* cls;           // supplied by the closure
+   md_closure_conf_t* closure_conf;     // closure config params
+   md_closure_secrets_t* closure_secrets;       // closure secrets
+   
+   char* spec;          // (AG only) path <--> command translation 
+   size_t spec_len;     // (AG only) len(spec)
+   
+   void* cls;           // supplied by the closure on initialization
    int running;         // set to non-zero of this driver is initialized
    
    pthread_rwlock_t reload_lock;                // if write-locked, no method can be called here (i.e. the closure is reloading)
    
-   int (*init)( struct md_syndicate_conf*, void** );
-   int (*shutdown)( void* );
-   
    struct md_closure_callback_entry* callbacks;
+   
+   bool gateway_specific;       // if true, then this closure is specific to a Gateway (and can have secrets)
 };
 
-// closure loading and processing
-int md_write_closure( struct md_syndicate_conf* conf, char** so_path, char const* closure_text, size_t closure_text_len );
-int md_load_closure( struct md_closure* closure, char* so_path, struct md_closure_callback_entry* callbacks );
-int md_install_binary_closure( struct md_syndicate_conf* conf, struct md_closure** closure, struct md_closure_callback_entry* prototype, char const* closure_text_b64, size_t closure_text_len_b64 );
+typedef int (*md_closure_init_func)( struct md_closure*, void** );
+typedef int (*md_closure_shutdown_func)( void* );
+
+// driver loading and processing
+int md_write_driver( struct md_syndicate_conf* conf, char** _so_path_ret, char const* driver_text, size_t driver_text_len );
+int md_load_driver( struct md_closure* closure, char* so_path, struct md_closure_callback_entry* closure_symtable );
 
 // locking...
 int md_closure_rlock( struct md_closure* closure );
 int md_closure_wlock( struct md_closure* closure );
 int md_closure_unlock( struct md_closure* closure );
 
-// driver interface 
-int md_closure_init( struct md_syndicate_conf* conf, struct md_closure* closure, struct md_closure_callback_entry* callbacks, char const* closure_text, size_t closure_text_len );
-int md_closure_reload( struct md_syndicate_conf* conf, struct md_closure* closure, char const* closure_text, size_t closure_text_len );
+// initialization, reload, and shutdown 
+int md_closure_init( struct ms_client* client, struct md_closure* closure, struct md_closure_callback_entry* prototype, char const* closure_text, size_t closure_text_len, bool gateway_specific );
+int md_closure_reload( struct ms_client* client, struct md_closure* closure, char const* closure_text, size_t closure_text_len );
 int md_closure_shutdown( struct md_closure* closure );
 
+// closure config API 
+int md_closure_get_config( struct md_closure* closure, char const* key, char** value, size_t* len );
+int md_closure_get_secret( struct md_closure* closure, char const* key, char** value, size_t* len );
+
+// driver management and querying 
+int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure* closure, char const* driver_text, size_t driver_text_len );
 void* md_closure_find_callback( struct md_closure* closure, char const* cb_name );
+
 
 #define MD_CLOSURE_CALL( ret, closure, symname, signature, ... ) \
    do {         \
@@ -81,5 +99,14 @@ void* md_closure_find_callback( struct md_closure* closure, char const* cb_name 
       pthread_rwlock_unlock( &(closure)->reload_lock ); \
    } while( 0 ); 
    
+   
+#define MD_CLOSURE_PROTOTYPE_BEGIN( prototype_name ) \
+   struct md_closure_callback_entry prototype_name[] = { \
+      MD_CLOSURE_CALLBACK( "closure_init"),     \
+      MD_CLOSURE_CALLBACK( "closure_shutdown"),
+
+#define MD_CLOSURE_PROTOTYPE_END \
+      , {NULL, NULL} \
+};
       
 #endif

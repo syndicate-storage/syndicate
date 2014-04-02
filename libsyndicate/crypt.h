@@ -52,15 +52,16 @@ void md_init_OpenSSL(void);
 int md_openssl_error(void);
 int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str );
 int md_load_privkey( EVP_PKEY** key, char const* privkey_str );
+int md_load_public_and_private_keys( EVP_PKEY** _pubkey, EVP_PKEY** _privkey, char const* privkey_str );
 int md_generate_key( EVP_PKEY** key );
 long md_dump_pubkey( EVP_PKEY* pkey, char** buf );
 int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len );
 int md_sign_message_raw( EVP_PKEY* pkey, char const* data, size_t len, char** sig, size_t* siglen );
 int md_verify_signature( EVP_PKEY* public_key, char const* data, size_t len, char* sigb64, size_t sigb64len );
 int md_verify_signature_raw( EVP_PKEY* public_key, char const* data, size_t len, char* sig, size_t sig_len );
-int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
+int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
 int md_encrypt_pem( char const* sender_pkey_pem, char const* receiver_pubkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for python
-int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
+int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );
 int md_decrypt_pem( char const* sender_pubkey_pem, char const* receiver_pkey_pem, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len );     // for python
 int md_password_seal( char const* data, size_t data_len, char const* password, size_t password_len, char** output, size_t* output_len );
 int md_password_unseal( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len );

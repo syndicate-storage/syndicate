@@ -291,6 +291,60 @@ static int fs_entry_download_xattr( struct fs_core* core, struct fs_entry* fent,
 }
 
 
+// cache an xattr.
+static int fs_entry_cache_xattr( struct fs_core* core, char const* fs_path, uint64_t user, uint64_t volume, char const* name, char const* value, size_t value_len, int64_t cur_xattr_nonce ) {
+   // write-lock so we can modify
+   int err = 0;
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, user, volume, true, &err );
+   if( !fent || err ) {
+      if( !err )
+         err = -ENOMEM;
+
+      return err;
+   }
+
+   fs_entry_put_cached_xattr( fent, name, value, value_len, cur_xattr_nonce );
+   
+   fs_entry_unlock( fent );
+   
+   return 0;
+}
+
+
+// get the xattr, given a locked fs_entry.
+// unlock the fent as soon as possible
+// check the cache, and then check the MS
+static ssize_t fs_entry_do_getxattr_and_unlock( struct fs_core* core, struct fs_entry* fent, char const* name, char** value, size_t* value_len, int* _cache_status ) {
+   // check the cache
+   ssize_t ret = 0;
+   char* val = NULL;
+   size_t vallen = 0;
+   
+   int cache_status = fs_entry_get_cached_xattr( fent, name, &val, &vallen );
+   
+   // don't need fent to be around anymore...
+   fs_entry_unlock( fent );
+   
+   if( cache_status < 0 ) {
+      // cache miss 
+      ret = (ssize_t)fs_entry_download_xattr( core, fent, name, &val );
+   }
+   else {
+      // cache hit
+      ret = vallen;
+   }
+   
+   if( ret >= 0 ) {
+      // success!
+      *value = val;
+      *value_len = vallen;
+      *_cache_status = cache_status;
+   }
+   
+   return ret;
+}
+
+
 // getxattr
 ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *name, char *value, size_t size, uint64_t user, uint64_t volume ) {
    
@@ -314,25 +368,15 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
    
    ssize_t ret = 0;
    char* val = NULL;
+   size_t vallen = 0;
+   int cache_status = 0;
    
    // find the xattr handler for this attribute
    struct syndicate_xattr_handler* xattr_handler = xattr_lookup_handler( name );
    if( xattr_handler == NULL ) {
-      // it's user-set.  check the cache 
-      size_t vallen = 0;
-      int cache_status = fs_entry_get_cached_xattr( fent, name, &val, &vallen );
       
-      // don't need fent to be around anymore...
-      fs_entry_unlock( fent );
-      
-      if( cache_status < 0 ) {
-         // cache miss 
-         ret = (ssize_t)fs_entry_download_xattr( core, fent, name, &val );
-      }
-      else {
-         // cache hit
-         ret = vallen;
-      }
+      // NOTE: this unlocks fent, with early_unlock == true
+      ret = fs_entry_do_getxattr_and_unlock( core, fent, name, &val, &vallen, &cache_status );
       
       if( ret >= 0 ) {
          // success!
@@ -345,19 +389,13 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
                // cache this?
                if( cache_status < 0 ) {
                   
-                  // write-lock this time, so we can put the downloaded data in
-                  fent = fs_entry_resolve_path( core, path, user, volume, true, &err );
-                  if( !fent || err ) {
-                     if( !err )
-                        err = -ENOMEM;
-
+                  // not cached...
+                  err = fs_entry_cache_xattr( core, path, user, volume, name, val, ret, cur_xattr_nonce );
+                  if( err < 0 ) {
+                     errorf("fs_entry_cache_xattr(%s, %s) rc = %d\n", path, name, err );
                      free( val );
                      return err;
                   }
-      
-                  fs_entry_put_cached_xattr( fent, name, val, ret, cur_xattr_nonce );
-                  
-                  fs_entry_unlock( fent );
                }
                
                memcpy( value, val, ret );
@@ -365,6 +403,10 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
          }
          
          free( val );
+      }
+      
+      else {
+         errorf("fs_entry_do_getxattr(%s, %s) rc = %zd\n", path, name, ret );
       }
    }
    else {
@@ -406,12 +448,7 @@ int fs_entry_setxattr( struct fs_core* core, char const* path, char const *name,
       
       ret = ms_client_setxattr( core->ms, &ent, name, value, size, flags );
       if( ret < 0 ) {
-         char* value_buf = CALLOC_LIST( char, size + 1 );
-         memcpy( value_buf, value, size );
-         
-         errorf("ms_client_setxattr( %s = %s ) rc = %zd\n", name, value_buf, ret );
-         
-         free( value_buf );
+         errorf("ms_client_setxattr( %s %s ) rc = %zd\n", path, name, ret );
       }
       else {
          // cache this 
@@ -428,6 +465,113 @@ int fs_entry_setxattr( struct fs_core* core, char const* path, char const *name,
    
    fs_entry_unlock( fent );
 
+   return ret;
+}
+
+
+// get an xattr, or set an xattr if not present.  There will be only one "set" winner globally, but "get" might return nothing (since the get and set do not occur as an atomic action)
+// Meant for use by UG closures.
+int fs_entry_get_or_set_xattr( struct fs_core* core, char const* fs_path, char const* name, char const* proposed_value, size_t proposed_value_len, char** value, size_t* value_len ) {
+   
+   // bring the metadata up to date
+   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, fs_path );
+   if( revalidate_rc != 0 ) {
+      errorf("fs_entry_revalidate_path(%s) rc = %d\n", fs_path, revalidate_rc );
+      return revalidate_rc;
+   }
+   
+   int err = 0;
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, true, &err );
+   if( !fent || err ) {
+      if( !err )
+         err = -ENOMEM;
+
+      return err;
+   }
+   
+   ssize_t ret = 0;
+   int cache_status = 0;
+   char* val = NULL;
+   size_t vallen = 0;
+   
+   int64_t cur_xattr_nonce = fent->xattr_nonce;
+   
+   // find the xattr handler for this attribute
+   struct syndicate_xattr_handler* xattr_handler = xattr_lookup_handler( name );
+   if( xattr_handler == NULL ) {
+      
+      // attempt to set, but fail if we don't create.
+      bool try_get = false;
+      
+      struct md_entry ent;
+      fs_entry_to_md_entry( core, &ent, fent, 0, NULL );        // parent information not needed
+      
+      ret = ms_client_setxattr( core->ms, &ent, name, proposed_value, proposed_value_len, XATTR_CREATE );
+      if( ret < 0 ) {
+         errorf("ms_client_setxattr( %s %s ) rc = %zd\n", fs_path, name, ret );
+         
+         if( ret == -EEXIST ) {
+            // attr already existed.  Get it
+            try_get = true;
+         }
+      }
+      else {
+         // set successfully!
+         // cache this 
+         fs_entry_put_cached_xattr( fent, name, proposed_value, proposed_value_len, fent->xattr_nonce );
+      }
+      
+      md_entry_free( &ent );
+   
+      if( try_get ) {
+            
+         // NOTE: this unlocks fent
+         ret = fs_entry_do_getxattr_and_unlock( core, fent, name, &val, &vallen, &cache_status );
+            
+         if( ret >= 0 ) {
+            // success!
+            // cache this?
+            if( cache_status < 0 ) {
+               
+               // not cached...
+               err = fs_entry_cache_xattr( core, fs_path, SYS_USER, 0, name, val, ret, cur_xattr_nonce );
+               if( err < 0 ) {
+                  errorf("fs_entry_cache_xattr(%s, %s) rc = %d\n", fs_path, name, err );
+                  free( val );
+                  return err;
+               }
+            }
+            
+            *value = val;
+            *value_len = (size_t)ret;
+         }
+      }
+      else {
+         fs_entry_unlock( fent );
+      }
+   }
+   else {
+      // built-in handler.
+      while( true ) {
+         ssize_t required_size = (*xattr_handler->get)( core, fent, NULL, 0 );
+         
+         char* buf = CALLOC_LIST( char, required_size + 1 );
+         
+         ret = (*xattr_handler->get)( core, fent, buf, required_size );
+         if( ret == -ERANGE ) {
+            // try again 
+            free( buf );
+            continue;
+         }
+         
+         *value = buf;
+         *value_len = (size_t)ret;
+         break;
+      }
+      
+      fs_entry_unlock( fent );
+   }
+   
    return ret;
 }
    

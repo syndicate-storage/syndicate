@@ -350,7 +350,7 @@ int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs
       // This lets us start all replicas concurrently, and then block until they're all done.
       struct fs_file_handle fh;
       memset( &fh, 0, sizeof(fh) );
-      fs_entry_replica_file_handle( core, fent, &fh, O_SYNC );
+      fs_entry_replica_file_handle( core, fs_path, fent, O_SYNC, &fh );
       
       rc = fs_entry_replicate_write( core, &fh, &modified_blocks );
       
