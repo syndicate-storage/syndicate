@@ -122,7 +122,7 @@ static int md_parse_closure_config( md_closure_conf_t* closure_conf, char const*
       
       // get the value 
       char const* value = json_object_get_string( val );
-      size_t value_len = json_object_get_string_len( val );
+      size_t value_len = strlen(value);         // json_object_get_string_len( val );
       
       // put it into the config 
       string key_s( key );
@@ -198,7 +198,7 @@ static int md_parse_closure_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway
       
       // get the value 
       char const* encrypted_value = json_object_get_string( val );
-      size_t encrypted_value_len = json_object_get_string_len( val );
+      size_t encrypted_value_len = strlen(encrypted_value);     // json_object_get_string_len( val );
       
       // put it into the config 
       string key_s( key );
@@ -224,15 +224,16 @@ static char const* md_load_json_string_by_key( struct json_object* obj, char con
       return NULL;
    }
    
-   char const* val = json_object_get_string( key_obj );
-   size_t val_len = json_object_get_string_len( key_obj );
-   
-   if( val_len == 0 || val == NULL ) {
+   // verify it's a string 
+   enum json_type jtype = json_object_get_type( key_obj );
+   if( jtype != json_type_string ) {
       errorf("'%s' is not a string\n", key );
       return NULL;
    }
- 
-   *_val_len = val_len;
+   
+   char const* val = json_object_get_string( key_obj );
+   
+   *_val_len = strlen(val);  // json_object_get_string_len( val );
    return val;
 }
 
