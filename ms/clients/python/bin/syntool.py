@@ -332,6 +332,49 @@ def setup_key_directories( config ):
 
 
 # -------------------
+def parse_url( url ):
+   # return (host, port, insecure)
+   
+   if "://" not in url:
+      log.warning("No scheme for %s.  Assuming https://" % url)
+      url = "https://" + url
+      
+   parsed = urlparse.urlparse( url )
+   
+   scheme = parsed.scheme 
+   netloc = parsed.netloc
+   
+   host = None
+   port = None 
+   no_tls = None
+   
+   if ":" in netloc:
+      host, port = netloc.split(":")
+      try:
+         port = int(port)
+      except:
+         raise Exception("Invalid URL %s" % config['url'])
+      
+   else:
+      host = netloc 
+   
+   if scheme.lower() == 'http':
+      if port is None:
+         port = 80
+      
+      no_tls = True
+      
+   elif scheme.lower() == 'https':
+      port = 443
+      no_tls = False
+   
+   else:
+      raise Exception("Unrecognized scheme in URL %s" % config['url'] )
+   
+   return (host, port, no_tls)
+
+
+# -------------------
 def load_options( argv, setup_methods=[], builtin_methods=[] ):
    
    parser = conf.build_parser( argv[0] )
@@ -389,42 +432,8 @@ def load_options( argv, setup_methods=[], builtin_methods=[] ):
       # use https if no :// is given 
       url = config['url']
       
-      if "://" not in url:
-         log.warning("No scheme for %s.  Assuming https://" % url)
-         url = "https://" + url
-         
-      parsed = urlparse.urlparse( url )
+      host, port, no_tls = parse_url( url )
       
-      scheme = parsed.scheme 
-      netloc = parsed.netloc
-      
-      host = None
-      port = None 
-      no_tls = None
-      
-      if ":" in netloc:
-         host, port = netloc.split(":")
-         try:
-            port = int(port)
-         except:
-            raise Exception("Invalid URL %s" % config['url'])
-         
-      else:
-         host = netloc 
-      
-      if scheme.lower() == 'http':
-         if port is None:
-            port = 80
-         
-         no_tls = True
-         
-      elif scheme.lower() == 'https':
-         port = 443
-         no_tls = False
-      
-      else:
-         raise Exception("Unrecognized scheme in URL %s" % config['url'] )
-         
       config['syndicate_host'] = host 
       config['syndicate_port'] = port
       config['no_tls'] = no_tls
@@ -656,6 +665,7 @@ def client_call( CONFIG, method_name, *args, **kw ):
    
          elif not no_verify_result:
             log.error("Could not obtain Syndicate public key.  Cannot continue.")
+            return None
          
          else:
             log.warning("INSECURE: will not verify result!")
@@ -677,6 +687,92 @@ def client_call( CONFIG, method_name, *args, **kw ):
 
    return ret
 
+
+# -------------------   
+class RPCMethod:
+   def __init__(self, config, method_name):
+      self.config = config 
+      self.method_name = method_name
+      
+      # create the RPC client
+      self.client = make_rpc_client( self.config,
+                                     username=self.config['user_id'],
+                                     password=self.config.get('password',None),
+                                     user_private_key=self.config.get('user_pkey',None),
+                                     syndicate_public_key=self.config.get('syndicate_public_key',None),
+                                     no_verify_result=self.config.get('no_verify_result') )
+      
+   def __call__(self, *args, **kw):
+      # parse arguments.
+      # use lib to load and store temporary data for the argument parsers.
+      lib = conf.ArgLib()
+      lib.config = self.config
+      lib.storage = storage
+      lib.user_id = self.config['user_id']
+      
+      args, kw, extras = conf.parse_args( self.method_name, args, kw, lib )
+      
+      # validate arguments
+      valid = conf.validate_args( self.method_name, args, kw )
+      if not valid:
+         raise Exception("Invalid arguments for %s" % self.method_name)
+      
+      return call_method( self.config, self.client, self.method_name, args, kw )
+   
+   
+
+# -------------------   
+class Client:
+   
+   def __init__(self, user_id, ms_url,
+                      password=None,
+                      user_pkey_pem=None,
+                      syndicate_public_key_pem=None,
+                      debug=False,
+                      ):
+      
+      self.config = {}
+      self.method_singletons = {}
+      
+      no_verify_result = True
+      
+      # sanity check...
+      if syndicate_public_key_pem is not None:
+         try:
+            self.config['syndicate_public_key'] = CryptoKey.importKey( syndicate_public_key )
+            no_verify_result = False
+         except:
+            raise Exception("Invalid value for syndicate_public_key_pem")
+      
+      # sanity check...
+      if user_pkey_pem is not None:
+         try:
+            self.config['user_pkey'] = CryptoKey.importKey( user_pkey_pem )
+            assert self.config['user_pkey'].has_private(), "Not a private key"
+         except:
+            raise Exception("Invalid value for user_pkey_pem")
+      
+      try:
+         host, port, no_tls = parse_url( ms_url )
+      except:
+         raise Exception("Invalid URL '%s'" % ms_url)
+      
+      # populate our config 
+      self.config['syndicate_host'] = host 
+      self.config['syndicate_port'] = port 
+      self.config['no_tls'] = no_tls
+      self.config['user_id'] = user_id
+      self.config['debug'] = debug 
+      self.config['password'] = password
+      self.config['no_verify_result'] = no_verify_result
+
+   def __getattr__(self, method_name ):
+      # return a callable
+      if not self.method_singletons.has_key( method_name ):
+         self.method_singletons[method_name] = RPCMethod( self.config, method_name )
+      
+      return self.method_singletons[method_name]
+      
 
 # -------------------   
 def main( argv ):
