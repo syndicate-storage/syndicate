@@ -20,7 +20,7 @@
 #include "libsyndicate.h"
 
 #include <dlfcn.h>
-#include <json-c/json.h>
+#include "libjson-compat.h"
 
 #define MD_CLOSURE_TMPFILE_NAME "closure-XXXXXX"
 

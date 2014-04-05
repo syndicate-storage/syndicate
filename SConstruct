@@ -80,6 +80,27 @@ for key, value in ARGLIST:
    else:
       extra_args[key] = value
 
+# deduce the host linux distro
+def deduce_distro():
+   distro = "UNKNOWN"
+
+   try:
+      fd = os.popen("lsb_release -i")
+      distro_id_text = fd.read()
+      fd.close()
+   except:
+      print "WARN: failed to run 'lsb_release -i'.  Cannot deduce distribution (assuming defaults)"
+      return distro
+
+   _, distro = distro_id_text.split("\t")
+   distro = distro.strip().upper()
+   
+   return distro
+
+if not extra_args.has_key("DISTRO"):
+   extra_args["DISTRO"] = deduce_distro()
+
+
 # setup environment for Google Native Client
 def make_nacl_env( env, NACL_TOOLCHAIN, PEPPER_ROOT, arch ):
    # Native Client library

@@ -44,6 +44,17 @@ CPPPATH = """
 LIBPATH = """
 """
 
+# json library is different on Debian...
+json_lib = "json"
+distro_switch = ""
+
+if extra_args.has_key("DISTRO"):
+   distro = extra_args["DISTRO"]
+   if distro == "DEBIAN":
+      json_lib = "json-c"
+
+   distro_switch = "-D_DISTRO_%s" % distro
+
 # add libraries here
 BASE_LIBS = """
    curl
@@ -54,8 +65,8 @@ BASE_LIBS = """
    rt
    m
    dl
-   json-c
-"""
+   %s
+""" % json_lib
 
 HTTPD_LIBS = """
    microhttpd
@@ -70,7 +81,7 @@ LIBS = LIBS_client + HTTPD_LIBS
 headers = Glob("*.h")
 
 # add additional CPPFLAGS here
-CPPFLAGS = ""
+CPPFLAGS = distro_switch
 
 # add additional CPPDEFINES here
 CPPDEFINES = [

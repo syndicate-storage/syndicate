@@ -161,10 +161,10 @@ class MSEntryShard(storagetypes.Object):
    @classmethod 
    def Delete_Deferred_ByVolume( cls, volume_id ):
       
-      def __delete_shard_mapper( ent_shard_key ):
-         storagetypes.deferred.defer( MSEntryShard.delete_all, [ent_shard_key] )
+      def __delete_shard_mapper( ent_shard ):
+         storagetypes.deferred.defer( MSEntryShard.delete_all, [ent_shard.key] )
          
-      MSEntryShard.ListAll( {"MSEntryShard.msentry_volume_id ==": volume_id}, keys_only=True, map_func=__delete_shard_mapper )
+      MSEntryShard.ListAll( {"MSEntryShard.msentry_volume_id ==": volume_id}, map_func=__delete_shard_mapper )
    
    
    
@@ -191,10 +191,10 @@ class MSEntryNameHolder( storagetypes.Object ):
       """
       Asynchronously delete by volume
       """
-      def __delete_nameholder_mapper( ent_nameholder_key ):
-         storagetypes.deferred.defer( MSEntryNameHolder.delete_all, [ent_nameholder_key] )
+      def __delete_nameholder_mapper( ent_nameholder ):
+         storagetypes.deferred.defer( MSEntryNameHolder.delete_all, [ent_nameholder.key] )
          
-      MSEntryNameHolder.ListAll( {"MSEntryNameHolder.volume_id ==": volume_id}, keys_only=True, map_func=__delete_nameholder_mapper )
+      MSEntryNameHolder.ListAll( {"MSEntryNameHolder.volume_id ==": volume_id}, map_func=__delete_nameholder_mapper )
       
    
    
@@ -1536,11 +1536,12 @@ class MSEntry( storagetypes.Object ):
       cached_root_key_name = MSEntry.cache_key_name( volume.volume_id, root_file_id )
       storagetypes.memcache.delete( cached_root_key_name )
       
+      # TODO: this will probably not work with large Volumes.  Create a reaper thread for this
       
-      def __delete_entry_mapper( ent_key ):
-         storagetypes.deferred.defer( MSEntry.delete_all, [ent_key] )
+      def __delete_entry_mapper( ent ):
+         storagetypes.deferred.defer( MSEntry.delete_all, [ent.key] )
          
-      MSEntry.ListAll( {"MSEntry.volume_id ==": volume.volume_id}, keys_only=True, map_func=__delete_entry_mapper )
+      MSEntry.ListAll( {"MSEntry.volume_id ==": volume.volume_id}, map_func=__delete_entry_mapper )
       
       MSEntryShard.Delete_Deferred_ByVolume( volume.volume_id )
       MSEntryNameHolder.Delete_Deferred_ByVolume( volume.volume_id )
