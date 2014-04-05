@@ -543,7 +543,7 @@ class SyndicateUser( StubObject ):
    @classmethod
    def parse_user_name_or_id( cls, user_name_or_id, lib=None ):
       """
-      Make usre user_name_or_id is an email address.
+      Make sure user_name_or_id is an email address.
       """
       try:
          user_id = int(user_name_or_id)
@@ -556,7 +556,8 @@ class SyndicateUser( StubObject ):
                
             return user_name_or_id, {"username": user_name_or_id}
       
-      raise Exception("Parse error: only user emails (not IDs) are allowed")
+      return user_id, {}
+      #raise Exception("Parse error: only user emails (not IDs) are allowed")
    
    
    @classmethod

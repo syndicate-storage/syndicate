@@ -66,6 +66,7 @@ else:
    OPENID_HOST_URL = "https://" + OPENID_TRUST_ROOT_HOST
    OPENID_SESSION_SSL_ONLY=True
    OPENID_LOCAL_TEST=False
+   OPENID_DEBUG=False
 
 if OPENID_DEBUG:
    # OpenID debug

@@ -914,7 +914,7 @@ class MSEntry( storagetypes.Object ):
       
       if delete:
          # roll back
-         storagetypes.deferred.defer( MSEntry.delete_all, [fut.get_result() for fut in futs] )
+         storagetypes.deferred.defer( MSEntry.delete_all, [fut.get_result().key for fut in futs] )
 
       # invalidate caches
       storagetypes.memcache.delete_multi( [MSEntry.cache_listing_key_name( volume_id, parent_id ), MSEntry.cache_key_name( volume_id, parent_id ) ] )
