@@ -186,7 +186,7 @@ ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct f
    }
    
    // process the block 
-   ssize_t processed_len = driver_read_block_postdown( core->closure, fs_path, fent, block_id, block_version, block_buf, read_len, block_bits, block_len );
+   ssize_t processed_len = driver_read_block_postdown( core, core->closure, fs_path, fent, block_id, block_version, block_buf, read_len, block_bits, block_len );
    
    if( processed_len < 0 ) {
       free( block_buf );

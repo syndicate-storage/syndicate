@@ -26,6 +26,7 @@ import shutil
 
 source_root = "../"
 build_dir = ""
+distro = "UNKNOWN"
 
 # is build_root in the args?
 i = 0
@@ -40,7 +41,14 @@ while i < len(sys.argv):
       sys.argv.remove( sys.argv[i] )
       continue
 
+   if sys.argv[i].startswith("--distro="):
+      distro = sys.argv[i].split("=", 1)[1]
+      sys.argv.remove( sys.argv[i] )
+      continue 
+
    i += 1
+
+distro_switch = "-D_DISTRO_%s" % distro
 
 ext_source_root = source_root
 
@@ -50,7 +58,7 @@ ext_modules=[
               libraries=["syndicate"],
               library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate")],             # libsyndicate local build
               include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "protobufs"), "/usr/local/include/syndicate", os.path.join(source_root, build_dir, "lib")],
-              extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON", "-fstack-protector", "-fstack-protector-all"],
+              extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON", "-fstack-protector", "-fstack-protector-all", distro_switch],
               language="c++"),
     
     Extension("volume",
@@ -63,7 +71,7 @@ ext_modules=[
                             os.path.join(source_root, build_dir, "bin/UG"),
                             os.path.join(source_root, build_dir, "bin/UG/fs"), 
                             "/usr/local/include/syndicate"],
-              extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON", "-fstack-protector", "-fstack-protector-all"],
+              extra_compile_args=["-D__STDC_FORMAT_MACROS", "-D_FORTIFY_SOUCRE", "-D_BUILD_PYTHON", "-fstack-protector", "-fstack-protector-all", distro_switch],
               language="c++"),
 ]
 

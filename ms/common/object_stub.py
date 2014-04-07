@@ -65,24 +65,29 @@ email_regex_str = r"^(?=^.{1,256}$)(?=.{1,64}@)(?:[^\x00-\x20\x22\x28\x29\x2c\x2
 email_regex = re.compile( email_regex_str )
 
 
-def is_valid_binary_driver( gateway_closure_path, required_syms ):
+def is_valid_binary_driver( driver_path, required_syms ):
    """
    Does a given path refer to a binary driver with the given symbols?
    """
    try:
-      driver = ctypes.CDLL( gateway_closure_path )
+      driver = ctypes.CDLL( driver_path )
    except Exception, e:
       log.exception(e)
       return False
+   
+   missing = []
    
    # check symbols
    for required_sym in required_syms:
       try:
          f = getattr( driver, required_sym )
       except:
-         # not present 
-         return False
-      
+         missing.append( required_sym )
+         
+   if len(missing) > 0:
+      log.warning("Driver '%s' is missing symbols %s" % (driver_path, ", ".join( missing )) )
+      return False 
+   
    return True
 
 
@@ -139,7 +144,7 @@ def is_valid_closure_dir( gateway_closure_path, required_files ):
          return False
       
    if len(missing) > 0:
-      log.error("%s is missing files %s" % (gateway_closure_path, ",".join(missing)) )
+      #log.warning("%s is missing files %s" % (gateway_closure_path, ",".join(missing)) )
       return False
    
    return True
@@ -494,7 +499,20 @@ class StubObject( object ):
       
       # find keyword argument?
       if arg_name in kw.keys():
-         kw[arg_name], arg_extras = arg_value_func( cls, kw[arg_name], lib )
+         ret = arg_value_func( cls, kw[arg_name], lib )
+         if ret is None:
+            raise Exception("Got None for parsing %s" % (arg_name))
+         
+         lret = 0
+         try:
+            lret = len(ret)
+         except:
+            raise Exception("Got non-iterable for parsing %s" % (arg_name))
+         
+         if len(ret) != 2:
+            raise Exception("Invalid value from parsing %s" % (arg_name))
+         
+         kw[arg_name], arg_extras = ret[0], ret[1]
          extras.update( arg_extras )
       
       return (args, kw, extras)      
@@ -944,7 +962,7 @@ class Gateway( StubObject ):
       Does a given path refer to a UG binary closure?
       """
       driver_path = os.path.join( gateway_closure_path, "libdriver.so" )
-      return is_valid_binary_driver( gateway_closure_path, ["connect_cache", "write_block_preup", "write_manifest_preup", "read_block_postdown", "read_manifest_postdown", "chcoord_begin", "chcoord_end"] )
+      return is_valid_binary_driver( driver_path, ["connect_cache", "write_block_preup", "write_manifest_preup", "read_block_postdown", "read_manifest_postdown", "chcoord_begin", "chcoord_end"] )
    
    
    @classmethod 
@@ -953,7 +971,7 @@ class Gateway( StubObject ):
       Does a given path refer to an AG binary closure?
       """
       driver_path = os.path.join( gateway_closure_path, "libdriver.so" )
-      return is_valid_binary_driver( gateway_closure_path, ["get_dataset", "cleanup_dataset", "publish_dataset", "connect_dataset", "controller"] )
+      return is_valid_binary_driver( driver_path, ["get_dataset", "cleanup_dataset", "publish_dataset", "connect_dataset", "controller"] )
    
    
    @classmethod 
@@ -1014,6 +1032,7 @@ class Gateway( StubObject ):
       elif cls.is_wellformed_AG_closure( gateway_closure_path ):
          return cls.parse_AG_closure( gateway_closure_path, lib )
    
+      raise Exception("Not a well-formed closure: %s" % gateway_closure_path) 
    
    
    @classmethod 

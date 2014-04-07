@@ -96,7 +96,7 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, cha
    char* processed_block = NULL;
    size_t processed_block_len = 0;
    
-   rc = driver_write_block_preup( core->closure, fs_path, fent, block_id, new_block_version, block_data, write_len, &processed_block, &processed_block_len );
+   rc = driver_write_block_preup( core, core->closure, fs_path, fent, block_id, new_block_version, block_data, write_len, &processed_block, &processed_block_len );
    if( rc != 0 ) {
       errorf("driver_write_block_preup(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, new_block_version, rc );
       *_rc = rc;

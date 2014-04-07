@@ -18,14 +18,21 @@
 
 # get our environment
 Import('env')
+Import('extra_args')
+
 env = env.Clone()
 
 import os
 
-build_cmd = "cd %s && rm -rf build/ && python ./setup.py --source-root=%s --build-dir=%s build && cp -a build/lib*/syndicate/* syndicate/" % (Dir(".").path, Dir("#").abspath, os.path.dirname(Dir(".").path))
+distro = "UNKNOWN"
+
+if extra_args.has_key("DISTRO"):
+   distro = extra_args["DISTRO"]
+
+build_cmd = "cd %s && rm -rf build/ && python ./setup.py --source-root=%s --build-dir=%s --distro=%s build && cp -a build/lib*/syndicate/* syndicate/" % (Dir(".").path, Dir("#").abspath, os.path.dirname(Dir(".").path), distro)
 
 build_target = env.Command("PYTHON", [], build_cmd )
-install_target = env.Command("PYTHON-INSTALL", [], "cd %s && python ./setup.py --source-root=%s --build-dir=%s install --prefix=%s" % (Dir(".").path, Dir("#").abspath, os.path.dirname(Dir(".").path), env['install_prefix']))
+install_target = env.Command("PYTHON-INSTALL", [], "cd %s && python ./setup.py --source-root=%s --build-dir=%s --distro=%s install --prefix=%s" % (Dir(".").path, Dir("#").abspath, os.path.dirname(Dir(".").path), env['install_prefix'], distro))
 
 env.AlwaysBuild(build_target)
 

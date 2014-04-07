@@ -89,7 +89,11 @@ for driver_dir in driver_dirs:
    driver_sos = create_sobjs( [driver_relpath(x.path) for x in filter( lambda y: y.path.endswith(".cpp"), Split(driver_files) )] )
    
    driver_lib = env.SharedLibrary( os.path.join(os.path.basename(driver_dir.path), "driver.so"), driver_sos, LIBS=Split(LIBS) )
-   driver_libs.append( driver_lib )
+
+   driver_targets = [driver_lib]
+   driver_targets.append( Glob("%s/*.py" % os.path.basename(driver_dir.path)) )
+
+   driver_libs.append( driver_targets )
    
 Return( 'driver_libs' )
 

@@ -48,12 +48,8 @@ LIBPATH = """
 json_lib = "json"
 distro_switch = ""
 
-if extra_args.has_key("DISTRO"):
-   distro = extra_args["DISTRO"]
-   if distro == "DEBIAN":
-      json_lib = "json-c"
-
-   distro_switch = "-D_DISTRO_%s" % distro
+if extra_args.has_key("LIBJSON"):
+   json_lib = extra_args["LIBJSON"]
 
 # add libraries here
 BASE_LIBS = """

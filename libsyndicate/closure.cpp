@@ -53,7 +53,9 @@ static void md_closure_callback_table_free( struct md_closure_callback_entry* ca
 static int md_parse_json_object( struct json_object** jobj_ret, char const* obj_json, size_t obj_json_len ) {
    
    // obj_json should be a valid json string that contains a single dictionary.
-   struct json_object* jobj = json_tokener_parse( obj_json );
+   struct json_tokener* tok = json_tokener_new();
+   struct json_object* jobj = json_tokener_parse_ex( tok, obj_json, obj_json_len );
+   json_tokener_free( tok );
    
    if( jobj == NULL ) {
       errorf("%s", "Failed to parse JSON object\n" );
@@ -305,7 +307,7 @@ int md_parse_closure( struct ms_client* client,
    if( rc == 0 && closure_secrets ) {
       // get the closure secrets JSON 
       size_t json_b64_len = 0;
-      char const* json_b64 = md_load_json_string_by_key( toplevel_obj, "config", &json_b64_len );
+      char const* json_b64 = md_load_json_string_by_key( toplevel_obj, "secrets", &json_b64_len );
       
       if( json_b64 != NULL || json_b64_len != 0 ) {
          // load it 

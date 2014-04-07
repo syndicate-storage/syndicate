@@ -199,6 +199,11 @@ int ms_client_connect_cache( struct md_closure* closure, CURL* curl, char const*
    return ret;
 }
 
+// default connect cache (for external consumption)
+int ms_client_volume_connect_cache( struct md_closure* closure, CURL* curl, char const* url, struct md_syndicate_conf* conf ) {
+   return ms_client_connect_cache( closure, curl, url, conf );
+}
+
 // start internal threads (only safe to do so after we have a private key)
 // client must be write-locked!
 int ms_client_start_threads( struct ms_client* client ) {
@@ -2015,15 +2020,6 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
    ms_client_view_wlock( client );
    client->volume = volume;
    ms_client_view_unlock( client );
-   
-   // start the threads
-   rc = ms_client_start_threads( client );
-   if( rc != 0 && rc != -EALREADY ) {
-      errorf("ms_client_start_threads rc = %d\n", rc );
-   }
-   else {
-      rc = 0;
-   }
 
    dbprintf("Registered with %s\n", client->url );
 
@@ -2177,6 +2173,15 @@ int ms_client_openid_gateway_register( struct ms_client* client, char const* gat
    if( rc != 0 ) {
       errorf("ms_client_reload_certs rc = %d\n", rc );
       return -ENODATA;
+   }
+   
+   // start the threads
+   rc = ms_client_start_threads( client );
+   if( rc != 0 && rc != -EALREADY ) {
+      errorf("ms_client_start_threads rc = %d\n", rc );
+   }
+   else {
+      rc = 0;
    }
    
    return 0;

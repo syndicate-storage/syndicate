@@ -662,6 +662,7 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
    // data must have these four values
    size_t header_len = sizeof(iv_len) + sizeof(ek_len) + sizeof(ciphertext_len) + sizeof(signature_len);
    if( header_len > in_data_len ) {
+      errorf("header_len (%zu) > in_data_len (%zu)\n", header_len, in_data_len );
       return -EINVAL;
    }
    
@@ -688,15 +689,19 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
    size_t ciphertext_offset     = ek_offset + ek_len;
    
    // sanity check--too short?
-   if( iv_len <= 0 || ek_len <= 0 || ciphertext_len <= 0 || signature_len <= 0 )
+   if( iv_len <= 0 || ek_len <= 0 || ciphertext_len <= 0 || signature_len <= 0 ) {
+      errorf("invalid header (iv_len = %d, ek_ken = %d, ciphertext_len = %d, signature_len = %d)\n", iv_len, ek_len, ciphertext_len, signature_len );
       return -EINVAL;
+   }
    
    // sanity check--too long?
    uint64_t total_len = (uint64_t)iv_len + (uint64_t)ek_len + (uint64_t)ciphertext_len + (uint64_t)signature_len +
                         sizeof(iv_len) + sizeof(ek_len) + sizeof(ciphertext_len) + sizeof(signature_len);
                         
-   if( total_len > in_data_len )
+   if( total_len > in_data_len ) {
+      dbprintf("total_len (%" PRIu64 ") > in_data_len (%zu)\n", total_len, in_data_len );
       return -EINVAL;
+   }
    
    // seems okay...
    size_t signature_offset = ciphertext_offset + ciphertext_len;
@@ -873,6 +878,138 @@ int md_password_unseal( char const* encrypted_data, size_t encrypted_data_len, c
    
    *output = (char*)outbuf;
    *output_len = outbuf_len;
+   
+   return 0;
+}
+
+
+// encrypt data using a symmetric key 
+int md_encrypt_symmetric( unsigned char const* key, size_t key_len, unsigned char const* iv, size_t iv_len, char* data, size_t data_len, char** ciphertext, size_t* ciphertext_len ) {
+   
+   if( key_len != 32 )
+      // not 256-bit key 
+      return -EINVAL;
+   
+   const EVP_CIPHER* cipher = EVP_aes_256_cbc();
+   int rc = 0;
+   
+   /*
+   if( EVP_CIPHER_iv_length( cipher ) != iv_len )
+      // invalid IV length 
+      return -EINVAL;
+   */
+   
+   EVP_CIPHER_CTX e_ctx;
+   
+   // initialize
+   EVP_CIPHER_CTX_init(&e_ctx);
+   
+   rc = EVP_EncryptInit_ex(&e_ctx, cipher, NULL, key, iv);
+   if( rc == 0 ) {
+      errorf("EVP_EncryptInit_ex rc = %d\n", rc );
+      md_openssl_error();
+      
+      return -1;
+   }
+   
+   // allocate ciphertext 
+   unsigned char* c_buf = CALLOC_LIST( unsigned char, data_len + EVP_CIPHER_block_size( cipher ) );
+   int c_buf_len = 0;
+   
+   rc = EVP_EncryptUpdate( &e_ctx, c_buf, &c_buf_len, (unsigned char*)data, data_len );
+   if( rc == 0 ) {
+      errorf("EVP_EncryptUpdate rc = %d\n", rc );
+      md_openssl_error();
+   
+      free( c_buf );
+      EVP_CIPHER_CTX_cleanup( &e_ctx );
+      return -1;
+   }
+   
+   // finalize 
+   int final_len = 0;
+   rc = EVP_EncryptFinal_ex( &e_ctx, c_buf + c_buf_len, &final_len );
+   if( rc == 0 ) {
+      errorf("EVP_EncryptFinal_ex rc = %d\n", rc );
+      md_openssl_error();
+      
+      free( c_buf );
+      EVP_CIPHER_CTX_cleanup( &e_ctx );
+      return -1;
+   }
+   
+   c_buf_len += final_len;
+   
+   EVP_CIPHER_CTX_cleanup( &e_ctx );
+   
+   *ciphertext = (char*)c_buf;
+   *ciphertext_len = c_buf_len;
+   
+   return 0;
+}
+
+
+// decrypt data using a symmetric key 
+int md_decrypt_symmetric( unsigned char const* key, size_t key_len, unsigned char const* iv, size_t iv_len, char* ciphertext_data, size_t ciphertext_len, char** data, size_t* data_len ) {
+   if( key_len != 32 )
+      // not a 256-bit key 
+      return -EINVAL;
+   
+   const EVP_CIPHER* cipher = EVP_aes_256_cbc();
+   int rc = 0;
+   
+   
+   /*
+   if( EVP_CIPHER_iv_length( cipher ) != iv_len )
+      // invalid IV length 
+      return -EINVAL;
+   */
+   
+   EVP_CIPHER_CTX d_ctx;
+   
+   // initialize
+   EVP_CIPHER_CTX_init(&d_ctx);
+   
+   rc = EVP_DecryptInit_ex(&d_ctx, cipher, NULL, key, iv);
+   if( rc == 0 ) {
+      errorf("EVP_EncryptInit_ex rc = %d\n", rc );
+      md_openssl_error();
+      
+      return -1;
+   }
+   
+   // allocate plaintext 
+   unsigned char* p_buf = CALLOC_LIST( unsigned char, ciphertext_len + EVP_CIPHER_block_size( cipher ) );
+   int p_buf_len = 0;
+   
+   rc = EVP_DecryptUpdate( &d_ctx, p_buf, &p_buf_len, (unsigned char*)ciphertext_data, ciphertext_len );
+   if( rc == 0 ) {
+      errorf("EVP_EncryptUpdate rc = %d\n", rc );
+      md_openssl_error();
+   
+      free( p_buf );
+      EVP_CIPHER_CTX_cleanup( &d_ctx );
+      return -1;
+   }
+   
+   // finalize 
+   int final_len = 0;
+   rc = EVP_DecryptFinal_ex( &d_ctx, p_buf + p_buf_len, &final_len );
+   if( rc == 0 ) {
+      errorf("EVP_EncryptFinal_ex rc = %d\n", rc );
+      md_openssl_error();
+      
+      free( p_buf );
+      EVP_CIPHER_CTX_cleanup( &d_ctx );
+      return -1;
+   }
+   
+   p_buf_len += final_len;
+   
+   EVP_CIPHER_CTX_cleanup( &d_ctx );
+   
+   *data = (char*)p_buf;
+   *data_len = p_buf_len;
    
    return 0;
 }

@@ -99,7 +99,12 @@ def deduce_distro():
 
 if not extra_args.has_key("DISTRO"):
    extra_args["DISTRO"] = deduce_distro()
+   CPPFLAGS += " -D_DISTRO_%s" % extra_args["DISTRO"]
 
+# TODO: possibly isolate this somewhere else?
+# select the appropriate JSON library
+if extra_args["DISTRO"] == "DEBIAN":
+   extra_args['LIBJSON'] = "json-c"
 
 # setup environment for Google Native Client
 def make_nacl_env( env, NACL_TOOLCHAIN, PEPPER_ROOT, arch ):
@@ -234,8 +239,9 @@ env.Alias( 'libsyndicate-drivers-install', [libsyndicate_install_drivers] )
 # ----------------------------------------
 # UG build
 libsyndicateUG_inc_install_dir = os.path.join( install_prefix, "include/libsyndicateUG" )
+
 ug_out = "build/out/bin/UG"
-ug_driver_out = "build/out/lib/UG-drivers"
+ug_driver_out = "build/out/lib/UG/drivers"
 syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUG, libsyndicateUG_headers, UG_nacl = SConscript( "UG/SConscript", variant_dir=ug_out )
 ug_drivers = SConscript( "UG/drivers/SConscript", variant_dir=ug_driver_out )
 

@@ -1417,7 +1417,7 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
    
    
    // run the pre-chcoord driver code...
-   rc = driver_chcoord_begin( core->closure, fs_path, fent, replica_version );
+   rc = driver_chcoord_begin( core, core->closure, fs_path, fent, replica_version );
    if( rc != 0 ) {
       errorf("driver_chcoord_begin(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, replica_version, rc );
       return rc;
@@ -1446,7 +1446,7 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
    }
    
    // run the post-chcoord driver code...
-   int driver_rc = driver_chcoord_end( core->closure, fs_path, fent, replica_version, rc );
+   int driver_rc = driver_chcoord_end( core, core->closure, fs_path, fent, replica_version, rc );
    if( driver_rc != 0 ) {
       errorf("driver_chcoord_end(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, replica_version, driver_rc );
    }

@@ -31,6 +31,7 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
    
    // process the manifest 
    struct driver_read_manifest_postdown_cls manifest_cls;
+   manifest_cls.core = core;
    manifest_cls.fs_path = fs_path;
    manifest_cls.fent = fent;
    manifest_cls.mtime_sec = mtime_sec;
@@ -89,6 +90,7 @@ ssize_t fs_entry_download_block( struct fs_core* core, char const* fs_path, stru
    char* block_buf = NULL;
    
    struct driver_connect_cache_cls driver_cls;
+   driver_cls.core = core;
    driver_cls.client = core->ms;
    
    // grab the block

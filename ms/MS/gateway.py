@@ -145,6 +145,7 @@ class Gateway( storagetypes.Object ):
       "port",
       "owner_id",
       "g_id",
+      "gateway_type",
       "volume_id",
       "session_timeout",
       "session_expires",

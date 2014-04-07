@@ -163,6 +163,9 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    int rc = fs_entry_init_dir( core, core->root, "/", 1, owner_id, 0, volume, 0755, 0, 0 );
    if( rc != 0 ) {
       errorf("fs_entry_init_dir rc = %d\n", rc );
+      
+      pthread_rwlock_destroy( &core->lock );
+      pthread_rwlock_destroy( &core->fs_lock );
       return rc;
    }
 
@@ -179,6 +182,15 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    
    if( rc != 0 && rc != -ENOENT ) {
       errorf("driver_init rc = %d\n", rc );
+      
+      free( core->closure );
+      
+      fs_entry_destroy( core->root, true );
+      free( core->root );
+      
+      pthread_rwlock_destroy( &core->lock );
+      pthread_rwlock_destroy( &core->fs_lock );
+      return rc;
    }
 
    // start watching for reloads 

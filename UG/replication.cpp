@@ -256,7 +256,7 @@ int replica_context_manifest( struct fs_core* core, char const* fs_path, struct 
    char* manifest_data = NULL;
    size_t manifest_data_len = 0;
    
-   rc = driver_write_manifest_preup( core->closure, fs_path, fent, fent->mtime_sec, fent->mtime_nsec, manifest_data, manifest_data_len, &manifest_data, &manifest_data_len );
+   rc = driver_write_manifest_preup( core, core->closure, fs_path, fent, fent->mtime_sec, fent->mtime_nsec, manifest_data, manifest_data_len, &manifest_data, &manifest_data_len );
    free( in_manifest_data );
    
    if( rc != 0 ) {

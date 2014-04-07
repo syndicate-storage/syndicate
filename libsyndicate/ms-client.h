@@ -366,9 +366,10 @@ void ms_client_free_path( path_t* path, void (*free_cls)(void*) );
 void ms_client_free_response( ms_response_t* ms_response );
 void ms_client_free_listing( struct ms_listing* listing );
 
-// closure prototype 
+// closure
 extern struct md_closure_callback_entry MS_CLIENT_CACHE_CLOSURE_PROTOTYPE[];
 int ms_client_connect_cache( struct md_closure* closure, CURL* curl, char const* url, void* cls );
+int ms_client_volume_connect_cache( struct md_closure* closure, CURL* curl, char const* url, struct md_syndicate_conf* conf );
 
 }
 
