@@ -1,0 +1,12 @@
+{
+    "Slice": [
+        "Site", 
+        "Service"
+    ], 
+    "VolumeAccessRight": [
+        "Volume"
+    ], 
+    "User": [
+        "Site"
+    ]
+}

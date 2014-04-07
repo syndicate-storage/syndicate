@@ -1,0 +1,1 @@
+from syndicate.models import *
