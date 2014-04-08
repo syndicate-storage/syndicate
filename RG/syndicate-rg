@@ -18,8 +18,6 @@
 
 import sys
 import os
-import syndicate.rg.common as rg_common
-import syndicate.rg.main as rg_main
 import signal
 import resource
 import daemon 
@@ -27,15 +25,51 @@ import grp
 import lockfile
 import errno 
 import time
+import atexit
+import time
+
+import syndicate.rg.common as rg_common
+import syndicate.rg.main as rg_main
+import syndicate.util.watchdog as watchdog
 
 log = rg_common.get_logger()
 
+RG_PID = 0
+LOG_FD = None
+
+LAST_SPAWN = 0
+
 #-------------------------------
-def daemonize( config, syndicate, main_method ):
+def death_handler( signum, frame ):
+   global RG_PID
+   
+   if RG_PID > 0:
+      watchdog.stop_child( RG_PID )
+   
+   sys.exit(0)
+   
+#-------------------------------
+def atexit_logclose():
+   global LOG_FD 
+   
+   if LOG_FD is not None:
+      LOG_FD.close()
+      LOG_FD = None
+
+#-------------------------------
+def watchdog_PID( pid ):
+   global RG_PID
+   RG_PID = pid
+   return 0
+
+
+#-------------------------------
+def daemonize( config, main_method ):
+   global LOG_FD 
+   
    signal_map = {
       signal.SIGTERM: 'terminate',
-      signal.SIGHUP: None,
-      signal.SIGUSR1: syndicate.sched_reload
+      signal.SIGHUP: None
    }
    
    daemon_gid = grp.getgrnam('daemon').gr_gid
@@ -44,13 +78,14 @@ def daemonize( config, syndicate, main_method ):
    error_fd = None
    
    if config.get("logdir", None) != None:
-      # create log files
-      # TODO: access.log, error.log
+      # create log file
       output_fd = open( os.path.join(config["logdir"], "RG.log"), "w+" )
       error_fd = output_fd 
       
-      os.dup2( output_fd, sys.stdout )
-      os.dup2( output_fd, sys.stderr )
+      os.dup2( output_fd.fileno(), sys.stdout.fileno() )
+      os.dup2( output_fd.fileno(), sys.stderr.fileno() )
+      
+      LOG_FD = output_fd
       
    else:
       # write to stdout and stderr
@@ -77,123 +112,39 @@ def daemonize( config, syndicate, main_method ):
    with context:
       main_method()
       
-
 #-------------------------------
-def spawn_rg( config, syndicate ):
-   # fork, become a watchdog, and run the main server
-   child_pid = os.fork()
+def spawn_rg( config, old_exit_status ):
+   """
+   Spawn an RG.
    
-   if child_pid == -1:
-      # failure
-      raise Exception("Failed to fork")
+   Don't respawn too quickly in case we start flapping.
+   """
    
-   if child_pid == 0:
-      # we're the child...start the server
-      rg_main.main( config, syndicate )
-   
-   return child_pid
+   syndicate = rg_main.setup_syndicate( config )
+   rc = rg_main.main( config, syndicate )
+   return rc
 
-
-#-------------------------------
-def handle_child_death( pid, exit_status ):
-   need_respawn = False
-   
-   # did the child exit on its own accord?
-   if os.WIFEXITED(exit_status):
-      log.info("RG exit status %s" % os.WEXITSTATUS( exit_status ) )
-      need_respawn = False
-   
-   # was the child signaled? 
-   elif os.WIFSIGNALED(exit_status):
-      sig = os.WTERMSIG( exit_status )
-      log.info("RG exited with signal %s" % sig )
-      need_respawn = True
-      
-   return need_respawn
-
-
-#-------------------------------
-def kill_rg( child_pid ):
-   # send SIGKILL
-   log.info("Sending SIGKILL to RG...")
-   os.kill( child_pid, signal.SIGKILL )
-
-#-------------------------------
-def stop_rg( child_pid ):
-   # send SIGTERM, then SIGKILL
-   log.info("Sending SIGTERM to RG...")
-   os.kill( child_pid, signal.SIGTERM )
-   
-   count = 3
-   while count > 0:
-      try:
-         pid, exit_status = os.waitpid( child_pid, os.WNOHANG )
-      except OSError, e:
-         log.exception(e)
-         
-         # if this wasn't ECHILD (i.e. the PID isn't invalid), then kill the process and die
-         if e.errno != errno.ECHILD:
-            kill_rg( child_pid )
-            return -1
-      
-      # did it exit?
-      if os.WIFEXITED(exit_status) or os.WIFSIGNALED(exit_status):
-         break
-      
-      # if not, try again
-      time.sleep(1.0)
-      count -= 1
-
-   if count == 0:
-      kill_rg( child_pid )
-      
-   return 0
-   
-
-#-------------------------------
-def main( config, syndicate ):
-   
-   # fork, become a watchdog, and run the main server
-   child_pid = spawn_rg( config, syndicate )
-   
-   # we're the parent...start monitoring 
-   while True:
-      # wait for child to die
-      try:
-         pid, exit_status = os.waitpid( child_pid, 0 )
-      except OSError, e:
-         log.exception(e)
-         sys.exit(1)
-      except (KeyboardInterrupt, SystemExit):
-         # kill the child and exit
-         my_exit_status = stop_rg( child_pid )
-         sys.exit(my_exit_status)
-         
-      need_respawn = handle_child_death( pid, exit_status )
-      
-      if need_respawn:
-         child_pid = spawn_rg( config )
-      
-      else:
-         sys.exit( os.WEXITSTATUS( exit_status ) )
-         
-   
 #-------------------------------
 if __name__ == "__main__":
    
    argv = sys.argv 
    
    config = rg_main.build_config( argv )
-   syndicate = rg_main.setup_syndicate( config )
+   
+   # set signal handlers
+   for sig in [signal.SIGTERM, signal.SIGFPE, signal.SIGQUIT, signal.SIGABRT, signal.SIGINT]:
+      signal.signal( sig, death_handler )
+   
+   atexit.register( atexit_logclose )
    
    # run in foreground?
    foreground = config['foreground']
    
    if not foreground:
       # become a daemon
-      daemonize( config, syndicate, lambda: main(config, syndicate) )
+      daemonize( config, lambda: watchdog.main( lambda old_exit_status: spawn_rg(config, old_exit_status), pid_cb=watchdog_PID ) )
    
    else:
       # run in the foreground
-      main( config, syndicate )
+      watchdog.main( lambda old_exit_status: spawn_rg(config, old_exit_status), pid_cb=watchdog_PID )
       

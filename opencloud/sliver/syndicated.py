@@ -1,10 +1,10 @@
 #!/usr/bin/python
 
 """
-Daemon that sits on a sliver, and securely receives commands from the Syndicate OpenCloud observer
-to set up or tear down access to a Volume.
-
-This daemon will provision gateways at OpenCloud's request.
+Daemon that sits on a sliver, which:
+* learns the Volumes it attached to from OpenCloud
+* creates/destroyes Gateways to said Volumes
+* keeps the Gateways mounted and running
 """
 
 import os
@@ -15,6 +15,18 @@ import daemon
 import grp
 import lockfile
 import argparse
+import cgi
+import SimpleHTTPServer
+import base64
+import json 
+import errno
+import requests
+import threading
+
+from Crypto.Hash import SHA256 as HashAlg
+from Crypto.PublicKey import RSA as CryptoKey
+from Crypto import Random
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 import logging
 from logging import Logger
@@ -24,32 +36,315 @@ log.setLevel( logging.INFO )
 import syndicate
 import syndicate.client.bin.syntool as syntool
 import syndicate.client.common.msconfig as msconfig
+import syndicate.util.watchdog as watchdog
+
+import syndicate.syndicate as c_syndicate
+
+#-------------------------------
+# constants 
+OPENCLOUD_JSON                          = "opencloud_json"
+OPENCLOUD_JSON_DATA                     = "opencloud_json_data"
+OPENCLOUD_JSON_SIGNATURE                = "opencloud_json_signature"
+
+OPENCLOUD_VOLUME_ID                     = "volume_id"
+OPENCLOUD_VOLUME_PASSWORD               = "volume_password"
+OPENCLOUD_SYNDICATE_URL                 = "syndicate_url"
 
 #-------------------------------
 CONFIG_OPTIONS = {
    "config":            ("-c", 1, "Path to the daemon configuration file"),
-   "cache":             ("-k", 1, "Directory to cache metadata from OpenCloud"),
-   "opencloud":         ("-o", 1, "URL to the OpenCloud SMI"),
    "foreground":        ("-f", 0, "Run in the foreground"),
-   "logdir":            ("-L", 1, "Directory to contain the log files.  If not given, then write to stdout and stderr."),
-   "pidfile":           ("-l", 1, "Path to the desired PID file.")
+   "logdir":            ("-l", 1, "Directory to contain the log files.  If not given, then write to stdout and stderr."),
+   "pidfile":           ("-i", 1, "Path to the desired PID file."),
+   "public-key":        ("-p", 1, "Path to the Observer public key."),
+   "observer-secret":   ("-s", 1, "Shared secret with Observer."),
+   "observer-url":      ("-u", 1, "URL to the Syndicate Observer"),
+   "poll-timeout":      ("-t", 1, "Interval to wait between asking OpenCloud for our Volume credentials."),
+   "mountpoint-dir":    ("-m", 1, "Directory to hold Volume mountpoints.")
 }
 
 DEFAULT_CONFIG = {
-    "config":   "/etc/syndicated.conf",
-    "cache":    "/var/cache/syndicated",
-    "logdir":   "/var/log/syndicated",
-    "pidfile":  "/var/run/syndicated.pid",
+    "config":           "/etc/syndicate/syndicated.conf",
+    "public-key":       "/etc/syndicate/observer.pub",
+    "logdir":           "/var/log/syndicated",
+    "pidfile":          "/var/run/syndicated.pid",
+    "poll-timeout":     86400,          # ask once a day; the Observer should poke us directly anyway
+    "observer-secret":  "woo",  
+    "observer-url":     "https://localhost:5553",
+    "mountpoint-dir":   "/tmp/syndicate-mounts",
+    
+    # these are filled in at runtime.
+    # THis is the information needed to act as a principal of the volume onwer (i.e. the slice)
+    "runtime": {
+        "volume_owner":         "judecn@gmail.com",
+        "volume_password":      "nya!",
+        "syndicate_url":        "http://localhost:8080",
+        "public-key":           None            # instantiated from CryptoKey
+     }
 }
 
+
 #-------------------------------
-def connect_syndicate():
+
+# global config structure 
+CONFIG = None 
+
+def get_config():
+    return CONFIG
+    
+def update_config_runtime( runtime_info ): 
+    if not CONFIG.has_key('runtime'):
+        CONFIG['runtime'] = {}
+        
+    CONFIG['runtime'].update( runtime_info )
+
+
+#-------------------------------
+class CommandHandler( SimpleHTTPServer.SimpleHTTPRequestHanlder ):
     """
-    Connect to the OpenCloud Syndicate SMI
+    Listen for new Volume information pushed out from the Syndicate Observer.
     """
-    client = syntool.Client( CONFIG.SYNDICATE_OPENCLOUD_USER, CONFIG.SYNDICATE_SMI_URL,
-                             password=CONFIG.SYNDICATE_OPENCLOUD_PASSWORD,
-                             debug=True )
+    
+    def response_error( self, status, message, content_type="text/plain" ):
+        
+        self.send_response( status )
+        self.send_header( "Content-Type", content_type )
+        self.send_header( "Content-Length", len(message) )
+        self.end_headers()
+        
+        self.wfile.write( message )
+        
+    def response_success( self, message, content_type="text/plain" ):
+        return self.response_error( 200, message, content_type )
+        
+        
+    def do_POST( self ):
+        
+        # do we have the requisite runtime information?
+        config = get_config()
+        if config is None:
+            response_error( 500, "Server is not configured" )
+            return 
+        
+        form = cgi.FieldStorage( fp=self.rfile,
+                                 headers=self.headers,
+                                 environ={
+                                    'REQUEST_METHOD':   'POST',
+                                    'CONTENT_TYPE':     self.headers['Content-Type'],
+                                 } )
+
+        # expecting a JSON string 
+        json_text = form.getfirst( OPENCLOUD_COMMAND, None )
+        if json_text is None:
+            # malformed request 
+            self.response_error( 400, "Missing data" )
+            return 
+        
+        # get the data 
+        rc, data_text = read_opencloud_data_from_json( config, json_text )
+        if rc != 0:
+            # failed to read 
+            self.response_error( 400, "Invalid request" )
+            return 
+        
+        # parse the data 
+        rc, data = parse_opencloud_data( config, data_text )
+        if rc != 0:
+            # failed to parse 
+            self.response_error( 400, "Invalid request")
+            return 
+        
+        update_config_runtime( data )
+        
+        # finish up
+        return response_success( "OK" )
+        
+
+#-------------------------------
+def load_public_key( key_path ):
+    try:
+      key_text = read_file( key_path )
+   except Exception, e:
+      log.error("Failed to read public key '%s'" % key_path )
+      return None
+
+   try:
+      key = CryptoKey.importKey( key_text )
+      assert not key.has_private()
+         
+   except Exception, e:
+      log.error("Failed to load public key %s'" % key_path )
+      return None
+   
+   return key
+
+
+#-------------------------------
+def verify_signature( key, data, sig ):
+    h = HashAlg.new( data )
+    verifier = CryptoSigner.new(key)
+    ret = verifier.verify( h, sig )
+    return ret
+
+
+#-------------------------------
+def find_missing_and_invalid_fields( required_fields, json_data ):
+    """
+    Look for missing or invalid fields, and return them.
+    """
+    
+    missing = []
+    invalid = []
+    for req, types in required_fields.items():
+        if req not in json_data.keys():
+            missing.append( req )
+        
+        if type(json_data[req]) not in types:
+            invalid.append( req )
+            
+    return missing, invalid
+
+
+#-------------------------------
+def read_opencloud_data_from_json( config, json_text ):
+    """
+    Parse and validate a JSON structure.
+    Return 0 on success
+    Return nonzero on error 
+    """
+    
+    # verify the presence and types of our required fields 
+    required_fields = {
+        OPENCLOUD_COMMAND_DATA: [str, unicode],
+        OPENCLOUD_COMMAND_SIGNATURE: [str, unicode]
+    }
+    
+    # parse the json structure 
+    try:
+        json_data = json.loads( json_text )
+    except:
+        # can't parse 
+        log.error("Failed to parse JSON text")
+        return -errno.EINVAL
+     
+    # look for missing or invalid fields
+    missing, invalid = find_missing_and_invalid_fields( required_fields, json_data )
+    
+    if len(missing) > 0:
+        log.error("Missing fields: %s" % (", ".join(missing)))
+        return (-errno.EINVAL, None)
+    
+    if len(invalid) > 0:
+        log.error("Invalid fields: %s" % (", ".join(invalid)))
+        return (-errno.EINVAL, None)
+    
+    # extract fields (they will be base64-encoded)
+    opencloud_data_b64 = json_data[OPENCLOUD_JSON_DATA]
+    opencloud_signature_b64 = json_data[OPENCLOUD_JSON_SIGNATURE]
+    
+    try:
+        opencloud_data = base64.b64decode( opencloud_data_b64 )
+        opencloud_signature = base64.b64decode( opencloud_signature_b64 )
+    except:
+        log.error("Failed to decode message")
+        return (-errno.EINVAL, None)
+    
+    # get the public key 
+    k = load_public_key( config['public-key'] )
+    if k is None:
+        logger.error("Failed to load public key from %s" % (config['public-key']))
+        return (-errno.ENOENT, None)
+    
+    # verify the signature 
+    rc = verify_signature( k, opencloud_data, opencloud_signature )
+    if not rc:
+        logger.error("Invalid signature")
+        return (-errno.EINVAL, None)
+    
+    # we're good!
+    return (0, opencloud_data)
+
+
+#-------------------------------
+def parse_opencloud_data( config, data_text ):
+    """
+    Parse a string of JSON data from OpenCloud.  It should be a JSON structure 
+    with some particular fields.
+    Return (0, dict) on success
+    Return (nonzero, None) on error.
+    """
+    
+    # verify the presence and types of our required fields
+    required_fields = {
+        OPENCLOUD_VOLUME_ID: [str, unicode],
+        OPENCLOUD_VOLUME_PASSWORD: [str, unicode],
+        OPENCLOUD_SYNDICATE_URL: [str, unicode],
+    }
+    
+    # parse the data text
+    try:
+        data = json.loads( data_text )
+    except:
+        # can't parse 
+        log.error("Failed to parse JSON data")
+        return -errno.EINVAL
+    
+    # look for missing or invalid fields
+    missing, invalid = find_missing_and_invalid_fields( required_fields, data )
+    
+    if len(missing) > 0:
+        log.error("Missing fields: %s" % (", ".join(missing)))
+        return (-errno.EINVAL, None)
+    
+    if len(invalid) > 0:
+        log.error("Invalid fields: %s" % (", ".join(invalid)))
+        return (-errno.EINVAL, None)
+    
+    return (0, data)
+    
+
+#-------------------------------
+def poll_opencloud_data( config ):
+    """
+    Download, verify, and parse OpenCloud data.
+    Return (0, data) on success
+    Return (nonzero, None) on error 
+    """
+    url = config['opencloud-url']
+    
+    req = requests.get( url )
+    if req.status != 200:
+        log.error("GET %s status %s" % (url, req.status))
+        return None
+    
+    rc, opencloud_data = read_opencloud_data_from_json( config, req.text )
+    if rc != 0:
+        log.error("Failed to read JSON, rc = %s" % rc)
+        return None 
+    
+    rc, data = parse_opencloud_data( config, opencloud_data )
+    if rc != 0:
+        log.error("Failed to read OpenCloud data, rc = %s" % rc )
+        return None
+    
+    return data
+    
+
+#-------------------------------
+def connect_syndicate( config ):
+    """
+    Connect to the Syndicate SMI
+    """
+    runtime_info = config.get('runtime', None)
+    
+    if runtime_info is None:
+        return None
+    
+    volume_owner_id = runtime_info['volume_owner']
+    syndicate_url = runtime_info['syndicate_url']
+    volume_password = runtime_info['volume_password']
+    
+    client = syntool.Client( volume_owner_id, syndicate_url, password=volume_password, debug=True )
 
     return client
 
@@ -63,14 +358,19 @@ def make_gateway_name( gateway_type, volume_name, host ):
 
 
 #-------------------------------
-def ensure_gateway_exists( gateway_type, user_email, volume_name, host, port, closure=None ):
+def ensure_gateway_exists( config, gateway_type, user_email, volume_name, host, port, closure=None ):
     """
     Ensure that a particular type of gateway with the given fields exists.
     Create one if need be.
+    Returns the gateway on succes.
+    Returns None if we can't connect.
+    Raises an exception on error.
     We assume that the Volume (and thus user) already exist...if they don't, its an error.
     """
 
-    client = connect_syndicate()
+    client = connect_syndicate( config )
+    if client is None:
+        return None
     
     gateway_name = make_gateway_name( gateway_type, volume_name, host )
 
@@ -132,12 +432,18 @@ def ensure_gateway_exists( gateway_type, user_email, volume_name, host, port, cl
 
 
 #-------------------------------
-def ensure_gateway_absent( gateway_type, user_email, volume_name, host ):
+def ensure_gateway_absent( config, gateway_type, user_email, volume_name, host ):
     """
     Ensure that a particular gateway does not exist.
+    Return True on success
+    return False if we can't connect
+    raise exception on error.
     """
     
-    client = connect_syndicate()
+    client = connect_syndicate( config )
+    if client is None:
+        return False
+    
     gateway_name = make_gateway_name( gateway_type, volume_name, host )
 
     client.delete_gateway( gateway_name )
@@ -145,36 +451,97 @@ def ensure_gateway_absent( gateway_type, user_email, volume_name, host ):
 
 
 #-------------------------------
-def ensure_UG_exists( user_email, volume_name, host, port=32780 ):
+def ensure_UG_exists( config, user_email, volume_name, host, port=32780 ):
     """
     Ensure that a particular UG exists.
     """
-    return ensure_gateway_exists( "UG", user_email, volume_name, host, port )
+    return ensure_gateway_exists( config, "UG", user_email, volume_name, host, port )
 
 
 #-------------------------------
-def ensure_RG_exists( user_email, volume_name, host, port=32800, closure=None ):
+def ensure_RG_exists( config, user_email, volume_name, host, port=32800, closure=None ):
     """
     Ensure that a particular RG exists.
     """
-    return ensure_gateway_exists( "RG", user_email, volume_name, host, port, closure=closure )
+    return ensure_gateway_exists( config, "RG", user_email, volume_name, host, port, closure=closure )
 
 
 #-------------------------------
-def ensure_UG_absent( user_email, volume_name, host ):
+def ensure_UG_absent( config, user_email, volume_name, host ):
     """
     Ensure that a particular UG does not exist
     """
-    return ensure_gateway_absent( "UG", user_email, volume_name, host )
+    return ensure_gateway_absent( config, "UG", user_email, volume_name, host )
 
 
 #-------------------------------
-def ensure_UG_absent( user_email, volume_name, host ):
+def ensure_UG_absent( config, user_email, volume_name, host ):
     """
     Ensure that a particular RG does not exist
     """
-    return ensure_gateway_absent( "RG", user_email, volume_name, host )
+    return ensure_gateway_absent( config, "RG", user_email, volume_name, host )
 
+
+#-------------------------------
+def make_UG_mountpoint_path( config, volume_name ):
+    """
+    Generate the path to a mountpoint.
+    """
+    vol_dirname = volume_name.replace("/", ".")
+    vol_mountpoint = os.path.join( config['mountpoint-dir'], vol_dirname )
+    return vol_mountpoint
+
+
+#-------------------------------
+def ensure_dir_exists( path ):
+    """
+    Create a directory, and ensure it exists
+    """
+    try:
+        os.makedirs( path )
+    except OSError, oe:
+        if oe.errno == errno.EEXIST:
+            # must be a dir 
+            if os.path.isdir( path ):
+                return 0
+            else:
+                return -errno.ENOTDIR
+            
+        else:
+            return -oe.errno
+    
+
+#-------------------------------
+def ensure_UG_running( config, volume_name, gateway_name, mountpoint ):
+    """
+    Ensure that a User Gateway is running on a particular mountpoint.
+    Return the PID on success.
+    Return negative on error.
+    """
+    
+    # make sure a mountpoint exists
+    rc = make_UG_mountpoint( mountpoint )
+    if rc != 0:
+        return rc
+    
+    # is there a UG running?
+    
+    
+    pass 
+
+
+#-------------------------------
+def ensure_UG_stopped( config, volume_name, gateway_name, mountpoint ):
+    pass 
+
+
+#-------------------------------
+def ensure_RG_running( config, volume_name, gateway_name ):
+    pass 
+
+#-------------------------------
+def ensure_RG_stopped( config, volume_name, gateway_name ):
+    pass
 
 #-------------------------------
 def daemonize( config, main_method ):
@@ -193,7 +560,6 @@ def daemonize( config, main_method ):
    
    if config.get("logdir", None) != None:
       # create log files
-      # TODO: access.log, error.log
       output_fd = open( os.path.join(config["logdir"], "syndicated.log"), "w+" )
       error_fd = output_fd 
       
@@ -287,11 +653,23 @@ def build_parser( progname ):
 def validate_args( config ):
    
    # required arguments
-   required = ['opencloud']
+   required = ['observer-secret', 'observer-url', 'public-key']
    for req in required:
       if config.get( req, None ) == None:
          raise Exception("Missing required argument: %s" % req )
    
+   # required types 
+   required_types = {
+       'poll-timeout': int,
+   }
+   
+   for req, reqtype in required_types.items():
+       try:
+           i = reqtype( config[req] )
+           config[req] = i
+       except:
+           raise Exception("Invalid value for '%s'" % req )
+       
    return True
       
 #-------------------------
@@ -314,14 +692,22 @@ def build_config( argv ):
       
    return config
       
+
+#-------------------------
+def poll_thread( config ):
+    """
+    Continuously poll the OpenCloud observer for runtime data.
+    """
+    while True:
+        pass
+
 #-------------------------
 def main( config ):
    
-   # get our hostname
-   hostname = socket.gethostname()
+   poll_timeout = config['poll-timeout']
    
-   # start waiting for commands from OpenCloud
-   # TODO
+   # start our listening server...
+   
    
    return True
 

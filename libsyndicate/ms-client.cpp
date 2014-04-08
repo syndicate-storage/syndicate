@@ -1875,11 +1875,13 @@ static int ms_client_unseal_and_load_keys( struct ms_client* client, ms::ms_regi
             decode_rc = md_load_public_and_private_keys( &pubkey, &pkey, gateway_private_key_str );
             if( decode_rc != 0 ) {
                errorf("md_load_privkey rc = %d\n", decode_rc );
+               rc = -ENODATA;
             }
             else {
                decode_rc = ms_client_verify_key( pkey );
                if( decode_rc != 0 ) {
-                  errorf("ms_client_verify_key rc = %d\n", rc );
+                  errorf("ms_client_verify_key rc = %d\n", decode_rc );
+                  rc = -ENODATA;
                }
                else {
                   // we're good!  install them

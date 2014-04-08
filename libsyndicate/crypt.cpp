@@ -405,27 +405,44 @@ int md_load_privkey( EVP_PKEY** key, char const* privkey_str ) {
 
 // load both public and private keys from an RSA private key into EVP key structures
 int md_load_public_and_private_keys( EVP_PKEY** _pubkey, EVP_PKEY** _privkey, char const* privkey_str ) {
-   BIO* buf_io = BIO_new_mem_buf( (void*)privkey_str, strlen(privkey_str) );
-
-   EVP_PKEY* privkey = PEM_read_bio_PrivateKey( buf_io, NULL, NULL, NULL );
-   EVP_PKEY* pubkey = PEM_read_bio_PUBKEY( buf_io, NULL, NULL, NULL );
+   BIO* buf_priv_io = BIO_new_mem_buf( (void*)privkey_str, strlen(privkey_str) );
    
-   BIO_free_all( buf_io );
+   EVP_PKEY* privkey = PEM_read_bio_PrivateKey( buf_priv_io, NULL, NULL, NULL );
+   
+   BIO_free_all( buf_priv_io );
 
    if( privkey == NULL ) {
       // invalid private key
       errorf("%s", "ERR: failed to read private key\n");
       md_openssl_error();
+      
+
       return -EINVAL;
    }
+   
+   // get the public part 
+   char* pubkey_pem = NULL;
+   long sz = md_dump_pubkey( privkey, &pubkey_pem );
+   if( sz < 0 ) {
+      errorf("md_dump_pubkey rc = %ld\n", sz );
+      
+      return -EINVAL;
+   }
+   
+   // load it 
+   BIO* buf_pub_io = BIO_new_mem_buf( (void*)pubkey_pem, sz );
+   EVP_PKEY* pubkey = PEM_read_bio_PUBKEY( buf_pub_io, NULL, NULL, NULL );
+   
+   BIO_free_all( buf_pub_io );
    
    if( pubkey == NULL ) {
       // invalid public key 
       errorf("%s", "ERR: failed to read public key\n");
       md_openssl_error();
+      
       return -EINVAL;
    }
-
+   
    *_privkey = privkey;
    *_pubkey = pubkey;
 

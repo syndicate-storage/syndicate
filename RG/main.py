@@ -182,14 +182,17 @@ def run( config, syndicate ):
    sender_pubkey_file = config.get("sender_pubkey", None )
    
    # get our configuration from the MS and start keeping it up to date 
-   rg_closure.init( syndicate, my_key_file, sender_pubkey_file )
+   rc = rg_closure.init( syndicate, my_key_file, sender_pubkey_file )
+   if rc < 0:
+       log.error("Failed to initialize (rc = %s)" % rc)
+       return rc
 
    # start serving
    httpd = make_server( hostname, syndicate.portnum(), rg_server.wsgi_application )
    
    httpd.serve_forever()
    
-   return True
+   return 0
    
 
 #-------------------------
@@ -216,7 +219,7 @@ def debug():
    
    httpd.serve_forever()
    
-   return True 
+   return 0 
 
 #-------------------------
 def build_config( argv ):
@@ -243,7 +246,7 @@ def main( config, syndicate=None ):
    if syndicate == None:
       syndicate = setup_syndicate( config )
       
-   run( config, syndicate )
+   return run( config, syndicate )
    #debug()
    
 

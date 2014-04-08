@@ -581,12 +581,11 @@ def call_closure_delete( request, filename ):
       Call the global storage closure's delete_replica() closure function.
    '''
    
+   global STORAGE_CONFIG
+   global storage_closure_lock
    
    if STORAGE_CONFIG is None:
       return 501
-   
-   global STORAGE_CONFIG
-   global storage_closure_lock
    
    storage_closure_lock.acquire()
    
