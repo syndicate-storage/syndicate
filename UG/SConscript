@@ -165,5 +165,7 @@ nacl_plugin = SConscript("nacl/SConscript")
 
 syndicate_client_lib_headers = Glob("*.h")
 syndicate_client_lib_headers.extend( Glob("fs/*.h") )
-Return( 'syndicatefs syndicate_httpd syndicate_ipc syndicate_client_lib syndicate_client_lib_headers nacl_plugin' )
+syndicate_watchdog = Glob("syndicate-ug")
+
+Return( 'syndicatefs syndicate_httpd syndicate_ipc syndicate_client_lib syndicate_client_lib_headers syndicate_watchdog nacl_plugin' )
 

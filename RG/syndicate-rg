@@ -31,13 +31,12 @@ import time
 import syndicate.rg.common as rg_common
 import syndicate.rg.main as rg_main
 import syndicate.util.watchdog as watchdog
+import syndicate.util.daemonize as daemonize
 
 log = rg_common.get_logger()
 
 RG_PID = 0
 LOG_FD = None
-
-LAST_SPAWN = 0
 
 #-------------------------------
 def death_handler( signum, frame ):
@@ -47,14 +46,6 @@ def death_handler( signum, frame ):
       watchdog.stop_child( RG_PID )
    
    sys.exit(0)
-   
-#-------------------------------
-def atexit_logclose():
-   global LOG_FD 
-   
-   if LOG_FD is not None:
-      LOG_FD.close()
-      LOG_FD = None
 
 #-------------------------------
 def watchdog_PID( pid ):
@@ -62,66 +53,21 @@ def watchdog_PID( pid ):
    RG_PID = pid
    return 0
 
-
 #-------------------------------
-def daemonize( config, main_method ):
-   global LOG_FD 
+def watchdog_need_respawn( exit_status ):
+   global RG_PID 
+   RG_PID = 0
    
-   signal_map = {
-      signal.SIGTERM: 'terminate',
-      signal.SIGHUP: None
-   }
-   
-   daemon_gid = grp.getgrnam('daemon').gr_gid
-   
-   output_fd = None
-   error_fd = None
-   
-   if config.get("logdir", None) != None:
-      # create log file
-      output_fd = open( os.path.join(config["logdir"], "RG.log"), "w+" )
-      error_fd = output_fd 
-      
-      os.dup2( output_fd.fileno(), sys.stdout.fileno() )
-      os.dup2( output_fd.fileno(), sys.stderr.fileno() )
-      
-      LOG_FD = output_fd
-      
-   else:
-      # write to stdout and stderr
-      output_fd = sys.stdout 
-      error_fd = sys.stderr
-   
-   context = daemon.DaemonContext( umask=0o002, prevent_core=True, signal_map=signal_map )
-   
-   # don't close these if they're open...
-   files_preserve = []
-   if output_fd:
-      files_preserve.append(output_fd)
-   if error_fd and error_fd != output_fd:
-      files_preserve.append(error_fd)
-   
-   context.files_preserve = files_preserve
-   
-   # pid file?
-   pidfile_path = config.get("pidfile", None) 
-   if pidfile_path:
-      context.pidfile = lockfile.FileLock(pidfile_path)
-   
-   # start up
-   with context:
-      main_method()
+   return watchdog.check_exit_status( exit_status, respawn_exit_statuses=range(1,255) )
       
 #-------------------------------
 def spawn_rg( config, old_exit_status ):
    """
    Spawn an RG.
-   
-   Don't respawn too quickly in case we start flapping.
    """
-   
    syndicate = rg_main.setup_syndicate( config )
    rc = rg_main.main( config, syndicate )
+   
    return rc
 
 #-------------------------------
@@ -130,21 +76,28 @@ if __name__ == "__main__":
    argv = sys.argv 
    
    config = rg_main.build_config( argv )
+   if config is None:
+      sys.exit(1)
    
    # set signal handlers
    for sig in [signal.SIGTERM, signal.SIGFPE, signal.SIGQUIT, signal.SIGABRT, signal.SIGINT]:
       signal.signal( sig, death_handler )
-   
-   atexit.register( atexit_logclose )
    
    # run in foreground?
    foreground = config['foreground']
    
    if not foreground:
       # become a daemon
-      daemonize( config, lambda: watchdog.main( lambda old_exit_status: spawn_rg(config, old_exit_status), pid_cb=watchdog_PID ) )
+      logfile_path = None 
+      pidfile_path = config.get('pidfile', None)
+      
+      if config.has_key('logdir'):
+         logfile_path = os.path.join( config['logdir'], "RG.log" )
+      
+      daemonize.daemonize( lambda: watchdog.main( lambda old_exit_status: spawn_rg(config, old_exit_status), pid_cb=watchdog_PID, exit_cb=watchdog_need_respawn, respawn_exit_statuses=range(1,255) ), 
+                           logfile_path=logfile_path, pidfile_path=pidfile_path )
    
    else:
       # run in the foreground
-      watchdog.main( lambda old_exit_status: spawn_rg(config, old_exit_status), pid_cb=watchdog_PID )
+      watchdog.main( lambda old_exit_status: spawn_rg(config, old_exit_status), pid_cb=watchdog_PID, exit_cb=watchdog_need_respawn, respawn_exit_statuses=range(1,255) )
       

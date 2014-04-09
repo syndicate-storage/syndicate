@@ -16,12 +16,15 @@ import grp
 import lockfile
 import argparse
 import cgi
-import SimpleHTTPServer
+import BaseHTTPServer
 import base64
 import json 
 import errno
 import requests
 import threading
+import psutil
+import socket
+import subprocess
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
@@ -29,14 +32,15 @@ from Crypto import Random
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 import logging
-from logging import Logger
-log = logging.getLogger()
-log.setLevel( logging.INFO )
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 
 import syndicate
 import syndicate.client.bin.syntool as syntool
 import syndicate.client.common.msconfig as msconfig
+
 import syndicate.util.watchdog as watchdog
+import syndicate.util.daemon as daemon 
+import syndicate.util.config as modconf
 
 import syndicate.syndicate as c_syndicate
 
@@ -46,9 +50,17 @@ OPENCLOUD_JSON                          = "opencloud_json"
 OPENCLOUD_JSON_DATA                     = "opencloud_json_data"
 OPENCLOUD_JSON_SIGNATURE                = "opencloud_json_signature"
 
-OPENCLOUD_VOLUME_ID                     = "volume_id"
+OPENCLOUD_VOLUME_NAME                   = "volume_name"
+OPENCLOUD_VOLUME_OWNER_ID               = "volume_owner"
 OPENCLOUD_VOLUME_PASSWORD               = "volume_password"
 OPENCLOUD_SYNDICATE_URL                 = "syndicate_url"
+
+SYNDICATE_UG_WATCHDOG_NAME              = "syndicate-ug"
+SYNDICATE_RG_WATCHDOG_NAME              = "syndicate-rg"
+SYNDICATE_UG_BINARY                     = "syndicatefs"
+
+UG_PORT                                 = 32780
+RG_PORT                                 = 32880
 
 #-------------------------------
 CONFIG_OPTIONS = {
@@ -60,7 +72,9 @@ CONFIG_OPTIONS = {
    "observer-secret":   ("-s", 1, "Shared secret with Observer."),
    "observer-url":      ("-u", 1, "URL to the Syndicate Observer"),
    "poll-timeout":      ("-t", 1, "Interval to wait between asking OpenCloud for our Volume credentials."),
-   "mountpoint-dir":    ("-m", 1, "Directory to hold Volume mountpoints.")
+   "mountpoint-dir":    ("-m", 1, "Directory to hold Volume mountpoints."),
+   "closure":           ("-C", 1, "Path to the RG closure to use."),
+   "port":              ("-P", 1, "Port to listen on.")
 }
 
 DEFAULT_CONFIG = {
@@ -68,18 +82,20 @@ DEFAULT_CONFIG = {
     "public-key":       "/etc/syndicate/observer.pub",
     "logdir":           "/var/log/syndicated",
     "pidfile":          "/var/run/syndicated.pid",
-    "poll-timeout":     86400,          # ask once a day; the Observer should poke us directly anyway
-    "observer-secret":  "woo",  
+    "poll-timeout":     43200,          # ask twice a day; the Observer should poke us directly anyway
+    "observer-secret":  None,  
     "observer-url":     "https://localhost:5553",
     "mountpoint-dir":   "/tmp/syndicate-mounts",
-    
+    "port":             5553,
+    "closure":          "/usr/local/lib64/python2.7/site-packages/syndicate/rg/drivers/s3",
+       
     # these are filled in at runtime.
     # THis is the information needed to act as a principal of the volume onwer (i.e. the slice)
     "runtime": {
+        "volume_name":          None
         "volume_owner":         "judecn@gmail.com",
         "volume_password":      "nya!",
         "syndicate_url":        "http://localhost:8080",
-        "public-key":           None            # instantiated from CryptoKey
      }
 }
 
@@ -100,7 +116,7 @@ def update_config_runtime( runtime_info ):
 
 
 #-------------------------------
-class CommandHandler( SimpleHTTPServer.SimpleHTTPRequestHanlder ):
+class ObserverPushHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
     """
     Listen for new Volume information pushed out from the Syndicate Observer.
     """
@@ -154,7 +170,9 @@ class CommandHandler( SimpleHTTPServer.SimpleHTTPRequestHanlder ):
             self.response_error( 400, "Invalid request")
             return 
         
-        update_config_runtime( data )
+        if data is not None:
+           update_config_runtime( data )
+           ensure_running()
         
         # finish up
         return response_success( "OK" )
@@ -276,7 +294,8 @@ def parse_opencloud_data( config, data_text ):
     
     # verify the presence and types of our required fields
     required_fields = {
-        OPENCLOUD_VOLUME_ID: [str, unicode],
+        OPENCLOUD_VOLUME_NAME: [str, unicode],
+        OPENCLOUD_VOLUME_OWNER_ID: [str, unicode],
         OPENCLOUD_VOLUME_PASSWORD: [str, unicode],
         OPENCLOUD_SYNDICATE_URL: [str, unicode],
     }
@@ -358,7 +377,18 @@ def make_gateway_name( gateway_type, volume_name, host ):
 
 
 #-------------------------------
-def ensure_gateway_exists( config, gateway_type, user_email, volume_name, host, port, closure=None ):
+def make_gateway_private_key_password( gateway_name, observer_secret ):
+    """
+    Generate a unique gateway private key password.
+    NOTE: its only as secure as the OpenCloud secret; the rest can be guessed by the adversary 
+    """
+    h = HashAlg.SHA256Hash()
+    h.update( "%s-%s-%s" % (gateway_name, observer_secret))
+    return h.hexdigest()
+ 
+
+#-------------------------------
+def ensure_gateway_exists( config, gateway_type, user_email, volume_name, gateway_name, host, port, key_password, closure=None ):
     """
     Ensure that a particular type of gateway with the given fields exists.
     Create one if need be.
@@ -372,8 +402,6 @@ def ensure_gateway_exists( config, gateway_type, user_email, volume_name, host, 
     if client is None:
         return None
     
-    gateway_name = make_gateway_name( gateway_type, volume_name, host )
-
     try:
         gateway = client.read_gateway( gateway_name )
     except Exception, e:
@@ -415,10 +443,12 @@ def ensure_gateway_exists( config, gateway_type, user_email, volume_name, host, 
 
     else:
         # create the gateway 
-        kw = {}
+        kw = {
+           'encryption_password': key_password,
+        }
+        
         if closure is not None:
             kw['closure'] = closure
-
         
         try:
             gateway = client.create_gateway( volume_name, user_email, gateway_type, gateway_name, host, port, **kw )
@@ -443,43 +473,41 @@ def ensure_gateway_absent( config, gateway_type, user_email, volume_name, host )
     client = connect_syndicate( config )
     if client is None:
         return False
-    
-    gateway_name = make_gateway_name( gateway_type, volume_name, host )
 
     client.delete_gateway( gateway_name )
     return True
 
 
 #-------------------------------
-def ensure_UG_exists( config, user_email, volume_name, host, port=32780 ):
+def ensure_UG_exists( config, user_email, volume_name, gateway_name, host, port=UG_PORT ):
     """
     Ensure that a particular UG exists.
     """
-    return ensure_gateway_exists( config, "UG", user_email, volume_name, host, port )
+    return ensure_gateway_exists( config, "UG", user_email, volume_name, gateway_name, host, port )
 
 
 #-------------------------------
-def ensure_RG_exists( config, user_email, volume_name, host, port=32800, closure=None ):
+def ensure_RG_exists( config, user_email, volume_name, gateway_name, host, port=RG_PORT, closure=None ):
     """
     Ensure that a particular RG exists.
     """
-    return ensure_gateway_exists( config, "RG", user_email, volume_name, host, port, closure=closure )
+    return ensure_gateway_exists( config, "RG", user_email, volume_name, gateway_name, host, port, closure=closure )
 
 
 #-------------------------------
-def ensure_UG_absent( config, user_email, volume_name, host ):
+def ensure_UG_absent( config, user_email, volume_name, gateway_name, host ):
     """
     Ensure that a particular UG does not exist
     """
-    return ensure_gateway_absent( config, "UG", user_email, volume_name, host )
+    return ensure_gateway_absent( config, "UG", user_email, volume_name, gateway_name, host )
 
 
 #-------------------------------
-def ensure_UG_absent( config, user_email, volume_name, host ):
+def ensure_RG_absent( config, user_email, volume_name, gateway_name, host ):
     """
     Ensure that a particular RG does not exist
     """
-    return ensure_gateway_absent( config, "RG", user_email, volume_name, host )
+    return ensure_gateway_absent( config, "RG", user_email, volume_name, gateway_name, host )
 
 
 #-------------------------------
@@ -493,170 +521,223 @@ def make_UG_mountpoint_path( config, volume_name ):
 
 
 #-------------------------------
-def ensure_dir_exists( path ):
-    """
-    Create a directory, and ensure it exists
-    """
-    try:
-        os.makedirs( path )
-    except OSError, oe:
-        if oe.errno == errno.EEXIST:
-            # must be a dir 
-            if os.path.isdir( path ):
-                return 0
-            else:
-                return -errno.ENOTDIR
-            
-        else:
-            return -oe.errno
-    
+def ensure_UG_mountpoint_exists( mountpoint ):
+   """
+   Make a mountpoint (i.e. a directory)
+   """
+   rc = 0
+   try:
+      os.makedirs( mountpoint )
+   except OSError, oe:
+      return -oe.errno
+   except Exception, e:
+      log.exception(e)
+      return -errno.EPERM
 
 #-------------------------------
-def ensure_UG_running( config, volume_name, gateway_name, mountpoint ):
+def make_UG_command_string( binary_name, user_email, user_password, volume_name, gateway_name, key_password, mountpoint ):
+   return "%s -f -u %s -p %s -v %s -g %s -K %s %s" % (binary_name, user_email, user_password, volume_name, gateway_name, key_password, mountpoint )
+                           
+
+#-------------------------------
+def find_UG_by_attr( attr_name, attr_value ):
+   """
+   Find a running UG (watchdog) by a given attr name and value
+   """
+   UGs = []
+   for p in psutil.process_iter():
+      if p.name == SYNDICATE_UG_WATCHDOG_NAME:
+         # switch on attrs 
+         for attr_kv in p.cmdline[1:]:
+            if attr_kv.startswith("attr:") and "=" in attr_kv:
+               # parse this: attr:<name>=<value>
+               kv = attr_kv[len("attr:"):]
+               
+               key, values = kv.split("=")
+               value = "=".join(values)
+               
+               if attr_name == key and attr_value == value:
+                  UGs.append( p )
+
+
+   return UGs
+            
+
+#-------------------------------
+def start_UG( config, username, volume_name, gateway_name, key_password, mountpoint ):
+   # generate the command, and pipe it over
+   # NOTE: do NOT execute the command directly! it contains sensitive information,
+   # which should NOT become visible to other users via /proc
+   password = config['runtime']['volume_password']
+   syndicate_url = config['runtime']['syndicate_url']
+   
+   command_str = make_UG_command_string( SYNDICATE_UG_BINARY, username, password, volume_name, gateway_name, key_password, mountpoint )
+   
+   # start the watchdog
+   p = subprocess.Popen([SYNDICATE_RG_WATCHDOG_NAME, "-v", volume_name, "-m", mountpoint], stdin=subprocess.PIPE)
+
+   # send the command to execute 
+   p.stdin.write( command_str )
+   p.stdin.close()
+   
+   # the watchdog will now daemonize and start the UG
+   return 0
+
+
+#-------------------------------
+def stop_UG( config, mountpoint ):
+   # stop a UG, given its mountpoint.
+   # this method is idempotent
+   mounted_UGs = find_UG_by_attr( "mountpoint", mountpoint )
+   if len(mounted_UGs) > 0:
+      for proc in mounted_UGs:
+         # tell the watchdog to die, so it shuts down the UG
+         try:
+            os.kill( proc.pid, signal.SIGTERM )
+         except OSError, oe:
+            if oe.errno != errno.ESRCH:
+               # NOT due to the process dying after we checked for it
+               log.exception(oe)
+               return -1
+         
+         except Exception, e:
+            log.exception(e)
+            return -1
+         
+   
+   return 0
+
+
+#-------------------------------
+def start_RG( config, volume_name, gateway_name ):
+   # TODO
+   return 0
+
+
+#-------------------------------
+def ensure_UG_running( config, user_email, volume_name, gateway_name, key_password, mountpoint, check_only=False ):
     """
     Ensure that a User Gateway is running on a particular mountpoint.
-    Return the PID on success.
+    Return 0 on success
     Return negative on error.
     """
     
     # make sure a mountpoint exists
-    rc = make_UG_mountpoint( mountpoint )
+    rc = ensure_UG_mountpoint_exists( mountpoint )
     if rc != 0:
         return rc
     
-    # is there a UG running?
+    # is there a UG running at this mountpoint?
+    mounted_UGs = find_UG_by_attr( "mountpoint", mountpoint )
+    if len(mounted_UGs) == 1:
+       # we're good!
+       return mounted_UGs[0].pid
     
+    elif len(mounted_UGs) > 1:
+       # too many!  probably in the middle of starting up 
+       return -errno.EAGAN
     
-    pass 
+    else: 
+       if not config.has_key('runtime') or config['runtime'] == None:
+          return -errno.EAGAIN
+       
+       if not check_only:
+          return start_UG( config, user_email, volume_name, gateway_name, key_password, mountpoint )
+       
+       else:
+          return 0
 
 
 #-------------------------------
-def ensure_UG_stopped( config, volume_name, gateway_name, mountpoint ):
-    pass 
+def ensure_UG_stopped( config, mountpoint ):
+    """
+    Ensure a UG is no longer running.
+    """
+    return stop_UG( config, mountpoint )
 
 
 #-------------------------------
-def ensure_RG_running( config, volume_name, gateway_name ):
+def ensure_RG_running( config, user_email, volume_name, gateway_name, key_password, check_only=False ):
     pass 
 
 #-------------------------------
-def ensure_RG_stopped( config, volume_name, gateway_name ):
+def ensure_RG_stopped( config ):
     pass
 
-#-------------------------------
-def daemonize( config, main_method ):
+
+#-------------------------
+def ensure_running():
    """
-   Become a daemon.  Run our main method.
+   Once config['runtime'] has been populated,
+   ensure that the gateways to the volume exist,
+   and that they are up and running.
    """
-   signal_map = {
-      signal.SIGTERM: 'terminate',
-      signal.SIGHUP: None
-   }
    
-   daemon_gid = grp.getgrnam('daemon').gr_gid
+   config = get_config()
    
-   output_fd = None
-   error_fd = None
+   hostname = socket.gethostname()
    
-   if config.get("logdir", None) != None:
-      # create log files
-      output_fd = open( os.path.join(config["logdir"], "syndicated.log"), "w+" )
-      error_fd = output_fd 
+   try:
+      volume_name = config['runtime']['volume_name']
+      user_email = config['runtime']['volume_owner']
+      volume_password = config['runtime']['volume_password']
+      syndicate_url = config['runtime']['syndicate_url']
+      observer_secret = config['observer_secret']
       
-      os.dup2( output_fd, sys.stdout )
-      os.dup2( output_fd, sys.stderr )
+   except:
+      return -errno.ENODATA
+   
+   UG_name = make_gateway_name( "UG", volume_name, hostname )
+   RG_name = make_gateway_name( "RG", volume_name, hostname )
+   
+   UG_key_password = make_gateway_private_key_password( UG_name, observer_secret )
+   RG_key_password = make_gateway_private_key_password( RG_name, observer_secret )
+   
+   UG_mountpoint_path = make_UG_mountpoint_path( config, volume_name )
+   
+   # is the UG running?
+   rc = ensure_UG_running( config, user_email, volume_name, UG_name, UG_key_password, UG_mountpoint_path, check_only=True )
+   
+   if rc != 0:
+      # ensure the UG exists
+      rc = ensure_UG_exists( config, user_email, volume_name, UG_name, host, port=UG_PORT )
+      if not rc:
+         log.error("Failed to create UG %s on the MS" % UG_name)
+         return rc
       
-   else:
-      # write to stdout and stderr
-      output_fd = sys.stdout 
-      error_fd = sys.stderr
-   
-   context = daemon.DaemonContext( umask=0o002, prevent_core=True, signal_map=signal_map )
-   
-   # don't close these if they're open...
-   files_preserve = []
-   if output_fd:
-      files_preserve.append(output_fd)
-   if error_fd and error_fd != output_fd:
-      files_preserve.append(error_fd)
-   
-   context.files_preserve = files_preserve
-   
-   # pid file?
-   pidfile_path = config.get("pidfile", None) 
-   if pidfile_path:
-      context.pidfile = lockfile.FileLock(pidfile_path)
-   
-   # start up
-   with context:
-      main_method()
-
+      # ensure our local copy is running 
+      rc = ensure_UG_running( config, user_email, volume_name, UG_name, UG_key_password, UG_mountpoint_path )
+      if rc != 0:
+         log.error("Failed to ensure that UG %s is running" % UG_name )
+         return rc
+      
+   # is the RG running?
+   rc = ensure_RG_running( config, user_email, volume_name, RG_name, RG_key_password, check_only=True )
+   if rc != 0:
+      # ensure the RG exists 
+      rc = ensure_RG_exists( config, user_email, volume_name, RG_name, host, port=UG_PORT )
+      if not rc:
+         log.error("Failed to create RG %s on the MS" % RG_name)
+         return rc
+      
+      # ensure our local copy is running
+      rc = ensure_RG_running( config, user_email, volume_name, RG_name, RG_key_password )
+      if rc != 0:
+         log.error("Failed to ensure that UG %s is running" % UG_name )
+         return rc
+      
+      
+   return 0
 
 #-------------------------
-def load_config( config_str, opts ):
-   
-   config = None 
-   
-   if config_str:
-      config = ConfigParser.SafeConfigParser()
-      config_fd = StringIO.StringIO( config_str )
-      config_fd.seek( 0 )
-      
-      try:
-         config.readfp( config_fd )
-      except Exception, e:
-         log.exception( e )
-         return None
-   
-   ret = {}
-   ret["_in_argv"] = []
-   ret["_in_config"] = []
-   
-   # convert to dictionary, merging in argv opts
-   for arg_opt in CONFIG_OPTIONS.keys():
-      if hasattr(opts, arg_opt) and getattr(opts, arg_opt) != None:
-         ret[arg_opt] = getattr(opts, arg_opt)
-         
-         # force singleton...
-         if isinstance(ret[arg_opt], list) and len(ret[arg_opt]) == 1 and CONFIG_OPTIONS[arg_opt][1] == 1:
-            ret[arg_opt] = ret[arg_opt][0]
-            
-         ret["_in_argv"].append( arg_opt )
-      
-      elif config != None and config.has_option("syndicated", arg_opt):
-         ret[arg_opt] = config.get("syndicated", arg_opt)
-         
-         ret["_in_config"].append( arg_opt )
-   
-   return ret
-
-#-------------------------
-def build_parser( progname ):
-   parser = argparse.ArgumentParser( prog=progname, description="Syndicate control daemon" )
-   
-   for (config_option, (short_option, nargs, config_help)) in CONFIG_OPTIONS.items():
-      if not isinstance(nargs, int) or nargs >= 1:
-         if short_option:
-            # short option means 'typical' argument
-            parser.add_argument( "--" + config_option, short_option, metavar=config_option, nargs=nargs, help=config_help)
-         else:
-            # no short option (no option in general) means accumulate
-            parser.add_argument( config_option, metavar=config_option, type=str, nargs=nargs, help=config_help)
-      else:
-         # no argument, but mark its existence
-         parser.add_argument( "--" + config_option, short_option, action="store_true", help=config_help)
-   
-   return parser
-
-
-#-------------------------
-def validate_args( config ):
+def validate_config( config ):
    
    # required arguments
    required = ['observer-secret', 'observer-url', 'public-key']
    for req in required:
       if config.get( req, None ) == None:
-         raise Exception("Missing required argument: %s" % req )
+         print >> sys.stderr, "Missing required argument: %s" % req
+         return -1
    
    # required types 
    required_types = {
@@ -668,56 +749,68 @@ def validate_args( config ):
            i = reqtype( config[req] )
            config[req] = i
        except:
-           raise Exception("Invalid value for '%s'" % req )
+           print >> sys.stderr, "Invalid value for '%s'" % req
+           return -1
        
-   return True
+   return 0
+      
       
 #-------------------------
-def build_config( argv ):
+class PollThread( threading.Thread ):
    
-   parser = build_parser( argv[0] )
-   opts = parser.parse_args( argv[1:] )
-   config = load_config( None, opts )
-   
-   if config == None:
-      log.error("Failed to load configuration")
-      parser.print_help()
-      sys.exit(1)
-   
-   rc = validate_args( config )
-   if not rc:
-      log.error("Invalid arguments")
-      parser.print_help()
-      sys.exit(1)
-      
-   return config
-      
-
-#-------------------------
-def poll_thread( config ):
-    """
-    Continuously poll the OpenCloud observer for runtime data.
-    """
-    while True:
-        pass
+   def run():
+      """
+      Continuously poll the OpenCloud observer for runtime data.
+      """
+      while True:
+         config = get_config()
+         
+         poll_timeout = config['poll-timeout']
+         
+         time.sleep( poll_timeout )
+         
+         rc, data = poll_opencloud_data( self.config )
+         
+         if rc != 0:
+            log.error("poll_opencloud_data rc = %s" % rc)
+            
+         elif data is not None:
+            update_config_runtime( data )
+            
+            # act on the data 
+            ensure_running()
+            
+         
 
 #-------------------------
 def main( config ):
    
-   poll_timeout = config['poll-timeout']
+   # start polling 
+   th = PollThread()
+   th.start()
    
-   # start our listening server...
-   
-   
-   return True
+   # start listening for pushes
+   httpd = BaseHTTPServer.HTTPServer( ('', 5553), ObserverPushHandler )
+   httpd.serve_forever()
+
 
 #-------------------------    
 if __name__ == "__main__":
-   config = build_config( argv )
+   
+   config = modconf.build_config( argv, conf_validator=validate_config )
+   
+   if config is None:
+      sys.exit(-1)
    
    if config.get("foreground", None):
-        main( config )
+      main( config )
    else:
-        daemonize( config, lambda: main(config) )
+      logfile_path = None 
+      pidfile_path = config.get("pidfile", None)
+      
+      if config.has_key("logdir"):
+         logfile_path = os.path.join( config['logdir'], "syndicated.log" )
+      
+      daemonize.daemonize( lambda: main(config), logfile_path=logfile_path, pidfile_path=pidfile_path )
         
 

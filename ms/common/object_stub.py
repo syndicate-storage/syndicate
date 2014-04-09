@@ -1166,6 +1166,12 @@ class Gateway( StubObject ):
       return closure_json_str, {}
    
    
+   
+   @classmethod 
+   def store_encryption_password( cls, password, lib ):
+      lib.encryption_password = password
+      return password, {}
+   
    arg_parsers = dict( StubObject.arg_parsers.items() + {
       "gateway_name":           (lambda cls, arg, lib: cls.parse_gateway_name_or_id(arg, lib)),
       "g_name_or_id":           (lambda cls, arg, lib: cls.parse_gateway_name_or_id(arg, lib)),
@@ -1173,7 +1179,8 @@ class Gateway( StubObject ):
       "gateway_type":           (lambda cls, arg, lib: cls.parse_gateway_type(arg, lib)),
       "gateway_public_key":     (lambda cls, arg, lib: cls.parse_gateway_public_key(arg, lib)),
       "closure":                (lambda cls, arg, lib: cls.parse_gateway_closure(arg, lib)),
-      "host_gateway_key":       (lambda cls, arg, lib: cls.recover_or_load_private_key(arg, lib))
+      "host_gateway_key":       (lambda cls, arg, lib: cls.recover_or_load_private_key(arg, lib)),
+      "encryption_password":    (lambda cls, arg, lib: cls.store_encryption_password(arg, lib)),
    }.items() )
    
    key_type = "gateway"
