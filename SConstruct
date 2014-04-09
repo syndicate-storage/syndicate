@@ -242,12 +242,12 @@ libsyndicateUG_inc_install_dir = os.path.join( install_prefix, "include/libsyndi
 
 ug_out = "build/out/bin/UG"
 ug_driver_out = "build/out/lib/UG/drivers"
-syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUG, libsyndicateUG_headers, UG_nacl = SConscript( "UG/SConscript", variant_dir=ug_out )
+syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUG, libsyndicateUG_headers, syndicate_watchdog, UG_nacl = SConscript( "UG/SConscript", variant_dir=ug_out )
 ug_drivers = SConscript( "UG/drivers/SConscript", variant_dir=ug_driver_out )
 
-ugs_bin = [syndicatefs, syndicate_httpd, syndicate_ipc]
+ugs_bin = [syndicatefs, syndicate_httpd, syndicate_ipc, syndicate_watchdog]
 ugs_lib = [libsyndicateUG]
-ug_aliases = [syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUG]
+ug_aliases = [syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUG, syndicate_watchdog]
 
 env.Depends( syndicatefs, libsyndicate )
 env.Depends( syndicate_ipc, libsyndicate )

@@ -17,10 +17,13 @@
 """
 
 import sys
+
 import syndicate.rg.common as rg_common
 import syndicate.rg.closure as rg_closure
 import syndicate.rg.server as rg_server
-import argparse
+
+import syndicate.util.config as modconf
+
 import socket
 import os
 
@@ -48,69 +51,14 @@ CONFIG_OPTIONS = {
 }
 
 #-------------------------
-def load_config( config_str, opts ):
-   
-   config = None 
-   
-   if config_str:
-      config = ConfigParser.SafeConfigParser()
-      config_fd = StringIO.StringIO( config_str )
-      config_fd.seek( 0 )
-      
-      try:
-         config.readfp( config_fd )
-      except Exception, e:
-         log.exception( e )
-         return None
-   
-   ret = {}
-   ret["_in_argv"] = []
-   ret["_in_config"] = []
-   
-   # convert to dictionary, merging in argv opts
-   for arg_opt in CONFIG_OPTIONS.keys():
-      if hasattr(opts, arg_opt) and getattr(opts, arg_opt) != None:
-         ret[arg_opt] = getattr(opts, arg_opt)
-         
-         # force singleton...
-         if isinstance(ret[arg_opt], list) and len(ret[arg_opt]) == 1 and CONFIG_OPTIONS[arg_opt][1] == 1:
-            ret[arg_opt] = ret[arg_opt][0]
-            
-         ret["_in_argv"].append( arg_opt )
-      
-      elif config != None and config.has_option("Replica Gateway", arg_opt):
-         ret[arg_opt] = config.get("Replica Gateway", arg_opt)
-         
-         ret["_in_config"].append( arg_opt )
-   
-   return ret
-
-#-------------------------
-def build_parser( progname ):
-   parser = argparse.ArgumentParser( prog=progname, description="Syndicate Replica Gateway" )
-   
-   for (config_option, (short_option, nargs, config_help)) in CONFIG_OPTIONS.items():
-      if not isinstance(nargs, int) or nargs >= 1:
-         if short_option:
-            # short option means 'typical' argument
-            parser.add_argument( "--" + config_option, short_option, metavar=config_option, nargs=nargs, help=config_help)
-         else:
-            # no short option (no option in general) means accumulate
-            parser.add_argument( config_option, metavar=config_option, type=str, nargs=nargs, help=config_help)
-      else:
-         # no argument, but mark its existence
-         parser.add_argument( "--" + config_option, short_option, action="store_true", help=config_help)
-   
-   return parser
-
-#-------------------------
 def validate_args( config ):
    
    # required arguments
    required = ['gateway', 'MS', 'volume']
    for req in required:
       if config.get( req, None ) == None:
-         raise Exception("Missing required argument: %s" % req )
+         print >> sys.stderr, "Missing required argument: %s" % req
+         return -1
    
    # check types...
    paths = []
@@ -135,9 +83,9 @@ def validate_args( config ):
             fd.close()
          
    if invalid:
-      return False
+      return -1
       
-   return True
+   return 0
       
 #-------------------------
 def setup_syndicate( config ):
@@ -223,23 +171,7 @@ def debug():
 
 #-------------------------
 def build_config( argv ):
-   
-   parser = build_parser( argv[0] )
-   opts = parser.parse_args( argv[1:] )
-   config = load_config( None, opts )
-   
-   if config == None:
-      log.error("Failed to load configuration")
-      parser.print_help()
-      sys.exit(1)
-   
-   rc = validate_args( config )
-   if not rc:
-      log.error("Invalid arguments")
-      parser.print_help()
-      sys.exit(1)
-      
-   return config
+   return modconf.build_config( argv, "Syndicate Replica Gateway", "RG", CONFIG_OPTIONS, conf_validator=validate_args )
       
 #-------------------------
 def main( config, syndicate=None ):
@@ -252,5 +184,8 @@ def main( config, syndicate=None ):
 
 #-------------------------    
 if __name__ == "__main__":
-   config = build_config( argv )
+   config = build_config( sys.argv )
+   if config is None:
+      sys.exit(1)
+      
    main( config )

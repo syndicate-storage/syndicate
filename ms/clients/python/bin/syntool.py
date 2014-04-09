@@ -33,6 +33,8 @@ import syndicate.client.common.api as api
 
 import syndicate.client.common.object_stub as object_stub
 
+import syndicate.util.config as modconf 
+
 import traceback
 
 from Crypto.Hash import SHA256 as HashAlg
@@ -377,7 +379,7 @@ def parse_url( url ):
 # -------------------
 def load_options( argv, setup_methods=[], builtin_methods=[] ):
    
-   parser = conf.build_parser( argv[0] )
+   parser = modconf.build_parser( argv[0], conf.CONFIG_DESCRIPTION, conf.CONFIG_OPTIONS )
    opts = parser.parse_args( argv[1:] )
    
    # load everything into a dictionary and return it

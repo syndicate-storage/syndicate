@@ -28,7 +28,9 @@ yum install \
    python-crypto \
    python-scrypt \
    python-requests \
-   redhat-lsb-core
+   redhat-lsb-core \
+   python-setproctitle \
+   python-psutil
 
 Required versions of the above software:
    limicrohttpd-devel >= 0.9
@@ -62,7 +64,9 @@ aptitude install \
    python-requests \
    libjson0-dev \
    libjson0 \
-   lsb-core
+   lsb-core \
+   python-setproctitle \
+   python-psutil
 
 Required versions of the above software:
    libmicrohttpd-dev >= 0.9

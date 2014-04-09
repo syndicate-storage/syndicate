@@ -21,15 +21,12 @@
 import sys
 import os
 import signal
-import resource
-import daemon 
-import grp
-import lockfile
 import errno 
 import time
 import logging
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 
-log = logging.getLogger("watchdog")
+log = logging.getLogger()
 
 #-------------------------------
 def spawn( child_method, old_exit_status ):
@@ -51,7 +48,9 @@ def spawn( child_method, old_exit_status ):
 
 
 #-------------------------------
-def handle_child_death( exit_status, respawn_exit_statuses, respawn_signals ):
+def check_exit_status( exit_status, respawn_exit_statuses=None, respawn_signals=None ):
+   # determine whether or not we need to respawn, based on the exit and signal status.
+   
    need_respawn = False
    
    # did the child exit on its own accord?
@@ -59,7 +58,7 @@ def handle_child_death( exit_status, respawn_exit_statuses, respawn_signals ):
       ex_status = os.WEXITSTATUS( exit_status )
       log.info("Child exit status %s" % ex_status )
       
-      if respawn_exit_statuses is not None and ex_status in respawn_exit_statuses:
+      if respawn_exit_statuses is None or ex_status in respawn_exit_statuses:
          need_respawn = True
    
    # was the child signaled? 
@@ -113,9 +112,33 @@ def stop_child( child_pid ):
    
 
 #-------------------------------
-def main( spawn_method, pid_cb=None, respawn_exit_statuses=None, respawn_signals=None ):
+def flap_wait( last_spawn, flap_delay, flap_threshold, flap_reset ):
+   # wait before spawning another process, to avoid flapping.
+   # return the new flap delay.
+   t = time.time()
+   if t - last_spawn > flap_reset:
+      flap_delay = 1
+      
+   if t - last_spawn < flap_threshold:
+      log.warning("Child is respawning too quickly.  Waiting %s seconds to try again" % flap_delay)
+         
+      time.sleep( flap_delay )
+      
+      flap_delay *= 2
+      
+      if flap_delay > flap_reset:
+         flap_delay = flap_reset
+      
+   return flap_delay
+      
+
+#-------------------------------
+def main( spawn_method, pid_cb=None, exit_cb=None, respawn_exit_statuses=None, respawn_signals=None, flap_threshold=600, flap_reset=3600 ):
    
    # fork, become a watchdog, and run the main server
+   last_spawn = time.time()
+   flap_delay = 1
+   
    child_pid = spawn( spawn_method, 0 )
    
    if pid_cb is not None:
@@ -139,15 +162,29 @@ def main( spawn_method, pid_cb=None, respawn_exit_statuses=None, respawn_signals
          log.info("watchdog exit, child exit status %s" % my_exit_status )
          return my_exit_status
          
-      need_respawn = handle_child_death( exit_status, respawn_exit_statuses, respawn_signals )
+      need_respawn = False
+      
+      # find out if we need to respawn
+      if exit_cb is not None:
+         need_respawn = exit_cb( exit_status )
+      
+      else:
+         need_respawn = check_exit_status( exit_status, respawn_exit_statuses, respawn_signals )
       
       if need_respawn:
+         
+         # are we flapping?  Wait for a bit if so
+         if flap_threshold > 0:
+            flap_delay = flap_wait( last_spawn, flap_delay, flap_threshold, flap_reset )
+               
          child_pid = spawn( spawn_method, exit_status )
          
          # pass along the PID 
          if pid_cb is not None:
             pid_cb( child_pid )
       
+         last_spawn = time.time()
+         
       else:
          # no respawn...return the exit status
          log.info("not respawning, child exit status %s" % exit_status )
