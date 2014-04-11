@@ -316,6 +316,9 @@ def list_pending_volumes( email, **q_opts ):
 
 # ----------------------------------
 def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **kwargs ):
+   if "encryption_password" in kwargs.keys():
+      del kwargs['encryption_password']
+      
    caller_user = _check_authenticated( kwargs )
    
    # user and volume must both exist

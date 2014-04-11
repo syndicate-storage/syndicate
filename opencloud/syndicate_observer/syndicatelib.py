@@ -6,6 +6,16 @@ Define some common methods for the Syndicate observer.
 import os
 import sys
 import random
+import json
+import requests
+import traceback 
+import base64 
+
+from Crypto.Hash import SHA256 as HashAlg
+from Crypto.PublicKey import RSA as CryptoKey
+from Crypto import Random
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
+
 
 try:
     from util.logger import Logger, logging
@@ -21,23 +31,30 @@ except:
 # get config package 
 import syndicatelib_config.config as CONFIG
 
-sys.path.insert(0,"/opt/planetstack/")
-#sys.path.insert(0,"/home/jude/Desktop/research/git/syndicate/opencloud/")
+# get the Syndicate models 
+sys.path.insert(0, os.path.join( os.path.dirname( __file__), ".." ) )
 
-import syndicate.models as models
+try:
+   import syndicate.models as models
+except:
+   logger.warning("Failed to import models; assming testing environment")
+   pass
 
-# import from the right place (NOTE: it's a different syndicate package, so reload!)
 
-sys.path.insert(0,"/root/syndicate/build/out/python")
+# get the Syndicate package
+
+#sys.path.insert(0,"/root/syndicate/build/out/python")
 #sys.path.insert(0,"/usr/local/lib64/site-packages") 
-#sys.path.insert(0,"/home/jude/Desktop/research/git/syndicate/build/out/python")
+sys.path.insert(0,"/home/jude/Desktop/research/git/syndicate/build/out/python")
 
 import syndicate
 syndicate = reload(syndicate)
 
 import syndicate.client.bin.syntool as syntool
 import syndicate.client.common.msconfig as msconfig
+import syndicate.syndicate as c_syndicate
 
+import lib.grequests.grequests as grequests
 
 #-------------------------------
 def openid_url( email ):
@@ -324,6 +341,123 @@ def slice_user_email( slice_name ):
     return slice_name + "@opencloud.us"
 
 
+#-------------------------------
+def sign_data( private_key_pem, data_str ):
+   """
+   Sign a string of data with a PEM-encoded private key.
+   """
+   try:
+      key = CryptoKey.importKey( private_key_pem )
+   except Exception, e:
+      logging.error("importKey %s", traceback.format_exc() )
+      return None
+   
+   h = HashAlg.new( data_str )
+   signer = CryptoSigner.new(key)
+   signature = signer.sign( h )
+   return signature
+
+
+#-------------------------------
+def create_credential_blob( private_key_pem, shared_secret, syndicate_url, volume_name, volume_owner, volume_password ):
+    """
+    Create a sealed, signed, encoded credentials blob.
+    """
+    
+    # create and serialize the data 
+    cred_data = {
+       "syndicate_url":   syndicate_url,
+       "volume_name":     volume_name,
+       "volume_owner":    volume_owner,
+       "volume_password": volume_password,
+    }
+    
+    cred_data_str = json.dumps( cred_data )
+    
+    # seal it with the password 
+    logger.info("Sealing credential data")
+    
+    rc, sealed_data = c_syndicate.password_seal( cred_data_str, shared_secret )
+    if rc != 0:
+       logger.error("Failed to seal data with the OpenCloud secret, rc = %s" % rc)
+       return None
+    
+    # sign it 
+    signature = sign_data( private_key_pem, sealed_data )
+    if signature is None:
+       logger.error("Failed to sign sealed data")
+       return None
+    
+    # create signed credential
+    creds = {
+       "data":  base64.b64encode( sealed_data ),
+       "sig":   base64.b64encode( signature )
+    }
+    
+    return json.dumps( creds )
+    
+
+#-------------------------------
+def store_credentials( volume, sealed_credentials_b64 ):
+    """
+    Store the sealed Volume credentials into the database,
+    so the sliver-side Syndicate daemon syndicated.py can get them later
+    (in case pushing them out fails).
+    """
+    volume.credentials_blob = sealed_credentials_b64
+    volume.save( updated_fields=['credentials_blob'] )
+
+
+#-------------------------------
+def get_volume( volume_name ):
+    """
+    Get a Volume from the datastore.
+    """
+    try:
+        volume = models.Volume.objects.get( name=volume_name )  
+    except:
+        logger.error("No such volume %s" % volume_name)
+        return None 
+    
+    return volume
+ 
+ 
+#-------------------------------
+def push_begin( sliver_host, payload ):
+    """
+    Start pushing a message to a sliver host.
+    Return the socket
+    """
+    
+    rs = grequests.post( sliver_host, data={"observer_message": payload} )
+    return rs
+ 
+ 
+#-------------------------------
+def push_run( requests ):
+    """
+    Run all pushes concurrently.
+    Log results.
+    """
+    responses = grequests.map( requests )
+    
+    assert len(responses) == len(requests), "grequests error: len(responses) != len(requests)"
+    
+    for i in xrange(0,len(requests)):
+       resp = responses[i]
+       req = requests[i]
+       
+       if resp is None:
+          logger.error("Failed to connect to %s" % (req.url))
+          continue 
+       
+       # verify they all worked 
+       if resp.status_code != 200:
+          logger.error("Failed to POST to %s, status code = %s" % (resp.url, resp.status_code))
+          continue
+          
+    return 0
+   
 
 # for testing 
 class FakeObject(object):

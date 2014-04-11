@@ -10,10 +10,6 @@ Daemon that sits on a sliver, which:
 import os
 import sys
 import signal
-import resource
-import daemon 
-import grp
-import lockfile
 import argparse
 import cgi
 import BaseHTTPServer
@@ -25,6 +21,8 @@ import threading
 import psutil
 import socket
 import subprocess
+import shlex
+import time
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
@@ -33,31 +31,40 @@ from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 import logging
 logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+log = logging.getLogger()
+log.setLevel( logging.INFO )
 
 import syndicate
 import syndicate.client.bin.syntool as syntool
 import syndicate.client.common.msconfig as msconfig
 
 import syndicate.util.watchdog as watchdog
-import syndicate.util.daemon as daemon 
+import syndicate.util.daemonize as daemon 
 import syndicate.util.config as modconf
+import syndicate.util.storage as storage
 
 import syndicate.syndicate as c_syndicate
 
 #-------------------------------
 # constants 
-OPENCLOUD_JSON                          = "opencloud_json"
-OPENCLOUD_JSON_DATA                     = "opencloud_json_data"
-OPENCLOUD_JSON_SIGNATURE                = "opencloud_json_signature"
+OPENCLOUD_JSON                          = "observer_message"
+OPENCLOUD_JSON_DATA                     = "data"
+OPENCLOUD_JSON_SIGNATURE                = "sig"
 
 OPENCLOUD_VOLUME_NAME                   = "volume_name"
 OPENCLOUD_VOLUME_OWNER_ID               = "volume_owner"
 OPENCLOUD_VOLUME_PASSWORD               = "volume_password"
 OPENCLOUD_SYNDICATE_URL                 = "syndicate_url"
 
+"""
 SYNDICATE_UG_WATCHDOG_NAME              = "syndicate-ug"
 SYNDICATE_RG_WATCHDOG_NAME              = "syndicate-rg"
 SYNDICATE_UG_BINARY                     = "syndicatefs"
+"""
+
+SYNDICATE_UG_WATCHDOG_NAME              = "/home/jude/Desktop/research/git/syndicate/build/out/bin/UG/syndicate-ug"
+SYNDICATE_RG_WATCHDOG_NAME              = "/home/jude/Desktop/research/git/syndicate/build/out/bin/RG/syndicate-rg"
+SYNDICATE_UG_BINARY                     = "/home/jude/Desktop/research/git/syndicate/build/out/bin/UG/syndicatefs"
 
 UG_PORT                                 = 32780
 RG_PORT                                 = 32880
@@ -68,31 +75,33 @@ CONFIG_OPTIONS = {
    "foreground":        ("-f", 0, "Run in the foreground"),
    "logdir":            ("-l", 1, "Directory to contain the log files.  If not given, then write to stdout and stderr."),
    "pidfile":           ("-i", 1, "Path to the desired PID file."),
-   "public-key":        ("-p", 1, "Path to the Observer public key."),
-   "observer-secret":   ("-s", 1, "Shared secret with Observer."),
-   "observer-url":      ("-u", 1, "URL to the Syndicate Observer"),
-   "poll-timeout":      ("-t", 1, "Interval to wait between asking OpenCloud for our Volume credentials."),
-   "mountpoint-dir":    ("-m", 1, "Directory to hold Volume mountpoints."),
+   "public_key":        ("-p", 1, "Path to the Observer public key."),
+   "observer_secret":   ("-s", 1, "Shared secret with Observer."),
+   "observer_url":      ("-u", 1, "URL to the Syndicate Observer"),
+   "poll_timeout":      ("-t", 1, "Interval to wait between asking OpenCloud for our Volume credentials."),
+   "mountpoint_dir":    ("-m", 1, "Directory to hold Volume mountpoints."),
    "closure":           ("-C", 1, "Path to the RG closure to use."),
-   "port":              ("-P", 1, "Port to listen on.")
+   "port":              ("-P", 1, "Port to listen on."),
+   "debug":             ("-d", 0, "Print debugging information."),
+   "run_once":          ("-1", 0, "Poll once (for testing)")
 }
 
 DEFAULT_CONFIG = {
     "config":           "/etc/syndicate/syndicated.conf",
-    "public-key":       "/etc/syndicate/observer.pub",
+    "public_key":       "/etc/syndicate/observer.pub",
     "logdir":           "/var/log/syndicated",
     "pidfile":          "/var/run/syndicated.pid",
-    "poll-timeout":     43200,          # ask twice a day; the Observer should poke us directly anyway
-    "observer-secret":  None,  
-    "observer-url":     "https://localhost:5553",
-    "mountpoint-dir":   "/tmp/syndicate-mounts",
+    "poll_timeout":     43200,          # ask twice a day; the Observer should poke us directly anyway
+    "observer_secret":  None,  
+    "observer_url":     "https://localhost:5553",
+    "mountpoint_dir":   "/tmp/syndicate-mounts",
     "port":             5553,
     "closure":          "/usr/local/lib64/python2.7/site-packages/syndicate/rg/drivers/s3",
        
     # these are filled in at runtime.
     # THis is the information needed to act as a principal of the volume onwer (i.e. the slice)
     "runtime": {
-        "volume_name":          None
+        "volume_name":          None,
         "volume_owner":         "judecn@gmail.com",
         "volume_password":      "nya!",
         "syndicate_url":        "http://localhost:8080",
@@ -108,7 +117,10 @@ CONFIG = None
 def get_config():
     return CONFIG
     
+    
 def update_config_runtime( runtime_info ): 
+    global CONFIG 
+    
     if not CONFIG.has_key('runtime'):
         CONFIG['runtime'] = {}
         
@@ -150,21 +162,21 @@ class ObserverPushHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
                                  } )
 
         # expecting a JSON string 
-        json_text = form.getfirst( OPENCLOUD_COMMAND, None )
+        json_text = form.getfirst( OPENCLOUD_JSON, None )
         if json_text is None:
             # malformed request 
             self.response_error( 400, "Missing data" )
             return 
         
         # get the data 
-        rc, data_text = read_opencloud_data_from_json( config, json_text )
+        rc, data_text = read_observer_data_from_json( config['public_key'], config['observer_secret'], json_text )
         if rc != 0:
             # failed to read 
             self.response_error( 400, "Invalid request" )
             return 
         
         # parse the data 
-        rc, data = parse_opencloud_data( config, data_text )
+        rc, data = parse_observer_data( config, data_text )
         if rc != 0:
             # failed to parse 
             self.response_error( 400, "Invalid request")
@@ -180,8 +192,8 @@ class ObserverPushHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
 
 #-------------------------------
 def load_public_key( key_path ):
-    try:
-      key_text = read_file( key_path )
+   try:
+      key_text = storage.read_file( key_path )
    except Exception, e:
       log.error("Failed to read public key '%s'" % key_path )
       return None
@@ -191,7 +203,7 @@ def load_public_key( key_path ):
       assert not key.has_private()
          
    except Exception, e:
-      log.error("Failed to load public key %s'" % key_path )
+      log.error("Failed to load public key %s" % key_path )
       return None
    
    return key
@@ -224,7 +236,7 @@ def find_missing_and_invalid_fields( required_fields, json_data ):
 
 
 #-------------------------------
-def read_opencloud_data_from_json( config, json_text ):
+def read_observer_data_from_json( public_key_path, shared_secret, json_text ):
     """
     Parse and validate a JSON structure.
     Return 0 on success
@@ -233,8 +245,8 @@ def read_opencloud_data_from_json( config, json_text ):
     
     # verify the presence and types of our required fields 
     required_fields = {
-        OPENCLOUD_COMMAND_DATA: [str, unicode],
-        OPENCLOUD_COMMAND_SIGNATURE: [str, unicode]
+        OPENCLOUD_JSON_DATA: [str, unicode],
+        OPENCLOUD_JSON_SIGNATURE: [str, unicode]
     }
     
     # parse the json structure 
@@ -261,32 +273,39 @@ def read_opencloud_data_from_json( config, json_text ):
     opencloud_signature_b64 = json_data[OPENCLOUD_JSON_SIGNATURE]
     
     try:
-        opencloud_data = base64.b64decode( opencloud_data_b64 )
+        sealed_data = base64.b64decode( opencloud_data_b64 )
         opencloud_signature = base64.b64decode( opencloud_signature_b64 )
     except:
         log.error("Failed to decode message")
         return (-errno.EINVAL, None)
     
     # get the public key 
-    k = load_public_key( config['public-key'] )
+    k = load_public_key( public_key_path )
     if k is None:
-        logger.error("Failed to load public key from %s" % (config['public-key']))
+        log.error("Failed to load public key from %s" % (public_key_path))
         return (-errno.ENOENT, None)
     
     # verify the signature 
-    rc = verify_signature( k, opencloud_data, opencloud_signature )
+    rc = verify_signature( k, sealed_data, opencloud_signature )
     if not rc:
-        logger.error("Invalid signature")
+        log.error("Invalid signature")
+        return (-errno.EINVAL, None)
+    
+    # decrypt the data, using the shared secret 
+    log.info("Unsealing credentials...")
+    rc, data = c_syndicate.password_unseal( sealed_data, shared_secret )
+    if rc != 0:
+        loggerr.error("Failed to decrypt data")
         return (-errno.EINVAL, None)
     
     # we're good!
-    return (0, opencloud_data)
+    return (0, data)
 
 
 #-------------------------------
-def parse_opencloud_data( config, data_text ):
+def parse_observer_data( data_text ):
     """
-    Parse a string of JSON data from OpenCloud.  It should be a JSON structure 
+    Parse a string of JSON data from the Syndicate OpenCloud Observer.  It should be a JSON structure 
     with some particular fields.
     Return (0, dict) on success
     Return (nonzero, None) on error.
@@ -325,23 +344,23 @@ def parse_opencloud_data( config, data_text ):
 #-------------------------------
 def poll_opencloud_data( config ):
     """
-    Download, verify, and parse OpenCloud data.
+    Download, verify, and parse Observer data.
     Return (0, data) on success
     Return (nonzero, None) on error 
     """
-    url = config['opencloud-url']
+    url = config['observer_url']
     
     req = requests.get( url )
-    if req.status != 200:
-        log.error("GET %s status %s" % (url, req.status))
+    if req.status_code != 200:
+        log.error("GET %s status %s" % (url, req.status_code))
         return None
     
-    rc, opencloud_data = read_opencloud_data_from_json( config, req.text )
+    rc, data_str = read_observer_data_from_json( config['public_key'], config['observer_secret'], req.text )
     if rc != 0:
         log.error("Failed to read JSON, rc = %s" % rc)
         return None 
     
-    rc, data = parse_opencloud_data( config, opencloud_data )
+    rc, data = parse_observer_data( data_str )
     if rc != 0:
         log.error("Failed to read OpenCloud data, rc = %s" % rc )
         return None
@@ -350,20 +369,11 @@ def poll_opencloud_data( config ):
     
 
 #-------------------------------
-def connect_syndicate( config ):
+def connect_syndicate( syndicate_url, volume_owner, volume_password ):
     """
     Connect to the Syndicate SMI
     """
-    runtime_info = config.get('runtime', None)
-    
-    if runtime_info is None:
-        return None
-    
-    volume_owner_id = runtime_info['volume_owner']
-    syndicate_url = runtime_info['syndicate_url']
-    volume_password = runtime_info['volume_password']
-    
-    client = syntool.Client( volume_owner_id, syndicate_url, password=volume_password, debug=True )
+    client = syntool.Client( volume_owner, syndicate_url, password=volume_password, debug=True )
 
     return client
 
@@ -383,12 +393,12 @@ def make_gateway_private_key_password( gateway_name, observer_secret ):
     NOTE: its only as secure as the OpenCloud secret; the rest can be guessed by the adversary 
     """
     h = HashAlg.SHA256Hash()
-    h.update( "%s-%s-%s" % (gateway_name, observer_secret))
+    h.update( "%s-%s" % (gateway_name, observer_secret))
     return h.hexdigest()
  
 
 #-------------------------------
-def ensure_gateway_exists( config, gateway_type, user_email, volume_name, gateway_name, host, port, key_password, closure=None ):
+def ensure_gateway_exists( syndicate_url, gateway_type, user_email, volume_password, volume_name, gateway_name, host, port, key_password, closure=None ):
     """
     Ensure that a particular type of gateway with the given fields exists.
     Create one if need be.
@@ -398,7 +408,7 @@ def ensure_gateway_exists( config, gateway_type, user_email, volume_name, gatewa
     We assume that the Volume (and thus user) already exist...if they don't, its an error.
     """
 
-    client = connect_syndicate( config )
+    client = connect_syndicate( syndicate_url, user_email, volume_password )
     if client is None:
         return None
     
@@ -406,7 +416,7 @@ def ensure_gateway_exists( config, gateway_type, user_email, volume_name, gatewa
         gateway = client.read_gateway( gateway_name )
     except Exception, e:
         # transport error 
-        logger.exception(e)
+        log.exception(e)
         raise e
 
     need_create_gateway = False
@@ -419,14 +429,14 @@ def ensure_gateway_exists( config, gateway_type, user_email, volume_name, gatewa
             user = client.read_user( user_email )
         except Exception, e:
             # transport error
-            logger.exception(e)
+            log.exception(e)
             raise e
 
         try:
             volume = client.read_volume( volume_name )
         except Exception, e:
             # transport error 
-            logger.exception(e)
+            log.exception(e)
             raise e
 
         # these had better exist...
@@ -443,18 +453,15 @@ def ensure_gateway_exists( config, gateway_type, user_email, volume_name, gatewa
 
     else:
         # create the gateway 
-        kw = {
-           'encryption_password': key_password,
-        }
-        
+        kw = {}
         if closure is not None:
             kw['closure'] = closure
         
         try:
-            gateway = client.create_gateway( volume_name, user_email, gateway_type, gateway_name, host, port, **kw )
+            gateway = client.create_gateway( volume_name, user_email, gateway_type, gateway_name, host, port, encryption_password=key_password, gateway_public_key="MAKE_AND_HOST_GATEWAY_KEY", **kw )
         except Exception, e:
             # transport, collision, or missing Volume or user
-            logger.exception(e)
+            log.exception(e)
             raise e
 
         else:
@@ -462,7 +469,7 @@ def ensure_gateway_exists( config, gateway_type, user_email, volume_name, gatewa
 
 
 #-------------------------------
-def ensure_gateway_absent( config, gateway_type, user_email, volume_name, host ):
+def ensure_gateway_absent( syndicate_url, gateway_type, user_email, volume_password, volume_name, host ):
     """
     Ensure that a particular gateway does not exist.
     Return True on success
@@ -470,7 +477,7 @@ def ensure_gateway_absent( config, gateway_type, user_email, volume_name, host )
     raise exception on error.
     """
     
-    client = connect_syndicate( config )
+    client = connect_syndicate( syndicate_url, user_email, volume_password )
     if client is None:
         return False
 
@@ -479,44 +486,44 @@ def ensure_gateway_absent( config, gateway_type, user_email, volume_name, host )
 
 
 #-------------------------------
-def ensure_UG_exists( config, user_email, volume_name, gateway_name, host, port=UG_PORT ):
+def ensure_UG_exists( syndicate_url, user_email, volume_password, volume_name, gateway_name, host, port, key_password ):
     """
     Ensure that a particular UG exists.
     """
-    return ensure_gateway_exists( config, "UG", user_email, volume_name, gateway_name, host, port )
+    return ensure_gateway_exists( syndicate_url, "UG", user_email, volume_password, volume_name, gateway_name, host, port, key_password )
 
 
 #-------------------------------
-def ensure_RG_exists( config, user_email, volume_name, gateway_name, host, port=RG_PORT, closure=None ):
+def ensure_RG_exists( syndicate_url, user_email, volume_password, volume_name, gateway_name, host, port, key_password, closure=None ):
     """
     Ensure that a particular RG exists.
     """
-    return ensure_gateway_exists( config, "RG", user_email, volume_name, gateway_name, host, port, closure=closure )
+    return ensure_gateway_exists( syndicate_url, "RG", user_email, volume_password, volume_name, gateway_name, host, port, key_password, closure=closure )
 
 
 #-------------------------------
-def ensure_UG_absent( config, user_email, volume_name, gateway_name, host ):
+def ensure_UG_absent( syndicate_url, user_email, volume_password, volume_name, gateway_name, host ):
     """
     Ensure that a particular UG does not exist
     """
-    return ensure_gateway_absent( config, "UG", user_email, volume_name, gateway_name, host )
+    return ensure_gateway_absent( syndicate_url, "UG", user_email, volume_password, volume_name, gateway_name, host )
 
 
 #-------------------------------
-def ensure_RG_absent( config, user_email, volume_name, gateway_name, host ):
+def ensure_RG_absent( syndicate_url, user_email, volume_password, volume_name, gateway_name, host ):
     """
     Ensure that a particular RG does not exist
     """
-    return ensure_gateway_absent( config, "RG", user_email, volume_name, gateway_name, host )
+    return ensure_gateway_absent( syndicate_url, "RG", user_email, volume_password, volume_name, gateway_name, host )
 
 
 #-------------------------------
-def make_UG_mountpoint_path( config, volume_name ):
+def make_UG_mountpoint_path( mountpoint_dir, volume_name ):
     """
     Generate the path to a mountpoint.
     """
     vol_dirname = volume_name.replace("/", ".")
-    vol_mountpoint = os.path.join( config['mountpoint-dir'], vol_dirname )
+    vol_mountpoint = os.path.join( mountpoint_dir, vol_dirname )
     return vol_mountpoint
 
 
@@ -529,66 +536,66 @@ def ensure_UG_mountpoint_exists( mountpoint ):
    try:
       os.makedirs( mountpoint )
    except OSError, oe:
-      return -oe.errno
+      if oe.errno != errno.EEXIST:
+         return -oe.errno
+      else:
+         return 0
    except Exception, e:
       log.exception(e)
       return -errno.EPERM
 
 #-------------------------------
-def make_UG_command_string( binary_name, user_email, user_password, volume_name, gateway_name, key_password, mountpoint ):
-   return "%s -f -u %s -p %s -v %s -g %s -K %s %s" % (binary_name, user_email, user_password, volume_name, gateway_name, key_password, mountpoint )
+def make_UG_command_string( binary_name, syndicate_url, user_email, user_password, volume_name, gateway_name, key_password, mountpoint ):
+   # NOTE: run in foreground; watchdog handles the rest
+   return "%s -f -m %s -u %s -p %s -v %s -g %s -K %s %s" % (binary_name, syndicate_url, user_email, user_password, volume_name, gateway_name, key_password, mountpoint )
                            
+#-------------------------------
+def make_RG_command_string( binary_name, syndicate_url, user_email, user_password, volume_name, gateway_name, key_password ):
+   # NOTE: run in foreground; watchdog handles the rest
+   return "%s -f -m %s -u %s -p %s -v %s -g %s -K %s" % (binary_name, syndicate_url, user_email, user_password, volume_name, gateway_name, key_password)
+
 
 #-------------------------------
-def find_UG_by_attr( attr_name, attr_value ):
+def make_watchdog( binary, argv, stdin_buf ):
    """
-   Find a running UG (watchdog) by a given attr name and value
+   Fork a watchdog.
+   Return its pid on success
+   return errno on error 
    """
-   UGs = []
-   for p in psutil.process_iter():
-      if p.name == SYNDICATE_UG_WATCHDOG_NAME:
-         # switch on attrs 
-         for attr_kv in p.cmdline[1:]:
-            if attr_kv.startswith("attr:") and "=" in attr_kv:
-               # parse this: attr:<name>=<value>
-               kv = attr_kv[len("attr:"):]
-               
-               key, values = kv.split("=")
-               value = "=".join(values)
-               
-               if attr_name == key and attr_value == value:
-                  UGs.append( p )
-
-
-   return UGs
-            
-
-#-------------------------------
-def start_UG( config, username, volume_name, gateway_name, key_password, mountpoint ):
-   # generate the command, and pipe it over
-   # NOTE: do NOT execute the command directly! it contains sensitive information,
-   # which should NOT become visible to other users via /proc
-   password = config['runtime']['volume_password']
-   syndicate_url = config['runtime']['syndicate_url']
    
-   command_str = make_UG_command_string( SYNDICATE_UG_BINARY, username, password, volume_name, gateway_name, key_password, mountpoint )
+   try:
+      watchdog_pid = os.fork()
+   except OSError, oe:
+      log.error("os.fork() errno %s" % -oe.errno)
+      return -oe.errno 
+   
+   if watchdog_pid == 0:
+      # child 
+      return daemon.exec_with_piped_stdin( binary, argv, stdin_buf )
+   
+   else:
+      # parent 
+      return watchdog_pid
+   
+
+#-------------------------------
+def start_UG( syndicate_url, username, password, volume_name, gateway_name, key_password, mountpoint ):
+   # generate the command, and pipe it over
+   # NOTE: do NOT execute the command directly! it contains sensitive information on argv,
+   # which should NOT become visible to other users via /proc
+   
+   command_str = make_UG_command_string( SYNDICATE_UG_BINARY, syndicate_url, username, password, volume_name, gateway_name, key_password, mountpoint )
    
    # start the watchdog
-   p = subprocess.Popen([SYNDICATE_RG_WATCHDOG_NAME, "-v", volume_name, "-m", mountpoint], stdin=subprocess.PIPE)
-
-   # send the command to execute 
-   p.stdin.write( command_str )
-   p.stdin.close()
+   command_list = shlex.split( command_str )   
+   return make_watchdog( SYNDICATE_UG_WATCHDOG_NAME, [SYNDICATE_UG_WATCHDOG_NAME, '-v', volume_name, '-m', mountpoint], command_str )
    
-   # the watchdog will now daemonize and start the UG
-   return 0
-
 
 #-------------------------------
-def stop_UG( config, mountpoint ):
+def stop_UG( volume_name, mountpoint ):
    # stop a UG, given its mountpoint.
    # this method is idempotent
-   mounted_UGs = find_UG_by_attr( "mountpoint", mountpoint )
+   mounted_UGs = watchdog.find_by_attrs( SYNDICATE_UG_WATCHDOG_NAME, {"volume": volume_name, "mountpoint": mountpoint} )
    if len(mounted_UGs) > 0:
       for proc in mounted_UGs:
          # tell the watchdog to die, so it shuts down the UG
@@ -609,13 +616,70 @@ def stop_UG( config, mountpoint ):
 
 
 #-------------------------------
-def start_RG( config, volume_name, gateway_name ):
-   # TODO
+def start_RG( syndicate_url, username, password, volume_name, gateway_name, key_password ):
+   # generate the command, and pipe it over
+   # NOTE: do NOT execute the command directly! it contains sensitive information on argv,
+   # which should NOT become visible to other users via /proc
+   
+   command_str = make_RG_command_string( SYNDICATE_RG_WATCHDOG_NAME, syndicate_url, username, password, volume_name, gateway_name, key_password )
+   
+   # start the watchdog
+   command_list = shlex.split( command_str )
+   
+   return make_watchdog( command_list[0], [command_list[0], '-R', '-v', volume_name], command_str )
+   
+
+
+#-------------------------------
+def stop_gateway_watchdog( pid ):
+   # stop a watchdog, given a PID.
+   # return 0 on success, -1 on error
+   
+   # tell the watchdog to die, so it shuts down the UG
+   try:
+      os.kill( pid, signal.SIGTERM )
+   except OSError, oe:
+      if oe.errno != errno.ESRCH:
+         # NOT due to the process dying after we checked for it
+         log.exception(oe)
+         return -1
+   
+   except Exception, e:
+      log.exception(e)
+      return -1
+   
    return 0
 
 
 #-------------------------------
-def ensure_UG_running( config, user_email, volume_name, gateway_name, key_password, mountpoint, check_only=False ):
+def stop_UG( volume_name, mountpoint ):
+   # stop a UG, given its mountpoint and volume name
+   # this method is idempotent
+   mounted_UGs = watchdog.find_by_attrs( SYNDICATE_UG_WATCHDOG_NAME, {"volume": volume_name, "mountpoint": mountpoint} )
+   if len(mounted_UGs) > 0:
+      for proc in mounted_UGs:
+         rc = stop_gateway_watchdog( proc.pid )
+         if rc != 0:
+            return rc
+   
+   return 0
+
+
+#-------------------------------
+def stop_RG( volume_name ):
+   # stop an RG
+   running_RGs = watchdog.find_by_attrs( SYNDICATE_RG_WATCHDOG_NAME, {"volume": volume_name} )
+   if len(running_RGs) > 0:
+      for proc in running_RGs:
+         rc = stop_gateway_watchdog( proc.pid )
+         if rc != 0:
+            return rc
+         
+   return 0
+
+         
+#-------------------------------
+def ensure_UG_running( syndicate_url, user_email, user_password, volume_name, gateway_name, key_password, mountpoint, check_only=False ):
     """
     Ensure that a User Gateway is running on a particular mountpoint.
     Return 0 on success
@@ -625,10 +689,11 @@ def ensure_UG_running( config, user_email, volume_name, gateway_name, key_passwo
     # make sure a mountpoint exists
     rc = ensure_UG_mountpoint_exists( mountpoint )
     if rc != 0:
-        return rc
+       log.error("Failed to ensure mountpoint %s exists" % mountpoint)
+       return rc
     
     # is there a UG running at this mountpoint?
-    mounted_UGs = find_UG_by_attr( "mountpoint", mountpoint )
+    mounted_UGs = watchdog.find_by_attrs( SYNDICATE_UG_WATCHDOG_NAME, {"volume": volume_name, "mountpoint": mountpoint} )
     if len(mounted_UGs) == 1:
        # we're good!
        return mounted_UGs[0].pid
@@ -638,31 +703,67 @@ def ensure_UG_running( config, user_email, volume_name, gateway_name, key_passwo
        return -errno.EAGAN
     
     else: 
-       if not config.has_key('runtime') or config['runtime'] == None:
-          return -errno.EAGAIN
-       
        if not check_only:
-          return start_UG( config, user_email, volume_name, gateway_name, key_password, mountpoint )
+          pid = start_UG( syndicate_url, user_email, user_password, volume_name, gateway_name, key_password, mountpoint )
+          if pid < 0:
+             log.error("Failed to start UG in %s at %s, rc = %s" % (volume_name, mountpoint, pid))
+          
+          return pid
        
        else:
           return 0
 
 
 #-------------------------------
-def ensure_UG_stopped( config, mountpoint ):
+def ensure_UG_stopped( volume_name, mountpoint ):
     """
     Ensure a UG is no longer running.
     """
-    return stop_UG( config, mountpoint )
+    rc = stop_UG( volume_name, mountpoint )
+    if rc != 0:
+       log.error("Failed to stop UG in %s at %s, rc = %s" % (volume_name, mountpoint, rc))
+    
+    return rc
 
 
 #-------------------------------
-def ensure_RG_running( config, user_email, volume_name, gateway_name, key_password, check_only=False ):
-    pass 
+def ensure_RG_running( syndicate_url, user_email, password, volume_name, gateway_name, key_password, check_only=False ):
+    """
+    Ensure an RG is running
+    """
+    # is there an RG running for this volume?
+    running_RGs = watchdog.find_by_attrs( SYNDICATE_RG_WATCHDOG_NAME, {"volume": volume_name} )
+    if len(running_RGs) == 1:
+       # we're good!
+       return running_RGs[0].pid
+    
+    elif len(running_RGs) > 1:
+       # too many! probably in the middle of starting up 
+       return -errno.EAGAIN
+    
+    else:
+       
+       if not check_only:
+          pid = start_RG( syndicate_url, user_email, password, volume_name, gateway_name, key_password )
+          if pid < 0:
+             log.error("Failed to start RG in %s, rc = %s" % (volume_name, pid))
+             
+          return pid
+                       
+       else:
+          return 0
+       
 
 #-------------------------------
-def ensure_RG_stopped( config ):
-    pass
+def ensure_RG_stopped( volume_name ):
+    """
+    Ensure that the RG is stopped.
+    """
+    rc = stop_RG( volume_name )
+    if rc != 0:
+       log.error("Failed to stop RG in %s, rc = %s" % (volume_name, rc))
+
+    return rc
 
 
 #-------------------------
@@ -693,47 +794,57 @@ def ensure_running():
    UG_key_password = make_gateway_private_key_password( UG_name, observer_secret )
    RG_key_password = make_gateway_private_key_password( RG_name, observer_secret )
    
-   UG_mountpoint_path = make_UG_mountpoint_path( config, volume_name )
+   UG_mountpoint_path = make_UG_mountpoint_path( config['mountpoint_dir'], volume_name )
    
    # is the UG running?
-   rc = ensure_UG_running( config, user_email, volume_name, UG_name, UG_key_password, UG_mountpoint_path, check_only=True )
+   rc = ensure_UG_running( syndicate_url, user_email, volume_password, volume_name, UG_name, UG_key_password, UG_mountpoint_path, check_only=True )
    
-   if rc != 0:
+   if rc <= 0:
       # ensure the UG exists
-      rc = ensure_UG_exists( config, user_email, volume_name, UG_name, host, port=UG_PORT )
-      if not rc:
-         log.error("Failed to create UG %s on the MS" % UG_name)
-         return rc
+      rc = ensure_UG_exists( syndicate_url, user_email, volume_password, volume_name, UG_name, hostname, UG_PORT, UG_key_password )
+      if rc is None:
+         log.error("Failed to create UG %s on the MS, rc = %s" % (UG_name, rc))
+         return -errno.ENOENT
       
       # ensure our local copy is running 
-      rc = ensure_UG_running( config, user_email, volume_name, UG_name, UG_key_password, UG_mountpoint_path )
-      if rc != 0:
-         log.error("Failed to ensure that UG %s is running" % UG_name )
+      rc = ensure_UG_running( syndicate_url, user_email, volume_password, volume_name, UG_name, UG_key_password, UG_mountpoint_path )
+      if rc < 0:
+         log.error("Failed to ensure that UG %s is running, rc = %s" % (UG_name, rc) )
          return rc
+   
+   if rc >= 0:
+      log.info("\n\nUG for %s (mounted at %s) running on PID %s\n" % (volume_name, UG_mountpoint_path, rc))
       
    # is the RG running?
-   rc = ensure_RG_running( config, user_email, volume_name, RG_name, RG_key_password, check_only=True )
-   if rc != 0:
+   rc = ensure_RG_running( syndicate_url, user_email, volume_password, volume_name, RG_name, RG_key_password, check_only=True )
+   if rc <= 0:
       # ensure the RG exists 
-      rc = ensure_RG_exists( config, user_email, volume_name, RG_name, host, port=UG_PORT )
-      if not rc:
-         log.error("Failed to create RG %s on the MS" % RG_name)
-         return rc
+      rc = ensure_RG_exists( syndicate_url, user_email, volume_password, volume_name, RG_name, hostname, RG_PORT, RG_key_password )
+      if rc is None:
+         log.error("Failed to create RG %s on the MS, rc = %s" % (RG_name, rc))
+         return -errno.ENOENT
       
       # ensure our local copy is running
-      rc = ensure_RG_running( config, user_email, volume_name, RG_name, RG_key_password )
-      if rc != 0:
-         log.error("Failed to ensure that UG %s is running" % UG_name )
+      rc = ensure_RG_running( syndicate_url, user_email, volume_password, volume_name, RG_name, RG_key_password )
+      if rc < 0:
+         log.error("Failed to ensure that UG %s is running, rc = %s" % (UG_name, rc) )
          return rc
       
-      
+   if rc >= 0:
+      log.info("\n\nRG for %s running on PID %s\n" % (volume_name, rc))
+   
    return 0
 
 #-------------------------
 def validate_config( config ):
+   global DEFAULT_CONFIG
    
+   # debugging info?
+   if config['debug']:
+      log.setLevel( logging.DEBUG )
+      
    # required arguments
-   required = ['observer-secret', 'observer-url', 'public-key']
+   required = ['observer_secret', 'observer_url', 'public_key']
    for req in required:
       if config.get( req, None ) == None:
          print >> sys.stderr, "Missing required argument: %s" % req
@@ -741,69 +852,139 @@ def validate_config( config ):
    
    # required types 
    required_types = {
-       'poll-timeout': int,
+       'poll_timeout': int,
+       'port': int,
    }
    
    for req, reqtype in required_types.items():
-       try:
-           i = reqtype( config[req] )
-           config[req] = i
-       except:
-           print >> sys.stderr, "Invalid value for '%s'" % req
-           return -1
+      if config.get( req, None ) is not None:
+         try:
+            i = reqtype( config[req] )
+            config[req] = i
+         except:
+            print >> sys.stderr, "Invalid value for '%s'" % req
+            return -1
        
+   # fill defaults 
+   for def_key, def_value in DEFAULT_CONFIG.items():
+      if config.get( def_key, None ) is None:
+         log.debug("Default: %s = %s" % (def_key, def_value) )
+         
+         config[def_key] = def_value
+         
+         
    return 0
       
       
 #-------------------------
 class PollThread( threading.Thread ):
    
-   def run():
+   @classmethod 
+   def poll_data( cls, config ):
+      data = poll_opencloud_data( config )
+      
+      if data is None:
+         log.error("Failed to poll data")
+         
+      else:
+         update_config_runtime( data )
+         
+         # act on the data 
+         rc = ensure_running()
+         if rc != 0:
+            log.error("ensure_running rc = %s" % rc)
+         
+         
+   def run(self):
       """
       Continuously poll the OpenCloud observer for runtime data.
       """
       while True:
          config = get_config()
          
-         poll_timeout = config['poll-timeout']
+         poll_timeout = config['poll_timeout']
          
          time.sleep( poll_timeout )
          
-         rc, data = poll_opencloud_data( self.config )
+         PollThread.poll_data( config )
+            
+            
+#-------------------------
+class ReaperThread( threading.Thread ):
+   
+   
+   def run(self):
+      """
+      Wait for all child processes to die, and reap their exit statuses.
+      """
+      self.running = True
+      while self.running:
+         try:
+            pid, status = os.wait()
+         except OSError, oe:
+            log.error("os.wait() errno %s" % -oe.errno)
+            time.sleep(1)
+            continue
          
-         if rc != 0:
-            log.error("poll_opencloud_data rc = %s" % rc)
-            
-         elif data is not None:
-            update_config_runtime( data )
-            
-            # act on the data 
-            ensure_running()
-            
+         if os.WIFSIGNALED( status ):
+            log.info("Process %s caught signal %s" % (pid, os.WTERMSIG( status ) ))
          
+         elif os.WIFEXITED( status ):
+            log.info("Process %s exit status %s" % (pid, os.WEXITSTATUS( status ) ))
+
+
+#-------------------------
+def run_once( config ):
+   rt = ReaperThread()
+   rt.start()
+   
+   PollThread.poll_data( config )
+   
+   if config['debug']:
+      import pprint 
+      pp = pprint.PrettyPrinter()
+      pp.pprint( config )
+   
+      print "UG key password: %s" % make_gateway_private_key_password( make_gateway_name( "UG", config['runtime']['volume_name'], socket.gethostname() ), config['observer_secret'] )
+      print "RG key password: %s" % make_gateway_private_key_password( make_gateway_name( "RG", config['runtime']['volume_name'], socket.gethostname() ), config['observer_secret'] )
+
+   rt.running = False
 
 #-------------------------
 def main( config ):
+   # start reaping 
+   rt = ReaperThread()
+   rt.start()
    
    # start polling 
    th = PollThread()
    th.start()
    
+   config = get_config()
+   
    # start listening for pushes
-   httpd = BaseHTTPServer.HTTPServer( ('', 5553), ObserverPushHandler )
+   httpd = BaseHTTPServer.HTTPServer( ('', config['port']), ObserverPushHandler )
    httpd.serve_forever()
 
 
 #-------------------------    
 if __name__ == "__main__":
    
-   config = modconf.build_config( argv, conf_validator=validate_config )
+   argv = sys.argv
+   config = modconf.build_config( argv, "Syndicate Observer Daemon", "syndicated", CONFIG_OPTIONS, conf_validator=validate_config )
    
    if config is None:
       sys.exit(-1)
    
+   CONFIG = config 
+   
+   if config['run_once']:
+      run_once( config )
+      sys.exit(0)
+      
    if config.get("foreground", None):
       main( config )
+      
    else:
       logfile_path = None 
       pidfile_path = config.get("pidfile", None)

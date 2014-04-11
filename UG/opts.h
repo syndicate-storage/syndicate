@@ -22,6 +22,14 @@
 
 #include <getopt.h>
 
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 
+#endif 
+
+#include <wordexp.h>
+
+#define SYNDICATE_OPTS_STDIN_MAX 65536 
+
 // command-line options
 struct syndicate_opts {
    char* config_file;
@@ -40,7 +48,9 @@ struct syndicate_opts {
    char* tls_pkey_path;
    char* tls_cert_path;
    char* storage_root;
+   char* mountpoint;             // UG only; first non-optarg
    bool flush_replicas;
+   bool read_stdin;     // if true, get arguments from stdin (i.e. to avoid them showing up in /proc/self/cmdline)
    size_t cache_soft_limit;
    size_t cache_hard_limit;
 };

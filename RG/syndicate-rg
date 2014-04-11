@@ -19,13 +19,9 @@
 import sys
 import os
 import signal
-import resource
-import daemon 
-import grp
-import lockfile
 import errno 
 import time
-import atexit
+import setproctitle
 import time
 
 import syndicate.rg.common as rg_common
@@ -65,10 +61,22 @@ def spawn_rg( config, old_exit_status ):
    """
    Spawn an RG.
    """
+   setproctitle.setproctitle( child_proc_title( config['volume'] ) )
+   
    syndicate = rg_main.setup_syndicate( config )
    rc = rg_main.main( config, syndicate )
    
    return rc
+
+
+#-------------------------------
+def supervisor_proc_title( volume ):
+   return watchdog.attr_proc_title( "syndicate-rg", {"volume": volume} )
+
+
+#-------------------------------
+def child_proc_title( volume ):
+   return watchdog.attr_proc_title( "syndicate-rg-worker", {"volume": volume} )
 
 #-------------------------------
 if __name__ == "__main__":
@@ -78,7 +86,7 @@ if __name__ == "__main__":
    config = rg_main.build_config( argv )
    if config is None:
       sys.exit(1)
-   
+         
    # set signal handlers
    for sig in [signal.SIGTERM, signal.SIGFPE, signal.SIGQUIT, signal.SIGABRT, signal.SIGINT]:
       signal.signal( sig, death_handler )

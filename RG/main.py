@@ -26,6 +26,8 @@ import syndicate.util.config as modconf
 
 import socket
 import os
+import shlex
+import setproctitle
 
 from wsgiref.simple_server import make_server 
 
@@ -47,11 +49,16 @@ CONFIG_OPTIONS = {
    "syndicate_pubkey":  ("-S", 1, "Path to the PEM-encoded Syndicate public key"),
    "foreground":        ("-f", 0, "Run in the foreground"),
    "logdir":            ("-L", 1, "Directory to contain the log files.  If not given, then write to stdout and stderr."),
-   "pidfile":           ("-l", 1, "Path to the desired PID file.")
+   "pidfile":           ("-l", 1, "Path to the desired PID file."),
+   "stdin":             ("-R", 0, "Read arguments on stdin (i.e. for security)")
 }
 
 #-------------------------
 def validate_args( config ):
+   
+   # if we're reading on stdin, then proceed to do so
+   if config.get('stdin'):
+      return 0
    
    # required arguments
    required = ['gateway', 'MS', 'volume']
@@ -171,7 +178,29 @@ def debug():
 
 #-------------------------
 def build_config( argv ):
-   return modconf.build_config( argv, "Syndicate Replica Gateway", "RG", CONFIG_OPTIONS, conf_validator=validate_args )
+   config = modconf.build_config( argv, "Syndicate Replica Gateway", "RG", CONFIG_OPTIONS, conf_validator=validate_args )
+   
+   if config is None:
+      log.error("Failed to load config")
+      return None 
+   
+   # reading commands from stdin?
+   if config.get("stdin", None) is not None and config["stdin"]:
+      
+      arg_string = sys.stdin.read()
+      argv = shlex.split( arg_string )
+      
+      config = modconf.build_config( argv, "Syndicate Replica Gateway", "RG", CONFIG_OPTIONS, conf_validator=validate_args )
+      if config is None:
+         log.error("Failed to read config from stdin")
+         return None
+         
+      if config.get("stdin", None) is not None and config["stdin"]:
+         log.error("Invalid argument: passed --stdin on stdin")
+         return None
+      
+   return config
+         
       
 #-------------------------
 def main( config, syndicate=None ):
@@ -187,5 +216,5 @@ if __name__ == "__main__":
    config = build_config( sys.argv )
    if config is None:
       sys.exit(1)
-      
+   
    main( config )

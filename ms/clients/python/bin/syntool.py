@@ -767,6 +767,8 @@ class Client:
       self.config['debug'] = debug 
       self.config['password'] = password
       self.config['no_verify_result'] = no_verify_result
+      
+      Log.set_log_level( "DEBUG" if debug else "INFO" )
 
    def __getattr__(self, method_name ):
       # return a callable

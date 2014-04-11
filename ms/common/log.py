@@ -19,15 +19,16 @@
 
 import logging
 
-global_log = None 
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+global_log = logging.getLogger()
 
 #-------------------------
 def get_logger():
-
+    
     global global_log
     
     if global_log == None:
-       
+        # DEPRICATED
         log = logging.getLogger()
         log.setLevel(logging.DEBUG)
         log.propagate = False

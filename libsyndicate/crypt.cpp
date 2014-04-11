@@ -434,6 +434,7 @@ int md_load_public_and_private_keys( EVP_PKEY** _pubkey, EVP_PKEY** _privkey, ch
    EVP_PKEY* pubkey = PEM_read_bio_PUBKEY( buf_pub_io, NULL, NULL, NULL );
    
    BIO_free_all( buf_pub_io );
+   free( pubkey_pem );
    
    if( pubkey == NULL ) {
       // invalid public key 

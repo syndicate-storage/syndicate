@@ -43,11 +43,69 @@ int syndicate_parse_long( int c, char* opt, long* result ) {
    return rc;
 }
 
+// read all of stdin 
+ssize_t syndicate_read_stdin( char* stdin_buf ) {
+   ssize_t nr = 0;
+   size_t r = 0;
+   
+   while( true ) {
+      r = read( STDIN_FILENO, stdin_buf + nr, SYNDICATE_OPTS_STDIN_MAX - nr );
+      if( r == 0 ) {
+         // EOF 
+         break;
+      }
+      if( nr >= SYNDICATE_OPTS_STDIN_MAX ) {
+         // too much 
+         nr = -EOVERFLOW;
+         break;
+      }
+      
+      nr += r;
+   }
+   
+   return nr;
+}
+
+// get options from stdin.
+// on success, set argc and argv with the actual arguments (the caller must free them) and return 0
+// on failure, return negative
+int syndicate_read_opts_from_stdin( int* argc, char*** argv ) {
+   
+   // realistically speaking, stdin can't really be longer than SYNDICATE_OPTS_STDIN_MAX 
+   char* stdin_buf = CALLOC_LIST( char, SYNDICATE_OPTS_STDIN_MAX + 1 );
+   ssize_t stdin_len = syndicate_read_stdin( stdin_buf );
+   
+   if( stdin_len < 0 ) {
+      errorf("Failed to read stdin, rc = %zd\n", stdin_len );
+      return -ENODATA;
+   }
+   
+   // lex it 
+   wordexp_t expanded_stdin;
+   memset( &expanded_stdin, 0, sizeof(wordexp_t) );
+   
+   int rc = wordexp( stdin_buf, &expanded_stdin, WRDE_SHOWERR );
+   if( rc != 0 ) {
+      errorf("wordexp rc = %d\n", rc );
+      
+      wordfree( &expanded_stdin );
+      free( stdin_buf );
+      return -EINVAL;
+   }
+   else {
+      // got it!
+      *argc = expanded_stdin.we_wordc;
+      *argv = expanded_stdin.we_wordv;
+      free( stdin_buf );
+      return 0;
+   }
+}
+
 // parse opts from argv.
 // optionally supply the optind after parsing (if it's not NULL)
 // return 0 on success
 // return -1 on failure
-int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*) ) {
+int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*), bool no_stdin ) {
    
    static struct option syndicate_options[] = {
       {"config-file",     required_argument,   0, 'c'},
@@ -66,25 +124,87 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
       {"storage-root",    required_argument,   0, 'r'},
       {"cache-soft-limit", required_argument,  0, 'l'},
       {"cache-hard-limit", required_argument,  0, 'L'},
+      {"read-stdin",      no_argument,         0, 'R'},
       {0, 0, 0, 0}
    };
 
+   struct option* all_options = NULL;
+   
    int rc = 0;
    int opt_index = 0;
    int c = 0;
    
-   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:T:C:K:l:L:";
+   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:T:C:K:l:L:r:R";
    
+   int num_default_options = 0;         // needed for freeing special arguments
    char* optstr = NULL;
+   
    if( special_opts != NULL ) {
       optstr = CALLOC_LIST( char, strlen(default_optstr) + strlen(special_opts) + 1 );
       sprintf( optstr, "%s%s", default_optstr, special_opts );
+      
+      // how many options?
+      int num_options = 0;
+      int num_special_options = 0;
+      
+      for( int i = 0; syndicate_options[i].name != NULL; i++ ) {
+         num_options ++;
+         num_default_options ++;
+      }
+      
+      for( int i = 0; special_opts[i] != '\0'; i++ ) {
+         if( special_opts[i] != ':' ) {
+            num_options ++;
+            num_special_options ++;
+         }
+      }
+      
+      // make a new options table
+      all_options = CALLOC_LIST( struct option, num_options + 1 );
+      
+      memcpy( all_options, syndicate_options, num_default_options * sizeof(struct option) );
+      
+      int k = 0;
+      for( int i = 0; i < num_special_options; i++ ) {
+         int ind = i + num_default_options;
+         
+         int has_arg = no_argument;
+         if( k + 1 < (signed)strlen(special_opts) && special_opts[k+1] == ':' ) {
+            has_arg = required_argument;
+         }
+         
+         if( special_opts[k] == '\0' ) {
+            // shouldn't happen, but check anyway 
+            errorf("%s", "Ran out of special options early\n");
+            break;
+         }
+         
+         char* buf = CALLOC_LIST( char, 12 );
+         sprintf(buf, "special-%c", special_opts[k] );
+         
+         all_options[ind].name = buf;
+         all_options[ind].has_arg = has_arg;
+         all_options[ind].flag = NULL;
+         all_options[ind].val = special_opts[k];
+         
+         k++;
+         if( has_arg )
+            k++;
+      }
    }
    else {
       optstr = (char*)default_optstr;
+      all_options = syndicate_options;
    }
    
-   while(rc == 0 && (c = getopt_long(argc, argv, optstr, syndicate_options, &opt_index)) != -1) {
+   c = 0;
+   while(rc == 0 && c != -1) {
+      
+      c = getopt_long(argc, argv, optstr, all_options, &opt_index);
+      
+      if( c == -1 )
+         break;
+      
       switch( c ) {
          case 'v': {
             opts->volume_name = optarg;
@@ -159,14 +279,25 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
             
             break;
          }
-         
+         case 'R': {
+            if( no_stdin ) {
+               // this is invalid--we're already parsing from stdin 
+               fprintf(stderr, "Invalid argument: cannot process -R when reading args from stdin\n");
+               return -EINVAL;
+            }
+            else {
+               dbprintf("%s", "Reading arguments from stdin\n");
+               opts->read_stdin = true;
+            }
+            break;
+         }
          default: {
             rc = -1;
             if( special_opt_handler ) {
                rc = special_opt_handler( c, optarg );
             }
             if( rc == -1 ) {
-               fprintf(stderr, "Unrecognized option -%c", c );
+               fprintf(stderr, "Unrecognized option -%c\n", c );
                rc = -1;
             }
             break;
@@ -178,9 +309,55 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
       free( optstr );
    }
    
+   if( all_options != syndicate_options ) {
+      for( int i = num_default_options; all_options[i].name != NULL; i++ ) {
+         free( (void*)all_options[i].name );
+      }
+      free( all_options );
+   }
+   
    if( out_optind != NULL ) {
       *out_optind = optind;
    }
+   
+   if( optind < argc ) {
+      opts->mountpoint = argv[optind];
+   }
+   
+   
+   return rc;
+}
+
+int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*) ) {
+   int rc = syndicate_parse_opts_impl( opts, argc, argv, out_optind, special_opts, special_opt_handler, false );
+   if( rc != 0 ) {
+      return rc;
+   }
+   
+   // do we need to parse stdin?
+   if( opts->read_stdin ) {
+      int new_argc = 0;
+      char** new_argv = NULL;
+      
+      int rc = syndicate_read_opts_from_stdin( &new_argc, &new_argv );
+      if( rc != 0 ) {
+         errorf("Failed to read args from stdin, rc = %d\n", rc );
+         return -ENODATA;
+      }
+      else {
+         // clear opts 
+         syndicate_default_opts( opts );
+         
+         // NOTE: set this to 0, since otherwise getopt_long decides to skip the first argument
+         optind = 0;
+         
+         // got new data.  parse it
+         rc = syndicate_parse_opts_impl( opts, new_argc, new_argv, out_optind, special_opts, special_opt_handler, true );
+         
+         // NOTE: don't free new_argv--opts currently points to its strings.  It's fine to let this leak for now.
+      }
+   }
+   
    return rc;
 }
 
@@ -226,6 +403,8 @@ Optional arguments:\n\
             Soft limit on the size of the local cache (bytes).\n\
    -L, --cache-hard-limit LIMIT\n\
             Hard limit on the size of the local cache (bytes).\n\
+   -R, --read-stdin\n\
+            If set, read all command-line options from stdin.\n\
 \n", progname );
 }
 

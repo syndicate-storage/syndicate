@@ -452,14 +452,15 @@ class StubObject( object ):
       
       parsed = []
       
-      # fill default arguments
-      if argspec.defaults != None:
-         for i in xrange(0, len(argspec.defaults)):
-            kw[ argspec.args[ len(argspec.args) - len(argspec.defaults) + i] ] = argspec.defaults[i]
+      #log.info("argspec: args=%s, defaults=%s" % (argspec.args, argspec.defaults))
+      #log.info("args = %s" % [str(s) for s in args])
       
       # parse args in order
       for i in xrange(0, len(argspec.args)):
          argname = argspec.args[i]
+         
+         #log.debug("parse argument '%s'" % argname)
+         
          arg_func = cls.arg_parsers.get( argname, None )
          if arg_func != None:
             args, kw, extras = cls.ReplaceArg( argspec, argname, arg_func, args, kw, lib )
@@ -479,6 +480,27 @@ class StubObject( object ):
       return args, kw, extras_all
    
    
+   @classmethod 
+   def replace_kw( cls, arg_name, arg_value_func, value, lib ):
+      """
+      Replace a single keyword argument.
+      """
+      ret = arg_value_func( cls, value, lib )
+      if ret is None:
+         raise Exception("Got None for parsing %s" % (arg_name))
+      
+      lret = 0
+      try:
+         lret = len(ret)
+      except:
+         raise Exception("Got non-iterable for parsing %s" % (arg_name))
+      
+      if len(ret) != 2:
+         raise Exception("Invalid value from parsing %s" % (arg_name))
+      
+      return ret[0], ret[1]
+
+
    @classmethod
    def ReplaceArg( cls, argspec, arg_name, arg_value_func, args, kw, lib ):
       """
@@ -491,29 +513,51 @@ class StubObject( object ):
       # find positional argument?
       args = list(args)
       extras = {}
+      replaced = False
       
+      # replace positional args
       for i in xrange(0, min(len(args), len(argspec.args))):
          if argspec.args[i] == arg_name:
             args[i], arg_extras = arg_value_func( cls, args[i], lib )
+            
+            #log.debug("positional argument '%s' is now '%s'" % (arg_name, args[i]) )
+            
             extras.update( arg_extras )
+            
+            replaced = True
+      
+      if not replaced and argspec.defaults != None:
+         # replace default args 
+         for i in xrange(0, len(argspec.defaults)):
+            if argspec.args[ len(argspec.args) - len(argspec.defaults) + i ] == arg_name:
+               
+               value = None
+               if arg_name in kw.keys():
+                  value = kw[arg_name]
+               else:
+                  value = argspec.defaults[i]
+               
+               ret = cls.replace_kw( arg_name, arg_value_func, value, lib )
+               
+               #log.debug("defaulted keyword argument '%s' is now '%s'" % (arg_name, ret[0]))
+            
+               kw[arg_name], arg_extras = ret[0], ret[1]
+               
+               extras.update( arg_extras )
+            
+               replaced = True
       
       # find keyword argument?
-      if arg_name in kw.keys():
-         ret = arg_value_func( cls, kw[arg_name], lib )
-         if ret is None:
-            raise Exception("Got None for parsing %s" % (arg_name))
+      if not replaced and arg_name in kw.keys():
+         ret = cls.replace_kw( arg_name, arg_value_func, kw[arg_name], lib )
          
-         lret = 0
-         try:
-            lret = len(ret)
-         except:
-            raise Exception("Got non-iterable for parsing %s" % (arg_name))
-         
-         if len(ret) != 2:
-            raise Exception("Invalid value from parsing %s" % (arg_name))
+         #log.debug("keyword argument '%s' is now '%s'" % (arg_name, ret[0]) )
          
          kw[arg_name], arg_extras = ret[0], ret[1]
+         
          extras.update( arg_extras )
+         
+         replaced = True
       
       return (args, kw, extras)      
          
@@ -849,8 +893,8 @@ class Gateway( StubObject ):
       """
       Hold on to the password in lib.
       """
-      lib.encryption_passwrod = passwd
-   
+      lib.encryption_password = passwd
+      
       return passwd, {}
    
    
@@ -1166,12 +1210,6 @@ class Gateway( StubObject ):
       return closure_json_str, {}
    
    
-   
-   @classmethod 
-   def store_encryption_password( cls, password, lib ):
-      lib.encryption_password = password
-      return password, {}
-   
    arg_parsers = dict( StubObject.arg_parsers.items() + {
       "gateway_name":           (lambda cls, arg, lib: cls.parse_gateway_name_or_id(arg, lib)),
       "g_name_or_id":           (lambda cls, arg, lib: cls.parse_gateway_name_or_id(arg, lib)),
@@ -1180,7 +1218,7 @@ class Gateway( StubObject ):
       "gateway_public_key":     (lambda cls, arg, lib: cls.parse_gateway_public_key(arg, lib)),
       "closure":                (lambda cls, arg, lib: cls.parse_gateway_closure(arg, lib)),
       "host_gateway_key":       (lambda cls, arg, lib: cls.recover_or_load_private_key(arg, lib)),
-      "encryption_password":    (lambda cls, arg, lib: cls.store_encryption_password(arg, lib)),
+      "encryption_password":    (lambda cls, arg, lib: cls.parse_encryption_password(arg, lib)),
    }.items() )
    
    key_type = "gateway"

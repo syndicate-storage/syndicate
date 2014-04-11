@@ -21,15 +21,13 @@
 import sys
 import os
 import signal
-import resource
-import daemon 
-import grp
-import lockfile
 import errno 
 import time
 import subprocess
 import setproctitle
 import logging
+import shlex 
+
 logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 
 import syndicate.util.daemonize as daemonize
@@ -80,7 +78,7 @@ def watchdog_need_respawn( exit_status ):
 
 
 #-------------------------------
-def fuse_umount( pid, mountpoint ):
+def fuse_umount( mountpoint ):
    """
    fusermount -u <mountpoint>
    """
@@ -115,15 +113,16 @@ def check_mounted( mountpoint, ug_name=UG_NAME ):
    
    for mounted_filesystem in mounted_filesystems:
       # line format:
-      try:
-         fs_spec, fs_file, fs_vfstype, fs_mntopts, fs_freq, fs_passno = mounted_filesystem.split(" ")
-      except:
-         log.warning("Ill-formatted mount line: '%s'" % mounted_filesystem)
-         continue 
-      
-      if fs_file == mountpoint and (ug_name is not None and fs_spec == ug_name):
-         # mounted here...
-         return True
+      if len(mounted_filesystem) > 0:
+         try:
+            fs_spec, fs_file, fs_vfstype, fs_mntopts, fs_freq, fs_passno = mounted_filesystem.split(" ")
+         except:
+            log.warning("Ill-formatted mount line: '%s'" % mounted_filesystem)
+            continue 
+         
+         if fs_file == mountpoint and (ug_name is not None and fs_spec == ug_name):
+            # mounted here...
+            return True
       
    return False
    
@@ -213,20 +212,35 @@ def spawn_ug( config, old_exit_status ):
    """
    Spawn a UG.
    """
+   
    # immediately switch to a different process name 
    pt = child_proc_title( config['volume'], config['mountpoint'] )
    setproctitle.setproctitle( pt )
    
    command_str = config['command']
    
+   # ensure nothing is mounted on our mountpoint
+   if check_mounted( config['mountpoint'] ):
+      umount_rc = fuse_umount( config['mountpoint'] )
+      
+      if umount_rc != 0:
+         errorf("Failed to unmount %s, rc = %s" % (config['mountpoint'], umount_rc ))
+         return umount_rc
+      
+   # make sure we can access /dev/fuse
    if not check_fuse_dev():
-      log.error("Cannot mount FUSE filesystems")
+      print >> sys.stderr, "Cannot mount FUSE filesystems"
       return -1
    
-   command_list = command_str.split(" ")
+   # split up our command string...
+   command_list = shlex.split( command_str )
    
-   return subprocess.call( command_list )
-
+   binary = command_list[0]
+   argv = [binary, '-R', '-v', config['volume'], config['mountpoint']]
+   stdin_buf = command_str 
+   
+   return daemonize.exec_with_piped_stdin( binary, argv, stdin_buf )
+   
 
 #-------------------------------
 def validate_config( config ):
@@ -272,11 +286,11 @@ def get_UG_command( config ):
 
 #-------------------------------
 def supervisor_proc_title( volume, mountpoint ):
-   return "syndicate-ug attr:volume=%s attr:mountpoint=%s" % (volume, mountpoint)
+   return watchdog.attr_proc_title( "syndicate-ug", {"volume": volume, "mountpoint": mountpoint} )
 
 #-------------------------------
 def child_proc_title( volume, mountpoint ):
-   return "syndicatefs attr:volume=%s attr:mountpoint=%s" % (volume, mountpoint)
+   return watchdog.attr_proc_title( "syndicatefs", {"volume": volume, "mountpoint": mountpoint} )
 
 #-------------------------------
 if __name__ == "__main__":

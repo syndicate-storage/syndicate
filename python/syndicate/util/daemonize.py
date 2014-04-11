@@ -23,6 +23,12 @@ import daemon
 import grp
 import lockfile
 
+
+import logging
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+log = logging.getLogger()
+log.setLevel( logging.INFO )
+
 #-------------------------------
 def daemonize( main_method, logfile_path=None, pidfile_path=None ):
    
@@ -67,5 +73,44 @@ def daemonize( main_method, logfile_path=None, pidfile_path=None ):
    # start up
    with context:
       main_method()
+      
+
+#-------------------------------
+def exec_with_piped_stdin( binary, argv, stdin_buf ):
+   """
+   exec() a process image, but send some data to it initially via stdin.
+   WARNING: this is hacky--you shouldn't use pipes in this manner. 
+   This method limits len(stdin_buf) to not exceed the host OS's pipe buffer
+   length, but a better method should be found.
+   """
+   
+   # WARNING: this is a hack, and is not really the right way to use pipes.
+   # open a pipe, replace stdin the read end, and send ourselves the command-list over the pipe.
+   
+   # make sure our pipe write won't block (otherwise, we're stuck)
+   pipe_buflen = os.pathconf('.', os.pathconf_names['PC_PIPE_BUF'])
+   if len(stdin_buf) >= pipe_buflen:
+      print >> sys.stderr, "stdin buffer too long"
+      return -1
+   
+   try:
+      r, w = os.pipe()
+   except OSError, oe:
+      print >> sys.stderr, "pipe errno = %s" % oe.errno
+      return -1
+   
+   os.dup2( r, sys.stdin.fileno() )
+   os.write( w, stdin_buf )
+   os.close( w )
+   
+   # exec the binary 
+   sys.stdout.flush()
+   sys.stderr.flush()
+   
+   try:
+      os.execv( binary, argv )
+   except OSError, oe:
+      log.error("Failed to execute %s, errno = %s" % (binary, -oe.errno))
+      sys.exit(oe.errno)
       
       

@@ -34,6 +34,7 @@ except ImportError, e:
       in_client = True
       import log as Log
       log = Log.get_logger()
+      
    
    log.warning("Using storage stub")
    from storage_stub import StorageStub as storage
@@ -49,7 +50,7 @@ except ImportError, e:
       in_client = True
       import log as Log
       log = Log.get_logger()
-   
+      
    log.warning("Using object stubs")
    from object_stub import *
 
@@ -62,7 +63,7 @@ except ImportError, e:
       in_client = True
       import log as Log
       log = Log.get_logger()
-   
+      
    log.warning("Using authentication stub")
    from auth_stub import *
 
@@ -988,7 +989,7 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
          be generated for you, but the private key will be written 
          to your local Syndicate key directory.
          
-      host_private_key=str (default: None)
+      host_gateway_key=str (default: None)
          If set, this is the path to the corresponding gateway public key.
          The private key will be sealed with your password and uploaded
          to the MS, so your Gateway can download and unseal it when it 
@@ -1005,9 +1006,8 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
       
       A user may be subject to a quota enforced for each type of Gateway.
    """
+   return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, encryption_password=encryption_password, encrypted_gateway_private_key=host_gateway_key, gateway_public_key=gateway_public_key, **attrs )
    
-   return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, gateway_public_key=gateway_public_key, encrypted_gateway_private_key=host_gateway_key, **attrs )
-
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
 @ReadAPIGuard( Gateway, parse_args=Gateway.ParseArgs )

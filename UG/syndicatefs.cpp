@@ -727,8 +727,10 @@ static fuse_args g_fargs = FUSE_ARGS_INIT( 0, NULL );
 
 int grab_fuse_opts( int fuse_opt, char* fuse_arg ) {
    int rc = 0;
+   dbprintf("Fuse opt: -%c\n", fuse_opt);
    
    switch( fuse_opt ) {
+      
       case 'f': {
          // run in foreground
          fuse_opt_add_arg( &g_fargs, "-f" );
@@ -789,25 +791,33 @@ int main(int argc, char** argv) {
       exit(1);
    }
    
+   /*
    // add remaining arguments to FUSE
    for( int i = fuse_optind; i < argc; i++ ) {
       fuse_opt_add_arg( &g_fargs, argv[i] );
    }
+   */
    
    // force direct io
    fuse_opt_add_arg( &g_fargs, "-odirect_io" );
    
-
    // we need a mountpoint, and possibly other options
-   if( argv[argc-1][0] == '-' ) {
+   if( syn_opts.mountpoint == NULL ) {
       syndicate_common_usage( argv[0] );
       fprintf(stderr, "You must give a mountpoint!\n");
       exit(1);
    }
-
+   
    // get absolute path to mountpoint
-   int mountpoint_ind = argc - 1;
-   char* mountpoint = realpath( argv[mountpoint_ind], NULL );
+   char* mountpoint = realpath( syn_opts.mountpoint, NULL );
+   if( mountpoint == NULL ) {
+      int errsv = errno;
+      fprintf(stderr, "realpath(%s) rc = %d\n", syn_opts.mountpoint, -errsv );
+      exit(1);
+   }
+   
+   // add mountpoint 
+   fuse_opt_add_arg( &g_fargs, mountpoint );
 
    struct md_HTTP syndicate_http;
    memset( &syndicate_http, 0, sizeof(struct md_HTTP) );
