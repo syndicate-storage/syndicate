@@ -87,6 +87,8 @@ if __name__ == "__main__":
    if config is None:
       sys.exit(1)
          
+   setproctitle.setproctitle( supervisor_proc_title(config['volume']) )
+   
    # set signal handlers
    for sig in [signal.SIGTERM, signal.SIGFPE, signal.SIGQUIT, signal.SIGABRT, signal.SIGINT]:
       signal.signal( sig, death_handler )

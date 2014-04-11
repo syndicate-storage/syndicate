@@ -56,15 +56,14 @@ OPENCLOUD_VOLUME_OWNER_ID               = "volume_owner"
 OPENCLOUD_VOLUME_PASSWORD               = "volume_password"
 OPENCLOUD_SYNDICATE_URL                 = "syndicate_url"
 
-"""
 SYNDICATE_UG_WATCHDOG_NAME              = "syndicate-ug"
 SYNDICATE_RG_WATCHDOG_NAME              = "syndicate-rg"
-SYNDICATE_UG_BINARY                     = "syndicatefs"
-"""
+SYNDICATE_UG_BINARY_NAME                = "syndicatefs"
 
-SYNDICATE_UG_WATCHDOG_NAME              = "/home/jude/Desktop/research/git/syndicate/build/out/bin/UG/syndicate-ug"
-SYNDICATE_RG_WATCHDOG_NAME              = "/home/jude/Desktop/research/git/syndicate/build/out/bin/RG/syndicate-rg"
-SYNDICATE_UG_BINARY                     = "/home/jude/Desktop/research/git/syndicate/build/out/bin/UG/syndicatefs"
+
+SYNDICATE_UG_WATCHDOG_PATH              = "/home/jude/Desktop/research/git/syndicate/build/out/bin/UG/syndicate-ug"
+SYNDICATE_RG_WATCHDOG_PATH              = "/home/jude/Desktop/research/git/syndicate/build/out/bin/RG/syndicate-rg"
+SYNDICATE_UG_BINARY_PATH                = "/home/jude/Desktop/research/git/syndicate/build/out/bin/UG/syndicatefs"
 
 UG_PORT                                 = 32780
 RG_PORT                                 = 32880
@@ -126,6 +125,65 @@ def update_config_runtime( runtime_info ):
         
     CONFIG['runtime'].update( runtime_info )
 
+#-------------------------------
+class EnsureRunningThread( threading.Thread ):
+   """
+   Process OpenCloud data and act on it, either 
+   synchronously or asynchronously
+   """
+   
+   processing_lock = threading.Lock()
+   
+   def __init__(self, sealed_data):
+      self.sealed_data = sealed_data
+      super( EnsureRunningThread, self ).__init__()
+      
+   @classmethod 
+   def unseal_and_process_data( cls, sealed_data ):
+      """
+      Unseal data, and then process it.
+      Make sure no more than one instance of this request is being processed.
+      """
+      locked = cls.processing_lock.acquire( False )
+      if not locked:
+         # failed to aquire 
+         return -errno.EAGAIN
+   
+      config = get_config()
+      
+      # unseal the data 
+      rc, data_text = unseal_observer_data( config['observer_secret'], sealed_data )
+      if rc != 0:
+         # failed to read 
+         cls.processing_lock.release()
+         log.error("unseal_observer_data rc = %s" % rc)
+         return -errno.EINVAL
+      
+      # parse the data 
+      rc, data = parse_observer_data( data_text )
+      if rc != 0:
+         # failed to parse 
+         cls.processing_lock.release()
+         log.error("parse_observer_data rc = %s" % rc)
+         return -errno.EINVAL
+      
+      if data is not None:
+         update_config_runtime( data )
+         rc = ensure_running()
+         
+         if rc != 0:
+            errorf("ensure_running rc = %s" % rc)
+      
+      cls.processing_lock.release()
+      return rc
+   
+   
+   def run( self ):
+      """
+      Unseal and process the data given in the constructor.
+      """
+      return EnsureRunningThread.unseal_and_process_data( self.sealed_data )
+      
 
 #-------------------------------
 class ObserverPushHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
@@ -169,25 +227,23 @@ class ObserverPushHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
             return 
         
         # get the data 
-        rc, data_text = read_observer_data_from_json( config['public_key'], config['observer_secret'], json_text )
+        rc, sealed_data = read_observer_data_from_json( config['public_key'], json_text )
         if rc != 0:
             # failed to read 
             self.response_error( 400, "Invalid request" )
             return 
+         
+        # send the request back immediately 
+        self.response_success( "OK" )
+        self.wfile.flush()
         
-        # parse the data 
-        rc, data = parse_observer_data( config, data_text )
-        if rc != 0:
-            # failed to parse 
-            self.response_error( 400, "Invalid request")
-            return 
+        # data came from OpenCloud
+        # asynchronously process it
+        proc_thread = EnsureRunningThread( sealed_data )
+        proc_thread.start()
         
-        if data is not None:
-           update_config_runtime( data )
-           ensure_running()
+        return
         
-        # finish up
-        return response_success( "OK" )
         
 
 #-------------------------------
@@ -236,7 +292,7 @@ def find_missing_and_invalid_fields( required_fields, json_data ):
 
 
 #-------------------------------
-def read_observer_data_from_json( public_key_path, shared_secret, json_text ):
+def read_observer_data_from_json( public_key_path, json_text ):
     """
     Parse and validate a JSON structure.
     Return 0 on success
@@ -290,6 +346,13 @@ def read_observer_data_from_json( public_key_path, shared_secret, json_text ):
     if not rc:
         log.error("Invalid signature")
         return (-errno.EINVAL, None)
+    
+    # return the encrypted data 
+    return (0, sealed_data)
+ 
+ 
+#-------------------------------
+def unseal_observer_data( shared_secret, sealed_data ):
     
     # decrypt the data, using the shared secret 
     log.info("Unsealing credentials...")
@@ -355,10 +418,15 @@ def poll_opencloud_data( config ):
         log.error("GET %s status %s" % (url, req.status_code))
         return None
     
-    rc, data_str = read_observer_data_from_json( config['public_key'], config['observer_secret'], req.text )
+    rc, sealed_data_str = read_observer_data_from_json( config['public_key'], req.text )
     if rc != 0:
         log.error("Failed to read JSON, rc = %s" % rc)
         return None 
+    
+    rc, sealed_data_str = unseal_observer_data( config['observer_secret'], sealed_data_str )
+    if rc != 0:
+       log.error("Failed to unseal data, rc = %s" % rc)
+       return None
     
     rc, data = parse_observer_data( data_str )
     if rc != 0:
@@ -551,8 +619,7 @@ def make_UG_command_string( binary_name, syndicate_url, user_email, user_passwor
                            
 #-------------------------------
 def make_RG_command_string( binary_name, syndicate_url, user_email, user_password, volume_name, gateway_name, key_password ):
-   # NOTE: run in foreground; watchdog handles the rest
-   return "%s -f -m %s -u %s -p %s -v %s -g %s -K %s" % (binary_name, syndicate_url, user_email, user_password, volume_name, gateway_name, key_password)
+   return "%s -m %s -u %s -p %s -v %s -g %s -K %s" % (binary_name, syndicate_url, user_email, user_password, volume_name, gateway_name, key_password)
 
 
 #-------------------------------
@@ -584,7 +651,7 @@ def start_UG( syndicate_url, username, password, volume_name, gateway_name, key_
    # NOTE: do NOT execute the command directly! it contains sensitive information on argv,
    # which should NOT become visible to other users via /proc
    
-   command_str = make_UG_command_string( SYNDICATE_UG_BINARY, syndicate_url, username, password, volume_name, gateway_name, key_password, mountpoint )
+   command_str = make_UG_command_string( SYNDICATE_UG_BINARY_NAME, syndicate_url, username, password, volume_name, gateway_name, key_password, mountpoint )
    
    # start the watchdog
    command_list = shlex.split( command_str )   
@@ -626,7 +693,7 @@ def start_RG( syndicate_url, username, password, volume_name, gateway_name, key_
    # start the watchdog
    command_list = shlex.split( command_str )
    
-   return make_watchdog( command_list[0], [command_list[0], '-R', '-v', volume_name], command_str )
+   return make_watchdog( command_list[0], [SYNDICATE_RG_WATCHDOG_NAME, '-R', '-v', volume_name], command_str )
    
 
 
@@ -696,13 +763,16 @@ def ensure_UG_running( syndicate_url, user_email, user_password, volume_name, ga
     mounted_UGs = watchdog.find_by_attrs( SYNDICATE_UG_WATCHDOG_NAME, {"volume": volume_name, "mountpoint": mountpoint} )
     if len(mounted_UGs) == 1:
        # we're good!
+       logging.info("UG for %s at %s already running; PID = %s" % (volume_name, mountpoint, mounted_UGs[0].pid))
        return mounted_UGs[0].pid
     
     elif len(mounted_UGs) > 1:
        # too many!  probably in the middle of starting up 
+       logging.error("Multiple UGs running for %s on %s...?" % (volume_name, mountpoint))
        return -errno.EAGAN
     
     else: 
+       logging.error("No UG for %s on %s" % (volume_name, mountpoint))
        if not check_only:
           pid = start_UG( syndicate_url, user_email, user_password, volume_name, gateway_name, key_password, mountpoint )
           if pid < 0:
@@ -735,14 +805,16 @@ def ensure_RG_running( syndicate_url, user_email, password, volume_name, gateway
     running_RGs = watchdog.find_by_attrs( SYNDICATE_RG_WATCHDOG_NAME, {"volume": volume_name} )
     if len(running_RGs) == 1:
        # we're good!
+       logging.info("RG for %s already running; PID = %s" % (volume_name, running_RGs[0].pid))
        return running_RGs[0].pid
     
     elif len(running_RGs) > 1:
        # too many! probably in the middle of starting up 
+       logging.error("Multiple RGs running for %s...?" % (volume_name))
        return -errno.EAGAIN
     
     else:
-       
+       logging.error("No RG for %s" % (volume_name))
        if not check_only:
           pid = start_RG( syndicate_url, user_email, password, volume_name, gateway_name, key_password )
           if pid < 0:
@@ -899,7 +971,8 @@ class PollThread( threading.Thread ):
       """
       Continuously poll the OpenCloud observer for runtime data.
       """
-      while True:
+      self.running = True
+      while self.running:
          config = get_config()
          
          poll_timeout = config['poll_timeout']
@@ -922,7 +995,9 @@ class ReaperThread( threading.Thread ):
          try:
             pid, status = os.wait()
          except OSError, oe:
-            log.error("os.wait() errno %s" % -oe.errno)
+            if oe.errno != errno.ECHILD:
+               log.error("os.wait() errno %s" % -oe.errno)
+               
             time.sleep(1)
             continue
          
@@ -936,6 +1011,7 @@ class ReaperThread( threading.Thread ):
 #-------------------------
 def run_once( config ):
    rt = ReaperThread()
+   rt.daemon = True
    rt.start()
    
    PollThread.poll_data( config )
@@ -954,17 +1030,27 @@ def run_once( config ):
 def main( config ):
    # start reaping 
    rt = ReaperThread()
+   rt.daemon = True
    rt.start()
    
    # start polling 
    th = PollThread()
+   th.daemon = True
    th.start()
    
    config = get_config()
    
    # start listening for pushes
    httpd = BaseHTTPServer.HTTPServer( ('', config['port']), ObserverPushHandler )
-   httpd.serve_forever()
+   
+   log.info("Listening on %s" % config['port'])
+   try:
+      httpd.serve_forever()
+   except:
+      log.info("shutting down")
+      rt.running = False
+      th.running = False
+      sys.exit(0)
 
 
 #-------------------------    

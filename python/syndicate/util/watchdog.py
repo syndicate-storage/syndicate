@@ -50,23 +50,37 @@ def find_by_attrs( watchdog_name, attrs ):
    """
    procs = []
    for p in psutil.process_iter():
-      if p.name == watchdog_name:
+      
+      if len(p.cmdline) == 0:
+         continue 
+      
+      parts = p.cmdline[0].split(" ")
+      if len(parts) < 2:
+         continue 
+      
+      name = parts[0]
+      attr_list = parts[1:]
+      
+      if name == watchdog_name:
+         
          # switch on attrs 
          matching_attrs = []
          match = True
          
          # find matching attrs
-         for attr_kv in p.cmdline[1:]:
+         for attr_kv in attr_list:
             
             if is_attr_str( attr_kv ):
                # parse this: attr:<name>=<value>
                kv = attr_kv[len("attr:"):]
                
-               key, values = kv.split("=")
-               value = "=".join(values)
+               parts = kv.split("=")
+               key = parts[0]
+               value = "=".join(parts[1:])
                
-               if attr_name == key and attr_value == value:
-                  matching_attrs.append( attr_name )
+               print "'%s' == '%s'" % (key, value)
+               if attrs.has_key(key) and attrs[key] == value:
+                  matching_attrs.append( key )
                   
          # did we match all attrs?
          for attr_name in attrs.keys():
