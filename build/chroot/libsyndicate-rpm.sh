@@ -4,7 +4,7 @@ ROOT=$HOME/syndicate/libsyndicate-root
 NAME="libsyndicate"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
-DEPS="openssl curl protobuf libmicrohttpd" 
+DEPS="openssl curl protobuf libmicrohttpd json-c" 
 
 DEPARGS=""
 for pkg in $DEPS; do
