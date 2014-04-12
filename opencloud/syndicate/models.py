@@ -12,9 +12,6 @@ class SyndicateService(SingletonModel,Service):
         verbose_name = "Syndicate Service"
         verbose_name_plural = "Syndicate Service"
 
-    # for sealing Volume credentials
-    observer_private_key_pem = models.TextField( editable=False )
-    
     def __unicode__(self):  return u'Syndicate Service'
 
 
@@ -22,7 +19,7 @@ class Volume(PlCoreBase):
     class Meta:
         app_label = "syndicate"
 
-    name = models.CharField(max_length=64, unique=True, help_text="Human-readable, searchable name of the Volume")
+    name = models.CharField(max_length=64, help_text="Human-readable, searchable name of the Volume")
     
     owner_id = models.ForeignKey(User, verbose_name='Owner')
 
@@ -33,8 +30,10 @@ class Volume(PlCoreBase):
     private = models.BooleanField(default=True, help_text="Indicates if the Volume is visible to users other than the Volume Owner and Syndicate Administrators.")
     archive = models.BooleanField(default=False, help_text="Indicates if this Volume is read-only, and only an Aquisition Gateway owned by the Volume owner (or Syndicate admin) can write to it.")
     
-    credentials_blob = models.TextField(null=True, blank=True, editable=False )
-    
+    #metadata_private_key = models.TextField(null=True, blank=True, max_length=1024, help_text="Private key the Volume should use to sign metadata served to Gateways")
+
+    #file_quota = models.IntegerField(help_text='Maximum number of files and directories allowed in this Volume (-1 means "unlimited")')
+
     CAP_READ_DATA = 1
     CAP_WRITE_DATA = 2
     CAP_HOST_DATA = 4

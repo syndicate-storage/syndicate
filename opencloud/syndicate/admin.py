@@ -25,8 +25,6 @@ class SyndicateServiceAdmin(SingletonAdmin,ReadOnlyAwareAdmin):
 
     user_readonly_fields = ['name','enabled','versionNumber','description']
     user_readonly_inlines = [SliceROInline, ServiceAttrAsTabROInline]
-    
-    exclude = ['observer_private_key_pem']
 
     suit_form_tabs =(('general', 'Syndicate Service Details'),
         ('slices','Slices'),
@@ -76,7 +74,7 @@ class VolumeAdmin(ReadOnlyAwareAdmin):
 
        else:
           # can't change owner, slice id, or block size on update
-          return ['blocksize', 'owner_id', 'slice_id', 'credentials_blob']
+          return ['blocksize', 'owner_id', 'slice_id']
 
 
     list_display = ['name', 'owner_id']
@@ -104,8 +102,6 @@ class VolumeAdmin(ReadOnlyAwareAdmin):
                      #('volumeKeys', 'Access Keys'),
                      ('volumeAccessRights', 'Volume Access Rights'),
     )
-    
-    exclude = ['credentials_blob']
     
 
 # left panel:

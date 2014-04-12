@@ -25,36 +25,60 @@ except:
     # for testing
     import logging
     from logging import Logger
+    logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
     logger = logging.getLogger()
     logger.setLevel( logging.INFO )
 
 # get config package 
 import syndicatelib_config.config as CONFIG
 
-# get the Syndicate models 
-sys.path.insert(0, os.path.join( os.path.dirname( __file__), ".." ) )
+if hasattr( CONFIG, "SYNDICATE_PYTHONPATH" ):
+    os.environ.setdefault("SYNDICATE_PYTHONPATH", CONFIG.SYNDICATE_PYTHONPATH)
 
-try:
-   import syndicate.models as models
-except:
-   logger.warning("Failed to import models; assming testing environment")
-   pass
+# get core syndicate modules 
+inserted = False
+if os.getenv("SYNDICATE_PYTHONPATH") is not None:
+    sys.path.insert(0, os.getenv("SYNDICATE_PYTHONPATH") )
+    inserted = True
+else:
+    logger.warning("No SYNDICATE_PYTHONPATH set.  Assuming Syndicate is in your PYTHONPATH")
 
-
-# get the Syndicate package
-
-#sys.path.insert(0,"/root/syndicate/build/out/python")
-#sys.path.insert(0,"/usr/local/lib64/site-packages") 
-sys.path.insert(0,"/home/jude/Desktop/research/git/syndicate/build/out/python")
-
-import syndicate
+import syndicate 
 syndicate = reload(syndicate)
 
 import syndicate.client.bin.syntool as syntool
 import syndicate.client.common.msconfig as msconfig
 import syndicate.syndicate as c_syndicate
 
-import lib.grequests.grequests as grequests
+# find the Syndicate models (also in a package called "syndicate")
+if inserted:
+    sys.path.pop(0)
+
+if os.getenv("OPENCLOUD_PYTHONPATH") is not None:
+    sys.path.insert(0, os.getenv("OPENCLOUD_PYTHONPATH"))
+else:
+    logger.warning("No OPENCLOUD_PYTHONPATH set.  Assuming Syndicate models are in your PYTHONPATH")
+
+try:
+   os.environ.setdefault("DJANGO_SETTINGS_MODULE", "planetstack.settings")
+
+   # get our models
+   import syndicate 
+   syndicate = reload(syndicate)
+
+   import syndicate.models as models
+   
+except Exception, e:
+   logger.exception(e)
+   logger.warning("Failed to import models; assming testing environment")
+   pass
+
+# make gevents runnabale from multiple threads 
+from gevent import monkey
+monkey.patch_all(socket=True, dns=True, time=True, select=True,thread=False, os=True, ssl=True, httplib=False, aggressive=True)
+#monkey.patch_all()
+
+import grequests
 
 #-------------------------------
 def openid_url( email ):
@@ -197,7 +221,7 @@ def ensure_user_absent( user_email ):
  
 
 #-------------------------------
-def ensure_volume_exists( user_email, opencloud_volume ):
+def ensure_volume_exists( user_email, opencloud_volume, user=None ):
     """
     Given the email address of a user, ensure that the given
     Volume exists and is owned by that user.
@@ -242,12 +266,13 @@ def ensure_volume_exists( user_email, opencloud_volume ):
     else:
         # volume already exists.  Verify its owned by this user.
 
-        try:
-            user = client.read_user( volume['owner_id'] )
-        except Exception, e:
-            # transport error, or user doesn't exist (either is unacceptable)
-            logger.exception(e)
-            raise e
+        if user is None:
+           try:
+               user = client.read_user( volume['owner_id'] )
+           except Exception, e:
+               # transport error, or user doesn't exist (either is unacceptable)
+               logger.exception(e)
+               raise e
 
         if user is None or user['email'] != user_email:
             raise Exception("Volume '%s' already exists, but is NOT owned by '%s'" % (opencloud_volume.name, user_email) )

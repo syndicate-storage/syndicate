@@ -8,3 +8,4 @@ SYNDICATE_OPENID_TRUSTROOT="http://localhost:8081"
 SYNDICATE_OPENCLOUD_USER="judecn@gmail.com"
 SYNDICATE_OPENCLOUD_PASSWORD="nya"
 
+SYNDICATE_PYTHONPATH="/root/syndicate/build/out/python"
