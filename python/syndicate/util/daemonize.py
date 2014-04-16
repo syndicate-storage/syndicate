@@ -111,6 +111,6 @@ def exec_with_piped_stdin( binary, argv, stdin_buf ):
       os.execvp( binary, argv )
    except OSError, oe:
       log.error("Failed to execute %s, errno = %s" % (binary, -oe.errno))
-      sys.exit(oe.errno)
+      return -oe.errno
       
       

@@ -38,11 +38,22 @@ log = logging.getLogger()
 def read_file( file_path ):
    try:
       fd = open( file_path, "r" )
-      buf = fd.read()
-      fd.close()
-      return buf
    except:
       return None
+   
+   buf = None
+   try:
+      buf = fd.read()
+   except:
+      fd.close()
+      return None
+   
+   try:
+      fd.close()
+   except:
+      return None
+   
+   return buf
 
 # -------------------   
 def write_file( file_path, data ):

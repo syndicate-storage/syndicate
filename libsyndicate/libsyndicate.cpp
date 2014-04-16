@@ -2377,7 +2377,7 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
    conf->connect_timeout = 10;
    conf->replica_connect_timeout = 10;
    
-   conf->portnum = 32780;
+   conf->portnum = -1;
    conf->transfer_timeout = 300;
 
    conf->owner = getuid();
