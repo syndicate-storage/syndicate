@@ -11,6 +11,14 @@ import requests
 import traceback 
 import base64 
 
+
+# make gevents runnabale from multiple threads 
+from gevent import monkey
+#monkey.patch_all(socket=True, dns=True, time=True, select=True,thread=False, os=True, ssl=True, httplib=False, aggressive=True)
+monkey.patch_all()
+
+import grequests
+
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
 from Crypto import Random
@@ -25,36 +33,53 @@ except:
     # for testing
     import logging
     from logging import Logger
+    logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
     logger = logging.getLogger()
     logger.setLevel( logging.INFO )
 
 # get config package 
 import syndicatelib_config.config as CONFIG
 
-# get the Syndicate models 
-sys.path.insert(0, os.path.join( os.path.dirname( __file__), ".." ) )
+if hasattr( CONFIG, "SYNDICATE_PYTHONPATH" ):
+    os.environ.setdefault("SYNDICATE_PYTHONPATH", CONFIG.SYNDICATE_PYTHONPATH)
 
-try:
-   import syndicate.models as models
-except:
-   logger.warning("Failed to import models; assming testing environment")
-   pass
+# get core syndicate modules 
+inserted = False
+if os.getenv("SYNDICATE_PYTHONPATH") is not None:
+    sys.path.insert(0, os.getenv("SYNDICATE_PYTHONPATH") )
+    inserted = True
+else:
+    logger.warning("No SYNDICATE_PYTHONPATH set.  Assuming Syndicate is in your PYTHONPATH")
 
-
-# get the Syndicate package
-
-#sys.path.insert(0,"/root/syndicate/build/out/python")
-#sys.path.insert(0,"/usr/local/lib64/site-packages") 
-sys.path.insert(0,"/home/jude/Desktop/research/git/syndicate/build/out/python")
-
-import syndicate
+import syndicate 
 syndicate = reload(syndicate)
 
 import syndicate.client.bin.syntool as syntool
 import syndicate.client.common.msconfig as msconfig
 import syndicate.syndicate as c_syndicate
 
-import lib.grequests.grequests as grequests
+# find the Syndicate models (also in a package called "syndicate")
+if inserted:
+    sys.path.pop(0)
+
+if os.getenv("OPENCLOUD_PYTHONPATH") is not None:
+    sys.path.insert(0, os.getenv("OPENCLOUD_PYTHONPATH"))
+else:
+    logger.warning("No OPENCLOUD_PYTHONPATH set.  Assuming Syndicate models are in your PYTHONPATH")
+
+try:
+   os.environ.setdefault("DJANGO_SETTINGS_MODULE", "planetstack.settings")
+
+   # get our models
+   import syndicate 
+   syndicate = reload(syndicate)
+
+   import syndicate.models as models
+   
+except ImportError, ie:
+   logger.warning("Failed to import models; assming testing environment")
+   pass
+
 
 #-------------------------------
 def openid_url( email ):
@@ -197,11 +222,14 @@ def ensure_user_absent( user_email ):
  
 
 #-------------------------------
-def ensure_volume_exists( user_email, opencloud_volume ):
+def ensure_volume_exists( user_email, opencloud_volume, user=None ):
     """
     Given the email address of a user, ensure that the given
     Volume exists and is owned by that user.
     Do not try to ensure that the user exists.
+
+    Return the Volume if we created it, or return None if we did not.
+    Raise an exception on error.
     """
     client = connect_syndicate()
 
@@ -237,28 +265,29 @@ def ensure_volume_exists( user_email, opencloud_volume ):
 
         else:
             # successfully created the volume!
-            return True
+            return vol_info
 
     else:
         # volume already exists.  Verify its owned by this user.
 
-        try:
-            user = client.read_user( volume['owner_id'] )
-        except Exception, e:
-            # transport error, or user doesn't exist (either is unacceptable)
-            logger.exception(e)
-            raise e
+        if user is None:
+           try:
+               user = client.read_user( volume['owner_id'] )
+           except Exception, e:
+               # transport error, or user doesn't exist (either is unacceptable)
+               logger.exception(e)
+               raise e
 
         if user is None or user['email'] != user_email:
             raise Exception("Volume '%s' already exists, but is NOT owned by '%s'" % (opencloud_volume.name, user_email) )
 
         # we're good!
-        return True
+        return None
 
 
 
 #-------------------------------
-def ensure_volume_absent( opencloud_volume ):
+def ensure_volume_absent( volume_name ):
     """
     Given an OpenCloud volume, ensure that the corresponding Syndicate
     Volume does not exist.
@@ -267,7 +296,7 @@ def ensure_volume_absent( opencloud_volume ):
     client = connect_syndicate()
 
     # this is idempotent, and returns True even if the Volume doesn't exist
-    return client.delete_volume( opencloud_volume.name )
+    return client.delete_volume( volume_name )
     
     
 #-------------------------------
@@ -359,7 +388,66 @@ def sign_data( private_key_pem, data_str ):
 
 
 #-------------------------------
-def create_credential_blob( private_key_pem, shared_secret, syndicate_url, volume_name, volume_owner, volume_password ):
+def create_signed_blob( private_key_pem, data ):
+    """
+    Create a signed message to syndicated.
+    """
+    signature = sign_data( private_key_pem, data )
+    if signature is None:
+       logger.error("Failed to sign data")
+       return None
+    
+    # create signed credential
+    msg = {
+       "data":  base64.b64encode( data ),
+       "sig":   base64.b64encode( signature )
+    }
+    
+    return json.dumps( msg )
+
+
+def create_sealed_and_signed_blob( private_key_pem, shared_secret, data ):
+    """
+    Create a sealed and signed message.
+    """
+    
+    # seal it with the password 
+    logger.info("Sealing credential data")
+    
+    rc, sealed_data = c_syndicate.password_seal( data, shared_secret )
+    if rc != 0:
+       logger.error("Failed to seal data with the OpenCloud secret, rc = %s" % rc)
+       return None
+    
+    msg = create_signed_blob( private_key_pem, sealed_data )
+    if msg is None:
+       logger.error("Failed to sign credential")
+       return None 
+    
+    return msg 
+
+
+#-------------------------------
+def create_volume_list_blob( private_key_pem, shared_secret, volume_list ):
+    """
+    Create a sealed volume list, signed with the private key.
+    """
+    list_data = {
+       "volumes": volume_list
+    }
+    
+    list_data_str = json.dumps( list_data )
+    
+    msg = create_sealed_and_signed_blob( private_key_pem, shared_secret, list_data_str )
+    if msg is None:
+       logger.error("Failed to seal volume list")
+       return None 
+    
+    return msg
+ 
+
+#-------------------------------
+def create_credential_blob( private_key_pem, shared_secret, syndicate_url, volume_name, volume_owner, volume_password, UG_port, RG_port ):
     """
     Create a sealed, signed, encoded credentials blob.
     """
@@ -370,57 +458,62 @@ def create_credential_blob( private_key_pem, shared_secret, syndicate_url, volum
        "volume_name":     volume_name,
        "volume_owner":    volume_owner,
        "volume_password": volume_password,
+       "volume_peer_port": UG_port,
+       "volume_replicate_port": RG_port
     }
     
     cred_data_str = json.dumps( cred_data )
     
-    # seal it with the password 
-    logger.info("Sealing credential data")
+    msg = create_sealed_and_signed_blob( private_key_pem, shared_secret, cred_data_str )
+    if msg is None:
+       logger.error("Failed to seal volume list")
+       return None 
     
-    rc, sealed_data = c_syndicate.password_seal( cred_data_str, shared_secret )
-    if rc != 0:
-       logger.error("Failed to seal data with the OpenCloud secret, rc = %s" % rc)
-       return None
-    
-    # sign it 
-    signature = sign_data( private_key_pem, sealed_data )
-    if signature is None:
-       logger.error("Failed to sign sealed data")
-       return None
-    
-    # create signed credential
-    creds = {
-       "data":  base64.b64encode( sealed_data ),
-       "sig":   base64.b64encode( signature )
-    }
-    
-    return json.dumps( creds )
+    return msg 
     
 
 #-------------------------------
-def store_credentials( volume, sealed_credentials_b64 ):
+def store_credentials( volumeslice, sealed_credentials_b64 ):
     """
     Store the sealed Volume credentials into the database,
     so the sliver-side Syndicate daemon syndicated.py can get them later
     (in case pushing them out fails).
     """
-    volume.credentials_blob = sealed_credentials_b64
-    volume.save( updated_fields=['credentials_blob'] )
+    volumeslice.credentials_blob = sealed_credentials_b64
+    volumeslice.save( updated_fields=['credentials_blob'] )
 
 
 #-------------------------------
-def get_volume( volume_name ):
+def get_volumeslice_names( slice_name ):
     """
-    Get a Volume from the datastore.
+    Get the list of Volume names from the datastore.
     """
     try:
-        volume = models.Volume.objects.get( name=volume_name )  
-    except:
-        logger.error("No such volume %s" % volume_name)
+        all_vs = models.VolumeSlice.objects.filter( slice_id__name = slice_name )
+        volume_names = []
+        for vs in all_vs:
+           volume_names.append( vs.volume_id.name )
+           
+        return volume_names
+    except Exception, e:
+        logger.exception(e)
+        logger.error("Failed to query datastore for volumes mounted in %s" % slice_name)
         return None 
-    
-    return volume
  
+
+#-------------------------------
+def get_volumeslice( volume_name, slice_name ):
+    """
+    Get a volumeslice record from the datastore.
+    """
+    try:
+        vs = models.VolumeSlice.objects.get( volume_id__name = volume_name, slice_id__name = slice_name )
+        return vs
+    except Exception, e:
+        logger.exception(e)
+        logger.error("Failed to query for volume %s mounted in %s" % (volume_name, slice_name))
+        return None
+                                    
  
 #-------------------------------
 def push_begin( sliver_host, payload ):
@@ -465,11 +558,11 @@ class FakeObject(object):
         pass
 
 
-# functional test 
-if __name__ == "__main__":
-    sys.path.append("/opt/planetstack")
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "planetstack.settings")
-
+def ft_syndicate_access():
+    """
+    Functional tests for ensuring objects exist and don't exist in Syndicate.
+    """
+    
     fake_user = FakeObject()
     fake_user.email = "fakeuser@opencloud.us"
 
@@ -517,3 +610,46 @@ if __name__ == "__main__":
     print "\nensure_user_absent(%s)\n" % fake_user.email
     ensure_user_absent( fake_user.email )
 
+
+def ft_volumeslice( slice_name ):
+    """
+    Functional tests for reading VolumeSlice information
+    """
+    print "slice: %s" % slice_name
+    
+    volumes = get_volumeslice_names( slice_name )
+    
+    print "volumes mounted in slice %s:" % slice_name
+    for v in volumes:
+       print "   %s:" % v
+      
+       vs = get_volumeslice( v, slice_name )
+       
+       print "      %s" % dir(vs)
+          
+
+# functional test 
+if __name__ == "__main__":
+    sys.path.append("/opt/planetstack")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "planetstack.settings")
+
+    if len(sys.argv) < 2:
+      print "Usage: %s testname [args]" % sys.argv[0]
+      
+    # call a method starting with ft_, and then pass the rest of argv as its arguments
+    testname = sys.argv[1]
+    ft_testname = "ft_%s" % testname
+    
+    try:
+       test_call = "%s(%s)" % (ft_testname, ",".join(sys.argv[2:]))
+       
+       print "calling %s" % test_call
+       
+       rc = eval( test_call )
+       
+       print "result = %s" % rc
+       
+    except NameError, ne:
+       
+       print "ERROR: No such test %s" % testname
+    
