@@ -8,7 +8,7 @@ Test server for syndicated.py
 import os
 import sys
 import BaseHTTPServer
-
+import json
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
@@ -45,12 +45,14 @@ CONFIG_OPTIONS = {
    "MS":                ("-m", 1, "Syndicate Metadata Service URL."),
    "push":              ("-P", 1, "Push a credential blob to given host(s).  Hosts must be comma-separated."),
    "server":            ("-S", 1, "Test serving on a given IP:Port combination"),
+   "UG_port":           ("-U", 1, "User Gateway port number" ),
+   "RG_port":           ("-R", 1, "Replica Gateway port number" )
 }
 
 
 #-------------------------------
 def validate_config( config ):
-   required = ["private_key", "observer_secret", "volume", "username", "password", "MS"]
+   required = ["private_key", "observer_secret", "volume", "username", "password", "MS", "UG_port", "RG_port"]
    missing = []
    ret = 0
    
@@ -67,6 +69,17 @@ def validate_config( config ):
    if config.get("push", None) is None and config.get("server",None) is None:
       log.error("Must pass either 'push' or 'server'")
       ret = -1 
+      
+      
+   # these must be integers 
+   must_be_ints = ["UG_port", "RG_port"]
+   for mbi in must_be_ints:
+      try:
+         config[mbi] = int(config[mbi])
+      except:
+         log.error("%s must be an integer" % mbi)
+         ret = -1
+         break
       
    return ret
 
@@ -94,20 +107,42 @@ def load_private_key( key_path ):
 class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
    
    def do_GET( self ):
+      volume_name = self.path.strip("/")
+      data = None 
+      datatype = None
+      if len(volume_name) == 0:
+         # request for volume name 
+         data = self.server.volume_str
+         datatype = "application/json"
+      
+      elif volume_name == "testvolume":
+         # request for credential 
+         data = self.server.cred_str
+         datatype = "application/json"
+         
+      else:
+         # not found 
+         self.send_response( 404 )
+         self.send_header( "Content-Type", "text/plain" )
+         self.wfile.write("Not found")
+         self.end_headers()
+         return 
+      
       self.send_response( 200 )
-      self.send_header( "Content-Type", "text/plain" )
-      self.send_header( "Content-Length", len(self.server.cred_str) )
+      self.send_header( "Content-Type", datatype )
+      self.send_header( "Content-Length", len(data) )
       self.end_headers()
       
-      self.wfile.write( self.server.cred_str )
+      self.wfile.write( data )
       return
    
    
 #-------------------------------
 class ObserverServer( BaseHTTPServer.HTTPServer ):
    
-   def __init__(self, cred_str, server, req_handler ):
+   def __init__(self, cred_str, volume_str, server, req_handler ):
       self.cred_str = cred_str
+      self.volume_str = volume_str
       BaseHTTPServer.HTTPServer.__init__( self, server, req_handler )
       
 
@@ -126,20 +161,17 @@ if __name__ == "__main__":
    
    key_pem = key.exportKey()
    
+   # make a volume list 
+   volume_str = syndicatelib.create_volume_list_blob( key_pem, config["observer_secret"], ["testvolume"] )
+   
    # make a volume credential 
-   cred_str = syndicatelib.create_credential_blob( key_pem, config["observer_secret"], config["MS"], config["volume"], config["username"], config["password"] )
+   cred_str = syndicatelib.create_credential_blob( key_pem, config["observer_secret"], config["MS"], config["volume"], config["username"], config["password"], config["UG_port"], config["RG_port"] )
    
    if config.get("push", None) is not None:
       
       hosts = config["push"].split(",")
       
-      # test push 
-      rss = []
-      for host in hosts:
-         rs = syndicatelib.push_begin( host, cred_str )
-         rss.append( rs )
-
-      syndicatelib.push_run( rss )
+      syndicatelib.do_push( hosts, cred_str )
       
       # done!
       sys.exit(0)
@@ -152,6 +184,6 @@ if __name__ == "__main__":
       
       log.info("Serving on %s port %s" % (server, portnum))
       
-      httpd = ObserverServer( cred_str, (server, portnum), ObserverServerHandler )
+      httpd = ObserverServer( cred_str, volume_str, (server, portnum), ObserverServerHandler )
       httpd.serve_forever()
       

@@ -1924,11 +1924,13 @@ int ms_client_load_registration_metadata( struct ms_client* client, ms::ms_regis
 
    ms_client_rlock( client );
 
-   // verify that our host and port match the MS's record
+   // verify that our host and port match the MS's record.
+   // The only time they don't have to match is when the gateway serves from localhost
+   // (i.e. its intended to serve only local requests)
 #ifndef _FIREWALL
-   if( strcmp( cert.hostname, client->conf->hostname ) != 0 ) {
+   if( strcmp( cert.hostname, client->conf->hostname ) != 0 && strcasecmp( cert.hostname, "localhost" ) != 0 ) {
       // wrong host
-      errorf("ERR: This gateway is running on %s:%d, but the MS says it should be running on %s:%d.  Please update the Gateway record on the MS.\n", client->conf->hostname, client->conf->portnum, cert.hostname, cert.portnum );
+      errorf("ERR: This gateway is serving from %s, but the MS says it should be serving from %s:%d.  Please update the Gateway record on the MS.\n", client->conf->hostname, cert.hostname, cert.portnum );
       ms_client_unlock( client );
 
       ms_client_gateway_cert_free( &cert );

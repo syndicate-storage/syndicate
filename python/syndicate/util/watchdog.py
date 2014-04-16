@@ -148,7 +148,7 @@ def kill_child( child_pid ):
 #-------------------------------
 def stop_child( child_pid ):
    # send SIGTERM, then SIGKILL
-   log.info("Sending SIGTERM to RG %s" % child_pid)
+   log.info("Sending SIGTERM to %s" % child_pid)
    os.kill( child_pid, signal.SIGTERM )
    
    count = 3

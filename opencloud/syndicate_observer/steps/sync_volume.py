@@ -61,6 +61,7 @@ class SyncVolume(SyncStep):
             # volume must exist 
             try:
                 new_volume = syndicatelib.ensure_volume_exists( volume.owner_id.email, volume, user=new_user )
+                syndicatelib.ensure_volume_exists( volume.owner_id.email, volume, user=new_user )
             except Exception, e:
                 traceback.print_exc()
                 logger.error("Failed to ensure volume '%s' exists" % volume.name )

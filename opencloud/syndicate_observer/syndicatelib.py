@@ -7,9 +7,13 @@ import os
 import sys
 import random
 import json
+import time
 import requests
 import traceback 
 import base64 
+import BaseHTTPServer
+import setproctitle
+import threading
 
 
 # make gevents runnabale from multiple threads 
@@ -56,6 +60,9 @@ syndicate = reload(syndicate)
 
 import syndicate.client.bin.syntool as syntool
 import syndicate.client.common.msconfig as msconfig
+import syndicate.util.storage as syndicate_storage
+import syndicate.util.watchdog as syndicate_watchdog
+import syndicate.util.daemonize as syndicate_daemon
 import syndicate.syndicate as c_syndicate
 
 # find the Syndicate models (also in a package called "syndicate")
@@ -473,13 +480,13 @@ def create_credential_blob( private_key_pem, shared_secret, syndicate_url, volum
     
 
 #-------------------------------
-def store_credentials( volumeslice, sealed_credentials_b64 ):
+def store_volumeslice_credentials( volumeslice, sealed_credentials_json ):
     """
     Store the sealed Volume credentials into the database,
     so the sliver-side Syndicate daemon syndicated.py can get them later
     (in case pushing them out fails).
     """
-    volumeslice.credentials_blob = sealed_credentials_b64
+    volumeslice.credentials_blob = sealed_credentials_json
     volumeslice.save( updated_fields=['credentials_blob'] )
 
 
@@ -511,27 +518,47 @@ def get_volumeslice( volume_name, slice_name ):
         return vs
     except Exception, e:
         logger.exception(e)
+        logger.error("Failed to query datastore for volumes (mounted in %s)" % (slice_name if (slice_name is not None or len(slice_name) > 0) else "UNKNOWN"))
+        return None 
+ 
+
+#-------------------------------
+def get_volumeslice( volume_name, slice_name ):
+    """
+    Get a volumeslice record from the datastore.
+    """
+    try:
+        vs = models.VolumeSlice.objects.get( volume_id__name = volume_name, slice_id__name = slice_name )
+        return vs
+    except Exception, e:
+        logger.exception(e)
         logger.error("Failed to query for volume %s mounted in %s" % (volume_name, slice_name))
         return None
                                     
  
 #-------------------------------
-def push_begin( sliver_host, payload ):
+def do_push( sliver_hosts, payload ):
     """
-    Start pushing a message to a sliver host.
-    Return the socket
+    Push a payload to a list of slivers.
+    NOTE: this has to be done in one go, since we can't import grequests
+    into the global namespace (without wrecking havoc on the poll server),
+    but it has to stick around for the push to work.
     """
     
-    rs = grequests.post( sliver_host, data={"observer_message": payload} )
-    return rs
- 
- 
-#-------------------------------
-def push_run( requests ):
-    """
-    Run all pushes concurrently.
-    Log results.
-    """
+    # make gevents runnabale from multiple threads (or Django will complain)
+    from gevent import monkey
+    #monkey.patch_all(socket=True, dns=True, time=True, select=True,thread=False, os=True, ssl=True, httplib=False, aggressive=True)
+    monkey.patch_all()
+
+    import grequests
+    
+    # fan-out 
+    requests = []
+    for sh in sliver_hosts:
+      rs = grequests.post( sh, data={"observer_message": payload} )
+      requests.append( rs )
+      
+    # fan-in
     responses = grequests.map( requests )
     
     assert len(responses) == len(requests), "grequests error: len(responses) != len(requests)"
@@ -551,13 +578,242 @@ def push_run( requests ):
           
     return 0
    
+   
+#-------------------------------
+class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
+   """
+   HTTP server handler that allows syndicated.py instances to poll
+   for volume state.
+   
+   NOTE: this is a fall-back mechanism.  The observer should push new 
+   volume state to the slices' slivers.  However, if that fails, the 
+   slivers are configured to poll for volume state periodically.  This 
+   server allows them to do just that.
+   
+   Responses:
+      GET /<slicename>              -- Reply with the signed sealed list of volume names
+      GET /<slicename>/<volumename> -- Reply with the signed sealed volume access credentials
+   
+   
+   NOTE: We want to limit who can learn which volumes a sliver can access.  It's not 
+   feasible to give each sliver or each slice its own pre-shared authentication token,
+   so our strategy  is to seal the volume list with the Syndicate-wide observer pre-shared secret.
+   However, sealing the listing is a time-consuming process (on the order of 10s), so we only want 
+   to do it when we have to.  Since *anyone* can ask for the ciphertext of the volume list,
+   we will cache the list ciphertext for each slice for a long-ish amount of time, so we don't
+   accidentally DDoS this server.  This necessarily means that the sliver might see a stale
+   volume listing, but that's okay, since the Observer is eventually consistent anyway.
+   """
+   
+   cached_volumes_json = {}             # map slice_name --> (volume name, timeout)
+   cached_volumes_json_lock = threading.Lock()
+   
+   CACHED_VOLUMES_JSON_LIFETIME = 3600          # one hour
+   
+   def parse_request_path( self, path ):
+      """
+      Parse the URL path into a slice name and (possibly) a volume name.
+      """
+      path_parts = path.strip("/").split("/")
+      
+      if len(path_parts) == 0:
+         # invalid 
+         return (None, None)
+      
+      if len(path_parts) > 2:
+         # invalid
+         return (None, None)
+      
+      slice_name = path_parts[0]
+      if len(slice_name) == 0:
+         # empty string is invalid 
+         return (None, None)
+      
+      volume_name = None
+      
+      if len(path_parts) > 1:
+         volume_name = path_parts[1]
+         
+      return slice_name, volume_name
+   
+   
+   def reply_data( self, data, datatype="application/json" ):
+      """
+      Give back a 200 response with data.
+      """
+      self.send_response( 200 )
+      self.send_header( "Content-Type", datatype )
+      self.send_header( "Content-Length", len(data) )
+      self.end_headers()
+      
+      self.wfile.write( data )
+      return 
+   
+   
+   def get_volumes_message( self, private_key_pem, observer_secret, slice_name ):
+      """
+      Get the json-ized list of volumes this slice is attached to.
+      Check the cache, evict stale data if necessary, and on miss, 
+      regenerate the slice volume list.
+      """
+      self.cached_volumes_json_lock.acquire()
+      
+      ret = None
+      volume_list_json, cache_timeout = self.cached_volumes_json.get( slice_name, (None, None) )
+      
+      if cache_timeout is not None and cache_timeout > time.time():
+         # expired 
+         volume_list_json = None
+      
+      if volume_list_json is None:
+         # generate a new list and cache it.
+         # BUT, don't starve other requests!
+         self.cached_volumes_json_lock.release()
+         
+         volume_names = get_volumeslice_names( slice_name )
+         if volume_names is None:
+            # nothing to do...
+            return None
+         else:
+            # seal and sign 
+            ret = create_volume_list_blob( private_key_pem, observer_secret, volume_names )
+         
+         self.cached_volumes_json_lock.acquire()
+         
+         # cache this 
+         cached_volumes_json[ slice_name ] = (ret, time.time() + self.CACHED_VOLUMES_JSON_LIFETIME )
+      
+      self.cached_volumes_json_lock.release()
+      
+      return ret
+      
+   
+   def do_GET( self ):
+      """
+      Handle one GET
+      """
+      slice_name, volume_name = self.parse_request_path( self.path )
+      
+      # valid request?
+      if volume_name is None and slice_name is None:
+         self.send_error( 400 )
+      
+      # volume list request?
+      elif volume_name is None and slice_name is not None:
+         
+         # get the list of volumes for this slice
+         ret = self.get_volumes_message( self.server.private_key_pem, self.server.observer_secret, slice_name )
+         
+         if ret is not None:
+            self.reply_data( ret )
+            return
+         else:
+            self.send_error( 404 )
+      
+      # volume credential request?
+      elif volume_name is not None and slice_name is not None:
+         
+         # get the VolumeSlice record
+         vs = get_volumeslice( volume_name, slice_name )
+         if vs is None:
+            # not found
+            self.send_error( 404 )
+            return
+         
+         else:
+            self.reply_data( vs.credentials_blob )
+            return
+         
+      else:
+         # shouldn't get here...
+         self.send_error( 500 )
+         return 
+   
+   
+#-------------------------------
+class ObserverServer( BaseHTTPServer.HTTPServer ):
+   
+   def __init__(self, private_key_pem, observer_secret, server, req_handler ):
+      self.private_key_pem = private_key_pem
+      self.observer_secret = observer_secret
+      BaseHTTPServer.HTTPServer.__init__( self, server, req_handler )
+
+
+#-------------------------------
+def load_private_key( key_path ):
+   try:
+      key_text = syndicate_storage.read_file( key_path )
+   except Exception, e:
+      logger.error("Failed to read public key '%s'" % key_path )
+      return None
+
+   try:
+      key = CryptoKey.importKey( key_text )
+      assert key.has_private()
+         
+   except Exception, e:
+      logger.error("Failed to load public key %s" % key_path )
+      return None
+   
+   return key
+
+
+#-------------------------------
+def poll_server_spawn( old_exit_status ):
+   """
+   Start our poll server (i.e. in a separate process, started by the watchdog)
+   """
+   
+   setproctitle.setproctitle( "syndicate-pollserver" )
+      
+   private_key = load_private_key( CONFIG.SYNDICATE_PRIVATE_KEY )
+   if private_key is None:
+      # exit code 255 will be ignored...
+      logger.error("Cannot load private key.  Exiting...")
+      sys.exit(255)
+      
+   srv = ObserverServer( private_key.exportKey(), CONFIG.SYNDICATE_OPENCLOUD_SECRET, ('', CONFIG.SYNDICATE_HTTP_PORT), ObserverServerHandler)
+   srv.serve_forever()
+
+
+#-------------------------------
+def ensure_poll_server_running():
+   """
+   Instantiate our poll server and keep it running.
+   """
+   
+   # is the watchdog running?
+   pids = syndicate_watchdog.find_by_attrs( "syndicate-pollserver-watchdog", {} )
+   if len(pids) > 0:
+      # it's running
+      return True
+   
+   # not running; spawn a new one 
+   try:
+      watchdog_pid = os.fork()
+   except OSError, oe:
+      logger.error("Failed to fork, errno = %s" % oe.errno)
+      return False
+   
+   if watchdog_pid != 0:
+      
+      setproctitle.setproctitle( "syndicate-pollserver-watchdog" )
+      
+      # child--become a daemon and run the watchdog
+      syndicate_daemon.daemonize( lambda: syndicate_watchdog.main( poll_server_spawn, respawn_exit_statuses=range(1,254) ) )
+
+
+#-------------------------------
+# Begin functional tests.
+# Any method starting with ft_ is a functional test.
+#-------------------------------
 
 # for testing 
 class FakeObject(object):
     def __init__(self):
         pass
-
-
+     
+#-------------------------------
 def ft_syndicate_access():
     """
     Functional tests for ensuring objects exist and don't exist in Syndicate.
@@ -611,6 +867,7 @@ def ft_syndicate_access():
     ensure_user_absent( fake_user.email )
 
 
+#-------------------------------
 def ft_volumeslice( slice_name ):
     """
     Functional tests for reading VolumeSlice information
@@ -628,7 +885,15 @@ def ft_volumeslice( slice_name ):
        print "      %s" % dir(vs)
           
 
-# functional test 
+#-------------------------------
+def ft_pollserver():
+   """
+   Functional test for the pollserver
+   """
+   ensure_poll_server_running()
+
+
+# run functional tests
 if __name__ == "__main__":
     sys.path.append("/opt/planetstack")
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "planetstack.settings")
@@ -650,6 +915,5 @@ if __name__ == "__main__":
        print "result = %s" % rc
        
     except NameError, ne:
-       
-       print "ERROR: No such test %s" % testname
+       raise ne
     
