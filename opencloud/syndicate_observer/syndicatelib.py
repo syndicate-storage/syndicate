@@ -15,14 +15,6 @@ import BaseHTTPServer
 import setproctitle
 import threading
 
-
-# make gevents runnabale from multiple threads 
-from gevent import monkey
-#monkey.patch_all(socket=True, dns=True, time=True, select=True,thread=False, os=True, ssl=True, httplib=False, aggressive=True)
-monkey.patch_all()
-
-import grequests
-
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
 from Crypto import Random
