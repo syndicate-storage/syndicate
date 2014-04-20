@@ -78,7 +78,6 @@ def find_by_attrs( watchdog_name, attrs ):
                key = parts[0]
                value = "=".join(parts[1:])
                
-               print "'%s' == '%s'" % (key, value)
                if attrs.has_key(key) and attrs[key] == value:
                   matching_attrs.append( key )
                   
@@ -95,22 +94,60 @@ def find_by_attrs( watchdog_name, attrs ):
 
 
 #-------------------------------
-def spawn( child_method, old_exit_status ):
+def spawn( child_method, stdin_method, old_exit_status ):
+   # get stdin 
+   stdin_buf = None
+   child_stdin = -1
+   parent_w = -1
+   
+   if stdin_method is not None:
+      stdin_buf = stdin_method()
+      
+      # create child stdin
+      try:
+         child_stdin, parent_w = os.pipe()
+      except OSError, oe:
+         print >> sys.stderr, "pipe errno = %s" % oe.errno
+         return -oe.errno
+   
    # fork, become a watchdog, and run the main server
-   child_pid = os.fork()
-   
-   if child_pid == -1:
+   try:
+      child_pid = os.fork()
+   except OSError, oe:
       # failure
-      raise Exception("Failed to fork")
+      log.exception(oe)
+      log.error("Failed to fork, errno = %s" % oe.errno)
+      
+   if child_pid > 0:
+      # we're the parent 
+      
+      if stdin_buf is not None:
+         # send stdin 
+         os.close( child_stdin )
+         
+         # parent.  Send stdin
+         os.write( parent_w, stdin_buf )
+         os.close( parent_w )
+         
+      log.info("Spawned child %s" % child_pid)
+      
+      return child_pid
    
-   if child_pid == 0:
+   else:
       # we're the child...
+      
+      if stdin_buf is not None:
+         os.close( parent_w )
+         
+         sys.stdout.flush()
+         sys.stderr.flush()
+         
+         # redirect stdin 
+         os.dup2( child_stdin, sys.stdin.fileno() )
+         
       rc = child_method( old_exit_status )
       sys.exit(rc)
    
-   log.info("Spawned child %s" % child_pid)
-   
-   return child_pid
 
 
 #-------------------------------
@@ -199,13 +236,42 @@ def flap_wait( last_spawn, flap_delay, flap_threshold, flap_reset ):
       
 
 #-------------------------------
-def main( spawn_method, pid_cb=None, exit_cb=None, respawn_exit_statuses=None, respawn_signals=None, flap_threshold=600, flap_reset=3600 ):
+def run( binary, argv, stdin_buf ):
+   """
+   Fork a child and feed it a stdin.
+   Return its pid on success
+   return errno on error 
+   """
+   
+   def do_exec( ignored ):
+      # exec the binary 
+      try:
+         os.execvp( binary, argv )
+      except OSError, oe:
+         log.error("Failed to execute %s, errno = %s" % (binary, -oe.errno))
+         return -oe.errno
+      
+      
+   stdin_method = lambda: stdin_buf
+   
+   return spawn( do_exec, stdin_method, 0 )
+      
+      
+   
+
+#-------------------------------
+def main( spawn_method, pid_cb=None, stdin_cb=None, exit_cb=None, respawn_exit_statuses=None, respawn_signals=None, flap_threshold=600, flap_reset=3600 ):
    
    # fork, become a watchdog, and run the main server
    last_spawn = time.time()
    flap_delay = 1
    
-   child_pid = spawn( spawn_method, 0 )
+   child_pid = spawn( spawn_method, stdin_cb, 0 )
+   
+   if child_pid < 0:
+      # spawn failed 
+      log.error("Failed to spawn, rc = %s" % child_pid)
+      return child_pid
    
    if pid_cb is not None:
       # pass along the PID
@@ -243,8 +309,13 @@ def main( spawn_method, pid_cb=None, exit_cb=None, respawn_exit_statuses=None, r
          if flap_threshold > 0:
             flap_delay = flap_wait( last_spawn, flap_delay, flap_threshold, flap_reset )
                
-         child_pid = spawn( spawn_method, exit_status )
-         
+         child_pid = spawn( spawn_method, stdin_cb, exit_status )
+               
+         if child_pid < 0:
+            # spawn failed 
+            log.error("Failed to spawn, rc = %s" % child_pid)
+            return child_pid
+      
          # pass along the PID 
          if pid_cb is not None:
             pid_cb( child_pid )

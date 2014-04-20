@@ -342,6 +342,64 @@ class MSOpenIDRegisterRequestHandler( GAEOpenIDRequestHandler ):
 
 
 # ----------------------------------
+class MSPublicKeyRegisterRequestHandler( webapp2.RequestHandler ):
+   """
+   Register a gateway using its owner's signature on the request.
+   """
+   def post( self ):
+      # get the request 
+      reg_req = register_request_parse( self )
+      if reg_req is None:
+         logging.error("Failed to parse registration request")
+         response_user_error( self, 400 )
+         return 
+      
+      # verify the request, looking up the user in the process
+      user = register_request_verify( reg_req )
+      if user is None:
+         # user doesn't exist (but don't tell the caller that)
+         logging.error("No such user")
+         response_user_error( self, 400 )
+         return 
+      
+      if user == False:
+         # signature mismatch 
+         logging.error("Signature mismatch")
+         response_user_error( self, 400 )
+         return 
+      
+      # authenticated! get the gateway 
+      gateway_type_str = GATEWAY_TYPE_TO_STR.get( reg_req.gateway_type, None )
+      if gateway_type_str is None:
+         # invalid request 
+         logging.error("Invalid gateway type %s" % reg_req.gateway_type )
+         response_user_error( self, 400 )
+         return 
+      
+      status, gateway = register_load_gateway( gateway_type_str, reg_req.gateway_name )
+      if status != 200 or gateway is None:
+         # failed to load gateway 
+         response_user_error( self, status )
+         return 
+
+      # does this user own the gateway?
+      if gateway.owner_id != user.owner_id:
+         # not ours
+         response_user_error( self, 403 )
+         return
+   
+      # finalize the registration
+      status, data = register_complete( gateway )
+      if status != 200:
+         response_user_error( self, 200 )
+         return 
+      
+      # success!
+      response_end( self, 200, data, "application/octet-stream", None )
+      
+      return 
+
+# ----------------------------------
 class MSFileHandler(webapp2.RequestHandler):
    
    """

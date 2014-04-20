@@ -40,11 +40,14 @@ struct syndicate_opts {
    char* gateway_name;
    char* volume_pubkey_path;
    char* gateway_pkey_path;
-   char* gateway_pkey_decryption_password;
+   char* syndicate_pubkey_path;
+   
+   struct mlock_buf user_pkey_pem;
+   
    char* volume_pubkey_pem;     // alternative to volume_pubkey_path
    char* gateway_pkey_pem;      // alternative to gateway_pkey_path
-   char* syndicate_pubkey_path;
    char* syndicate_pubkey_pem;  // altenrative to syndicate_pubkey_path 
+   char* gateway_pkey_decryption_password;
    char* tls_pkey_path;
    char* tls_cert_path;
    char* storage_root;
@@ -57,6 +60,7 @@ struct syndicate_opts {
 
 int syndicate_default_opts( struct syndicate_opts* opts );
 int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, int* optind, char const* special_opts, int (*special_opt_handler)(int, char*) );
+int syndicate_cleanup_opts( struct syndicate_opts* opts );
 void syndicate_common_usage( char* progname );
 
 #endif

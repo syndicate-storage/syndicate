@@ -43,6 +43,7 @@ handlers = [
     ('[/]+FILE[/]+([0123456789]+)[/]*', MSFileHandler ),                          # POST: for creating, updating, deleting, renaming, changing coordinator, setting, and deleting xattrs.
                                                                                   # The specific operation is encoded in the posted data.  This handler dispatches the call to the appropriate objects.
     ('[/]+VOLUME[/]+([^/]+)[/]*', MSVolumeRequestHandler),
+    ('[/]+REGISTER[/]*', MSPublicKeyRegisterRequestHandler),
     ('[/]+REGISTER[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]*', MSOpenIDRegisterRequestHandler),
     ('[/]+CERT[/]+([0123456789]+)[/]+manifest.([0123456789]+)[/]*', MSCertManifestRequestHandler),
     ('[/]+CERT[/]+([0123456789]+)[/]+([0123456789]+)[/]+(UG|RG|AG)[/]+([0123456789]+)[/]+([0123456789]+)[/]*', MSCertRequestHandler),

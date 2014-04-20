@@ -128,8 +128,8 @@ cdef extern from "opts.h":
       char* gateway_pkey_decryption_password
       char* volume_pubkey_pem
       char* gateway_pkey_pem
-      char* syndicate_pubkey_path,
-      char* syndicate_pubkey_pem,
+      char* syndicate_pubkey_path
+      char* syndicate_pubkey_pem
       char* tls_pkey_path
       char* tls_cert_path
       char* storage_root

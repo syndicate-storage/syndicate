@@ -57,8 +57,8 @@ def death_handler( signum, frame ):
    global UG_PID, UG_MOUNTPOINT
    
    if UG_PID > 0:
-      watchdog.stop_child( UG_PID )      
       stop_ug( UG_PID, UG_MOUNTPOINT )
+      watchdog.stop_child( UG_PID )
    
    sys.exit(0)
 
@@ -84,8 +84,9 @@ def fuse_umount( mountpoint ):
    """
    try:
       ret = subprocess.call(["fusermount", "-u", mountpoint])
-      return ret      
+      return ret
    except OSError, oe:
+      log.error("fusermount errno = %s" % -oe.errno)
       return -oe.errno
    
    except Exception, e:
@@ -153,26 +154,26 @@ def stop_ug( child_pid, mountpath ):
    if check_mounted( mountpath ):
       umount_rc = fuse_umount( mountpath )
    
-   if umount_rc != 0:
+   if umount_rc != 0 and check_mounted( mountpath ):
       # kill and then unmount 
       
       log.info("Stopping UG at %s" % mountpath )
       
       # first, ask nicely
       try:
-         os.kill( pid, signal.SIGINT )
+         os.kill( child_pid, signal.SIGINT )
       except OSError, oe:
          log.exception(oe)
          return -oe.errno
       
-      still_running = False 
+      still_running = check_mounted( mountpath )
       
       for i in xrange(0,3):
          # check to see if it dies
          # still running?
          still_running = False
          try:
-            os.kill( pid, signal.SIGINT )
+            os.kill( child_pid, signal.SIGINT )
             still_running = True
          except OSError, oe:
             if oe.errno != errno.ESRCH:
@@ -182,13 +183,15 @@ def stop_ug( child_pid, mountpath ):
                
          if not still_running:
             break
+         else:
+            still_running = check_mounted( mountpath )
       
       
       if still_running:
          # still running (it ignored SIGINT).
          # kill it outright
          try:
-            os.kill( pid, signal.SIGKILL )
+            os.kill( child_pid, signal.SIGKILL )
          except OSError, oe:
             if oe.errno != errno.ESRCH:
                # still running; probably the wrong PID
@@ -201,7 +204,7 @@ def stop_ug( child_pid, mountpath ):
          umount_rc = fuse_umount( mountpath )
          
          if umount_rc != 0:
-            log.error("Failed to unmount child %s from %s" % (child_pid, mount_path) )
+            log.error("Failed to unmount child %s from %s" % (child_pid, mountpath) )
             return -errno.ENOTEMPTY
    
    return 0
@@ -217,29 +220,32 @@ def spawn_ug( config, old_exit_status ):
    pt = child_proc_title( config['volume'], config['mountpoint'] )
    setproctitle.setproctitle( pt )
    
-   command_str = config['command']
-   
    # ensure nothing is mounted on our mountpoint
    if check_mounted( config['mountpoint'] ):
       umount_rc = fuse_umount( config['mountpoint'] )
       
       if umount_rc != 0:
-         errorf("Failed to unmount %s, rc = %s" % (config['mountpoint'], umount_rc ))
+         log.error("Failed to unmount %s, rc = %s" % (config['mountpoint'], umount_rc ))
          return umount_rc
       
    # make sure we can access /dev/fuse
    if not check_fuse_dev():
       print >> sys.stderr, "Cannot mount FUSE filesystems"
-      return -1
+      return 255
    
    # split up our command string...
    command_list = shlex.split( command_str )
    
    binary = command_list[0]
    argv = [binary, '-R', '-v', config['volume'], config['mountpoint']]
-   stdin_buf = command_str 
    
-   return daemonize.exec_with_piped_stdin( binary, argv, stdin_buf )
+   # exec the binary 
+   try:
+      os.execvp( binary, argv )
+   except OSError, oe:
+      log.error("Failed to exec %s, rc = %s" % (binary, oe.errno))
+      return 255
+      
    
 
 #-------------------------------
@@ -329,10 +335,19 @@ if __name__ == "__main__":
       if config.has_key('logdir'):
          logfile_path = os.path.join( config['logdir'], "RG.log" )
       
-      daemonize.daemonize( lambda: watchdog.main( lambda old_exit_status: spawn_ug(config, old_exit_status), pid_cb=watchdog_PID, exit_cb=watchdog_need_respawn, respawn_exit_statuses=range(1,255) ),
+      daemonize.daemonize( lambda: watchdog.main( lambda old_exit_status: spawn_ug(config, old_exit_status),
+                                                  stdin_cb=lambda: command_str,
+                                                  pid_cb=watchdog_PID,
+                                                  exit_cb=watchdog_need_respawn,
+                                                  respawn_exit_statuses=range(1,255) ),
                            logfile_path=logfile_path, pidfile_path=pidfile_path )
    
    else:
       # run in the foreground
-      watchdog.main( lambda old_exit_status: spawn_ug(config, old_exit_status), pid_cb=watchdog_PID, exit_cb=watchdog_need_respawn, respawn_exit_statuses=range(1,255) )
+      watchdog.main( lambda old_exit_status: spawn_ug(config, old_exit_status),
+                     pid_cb=watchdog_PID,
+                     stdin_cb=lambda: command_str,
+                     exit_cb=watchdog_need_respawn,
+                     respawn_exit_statuses=range(1,255) )
+      
       

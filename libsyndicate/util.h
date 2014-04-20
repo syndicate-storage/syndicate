@@ -54,6 +54,7 @@
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <math.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>        // for gettid()
 
 #define WHERESTR "%05d:%05d: [%16s:%04u] %s: "
@@ -124,6 +125,11 @@ struct thread_args {
 };
 
 
+struct mlock_buf {
+   void* ptr;
+   size_t len;
+};
+
 extern "C" {
 
 void block_all_signals();
@@ -177,6 +183,10 @@ uint32_t CMWC4096(void);
 
 // library initialization
 int util_init(void);
+
+// safe allocators 
+int mlock_calloc( struct mlock_buf* buf, size_t len );
+int mlock_free( struct mlock_buf* buf );
 
 // linux-specific...
 pid_t gettid(void);

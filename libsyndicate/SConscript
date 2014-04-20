@@ -27,7 +27,6 @@ SCRYPT_FILES = Glob("scrypt/*.cpp")
 HTTPD_FILES = """
    httpd.cpp
    system.cpp
-   libgateway.cpp
 """
 
 # build at least the base files...

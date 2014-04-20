@@ -459,7 +459,7 @@ class StubObject( object ):
       for i in xrange(0, len(argspec.args)):
          argname = argspec.args[i]
          
-         #log.debug("parse argument '%s'" % argname)
+         log.debug("parse argument '%s'" % argname)
          
          arg_func = cls.arg_parsers.get( argname, None )
          if arg_func != None:
@@ -520,7 +520,7 @@ class StubObject( object ):
          if argspec.args[i] == arg_name:
             args[i], arg_extras = arg_value_func( cls, args[i], lib )
             
-            #log.debug("positional argument '%s' is now '%s'" % (arg_name, args[i]) )
+            log.debug("positional argument '%s' is now '%s'" % (arg_name, args[i]) )
             
             extras.update( arg_extras )
             
@@ -539,7 +539,7 @@ class StubObject( object ):
                
                ret = cls.replace_kw( arg_name, arg_value_func, value, lib )
                
-               #log.debug("defaulted keyword argument '%s' is now '%s'" % (arg_name, ret[0]))
+               log.debug("defaulted keyword argument '%s' is now '%s'" % (arg_name, ret[0]))
             
                kw[arg_name], arg_extras = ret[0], ret[1]
                
@@ -551,7 +551,7 @@ class StubObject( object ):
       if not replaced and arg_name in kw.keys():
          ret = cls.replace_kw( arg_name, arg_value_func, kw[arg_name], lib )
          
-         #log.debug("keyword argument '%s' is now '%s'" % (arg_name, ret[0]) )
+         log.debug("keyword argument '%s' is now '%s'" % (arg_name, ret[0]) )
          
          kw[arg_name], arg_extras = ret[0], ret[1]
          
@@ -581,6 +581,7 @@ class SyndicateUser( StubObject ):
       Return pubkey, extras
       """
       extra = {}
+      pubkey_pem = None 
       
       if signing_public_key == "MAKE_SIGNING_KEY":
          pubkey_pem, privkey_pem = api.generate_key_pair( OBJECT_KEY_SIZE )
@@ -593,14 +594,20 @@ class SyndicateUser( StubObject ):
          return None, extra
       
       else:
-         # try validating the given one
+         # try loading the key 
          try:
-            pubkey = CryptoKey.importKey( signing_public_key )
-         except Exception, e:
-            log.exception(e)
-            raise Exception("Failed to parse public key")
+            storagelib = lib.storage
+         except:
+            raise Exception("Missing runtime storage library")
          
-      return signing_public_key, extra
+         try:
+            pubkey = storagelib.read_public_key( signing_public_key )
+         except:
+            raise Exception("Failed to load %s" % signing_public_key )
+         
+         pubkey_pem = pubkey.exportKey()
+         
+      return pubkey_pem, extra
    
    @classmethod
    def parse_user_name_or_id( cls, user_name_or_id, lib=None ):
@@ -913,7 +920,7 @@ class Gateway( StubObject ):
          if lib is None:
             raise Exception("No password given.  Needed for gateway_public_key == MAKE_AND_HOST_GATEWAY_KEY.")
          
-         if not hasattr(lib, "encryption_password"):
+         if not hasattr(lib, "encryption_password") or lib.encryption_password is None:
             password = getpass.getpass("Gateway private key password: ")
             lib.encryption_password = password
          
@@ -921,7 +928,10 @@ class Gateway( StubObject ):
          
          # save for later, to be recovered as keyword arguments
          lib.encrypted_gateway_key_str = encrypted_key_str
-      
+         
+      else:
+         log.warning("MS will not host private key.  Be sure to back it up and keep it safe!")
+         
       extra = {'gateway_private_key': privkey_str}
       lib.gateway_public_key_str = pubkey_str           # validate against private key, if we need to load it
       

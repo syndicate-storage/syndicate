@@ -791,13 +791,6 @@ int main(int argc, char** argv) {
       exit(1);
    }
    
-   /*
-   // add remaining arguments to FUSE
-   for( int i = fuse_optind; i < argc; i++ ) {
-      fuse_opt_add_arg( &g_fargs, argv[i] );
-   }
-   */
-   
    // force direct io
    fuse_opt_add_arg( &g_fargs, "-odirect_io" );
    

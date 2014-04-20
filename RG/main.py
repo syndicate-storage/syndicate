@@ -23,11 +23,18 @@ import syndicate.rg.closure as rg_closure
 import syndicate.rg.server as rg_server
 
 import syndicate.util.config as modconf
+import syndicate.util.storage as syndicate_storage
 
 import socket
 import os
 import shlex
 import setproctitle
+
+from Crypto.Hash import SHA256 as HashAlg
+from Crypto.PublicKey import RSA as CryptoKey
+from Crypto import Random
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
+
 
 from wsgiref.simple_server import make_server 
 
@@ -39,9 +46,10 @@ CONFIG_OPTIONS = {
    "config":            ("-c", 1, "Path to the Syndicate configuration file for this RG"),
    "username":          ("-u", 1, "Syndicate username of the owner of this RG"),
    "password":          ("-p", 1, "If authenticating via OpenID, the Syndicate user's OpenID password"),
-   "key_password":      ("-K", 1, "Gateway private key decryption password"),
+   "gateway_pkey_password":      ("-K", 1, "Gateway private key decryption password"),
    "MS":                ("-m", 1, "Syndicate MS URL"),
-   "sender_pubkey":     ("-U", 1, "Path to the PEM-encoded public key to verify closures for this RG"),
+   "user_pkey":         ("-U", 1, "Path to the PEM-encoded user private key"),
+   "user_pkey_pem":     ("-P", 1, "PEM-encoded user private key, as a string"),
    "volume_pubkey":     ("-V", 1, "Path to the PEM-encoded Volume public key"),
    "gateway_pkey":      ("-G", 1, "Path to the PEM-encoded RG private key"),
    "tls_pkey":          ("-T", 1, "Path to the PEM-encoded RG TLS private key.  Use if you want TLS for data transfers (might cause breakage if your HTTP caches do not expect TLS)."),
@@ -100,8 +108,10 @@ def setup_syndicate( config ):
    gateway_name = config.get('gateway', None)
    rg_username = config.get('username', None)
    rg_password = config.get('password', None)
-   key_password = config.get('key_password', None)
+   key_password = config.get('gateway_pkey_password', None)
    ms_url = config.get('MS', None)
+   user_pkey = config.get('user_pkey', None)
+   user_pkey_pem = config.get('user_pkey_pem', None)
    my_key_file = config.get('gateway_pkey', None)
    volume_name = config.get('volume', None)
    volume_pubkey = config.get('volume_pubkey', None)
@@ -110,12 +120,21 @@ def setup_syndicate( config ):
    syndicate_pubkey = config.get('syndicate_pubkey', None)
    config_file = config.get('config_file', None)
    
+   if user_pkey_pem is None and user_pkey is not None:
+      user_pkey = syndicate_storage.read_key( user_pkey )
+      if user_pkey is None:
+         log.error("Failed to read %s" % user_pkey )
+         return None
+      
+      user_pkey_pem = user_pkey.exportKey()
+   
    # start up libsyndicate
    syndicate = rg_common.syndicate_init( ms_url=ms_url,
                                          gateway_name=gateway_name,
                                          volume_name=volume_name,
                                          username=rg_username,
                                          password=rg_password,
+                                         user_pkey_pem=user_pkey_pem,
                                          gateway_pkey_decryption_password=key_password,
                                          gateway_pkey_path=my_key_file,
                                          config_file=config_file,
@@ -134,10 +153,23 @@ def run( config, syndicate ):
    
    # get our key files
    my_key_file = config.get("gateway_pkey", None )
-   sender_pubkey_file = config.get("sender_pubkey", None )
+   user_pkey_file = config.get("user_pkey", None )
+   user_pkey_pem = config.get("user_pkey_pem", None )
    
+   user_pubkey_pem = None 
+   user_pkey = None
+   
+   if user_pkey_pem is None and user_pkey_file is not None:
+      user_pkey = syndicate_storage.read_key( user_pkey_file )
+      if user_pkey is None:
+         log.error("Failed to read %s" % user_pkey_file )
+         return -errno.ENODATA
+
+      user_pkey_pem = user_pkey.exportKey()
+      user_pubkey_pem = user_pkey.publickey().exportKey()
+
    # get our configuration from the MS and start keeping it up to date 
-   rc = rg_closure.init( syndicate, my_key_file, sender_pubkey_file )
+   rc = rg_closure.init( syndicate, my_key_file, user_pubkey_pem )
    if rc < 0:
        log.error("Failed to initialize (rc = %s)" % rc)
        return rc
@@ -151,34 +183,12 @@ def run( config, syndicate ):
    
 
 #-------------------------
-def debug():
-   
-   rg_common.syndicate_lib_path( "../python" )
-   
-   gateway_name = "RG-t510-0-690"
-   rg_username = "jcnelson@cs.princeton.edu"
-   rg_password = "nya!"
-   ms_url = "http://localhost:8080/"
-   my_key_file = "../../../replica_manager/test/replica_manager_key.pem"
-   sender_pubkey_file = "../../../../ms/tests/user_test_key.pub"
-   volume_name = "testvolume-jcnelson-cs.princeton.edu"
-   
-   # start up libsyndicate
-   syndicate = rg_common.syndicate_init( ms_url=ms_url, gateway_name=gateway_name, volume_name=volume_name, username=rg_username, password=rg_password, gateway_pkey_path=my_key_file )
-   
-   # start up config
-   rg_closure.init( syndicate, my_key_file, sender_pubkey_file )
-   
-   # start serving!
-   httpd = make_server( "t510", syndicate.portnum(), rg_server.wsgi_application )
-   
-   httpd.serve_forever()
-   
-   return 0 
-
-#-------------------------
 def build_config( argv ):
-   config = modconf.build_config( argv, "Syndicate Replica Gateway", "RG", CONFIG_OPTIONS, conf_validator=validate_args )
+   
+   gateway_name = "RG"
+   gateway_desc = "Syndicate Replica Gateway"
+   
+   config = modconf.build_config( argv, gateway_desc, gateway_name, CONFIG_OPTIONS, conf_validator=validate_args )
    
    if config is None:
       log.error("Failed to load config")
@@ -190,7 +200,7 @@ def build_config( argv ):
       arg_string = sys.stdin.read()
       argv = shlex.split( arg_string )
       
-      config = modconf.build_config( argv, "Syndicate Replica Gateway", "RG", CONFIG_OPTIONS, conf_validator=validate_args )
+      config = modconf.build_config( argv, gateway_desc, gateway_name, CONFIG_OPTIONS, conf_validator=validate_args )
       if config is None:
          log.error("Failed to read config from stdin")
          return None
@@ -204,11 +214,12 @@ def build_config( argv ):
       
 #-------------------------
 def main( config, syndicate=None ):
-   if syndicate == None:
+   if syndicate is None:
       syndicate = setup_syndicate( config )
+      if syndicate is None:
+         sys.exit(1)
       
    return run( config, syndicate )
-   #debug()
    
 
 #-------------------------    

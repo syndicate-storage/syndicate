@@ -16,6 +16,7 @@
 
 #include "libsyndicate/storage.h"
 
+// load a file as a string.  return the buffer with the file 
 char* md_load_file_as_string( char const* path, size_t* size ) {
    char* ret = load_file( path, size );
 
@@ -29,6 +30,40 @@ char* md_load_file_as_string( char const* path, size_t* size ) {
    ret[ *size ] = 0;
 
    return ret;
+}  
+
+
+// safely load secret information as a null-terminated string, ensuring that the memory allocated is mlocked
+int md_load_secret_as_string( struct mlock_buf* buf, char const* path ) {
+   struct stat statbuf;
+   int rc = stat( path, &statbuf );
+   if( rc != 0 ) {
+      rc = -errno;
+      errorf("stat(%s) errno = %d\n", path, rc );
+      return rc;
+   }
+   
+   rc = mlock_calloc( buf, statbuf.st_size + 1 );
+   if( rc != 0 ) {
+      errorf("mlock_calloc rc = %d\n", rc );
+      return -ENODATA;
+   }
+   
+   FILE* f = fopen( path, "r" );
+   if( !f ) {
+      rc = -errno;
+      mlock_free( buf );
+      errorf("fopen(%s) errno = %d\n", path, rc );
+      return -ENODATA;
+   }
+   
+   buf->len = fread( buf->ptr, 1, statbuf.st_size, f );
+   fclose( f );
+
+   char* char_ptr = (char*)buf->ptr;
+   char_ptr[ buf->len ] = 0;
+
+   return 0;
 }  
 
 

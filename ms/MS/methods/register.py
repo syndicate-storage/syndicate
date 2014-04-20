@@ -24,6 +24,8 @@ import storage.storagetypes as storagetypes
 from common.msconfig import *
 from common.admin_info import *
 
+from MS.user import SyndicateUser 
+
 import logging
 import urllib
 import base64
@@ -70,6 +72,31 @@ def register_make_openid_reply( oid_request, return_method, return_to, query ):
 
 
 # ----------------------------------
+def register_load_gateway( gateway_type_str, gateway_name ):
+   """
+   Load up a Gateway from the datastore.
+   Return the status to be sent back, and the gateway
+   """
+   # get the gateway
+   if gateway_type_str not in ["UG", "RG", "AG"]:
+      logging.error("Invalid gateway type '%s'" % gateway_type_str )
+      return (401, None)
+      
+      
+   gateway = storage.read_gateway( gateway_name )
+   if gateway == None:
+      logging.error("No such Gateway named %s" % (gateway_name))
+      return (404, None)
+   
+   for type_str, type_id in zip( ["UG", "RG", "AG"], [GATEWAY_TYPE_UG, GATEWAY_TYPE_RG, GATEWAY_TYPE_AG] ):
+      if gateway_type_str == type_str and gateway.gateway_type != type_id:
+         logging.error("No such %s named %s" % (gateway_type_str, gateway_name))
+         return (404, None)
+
+   return (200, gateway)
+
+
+# ----------------------------------
 def register_load_objects( gateway_type_str, gateway_name, username ):
    """
    Load up a gateway and user object from the datastore, given the type of gateway,
@@ -78,21 +105,10 @@ def register_load_objects( gateway_type_str, gateway_name, username ):
    """
 
    # get the gateway
-   if gateway_type_str not in ["UG", "RG", "AG"]:
-      logging.error("Invalid gateway type '%s'" % gateway_type_str )
-      return (401, None, None)
-      
-      
-   gateway = storage.read_gateway( gateway_name )
-   if gateway == None:
-      logging.error("No such Gateway named %s" % (gateway_name))
-      return (404, None, None)
+   status, gateway = register_load_gateway( gateway_type_str, gateway_name )
+   if status != 200:
+      return (status, None, None)
    
-   for type_str, type_id in zip( ["UG", "RG", "AG"], [GATEWAY_TYPE_UG, GATEWAY_TYPE_RG, GATEWAY_TYPE_AG] ):
-      if gateway_type_str == type_str and gateway.gateway_type != type_id:
-         logging.error("No such %s named %s" % (gateway_type_str, gateway_name))
-         return (404, None, None)
-
    user = storage.read_user( username )
    if user == None:
       logging.error("No such user '%s'" % username)
@@ -170,4 +186,53 @@ def register_complete( gateway ):
    volume.FlushCache( volume.volume_id )
    
    return (200, data)
+   
+   
+# ----------------------------------
+def register_request_parse( request_handler ):
+   """
+   Parse the raw data from the 'ms-register-request' POST field into an ms_register_request.
+   Return None on failure.
+   """
+   
+   # will have gotten metadata updates
+   reg_field = request_handler.request.POST.get( 'ms-register-request' )
+
+   if reg_field == None:
+      # no valid data given (malformed)
+      return None
+
+   # extract the data
+   data = reg_field.file.read()
+   
+   # parse it 
+   reg_req = ms_pb2.ms_register_request()
+
+   try:
+      reg_req.ParseFromString( data )
+   except:
+      return None
+   
+   return reg_req
+
+
+# ----------------------------------
+def register_request_verify( reg_req ):
+   """
+   Verify that a user (SyndicateUser) sent a registration request (ms_pb2.ms_register_request)
+   Return the user on success; None if the user doesn't exist; False if the signature doesn't match.
+   """
+   
+   username = reg_req.username
+   sig_b64 = reg_req.signature 
+   
+   reg_req.signature = ""
+   
+   reg_req_str = reg_req.SerializeToString()
+   sig = base64.b64decode( sig_b64 )
+   
+   user = SyndicateUser.Authenticate( username, reg_req_str, sig )
+   return user
+   
+   
    

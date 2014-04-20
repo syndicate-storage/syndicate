@@ -229,6 +229,8 @@ struct md_syndicate_conf {
    size_t volume_pubkey_len;
    char* syndicate_pubkey;                            // Syndicate-specific public key
    size_t syndicate_pubkey_len;
+   char* user_pkey;                                   // SyndicateUser private key 
+   size_t user_pkey_len;
 
    // set at runtime
    char* data_root;                                   // root of the path where we store local file blocks
@@ -436,9 +438,10 @@ int md_init( struct md_syndicate_conf* conf,
              char const* gateway_name,
              char const* oid_username,
              char const* oid_password,
+             char const* user_pkey_pem,
              char const* volume_pubkey_file,
-             char const* my_key_file,
-             char const* my_key_password,
+             char const* gateway_key_path,
+             char const* gateway_key_password,
              char const* tls_pkey_file,
              char const* tls_cert_file,
              char const* storage_root,
@@ -454,9 +457,10 @@ int md_init_client( struct md_syndicate_conf* conf,
                     char const* gateway_name,
                     char const* oid_username,
                     char const* oid_password,
+                    char const* user_pkey_pem,
                     char const* volume_pubkey_pem,
-                    char const* my_key_pem,
-                    char const* my_key_password,
+                    char const* gateway_key_pem,
+                    char const* gateway_key_password,
                     char const* storage_root,
                     char const* syndicate_pubkey_pem
                   );
