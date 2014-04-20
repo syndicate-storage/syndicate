@@ -594,7 +594,18 @@ class SyndicateUser( StubObject ):
          return None, extra
       
       else:
-         # try loading the key 
+         # is this a key literal?
+         try:
+            pubkey = CryptoKey.importKey( signing_public_key )
+            assert not pubkey.has_private()
+            
+            return signing_public_key, extra
+         
+         except:
+            # not a key literal
+            pass
+         
+         # is this a path?  Try to load it from disk
          try:
             storagelib = lib.storage
          except:

@@ -39,7 +39,8 @@ import syndicatelib_config.config as CONFIG
 if hasattr( CONFIG, "SYNDICATE_PYTHONPATH" ):
     os.environ.setdefault("SYNDICATE_PYTHONPATH", CONFIG.SYNDICATE_PYTHONPATH)
 
-# get core syndicate modules 
+# get core syndicate modules, but to do so, we'll have to look in the right place
+# (i.e. don't import the Django models package)
 inserted = False
 if os.getenv("SYNDICATE_PYTHONPATH") is not None:
     sys.path.insert(0, os.getenv("SYNDICATE_PYTHONPATH") )
@@ -47,17 +48,25 @@ if os.getenv("SYNDICATE_PYTHONPATH") is not None:
 else:
     logger.warning("No SYNDICATE_PYTHONPATH set.  Assuming Syndicate is in your PYTHONPATH")
 
+
+# get the Syndicate modules
 import syndicate 
 syndicate = reload(syndicate)
 
 import syndicate.client.bin.syntool as syntool
 import syndicate.client.common.msconfig as msconfig
+import syndicate.client.common.api as api
 import syndicate.util.storage as syndicate_storage
 import syndicate.util.watchdog as syndicate_watchdog
 import syndicate.util.daemonize as syndicate_daemon
 import syndicate.syndicate as c_syndicate
 
-# find the Syndicate models (also in a package called "syndicate")
+# for testing 
+class FakeObject(object):
+    def __init__(self):
+        pass
+
+# now, find the Django Syndicate models (also in a package called "syndicate")
 if inserted:
     sys.path.pop(0)
 
@@ -77,7 +86,13 @@ try:
    
 except ImportError, ie:
    logger.warning("Failed to import models; assming testing environment")
-   pass
+   
+   # create a fake "models" package that has exactly the members we need for testing.
+   models = FakeObject()
+   models.Volume = FakeObject()
+   models.Volume.CAP_READ_DATA = 1
+   models.Volume.CAP_WRITE_DATA = 2
+   models.Volume.CAP_HOST_DATA = 4
 
 
 #-------------------------------
@@ -108,8 +123,9 @@ def registration_password():
 def exc_user_exists( exc ):
     """
     Given an exception, is it due to the user already existing?
+    NOTE: this is a bit hacky
     """
-    return "already exists" in exc.message
+    return ("User" in exc.message) and ("already exists" in exc.message)
 
 
 #-------------------------------
@@ -117,9 +133,13 @@ def connect_syndicate():
     """
     Connect to the OpenCloud Syndicate SMI
     """
+    debug = True 
+    if hasattr(CONFIG, "DEBUG"):
+       debug = CONFIG.DEBUG
+       
     client = syntool.Client( CONFIG.SYNDICATE_OPENCLOUD_USER, CONFIG.SYNDICATE_SMI_URL,
                              password=CONFIG.SYNDICATE_OPENCLOUD_PASSWORD,
-                             debug=True )
+                             debug=debug )
 
     return client
 
@@ -172,15 +192,23 @@ def create_and_activate_user( client, user_email ):
             return None     # user already existed
 
     else:
-        # activate the user
+        # activate the user.
+        # first, generate a keypar 
+        logger.info("Generating %s-bit key pair for %s" % (msconfig.OBJECT_KEY_SIZE, user_id))
+        pubkey_pem, privkey_pem = api.generate_key_pair( msconfig.OBJECT_KEY_SIZE )
+        
+        # then, activate the account with the keypair
         try:
-            activate_rc = client.register_account( user_id, user_activate_pw )
+            activate_rc = client.register_account( user_id, user_activate_pw, signing_public_key=pubkey_pem )
         except Exception, e:
             # transport error, or the user diesn't exist (rare, but possible)
             logger.exception(e)
             raise e
             
         else:
+            # give back the keys to the caller
+            new_user['signing_public_key'] = pubkey_pem
+            new_user['signing_private_key'] = privkey_pem
             return new_user     # success!
 
 
@@ -808,12 +836,7 @@ def ensure_poll_server_running():
 # Begin functional tests.
 # Any method starting with ft_ is a functional test.
 #-------------------------------
-
-# for testing 
-class FakeObject(object):
-    def __init__(self):
-        pass
-     
+  
 #-------------------------------
 def ft_syndicate_access():
     """
@@ -856,10 +879,10 @@ def ft_syndicate_access():
     ensure_volume_access_right_absent( fake_user.email, fake_volume.name )
  
     print "\nensure_volume_absent(%s)\n" % fake_volume.name
-    ensure_volume_absent( fake_volume )
+    ensure_volume_absent( fake_volume.name )
 
     print "\nensure_volume_absent(%s)\n" % fake_volume.name
-    ensure_volume_absent( fake_volume )
+    ensure_volume_absent( fake_volume.name )
 
     print "\nensure_user_absent(%s)\n" % fake_user.email
     ensure_user_absent( fake_user.email )
@@ -906,15 +929,12 @@ if __name__ == "__main__":
     testname = sys.argv[1]
     ft_testname = "ft_%s" % testname
     
-    try:
-       test_call = "%s(%s)" % (ft_testname, ",".join(sys.argv[2:]))
-       
-       print "calling %s" % test_call
-       
-       rc = eval( test_call )
-       
-       print "result = %s" % rc
-       
-    except NameError, ne:
-       raise ne
+    test_call = "%s(%s)" % (ft_testname, ",".join(sys.argv[2:]))
+   
+    print "calling %s" % test_call
+   
+    rc = eval( test_call )
+   
+    print "result = %s" % rc
+      
     
