@@ -81,6 +81,14 @@ except ImportError, ie:
 
 
 #-------------------------------
+def get_config():
+    """
+    Return the imported config
+    """
+    return CONFIG
+
+
+#-------------------------------
 def openid_url( email ):
     """
     Generate an OpenID identity URL from an email address.
@@ -653,8 +661,8 @@ class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
       ret = None
       volume_list_json, cache_timeout = self.cached_volumes_json.get( slice_name, (None, None) )
       
-      if cache_timeout is not None and cache_timeout > time.time():
-         # expired 
+      if (cache_timeout is not None) and cache_timeout < time.time():
+         #  expired
          volume_list_json = None
       
       if volume_list_json is None:
@@ -673,7 +681,7 @@ class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
          self.cached_volumes_json_lock.acquire()
          
          # cache this 
-         cached_volumes_json[ slice_name ] = (ret, time.time() + self.CACHED_VOLUMES_JSON_LIFETIME )
+         self.cached_volumes_json[ slice_name ] = (ret, time.time() + self.CACHED_VOLUMES_JSON_LIFETIME )
       
       self.cached_volumes_json_lock.release()
       
