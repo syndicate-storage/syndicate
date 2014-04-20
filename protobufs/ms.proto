@@ -216,3 +216,17 @@ message ms_openid_provider_reply {
    required string signature = 9;               // signed with the Syndicate private key
 }
 
+// Registration request using the user's private key to prove Gateway ownership
+message ms_register_request {
+   enum AuthMethod {
+      AUTH_PUBLIC_KEY = 1;
+   }
+   
+   required uint32 gateway_type = 1;                // uses ms_gateway_cert.GatewayType 
+   required string gateway_name = 2;
+   required string username = 3;
+   required string nonce = 4;
+   required string signature = 5;                   // signed with user public key
+}
+
+

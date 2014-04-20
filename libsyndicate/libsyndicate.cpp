@@ -621,6 +621,7 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->volume_name,
       (void*)conf->volume_pubkey,
       (void*)conf->syndicate_pubkey,
+      (void*)conf->user_pkey,
       (void*)conf
    };
 
@@ -2119,7 +2120,8 @@ int md_init_begin( struct md_syndicate_conf* conf,
                    char const* gateway_name,
                    char const* oid_username,
                    char const* oid_password,
-                   char const* my_key_path,
+                   char const* user_pkey_pem,
+                   char const* gateway_key_path,
                    char const* tls_pkey_file,
                    char const* tls_cert_file,
                    char const* syndicate_pubkey_path
@@ -2167,8 +2169,13 @@ int md_init_begin( struct md_syndicate_conf* conf,
    MD_SYNDICATE_CONF_OPT( *conf, gateway_name, gateway_name );
    MD_SYNDICATE_CONF_OPT( *conf, server_cert_path, tls_cert_file );
    MD_SYNDICATE_CONF_OPT( *conf, server_key_path, tls_pkey_file );
-   MD_SYNDICATE_CONF_OPT( *conf, gateway_key_path, my_key_path );
+   MD_SYNDICATE_CONF_OPT( *conf, gateway_key_path, gateway_key_path );
    MD_SYNDICATE_CONF_OPT( *conf, syndicate_pubkey_path, syndicate_pubkey_path );
+   MD_SYNDICATE_CONF_OPT( *conf, user_pkey, user_pkey_pem );
+   
+   if( user_pkey_pem != NULL ) {
+      conf->user_pkey_len = strlen(user_pkey_pem);
+   }
    
    return rc;
 }
@@ -2193,7 +2200,20 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       return rc;
    }
    
-   if( conf->gateway_name != NULL && conf->ms_username != NULL && conf->ms_password != NULL ) {
+   // attempt public-key authentication 
+   if( conf->user_pkey != NULL ) {
+      rc = ms_client_public_key_gateway_register( client, conf->gateway_name, conf->ms_username, conf->user_pkey, conf->volume_pubkey, key_password );
+      if( rc != 0 ) {
+         errorf("ms_client_public_key_register rc = %d\n", rc );
+         
+         ms_client_destroy( client );
+         
+         return rc;
+      }
+   }
+   
+   // attempt OpeNID authentication
+   else if( conf->gateway_name != NULL && conf->ms_username != NULL && conf->ms_password != NULL ) {
       // register the gateway via OpenID
       rc = ms_client_openid_gateway_register( client, conf->gateway_name, conf->ms_username, conf->ms_password, conf->volume_pubkey, key_password );
       if( rc != 0 ) {
@@ -2265,16 +2285,17 @@ int md_init( struct md_syndicate_conf* conf,
              char const* gateway_name,
              char const* oid_username,
              char const* oid_password,
+             char const* user_pkey_pem,
              char const* volume_pubkey_file,
-             char const* my_key_file,
-             char const* my_key_password,
+             char const* gateway_key_path,
+             char const* gateway_key_password,
              char const* tls_pkey_file,
              char const* tls_cert_file,
              char const* storage_root,
              char const* syndicate_pubkey_path
            ) {
 
-   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, my_key_file, tls_pkey_file, tls_cert_file, syndicate_pubkey_path );
+   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, user_pkey_pem, gateway_key_path, tls_pkey_file, tls_cert_file, syndicate_pubkey_path );
 
    if( rc != 0 ) {
       errorf("md_init_begin() rc = %d\n", rc );
@@ -2287,13 +2308,13 @@ int md_init( struct md_syndicate_conf* conf,
    
 
    // set up libsyndicate runtime information
-   rc = md_runtime_init( conf, my_key_password );
+   rc = md_runtime_init( conf, gateway_key_password );
    if( rc != 0 ) {
       errorf("md_runtime_init() rc = %d\n", rc );
       return rc;
    }
    
-   return md_init_finish( conf, client, my_key_password );
+   return md_init_finish( conf, client, gateway_key_password );
 }
 
 
@@ -2305,15 +2326,16 @@ int md_init_client( struct md_syndicate_conf* conf,
                     char const* gateway_name,
                     char const* oid_username,
                     char const* oid_password,
+                    char const* user_pkey_pem,
                     char const* volume_pubkey_pem,
-                    char const* my_key_pem,
-                    char const* my_key_password,
+                    char const* gateway_key_pem,
+                    char const* gateway_key_password,
                     char const* storage_root,
                     char const* syndicate_pubkey_pem
                   ) {
    
    
-   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, NULL, NULL, NULL, NULL );
+   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, user_pkey_pem, NULL, NULL, NULL, NULL );
 
    if( rc != 0 ) {
       errorf("md_init_begin() rc = %d\n", rc );
@@ -2323,9 +2345,10 @@ int md_init_client( struct md_syndicate_conf* conf,
    conf->is_client = true;
    
    MD_SYNDICATE_CONF_OPT( *conf, storage_root, storage_root );
-   MD_SYNDICATE_CONF_OPT( *conf, gateway_key, my_key_pem );
+   MD_SYNDICATE_CONF_OPT( *conf, gateway_key, gateway_key_pem );
    MD_SYNDICATE_CONF_OPT( *conf, volume_pubkey, volume_pubkey_pem );
    MD_SYNDICATE_CONF_OPT( *conf, syndicate_pubkey, syndicate_pubkey_pem );
+   MD_SYNDICATE_CONF_OPT( *conf, user_pkey, user_pkey_pem );
    
    if( conf->gateway_key ) {
       conf->gateway_key_len = strlen(conf->gateway_key);
@@ -2336,15 +2359,18 @@ int md_init_client( struct md_syndicate_conf* conf,
    if( conf->syndicate_pubkey ) {
       conf->syndicate_pubkey_len = strlen(conf->syndicate_pubkey);
    }
+   if( conf->user_pkey ) {
+      conf->user_pkey_len = strlen(conf->user_pkey);
+   }
    
    // set up libsyndicate runtime information
-   rc = md_runtime_init( conf, my_key_password );
+   rc = md_runtime_init( conf, gateway_key_password );
    if( rc != 0 ) {
       errorf("md_runtime_init() rc = %d\n", rc );
       return rc;
    }
    
-   return md_init_finish( conf, client, my_key_password );   
+   return md_init_finish( conf, client, gateway_key_password );   
 }
 
 

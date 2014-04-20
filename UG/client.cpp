@@ -660,7 +660,7 @@ int syndicate_client_init( struct syndicate_state* state, struct syndicate_opts*
    }
    
    // initialize library
-   int rc = md_init_client( &state->conf, ms, opts->ms_url, opts->volume_name, opts->gateway_name, opts->username, opts->password,
+   int rc = md_init_client( &state->conf, ms, opts->ms_url, opts->volume_name, opts->gateway_name, opts->username, opts->password, (char*)opts->user_pkey_pem.ptr,
                                               opts->volume_pubkey_pem, opts->gateway_pkey_pem, opts->gateway_pkey_decryption_password, opts->storage_root, opts->syndicate_pubkey_pem );
    if( rc != 0 ) {
       errorf("md_init_client rc = %d\n", rc );

@@ -436,6 +436,8 @@ int AG_main( int argc, char** argv ) {
    char* metadata_url = NULL;
    char* username = NULL;
    char* password = NULL;
+   char* user_pkey_path = NULL;
+   struct mlock_buf user_pkey_pem;
    char* volume_name = NULL;
    char* dataset = NULL;
    char* gw_driver = NULL;
@@ -451,11 +453,15 @@ int AG_main( int argc, char** argv ) {
    bool rmap = false;
    bool stop = false;
    
+   memset( &user_pkey_pem, 0, sizeof(user_pkey_pem) );
+   
    static struct option gateway_options[] = {
       {"config-file\0Gateway configuration file path",      required_argument,   0, 'c'},
       {"volume-name\0Name of the volume to join",           required_argument,   0, 'v'},
       {"username\0User authentication identity",             required_argument,   0, 'u'},
       {"password\0User authentication secret",               required_argument,   0, 'p'},
+      {"user-pkey-pem\0User private key PEM string",         required_argument,  0, 'P'},
+      {"user-pkey\0User private key path (PEM)",             required_argument,  0, 'U'},
       {"MS\0Metadata Service URL",                          required_argument,   0, 'm'},
       {"foreground\0Run in the foreground",                 no_argument,         0, 'f'},
       {"overwrite\0Overwrite previous upload on conflict",  no_argument,         0, 'w'},
@@ -478,7 +484,7 @@ int AG_main( int argc, char** argv ) {
 
    int opt_index = 0;
    int c = 0;
-   while((c = getopt_long(argc, argv, "c:v:u:p:P:m:fwl:i:d:D:hg:V:G:S:T:C:t:r:K:", gateway_options, &opt_index)) != -1) {
+   while((c = getopt_long(argc, argv, "c:v:u:p:U:P:m:fwl:i:d:D:hg:V:G:S:T:C:t:r:K:", gateway_options, &opt_index)) != -1) {
       switch( c ) {
          case 'v': {
             volume_name = optarg;
@@ -496,6 +502,23 @@ int AG_main( int argc, char** argv ) {
             password = optarg;
             break;
          }
+         case 'U': {
+            user_pkey_path = optarg;
+            break;
+         }
+         case 'P': {
+            size_t len = strlen(optarg);
+            int rc = mlock_calloc( &user_pkey_pem, len );
+            if( rc != 0 ) {
+               errorf("mlock_calloc rc = %d\n", rc );
+               exit(1);
+            }
+            
+            memcpy( user_pkey_pem.ptr, optarg, len );
+            memset( optarg, 0, len );
+            break;
+         }
+         
          case 'm': {
             metadata_url = optarg;
             break;
@@ -613,12 +636,23 @@ int AG_main( int argc, char** argv ) {
    if( config_file != NULL ) {
       rc = md_read_conf( config_file, global_conf );
       if( rc != 0 ) {
-         errorf("WARN: failed to read %s, rc = %d\n", config_file, rc );
+         errorf("ERROR: failed to read %s, rc = %d\n", config_file, rc );
          return rc;
       }
    }
    
-   rc = md_init( global_conf, global_ms, metadata_url, volume_name, gateway_name, username, password, volume_pubkey_path, gateway_pkey_path, gateway_pkey_decryption_password, tls_pkey_path, tls_cert_path, NULL, syndicate_pubkey_path );
+   // load user private key?
+   if( user_pkey_path != NULL && user_pkey_pem.ptr == NULL ) {
+      int rc = md_load_secret_as_string( &user_pkey_pem, user_pkey_path );
+      if( rc != 0 ) {
+         errorf("Failed to read %s, rc = %d\n", user_pkey_path, rc );
+         return -ENOENT;
+      }
+   }
+   
+   rc = md_init( global_conf, global_ms, metadata_url, volume_name, gateway_name, username, password, (char const*)user_pkey_pem.ptr,
+                 volume_pubkey_path, gateway_pkey_path, gateway_pkey_decryption_password, tls_pkey_path, tls_cert_path, NULL, syndicate_pubkey_path );
+   
    if( rc != 0 ) {
       exit(1);
    }
@@ -658,111 +692,9 @@ int AG_main( int argc, char** argv ) {
        errorf( "start_gateway_service rc = %d\n", rc);	
    } 
 
+   mlock_free( &user_pkey_pem );
+   
    return 0;
-}
-
-
-// turn into a deamon
-int daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
-
-   FILE* log = NULL;
-   int pid_fd = -1;
-   
-   if( logfile_path ) {
-      log = fopen( logfile_path, "a" );
-   }
-   if( pidfile_path ) {
-      pid_fd = open( pidfile_path, O_CREAT | O_EXCL | O_WRONLY, 0644 );
-      if( pid_fd < 0 ) {
-         // specified a PID file, and we couldn't make it.  someone else is running
-         int errsv = -errno;
-         errorf( "Failed to create PID file %s (error %d)\n", pidfile_path, errsv );
-         return errsv;
-      }
-   }
-   
-   pid_t pid, sid;
-
-   pid = fork();
-   if (pid < 0) {
-      int rc = -errno;
-      errorf( "Failed to fork (errno = %d)\n", -errno);
-      return rc;
-   }
-
-   if (pid > 0) {
-      exit(0);
-   }
-
-   // child process 
-   // umask(0);
-
-   sid = setsid();
-   if( sid < 0 ) {
-      int rc = -errno;
-      errorf("setsid errno = %d\n", rc );
-      return rc;
-   }
-
-   if( chdir("/") < 0 ) {
-      int rc = -errno;
-      errorf("chdir errno = %d\n", rc );
-      return rc;
-   }
-
-   close( STDIN_FILENO );
-   close( STDOUT_FILENO );
-   close( STDERR_FILENO );
-
-   if( log ) {
-      int log_fileno = fileno( log );
-
-      if( dup2( log_fileno, STDOUT_FILENO ) < 0 ) {
-         int errsv = -errno;
-         errorf( "dup2 errno = %d\n", errsv);
-         return errsv;
-      }
-      if( dup2( log_fileno, STDERR_FILENO ) < 0 ) {
-         int errsv = -errno;
-         errorf( "dup2 errno = %d\n", errsv);
-         return errsv;
-      }
-
-      if( logfile )
-         *logfile = log;
-      else
-         fclose( log );
-   }
-   else {
-      int null_fileno = open("/dev/null", O_WRONLY);
-      dup2( null_fileno, STDOUT_FILENO );
-      dup2( null_fileno, STDERR_FILENO );
-   }
-
-   if( pid_fd >= 0 ) {
-      char buf[10];
-      sprintf(buf, "%d", getpid() );
-      write( pid_fd, buf, strlen(buf) );
-      fsync( pid_fd );
-      close( pid_fd );
-   }
-   
-   struct passwd* pwd;
-   int ret = 0;
-   
-   // switch to "daemon" user, if possible
-   pwd = getpwnam( "daemon" );
-   if( pwd != NULL ) {
-      setuid( pwd->pw_uid );
-      dbprintf( "became user '%s'\n", "daemon" );
-      ret = 0;
-   }
-   else {
-      dbprintf( "could not become '%s'\n", "daemon" );
-      ret = 1;
-   }
-   
-   return ret;
 }
 
 
@@ -776,7 +708,7 @@ int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *cli
    // need to daemonize?
    if( make_daemon ) {
       FILE* log = NULL;
-      rc = daemonize( logfile, pidfile, &log );
+      rc = md_daemonize( logfile, pidfile, &log );
       if( rc < 0 ) {
          errorf( "daemonize rc = %d\n", rc );
          exit(1);

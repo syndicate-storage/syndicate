@@ -31,6 +31,8 @@ import syndicate.util.daemonize as daemonize
 
 log = rg_common.get_logger()
 
+RESPAWN_EXIT_STATUES = range(1,255)
+
 RG_PID = 0
 LOG_FD = None
 
@@ -54,7 +56,7 @@ def watchdog_need_respawn( exit_status ):
    global RG_PID 
    RG_PID = 0
    
-   return watchdog.check_exit_status( exit_status, respawn_exit_statuses=range(1,255) )
+   return watchdog.check_exit_status( exit_status, respawn_exit_statuses=RESPAWN_EXIT_STATUES )
       
 #-------------------------------
 def spawn_rg( config, old_exit_status ):
@@ -104,10 +106,10 @@ if __name__ == "__main__":
       if config.has_key('logdir'):
          logfile_path = os.path.join( config['logdir'], "RG.log" )
       
-      daemonize.daemonize( lambda: watchdog.main( lambda old_exit_status: spawn_rg(config, old_exit_status), pid_cb=watchdog_PID, exit_cb=watchdog_need_respawn, respawn_exit_statuses=range(1,255) ), 
+      daemonize.daemonize( lambda: watchdog.main( lambda old_exit_status: spawn_rg(config, old_exit_status), pid_cb=watchdog_PID, exit_cb=watchdog_need_respawn, respawn_exit_statuses=RESPAWN_EXIT_STATUES ), 
                            logfile_path=logfile_path, pidfile_path=pidfile_path )
    
    else:
       # run in the foreground
-      watchdog.main( lambda old_exit_status: spawn_rg(config, old_exit_status), pid_cb=watchdog_PID, exit_cb=watchdog_need_respawn, respawn_exit_statuses=range(1,255) )
+      watchdog.main( lambda old_exit_status: spawn_rg(config, old_exit_status), pid_cb=watchdog_PID, exit_cb=watchdog_need_respawn, respawn_exit_statuses=RESPAWN_EXIT_STATUES )
       

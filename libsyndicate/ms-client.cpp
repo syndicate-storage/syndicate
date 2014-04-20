@@ -575,6 +575,20 @@ char* ms_client_volume_url_by_name( struct ms_client* client, char const* name )
    return url;
 }
 
+
+char* ms_client_public_key_register_url( struct ms_client* client ) {
+   char* url = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/REGISTER/") + 1 );
+   
+   ms_client_rlock( client );
+   
+   sprintf( url, "%s/REGISTER", client->url );
+   
+   ms_client_unlock( client );
+   
+   return url;
+}
+   
+
 char* ms_client_openid_register_url( struct ms_client* client, char const* gateway_name, char const* username ) {
    // build the /REGISTER/ url
 
@@ -2109,6 +2123,30 @@ static int ms_client_reload_syndicate_public_key( struct ms_client* client ) {
    return 0;
 }
 
+
+// finish registration
+static int ms_client_finish_registration( struct ms_client* client ) {
+   int rc = 0;
+   
+   // load the certificate bundle   
+   rc = ms_client_reload_certs( client );
+   if( rc != 0 ) {
+      errorf("ms_client_reload_certs rc = %d\n", rc );
+      return -ENODATA;
+   }
+   
+   // start the threads
+   rc = ms_client_start_threads( client );
+   if( rc != 0 && rc != -EALREADY ) {
+      errorf("ms_client_start_threads rc = %d\n", rc );
+   }
+   else {
+      rc = 0;
+   }
+   
+   return rc;
+}
+
    
 
 // register this gateway with the MS, using the SyndicateUser's OpenID username and password
@@ -2169,26 +2207,17 @@ int ms_client_openid_gateway_register( struct ms_client* client, char const* gat
    rc = ms_client_load_registration_metadata( client, &registration_md, volume_pubkey_pem, key_password );
    if( rc != 0 ) {
       errorf("ms_client_load_registration_metadata rc = %d\n", rc );
-      return -ENODATA;
+      return -ENOTCONN;
    }
    
-   // load the certificate bundle   
-   rc = ms_client_reload_certs( client );
+   // finish up 
+   rc = ms_client_finish_registration( client );
    if( rc != 0 ) {
-      errorf("ms_client_reload_certs rc = %d\n", rc );
-      return -ENODATA;
+      errorf("ms_client_finish_registration rc = %d\n", rc );
+      return -ENOTCONN;
    }
    
-   // start the threads
-   rc = ms_client_start_threads( client );
-   if( rc != 0 && rc != -EALREADY ) {
-      errorf("ms_client_start_threads rc = %d\n", rc );
-   }
-   else {
-      rc = 0;
-   }
-   
-   return 0;
+   return rc;
 }
 
 
@@ -2237,7 +2266,7 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
       errorf("ms_client_download_volume_by_name(%s) rc = %d\n", volume_name, rc );
       ms_volume_free( volume );
       free( volume );
-      return -ENOTCONN;
+      return -ENODATA;
    }
    
    dbprintf("Volume ID %" PRIu64 ": '%s', version: %" PRIu64 ", certs: %" PRIu64 "\n", volume->volume_id, volume->name, volume->volume_version, volume->volume_cert_version );
@@ -2246,10 +2275,198 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
    client->volume = volume;
    ms_client_view_unlock( client );
    
-   // load the certificate bundle   
-   rc = ms_client_reload_certs( client );
-
+   // finish registration 
+   rc = ms_client_finish_registration( client );
+   if( rc != 0 ) {
+      errorf("ms_client_finish_registration rc = %d\n", rc );
+      return -ENOTCONN;
+   }
+   
    return rc;
+}
+
+
+// populate a registration request 
+static int ms_client_make_registration_request( struct ms_client* client, EVP_PKEY* user_pkey, char const* username, int gateway_type, char const* gateway_name, ms::ms_register_request* req ) {
+   req->set_username( string(username) );
+   req->set_gateway_name( string(gateway_name) );
+   req->set_gateway_type( gateway_type );
+   
+   char nonce[32];
+   char const* tbl = "0123456789abcdef";
+   
+   for( int i = 0; i < 32; i++ ) {
+      nonce[i] = tbl[ rand() % 16 ];
+   }
+   nonce[32] = 0;
+      
+   req->set_nonce( string(nonce) );
+   
+   int rc = md_sign< ms::ms_register_request >( user_pkey, req );
+   return rc;
+}
+
+
+// send the registration information, and get back a reply 
+static int ms_client_send_register_request( struct ms_client* client, char* url, ms::ms_register_request* reg_req, ms::ms_registration_metadata* registration_md ) {
+   
+   CURL* curl = curl_easy_init();
+   
+   ms_client_rlock( client );
+   md_init_curl_handle( client->conf, curl, url, client->conf->connect_timeout );
+   ms_client_unlock( client );
+   
+   // serialize
+   char* serialized_registration_buf = NULL;
+   size_t serialized_registration_buf_len = 0;
+   
+   int rc = md_serialize< ms::ms_register_request >( reg_req, &serialized_registration_buf, &serialized_registration_buf_len );
+   if( rc != 0 ) {
+      errorf("Failed to serialize, rc = %d\n", rc );
+      
+      curl_easy_cleanup( curl );
+      return -EINVAL;
+   }
+   
+   // POST the request 
+   struct curl_httppost *post = NULL, *last = NULL;
+   long http_response = 0;
+   response_buffer_t* rb = new response_buffer_t();
+
+   // send as multipart/form-data file
+   curl_formadd( &post, &last, CURLFORM_COPYNAME, "ms-register-request", CURLFORM_BUFFER, "data", CURLFORM_BUFFERPTR, serialized_registration_buf, CURLFORM_BUFFERLENGTH, serialized_registration_buf_len, CURLFORM_END );
+   
+   curl_easy_setopt( curl, CURLOPT_POST, 1L);
+   curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, (void*)rb );
+   curl_easy_setopt( curl, CURLOPT_HTTPPOST, post );
+   
+   rc = curl_easy_perform( curl );
+   
+   if( rc != 0 ) {
+      errorf("curl_easy_perform(%s) rc = %d\n", url, rc );
+         
+      curl_easy_cleanup( curl );
+      curl_formfree( post );
+      free( serialized_registration_buf );
+      
+      response_buffer_free( rb );
+      
+      delete rb;
+      return rc;
+   }
+   else {
+      // get status 
+      curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &http_response );
+      
+      curl_easy_cleanup( curl );
+      curl_formfree( post );
+      free( serialized_registration_buf );
+      
+      if( http_response != 200 ) {
+         errorf("curl_easy_perform(%s) HTTP status = %ld\n", url, http_response );
+         response_buffer_free( rb );
+         delete rb;
+         return -ENODATA;
+      }
+      else {
+         // got 200.  Parse to registration metadata
+         char* registration_md_buf = response_buffer_to_string( rb );
+         size_t registration_md_buf_len = response_buffer_size( rb );
+         
+         // free memory
+         response_buffer_free( rb );
+         delete rb;
+         
+         // got the data
+         bool valid = registration_md->ParseFromString( string(registration_md_buf, registration_md_buf_len) );
+         
+         // free memory
+         free( registration_md_buf );
+      
+         if( !valid ) {
+            errorf( "%s", "invalid registration metadata\n" );
+            return -EINVAL;
+         }
+      }
+   }
+   
+   return 0;
+}
+   
+   
+
+// register via public-key signatures.
+int ms_client_public_key_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* user_privkey_pem, char const* volume_pubkey_pem, char const* key_password ) {
+   
+   ms::ms_registration_metadata registration_md;
+   ms::ms_register_request registration_req;
+   
+   EVP_PKEY* user_pkey = NULL;
+   
+   // load the private key
+   int rc = md_load_privkey( &user_pkey, user_privkey_pem );
+   if( rc != 0 ) {
+      errorf("md_load_privkey rc = %d\n", rc );
+      
+      return -EINVAL;
+   }
+
+   ms_client_rlock( client );
+
+   // make the request 
+   rc = ms_client_make_registration_request( client, user_pkey, username, client->gateway_type, gateway_name, &registration_req );
+   if( rc != 0 ) {
+      ms_client_unlock( client );
+      
+      errorf("ms_client_make_registration_request rc = %d\n", rc );
+      return -ENOTCONN;
+   }
+   
+   char* register_url = ms_client_public_key_register_url( client );
+   
+   ms_client_unlock( client );
+   
+   dbprintf("register at %s\n", register_url );
+   
+   // if we don't have the public key, grab it 
+   if( client->syndicate_public_key == NULL ) {
+      dbprintf("%s\n", "WARN: no Syndicate public key given.");
+      rc = ms_client_reload_syndicate_public_key( client );
+      if( rc != 0 ) {
+         errorf("ms_client_reload_syndicate_public_key rc = %d\n", rc );
+         
+         free( register_url );
+         return -ENODATA;
+      }
+   }
+
+   // send our request; get our registration data 
+   rc = ms_client_send_register_request( client, register_url, &registration_req, &registration_md );
+   
+   free( register_url );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_send_register_request rc = %d\n", rc );
+      return -ENODATA;
+   }
+   
+   // load up the registration information, including our set of Volumes
+   rc = ms_client_load_registration_metadata( client, &registration_md, volume_pubkey_pem, key_password );
+   if( rc != 0 ) {
+      errorf("ms_client_load_registration_metadata rc = %d\n", rc );
+      return -ENOTCONN;
+   }
+   
+   // finish up 
+   rc = ms_client_finish_registration( client );
+   if( rc != 0 ) {
+      errorf("ms_client_finish_registration rc = %d\n", rc );
+      return -ENOTCONN;
+   }
+   
+   return rc;
+
 }
 
 

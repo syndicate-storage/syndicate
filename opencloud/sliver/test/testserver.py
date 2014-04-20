@@ -46,13 +46,14 @@ CONFIG_OPTIONS = {
    "push":              ("-P", 1, "Push a credential blob to given host(s).  Hosts must be comma-separated."),
    "server":            ("-S", 1, "Test serving on a given IP:Port combination"),
    "UG_port":           ("-U", 1, "User Gateway port number" ),
-   "RG_port":           ("-R", 1, "Replica Gateway port number" )
+   "RG_port":           ("-R", 1, "Replica Gateway port number" ),
+   "user_pkey":         ("-K", 1, "User private key"),
 }
 
 
 #-------------------------------
 def validate_config( config ):
-   required = ["private_key", "observer_secret", "volume", "username", "password", "MS", "UG_port", "RG_port"]
+   required = ["private_key", "observer_secret", "volume", "username", "password", "MS", "UG_port", "RG_port", "user_pkey"]
    missing = []
    ret = 0
    
@@ -161,11 +162,18 @@ if __name__ == "__main__":
    
    key_pem = key.exportKey()
    
+   # get user private key
+   user_key = load_private_key( config['user_pkey'] )
+   if user_key is None:
+      sys.exit(-1)
+      
+   user_pkey_pem = user_key.exportKey()
+   
    # make a volume list 
    volume_str = syndicatelib.create_volume_list_blob( key_pem, config["observer_secret"], ["testvolume"] )
    
    # make a volume credential 
-   cred_str = syndicatelib.create_credential_blob( key_pem, config["observer_secret"], config["MS"], config["volume"], config["username"], config["password"], config["UG_port"], config["RG_port"] )
+   cred_str = syndicatelib.create_credential_blob( key_pem, config["observer_secret"], config["MS"], config["volume"], config["username"], config["password"], config["UG_port"], config["RG_port"], user_pkey_pem )
    
    if config.get("push", None) is not None:
       

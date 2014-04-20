@@ -17,6 +17,10 @@
 # add additional source files here
 source_files = """
    AG.cpp
+   AG-core.cpp
+   AG-util.cpp
+   map-parser.cpp
+   reversion-daemon.cpp 
 """
 
 # add source file search paths here
@@ -40,6 +44,9 @@ LIBS = """
    syndicate
    protobuf
    rt
+   dl
+   xerces-c
+   m
 """
 
 # add additional CPPFLAGS here

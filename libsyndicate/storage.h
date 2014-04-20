@@ -25,6 +25,7 @@ int md_init_local_storage( struct md_syndicate_conf* c );
 
 // file I/O
 char* md_load_file_as_string( char const* path, size_t* size );
+int md_load_secret_as_string( struct mlock_buf* buf, char const* path );
 
 // directory manipulation
 int md_mkdirs( char const* dirp );

@@ -605,7 +605,7 @@ def call_closure_delete( request, filename ):
 
 
 #-------------------------
-def init( libsyndicate, gateway_key_path, sender_pubkey_path ):
+def init( libsyndicate, gateway_key_path, user_pubkey_pem ):
    '''
       Initialize this module.
    '''
@@ -615,19 +615,6 @@ def init( libsyndicate, gateway_key_path, sender_pubkey_path ):
    
    # disable core dumps (don't want our private key to get leaked)
    resource.setrlimit( resource.RLIMIT_CORE, (0, 0) )
-   
-   sender_pubkey_pem = None 
-   
-   if sender_pubkey_path is not None:
-      try:
-         # load keys
-         fd = open( sender_pubkey_path, "r" )
-         sender_pubkey_pem = fd.read()
-         fd.close()
-      except OSError, oe:
-         log.exception(oe)
-         log.error("Failed to read sender public key %s" % sender_pubkey_path)
-         return -1
    
    gateway_privkey_pem = None 
    
@@ -654,11 +641,11 @@ def init( libsyndicate, gateway_key_path, sender_pubkey_path ):
       
       gateway_privkey = CryptoKey.importKey( gateway_privkey_pem )
       
-   if sender_pubkey_pem is None:
+   if user_pubkey_pem is None:
       log.warning("Using Gateway public key to verify closures")
-      sender_pubkey_pem = gateway_privkey.publickey().exportKey()
+      user_pubkey_pem = gateway_privkey.publickey().exportKey()
 
-   SENDER_PUBKEY_PEM = sender_pubkey_pem 
+   SENDER_PUBKEY_PEM = user_pubkey_pem 
    GATEWAY_PRIVKEY_PEM = gateway_privkey_pem
    
    # set up our storage

@@ -24,7 +24,7 @@ void md_init_OpenSSL(void) {
     if (!md_openssl_thread_setup() || !SSL_library_init())
     {
         errorf("%s", "OpenSSL initialization failed!\n");
-        exit(-1);
+        exit(1);
     }
     
     OpenSSL_add_all_digests();

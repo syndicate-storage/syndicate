@@ -199,28 +199,31 @@ class SyndicateUser( storagetypes.Object ):
    def owned_by( self, user ):
       return user.owner_id == self.owner_id
    
+   
    @classmethod
    def Authenticate( cls, email, data, data_signature ):
       """
       Authenticate a user via public-key cryptography.
       Verify that data was signed by the user's private key, given the signature and data.
       (use RSA PSS for security).
+      Return the user on success; False on authentication error; None if the user doesn't exist
       """
       user = SyndicateUser.Read( email )
       if user == None:
          return None
       
       if not SyndicateUser.is_signing_public_key_set( user.signing_public_key ):
-         log.error("Key for %s is not set or unused" % email)
+         logging.error("Key for %s is not set or unused" % email)
          return None
       
       ret = cls.auth_verify( user.signing_public_key, data, data_signature )
       if not ret:
-         logging.error("Verification failed")
+         logging.error("Verification failed for %s" % email)
          return False
       
       else:
          return user
+
 
    def makeCert( self ):
       ret = {}
@@ -230,6 +233,7 @@ class SyndicateUser( storagetypes.Object ):
       ret['openid_url'] = self.openid_url
       
       return ret
+
 
    @classmethod
    def Create( cls, email, **kwargs ):

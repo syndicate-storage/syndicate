@@ -101,6 +101,15 @@ int syndicate_read_opts_from_stdin( int* argc, char*** argv ) {
    }
 }
 
+
+// clean up the opts structure, freeing things we don't need 
+int syndicate_cleanup_opts( struct syndicate_opts* opts ) {
+   if( opts->user_pkey_pem.ptr != NULL ) {
+      mlock_free( &opts->user_pkey_pem );
+   }
+   return 0;
+}
+
 // parse opts from argv.
 // optionally supply the optind after parsing (if it's not NULL)
 // return 0 on success
@@ -117,7 +126,7 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
       {"volume-pubkey",   required_argument,   0, 'V'},
       {"gateway-pkey",    required_argument,   0, 'G'},
       {"syndicate-pubkey", required_argument,  0, 'S'},
-      {"gateway-pkey-decryption-password", required_argument, 0, 'K'},
+      {"gateway-pkey-password", required_argument, 0, 'K'},
       {"tls-pkey",        required_argument,   0, 'T'},
       {"tls-cert",        required_argument,   0, 'C'},
       {"no-flush-replicas", no_argument,       0, 'F'},
@@ -125,6 +134,8 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
       {"cache-soft-limit", required_argument,  0, 'l'},
       {"cache-hard-limit", required_argument,  0, 'L'},
       {"read-stdin",      no_argument,         0, 'R'},
+      {"user-pkey",       required_argument,   0, 'U'},
+      {"user-pkey-pem",   required_argument,   0, 'P'},
       {0, 0, 0, 0}
    };
 
@@ -134,11 +145,12 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
    int opt_index = 0;
    int c = 0;
    
-   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:T:C:K:l:L:r:R";
+   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:T:C:K:l:L:r:RU:";
    
    int num_default_options = 0;         // needed for freeing special arguments
    char* optstr = NULL;
    
+   // merge in long-opts for special options
    if( special_opts != NULL ) {
       optstr = CALLOC_LIST( char, strlen(default_optstr) + strlen(special_opts) + 1 );
       sprintf( optstr, "%s%s", default_optstr, special_opts );
@@ -263,6 +275,30 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
             opts->gateway_pkey_decryption_password = optarg;
             break;
          }
+         case 'U': {
+            // read the file...
+            int rc = md_load_secret_as_string( &opts->user_pkey_pem, optarg );
+            if( rc != 0 ) {
+               errorf("md_load_secret_as_string(%s) rc = %d\n", optarg, rc );
+               rc = -1;
+               break;
+            }
+            break;
+         }
+         case 'P': {
+            size_t len = strlen(optarg);
+            int rc = mlock_calloc( &opts->user_pkey_pem, len );
+            if( rc != 0 ) {
+               errorf("mlock_calloc rc = %d\n", rc );
+               exit(1);
+            }
+            else {
+               memcpy( opts->user_pkey_pem.ptr, optarg, len );
+               opts->user_pkey_pem.len = len;
+               memset( optarg, 0, len );
+            }
+            break;
+         }
          case 'l': {
             long lim = 0;
             rc = syndicate_parse_long( c, optarg, &lim );
@@ -373,7 +409,14 @@ Required arguments:\n\
    -u, --username USERNAME\n\
             Syndicate account username\n\
    -p, --password PASSWORD\n\
-            Syndicate account password\n\
+            Syndicate account password.\n\
+            Required if -U is not given.\n\
+   -U, --user-pkey PATH\n\
+            Path to user private key.\n\
+            Required if -p is not given.\n\
+   -P, --user-pkey-pem STRING\n\
+            Raw PEM-encoded user private key.\n\
+            Can be used in place of -U.\n\
    -v, --volume VOLUME_NAME\n\
             Name of the Volume you are going to access\n\
    -g, --gateway GATEWAY_NAME\n\
@@ -398,7 +441,7 @@ Optional arguments:\n\
             Path to this gateway's private key.  If no private key\n\
             is given, then it will be downloaded from the MS.\n\
    -K, --gateway-pkey-decryption-password DECRYPTION_PASSWORD\n\
-            Password to decrypt the private key.\
+            Password to decrypt the private key.\n\
    -l, --cache-soft-limit LIMIT\n\
             Soft limit on the size of the local cache (bytes).\n\
    -L, --cache-hard-limit LIMIT\n\

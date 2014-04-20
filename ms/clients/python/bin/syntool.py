@@ -118,7 +118,7 @@ It's possible that someone is impersonating your Syndicate, to get you to leak s
 If you are certain this is not the case, you should remove the offending public key.
 
 Offending public key path:  %s
-""" % conf.syndicate_pubkey_name( config['syndicate_host'], config['syndicate_port'], config['no_tls'] )
+""" % conf.make_syndicate_pubkey_name( config['syndicate_host'], config['syndicate_port'], config['no_tls'] )
 
    sys.exit(1)
 

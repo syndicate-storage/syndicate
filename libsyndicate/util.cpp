@@ -527,6 +527,43 @@ double now_ns(void) {
    return timespec_to_double( &ts );
 }
 
+// alloc and then mlock 
+int mlock_calloc( struct mlock_buf* buf, size_t len ) {
+   memset( buf, 0, sizeof( struct mlock_buf ) );
+   
+   int rc = posix_memalign( &buf->ptr, sysconf(_SC_PAGESIZE), len );
+   if( rc != 0 ) {
+      return rc;
+   }
+   
+   memset( buf->ptr, 0, len );
+   
+   buf->len = len;
+   
+   rc = mlock( buf->ptr, buf->len );
+   if( rc != 0 ) {
+      free( buf->ptr );
+      
+      buf->ptr = NULL;
+      buf->len = 0;
+      
+      return rc;
+   }
+   
+   return 0;
+}
+
+int mlock_free( struct mlock_buf* buf ) {
+   if( buf->ptr != NULL ) {
+      memset( buf->ptr, 0, buf->len );
+      munlock( buf->ptr, buf->len );
+      free( buf->ptr );
+   }
+   buf->ptr = NULL;
+   buf->len = 0;
+   return 0;
+}
+
 // get task ID (no glibc wrapper around this...)
 pid_t gettid(void) {
    return syscall( __NR_gettid );

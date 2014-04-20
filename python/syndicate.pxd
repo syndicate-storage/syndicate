@@ -77,6 +77,7 @@ cdef extern from "libsyndicate.h":
                char* gateway_name,
                char* md_username,
                char* md_password,
+               char* user_pkey_pem,
                char* volume_pubkey_file,
                char* my_key_file,
                char* my_key_password,

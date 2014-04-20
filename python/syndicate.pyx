@@ -276,6 +276,7 @@ cdef class Syndicate:
                        ms_url=None,
                        username=None,
                        password=None,
+                       user_pkey_pem=None,
                        gateway_pkey_decryption_password=None,
                        volume_name=None,
                        volume_pubkey_path=None,
@@ -302,6 +303,7 @@ cdef class Syndicate:
          char *c_ms_url = NULL
          char *c_username = NULL
          char *c_password = NULL
+         char *c_user_pkey_pem = NULL
          char* c_gateway_pkey_decryption_password = NULL
          char *c_volume_name = NULL
          char *c_volume_pubkey_path = NULL
@@ -312,44 +314,47 @@ cdef class Syndicate:
          char* c_storage_root = NULL
          char* c_syndicate_pubkey_path = NULL
 
-      if gateway_name != None:
+      if gateway_name is not None:
          c_gateway_name = gateway_name
       
-      if ms_url != None:
+      if ms_url is not None:
          c_ms_url = ms_url
 
-      if username != None:
+      if username is not None:
          c_username = username 
          
-      if password != None:
+      if password is not None:
          c_password = password
 
-      if gateway_pkey_decryption_password != None:
+      if user_pkey_pem is not None:
+         c_user_pkey_pem = user_pkey_pem
+
+      if gateway_pkey_decryption_password is not None:
          c_gateway_pkey_decryption_password = gateway_pkey_decryption_password
          
-      if volume_name != None:
+      if volume_name is not None:
          c_volume_name = volume_name 
          
-      if config_file != None:
+      if config_file is not None:
          c_config_file = config_file 
 
-      if volume_pubkey_path != None:
+      if volume_pubkey_path is not None:
          c_volume_pubkey_path = volume_pubkey_path
       
-      if gateway_pkey_path != None:
+      if gateway_pkey_path is not None:
          c_gateway_pkey_path = gateway_pkey_path
          runtime_privkey_path = gateway_pkey_path
          
-      if tls_pkey_path != None:
+      if tls_pkey_path is not None:
          c_tls_pkey_path = tls_pkey_path
       
-      if tls_cert_path != None:
+      if tls_cert_path is not None:
          c_tls_cert_path = tls_cert_path
 
-      if storage_root != None:
+      if storage_root is not None:
          c_storage_root = storage_root
 
-      if syndicate_pubkey_path != None:
+      if syndicate_pubkey_path is not None:
          c_syndicate_pubkey_path = syndicate_pubkey_path
 
       # initialize configuration first
@@ -362,6 +367,7 @@ cdef class Syndicate:
                      c_gateway_name,
                      c_username,
                      c_password,
+                     c_user_pkey_pem,
                      c_volume_pubkey_path,
                      c_gateway_pkey_path,
                      c_gateway_pkey_decryption_password,
@@ -382,6 +388,7 @@ cdef class Syndicate:
                            ms_url=None,
                            username=None,
                            password=None,
+                           user_pkey_pem=None,
                            gateway_pkey_decryption_password=None,
                            volume_name=None,
                            volume_pubkey_path=None,
@@ -406,6 +413,7 @@ cdef class Syndicate:
                                     ms_url=ms_url,
                                     username=username,
                                     password=password,
+                                    user_pkey_pem=user_pkey_pem,
                                     volume_name=volume_name,
                                     volume_pubkey_path=volume_pubkey_path,
                                     config_file=config_file,

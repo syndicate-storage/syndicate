@@ -454,7 +454,7 @@ def create_volume_list_blob( private_key_pem, shared_secret, volume_list ):
  
 
 #-------------------------------
-def create_credential_blob( private_key_pem, shared_secret, syndicate_url, volume_name, volume_owner, volume_password, UG_port, RG_port ):
+def create_credential_blob( private_key_pem, shared_secret, syndicate_url, volume_name, volume_owner, volume_password, UG_port, RG_port, user_pkey_pem ):
     """
     Create a sealed, signed, encoded credentials blob.
     """
@@ -466,7 +466,8 @@ def create_credential_blob( private_key_pem, shared_secret, syndicate_url, volum
        "volume_owner":    volume_owner,
        "volume_password": volume_password,
        "volume_peer_port": UG_port,
-       "volume_replicate_port": RG_port
+       "volume_replicate_port": RG_port,
+       "volume_user_pkey_pem": user_pkey_pem,
     }
     
     cred_data_str = json.dumps( cred_data )
