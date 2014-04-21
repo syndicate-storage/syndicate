@@ -37,20 +37,20 @@ log.setLevel( logging.INFO )
 
 import syndicate
 import syndicate.client.bin.syntool as syntool
+import syndicate.client.common.api as api
 import syndicate.client.common.msconfig as msconfig
 
 import syndicate.util.watchdog as watchdog
 import syndicate.util.daemonize as daemon 
 import syndicate.util.config as modconf
 import syndicate.util.storage as storage
+import syndicate.util.crypto as crypto
 
 import syndicate.syndicate as c_syndicate
 
 #-------------------------------
 # constants 
 OPENCLOUD_JSON                          = "observer_message"
-OPENCLOUD_JSON_DATA                     = "data"
-OPENCLOUD_JSON_SIGNATURE                = "sig"
 
 # message for one Volume
 OPENCLOUD_VOLUME_NAME                   = "volume_name"
@@ -183,33 +183,6 @@ def update_volume_runtime( runtime_info ):
     
     CONFIG_lock.release()
 
-
-#-------------------------------
-def get_open_port( port_search_start ):
-    
-    global PORT_MAX
-    
-    for cur_port in xrange( port_search_start, PORT_MAX ):
-      try:
-         s = socket.socket()
-         s.bind( ('', cur_port) )
-         return s, cur_port
-      except OSError, oe:
-         if oe.errno == errno.EADDRINUSE:
-            # port in use 
-            continue
-         else:
-            log.exception(oe)
-            log.error("Failed to find a port")
-            return (None, None)
-         
-      except Exception, e:
-         log.exception(e)
-         log.error("Failed to find a port")
-         return (None, None)
-      
-    log.error("Failed to find a port between %s and %s" % (port_search_start, PORT_MAX))
-    return (None, None)
 
 #-------------------------------
 class EnsureRunningThread( threading.Thread ):
@@ -350,15 +323,6 @@ def load_public_key( key_path ):
    
    return key
 
-
-#-------------------------------
-def verify_signature( key, data, sig ):
-    h = HashAlg.new( data )
-    verifier = CryptoSigner.new(key)
-    ret = verifier.verify( h, sig )
-    return ret
-
-
 #-------------------------------
 def find_missing_and_invalid_fields( required_fields, json_data ):
     """
@@ -385,56 +349,13 @@ def read_observer_data_from_json( public_key_path, json_text ):
     Return nonzero on error 
     """
     
-    # verify the presence and types of our required fields 
-    required_fields = {
-        OPENCLOUD_JSON_DATA: [str, unicode],
-        OPENCLOUD_JSON_SIGNATURE: [str, unicode]
-    }
-    
-    # parse the json structure 
-    try:
-        json_data = json.loads( json_text )
-    except:
-        # can't parse 
-        log.error("Failed to parse JSON text")
-        return (-errno.EINVAL, None)
-     
-    # look for missing or invalid fields
-    missing, invalid = find_missing_and_invalid_fields( required_fields, json_data )
-    
-    if len(missing) > 0:
-        log.error("Missing fields: %s" % (", ".join(missing)))
-        return (-errno.EINVAL, None)
-    
-    if len(invalid) > 0:
-        log.error("Invalid fields: %s" % (", ".join(invalid)))
-        return (-errno.EINVAL, None)
-    
-    # extract fields (they will be base64-encoded)
-    opencloud_data_b64 = json_data[OPENCLOUD_JSON_DATA]
-    opencloud_signature_b64 = json_data[OPENCLOUD_JSON_SIGNATURE]
-    
-    try:
-        sealed_data = base64.b64decode( opencloud_data_b64 )
-        opencloud_signature = base64.b64decode( opencloud_signature_b64 )
-    except:
-        log.error("Failed to decode message")
-        return (-errno.EINVAL, None)
-    
     # get the public key 
     k = load_public_key( public_key_path )
     if k is None:
         log.error("Failed to load public key from %s" % (public_key_path))
         return (-errno.ENOENT, None)
     
-    # verify the signature 
-    rc = verify_signature( k, sealed_data, opencloud_signature )
-    if not rc:
-        log.error("Invalid signature")
-        return (-errno.EINVAL, None)
-    
-    # return the encrypted data 
-    return (0, sealed_data)
+    return crypto.verify_and_parse_json( k.exportKey(), json_text )
  
  
 #-------------------------------
