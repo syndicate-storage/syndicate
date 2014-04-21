@@ -97,17 +97,31 @@ def generate_key_pair( key_size ):
    return (public_key_pem, private_key_pem)
 
 
+# NOTE: this is duplicated from storagetypes.  DRY this up
 def sign_data( private_key_str, data ):
    try:
       key = CryptoKey.importKey( private_key_str )
    except Exception, e:
-      log.error("importKey %s", traceback.format_exc() )
-      return False
+      log.error("importKey %s" % traceback.format_exc() )
+      return None
    
    h = HashAlg.new( data )
    signer = CryptoSigner.new(key)
    signature = signer.sign( h )
    return signature
+
+
+def verify_data( pubkey_str, data, signature ):
+   try:
+      key = CryptoKey.importKey( pubkey_str )
+   except Exception, e:
+      log.error("importKey %s" % traceback.format_exc() )
+      return False
+   
+   h = HashAlg.new( data )
+   verifier = CryptoSigner.new(key)
+   ret = verifier.verify( h, data_signature )
+   return ret
 
 # ----------------------------------
 # The User API.

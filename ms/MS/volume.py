@@ -480,6 +480,9 @@ class Volume( storagetypes.Object ):
       signed with our metadata private key.
       """
       signature = Volume.auth_sign( self.metadata_private_key, data )
+      if signature is None:
+         raise Exception("Failed to sign data")
+      
       sigb64 = base64.b64encode( signature )
       return sigb64
       

@@ -23,6 +23,7 @@ import storage.storagetypes as storagetypes
 
 from common.msconfig import *
 from common.admin_info import *
+import common.api as api
 
 from MS.user import SyndicateUser 
 
@@ -62,7 +63,8 @@ def register_make_openid_reply( oid_request, return_method, return_to, query ):
    
    data = openid_reply.SerializeToString()
    
-   signature = storagetypes.Object.auth_sign( SYNDICATE_PRIVKEY, data );
+   #signature = storagetypes.Object.auth_sign( SYNDICATE_PRIVKEY, data );
+   signature = api.sign_data( SYNDICATE_PRIVKEY, data )
    
    openid_reply.signature = base64.b64encode( signature )
    

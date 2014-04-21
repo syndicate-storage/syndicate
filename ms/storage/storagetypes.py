@@ -591,7 +591,7 @@ class Object( Model ):
       try:
          key = CryptoKey.importKey( key_str )
       except Exception, e:
-         logging.error("importKey %s", traceback.format_exc() )
+         logging.error("importKey %s" % traceback.format_exc() )
          return False
 
       # must have desired security level 
@@ -610,7 +610,7 @@ class Object( Model ):
       try:
          key = CryptoKey.importKey( public_key_str )
       except Exception, e:
-         logging.error("importKey %s", traceback.format_exc() )
+         logging.error("importKey %s" % traceback.format_exc() )
          return False
       
       h = HashAlg.new( data )
@@ -627,8 +627,8 @@ class Object( Model ):
       try:
          key = CryptoKey.importKey( private_key_str )
       except Exception, e:
-         logging.error("importKey %s", traceback.format_exc() )
-         return False
+         logging.error("importKey %s" % traceback.format_exc() )
+         return None
       
       h = HashAlg.new( data )
       signer = CryptoSigner.new(key)
