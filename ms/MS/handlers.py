@@ -387,7 +387,7 @@ class MSPublicKeyRegisterRequestHandler( webapp2.RequestHandler ):
          # not ours
          response_user_error( self, 403 )
          return
-   
+      
       # finalize the registration
       status, data = register_complete( gateway )
       if status != 200:

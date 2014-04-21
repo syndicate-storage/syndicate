@@ -118,7 +118,7 @@ def list_user_access_requests( email, **q_opts ):
    return VolumeAccessRequest.ListUserAccessRequests( user.owner_id, **q_opts )
 
 # ----------------------------------
-def request_volume_access( email, volume_name_or_id, caps, message ):
+def request_volume_access( email, volume_name_or_id, gateway_types, ug_caps, message ):
    user, volume = _read_user_and_volume( email, volume_name_or_id )
    
    # defensive checks...
@@ -127,10 +127,12 @@ def request_volume_access( email, volume_name_or_id, caps, message ):
    if volume == None or volume.deleted:
       raise Exception("No such volume '%s'" % volume_name_or_id )
    
-   return VolumeAccessRequest.RequestAccess( user.owner_id, volume.volume_id, volume.name, caps, message )
+   return VolumeAccessRequest.RequestAccess( user.owner_id, volume.volume_id, volume.name, gateway_types, ug_caps, message )
 
 # ----------------------------------
-def remove_volume_access( email, volume_name_or_id ):
+def remove_volume_access( email, volume_name_or_id, **caller_user_dict ):
+   caller_user = _check_authenticated( caller_user_dict )
+   
    user, volume = _read_user_and_volume( email, volume_name_or_id )
    
    # defensive checks...
@@ -139,8 +141,14 @@ def remove_volume_access( email, volume_name_or_id ):
    if volume == None or volume.deleted:
       raise Exception("No such volume '%s'" % volume_name_or_id )
    
-   return VolumeAccessRequest.RemoveAccessRequest( user.owner_id, volume.volume_id )
-
+   if volume.owner_id == caller_user.owner_id or caller_user.is_admin:
+      # delete the access request...this user cannot create any more gateways
+      return VolumeAccessRequest.RemoveAccessRequest( user.owner_id, volume.volume_id )
+      
+   else:
+      # can't delete 
+      raise Exception("User '%s' is insufficiently privileged to alter access rights for User '%s' in Volume '%s'" % (caller_user.email, user.email, volume.name))
+   
 # ----------------------------------
 def list_volume_access_requests( volume_name_or_id, **q_opts ):
    caller_user = _check_authenticated( q_opts )
@@ -171,7 +179,7 @@ def list_volume_access( volume_name_or_id, **q_opts ):
    return VolumeAccessRequest.ListVolumeAccess( volume.volume_id, **q_opts )
 
 # ----------------------------------
-def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
+def set_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, **caller_user_dict ):
    caller_user = _check_authenticated( caller_user_dict )
    
    user, volume = _read_user_and_volume( email, volume_name_or_id )
@@ -183,7 +191,11 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
       # defensive check 
       raise Exception("No such Volume '%s'" % volume_name_or_id)
    
-   return VolumeAccessRequest.GrantAccess( user.owner_id, volume.volume_id, volume.name, caps )
+   # caller user must be admin, or must own the volume 
+   if not caller_user.is_admin and volume.owner_id != caller_user.owner_id:
+      raise Exception("User '%s' cannot set access rights to Volume '%s'" % (caller_user.email, volume.name))
+   
+   return VolumeAccessRequest.GrantAccess( user.owner_id, volume.volume_id, volume.name, allowed_gateways=allowed_gateways, gateway_caps=ug_caps )
 
 # ----------------------------------
 def list_volume_user_ids( volume_name_or_id, **q_opts ):
@@ -319,6 +331,10 @@ def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **
    if "encryption_password" in kwargs.keys():
       del kwargs['encryption_password']
       
+   # verify gateway type...
+   if gateway_type not in [GATEWAY_TYPE_UG, GATEWAY_TYPE_RG, GATEWAY_TYPE_AG]:
+      raise Exception("Unrecognized Gateway type %s" % gateway_type)
+      
    caller_user = _check_authenticated( kwargs )
    
    # user and volume must both exist
@@ -336,38 +352,49 @@ def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **
       # caller user must be the same as the user 
       if caller_user.owner_id != user.owner_id:
          raise Exception("Caller can only create gateways for itself.")
+      
+      # if the volume is not public, then there needs to be a volume access request that is granted to this user. 
+      if not volume.private:
          
-      # check access status
-      access_request = VolumeAccessRequest.GetAccess( user.owner_id, volume.volume_id )
+         # check access status
+         access_request = VolumeAccessRequest.GetAccess( user.owner_id, volume.volume_id )
+         
+         if access_request == None:
+            # user has not been given permission to access this volume
+            raise Exception("User '%s' is not allowed to access Volume '%s'" % (caller_user.email, volume.name))
+         
+         if access_request.status != VolumeAccessRequest.STATUS_GRANTED:
+            # user has not been given permission to create a gateway here 
+            raise Exception("User '%s' is not allowed to create a Gateway in Volume '%s'" % (caller_user.email, volume.name))
+         
+         else:
+            # verify caps 
+            requested_caps = kwargs.get("caps", None)
+            if requested_caps is not None and requested_caps != access_request.gateway_caps:
+               raise Exception("User '%s' is not allowed to set Gateway capabilities '%s'" % requested_caps)
+               
+            # verify the caller is allowed to create this kind of gateway
+            if (gateway_type & access_request.allowed_gateways) == 0:
+               gateway_type_str = GATEWAY_TYPE_TO_STR[gateway_type]
+               raise Exception("User '%s' is not allowed to create %s Gateways" % (gateway_type_str))
+            
+      # user is allowed to create this gateway in this Volume...
       
-      if access_request == None:
-         # user has not been given permission to access this volume
-         raise Exception("User '%s' is not allowed to access Volume '%s'" % (email, volume.name))
-      
-      if access_request.status != VolumeAccessRequest.STATUS_GRANTED:
-         # user has not been given permission to create a gateway here 
-         raise Exception("User '%s' is not allowed to create a Gateway in Volume '%s'" % (email, volume.name))
-      
-      else:
-         if not caller_user.is_admin:
-            # admins can set caps to whatever they want, but not users 
-            kwargs['caps'] = access_request.gateway_caps
-         elif kwargs.has_hey('caps') and kwargs['caps'] != access_request.gateway_caps:
-            raise Exception("User '%s' is not allowed to set Gateway capabilities")
    
    # verify quota 
    gateway_quota = user.get_gateway_quota( gateway_type )
    
    if gateway_quota == 0:
-      raise Exception("User '%s' cannot create Gateways" % (email))
+      raise Exception("User '%s' cannot own %s Gateways" % (email, gateway_type_str))
    
    if gateway_quota > 0:
       gateway_ids = list_gateways_by_user( user.email, caller_user=user, keys_only=True )
       if len(gateway_ids) >= gateway_quota:
-         raise Exception("User '%s' has too many Gateways" % (email))
-   
+         raise Exception("User '%s' is at quota for %s Gateways" % (email, gateway_type_str))
+      
    gateway_key = Gateway.Create( user, volume, gateway_type=gateway_type, name=gateway_name, host=host, port=port, **kwargs )
    return gateway_key.get()
+
 
 # ----------------------------------
 def read_gateway( g_name_or_id ):

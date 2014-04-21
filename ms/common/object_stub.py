@@ -1234,7 +1234,7 @@ class Gateway( StubObject ):
    arg_parsers = dict( StubObject.arg_parsers.items() + {
       "gateway_name":           (lambda cls, arg, lib: cls.parse_gateway_name_or_id(arg, lib)),
       "g_name_or_id":           (lambda cls, arg, lib: cls.parse_gateway_name_or_id(arg, lib)),
-      "caps":                   (lambda cls, arg, lib: cls.parse_gateway_caps(arg, lib)),
+      "ug_caps":                (lambda cls, arg, lib: cls.parse_gateway_caps(arg, lib)),
       "gateway_type":           (lambda cls, arg, lib: cls.parse_gateway_type(arg, lib)),
       "gateway_public_key":     (lambda cls, arg, lib: cls.parse_gateway_public_key(arg, lib)),
       "closure":                (lambda cls, arg, lib: cls.parse_gateway_closure(arg, lib)),
@@ -1279,8 +1279,39 @@ class Gateway( StubObject ):
 
 
 class VolumeAccessRequest( StubObject ):
+   
+   @classmethod
+   def parse_allowed_gateways( cls, allowed_gateways, lib=None ):
+      """
+      Parse allowed gateways (string or int)
+      """
+      
+      if isinstance( allowed_gateways, str ):
+         gtypes = allowed_gateways.split("|")
+         ret = 0
+         
+         for gtype in gtypes:
+            value = getattr( msconfig, gtype, 0 )
+            if value == 0:
+               raise Exception("Unknown Gateway type '%s'" % gtype)
+            
+            try:
+               ret |= value
+            except:
+               raise Exception("Invalid value '%s'" % value)
+      
+      elif isinstance( allowed_gateways, int ):
+         ret = allowed_gateways 
+      
+      else:
+         raise Exception("Could not parse Gateway types: '%s'" % allowed_gateways )
+         
+      return ret, {}
+   
+      
    arg_parsers = dict( StubObject.arg_parsers.items() + {
-      "caps":                   (lambda cls, arg, lib: cls.parse_gateway_caps(arg, lib)),
+      "ug_caps":                   (lambda cls, arg, lib: cls.parse_gateway_caps(arg, lib)),
+      "allowed_gateways":          (lambda cls, arg, lib: cls.parse_allowed_gateways(arg, lib)),
    }.items() )
 
 

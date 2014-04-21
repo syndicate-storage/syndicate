@@ -651,6 +651,34 @@ class Gateway( storagetypes.Object ):
          return False
          
    
+   @classmethod 
+   def SetUGCaps_ByUser( cls, owner_id, caps ):
+      """
+      Set the capabilities for all of a user's UGs.
+      """
+      def set_caps_func( gw ):
+         gw.caps = caps
+         return gw.put_async()
+         
+      gw_futs = cls.ListAll( {"Gateway.gateway_type ==": GATEWAY_TYPE_UG, "Gateway.owner_id ==": owner_id}, map_func=set_caps_func )
+      storagetypes.wait_futures( gw_futs )
+      return True
+   
+   
+   @classmethod 
+   def SetUGCaps_ByVolume( cls, volume_id, caps ):
+      """
+      Set the capabilities of all of a Volume's UGs.
+      """
+      def set_caps_func( gw ):
+         gw.caps = caps
+         return gw.put_async()
+         
+      gw_futs = cls.ListAll( {"Gateway.gateway_type ==": GATEWAY_TYPE_UG, "Gateway.volume_id ==": volume_id}, map_func=set_caps_func )
+      storagetypes.wait_futures( gw_futs )
+      return True
+   
+   
    @classmethod
    def Delete( cls, g_name_or_id ):
       """

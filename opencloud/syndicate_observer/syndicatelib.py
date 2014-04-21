@@ -377,7 +377,7 @@ def ensure_volume_access_right_exists( user_email, volume_name, caps ):
     client = connect_syndicate()
     
     try:
-        rc = client.set_volume_access( user_email, volume_name, caps )
+        rc = client.set_volume_access( user_email, volume_name, msconfig.GATEWAY_TYPE_UG, caps )
     except Exception, e:
         # transport error 
         logger.exception(e)
@@ -441,6 +441,7 @@ def create_signed_blob( private_key_pem, data ):
     return json.dumps( msg )
 
 
+#-------------------------------
 def create_sealed_and_signed_blob( private_key_pem, shared_secret, data ):
     """
     Create a sealed and signed message.

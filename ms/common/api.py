@@ -730,8 +730,8 @@ def list_archive_volumes():
 # The Volume Access Request API.
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_target=False, parse_args=VolumeAccessRequest.ParseArgs )
-def remove_volume_access( email, volume_name_or_id ):
+@BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_target=False, parse_args=VolumeAccessRequest.ParseArgs, pass_caller_user="caller_user" )
+def remove_volume_access( email, volume_name_or_id, **caller_user_dict ):
    """
    Remove a given user's access capabilities from a given volume.
    
@@ -753,17 +753,18 @@ def remove_volume_access( email, volume_name_or_id ):
    
    Remarks:
       This method is idempotent.  It will succeed even if the user
-      is not present in the volume.
+      is not allowed to create gateways in the volume.
    """
-   return storage.remove_volume_access( email, volume_name_or_id )
+   return storage.remove_volume_access( email, volume_name_or_id, **caller_user_dict )
+
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
 @BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_target=False, parse_args=VolumeAccessRequest.ParseArgs )
-def request_volume_access( email, volume_name_or_id, caps, message ):
+def request_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, message ):
    """
-   Send a request for Volume access.  The Volume owner will be able
-   to read the request, and decide whether or not to add or remove 
-   the user.
+   Request permission to create Gateways for a Volume.  The Volume owner 
+   will be able to read the request, and decide whether or not to allow 
+   the user to do so.
    
    Positional arguments:
       email (str):
@@ -771,8 +772,18 @@ def request_volume_access( email, volume_name_or_id, caps, message ):
       
       volume_name_or_id (str or int):
          Name or ID of the volume to join
+         
+      allowed_gateways (str or int):
+         Which Gateways the requester will be allowed to create.
+         Bit-wise OR of:
+            GATEWAY_TYPE_UG
+            GATEWAY_TYPE_RG
+            GATEWAY_TYPE_AG
+            
+         You can pass them as a string, and they will be parsed 
+         into the appropriate bit vector.
       
-      caps (str or int)
+      ug_caps (str or int)
          Default capability bits for User Gateways when they are 
          added to this Volume.  By default, User Gateways are 
          given read-only access to data and metadata.
@@ -793,6 +804,9 @@ def request_volume_access( email, volume_name_or_id, caps, message ):
          ALL            Set all capabilities
          READWRITE      Set all but GATEWAY_CAP_COORDINATE
          READONLY       GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA
+         
+         The Volume owner or admin can override this on a per-UG basis with 
+         set_gateway_caps().
 
       message (str)
          Message to the volume owner, explaining the nature of the request.
@@ -806,7 +820,8 @@ def request_volume_access( email, volume_name_or_id, caps, message ):
       FIXME: users are limited in the number of outstanding requests they may have
       FIXME: requests expire after a time if they are not acted upon.
    """   
-   return storage.request_volume_access( email, volume_name_or_id, caps, message )
+   return storage.request_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, message )
+
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
 @ListAPIGuard( VolumeAccessRequest, pass_caller_user="caller_user", parse_args=VolumeAccessRequest.ParseArgs )
@@ -829,11 +844,12 @@ def list_volume_access_requests( volume_name_or_id, **attrs ):
    """
    return storage.list_volume_access_requests( volume_name_or_id, **attrs )
 
+
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
 @ListAPIGuard( VolumeAccessRequest, pass_caller_user="caller_user", parse_args=VolumeAccessRequest.ParseArgs )
 def list_volume_access( volume_name_or_id, **attrs ):
    """
-   List the set of users that can access a particular volume.
+   List the set of users that can create gateways for a particular volume.
    
    Positional arguments:
       volume_name_or_id (str or int):
@@ -849,6 +865,7 @@ def list_volume_access( volume_name_or_id, **attrs ):
       Normal users cannot list volume users.
    """
    return storage.list_volume_access( volume_name_or_id, **attrs )
+
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
 @ListAPIGuard( VolumeAccessRequest, parse_args=VolumeAccessRequest.ParseArgs )
@@ -871,11 +888,13 @@ def list_user_access_requests( email ):
    """
    return storage.list_user_access_requests( email )
 
+
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
 @BindAPIGuard( SyndicateUser, Volume, source_object_name="email", target_object_name="volume_name_or_id", caller_owns_source=False, parse_args=VolumeAccessRequest.ParseArgs, pass_caller_user="caller_user" )
-def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
+def set_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, **caller_user_dict ):
    """
-   Set the access capabilities for a user in a volume.
+   Set the types of Gateways a user may create in a Volume, and if User Gateways 
+   are allowed, set what access capabilities they will have.
    
    Positional arguments:
       email (str):
@@ -884,7 +903,17 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
       volume_name_or_id (str or int):
          Name or ID of the volume to add the user to
       
-      caps (str or int):
+      allowed_gateways (str or int):
+         Which Gateways the requester will be allowed to create.
+         Bit-wise OR of:
+            GATEWAY_TYPE_UG
+            GATEWAY_TYPE_RG
+            GATEWAY_TYPE_AG
+            
+         You can pass them as a string, and they will be parsed 
+         into the appropriate bit vector.
+         
+      ug_caps (str or int):
          Default capability bits for User Gateways when they are 
          added to this Volume.  By default, User Gateways are 
          given read-only access to data and metadata.
@@ -905,6 +934,9 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
          ALL            Set all capabilities
          READWRITE      Set all but GATEWAY_CAP_COORDINATE
          READONLY       GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_READ_DATA
+         
+         The Volume owner or admin can override this on a per-UG basis with 
+         set_gateway_caps().
 
    Returns:
       True on success.
@@ -919,7 +951,7 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
       This method is idempotent.
    """
       
-   return storage.set_volume_access( email, volume_name_or_id, caps, **caller_user_dict )
+   return storage.set_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, **caller_user_dict )
 
 
 # ----------------------------------
@@ -934,6 +966,8 @@ def set_volume_access( email, volume_name_or_id, caps, **caller_user_dict ):
 def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, encryption_password=None, gateway_public_key="MAKE_AND_HOST_GATEWAY_KEY", host_gateway_key=None, **attrs ):
    """
    Create a Gateway.  It will be owned by the given user (which must be the same as the calling user, if the calling user is not admin).
+   If it is a User Gateway, it will have the capabilities defined in the calling user's VolumeAccessRequest record (created via 
+   set_volume_access()).
    
    Positional arguments:
       volume_name_or_id (str or int):
@@ -1000,9 +1034,11 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
       raises an exception.
    
    Authorization:
-      An administrator can create a Gateway in any Volume, for any user.
+      An administrator can create any Gateway in any Volume, for any user.
       A user can only create Gateways in Volumes (s)he owns, or in Volumes
       in which (s)he has been given the right to do so by the Volume's owner.
+      Moreover, the type of gateway the user may create is constrainted by 
+      its access rights (set in a previous call to set_volume_access()).
       
       A user may be subject to a quota enforced for each type of Gateway.
    """

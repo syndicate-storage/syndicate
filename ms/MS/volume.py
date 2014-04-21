@@ -45,16 +45,22 @@ from MS.gateway import Gateway
 
 # ----------------------------------
 class VolumeAccessRequest( storagetypes.Object ):
+   """
+   This object controls what kinds of Gateways a user can create within a Volume,
+   and what capabilities they are allowed to have.
+   """
+   
    STATUS_PENDING = 1
    STATUS_GRANTED = 2
    
    requester_owner_id = storagetypes.Integer()          # owner id of the requester
    request_message = storagetypes.Text()                # message to the owner 
    volume_id = storagetypes.Integer()                   # ID of volume to join 
-   gateway_caps = storagetypes.Integer( indexed=False )  # gateway capabilities requested
+   gateway_caps = storagetypes.Integer( indexed=False )  # gateway capabilities requested (only apply to User Gateways)
    nonce = storagetypes.Integer( indexed=False )         # detect collision with another one of these
    request_timestamp = storagetypes.Integer()           # when was the request made?
    status = storagetypes.Integer()                      # granted or pending?
+   allowed_gateways = storagetypes.Integer(default=0)   # bit vector of GATEWAY_TYPE_*G (from msconfig)
    
    # purely for readability
    volume_name = storagetypes.String()
@@ -74,7 +80,8 @@ class VolumeAccessRequest( storagetypes.Object ):
       "gateway_caps",
       "request_timestamp",
       "status",
-      "volume_name"
+      "volume_name",
+      "allowed_gateways"
    ]
    
    read_attrs_api_required = read_attrs
@@ -100,9 +107,10 @@ class VolumeAccessRequest( storagetypes.Object ):
    
 
    @classmethod
-   def RequestAccess( cls, owner_id, volume_id, volume_name, gateway_caps, message ):
+   def RequestAccess( cls, owner_id, volume_id, volume_name, allowed_gateways, gateway_caps, message ):
       """
-      Create a request that a particular user be granted certain capabilities to access a particular Volume.
+      Create a request that a particular user be allowed to provision Gateways for a particular Volume.
+      If User Gateways are allowed, then gateway_caps controls what those capabilities are allowed to be.
       Include a message that the Volume owner will be able to read.
       
       Return if the request was successfully placed.
@@ -110,7 +118,7 @@ class VolumeAccessRequest( storagetypes.Object ):
       """
       
       nonce = random.randint( -2**63, 2**63 - 1 )
-      req_fut = VolumeAccessRequest.create_async( owner_id, volume_id, volume_name, nonce, VolumeAccessRequest.STATUS_PENDING, request_message=message, gateway_caps=gateway_caps )
+      req_fut = VolumeAccessRequest.create_async( owner_id, volume_id, volume_name, nonce, VolumeAccessRequest.STATUS_PENDING, request_message=message, gateway_caps=gateway_caps, allowed_gateways=allowed_gateways )
       req = req_fut.get_result()
       
       # duplicate?
@@ -120,10 +128,22 @@ class VolumeAccessRequest( storagetypes.Object ):
       return True
    
    @classmethod
-   def GrantAccess( cls, owner_id, volume_id, volume_name, gateway_caps=None ):
+   def GrantAccess( cls, owner_id, volume_id, volume_name, allowed_gateways=None, gateway_caps=None ):
+      """
+      Allow a given user to create Gateways within a given Volume, subject to given capabilities.
+      """
+      
+      # verify the arguments are valid 
+      if allowed_gateways is not None and (allowed_gateways & ~(GATEWAY_TYPE_UG | GATEWAY_TYPE_RG | GATEWAY_TYPE_AG)) != 0:
+         # extra bits 
+         raise Exception("Invalid bit field for allowed_gateways (%x)" % (allowed_gateways))
+      
+      if gateway_caps is not None and (gateway_caps & ~(GATEWAY_CAP_READ_DATA | GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_WRITE_DATA | GATEWAY_CAP_WRITE_METADATA | GATEWAY_CAP_COORDINATE)) != 0:
+         # extra bits 
+         raise Exception("Invalid bit field for gateway_caps (%x)" % (gateway_caps))
       
       nonce = random.randint( -2**63, 2**63 - 1 )
-      req_fut = VolumeAccessRequest.create_async( owner_id, volume_id, volume_name, nonce, VolumeAccessRequest.STATUS_GRANTED, request_message="", gateway_caps=gateway_caps )
+      req_fut = VolumeAccessRequest.create_async( owner_id, volume_id, volume_name, nonce, VolumeAccessRequest.STATUS_GRANTED, request_message="", gateway_caps=gateway_caps, allowed_gateways=allowed_gateways )
       req = req_fut.get_result()
       
       if req.nonce != nonce:
@@ -132,6 +152,9 @@ class VolumeAccessRequest( storagetypes.Object ):
          if gateway_caps != None:
             req.gateway_caps = gateway_caps 
          
+         if allowed_gateways != None:
+            req.allowed_gateways = allowed_gateways
+            
          req.status = VolumeAccessRequest.STATUS_GRANTED
          req.put()
       
@@ -139,9 +162,12 @@ class VolumeAccessRequest( storagetypes.Object ):
       storagetypes.memcache.delete( req_key_name )
       
       return True
-         
+      
    @classmethod
    def GetAccess( cls, owner_id, volume_id ):
+      """
+      Get the access status of a user in a Volume.
+      """
       
       req_key_name = VolumeAccessRequest.make_key_name( owner_id, volume_id )
       req = storagetypes.memcache.get( req_key_name )
@@ -877,6 +903,8 @@ class Volume( storagetypes.Object ):
       futs.append( volume_nameholder_key.delete_async() )
       
       storagetypes.wait_futures( futs )
+      
+      # TODO: reap gateways
       
 
    @classmethod
