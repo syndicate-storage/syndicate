@@ -16,6 +16,18 @@ class SyndicateService(SingletonModel,Service):
     def __unicode__(self):  return u'Syndicate Service'
 
 
+class SyndicatePrincipal(PlCoreBase):
+    class Meta:
+        app_label = "syndicate"
+
+    # for now, this is a user 
+    principal_id = models.ForeignKey( User )
+    public_key_pem = models.TextField()
+    sealed_private_key = models.TextField()
+
+    def __unicode__self(self):  return "%s" % self.principal_id
+
+
 class Volume(PlCoreBase):
     class Meta:
         app_label = "syndicate"
@@ -28,7 +40,7 @@ class Volume(PlCoreBase):
     blocksize = models.PositiveIntegerField(help_text="Number of bytes per block.")
     private = models.BooleanField(default=True, help_text="Indicates if the Volume is visible to users other than the Volume Owner and Syndicate Administrators.")
     archive = models.BooleanField(default=False, help_text="Indicates if this Volume is read-only, and only an Aquisition Gateway owned by the Volume owner (or Syndicate admin) can write to it.")
-   
+
     CAP_READ_DATA = 1
     CAP_WRITE_DATA = 2
     CAP_HOST_DATA = 4
@@ -37,7 +49,6 @@ class Volume(PlCoreBase):
     default_gateway_caps = BitField(flags=("read data", "write data", "host files"), verbose_name='Default User Capabilities')
 
     def __unicode__(self):  return self.name
-
 
 
 class VolumeAccessRight(PlCoreBase):

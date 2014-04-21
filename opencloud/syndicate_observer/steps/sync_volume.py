@@ -50,18 +50,30 @@ class SyncVolume(SyncStep):
             print "Sync!"
             print "volume = %s" % volume.name
         
+            user_email = volume.owner_id.email
+
             # owner must exist...
             try:
-                new_user = syndicatelib.ensure_user_exists( volume.owner_id.email )
+                new_user = syndicatelib.ensure_user_exists( user_email )
             except Exception, e:
                 traceback.print_exc()
-                logger.error("Failed to ensure user '%s' exists" % volume.owner_id.email )
+                logger.error("Failed to ensure user '%s' exists" % user_email )
                 return False
+
+            # if we created a new user, then save its credentials 
+            if new_user is not None:
+                try:
+                    rc = syndicatelib.save_syndicate_principal( user_email, new_user['signing_public_key'], new_user['signing_private_key'] )
+                    assert rc == True, "Failed to save SyndicatePrincipal"
+                except Exception, e:
+                    traceback.print_exc()
+                    logger.error("Failed to save private key for principal %s" % (user_email))
+                    return False
 
             # volume must exist 
             try:
-                new_volume = syndicatelib.ensure_volume_exists( volume.owner_id.email, volume, user=new_user )
-                syndicatelib.ensure_volume_exists( volume.owner_id.email, volume, user=new_user )
+                new_volume = syndicatelib.ensure_volume_exists( user_email, volume, user=new_user )
+                syndicatelib.ensure_volume_exists( user_email, volume, user=new_user )
             except Exception, e:
                 traceback.print_exc()
                 logger.error("Failed to ensure volume '%s' exists" % volume.name )

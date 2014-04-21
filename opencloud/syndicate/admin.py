@@ -147,13 +147,14 @@ class VolumeAdmin(ReadOnlyAwareAdmin):
     model = Volume
    
     def get_readonly_fields(self, request, obj=None ):
+       always_readonly = []
        if obj == None:
           # all fields are editable on add
-          return []
+          return always_readonly
 
        else:
           # can't change owner, slice id, or block size on update
-          return ['blocksize', 'owner_id']
+          return ['blocksize', 'owner_id'] + always_readonly
 
 
     list_display = ['name', 'owner_id']
