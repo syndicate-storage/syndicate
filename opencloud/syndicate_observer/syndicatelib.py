@@ -59,6 +59,7 @@ import syndicate.client.common.api as api
 import syndicate.util.storage as syndicate_storage
 import syndicate.util.watchdog as syndicate_watchdog
 import syndicate.util.daemonize as syndicate_daemon
+import syndicate.util.crypto as syndicate_crypto
 import syndicate.syndicate as c_syndicate
 
 # for testing 
@@ -406,42 +407,6 @@ def slice_user_email( slice_name ):
 
 
 #-------------------------------
-def sign_data( private_key_pem, data_str ):
-   """
-   Sign a string of data with a PEM-encoded private key.
-   """
-   try:
-      key = CryptoKey.importKey( private_key_pem )
-   except Exception, e:
-      logging.error("importKey %s", traceback.format_exc() )
-      return None
-   
-   h = HashAlg.new( data_str )
-   signer = CryptoSigner.new(key)
-   signature = signer.sign( h )
-   return signature
-
-
-#-------------------------------
-def create_signed_blob( private_key_pem, data ):
-    """
-    Create a signed message to syndicated.
-    """
-    signature = sign_data( private_key_pem, data )
-    if signature is None:
-       logger.error("Failed to sign data")
-       return None
-    
-    # create signed credential
-    msg = {
-       "data":  base64.b64encode( data ),
-       "sig":   base64.b64encode( signature )
-    }
-    
-    return json.dumps( msg )
-
-
-#-------------------------------
 def create_sealed_and_signed_blob( private_key_pem, shared_secret, data ):
     """
     Create a sealed and signed message.
@@ -455,12 +420,34 @@ def create_sealed_and_signed_blob( private_key_pem, shared_secret, data ):
        logger.error("Failed to seal data with the OpenCloud secret, rc = %s" % rc)
        return None
     
-    msg = create_signed_blob( private_key_pem, sealed_data )
+    msg = syndicate_crypto.sign_and_serialize_json( private_key_pem, sealed_data )
     if msg is None:
        logger.error("Failed to sign credential")
        return None 
     
     return msg 
+
+
+#-------------------------------
+def verify_and_unseal_blob( public_key_pem, shared_secret, blob_data ):
+    """
+    verify and unseal a serialized string of JSON
+    """
+
+    # verify it 
+    rc, sealed_data = syndicate_crypto.verify_and_parse_json( public_key_pem, blob_data )
+    if rc != 0:
+        logger.error("Failed to verify and parse blob, rc = %s" % rc)
+        return None
+
+    logger.info("Unsealing credential data")
+
+    rc, data = c_syndicate.password_unseal( sealed_data, shared_secret )
+    if rc != 0:
+        logger.error("Failed to unseal blob, rc = %s" % rc )
+        return None
+
+    return data
 
 
 #-------------------------------
@@ -510,14 +497,42 @@ def create_credential_blob( private_key_pem, shared_secret, syndicate_url, volum
     
 
 #-------------------------------
-def store_volumeslice_credentials( volumeslice, sealed_credentials_json ):
+def save_syndicate_principal( user_email, observer_secret, public_key_pem, private_key_pem ):
     """
-    Store the sealed Volume credentials into the database,
+    Seal and store the principal's private key into the database,
     so the sliver-side Syndicate daemon syndicated.py can get them later
     (in case pushing them out fails).
     """
-    volumeslice.credentials_blob = sealed_credentials_json
-    volumeslice.save( updated_fields=['credentials_blob'] )
+    sealed_private_key = create_sealed_and_signed_blob( private_key_pem, observer_secret, private_key_pem )
+    if sealed_private_key is None:
+        return False
+
+    sp = models.SyndicatePrincipal( sealed_private_key=sealed_private_key, public_key_pem=public_key_pem, principal_id=user_email )
+    sp.save()
+    return True
+
+
+#-------------------------------
+def get_syndicate_principal_pkey( user_email, observer_secret ):
+    """
+    Fetch and unseal the private key of a SyndicatePrincipal.
+    """
+
+    try:
+        sp = models.SyndicatePrincipal.objects.get( user_email )
+    except DoesNotExist:
+        logger.error("No SyndicatePrincipal record for %s" % user_email)
+        return None
+
+    public_key_pem = sp.public_key_pem
+    sealed_private_key_pem = sp.sealed_private_key
+
+    # unseal
+    private_key_pem = verify_and_unseal_blob(public_key_pem, observer_secret, sealed_private_key)
+    if private_key_pem is None:
+        logger.error("Failed to unseal private key")
+
+    return private_key_pem
 
 
 #-------------------------------
@@ -917,6 +932,21 @@ def ft_pollserver():
    """
    ensure_poll_server_running()
 
+
+#-------------------------------
+def ft_seal_and_unseal():
+    """
+    Functional test for sealing/unsealing data
+    """
+    print "generating key pair"
+    pubkey_pem, privkey_pem = api.generate_key_pair( 4096 )
+    
+    sealed_buf = create_sealed_and_signed_blob( privkey_pem, "foo", "hello world")
+    print "sealed data is:\n\n%s\n\n" % sealed_buf
+
+    buf = verify_and_unseal_blob( pubkey_pem, "foo", sealed_buf )
+    print "unsealed data is: \n\n%s\n\n" % buf
+    
 
 # run functional tests
 if __name__ == "__main__":

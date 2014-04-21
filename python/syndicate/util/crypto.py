@@ -62,13 +62,6 @@ def verify_and_parse_json( public_key_pem, json_text ):
     Return (nonzero, None) on error 
     """
     
-    # load the key 
-    try:
-       k = CryptoKey.importKey( public_key_pem )
-    except:
-       log.error("Failed to import public key")
-       return (-errno.EINVAL, None)
-    
     # verify the presence and types of our required fields 
     required_fields = {
         "data": [str, unicode],
@@ -107,7 +100,7 @@ def verify_and_parse_json( public_key_pem, json_text ):
         return (-errno.EINVAL, None)
     
     # verify the signature 
-    rc = api.verify_data( k, data, sig )
+    rc = api.verify_data( public_key_pem, data, sig )
     if not rc:
         log.error("Invalid signature")
         return (-errno.EINVAL, None)
@@ -115,8 +108,8 @@ def verify_and_parse_json( public_key_pem, json_text ):
     return (0, data)
  
  
- #-------------------------------
- def sign_and_serialize_json( private_key_pem, data ):
+#-------------------------------
+def sign_and_serialize_json( private_key_pem, data ):
     """
     Sign and serialize data.  Put it into a JSON object with:
        data (str): base64-encoded data 

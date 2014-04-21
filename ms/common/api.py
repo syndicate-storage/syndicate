@@ -84,6 +84,7 @@ from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 import hashlib
 import binascii
+import traceback
 from itertools import izip
 
 # ----------------------------------
@@ -120,7 +121,7 @@ def verify_data( pubkey_str, data, signature ):
    
    h = HashAlg.new( data )
    verifier = CryptoSigner.new(key)
-   ret = verifier.verify( h, data_signature )
+   ret = verifier.verify( h, signature )
    return ret
 
 # ----------------------------------
