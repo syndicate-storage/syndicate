@@ -1296,7 +1296,7 @@ class VolumeAccessRequest( StubObject ):
                raise Exception("Unknown Gateway type '%s'" % gtype)
             
             try:
-               ret |= value
+               ret |= (1 << value)
             except:
                raise Exception("Invalid value '%s'" % value)
       
