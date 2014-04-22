@@ -4,7 +4,7 @@ ROOT=$HOME/syndicate/python-syndicate-root
 NAME="python-syndicate"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
-DEPS="libssl1.0.0 libcurl3-gnutls libprotobuf7 libsyndicate libsyndicateUG python-protobuf" 
+DEPS="libssl1.0.0 libcurl3-gnutls libprotobuf7 libsyndicate libsyndicateUG python-protobuf python-crypto python-scrypt" 
 
 DEPARGS=""
 for pkg in $DEPS; do
