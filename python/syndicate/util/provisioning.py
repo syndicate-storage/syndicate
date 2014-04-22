@@ -191,31 +191,3 @@ def ensure_volume_access_right_absent( client, user_email, volume_name ):
     
     return client.remove_volume_access( user_email, volume_name )
  
-
-#------------------------------- 
-def remove_gateways_from_volume( user_email, volume_name ):
-    """
-    Remove all gateways belonging to a particular user from a volume.
-    
-    You should remove the user's volume access right beforehand, so the
-    user can't create new gateways while you're removing them (see 
-    ensure_volume_access_right_absent()).
-    
-    This method is idempotent.
-    """
-    
-    # look up the volume 
-    try:
-       volume = client.read_volume( volume_name )
-       assert volume is not None, "Failed to read volume %s" % volume_name)
-    
-    except Exception, e:
-       logger.exception(e)
-       return False 
-    
-    # find all gateways belonging to this user, and delete them 
-    logger.info("Getting list of gateways owned by %s in volume %s" % (user_email, volume_name))
-    gateways = client.
-    
-    
-                                
