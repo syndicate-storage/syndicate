@@ -46,31 +46,25 @@ class SyncVolume(SyncStep):
             return None
 
     def sync_record(self, volume):
+        """
+        Synchronize a Volume record with Syndicate.
+        """
         try:
             print "Sync!"
             print "volume = %s" % volume.name
         
             user_email = volume.owner_id.email
 
-            # owner must exist...
+            # volume owner must exist as a Syndicate user...
             try:
-                new_user = syndicatelib.ensure_user_exists( user_email )
+                new_user = syndicatelib.ensure_user_exists_and_has_credentials( user_email )
             except Exception, e:
                 traceback.print_exc()
                 logger.error("Failed to ensure user '%s' exists" % user_email )
                 return False
 
-            # if we created a new user, then save its credentials 
-            if new_user is not None:
-                try:
-                    rc = syndicatelib.save_syndicate_principal( user_email, new_user['signing_public_key'], new_user['signing_private_key'] )
-                    assert rc == True, "Failed to save SyndicatePrincipal"
-                except Exception, e:
-                    traceback.print_exc()
-                    logger.error("Failed to save private key for principal %s" % (user_email))
-                    return False
-
-            # volume must exist 
+            
+            # create or update the Volume
             try:
                 new_volume = syndicatelib.ensure_volume_exists( user_email, volume, user=new_user )
                 syndicatelib.ensure_volume_exists( user_email, volume, user=new_user )
@@ -79,10 +73,12 @@ class SyncVolume(SyncStep):
                 logger.error("Failed to ensure volume '%s' exists" % volume.name )
                 return False
 
-            # did we create the Volume?  If so, set up its slice
+            
+            # did we create the Volume?
             if new_volume is not None:
-                pass
-
+                # we're good
+                pass 
+             
             # otherwise, just update it 
             else:
                 try:

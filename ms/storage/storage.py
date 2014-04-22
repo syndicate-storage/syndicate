@@ -449,7 +449,7 @@ def list_gateways_by_volume( volume_name_or_id, **q_opts ):
    if volume.owner_id != caller_user.owner_id and not caller_user.is_admin:
       raise Exception("User '%s' is not sufficiently privileged" % caller_user.email)
    
-   return Gateway.ListAll( {"Gateway.volume_id ==" : volume_id}, **q_opts )
+   return Gateway.ListAll( {"Gateway.volume_id ==" : volume.volume_id}, **q_opts )
 
 
 # ----------------------------------
@@ -471,6 +471,56 @@ def list_gateways_by_user( email, **q_opts ):
    
    return Gateway.ListAll( {"Gateway.owner_id ==": user.owner_id}, **q_opts )
 
+# ----------------------------------
+def list_gateways_by_user_and_volume( email, volume_name_or_id, **q_opts ):
+   caller_user = _check_authenticated( q_opts )
+   
+   user, volume = _read_user_and_volume( email, volume_name_or_id )
+   
+   # user and volume must exist 
+   if user is None:
+      raise Exception("No such user '%s'" % email)
+   
+   if volume is None or volume.deleted:
+      raise Exception("No such Volume '%s'" % email)
+   
+   # only admin can list other users' gateways 
+   if caller_user.owner_id != user.owner_id and not caller_user.is_admin:
+      raise Exception("User '%s' is not sufficiently privileged" % caller_user.email )
+   
+   return Gateway.ListAll( {"Gateway.owner_id ==": user.owner_id, "Gateway.volume_id ==": volume.volume_id}, **q_opts )
+
+
+# ----------------------------------
+def _remove_user_from_volume_helper( owner_id, volume_id ):
+   # helper function for remove_user_from_volume, to be run deferred.
+   
+   def _remove_gateway( gw_key ):
+      gw_key.delete()
+      return None
+      
+   Gateway.ListAll( {"Gateway.owner_id ==": owner_id, "Gateway.volume_id ==": volume_id}, map_func=_remove_gateway )
+   
+
+# ----------------------------------
+def remove_user_from_volume( email, volume_name_or_id ):
+   # NOTE: it's assumed that the caller has done the appropriate authentication.
+   
+   user, volume = _read_user_and_volume( email, volume_name_or_id )
+   
+   # user and volume must exist 
+   if user is None:
+      raise Exception("No such user '%s'" % email)
+   
+   if volume is None or volume.deleted:
+      raise Exception("No such Volume '%s'" % email)
+   
+   # delete the volume access request 
+   rc = VolumeAccessRequest.RemoveAccessRequest( user.owner_id, volume.volume_id )
+   assert rc is True, "Failed to remove access request for %s in %s" % (email, volume.name)
+   
+   storagetypes.deferred.defer( _remove_user_from_volume_helper, user.owner_id, volume.volume_id )
+   return True
 
 # ----------------------------------
 def delete_gateway( g_id ):

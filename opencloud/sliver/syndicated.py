@@ -45,6 +45,7 @@ import syndicate.util.daemonize as daemon
 import syndicate.util.config as modconf
 import syndicate.util.storage as storage
 import syndicate.util.crypto as crypto
+import syndicate.util.provisioning as provisioning
 
 import syndicate.syndicate as c_syndicate
 
@@ -55,9 +56,7 @@ OPENCLOUD_JSON                          = "observer_message"
 # message for one Volume
 OPENCLOUD_VOLUME_NAME                   = "volume_name"
 OPENCLOUD_VOLUME_OWNER_ID               = "volume_owner"
-OPENCLOUD_VOLUME_PASSWORD               = "volume_password"
 OPENCLOUD_VOLUME_PEER_PORT              = "volume_peer_port"
-OPENCLOUD_VOLUME_REPLICATE_PORT         = "volume_replicate_port"
 OPENCLOUD_VOLUME_USER_PKEY_PEM          = "volume_user_pkey_pem"
 OPENCLOUD_SYNDICATE_URL                 = "syndicate_url"
 
@@ -106,7 +105,6 @@ DEFAULT_CONFIG = {
         "testvolume": {
             "volume_name":          "testvolume",
             "volume_owner":         "judecn@gmail.com",
-            "volume_password":      "nya!",
             "volume_peer_port":      32780,
             "volume_replicate_port": 32781,
             "syndicate_url":        "http://localhost:8080",
@@ -114,7 +112,6 @@ DEFAULT_CONFIG = {
         "testvolume2": {
             "volume_name":          "testvolume2",
             "volume_owner":         "padmin@vicci.org",
-            "volume_password":      "nya!",
             "volume_peer_port":      32880,
             "volume_replicate_port": 32881,
             "syndicate_url":        "http://localhost:8080",
@@ -385,9 +382,7 @@ def parse_observer_data( data_text ):
     required_fields = {
         OPENCLOUD_VOLUME_NAME: [str, unicode],
         OPENCLOUD_VOLUME_OWNER_ID: [str, unicode],
-        OPENCLOUD_VOLUME_PASSWORD: [str, unicode],
         OPENCLOUD_VOLUME_PEER_PORT: [int],
-        OPENCLOUD_VOLUME_REPLICATE_PORT: [int],
         OPENCLOUD_VOLUME_USER_PKEY_PEM: [str, unicode],
         OPENCLOUD_SYNDICATE_URL: [str, unicode],
     }
@@ -517,155 +512,16 @@ def poll_opencloud_volume_data( config, volume_name ):
     
 
 #-------------------------------
-def connect_syndicate( syndicate_url, volume_owner, volume_password ):
+def connect_syndicate( syndicate_url, user_email, user_pkey_pem ):
     """
     Connect to the Syndicate SMI
     """
     global CONFIG 
     debug = CONFIG.get('debug', False)
     
-    client = syntool.Client( volume_owner, syndicate_url, password=volume_password, debug=debug )
+    client = syntool.Client( user_email, syndicate_url, user_pkey_pem=user_pkey_pem, debug=debug )
 
     return client
-
-
-#-------------------------------
-def make_gateway_name( gateway_type, volume_name, host ):
-    """
-    Generate a name for a gateway
-    """
-    return "OpenCloud-%s-%s-%s" % (volume_name, gateway_type, host)    
-
-
-#-------------------------------
-def make_gateway_private_key_password( gateway_name, observer_secret ):
-    """
-    Generate a unique gateway private key password.
-    NOTE: its only as secure as the OpenCloud secret; the rest can be guessed by the adversary 
-    """
-    h = HashAlg.SHA256Hash()
-    h.update( "%s-%s" % (gateway_name, observer_secret))
-    return h.hexdigest()
- 
-
-#-------------------------------
-def ensure_gateway_exists( syndicate_url, gateway_type, user_email, volume_password, volume_name, gateway_name, host, port, key_password, closure=None ):
-    """
-    Ensure that a particular type of gateway with the given fields exists.
-    Create one if need be.
-    Returns the gateway on succes.
-    Returns None if we can't connect.
-    Raises an exception on error.
-    We assume that the Volume (and thus user) already exist...if they don't, its an error.
-    """
-
-    client = connect_syndicate( syndicate_url, user_email, volume_password )
-    if client is None:
-        return None
-    
-    try:
-        gateway = client.read_gateway( gateway_name )
-    except Exception, e:
-        # transport error 
-        log.exception(e)
-        raise e
-
-    need_create_gateway = False
-
-    # is it the right gateway?
-    if gateway is not None:
-        
-        # the associated user and volume must exist, and they must match 
-        try:
-            user = client.read_user( user_email )
-        except Exception, e:
-            # transport error
-            log.exception(e)
-            raise e
-
-        try:
-            volume = client.read_volume( volume_name )
-        except Exception, e:
-            # transport error 
-            log.exception(e)
-            raise e
-
-        # these had better exist...
-        if user is None or volume is None:
-            raise Exception("Orphaned gateway with the same name as us (%s)" % gateway_name)
-
-        # does this gateway match the user and volume it claims to belong to?
-        # NOTE: this doesn't check the closure!
-        if msconfig.GATEWAY_TYPE_TO_STR[ gateway["gateway_type"] ] != gateway_type or gateway['owner_id'] != user['owner_id'] or gateway['volume_id'] != volume['volume_id']:
-            raise Exception("Gateway exists under a different volume (%s) or user (%s)" % (volume['name'], user['email']))
-
-        # gateway exists, and is owned by the given volume and user 
-        return gateway
-
-    else:
-        # create the gateway 
-        kw = {}
-        if closure is not None:
-            kw['closure'] = closure
-        
-        try:
-            gateway = client.create_gateway( volume_name, user_email, gateway_type, gateway_name, host, port, encryption_password=key_password, gateway_public_key="MAKE_AND_HOST_GATEWAY_KEY", **kw )
-        except Exception, e:
-            # transport, collision, or missing Volume or user
-            log.exception(e)
-            raise e
-
-        else:
-            return gateway
-
-
-#-------------------------------
-def ensure_gateway_absent( syndicate_url, gateway_type, user_email, volume_password, volume_name, host ):
-    """
-    Ensure that a particular gateway does not exist.
-    Return True on success
-    return False if we can't connect
-    raise exception on error.
-    """
-    
-    client = connect_syndicate( syndicate_url, user_email, volume_password )
-    if client is None:
-        return False
-
-    client.delete_gateway( gateway_name )
-    return True
-
-
-#-------------------------------
-def ensure_UG_exists( syndicate_url, user_email, volume_password, volume_name, gateway_name, host, port, key_password ):
-    """
-    Ensure that a particular UG exists.
-    """
-    return ensure_gateway_exists( syndicate_url, "UG", user_email, volume_password, volume_name, gateway_name, host, port, key_password )
-
-
-#-------------------------------
-def ensure_RG_exists( syndicate_url, user_email, volume_password, volume_name, gateway_name, host, port, key_password, closure=None ):
-    """
-    Ensure that a particular RG exists.
-    """
-    return ensure_gateway_exists( syndicate_url, "RG", user_email, volume_password, volume_name, gateway_name, host, port, key_password, closure=closure )
-
-
-#-------------------------------
-def ensure_UG_absent( syndicate_url, user_email, volume_password, volume_name, gateway_name, host ):
-    """
-    Ensure that a particular UG does not exist
-    """
-    return ensure_gateway_absent( syndicate_url, "UG", user_email, volume_password, volume_name, gateway_name, host )
-
-
-#-------------------------------
-def ensure_RG_absent( syndicate_url, user_email, volume_password, volume_name, gateway_name, host ):
-    """
-    Ensure that a particular RG does not exist
-    """
-    return ensure_gateway_absent( syndicate_url, "RG", user_email, volume_password, volume_name, gateway_name, host )
 
 
 #-------------------------------
@@ -962,33 +818,37 @@ def ensure_running():
       
       try:
          user_email = volume_config[ OPENCLOUD_VOLUME_OWNER_ID ]
-         volume_password = volume_config[ OPENCLOUD_VOLUME_PASSWORD ]
          syndicate_url = volume_config[ OPENCLOUD_SYNDICATE_URL ]
          UG_portnum = volume_config[ OPENCLOUD_VOLUME_PEER_PORT ]
-         RG_portnum = volume_config[ OPENCLOUD_VOLUME_REPLICATE_PORT ]
          user_pkey_pem = volume_config[ OPENCLOUD_VOLUME_USER_PKEY_PEM ]
       except:
          log.error("Invalid configuration for Volume %s" % volume_name)
          remove_volume_runtime( volume_name )
          continue
       
-      UG_name = make_gateway_name( "UG", volume_name, hostname )
-      RG_name = make_gateway_name( "RG", volume_name, "localhost" )
+      UG_name = provisioning.make_gateway_name( "OpenCloud", "UG", volume_name, hostname )
+      RG_name = provisioning.make_gateway_name( "OpenCloud", "RG", volume_name, "localhost" )
       
-      UG_key_password = make_gateway_private_key_password( UG_name, observer_secret )
-      RG_key_password = make_gateway_private_key_password( RG_name, observer_secret )
+      UG_key_password = provisioning.make_gateway_private_key_password( UG_name, observer_secret )
+      RG_key_password = provisioning.make_gateway_private_key_password( RG_name, observer_secret )
       
       UG_mountpoint_path = make_UG_mountpoint_path( mountpoint_dir, volume_name )
       
       if not config['UG_only']:
          # is the RG running?
-         rc = ensure_RG_running( syndicate_url, user_email, volume_password, volume_name, RG_name, RG_key_password, user_pkey_pem, check_only=True )
+         rc = ensure_RG_running( syndicate_url, user_email, volume_name, RG_name, RG_key_password, user_pkey_pem, check_only=True )
+         if rc <= 0:
+            log.error("Failed to start RG for %s, rc = %s" % (volume_name, rc))
+         else:
+            log.info("\n\nRG for %s running on PID %s\n\n" % (volume_name, rc))
+            
+         """
          if rc <= 0:
             # NOTE: in OpenCloud, the RG always runs on localhost, so the local UG can always find it.
             # There is one logical RG, but it is instantiated once per host.
             rc = instantiate_and_run( "RG", RG_name,
-                                    lambda: ensure_RG_exists( syndicate_url, user_email, volume_password, volume_name, RG_name, "localhost", RG_portnum, RG_key_password ),
-                                    lambda: ensure_RG_running( syndicate_url, user_email, volume_password, volume_name, RG_name, RG_key_password, user_pkey_pem ) )
+                                    lambda: provisioning.ensure_RG_exists( client, user_email, volume_name, RG_name, "localhost", RG_portnum, RG_key_password ),
+                                    lambda: ensure_RG_running( syndicate_url, user_email, volume_name, RG_name, RG_key_password, user_pkey_pem ) )
             
             if rc < 0:
                log.error("Failed to instantiate and run RG %s" % UG_name )
@@ -996,16 +856,19 @@ def ensure_running():
             
          if rc >= 0:
             log.info("\n\nRG for %s running on PID %s\n" % (volume_name, rc))
+         """
          
       
       if not config['RG_only']:
          # is the UG running?
-         rc = ensure_UG_running( syndicate_url, user_email, volume_password, volume_name, UG_name, UG_key_password, UG_mountpoint_path, user_pkey_pem, check_only=True )
+         rc = ensure_UG_running( syndicate_url, user_email, volume_name, UG_name, UG_key_password, UG_mountpoint_path, user_pkey_pem, check_only=True )
          
          if rc <= 0:
+            client = connect_syndicate( syndicate_url, user_email, user_pkey_pem )
+            
             rc = instantiate_and_run( "UG", UG_name,
-                                    lambda: ensure_UG_exists( syndicate_url, user_email, volume_password, volume_name, UG_name, hostname, UG_portnum, UG_key_password ),
-                                    lambda: ensure_UG_running( syndicate_url, user_email, volume_password, volume_name, UG_name, UG_key_password, UG_mountpoint_path, user_pkey_pem ) )
+                                    lambda: provisioning.ensure_UG_exists( client, user_email, volume_name, UG_name, hostname, UG_portnum, UG_key_password ),
+                                    lambda: ensure_UG_running( syndicate_url, user_email, volume_name, UG_name, UG_key_password, UG_mountpoint_path, user_pkey_pem ) )
             
             if rc < 0:
                log.error("Failed to instantiate and run UG %s" % UG_name )

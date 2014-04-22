@@ -58,7 +58,7 @@ class VolumeAccessRight(PlCoreBase):
     owner_id = models.ForeignKey(User, verbose_name='user')
     
     volume = models.ForeignKey(Volume)
-    gateway_caps = BitField(flags=("read data", "write data", "host files"), verbose_name="User Capabilities")    
+    gateway_caps = BitField(flags=("read data", "write data", "host files"), verbose_name="User Capabilities")
 
     def __unicode__(self):  return "%s-%s" % (self.owner_id.email, self.volume.name)
 

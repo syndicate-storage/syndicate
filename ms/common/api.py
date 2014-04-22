@@ -1293,6 +1293,60 @@ def list_gateways_by_volume( volume_name_or_id, **caller_user_dict ):
    return storage.list_gateways_by_volume( volume_name_or_id, **caller_user_dict )
 
 
+@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@ListAPIGuard( Gateway, parse_args=Gateway.ParseArgs, pass_caller_user="caller_user" )
+def list_gateways_by_user_and_volume( email, volume_name_or_id, **caller_user_dict ):
+   """
+   List gateways in a Volume that belong to a particular user.
+   
+   Positional arguments:
+      email (str or int):
+         The email of the user to query.
+         
+      volume_name_or_id (str or int)
+         The name or ID of the Volume to query on.
+         
+   Returns:
+      On success, a list of gateways belonging to a particular user
+      in a particular Volume.
+      Raises an exception on failure.
+      
+   Authorization:
+      An administrator can list any Volume's gateways, and any user's gateways.
+      A user can only list their own gateways.
+   """
+   return storage.list_gateways_by_user_and_volume( email, volume_name_or_id, **caller_user_dict )
+
+
+# ----------------------------------
+@Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
+@DeleteAPIGuard( Gateway, target_object_name="volume_name_or_id", parse_args=Gateway.ParseArgs )        # caller must own the Volume
+def remove_user_from_volume( email, volume_name_or_id ):
+   """
+   Remove a user from a volume.  This removes the user's volume
+   access requests, and deletes every gateway in 
+   the volume owned by the user.
+   
+   Positional Arguments:
+      email (str or int):
+         The email of the user to remove 
+         
+      volume_name_or_id (str or int)
+         The name or ID of the Volume to remove the user from.
+         
+   Returns:
+      On success, this returns True.
+      Raises an exception on failure.
+     
+   Authorization:
+      An administrator can remove any user from any volume.
+      A volume owner can remove any user from a volume (s)he owns.
+      A user cannot call this method.
+   """
+   
+   return storage.remove_user_from_volume( email, volume_name_or_id )
+
+
 # ----------------------------------
 class API( object ):
    # NOTE: this should only be used by the MS
