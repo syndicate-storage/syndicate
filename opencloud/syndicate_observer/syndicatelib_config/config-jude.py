@@ -15,4 +15,7 @@ SYNDICATE_OPENCLOUD_SECRET="e4988309a5005edb8ea185f16f607938c0fb7657e4d7609853bc
 
 SYNDICATE_HTTP_PORT=65321
 
+SYNDICATE_RG_CLOSURE="/home/jude/Desktop/research/git/syndicate/build/out/python/syndicate/rg/drivers/disk"
+SYNDICATE_RG_DEFAULT_PORT=38800
+
 DEBUG=True

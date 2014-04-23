@@ -35,7 +35,6 @@ sys.path.insert(0,parentdir)
 
 import syndicatelib
 
-
 class SyncVolumeAccessRight(SyncStep):
     provides=[VolumeAccessRight]
     requested_interval=0
@@ -48,33 +47,46 @@ class SyncVolumeAccessRight(SyncStep):
 
     def sync_record(self, vac):
         syndicate_caps = "UNKNOWN"  # for exception handling
+        
         try:
-            print "Sync Volume Access Right!"
-            print "Sync for (%s, %s)" % (vac.owner_id.email, vac.volume.name)
-
-            # ensure the user exists...
+            # get arguments
+            config = syndicatelib.get_config()
+            user_email = vac.owner_id.email
+            volume_name = vac.volume.name
+            syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( vac.gateway_caps ) 
+            
+            # validate config
             try:
-                new_user = syndicatelib.ensure_user_exists( vac.owner_id.email )
+               RG_port = config.SYNDICATE_RG_DEFAULT_PORT
+            except Exception, e:
+               logger.print_exc()
+               logger.error("syndicatelib config is missing SYNDICATE_RG_DEFAULT_PORT")
+               return False
+            
+            print "Sync Volume Access Right!"
+            print "Sync for (%s, %s)" % (user_email, volume_name)
+            
+            # ensure the user exists and has credentials
+            try:
+                new_user = syndicatelib.ensure_user_exists_and_has_credentials( user_email )
             except Exception, e:
                 traceback.print_exc()
-                logger.error("Failed to ensure user '%s' exists" % vac.owner_id.email )
+                logger.error("Failed to ensure user '%s' exists" % user_email )
                 return False
 
-            # convert caps to Syndicate caps
-            syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( vac.gateway_caps )
-            
-            # make the access right 
+            # make the access right for the user to create their own UGs, and provision an RG for this user that will listen on localhost.
+            # the user will have to supply their own RG closure.
             try:
-                rc = syndicatelib.ensure_volume_access_right_exists( vac.owner_id.email, vac.volume.name, syndicate_caps )
+                rc = syndicatelib.setup_volume_access( user_email, volume_name, syndicate_caps, RG_port, observer_secret )
             except Exception, e:
                 traceback.print_exc()
-                logger.error("Faoed to ensure user %s can access Volume %s with rights %s" % (vac.owner_id.email, vac.volume.name, syndicate_caps))
+                logger.error("Faoed to ensure user %s can access Volume %s with rights %s" % (user_email, volume_name, syndicate_caps))
                 return False
 
             return rc
         except Exception, e:
             traceback.print_exc()
-            logger.error("Failed to ensure user %s can access Volume %s with rights %s" % (vac.owner_id.email, vac.volume.name, syndicate_caps))
+            logger.error("Failed to ensure user %s can access Volume %s with rights %s" % (user_email, volume_name, syndicate_caps))
             return False
 
 

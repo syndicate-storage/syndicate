@@ -60,7 +60,7 @@ class VolumeAccessRequest( storagetypes.Object ):
    nonce = storagetypes.Integer( indexed=False )         # detect collision with another one of these
    request_timestamp = storagetypes.Integer()           # when was the request made?
    status = storagetypes.Integer()                      # granted or pending?
-   allowed_gateways = storagetypes.Integer(default=0)   # bit vector of GATEWAY_TYPE_*G (from msconfig)
+   allowed_gateways = storagetypes.Integer(default=0)   # bit vector representing GATEWAY_TYPE_*G (from msconfig)
    
    # purely for readability
    volume_name = storagetypes.String()
@@ -134,7 +134,7 @@ class VolumeAccessRequest( storagetypes.Object ):
       """
       
       # verify the arguments are valid 
-      if allowed_gateways is not None and (allowed_gateways & ~(GATEWAY_TYPE_UG | GATEWAY_TYPE_RG | GATEWAY_TYPE_AG)) != 0:
+      if allowed_gateways is not None and (allowed_gateways & ~((1 << GATEWAY_TYPE_UG) | (1 << GATEWAY_TYPE_RG) | (1 << GATEWAY_TYPE_AG))) != 0:
          # extra bits 
          raise Exception("Invalid bit field for allowed_gateways (%x)" % (allowed_gateways))
       

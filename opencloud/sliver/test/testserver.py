@@ -41,19 +41,17 @@ CONFIG_OPTIONS = {
    "observer_secret":   ("-s", 1, "Shared secret with Observer."),
    "volume":            ("-v", 1, "Name of Volume."),
    "username":          ("-u", 1, "Name of volume owner."),
-   "password":          ("-p", 1, "Volume password."),
    "MS":                ("-m", 1, "Syndicate Metadata Service URL."),
-   "push":              ("-P", 1, "Push a credential blob to given host(s).  Hosts must be comma-separated."),
+   "push":              ("-p", 1, "Push a credential blob to given host(s).  Hosts must be comma-separated."),
    "server":            ("-S", 1, "Test serving on a given IP:Port combination"),
    "UG_port":           ("-U", 1, "User Gateway port number" ),
-   "RG_port":           ("-R", 1, "Replica Gateway port number" ),
-   "user_pkey":         ("-K", 1, "User private key"),
+   "user_pkey":         ("-P", 1, "User private key"),
 }
 
 
 #-------------------------------
 def validate_config( config ):
-   required = ["private_key", "observer_secret", "volume", "username", "password", "MS", "UG_port", "RG_port", "user_pkey"]
+   required = ["private_key", "observer_secret", "volume", "username", "MS", "UG_port", "user_pkey"]
    missing = []
    ret = 0
    
@@ -73,7 +71,7 @@ def validate_config( config ):
       
       
    # these must be integers 
-   must_be_ints = ["UG_port", "RG_port"]
+   must_be_ints = ["UG_port"]
    for mbi in must_be_ints:
       try:
          config[mbi] = int(config[mbi])
@@ -173,7 +171,7 @@ if __name__ == "__main__":
    volume_str = syndicatelib.create_volume_list_blob( key_pem, config["observer_secret"], ["testvolume"] )
    
    # make a volume credential 
-   cred_str = syndicatelib.create_credential_blob( key_pem, config["observer_secret"], config["MS"], config["volume"], config["username"], config["password"], config["UG_port"], config["RG_port"], user_pkey_pem )
+   cred_str = syndicatelib.create_credential_blob( key_pem, config["observer_secret"], config["MS"], config["volume"], config["username"], config["UG_port"], user_pkey_pem )
    
    if config.get("push", None) is not None:
       
