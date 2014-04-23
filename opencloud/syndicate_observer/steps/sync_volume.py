@@ -47,10 +47,19 @@ class SyncVolume(SyncStep):
 
     def sync_record(self, volume):
         try:
-            print "Sync!"
-            print "volume = %s" % volume.name
+            print "\n\nSync!"
+            print "volume = %s\n\n" % volume.name
         
             user_email = volume.owner_id.email
+            config = syndicatelib.get_config()
+
+            # get the observer secret 
+            try:
+                observer_secret = config.SYNDICATE_OPENCLOUD_SECRET
+            except Exception, e:
+                traceback.print_exc()
+                logger.error("config is missing SYNDICATE_OPENCLOUD_SECRET")
+                return False
 
             # owner must exist...
             try:
@@ -63,12 +72,14 @@ class SyncVolume(SyncStep):
             # if we created a new user, then save its credentials 
             if new_user is not None:
                 try:
-                    rc = syndicatelib.save_syndicate_principal( user_email, new_user['signing_public_key'], new_user['signing_private_key'] )
+                    rc = syndicatelib.save_syndicate_principal( user_email, observer_secret, new_user['signing_public_key'], new_user['signing_private_key'] )
                     assert rc == True, "Failed to save SyndicatePrincipal"
                 except Exception, e:
                     traceback.print_exc()
                     logger.error("Failed to save private key for principal %s" % (user_email))
                     return False
+
+            print "\n\nuser for %s: %s\n\n" % (user_email, new_user)
 
             # volume must exist 
             try:
@@ -79,6 +90,8 @@ class SyncVolume(SyncStep):
                 logger.error("Failed to ensure volume '%s' exists" % volume.name )
                 return False
 
+            print "\n\nvolume for %s: %s\n\n" % (volume.name, new_volume)
+            
             # did we create the Volume?  If so, set up its slice
             if new_volume is not None:
                 pass
@@ -106,7 +119,16 @@ class SyncVolume(SyncStep):
 if __name__ == "__main__":
     sv = SyncVolume()
 
+
+    # first, set all volumes to not-enacted so we can test 
+    for v in Volume.objects.all():
+       v.enacted = None
+       v.save()
+    
     recs = sv.fetch_pending()
 
     for rec in recs:
-        sv.sync_record( rec )
+        rc = sv.sync_record( rec )
+        if not rc:
+          print "\n\nFailed to sync %s\n\n" % (rec.name)
+

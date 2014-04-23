@@ -20,8 +20,8 @@ class SyndicatePrincipal(PlCoreBase):
     class Meta:
         app_label = "syndicate"
 
-    # for now, this is a user 
-    principal_id = models.ForeignKey( User )
+    # for now, this is a user email address 
+    principal_id = models.TextField()
     public_key_pem = models.TextField()
     sealed_private_key = models.TextField()
 

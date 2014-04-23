@@ -182,7 +182,7 @@ def create_and_activate_user( client, user_email ):
     user_activate_pw = registration_password()
     try:
         # NOTE: allow for lots of UGs and RGs, since we're going to create at least one for each sliver
-        new_user = client.create_user( user_id, user_openid_url, user_activate_pw, is_admin=False, max_UGs=1100, max_RGs=1100 )
+        new_user = client.create_user( user_id, user_openid_url, user_activate_pw, is_admin=False, max_UGs=1100, max_RGs=1 )
     except Exception, e:
         # transport error, or the user already exists (rare, but possible)
         logger.exception(e)
@@ -191,6 +191,10 @@ def create_and_activate_user( client, user_email ):
             raise e
         else:
             return None     # user already existed
+
+    if new_user is None:
+        # the method itself failed
+        raise Exception("Creating %s failed" % user_email)
 
     else:
         # activate the user.
