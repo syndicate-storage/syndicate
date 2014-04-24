@@ -21,17 +21,11 @@ from Crypto import Random
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 
-try:
-    from util.logger import Logger, logging
-    logger = Logger(level=logging.INFO)
-
-except:
-    # for testing
-    import logging
-    from logging import Logger
-    logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
-    logger = logging.getLogger()
-    logger.setLevel( logging.INFO )
+import logging
+from logging import Logger
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+logger = logging.getLogger()
+logger.setLevel( logging.INFO )
 
 # get config package 
 import syndicatelib_config.config as CONFIG
@@ -413,7 +407,7 @@ def ensure_volume_access_right_exists( user_email, volume_name, caps, allowed_ga
     Do not try to ensure that the user or volume exist, however!
     """
     client = connect_syndicate()
-    return provisioning.ensure_volume_access_right_exists( client, user_email, volume_name, caps, allowed_gateways )
+    return syndicate_provisioning.ensure_volume_access_right_exists( client, user_email, volume_name, caps, allowed_gateways )
 
 #-------------------------------
 def ensure_volume_access_right_absent( user_email, volume_name ):
@@ -421,7 +415,7 @@ def ensure_volume_access_right_absent( user_email, volume_name ):
     Ensure that acess to a particular volume is revoked.
     """
     client = connect_syndicate()
-    return provisioning.ensure_volume_access_right_absent( client, user_email, volume_name )
+    return syndicate_provisioning.ensure_volume_access_right_absent( client, user_email, volume_name )
     
     
 #-------------------------------
@@ -441,11 +435,11 @@ def setup_volume_access( user_email, volume_name, caps, RG_port, observer_secret
        logger.exception(e)
        return False
     
-    RG_name = provisioning.make_gateway_name( "OpenCloud", "RG", volume_name, "localhost" )
-    RG_key_password = provisioning.make_gateway_private_key_password( RG_name, observer_secret )
+    RG_name = syndicate_provisioning.make_gateway_name( "OpenCloud", "RG", volume_name, "localhost" )
+    RG_key_password = syndicate_provisioning.make_gateway_private_key_password( RG_name, observer_secret )
     
     try:
-       rc = provisioning.ensure_RG_exists( client, user_email, volume_name, RG_name, "localhost", RG_port, RG_key_password, closure=RG_closure )
+       rc = syndicate_provisioning.ensure_RG_exists( client, user_email, volume_name, RG_name, "localhost", RG_port, RG_key_password, closure=RG_closure )
     except Exception, e:
        logger.exception(e)
        return False

@@ -20,8 +20,19 @@ from planetstack.config import Config
 from observer.syncstep import SyncStep
 from core.models import Service
 from syndicate.models import Volume
-from util.logger import Logger, logging
-logger = Logger(level=logging.INFO)
+
+import logging
+from logging import Logger
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+logger = logging.getLogger()
+logger.setLevel( logging.INFO )
+
+# point to planetstack
+if __name__ != "__main__": 
+    if os.getenv("OPENCLOUD_PYTHONPATH") is not None:
+        sys.path.insert(0, os.getenv("OPENCLOUD_PYTHONPATH"))
+    else:
+        logger.warning("No OPENCLOUD_PYTHONPATH set; assuming your PYTHONPATH works")
 
 # syndicatelib will be in stes/..
 parentdir = os.path.join(os.path.dirname(__file__),"..")
@@ -49,65 +60,58 @@ class SyncVolume(SyncStep):
         """
         Synchronize a Volume record with Syndicate.
         """
+        print "\n\nSync!"
+        print "volume = %s\n\n" % volume.name
+    
+        user_email = volume.owner_id.email
+        config = syndicatelib.get_config()
+
+        # get the observer secret 
         try:
-            print "\n\nSync!"
-            print "volume = %s\n\n" % volume.name
-        
-            user_email = volume.owner_id.email
-            config = syndicatelib.get_config()
-
-            # get the observer secret 
-            try:
-                observer_secret = config.SYNDICATE_OPENCLOUD_SECRET
-            except Exception, e:
-                traceback.print_exc()
-                logger.error("config is missing SYNDICATE_OPENCLOUD_SECRET")
-                return False
-
-            # volume owner must exist as a Syndicate user...
-            try:
-                rc, new_user = syndicatelib.ensure_user_exists_and_has_credentials( user_email, observer_secret )
-            except Exception, e:
-                traceback.print_exc()
-                logger.error("Failed to ensure user '%s' exists" % user_email )
-                return False
-
-            print "\n\nuser for %s: %s\n\n" % (user_email, new_user)
-
-            # volume must exist 
-            
-            # create or update the Volume
-            try:
-                new_volume = syndicatelib.ensure_volume_exists( user_email, volume, user=new_user )
-            except Exception, e:
-                traceback.print_exc()
-                logger.error("Failed to ensure volume '%s' exists" % volume.name )
-                return False
-
-            print "\n\nvolume for %s: %s\n\n" % (volume.name, new_volume)
-            
-            # did we create the Volume?
-            if new_volume is not None:
-                # we're good
-                pass 
-             
-            # otherwise, just update it 
-            else:
-                try:
-                    rc = syndicatelib.update_volume( volume )
-                except Exception, e:
-                    traceback.print_exc()
-                    logger.error("Failed to update volume '%s', exception = %s" % (volume.name, e.message))
-                    return False
-                    
-                return True
-                
-            return True
-
+            observer_secret = config.SYNDICATE_OPENCLOUD_SECRET
         except Exception, e:
             traceback.print_exc()
-            return False
-        
+            logger.error("config is missing SYNDICATE_OPENCLOUD_SECRET")
+            raise e
+
+        # volume owner must exist as a Syndicate user...
+        try:
+            rc, new_user = syndicatelib.ensure_user_exists_and_has_credentials( user_email, observer_secret )
+        except Exception, e:
+            traceback.print_exc()
+            logger.error("Failed to ensure user '%s' exists" % user_email )
+            raise e
+
+        print "\n\nuser for %s: %s\n\n" % (user_email, new_user)
+
+        # volume must exist 
+            
+        # create or update the Volume
+        try:
+            new_volume = syndicatelib.ensure_volume_exists( user_email, volume, user=new_user )
+        except Exception, e:
+            traceback.print_exc()
+            logger.error("Failed to ensure volume '%s' exists" % volume.name )
+            raise e
+
+        print "\n\nvolume for %s: %s\n\n" % (volume.name, new_volume)
+           
+        # did we create the Volume?
+        if new_volume is not None:
+            # we're good
+            pass 
+             
+        # otherwise, just update it 
+        else:
+            try:
+                rc = syndicatelib.update_volume( volume )
+            except Exception, e:
+                traceback.print_exc()
+                logger.error("Failed to update volume '%s', exception = %s" % (volume.name, e.message))
+                raise e
+                    
+        return True
+
 
 
 
@@ -120,6 +124,10 @@ if __name__ == "__main__":
        v.enacted = None
        v.save()
     
+    # NOTE: for resetting only 
+    if len(sys.argv) > 1 and sys.argv[1] == "reset":
+       sys.exit(0)
+
     recs = sv.fetch_pending()
 
     for rec in recs:
