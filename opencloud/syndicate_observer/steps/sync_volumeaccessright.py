@@ -18,14 +18,19 @@ from django.db.models import F, Q
 from planetstack.config import Config
 from observer.syncstep import SyncStep
 from core.models import Service
-from util.logger import Logger, logging
-logger = Logger(level=logging.INFO)
+
+import logging
+from logging import Logger
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+logger = logging.getLogger()
+logger.setLevel( logging.INFO )
 
 # point to planetstack 
-if os.getenv("OPENCLOUD_PYTHONPATH") is not None:
-    sys.path.insert(0, os.getenv("OPENCLOUD_PYTHONPATH"))
-else:
-    logger.warning("No OPENCLOUD_PYTHONPATH set; assuming your PYTHONPATH works") 
+if __name__ != "__main__":
+    if os.getenv("OPENCLOUD_PYTHONPATH") is not None:
+        sys.path.insert(0, os.getenv("OPENCLOUD_PYTHONPATH"))
+    else:
+        logger.warning("No OPENCLOUD_PYTHONPATH set; assuming your PYTHONPATH works")
 
 from syndicate.models import VolumeAccessRight
 
@@ -48,52 +53,61 @@ class SyncVolumeAccessRight(SyncStep):
     def sync_record(self, vac):
         syndicate_caps = "UNKNOWN"  # for exception handling
         
+        # get arguments
+        config = syndicatelib.get_config()
+        user_email = vac.owner_id.email
+        volume_name = vac.volume.name
+        syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( vac.gateway_caps ) 
+            
+        # validate config
         try:
-            # get arguments
-            config = syndicatelib.get_config()
-            user_email = vac.owner_id.email
-            volume_name = vac.volume.name
-            syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( vac.gateway_caps ) 
+           RG_port = config.SYNDICATE_RG_DEFAULT_PORT
+           observer_secret = config.SYNDICATE_OPENCLOUD_SECRET
+        except Exception, e:
+           traceback.print_exc()
+           logger.error("syndicatelib config is missing SYNDICATE_RG_DEFAULT_PORT, SYNDICATE_OPENCLOUD_SECRET")
+           raise e
             
-            # validate config
-            try:
-               RG_port = config.SYNDICATE_RG_DEFAULT_PORT
-            except Exception, e:
-               logger.print_exc()
-               logger.error("syndicatelib config is missing SYNDICATE_RG_DEFAULT_PORT")
-               return False
+        print "Sync Volume Access Right!"
+        print "Sync for (%s, %s)" % (user_email, volume_name)
             
-            print "Sync Volume Access Right!"
-            print "Sync for (%s, %s)" % (user_email, volume_name)
-            
-            # ensure the user exists and has credentials
-            try:
-                new_user = syndicatelib.ensure_user_exists_and_has_credentials( user_email )
-            except Exception, e:
-                traceback.print_exc()
-                logger.error("Failed to ensure user '%s' exists" % user_email )
-                return False
-
-            # make the access right for the user to create their own UGs, and provision an RG for this user that will listen on localhost.
-            # the user will have to supply their own RG closure.
-            try:
-                rc = syndicatelib.setup_volume_access( user_email, volume_name, syndicate_caps, RG_port, observer_secret )
-            except Exception, e:
-                traceback.print_exc()
-                logger.error("Faoed to ensure user %s can access Volume %s with rights %s" % (user_email, volume_name, syndicate_caps))
-                return False
-
-            return rc
+        # ensure the user exists and has credentials
+        try:
+            new_user = syndicatelib.ensure_user_exists_and_has_credentials( user_email, observer_secret )
         except Exception, e:
             traceback.print_exc()
-            logger.error("Failed to ensure user %s can access Volume %s with rights %s" % (user_email, volume_name, syndicate_caps))
-            return False
+            logger.error("Failed to ensure user '%s' exists" % user_email )
+            raise e
+ 
+        # make the access right for the user to create their own UGs, and provision an RG for this user that will listen on localhost.
+        # the user will have to supply their own RG closure.
+        try:
+            rc = syndicatelib.setup_volume_access( user_email, volume_name, syndicate_caps, RG_port, observer_secret )
+            assert rc is True, "Failed to setup volume access for %s in %s" % (user_email, volume_name)
+
+        except Exception, e:
+            traceback.print_exc()
+            logger.error("Faoed to ensure user %s can access Volume %s with rights %s" % (user_email, volume_name, syndicate_caps))
+            raise e
+
+        return True
 
 
 if __name__ == "__main__":
-    sv = SyncVolumeAccessRight()
 
+    # first, set all VolumeAccessRights to not-enacted so we can test 
+    for v in VolumeAccessRight.objects.all():
+       v.enacted = None
+       v.save()
+
+    # NOTE: for resetting only 
+    if len(sys.argv) > 1 and sys.argv[1] == "reset":
+       sys.exit(0)
+
+
+    sv = SyncVolumeAccessRight()
     recs = sv.fetch_pending()
 
     for rec in recs:
         sv.sync_record( rec )
+

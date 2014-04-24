@@ -441,7 +441,7 @@ def list_gateways_by_volume( volume_name_or_id, **q_opts ):
    caller_user = _check_authenticated( q_opts )
    
    # volume must exist
-   volume = storage.read_volume( volume_name_or_id )
+   volume = read_volume( volume_name_or_id )
    if volume == None or volume.deleted:
       raise Exception("No such Volume '%s'" % volume_name_or_id )
    
