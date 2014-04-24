@@ -791,9 +791,9 @@ def request_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, 
       allowed_gateways (str or int):
          Which Gateways the requester will be allowed to create.
          Bit-wise OR of:
-            GATEWAY_TYPE_UG
-            GATEWAY_TYPE_RG
-            GATEWAY_TYPE_AG
+            1 << GATEWAY_TYPE_UG
+            1 << GATEWAY_TYPE_RG
+            1 << GATEWAY_TYPE_AG
             
          You can pass them as a string, and they will be parsed 
          into the appropriate bit vector.
@@ -921,9 +921,9 @@ def set_volume_access( email, volume_name_or_id, allowed_gateways, ug_caps, **ca
       allowed_gateways (str or int):
          Which Gateways the requester will be allowed to create.
          Bit-wise OR of:
-            GATEWAY_TYPE_UG
-            GATEWAY_TYPE_RG
-            GATEWAY_TYPE_AG
+            1 << GATEWAY_TYPE_UG
+            1 << GATEWAY_TYPE_RG
+            1 << GATEWAY_TYPE_AG
             
          You can pass them as a string, and they will be parsed 
          into the appropriate bit vector.

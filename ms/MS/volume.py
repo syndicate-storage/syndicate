@@ -580,7 +580,7 @@ class Volume( storagetypes.Object ):
       
       # set permissions
       req = VolumeAccessRequest.create_async( user.owner_id, volume_id, kwargs['name'], random.randint(-2**63, 2**63 - 1), VolumeAccessRequest.STATUS_GRANTED,
-                                              gateway_caps=kwargs['default_gateway_caps'], request_message="Created").get_result()
+                                              gateway_caps=kwargs['default_gateway_caps'], allowed_gateways=(1 << GATEWAY_TYPE_AG)|(1 << GATEWAY_TYPE_UG)|(1 << GATEWAY_TYPE_RG), request_message="Created").get_result()
       return volume_key
          
 
