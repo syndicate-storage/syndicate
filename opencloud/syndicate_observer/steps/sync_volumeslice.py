@@ -32,7 +32,7 @@ if __name__ != "__main__":
     else:
         logger.warning("No OPENCLOUD_PYTHONPATH set; assuming your PYTHONPATH works") 
 
-from syndicate.models import VolumeSlice,VolumeAccessRight
+from syndicate.models import VolumeSlice,VolumeAccessRight,Volume
 
 # syndicatelib will be in stes/..
 parentdir = os.path.join(os.path.dirname(__file__),"..")
@@ -58,16 +58,7 @@ class SyncVolumeSlice(SyncStep):
         user_email = vs.slice_id.creator.email
         slice_name = vs.slice_id.name
         volume_name = vs.volume_id.name
-
-        # find the access right for this user, and get the gateway caps 
-        try:
-           var = VolumeAccessRight.objects.get( volume__name__eq=volume_name, owner_id__eq=user_email )
-        except Exception, e:
-           traceback.print_exc()
-           logger.error("Failed to get VolumeAccessRight for %s in %s" % (user_email, volume_name))
-           raise e
-
-        syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( var.gateway_caps )
+        syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( vs.gateway_caps )
         RG_port = vs.replicate_portnum
         UG_port = vs.peer_portnum
             
@@ -84,7 +75,8 @@ class SyncVolumeSlice(SyncStep):
             
         # make sure there's a Syndicate user account for the slice owner
         try:
-            new_user = syndicatelib.ensure_user_exists_and_has_credentials( user_email )
+            rc, user = syndicatelib.ensure_user_exists_and_has_credentials( user_email, observer_secret )
+            assert rc is True, "Failed to ensure user %s exists and has credentials (rc = %s,%s)" % (user_email, rc, user)
         except Exception, e:
             traceback.print_exc()
             logger.error('Failed to ensure user %s exists' % user_email)
@@ -102,7 +94,7 @@ class SyncVolumeSlice(SyncStep):
             
         # get slice credentials....
         try:
-            slice_cred = syndicatelib.generate_slice_credentials( observer_pkey_path, syndicate_url, user_email, volume_name, observer_secret, UG_port, existing_user=new_user )
+            slice_cred = syndicatelib.generate_slice_credentials( observer_pkey_path, syndicate_url, user_email, volume_name, observer_secret, UG_port, existing_user=user )
             assert slice_cred is not None, "Failed to generate slice credential for %s in %s" % (user_email, volume_name )
                 
         except Exception, e:
@@ -134,7 +126,6 @@ if __name__ == "__main__":
     # NOTE: for resetting only 
     if len(sys.argv) > 1 and sys.argv[1] == "reset":
        sys.exit(0)
-
 
     recs = sv.fetch_pending()
 

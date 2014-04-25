@@ -73,7 +73,8 @@ class SyncVolumeAccessRight(SyncStep):
             
         # ensure the user exists and has credentials
         try:
-            new_user = syndicatelib.ensure_user_exists_and_has_credentials( user_email, observer_secret )
+            rc, user = syndicatelib.ensure_user_exists_and_has_credentials( user_email, observer_secret )
+            assert rc is True, "Failed to ensure user %s exists and has credentials (rc = %s,%s)" % (user_email, rc, user)
         except Exception, e:
             traceback.print_exc()
             logger.error("Failed to ensure user '%s' exists" % user_email )
