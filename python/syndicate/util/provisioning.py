@@ -172,7 +172,7 @@ def ensure_volume_access_right_exists( client, user_email, volume_name, caps, al
            allowed_gateways_bitmask |= (1 << allowed_gateway_type)
            
         rc = client.set_volume_access( user_email, volume_name, allowed_gateways_bitmask, caps )
-        assert rc is True, "Failed to allow '%s' to access Volume '%s'" % (user_email, volume_name)
+        assert rc is True, "Failed to allow '%s' to access Volume '%s' (rc = %s)" % (user_email, volume_name, rc)
         
     except Exception, e:
         # transport error 
