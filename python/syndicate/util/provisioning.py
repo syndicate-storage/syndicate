@@ -176,7 +176,7 @@ def ensure_volume_access_right_exists( client, user_email, volume_name, caps, al
         
     except Exception, e:
         # transport error 
-        logger.exception(e)
+        log.exception(e)
         return False
     
     return True
