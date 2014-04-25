@@ -20,7 +20,6 @@ from Crypto.PublicKey import RSA as CryptoKey
 from Crypto import Random
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
-
 import logging
 from logging import Logger
 logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
@@ -56,6 +55,8 @@ import syndicate.util.daemonize as syndicate_daemon
 import syndicate.util.crypto as syndicate_crypto
 import syndicate.util.provisioning as syndicate_provisioning
 import syndicate.syndicate as c_syndicate
+
+from django.core.exceptions import ObjectDoesNotExist
 
 # for testing 
 class FakeObject(object):
@@ -221,8 +222,8 @@ def ensure_user_exists( user_email ):
     Given an OpenCloud user, ensure that the corresponding
     Syndicate user exists.
 
-    Return the new user if a user was created.
-    Return None if the user already exists.
+    Return the (created, user), where created==True if the user 
+    was created and created==False if the user was read.
     Raise an exception on error.
     """
     
@@ -238,10 +239,10 @@ def ensure_user_exists( user_email ):
     if user is None:
         # the user does not exist....try to create it
         user = create_and_activate_user( client, user_email )
-        return user          # user exists now 
+        return (True, user)          # user exists now 
     
     else:
-        return None         # user already exists
+        return (False, user)         # user already exists
 
 
 #-------------------------------
@@ -270,14 +271,14 @@ def ensure_user_exists_and_has_credentials( user_email, observer_secret ):
     """
     
     try:
-         new_user = ensure_user_exists( user_email )
+         created, new_user = ensure_user_exists( user_email )
     except Exception, e:
          traceback.print_exc()
          logger.error("Failed to ensure user '%s' exists" % user_email )
          return (False, None)
       
     # if we created a new user, then save its (sealed) credentials to the Django DB
-    if new_user is not None:
+    if created:
          try:
             rc = save_syndicate_principal( user_email, observer_secret, new_user['signing_public_key'], new_user['signing_private_key'] )
             assert rc == True, "Failed to save SyndicatePrincipal"
@@ -576,7 +577,7 @@ def delete_syndicate_principal( user_email ):
     """
     Delete a syndicateprincipal
     """
-    sp = models.SyndicatePrincipal.objects.get( user_email )
+    sp = models.SyndicatePrincipal.objects.get( principal_id=user_email )
     sp.delete()
     
     return True
@@ -588,8 +589,8 @@ def get_syndicate_principal_pkey( user_email, observer_secret ):
     """
 
     try:
-        sp = models.SyndicatePrincipal.objects.get( user_email )
-    except DoesNotExist:
+        sp = models.SyndicatePrincipal.objects.get( principal_id=user_email )
+    except ObjectDoesNotExist:
         logger.error("No SyndicatePrincipal record for %s" % user_email)
         return None
 
@@ -597,7 +598,7 @@ def get_syndicate_principal_pkey( user_email, observer_secret ):
     sealed_private_key_pem = sp.sealed_private_key
 
     # unseal
-    private_key_pem = verify_and_unseal_blob(public_key_pem, observer_secret, sealed_private_key)
+    private_key_pem = verify_and_unseal_blob(public_key_pem, observer_secret, sealed_private_key_pem)
     if private_key_pem is None:
         logger.error("Failed to unseal private key")
 
@@ -631,7 +632,7 @@ def generate_slice_credentials( observer_pkey_path, syndicate_url, user_email, v
     if user_pkey_pem is None:
       try:
          # get it from Django DB
-         user_pkey_pem = syndicatelib.get_syndicate_principal_pkey( user_email, observer_secret )
+         user_pkey_pem = get_syndicate_principal_pkey( user_email, observer_secret )
          assert user_pkey_pem is not None, "No private key for %s" % user_email
          
       except:
