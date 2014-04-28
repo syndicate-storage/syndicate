@@ -144,6 +144,8 @@ def make_nacl_env( env, NACL_TOOLCHAIN, PEPPER_ROOT, arch ):
    env_nacl.Replace(LIBPATH = nacl_libpath)
    env_nacl.Append(CPPFLAGS = "-D_SYNDICATE_NACL_")
 
+   # preserve PYTHONPATH and PATH
+   env_nacl.Replace( ENV = {'PATH': os.getenv("PATH"), "PYTHONPATH": os.getenv("PYTHONPATH")} )
    return env_nacl 
 
 Export("make_nacl_env")
@@ -157,7 +159,7 @@ nacl_lib_install_dir = None
 nacl_env = None
 
 env = Environment( 
-   ENV = {'PATH': os.environ['PATH']},
+   ENV = {'PATH': os.getenv('PATH'), 'PYTHONPATH': os.getenv('PYTHONPATH')},
    CPPFLAGS = Split(CPPFLAGS),
    CPPPATH = CPPPATH,
    LIBPATH = LIBPATH,
@@ -168,7 +170,7 @@ env = Environment(
    devel = devel,
    firewall = firewall,
    old_boost = old_boost,   # for the UG
-   install_prefix = install_prefix
+   install_prefix = install_prefix,
 )
 
 common.setup_env( env )
