@@ -685,15 +685,12 @@ class Gateway( storagetypes.Object ):
       Given a gateway ID, delete the corresponding gateway
       """
       
-      try:
-         g_id = int(g_name_or_id)
-      except:
-         gateway = Gateway.Read( g_name_or_id )
-         if gateway:
-            g_id = gateway.g_id 
-         else:
-            raise Exception("No such Gateway '%s'" % g_name_or_id )
-         
+      gateway = Gateway.Read( g_name_or_id )
+      if gateway:
+         g_id = gateway.g_id 
+      else:
+         raise Exception("No such Gateway '%s'" % g_name_or_id )
+      
       key_name = Gateway.make_key_name( g_id=g_id )
 
       g_key = storagetypes.make_key( cls, key_name )
@@ -710,3 +707,18 @@ class Gateway( storagetypes.Object ):
       storagetypes.wait_futures( [g_delete_fut, g_name_delete_fut] )
       
       return True
+
+   @classmethod 
+   def DeleteAll( cls, volume ):
+      """
+      Given a Volume, delete all Gateways attached to it.
+      It's best to run this as a deferred task.
+      """
+      
+      def __delete_gw( gateway ):
+         cls.Delete( gateway.g_id )
+      
+      cls.ListAll( {"Gateway.volume_id ==": volume.volume_id}, map_func=__delete_gw, projection=["g_id"] )
+      return True 
+   
+   

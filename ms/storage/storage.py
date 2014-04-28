@@ -264,8 +264,13 @@ def delete_volume( volume_name_or_id ):
    
    ret = Volume.Delete( volume.volume_id )
    if ret:
-      # delete succeeded.  Blow away the MSEntries
-      MSEntry.DeleteAll( volume )
+      # delete succeeded.
+      
+      # Blow away the MSEntries, in a deferred task 
+      storagetypes.deferred.defer( MSEntry.DeleteAll, volume )
+      
+      # Blow away the Gateways, in a deferred task 
+      storagetypes.deferred.defer( Gateway.DeleteAll, volume )
    
    return ret
    

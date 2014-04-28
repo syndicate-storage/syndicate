@@ -111,12 +111,22 @@ def load_private_key( config, key_type, object_id ):
 
 # -------------------   
 def write_key( path, key_data, overwrite=False ):
-   return util_storage.write_key( path, key_data, overwrite=overwrite )
+   try:
+      return util_storage.write_key( path, key_data, overwrite=overwrite )
+   except:
+      if not overwrite:
+         
+         tmp_keypath = os.tmpnam()
+         
+         print "\n\n!!! FAILED TO WRITE KEY TO %s !!!\n!!! Saving %s to %s instead !!!\n\n" % (path, path, tmp_keypath)
+         
+         return write_key( tmp_keypath, key_data )
 
 # -------------------   
 def store_public_key( config, key_type, object_id, key_data ):
    key_path = conf.object_key_path( config, key_type, object_id, public=True )
    return write_key( key_path, key_data )
+      
 
 # -------------------   
 def store_private_key( config, key_type, object_id, key_data ):

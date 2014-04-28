@@ -571,9 +571,9 @@ class Object( Model ):
                   qry_ret = qry.fetch( limit, keys_only=keys_only, offset=offset, projection=proj_attrs )
          else:
             if async:
-               qry_ret = qry.map_async( map_func )
+               qry_ret = qry.map_async( map_func, keys_only=keys_only, offset=offset, projection=proj_attrs )
             else:
-               qry_ret = qry.map( map_func )
+               qry_ret = qry.map( map_func, keys_only=keys_only, offset=offset, projection=proj_attrs )
             
       return qry_ret
 
