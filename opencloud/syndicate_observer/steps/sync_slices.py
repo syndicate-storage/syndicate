@@ -20,8 +20,19 @@ from planetstack.config import Config
 from observer.syncstep import SyncStep
 from core.models.slice import Slice
 from syndicate.models import Volume
-from util.logger import Logger, logging
-logger = Logger(level=logging.INFO)
+
+import logging
+from logging import Logger
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+logger = logging.getLogger()
+logger.setLevel( logging.INFO )
+
+# point to planetstack
+if __name__ != "__main__": 
+    if os.getenv("OPENCLOUD_PYTHONPATH") is not None:
+        sys.path.insert(0, os.getenv("OPENCLOUD_PYTHONPATH"))
+    else:
+        logger.warning("No OPENCLOUD_PYTHONPATH set; assuming your PYTHONPATH works")
 
 # syndicatelib will be in stes/..
 parentdir = os.path.join(os.path.dirname(__file__),"..")
@@ -49,59 +60,53 @@ class SyncSlices(SyncStep):
         """
         Synchronize a Syndicate Slice record with Syndicate.
         """
+        print "Sync - per-slice volume!"
+        print "slice = %s" % slice.name
+
+        slice_email = syndicatelib.generate_opencloud_slice_openid( slice.name )
+        print "slice email = %s" % slice_email
+
+        logger.info('Create per-slice syndicate volume. Slice = %s, Slice-openid = %s' % (slice.name, slice_email))
+
+        # create the slice-openid
         try:
-            print "Sync - per-slice volume!"
-            print "slice = %s" % slice.name
-
-            slice_email = syndicatelib.generate_opencloud_slice_openid( slice.name )
-            print "slice email = %s" % slice_email
-
-            logger.info('Create per-slice syndicate volume. Slice = %s, Slice-openid = %s' % (slice.name, slice_email))
-
-            # create the slice-openid
-            try:
-                #new_user = syndicatelib.ensure_user_exists_and_has_credentials( user_email )
-                pass
-            except Exception, e:
-                traceback.print_exc()
-                logger.error("Failed to register openid user (slice) '%s' exists" % slice_email )
-                return False
- 
-            """
-            
-            # create or update the Volume
-            try:
-                new_volume = syndicatelib.ensure_volume_exists( user_email, volume, user=new_user )
-                syndicatelib.ensure_volume_exists( user_email, volume, user=new_user )
-            except Exception, e:
-                traceback.print_exc()
-                logger.error("Failed to ensure volume '%s' exists" % volume.name )
-                return False
-
-            
-            # did we create the Volume?
-            if new_volume is not None:
-                # we're good
-                pass 
-             
-            # otherwise, just update it 
-            else:
-                try:
-                    rc = syndicatelib.update_volume( volume )
-                except Exception, e:
-                    traceback.print_exc()
-                    logger.error("Failed to update volume '%s', exception = %s" % (volume.name, e.message))
-                    return False
-                    
-                return True
-            """
- 
-            return True
-
+            #new_user = syndicatelib.ensure_user_exists_and_has_credentials( user_email )
+            pass
         except Exception, e:
             traceback.print_exc()
+            logger.error("Failed to register openid user (slice) '%s' exists" % slice_email )
             return False
-        
+ 
+        """
+            
+        # create or update the Volume
+        try:
+            new_volume = syndicatelib.ensure_volume_exists( user_email, volume, user=new_user )
+            syndicatelib.ensure_volume_exists( user_email, volume, user=new_user )
+        except Exception, e:
+            traceback.print_exc()
+            logger.error("Failed to ensure volume '%s' exists" % volume.name )
+            return False
+
+            
+        # did we create the Volume?
+        if new_volume is not None:
+            # we're good
+            pass 
+             
+        # otherwise, just update it 
+        else:
+            try:
+                rc = syndicatelib.update_volume( volume )
+            except Exception, e:
+                traceback.print_exc()
+                logger.error("Failed to update volume '%s', exception = %s" % (volume.name, e.message))
+                return False
+                    
+            return True
+        """
+ 
+        return True
 
 
 
