@@ -215,7 +215,8 @@ struct md_syndicate_conf {
    uint64_t view_reload_freq;                         // how often do we check for new Volume/UG/RG metadata?
    char* syndicate_pubkey_path;                       // location on disk where the syndicate public key can be found.
 
-   // security fields (loaded at runtime)
+   // security fields (loaded at runtime).
+   // private keys are all mlock'ed
    char* gateway_key;                                 // gateway private key (PEM format)
    size_t gateway_key_len;
    char* server_key;                                  // TLS private key (PEM format)
@@ -422,8 +423,8 @@ int md_init( struct md_syndicate_conf* conf,
              char const* ms_url,
              char const* volume_name,
              char const* gateway_name,
-             char const* oid_username,
-             char const* oid_password,
+             char const* ms_username,
+             char const* ms_password,
              char const* user_pkey_pem,
              char const* volume_pubkey_file,
              char const* gateway_key_path,
@@ -439,10 +440,10 @@ int md_init( struct md_syndicate_conf* conf,
 int md_init_client( struct md_syndicate_conf* conf,
                     struct ms_client* client,
                     char const* ms_url,
-                    char const* volume_name, 
+                    char const* volume_name,
                     char const* gateway_name,
-                    char const* oid_username,
-                    char const* oid_password,
+                    char const* ms_username,
+                    char const* ms_password,
                     char const* user_pkey_pem,
                     char const* volume_pubkey_pem,
                     char const* gateway_key_pem,

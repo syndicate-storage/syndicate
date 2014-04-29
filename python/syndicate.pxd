@@ -75,8 +75,8 @@ cdef extern from "libsyndicate.h":
                char* ms_url,
                char* volume_name,
                char* gateway_name,
-               char* md_username,
-               char* md_password,
+               char* ms_username,
+               char* ms_password,
                char* user_pkey_pem,
                char* volume_pubkey_file,
                char* my_key_file,
@@ -97,7 +97,7 @@ cdef extern from "libsyndicate.h":
    int md_encrypt_pem( const char* sender_privkey_pem, const char* receiver_pubkey_pem, const char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len )
    int md_decrypt_pem( const char* sender_pubkey_pem, const char* receiver_privkey_pepm, const char* in_data, size_t in_data_len, char** out_data, size_t* out_data_len )
    int md_password_seal( const char* data, size_t data_len, const char* password, size_t password_len, char** output, size_t* output_len )
-   int md_password_unseal( const char* encrypted_data, size_t encrypted_data_len, const char* password, size_t password_len, char** output, size_t* output_len )
+   int md_password_unseal_UNSAFE( const char* encrypted_data, size_t encrypted_data_len, const char* password, size_t password_len, char** output, size_t* output_len )
    
    # ------------------------------------------
    # config
@@ -105,7 +105,12 @@ cdef extern from "libsyndicate.h":
    int ms_client_get_closure_text( ms_client* client, char** closure_text, uint64_t* closure_text_len )
    int ms_client_set_view_change_callback( ms_client* client, ms_client_view_change_callback clb, void* cls )
    int ms_client_sched_volume_reload( ms_client* client )
-   int ms_client_my_key_pem( ms_client* client, char** my_key_pem, size_t* my_key_len )
+   int ms_client_my_key_pem_UNSAFE( ms_client* client, char** my_key_pem, size_t* my_key_len )
+
+   # ------------------------------------------
+   # debugging 
+
+   int md_debug( md_syndicate_conf* conf, int level )
 
    # ------------------------------------------
    # queries 

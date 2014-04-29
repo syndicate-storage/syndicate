@@ -58,7 +58,8 @@ CONFIG_OPTIONS = {
    "foreground":        ("-f", 0, "Run in the foreground"),
    "logdir":            ("-L", 1, "Directory to contain the log files.  If not given, then write to stdout and stderr."),
    "pidfile":           ("-l", 1, "Path to the desired PID file."),
-   "stdin":             ("-R", 0, "Read arguments on stdin (i.e. for security)")
+   "stdin":             ("-R", 0, "Read arguments on stdin (i.e. for security)"),
+   "debug_level":       ("-d", 1, "Debug level (0: nothing (default), 1: global debug, 2: global and locking debug"),
 }
 
 #-------------------------
@@ -96,7 +97,17 @@ def validate_args( config ):
             invalid = True
          finally:
             fd.close()
-         
+            
+   # coerce integer 
+   must_be_int = ['debug_level']
+   for mbi in must_be_int:
+      if config.get(mbi, None) != None:
+         try:
+            config[mbi] = int(config[mbi])
+         except:
+            log.error("Invalid argument '%s' for %s" % (config[mbi], mbi))
+            invalid = True
+            
    if invalid:
       return -1
       
@@ -119,6 +130,7 @@ def setup_syndicate( config ):
    tls_cert = config.get('tls_cert', None)
    syndicate_pubkey = config.get('syndicate_pubkey', None)
    config_file = config.get('config_file', None)
+   debug_level = config.get("debug_level", 0)
    
    if user_pkey_pem is None and user_pkey is not None:
       user_pkey = syndicate_storage.read_key( user_pkey )
@@ -141,6 +153,7 @@ def setup_syndicate( config ):
                                          volume_pubkey_path=volume_pubkey,
                                          tls_pkey_path=tls_pkey,
                                          tls_cert_path=tls_cert,
+                                         debug_level=debug_level,
                                          syndicate_pubkey_path=syndicate_pubkey )
    
    return syndicate 

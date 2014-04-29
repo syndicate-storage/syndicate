@@ -104,29 +104,48 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
    
    // load gateway public/private key
    if( c->gateway_key_path != NULL ) {
-      c->gateway_key = md_load_file_as_string( c->gateway_key_path, &c->gateway_key_len );
-
-      if( c->gateway_key == NULL ) {
-         errorf("Could not read Gateway key %s\n", c->gateway_key_path );
-         rc = -ENOENT;
+      
+      // securely load the gateway key
+      struct mlock_buf gateway_key_mlock_buf;
+      memset( &gateway_key_mlock_buf, 0, sizeof(gateway_key_mlock_buf) );
+      
+      int rc = md_load_secret_as_string( &gateway_key_mlock_buf, c->gateway_key_path );
+      if( rc != 0 ) {
+         errorf("Could not read Gateway key %s, rc = %d\n", c->gateway_key_path, rc );
+         return rc;
       }
+      
+      char* enc_gateway_key = (char*)gateway_key_mlock_buf.ptr;
+      size_t enc_gateway_key_len = gateway_key_mlock_buf.len;
       
       if( key_password ) {
          // need to decrypt
          char* unencrypted_key = NULL;
          size_t unencrypted_key_len = 0;
          
-         rc = md_password_unseal( c->gateway_key, c->gateway_key_len, key_password, strlen(key_password), &unencrypted_key, &unencrypted_key_len );
+         // NOTE: unencrypted_key will be mlock'ed
+         rc = md_password_unseal( enc_gateway_key, enc_gateway_key_len, key_password, strlen(key_password), &unencrypted_key, &unencrypted_key_len );
+         
+         // NOTE: gateway_key_mlock_buf is the same as enc_gateway_key 
+         mlock_free( &gateway_key_mlock_buf );
+         
          if( rc != 0 ) {
             errorf("md_password_unseal rc = %d\n", rc );
             
-            free( c->gateway_key );
             c->gateway_key = NULL;
+            c->gateway_key_len = 0;
          }
          else {
-            free( c->gateway_key );
+            // NOTE: unencrypted_key is mlock'ed, so it will be safe to put it back into an mlock_buf and mlock_free it.
             c->gateway_key = unencrypted_key;
+            c->gateway_key_len = 0;
          }
+      }
+      else {
+         // not encrypted; just initialize.
+         // NOTE: the key is mlock'ed, so it will be safe to put it back into an mlock_buf and mlock_free it later.
+         c->gateway_key = enc_gateway_key;
+         c->gateway_key_len = enc_gateway_key_len;
       }
    }
    
@@ -143,16 +162,27 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
    // load TLS credentials
    if( c->server_key_path != NULL && c->server_cert_path != NULL ) {
       
-      c->server_key = md_load_file_as_string( c->server_key_path, &c->server_key_len );
+      // load the signed public key (i.e. the cert)
       c->server_cert = md_load_file_as_string( c->server_cert_path, &c->server_cert_len );
-
-      if( c->server_key == NULL ) {
-         errorf( "Could not read TLS private key %s\n", c->server_key_path );
-         rc = -ENOENT;
-      }
+      
       if( c->server_cert == NULL ) {
          errorf( "Could not read TLS certificate %s\n", c->server_cert_path );
          rc = -ENOENT;
+      }
+      else {
+         // securely load the private key 
+         struct mlock_buf server_key_mlock_buf;
+         int rc = md_load_secret_as_string( &server_key_mlock_buf, c->server_key_path );
+         if( rc != 0 ) {
+            errorf("Could not read TLS private key %s\n", c->server_key_path );
+            free( c->server_cert );
+            c->server_cert = NULL;
+            return rc;
+         }
+         
+         // NOTE: server_key will be mlock'ed
+         c->server_key = (char*)server_key_mlock_buf.ptr;
+         c->server_key_len = server_key_mlock_buf.len;
       }
    }
    
@@ -577,20 +607,45 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->proxy_url,
       (void*)conf->ms_username,
       (void*)conf->ms_password,
-      (void*)conf->server_key,
       (void*)conf->server_cert,
       (void*)conf->server_key_path,
       (void*)conf->server_cert_path,
-      (void*)conf->gateway_key,
       (void*)conf->gateway_key_path,
       (void*)conf->gateway_name,
       (void*)conf->volume_name,
       (void*)conf->volume_pubkey,
       (void*)conf->syndicate_pubkey,
+      (void*)conf
+   };
+   
+   // things that are mlock'ed, and need to be munlock'ed
+   void* mlocked[] = {
+      (void*)conf->server_key,   
+      (void*)conf->gateway_key,
       (void*)conf->user_pkey,
       (void*)conf
    };
+   
+   size_t mlocked_len[] = {
+      conf->server_key_len,
+      conf->gateway_key_len,
+      conf->user_pkey_len,
+      0
+   };
 
+   // munlock first 
+   for( int i = 0; mlocked[i] != conf; i++ ) {
+      struct mlock_buf tmp;
+      
+      if( mlocked[i] != NULL ) {
+         tmp.ptr = mlocked[i];
+         tmp.len = mlocked_len[i];
+      
+         mlock_free( &tmp );
+      }
+   }
+   
+   // free the rest
    for( int i = 0; to_free[i] != conf; i++ ) {
       free( to_free[i] );
    }
@@ -2084,9 +2139,10 @@ int md_init_begin( struct md_syndicate_conf* conf,
                    char const* ms_url,
                    char const* volume_name,
                    char const* gateway_name,
-                   char const* oid_username,
-                   char const* oid_password,
-                   char const* user_pkey_pem,
+                   char const* ms_username,
+                   char const* ms_password,
+                   char const* user_pkey_pem,           // NOTE: should be mlock'ed
+                   char const* volume_pubkey_path,
                    char const* gateway_key_path,
                    char const* tls_pkey_file,
                    char const* tls_cert_file,
@@ -2130,18 +2186,28 @@ int md_init_begin( struct md_syndicate_conf* conf,
    
    // populate the config
    MD_SYNDICATE_CONF_OPT( *conf, volume_name, volume_name );
+   MD_SYNDICATE_CONF_OPT( *conf, volume_pubkey_path, volume_pubkey_path );
    MD_SYNDICATE_CONF_OPT( *conf, metadata_url, ms_url );
-   MD_SYNDICATE_CONF_OPT( *conf, ms_username, oid_username );
-   MD_SYNDICATE_CONF_OPT( *conf, ms_password, oid_password );
+   MD_SYNDICATE_CONF_OPT( *conf, ms_username, ms_username );
+   MD_SYNDICATE_CONF_OPT( *conf, ms_password, ms_password );
    MD_SYNDICATE_CONF_OPT( *conf, gateway_name, gateway_name );
    MD_SYNDICATE_CONF_OPT( *conf, server_cert_path, tls_cert_file );
    MD_SYNDICATE_CONF_OPT( *conf, server_key_path, tls_pkey_file );
    MD_SYNDICATE_CONF_OPT( *conf, gateway_key_path, gateway_key_path );
    MD_SYNDICATE_CONF_OPT( *conf, syndicate_pubkey_path, syndicate_pubkey_path );
-   MD_SYNDICATE_CONF_OPT( *conf, user_pkey, user_pkey_pem );
    
    if( user_pkey_pem != NULL ) {
+      // special case: duplicate an mlock'ed buffer
       conf->user_pkey_len = strlen(user_pkey_pem);
+      
+      struct mlock_buf tmp;
+      int rc = mlock_dup( &tmp, user_pkey_pem, conf->user_pkey_len );
+      if( rc != 0 ) {
+         errorf("mlock_dup rc = %d\n", rc );
+         exit(1);
+      }
+      
+      conf->user_pkey = (char*)tmp.ptr;
    }
    
    return rc;
@@ -2149,6 +2215,7 @@ int md_init_begin( struct md_syndicate_conf* conf,
 
 
 // finish initialization
+// NOTE: key_password should be mlock'ed
 int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, char const* key_password ) {
    
    int rc = 0;
@@ -2258,17 +2325,17 @@ int md_init( struct md_syndicate_conf* conf,
              char const* gateway_name,
              char const* oid_username,
              char const* oid_password,
-             char const* user_pkey_pem,
-             char const* volume_pubkey_file,
+             char const* user_pkey_pem,                 // NOTE: should be mlock'ed
+             char const* volume_pubkey_path,
              char const* gateway_key_path,
-             char const* gateway_key_password,
+             char const* gateway_key_password,          // NOTE: should be mlock'ed
              char const* tls_pkey_file,
              char const* tls_cert_file,
              char const* storage_root,
              char const* syndicate_pubkey_path
            ) {
 
-   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, user_pkey_pem, gateway_key_path, tls_pkey_file, tls_cert_file, syndicate_pubkey_path );
+   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, user_pkey_pem, volume_pubkey_path, gateway_key_path, tls_pkey_file, tls_cert_file, syndicate_pubkey_path );
 
    if( rc != 0 ) {
       errorf("md_init_begin() rc = %d\n", rc );
@@ -2297,18 +2364,18 @@ int md_init_client( struct md_syndicate_conf* conf,
                     char const* ms_url,
                     char const* volume_name, 
                     char const* gateway_name,
-                    char const* oid_username,
-                    char const* oid_password,
-                    char const* user_pkey_pem,
+                    char const* ms_username,
+                    char const* ms_password,
+                    char const* user_pkey_pem,          // NOTE: should be mlock'ed
                     char const* volume_pubkey_pem,
-                    char const* gateway_key_pem,
-                    char const* gateway_key_password,
+                    char const* gateway_key_pem,        // NOTE: should be mlock'ed
+                    char const* gateway_key_password,   // NOTE: should be mlock'ed
                     char const* storage_root,
                     char const* syndicate_pubkey_pem
                   ) {
    
    
-   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, oid_username, oid_password, user_pkey_pem, NULL, NULL, NULL, NULL );
+   int rc = md_init_begin( conf, ms_url, volume_name, gateway_name, ms_username, ms_password, user_pkey_pem, NULL, NULL, NULL, NULL, NULL );
 
    if( rc != 0 ) {
       errorf("md_init_begin() rc = %d\n", rc );
@@ -2318,22 +2385,29 @@ int md_init_client( struct md_syndicate_conf* conf,
    conf->is_client = true;
    
    MD_SYNDICATE_CONF_OPT( *conf, storage_root, storage_root );
-   MD_SYNDICATE_CONF_OPT( *conf, gateway_key, gateway_key_pem );
    MD_SYNDICATE_CONF_OPT( *conf, volume_pubkey, volume_pubkey_pem );
    MD_SYNDICATE_CONF_OPT( *conf, syndicate_pubkey, syndicate_pubkey_pem );
    MD_SYNDICATE_CONF_OPT( *conf, user_pkey, user_pkey_pem );
    
-   if( conf->gateway_key ) {
-      conf->gateway_key_len = strlen(conf->gateway_key);
-   }
    if( conf->volume_pubkey ) {
       conf->volume_pubkey_len = strlen(conf->volume_pubkey);
    }
    if( conf->syndicate_pubkey ) {
       conf->syndicate_pubkey_len = strlen(conf->syndicate_pubkey);
    }
-   if( conf->user_pkey ) {
-      conf->user_pkey_len = strlen(conf->user_pkey);
+   
+   if( gateway_key_pem ) {
+      // special case: duplicate an mlock'ed buffer
+      conf->gateway_key_len = strlen(user_pkey_pem);
+      
+      struct mlock_buf tmp;
+      int rc = mlock_dup( &tmp, gateway_key_pem, conf->gateway_key_len );
+      if( rc != 0 ) {
+         errorf("mlock_dup rc = %d\n", rc );
+         exit(1);
+      }
+      
+      conf->gateway_key = (char*)tmp.ptr;
    }
    
    // set up libsyndicate runtime information

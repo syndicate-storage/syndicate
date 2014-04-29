@@ -226,7 +226,10 @@ cpdef password_unseal( input_buf, password ):
    cdef char* c_output_buf = NULL
    cdef size_t c_output_buf_len = 0
    
-   rc = md_password_unseal( c_input_buf, c_input_buf_len, c_password, c_password_len, &c_output_buf, &c_output_buf_len )
+   # NOTE: we have to use the unsafe version here (which does NOT mlock the output'ed data),
+   # since Python doesn't seem to have a way to munlock the memory when it gets garbage-collected :(
+
+   rc = md_password_unseal_UNSAFE( c_input_buf, c_input_buf_len, c_password, c_password_len, &c_output_buf, &c_output_buf_len )
    if rc != 0:
       return (rc, None)
 
@@ -285,6 +288,7 @@ cdef class Syndicate:
                        tls_pkey_path=None,
                        tls_cert_path=None,
                        storage_root=None,
+                       debug_level=0,
                        syndicate_pubkey_path=None):
 
       '''
@@ -360,6 +364,9 @@ cdef class Syndicate:
       # initialize configuration first
       md_default_conf( &self.conf_inst, gateway_type )
 
+      # initialize debugging
+      md_debug( &self.conf_inst, debug_level )
+
       rc = md_init(  &self.conf_inst,
                      &self.client_inst,
                      c_ms_url,
@@ -397,6 +404,7 @@ cdef class Syndicate:
                            tls_pkey_path=None,
                            tls_cert_path=None,
                            storage_root=None,
+                           debug_level=0,
                            syndicate_pubkey_path=None):
       
       '''
@@ -422,6 +430,7 @@ cdef class Syndicate:
                                     tls_pkey_path=tls_pkey_path,
                                     tls_cert_path=tls_cert_path,
                                     storage_root=storage_root,
+                                    debug_level=debug_level,
                                     syndicate_pubkey_path=syndicate_pubkey_path)
          
       return syndicate_ref
@@ -567,7 +576,7 @@ cdef class Syndicate:
       cdef char* c_privkey_pem = NULL
       cdef size_t c_privkey_len = 0
 
-      rc = ms_client_my_key_pem( &self.client_inst, &c_privkey_pem, &c_privkey_len );
+      rc = ms_client_my_key_pem_UNSAFE( &self.client_inst, &c_privkey_pem, &c_privkey_len );
       if rc == 0:
          py_privkey_pem = None
          try:

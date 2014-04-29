@@ -43,16 +43,29 @@ int md_load_secret_as_string( struct mlock_buf* buf, char const* path ) {
       return rc;
    }
    
-   rc = mlock_calloc( buf, statbuf.st_size + 1 );
-   if( rc != 0 ) {
-      errorf("mlock_calloc rc = %d\n", rc );
-      return -ENODATA;
+   bool alloced = false;
+   
+   if( buf->ptr == NULL ) {
+      rc = mlock_calloc( buf, statbuf.st_size + 1 );
+      if( rc != 0 ) {
+         errorf("mlock_calloc rc = %d\n", rc );
+         return -ENODATA;
+      }
+      
+      alloced = true;
+   }
+   else if( buf->len <= (size_t)statbuf.st_size ) {
+      errorf("insufficient space for %s\n", path );
+      return -EOVERFLOW;
    }
    
    FILE* f = fopen( path, "r" );
    if( !f ) {
       rc = -errno;
-      mlock_free( buf );
+      
+      if( alloced )
+         mlock_free( buf );
+      
       errorf("fopen(%s) errno = %d\n", path, rc );
       return -ENODATA;
    }

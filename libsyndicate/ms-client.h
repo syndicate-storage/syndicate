@@ -252,7 +252,11 @@ struct ms_client {
    // you can use it without locking, as long as you don't destroy it.
    EVP_PKEY* my_key;
    EVP_PKEY* my_pubkey;
+   
+   // raw private key
    char* my_key_pem;
+   size_t my_key_pem_len;
+   bool my_key_pem_mlocked;
 
    // reference to syndicate config 
    struct md_syndicate_conf* conf;
@@ -358,7 +362,7 @@ int ms_client_get_gateway_user( struct ms_client* client, uint64_t gateway_type,
 int ms_client_get_gateway_volume( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t* volume_id );
 int ms_client_get_gateway_name( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, char** gateway_name );
 int ms_client_check_gateway_caps( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t caps );
-int ms_client_my_key_pem( struct ms_client* client, char** buf, size_t* len );
+int ms_client_my_key_pem_UNSAFE( struct ms_client* client, char** buf, size_t* len );
 int ms_client_get_closure_text( struct ms_client* client, char** closure_text, uint64_t* closure_len );
 
 // memory management

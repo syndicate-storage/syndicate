@@ -284,9 +284,20 @@ int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char
          return rc;
       }
 
-      // hold onto the PEM form
-      if( key_pem_dup )
-         *key_pem_dup = strdup( key_pem );
+      // hold onto the PEM form.
+      // if private, mlock it
+      if( key_pem_dup ) {
+         struct mlock_buf pkey_buf;
+         memset( &pkey_buf, 0, sizeof(pkey_buf) );
+         
+         rc = mlock_dup( &pkey_buf, key_pem, strlen(key_pem) );
+         if( rc != 0 ) {
+            errorf("mlock_dup rc = %d\n", rc );
+            return rc;
+         }
+         
+         *key_pem_dup = (char*)pkey_buf.ptr;
+      }
    }
    else {
       dbprintf("%s\n", "WARN: No key given" );
@@ -353,6 +364,9 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
       return rc;
    }
    
+   // NOTE: ms_client_try_load_key will mlock a private key 
+   client->my_key_pem_mlocked = true;
+   
    rc = ms_client_try_load_key( conf, &client->syndicate_public_key, &client->syndicate_public_key_pem, conf->syndicate_pubkey, true );
    if( rc != 0 ) {
       errorf("ms_client_try_load_key rc = %d\n", rc );
@@ -364,28 +378,27 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
 
    client->inited = true;               // safe to destroy later
    
-   if( client->my_key != NULL ) {
-      rc = ms_client_start_threads( client );
-      if( rc != 0 ) {
-         errorf("ms_client_start_threads rc = %d\n", rc );
-      }
-   }
-   
    return rc;
 }
 
 
 // destroy an MS client context 
 int ms_client_destroy( struct ms_client* client ) {
-   if( client == NULL )
+   if( client == NULL ) {
+      errorf("WARN: client is %p\n", client);
       return 0;
+   }
    
-   if( !client->inited )
+   if( !client->inited ) {
+      errorf("WARN: client->inited = %d\n", client->inited );
       return 0;
+   }
    
    ms_client_stop_threads( client );
    
    ms_client_wlock( client );
+   
+   client->inited = false;
 
    pthread_mutex_destroy( &client->uploader_lock );
    pthread_cond_destroy( &client->uploader_cv );
@@ -434,16 +447,18 @@ int ms_client_destroy( struct ms_client* client ) {
    if( client->my_pubkey )
       EVP_PKEY_free( client->my_pubkey );
    
-   if( client->my_key_pem )
+   if( client->my_key_pem ) {
+      // NOTE: was mlock'ed
+      if( client->my_key_pem_mlocked )
+         munlock( client->my_key_pem, client->my_key_pem_len );
+      
       free( client->my_key_pem );
-   
+   }
    if( client->syndicate_public_key_pem )
       free( client->syndicate_public_key_pem );
    
    if( client->syndicate_public_key )
       EVP_PKEY_free( client->syndicate_public_key );
-   
-   client->inited = false;
    
    ms_client_unlock( client );
    pthread_rwlock_destroy( &client->lock );
@@ -1871,6 +1886,7 @@ static int ms_client_unseal_and_load_keys( struct ms_client* client, ms::ms_regi
          rc = -ENOTCONN;
       }
       else {
+         // NOTE: will be mlock'ed
          char* gateway_private_key_str = NULL;
          size_t gateway_private_key_str_len = 0;
          
@@ -1890,25 +1906,31 @@ static int ms_client_unseal_and_load_keys( struct ms_client* client, ms::ms_regi
             if( decode_rc != 0 ) {
                errorf("md_load_privkey rc = %d\n", decode_rc );
                rc = -ENODATA;
+               
+               memset( gateway_private_key_str, 0, gateway_private_key_str_len );
+               munlock( gateway_private_key_str, gateway_private_key_str_len );
+               free( gateway_private_key_str );
             }
             else {
                decode_rc = ms_client_verify_key( pkey );
                if( decode_rc != 0 ) {
                   errorf("ms_client_verify_key rc = %d\n", decode_rc );
                   rc = -ENODATA;
+                  
+                  memset( gateway_private_key_str, 0, gateway_private_key_str_len );
+                  munlock( gateway_private_key_str, gateway_private_key_str_len );
+                  free( gateway_private_key_str );
                }
                else {
                   // we're good!  install them
                   client->my_key = pkey;
                   client->my_pubkey = pubkey;
-                  client->my_key_pem = strdup( gateway_private_key_str );
+                  client->my_key_pem = gateway_private_key_str;
+                  client->my_key_pem_len = gateway_private_key_str_len;
+                  client->my_key_pem_mlocked = true;
                }
             }
          }
-         
-         if( gateway_private_key_str )
-            free( gateway_private_key_str );
-         
       }
       
       if( encrypted_gateway_private_key )
@@ -4145,7 +4167,10 @@ int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint
 }
 
 // get my private key as a PEM-encoded string
-int ms_client_my_key_pem( struct ms_client* client, char** buf, size_t* len ) {
+// THIS IS UNSAFE: the allocated buffer will not be locked in memory
+// USE AT YOUR OWN PERIL
+// (used in Python, which doesn't support mlock)
+int ms_client_my_key_pem_UNSAFE( struct ms_client* client, char** buf, size_t* len ) {
    ms_client_rlock( client );
    
    int rc = 0;

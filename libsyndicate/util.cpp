@@ -553,6 +553,7 @@ int mlock_calloc( struct mlock_buf* buf, size_t len ) {
    return 0;
 }
 
+// free an mlock'ed buf (unlock it first)
 int mlock_free( struct mlock_buf* buf ) {
    if( buf->ptr != NULL ) {
       memset( buf->ptr, 0, buf->len );
@@ -563,6 +564,43 @@ int mlock_free( struct mlock_buf* buf ) {
    buf->len = 0;
    return 0;
 }
+
+// duplicate a string into an mlock'ed buffer, allocating if needed
+int mlock_dup( struct mlock_buf* dest, char const* src, size_t src_len ) {
+   if( dest->ptr == NULL ) {
+      int rc = mlock_calloc( dest, src_len );
+      if( rc != 0 ) {
+         errorf("mlock_calloc rc = %d\n", rc );
+         return rc;
+      }
+   }
+   else if( dest->len < src_len) {
+      errorf("%s", "not enough space\n");
+      return -EINVAL;
+   }
+   
+   memcpy( dest->ptr, src, src_len );
+   return 0;
+}
+
+// duplicate an mlock'ed buffer's contents, allocating dest if need be.
+int mlock_buf_dup( struct mlock_buf* dest, struct mlock_buf* src ) {
+   if( dest->ptr == NULL ) {
+      int rc = mlock_calloc( dest, src->len );
+      if( rc != 0 ) {
+         errorf("mlock_calloc rc = %d\n", rc );
+         return rc;
+      }
+   }
+   else if( dest->len < src->len ) {
+      errorf("%s", "not enough space\n");
+      return -EINVAL;
+   }
+   
+   memcpy( dest->ptr, src->ptr, src->len );
+   return 0;
+}
+   
 
 // get task ID (no glibc wrapper around this...)
 pid_t gettid(void) {

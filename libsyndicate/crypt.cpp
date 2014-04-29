@@ -877,27 +877,49 @@ int md_password_seal( char const* data, size_t data_len, char const* password, s
    return 0;
 }
 
-// unseal something with a password 
+// unseal something with a password.
+// the returned buffer will be mlock'ed
 int md_password_unseal( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
    // implementation: use scrypt
    size_t outbuf_len = encrypted_data_len;
-   uint8_t* outbuf = CALLOC_LIST( uint8_t, outbuf_len );
    
-   if( outbuf == NULL )
-      return -ENOMEM;
-   
-   int rc = scryptdec_buf( (uint8_t*)encrypted_data, encrypted_data_len, outbuf, &outbuf_len, (const uint8_t*)password, password_len, 1024000000, 0.0, 5000.0 );       // 5000 seconds, 100MB minimum
+   struct mlock_buf output_mlock_buf;
+   int rc = mlock_calloc( &output_mlock_buf, outbuf_len );
    if( rc != 0 ) {
-      errorf("scryptdec_buf rc = %d\n", rc );
-      
-      free( outbuf );
+      errorf("mlock_calloc rc = %d\n", rc );
       return rc;
    }
    
-   *output = (char*)outbuf;
+   rc = scryptdec_buf( (uint8_t*)encrypted_data, encrypted_data_len, (uint8_t*)output_mlock_buf.ptr, &outbuf_len, (const uint8_t*)password, password_len, 1024000000, 0.0, 5000.0 );       // 5000 seconds, 100MB minimum
+   if( rc != 0 ) {
+      errorf("scryptdec_buf rc = %d\n", rc );
+      
+      mlock_free( &output_mlock_buf );
+      return rc;
+   }
+   
+   *output = (char*)output_mlock_buf.ptr;
    *output_len = outbuf_len;
    
    return 0;
+}
+
+
+// unseal something with a password.
+// UNSAFE: the returned buffer will NOT be locked in RAM
+// THE SECRET INFORMATION CAN BE SWAPPED TO DISK AND READ LATER.
+// USE AT YOUR OWN PERIL (i.e. if you can't get to mlock() directly, and are absolutely sure swapping is not a risk).
+int md_password_unseal_UNSAFE( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
+   int rc = md_password_unseal( encrypted_data, encrypted_data_len, password, password_len, output, output_len );
+   if( rc == 0 ) {
+      rc = munlock( output, *output_len );
+      if( rc != 0 ) {
+         int errsv = errno;
+         errorf("munlock rc = %d\n", rc );
+         return -errsv;
+      }
+   }
+   return rc;
 }
 
 

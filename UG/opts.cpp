@@ -104,9 +104,36 @@ int syndicate_read_opts_from_stdin( int* argc, char*** argv ) {
 
 // clean up the opts structure, freeing things we don't need 
 int syndicate_cleanup_opts( struct syndicate_opts* opts ) {
-   if( opts->user_pkey_pem.ptr != NULL ) {
-      mlock_free( &opts->user_pkey_pem );
+   struct mlock_buf* to_free[] = {
+      &opts->user_pkey_pem,
+      &opts->gateway_pkey_pem,
+      &opts->gateway_pkey_decryption_password,
+      NULL
+   };
+   
+   for( int i = 0; to_free[i] != NULL; i++ ) {
+      if( to_free[i]->ptr != NULL ) {
+         mlock_free( to_free[i] );
+      }
    }
+   
+   return 0;
+}
+
+// load an optarg into an mlock'ed buffer.
+// exit on failure, since this is used to load sensitive (i.e. secret) information.
+int syndicate_load_mlock_buf( struct mlock_buf* buf, char* str ) {
+   size_t len = strlen(str);
+   int rc = mlock_calloc( buf, len );
+   if( rc != 0 ) {
+      errorf("mlock_calloc rc = %d\n", rc );
+      exit(1);
+   }
+   else {
+      memcpy( buf->ptr, str, len );
+      buf->len = len;
+   }
+   
    return 0;
 }
 
@@ -273,7 +300,8 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
             break;
          }
          case 'K': {
-            opts->gateway_pkey_decryption_password = optarg;
+            syndicate_load_mlock_buf( &opts->gateway_pkey_decryption_password, optarg );
+            memset( optarg, 0, strlen(optarg) );
             break;
          }
          case 'U': {
@@ -287,17 +315,8 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
             break;
          }
          case 'P': {
-            size_t len = strlen(optarg);
-            int rc = mlock_calloc( &opts->user_pkey_pem, len );
-            if( rc != 0 ) {
-               errorf("mlock_calloc rc = %d\n", rc );
-               exit(1);
-            }
-            else {
-               memcpy( opts->user_pkey_pem.ptr, optarg, len );
-               opts->user_pkey_pem.len = len;
-               memset( optarg, 0, len );
-            }
+            syndicate_load_mlock_buf( &opts->user_pkey_pem, optarg );
+            memset( optarg, 0, strlen(optarg) );
             break;
          }
          case 'l': {

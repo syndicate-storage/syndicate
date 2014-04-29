@@ -43,11 +43,12 @@ int syndicate_init( struct syndicate_opts* opts ) {
       }
    }
    
+   // set debug level
    md_debug( &state->conf, opts->debug_level );
    
    // initialize library
    int rc = md_init( &state->conf, ms, opts->ms_url, opts->volume_name, opts->gateway_name, opts->username, opts->password, (char const*)opts->user_pkey_pem.ptr,
-                                       opts->volume_pubkey_path, opts->gateway_pkey_path, opts->gateway_pkey_decryption_password,
+                                       opts->volume_pubkey_path, opts->gateway_pkey_path, (char const*)opts->gateway_pkey_decryption_password.ptr,
                                        opts->tls_pkey_path, opts->tls_cert_path, opts->storage_root, opts->syndicate_pubkey_path );
    if( rc != 0 ) {
       errorf("md_init rc = %d\n", rc );

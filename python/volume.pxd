@@ -82,6 +82,14 @@ cdef extern from "libsyndicate.h":
 
 
 # ------------------------------------------
+cdef extern from "util.h":
+
+   cdef struct mlock_buf:
+      void* ptr
+      size_t len
+      
+
+# ------------------------------------------
 cdef extern from "fs/fs_entry.h":
    cdef struct fs_dir_entry:
       int type
@@ -125,9 +133,9 @@ cdef extern from "opts.h":
       char* gateway_name
       char* volume_pubkey_path
       char* gateway_pkey_path
-      char* gateway_pkey_decryption_password
+      mlock_buf gateway_pkey_decryption_password
       char* volume_pubkey_pem
-      char* gateway_pkey_pem
+      mlock_buf gateway_pkey_pem
       char* syndicate_pubkey_path
       char* syndicate_pubkey_pem
       char* tls_pkey_path

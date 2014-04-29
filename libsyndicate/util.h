@@ -187,6 +187,8 @@ int util_init(void);
 // safe allocators 
 int mlock_calloc( struct mlock_buf* buf, size_t len );
 int mlock_free( struct mlock_buf* buf );
+int mlock_dup( struct mlock_buf* dest, char const* src, size_t src_len );
+int mlock_buf_dup( struct mlock_buf* dest, struct mlock_buf* src );
 
 // linux-specific...
 pid_t gettid(void);

@@ -79,7 +79,9 @@ cdef class Volume:
                        volume_name=None,
                        volume_key_pem=None,
                        gateway_pkey_pem=None,
+                       user_pkey_pem=None,
                        gateway_pkey_decryption_password=None,
+                       syndicate_pubkey_pem=None,
                        storage_root=None,
                        wait_replicas=-1 ):
 
@@ -98,6 +100,7 @@ cdef class Volume:
          char* c_gateway_pkey_pem = NULL
          char* c_gateway_pkey_decryption_password = NULL
          char* c_storage_root = NULL
+         char* c_syndicate_pubkey_pem = NULL
          syndicate_opts opts
          
       if gateway_name != None:
@@ -127,8 +130,10 @@ cdef class Volume:
       if storage_root != None:
          c_storage_root = storage_root
       
-      self.wait_replicas = wait_replicas
+      if syndicate_pubkey_pem != None:
+         c_syndicate_pubkey_pem = syndicate_pubkey_pem
 
+      self.wait_replicas = wait_replicas
 
       memset( &opts, 0, sizeof(opts) )
       
@@ -138,11 +143,20 @@ cdef class Volume:
       opts.password = password
       opts.volume_name = volume_name
       opts.config_file = config_file
-      opts.gateway_pkey_pem = gateway_pkey_pem
-      opts.gateway_pkey_decryption_password = gateway_pkey_decryption_password
       opts.storage_root = storage_root
-      opts.wait_replicas = wait_replicas
+      opts.syndicate_pubkey_pem = syndicate_pubkey_pem
 
+      # NOTE: not mlock'ed!
+      opts.gateway_pkey_pem.ptr = c_gateway_pkey_pem
+      opts.gateway_pkey_pem.len = len(gateway_pkey_pem)
+      
+      # NOTE: not mlock'ed!
+      opts.gateway_pkey_decryption_password.ptr = c_gateway_pkey_decryption_password
+      opts.gateway_pkey_decryption_password.len = len(gateway_pkey_decryption_password)
+      
+      if wait_replicas < 0:
+         opts.flush_replicas = 1
+      
       rc = syndicate_client_init( &self.state_inst, &opts )
 
       if rc != 0:
