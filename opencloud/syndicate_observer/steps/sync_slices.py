@@ -18,8 +18,8 @@ if __name__ == "__main__":
 from django.db.models import F, Q
 from planetstack.config import Config
 from observer.syncstep import SyncStep
-from core.models.slice import Slice
-from syndicate.models import Volume
+from core.models import Slice, User
+from syndicate.models import Volume, VolumeSlice
 
 import logging
 from logging import Logger
@@ -71,10 +71,33 @@ class SyncSlices(SyncStep):
         slice_password = syndicatelib.registration_password()
         print "slice email = %s" % slice_email
 
-        logger.info('Create per-slice syndicate volume. Slice = %s, Slice-openid = %s' % (slice.name, slice_email))
-
         # create the slice-openid
-        new_user = openidlib.createOrUpdate_user( slice_email, slice_password )
+        logger.info('Create per-slice openID. Slice = %s, openid = %s' % (slice.name, slice_email))
+        try:
+            new_user = openidlib.createOrUpdate_user( slice_email, slice_password )
+        except Exception, e:
+            traceback.print_exc()
+            logger.error("Creation of per-slice openID was failed")
+            raise e
+
+        logger.info('Create per-slice syndicate volume. Slice = %s, Slice-openid = %s' % (slice.name, slice_email))
+        new_volume = Volume()
+        new_volume.name = slice.name
+        new_volume.owner_id = slice.creator
+        new_volume.blocksize = 1024000
+        new_volume.private = True
+        new_volume.archive = False
+        new_volume.default_gateway_caps = Volume.CAP_READ_DATA | Volume.CAP_WRITE_DATA | Volume.CAP_HOST_DATA
+        new_volume.save()
+
+        new_volumeslice = VolumeSlice()
+        new_volumeslice.volume_id = new_volume
+        new_volumeslice.slice_id = slice
+        new_volumeslice.gateway_caps = Volume.CAP_READ_DATA | Volume.CAP_WRITE_DATA | Volume.CAP_HOST_DATA
+        new_volumeslice.peer_portnum = 32780
+        new_volumeslice.replicate_portnum = 32781
+        new_volumeslice.save()
+        
         return True
 
 

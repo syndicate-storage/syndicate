@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 # this file is for import into steps/sync_slices.py, and maybe other
 # components later
 
