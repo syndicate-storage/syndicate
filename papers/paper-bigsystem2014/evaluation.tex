@@ -1,0 +1,48 @@
+\section{Preliminary Evaluation}
+\label{sec:evaluation}
+
+We have deployed our \MS\ on Google AppEngine~\cite{google-appengine},
+and our Replica and Acquisition \SGs\ on PlanetLab~\cite{planetlab}.
+They use a CDN running on VICCI~\cite{vicci} based on 
+CoBlitz~\cite{coblitz}, and use Amazon S3 to make data durable.  We are in the
+process of gathering large-scale usage data.
+
+\Syndicate's performance is partially determined by the 
+underlying providers.  Our microbenchmarks indicate that User \SG\
+and Replica \SG\ contribute a small constant-factor overhead on top of directly 
+uploading data to cloud storage and downloading data from the CDN.
+
+\Syndicate's main performance bottlenecks are in reading consistent data
+in the face of writes, and in handling many writes on the same object.
+The costs for consistency come from re-synchronizing
+stale metadata and missing overwritten blocks in the cache.  A preliminary
+test with PlanetLab nodes shows that half of metadata refreshes take less than 200 milliseconds, and 
+90\% take less than 300 ($n=300$).
+
+Another early consistency evaluation shows that the time required to read an object
+is linear in the fraction of blocks overwritten,
+with $r^2=0.983$ for the median read times and $r^2=0.939$ for the 90\% percentile read
+times ($n=300$).  The nodes read a 100-block object in increments of 10 blocks,
+with a 60KB block size (i.e. the size of a large gene sequence from GenBank).
+Blocks were downloaded sequentially, but we expect similar results if the 
+blocks are downloaded in parallel.  This represents the expected performance 
+profile for reading with ongoing writes, as well as for distributing new certificates and \SG\ code.
+
+The performance costs in writing to the same object come from write serialization in the \MS.
+In an experiment where 300 nodes wrote metadata to the same object,
+50\% of \MS\ responses take less than 1500 milliseconds, and 90\% take less than 2350 milliseconds.
+The \MS\ operations are I/O bound in local tests, and according to Google AppEngine's internal measurements, at
+most 250 milliseconds are spent accessing the datastore and performing TLS negotiation.
+This suggests most of the latency comes from the platform's internal request buffering,
+including waiting for new front-end instances to spin up.  As such, we believe this data
+is indicative of the \MS's performance under load.  We are working on preventing the 
+platform from contributing so much overhead.
+
+We are also in the process of evaluating the User \SG's ability to handle many concurrent
+writes, as well as its ability to shed load to other User \SGs.
+We anticipate that a loaded User \SG\ will naturally distribute coordinator responsibility to
+heavy writers, since statistically their writes are most likely to fail first.
+
+The take-away from our preliminary tests is that composing providers to reap their aggregate utility benefits is feasible 
+in practice. They -- not \Syndicate\ -- are the limiting factor in performance, so it is to the developer's
+advantage to select providers with the best cost/performance trade-off while using \Syndicate.

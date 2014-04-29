@@ -70,7 +70,8 @@ class VolumeAccessRequest( storagetypes.Object ):
       "nonce",
       "request_timestamp",
       "status",
-      "volume_name"
+      "volume_name",
+      "volume_id"
    ]
    
    read_attrs = [
@@ -199,18 +200,27 @@ class VolumeAccessRequest( storagetypes.Object ):
    @classmethod
    def ListUserAccessRequests( cls, owner_id, **q_opts ):
       
-      return VolumeAccessRequest.ListAll( {"requester_owner_id ==": owner_id}, **q_opts )
+      return VolumeAccessRequest.ListAll( {"VolumeAccessRequest.requester_owner_id ==": owner_id}, **q_opts )
    
    @classmethod
    def ListVolumeAccessRequests( cls, volume_id, **q_opts ):
       
-      return VolumeAccessRequest.ListAll( {"volume_id ==": volume_id, "status ==": VolumeAccessRequest.STATUS_PENDING}, **q_opts )
+      return VolumeAccessRequest.ListAll( {"VolumeAccessRequest.volume_id ==": volume_id, "VolumeAccessRequest.status ==": VolumeAccessRequest.STATUS_PENDING}, **q_opts )
 
    @classmethod
    def ListVolumeAccess( cls, volume_id, **q_opts ):
       
-      return VolumeAccessRequest.ListAll( {"volume_id ==": volume_id, "status ==": VolumeAccessRequest.STATUS_GRANTED}, **q_opts )
+      return VolumeAccessRequest.ListAll( {"VolumeAccessRequest.volume_id ==": volume_id, "VolumeAccessRequest.status ==": VolumeAccessRequest.STATUS_GRANTED}, **q_opts )
 
+   @classmethod 
+   def DeleteAccessRequestsByVolume( cls, volume_id, async=False ):
+      
+      def __delete_var( var ):
+         req_key_name = VolumeAccessRequest.make_key_name( var.requester_owner_id, volume_id )
+         storagetypes.memcache.delete( req_key_name )
+         var.key.delete()
+         
+      return VolumeAccessRequest.ListAll( {"VolumeAccessRequest.volume_id ==": volume_id}, map_func=__delete_var, projection=['requester_owner_id'], async=async )
 
 
 class VolumeNameHolder( storagetypes.Object ):
@@ -887,27 +897,28 @@ class Volume( storagetypes.Object ):
 
    @classmethod
    def delete_volume_and_friends( cls, volume_id, volume_name ):
-      access_keys_fut = VolumeAccessRequest.ListVolumeAccessRequests( volume_id, async=True, keys_only=True )
-      
-      storagetypes.wait_futures( [access_keys_fut] )
-      
-      access_keys = access_keys_fut.get_result()
+      """
+      Delete the following for a particular volume, as a deferred task:
+         the Volume
+         all Volume access requests 
+         the Volume name holder
+      """
       
       futs = []
       
-      if access_keys:
-         for key in access_keys:
-            futs.append( key.delete_async() )
-      
+      # delete volume 
       volume_key = storagetypes.make_key( Volume, Volume.make_key_name( volume_id=volume_id ) )
       futs.append( volume_key.delete_async() )
       
+      # delete volume nameholder
       volume_nameholder_key = storagetypes.make_key( VolumeNameHolder, VolumeNameHolder.make_key_name( volume_name ) )
       futs.append( volume_nameholder_key.delete_async() )
       
-      storagetypes.wait_futures( futs )
+      # delete volume access requests 
+      volume_access_requests_fut = VolumeAccessRequest.DeleteAccessRequestsByVolume( volume_id, async=True )
+      futs.append( volume_access_requests_fut )
       
-      # TODO: reap gateways
+      storagetypes.wait_futures( futs )
       
 
    @classmethod
@@ -932,7 +943,7 @@ class Volume( storagetypes.Object ):
       vol_name_to_id_cached = "Read_ByName: volume_name=%s" % volume.name 
       storagetypes.memcache.delete( vol_name_to_id_cached )
       
-      
+      # blow away the associated data
       storagetypes.deferred.defer( Volume.delete_volume_and_friends, volume.volume_id, volume.name )
       
       return True

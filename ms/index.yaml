@@ -25,6 +25,11 @@ indexes:
   - name: g_id
   - name: gateway_type
 
+- kind: Gateway
+  properties:
+  - name: volume_id
+  - name: g_id
+
 - kind: MSEntry
   properties:
   - name: is_readable_in_list
@@ -58,6 +63,12 @@ indexes:
   - name: volume_id
   - name: xattr_name
 
+- kind: MSEntryXAttr
+  properties:
+  - name: volume_id
+  - name: file_id
+  - name: xattr_name
+
 - kind: OpenIDAssociation
   properties:
   - name: server_url_hash
@@ -87,3 +98,14 @@ indexes:
   - name: caps
   - name: cert_version
   - name: g_id
+
+- kind: VolumeAccessRequest
+  properties:
+  - name: requester_owner_id
+  - name: status
+  - name: volume_id
+
+- kind: VolumeAccessRequest
+  properties:
+  - name: volume_id
+  - name: requester_owner_id

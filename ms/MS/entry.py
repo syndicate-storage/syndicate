@@ -159,13 +159,14 @@ class MSEntryShard(storagetypes.Object):
       return sz.size
    
    @classmethod 
-   def Delete_Deferred_ByVolume( cls, volume_id ):
+   def Delete_ByVolume( cls, volume_id, async=False ):
+      """
+      Asynchronously delete by Volume
+      """
+      def __delete_shard_mapper( ent_shard_key ):
+         ent_shard_key.delete()
       
-      def __delete_shard_mapper( ent_shard ):
-         storagetypes.deferred.defer( MSEntryShard.delete_all, [ent_shard.key] )
-         
-      MSEntryShard.ListAll( {"MSEntryShard.msentry_volume_id ==": volume_id}, map_func=__delete_shard_mapper )
-   
+      return MSEntryShard.ListAll( {"MSEntryShard.msentry_volume_id ==": volume_id}, map_func=__delete_shard_mapper, keys_only=True, async=async )
    
    
 class MSEntryNameHolder( storagetypes.Object ):
@@ -187,14 +188,14 @@ class MSEntryNameHolder( storagetypes.Object ):
       return MSEntryNameHolder.get_or_insert_async( MSEntryNameHolder.make_key_name( _volume_id, _parent_id, _name ), volume_id=_volume_id, parent_id=_parent_id, file_id=_file_id, name=_name )
    
    @classmethod
-   def Delete_Deferred_ByVolume( cls, volume_id ):
+   def Delete_ByVolume( cls, volume_id, async=False ):
       """
-      Asynchronously delete by volume
+      Asynchronously delete by volume.
       """
-      def __delete_nameholder_mapper( ent_nameholder ):
-         storagetypes.deferred.defer( MSEntryNameHolder.delete_all, [ent_nameholder.key] )
+      def __delete_nameholder_mapper( ent_nameholder_key ):
+         ent_nameholder_key.delete()
          
-      MSEntryNameHolder.ListAll( {"MSEntryNameHolder.volume_id ==": volume_id}, map_func=__delete_nameholder_mapper )
+      return MSEntryNameHolder.ListAll( {"MSEntryNameHolder.volume_id ==": volume_id}, map_func=__delete_nameholder_mapper, keys_only=True, async=async )
       
    
    
@@ -334,6 +335,12 @@ class MSEntryXAttr( storagetypes.Object ):
       
    @classmethod 
    def remove_and_uncache( cls, volume, msent, xattr_name ):
+      """
+      Remove and uncache an xattr.
+      Updates the MSEntry shard.
+      Use this with removexattr()
+      """
+      
       # get the xattr
       xattr_key_name = MSEntryXAttr.make_key_name( volume.volume_id, msent.file_id, xattr_name )
       xattr_key = storagetypes.make_key( MSEntryXAttr, xattr_key_name )
@@ -355,6 +362,11 @@ class MSEntryXAttr( storagetypes.Object ):
    
    @classmethod 
    def delete_and_uncache( cls, volume_id, file_id, xattr_name ):
+      """
+      Delete and uncache an xattr.
+      Does NOT update the associated MSEntry shard.
+      Only use this when deleting an MSEntry.
+      """
       # get the xattr
       xattr_key_name = MSEntryXAttr.make_key_name( volume.volume_id, msent.file_id, xattr_name )
       xattr_key = storagetypes.make_key( MSEntryXAttr, xattr_key_name )
@@ -378,26 +390,26 @@ class MSEntryXAttr( storagetypes.Object ):
       
    
    @classmethod
-   def Delete_Deferred_ByFile( cls, volume_id, file_id ):
+   def Delete_ByFile( cls, volume_id, file_id, async=False ):
       """
-      Delete all xattrs for a given file
+      Delete all xattrs for a given file asynchronously
       """
       
       def __xattr_deferred_delete( cls, xattr ):
-         storagetypes.deferred.defer( MSEntryXAttr.delete_and_uncache, xattr.volume_id, xattr.file_id, xattr.xattr_name )
+         MSEntryXAttr.delete_and_uncache( volume_id, file_id, xattr.xattr_name )
          
-      cls.ListAll( {"MSEntryXAttr.file_id ==": file_id, "MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name', 'volume_id', 'file_id'], map_func=__xattr_deferred_delete )
+      return cls.ListAll( {"MSEntryXAttr.file_id ==": file_id, "MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name'], map_func=__xattr_deferred_delete, async=async )
    
    
    @classmethod
-   def Delete_Deferred_ByVolume( cls, volume_id ):
+   def Delete_ByVolume( cls, volume_id, async=False ):
       """
-      Delete all xattrs for a given volume
+      Delete all xattrs for a given volume asynchronously
       """
       def __xattr_deferred_delete( cls, xattr ):
-         storagetypes.deferred.defer( MSEntryXAttr.delete_and_uncache, xattr.volume_id, xattr.file_id, xattr.xattr_name )
+         MSEntryXAttr.delete_and_uncache( volume_id, xattr.file_id, xattr.xattr_name )
       
-      cls.ListAll( {"MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name', 'volume_id', 'file_id'], map_func=__xattr_deferred_delete )
+      return cls.ListAll( {"MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name', 'file_id'], map_func=__xattr_deferred_delete, async=async )
 
 
 
@@ -1413,7 +1425,8 @@ class MSEntry( storagetypes.Object ):
       
       storagetypes.deferred.defer( MSEntry.delete_all, [nh_key, ent_key] + ent_shard_keys )
       
-      MSEntryXAttr.Delete_Deferred_ByFile( volume.volume_id, ent.file_id )
+      # blow away the associated xattrs
+      yield MSEntryXAttr.Delete_ByFile( volume.volume_id, ent.file_id, async=True )
       
       # decrease number of files
       storagetypes.deferred.defer( Volume.decrease_file_count, volume_id )
@@ -1519,6 +1532,7 @@ class MSEntry( storagetypes.Object ):
    def DeleteAll( cls, volume ):
       """
       Obliterate all MSEntry records in this Volume.
+      It's best to do this as a deferred task, since it can take a while.
       """
       
       # caller must own the root
@@ -1536,16 +1550,21 @@ class MSEntry( storagetypes.Object ):
       cached_root_key_name = MSEntry.cache_key_name( volume.volume_id, root_file_id )
       storagetypes.memcache.delete( cached_root_key_name )
       
-      # TODO: this will probably not work with large Volumes.  Create a reaper thread for this
-      
       def __delete_entry_mapper( ent ):
-         storagetypes.deferred.defer( MSEntry.delete_all, [ent.key] )
-         
-      MSEntry.ListAll( {"MSEntry.volume_id ==": volume.volume_id}, map_func=__delete_entry_mapper )
+         MSEntry.delete_all( [ent.key] )
       
-      MSEntryShard.Delete_Deferred_ByVolume( volume.volume_id )
-      MSEntryNameHolder.Delete_Deferred_ByVolume( volume.volume_id )
-      MSEntryXAttr.Delete_Deferred_ByVolume( volume.volume_id )
+      futs = []
+      
+      futs.append( MSEntry.ListAll( {"MSEntry.volume_id ==": volume.volume_id}, map_func=__delete_entry_mapper, async=True ) )
+      
+      futs.append( MSEntryShard.Delete_ByVolume( volume.volume_id, async=True ) )
+      
+      futs.append( MSEntryNameHolder.Delete_ByVolume( volume.volume_id, async=True ) )
+      
+      futs.append( MSEntryXAttr.Delete_ByVolume( volume.volume_id, async=True ) )
+      
+      storagetypes.wait_futures( futs )
+      
       return 0
       
    

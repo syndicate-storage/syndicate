@@ -1,0 +1,38 @@
+\section{Related Work}
+\label{sec:related}
+
+\Syndicate\ adds to a growing body of work on in separating storage 
+aspects into independent composable functional units, which can be layered on top
+of existing providers.
+Separating consistency has been exploited
+to provide causal consistency~\cite{bolt-on-causal-consistency},
+ACID semantics~\cite{deuteronomy}, and key-group transactions~\cite{g-store} on
+top of unmodified cloud storage.  Separating access and admission control 
+has been exploited to implement single sign-on across multiple providers~\cite{openid,oauth,kerberos}.
+Recently, cloud storage gateway middleboxes 
+(such as~\cite{riverbed-gateway, twinstrata-gateway}) let developers
+separate some storage logic from providers, including
+encryption and de-duplication.
+
+Unlike these systems, \Syndicate\ abstracts storage aspects into a provider-agnostic 
+programming model, allowing the application to control how 
+the storage system addresses them.  \Syndicate\ provides default semantics for each 
+in order to lower the barrier to entry for developing new functionality.
+
+By providing default semantics, \Syndicate\ is superficially similar to many peer-to-peer storage 
+systems~\cite{oceanstore,bayou,practi,pastry,dot}
+and distributed filesystems~\cite{wheelfs,farsite,tahoe-lafs,shark,ivy}, where the 
+contributions are in orchestrating many wide-area computers to provide a logically-single
+provider.  The key difference between these systems and ours is that we focus instead 
+on orchestrating multiple providers (which have wildly different APIs, semantics, and behaviors
+compared to individual hosts) in order to offer consistent, application-defined functionality.
+\Syndicate\ is a layer above these systems.
+
+\Syndicate\ contributes to the emerging field of software-defined storage (SDS).  Previous
+work~\cite{ioflow,oktopus} focuses on SDS in the datacenter, a problem domain concerned 
+with enforcing end-to-end storage QoS, providing tenant isolation, and 
+pooling storage.  In contrast, \Syndicate\ focuses on SDS for the wide-area, where the main 
+concerns are in keeping data available in the face of Internet-scale read and write traffic 
+while handling faults and mitigating security breaches.  These separate domains have
+led to very different storage architectures, despite the complementary
+roles \Syndicate\ and these systems play.

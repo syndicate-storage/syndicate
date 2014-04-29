@@ -1,0 +1,129 @@
+\section{Usage Scenarios}
+\label{sec:motivation}
+
+\Syndicate\ helps applications handle scalable
+read/write wide-area workloads where cloud storage, edge
+caches, and external datasets have complementary roles to play.  To motivate its
+design, we explore three application domains that today are dominated by 
+vertically-integrated storage point-solutions, and argue that the ideal 
+storage system in each domain would be flexible enough to integrate 
+a changing set of disparate providers into a coherent whole.  In doing so, 
+it could allow applications to leverage providers 
+for their utility benefits, independent of their functional benefits.
+A concluding subsection summarizes our observations about these examples,
+which influence our design.
+
+\subsection{Scientific Datasets}
+
+Tens of thousands of computers work together to process multi-terabyte
+datasets; genomic sequencing datasets being illustrative
+examples~\cite{GenBank,metagenomics,1000genomes}.
+Researchers run small experiments in their labs on local workstations
+and clusters, but run large experiments on powerful cloud computing platforms
+and scalable grids of computers in the wide-area.
+At the same time, they share findings with collaborators,
+archive working datasets in cloud storage,
+and submit vetted results for integration into the original datasets.
+
+However, each provider has
+different curation policies, APIs, performance profiles, consistency models, and 
+access controls.  Grids and clusters must be specifically programmed 
+to access each, or data must be manually staged for them.  This leads 
+to point-solutions and manual procedures for sharing data.
+
+Ideally, researchers would store relevant data on their
+local workstations for fast access, and seamlessly stream it from
+dataset providers on an as-needed basis (as in iRODS~\cite{irods}),
+regardless of source.  The data would be accessible to a scalable
+number of readers via edge caches (as in CERN VM-FS~\cite{cern-vmfs}),
+provided that readers always receive fresh data.  Results from
+authorized computers would be sanitized and uploaded to
+researcher-chosen storage (as in Folding@Home~\cite{folding-at-home})
+for subsequent curation.
+
+\subsection{Collaborative Document Editing}
+
+Collaborative document editing systems include cloud-hosted systems
+like Google Docs~\cite{google-docs}, version control systems like {\tt
+  git}~\cite{git}, and industry-specific form-processing systems such
+as Blackboard~\cite{blackboard} and OpenEMR~\cite{openemr}.  In all
+cases, the system lets a set of users read and write 
+documents, subject to common format, consistency, and access control rules.
+
+A key challenge is that users have different usage policies for their 
+data.  For example, a doctor editing
+medical records must keep a verifiable edit history and guarantee
+confidentiality.  As another example, businesses sharing documents
+through a third party must require edits to be mirrored to their own
+servers for extra durability.
+
+Ideally, users could bring their own storage system for hosting
+writes.  The storage system would enforce the user's policies whenever
+another user accesses it through the application.  At the same time,
+the application would allow a scalable number of users to access
+(fresh) data through edge caches, regardless of the underlying
+storage.
+
+\subsection{Virtual Desktop Infrastructure}
+
+An alternative approach to giving employees corporate computers is to
+let them bring their own devices, and have them run a corporate OS in
+a VM while they are at work.  Employees download their VM images when
+they begin the day, and periodically save their sessions until they
+leave.  VDI systems exploit the facts that VM images do not change
+much between sessions~\cite{collective} and have only one writer (the
+user), in order to achieve scalable VM deployment through on-site VM
+block caching.
+
+While some VDI implementations (such as Citrix~\cite{citrix}) use system-specific
+infrastructure, the ideal scenario is to let the corporation use the
+cache and storage providers that best meet their business needs, and
+impose their own user authentication requirements.  The VDI
+infrastructure is not desirable if there already exists proven
+in-house equivalents that can be used for the purpose.
+
+\subsection{Observations}
+
+Despite being point-solutions, the real-world examples above address reoccurring 
+storage-level concerns.  These include stronger-than-eventual consistency, 
+common fault tolerance strategies (such as automatic fail-over and integrity checks),
+and common security requirements (such as access control and authentication).  This suggests 
+that with the right refactoring, the mechanisms that address these 
+concerns can be implemented once and reused across different application domains.
+
+Our goal is for \Syndicate\ to provide a storage service that 
+addresses these concerns for these and similar applications, while allowing developers
+to dynamically extend it instead of rewrite it.  In doing so, developers could re-use \Syndicate\ as the 
+storage layer to meet basic storage needs, and develop only the 
+the extra storage functionality as a code module for \Syndicate\ to load and deploy.  This saves the effort of
+creating multiple point-solutions, and creates an opportunity for re-using specialized 
+storage functionality across \Syndicate-powered applications.  Once our goal is achieved, 
+developers can use \Syndicate\ to combine providers to gain the utility benefits they offer, and not concern 
+themselves with integrating their functional benefits into the application design.
+
+There are three design challenges to achieving this goal.  First, \Syndicate\ must provide  
+storage abstractions that allow the application to interact with data without 
+coupling its design to underlying providers.  At the same time, the abstractions should 
+couple \Syndicate\ to providers as loosely as possible.
+
+Second, to facilitate reuse, \Syndicate\ must offer a storage programming model 
+that distinguishes between logic that adds support for additional providers, and logic 
+that adds provider-agnostic storage functionality (such as encryption or access logging)
+or extends \Syndicate's built-in features.
+
+Third, regardless of provider functional benefits and application extensions, \Syndicate\ must always meet consistency, fault-tolerance, 
+and security requirements.  If needed, \Syndicate\ must make up for shortcomings in the design of underlying providers.
+Once addressed, \Syndicate\ can aggregate their utility benefits.
+
+%llp: talk about gateways, but not common/base functionality
+%like consistency; although first paragraph of next section hits
+%this, this paragraph somewhat minimizes Syndicate's role. Not
+%sure how to address.
+
+%Our strategy is to elevate these gateways to first-class logical
+%storage components and make them programmable.
+%The application would define its own storage functionality, and
+%\Syndicate\ would distribute and run it in these gateways.  In doing
+%so, we would reduce building storage point-solutions to writing only
+%the logic that differentiates them from commodity providers.
+
