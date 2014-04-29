@@ -48,6 +48,11 @@ class Volume(PlCoreBase):
     # NOTE: preserve order of capabilities here...
     default_gateway_caps = BitField(flags=("read data", "write data", "host files"), verbose_name='Default User Capabilities')
 
+    # Per-slice volume
+    per_slice_volume = models.BooleanField(default=False, help_text="Indicates if the Volume is per-slice volume.")
+    per_slice_id = models.TextField(null=True, blank=True, max_length=30, help_text="slice open-id.")
+    per_slice_password = models.TextField(null=True, blank=True, max_length=30, help_text="slice open-id password.")
+
     def __unicode__(self):  return self.name
 
 

@@ -68,7 +68,7 @@ class SyncSlices(SyncStep):
         # user names up to 30 characters.
 
         slice_email = slice.name
-        slice_password = syndicatelib.registration_password()
+        slice_password = openidlib.generate_password()
         print "slice email = %s" % slice_email
 
         # create the slice-openid
@@ -88,6 +88,9 @@ class SyncSlices(SyncStep):
         new_volume.private = True
         new_volume.archive = False
         new_volume.default_gateway_caps = Volume.CAP_READ_DATA | Volume.CAP_WRITE_DATA | Volume.CAP_HOST_DATA
+        new_volume.per_slice_volume = True
+        new_volume.per_slice_id = slice_email
+        new_volume.per_slice_password = slice_password
         new_volume.save()
 
         new_volumeslice = VolumeSlice()

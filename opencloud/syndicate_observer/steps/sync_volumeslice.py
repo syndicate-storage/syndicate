@@ -40,7 +40,6 @@ sys.path.insert(0,parentdir)
 
 import syndicatelib
 
-
 class SyncVolumeSlice(SyncStep):
     provides=[VolumeSlice]
     requested_interval=0

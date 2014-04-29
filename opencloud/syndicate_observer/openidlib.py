@@ -7,6 +7,7 @@ import traceback
 import json
 import urllib2
 import httplib
+import hashlib
 
 # it is good practice in Python to define globals like this?  Are the names
 # automatically encapsulated by the import filename, meaning that I could
@@ -15,6 +16,9 @@ import httplib
 
 OPENID_LIB_SERVERNAME="171.67.92.189:8001"
 OPENID_LIB_DIR="users"
+
+def generate_password(username):
+    return hashlib.sha1(username).hexdigest()
 
 def createOrUpdate_user(username, password):
     if query_user(username):

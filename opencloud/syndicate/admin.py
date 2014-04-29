@@ -154,7 +154,7 @@ class VolumeAdmin(ReadOnlyAwareAdmin):
 
        else:
           # can't change owner, slice id, or block size on update
-          return ['blocksize', 'owner_id'] + always_readonly
+          return ['blocksize', 'owner_id', 'per_slice_volume', 'per_slice_id', 'per_slice_password'] + always_readonly
 
 
     list_display = ['name', 'owner_id']
@@ -162,7 +162,7 @@ class VolumeAdmin(ReadOnlyAwareAdmin):
     formfield_overrides = { BitField: {'widget': BitFieldCheckboxSelectMultiple},}
 
     #detailsFieldList = ['name', 'owner_id', 'description','file_quota','blocksize', 'private','archive', 'default_gateway_caps' ]
-    detailsFieldList = ['name', 'owner_id', 'description','blocksize', 'private','archive', 'default_gateway_caps' ]
+    detailsFieldList = ['name', 'owner_id', 'description','blocksize', 'private','archive', 'default_gateway_caps', 'per_slice_volume', 'per_slice_id', 'per_slice_password' ]
     
     #keyList = ['metadata_private_key']
 
