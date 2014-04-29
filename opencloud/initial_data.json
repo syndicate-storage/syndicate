@@ -46208,7 +46208,10 @@
         "private": false, 
         "owner_id": 1, 
         "archive": true, 
-        "name": "GenBank-11-2013"
+        "name": "GenBank-11-2013",
+        "per_slice_volume": false,
+        "per_slice_id": "",
+        "per_slice_password": ""
     }
 },
 {
@@ -46223,7 +46226,10 @@
         "private": true, 
         "owner_id": 1, 
         "archive": false, 
-        "name": "princeton_syndicate-Volume"
+        "name": "princeton_syndicate-Volume",
+        "per_slice_volume": false,
+        "per_slice_id": "",
+        "per_slice_password": ""
     }
 },
 {

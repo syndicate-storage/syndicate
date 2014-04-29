@@ -68,7 +68,7 @@ class SyncSlices(SyncStep):
         # user names up to 30 characters.
 
         slice_email = slice.name
-        slice_password = openidlib.generate_password()
+        slice_password = openidlib.generate_password(slice_email)
         print "slice email = %s" % slice_email
 
         # create the slice-openid
