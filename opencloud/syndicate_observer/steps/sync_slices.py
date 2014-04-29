@@ -39,7 +39,7 @@ parentdir = os.path.join(os.path.dirname(__file__),"..")
 sys.path.insert(0,parentdir)
 
 import syndicatelib
-
+import openidlib
 
 class SyncSlices(SyncStep):
     provides=[Slice]
@@ -60,54 +60,22 @@ class SyncSlices(SyncStep):
         """
         Synchronize a Syndicate Slice record with Syndicate.
         """
+
         print "Sync - per-slice volume!"
         print "slice = %s" % slice.name
 
-        slice_email = syndicatelib.generate_opencloud_slice_openid( slice.name )
+        # we now pass the base name to OpenID, because the OpenID server only supports
+        # user names up to 30 characters.
+
+        slice_email = slice.name
+        slice_password = syndicatelib.registration_password()
         print "slice email = %s" % slice_email
 
         logger.info('Create per-slice syndicate volume. Slice = %s, Slice-openid = %s' % (slice.name, slice_email))
 
         # create the slice-openid
-        try:
-            #new_user = syndicatelib.ensure_user_exists_and_has_credentials( user_email )
-            pass
-        except Exception, e:
-            traceback.print_exc()
-            logger.error("Failed to register openid user (slice) '%s' exists" % slice_email )
-            return False
- 
-        """
-            
-        # create or update the Volume
-        try:
-            new_volume = syndicatelib.ensure_volume_exists( user_email, volume, user=new_user )
-            syndicatelib.ensure_volume_exists( user_email, volume, user=new_user )
-        except Exception, e:
-            traceback.print_exc()
-            logger.error("Failed to ensure volume '%s' exists" % volume.name )
-            return False
-
-            
-        # did we create the Volume?
-        if new_volume is not None:
-            # we're good
-            pass 
-             
-        # otherwise, just update it 
-        else:
-            try:
-                rc = syndicatelib.update_volume( volume )
-            except Exception, e:
-                traceback.print_exc()
-                logger.error("Failed to update volume '%s', exception = %s" % (volume.name, e.message))
-                return False
-                    
-            return True
-        """
- 
+        new_user = openidlib.createOrUpdate_user( slice_email, slice_password )
         return True
-
 
 
 if __name__ == "__main__":

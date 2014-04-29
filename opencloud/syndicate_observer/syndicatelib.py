@@ -119,14 +119,6 @@ def registration_password():
 
 
 #-------------------------------
-def generate_opencloud_slice_openid( slicename ):
-    """
-    Generate an opencloud per-slice openid.
-    """
-    return "".join( [slicename, ".slice@opencloud.us"] )
-
-
-#-------------------------------
 def exc_user_exists( exc ):
     """
     Given an exception, is it due to the user already existing?
