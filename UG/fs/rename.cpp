@@ -90,6 +90,12 @@ int fs_entry_verify_no_loop( struct fs_entry* fent, void* cls ) {
 // rename a file
 int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char const* new_path, uint64_t user, uint64_t volume, int64_t version ) {
    
+   // renaming is forbidden if anonymous
+   if( core->gateway == GATEWAY_ANON ) {
+      errorf("%s", "Renaming is forbidden for anonymous gateways\n");
+      return -EPERM;
+   }
+   
    int err_old = 0, err_new = 0, err = 0;
 
    int rc = 0;

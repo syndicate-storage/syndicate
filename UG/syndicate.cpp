@@ -47,18 +47,52 @@ int syndicate_init( struct syndicate_opts* opts ) {
    md_debug( &state->conf, opts->debug_level );
    
    // initialize library
-   int rc = md_init( &state->conf, ms, opts->ms_url, opts->volume_name, opts->gateway_name, opts->username, opts->password, (char const*)opts->user_pkey_pem.ptr,
-                                       opts->volume_pubkey_path, opts->gateway_pkey_path, (char const*)opts->gateway_pkey_decryption_password.ptr,
-                                       opts->tls_pkey_path, opts->tls_cert_path, opts->storage_root, opts->syndicate_pubkey_path );
-   if( rc != 0 ) {
-      errorf("md_init rc = %d\n", rc );
-      return rc;
+   if( !opts->anonymous ) {
+      int rc = md_init( &state->conf, ms, opts->ms_url, opts->volume_name, opts->gateway_name, opts->username, (char const*)opts->password.ptr, (char const*)opts->user_pkey_pem.ptr,
+                                          opts->volume_pubkey_path, opts->gateway_pkey_path, (char const*)opts->gateway_pkey_decryption_password.ptr,
+                                          opts->tls_pkey_path, opts->tls_cert_path, opts->storage_root, opts->syndicate_pubkey_path );
+      if( rc != 0 ) {
+         errorf("md_init rc = %d\n", rc );
+         return rc;
+      }
+   }
+   else {
+      // load anything we need into RAM 
+      char* volume_pubkey_pem = NULL;
+      size_t volume_pubkey_pem_len = 0;
+      
+      char* syndicate_pubkey_pem = NULL;
+      size_t syndicate_pubkey_pem_len = 0;
+      
+      // get the public keys into RAM 
+      if( opts->volume_pubkey_path ) {
+         volume_pubkey_pem = md_load_file_as_string( opts->volume_pubkey_path, &volume_pubkey_pem_len );
+         if( volume_pubkey_pem == NULL ) {
+            errorf("Failed to load %s\n", opts->volume_pubkey_path );
+            return -ENOENT;
+         }
+      }
+      
+      if( opts->syndicate_pubkey_path ) {
+         syndicate_pubkey_pem = md_load_file_as_string( opts->syndicate_pubkey_path, &syndicate_pubkey_pem_len );
+         if( syndicate_pubkey_pem == NULL ) {
+            errorf("Failed to load %s\n", opts->syndicate_pubkey_path );
+            return -ENOENT;
+         }
+      }
+      
+      int rc = md_init_client( &state->conf, ms, opts->ms_url, opts->volume_name, NULL, NULL, NULL, NULL, volume_pubkey_pem, NULL, NULL, opts->storage_root, syndicate_pubkey_pem );
+      
+      if( rc != 0 ) {
+         errorf("md_init_client rc = %d\n", rc );
+         return rc;
+      }
    }
    
    syndicate_add_extra_config( &state->conf, opts );
    
    // initialize state
-   rc = syndicate_init_state( state, ms );
+   int rc = syndicate_init_state( state, ms );
    if( rc != 0 ) {
       errorf("syndicate_init_state rc = %d\n", rc );
       return rc;

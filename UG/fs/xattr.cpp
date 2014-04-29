@@ -431,6 +431,11 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
 // setxattr
 int fs_entry_setxattr( struct fs_core* core, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume ) {
    
+   if( core->gateway == GATEWAY_ANON ) {
+      errorf("%s", "Setting extended attributes is forbidden for anonymous gateways\n");
+      return -EPERM;
+   }
+   
    // bring the metadata up to date
    int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
    if( revalidate_rc != 0 ) {
@@ -620,6 +625,11 @@ ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, 
 
 // removexattr
 int fs_entry_removexattr( struct fs_core* core, char const* path, char const *name, uint64_t user, uint64_t volume ) {
+   if( core->gateway == GATEWAY_ANON ) {
+      errorf("%s", "Removing extended attributes is forbidden for anonymous gateways\n");
+      return -EPERM;
+   }
+   
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, true, &err );
    if( !fent || err ) {

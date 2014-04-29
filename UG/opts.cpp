@@ -108,6 +108,7 @@ int syndicate_cleanup_opts( struct syndicate_opts* opts ) {
       &opts->user_pkey_pem,
       &opts->gateway_pkey_pem,
       &opts->gateway_pkey_decryption_password,
+      &opts->password,
       NULL
    };
    
@@ -164,6 +165,7 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
       {"user-pkey",       required_argument,   0, 'U'},
       {"user-pkey-pem",   required_argument,   0, 'P'},
       {"debug-level",     required_argument,   0, 'd'},
+      {"anonymous",       no_argument,         0, 'a'},
       {0, 0, 0, 0}
    };
 
@@ -173,7 +175,7 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
    int opt_index = 0;
    int c = 0;
    
-   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:T:C:K:l:L:r:RU:d:";
+   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:T:C:K:l:L:r:RU:d:a";
    
    int num_default_options = 0;         // needed for freeing special arguments
    char* optstr = NULL;
@@ -259,7 +261,8 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
             break;
          }
          case 'p': {
-            opts->password = optarg;
+            syndicate_load_mlock_buf( &opts->password, optarg );
+            memset( optarg, 0, strlen(optarg) );
             break;
          }
          case 'm': {
@@ -367,6 +370,10 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
             }
             break;
          }
+         case 'a': {
+            opts->anonymous = true;
+            break;
+         }
          default: {
             rc = -1;
             if( special_opt_handler ) {
@@ -461,6 +468,10 @@ Required arguments:\n\
             Name of the Volume you are going to access\n\
    -g, --gateway GATEWAY_NAME\n\
             Name of this gateway\n\
+   -a, --anonymous\n\
+            Sign in anonymously.  You will have read-only\n\
+            permissions.  If you use this option, you do not\n\
+            need -U, -P, -g, -u, or -p.\n\
 \n\
 Optional arguments:\n\
    -V, --volume-pubkey VOLUME_PUBLIC_KEY_PATH\n\

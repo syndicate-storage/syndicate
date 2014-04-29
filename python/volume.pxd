@@ -127,7 +127,7 @@ cdef extern from "opts.h":
    cdef struct syndicate_opts:
       char* config_file
       char* username
-      char* password
+      mlock_buf password
       char* volume_name
       char* ms_url
       char* gateway_name

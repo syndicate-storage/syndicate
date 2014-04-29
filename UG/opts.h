@@ -34,7 +34,6 @@
 struct syndicate_opts {
    char* config_file;
    char* username;
-   char* password;
    char* volume_name;
    char* ms_url;
    char* gateway_name;
@@ -42,6 +41,7 @@ struct syndicate_opts {
    char* gateway_pkey_path;
    char* syndicate_pubkey_path;
    
+   struct mlock_buf password;
    struct mlock_buf user_pkey_pem;
    struct mlock_buf gateway_pkey_pem;   // alternative to gateway_pkey_path
    struct mlock_buf gateway_pkey_decryption_password;
@@ -57,6 +57,8 @@ struct syndicate_opts {
    int debug_level;     // if 0, no debugging.  if 1, set global debug.  If 2, then set global and locking debug
    size_t cache_soft_limit;
    size_t cache_hard_limit;
+   
+   bool anonymous;
 };
 
 int syndicate_default_opts( struct syndicate_opts* opts );

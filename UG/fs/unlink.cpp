@@ -152,6 +152,12 @@ int fs_entry_detach( struct fs_core* core, char const* path, uint64_t user, uint
 // pass -1 if the version is not known, or pass the known version to be unlinked
 int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t file_id, uint64_t coordinator_id, int64_t known_version, uint64_t owner, uint64_t volume, uint64_t gateway_id, bool check_file_id_and_coordinator_id ) {
    
+   // can't modify state if anonymous
+   if( core->gateway == GATEWAY_ANON ) {
+      errorf("%s", "Writing is forbidden for anonymous gateways\n");
+      return -EPERM;
+   }
+   
    // get some info about this file first
    int rc = 0;
    int err = 0;

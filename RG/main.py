@@ -59,7 +59,7 @@ CONFIG_OPTIONS = {
    "logdir":            ("-L", 1, "Directory to contain the log files.  If not given, then write to stdout and stderr."),
    "pidfile":           ("-l", 1, "Path to the desired PID file."),
    "stdin":             ("-R", 0, "Read arguments on stdin (i.e. for security)"),
-   "debug_level":       ("-d", 1, "Debug level (0: nothing (default), 1: global debug, 2: global and locking debug"),
+   "debug_level":       ("-d", 1, "Debug level (0: nothing (default), 1: global debug, 2: global and locking debug)"),
 }
 
 #-------------------------

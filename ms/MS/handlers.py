@@ -471,7 +471,7 @@ class MSFileHandler(webapp2.RequestHandler):
          response_user_error( self, 400 )
          return
       
-      gateway, volume, response_timing = response_begin( self, volume_id_str )
+      gateway, volume, response_timing = response_begin( self, volume_id_str, fail_if_no_auth_header=False )
       if volume == None:
          return
       

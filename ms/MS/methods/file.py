@@ -23,6 +23,7 @@ from storage import storage
 import storage.storagetypes as storagetypes
 
 from common import *
+import common.msconfig as msconfig
 
 import random
 import os
@@ -196,7 +197,7 @@ def file_resolve( gateway, volume, file_id, file_version_str, write_nonce_str ):
    
    logging.info("resolve /%s/%s/%s/%s" % (volume.volume_id, file_id, file_version, write_nonce) )
    
-   owner_id = volume.owner_id
+   owner_id = msconfig.GATEWAY_ID_ANON
    if gateway != None:
       owner_id = gateway.owner_id
       
@@ -383,18 +384,18 @@ def file_read_auth( gateway, volume ):
    """
    
    # gateway authentication required?
-   if volume.need_gateway_auth() and gateway == None:
-      print "no gateway"
+   if volume.need_gateway_auth() and gateway is None:
+      logging.error( "no gateway" )
       return False
 
    # this must be a User Gateway, if there is a specific gateway
-   if gateway != None and gateway.gateway_type != GATEWAY_TYPE_UG:
-      print "not UG"
+   if gateway is not None and gateway.gateway_type != GATEWAY_TYPE_UG:
+      logging.error( "not UG" )
       return False
    
    # this gateway must be allowed to read metadata
-   if gateway != None and not gateway.check_caps( GATEWAY_CAP_READ_METADATA ):
-      print "bad caps: %s" % gateway.caps
+   if gateway is not None and not gateway.check_caps( GATEWAY_CAP_READ_METADATA ):
+      logging.error( "bad caps: %s" % gateway.caps )
       return False
    
    return True
@@ -414,10 +415,16 @@ def file_xattr_get_and_check_msentry_readable( gateway, volume, file_id):
       # does not exist
       rc = -errno.ENOENT
       
-   elif msent.owner_id != gateway.owner_id and (msent.mode & 0044) == 0:
-      # not readable.
-      # don't tell the reader that this entry even exists.
-      rc = -errno.ENOENT
+   else:
+      # which gateway ID are we using?
+      gateway_owner_id = GATEWAY_ID_ANON
+      if gateway is not None:
+         gateway_owner_id = gateway.owner_id
+         
+      if msent.owner_id != gateway_owner_id and (msent.mode & 0044) == 0:
+         # not readable.
+         # don't tell the reader that this entry even exists.
+         rc = -errno.ENOENT
       
    if rc != 0:
       msent = None

@@ -477,6 +477,12 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    if( count == 0 )
       return 0;
    
+   // first things first: check open mode vs whether or not we're a client and/or have read-only caps 
+   if( core->gateway == GATEWAY_ANON ) {
+      errorf("%s", "Writing is forbidden for anonymous gateways\n");
+      return -EPERM;
+   }
+   
    // lock handle--prevent the file from being destroyed
    fs_file_handle_rlock( fh );
    if( fh->fent == NULL || fh->open_count <= 0 ) {

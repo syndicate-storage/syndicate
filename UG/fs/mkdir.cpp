@@ -47,6 +47,12 @@ int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_e
 
 // create a directory
 int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_t user, uint64_t vol ) {
+   
+   if( core->gateway == GATEWAY_ANON ) {
+      errorf("%s", "Making directories is forbidden for anonymous gateways\n");
+      return -EPERM;
+   }
+   
    int err = 0;
 
    // resolve the parent of this child (and write-lock it)

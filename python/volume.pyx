@@ -153,6 +153,10 @@ cdef class Volume:
       # NOTE: not mlock'ed!
       opts.gateway_pkey_decryption_password.ptr = c_gateway_pkey_decryption_password
       opts.gateway_pkey_decryption_password.len = len(gateway_pkey_decryption_password)
+
+      # NOTE: not mlock'ed!
+      opts.password.ptr = c_password
+      opts.password.len = len(password)
       
       if wait_replicas < 0:
          opts.flush_replicas = 1

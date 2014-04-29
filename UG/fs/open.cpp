@@ -168,11 +168,23 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
 // mark an fs_entry as having been opened, and/or create a file
 struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, uint64_t user, uint64_t vol, int flags, mode_t mode, int* err ) {
 
+   // first things first: check open mode vs whether or not we're a client and/or have read-only caps 
+   if( core->gateway == GATEWAY_ANON ) {
+      // no authentication; we're read-only
+      if( flags & (O_CREAT | O_RDWR | O_WRONLY | O_TRUNC | O_EXCL) ) {
+         errorf("%s", "Opening to create, write, or truncate is forbidden for anonymous gateways\n");
+         *err = -EPERM;
+         return NULL;
+      }
+   }
+      
+   int rc = 0;
+   
    char* path = strdup(_path);
    md_sanitize_path( path );
    
    // revalidate this path
-   int rc = fs_entry_revalidate_path( core, vol, path );
+   rc = fs_entry_revalidate_path( core, vol, path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
       
