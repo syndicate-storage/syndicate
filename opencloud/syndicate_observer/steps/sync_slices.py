@@ -64,42 +64,43 @@ class SyncSlices(SyncStep):
         print "Sync - per-slice volume!"
         print "slice = %s" % slice.name
 
-        # we now pass the base name to OpenID, because the OpenID server only supports
-        # user names up to 30 characters.
+        if (slice.name is not None) and (slice.creator is not None):
+            # we now pass the base name to OpenID, because the OpenID server only supports
+            # user names up to 30 characters.
 
-        slice_email = slice.name
-        slice_password = openidlib.generate_password(slice_email)
-        print "slice email = %s" % slice_email
+            slice_email = slice.name
+            slice_password = openidlib.generate_password(slice_email)
+            print "slice email = %s" % slice_email
 
-        # create the slice-openid
-        logger.info('Create per-slice openID. Slice = %s, openid = %s' % (slice.name, slice_email))
-        try:
-            new_user = openidlib.createOrUpdate_user( slice_email, slice_password )
-        except Exception, e:
-            traceback.print_exc()
-            logger.error("Creation of per-slice openID was failed")
-            raise e
+            # create the slice-openid
+            logger.info('Create per-slice openID. Slice = %s, openid = %s' % (slice.name, slice_email))
+            try:
+                new_user = openidlib.createOrUpdate_user( slice_email, slice_password )
+            except Exception, e:
+                traceback.print_exc()
+                logger.error("Creation of per-slice openID was failed")
+                raise e
 
-        logger.info('Create per-slice syndicate volume. Slice = %s, Slice-openid = %s' % (slice.name, slice_email))
-        new_volume = Volume()
-        new_volume.name = slice.name
-        new_volume.owner_id = slice.creator
-        new_volume.blocksize = 1024000
-        new_volume.private = True
-        new_volume.archive = False
-        new_volume.default_gateway_caps = Volume.CAP_READ_DATA | Volume.CAP_WRITE_DATA | Volume.CAP_HOST_DATA
-        new_volume.per_slice_volume = True
-        new_volume.per_slice_id = slice_email
-        new_volume.per_slice_password = slice_password
-        new_volume.save()
+            logger.info('Create per-slice syndicate volume. Slice = %s, Slice-openid = %s' % (slice.name, slice_email))
+            new_volume = Volume()
+            new_volume.name = slice.name
+            new_volume.owner_id = slice.creator
+            new_volume.blocksize = 1024000
+            new_volume.private = True
+            new_volume.archive = False
+            new_volume.default_gateway_caps = Volume.CAP_READ_DATA | Volume.CAP_WRITE_DATA | Volume.CAP_HOST_DATA
+            new_volume.per_slice_volume = True
+            new_volume.per_slice_id = slice_email
+            new_volume.per_slice_password = slice_password
+            new_volume.save()
 
-        new_volumeslice = VolumeSlice()
-        new_volumeslice.volume_id = new_volume
-        new_volumeslice.slice_id = slice
-        new_volumeslice.gateway_caps = Volume.CAP_READ_DATA | Volume.CAP_WRITE_DATA | Volume.CAP_HOST_DATA
-        new_volumeslice.peer_portnum = 32780
-        new_volumeslice.replicate_portnum = 32781
-        new_volumeslice.save()
+            new_volumeslice = VolumeSlice()
+            new_volumeslice.volume_id = new_volume
+            new_volumeslice.slice_id = slice
+            new_volumeslice.gateway_caps = Volume.CAP_READ_DATA | Volume.CAP_WRITE_DATA | Volume.CAP_HOST_DATA
+            new_volumeslice.peer_portnum = 32780
+            new_volumeslice.replicate_portnum = 32781
+            new_volumeslice.save()
         
         return True
 
