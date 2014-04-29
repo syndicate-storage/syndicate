@@ -140,7 +140,6 @@ cdef class Volume:
       opts.gateway_name = gateway_name
       opts.ms_url = ms_url
       opts.username = username
-      opts.password = password
       opts.volume_name = volume_name
       opts.config_file = config_file
       opts.storage_root = storage_root
