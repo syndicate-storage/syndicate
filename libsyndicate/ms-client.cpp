@@ -2286,8 +2286,8 @@ int ms_client_anonymous_gateway_register( struct ms_client* client, char const* 
 }
 
 
-// populate a registration request 
-static int ms_client_make_registration_request( struct ms_client* client, EVP_PKEY* user_pkey, char const* username, int gateway_type, char const* gateway_name, ms::ms_register_request* req ) {
+// populate a registration request for public key registration
+static int ms_client_make_public_key_registration_request( struct ms_client* client, EVP_PKEY* user_pkey, char const* username, int gateway_type, char const* gateway_name, ms::ms_register_request* req ) {
    req->set_username( string(username) );
    req->set_gateway_name( string(gateway_name) );
    req->set_gateway_type( gateway_type );
@@ -2308,7 +2308,7 @@ static int ms_client_make_registration_request( struct ms_client* client, EVP_PK
 
 
 // send the registration information, and get back a reply 
-static int ms_client_send_register_request( struct ms_client* client, char* url, ms::ms_register_request* reg_req, ms::ms_registration_metadata* registration_md ) {
+static int ms_client_send_public_key_register_request( struct ms_client* client, char* url, ms::ms_register_request* reg_req, ms::ms_registration_metadata* registration_md ) {
    
    CURL* curl = curl_easy_init();
    
@@ -2415,11 +2415,11 @@ int ms_client_public_key_gateway_register( struct ms_client* client, char const*
    ms_client_rlock( client );
 
    // make the request 
-   rc = ms_client_make_registration_request( client, user_pkey, username, client->gateway_type, gateway_name, &registration_req );
+   rc = ms_client_make_public_key_registration_request( client, user_pkey, username, client->gateway_type, gateway_name, &registration_req );
    if( rc != 0 ) {
       ms_client_unlock( client );
       
-      errorf("ms_client_make_registration_request rc = %d\n", rc );
+      errorf("ms_client_make_public_key_registration_request rc = %d\n", rc );
       return -ENOTCONN;
    }
    
@@ -2442,7 +2442,7 @@ int ms_client_public_key_gateway_register( struct ms_client* client, char const*
    }
 
    // send our request; get our registration data 
-   rc = ms_client_send_register_request( client, register_url, &registration_req, &registration_md );
+   rc = ms_client_send_public_key_register_request( client, register_url, &registration_req, &registration_md );
    
    free( register_url );
    
@@ -4055,9 +4055,18 @@ int ms_client_get_closure_text( struct ms_client* client, char** closure_text, u
    
    ms_cert_bundle::iterator itr = cert_bundles[ client->gateway_type ]->find( client->gateway_id );
    if( itr == cert_bundles[ client->gateway_type ]->end() ) {
-      // something's seriously wrong here...
+      int rc = 0;
+      
+      // no certificate on file for this gateway.  It might be anonymous
+      if( client->conf->is_client || client->gateway_id == GATEWAY_ANON ) {
+         rc = -ENODATA;
+      }
+      else {
+         rc = -ENOTCONN;
+      }
+      
       ms_client_view_unlock( client );
-      return -ENOTCONN;
+      return rc;
    }
    
    struct ms_gateway_cert* my_cert = itr->second;

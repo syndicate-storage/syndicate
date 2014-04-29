@@ -29,7 +29,6 @@ void syndicate_add_extra_config( struct md_syndicate_conf* conf, struct syndicat
 // initialize
 int syndicate_init( struct syndicate_opts* opts ) {
 
-
    struct syndicate_state* state = CALLOC_LIST( struct syndicate_state, 1 );
    struct ms_client* ms = CALLOC_LIST( struct ms_client, 1 );
    
@@ -43,6 +42,8 @@ int syndicate_init( struct syndicate_opts* opts ) {
          dbprintf("ERR: failed to read %s, rc = %d\n", opts->config_file, rc );
       }
    }
+   
+   md_debug( &state->conf, opts->debug_level );
    
    // initialize library
    int rc = md_init( &state->conf, ms, opts->ms_url, opts->volume_name, opts->gateway_name, opts->username, opts->password, (char const*)opts->user_pkey_pem.ptr,

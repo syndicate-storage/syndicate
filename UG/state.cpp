@@ -37,6 +37,9 @@ int syndicate_init_state( struct syndicate_state* state, struct ms_client* ms ) 
    if( state->logfile == NULL ) {
       return -ENOMEM;
    }
+   
+   // start debugging
+   fs_entry_set_config( &state->conf );
 
    // start up stats gathering
    state->stats = new Stats( NULL );

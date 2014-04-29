@@ -21,7 +21,7 @@
 
 int _DEBUG = 1;
 
-int _DEBUG_MESSAGES = 1;
+int _DEBUG_MESSAGES = 0;
 int _ERROR_MESSAGES = 1;
 
 

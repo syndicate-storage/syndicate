@@ -136,6 +136,7 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
       {"read-stdin",      no_argument,         0, 'R'},
       {"user-pkey",       required_argument,   0, 'U'},
       {"user-pkey-pem",   required_argument,   0, 'P'},
+      {"debug-level",     required_argument,   0, 'd'},
       {0, 0, 0, 0}
    };
 
@@ -145,7 +146,7 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
    int opt_index = 0;
    int c = 0;
    
-   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:T:C:K:l:L:r:RU:";
+   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:T:C:K:l:L:r:RU:d:";
    
    int num_default_options = 0;         // needed for freeing special arguments
    char* optstr = NULL;
@@ -302,17 +303,25 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
          case 'l': {
             long lim = 0;
             rc = syndicate_parse_long( c, optarg, &lim );
-            if( rc == 0 )
+            if( rc == 0 ) {
                opts->cache_soft_limit = (size_t)lim;
-            
+            }
+            else {
+               errorf("Failed to parse -l, rc = %d\n", rc );
+               rc = -1;
+            }
             break;
          }
          case 'L': {
             long lim = 0;
             rc = syndicate_parse_long( c, optarg, &lim );
-            if( rc == 0 )
-               opts->cache_soft_limit = (size_t)lim;
-            
+            if( rc == 0 ) {
+               opts->cache_hard_limit = (size_t)lim;
+            }
+            else {
+               errorf("Failed to parse -L, rc = %d\n", rc );
+               rc = -1;
+            }
             break;
          }
          case 'R': {
@@ -324,6 +333,18 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
             else {
                dbprintf("%s", "Reading arguments from stdin\n");
                opts->read_stdin = true;
+            }
+            break;
+         }
+         case 'd': {
+            long debug_level = 0;
+            rc = syndicate_parse_long( c, optarg, &debug_level );
+            if( rc == 0 ) {
+               opts->debug_level = (int)debug_level;
+            }
+            else {
+               errorf("Failed to parse -d, rc = %d\n", rc );
+               rc = -1;
             }
             break;
          }
@@ -364,6 +385,7 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
    return rc;
 }
 
+// parse syndicate options
 int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, int* out_optind, char const* special_opts, int (*special_opt_handler)(int, char*) ) {
    int rc = syndicate_parse_opts_impl( opts, argc, argv, out_optind, special_opts, special_opt_handler, false );
    if( rc != 0 ) {
@@ -396,7 +418,6 @@ int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, in
    
    return rc;
 }
-
 
 // print usage and exit
 void syndicate_common_usage( char* progname ) {
@@ -448,6 +469,11 @@ Optional arguments:\n\
             Hard limit on the size of the local cache (bytes).\n\
    -R, --read-stdin\n\
             If set, read all command-line options from stdin.\n\
+   -d, --debug-level DEBUG_LEVEL\n\
+            Debugging level.\n\
+            Pass 0 (the default) for no debugging output.\n\
+            Pass 1 for global debugging messages.\n\
+            Pass 2 to add locking debugging.\n\
 \n", progname );
 }
 

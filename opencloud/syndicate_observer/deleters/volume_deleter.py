@@ -12,10 +12,25 @@ if __name__ == "__main__":
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "planetstack.settings")
 
 
+import logging
+from logging import Logger
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+logger = logging.getLogger()
+logger.setLevel( logging.INFO )
+
+# point to planetstack 
+if __name__ != "__main__":
+    if os.getenv("OPENCLOUD_PYTHONPATH") is not None:
+        sys.path.insert(0, os.getenv("OPENCLOUD_PYTHONPATH"))
+    else:
+        logger.warning("No OPENCLOUD_PYTHONPATH set; assuming your PYTHONPATH works") 
+
+
 from syndicate.models import Volume
 from observer.deleter import Deleter
-from util.logger import Logger, logging
-logger = Logger(level=logging.INFO)
+
+from django.forms.models import model_to_dict
+
 
 # syndicatelib will be in steps/..
 parentdir = os.path.join(os.path.dirname(__file__),"..")
@@ -41,6 +56,8 @@ class VolumeDeleter(Deleter):
             
 
 if __name__ == "__main__":
-    vd = VolumeDeleter()
-    vd.call( 1, {'name': 'testvolume'} )
-    
+   vd = VolumeDeleter()
+   
+   all_volumes = Volume.objects.all()
+   for vol in all_volumes:
+      vd( vol.pk, model_to_dict( vol ) )

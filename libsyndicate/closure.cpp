@@ -220,7 +220,9 @@ static int md_parse_closure_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway
 static char const* md_load_json_string_by_key( struct json_object* obj, char const* key, size_t* _val_len ) {
    
    // look up the keyed value
-   struct json_object* key_obj = json_object_object_get( obj, key );
+   // TODO: use json_object_object_get_ex at some point, when we can move away from old libjson
+   struct json_object* key_obj = NULL;
+   key_obj = json_object_object_get( obj, key );
    if( key_obj == NULL ) {
       errorf("No such key '%s'\n", key );
       return NULL;

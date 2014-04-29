@@ -54,6 +54,7 @@ struct syndicate_opts {
    char* mountpoint;             // UG only; first non-optarg
    bool flush_replicas;
    bool read_stdin;     // if true, get arguments from stdin (i.e. to avoid them showing up in /proc/self/cmdline)
+   int debug_level;     // if 0, no debugging.  if 1, set global debug.  If 2, then set global and locking debug
    size_t cache_soft_limit;
    size_t cache_hard_limit;
 };

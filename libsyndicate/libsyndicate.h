@@ -179,7 +179,6 @@ struct md_syndicate_conf {
    bool gather_stats;                                 // gather statistics or not?
    char* content_url;                                 // what is the URL under which published files can be accessed?
    char* storage_root;                                // toplevel directory that stores local syndicate state
-   int num_replica_threads;                           // how many replica threads?
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
    char* volume_name;                                 // name of the volume we're connected to
    char* volume_pubkey_path;                          // path on disk to find Volume metadata public key
@@ -188,14 +187,12 @@ struct md_syndicate_conf {
    
    // RG/AG servers
    unsigned int num_http_threads;                     // how many HTTP threads to create
-   bool replica_overwrite;                            // overwrite replica file at the client's request
    char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
    char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
    uint64_t ag_block_size;                            // block size for an AG
    char* local_sd_dir;                                // location on disk where RG storage drivers can be found.
    
    // debug
-   int debug_read;                                    // print verbose information for reads
    int debug_lock;                                    // print verbose information on locks
 
    // common
@@ -251,9 +248,7 @@ typedef int (*md_manifest_processor_func)(struct md_closure*, char*, size_t, cha
 
 #define COMMENT_KEY                 '#'
 
-#define DEBUG_KEY                   "DEBUG"
-#define DEBUG_READ_KEY              "DEBUG_READ"
-#define DEBUG_LOCK_KEY              "DEBUG_LOCK"
+#define DEBUG_KEY                   "DEBUG_LEVEL"
 
 // config elements 
 #define DEFAULT_READ_FRESHNESS_KEY  "DEFAULT_READ_FRESHNESS"
@@ -262,20 +257,15 @@ typedef int (*md_manifest_processor_func)(struct md_closure*, char*, size_t, cha
 #define LOGFILE_PATH_KEY            "LOGFILE"
 #define CDN_PREFIX_KEY              "CDN_PREFIX"
 #define PROXY_URL_KEY               "PROXY_URL"
-#define PREFER_USER_KEY             "PRESERVE_USER_FILES"
 #define GATHER_STATS_KEY            "GATHER_STATISTICS"
-#define PUBLISH_BUFSIZE_KEY         "PUBLISH_BUFFER_SIZE"
-#define METADATA_USERNAME_KEY       "METADATA_USERNAME"
-#define METADATA_PASSWORD_KEY       "METADATA_PASSWORD"
-#define METADATA_UID_KEY            "METADATA_UID"
+#define MS_USERNAME_KEY             "USERNAME"
+#define MS_PASSWORD_KEY             "PASSWORD"
 #define DATA_ROOT_KEY               "DATA_ROOT"
 
-#define METADATA_CONNECT_TIMEOUT_KEY   "METADATA_CONNECT_TIMEOUT"
+#define CONNECT_TIMEOUT_KEY         "CONNECT_TIMEOUT"
 
 #define REPLICA_URL_KEY             "REPLICA_URL"
-#define NUM_REPLICA_THREADS_KEY     "NUM_REPLICA_THREADS"
-#define REPLICA_LOGFILE_KEY         "REPLICA_LOGFILE"
-#define BLOCKING_FACTOR_KEY         "BLOCKING_FACTOR"
+#define BLOCKING_FACTOR_KEY         "BLOCKSIZE"
 #define REPLICATION_FACTOR_KEY      "REPLICATION_FACTOR"
 #define TRANSFER_TIMEOUT_KEY        "TRANSFER_TIMEOUT"
 #define NUM_HTTP_THREADS_KEY        "HTTP_THREADPOOL_SIZE"
@@ -292,29 +282,25 @@ typedef int (*md_manifest_processor_func)(struct md_closure*, char*, size_t, cha
 
 #define LOCAL_STORAGE_DRIVERS_KEY   "LOCAL_STORAGE_DRIVERS"
 
+#define AG_BLOCK_SIZE_KEY           "AG_BLOCK_SIZE"
+
+
 // gateway config
-#define GATEWAY_PORTNUM_KEY         "GATEWAY_PORTNUM"
 #define REPLICA_OVERWRITE_KEY       "REPLICA_OVERWRITE"
 
 // misc
 #define VERIFY_PEER_KEY             "SSL_VERIFY_PEER"
 #define CONTENT_URL_KEY             "PUBLIC_URL"
-#define METADATA_UID_KEY            "METADATA_UID"
 #define VIEW_RELOAD_FREQ_KEY        "VIEW_RELOAD_FREQ"
 
 #define SYNDICATEFS_XATTR_URL          "user.syndicate_url"
 #define CLIENT_DEFAULT_CONFIG          "/usr/etc/syndicate/syndicate-UG.conf"
 #define AG_GATEWAY_DRIVER_KEY	    "AG_GATEWAY_DRIVER"
 
-#define AG_BLOCK_SIZE_KEY           "AG_BLOCK_SIZE"
-
 // URL protocol prefix for local files
 #define SYNDICATEFS_LOCAL_PROTO     "file://"
 
 #define SYNDICATE_DATA_PREFIX "SYNDICATE-DATA"
-
-// maximum length of a single line of metadata
-#define MD_MAX_LINE_LEN       65536
 
 // check to see if a URL refers to local data
 #define URL_LOCAL( url ) (strlen(url) > strlen(SYNDICATEFS_LOCAL_PROTO) && strncmp( (url), SYNDICATEFS_LOCAL_PROTO, strlen(SYNDICATEFS_LOCAL_PROTO) ) == 0)
@@ -341,8 +327,8 @@ typedef vector<long> md_pathlist;
 extern "C" {
    
 // library config 
-int md_debug( int level );
-int md_error( int level );
+int md_debug( struct md_syndicate_conf* conf, int level );
+int md_error( struct md_syndicate_conf* conf, int level );
 int md_signals( int use_signals );
 
 // configuration parser

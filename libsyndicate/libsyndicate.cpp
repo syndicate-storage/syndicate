@@ -168,13 +168,21 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
    return rc;
 }
 
-int md_debug( int level ) {
+// if level >= 1, this turns on debug messages.
+// if level >= 2, this turns on locking debug messages
+int md_debug( struct md_syndicate_conf* conf, int level ) {
    int prev = get_debug_level();
    set_debug_level( level );
+   
+   conf->debug_lock = false;
+   if( level >= 2 )
+      conf->debug_lock = true;
+   
    return prev;
 }
 
-int md_error( int level ) {
+// if level >= 1, this turns on error messages
+int md_error( struct md_syndicate_conf* conf, int level ) {
    int prev = get_error_level();
    set_error_level( level );
    return prev;
@@ -311,6 +319,21 @@ int md_read_conf_line( char* line, char** key, char*** values ) {
 }
 
 
+// read an int value 
+int md_conf_parse_long( char* value, long* ret, char* buf, int line_cnt ) {
+   char *end = NULL;
+   long val = strtol( value, &end, 10 );
+   if( end[0] != '\0' ) {
+      errorf( "WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
+      return -1;
+   }
+   else {
+      *ret = val;
+   }
+   return 0;
+}
+
+
 // read the configuration file and populate a md_syndicate_conf structure
 int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
 
@@ -350,82 +373,56 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       // what to do?
       if( strcmp( key, DEFAULT_READ_FRESHNESS_KEY ) == 0 ) {
          // pull time interval
-         char *end = NULL;
-         long time = strtol( values[0], &end, 10 );
-         if( end[0] != '\0' ) {
-            errorf( " WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
-         }
-         else {
-            conf->default_read_freshness = time;
+         long val = 0;
+         int rc = md_conf_parse_long( values[0], &val, buf, line_cnt );
+         if( rc == 0 ) {
+            conf->default_read_freshness = val;
          }
       }
       
       else if( strcmp( key, DEFAULT_WRITE_FRESHNESS_KEY ) == 0 ) {
          // pull time interval
-         char *end = NULL;
-         long time = strtol( values[0], &end, 10 );
-         if( end[0] != '\0' ) {
-            errorf( " WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
-         }
-         else {
-            conf->default_write_freshness = time;
+         long val = 0;
+         int rc = md_conf_parse_long( values[0], &val, buf, line_cnt );
+         if( rc == 0 ) {
+            conf->default_write_freshness = val;
          }
       }
       
-      else if( strcmp( key, METADATA_CONNECT_TIMEOUT_KEY ) == 0 ) {
+      else if( strcmp( key, CONNECT_TIMEOUT_KEY ) == 0 ) {
          // read timeout
-         char *end;
-         long time = strtol( values[0], &end, 10 );
-         if( end[0] != '\0' || (end[0] == '\0' && time == 0) ) {
-            errorf( " WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
-         }
-         else {
-            conf->connect_timeout = time;
+         long val = 0;
+         int rc = md_conf_parse_long( values[0], &val, buf, line_cnt );
+         if( rc == 0 ) {
+            conf->connect_timeout = val;
          }
       }
       
-      else if( strcmp( key, METADATA_USERNAME_KEY ) == 0 ) {
+      else if( strcmp( key, MS_USERNAME_KEY ) == 0 ) {
          // metadata server username
          conf->ms_username = strdup( values[0] );
       }
       
-      else if( strcmp( key, METADATA_PASSWORD_KEY ) == 0 ) {
+      else if( strcmp( key, MS_PASSWORD_KEY ) == 0 ) {
          // metadata server password
          conf->ms_password = strdup( values[0] );
       }
-      else if( strcmp( key, METADATA_UID_KEY ) == 0 ) {
-         // metadata server UID
-         char *end;
-         long v = strtol( values[0], &end, 10 );
-         if( end[0] != '\0' ) {
-            errorf( "WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
-         }
-         else {
-            conf->owner = v;
-         }
-      }
-
+      
       else if( strcmp( key, VIEW_RELOAD_FREQ_KEY ) == 0 ) {
          // view reload frequency
-         char* end;
-         long v = strtol( values[0], &end, 10 );
-         if( values[0] != '\0' ) {
-            errorf("WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
-         }
-         else {
-            conf->view_reload_freq = v;
+         long val = 0;
+         int rc = md_conf_parse_long( values[0], &val, buf, line_cnt );
+         if( rc == 0 ) {
+            conf->view_reload_freq = val;
          }
       }
       
       else if( strcmp( key, VERIFY_PEER_KEY ) == 0 ) {
          // verify peer?
-         char *end;
-         long v = strtol( values[0], &end, 10 );
-         if( end[0] != '\0' ) {
-            errorf( "WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
-         }
-         else {
-            conf->verify_peer = (v ? true : false);
+         long val = 0;
+         int rc = md_conf_parse_long( values[0], &val, buf, line_cnt );
+         if( rc == 0 ) {
+            conf->verify_peer = (val != 0);
          }
       }
       
@@ -451,16 +448,10 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       
       else if( strcmp( key, GATHER_STATS_KEY ) == 0 ) {
          // gather statistics?
-         char *end;
-         long val = strtol( values[0], &end, 10 );
-         if( end[0] != '\0' ) {
-            errorf( "WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
-         }
-         else {
-            if( val == 0 )
-               conf->gather_stats = false;
-            else
-               conf->gather_stats = true;
+         long val = 0;
+         int rc = md_conf_parse_long( values[0], &val, buf, line_cnt );
+         if( rc == 0 ) {
+            conf->gather_stats = (val != 0);
          }
       }
 
@@ -500,13 +491,13 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       }
 
       else if( strcmp( key, PORTNUM_KEY ) == 0 ) {
-         char *end;
-         long val = strtol( values[0], &end, 10 );
-         if( end[0] != '\0' || val <= 0 || val >= 65534 ) {
-            errorf( "WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
-         }
-         else {
-            conf->portnum = val;
+         long val = 0;
+         int rc = md_conf_parse_long( values[0], &val, buf, line_cnt );
+         if( rc == 0 ) {
+            if( val > 0 && val <= 65534 )
+               conf->portnum = val;
+            else
+               errorf("WARN: invalid port number %ld in line %d\n", val, line_cnt );
          }
       }
 
@@ -526,38 +517,16 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       }
       
       else if( strcmp( key, DEBUG_KEY ) == 0 ) {
-         if( strcmp(values[0], "0" ) != 0 )
-            md_debug(1);
-         else
-            md_debug(0);
-      }
-      
-      else if( strcmp( key, DEBUG_READ_KEY ) == 0 ) {
-         if( strcmp(values[0], "0" ) != 0 )
-            conf->debug_read = 1;
-         else
-            conf->debug_read = 0;
-      }
-
-      else if( strcmp( key, DEBUG_LOCK_KEY ) == 0 ) {
-         if( strcmp(values[0], "0" ) != 0 )
-            conf->debug_lock = 1;
-         else
-            conf->debug_lock = 0;
-      }
-      
-      else if( strcmp( key, NUM_REPLICA_THREADS_KEY ) == 0 ) {
-         conf->num_replica_threads = (unsigned int)strtol( values[0], NULL, 10 );
+         long val = 0;
+         int rc = md_conf_parse_long( values[0], &val, buf, line_cnt );
+         if( rc == 0 ) {
+            md_debug( conf, (int)val );
+         }
       }
       
       else if( strcmp( key, LOCAL_STORAGE_DRIVERS_KEY ) == 0 ) {
          conf->local_sd_dir = strdup( values[0] );
       }
-      
-      else if( strcmp( key, REPLICA_OVERWRITE_KEY ) == 0 ) {
-         conf->replica_overwrite = (strtol(values[0], NULL, 10) != 0 ? true : false);
-      }
-
       else if( strcmp( key, HTTPD_PORTNUM_KEY ) == 0 ) {
          conf->httpd_portnum = strtol( values[0], NULL, 10 );
       }
@@ -571,12 +540,9 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       }
       
       else if( strcmp( key, AG_BLOCK_SIZE_KEY ) == 0 ) {
-         char *end;
-         long val = strtol( values[0], &end, 10 );
-         if( end[0] != '\0' ) {
-            errorf( "WARN: ignoring bad config line %d: %s\n", line_cnt, buf );
-         }
-         else {
+         long val = 0;
+         int rc = md_conf_parse_long( values[0], &val, buf, line_cnt );
+         if( rc == 0 ) {
             conf->ag_block_size = val;
          }
       }
@@ -2147,7 +2113,7 @@ int md_init_begin( struct md_syndicate_conf* conf,
       }
    #endif
       
-      // need a Volume nam
+      // need a Volume name
       if( volume_name == NULL ) {
          errorf("%s", "ERR: missing Volume name\n");
          return -EINVAL;
@@ -2162,6 +2128,7 @@ int md_init_begin( struct md_syndicate_conf* conf,
       _already_inited = true;
    }
    
+   // populate the config
    MD_SYNDICATE_CONF_OPT( *conf, volume_name, volume_name );
    MD_SYNDICATE_CONF_OPT( *conf, metadata_url, ms_url );
    MD_SYNDICATE_CONF_OPT( *conf, ms_username, oid_username );
@@ -2212,7 +2179,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       }
    }
    
-   // attempt OpeNID authentication
+   // attempt OpenID authentication
    else if( conf->gateway_name != NULL && conf->ms_username != NULL && conf->ms_password != NULL ) {
       // register the gateway via OpenID
       rc = ms_client_openid_gateway_register( client, conf->gateway_name, conf->ms_username, conf->ms_password, conf->volume_pubkey, key_password );
@@ -2225,7 +2192,13 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       }
    }
    else {
-      // anonymous register
+      // anonymous register.
+      // (force client mode)
+      if( !conf->is_client ) {
+         errorf("%s", "ERROR: no authentication tokens provided, but not in client mode.\n");
+         return -EINVAL;
+      }
+      
       conf->gateway_name = strdup("<anonymous>");
       conf->ms_username = strdup("<anonymous>");
       conf->ms_password = strdup("<anonymous>");
@@ -2236,7 +2209,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
       if( rc != 0 ) {
          errorf("ms_client_anonymous_gateway_register(%s) rc = %d\n", conf->volume_name, rc );
          
-         ms_client_destroy( client );;
+         ms_client_destroy( client );
          
          return -ENOTCONN;
       }  
@@ -2383,7 +2356,6 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
    conf->default_read_freshness = 5000;
    conf->default_write_freshness = 0;
    conf->gather_stats = false;
-   conf->num_replica_threads = 1;
    conf->httpd_portnum = 44444;
 
 #ifndef _DEVELOPMENT
@@ -2393,11 +2365,9 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
 #endif
    
    conf->num_http_threads = 1;
-   conf->replica_overwrite = false;
-
+   
    conf->ag_block_size = 0;
    
-   conf->debug_read = false;
    conf->debug_lock = false;
 
    conf->connect_timeout = 10;
@@ -2440,10 +2410,10 @@ int md_check_conf( struct md_syndicate_conf* conf ) {
       fprintf(stderr, err_fmt, METADATA_URL_KEY );
    }
    if( conf->ms_username == NULL ) {
-      fprintf(stderr, warn_fmt, METADATA_USERNAME_KEY );
+      fprintf(stderr, warn_fmt, MS_USERNAME_KEY );
    }
    if( conf->ms_password == NULL ) {
-      fprintf(stderr, warn_fmt, METADATA_PASSWORD_KEY );
+      fprintf(stderr, warn_fmt, MS_PASSWORD_KEY );
    }
    if( conf->gateway_name == NULL ) {
       fprintf(stderr, warn_fmt, GATEWAY_NAME_KEY );

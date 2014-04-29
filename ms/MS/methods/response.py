@@ -241,7 +241,7 @@ def response_load_gateway( request_handler, vol ):
    
 
 # ----------------------------------
-def response_begin( request_handler, volume_name_or_id ):
+def response_begin( request_handler, volume_name_or_id, fail_if_no_auth_header=True ):
    """
    Begin a response to a calling gateway, given the request handler and either the volume name or ID.
    Load up the calling gateway and the volume it's trying to access, and return both along with 
@@ -264,7 +264,7 @@ def response_begin( request_handler, volume_name_or_id ):
    # try to authenticate the gateway
    gateway, status, gateway_read_time = response_load_gateway( request_handler, volume )
 
-   if (status != 200 or gateway == None):
+   if fail_if_no_auth_header and (status != 200 or gateway == None):
       return (None, None, None)
 
    # make sure this gateway is allowed to access this Volume

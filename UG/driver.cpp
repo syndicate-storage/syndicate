@@ -37,6 +37,16 @@ int driver_init( struct fs_core* core, struct md_closure** _ret ) {
    
    int rc = ms_client_get_closure_text( core->ms, &closure_text, &closure_text_len );
    if( rc != 0 ) {
+      
+      if( rc == -ENODATA && (core->conf->is_client || core->gateway == GATEWAY_ANON) ) {
+         // no driver, since we're either anonymous or a client.
+         // use the dummy closure 
+         dbprintf("WARNING: ms_client_get_closure_text rc = %d, but this gateway is anonymous and/or in client mode.  Not treating this as an error.\n", rc );
+         *_ret = closure;
+         return 0;
+      }
+      
+      // some other error
       errorf("ms_client_get_closure_text rc = %d\n", rc );
       
       if( rc == -ENOENT ) {

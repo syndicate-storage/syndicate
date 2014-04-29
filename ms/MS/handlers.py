@@ -62,14 +62,14 @@ class MSVolumeRequestHandler(webapp2.RequestHandler):
 
    def get( self, volume_name_or_id_str ):
    
-      gateway, volume, timing = response_begin( self, volume_name_or_id_str )
+      # get the gateway, but we'll check for ourselves whether or not the gateway needs authentication
+      gateway, volume, timing = response_begin( self, volume_name_or_id_str, fail_if_no_auth_header=False )
       if volume == None:
          return
 
       if volume.need_gateway_auth() and gateway == None:
          response_user_error( self, 403 )
          return 
-      
    
       root = storage.get_volume_root( volume )
       

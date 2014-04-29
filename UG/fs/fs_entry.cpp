@@ -23,7 +23,7 @@
 #include "replication.h"
 #include "driver.h"
 
-int _debug_locks = 1;
+int _debug_locks = 0;
 
 int fs_entry_set_config( struct md_syndicate_conf* conf ) {
    _debug_locks = conf->debug_lock;
