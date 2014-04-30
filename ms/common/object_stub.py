@@ -1195,10 +1195,10 @@ class Gateway( StubObject ):
       driver_py = None 
       
       if os.path.exists( replica_py_path ):
-         replica_py = storage.read_file( replica_py_path )
+         replica_py = storagelib.read_file( replica_py_path )
          
       if os.path.exists( driver_py_path ):
-         driver_py = storage.read_file( driver_py_path )
+         driver_py = storagelib.read_file( driver_py_path )
       
       # need replica, but not driver
       if replica_py == None:
