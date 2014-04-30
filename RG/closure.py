@@ -605,7 +605,7 @@ def call_closure_delete( request, filename ):
 
 
 #-------------------------
-def init( libsyndicate, gateway_key_path, user_pubkey_pem ):
+def init( libsyndicate, gateway_key_path ):
    '''
       Initialize this module.
    '''
@@ -640,12 +640,8 @@ def init( libsyndicate, gateway_key_path, user_pubkey_pem ):
          return -1
       
       gateway_privkey = CryptoKey.importKey( gateway_privkey_pem )
-      
-   if user_pubkey_pem is None:
-      log.warning("Using Gateway public key to verify closures")
-      user_pubkey_pem = gateway_privkey.publickey().exportKey()
-
-   SENDER_PUBKEY_PEM = user_pubkey_pem 
+   
+   SENDER_PUBKEY_PEM = gateway_privkey.publickey().exportKey() 
    GATEWAY_PRIVKEY_PEM = gateway_privkey_pem
    
    # set up our storage

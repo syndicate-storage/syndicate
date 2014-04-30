@@ -166,23 +166,9 @@ def run( config, syndicate ):
    
    # get our key files
    my_key_file = config.get("gateway_pkey", None )
-   user_pkey_file = config.get("user_pkey", None )
-   user_pkey_pem = config.get("user_pkey_pem", None )
    
-   user_pubkey_pem = None 
-   user_pkey = None
-   
-   if user_pkey_pem is None and user_pkey_file is not None:
-      user_pkey = syndicate_storage.read_key( user_pkey_file )
-      if user_pkey is None:
-         log.error("Failed to read %s" % user_pkey_file )
-         return -errno.ENODATA
-
-      user_pkey_pem = user_pkey.exportKey()
-      user_pubkey_pem = user_pkey.publickey().exportKey()
-
    # get our configuration from the MS and start keeping it up to date 
-   rc = rg_closure.init( syndicate, my_key_file, user_pubkey_pem )
+   rc = rg_closure.init( syndicate, my_key_file )
    if rc < 0:
        log.error("Failed to initialize (rc = %s)" % rc)
        return rc
