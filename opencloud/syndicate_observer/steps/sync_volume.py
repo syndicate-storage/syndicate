@@ -39,7 +39,7 @@ parentdir = os.path.join(os.path.dirname(__file__),"..")
 sys.path.insert(0,parentdir)
 
 import syndicatelib
-
+import openidlib
 
 class SyncVolume(SyncStep):
     provides=[Volume]
@@ -69,6 +69,8 @@ class SyncVolume(SyncStep):
         # get the observer secret 
         try:
             observer_secret = config.SYNDICATE_OPENCLOUD_SECRET
+            observer_pkey_path = config.SYNDICATE_PRIVATE_KEY
+            syndicate_url = config.SYNDICATE_SMI_URL
         except Exception, e:
             traceback.print_exc()
             logger.error("config is missing SYNDICATE_OPENCLOUD_SECRET")
@@ -109,7 +111,49 @@ class SyncVolume(SyncStep):
                 traceback.print_exc()
                 logger.error("Failed to update volume '%s', exception = %s" % (volume.name, e.message))
                 raise e
+
+
+        if volume.per_slice_volume:
+            slice_user_email = openidlib.build_full_id( volume.per_slice_id )
+
+            # make sure there's a Syndicate user account for the slice
+            try:
+                rc, slice_user = syndicatelib.ensure_user_exists_and_has_credentials( slice_user_email, observer_secret )
+                assert rc is True, "Failed to ensure user %s exists and has credentials (rc = %s,%s)" % (slice_user_email, rc, slice_user)
+            except Exception, e:
+                traceback.print_exc()
+                logger.error('Failed to ensure user %s exists' % slice_user_email)
+                raise e
+
+            # grant the slice the ability to provision UGs in this Volume
+            try:
+                rc = syndicatelib.ensure_volume_access_right_exists( slice_user_email, volume.name, volume.default_gateway_caps )
+                assert rc is True, "Failed to create access right for %s in %s" % (slice_user_email, volume.name)       
+            except Exception, e:
+                traceback.print_exc()
+                logger.error("Failed to create access right for %s in %s" % (slice_user_email, volume.name))
+                raise e
+
+            # get slice credentials....
+            try:
+                slice_cred = syndicatelib.generate_slice_credentials( observer_pkey_path, syndicate_url, slice_user_email, volume.name, observer_secret, 32770, existing_user=slice_user )
+                assert slice_cred is not None, "Failed to generate slice credential for %s in %s" % (slice_user_email, volume.name )
                     
+            except Exception, e:
+                traceback.print_exc()
+                logger.error("Failed to generate slice credential for %s in %s" % (slice_user_email, volume.name))
+                raise e
+                 
+            # .... and push them all out.
+            try:
+                rc = syndicatelib.push_credentials_to_slice( slice.name, slice_cred )
+                assert rc is True, "Failed to push credentials to slice %s for volume %s" % (slice.name, volume_name)
+                   
+            except Exception, e:
+                traceback.print_exc()
+                logger.error("Failed to push slice credentials to %s for volume %s" % (slice.name, volume_name))
+                raise e
+
         return True
 
 
