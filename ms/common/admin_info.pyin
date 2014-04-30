@@ -8,3 +8,5 @@ ADMIN_REGISTER_PASSWORD = "%(register_password)s".strip()
 SYNDICATE_NAME = "%(syndicate_name)s".strip()
 SYNDICATE_PUBKEY = """%(syndicate_public_key)s""".strip()
 SYNDICATE_PRIVKEY = """%(syndicate_private_key)s""".strip()
+
+OPENID_DEBUG = bool( "%(devel)s" )

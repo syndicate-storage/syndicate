@@ -2201,7 +2201,7 @@ int md_init_begin( struct md_syndicate_conf* conf,
       conf->user_pkey_len = strlen(user_pkey_pem);
       
       struct mlock_buf tmp;
-      int rc = mlock_dup( &tmp, user_pkey_pem, conf->user_pkey_len );
+      int rc = mlock_dup( &tmp, user_pkey_pem, conf->user_pkey_len + 1 );
       if( rc != 0 ) {
          errorf("mlock_dup rc = %d\n", rc );
          exit(1);
@@ -2401,7 +2401,7 @@ int md_init_client( struct md_syndicate_conf* conf,
       conf->gateway_key_len = strlen(user_pkey_pem);
       
       struct mlock_buf tmp;
-      int rc = mlock_dup( &tmp, gateway_key_pem, conf->gateway_key_len );
+      int rc = mlock_dup( &tmp, gateway_key_pem, conf->gateway_key_len + 1 );
       if( rc != 0 ) {
          errorf("mlock_dup rc = %d\n", rc );
          exit(1);

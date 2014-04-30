@@ -22,11 +22,16 @@ try:
    import syndicate.protobufs.ms_pb2 as ms_pb2
 except:
    import protobufs.ms_pb2 as ms_pb2
+   
+from admin_info import OPENID_DEBUG
+
+try:
+   import syndicate.client.common.log as Log
+   log = Log.get_logger()
+except:
+   import logging as log
 
 # configuration parameters
-
-# debug
-OPENID_DEBUG = True
 
 # MS
 MS_HOSTNAME = ""
@@ -35,7 +40,6 @@ MS_URL = ""
 
 # OpenID
 OPENID_SESSION_SSL_ONLY=True
-OPENID_LOCAL_TEST=True
 OPENID_TRUST_ROOT_HOST = ""
 OPENID_HOST_URL = ""
 
@@ -49,7 +53,6 @@ if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
    OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
    OPENID_HOST_URL = "http://" + OPENID_TRUST_ROOT_HOST
    OPENID_SESSION_SSL_ONLY=False
-   OPENID_LOCAL_TEST=True
    
 else:
    # running publicly.
@@ -65,7 +68,6 @@ else:
    OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
    OPENID_HOST_URL = "https://" + OPENID_TRUST_ROOT_HOST
    OPENID_SESSION_SSL_ONLY=True
-   OPENID_LOCAL_TEST=False
    OPENID_DEBUG=False
 
 if OPENID_DEBUG:
@@ -90,6 +92,8 @@ else:
    OPENID_PROVIDER_RESPONSE_METHOD = "POST"
 
 MS_URL = MS_PROTO + MS_HOSTNAME
+
+log.info("OpenID provider: %s" % OPENID_PROVIDER_URL )
 
 # security
 OBJECT_KEY_SIZE = 4096

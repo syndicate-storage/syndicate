@@ -42,6 +42,7 @@ cdef extern from "ms-client.h":
 
    int ms_client_init( ms_client* client, int gateway_type, md_syndicate_conf* conf )
    int ms_client_destroy( ms_client* client )
+   char* ms_client_get_hostname( ms_client* client )
    int ms_client_get_portnum( ms_client* client )
 
 # ------------------------------------------

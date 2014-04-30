@@ -290,7 +290,7 @@ int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char
          struct mlock_buf pkey_buf;
          memset( &pkey_buf, 0, sizeof(pkey_buf) );
          
-         rc = mlock_dup( &pkey_buf, key_pem, strlen(key_pem) );
+         rc = mlock_dup( &pkey_buf, key_pem, strlen(key_pem) + 1 );
          if( rc != 0 ) {
             errorf("mlock_dup rc = %d\n", rc );
             return rc;
@@ -3772,6 +3772,28 @@ char* ms_client_get_volume_name( struct ms_client* client ) {
    
    ms_client_view_unlock( client );
    return ret;
+}
+
+// get the hostname in the cert
+char* ms_client_get_hostname( struct ms_client* client ) {
+   ms_client_view_rlock( client );
+   
+   char* hostname = NULL;
+   
+   // get our cert...
+   if( client->volume != NULL ) {
+      ms_cert_bundle* cert_bundles[MS_NUM_CERT_BUNDLES+1];
+      ms_client_cert_bundles( client->volume, cert_bundles );
+      
+      ms_cert_bundle::iterator itr = cert_bundles[ client->conf->gateway_type ]->find( client->gateway_id );
+      if( itr != cert_bundles[ client->conf->gateway_type ]->end() ) {
+         hostname = strdup( itr->second->hostname );
+      }
+   }
+   
+   ms_client_view_unlock( client );
+   
+   return hostname;
 }
 
 // get the port num

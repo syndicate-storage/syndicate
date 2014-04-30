@@ -161,8 +161,8 @@ def setup_syndicate( config ):
 #-------------------------
 def run( config, syndicate ):
 
-   # get our hostname
-   hostname = socket.gethostname()
+   # get our cert-designated hostname
+   hostname = syndicate.hostname()
    
    # get our key files
    my_key_file = config.get("gateway_pkey", None )
@@ -186,6 +186,8 @@ def run( config, syndicate ):
    if rc < 0:
        log.error("Failed to initialize (rc = %s)" % rc)
        return rc
+
+   log.info("Starting server on %s:%s" % (hostname, syndicate.portnum()))
 
    # start serving
    httpd = make_server( hostname, syndicate.portnum(), rg_server.wsgi_application )

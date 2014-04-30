@@ -456,6 +456,21 @@ cdef class Syndicate:
       '''
       return ms_client_get_portnum( &self.client_inst )
 
+
+   def hostname( self ):
+      '''
+         Get the hostname the cert says we're supposed to listen on.
+      '''
+      hostname = ms_client_get_hostname( &self.client_inst )
+      if hostname != None:
+         ret = hostname[:]
+         stdlib.free( hostname )
+         return ret 
+
+      else:
+         return None
+
+
    cpdef sign_message( self, data ):
       '''
          Sign a message with the gateway's private key.

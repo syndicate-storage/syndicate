@@ -470,7 +470,7 @@ class GAEOpenIDRequestHandler(webapp2.RequestHandler):
         # us.  Status is a code indicating the response type. info is
         # either None or a Response subclass with more information about
         # the return type.
-        url = "http://" + self.request.headers.get("Host") + self.request.path
+        url = MS_PROTO + self.request.headers.get("Host") + self.request.path
         info = oidconsumer.complete(self.query, url)
         
         display_identifier = info.getDisplayIdentifier()

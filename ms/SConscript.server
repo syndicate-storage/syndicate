@@ -160,7 +160,8 @@ arg_handlers = {
    "syndicate_name": None,
    "openid_url": None,
    "user_id": None,
-   "register_password": None
+   "register_password": None,
+   "devel": None
 }
 
 def raise_(msg):
@@ -183,7 +184,8 @@ default_args = {
    "user_id": lambda: raise_("No admin user ID given.  Please pass user_id=YOUR.ADMIN.EMAIL@EXAMPLE.COM"),
    "syndicate_private_key": lambda: None,
    "syndicate_public_key": lambda: None,
-   "register_password": lambda: warn_and_value("No administrator public key activation password set.  Using the default: '%s'" % default_register_password, default_register_password)
+   "register_password": lambda: warn_and_value("No administrator public key activation password set.  Using the default: '%s'" % default_register_password, default_register_password),
+   "devel": lambda: str( extra_args.get("devel", False) )
 }
 
 

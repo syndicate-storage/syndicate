@@ -352,6 +352,7 @@ int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint
 
 // get information about a specific gateway
 int ms_client_get_gateway_type( struct ms_client* client, uint64_t g_id );
+char* ms_client_get_hostname( struct ms_client* client );
 int ms_client_get_portnum( struct ms_client* client );
 uint64_t* ms_client_RG_ids( struct ms_client* client );
 uint64_t ms_client_get_AG_blocksize( struct ms_client* client, uint64_t gateway_id );
