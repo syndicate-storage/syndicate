@@ -16,6 +16,7 @@ import hashlib
 
 OPENID_LIB_SERVERNAME="171.67.92.189:8001"
 OPENID_LIB_DIR="users"
+OPENID_ADDRESS_BASE="slc.onlab.us"
 
 def generate_password(username):
     return hashlib.sha1(username).hexdigest()
@@ -75,5 +76,5 @@ def get_id_by_username(username):
     return one_row['id']
 
 def build_full_id(username):
-    return "%s@%s" % (username, OPENID_LIB_SERVERNAME)
+    return "%s@%s" % (username, OPENID_ADDRESS_BASE)
 

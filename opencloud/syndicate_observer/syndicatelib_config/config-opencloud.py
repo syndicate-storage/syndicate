@@ -1,11 +1,11 @@
 #!/usr/bin/python
 
 # configuration for syndicatelib
-SYNDICATE_SMI_URL="http://localhost:8080"
+SYNDICATE_SMI_URL="http://node48.princeton.vicci.org:8000"
 
-SYNDICATE_OPENID_TRUSTROOT="http://localhost:8081"
+SYNDICATE_OPENID_TRUSTROOT="http://171.67.92.189:8001"
 
-SYNDICATE_OPENCLOUD_USER="judecn@gmail.com"
+SYNDICATE_OPENCLOUD_USER="iychoi@email.arizona.edu"
 SYNDICATE_OPENCLOUD_PASSWORD="nya"
 
 SYNDICATE_PYTHONPATH="/root/syndicate/build/out/python"

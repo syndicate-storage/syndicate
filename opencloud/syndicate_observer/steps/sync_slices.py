@@ -68,7 +68,7 @@ class SyncSlices(SyncStep):
             # we now pass the base name to OpenID, because the OpenID server only supports
             # user names up to 30 characters.
 
-            slice_email = slice.name
+            slice_email = openidlib.build_full_id(slice.name)
             slice_password = openidlib.generate_password(slice_email)
             print "slice email = %s" % slice_email
 

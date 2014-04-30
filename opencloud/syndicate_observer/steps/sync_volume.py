@@ -114,7 +114,7 @@ class SyncVolume(SyncStep):
 
 
         if volume.per_slice_volume:
-            slice_user_email = openidlib.build_full_id( volume.per_slice_id )
+            slice_user_email = volume.per_slice_id
 
             # make sure there's a Syndicate user account for the slice
             try:
