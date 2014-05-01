@@ -127,7 +127,7 @@ class SyncVolume(SyncStep):
 
             # grant the slice the ability to provision UGs in this Volume
             try:
-                rc = syndicatelib.ensure_volume_access_right_exists( slice_user_email, volume.name, volume.default_gateway_caps )
+                rc = syndicatelib.ensure_volume_access_right_exists( slice_user_email, volume.name, syndicatelib.opencloud_caps_to_syndicate_caps(volume.default_gateway_caps) )
                 assert rc is True, "Failed to create access right for %s in %s" % (slice_user_email, volume.name)       
             except Exception, e:
                 traceback.print_exc()
@@ -147,11 +147,11 @@ class SyncVolume(SyncStep):
             # .... and push them all out.
             try:
                 rc = syndicatelib.push_credentials_to_slice( slice.name, slice_cred )
-                assert rc is True, "Failed to push credentials to slice %s for volume %s" % (slice.name, volume_name)
+                assert rc is True, "Failed to push credentials to slice %s for volume %s" % (volume.name, volume_name)
                    
             except Exception, e:
                 traceback.print_exc()
-                logger.error("Failed to push slice credentials to %s for volume %s" % (slice.name, volume_name))
+                logger.error("Failed to push slice credentials to %s for volume %s" % (volume.name, volume_name))
                 raise e
 
         return True
