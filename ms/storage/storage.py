@@ -390,11 +390,13 @@ def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **
    gateway_quota = user.get_gateway_quota( gateway_type )
    
    if gateway_quota == 0:
+      gateway_type_str = GATEWAY_TYPE_TO_STR[gateway_type]
       raise Exception("User '%s' cannot own %s Gateways" % (email, gateway_type_str))
    
    if gateway_quota > 0:
       gateway_ids = list_gateways_by_user( user.email, caller_user=user, keys_only=True )
-      if len(gateway_ids) >= gateway_quota:
+      if len(gateway_ids) > gateway_quota:
+         gateway_type_str = GATEWAY_TYPE_TO_STR[gateway_type]
          raise Exception("User '%s' is at quota for %s Gateways" % (email, gateway_type_str))
       
    gateway_key = Gateway.Create( user, volume, gateway_type=gateway_type, name=gateway_name, host=host, port=port, **kwargs )

@@ -146,12 +146,12 @@ class SyncVolume(SyncStep):
                  
             # .... and push them all out.
             try:
-                rc = syndicatelib.push_credentials_to_slice( slice.name, slice_cred )
-                assert rc is True, "Failed to push credentials to slice %s for volume %s" % (volume.name, volume_name)
+                rc = syndicatelib.push_credentials_to_slice( volume.name, slice_cred )
+                assert rc is True, "Failed to push credentials to slice %s for volume %s" % (volume.name, volume.name)
                    
             except Exception, e:
                 traceback.print_exc()
-                logger.error("Failed to push slice credentials to %s for volume %s" % (volume.name, volume_name))
+                logger.error("Failed to push slice credentials to %s for volume %s" % (volume.name, volume.name))
                 raise e
 
         return True

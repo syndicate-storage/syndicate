@@ -697,8 +697,8 @@ def do_push( sliver_hosts, payload ):
     
     # make gevents runnabale from multiple threads (or Django will complain)
     from gevent import monkey
-    #monkey.patch_all(socket=True, dns=True, time=True, select=True,thread=False, os=True, ssl=True, httplib=False, aggressive=True)
-    monkey.patch_all()
+    monkey.patch_all(socket=True, dns=True, time=True, select=True,thread=False, os=True, ssl=True, httplib=False, aggressive=True)
+    #monkey.patch_all()
 
     import grequests
     
