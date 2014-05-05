@@ -22,8 +22,12 @@ try:
    import syndicate.protobufs.ms_pb2 as ms_pb2
 except:
    import protobufs.ms_pb2 as ms_pb2
-   
-from admin_info import OPENID_DEBUG
+
+try:
+   from admin_info import OPENID_LOCAL
+except:
+   # imported by a client program, not the MS, since admin_info isn't available
+   OPENID_LOCAL = False
 
 try:
    import syndicate.client.common.log as Log
@@ -39,7 +43,7 @@ MS_PROTO = ""
 MS_URL = ""
 
 # OpenID
-OPENID_SESSION_SSL_ONLY=True
+OPENID_SESSION_SSL_ONLY = True
 OPENID_TRUST_ROOT_HOST = ""
 OPENID_HOST_URL = ""
 
@@ -52,7 +56,7 @@ if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
    
    OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
    OPENID_HOST_URL = "http://" + OPENID_TRUST_ROOT_HOST
-   OPENID_SESSION_SSL_ONLY=False
+   OPENID_SESSION_SSL_ONLY = False
    
 else:
    # running publicly.
@@ -68,10 +72,10 @@ else:
    OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
    OPENID_HOST_URL = "https://" + OPENID_TRUST_ROOT_HOST
    OPENID_SESSION_SSL_ONLY=True
-   OPENID_DEBUG=False
+   OPENID_LOCAL = False
 
-if OPENID_DEBUG:
-   # OpenID debug
+if OPENID_LOCAL:
+   # OpenID debug on local server
    OPENID_PROVIDER_NAME = "localhost"
    OPENID_PROVIDER_URL = "http://localhost:8081/id/"
    OPENID_PROVIDER_AUTH_HANDLER = "http://localhost:8081/allow"

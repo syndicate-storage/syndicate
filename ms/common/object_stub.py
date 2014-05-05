@@ -181,7 +181,7 @@ def load_binary_driver( gateway_closure_path, storagelib ):
 
 
 
-def encrypt_secrets_dict( obj_type, obj_name, secrets_dict, serializer, c_syndicate=None, config=None, storagelib=None ):
+def encrypt_secrets_dict( obj_type, obj_name, secrets_dict, serializer, c_syndicate=None, config=None, storagelib=None, privkey_pem=None ):
    """
    Encrypt a secrets dictionary, returning the serialized base64-encoded ciphertext.
    c_syndicate must be the binary Syndicate module (containing the encrypt_closure_secrets() method)
@@ -204,14 +204,22 @@ def encrypt_secrets_dict( obj_type, obj_name, secrets_dict, serializer, c_syndic
       raise Exception("Failed to serialize secrets")
    
    # attempt to get the private key
-   privkey_pem = None
-   try:
-      privkey = storagelib.load_private_key( config, obj_type, obj_name )
-      privkey_pem = privkey.exportKey()
-   except Exception, e:
-      log.exception(e)
-      raise Exception("Failed to load private key for %s" % obj_name )
+   privkey = None
+   if privkey_pem is None:
+      try:
+         privkey = storagelib.load_private_key( config, obj_type, obj_name )
+         privkey_pem = privkey.exportKey()
+      except Exception, e:
+         log.exception(e)
+         raise Exception("Failed to load private key for %s" % obj_name )
    
+   else:
+      try:
+         privkey = CryptoKey.importKey( privkey_pem )
+      except Exception, e:
+         log.exception(e)
+         raise Exception("Failed to parse private key for %s" % obj_name )
+      
    pubkey_pem = privkey.publickey().exportKey()
    
    # encrypt the serialized secrets dict 
@@ -264,7 +272,7 @@ def load_closure_config( closure_path, storagelib, serializer=None ):
    return config_dict_str 
 
 
-def load_closure_secrets( closure_path, obj_type, obj_name, config, storagelib, serializer=None ):
+def load_closure_secrets( closure_path, obj_type, obj_name, config, storagelib, serializer=None, privkey_pem=None ):
    """
    Given the path to our closure on disk, load and serialize the secrets dictionary, encrypting it with the public key of the given object type and name.
    storagelib must be our storage library.
@@ -291,17 +299,17 @@ def load_closure_secrets( closure_path, obj_type, obj_name, config, storagelib, 
       log.warning("No secrets defined")
    
    # secrets...
-   secrets_dict_str = encrypt_secrets_dict( obj_type, obj_name, secrets_dict, serializer, c_syndicate, config, storagelib )
+   secrets_dict_str = encrypt_secrets_dict( obj_type, obj_name, secrets_dict, serializer, c_syndicate=c_syndicate, config=config, storagelib=storagelib, privkey_pem=privkey_pem )
    
    return secrets_dict_str
    
    
-def load_config_and_secrets( closure_path, obj_type, obj_name, config, storagelib, serializer=None ):
+def load_config_and_secrets( closure_path, obj_type, obj_name, config, storagelib, serializer=None, privkey_pem=None ):
    """
    Load a closure's config and secrets.  Literall wraps load_closure_config and load_closure_secrets.
    """
    config_str = load_closure_config( closure_path, storagelib, serializer )
-   secrets_str = load_closure_secrets( closure_path, obj_type, obj_name, config, storagelib, serializer )
+   secrets_str = load_closure_secrets( closure_path, obj_type, obj_name, config, storagelib, serializer=serializer, privkey_pem=privkey_pem )
    return (config_str, secrets_str)
 
 
@@ -325,7 +333,7 @@ def make_closure_json( closure_dict ):
    return closure_str
 
 
-def load_binary_closure_essentials( closure_path, obj_type, obj_name, config, storagelib ):
+def load_binary_closure_essentials( closure_path, obj_type, obj_name, config, storagelib, privkey_pem=None):
    """
    Load binary driver essentials: the .so file, the config dict, and the secrets dict.
    Generate a JSON string containing them all.
@@ -333,7 +341,7 @@ def load_binary_closure_essentials( closure_path, obj_type, obj_name, config, st
    """
    
    # get config and secrets data
-   config_dict_str, secrets_dict_str = load_config_and_secrets( closure_path, obj_type, obj_name, config, storagelib, json.dumps )
+   config_dict_str, secrets_dict_str = load_config_and_secrets( closure_path, obj_type, obj_name, config, storagelib, serializer=json.dumps, privkey_pem=privkey_pem )
    
    # get the driver
    driver_str = load_binary_driver( closure_path, storagelib )
@@ -945,6 +953,7 @@ class Gateway( StubObject ):
          
       extra = {'gateway_private_key': privkey_str}
       lib.gateway_public_key_str = pubkey_str           # validate against private key, if we need to load it
+      lib.gateway_private_key_str = privkey_str
       
       return pubkey_str, extra
    
@@ -1115,7 +1124,14 @@ class Gateway( StubObject ):
          log.error("Missing parsed call information")
          raise e
       
-      essentials = load_binary_closure_essentials( gateway_closure_path, "gateway", gateway_name, config, storagelib )
+      # maybe generated a private key earlier?
+      privkey_pem = None
+      try:
+         privkey_pem = lib.gateway_private_key_str
+      except:
+         pass
+      
+      essentials = load_binary_closure_essentials( gateway_closure_path, "gateway", gateway_name, config, storagelib, privkey_pem=privkey_pem )
       
       # UG needs nothing more...
       
@@ -1141,7 +1157,14 @@ class Gateway( StubObject ):
          log.error("Missing parsed call information")
          raise e
       
-      driver_components = load_binary_closure_essentials( gateway_closure_path, "gateway", gateway_name, config, storagelib )
+      # maybe generated a private key earlier?
+      privkey_pem = None
+      try:
+         privkey_pem = lib.gateway_private_key_str
+      except:
+         pass
+      
+      driver_components = load_binary_closure_essentials( gateway_closure_path, "gateway", gateway_name, config, storagelib, privkey_pem=privkey_pem )
       
       # load the spec file 
       spec_file_path = os.path.join( gateway_closure_path, "spec.xml" )
@@ -1184,8 +1207,15 @@ class Gateway( StubObject ):
          log.error("Missing parsed call information")
          raise e
       
+      # maybe generated a private key earlier?
+      privkey_pem = None
+      try:
+         privkey_pem = lib.gateway_private_key_str
+      except:
+         pass
+      
       # get config and secrets data
-      config_dict_str, secrets_dict_str = load_config_and_secrets( gateway_closure_path, "gateway", gateway_name, config, storagelib )
+      config_dict_str, secrets_dict_str = load_config_and_secrets( gateway_closure_path, "gateway", gateway_name, config, storagelib, privkey_pem=privkey_pem )
       
       # get the replica.py and driver.py files, if they exist 
       replica_py_path = os.path.join( gateway_closure_path, "replica.py" )
@@ -1195,10 +1225,10 @@ class Gateway( StubObject ):
       driver_py = None 
       
       if os.path.exists( replica_py_path ):
-         replica_py = storage.read_file( replica_py_path )
+         replica_py = storagelib.read_file( replica_py_path )
          
       if os.path.exists( driver_py_path ):
-         driver_py = storage.read_file( driver_py_path )
+         driver_py = storagelib.read_file( driver_py_path )
       
       # need replica, but not driver
       if replica_py == None:
