@@ -340,6 +340,8 @@ def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **
    if gateway_type not in [GATEWAY_TYPE_UG, GATEWAY_TYPE_RG, GATEWAY_TYPE_AG]:
       raise Exception("Unrecognized Gateway type %s" % gateway_type)
       
+   gateway_type_str = GATEWAY_TYPE_TO_STR[gateway_type]
+   
    caller_user = _check_authenticated( kwargs )
    
    # user and volume must both exist
@@ -379,8 +381,7 @@ def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **
                raise Exception("User '%s' is not allowed to set Gateway capabilities '%s'" % requested_caps)
                
             # verify the caller is allowed to create this kind of gateway
-            if (gateway_type & access_request.allowed_gateways) == 0:
-               gateway_type_str = GATEWAY_TYPE_TO_STR[gateway_type]
+            if not access_request.is_gateway_type_allowed( gateway_type ):
                raise Exception("User '%s' is not allowed to create %s Gateways" % (gateway_type_str))
             
       # user is allowed to create this gateway in this Volume...
@@ -398,7 +399,13 @@ def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **
          raise Exception("User '%s' is at quota for %s Gateways" % (email, gateway_type_str))
       
    gateway_key = Gateway.Create( user, volume, gateway_type=gateway_type, name=gateway_name, host=host, port=port, **kwargs )
-   return gateway_key.get()
+   gw = gateway_key.get()
+   
+   # reversion volume cert?
+   if gw is not None:
+      storagetypes.deferred.defer( Volume.Reversion, volume_id )
+         
+   return gw
 
 
 # ----------------------------------
@@ -407,12 +414,9 @@ def read_gateway( g_name_or_id ):
 
 # ----------------------------------
 def update_gateway( g_name_or_id, **fields):
-   Gateway.Update( g_name_or_id, **fields )
-   return True
-
-# ----------------------------------
-def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
-   caller_user = _check_authenticated( caller_user_dict )
+   # NOTE: the UpdateAPIGuard ensures that the caller user exists,
+   # and that the user is either admin or the owner of this gateway.
+   # We only need to read the volume and gateway to call Volume.Reversion 
    
    # gateway must exist...(defensive check)
    gateway = read_gateway( g_name_or_id )
@@ -420,21 +424,45 @@ def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
    if gateway == None:
       raise Exception("No such Gateway '%s'" % g_name_or_id )
    
-   # user and volume must exist...(defensive check)
-   user, volume = _read_user_and_volume( gateway.owner_id, gateway.volume_id )
+   volume = read_volume( gateway.volume_id )
    
-   if user == None:
-      raise Exception("No user with ID '%s'" % gateway.owner_id )
-   
+   # volume must exist...(defensive check)
    if volume == None or volume.deleted:
       raise Exception("No volume with ID '%s'" % gateway.volume_id )
    
-   # caller must own the volume or be admin to do this
-   if not caller_user.is_admin and caller_user.owner_id != volume.owner_id:
-      raise Exception("User '%s' is not allowed to set the capabilities of Gateway '%s'" % user.email, gateway.name )
+   rc = Gateway.Update( g_name_or_id, **fields )
    
-   Gateway.SetCaps( g_name_or_id, caps )
-   return True
+   if rc:
+      storagetypes.deferred.defer( Volume.Reversion, volume.volume_id )
+
+   return rc
+
+
+# ----------------------------------
+def set_gateway_caps( g_name_or_id, caps ):
+   # NOTE: the UpdateAPIGuard ensures that the user exists, and that the user 
+   # is either an admin or the owner of this Gateway.
+   # we only read the user and volume again since we have to call Volume.Reversion 
+   
+   # gateway must exist...(defensive check)
+   gateway = read_gateway( g_name_or_id )
+   
+   if gateway == None:
+      raise Exception("No such Gateway '%s'" % g_name_or_id )
+   
+   volume = read_volume( gateway.volume_id )
+   
+   # volume must exist...(defensive check)
+   if volume == None or volume.deleted:
+      raise Exception("No volume with ID '%s'" % gateway.volume_id )
+   
+   rc = Gateway.SetCaps( g_name_or_id, caps )
+   
+   if rc:
+      # reversion volume cert
+      storagetypes.deferred.defer( Volume.Reversion, volume.volume_id )
+   
+   return rc
 
 # ----------------------------------
 def list_gateways( attrs=None, **q_opts):
