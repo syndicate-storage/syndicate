@@ -15,7 +15,6 @@
 */
 
 #include <driver.h>
-#include <libgateway.h>
 
 // server config 
 extern struct md_syndicate_conf *global_conf;

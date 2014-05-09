@@ -15,7 +15,6 @@
 */
 
 #include <proc-handler.h>
-#include <libgateway.h>
 
 #define BLK_SIZE (global_conf->blocking_factor)
 

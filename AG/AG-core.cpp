@@ -15,10 +15,9 @@
 */
 
 
-#include "libsyndicate/libgateway.h"
+#include "AG-core.h"
 
 static bool gateway_running = true;
-static bool allow_overwrite = false;
 
 // gloabl config
 struct md_syndicate_conf *global_conf = NULL;
@@ -464,7 +463,6 @@ int AG_main( int argc, char** argv ) {
       {"user-pkey\0User private key path (PEM)",             required_argument,  0, 'U'},
       {"MS\0Metadata Service URL",                          required_argument,   0, 'm'},
       {"foreground\0Run in the foreground",                 no_argument,         0, 'f'},
-      {"overwrite\0Overwrite previous upload on conflict",  no_argument,         0, 'w'},
       {"logfile\0Path to the log file",                     required_argument,   0, 'l'},
       {"pidfile\0Path to the PID file",                     required_argument,   0, 'i'},
       {"dataset\0Path to dataset",                     	    required_argument,   0, 'd'},
@@ -525,10 +523,6 @@ int AG_main( int argc, char** argv ) {
          }
          case 'f': {
             make_daemon = false;
-            break;
-         }
-         case 'w': {
-            allow_overwrite = true;
             break;
          }
          case 'l': {
@@ -700,10 +694,6 @@ int AG_main( int argc, char** argv ) {
 
 int start_gateway_service( struct md_syndicate_conf *conf, struct ms_client *client, char* logfile, char* pidfile, bool make_daemon ) {
    int rc = 0;
-   // clean up stale records
-   // overwrite mandated by config?
-   if( conf->replica_overwrite )
-      allow_overwrite = true;
    
    // need to daemonize?
    if( make_daemon ) {

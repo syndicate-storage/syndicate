@@ -15,7 +15,6 @@
 */
 
 #include <driver.h>
-#include <libgateway.h>
 #include <pthread.h>
 
 // server config 

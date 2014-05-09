@@ -42,6 +42,8 @@
 #include <shell-ctx.h>
 #include <map-parser.h>
 
+#include <AG-core.h>
+
 #define MAX_FILE_NAME_LEN	    32
 #define INOTIFY_EVENT_SIZE	    sizeof(struct inotify_event)
 #define INOTIFY_READ_BUFFER_LEN	    ((INOTIFY_EVENT_SIZE + \

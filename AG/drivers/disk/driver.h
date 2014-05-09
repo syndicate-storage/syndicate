@@ -26,7 +26,7 @@
 #include <errno.h>
 #include <ftw.h>
 
-#include <libgateway.h>
+#include <AG-core.h>
 #include <ms-client.h>
 #include <libsyndicate.h>
 #include <AG-util.h>

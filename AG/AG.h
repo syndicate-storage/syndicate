@@ -17,7 +17,7 @@
 #ifndef _AG_H
 #define _AG_H_
 
-#include "libgateway.h"
+#include "AG-core.h"
 #include "ms-client.h"
 #include "libsyndicate.h"
 

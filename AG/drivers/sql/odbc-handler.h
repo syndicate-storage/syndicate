@@ -27,9 +27,10 @@
 #include <iostream>
 #include <vector>
 
-#include <block-index.h>
-#include <gateway-ctx.h>
-#include <map-parser.h>
+#include "AG-core.h"
+#include "block-index.h"
+#include "gateway-ctx.h"
+#include "map-parser.h"
 
 using namespace std;
 

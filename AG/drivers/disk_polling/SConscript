@@ -27,9 +27,9 @@ source_files = """
 
 # add source file search paths here
 CPPPATH = """
-   #libsyndicate/
+   #build/out/lib/libsyndicate/
    #build/out/protobufs
-   #AG/drivers/common
+   #build/out/bin/AG/
 """
 
 # add library paths here

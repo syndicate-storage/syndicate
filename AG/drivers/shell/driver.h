@@ -23,7 +23,7 @@
 #include <sstream>
 #include <algorithm>
 
-#include <libgateway.h>
+#include <AG-core.h>
 #include <libsyndicate.h>
 #include <map-parser.h>
 #include <proc-handler.h>

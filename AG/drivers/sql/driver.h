@@ -22,9 +22,8 @@
 #include <set>
 #include <sstream>
 
-#include <libgateway.h>
+#include <AG-core.h>
 #include <libsyndicate.h>
-#include <fs/fs_entry.h>
 #include <map-parser.h>
 #include <odbc-handler.h>
 #include <block-index.h>

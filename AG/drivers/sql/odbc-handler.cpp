@@ -13,8 +13,6 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-
-#include <libgateway.h>
 #include <odbc-handler.h>
 
 ssize_t ag_blk_size = AG_BLOCK_SIZE();    
