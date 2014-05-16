@@ -223,6 +223,10 @@ class VolumeAccessRequest( storagetypes.Object ):
       return VolumeAccessRequest.ListAll( {"VolumeAccessRequest.volume_id ==": volume_id}, map_func=__delete_var, projection=['requester_owner_id'], async=async )
 
 
+   def is_gateway_type_allowed( self, gateway_type ):
+      return ((1 << gateway_type) & self.allowed_gateways) != 0
+   
+
 class VolumeNameHolder( storagetypes.Object ):
    '''
    Mark a Volume name as taken
@@ -442,6 +446,8 @@ class Volume( storagetypes.Object ):
       manifest.file_version = self.cert_version
       manifest.mtime_sec = 0
       manifest.mtime_nsec = 0
+      manifest.fent_mtime_sec = 0
+      manifest.fent_mtime_nsec = 0
       
       sz = 0
       
@@ -865,13 +871,8 @@ class Volume( storagetypes.Object ):
          for (k,v) in fields.items():
             setattr( volume, k, v )
          
-         if "version" in fields.keys():
-            # forced revision.  Ignore the actual value; just change it
-            volume.version = old_version + 1
-         
-         if "cert_version" in fields.keys():
-            # forced cert reverion.  Ignore the actual value, just change it
-            volume.cert_version = old_cert_version + 1
+         volume.version = old_version + 1
+         volume.cert_version = old_cert_version + 1
          
          return volume.put()
       
@@ -948,6 +949,45 @@ class Volume( storagetypes.Object ):
       
       return True
    
+   
+   @classmethod 
+   def Reversion( cls, volume_name_or_id ):
+      '''
+      Increase the cert version by one.
+      Call this when you add/remove a Gateway.
+      '''
+      
+      def update_txn( volume_id ):
+         '''
+         Update the Volume transactionally.
+         '''
+         
+         volume = Volume.Read( volume_id )
+         if not volume or volume.deleted:
+            raise Exception("No volume with the ID %d exists.", volume_id)
+         
+         
+         # purge from cache
+         Volume.FlushCache( volume_id )
+         
+         volume.cert_version += 1
+         
+         volume.put()
+         
+         return volume.cert_version
+      
+      volume = Volume.Read( volume_name_or_id )
+      if volume is None or volume.deleted:
+         raise Exception("No such Volume %s" % volume_name_or_id)
+      
+      try:
+         new_version = storagetypes.transaction( lambda: update_txn(volume.volume_id), xg=True )
+      except Exception, e:
+         logging.exception( e )
+         raise e
+      
+      return new_version
+      
    
    @classmethod
    def Mount( cls, volume_id, mountpoint_id, new_volume_id ):
