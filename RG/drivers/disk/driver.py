@@ -20,7 +20,8 @@
 def read_file( filename, outfile, **kw ):
    import traceback
    import os
-
+   import errno 
+   
    context = kw['context'] 
    STORAGE_DIR = context.config['STORAGE_DIR']
    
@@ -29,14 +30,29 @@ def read_file( filename, outfile, **kw ):
    
    storage_path = os.path.join(STORAGE_DIR, filename)
    
+   fd = None 
+   
    try:
       fd = open( storage_path, "r" )
       outfile.write( fd.read() )
-      fd.close()
+      
+   except OSError, oe:
+      if oe.errno == errno.ENOENT:
+         return 404 
+      else:
+         return 500
+      
    except Exception, e:
       context.log.exception(e)
       return 500
    
+   finally:
+      if fd is not None:
+         try:
+            fd.close()
+         except:
+            pass
+         
    return 200
 
 
@@ -44,7 +60,8 @@ def read_file( filename, outfile, **kw ):
 def write_file( filename, infile, **kw ):
    import traceback
    import os
-
+   import errno 
+   
    buf = infile.read()
    
    context = kw['context']
@@ -55,20 +72,35 @@ def write_file( filename, infile, **kw ):
    
    storage_path = os.path.join(STORAGE_DIR, filename)
    
+   fd = None
    try:
       fd = open( storage_path, "w" )
       fd.write( buf )
-      fd.close()
+      
+   except OSError, oe:
+      if oe.errno == errno.ENOENT:
+         return 404 
+      else:
+         return 500
+   
    except Exception, e:
       context.log.exception(e)
       return 500
    
+   finally:
+      if fd is not None:
+         try:
+            fd.close()
+         except:
+            pass
+         
    return 200
 
 
 def delete_file( filename, **kw ):
    import traceback
    import os
+   import errno
 
    context = kw['context']   
    STORAGE_DIR = context.config['STORAGE_DIR']
@@ -80,6 +112,13 @@ def delete_file( filename, **kw ):
    
    try:
       os.unlink( os.path.join(STORAGE_DIR, filename) )
+   
+   except OSError, oe:
+      if oe.errno == errno.ENOENT:
+         return 404 
+      else:
+         return 500
+      
    except Exception, e:
       context.log.exception(e)
       return 500
