@@ -612,6 +612,7 @@ class Gateway( storagetypes.Object ):
       gateway_key = None
       try:
          gateway_key = storagetypes.transaction( lambda: update_txn( fields ), xg=True )
+         assert gateway_key is not None, "Transaction failed"
       except Exception, e:
          logging.exception( e )
          raise e
@@ -625,7 +626,7 @@ class Gateway( storagetypes.Object ):
          g_name_to_id_cache_key = Gateway.Read_ByName_name_cache_key( old_name )
          storagetypes.memcache.delete( g_name_to_id_cache_key )
          
-      return gateway_key
+      return True
    
    
    @classmethod
@@ -642,7 +643,11 @@ class Gateway( storagetypes.Object ):
          gateway.put()
          return gateway
       
-      gateway = storagetypes.transaction( lambda: set_caps_txn( g_name_or_id ) )
+      try:
+         gateway = storagetypes.transaction( lambda: set_caps_txn( g_name_or_id ) )
+      except:
+         log.error("Failed to set caps")
+         return False
       
       if gateway is not None:
          Gateway.FlushCache( gateway.g_id )
