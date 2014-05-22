@@ -128,7 +128,7 @@ def exc_user_exists( exc ):
 
 
 #-------------------------------
-def connect_syndicate( username=CONFIG.SYNDICATE_OPENCLOUD_USER, password=CONFIG.SYNDICATE_OPENCLOUD_PASSWORD, user_pkey_pem=None ):
+def connect_syndicate( username=CONFIG.SYNDICATE_OPENCLOUD_USER, password=CONFIG.SYNDICATE_OPENCLOUD_PASSWORD, user_pkey_pem=CONFIG.SYNDICATE_OPENCLOUD_PKEY ):
     """
     Connect to the OpenCloud Syndicate SMI, using the OpenCloud user credentials.
     """
@@ -687,7 +687,7 @@ def get_volumeslice( volume_name, slice_name ):
 
 
 #-------------------------------
-def do_push( sliver_hosts, payload ):
+def do_push( sliver_hosts, portnum, payload ):
     """
     Push a payload to a list of slivers.
     NOTE: this has to be done in one go, since we can't import grequests
@@ -705,7 +705,7 @@ def do_push( sliver_hosts, payload ):
     # fan-out 
     requests = []
     for sh in sliver_hosts:
-      rs = grequests.post( sh, data={"observer_message": payload} )
+      rs = grequests.post( sh + ":" + str(portnum) ), data={"observer_message": payload} )
       requests.append( rs )
       
     # fan-in
@@ -751,7 +751,7 @@ def push_credentials_to_slice( slice_name, payload ):
    Push a credentials payload to the VMs in a slice.
    """
    hostnames = get_slice_hostnames( slice_name )
-   return do_push( hostnames, payload )
+   return do_push( hostnames, CONFIG.SYNDICATE_SLIVER_PORT, payload )
 
    
 #-------------------------------
@@ -1022,10 +1022,10 @@ def ft_syndicate_access():
     
     
     print "\nensure_user_exists_and_has_credentials(%s)\n" % fake_user.email
-    ensure_user_exists_and_has_credentials( fake_user.email )
+    ensure_user_exists_and_has_credentials( fake_user.email, "asdf" )
     
     print "\nensure_user_exists_and_has_credentials(%s)\n" % fake_user.email
-    ensure_user_exists_and_has_credentials( fake_user.email )
+    ensure_user_exists_and_has_credentials( fake_user.email, "asdf" )
 
     print "\nensure_volume_exists(%s)\n" % fake_volume.name
     ensure_volume_exists( fake_user.email, fake_volume )
