@@ -658,12 +658,12 @@ def client_call( CONFIG, method_name, *args, **kw ):
    
    if syndicate_public_key is None:
       # get the public key from the MS
-      syndicate_public_key = download_syndicate_public_key( CONFIG )
-      if syndicate_public_key is not None:
+      syndicate_public_key_str = download_syndicate_public_key( CONFIG )
+      if syndicate_public_key_str is not None:
          if not trust_public_key:
-            do_trust = ask_trust_public_key( CONFIG, syndicate_public_key )
+            do_trust = ask_trust_public_key( CONFIG, syndicate_public_key_str )
             if do_trust:
-               store_syndicate_public_key( CONIFG, syndicate_public_key )
+               store_syndicate_public_key( CONFIG, syndicate_public_key_str )
    
          elif not no_verify_result:
             log.error("Could not obtain Syndicate public key.  Cannot continue.")
@@ -671,6 +671,12 @@ def client_call( CONFIG, method_name, *args, **kw ):
          
          else:
             log.warning("INSECURE: will not verify result!")
+            
+         try:
+            syndicate_public_key = CryptoKey.importKey( syndicate_public_key_str )
+         except:
+            log.error("Failed to parse public key")
+            return None
             
    
    # create the RPC client
