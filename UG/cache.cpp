@@ -1182,7 +1182,7 @@ int fs_entry_cache_block_future_has_error( struct cache_block_future* f ) {
    if( !f->finalized )
       return -EAGAIN;
  
-   if( f->aio_rc != 0 || f->write_rc != 0 ) 
+   if( f->aio_rc != 0 || f->write_rc < 0 ) 
       return 1;
    
    return 0;

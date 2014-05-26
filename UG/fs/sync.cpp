@@ -95,6 +95,7 @@ int fs_entry_remote_write_or_coordinate( struct fs_core* core, char const* fs_pa
 
 
 // flush in-core buffer blocks to cache for a particular file.
+// this will update the manifest with the new versions of the blocks, as well as advance its mtime
 // fent must be write-locked
 int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, vector<struct cache_block_future*>* cache_futs ) {
    
@@ -107,11 +108,15 @@ int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_
    // get bufferred blocks
    fs_entry_extract_bufferred_blocks( fent, &bufferred_blocks );
    
+   dbprintf("%" PRIX64 " has %zu bufferred blocks\n", fent->file_id, bufferred_blocks.size() );
+   
    // flush'em, but asynchronously
    for( modification_map::iterator itr = bufferred_blocks.begin(); itr != bufferred_blocks.end(); itr++ ) {
       
       uint64_t block_id = itr->first;
       struct fs_entry_block_info* binfo = &itr->second;
+      
+      dbprintf("Flush bufferred block %" PRIX64 ".%" PRId64 "[%" PRIu64 "]\n", fent->file_id, fent->version, block_id );
       
       struct fs_entry_block_info old_binfo, new_binfo;
       
@@ -142,7 +147,14 @@ int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_
       
       fs_entry_merge_garbage_blocks( core, fent, fent->file_id, fent->version, &garbage_blocks, &unmerged_garbage );
       
+      fs_entry_free_modification_map( &bufferred_blocks );
+      
+      // TODO: persistence
       fs_entry_free_modification_map_ex( &unmerged_garbage, false );
+   }
+   else {
+      // put bufferred blocks back
+      fs_entry_emplace_bufferred_blocks( fent, &bufferred_blocks );
    }
    
    return rc;
@@ -247,6 +259,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    // anything to replicate?  If not, return early.
    if( sync_ctx.dirty_blocks->size() == 0 && sync_ctx.garbage_blocks->size() == 0 ) {
       // done!
+      dbprintf("Nothing to replicate for %" PRIX64 "\n", fent->file_id );
       memset( _sync_ctx, 0, sizeof(struct sync_context) );
       *_sync_ctx = sync_ctx;
       return 0;

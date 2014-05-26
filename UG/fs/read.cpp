@@ -1279,7 +1279,7 @@ static struct fs_entry_read_block_future* fs_entry_find_latest_block( fs_entry_r
 // return 0 on success
 // return negative on error.
 // fent must be read-locked 
-static int fs_entry_update_bufferred_block_read( struct fs_entry* fent, fs_entry_read_block_future_set_t* reads ) {
+static int fs_entry_update_bufferred_block_read( struct fs_core* core, struct fs_entry* fent, fs_entry_read_block_future_set_t* reads ) {
    
    // Find the last block read, and if there wasn't an EOF, cache it in RAM.
    struct fs_entry_read_block_future* last_block_fut = fs_entry_find_latest_block( reads, true, true );
@@ -1290,7 +1290,7 @@ static int fs_entry_update_bufferred_block_read( struct fs_entry* fent, fs_entry
       int has_block = fs_entry_has_bufferred_block( fent, last_block_fut->block_id );
       if( has_block == -ENOENT ) {
          // this block is not cached, so do so.
-         fs_entry_replace_bufferred_block( fent, last_block_fut->block_id, last_block_fut->result, last_block_fut->result_len );
+         fs_entry_replace_bufferred_block( core, fent, last_block_fut->block_id, last_block_fut->result, last_block_fut->result_len );
       }
    }
    
@@ -1408,7 +1408,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    }
    else {
       // file not modified during our read, so update the cached data
-      fs_entry_update_bufferred_block_read( fent, read_ctx.reads );
+      fs_entry_update_bufferred_block_read( core, fent, read_ctx.reads );
       
       // cache all downloaded blocks to disk, asynchronously
       fs_entry_cache_downloaded_blocks_async( core, fs_path, fent, read_ctx.reads );

@@ -279,11 +279,11 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    ms::ms_gateway_request_info replica_info;
    rc = replica_populate_request( &replica_info, ms::ms_gateway_request_info::MANIFEST, &snapshot, manifest_data_len, hash, hash_len );
    
-   free( hash );
-   
    if( rc != 0 ) {
       errorf("replica_populate_request rc = %d\n", rc );
       free( manifest_data );
+      free( hash );
+      
       return -EINVAL;
    }
    
@@ -291,6 +291,8 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    if( rc != 0 ) {
       errorf("md_sign rc = %d\n", rc );
       free( manifest_data );
+      free( hash );
+      
       return -EINVAL;
    }
    
@@ -303,6 +305,8 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    if( rc != 0 ) {
       errorf("replica_add_metadata_form( %" PRIX64 " ) rc = %d\n", fent->file_id, rc );
       free( manifest_data );
+      free( hash );
+   
       return -EINVAL;
    }
    
@@ -313,7 +317,8 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
       
       curl_formfree( form_data );
       free( manifest_data );
-      
+      free( hash );
+   
       return -EINVAL;
    }
    
@@ -328,6 +333,8 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
       
       return -EINVAL;
    }
+   
+   free( hash );
    
    return 0;
 }
@@ -1754,7 +1761,14 @@ int fs_entry_extract_block_info_from_failed_block_replicas( replica_list_t* rctx
          
          // block info 
          struct fs_entry_block_info binfo;
-         fs_entry_block_info_replicate_init( &binfo, rctx->snapshot.file_version, rctx->hash, rctx->hash_len, rctx->snapshot.coordinator_id, newfd );
+         memset( &binfo, 0, sizeof(struct fs_entry_block_info) );
+         
+         // duplicate the hash 
+         unsigned char* hash_dup = CALLOC_LIST( unsigned char, rctx->hash_len );
+         memcpy( hash_dup, rctx->hash, rctx->hash_len );
+         
+         // init the block info, with the separate hash (passed in, not copied)
+         fs_entry_block_info_replicate_init( &binfo, rctx->snapshot.file_version, hash_dup, rctx->hash_len, rctx->snapshot.coordinator_id, newfd );
          
          (*dirty_blocks)[ rctx->snapshot.block_id ] = binfo;
       }

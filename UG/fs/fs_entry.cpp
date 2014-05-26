@@ -1211,6 +1211,7 @@ int fs_file_handle_destroy( struct fs_file_handle* fh ) {
 }
 
 // initialize an fs_entry_block_info_structure for replication
+// NOTE: the hash is NOT copied
 void fs_entry_block_info_replicate_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id, int block_fd ) {
    memset( binfo, 0, sizeof(struct fs_entry_block_info) );
    binfo->version = version;
@@ -1599,6 +1600,9 @@ int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent,
          
          fs_entry_block_info_buffer_init( &new_binfo, core->blocking_factor );
          
+         // put the block
+         (*fent->bufferred_blocks)[ block_id ] = new_binfo;
+         
          binfo = &new_binfo;
       }
       else {
@@ -1641,7 +1645,7 @@ int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent,
 // return -ENOENT if the block ID doesn't match the bufferred block 
 // return negative on error 
 // fent must be write-locked 
-int fs_entry_replace_bufferred_block( struct fs_entry* fent, uint64_t block_id, char* buf, size_t buf_len ) {
+int fs_entry_replace_bufferred_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* buf, size_t buf_len ) {
    if( fent->bufferred_blocks ) {
       
       modification_map::iterator itr = fent->bufferred_blocks->find( block_id );
@@ -1651,6 +1655,9 @@ int fs_entry_replace_bufferred_block( struct fs_entry* fent, uint64_t block_id, 
       if( itr == fent->bufferred_blocks->end() ) {
          // no block; add it
          binfo = &((*fent->bufferred_blocks)[ block_id ]);
+         
+         // initialize it
+         fs_entry_block_info_buffer_init( binfo, core->blocking_factor );
       }
       else {
          // have an entry 
@@ -1659,22 +1666,12 @@ int fs_entry_replace_bufferred_block( struct fs_entry* fent, uint64_t block_id, 
       
       if( binfo->block_buf == NULL ) {
          // allocate this 
-         binfo->block_buf = CALLOC_LIST( char, buf_len );
-         binfo->block_len = buf_len;
+         binfo->block_buf = CALLOC_LIST( char, core->blocking_factor );
+         binfo->block_len = core->blocking_factor;
          
          if( binfo->block_buf == NULL )
             return -ENOMEM;
          
-      }
-      else if( binfo->block_len != buf_len ) {
-         // realloc this to be bigger/smaller
-         char* tmp = (char*)realloc( binfo->block_buf, buf_len );
-         
-         if( tmp == NULL )
-            return -ENOMEM;
-         
-         binfo->block_buf = tmp;
-         binfo->block_len = buf_len;
       }
       
       // copy the data over 
@@ -1726,6 +1723,28 @@ int fs_entry_extract_bufferred_blocks( struct fs_entry* fent, modification_map* 
    
    return 0;
 }
+
+// put a collection of bufferred blocks into fent (i.e. to roll back an extraction)
+// caller MUST NOT FREE block_info
+// fent must be write-locked 
+int fs_entry_emplace_bufferred_blocks( struct fs_entry* fent, modification_map* block_info ) {
+   if( fent->bufferred_blocks ) {
+      
+      for( modification_map::iterator itr = block_info->begin(); itr != block_info->end(); itr++ ) {
+         
+         uint64_t block_id = itr->first;
+         struct fs_entry_block_info* binfo = &itr->second;
+         
+         // NOTE: don't duplicate; copy directly
+         (*fent->bufferred_blocks)[ block_id ] = *binfo;
+      }
+      
+      fent->bufferred_blocks->clear();
+   }
+   
+   return 0;
+}
+
 
 // how many items are queued in the sync queue?
 // fent must be at least read-locked 

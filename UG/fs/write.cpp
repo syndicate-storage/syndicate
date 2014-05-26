@@ -114,7 +114,7 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
    uint64_t end_block_id = fs_entry_block_id( core, offset + len );
    
    // do we have a partial head?
-   if( (offset % core->blocking_factor) != 0 ) {
+   if( (offset % core->blocking_factor) != 0 || start_block_id == end_block_id ) {
       
       // fill in the head
       head->buf_ptr = buf;
@@ -128,6 +128,8 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
       }
       
       wvec->has_head = true;
+      
+      dbprintf("Partial head: block %" PRIu64 " [%zu] offset %zu\n", head->block_id, head->write_len, head->write_offset );
    }
    
    // do we have a partial tail?
@@ -144,6 +146,8 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
       }
       
       wvec->has_tail = true;
+      
+      dbprintf("Partial tail: block %" PRIu64 " [%zu]\n", tail->block_id, tail->write_len );
    }
    
    // do we have overwritten blocks?
@@ -283,6 +287,7 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, cha
    
    // store information about the old and new block
    // NOTE: we're passing the block_fd into the fs_entry_block_info structure from the cache_block_future.  DO NOT CLOSE IT!
+   // NOTE: don't free the hash--pass it in
    fs_entry_block_info_replicate_init( binfo_new, new_version, new_hash, BLOCK_HASH_LEN(), core->gateway, block_fut->block_fd );
    
    if( has_old_version ) {
@@ -428,43 +433,6 @@ int fs_entry_cache_evict_blocks_async( struct fs_core* core, struct fs_entry* fe
 }
 
 
-// update the bufferred block--replace it with the new one
-int fs_entry_update_bufferred_block_write( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char* block, size_t block_len ) {
-   
-   int rc = 0;
-   
-   // replace the old block with the newly-written one
-   int has_block = fs_entry_has_bufferred_block( fent, block_id );
-   if( has_block == -ENOENT ) {
-      // this block is not cached, so do so.
-      rc = fs_entry_replace_bufferred_block( fent, block_id, block, block_len );
-      
-      if( rc != 0 ) {
-         errorf("fs_entry_replace_bufferred_block(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, rc );
-         return rc;
-      }
-      
-      return rc;
-   }
-   else if( rc == 0 ) {
-      // this block is already cached, so patch it 
-      rc = fs_entry_write_bufferred_block( core, fent, block_id, block, 0, block_len );
-      
-      if( rc != 0 ) {
-         errorf("fs_entry_write_bufferred_block(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, rc );
-         return rc;
-         
-      }
-      
-      return rc;
-   }
-   else {
-      // some other error 
-      errorf("fs_entry_has_bufferred_block(%s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, rc );
-      return rc;
-   }
-}
-
 // flush a cache write 
 int fs_entry_flush_cache_write( struct cache_block_future* f ) {
 
@@ -521,7 +489,6 @@ int fs_entry_cache_block_future_free_all( vector<struct cache_block_future*>* fu
       }
       
       fs_entry_cache_block_future_free( f );
-      free( f );
    }
    
    futs->clear();
@@ -530,15 +497,105 @@ int fs_entry_cache_block_future_free_all( vector<struct cache_block_future*>* fu
 }
 
 
-// write a write vector in its entirety.
-// fent must be write-locked
-// return 0 on success; negative on error
-// NOTE: this is a "heavy" method.  Only use it if you're writing to multiple blocks
-static int fs_entry_writev( struct fs_core* core, struct fs_file_handle* fh, char* fs_path, struct fs_entry* fent, struct fs_entry_write_vec* wvec, modification_map* old_blocks ) {
+// apply partial blocks to existing block data.
+// block_head and block_tail are full-sized blocks that need to be patched
+// if we patch the head to the point where it forms a complete block, then put it into the overwritten list
+static int fs_entry_apply_partial_blocks( struct fs_core* core, struct fs_entry_write_vec* wvec, char* block_head, char* block_tail, fs_entry_whole_block_list_t* overwritten ) {
+
+   if( block_head ) {
+      // write the head to the buffer
+      fs_entry_apply_partial_head( block_head, &wvec->head );
+      
+      // has this block been made whole?
+      if( fs_entry_head_completes_block( core, &wvec->head ) ) {
+         
+         // the head block is now a full block (which we allocated)
+         struct fs_entry_whole_block full_head;
+         
+         full_head.block_id = wvec->head.block_id;
+         full_head.buf_ptr = block_head;
+         
+         overwritten->push_back( full_head );
+      }
+   }
+   
+   if( block_tail ) {
+      // write the tail 
+      fs_entry_apply_partial_tail( block_tail, &wvec->tail );
+   }
+
+   return 0;
+}
+
+// write partial blocks to the block buffer.
+// if opt_block_head is not NULL, it must be a full block and will serve as the partial head to be bufferred.  Otherwise, the partial head client buffer in the write vector will be used.
+// if opt_block_tail is not NULL, it must be a full block and will serve as the partial tail to be bufferred.  Otherwise, the partial tail client buffer in the write vector will be used.
+// return 0 on success
+// fent must be write-locked, in the same context as fs_entry_writev
+static int fs_entry_buffer_partial_blocks( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct fs_entry_write_vec* wvec, char* opt_block_head, char* opt_block_tail ) {
    
    int rc = 0;
    
-   // head and tail buffers
+   // write the partial head to the block buffer, if we can
+   if( wvec->has_head && !fs_entry_head_completes_block( core, &wvec->head ) ) {
+      
+      dbprintf("write partial head block %" PRIu64 " to bufferred blocks\n", wvec->head.block_id );
+      
+      // update the block 
+      if( opt_block_head ) {
+         // use the data we read
+         rc = fs_entry_write_bufferred_block( core, fent, wvec->head.block_id, opt_block_head, 0, core->blocking_factor );
+      }
+      else {
+         // use the client buffer
+         rc = fs_entry_write_bufferred_block( core, fent, wvec->head.block_id, wvec->head.buf_ptr, wvec->head.write_offset, wvec->head.write_len );
+      }
+      
+      if( rc != 0 ) {
+         errorf("fs_entry_write_bufferred_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n",
+                fs_path, fent->file_id, fent->version, wvec->head.block_id, rc );
+         
+         return rc;
+      }
+   }
+   
+   // write the partial tail to the block buffer, if it exists 
+   else if( wvec->has_tail ) {
+      
+      dbprintf("write partial tail block %" PRIu64 " to bufferred blocks\n", wvec->tail.block_id );
+      
+      // update the block 
+      if( opt_block_tail ) {
+         // use the data we read
+         rc = fs_entry_write_bufferred_block( core, fent, wvec->tail.block_id, opt_block_tail, 0, core->blocking_factor );
+      }
+      else {
+         // use the client buffer
+         rc = fs_entry_write_bufferred_block( core, fent, wvec->tail.block_id, wvec->tail.buf_ptr, 0, wvec->tail.write_len );
+      }
+      
+      if( rc != 0 ) {
+         errorf("fs_entry_write_bufferred_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "] ) rc = %d\n",
+                fs_path, fent->file_id, fent->version, wvec->tail.block_id, rc );
+         
+         return rc;
+      }
+   }
+   
+   return rc;
+}
+   
+
+
+// write a write vector in its entirety.
+// fent must be write-locked
+// return 0 on success; negative on error
+// NOTE: this is a "heavy" method.  Only use it if you're writing to multiple blocks, or you can't write to a bufferred block
+static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry* fent, struct fs_entry_write_vec* wvec, modification_map* old_blocks ) {
+   
+   int rc = 0;
+   
+   // head and tail buffers (pointers to buffers flushed to cache)
    char* block_head = NULL;
    char* block_tail = NULL;
    
@@ -553,7 +610,7 @@ static int fs_entry_writev( struct fs_core* core, struct fs_file_handle* fh, cha
    memset( &tail_fut, 0, sizeof(struct fs_entry_read_block_future) );
    
    // overwritten blocks 
-   fs_entry_whole_block_list_t overwritten( wvec->overwritten->size() + 1 );
+   fs_entry_whole_block_list_t overwritten;
    
    struct fs_entry_read_context read_ctx;      // for getting partial heads and tails
    fs_entry_read_context_init( &read_ctx );
@@ -594,40 +651,21 @@ static int fs_entry_writev( struct fs_core* core, struct fs_file_handle* fh, cha
       }
       
       // apply writes to the head and tail block buffers
-      
-      if( block_head ) {
-         // write the head to the buffer
-         fs_entry_apply_partial_head( block_head, &wvec->head );
-         
-         // has this block been made whole?
-         if( fs_entry_head_completes_block( core, &wvec->head ) ) {
-            
-            // the head block is now a full block (which we allocated)
-            struct fs_entry_whole_block full_head;
-            
-            full_head.block_id = wvec->head.block_id;
-            full_head.buf_ptr = block_head;
-            
-            overwritten.push_back( full_head );
-         }
-      }
-      
-      if( block_tail ) {
-         // write the tail 
-         fs_entry_apply_partial_tail( block_tail, &wvec->tail );
-      }
+      fs_entry_apply_partial_blocks( core, wvec, block_head, block_tail, &overwritten );
    }
    
    // write all full blocks to cache.
    // gather the full list of overwritten blocks 
-   for( fs_entry_whole_block_list_t::iterator itr = wvec->overwritten->begin(); itr != wvec->overwritten->end(); itr++ ) {
-      overwritten.push_back( *itr );
+   if( wvec->overwritten != NULL ) {
+      for( fs_entry_whole_block_list_t::iterator itr = wvec->overwritten->begin(); itr != wvec->overwritten->end(); itr++ ) {
+         overwritten.push_back( *itr );
+      }
    }
    
    // accumulate cache write futures
    vector<struct cache_block_future*> futs;
    
-   // process and flush them to disk 
+   // process and flush them to disk, if we have any 
    rc = fs_entry_write_full_blocks_async( core, fs_path, fent, &overwritten, old_blocks, &new_blocks, &futs );
    
    if( rc != 0 ) {
@@ -659,6 +697,23 @@ static int fs_entry_writev( struct fs_core* core, struct fs_file_handle* fh, cha
    // free all cache futures
    fs_entry_cache_block_future_free_all( &futs, false );
    
+   // write partial blocks to the block buffer
+   rc = fs_entry_buffer_partial_blocks( core, fs_path, fent, wvec, block_head, block_tail );
+   if( rc != 0 ) {
+      errorf("fs_entry_buffer_partial_blocks( %s %" PRIX64 ".%" PRId64 ") rc = %d\n",
+               fs_path, fent->file_id, fent->version, rc );
+      
+      
+      // roll back cache write 
+      fs_entry_cache_evict_blocks_async( core, fent, &new_blocks );
+      
+      // free everything 
+      // NOTE: this frees block_head and block_tail, since they were assigned to their respective read futures
+      fs_entry_read_context_free_all( &read_ctx );
+      
+      return rc;
+   }
+   
    // all data committed to disk!
    // merge new writes into the dirty block set, freeing the old ones to be evicted
    fs_entry_merge_new_dirty_blocks( fent, &new_blocks );
@@ -667,25 +722,14 @@ static int fs_entry_writev( struct fs_core* core, struct fs_file_handle* fh, cha
    modification_map unmerged_garbage;
    fs_entry_merge_garbage_blocks( core, fent, fent->file_id, fent->version, old_blocks, &unmerged_garbage );
    
-   // write the partial head to the block buffer, if we can
-   if( wvec->has_head && !fs_entry_head_completes_block( core, &wvec->head ) ) {
-      
-      // update the block 
-      fs_entry_update_bufferred_block_write( core, fs_path, fent, wvec->head.block_id, block_head, core->blocking_factor );
-   }
-   
-   // write the partial tail to the block buffer, if it exists 
-   else if( wvec->has_tail ) {
-      
-      // update the block 
-      fs_entry_update_bufferred_block_write( core, fs_path, fent, wvec->tail.block_id, block_tail, core->blocking_factor );
-   }
-   
    // evict old blocks asynchronously
    fs_entry_cache_evict_blocks_async( core, fent, old_blocks );
    
    // free memory 
    fs_entry_free_modification_map( &unmerged_garbage );         // TODO: log it somewhere
+   
+   // free everything, including block_head and block_tail
+   fs_entry_read_context_free_all( &read_ctx );
    
    return 0;
 }
@@ -825,7 +869,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       }
       
       // write the write vector
-      rc = fs_entry_writev( core, fh, fh->path, fh->fent, &wvec, &old_blocks );
+      rc = fs_entry_writev( core, fh->path, fh->fent, &wvec, &old_blocks );
       if( rc != 0 ) {
          errorf("fs_entry_writev(%s offset %jd size %zu) rc = %d\n", fh->path, offset, count, rc );
          

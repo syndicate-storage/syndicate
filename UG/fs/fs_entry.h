@@ -334,9 +334,10 @@ int fs_entry_block_info_free_ex( struct fs_entry_block_info* binfo, bool close_f
 int fs_entry_has_bufferred_block( struct fs_entry* fent, uint64_t block_id );
 int fs_entry_read_bufferred_block( struct fs_entry* fent, uint64_t block_id, char* buf, off_t block_offset, size_t read_len );
 int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char const* buf, off_t block_offset, size_t write_len );
-int fs_entry_replace_bufferred_block( struct fs_entry* fent, uint64_t block_id, char* buf, size_t buf_len );
+int fs_entry_replace_bufferred_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* buf, size_t buf_len );
 int fs_entry_clear_bufferred_block( struct fs_entry* fent, uint64_t block_id );
 int fs_entry_extract_bufferred_blocks( struct fs_entry* fent, modification_map* block_info );
+int fs_entry_emplace_bufferred_blocks( struct fs_entry* fent, modification_map* block_info );
 
 // syncing 
 int fs_entry_sync_context_enqueue( struct fs_entry* fent, struct sync_context* ctx );
