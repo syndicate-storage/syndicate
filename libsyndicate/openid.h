@@ -18,6 +18,7 @@
 #define _LIBSYNDICATE_OPENID_H_
 
 #include "libsyndicate/libsyndicate.h"
+#include "libsyndicate/download.h"
 
 #define MS_OPENID_USERNAME_FIELD "openid_username"
 

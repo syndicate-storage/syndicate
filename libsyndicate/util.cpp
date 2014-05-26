@@ -600,6 +600,49 @@ int mlock_buf_dup( struct mlock_buf* dest, struct mlock_buf* src ) {
    memcpy( dest->ptr, src->ptr, src->len );
    return 0;
 }
+
+
+
+// flatten a response buffer into a byte string
+char* response_buffer_to_string( response_buffer_t* rb ) {
+   size_t total_len = 0;
+   for( unsigned int i = 0; i < rb->size(); i++ ) {
+      total_len += (*rb)[i].second;
+   }
+
+   char* msg_buf = CALLOC_LIST( char, total_len );
+   size_t offset = 0;
+   for( unsigned int i = 0; i < rb->size(); i++ ) {
+      memcpy( msg_buf + offset, (*rb)[i].first, (*rb)[i].second );
+      offset += (*rb)[i].second;
+   }
+
+   return msg_buf;
+}
+
+// free a response buffer
+void response_buffer_free( response_buffer_t* rb ) {
+   if( rb == NULL )
+      return;
+      
+   for( unsigned int i = 0; i < rb->size(); i++ ) {
+      if( rb->at(i).first != NULL ) {
+         free( rb->at(i).first );
+         rb->at(i).first = NULL;
+      }
+      rb->at(i).second = 0;
+   }
+   rb->clear();
+}
+
+// size of a response buffer
+off_t response_buffer_size( response_buffer_t* rb ) {
+   off_t ret = 0;
+   for( unsigned int i = 0; i < rb->size(); i++ ) {
+      ret += rb->at(i).second;
+   }
+   return ret;
+}
    
 
 // get task ID (no glibc wrapper around this...)

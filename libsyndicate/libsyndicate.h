@@ -70,10 +70,8 @@ using namespace std;
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 #endif
 
-struct md_syndicate_conf; 
-
-#define MD_ENTRY_FILE 1
-#define MD_ENTRY_DIR  2
+#define MD_ENTRY_FILE ms::ms_entry::MS_ENTRY_TYPE_FILE
+#define MD_ENTRY_DIR  ms::ms_entry::MS_ENTRY_TYPE_DIR
 
 // metadata entry (represents a file or a directory)
 struct md_entry {
@@ -84,6 +82,8 @@ struct md_entry {
    int32_t ctime_nsec;  // creation time (nanoseconds)
    int64_t mtime_sec;   // last-modified time (seconds)
    int32_t mtime_nsec;  // last-modified time (nanoseconds)
+   int64_t manifest_mtime_sec;  // manifest last-mod time (actual last-write time, regardless of utime) (seconds)
+   int32_t manifest_mtime_nsec; // manifest last-mod time (actual last-write time, regardless of utime) (nanoseconds)
    int64_t write_nonce; // last-write nonce 
    int64_t xattr_nonce; // xattr write nonce
    int64_t version;     // file version
@@ -123,31 +123,6 @@ struct md_update {
 #define MD_OP_USR    'S'      // special (context-specific) state
 #define MD_OP_NEWBLK 'B'      // new block written
 #define MD_OP_CHOWN  'C'
-
-// download buffer
-struct md_download_buf {
-   off_t len;         // amount of data
-   off_t data_len;    // size of data (if data was preallocated)
-   char* data;    // NOT null-terminated
-};
-
-
-// bounded response buffer
-struct md_bound_response_buffer {
-   off_t max_size;
-   off_t size;
-   response_buffer_t* rb;
-};
-
-typedef size_t (*md_download_continuation_func)(void*, size_t, size_t, void*);
-
-// driver continuation, for calling libsyndicate download-handling code along with user-given driver code when downloading something
-struct md_download_continuation { 
-   struct md_bound_response_buffer brb;
-   
-   void* user_cls;
-   md_download_continuation_func cont;
-};
 
 // upload buffer
 struct md_upload_buf {
@@ -241,9 +216,6 @@ struct md_syndicate_conf {
    bool is_client;                                    // if true for a UG, always fetch data from RGs
 };
 
-typedef int (*md_cache_connector_func)(struct md_closure*, CURL*, char const*, void*);
-typedef int (*md_manifest_processor_func)(struct md_closure*, char*, size_t, char**, size_t*, void*);
-
 #define USER_ANON               (uint64_t)0xFFFFFFFFFFFFFFFFLL
 #define GATEWAY_ANON            (uint64_t)0xFFFFFFFFFFFFFFFFLL
 
@@ -326,7 +298,7 @@ typedef vector<long> md_pathlist;
 
 
 extern "C" {
-   
+
 // library config 
 int md_debug( struct md_syndicate_conf* conf, int level );
 int md_error( struct md_syndicate_conf* conf, int level );
@@ -373,24 +345,7 @@ int ms_entry_to_md_entry( const ms::ms_entry& msent, struct md_entry* ent );
 // threading
 pthread_t md_start_thread( void* (*thread_func)(void*), void* args, bool detach );
 
-// downloads
-void md_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char const* url, time_t query_time );
-void md_init_curl_handle2( CURL* curl_h, char const* url, time_t query_timeout, bool ssl_verify_peer );
-off_t md_download_file( CURL* curl_h, char** buf );
-off_t md_download_file2( CURL* curl_h, char** buf, off_t max_len );
-int md_download_with_continuation( CURL* curl, char** bits, off_t* ret_len, int* _status_code, struct md_download_continuation* cont );
-int md_download_from_caches( struct md_syndicate_conf* conf, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls );
-int md_download( struct md_syndicate_conf* conf, struct md_closure* closure, CURL* curl, char const* base_url, char** bits, off_t* ret_len, off_t max_len, int* status_code, md_cache_connector_func cache_func, void* cache_func_cls );
-int md_download_manifest( struct md_syndicate_conf* conf, struct md_closure* closure, CURL* curl, char const* manifest_url, Serialization::ManifestMsg* mmsg,
-                          md_cache_connector_func cache_func, void* cache_func_cls,
-                          md_manifest_processor_func manifest_func, void* manifest_func_cls );
-off_t md_download_block( struct md_syndicate_conf* conf, struct md_closure* closure, CURL* curl, char const* block_url, char** block_bits, size_t block_len, md_cache_connector_func cache_func, void* cache_func_cls );
-
-// download/upload callbacks
-size_t md_get_callback_bound_response_buffer( void* stream, size_t size, size_t count, void* user_data );
-size_t md_default_get_callback_ram(void *stream, size_t size, size_t count, void *user_data);
-size_t md_default_get_callback_disk(void *stream, size_t size, size_t count, void *user_data);
-size_t md_get_callback_response_buffer( void* stream, size_t size, size_t count, void* user_data );
+// upload callback for CURL
 size_t md_default_upload_callback(void *ptr, size_t size, size_t nmemb, void *userp);
 
 // URL parsing
@@ -410,11 +365,6 @@ int md_split_url_qs( char const* url, char** url_and_path, char** qs );
 off_t md_header_value_offset( char* header_buf, size_t header_len, char const* header_name );
 uint64_t md_parse_header_uint64( char* hdr, off_t offset, size_t size );
 uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t* ret_len );
-
-// response buffers
-char* response_buffer_to_string( response_buffer_t* rb );
-off_t response_buffer_size( response_buffer_t* rb );
-void response_buffer_free( response_buffer_t* rb );
 
 
 // top-level initialization

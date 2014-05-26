@@ -34,6 +34,7 @@
 #include "libsyndicate/crypt.h"
 #include "libsyndicate/openid.h"
 #include "libsyndicate/closure.h"
+#include "libsyndicate/download.h"
 
 // benchmarking HTTP headers
 #define HTTP_VOLUME_TIME   "X-Volume-Time"
@@ -264,6 +265,9 @@ struct ms_client {
    // syndicate public key 
    EVP_PKEY* syndicate_public_key;
    char* syndicate_public_key_pem;
+   
+   // downloader instance 
+   struct md_downloader dl;
 };
 
 extern "C" {
@@ -355,6 +359,7 @@ int ms_client_get_gateway_type( struct ms_client* client, uint64_t g_id );
 char* ms_client_get_hostname( struct ms_client* client );
 int ms_client_get_portnum( struct ms_client* client );
 uint64_t* ms_client_RG_ids( struct ms_client* client );
+bool ms_client_is_AG( struct ms_client* client, uint64_t ag_id );
 uint64_t ms_client_get_AG_blocksize( struct ms_client* client, uint64_t gateway_id );
 char* ms_client_get_UG_content_url( struct ms_client* client, uint64_t gateway_id );
 char* ms_client_get_AG_content_url( struct ms_client* client, uint64_t gateway_id );

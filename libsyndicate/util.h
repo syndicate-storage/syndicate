@@ -116,8 +116,6 @@ using namespace std;
 typedef pair<char*, size_t> buffer_segment_t;
 typedef vector< buffer_segment_t > response_buffer_t;
 
-
-
 struct thread_args {
    void* context;
    int thread_no;
@@ -189,6 +187,10 @@ int mlock_calloc( struct mlock_buf* buf, size_t len );
 int mlock_free( struct mlock_buf* buf );
 int mlock_dup( struct mlock_buf* dest, char const* src, size_t src_len );
 int mlock_buf_dup( struct mlock_buf* dest, struct mlock_buf* src );
+
+char* response_buffer_to_string( response_buffer_t* rb );
+void response_buffer_free( response_buffer_t* rb );
+off_t response_buffer_size( response_buffer_t* rb );
 
 // linux-specific...
 pid_t gettid(void);

@@ -218,12 +218,21 @@ int ms_client_start_threads( struct ms_client* client ) {
    
    client->uploader_thread = md_start_thread( ms_client_uploader_thread, client, false );
    if( client->uploader_thread < 0 ) {
+      client->running = false;
       return -errno;
    }
 
    client->view_thread = md_start_thread( ms_client_view_thread, client, false );
    if( client->view_thread < 0 ) {
+      client->running = false;
       return -errno;  
+   }
+   
+   int rc = md_downloader_start( &client->dl );
+   if( rc != 0 ) {
+      client->running = false;
+      errorf("Failed to start downloader, rc = %d\n", rc );
+      return rc;
    }
    
    return 0;
@@ -252,6 +261,8 @@ int ms_client_stop_threads( struct ms_client* client ) {
       
       if( client->view_thread != 0 )
          pthread_join( client->view_thread, NULL );
+      
+      md_downloader_stop( &client->dl );
    }
    
    return 0;
@@ -375,6 +386,8 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    
    client->view_change_callback = ms_client_view_change_callback_default;
    client->view_change_callback_cls = NULL;
+   
+   md_downloader_init( &client->dl, "ms-client" );
 
    client->inited = true;               // safe to destroy later
    
@@ -459,6 +472,8 @@ int ms_client_destroy( struct ms_client* client ) {
    
    if( client->syndicate_public_key )
       EVP_PKEY_free( client->syndicate_public_key );
+   
+   md_downloader_shutdown( &client->dl );
    
    ms_client_unlock( client );
    pthread_rwlock_destroy( &client->lock );
@@ -1134,7 +1149,7 @@ int ms_client_download_cert_bundle_manifest( struct ms_client* client, uint64_t 
    
    ms_client_begin_downloading_view( client, url, NULL );
    
-   int rc = md_download_manifest( client->conf, client->volume->cache_closure, client->ms_view, url, mmsg, ms_client_connect_cache, client->conf, NULL, NULL );
+   int rc = md_download_manifest( client->conf, &client->dl, client->volume->cache_closure, client->ms_view, url, mmsg, ms_client_connect_cache, client->conf, NULL, NULL );
    
    int http_response = ms_client_end_downloading_view( client );
    
@@ -1286,7 +1301,7 @@ int ms_client_download_cert( struct ms_client* client, CURL* curl, char const* u
    ssize_t buf_len = 0;
    int http_status = 0;
    
-   int rc = md_download( client->conf, client->volume->cache_closure, curl, url, &buf, &buf_len, MS_MAX_CERT_SIZE, &http_status, ms_client_connect_cache, client->conf );
+   int rc = md_download( client->conf, &client->dl, client->volume->cache_closure, curl, url, &buf, &buf_len, MS_MAX_CERT_SIZE, &http_status, ms_client_connect_cache, client->conf );
    
    if( rc != 0 ) {
       errorf("md_download_cached(%s) rc = %d\n", url, rc );

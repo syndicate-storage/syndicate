@@ -15,6 +15,7 @@ Import("make_nacl_env")
 BASE_FILES = """
    crypt.cpp
    closure.cpp
+   download.cpp
    libsyndicate.cpp
    ms-client.cpp
    util.cpp
