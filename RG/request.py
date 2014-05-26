@@ -74,7 +74,13 @@ def gateway_is_UG( req ):
    gw_type = libsyndicate.get_gateway_type( req.gateway_id )
    if gw_type < 0:
       log.error("Gateway %s is not recognized (get_gateway_type rc = %s)" % (req.gateway_id, gw_type) )
-      return -errno.EINVAL
+      
+      if gw_type == -errno.ENOENT:
+         # we're refreshing; caller should try again
+         return -errno.EAGAIN
+      
+      else:
+         return -errno.INVAL
                 
    if gw_type != libsyndicate.GATEWAY_TYPE_UG:
       log.error("Gateway %s is not a UG" % (req.gateway_id) )
