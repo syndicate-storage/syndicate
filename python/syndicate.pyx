@@ -30,7 +30,7 @@ runtime_privkey_path = None
 cdef int py_view_change_callback_springboard( ms_client* client, void* cls ):
    global syndicate_view_change_callback
    
-   if syndicate_view_change_callback != None:
+   if syndicate_view_change_callback is not None:
       return syndicate_view_change_callback()
    
    return 0
