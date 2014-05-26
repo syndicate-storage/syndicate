@@ -144,13 +144,16 @@ Export("fs_objs_nacl")
 common = [syndicate_common_objs, fs_objs]
 shared_common = [syndicate_common_sobjs, fs_sobjs]
 server = create_objs( Split(server_source_files) )
+shared_server = create_sobjs( Split(server_source_files) )
 
 common_full = common + server
+shared_common_full = shared_common + shared_server
 
 syndicatefs = env.Program("syndicatefs", common_full + create_objs( Split(syndicatefs_source) ), LIBS=Split(LIBS_COMMON + LIBS_FS) )
 syndicate_httpd = env.Program("syndicate-httpd", common_full + create_objs( Split(syndicate_httpd_source) ), LIBS=Split(LIBS_COMMON + LIBS_HTTPD) )
 syndicate_ipc = env.Program("syndicate-ipc", common_full + create_objs( Split(syndicate_ipc_source) ), LIBS=Split(LIBS_COMMON + LIBS_IPC) )
-syndicate_client_lib = env.SharedLibrary( "libsyndicateUG.so", shared_common + create_sobjs( Split(syndicate_client_source) ), LIBS=Split(LIBS_COMMON))
+syndicate_client_lib = env.SharedLibrary( "libsyndicateUGclient.so", shared_common + create_sobjs( Split(syndicate_client_source) ), LIBS=Split(LIBS_COMMON))
+syndicate_full_UG_lib = env.SharedLibrary( "libsyndicateUG.so", shared_common_full + create_sobjs( Split(syndicate_client_source) ), LIBS=Split(LIBS_COMMON))
 
 syndicate_common_objs_nacl = None
 
@@ -164,8 +167,8 @@ Export( "syndicate_common_objs_nacl" )
 nacl_plugin = SConscript("nacl/SConscript")
 
 syndicate_client_lib_headers = Glob("*.h")
-syndicate_client_lib_headers.extend( Glob("fs/*.h") )
+syndicate_client_lib_fs_headers = Glob("fs/*.h")
 syndicate_watchdog = Glob("syndicate-ug")
 
-Return( 'syndicatefs syndicate_httpd syndicate_ipc syndicate_client_lib syndicate_client_lib_headers syndicate_watchdog nacl_plugin' )
+Return( 'syndicatefs syndicate_httpd syndicate_ipc syndicate_client_lib syndicate_full_UG_lib syndicate_client_lib_headers syndicate_client_lib_fs_headers syndicate_watchdog nacl_plugin' )
 

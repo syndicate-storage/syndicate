@@ -75,6 +75,7 @@ LIBS = LIBS_client + HTTPD_LIBS
 # add headers here (will be returned by SCons)
 # TODO: don't return httpd headers if we're not building it
 headers = Glob("*.h")
+scrypt_headers = Glob("scrypt/*.h")
 
 # add additional CPPFLAGS here
 CPPFLAGS = distro_switch
@@ -129,5 +130,6 @@ if nacl_env is not None:
 
 # generate header and source paths
 header_paths = [os.path.join( x.path ) for x in Split(headers)]
+scrypt_header_paths = [os.path.join( x.path ) for x in Split(scrypt_headers)]
 source_paths = [os.path.join( x ) for x in Split(source_files)] 
-Return( 'libsyndicate libsyndicate_nacl header_paths source_paths' )
+Return( 'libsyndicate libsyndicate_nacl header_paths scrypt_header_paths source_paths' )

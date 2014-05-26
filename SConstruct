@@ -211,7 +211,7 @@ libsyndicate_out = "build/out/lib/libsyndicate"
 libsyndicate_driver_out = "build/out/lib/syndicate-drivers/volume"
 libsyndicate_driver_install = os.path.join( lib_install_dir, "syndicate-drivers/volume" )
 
-libsyndicate, libsyndicate_nacl, libsyndicate_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
+libsyndicate, libsyndicate_nacl, libsyndicate_header_paths, libsyndicate_scrypt_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
 libsyndicate_drivers = SConscript( "libsyndicate/drivers/SConscript", variant_dir=libsyndicate_driver_out )
 
 libsyndicate_protobuf_deps = [protobufs, protobuf_cc_files]
@@ -221,6 +221,7 @@ for libsyndicate_target in [libsyndicate, libsyndicate_nacl, libsyndicate_header
 
 # alias installation targets for libsyndicate
 libsyndicate_install_headers = env.Install( inc_install_dir, libsyndicate_header_paths + protobuf_header_paths )
+libsyndicate_install_scrypt_headers = env.Install( os.path.join( inc_install_dir, "scrypt" ), libsyndicate_scrypt_header_paths )
 libsyndicate_install_library = env.Install( lib_install_dir, [libsyndicate] ) 
 libsyndicate_install_drivers = env.Install( libsyndicate_driver_install, [libsyndicate_drivers] )
 
@@ -233,7 +234,7 @@ if libsyndicate_nacl is not None:
 
 # main targets...
 env.Alias( 'libsyndicate', [libsyndicate, libsyndicate_drivers] )
-env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers] )
+env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers, libsyndicate_install_scrypt_headers] )
 
 env.Alias( 'libsyndicate-drivers', [libsyndicate_drivers] )
 env.Alias( 'libsyndicate-drivers-install', [libsyndicate_install_drivers] )
@@ -241,25 +242,28 @@ env.Alias( 'libsyndicate-drivers-install', [libsyndicate_install_drivers] )
 # ----------------------------------------
 # UG build
 libsyndicateUG_inc_install_dir = os.path.join( install_prefix, "include/libsyndicateUG" )
+libsyndicateUG_inc_fs_install_dir = os.path.join( install_prefix, "include/libsyndicateUG/fs" )
 
 ug_out = "build/out/bin/UG"
 ug_driver_out = "build/out/lib/UG/drivers"
-syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUG, libsyndicateUG_headers, syndicate_watchdog, UG_nacl = SConscript( "UG/SConscript", variant_dir=ug_out )
+syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUGclient, libsyndicateUG, libsyndicateUG_headers, libsyndicateUG_fs_headers, syndicate_watchdog, UG_nacl = SConscript( "UG/SConscript", variant_dir=ug_out )
 ug_drivers = SConscript( "UG/drivers/SConscript", variant_dir=ug_driver_out )
 
 ugs_bin = [syndicatefs, syndicate_httpd, syndicate_ipc, syndicate_watchdog]
-ugs_lib = [libsyndicateUG]
-ug_aliases = [syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUG, syndicate_watchdog]
+ugs_lib = [libsyndicateUGclient, libsyndicateUG]
+ug_aliases = [syndicatefs, syndicate_httpd, syndicate_ipc, libsyndicateUGclient, libsyndicateUG, syndicate_watchdog]
 
 env.Depends( syndicatefs, libsyndicate )
 env.Depends( syndicate_ipc, libsyndicate )
 env.Depends( syndicate_httpd, libsyndicate )
 env.Depends( libsyndicateUG, libsyndicate )
+env.Depends( libsyndicateUGclient, libsyndicate )
 env.Depends( UG_nacl, libsyndicate_nacl )
 
 env.Alias("syndicatefs", syndicatefs)
 env.Alias("UG-httpd", syndicate_httpd)
 env.Alias("libsyndicateUG", libsyndicateUG)
+env.Alias("libsyndicateUGclient", libsyndicateUGclient)
 env.Alias("UG-ipc", syndicate_ipc)
 env.Alias("UG-nacl", UG_nacl)
 env.Alias("UG-drivers", ug_drivers )
@@ -268,10 +272,11 @@ env.Alias("UG-drivers", ug_drivers )
 common.install_targets( env, 'UG-install', bin_install_dir, ugs_bin )
 common.install_targets( env, 'UG-drivers-install', lib_install_dir, ug_drivers )
 
-libsyndicateUG_install_library = env.Install( lib_install_dir, [libsyndicateUG] )
+libsyndicateUG_install_library = env.Install( lib_install_dir, [libsyndicateUG, libsyndicateUGclient] )
 libsyndicateUG_install_headers = env.Install( libsyndicateUG_inc_install_dir, libsyndicateUG_headers )
+libsyndicateUG_install_fs_headers = env.Install( libsyndicateUG_inc_fs_install_dir, libsyndicateUG_fs_headers )
 
-env.Alias( "libsyndicateUG-install", [libsyndicateUG_install_library, libsyndicateUG_install_headers] )
+env.Alias( "libsyndicateUG-install", [libsyndicateUG_install_library, libsyndicateUG_install_headers, libsyndicateUG_install_fs_headers] )
 env.Alias("UG", ug_aliases )
 
 # ----------------------------------------

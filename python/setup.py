@@ -63,7 +63,7 @@ ext_modules=[
     
     Extension("volume",
               sources=["volume.pyx"],
-              libraries=["syndicate", "syndicateUG"],
+              libraries=["syndicate", "syndicateUGclient"],
               library_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"), os.path.join(source_root, build_dir, "bin/UG")],             # local build
               include_dirs=[os.path.join(source_root, build_dir, "lib/libsyndicate"),
                             os.path.join(source_root, build_dir, "lib/"),
