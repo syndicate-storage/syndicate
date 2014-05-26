@@ -67,6 +67,8 @@ class MSEntryShard(storagetypes.Object):
    # has changed at all.  The concept of a "latest" shard is applicable only for files.
    mtime_sec = storagetypes.Integer(default=0, indexed=False)
    mtime_nsec = storagetypes.Integer(default=0, indexed=False)
+   manifest_mtime_sec = storagetypes.Integer(default=0, indexed=False)
+   manifest_mtime_nsec = storagetypes.Integer(default=0, indexed=False)
    size = storagetypes.Integer(default=0, indexed=False )
    write_nonce = storagetypes.Integer( default=0, indexed=False )
    xattr_nonce = storagetypes.Integer( default=0, indexed=False )
@@ -90,6 +92,23 @@ class MSEntryShard(storagetypes.Object):
          return m2
 
       elif m1.mtime_nsec > m2.mtime_nsec:
+         return m1
+
+      return m1
+
+   @classmethod
+   def manifest_modtime_max( cls, m1, m2 ):
+      # return the later of two MSEntryShards, based on manifest_moddtime
+      if m1.manifest_mtime_sec < m2.manifest_mtime_sec:
+         return m2
+
+      elif m1.manifest_mtime_sec > m2.manifest_mtime_sec:
+         return m1
+
+      elif m1.manifest_mtime_nsec < m2.manifest_mtime_nsec:
+         return m2
+
+      elif m1.manifest_mtime_nsec > m2.manifest_mtime_nsec:
          return m1
 
       return m1
@@ -132,7 +151,7 @@ class MSEntryShard(storagetypes.Object):
    @classmethod
    def get_mtime_from_shards( cls, ent, shards ):
       mm = MSEntryShard.get_latest_shard( ent, shards )
-      if mm != None:
+      if mm is not None:
          return (mm.mtime_sec, mm.mtime_nsec)
       else:
          return (None, None)
@@ -157,6 +176,30 @@ class MSEntryShard(storagetypes.Object):
          sz = MSEntryShard.size_max( sz, shard )
 
       return sz.size
+   
+   @classmethod 
+   def get_manifest_mtime_from_shards( cls, ent, shards ):
+      # get the latest manifest modification time
+      mm = None
+      latest_version = ent.version
+      latest_shard = None
+      for shard in shards:
+         if mm == None:
+            mm = shard
+            continue
+
+         if shard == None:
+            continue
+
+         if shard.msentry_version != latest_version:
+            continue
+         
+         mm = MSEntryShard.manifest_modtime_max( mm, shard )
+      
+      if mm is not None:
+         return (mm.manifest_mtime_sec, mm.manifest_mtime_nsec)
+      else:
+         return (None, None)
    
    @classmethod 
    def Delete_ByVolume( cls, volume_id, async=False ):
@@ -443,6 +486,8 @@ class MSEntry( storagetypes.Object ):
    # stuff that can be encrypted and filled in from a shard
    mtime_sec = storagetypes.Integer( default=-1, indexed=False )
    mtime_nsec = storagetypes.Integer( default=-1, indexed=False )
+   manifest_mtime_sec = storagetypes.Integer( default=-1, indexed=False )               # NOTE: only used for files
+   manifest_mtime_nsec = storagetypes.Integer( default=-1, indexed=False )              # NOTE: only used for files
    size = storagetypes.Integer( default=0, indexed=False )
    write_nonce = storagetypes.Integer( default=0, indexed=False )
    xattr_nonce = storagetypes.Integer( default=0, indexed=False )
@@ -458,6 +503,8 @@ class MSEntry( storagetypes.Object ):
       "volume_id",
       "mtime_sec",
       "mtime_nsec",
+      "manifest_mtime_sec",
+      "manifest_mtime_nsec",
       "ctime_sec",
       "ctime_nsec",
       "mode",
@@ -495,6 +542,8 @@ class MSEntry( storagetypes.Object ):
       "ctime_nsec",
       "mtime_sec",
       "mtime_nsec",
+      "manifest_mtime_sec",
+      "manifest_mtime_nsec",
       "owner_id",
       "coordinator_id",
       "volume_id",
@@ -514,6 +563,8 @@ class MSEntry( storagetypes.Object ):
       "size",
       "mtime_sec",
       "mtime_nsec",
+      "manifest_mtime_sec",
+      "manifest_mtime_nsec",
       "max_read_freshness",
       "max_write_freshness"
    ]
@@ -523,6 +574,8 @@ class MSEntry( storagetypes.Object ):
    
    # sharded fields
    shard_fields = [
+      "manifest_mtime_sec",
+      "manifest_mtime_nsec",
       "mtime_sec",
       "mtime_nsec",
       "size",
@@ -534,6 +587,8 @@ class MSEntry( storagetypes.Object ):
 
    # functions that read a sharded value from shards for an instance of this ent
    shard_readers = {
+      "manifest_mtime_sec": (lambda ent, shards: MSEntryShard.get_manifest_mtime_from_shards( ent, shards )[0]),
+      "manifest_mtime_nsec": (lambda ent, shards: MSEntryShard.get_manifest_mtime_from_shards( ent, shards )[1]),
       "mtime_sec": (lambda ent, shards: MSEntryShard.get_mtime_from_shards( ent, shards )[0]),
       "mtime_nsec": (lambda ent, shards: MSEntryShard.get_mtime_from_shards( ent, shards )[1]),
       "size": (lambda ent, shards: MSEntryShard.get_size_from_shards( ent, shards )),
@@ -574,6 +629,8 @@ class MSEntry( storagetypes.Object ):
       pbent.ctime_nsec = kwargs.get( 'ctime_nsec', self.ctime_nsec )
       pbent.mtime_sec = kwargs.get( 'mtime_sec', self.mtime_sec )
       pbent.mtime_nsec = kwargs.get( 'mtime_nsec', self.mtime_nsec )
+      pbent.manifest_mtime_sec = kwargs.get( 'manifest_mtime_sec', self.manifest_mtime_sec )
+      pbent.manifest_mtime_nsec = kwargs.get( 'manifest_mtime_nsec', self.manifest_mtime_nsec )
       pbent.owner = kwargs.get( 'owner_id', self.owner_id )
       pbent.coordinator = kwargs.get( 'coordinator_id', self.coordinator_id )
       pbent.volume = kwargs.get( 'volume_id', self.volume_id )
@@ -608,6 +665,8 @@ class MSEntry( storagetypes.Object ):
       ret.ctime_nsec = ent.ctime_nsec
       ret.mtime_sec = ent.mtime_sec
       ret.mtime_nsec = ent.mtime_nsec
+      ret.manifest_mtime_sec = ent.manifest_mtime_sec
+      ret.manifest_mtime_nsec = ent.manifest_mtime_nsec
       ret.owner_id = ent.owner
       ret.coordinator_id = ent.coordinator
       ret.volume_id = ent.volume
@@ -685,6 +744,8 @@ class MSEntry( storagetypes.Object ):
 
    def update_dir_shard( self, num_shards, parent_volume_id, parent_file_id, **parent_attrs ):
       """
+      Update the shard for a directory specifically.
+      
       NOTE: This does NOT need to run in a transaction.
       For files, only one UG will ever send size updates, and they will be serialized and sanity-checked both by the UG and the MS.
       For directories, size does not ever change, and mtime only has to be different across updates.
@@ -761,6 +822,10 @@ class MSEntry( storagetypes.Object ):
    
    @classmethod
    def update_shard( cls, num_shards, ent, **extra_shard_attrs ):
+      """
+      Update a shard for an msentry.
+      This regenerates the write nonce and mtime
+      """
       
       # generate attributes to put
       attrs = {}
@@ -954,6 +1019,8 @@ class MSEntry( storagetypes.Object ):
          "ctime_nsec" : now_nsec,
          "mtime_sec" : now_sec,
          "mtime_nsec" : now_nsec,
+         "manifest_mtime_sec": now_sec,
+         "manifest_mtime_nsec": now_nsec,
          "owner_id" : user_owner_id,
          "coordinator_id": 0,
          "volume_id" : volume.volume_id,
