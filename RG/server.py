@@ -30,6 +30,7 @@ from cgi import parse_qs, FieldStorage
 from StringIO import StringIO
 
 import types
+import errno 
 
 log = rg_common.get_logger()
 
