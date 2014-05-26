@@ -125,7 +125,7 @@ int syndicate_cleanup_opts( struct syndicate_opts* opts ) {
 // exit on failure, since this is used to load sensitive (i.e. secret) information.
 int syndicate_load_mlock_buf( struct mlock_buf* buf, char* str ) {
    size_t len = strlen(str);
-   int rc = mlock_calloc( buf, len );
+   int rc = mlock_calloc( buf, len + 1 );
    if( rc != 0 ) {
       errorf("mlock_calloc rc = %d\n", rc );
       exit(1);

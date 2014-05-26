@@ -62,6 +62,7 @@ char* fs_entry_block_url( struct fs_core* core, uint64_t volume_id, char const* 
 }
 
 
+// generate a locally-resolvable URL to a block in this UG
 char* fs_entry_local_block_url( struct fs_core* core, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    // file:// URL to a locally-hosted block in a locally-coordinated file
    char* fs_path = fs_entry_path_from_file_id( file_id );
@@ -71,15 +72,17 @@ char* fs_entry_local_block_url( struct fs_core* core, uint64_t file_id, int64_t 
 }
 
 
+// generate a publicly-resolvable URL to a block in this UG
 char* fs_entry_public_block_url( struct fs_core* core, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    // http:// URL to a locally-hosted block in a locally-coordinated file
    return fs_entry_block_url( core, core->volume, core->conf->content_url, fs_path, file_version, block_id, block_version, false );
 }
 
 
-char* fs_entry_remote_block_url( struct fs_core* core, uint64_t gateway_id, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
+// generate a publicly-resolvable URL to a block in a UG
+char* fs_entry_UG_block_url( struct fs_core* core, uint64_t UG_id, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version ) {
    // http:// URL to a remotely-hosted block
-   char* content_url = ms_client_get_UG_content_url( core->ms, gateway_id );
+   char* content_url = ms_client_get_UG_content_url( core->ms, UG_id );
    if( content_url == NULL )
       return NULL;
 
@@ -89,51 +92,67 @@ char* fs_entry_remote_block_url( struct fs_core* core, uint64_t gateway_id, char
 }
 
 
-char* fs_entry_replica_block_url( struct fs_core* core, char* RG_url, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
-   // http:// URL to a remotely-hosted block on an RG
-   char* url = CALLOC_LIST( char, strlen(RG_url) + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 );
-   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64, RG_url, SYNDICATE_DATA_PREFIX, volume_id, file_id, file_version, block_id, block_version );
-   return url;
-   
-}
-
-char* fs_entry_block_url_path( struct fs_core* core, char const* fs_path, int64_t version, uint64_t block_id, int64_t block_version ) {
-   char* url_path = CALLOC_LIST( char, 105 + strlen(fs_path) );
-   sprintf(url_path, "/%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64, core->volume, fs_path, version, block_id, block_version );
-   return url_path;
-}
-
+// generaate a publicly-resolvable URL to a block in an AG
 char* fs_entry_AG_block_url( struct fs_core* core, uint64_t ag_id, char const* fs_path, int64_t version, uint64_t block_id, int64_t block_version ) {
    char* base_url = ms_client_get_AG_content_url( core->ms, ag_id );
    if( base_url == NULL )
       return NULL;
    
-   uint64_t volume_id = 0;
-   int rc = ms_client_get_gateway_volume( core->ms, SYNDICATE_AG, ag_id, &volume_id );
-   if( rc != 0 ) {
-      errorf("ms_client_gat_gateway_volume(%" PRIu64 ") rc = %d\n", ag_id, rc );
-      return NULL;
-   }
-   
    int base_len = 25 + 1 + 25 + 1 + strlen(fs_path) + 1 + 25 + 1 + 25 + 1 + 25 + 1;
    char* ret = CALLOC_LIST( char, strlen(base_url) + 1 + strlen(SYNDICATE_DATA_PREFIX) + 1 + base_len );
 
-   sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64, base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, version, block_id, block_version );
+   sprintf(ret, "%s%s/%" PRIu64 "%s.%" PRId64 "/%" PRIu64 ".%" PRId64, base_url, SYNDICATE_DATA_PREFIX, core->volume, fs_path, version, block_id, block_version );
 
    free( base_url );
    return ret;
 }
 
-char* fs_entry_RG_block_url( struct fs_core* core, uint64_t rg_id, uint64_t volume_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version ) {
+// generate a publicly-resolvable URL to a block in an RG
+char* fs_entry_RG_block_url( struct fs_core* core, uint64_t rg_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version ) {
    char* base_url = ms_client_get_RG_content_url( core->ms, rg_id );
    if( base_url == NULL )
       return NULL;
    
-   char* ret = fs_entry_replica_block_url( core, base_url, volume_id, file_id, version, block_id, block_version );
+   char* url = CALLOC_LIST( char, strlen(base_url) + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 + 21 + 1 );
+   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64, base_url, SYNDICATE_DATA_PREFIX, core->volume, file_id, version, block_id, block_version );
+   
    free( base_url );
-   return ret;
+   return url;
 }
 
+
+// generate a block URL, based on what gateway hosts it.
+// return -ENOENT if the gateway is currently unknown.
+int fs_entry_make_block_url( struct fs_core* core, char const* fs_path, uint64_t coordinator_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version, char** url ) {
+   
+   int gateway_type = ms_client_get_gateway_type( core->ms, coordinator_id );
+   
+   if( gateway_type < 0 ) {
+      // unknown gateway---maybe try reloading the certs?
+      errorf("Unknown gateway %" PRIu64 "\n", coordinator_id );
+      return -ENOENT;
+   }
+   
+   char* block_url = NULL;
+   
+   if( gateway_type == SYNDICATE_UG )
+      block_url = fs_entry_UG_block_url( core, coordinator_id, fs_path, version, block_id, block_version );
+   else if( gateway_type == SYNDICATE_RG )
+      block_url = fs_entry_RG_block_url( core, coordinator_id, file_id, version, block_id, block_version );
+   else if( gateway_type == SYNDICATE_AG )
+      block_url = fs_entry_AG_block_url( core, coordinator_id, fs_path, version, block_id, block_version );
+   
+   if( block_url == NULL ) {
+      errorf("Failed to compute block URL for Gateway %" PRIu64 " (type %d)\n", coordinator_id, gateway_type);
+      return -ENOENT;
+   }
+
+   *url = block_url;
+   return 0;
+}
+
+
+// generate a URL to a file
 char* fs_entry_file_url( struct fs_core* core, uint64_t volume_id, char const* base_url, char const* fs_path, int64_t file_version, bool local ) {
    
    int base_len = 25 + 1 + 25 + 1 + strlen(fs_path) + 25 + 1 + 1;
@@ -156,6 +175,7 @@ char* fs_entry_file_url( struct fs_core* core, uint64_t volume_id, char const* b
 }
 
 
+// generate a locally-resolvable URL to a file in this UG
 char* fs_entry_local_file_url( struct fs_core* core, uint64_t file_id, int64_t file_version) {
    char* fs_path = fs_entry_path_from_file_id( file_id );
    char* ret = fs_entry_file_url( core, core->volume, NULL, fs_path, file_version, true );
@@ -163,71 +183,92 @@ char* fs_entry_local_file_url( struct fs_core* core, uint64_t file_id, int64_t f
    return ret;
 }
 
+// generate a publicly-resolvable URL to a file in this UG
 char* fs_entry_public_file_url( struct fs_core* core, char const* fs_path, int64_t file_version ) {
    char* ret = fs_entry_file_url( core, core->volume, core->conf->content_url, fs_path, file_version, false );
    return ret;
 }
 
-char* fs_entry_manifest_url( struct fs_core* core, char const* gateway_base_url, uint64_t volume_id, char const* fs_path, int64_t version, struct timespec* ts ) {
+// basic manifest URL generator
+char* fs_entry_base_manifest_url( struct fs_core* core, char const* gateway_base_url, uint64_t volume_id, char const* fs_path, int64_t version, struct timespec* ts ) {
    char* ret = CALLOC_LIST( char, strlen(SYNDICATE_DATA_PREFIX) + 1 + strlen(gateway_base_url) + 1 + strlen(fs_path) + 1 + 82 );
    sprintf( ret, "%s%s/%" PRIu64 "%s.%" PRId64 "/manifest.%ld.%ld", gateway_base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, version, (long)ts->tv_sec, (long)ts->tv_nsec );
    return ret;
 }
 
+// generate a publicly-resolvable URL to this UG's manifest
 char* fs_entry_public_manifest_url( struct fs_core* core, char const* fs_path, int64_t version, struct timespec* ts ) {
-   char* ret = fs_entry_manifest_url( core, core->conf->content_url, core->volume, fs_path, version, ts );
+   char* ret = fs_entry_base_manifest_url( core, core->conf->content_url, core->volume, fs_path, version, ts );
    return ret;
 }
 
 
-char* fs_entry_remote_manifest_url( struct fs_core* core, uint64_t UG_id, char const* fs_path, int64_t version, struct timespec* ts ) {
+// generate a URL to a UG's manifest
+char* fs_entry_UG_manifest_url( struct fs_core* core, uint64_t UG_id, char const* fs_path, int64_t version, struct timespec* ts ) {
    char* content_url = ms_client_get_UG_content_url( core->ms, UG_id );
    if( content_url == NULL )
       return NULL;
    
-   char* ret = fs_entry_manifest_url( core, content_url, core->volume, fs_path, version, ts );
+   char* ret = fs_entry_base_manifest_url( core, content_url, core->volume, fs_path, version, ts );
    free( content_url );
    return ret;
 }
 
-char* fs_entry_replica_manifest_url( struct fs_core* core, char const* base_url, uint64_t volume_id, uint64_t file_id, int64_t version, struct timespec* ts ) {
-   char* url = CALLOC_LIST( char, strlen(base_url) + 1 + 21 + 1 + 21 + 1 + 21 + 21 + 1 + strlen("manifest") + 21 + 1 + 21 );
-   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, SYNDICATE_DATA_PREFIX, volume_id, file_id, version, (long)ts->tv_sec, (long)ts->tv_nsec );
-   return url;
-}
-
-char* fs_entry_RG_manifest_url( struct fs_core* core, uint64_t rg_id, uint64_t volume_id, uint64_t file_id, int64_t file_version, struct timespec* ts ) {
+// generate a URL to an RG's manifest
+char* fs_entry_RG_manifest_url( struct fs_core* core, uint64_t rg_id, uint64_t file_id, int64_t file_version, struct timespec* ts ) {
    char* base_url = ms_client_get_RG_content_url( core->ms, rg_id );
    if( base_url == NULL )
       return NULL;
    
-   char* ret = fs_entry_replica_manifest_url( core, base_url, volume_id, file_id, file_version, ts );
+   char* url = CALLOC_LIST( char, strlen(base_url) + 1 + 21 + 1 + 21 + 1 + 21 + 21 + 1 + strlen("manifest") + 21 + 1 + 21 );
+   sprintf( url, "%s%s/%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld", base_url, SYNDICATE_DATA_PREFIX, core->volume, file_id, file_version, (long)ts->tv_sec, (long)ts->tv_nsec );
+   
    free( base_url );
-   return ret;
+   return url;
 }
 
+// generate a URL to an AG's manifest
 char* fs_entry_AG_manifest_url( struct fs_core* core, uint64_t ag_id, char const* fs_path, int64_t file_version, struct timespec* ts ) {
    char* base_url = ms_client_get_AG_content_url( core->ms, ag_id );
    if( base_url == NULL ) {
       return NULL;
    }
    
-   uint64_t volume_id = 0;
-   int rc = ms_client_get_gateway_volume( core->ms, SYNDICATE_AG, ag_id, &volume_id );
-   if( rc != 0 ) {
-      errorf("ms_client_gat_gateway_volume(%" PRIu64 ") rc = %d\n", ag_id, rc );
-      return NULL;
-   }
-   
    char* ret = CALLOC_LIST( char, strlen(SYNDICATE_DATA_PREFIX) + 1 + strlen(base_url) + 1 + strlen(fs_path) + 1 + 82 );
-   sprintf( ret, "%s%s/%" PRIu64 "%s.%" PRId64 "/manifest.%ld.%ld", base_url, SYNDICATE_DATA_PREFIX, volume_id, fs_path, file_version, (long)ts->tv_sec, (long)ts->tv_nsec );
+   sprintf( ret, "%s%s/%" PRIu64 "%s.%" PRId64 "/manifest.%ld.%ld", base_url, SYNDICATE_DATA_PREFIX, core->volume, fs_path, file_version, (long)ts->tv_sec, (long)ts->tv_nsec );
    
    free( base_url );
    return ret;
 }
 
-char* fs_entry_manifest_url_path( struct fs_core* core, char const* fs_path, int64_t version, struct timespec* ts ) {
-   char* url_path = CALLOC_LIST( char, 105 + strlen(fs_path) );
-   sprintf(url_path, "/%" PRIu64 "%s.%" PRId64 "/manifest.%ld.%ld", core->volume, fs_path, version, (long)ts->tv_sec, (long)ts->tv_nsec );
-   return url_path;
+
+// generate a URL to an fs_entry's manifest, given its coordinator.  Automatically determine what kind of gateway hosts it.
+int fs_entry_make_manifest_url( struct fs_core* core, char const* fs_path, uint64_t coordinator_id, uint64_t file_id, int64_t file_version, struct timespec* ts, char** url ) {
+   
+   // what kind of gateway?
+   int gateway_type = ms_client_get_gateway_type( core->ms, coordinator_id );
+
+   if( gateway_type < 0 ) {
+      // unknown gateway
+      errorf("Unknown Gateway %" PRIu64 "\n", coordinator_id );
+      return -ENOENT;
+   }
+   
+   char* manifest_url = NULL;
+   
+   if( gateway_type == SYNDICATE_UG )
+      manifest_url = fs_entry_UG_manifest_url( core, coordinator_id, fs_path, file_version, ts );
+   else if( gateway_type == SYNDICATE_RG )
+      manifest_url = fs_entry_RG_manifest_url( core, coordinator_id, file_id, file_version, ts );
+   else if( gateway_type == SYNDICATE_AG )
+      manifest_url = fs_entry_AG_manifest_url( core, coordinator_id, fs_path, file_version, ts );
+   
+   if( manifest_url == NULL ) {
+      // gateway not found 
+      errorf("Unknown Gateway %" PRIu64 " of type %d\n", coordinator_id, gateway_type );
+      return -ENOENT;
+   }
+   
+   *url = manifest_url;
+   return 0;
 }

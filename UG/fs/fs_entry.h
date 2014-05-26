@@ -74,7 +74,9 @@ struct fs_entry_block_info {
    size_t hash_len;
    
    // already-opened block
-   int block_fd;
+   int block_fd;        // if >= 0, this is an FD that refers to the block on disk 
+   char* block_buf;     // if non-NULL, this is the block itself in RAM 
+   size_t block_len;    // length of block_buf
 };
 
 typedef map<uint64_t, struct fs_entry_block_info> modification_map;
@@ -82,9 +84,13 @@ typedef map<string, string> xattr_cache_t;
 
 // pre-declare these
 class file_manifest;
-struct replica_context;
 struct syndicate_state;
 struct syndicate_cache;
+struct fs_file_handle;
+struct replica_snapshot;
+struct sync_context;
+
+typedef list<struct sync_context*> sync_context_list_t;     // queue of sync contexts
 
 // Syndicate filesystem entry
 struct fs_entry {
@@ -100,7 +106,7 @@ struct fs_entry {
    mode_t mode;               // access permissions
    off_t size;                // how big is this file's content?
    int link_count;            // how many other fs_entry structures refer to this file
-   int open_count;            // how many processes are reading this file
+   int open_count;            // how many file descriptors refer to this file
 
    int64_t mtime_sec;         // modification time (seconds)
    int32_t mtime_nsec;        // modification time (nanoseconds)
@@ -110,14 +116,22 @@ struct fs_entry {
    int64_t write_nonce;       // nonce generated at last write by the MS
    int64_t xattr_nonce;       // nonce generated on setxattr/removexattr by the MS
    
+   modification_map* bufferred_blocks;  // set of in-core blocks that have been either read recently, or modified recently.  Modified blocks will be flushed to on-disk cache.
+   modification_map* dirty_blocks;      // set of disk-cached blocks that have been modified locally, and will need to be replicated on flush() or last close()
+   modification_map* garbage_blocks;    // set of blocks that have been overwritten by local modifications, and will need to be garbage-collected on flush() or last close()  
+   
    struct timespec refresh_time;    // time of last refresh from the ms
-   uint32_t max_read_freshness;     // how long since last refresh, in ms, this fs_entry is to be considered fresh for reading (negative means always fresh)
-   uint32_t max_write_freshness;    // how long since last refresh, in ms, this fs_entry is to be considered fresh for writing (negative means always fresh)
+   uint32_t max_read_freshness;     // how long since last refresh, in ms, this fs_entry is to be considered fresh for reading
+   uint32_t max_write_freshness;    // how long since last refresh, in ms, this fs_entry is to be considered fresh for writing
    bool read_stale;
    bool write_stale;
+   
+   replica_snapshot* old_snapshot;      // snapshot of this fs_entry before dirtying it
 
    pthread_rwlock_t lock;     // lock to control access to this structure
-
+   
+   sync_context_list_t* sync_queue;     // queue of synchronization requests (from truncate() and fsync()), used to ensure that we send metadata to the MS in program order
+   
    fs_entry_set* children;    // used only for directories--set of children
    
    pthread_rwlock_t xattr_lock;
@@ -136,19 +150,19 @@ struct fs_file_handle {
    uint64_t volume;           // which Volume this fent belongs to
    int open_count;            // how many processes have opened this handle
    int flags;                 // open flags
-   bool dirty;                // set to true if a write has occurred on this file handle (but it wasn't flushed)
-
+   bool dirty;                // set to true if there is dirty data 
+   
    char* parent_name;         // name of parent directory
    uint64_t parent_id;        // ID of parent directory
 
    bool is_AG;                // whether or not this file is hosted by an AG
    uint64_t AG_blocksize;     // blocksize of this AG
    
+   uint64_t block_id;         // ID of the block we're currently reading
+   
    int64_t transfer_timeout_ms;   // how long the transfer is allowed to take (in milliseconds)
 
    pthread_rwlock_t lock;     // lock to control access to this structure
-   
-   vector<struct replica_context*>* rctxs;        // used for write replication
 };
 
 // Syndicate directory handle
@@ -250,6 +264,13 @@ int fs_entry_clear_cached_xattrs( struct fs_entry* fent, int64_t new_xattr_nonce
 int fs_entry_list_cached_xattrs( struct fs_entry* fent, char** xattr_list, size_t* xattr_list_len, int64_t last_known_xattr_nonce );
 int fs_entry_cache_xattr_list( struct fs_entry* fent, xattr_cache_t* new_listing, int64_t last_known_xattr_nonce );
 
+// dirty block handling 
+int fs_entry_extract_dirty_blocks( struct fs_entry* fent, modification_map** dirty_blocks );
+int fs_entry_extract_garbage_blocks( struct fs_entry* fent, modification_map** garbage_blocks );
+
+int fs_entry_replace_dirty_blocks( struct fs_entry* fent, modification_map* dirty_blocks );
+int fs_entry_replace_garbage_blocks( struct fs_entry* fent, modification_map* garbage_blocks );
+
 // fs_entry locking
 int fs_entry_rlock2( struct fs_entry* fent, char const* from_str, int lineno );
 int fs_entry_wlock2( struct fs_entry* fent, char const* from_str, int lineno );
@@ -298,14 +319,44 @@ int fs_entry_to_md_entry( struct fs_core* core, struct md_entry* dest, struct fs
 
 // versioning
 int64_t fs_entry_next_version_number(void);
-int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t new_version, uint64_t parent_id, char const* parent_name );
+int fs_entry_update_modtime( struct fs_entry* fent );
 
 // misc
 unsigned int fs_entry_num_children( struct fs_entry* fent );
 
+// block info 
+void fs_entry_block_info_replicate_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id, int block_fd );
+void fs_entry_block_info_garbage_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id );
 int fs_entry_block_info_free( struct fs_entry_block_info* binfo );
-int fs_entry_free_modification_map( modification_map* m );
+int fs_entry_block_info_free_ex( struct fs_entry_block_info* binfo, bool close_fd );
+
+// bufferring 
+int fs_entry_has_bufferred_block( struct fs_entry* fent, uint64_t block_id );
+int fs_entry_read_bufferred_block( struct fs_entry* fent, uint64_t block_id, char* buf, off_t block_offset, size_t read_len );
+int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char const* buf, off_t block_offset, size_t write_len );
+int fs_entry_replace_bufferred_block( struct fs_entry* fent, uint64_t block_id, char* buf, size_t buf_len );
+int fs_entry_clear_bufferred_block( struct fs_entry* fent, uint64_t block_id );
+int fs_entry_extract_bufferred_blocks( struct fs_entry* fent, modification_map* block_info );
+
+// syncing 
+int fs_entry_sync_context_enqueue( struct fs_entry* fent, struct sync_context* ctx );
+int fs_entry_sync_context_dequeue( struct fs_entry* fent, struct sync_context** ctx );
+int fs_entry_sync_context_remove( struct fs_entry* fent, struct sync_context* ctx );
+size_t fs_entry_sync_context_size( struct fs_entry* fent );
+
+// view change
 int fs_entry_view_change_callback( struct ms_client* ms, void* cls );
+
+// state management
+int fs_entry_setup_working_data( struct fs_core* core, struct fs_entry* fent );
+int fs_entry_free_working_data( struct fs_entry* fent );
+
+int fs_entry_free_modification_map( modification_map* m );
+int fs_entry_free_modification_map_ex( modification_map* m, bool close_fds );
+
+int fs_entry_merge_new_dirty_blocks( struct fs_entry* fent, modification_map* new_dirty_blocks );
+int fs_entry_merge_old_dirty_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t original_file_id, int64_t original_file_version, modification_map* old_dirty_blocks, modification_map* unmerged );
+int fs_entry_merge_garbage_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t original_file_id, int64_t original_file_version, modification_map* new_garbage_blocks, modification_map* unmerged );
 
 // cython compatibility
 uint64_t fs_dir_entry_type( struct fs_dir_entry* dirent );

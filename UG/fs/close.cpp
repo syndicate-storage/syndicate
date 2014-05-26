@@ -18,6 +18,8 @@
 #include "consistency.h"
 #include "cache.h"
 #include "replication.h"
+#include "network.h"
+#include "sync.h"
 
 // close a file handle.
 // NOTE: make sure everything's locked first!
@@ -41,81 +43,49 @@ int fs_entry_close( struct fs_core* core, struct fs_file_handle* fh ) {
 
    if( fh->open_count <= 0 ) {
       
+      // this descriptor is getting closed, so sync data 
+      sync = true;
+      
       fh->fent->open_count--;
+      
+      if( fh->fent->open_count <= 0 ) {
+         fs_entry_free_working_data( fh->fent );
+      }
 
       rc = fs_entry_try_destroy( core, fh->fent );
       if( rc > 0 ) {
          // fent was unlocked and destroyed
          free( fh->fent );
-         sync = true;
+         sync = false;  // don't sync data--the file no longer exists
       }
    }
    
-   else {
-      sync = true;
-   }
-   
-   bool closed = false;
-
    if( sync ) {
       if( fh->dirty ) {
          
-         char* path = fh->path;
-         char* parent_name = fh->parent_name;
-         
-         fh->path = NULL;
-         fh->parent_name = NULL;
-
-         fs_entry_unlock( fh->fent );
+         struct sync_context sync_ctx;
                
-         // flush replicas (flush data)
-         struct timespec ts, ts2;
-
-         BEGIN_TIMING_DATA( ts );
+         // synchronize data and metadata
+         rc = fs_entry_fsync_locked( core, fh, &sync_ctx );
          
-         int replica_rc = fs_entry_replicate_wait( core, fh );
-         fs_entry_replica_clean( fh );
-         
-         END_TIMING_DATA( ts, ts2, "replication" );
-         
-         if( replica_rc == 0 ) {
-            errorf("fs_entry_replicate_wait rc = %d\n", replica_rc );
-            rc = replica_rc;
-         }
-
-         if( fh->open_count <= 0 )
-            fs_file_handle_destroy( fh );
-         else
-            fs_file_handle_unlock( fh );
-         
-         // synchronize outstanding updates (flush metadata)
-         int metadata_rc = ms_client_sync_update( core->ms, fh->volume, fh->file_id );
-
-         if( path )
-            free( path );
-
-         if( parent_name )
-            free( parent_name );
-
-         if( metadata_rc != 0 && metadata_rc != -ENOENT ) {
-            errorf("ms_client_sync_update rc = %d\n", metadata_rc );
+         if( rc != 0 ) {
             
-            if( rc == 0 )
-               rc = -EIO;
+            fs_entry_unlock( fh->fent );
+            fs_file_handle_unlock( fh );
+            
+            return rc;
          }
          
-         closed = true;
+         fs_entry_sync_context_free( &sync_ctx );
       }
    }
-   
-   if( !closed ) {
-      fs_entry_unlock( fh->fent );
 
-      if( fh->open_count <= 0 )
-         fs_file_handle_destroy( fh );
-      else
-         fs_file_handle_unlock( fh );
-   }
+   fs_entry_unlock( fh->fent );
+
+   if( fh->open_count <= 0 )
+      fs_file_handle_destroy( fh );
+   else
+      fs_file_handle_unlock( fh );
 
    return rc;
 }

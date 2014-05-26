@@ -22,10 +22,9 @@
 // block URL set--a set of blocks for a particular file from a particular host
 class block_url_set {
 public:
-   //char* file_url;            // base URL (no version) to the host and file for the represented blocks
    uint64_t volume_id;        // ID of the Volume this file is in
    uint64_t file_id;          // ID of the file
-   uint64_t gateway_id;       // ID of the UG that wrote them last
+   uint64_t gateway_id;       // ID of the UG that wrote them last (0 if this is a write hole)
    uint64_t start_id;         // starting block ID
    uint64_t end_id;           // ending block ID
    int64_t file_version;      // version of this file
@@ -92,6 +91,9 @@ public:
 
    // populate a protobuf structure with our data
    void as_protobuf( struct fs_core* core, Serialization::BlockURLSetMsg* busmsg );
+   
+   // is this a hole?
+   bool is_hole() { return this->gateway_id == 0; }
 };
 
 
@@ -142,6 +144,9 @@ public:
 
    // put a block URL.
    int put_block( struct fs_core* core, uint64_t gateway_id, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash );
+   
+   // put a block hole 
+   int put_hole( struct fs_core* core, struct fs_entry* fent, uint64_t block_id );
 
    // directly put a url set
    void put_url_set( block_url_set* bus );
@@ -166,6 +171,12 @@ public:
 
    // is a block local?
    int is_block_local( struct fs_core* core, uint64_t block_id );
+   
+   // is this block part of a hole?  As in, is there data beyond this block id, but none for this one?
+   bool is_hole( uint64_t block_id );
+   
+   // is a block present?
+   bool is_block_present( uint64_t block_id );
 
    // mark the manifest as stale
    void mark_stale() {
@@ -210,6 +221,34 @@ public:
 
    // get the range of a block
    int get_range( uint64_t block_id, uint64_t* start_id, uint64_t* end_id, uint64_t* gateway_id );
+   
+   // get the modtime 
+   int get_modtime( struct timespec* ts ) {
+      pthread_rwlock_rdlock( &this->manifest_lock );
+      ts->tv_sec = this->lastmod.tv_sec;
+      ts->tv_nsec = this->lastmod.tv_nsec;
+      pthread_rwlock_unlock( &this->manifest_lock );
+      return 0;
+   }
+   
+   // get the modtime 
+   int get_modtime( int64_t* mtime_sec, int32_t* mtime_nsec ) {
+      pthread_rwlock_rdlock( &this->manifest_lock );
+      *mtime_sec = this->lastmod.tv_sec;
+      *mtime_nsec = this->lastmod.tv_nsec;
+      pthread_rwlock_unlock( &this->manifest_lock );
+      return 0;
+   }
+   
+   // set the modtime 
+   int set_modtime( uint64_t mtime_sec, uint32_t mtime_nsec ) {
+      pthread_rwlock_wrlock( &this->manifest_lock );
+      this->lastmod.tv_sec = mtime_sec;
+      this->lastmod.tv_nsec = mtime_nsec;
+      pthread_rwlock_unlock( &this->manifest_lock );
+      return 0;
+   }
+   
    
 private:
 

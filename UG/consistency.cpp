@@ -24,57 +24,6 @@
 #include "driver.h"
 
 
-// sync a file's metadata with the MS and flush replicas
-int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
-   fs_file_handle_wlock( fh );
-   if( fh->fent == NULL ) {
-      fs_file_handle_unlock( fh );
-      return -EBADF;
-   }
-
-   int rc = 0;
-   
-   // flush replicas
-   struct timespec ts, ts2;
-
-   BEGIN_TIMING_DATA( ts );
-   
-   int replica_rc = fs_entry_replicate_wait( core, fh );
-   fs_entry_replica_clean( fh );
-   
-   END_TIMING_DATA( ts, ts2, "replication" );
-      
-   int sync_rc = ms_client_sync_update( core->ms, fh->volume, fh->file_id );
-   if( sync_rc != 0 ) {
-      errorf("ms_client_sync_update(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", fh->volume, core->gateway, fh->file_id, sync_rc );
-
-      // ENOENT allowed because the update thread could have preempted us
-      if( sync_rc == -ENOENT ) {
-         rc = 0;
-      }
-      else {
-         rc = sync_rc;
-      }
-   }
-   
-   if( replica_rc != 0 ) {
-      errorf("fs_entry_replicate_wait(/%" PRIu64 "/%" PRIu64 "/%" PRIX64 ") rc = %d\n", fh->volume, core->gateway, fh->file_id, replica_rc );
-      fs_file_handle_unlock( fh );
-      
-      return replica_rc;
-   }
-   
-   fs_file_handle_unlock( fh );
-   return rc;
-}
-
-int fs_entry_fdatasync( struct fs_core* core, struct fs_file_handle* fh ) {
-   
-   // TODO:
-   return -ENOSYS;
-}
-
-
 // is a fent stale for reads?
 bool fs_entry_is_read_stale( struct fs_entry* fent ) {
    if( fent->read_stale ) {
@@ -93,9 +42,19 @@ bool fs_entry_is_read_stale( struct fs_entry* fent ) {
 }
 
 
-// determine whether or not an entry is stale, given the current entry's modtime and the time of the query
+// determine whether or not an entry is stale, given the current entry's modtime and the time of the query.
+// for files, the modtime is the manifest modtime (which increases monotonically)
+// for directories, the modtime is the fs_entry modtime (which also increases monotonically)
 // fent must be at least read-locked!
-static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent, uint64_t mtime_sec, uint32_t mtime_nsec, int64_t write_nonce, struct timespec* query_time ) {
+static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent, struct md_entry* ent, struct timespec* query_time ) {
+   
+   int64_t local_modtime_sec = 0;
+   int32_t local_modtime_nsec = 0;
+   
+   int64_t remote_modtime_sec = 0;
+   int32_t remote_modtime_nsec = 0;
+   
+   int64_t write_nonce = ent->write_nonce;
    
    // a directory is stale if the write nonce has changed
    if( fent->ftype == FTYPE_DIR ) {
@@ -114,16 +73,38 @@ static bool fs_entry_should_reload( struct fs_core* core, struct fs_entry* fent,
    }
 
    if( FS_ENTRY_LOCAL( core, fent ) ) {
+      
+      if( fent->ftype == FTYPE_DIR ) {
+         local_modtime_sec = fent->mtime_sec;
+         local_modtime_nsec = fent->mtime_nsec;
+         
+         remote_modtime_sec = ent->mtime_sec;
+         remote_modtime_nsec = ent->mtime_sec;
+      }
+      else {
+         if( fent->manifest == NULL || !fent->manifest->is_initialized() ) {
+            // definitely stale 
+            return true;
+         }
+         else {
+            // check manifest modtime
+            fent->manifest->get_modtime( &local_modtime_sec, &local_modtime_nsec );
+            
+            remote_modtime_sec = ent->manifest_mtime_sec;
+            remote_modtime_nsec = ent->manifest_mtime_nsec;
+         }
+      }
+      
       // local means that only this UG controls its ctime and mtime (which both increase monotonically)
       if( fent->ctime_sec > query_time->tv_sec || (fent->ctime_sec == query_time->tv_sec && fent->ctime_nsec > query_time->tv_nsec) ) {
          // fent is local and was created after the query time.  Don't reload; we have potentially uncommitted changes.
          return false;
       }
-      if( fent->mtime_sec > query_time->tv_sec || (fent->mtime_sec == query_time->tv_sec && fent->mtime_nsec > query_time->tv_nsec) ) {
+      if( local_modtime_sec > query_time->tv_sec || (local_modtime_sec == query_time->tv_sec && local_modtime_nsec > query_time->tv_nsec) ) {
          // fent is local and was modified after the query time.  Don't reload; we have potentially uncommitted changes
          return false;
       }
-      if( (unsigned)fent->mtime_sec == mtime_sec && (unsigned)fent->mtime_nsec == mtime_nsec ) {
+      if( local_modtime_sec == remote_modtime_sec && local_modtime_nsec == remote_modtime_nsec ) {
          // not modified
          return false;
       }
@@ -191,11 +172,21 @@ int fs_entry_reload( struct fs_entry_consistency_cls* consistency_cls, struct fs
 
    if( fent->manifest ) {
       // the manifest is only stale 
-      if( fent->mtime_sec != ent->mtime_sec || fent->mtime_nsec != ent->mtime_nsec || fent->write_nonce != ent->write_nonce )
+      if( !fent->manifest->is_initialized() ) {
          fent->manifest->mark_stale();
+      }
+      else {
+         int64_t modtime_sec = 0;
+         int32_t modtime_nsec = 0;
+         
+         fent->manifest->get_modtime( &modtime_sec, &modtime_nsec );
+         
+         if( modtime_sec != ent->manifest_mtime_sec || modtime_nsec != ent->manifest_mtime_nsec || fent->write_nonce != ent->write_nonce )
+            fent->manifest->mark_stale();
 
-      if( fent->version != fent->manifest->get_file_version() )
-         fent->manifest->mark_stale();
+         if( fent->version != fent->manifest->get_file_version() )
+            fent->manifest->mark_stale();
+      }
    }
    
    fent->owner = ent->owner;
@@ -219,8 +210,11 @@ int fs_entry_reload( struct fs_entry_consistency_cls* consistency_cls, struct fs
       
    fent->name = strdup( ent->name );
    
+   if( fent->manifest )
+      fent->manifest->set_modtime( ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
+   
    fs_entry_mark_read_fresh_path( consistency_cls, fent );
-   dbprintf("reloaded %s up to (%" PRIu64 ".%d)\n", ent->name, ent->mtime_sec, ent->mtime_nsec );
+   dbprintf("reloaded %s up to (%" PRIu64 ".%d)\n", ent->name, ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
    return 0;
 }
    
@@ -372,7 +366,22 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
    
    ms_path->push_back( path_ent );
    
-   dbprintf("in path: %s.%" PRId64 " (mtime=%" PRId64 ".%d) (write_nonce=%" PRId64 ") (%s)\n", fent->name, fent->version, fent->mtime_sec, fent->mtime_nsec, fent->write_nonce, cls->fs_path);
+   //////////////////
+   
+   int64_t modtime_sec = 0;
+   int32_t modtime_nsec = 0;
+   bool manifest_inited = false;
+   
+   if( fent->manifest && fent->manifest->is_initialized() ) {
+      fent->manifest->get_modtime( &modtime_sec, &modtime_nsec );
+      manifest_inited = true;
+   }
+   else {
+      modtime_sec = fent->mtime_sec;
+      modtime_nsec = fent->mtime_nsec;
+   }
+   
+   dbprintf("in path: %s.%" PRId64 " (mtime=%" PRId64 ".%d, inited=%d) (write_nonce=%" PRId64 ") (%s)\n", fent->name, fent->version, modtime_sec, modtime_nsec, manifest_inited, fent->write_nonce, cls->fs_path);
    return 0;
 }
 
@@ -476,7 +485,7 @@ static int fs_entry_reload_file( struct fs_entry_consistency_cls* consistency_cl
       fs_entry_clear_cached_xattrs( fent, ent->xattr_nonce );
    }
    
-   if( !fs_entry_should_reload( consistency_cls->core, fent, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, &consistency_cls->query_time ) ) {
+   if( !fs_entry_should_reload( consistency_cls->core, fent, ent, &consistency_cls->query_time ) ) {
       // nothing to do
       fs_entry_mark_read_fresh_path( consistency_cls, fent );
       return 0;
@@ -583,7 +592,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
             fs_entry_clear_cached_xattrs( dent, ms_ent->xattr_nonce );
          }
          
-         if( fs_entry_should_reload( consistency_cls->core, dent, ms_ent->mtime_sec, ms_ent->mtime_nsec, ms_ent->write_nonce, &consistency_cls->query_time ) ) {
+         if( fs_entry_should_reload( consistency_cls->core, dent, ms_ent, &consistency_cls->query_time ) ) {
             dbprintf("reload '%s' ('%s')\n", dent->name, ms_ent->name );
             fs_entry_reload( consistency_cls, dent, ms_ent );
          }
@@ -664,7 +673,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
             }
             
             // do the reload (if we need to)
-            if( fs_entry_should_reload( consistency_cls->core, child, ms_ent->mtime_sec, ms_ent->mtime_nsec, ms_ent->write_nonce, &consistency_cls->query_time ) ) {
+            if( fs_entry_should_reload( consistency_cls->core, child, ms_ent, &consistency_cls->query_time ) ) {
                // keep directories marked as read-stale if they were before, since we want to later refresh their children if they were modified
                bool read_stale = false;
 
@@ -1222,8 +1231,8 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
    fent->manifest->reload( core, fent, mmsg );
    fent->size = mmsg->size();
    
-   fent->mtime_sec = mmsg->mtime_sec();
-   fent->mtime_nsec = mmsg->mtime_nsec();
+   fent->mtime_sec = mmsg->fent_mtime_sec();
+   fent->mtime_nsec = mmsg->fent_mtime_nsec();
    fent->version = mmsg->file_version();
    
    fent->manifest->mark_initialized();
@@ -1236,8 +1245,8 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
 // if check_coordinator is true, then ask the manifest-designated gateway before asking the RGs.
 // if successful_gateway_id != NULL, then fill it with the ID of the gateway that served the manifest (if any). Otherwise set to 0 if given but the manifest was fresh.
 // a manifest fetched from an AG will be marked as stale, since a subsequent read can fail with HTTP 204.  The caller should mark the manifest as fresh if it succeeds in reading data.
-// FENT MUST BE WRITE-LOCKED FIRST!
-int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id ) {
+// fent must be write-locked
+int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id, bool force_refresh ) {
    
    if( fent->manifest != NULL && fent->manifest->is_initialized() ) {
       if( FS_ENTRY_LOCAL( core, fent ) && !core->conf->is_client ) {
@@ -1259,16 +1268,20 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    BEGIN_TIMING_DATA( ts );
    
    bool need_refresh = false;
-   
-   if( fent->manifest == NULL ) {
-      fent->manifest = new file_manifest( version );
+   if( force_refresh ) {
       need_refresh = true;
    }
-   else {
-      // does the manifest need refreshing?
-      need_refresh = fs_entry_is_manifest_stale( fent );
+   else {  
+      if( fent->manifest == NULL ) {
+         fent->manifest = new file_manifest( version );
+         need_refresh = true;
+      }
+      else {
+         // does the manifest need refreshing?
+         need_refresh = fs_entry_is_manifest_stale( fent );
+      }
    }
-
+   
    if( !need_refresh ) {
       // we're good to go
       END_TIMING_DATA( ts, ts2, "manifest refresh (fresh)" );
@@ -1301,20 +1314,22 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
          return -EAGAIN;
       }
       
-      if( gateway_type == SYNDICATE_UG )
-         manifest_url = fs_entry_remote_manifest_url( core, fent->coordinator, fs_path, version, &modtime );
-      else if( gateway_type == SYNDICATE_RG )
-         manifest_url = fs_entry_RG_manifest_url( core, fent->coordinator, fent->volume, fent->file_id, version, &modtime );
-      else if( gateway_type == SYNDICATE_AG )
-         manifest_url = fs_entry_AG_manifest_url( core, fent->coordinator, fs_path, version, &modtime );
+      rc = fs_entry_make_manifest_url( core, fs_path, fent->coordinator, fent->file_id, version, &modtime, &manifest_url );
       
-      if( manifest_url == NULL ) {
-         // unknown gateway...try refreshing the Volume
-         errorf("Unknown Gateway %" PRIu64 "\n", fent->coordinator );
-         ms_client_sched_volume_reload( core->ms );
-         return -EAGAIN;
+      if( rc != 0 ) {
+         // failed to produce the url
+         errorf("fs_entry_make_manifest_url rc = %d\n", rc );
+         
+         if( rc == -ENOENT ) {
+            // gateway not found.  try refreshing our certs
+            ms_client_sched_volume_reload( core->ms );
+            return -EAGAIN;
+         }
+         else {
+            return -ENODATA;
+         }
       }
-   
+      
       dbprintf("Reload manifest from Gateway %" PRIu64 " at %s\n", fent->coordinator, manifest_url );
   
       rc = fs_entry_download_manifest( core, fs_path, fent, mtime_sec, mtime_nsec, manifest_url, &manifest_msg );
@@ -1385,14 +1400,32 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    return 0;
 }
 
+// ensure the manifest is fresh
+// fent should be write-locked
 int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
-   return fs_entry_revalidate_manifest( core, fs_path, fent, fent->version, fent->mtime_sec, fent->mtime_nsec, true, NULL );
+   struct timespec ts;
+   
+   bool force_refresh = false;
+   
+   if( fent->manifest == NULL ) {
+      // no manifest on file...reload it
+      fent->manifest = new file_manifest( fent->version );
+      fent->manifest->set_modtime( 0, 0 );
+      force_refresh = true;
+   }
+   
+   fent->manifest->get_modtime( &ts );
+   
+   return fs_entry_revalidate_manifest( core, fs_path, fent, fent->version, ts.tv_sec, ts.tv_nsec, true, NULL, force_refresh );   
 }
 
 
-// become the coordinator for a fent
+// become the coordinator for a fent.
+// if it succeeds, we become the coordinator (and return 0)
+// if it fails, we learn the new coordinator, which gets written to fent->coordinator (this method returns -EAGAIN in this case)
+// NOTE: you should revalidate the metadata and manifest prior to calling this, so it's not stale
 // fent must be write-locked!
-int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t replica_version, int64_t replica_manifest_mtime_sec, int32_t replica_manifest_mtime_nsec ) {
+int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
    
    // sanity check...
    if( FS_ENTRY_LOCAL( core, fent ) )
@@ -1404,22 +1437,10 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
       return -EINVAL;
    }
    
-   // which RG served?
-   uint64_t rg_id = 0;
-   
-   // revalidate the manifest 
-   int rc = fs_entry_revalidate_manifest( core, fs_path, fent, replica_version, replica_manifest_mtime_sec, replica_manifest_mtime_nsec, false, &rg_id );
-   if( rc != 0 ) {
-      // failed to revalidate manifest
-      errorf("fs_entry_revalidate_manifest( /%" PRIu64 "/%" PRIX64 ".%" PRId64 " (modtime=%" PRId64 ".%d) ) rc = %d\n", fent->volume, fent->file_id, replica_version, replica_manifest_mtime_sec, replica_manifest_mtime_nsec, rc );
-      return -ENODATA;
-   }
-   
-   
    // run the pre-chcoord driver code...
-   rc = driver_chcoord_begin( core, core->closure, fs_path, fent, replica_version );
+   int rc = driver_chcoord_begin( core, core->closure, fs_path, fent, fent->version );
    if( rc != 0 ) {
-      errorf("driver_chcoord_begin(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, replica_version, rc );
+      errorf("driver_chcoord_begin(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, fent->version, rc );
       return rc;
    }
    
@@ -1446,9 +1467,9 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
    }
    
    // run the post-chcoord driver code...
-   int driver_rc = driver_chcoord_end( core, core->closure, fs_path, fent, replica_version, rc );
+   int driver_rc = driver_chcoord_end( core, core->closure, fs_path, fent, fent->version, rc );
    if( driver_rc != 0 ) {
-      errorf("driver_chcoord_end(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, replica_version, driver_rc );
+      errorf("driver_chcoord_end(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, fent->version, driver_rc );
    }
    
    md_entry_free( &ent );
@@ -1458,6 +1479,7 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
 
 
 // revalidate a path and the manifest at the end of the path
+// fent should NOT be locked
 int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t* rg_id_ret ) {
    
    struct timespec ts, ts2;
@@ -1475,7 +1497,20 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
    
    // reload this manifest.  If we get this manifest from an RG, remember which one.
    uint64_t rg_id = 0;
-   rc = fs_entry_revalidate_manifest( core, fs_path, fent, fent->version, fent->mtime_sec, fent->mtime_nsec, true, &rg_id );
+   
+   struct timespec manifest_ts;
+   bool force_refresh = false;
+   
+   if( fent->manifest == NULL ) {
+      // no manifest; force refresh
+      fent->manifest = new file_manifest( fent->version );
+      fent->manifest->set_modtime( fent->mtime_sec, fent->mtime_nsec );
+      force_refresh = true;
+   }
+   
+   fent->manifest->get_modtime( &manifest_ts );
+   
+   rc = fs_entry_revalidate_manifest( core, fs_path, fent, fent->version, manifest_ts.tv_sec, manifest_ts.tv_nsec, true, &rg_id, force_refresh );
 
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, rc );

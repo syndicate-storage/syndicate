@@ -401,7 +401,14 @@ char* file_manifest::get_block_url( struct fs_core* core, char const* fs_path, s
       else {
          // not hosted here
          if( fs_path != NULL ) {
-            return fs_entry_remote_block_url( core, itr->second->gateway_id, fs_path, fent->version, block_id, block_version );
+            char* ret = NULL;
+            int rc = fs_entry_make_block_url( core, fs_path, itr->second->gateway_id, fent->file_id, fent->version, block_id, block_version, &ret );
+            if( rc != 0 ) {
+               errorf("fs_entry_make_block_url( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
+               return NULL;
+            }
+            
+            return ret;
          }
          else {
             errorf("%s", "No fs_path given\n");
@@ -885,7 +892,10 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
          }
       }
    }
-
+   
+   // advance the mod time 
+   clock_gettime( CLOCK_REALTIME, &this->lastmod );
+   
    pthread_rwlock_unlock( &this->manifest_lock );
 
    /*
@@ -897,6 +907,15 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
    return 0;
 }
 
+
+// put a write hole 
+int file_manifest::put_hole( struct fs_core* core, struct fs_entry* fent, uint64_t block_id ) {
+   unsigned char* dead_hash = (unsigned char*)alloca( BLOCK_HASH_LEN() );
+   memset( dead_hash, 0, BLOCK_HASH_LEN() );
+   
+   int rc = this->put_block( core, 0, fent, block_id, 0, dead_hash );
+   return rc;
+}
 
 // truncate a manifest
 void file_manifest::truncate( uint64_t new_end_id ) {
@@ -923,6 +942,9 @@ void file_manifest::truncate( uint64_t new_end_id ) {
 
    pthread_rwlock_unlock( &this->manifest_lock );
 
+   // advance the mod time 
+   clock_gettime( CLOCK_REALTIME, &this->lastmod );
+   
    /*
    char* data = this->serialize_str();
    dbprintf( "Manifest is now:\n%s\n", data);
@@ -930,6 +952,45 @@ void file_manifest::truncate( uint64_t new_end_id ) {
    */
 }
 
+
+// is a block part of a write hole?
+bool file_manifest::is_hole( uint64_t block_id ) {
+   
+   bool ret = false;
+   
+   pthread_rwlock_wrlock( &this->manifest_lock );
+
+   block_map::iterator itr = this->find_block_set( block_id );
+
+   if( itr != this->block_urls.end() ) {
+      if( itr->second->is_hole() ) {
+         ret = true;
+      }
+   }
+
+   pthread_rwlock_unlock( &this->manifest_lock );
+
+   return ret;
+}
+
+
+// is a block present?
+bool file_manifest::is_block_present( uint64_t block_id ) {
+   
+   bool ret = false;
+   
+   pthread_rwlock_wrlock( &this->manifest_lock );
+
+   block_map::iterator itr = this->find_block_set( block_id );
+
+   if( itr != this->block_urls.end() ) {
+      ret = true;
+   }
+
+   pthread_rwlock_unlock( &this->manifest_lock );
+
+   return ret;
+}
 
 
 // serialize the manifest to a string
@@ -982,8 +1043,10 @@ void file_manifest::as_protobuf( struct fs_core* core, struct fs_entry* fent, Se
    mmsg->set_file_id( fent->file_id );
    mmsg->set_file_version( fent->version );
    mmsg->set_size( fent->size );
-   mmsg->set_mtime_sec( fent->mtime_sec );
-   mmsg->set_mtime_nsec( fent->mtime_nsec );
+   mmsg->set_mtime_sec( this->lastmod.tv_sec );
+   mmsg->set_mtime_nsec( this->lastmod.tv_nsec );
+   mmsg->set_fent_mtime_sec( fent->mtime_sec );
+   mmsg->set_fent_mtime_nsec( fent->mtime_nsec );
 
    pthread_rwlock_unlock( &this->manifest_lock );
 }
@@ -1054,6 +1117,8 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
 
    if( rc == 0 ) {
       m->file_version = mmsg->file_version();
+      m->lastmod.tv_sec = mmsg->mtime_sec();
+      m->lastmod.tv_nsec = mmsg->mtime_nsec();
    }
 
    return rc;
@@ -1087,6 +1152,8 @@ int fs_entry_manifest_error( Serialization::ManifestMsg* mmsg, int error, char c
    mmsg->set_size( (int64_t)random64() );
    mmsg->set_mtime_sec( (int64_t)random64() );
    mmsg->set_mtime_nsec( (int64_t)random64() );
+   mmsg->set_fent_mtime_sec( (int64_t)random64() );
+   mmsg->set_fent_mtime_nsec( (int64_t)random64() );
 
    mmsg->set_errorcode( error );
    mmsg->set_errortxt( string(errormsg) );

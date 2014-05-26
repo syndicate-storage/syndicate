@@ -81,6 +81,8 @@ struct cache_block_future {
    
    sem_t sem_ongoing;
    bool detached;       // if true, reap this future once the write finishes
+   
+   bool finalized;
 };
 
 
@@ -128,6 +130,13 @@ struct syndicate_cache {
    cache_lru_t* promotes_1;
    cache_lru_t* promotes_2;
    
+   // blocks to be evicted  (guarded by promotes_lock)
+   cache_lru_t* evicts;
+   
+   // evicts refers to one of these 
+   cache_lru_t* evicts_1;
+   cache_lru_t* evicts_2;
+   
    // thread for processing writes and evictions
    pthread_t thread;
    bool running;
@@ -167,8 +176,9 @@ int fs_entry_cache_block_future_free( struct cache_block_future* f );
 int fs_entry_cache_block_future_release_fd( struct cache_block_future* f );
 
 // synchronous block I/O
+int fs_entry_cache_is_block_readable( struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
 int fs_entry_cache_open_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int flags );
-ssize_t fs_entry_cache_read_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int block_fd, char** buf );
+ssize_t fs_entry_cache_read_block( int block_fd, char** buf );
 
 int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, struct stat* sb );
 int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cache, char const* fs_path, uint64_t block_id, int64_t block_version, struct stat* sb );
@@ -176,6 +186,7 @@ int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cac
 // allow external client to evict data
 int fs_entry_cache_evict_file( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version );
 int fs_entry_cache_evict_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
+int fs_entry_cache_evict_block_async( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
 
 // allow external client to promote data in the cache (i.e. move it up the LRU)
 int fs_entry_cache_promote_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
@@ -185,5 +196,10 @@ int fs_entry_cache_reversion_file( struct fs_core* core, struct syndicate_cache*
 
 // allow external client to scan a file's cached blocks
 int fs_entry_cache_file_blocks_apply( char const* local_path, int (*block_func)( char const*, void* ), void* cls );
+
+// check a cache write future for I/O errors 
+int fs_entry_cache_block_future_has_error( struct cache_block_future* f );
+int fs_entry_cache_block_future_get_aio_error( struct cache_block_future* f );
+int fs_entry_cache_block_future_get_write_error( struct cache_block_future* f );
 
 #endif

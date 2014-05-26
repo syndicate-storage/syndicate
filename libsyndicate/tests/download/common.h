@@ -1,5 +1,5 @@
 /*
-   Copyright 2011 Jude Nelson
+   Copyright 2014 The Trustees of Princeton University
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -14,25 +14,11 @@
    limitations under the License.
 */
 
-#ifndef _TEST_FS_ENTRY_
-#define _TEST_FS_ENTRY_
+#ifndef _LIBSYNDICATE_DOWNLOAD_TEST_COMMON_H_
+#define _LIBSYNDICATE_DOWNLOAD_TEST_COMMON_H_
 
-#include <limits.h>
+#include "libsyndicate/download.h"
 
-#include "fs_entry.h"
-#include "libsyndicate.h"
-
-#define NUM_THREADS 10
-
-struct test_thread_args {
-   int id;
-   struct fs_core* fs;
-};
-
-#define TEST_DIR "test_fs_entry/"
-
-#define LOCAL_FILE "local.html"
-#define LOCAL_FILE2 "local2.html"
-#define LOCAL_DIR "localdir"
+int print_download( struct md_download_context* dlctx, char const* base_url );
 
 #endif

@@ -28,13 +28,13 @@ struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_en
    fh->flags = 0;
    fh->open_count = 0;
    fh->fent = ent;
-   fh->dirty = false;
    fh->volume = ent->volume;
    fh->file_id = ent->file_id;
    fh->path = strdup( opened_path );
    fh->parent_name = strdup( parent_name );
    fh->parent_id = parent_id;
    fh->transfer_timeout_ms = (core->conf->transfer_timeout) * 1000L;
+   fh->dirty = false;
 
    int gateway_type = ms_client_get_gateway_type( core->ms, ent->coordinator );
    if( gateway_type == SYNDICATE_AG ) {
@@ -43,8 +43,6 @@ struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_en
    }
    
    pthread_rwlock_init( &fh->lock, NULL );
-   
-   fh->rctxs = new vector<struct replica_context*>();
    
    return fh;
 }
@@ -314,7 +312,10 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
             
             // insert it into the filesystem
             fs_entry_wlock( child );
+            
+            // open it
             child->open_count++;
+            fs_entry_setup_working_data( core, child );
             
             fs_entry_attach_lowlevel( core, parent, child );
             created = true;
@@ -394,13 +395,17 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
          free( path_basename );
          free( path );
          free( parent_name );
-         *err = -EREMOTEIO;
+         
+         *err = rc;
+         if( rc != -EAGAIN )    // i.e. not due to missing a cert
+            *err = -EREMOTEIO;
+         
          return NULL;
       }
    }
 
    // do we need to truncate?
-   if( flags & O_TRUNC && !created ) {
+   if( (flags & O_TRUNC) && !created ) {
       child->size = 0;
       
       if( FS_ENTRY_LOCAL( core, child ) ) {
@@ -410,17 +415,8 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
          // send a truncate request to the owner
          Serialization::WriteMsg *truncate_msg = new Serialization::WriteMsg();
          fs_entry_init_write_message( truncate_msg, core, Serialization::WriteMsg::TRUNCATE );
-
-         Serialization::TruncateRequest* truncate_req = truncate_msg->mutable_truncate();
-         truncate_req->set_fs_path( path );
-         truncate_req->set_file_version( child->version );
-         truncate_req->set_size( 0 );
-
-         Serialization::BlockList* blocks = truncate_msg->mutable_blocks();
-         blocks->set_start_id( 0 );
-         blocks->set_end_id( 1 );
-         blocks->add_version( child->manifest->get_block_version( 0 ) );
-
+         fs_entry_prepare_truncate_message( truncate_msg, path, child, 0 );
+         
          Serialization::WriteMsg *withdraw_ack = new Serialization::WriteMsg();
 
          *err = fs_entry_post_write( withdraw_ack, core, child->coordinator, truncate_msg );
@@ -465,8 +461,15 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
    }
 
 
-   if( !created )
+   if( !created ) {
+      // merely opened.
       child->open_count++;
+      
+      if( child->open_count == 1 ) {
+         // opened for the first time, so allocate working data
+         fs_entry_setup_working_data( core, child );
+      }
+   }
 
    if( created && *err == 0 ) {
 
@@ -483,6 +486,8 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
 
          // revert
          child->open_count = 0;
+         fs_entry_free_working_data( child );
+         
          fs_entry_unlock( child );
 
          // NOTE: parent will still exist--we can't remove a non-empty directory
@@ -503,8 +508,10 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
       fs_file_handle_open( ret, flags, mode );
    }
    
-   if( child ) 
+   if( child ) {
+      // merely opened
       fs_entry_unlock( child );
+   }
    
    free( path_basename );
    free( path );

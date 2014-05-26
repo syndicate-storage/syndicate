@@ -32,8 +32,9 @@ struct syndicate_state {
    struct ms_client* ms;   // metadata service client
    struct fs_core* core;   // core of the system
    struct syndicate_cache cache;        // local cache
-   struct syndicate_replication replication;            // replication context
-   struct syndicate_replication garbage_collector;      // garbage collector context
+   struct rg_client replication;            // replication context
+   struct rg_client garbage_collector;      // garbage collector context
+   struct md_downloader dl;             // downloader for this client
 
    // mounter info (since apparently FUSE doesn't do this right)
    int gid;

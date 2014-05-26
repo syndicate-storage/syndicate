@@ -15,6 +15,7 @@
 */
 
 #include "server.h"
+#include "write.h"
 
 // connection initialization handler for embedded HTTP server
 void* server_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
@@ -134,10 +135,17 @@ struct md_HTTP_response* server_HTTP_GET_handler( struct md_HTTP_connection_data
       // serve back the block
       char* block = CALLOC_LIST( char, state->core->blocking_factor );
 
-      ssize_t size = fs_entry_read_block( state->core, reqdat.fs_path, reqdat.block_id, block, state->core->blocking_factor );
+      ssize_t size = fs_entry_read_block_local( state->core, reqdat.fs_path, reqdat.block_id, block, state->core->blocking_factor );
       if( size < 0 ) {
          errorf( "fs_entry_read_block(%s.%" PRId64 "/%" PRIu64 ".%" PRId64 ") rc = %zd\n", reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version, size );
-         md_create_HTTP_response_ram( resp, "text/plain", 500, "INTERNAL SERVER ERROR\n", strlen("INTERNAL SERVER ERROR\n") + 1 );
+         
+         if( size == -EREMOTE ) {
+            // data is not local
+            md_create_HTTP_response_ram( resp, "text/plain", 410, "Block is not local\n", strlen("Block is not local\n") );
+         }
+         else {
+            md_create_HTTP_response_ram( resp, "text/plain", 500, "INTERNAL SERVER ERROR\n", strlen("INTERNAL SERVER ERROR\n") + 1 );
+         }
 
          md_gateway_request_data_free( &reqdat );
          free( block );
@@ -231,7 +239,7 @@ bool syndicate_extract_file_info( Serialization::WriteMsg* msg, char const** fs_
       }
       case Serialization::WriteMsg::PREPARE: {
          dbprintf("%s", "Got PREPARE\n");
-         if( !msg->has_metadata() || !msg->has_blocks() ) {
+         if( !msg->has_metadata() || !msg->blocks().size() == 0 ) {
             return false;
          }
 
@@ -249,7 +257,7 @@ bool syndicate_extract_file_info( Serialization::WriteMsg* msg, char const** fs_
             errorf("%s", "msg has no truncate block\n");
             return false;
          }
-         if( !msg->has_blocks() ) {
+         if( msg->blocks().size() == 0 ) {
             errorf("%s", "msg has no blocks\n");
             return false;
          }

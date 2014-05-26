@@ -199,14 +199,14 @@ int fs_entry_set_mod_time( struct fs_core* core, char const* fs_path, struct tim
 }
 
 // basic stat (called from fs_entry_stat or fs_entry_fstat)
-// NOTE: make sure the fs_entry is locked!
+// fent must be at least read-locked
 static int fs_entry_do_stat( struct fs_core* core, struct fs_entry* fent, struct stat* sb ) {
    int rc = 0;
 
    memset( sb, 0, sizeof(struct stat) );
    
    sb->st_dev = 0;
-   sb->st_ino = (ino_t)fent->file_id;
+   sb->st_ino = (ino_t)fent->file_id;   // NOTE: must support 64-bit inodes
 
    mode_t ftype = 0;
    if( fent->ftype == FTYPE_FILE )
@@ -526,8 +526,6 @@ int fs_entry_utime( struct fs_core* core, char const* path, struct utimbuf* tb, 
       fent->mtime_sec = ts.tv_sec;
       fent->mtime_nsec = ts.tv_nsec;
       fent->atime = fent->mtime_sec;
-
-      //fent->manifest->set_lastmod( &ts );
    }
 
    fent->atime = currentTimeSeconds();

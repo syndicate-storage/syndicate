@@ -121,6 +121,15 @@ int fs_entry_cache_ongoing_writes_unlock( struct syndicate_cache* cache ) {
 }
 
 
+// make a cache entry
+static int cache_entry_key_init( struct cache_entry_key* c, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
+   c->file_id = file_id;
+   c->file_version = file_version;
+   c->block_id = block_id;
+   c->block_version = block_version;
+   return 0;
+}
+
 // arguments to the cb below
 struct cache_cb_add_lru_args {
    cache_lru_t* cache_lru;
@@ -218,6 +227,32 @@ static int fs_entry_cache_file_setup( struct fs_core* core, uint64_t file_id, in
 }
 
 
+// is a block in a cache readable?  As in, has it been completely written to disk?
+// return 0 on success
+// return -EAGAIN if the block is still being written
+int fs_entry_cache_is_block_readable( struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
+   int rc = 0;
+   
+   struct cache_entry_key k;
+   cache_entry_key_init( &k, file_id, file_version, block_id, block_version );
+   
+   // read through ongoing writes...
+   fs_entry_cache_ongoing_writes_rlock( cache );
+   
+   for( ongoing_writes_t::iterator itr = cache->ongoing_writes->begin(); itr != cache->ongoing_writes->end(); itr++ ) {
+      
+      struct cache_block_future* f = *itr;
+      
+      // is this block being written?
+      if( cache_entry_key_comp::equal( f->key, k ) ) {
+         rc = -EAGAIN;
+         break;
+      }
+   }
+   
+   fs_entry_cache_ongoing_writes_unlock( cache );
+   return rc;
+}
 
 // open a block in the cache
 int fs_entry_cache_open_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int flags ) {
@@ -318,6 +353,25 @@ int fs_entry_cache_evict_block( struct fs_core* core, struct syndicate_cache* ca
    return rc;
 }
 
+
+// schedule a block to be deleted.
+int fs_entry_cache_evict_block_async( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
+   int rc = 0;
+   
+   if( !cache->running )
+      return -EAGAIN;
+   
+   struct cache_entry_key c;
+   cache_entry_key_init( &c, file_id, file_version, block_id, block_version );
+   
+   fs_entry_cache_promotes_wlock( cache );
+   
+   cache->evicts->push_back( c );
+   
+   fs_entry_cache_promotes_unlock( cache );
+   
+   return rc;
+}
 
 // apply a function over a file's cached blocks
 int fs_entry_cache_file_blocks_apply( char const* local_path, int (*block_func)( char const*, void* ), void* cls ) {
@@ -533,6 +587,10 @@ int fs_entry_cache_init( struct fs_core* core, struct syndicate_cache* cache, si
    cache->promotes_2 = new cache_lru_t();
    cache->promotes = cache->promotes_1;
    
+   cache->evicts_1 = new cache_lru_t();
+   cache->evicts_2 = new cache_lru_t();
+   cache->evicts = cache->evicts_1;
+   
    cache->ongoing_writes = new ongoing_writes_t();
    
    // start the thread up 
@@ -603,6 +661,8 @@ int fs_entry_cache_destroy( struct syndicate_cache* cache ) {
       cache->cache_lru,
       cache->promotes_1,
       cache->promotes_2,
+      cache->evicts_1,
+      cache->evicts_2,
       NULL
    };
    
@@ -615,6 +675,9 @@ int fs_entry_cache_destroy( struct syndicate_cache* cache ) {
    
    cache->completed_1 = NULL;
    cache->completed_2 = NULL;
+   
+   cache->evicts_1 = NULL;
+   cache->evicts_2 = NULL;
    
    cache->cache_lru = NULL;
    cache->promotes_1 = NULL;
@@ -687,6 +750,27 @@ int cache_block_future_init( struct fs_core* core, struct syndicate_cache* cache
    return 0;
 }
 
+// add a block future to ongoing 
+// cache->ongoing_lock must be write-locked
+static int cache_add_ongoing( struct syndicate_cache* cache, struct cache_block_future* f ) {
+   cache->ongoing_writes->insert( f );   
+   return 0;
+}
+
+// remove a block future from ongoing
+// cache->ongoing_lock must be write-locked 
+static int cache_remove_ongoing( struct syndicate_cache* cache, struct cache_block_future* f ) {
+   cache->ongoing_writes->erase( f );
+   return 0;
+}
+
+
+// check to see if a block is in the process of being cached 
+bool fs_entry_cache_is_writing_block( struct syndicate_cache* cache, uint64_t file_id, uint64_t block_id ) {
+   // TODO
+   return false;
+}
+
 // asynchronously write a block 
 static int cache_aio_write( struct fs_core* core, struct syndicate_cache* cache, struct cache_block_future* f ) {
    
@@ -697,7 +781,7 @@ static int cache_aio_write( struct fs_core* core, struct syndicate_cache* cache,
    
    if( rc == 0 ) {
       // put one new block
-      cache->ongoing_writes->insert( f );   
+      cache_add_ongoing( cache, f );
    }
    
    fs_entry_cache_ongoing_writes_unlock( cache );
@@ -725,16 +809,8 @@ void cache_aio_write_completion( sigval_t sigval ) {
          write_rc = -errno;
       }
       else {
-         // sync and rewind file handle
-         fdatasync( future->block_fd );
+         // rewind file handle, so other subsystems (i.e. replication) can access it 
          lseek( future->block_fd, 0, SEEK_SET );
-         
-         //char prefix[21];
-         //memset(prefix, 0, 21);
-         //memcpy( prefix, future->block_data, MIN( core->blocking_factor, future->data_len ) );
-         
-         //dbprintf("wrote %d (of %zu) bytes to %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], prefix = '%s'\n",
-         //         write_rc, future->data_len, future->key.file_id, future->key.file_version, future->key.block_id, future->key.block_version, prefix );
       }
    }
    else {
@@ -816,7 +892,7 @@ void fs_entry_cache_complete_writes( struct fs_core* core, struct syndicate_cach
       // finished an aio write
       fs_entry_cache_ongoing_writes_wlock( cache );
       
-      cache->ongoing_writes->erase( f );
+      cache_remove_ongoing( cache, f );
       
       fs_entry_cache_ongoing_writes_unlock( cache );
       
@@ -842,6 +918,9 @@ void fs_entry_cache_complete_writes( struct fs_core* core, struct syndicate_cach
          write_count ++;
       }
       
+      // finalized!
+      f->finalized = true;
+      
       bool detached = f->detached;
       
       // wake up anyone waiting on this
@@ -863,11 +942,56 @@ void fs_entry_cache_complete_writes( struct fs_core* core, struct syndicate_cach
 }
 
 
-// evict blocks
+
+// promote blocks in a cache LRU
+void fs_entry_cache_promote_blocks( cache_lru_t* cache_lru, cache_lru_t* promotes ) {
+   // process block promotions
+   // we can (probably) afford to be linear here, since we won't have millions of entries.
+   // TODO: investigate boost biamp if not
+   for( cache_lru_t::iterator pitr = promotes->begin(); pitr != promotes->end(); pitr++ ) {
+      // search from the back first, since we might be hitting blocks that were recently read.
+      cache_lru_t::iterator citr = cache_lru->end();
+      citr--;
+      for( ; citr != cache_lru->begin(); citr-- ) {
+         
+         if( cache_entry_key_comp::equal( *pitr, *citr ) ) {
+            // promote this entry--take it out of the LRU and splice it at the end (below)
+            citr = cache_lru->erase( citr );
+         }
+      }
+   }
+   
+   // add the newly-promoted blocks to the end of the LRU (i.e. they are most-recently-used)
+   cache_lru->splice( cache_lru->end(), *promotes );
+}
+
+
+// demote blocks in a cache LRU 
+void fs_entry_cache_demote_blocks( cache_lru_t* cache_lru, cache_lru_t* demotes ) {
+   // process block demotions
+   // we can (probably) afford to be linear here, since we won't have millions of entries.
+   // TODO: investigate boost biamp if not
+   for( cache_lru_t::iterator pitr = demotes->begin(); pitr != demotes->end(); pitr++ ) {
+      // search from the beginning, since we might be hitting blocks that are close to eviction anyway
+      for( cache_lru_t::iterator citr = cache_lru->begin(); citr != cache_lru->end(); citr++ ) {   
+         if( cache_entry_key_comp::equal( *pitr, *citr ) ) {
+            // demote this entry--take it out of the LRU and splite it at the beginning (below)
+            citr = cache_lru->erase( citr );
+         }
+      }
+   }
+   
+   // add the newly-dmoted blocks to the beginning of the LRU (i.e. they are now the least-recently-used)
+   cache_lru->splice( cache_lru->begin(), *demotes );
+}
+
+
+// evict blocks, according to their LRU ordering and whether or not they are requested to be eagerly evicted
 // NOTE: we assume that only one thread calls this at a time, for a given cache
 void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* cache, cache_lru_t* new_writes ) {
    
    cache_lru_t* promotes = NULL;
+   cache_lru_t* evicts = NULL;
    
    // swap promotes
    fs_entry_cache_promotes_wlock( cache );
@@ -878,64 +1002,58 @@ void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* 
    else
       cache->promotes = cache->promotes_1;
    
+   evicts = cache->evicts;
+   if( cache->evicts == cache->evicts_1 )
+      cache->evicts = cache->evicts_2;
+   else
+      cache->evicts = cache->evicts_1;
+   
    fs_entry_cache_promotes_unlock( cache );
    
-   // safe access to the promote buffer, as long as no one performs the above swap
+   // safe access to the promote and evicts buffers, as long as no one performs the above swap
    
    fs_entry_cache_lru_wlock( cache );
    
-   // merge in the new writes
+   // merge in the new writes, as the most-recently-used
    if( new_writes )
       cache->cache_lru->splice( cache->cache_lru->end(), *new_writes );
    
    // process promotions
-   // we can (probably) afford to be linear here, since we won't have millions of entries.
-   // TODO: investigate boost biamp if not
-   for( cache_lru_t::iterator pitr = promotes->begin(); pitr != promotes->end(); pitr++ ) {
-      // search from the back first, since we might be hitting blocks that were recently read.
-      cache_lru_t::iterator citr = cache->cache_lru->end();
-      citr--;
-      for( ; citr != cache->cache_lru->begin(); citr-- ) {
-         
-         if( cache_entry_key_comp::equal( *pitr, *citr ) ) {
-            // promote this entry
-            //struct cache_entry_key p = *citr;
-            citr = cache->cache_lru->erase( citr );
-         }
-      }
-   }
+   fs_entry_cache_promote_blocks( cache->cache_lru, promotes );
    
-   cache->cache_lru->splice( cache->cache_lru->end(), *promotes );
+   // process demotions 
+   fs_entry_cache_demote_blocks( cache->cache_lru, evicts );
    
+   // NOTE: all blocks scheduled for eager eviction are at the beginning of cache_lru.
+   // we will evict them here, even if the cache is not full.
+   
+   // see if we should start erasing blocks
    int num_blocks_written = cache->num_blocks_written;
    int blocks_removed = 0;
+   int eager_evictions = evicts->size();        // number of blocks to eagerly evict
    
    // work to do?
-   if( cache->cache_lru->size() > 0 && (unsigned)num_blocks_written > cache->soft_max_size ) {
+   if( cache->cache_lru->size() > 0 && ((unsigned)num_blocks_written > cache->soft_max_size || eager_evictions > 0) ) {
       // start evicting
       do { 
+         
+         // least-recently-used block
          struct cache_entry_key c = cache->cache_lru->front();
          cache->cache_lru->pop_front();
          
          int rc = fs_entry_cache_evict_block_internal( core, cache, c.file_id, c.file_version, c.block_id, c.block_version );
          
-         if( rc != 0 ) {
-            // if it wasn't there, then it was already evicted.
+         if( rc != 0 && rc != -ENOENT ) {
             errorf("WARN: failed to evict %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", c.file_id, c.file_version, c.block_id, c.block_version, rc );
-            
-            if( rc == -ENOENT ) {
-               // something removed it...
-               blocks_removed ++;
-            }
          }
-         
          else {
             // successfully evicted a block
             dbprintf("Cache EVICT %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", c.file_id, c.file_version, c.block_id, c.block_version );
             blocks_removed ++;
+            eager_evictions --;
          }
          
-      } while( cache->cache_lru->size() > 0 && (unsigned)num_blocks_written - (unsigned)blocks_removed > cache->soft_max_size );
+      } while( cache->cache_lru->size() > 0 && ((unsigned)num_blocks_written - (unsigned)blocks_removed > cache->soft_max_size || eager_evictions > 0) );
       
       // blocks evicted!
       __sync_fetch_and_sub( &cache->num_blocks_written, blocks_removed );
@@ -947,6 +1065,7 @@ void fs_entry_cache_evict_blocks( struct fs_core* core, struct syndicate_cache* 
    
    // done with this
    promotes->clear();
+   evicts->clear();
 }
 
 
@@ -1007,16 +1126,6 @@ void* fs_entry_cache_main_loop( void* arg ) {
    return NULL;
 }
 
-
-// make a cache entry
-static int cache_entry_key_init( struct cache_entry_key* c, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version ) {
-   c->file_id = file_id;
-   c->file_version = file_version;
-   c->block_id = block_id;
-   c->block_version = block_version;
-   return 0;
-}
-
 // add a block to the cache, to be written asynchronously.
 // return a future that can be waited on.
 // NOTE: the given data will be referenced!  Do NOT free it!
@@ -1060,7 +1169,39 @@ struct cache_block_future* fs_entry_cache_write_block_async( struct fs_core* cor
 
 // wait for a write to finish
 int fs_entry_cache_block_future_wait( struct cache_block_future* f ) {
-   return sem_wait( &f->sem_ongoing );
+   int rc = md_download_sem_wait( &f->sem_ongoing, -1 );
+   if( rc != 0 ) {
+      errorf("md_download_sem_wait rc = %d\n", rc );
+      return rc;
+   }
+   return rc;
+}
+
+// do we have an error?
+int fs_entry_cache_block_future_has_error( struct cache_block_future* f ) {
+   if( !f->finalized )
+      return -EAGAIN;
+ 
+   if( f->aio_rc != 0 || f->write_rc != 0 ) 
+      return 1;
+   
+   return 0;
+}
+
+// what's the aio rc?
+int fs_entry_cache_block_future_get_aio_error( struct cache_block_future* f ) {
+   if( !f->finalized )
+      return -EAGAIN;
+   
+   return f->aio_rc;
+}
+
+// what's the write error?
+int fs_entry_cache_block_future_get_write_error( struct cache_block_future* f ) {
+   if( !f->finalized )
+      return -EAGAIN;
+ 
+   return f->write_rc;
 }
 
 // extract the block file descriptor from a future.
@@ -1093,14 +1234,14 @@ int fs_entry_cache_promote_block( struct fs_core* core, struct syndicate_cache* 
 
 
 // read a block from the cache, in its entirety
-ssize_t fs_entry_cache_read_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int block_fd, char** buf ) {
+ssize_t fs_entry_cache_read_block( int block_fd, char** buf ) {
    ssize_t nr = 0;
    
    struct stat sb;
    int rc = fstat( block_fd, &sb );
    if( rc != 0 ) {
       rc = -errno;
-      errorf("fstat(%d (%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "])) rc = %d\n", block_fd, file_id, file_version, block_id, block_version, rc );
+      errorf("fstat(%d) rc = %d\n", block_fd, rc );
       return rc;
    }
    

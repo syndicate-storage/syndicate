@@ -44,8 +44,7 @@
 #include <dirent.h>
 
 #include "libsyndicate/libsyndicate.h"
-#include "log.h"
-#include "fs.h"
+#include "fs_entry.h"
 
 using namespace std;
 
@@ -59,16 +58,23 @@ using namespace std;
 struct replica_snapshot {
    uint64_t file_id;
    int64_t file_version;
-   uint64_t block_id;
-   int64_t block_version;
-   int64_t mtime_sec;
-   int32_t mtime_nsec;
    uint64_t owner_id;
    uint64_t writer_id;          // our gateway ID
    uint64_t coordinator_id;     // file's coordinator ID
    uint64_t volume_id;
    uint32_t max_write_freshness;
    off_t size;
+   int64_t fent_mtime_sec;
+   int32_t fent_mtime_nsec;
+   
+   // for block replication 
+   uint64_t block_id;
+   int64_t block_version;
+   
+   // for manifest replication 
+   int64_t manifest_mtime_sec;
+   int32_t manifest_mtime_nsec;
+   bool manifest_initialized;
 };
 
 // chunk of data to upload
@@ -80,8 +86,13 @@ struct replica_context {
    
    // data to upload
    struct curl_httppost* form_data;    // what we're uploading
+   
    char* data;             // for POSTing the manifest
    FILE* file;             // for POSTing the block
+   
+   unsigned char* hash;         // hash of whatever we are POSTing
+   size_t hash_len;
+   
    off_t size;             // number of bytes to send on POST
    
    struct timespec deadline;    // when we should abort this replication request
@@ -90,18 +101,17 @@ struct replica_context {
    
    sem_t processing_lock;       // released when the context has been processed
    
-   bool sync;                 // synchronous or asynchronous operation
    bool free_on_processed;    // if true, destroy this structure when it is processed
    
-   struct replica_snapshot snapshot;
+   struct replica_snapshot snapshot;            // fent metadata
 };
 
 typedef map<CURL*, struct replica_context*> replica_upload_set;
 typedef vector<struct replica_snapshot> replica_cancel_list;
 typedef set<CURL*> replica_expire_set;
-typedef map<double, struct replica_context*> replica_delay_queue;
+typedef vector<struct replica_context*> replica_list_t;
 
-struct syndicate_replication {
+struct rg_client {
    char* process_name;            // used for logging
    
    CURLM* running;                      // CURL multi-upload interface
@@ -123,11 +133,6 @@ struct syndicate_replication {
    bool has_expires;
    pthread_mutex_t expire_lock;
    
-   // hold replication requests until after the write_ttl expires
-   replica_delay_queue* write_delayed;
-   bool has_write_delayed;
-   pthread_mutex_t write_delayed_lock;
-   
    pthread_t upload_thread;     // thread to send data to Replica SGs
    
    bool active;                 // set to true when the syndciate_replication thread is running
@@ -145,13 +150,15 @@ struct syndicate_state;
 int replication_init( struct syndicate_state* state, uint64_t volume_id );
 int replication_shutdown( struct syndicate_state* state, int wait_replicas );
 
-void fs_entry_block_info_replicate_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id, int block_fd );
-void fs_entry_block_info_garbage_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id );
-
 int replica_context_free( struct replica_context* rctx );
 
-int fs_entry_replicate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, bool sync, struct fs_file_handle* fh );
-int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, bool sync, struct fs_file_handle* fh );
+int fs_entry_replicate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent );
+struct replica_context* fs_entry_replicate_manifest_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int* ret );
+
+int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks );
+int fs_entry_replicate_blocks_async( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, replica_list_t* replica_futures );
+
+struct replica_context* fs_entry_replicate_block_async( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, struct fs_entry_block_info* binfo, int* ret );
 
 int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snapshot* snapshot );
 int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* modified_blocks );
@@ -159,13 +166,14 @@ int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapsh
 int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_fent, uint64_t block_id, int64_t block_version, struct replica_snapshot* snapshot );
 int fs_entry_replica_snapshot_restore( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* snapshot );
 
-int fs_entry_replicate_wait( struct fs_core* core, struct fs_file_handle* fh );
+int fs_entry_replica_wait( struct fs_core* core, struct replica_context* rctx, uint64_t transfer_timeout_ms );
+int fs_entry_replica_wait_all( struct fs_core* core, replica_list_t* rctxs, uint64_t transfer_timeout_ms );
 
-int fs_entry_replica_clean( struct fs_file_handle* fh );
-
-int fs_entry_replica_file_handle( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int flags, struct fs_file_handle* fh );
-int fs_entry_free_replica_file_handle( struct fs_file_handle* fh );
+int fs_entry_replica_context_free( struct replica_context* rctx );
+int fs_entry_replica_list_free( replica_list_t* rctxs );
 
 int fs_entry_garbage_collect_file( struct fs_core* core, struct fs_entry* fent );
+
+int fs_entry_extract_block_info_from_failed_block_replicas( replica_list_t* rctxs, modification_map* dirty_blocks );
 
 #endif

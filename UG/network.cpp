@@ -20,6 +20,7 @@
 #include "cache.h"
 #include "replication.h"
 #include "driver.h"
+#include "state.h"
 
 // download and verify a manifest
 int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
@@ -37,7 +38,7 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
    manifest_cls.mtime_sec = mtime_sec;
    manifest_cls.mtime_nsec = mtime_nsec;
    
-   int rc = md_download_manifest( core->conf, core->closure, curl, manifest_url, mmsg, driver_connect_cache, &driver_cls, driver_read_manifest_postdown, &manifest_cls );
+   int rc = md_download_manifest( core->conf, &core->state->dl, core->closure, curl, manifest_url, mmsg, driver_connect_cache, &driver_cls, driver_read_manifest_postdown, &manifest_cls );
    if( rc != 0 ) {
       
       errorf("md_download_manifest(%s) rc = %d\n", manifest_url, rc );
@@ -81,32 +82,67 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
 }
 
 
-// download a block 
-ssize_t fs_entry_download_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version, char const* block_url, char** block_bits ) {
+// download a manifest from an RG.
+// fent must be at least read-locked
+int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec,
+                                        Serialization::ManifestMsg* mmsg, uint64_t* successful_RG_id ) {
+   
+   uint64_t* rg_ids = ms_client_RG_ids( core->ms );
+   
+   int rc = -ENOTCONN;
+   int i = -1;
+   uint64_t RG_id = 0;
+   
+   // try a replica
+   if( rg_ids != NULL ) {
+      for( i = 0; rg_ids[i] != 0; i++ ) {
+         
+         rc = 0;
+         
+         struct timespec ts;
+         ts.tv_sec = mtime_sec;
+         ts.tv_nsec = mtime_nsec;
+         
+         char* replica_url = fs_entry_RG_manifest_url( core, rg_ids[i], fent->file_id, fent->version, &ts );
+         
+         rc = fs_entry_download_manifest( core, fs_path, fent, mtime_sec, mtime_nsec, replica_url, mmsg );
 
-   CURL* curl = curl_easy_init();
-   
-   // connect to the cache...
-   char* block_buf = NULL;
-   
-   struct driver_connect_cache_cls driver_cls;
-   driver_cls.core = core;
-   driver_cls.client = core->ms;
-   
-   // grab the block
-   ssize_t download_len = md_download_block( core->conf, core->closure, curl, block_url, &block_buf, -1, driver_connect_cache, &driver_cls );
-   if( download_len < 0 ) {
+         if( rc == 0 ) {
+            free( replica_url );
+            break;
+         }
+         else {
+            errorf("fs_entry_download_manifest(%s) rc = %d\n", replica_url, rc );
+            rc = -ENODATA;
+         }
+         
+         free( replica_url );
+      }
+
+      if( rc == 0 && i >= 0 ) {
+         RG_id = rg_ids[i];
+         
+         if( successful_RG_id )
+            *successful_RG_id = RG_id;
+      }
       
-      errorf("md_download_block(%s) rc = %zd\n", block_url, download_len );
-      curl_easy_cleanup( curl );
-      return download_len;
+      free( rg_ids);
+   }
+   else {
+      rc = -ENODATA;
    }
    
-   curl_easy_cleanup( curl );
+   if( rc == 0 ) {
+      
+      // error code? 
+      if( mmsg->has_errorcode() ) {
+         rc = mmsg->errorcode();
+         errorf("manifest gives error %d\n", rc );
+         return rc;
+      }
+   }
    
-   *block_bits = block_buf;
-   
-   return download_len;
+   return rc;
 }
 
 
@@ -125,43 +161,97 @@ int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_co
 }
 
 
-// set up a PREPARE message
-// NEED TO AT LEAST READ-LOCK fent
-int fs_entry_prepare_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t start_id, uint64_t end_id, int64_t* versions, unsigned char** hashes ) {
+// set up a PREPARE message, with the blocks we're gonna send
+int fs_entry_prepare_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core, char const* fs_path, struct replica_snapshot* fent_snapshot, int64_t write_nonce, modification_map* dirty_blocks ) {
    
    fs_entry_init_write_message( writeMsg, core, Serialization::WriteMsg::PREPARE );
    
    Serialization::FileMetadata* file_md = writeMsg->mutable_metadata();
-   Serialization::BlockList* block_list = writeMsg->mutable_blocks();
 
    file_md->set_fs_path( string(fs_path) );
    file_md->set_volume_id( core->volume );
-   file_md->set_file_id( fent->file_id );
-   file_md->set_file_version( fent->version );
-   file_md->set_size( fent->size );
+   file_md->set_file_id( fent_snapshot->file_id );
+   file_md->set_file_version( fent_snapshot->file_version );
+   file_md->set_size( fent_snapshot->size );
+   /*
    file_md->set_mtime_sec( fent->mtime_sec );
    file_md->set_mtime_nsec( fent->mtime_nsec );
-   file_md->set_write_nonce( fent->write_nonce );
-   file_md->set_coordinator_id( fent->coordinator );
+   */
+   file_md->set_write_nonce( write_nonce );
+   file_md->set_coordinator_id( fent_snapshot->coordinator_id );
    
-   block_list->set_start_id( start_id );
-   block_list->set_end_id( end_id );
+   for( modification_map::iterator itr = dirty_blocks->begin(); itr != dirty_blocks->end(); itr++ ) {
+      
+      uint64_t block_id = itr->first;
+      struct fs_entry_block_info* binfo = &itr->second;
+      
+      Serialization::BlockInfo* msg_binfo = writeMsg->add_blocks();
+      
+      msg_binfo->set_block_id( block_id );
+      msg_binfo->set_block_version( binfo->version );
+      msg_binfo->set_hash( string( (char const*)binfo->hash, BLOCK_HASH_LEN()) );
+   }
+   
+   return 0;
+}
 
-   uint64_t i = 0;
-   
-   for( i = 0; i < end_id - start_id; i++ ) {
-      block_list->add_version( versions[i] );
-   }
-   
-   for( i = 0; i < end_id - start_id && hashes[i] != NULL; i++ ) {
-      block_list->add_hash( string((char*)hashes[i], BLOCK_HASH_LEN()) );
-   }
-   // sanity check--number of hashes should be end_id - start_id
-   if( i != end_id - start_id ) {
-      errorf("Not enough block hashes given (expected %" PRIu64 ")\n", i);
-      return -EINVAL;
-   }
 
+// make a truncate message
+// fent must be at least read-locked
+int fs_entry_prepare_truncate_message( Serialization::WriteMsg* truncate_msg, char const* fs_path, struct fs_entry* fent, uint64_t new_max_block ) {
+   Serialization::TruncateRequest* truncate_req = truncate_msg->mutable_truncate();
+   
+   truncate_req->set_volume_id( fent->volume );
+   truncate_req->set_coordinator_id( fent->coordinator );
+   truncate_req->set_file_id( fent->file_id );
+   truncate_req->set_fs_path( fs_path );
+   truncate_req->set_file_version( fent->version );
+   truncate_req->set_size( fent->size );
+
+   for( uint64_t i = 0; i < new_max_block; i++ ) {
+      
+      Serialization::BlockInfo* msg_binfo = truncate_msg->add_blocks();
+      
+      int64_t block_version = fent->manifest->get_block_version( i );
+      unsigned char* block_hash = fent->manifest->get_block_hash( i );
+      
+      msg_binfo->set_block_id( i );
+      msg_binfo->set_block_version( block_version );
+      msg_binfo->set_hash( string( (char const*)block_hash, BLOCK_HASH_LEN()) );
+      
+      free( block_hash );
+   }
+   
+   return 0;
+}
+
+
+// make a rename message
+int fs_entry_prepare_rename_message( Serialization::WriteMsg* rename_msg, char const* old_path, char const* new_path, struct fs_entry* fent_old, int64_t version ) {
+
+   Serialization::RenameMsg* rename_info = rename_msg->mutable_rename();
+   rename_info->set_volume_id( fent_old->volume );
+   rename_info->set_coordinator_id( fent_old->coordinator );
+   rename_info->set_file_id( fent_old->file_id );
+   rename_info->set_file_version( version );
+   rename_info->set_old_fs_path( string(old_path) );
+   rename_info->set_new_fs_path( string(new_path) );
+   
+   return 0;
+}
+
+// make an unlink message 
+// fent must be read-locked
+int fs_entry_prepare_detach_message( Serialization::WriteMsg* detach_msg, char const* fs_path, struct fs_entry* fent, int64_t version ) {
+   
+   Serialization::DetachRequest* detach = detach_msg->mutable_detach();
+   
+   detach->set_volume_id( fent->volume );
+   detach->set_coordinator_id( fent->coordinator );
+   detach->set_file_id( fent->file_id );
+   detach->set_fs_path( string(fs_path) );
+   detach->set_file_version( version );
+   
    return 0;
 }
 
@@ -309,112 +399,6 @@ int fs_entry_post_write( Serialization::WriteMsg* recvMsg, struct fs_core* core,
    return rc;
 }
 
-// get a replicated block from an RG
-// fent must be at least read-locked
-// NOTE: this does NOT verify the authenticity of the block!
-ssize_t fs_entry_download_block_replica( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
-                                         char** block_bits, uint64_t* successful_RG_id ) {
-   
-   uint64_t* rg_ids = ms_client_RG_ids( core->ms );
-   
-   ssize_t nr = 0;
-   
-   int i = -1;
-   
-   // try a replica
-   if( rg_ids != NULL ) {
-      for( i = 0; rg_ids[i] != 0; i++ ) {
-         
-         char* replica_url = fs_entry_RG_block_url( core, rg_ids[i], fent->volume, fent->file_id, fent->version, block_id, block_version );
-         
-         nr = fs_entry_download_block( core, fs_path, fent, block_id, block_version, replica_url, block_bits );
-
-         if( nr > 0 ) {
-            free( replica_url );
-            break;
-         }
-         else {
-            errorf("fs_entry_download_block(%s) rc = %zd\n", replica_url, nr );
-            nr = -ENODATA;
-         }
-         
-         free( replica_url );
-      }
-
-      if( nr > 0 && successful_RG_id && i >= 0 ) {
-         *successful_RG_id = rg_ids[i];
-      }
-      
-      free( rg_ids);
-   }
-   
-   return nr;
-}
-
-
-// download a manifest from an RG.
-// fent must be at least read-locked
-int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec,
-                                        Serialization::ManifestMsg* mmsg, uint64_t* successful_RG_id ) {
-   
-   uint64_t* rg_ids = ms_client_RG_ids( core->ms );
-   
-   int rc = -ENOTCONN;
-   int i = -1;
-   uint64_t RG_id = 0;
-   
-   // try a replica
-   if( rg_ids != NULL ) {
-      for( i = 0; rg_ids[i] != 0; i++ ) {
-         
-         rc = 0;
-         
-         struct timespec ts;
-         ts.tv_sec = mtime_sec;
-         ts.tv_nsec = mtime_nsec;
-         
-         char* replica_url = fs_entry_RG_manifest_url( core, rg_ids[i], fent->volume, fent->file_id, fent->version, &ts );
-         
-         rc = fs_entry_download_manifest( core, fs_path, fent, mtime_sec, mtime_nsec, replica_url, mmsg );
-
-         if( rc == 0 ) {
-            free( replica_url );
-            break;
-         }
-         else {
-            errorf("fs_entry_download_manifest(%s) rc = %d\n", replica_url, rc );
-            rc = -ENODATA;
-         }
-         
-         free( replica_url );
-      }
-
-      if( rc == 0 && i >= 0 ) {
-         RG_id = rg_ids[i];
-         
-         if( successful_RG_id )
-            *successful_RG_id = RG_id;
-      }
-      
-      free( rg_ids);
-   }
-   else {
-      rc = -ENODATA;
-   }
-   
-   if( rc == 0 ) {
-      
-      // error code? 
-      if( mmsg->has_errorcode() ) {
-         rc = mmsg->errorcode();
-         errorf("manifest gives error %d\n", rc );
-         return rc;
-      }
-   }
-   
-   return rc;
-}
-
 
 // send a write message for a file to a remote gateway, or become the coordinator of the file.
 // this does not affect the manifest in any way.
@@ -422,7 +406,7 @@ int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_pat
 // return 0 if the send was successful.
 // return 1 if we're now the coordinator.
 // return negative on error.
-int fs_entry_send_write_or_coordinate( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct replica_snapshot* fent_snapshot_prewrite, Serialization::WriteMsg* write_msg, Serialization::WriteMsg* write_ack ) {
+int fs_entry_send_write_or_coordinate( struct fs_core* core, char const* fs_path, struct fs_entry* fent, Serialization::WriteMsg* write_msg, Serialization::WriteMsg* write_ack ) {
 
    int ret = 0;
    
@@ -441,7 +425,7 @@ int fs_entry_send_write_or_coordinate( struct fs_core* core, char const* fs_path
          if( rc == -ENODATA ) {
             // curl couldn't connect--this is maybe a partition.
             // Try to become the coordinator.
-            rc = fs_entry_coordinate( core, fs_path, fent, fent_snapshot_prewrite->file_version, fent_snapshot_prewrite->mtime_sec, fent_snapshot_prewrite->mtime_nsec );
+            rc = fs_entry_coordinate( core, fs_path, fent );
             
             if( rc == 0 ) {
                // we're now the coordinator, and the MS has the latest metadata.

@@ -135,8 +135,10 @@ static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* f
    char* cached_file_path = GET_PATH( cached_file_url );
    
    // enough space...
-   memset( buf, '0', buf_len );
-   buf[buf_len - 1] = '\0';
+   if( buf_len > 0 ) {
+      memset( buf, '0', buf_len );
+      buf[buf_len - 1] = '\0';
+   }
    
    ssize_t rc = fs_entry_cache_file_blocks_apply( cached_file_path, local::xattr_stat_block, buf );
    

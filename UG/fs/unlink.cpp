@@ -18,6 +18,7 @@
 #include "storage.h"
 #include "cache.h"
 #include "replication.h"
+#include "network.h"
 
 // lowlevel unlink operation--given an fs_entry and the name of an entry
 // PARENT MUST BE LOCKED FIRST!
@@ -220,27 +221,18 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    
    rc = 0;
    
-   // before we do anything, snapshot
-   struct replica_snapshot fent_snapshot;
-   fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
-  
    if( !local ) {
       // this is someone else's file; tell them to unlink
       Serialization::WriteMsg* detach_request = new Serialization::WriteMsg();
 
       fs_entry_init_write_message( detach_request, core, Serialization::WriteMsg::DETACH );
       
-      Serialization::DetachRequest* detach = detach_request->mutable_detach();
-      detach->set_volume_id( fent->volume );
-      detach->set_coordinator_id( fent->coordinator );
-      detach->set_file_id( fent->file_id );
-      detach->set_fs_path( string(path) );
-      detach->set_file_version( version );
+      fs_entry_prepare_detach_message( detach_request, path, fent, version );
 
       Serialization::WriteMsg* detach_ack = new Serialization::WriteMsg();
       
       // send the write message, or coordinate
-      rc = fs_entry_send_write_or_coordinate( core, path, fent, &fent_snapshot, detach_request, detach_ack );
+      rc = fs_entry_send_write_or_coordinate( core, path, fent, detach_request, detach_ack );
       
       if( rc < 0 ) {
          errorf( "fs_entry_send_write_or_coordinate(%s) rc = %d\n", path, rc );

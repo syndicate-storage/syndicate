@@ -22,6 +22,7 @@
 #include "consistency.h"
 #include "replication.h"
 #include "driver.h"
+#include "sync.h"
 
 int _debug_locks = 0;
 
@@ -382,17 +383,17 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    fent->read_stale = false;
    fent->xattr_cache = new xattr_cache_t();
    
-   clock_gettime( CLOCK_REALTIME, &fent->refresh_time );
+   fent->manifest->set_modtime( 0, 0 );
    
-   ts.tv_sec = mtime_sec;
-   ts.tv_nsec = mtime_nsec;
+   clock_gettime( CLOCK_REALTIME, &fent->refresh_time );
    
    return 0;
 }
 
 // common fs_entry initializion code
 // a version of <= 0 will cause the FS to look at the underlying data to deduce the correct version
-static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, int type, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec) {
+static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, int type, char const* name, int64_t version,
+                                 uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec) {
 
    memset( fent, 0, sizeof(struct fs_entry) );
    fs_entry_init_data( core, fent, type, name, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
@@ -406,6 +407,8 @@ static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, in
 int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
    fs_entry_init_common( core, fent, FTYPE_FILE, name, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
    fent->ftype = FTYPE_FILE;
+   fent->sync_queue = new sync_context_list_t();
+   fent->old_snapshot = CALLOC_LIST( struct replica_snapshot, 1 );
    return 0;
 }
 
@@ -444,26 +447,6 @@ int64_t fs_entry_next_block_version(void) {
    return fs_entry_next_random_version();
 }
 
-// duplicate an FS entry
-int fs_entry_dup( struct fs_core* core, struct fs_entry* fent, struct fs_entry* src ) {
-   fs_entry_init_common( core, fent, src->ftype, src->name, src->version, src->owner, src->coordinator, src->volume, src->mode, src->size, src->mtime_sec, src->mtime_nsec );
-   fent->ftype = src->ftype;
-   fent->file_id = src->file_id;
-   
-   if( src->children ) {
-      fent->children = new fs_entry_set();
-      for( fs_entry_set::iterator itr = src->children->begin(); itr != src->children->end(); itr++ ) {
-         fs_dirent d( itr->first, itr->second );
-         fent->children->push_back( d );
-      }
-   }
-
-   fent->manifest = new file_manifest( src->manifest );
-
-   return 0;
-}
-
-
 // create an FS entry from an md_entry.
 int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_entry* ent ) {
    
@@ -474,6 +457,7 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
    else if ( ent->type == MD_ENTRY_FILE ){
       // this is a file
       fs_entry_init_file( core, fent, ent->name, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
+      fent->manifest->set_modtime( ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
    }
    else if (S_ISFIFO(ent->mode)){
       // this is a FIFO 
@@ -516,6 +500,18 @@ int fs_entry_destroy( struct fs_entry* fent, bool needlock ) {
       delete fent->xattr_cache;
       fent->xattr_cache = NULL;
    }
+   
+   if( fent->sync_queue ) {
+      delete fent->sync_queue;
+      fent->sync_queue = NULL;
+   }
+   
+   if( fent->old_snapshot ) {
+      free( fent->old_snapshot );
+      fent->old_snapshot = NULL;
+   }
+   
+   fs_entry_free_working_data( fent );
    
    fent->ftype = FTYPE_DEAD;      // next thread to hold this lock knows this is a dead entry
    
@@ -1138,6 +1134,15 @@ int fs_entry_to_md_entry( struct fs_core* core, struct md_entry* dest, struct fs
 
    memset( dest, 0, sizeof(struct md_entry) );
    
+   struct timespec manifest_ts;
+   if( fent->manifest != NULL ) {
+      fent->manifest->get_modtime( &manifest_ts );
+   }
+   else {
+      manifest_ts.tv_sec = 0;
+      manifest_ts.tv_nsec = 0;
+   }
+   
    dest->type = fent->ftype == FTYPE_FILE ? MD_ENTRY_FILE : MD_ENTRY_DIR;
    dest->name = strdup( fent->name );
    dest->file_id = fent->file_id;
@@ -1145,6 +1150,8 @@ int fs_entry_to_md_entry( struct fs_core* core, struct md_entry* dest, struct fs
    dest->ctime_nsec = fent->ctime_nsec;
    dest->mtime_sec = fent->mtime_sec;
    dest->mtime_nsec = fent->mtime_nsec;
+   dest->manifest_mtime_sec = manifest_ts.tv_sec;
+   dest->manifest_mtime_nsec = manifest_ts.tv_nsec;
    dest->owner = fent->owner;
    dest->coordinator = fent->coordinator;
    dest->volume = fent->volume;
@@ -1196,74 +1203,82 @@ int fs_file_handle_destroy( struct fs_file_handle* fh ) {
       free( fh->parent_name );
       fh->parent_name = NULL;
    }
-   if( fh->rctxs ) {
-      delete fh->rctxs;
-   }
+
    pthread_rwlock_unlock( &fh->lock );
    pthread_rwlock_destroy( &fh->lock );
 
    return 0;
 }
 
+// initialize an fs_entry_block_info_structure for replication
+void fs_entry_block_info_replicate_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id, int block_fd ) {
+   memset( binfo, 0, sizeof(struct fs_entry_block_info) );
+   binfo->version = version;
+   binfo->hash = hash;
+   binfo->hash_len = hash_len;
+   binfo->gateway_id = gateway_id;
+   binfo->block_fd = block_fd;
+}
 
-// reversion a file.  Only valid for local files 
-// FENT MUST BE WRITE-LOCKED!
-int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t new_version, uint64_t parent_id, char const* parent_name ) {
+// initialize an fs_entry_block_info structure for garbage collection 
+void fs_entry_block_info_garbage_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id ) {
+   memset( binfo, 0, sizeof(struct fs_entry_block_info) );
+   binfo->version = version;
+   binfo->gateway_id = gateway_id;
+   binfo->hash = hash;
+   binfo->hash_len = hash_len;
+   binfo->block_fd = -1;
+}
 
-   if( !FS_ENTRY_LOCAL( core, fent ) ) {
-      return -EINVAL;
-   }
-   
-   // reversion the data locally.  ENOENT here is fine, since it means that the data wasn't cached
-   int rc = fs_entry_cache_reversion_file( core, core->cache, fent->file_id, fent->version, new_version );
-   if( rc != 0 ) {
-      if( rc != -ENOENT ) {
-         errorf("fs_entry_cache_reversion_file(%s (%" PRIX64 ".%" PRId64 " --> %" PRId64 ")) rc = %d\n", fs_path, fent->file_id, fent->version, new_version, rc );
-         return rc;
-      }
-   }
-
-   // set the version on local data, since the local reversioning succeeded
-   fent->version = new_version;
-   fent->manifest->set_file_version( core, new_version );
-
-   struct md_entry ent;
-   fs_entry_to_md_entry( core, &ent, fent, parent_id, parent_name );
-
-   // synchronously update
-   rc = ms_client_update( core->ms, &ent );
-
-   md_entry_free( &ent );
-
-   if( rc != 0 ) {
-      // failed to reversion remotely
-      errorf("ms_client_update(%s.%" PRId64 " --> %" PRId64 ") rc = %d\n", fs_path, fent->version, new_version, rc );
-   }
-   
-   return rc;
+// initialize an fs_entry_block_info structure for bufferring blocks 
+void fs_entry_block_info_buffer_init( struct fs_entry_block_info* binfo, size_t block_len ) {
+   memset( binfo, 0, sizeof(struct fs_entry_block_info) );
+   binfo->block_buf = CALLOC_LIST( char, block_len );
+   binfo->block_len = block_len;
+   binfo->block_fd = -1;
 }
 
 
-int fs_entry_block_info_free( struct fs_entry_block_info* binfo ) {
+// free an fs_entry_block_info structure's memory.
+int fs_entry_block_info_free_ex( struct fs_entry_block_info* binfo, bool close_fd ) {
    if( binfo->hash ) {
       free( binfo->hash );
       binfo->hash = NULL;
+   }
+   
+   if( binfo->block_buf ) {
+      free( binfo->block_buf );
+      binfo->block_buf = NULL;  
+   }
+   
+   if( close_fd && binfo->block_fd >= 0 ) {
+      close( binfo->block_fd );  
    }
    
    memset(binfo, 0, sizeof(struct fs_entry_block_info) );
    return 0;
 }
 
+int fs_entry_block_info_free( struct fs_entry_block_info* binfo ) {
+   return fs_entry_block_info_free_ex( binfo, false );
+}
 
-int fs_entry_free_modification_map( modification_map* m ) {
+// free a modification_map.
+int fs_entry_free_modification_map_ex( modification_map* m, bool close_fds ) {
    if( m->size() > 0 ) {
       for( modification_map::iterator itr = m->begin(); itr != m->end(); itr++ ) {
-         fs_entry_block_info_free( &itr->second );
+         fs_entry_block_info_free_ex( &itr->second, close_fds );
       }
+      
+      m->clear();
    }
-   m->clear();
    return 0;
 }
+
+int fs_entry_free_modification_map( modification_map* m ) {
+   return fs_entry_free_modification_map_ex( m, false );
+}
+
 
 // view change callback: reload the driver
 int fs_entry_view_change_callback( struct ms_client* ms, void* cls ) {
@@ -1287,6 +1302,499 @@ int fs_entry_view_change_callback( struct ms_client* ms, void* cls ) {
    }
    
    return 0;
+}
+
+// extract and re-initialize the dirty block set for an fs_entry.
+// the caller gains exclusive access to the dirty block set, and must free it.
+// fent must be write-locked
+int fs_entry_extract_dirty_blocks( struct fs_entry* fent, modification_map** dirty_blocks ) {
+   *dirty_blocks = fent->dirty_blocks;
+   fent->dirty_blocks = new modification_map();
+   return 0;
+}
+
+// extract and re-initialize the garbage block set for an fs_entry.
+// the caller gains exclusive access to the garbage block set, and must free it.
+// fent must be write-locked
+int fs_entry_extract_garbage_blocks( struct fs_entry* fent, modification_map** garbage_blocks ) {
+   *garbage_blocks = fent->garbage_blocks;
+   fent->garbage_blocks = new modification_map();
+   return 0;
+}
+
+
+// replace dirty blocks (i.e. on replica failure)
+// this overwrites existing dirty blocks 
+// fent must be write-locked, and *should* be locked during the same interval as a previous call to extract_dirty_blocks that obtained the dirty_blocks argument.
+int fs_entry_replace_dirty_blocks( struct fs_entry* fent, modification_map* dirty_blocks ) {
+   if( fent->dirty_blocks ) {
+      fs_entry_free_modification_map_ex( fent->dirty_blocks, true );
+      delete fent->dirty_blocks;
+   }
+   
+   fent->dirty_blocks = dirty_blocks;
+   return 0;
+}
+
+// replace garbage blocks (i.e. on replica failure)
+// this overwrites existing garbage blocks 
+// fent must be write-locked, and *should* be locked during the same interval as a previous call to extract_garbage_blocks that obtained the garbage_blocks argument.
+int fs_entry_replace_garbage_blocks( struct fs_entry* fent, modification_map* garbage_blocks ) {
+   if( fent->garbage_blocks ) {
+      fs_entry_free_modification_map_ex( fent->dirty_blocks, true );
+      delete fent->garbage_blocks;
+   }
+   
+   fent->garbage_blocks = garbage_blocks;
+   return 0;
+   
+}
+   
+
+// allocate working data for when the file is opened at least once
+// fent must be write-locked
+int fs_entry_setup_working_data( struct fs_core* core, struct fs_entry* fent ) {
+   fent->dirty_blocks = new modification_map();
+   fent->garbage_blocks = new modification_map();
+   fent->bufferred_blocks = new modification_map();
+   
+   if( fent->dirty_blocks == NULL || fent->garbage_blocks == NULL || fent->bufferred_blocks == NULL )
+      return -ENOMEM;
+   
+   return 0;
+}
+
+// free working data 
+// fent must be write-locked
+int fs_entry_free_working_data( struct fs_entry* fent ) {
+   if( fent->dirty_blocks ) {
+      fs_entry_free_modification_map_ex( fent->dirty_blocks, true );
+      delete fent->dirty_blocks;
+   }
+
+   if( fent->garbage_blocks ) {
+      fs_entry_free_modification_map_ex( fent->garbage_blocks, false );
+      delete fent->garbage_blocks;
+   }
+   
+   if( fent->bufferred_blocks ) {
+      fs_entry_free_modification_map_ex( fent->bufferred_blocks, false );
+      delete fent->bufferred_blocks;
+   }
+   
+   fent->dirty_blocks = NULL;
+   fent->garbage_blocks = NULL;
+   fent->bufferred_blocks = NULL;
+   
+   return 0;
+}
+
+// Merge new dirty blocks into an fs_entry's list of dirty blocks.
+// This replaces versions of the same block.  It will close an existing dirty block's file descriptor, if it is open.
+// fent must be write-locked
+int fs_entry_merge_new_dirty_blocks( struct fs_entry* fent, modification_map* new_dirty_blocks ) {
+   for( modification_map::iterator itr = new_dirty_blocks->begin(); itr != new_dirty_blocks->end(); itr++ ) {
+      
+      uint64_t block_id = itr->first;
+      
+      // find the existing entry...
+      modification_map::iterator existing_itr = fent->dirty_blocks->find( block_id );
+
+      if( existing_itr != fent->dirty_blocks->end() ) {
+         
+         // clean up the existing entry, closing its file descriptor as well (so it can be unlinked and erased) 
+         struct fs_entry_block_info* binfo = &itr->second;
+         
+         fs_entry_block_info_free_ex( binfo, true );
+      }
+
+      (*fent->dirty_blocks)[ block_id ] = itr->second;
+   }
+   
+   return 0;
+}
+
+
+// Merge old dirty blocks into an fs_entry's list of dirty blocks, effectively "undo-ing" a block flush.
+// However, the file could have been subsequently modified, truncated, or deleted/recreated.
+// As such, does NOT replace new versions of the same block, and does NOT put dirty blocks into a new file.
+// fent must be write-locked
+int fs_entry_merge_old_dirty_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t original_file_id, int64_t original_file_version, modification_map* old_dirty_blocks, modification_map* unmerged ) {
+   
+   uint64_t max_block = fs_entry_block_id( core, fent->size );
+   
+   for( modification_map::iterator itr = old_dirty_blocks->begin(); itr != old_dirty_blocks->end(); itr++ ) {
+      
+      uint64_t block_id = itr->first;
+      struct fs_entry_block_info* binfo = &itr->second;
+      
+      // if this is a different file, then these old dirty blocks shall not be merged (i.e. file was deleted and recreated, so they don't belong)
+      if( fent->file_id != original_file_id || fent->version != original_file_version ) {
+         (*unmerged)[ block_id ] = *binfo;
+         continue;
+      }
+      
+      // if the block is off the end of the file, then it won't be merged (a truncate superceded this block)
+      if( block_id > max_block ) {
+         (*unmerged)[ block_id ] = *binfo;
+         continue;
+      }
+      
+      // find the existing entry...
+      modification_map::iterator existing_itr = fent->dirty_blocks->find( block_id );
+
+      if( existing_itr == fent->dirty_blocks->end() ) {
+         // no entry for this block...check the manifest
+         
+         if( fent->manifest->get_block_version( block_id ) == binfo->version ) {
+            
+            // block has not been modified since we extracted it.  Make it dirty again
+            (*fent->dirty_blocks)[ block_id ] = *binfo;
+         }
+         else {
+            // a new write superceded this block.  It will not be merged
+            (*unmerged)[ block_id ] = *binfo;
+         }
+      }
+      else {
+         // a new write superceded this block.  It will not be merged 
+         (*unmerged)[ block_id ] = *binfo;
+      }
+   }
+   
+   return 0;
+}
+
+
+// Merge garbage blocks into an existing list of garbage blocks.
+// This only adds blocks into the garbage block list; if a block has an existing garbage entry,
+// then any subsequent block written will only have been cached locally (so no need to garbage-collect it).
+// fent must be write-locked 
+int fs_entry_merge_garbage_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t original_file_id, int64_t original_file_version, modification_map* new_garbage_blocks, modification_map* unmerged ) {
+   
+   uint64_t max_block = fs_entry_block_id( core, fent->size );
+   
+   for( modification_map::iterator itr = new_garbage_blocks->begin(); itr != new_garbage_blocks->end(); itr++ ) {
+      
+      uint64_t block_id = itr->first;
+      struct fs_entry_block_info* binfo = &itr->second;
+      
+      // if this is a different file, then we shouldn't add this to be garbage-collected.  The caller should garbage-collect it
+      if( fent->file_id != original_file_id || fent->version != original_file_version ) {
+         (*unmerged)[ block_id ] = *binfo;
+         continue;
+      }
+      
+      // if the block is off the end of the file, then it shouldn't be merged (a truncate superceded this block, and we don't want to stop garbage-collection for subsequent writes or truncates that expand the file)
+      if( block_id > max_block ) {
+         (*unmerged)[ block_id ] = *binfo;
+         continue;
+      }
+      
+      // are we already going to garbage-collect this block?
+      modification_map::iterator existing_itr = fent->garbage_blocks->find( block_id );
+
+      if( existing_itr == fent->garbage_blocks->end() ) {
+         // Nope--add the entry.
+         (*fent->garbage_blocks)[ block_id ] = *binfo;
+      }
+      else {
+         // going to garbage-collect a different version of this block, so caller should handle this
+         (*unmerged)[ block_id ] = *binfo;
+      }
+   }
+   
+   return 0;
+}
+
+
+// is a block bufferred in RAM?
+// return 1 if so.
+// return -ENOENT if not.
+// fent must be at least read-locked
+int fs_entry_has_bufferred_block( struct fs_entry* fent, uint64_t block_id ) {
+   
+   if( fent->bufferred_blocks ) {
+      modification_map::iterator itr = fent->bufferred_blocks->find( block_id );
+      if( itr != fent->bufferred_blocks->end() ) {
+         // have an entry...
+         struct fs_entry_block_info* binfo = &itr->second;
+         
+         // block ID must match, and must have allocated
+         if( binfo->block_buf == NULL ) {
+            return -ENOENT;
+         }
+         else {
+            // have an in-core block buffer
+            return 1;
+         }
+      }
+      else {
+         return -ENOENT;
+      }
+   }
+   else {
+      return -ENOENT;
+   }
+}
+
+
+// read part of a bufferred block 
+// return 0 on success
+// return -ENOENT if there is no block.
+// return negative on error
+// fent must be read-locked 
+int fs_entry_read_bufferred_block( struct fs_entry* fent, uint64_t block_id, char* buf, off_t block_offset, size_t read_len ) {
+   
+   if( fent->bufferred_blocks ) {
+      
+      modification_map::iterator itr = fent->bufferred_blocks->find( block_id );
+      if( itr != fent->bufferred_blocks->end() ) {
+         // have an entry...
+         struct fs_entry_block_info* binfo = &itr->second;
+         
+         if( binfo->block_buf != NULL ) {
+            // range check 
+            if( block_offset + read_len < 0 || block_offset + read_len >= binfo->block_len ) {
+               return -ERANGE;
+            }
+            else {
+               // have an in-core copy of this block.  Read it 
+               memcpy( buf, binfo->block_buf + block_offset, read_len );
+               return 0;
+            }
+         }
+         else {
+            return -ENOENT;
+         }
+      }
+      else {
+         return -ENOENT;
+      }
+   }
+   else {
+      // shouldn't get here--it's a bug 
+      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id);
+      return -EIO;
+   }
+}
+
+
+// write to a bufferred block, creating it on-the-fly if one does not exist.
+// return 0 on success
+// return -EEXIST if there is a buffer for a different block than the one indicated
+// return negative on error
+// fent must be write-locked 
+int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char const* buf, off_t block_offset, size_t write_len ) {
+   
+   if( fent->bufferred_blocks ) {
+      
+      modification_map::iterator itr = fent->bufferred_blocks->find( block_id );
+      
+      struct fs_entry_block_info* binfo = NULL;
+      
+      if( itr == fent->bufferred_blocks->end() ) {
+         // no block; allocate it 
+         struct fs_entry_block_info new_binfo;
+         
+         fs_entry_block_info_buffer_init( &new_binfo, core->blocking_factor );
+         
+         binfo = &new_binfo;
+      }
+      else {
+         // have an entry...
+         binfo = &itr->second;
+      }
+      
+      if( binfo->block_buf != NULL ) {
+         // range check 
+         if( block_offset + write_len < 0 || block_offset + write_len >= binfo->block_len ) {
+            return -ERANGE;
+         }
+         else {
+            // have an in-core copy of this block.  Write to it 
+            memcpy( binfo->block_buf + block_offset, buf, write_len );
+            return 0;
+         }
+      }
+      else {
+         if( binfo->block_buf == NULL ) {
+            // shouldn't get here
+            errorf( "BUG: %" PRIX64 " has no buffer for %" PRIu64 "\n", fent->file_id, block_id );
+            return -EIO;
+         }
+         else {
+            // wrong block
+            return -EEXIST;
+         }
+      }
+   }
+   else {
+      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id);
+      return -ENODATA;
+   }
+}
+
+// replace a bufferred block's contents
+// if there is no block data, then allocate it.
+// return 0 and fill in buf, buf_len on success with the block buffer
+// return -ENOENT if the block ID doesn't match the bufferred block 
+// return negative on error 
+// fent must be write-locked 
+int fs_entry_replace_bufferred_block( struct fs_entry* fent, uint64_t block_id, char* buf, size_t buf_len ) {
+   if( fent->bufferred_blocks ) {
+      
+      modification_map::iterator itr = fent->bufferred_blocks->find( block_id );
+      
+      struct fs_entry_block_info* binfo = NULL;
+      
+      if( itr == fent->bufferred_blocks->end() ) {
+         // no block; add it
+         binfo = &((*fent->bufferred_blocks)[ block_id ]);
+      }
+      else {
+         // have an entry 
+         binfo = &itr->second;
+      }
+      
+      if( binfo->block_buf == NULL ) {
+         // allocate this 
+         binfo->block_buf = CALLOC_LIST( char, buf_len );
+         binfo->block_len = buf_len;
+         
+         if( binfo->block_buf == NULL )
+            return -ENOMEM;
+         
+      }
+      else if( binfo->block_len != buf_len ) {
+         // realloc this to be bigger/smaller
+         char* tmp = (char*)realloc( binfo->block_buf, buf_len );
+         
+         if( tmp == NULL )
+            return -ENOMEM;
+         
+         binfo->block_buf = tmp;
+         binfo->block_len = buf_len;
+      }
+      
+      // copy the data over 
+      memcpy( binfo->block_buf, buf, buf_len );
+      
+      return 0;
+   }
+   else {
+      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      return -ENODATA;
+   }
+}
+
+// clear a single bufferred block 
+// fent must be write-locked
+int fs_entry_clear_bufferred_block( struct fs_entry* fent, uint64_t block_id ) {
+   
+   if( fent->bufferred_blocks ) {
+      
+      modification_map::iterator itr = fent->bufferred_blocks->find( block_id );
+      if( itr != fent->bufferred_blocks->end() ) {
+         
+         struct fs_entry_block_info* binfo = &itr->second;
+      
+         // clear it 
+         fs_entry_block_info_free_ex( binfo, true );
+      }
+   }
+   return 0;
+}
+
+// extract all bufferred blocks to a modification map.
+// replace the bufferred blocks in fent with a new, empty set.
+// fent must be write-locked 
+int fs_entry_extract_bufferred_blocks( struct fs_entry* fent, modification_map* block_info ) {
+   if( fent->bufferred_blocks ) {
+      
+      for( modification_map::iterator itr = fent->bufferred_blocks->begin(); itr != fent->bufferred_blocks->end(); itr++ ) {
+         
+         uint64_t block_id = itr->first;
+         struct fs_entry_block_info* binfo = &itr->second;
+         
+         // NOTE: don't duplicate; copy directly
+         (*block_info)[ block_id ] = *binfo;
+      }
+      
+      fent->bufferred_blocks->clear();
+   }
+   
+   return 0;
+}
+
+// how many items are queued in the sync queue?
+// fent must be at least read-locked 
+size_t fs_entry_sync_context_size( struct fs_entry* fent ) {
+   return fent->sync_queue->size();
+}
+
+// add a sync context to the sync queue
+// fent must be write-locked
+int fs_entry_sync_context_enqueue( struct fs_entry* fent, struct sync_context* ctx ) {
+   fent->sync_queue->push_back( ctx );
+   
+   return 0;
+}
+
+// remove a sync context from the head of the sync queue.
+// return 0 on succes; -ENOENT if no entries
+// fent must be write-locked
+int fs_entry_sync_context_dequeue( struct fs_entry* fent, struct sync_context** ctx ) {
+   int rc = 0;
+   
+   if( fent->sync_queue->size() > 0 ) {
+      *ctx = fent->sync_queue->front();
+      fent->sync_queue->pop_front();
+   }
+   else {
+      rc = -ENOENT;
+   }
+   
+   return rc;
+}
+
+// clear a sync context from the sync queue 
+// fent must be write-locked
+int fs_entry_sync_context_remove( struct fs_entry* fent, struct sync_context* ctx ) {
+   int rc = 0;
+   
+   if( fent->sync_queue->size() > 0 ) {
+      for( sync_context_list_t::iterator itr = fent->sync_queue->begin(); itr != fent->sync_queue->end(); itr++ ) {
+         
+         struct sync_context* curr_ctx = *itr;
+         
+         if( curr_ctx == ctx ) {
+            sync_context_list_t::iterator old = itr;
+            itr++;
+            
+            fent->sync_queue->erase( old );
+         }
+      }
+   }
+   
+   return rc;
+}
+
+
+// advance an fs_entry's last-mod time to now.
+// fent must be write-locked
+int fs_entry_update_modtime( struct fs_entry* fent ) {
+   
+   // update our modtime
+   struct timespec ts;
+   int rc = clock_gettime( CLOCK_REALTIME, &ts );
+   
+   if( rc == 0 ) {
+      fent->mtime_sec = ts.tv_sec;
+      fent->mtime_nsec = ts.tv_nsec;
+   }
+   
+   return rc;
 }
 
 // how many children (besides . and ..) are there in this fent?

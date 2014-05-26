@@ -82,6 +82,20 @@ int syndicate_init_state( struct syndicate_state* state, struct ms_client* ms ) 
    state->gid = getgid();
    
    state->mounttime = currentTimeSeconds();
+   
+   // initialize the downloader 
+   rc = md_downloader_init( &state->dl, "UG-downloader" );
+   if( rc != 0 ) {
+      errorf("md_downloader_init rc = %d\n", rc );
+      return rc;
+   }
+   
+   // start it up 
+   rc = md_downloader_start( &state->dl );
+   if( rc != 0 ) {
+      errorf("md_downloader_start rc = %d\n", rc );
+      return rc;
+   }
 
    // initialize and start caching
    rc = fs_entry_cache_init( core, &state->cache, state->conf.cache_soft_limit / block_size, state->conf.cache_hard_limit / block_size );
@@ -104,6 +118,12 @@ int syndicate_set_running( struct syndicate_state* state, int running ) {
 int syndicate_destroy_state( struct syndicate_state* state, int wait_replicas ) {
    
    state->running = 0;
+   
+   dbprintf("%s", "stopping downloads\n");
+   md_downloader_stop( &state->dl );
+   
+   dbprintf("%s", "shutting down downloader\n");
+   md_downloader_shutdown( &state->dl );
 
    dbprintf("%s", "stopping replication\n");
    replication_shutdown( state, wait_replicas );

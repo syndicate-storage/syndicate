@@ -19,25 +19,31 @@
 
 #include "fs_entry.h"
 
-char* fs_entry_block_url( struct fs_core* core, uint64_t volume_id, char const* base_url, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version, bool local );
+// URLs to manifest data in this UG
 char* fs_entry_local_block_url( struct fs_core* core, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
 char* fs_entry_public_block_url( struct fs_core* core, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version );
-char* fs_entry_remote_block_url( struct fs_core* core, uint64_t gateway_id, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version );
-char* fs_entry_replica_block_url( struct fs_core* core, char* RG_url, uint64_t volume_id, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
-char* fs_entry_RG_block_url( struct fs_core* core, uint64_t rg_id, uint64_t volume_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version );
-char* fs_entry_AG_block_url( struct fs_core* core, uint64_t ag_id, char const* fs_path, int64_t version, uint64_t block_id, int64_t block_version );
-char* fs_entry_block_url_path( struct fs_core* core, char const* fs_path, int64_t version, uint64_t block_id, int64_t block_version );
 
-char* fs_entry_file_url( struct fs_core* core, uint64_t volume_id, char const* base_url, char const* fs_path, int64_t file_version, bool local );
+// URLs to block data in other gateways
+char* fs_entry_UG_block_url( struct fs_core* core, uint64_t gateway_id, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version );
+char* fs_entry_RG_block_url( struct fs_core* core, uint64_t rg_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version );
+char* fs_entry_AG_block_url( struct fs_core* core, uint64_t ag_id, char const* fs_path, int64_t version, uint64_t block_id, int64_t block_version );
+
+// generate a URL to a fent's block
+int fs_entry_make_block_url( struct fs_core* core, char const* fs_path, uint64_t coordinator_id, uint64_t file_id, int64_t version, uint64_t block_id, int64_t block_version, char** url );
+
+// URLs to file data in this UG
 char* fs_entry_local_file_url( struct fs_core* core, uint64_t file_id, int64_t file_version );
 char* fs_entry_public_file_url( struct fs_core* core, char const* fs_path, int64_t file_version );
 
-char* fs_entry_manifest_url( struct fs_core* core, char const* gateway_base_url, uint64_t volume_id, char* fs_path, int64_t version, struct timespec* ts );
+// URLs to manifest data in this UG
 char* fs_entry_public_manifest_url( struct fs_core* core, char const* fs_path, int64_t version, struct timespec* ts );
-char* fs_entry_remote_manifest_url( struct fs_core* core, uint64_t UG_id, char const* fs_path, int64_t version, struct timespec* ts );
-char* fs_entry_replica_manifest_url( struct fs_core* core, char const* RG_url, uint64_t volume_id, uint64_t file_id, int64_t version, struct timespec* ts );
-char* fs_entry_manifest_url_path( struct fs_core* core, char const* fs_path, int64_t version, struct timespec* ts );
-char* fs_entry_RG_manifest_url( struct fs_core* core, uint64_t rg_id, uint64_t volume_id, uint64_t file_id, int64_t file_version, struct timespec* ts );
-char* fs_entry_AG_manifest_url( struct fs_core* core, uint64_t ag_id, char const* fs_path, int64_t file_version, struct timespec* ts );
+
+// URLs to manifests in other gateways
+char* fs_entry_UG_manifest_url( struct fs_core* core, uint64_t UG_id, char const* fs_path, int64_t version, struct timespec* ts );
+char* fs_entry_RG_manifest_url( struct fs_core* core, uint64_t RG_id, uint64_t file_id, int64_t file_version, struct timespec* ts );
+char* fs_entry_AG_manifest_url( struct fs_core* core, uint64_t AG_id, char const* fs_path, int64_t file_version, struct timespec* ts );
+
+// generate a URL to a fent's manifest
+int fs_entry_make_manifest_url( struct fs_core* core, char const* fs_path, uint64_t coordinator_id, uint64_t file_id, int64_t file_version, struct timespec* ts, char** url );
 
 #endif 

@@ -31,6 +31,7 @@
 #include "rename.h"
 #include "rmdir.h"
 #include "stat.h"
+#include "sync.h"
 #include "trunc.h"
 #include "unlink.h"
 #include "url.h"

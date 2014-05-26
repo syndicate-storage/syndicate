@@ -31,6 +31,7 @@ source_files = """
    rename.cpp
    rmdir.cpp
    stat.cpp
+   sync.cpp
    trunc.cpp
    unlink.cpp
    url.cpp

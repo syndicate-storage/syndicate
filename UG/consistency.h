@@ -19,10 +19,6 @@
 
 #include "fs_entry.h"
 
-// flush/resync data
-int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh );
-int fs_entry_fdatasync( struct fs_core* core, struct fs_file_handle* fh );
-
 // staleness processing
 bool fs_entry_is_read_stale( struct fs_entry* fent );
 int fs_entry_mark_read_stale( struct fs_entry* fent );
@@ -42,7 +38,7 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
 int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t* rg_id_ret );
 
 // change/learn coordinator
-int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t replica_version, int64_t replica_manifest_mtime_sec, int32_t replica_manifest_mtime_nsec );
+int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_entry* fent );
 
 // extra information to be stored in path entries
 struct fs_entry_listing_cls {

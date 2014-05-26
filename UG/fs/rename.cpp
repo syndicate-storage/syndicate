@@ -15,6 +15,7 @@
 */
 
 #include "rename.h"
+#include "consistency.h"
 #include "url.h"
 #include "network.h"
 #include "replication.h"
@@ -280,20 +281,12 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
       if( !local ) {
          // tell remote coordinator to rename, or become the coordinator
          Serialization::WriteMsg* rename_request = new Serialization::WriteMsg();
-
-         fs_entry_init_write_message( rename_request, core, Serialization::WriteMsg::RENAME );
-         
-         Serialization::RenameMsg* rename_info = rename_request->mutable_rename();
-         rename_info->set_volume_id( fent_old->volume );
-         rename_info->set_coordinator_id( fent_old->coordinator );
-         rename_info->set_file_id( fent_old->file_id );
-         rename_info->set_file_version( version );
-         rename_info->set_old_fs_path( string(old_path) );
-         rename_info->set_new_fs_path( string(new_path) );
-         
          Serialization::WriteMsg* ack = new Serialization::WriteMsg();
          
-         rc = fs_entry_send_write_or_coordinate( core, old_path, fent_old, &fent_old_snapshot, rename_request, ack );
+         fs_entry_init_write_message( rename_request, core, Serialization::WriteMsg::RENAME );
+         fs_entry_prepare_rename_message( rename_request, old_path, new_path, fent_old, version );
+         
+         rc = fs_entry_send_write_or_coordinate( core, old_path, fent_old, rename_request, ack );
          if( rc < 0 ) {
             errorf( "fs_entry_post_write(%s) rc = %d\n", old_path, rc );
 

@@ -20,8 +20,91 @@
 #include "fs_entry.h"
 #include "consistency.h"
 
-ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, uint64_t block_id, char* block_bits, size_t block_len );
-ssize_t fs_entry_read_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len );
+enum fs_entry_block_read_status_t {
+   READ_NOT_STARTED = 0,
+   READ_DOWNLOAD_NOT_STARTED = 1,
+   READ_PRIMARY = 2,
+   READ_REPLICA = 3,
+   READ_FINISHED = 4,
+   READ_ERROR = 5
+};
+
+// pending outcome of a block read
+struct fs_entry_read_block_future {
+   
+   // block info
+   char const* fs_path;         // NOTE: this is a reference to the client-supplied fs_path, not a duplicate.  DO NOT FREE IT
+   uint64_t gateway_id;         // which gateway hosts this copy of the block
+   int64_t file_version;
+   uint64_t block_id;
+   int64_t block_version;
+   
+   fs_entry_block_read_status_t status;
+   
+   bool has_dlctx;
+   struct md_download_context dlctx;           // download context; only used if the data is being downloaded (NULL otherwise)
+   
+   int curr_RG;                 // if trying replicas, this is the handle to the current RG
+   char* curr_URL;              // current URL (valid during the download)
+   
+   bool is_AG;                  // if true, we're downloading from an AG (so don't try the RGs)
+   
+   char* result;                // pointer to the buffer to hold block data (NULL at first; filled in when ready)
+   off_t result_len;            // length of the above buffer
+   off_t result_start;          // offset in result where the logical read on this block begins
+   off_t result_end;            // offset in result where the logical read on this block ends
+   bool result_is_partial_head; // true if the result is a partial block at the start of the read
+   bool result_is_partial_tail; // true if the result is a partial block at the end of the reads
+   bool result_allocd;          // if true, then result was dyanmically allocated (instead of pointing to an offset in a client's read buffer).
+   
+   int err;                     // set to nonzero on error
+   bool eof;                    // set if the block couldn't be found (indicates EOF; only relevant for an AG)
+   bool size_unknown;           // set to true if we don't know the size of the file in advance (only possible for an AG)
+   bool downloaded;             // set to true if we downloaded data 
+   
+   sem_t sem;                   // posted when data is available
+};
+
+
+// set of block reads 
+typedef set<struct fs_entry_read_block_future*> fs_entry_read_block_future_set_t;
+
+// look-up read future from download context 
+typedef map<struct md_download_context*, struct fs_entry_read_block_future*> fs_entry_download_to_future_map_t;
+
+// read context
+struct fs_entry_read_context {
+   
+   fs_entry_read_block_future_set_t* reads;
+   
+   fs_entry_download_to_future_map_t* download_to_future;
+   
+   md_download_set dlset;       // for downloading reads
+};
+
+// read context 
+int fs_entry_read_context_init( struct fs_entry_read_context* read_ctx );
+int fs_entry_read_context_free( struct fs_entry_read_context* read_ctx );
+int fs_entry_read_context_free_all( struct fs_entry_read_context* read_ctx );
+
+int fs_entry_read_context_add_block_future( struct fs_entry_read_context* read_ctx, struct fs_entry_read_block_future* block_fut );
+int fs_entry_read_context_remove_block_future( struct fs_entry_read_context* read_ctx, struct fs_entry_read_block_future* block_fut );
+size_t fs_entry_read_context_size( struct fs_entry_read_context* read_ctx );
+int fs_entry_read_context_run_local( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct fs_entry_read_context* read_ctx );
+bool fs_entry_read_context_has_downloading_blocks( struct fs_entry_read_context* read_ctx );
+int fs_entry_read_context_setup_downloads( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx );
+int fs_entry_read_context_run_downloads( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx );
+
+// block futures 
+int fs_entry_read_block_future_init( struct fs_entry_read_block_future* block_fut, uint64_t gateway_id, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version,
+                                     char* result_buf, off_t result_buf_len, off_t block_read_start, off_t block_read_end, bool free_result_buf );
+int fs_entry_read_block_future_free( struct fs_entry_read_block_future* block_fut );
+
+// bufferred blocks 
+int fs_entry_update_bufferred_block( struct fs_file_handle* fh, struct fs_entry* fent, fs_entry_read_block_future_set_t* reads );
+
+int fs_entry_read_block( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char* block_buf, size_t block_len );
+ssize_t fs_entry_read_block_local( struct fs_core* core, char const* fs_path, uint64_t block_id, char* block_buf, size_t block_len );
 
 ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* buf, size_t count, off_t offset );
 

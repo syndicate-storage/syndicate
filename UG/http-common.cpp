@@ -151,6 +151,8 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
    
    int rc = 0;
 
+   // TODO: get file ID from reqdat
+   uint64_t file_id = 0;
    uint64_t volume_id = reqdat->volume_id;
    char* fs_path = reqdat->fs_path;
    int64_t file_version = reqdat->file_version;
@@ -182,6 +184,9 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
       return rc;
    }
    
+   // TODO: get file ID from reqdat 
+   file_id = sb->st_ino;
+   
    // what is this a request for?
    // was this a request for a block?
    if( block_id != INVALID_BLOCK_ID ) {
@@ -190,8 +195,16 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
       if( !block_local ) {
          // block exists, and is remotely-hosted
          uint64_t gateway_id = fs_entry_get_block_host( state->core, fs_path, block_id );
-         char* block_url = fs_entry_remote_block_url( state->core, gateway_id, fs_path, file_version, block_id, block_version );
-
+         
+         char* block_url = NULL;
+         rc = fs_entry_make_block_url( state->core, fs_path, gateway_id, file_id, file_version, block_id, block_version, &block_url );
+         
+         if( rc != 0 ) {
+            // failed to make the URL 
+            errorf("fs_entry_make_block_url( %" PRIu64 ": %s (.%" PRId64 "[%" PRIu64 ".%" PRId64 "]) ) rc = %d\n", gateway_id, fs_path, file_version, block_id, block_version, rc );
+            return rc;
+         }
+         
          *redirect_url = block_url;
 
          return HTTP_REDIRECT_HANDLED;
@@ -207,15 +220,20 @@ int http_process_redirect( struct syndicate_state* state, char** redirect_url, s
             return (int)latest_block_version;
          }
 
+         // TODO: check requester's file ID against local file ID, and error with 404 if they don't match
+         // TODO: requester has to send file ID
+         
+         /*
          if( latest_file_version != file_version ) {
             // older version of the file (i.e. file has been unlinked/recreated, so it's not the same file)
             dbprintf("Request for stale file version (%" PRId64 " != %" PRId64 ")\n", latest_file_version, file_version );
             return -ESTALE;
          }
-
+         */
+         
          // same file version but wrong block version?  redirect
-         if( latest_block_version != block_version ) {
-            // HTTP redirect to the latest
+         if( latest_block_version != block_version || latest_file_version != file_version ) {
+            // HTTP redirect to the latest block
             char* txt = fs_entry_public_block_url( state->core, fs_path, latest_file_version, block_id, latest_block_version );
 
             *redirect_url = txt;

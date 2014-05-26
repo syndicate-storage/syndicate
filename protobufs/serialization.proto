@@ -23,16 +23,14 @@ message FileMetadata {
    required uint64 file_id = 3;
    required int64 file_version = 4;
    required int64 size = 5;
-   required int64 mtime_sec = 6;
-   required int32 mtime_nsec = 7;
-   required int64 write_nonce = 8;
+   required int64 write_nonce = 6;
 }
 
-message BlockList {
-   required uint64 start_id = 1;
-   required uint64 end_id = 2;
-   repeated int64 version = 3;
-   repeated bytes hash = 4;            // must be the same length as version
+// single block 
+message BlockInfo {
+   required uint64 block_id = 1;
+   required int64 block_version = 2;
+   required bytes hash = 3;
 }
 
 // truncate a file
@@ -73,12 +71,14 @@ message ManifestMsg {
    required int64 size = 6;             // if gateway_id == 0, then this is simply the number of certificates
    required int64 mtime_sec = 7;
    required int32 mtime_nsec = 8;
-   repeated BlockURLSetMsg block_url_set = 9;
+   required int64 fent_mtime_sec = 9;
+   required int32 fent_mtime_nsec = 10;
+   repeated BlockURLSetMsg block_url_set = 11;
    
-   optional int32 errorcode = 10;
-   optional string errortxt = 11;
+   optional int32 errorcode = 12;
+   optional string errortxt = 13;
    
-   required string signature = 12;       // base64-encoded signature of this message using the origin gateway's private key
+   required string signature = 14;       // base64-encoded signature of this message using the origin gateway's private key
 }
 
 // accepted message
@@ -131,7 +131,7 @@ message WriteMsg {
    required uint64 gateway_id = 6;        // who's sending this message
 
    optional FileMetadata metadata = 7;
-   optional BlockList blocks = 8;
+   repeated BlockInfo blocks = 8;
    optional TruncateRequest truncate = 9;
    optional DetachRequest detach = 10;
    optional AcceptMsg accepted = 11;

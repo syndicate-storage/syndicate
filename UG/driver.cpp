@@ -131,7 +131,7 @@ int driver_connect_cache( struct md_closure* closure, CURL* curl, char const* ur
 
 // process data before uploading 
 int driver_write_block_preup( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
-                              char* in_block_data, size_t in_block_data_len, char** out_block_data, size_t* out_block_data_len ) {
+                              char const* in_block_data, size_t in_block_data_len, char** out_block_data, size_t* out_block_data_len ) {
    
    int ret = 0;
    
@@ -151,7 +151,7 @@ int driver_write_block_preup( struct fs_core* core, struct md_closure* closure, 
 }
 
 int driver_write_manifest_preup( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec,
-                                 char* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len ) {
+                                 char const* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len ) {
  
    int ret = 0;
    
@@ -173,9 +173,11 @@ int driver_write_manifest_preup( struct fs_core* core, struct md_closure* closur
 }
 
 
-// process data after downloading 
+// process data after downloading.
+// NOTE: fent->version may not match the version of the data downloaded, since fent->version might have changed after the download started.
+// If this is a problem, then use the as-of-yet-existing pre-read() method to snapshot the old versioning info.
 ssize_t driver_read_block_postdown( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
-                                    char* in_block_data, size_t in_block_data_len, char* out_block_data, size_t out_block_data_len ) {
+                                    char const* in_block_data, size_t in_block_data_len, char* out_block_data, size_t out_block_data_len ) {
    
    ssize_t ret = 0;
    
@@ -194,7 +196,7 @@ ssize_t driver_read_block_postdown( struct fs_core* core, struct md_closure* clo
 
 
 // process a manifest after downloading (called by md_download_manifest())
-int driver_read_manifest_postdown( struct md_closure* closure, char* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len, void* user_cls ) {
+int driver_read_manifest_postdown( struct md_closure* closure, char const* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len, void* user_cls ) {
  
    int ret = 0;
    
@@ -231,7 +233,7 @@ int driver_chcoord_begin( struct fs_core* core, struct md_closure* closure, char
    return ret;
 }
 
-// end changing coordinator.  This is called *after* the coordintaor changes.
+// end changing coordinator.  This is called *after* the coordintaor changes.  fent->coordinator refers to the current coordinator
 // chcoord_status is the MS's return code (0 for success, negative for error). 
 // If chcoord_status == 0, the change succeeded
 int driver_chcoord_end( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t replica_version, int chcoord_status ) {
