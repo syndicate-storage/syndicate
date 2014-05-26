@@ -1133,8 +1133,8 @@ def update_gateway( g_name_or_id, **attrs ):
 
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@UpdateAPIGuard( Gateway, target_object_name="g_name_or_id", parse_args=Gateway.ParseArgs, pass_caller_user="caller_user" )
-def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
+@UpdateAPIGuard( Gateway, target_object_name="g_name_or_id", parse_args=Gateway.ParseArgs )
+def set_gateway_caps( g_name_or_id, caps ):
    """
    Set a gateway's capabilities.
    
@@ -1178,7 +1178,7 @@ def set_gateway_caps( g_name_or_id, caps, **caller_user_dict ):
       different capabilities will silently fail.
    """
       
-   return storage.set_gateway_caps( g_name_or_id, caps, **caller_user_dict )
+   return storage.set_gateway_caps( g_name_or_id, caps )
 
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
