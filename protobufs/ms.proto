@@ -30,21 +30,23 @@ message ms_entry {
    required int64 ctime_nsec = 4;
    required int64 mtime_sec = 5;
    required int32 mtime_nsec = 6;
-   required uint64 owner = 7;
-   required uint64 coordinator = 8;
-   required uint64 volume = 9;
-   required int32 mode = 10;
-   required int64 size = 11;
-   required int64 version = 12;
-   required int32 max_read_freshness = 13;
-   required int32 max_write_freshness = 14;
-   required string name = 15;
+   required int64 manifest_mtime_sec = 7;
+   required int32 manifest_mtime_nsec = 8;
+   required uint64 owner = 9;
+   required uint64 coordinator = 10;
+   required uint64 volume = 11;
+   required int32 mode = 12;
+   required int64 size = 13;
+   required int64 version = 14;
+   required int32 max_read_freshness = 15;
+   required int32 max_write_freshness = 16;
+   required string name = 17;
    
-   required int64 write_nonce = 16;
-   required int64 xattr_nonce = 17;
+   required int64 write_nonce = 18;
+   required int64 xattr_nonce = 19;
    
-   optional uint64 parent_id = 18;
-   optional string parent_name = 19;
+   optional uint64 parent_id = 20;
+   optional string parent_name = 21;
 }
 
 
@@ -108,7 +110,7 @@ message ms_keyword_arg {
    required string value = 2;
 }
 
-// metadata information on a block/manifest request to an RG
+// metadata information on a block/manifest request to an RG or AG
 message ms_gateway_request_info {
    enum ReplicaType {
       MANIFEST = 1;
@@ -121,16 +123,16 @@ message ms_gateway_request_info {
    required uint64 block_id = 4;          // ID of the block
    required int64 block_version = 5;      // version of he block
    required uint64 size = 6;              // size of the block or manifest
-   required int64 file_mtime_sec = 7;     // time of the write on the UG that created this block (seconds)
-   required int32 file_mtime_nsec = 8;    // time of the write on the UG that created this block (nanoseconds)
+   required int64 file_mtime_sec = 7;     // time of the write that created this block (seconds).  Derived from the manifest, if from a UG.
+   required int32 file_mtime_nsec = 8;    // time of the write that created this block (nanoseconds).  Derived from the manifest, if from a UG.
    required uint64 owner = 9;             // ID of the SyndicateUser that owns this file
-   required uint64 writer = 10;            // ID of the UG that created this message
+   required uint64 writer = 10;           // ID of the UG that created this message
    required uint64 volume = 11;           // ID of the Volume that this file/UG belong to
    required string hash = 12;             // secure hash (SHA256) of the block or manifest bits
    
    repeated ms_keyword_arg args = 13;     // driver-specific arguments
    
-   required string signature = 14;        // signature of this message, from the sender gateway's operator's private key
+   required string signature = 14;        // signature of this message, from the sender gateway's private key
 }
 
 
