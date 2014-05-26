@@ -51,6 +51,23 @@ def validate_post( self, post_dict ):
 
 
 #-------------------------
+def post_interpret_error( rc ):
+   """
+      Intepret a system error code into an HTTP error code,
+      for purposes of validating a caller's POST request.
+   """
+   
+   if rc == -errno.EAGAIN:
+      return (503, "Try again later")
+   
+   elif rc == -errno.ENOENT:
+      return (404, "Not found")
+   
+   else:
+      return (400, "Invalid Request")
+
+
+#-------------------------
 def post( metadata_field, infile ):
    '''
       Process a POST request.  Return an HTTP status code.  Read all data from infile.
@@ -75,11 +92,14 @@ def post( metadata_field, infile ):
    log.info("POST %s" % rg_request.req_info_to_string( req_info ) )
    
    # validate security--the calling gateway must be a UG with CAP_WRITE_DATA
-   if rg_request.gateway_is_UG( req_info ) != 0:
-      return (400, "Invalid Request")
+   rc = rg_request.gateway_is_UG( req_info )
+   if rc != 0:
+      return post_interpret_error( rc )
    
-   if rg_request.check_post_caps( req_info ) != 0:
-      return (400, "Invalid Reqeust")
+   rc = rg_request.check_post_caps( req_info )
+   if rc != 0:
+      return post_interpret_error( rc )
+      
    
    # validate data integrity
    hf = HashFunc()
