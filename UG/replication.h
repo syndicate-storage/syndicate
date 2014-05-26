@@ -155,13 +155,11 @@ int replica_context_free( struct replica_context* rctx );
 int fs_entry_replicate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent );
 struct replica_context* fs_entry_replicate_manifest_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int* ret );
 
-int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks );
-int fs_entry_replicate_blocks_async( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, replica_list_t* replica_futures );
-
 struct replica_context* fs_entry_replicate_block_async( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, struct fs_entry_block_info* binfo, int* ret );
 
 int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snapshot* snapshot );
 int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* modified_blocks );
+int fs_entry_garbage_collect_file( struct fs_core* core, struct fs_entry* fent );
 
 int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_fent, uint64_t block_id, int64_t block_version, struct replica_snapshot* snapshot );
 int fs_entry_replica_snapshot_restore( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* snapshot );
@@ -172,8 +170,10 @@ int fs_entry_replica_wait_all( struct fs_core* core, replica_list_t* rctxs, uint
 int fs_entry_replica_context_free( struct replica_context* rctx );
 int fs_entry_replica_list_free( replica_list_t* rctxs );
 
-int fs_entry_garbage_collect_file( struct fs_core* core, struct fs_entry* fent );
+int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks );
+int fs_entry_replicate_blocks_async( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, replica_list_t* replica_futures );
 
 int fs_entry_extract_block_info_from_failed_block_replicas( replica_list_t* rctxs, modification_map* dirty_blocks );
+
 
 #endif

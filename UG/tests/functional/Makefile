@@ -1,7 +1,7 @@
 CPP			:= g++ -Wall -fPIC -g -Wno-format
-INC			:= -I/usr/local/include -I../
+INC			:= -I/usr/local/include -I/usr/local/include/libsyndicateUG -I/usr/local/include/libsyndicateUG/fs/ -I/usr/local/include/libsyndicate
 
-LIB			:= -lpthread -lcurl -lssl -lmicrohttpd -lprotobuf -lrt -lm -ldl -lsyndicate 
+LIB			:= -lpthread -lcurl -lssl -lmicrohttpd -lprotobuf -lrt -lm -ldl -lsyndicate -lsyndicateUG 
 DEFS			:= -D_FILE_OFFSET_BITS=64 -D_REENTRANT -D_THREAD_SAFE -D_DISTRO_DEBIAN -D__STDC_FORMAT_MACROS -fstack-protector -fstack-protector-all -funwind-tables
 
 TARGETS	   := creat read write open-close mkdir readdir rmdir unlink

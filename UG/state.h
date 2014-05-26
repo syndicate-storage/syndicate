@@ -53,9 +53,12 @@ struct syndicate_state {
    Stats* stats;
 };
 
-
+extern "C" {
+   
 int syndicate_init_state( struct syndicate_state* state, struct ms_client* ms );
 int syndicate_set_running( struct syndicate_state* state, int running );
 int syndicate_destroy_state( struct syndicate_state* state, int wait_replicas );
+
+}
 
 #endif

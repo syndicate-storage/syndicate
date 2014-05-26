@@ -282,7 +282,7 @@ int fs_entry_cache_open_block( struct fs_core* core, struct syndicate_cache* cac
 
 
 // stat a block in the cache (system use only)
-int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, struct stat* sb ) {
+int fs_entry_cache_stat_block_by_id( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, struct stat* sb ) {
    
    char* block_url = fs_entry_local_block_url( core, file_id, file_version, block_id, block_version );
    char* stat_path = GET_PATH( block_url );
@@ -297,7 +297,7 @@ int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cac
 }
 
 // stat a block in the cache (system use only)
-int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cache, char const* fs_path, uint64_t block_id, int64_t block_version, struct stat* sb ) {
+int fs_entry_cache_stat_block_by_path( struct fs_core* core, struct syndicate_cache* cache, char const* fs_path, uint64_t block_id, int64_t block_version, struct stat* sb ) {
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
    if( !fent || err ) {
@@ -307,7 +307,7 @@ int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cac
       return err;
    }
    
-   int rc = fs_entry_cache_stat_block( core, cache, fent->file_id, fent->version, block_id, block_version, sb );
+   int rc = fs_entry_cache_stat_block_by_id( core, cache, fent->file_id, fent->version, block_id, block_version, sb );
    
    fs_entry_unlock( fent );
 

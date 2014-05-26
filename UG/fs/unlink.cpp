@@ -200,11 +200,14 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    }
    
    // make sure the manifest is fresh, so we delete every block
-   err = fs_entry_revalidate_manifest( core, path, fent );
-   if( err != 0 ) {
-      errorf( "fs_entry_revalidate_manifest(%s) rc = %d\n", path, err );
-      fs_entry_unlock( fent );
-      return err;
+   // only need to worry about this if file has > 0 size
+   if( fent->size > 0 ) {
+      err = fs_entry_revalidate_manifest( core, path, fent );
+      if( err != 0 ) {
+         errorf( "fs_entry_revalidate_manifest(%s) rc = %d\n", path, err );
+         fs_entry_unlock( fent );
+         return err;
+      }
    }
 
    char* path_dirname = md_dirname( path, NULL );
@@ -296,4 +299,10 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    fs_entry_unlock( parent );
 
    return rc;
+}
+
+
+// unlink for client library consumption 
+int fs_entry_unlink( struct fs_core* core, char const* path, uint64_t owner, uint64_t volume ) {
+   return fs_entry_versioned_unlink( core, path, 0, 0, -1, owner, volume, core->gateway, false );
 }

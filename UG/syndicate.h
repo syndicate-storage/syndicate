@@ -27,6 +27,8 @@
 #include "state.h"
 #include "opts.h"
 
+extern "C" {
+   
 int syndicate_init( struct syndicate_opts* opts );
 
 void syndicate_finish_init();
@@ -35,5 +37,7 @@ struct syndicate_state* syndicate_get_state();
 struct md_syndicate_conf* syndicate_get_conf();
 
 int syndicate_destroy( int wait_replicas );
+
+}
 
 #endif

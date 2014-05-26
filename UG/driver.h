@@ -47,7 +47,8 @@ struct driver_read_manifest_postdown_cls {
    int32_t mtime_nsec;
 };
 
-
+extern "C" {
+   
 // driver control API
 int driver_init( struct fs_core* core, struct md_closure** closure );
 int driver_reload( struct fs_core* core, struct md_closure* closure );
@@ -72,5 +73,7 @@ int driver_chcoord_begin( struct fs_core*, struct md_closure* closure, char cons
 int driver_chcoord_end( struct fs_core*, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t replica_version, int chcoord_status );
 
 extern struct md_closure_callback_entry UG_CLOSURE_PROTOTYPE[];
+
+}
 
 #endif

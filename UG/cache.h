@@ -162,6 +162,8 @@ struct syndicate_cache_aio_write_args {
    struct cache_block_future* future;
 };
 
+extern "C" {
+
 int fs_entry_cache_init( struct fs_core* core, struct syndicate_cache* cache, size_t soft_max_size, size_t hard_max_size );
 int fs_entry_cache_destroy( struct syndicate_cache* cache );
 
@@ -180,8 +182,8 @@ int fs_entry_cache_is_block_readable( struct syndicate_cache* cache, uint64_t fi
 int fs_entry_cache_open_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, int flags );
 ssize_t fs_entry_cache_read_block( int block_fd, char** buf );
 
-int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, struct stat* sb );
-int fs_entry_cache_stat_block( struct fs_core* core, struct syndicate_cache* cache, char const* fs_path, uint64_t block_id, int64_t block_version, struct stat* sb );
+int fs_entry_cache_stat_block_by_id( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version, struct stat* sb );
+int fs_entry_cache_stat_block_by_path( struct fs_core* core, struct syndicate_cache* cache, char const* fs_path, uint64_t block_id, int64_t block_version, struct stat* sb );
 
 // allow external client to evict data
 int fs_entry_cache_evict_file( struct fs_core* core, struct syndicate_cache* cache, uint64_t file_id, int64_t file_version );
@@ -201,5 +203,7 @@ int fs_entry_cache_file_blocks_apply( char const* local_path, int (*block_func)(
 int fs_entry_cache_block_future_has_error( struct cache_block_future* f );
 int fs_entry_cache_block_future_get_aio_error( struct cache_block_future* f );
 int fs_entry_cache_block_future_get_write_error( struct cache_block_future* f );
+
+}
 
 #endif

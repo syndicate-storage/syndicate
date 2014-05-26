@@ -20,7 +20,6 @@
 #include "fs_entry.h"
 #include "serialization.pb.h"
 
-
 // downloading
 int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec, char const* manifest_url, Serialization::ManifestMsg* mmsg );
 

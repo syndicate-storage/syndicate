@@ -19,10 +19,14 @@
 
 #include "libsyndicate/libsyndicate.h"
 
+extern "C" {
+   
 // logging functions
 FILE* log_init(const char* logpath);
 int log_shutdown( FILE* logfile );
 void logmsg( FILE* logfile, const char* msg, ... );
 int logerr( FILE* logfile, const char* msg, ... );
+
+}
 
 #endif

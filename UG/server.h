@@ -25,8 +25,11 @@ struct syndicate_connection {
    struct syndicate_state* state;
 };
 
+extern "C" {
 
 int server_init( struct syndicate_state* state, struct md_HTTP* server );
 int server_shutdown( struct md_HTTP* server );
+
+}
 
 #endif

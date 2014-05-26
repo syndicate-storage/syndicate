@@ -39,6 +39,8 @@
 
 #define SYNDICATEFS_DATA ((struct syndicate_state *) fuse_get_context()->private_data)
 
+extern "C" {
+   
 // prototypes for FUSE methods
 int syndicatefs_getattr(const char *path, struct stat *statbuf);
 int syndicatefs_readlink(const char *path, char *link, size_t size);
@@ -79,5 +81,6 @@ void syndicatefs_destroy(void *userdata);
 // get the above functions as a fuse_operations structure
 struct fuse_operations get_syndicatefs_opers();
 
+}
 
 #endif

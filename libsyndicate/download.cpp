@@ -433,6 +433,33 @@ int md_download_context_reset( struct md_download_context* dlctx, CURL* new_curl
    return 0;
 }
 
+// free a download context
+int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
+   if( dlctx->brb.rb ) {
+      response_buffer_free( dlctx->brb.rb );
+      delete dlctx->brb.rb;
+      dlctx->brb.rb = NULL;
+      dlctx->brb.size = 0;
+   }
+   
+   if( curl ) {
+      *curl = dlctx->curl;
+   }
+   
+   if( dlctx->effective_url ) {
+      free( dlctx->effective_url );
+      dlctx->effective_url = NULL;
+   }
+   
+   dlctx->curl = NULL;
+   
+   sem_destroy( &dlctx->sem );
+   
+   memset( dlctx, 0, sizeof(struct md_download_context));
+   
+   return 0;
+}
+
 // wrapper around sem_wait and sem_trywait.
 // if timeout_ms < 0, then use sem_wait.  Otherwise, use sem_trywait +timeout_ms seconds into the future.
 int md_download_sem_wait( sem_t* sem, int64_t timeout_ms ) {
@@ -511,34 +538,6 @@ int md_download_context_wait_any( struct md_download_set* dlset, int64_t timeout
    
    return rc;
 }
-
-
-// free a download context
-int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
-   if( dlctx->brb.rb ) {
-      response_buffer_free( dlctx->brb.rb );
-      delete dlctx->brb.rb;
-      dlctx->brb.rb = NULL;
-   }
-   
-   if( curl ) {
-      *curl = dlctx->curl;
-   }
-   
-   if( dlctx->effective_url ) {
-      free( dlctx->effective_url );
-      dlctx->effective_url = NULL;
-   }
-   
-   dlctx->curl = NULL;
-   
-   sem_destroy( &dlctx->sem );
-   
-   memset( dlctx, 0, sizeof(struct md_download_context));
-   
-   return 0;
-}
-
 
 // set up a download set 
 int md_download_set_init( struct md_download_set* dlset ) {
@@ -631,7 +630,7 @@ static int md_download_context_connect_cache( struct md_downloader* dl, struct m
    
    // connect to the cache 
    if( dlctx->cache_func ) {
-      // need a closure
+      // no closure?
       if( cache_closure == NULL ) {
          return -EINVAL;
       }
@@ -661,30 +660,6 @@ int md_download_context_start( struct md_downloader* dl, struct md_download_cont
    md_downloader_insert_pending( dl, dlctx );
    return 0;
 }
-
-
-/*
-// start all download contexts in a download set.
-int md_download_context_start_all( struct md_downloader* dl, struct md_download_set* dlset, struct md_closure* cache_closure, char const* base_url ) {
-   int rc = 0;
-   
-   for( md_pending_set_t::iterator itr = dlset->waiting->begin(); itr != dlset->waiting->end(); itr++ ) {
-      
-      struct md_download_context* dlctx = *itr;
-      
-      // connect all contexts to the cache
-      rc = md_download_context_connect_cache( dl, dlctx, cache_closure, base_url );
-      if( rc != 0 ) {
-         errorf("%s: md_download_context_connect_cache(%s) rc = %d\n", dl->name, base_url, rc );
-         return rc;
-      }
-   }
-   
-   // start all contexts 
-   md_downloader_insert_pending_set( dl, dlset->waiting );
-   return 0;
-}
-*/
 
 // cancel downloading something 
 int md_download_context_cancel( struct md_downloader* dl, struct md_download_context* dlctx ) {
@@ -1041,20 +1016,16 @@ int md_download_from_caches( struct md_downloader* dl, struct md_closure* closur
    struct md_download_context dlctx;
    md_download_context_init( &dlctx, curl, cache_func, cache_func_cls, max_len );
    
-   rc = md_download_context_start( dl, &dlctx, closure, base_url );
+   // connect to cache...
+   rc = md_download_context_connect_cache( dl, &dlctx, closure, base_url );
    if( rc != 0 ) {
-      errorf("%s: md_download_context_start(%s) rc = %d\n", dl->name, base_url, rc );
-      return -ENOTCONN;
+      errorf("%s: md_download_context_connect_cache(%s) rc = %d\n", dl->name, base_url, rc );
+      return rc;
    }
    
-   // wait indefinitely; the CURL handle will have been configured to time out 
-   rc = md_download_context_wait( &dlctx, -1 );
-   if( rc != 0 ) {
-      errorf("%s: md_download_context_wait(%s) rc = %d\n", dl->name, base_url, rc );
-      
-      md_download_context_free( &dlctx, NULL );
-      return -ENODATA;
-   }
+   // run the download 
+   rc = curl_easy_perform( curl );
+   md_downloader_finalize_download_context( &dlctx, rc );
    
    // check for errors 
    rc = md_download_context_get_curl_rc( &dlctx );
@@ -1101,7 +1072,7 @@ int md_download( struct md_syndicate_conf* conf, struct md_downloader* dl, struc
          return 0;
       }
       else {
-         errorf("WARN: md_download_from_caches(%s) rc = %d\n", base_url, rc);
+         errorf("WARN: md_download_from_caches(%s) rc = %d, falling back to direct download\n", base_url, rc);
       }
    }
    
@@ -1151,6 +1122,9 @@ int md_download_manifest( struct md_syndicate_conf* conf, struct md_downloader* 
    if( status_code != 200 ) {
       // bad HTTP status
       errorf( "md_download(%s) HTTP status %d\n", manifest_url, status_code );
+      
+      if( manifest_data )
+         free( manifest_data );
       
       int err = md_HTTP_status_code_to_error_code( status_code );
       if( err == 0 || err == status_code )

@@ -38,6 +38,8 @@ typedef struct _syndicate_handle {
 // NULL-terminated directory listing
 typedef fs_dir_entry** syndicate_dir_listing_t;
 
+extern "C" {
+
 int syndicate_getattr(struct syndicate_state* state, const char *path, struct stat *statbuf);
 int syndicate_mkdir(struct syndicate_state* state, const char *path, mode_t mode);
 int syndicate_unlink(struct syndicate_state* state, const char *path);
@@ -72,5 +74,7 @@ int syndicate_removexattr(struct syndicate_state* state, const char *path, const
 int syndicate_client_init( struct syndicate_state* state, struct syndicate_opts* opts );
 
 int syndicate_client_shutdown( struct syndicate_state* state, int wait_replicas );
+
+}
 
 #endif

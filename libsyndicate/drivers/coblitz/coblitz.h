@@ -18,6 +18,7 @@
 #define _DRIVER_COBLITZ_H_
 
 #include "libsyndicate/closure.h"
+#include "libsyndicate/download.h"
 
 struct coblitz_cls {
    char* cdn_prefix;

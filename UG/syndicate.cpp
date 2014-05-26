@@ -48,6 +48,8 @@ int syndicate_init( struct syndicate_opts* opts ) {
    
    // initialize library
    if( !opts->anonymous ) {
+      dbprintf("%s", "Not anonymous; initializing as peer\n");
+      
       int rc = md_init( &state->conf, ms, opts->ms_url, opts->volume_name, opts->gateway_name, opts->username, (char const*)opts->password.ptr, (char const*)opts->user_pkey_pem.ptr,
                                           opts->volume_pubkey_path, opts->gateway_pkey_path, (char const*)opts->gateway_pkey_decryption_password.ptr,
                                           opts->tls_pkey_path, opts->tls_cert_path, opts->storage_root, opts->syndicate_pubkey_path );
@@ -57,6 +59,8 @@ int syndicate_init( struct syndicate_opts* opts ) {
       }
    }
    else {
+      dbprintf("%s", "Anonymous; initializing as client\n");
+      
       // load anything we need into RAM 
       char* volume_pubkey_pem = NULL;
       size_t volume_pubkey_pem_len = 0;

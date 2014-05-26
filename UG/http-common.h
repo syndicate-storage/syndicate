@@ -25,6 +25,8 @@
 #define HTTP_REDIRECT_NOT_HANDLED 1
 #define HTTP_REDIRECT_REMOTE 2
 
+extern "C" {
+   
 char* http_validate_url_path( struct md_HTTP* http, char* url, struct md_HTTP_response* resp );
 
 bool http_file_exists( struct syndicate_state* state, char* url_path, struct stat* sb );
@@ -44,5 +46,7 @@ int http_POST_iterator(void *coninfo_cls, enum MHD_ValueKind kind,
                        uint64_t off, size_t size);
 
 int http_parse_request( struct md_HTTP* http_ctx, struct md_HTTP_response* resp, struct md_gateway_request_data* reqdat, char* url );
+
+}
 
 #endif

@@ -1246,7 +1246,7 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
 // if successful_gateway_id != NULL, then fill it with the ID of the gateway that served the manifest (if any). Otherwise set to 0 if given but the manifest was fresh.
 // a manifest fetched from an AG will be marked as stale, since a subsequent read can fail with HTTP 204.  The caller should mark the manifest as fresh if it succeeds in reading data.
 // fent must be write-locked
-int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id, bool force_refresh ) {
+int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id, bool force_refresh ) {
    
    if( fent->manifest != NULL && fent->manifest->is_initialized() ) {
       if( FS_ENTRY_LOCAL( core, fent ) && !core->conf->is_client ) {
@@ -1416,7 +1416,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    
    fent->manifest->get_modtime( &ts );
    
-   return fs_entry_revalidate_manifest( core, fs_path, fent, fent->version, ts.tv_sec, ts.tv_nsec, true, NULL, force_refresh );   
+   return fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->version, ts.tv_sec, ts.tv_nsec, true, NULL, force_refresh );   
 }
 
 
@@ -1510,7 +1510,7 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
    
    fent->manifest->get_modtime( &manifest_ts );
    
-   rc = fs_entry_revalidate_manifest( core, fs_path, fent, fent->version, manifest_ts.tv_sec, manifest_ts.tv_nsec, true, &rg_id, force_refresh );
+   rc = fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->version, manifest_ts.tv_sec, manifest_ts.tv_nsec, true, &rg_id, force_refresh );
 
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, rc );

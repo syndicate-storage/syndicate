@@ -61,9 +61,13 @@ struct syndicate_opts {
    bool anonymous;
 };
 
+extern "C" {
+
 int syndicate_default_opts( struct syndicate_opts* opts );
 int syndicate_parse_opts( struct syndicate_opts* opts, int argc, char** argv, int* optind, char const* special_opts, int (*special_opt_handler)(int, char*) );
 int syndicate_cleanup_opts( struct syndicate_opts* opts );
 void syndicate_common_usage( char* progname );
+
+}
 
 #endif

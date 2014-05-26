@@ -1774,6 +1774,10 @@ int fs_entry_garbage_collect_file( struct fs_core* core, struct fs_entry* fent )
    if( !FS_ENTRY_LOCAL( core, fent ) )
       return -EINVAL;
    
+   // anything to collect?
+   if( fent->size == 0 )
+      return 0;
+   
    struct replica_snapshot fent_snapshot;
    fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
 
