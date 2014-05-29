@@ -1308,6 +1308,20 @@ int fs_entry_view_change_callback( struct ms_client* ms, void* cls ) {
    return 0;
 }
 
+
+// do we have dirty blocks?
+// fent must be at least read-locked
+bool fs_entry_has_dirty_blocks( struct fs_entry* fent ) {
+   if( fent->dirty_blocks == NULL )
+      return false;
+   
+   if( fent->dirty_blocks->size() == 0 )
+      return false;
+   
+   return true;
+}
+
+
 // extract and re-initialize the dirty block set for an fs_entry.
 // the caller gains exclusive access to the dirty block set, and must free it.
 // fent must be write-locked

@@ -271,6 +271,8 @@ int fs_entry_extract_garbage_blocks( struct fs_entry* fent, modification_map** g
 int fs_entry_replace_dirty_blocks( struct fs_entry* fent, modification_map* dirty_blocks );
 int fs_entry_replace_garbage_blocks( struct fs_entry* fent, modification_map* garbage_blocks );
 
+bool fs_entry_has_dirty_blocks( struct fs_entry* fent );
+
 // fs_entry locking
 int fs_entry_rlock2( struct fs_entry* fent, char const* from_str, int lineno );
 int fs_entry_wlock2( struct fs_entry* fent, char const* from_str, int lineno );

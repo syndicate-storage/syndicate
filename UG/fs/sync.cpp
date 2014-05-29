@@ -535,6 +535,10 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
 
    int rc = 0;
    
+   // do we have data to flush?  if not, then done 
+   if( !fs_entry_has_dirty_blocks( fh->fent ) )
+      return 0;
+   
    // start fsync
    int begin_rc = fs_entry_fsync_begin_data( core, fh, sync_ctx );
    
@@ -597,9 +601,10 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
       fs_file_handle_unlock( fh );
       return -EBADF;
    }
-
+   
    int rc = 0;
    struct sync_context sync_ctx;
+   memset( &sync_ctx, 0, sizeof(struct sync_context) );
    
    fs_entry_wlock( fh->fent );
    
