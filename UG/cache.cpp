@@ -178,7 +178,7 @@ static int cache_cb_add_lru( char const* block_path, void* cls ) {
 }
 
 // clean up a future
-static int cache_block_future_clean( struct cache_block_future* f ) {
+int cache_block_future_clean( struct cache_block_future* f ) {
    if( f->block_fd >= 0 ) {
       fsync( f->block_fd );
       close( f->block_fd );
@@ -208,6 +208,116 @@ int fs_entry_cache_block_future_free( struct cache_block_future* f ) {
    free( f );
    return 0;
 }
+
+// apply a function over a list of futures 
+int fs_entry_cache_block_future_apply_all( vector<struct cache_block_future*>* futs, void (*func)( struct cache_block_future*, void* ), void* func_cls ) {
+   
+   for( vector<struct cache_block_future*>::iterator itr = futs->begin(); itr != futs->end(); itr++ ) {
+      
+      struct cache_block_future* f = *itr;
+      
+      (*func)( f, func_cls );
+   }
+   
+   return 0;
+}
+
+// free cache futures 
+int fs_entry_cache_block_future_free_all( vector<struct cache_block_future*>* futs, bool close_fds ) {
+   
+   struct local {
+      
+      // free a cache block future, optionally releasing its file descriptor
+      static void release_and_free( struct cache_block_future* fut, void* cls ) {
+         bool* close_fds_ptr = (bool*)cls;
+         
+         if( *close_fds_ptr ) {
+            // release the file FD from the future, so we can use it later 
+            fs_entry_cache_block_future_release_fd( fut );
+         }
+         fs_entry_cache_block_future_free( fut );
+      }
+   };
+   
+   fs_entry_cache_block_future_apply_all( futs, local::release_and_free, &close_fds );
+   
+   return 0;
+}
+
+// clean cache futures 
+int fs_entry_cache_block_future_clean_all( vector<struct cache_block_future*>* futs, bool close_fds ) {
+   
+   struct local {
+      
+      // free a cache block future, optionally releasing its file descriptor
+      static void release_and_clean( struct cache_block_future* fut, void* cls ) {
+         bool* close_fds_ptr = (bool*)cls;
+         
+         if( *close_fds_ptr ) {
+            // release the file FD from the future, so we can use it later 
+            fs_entry_cache_block_future_release_fd( fut );
+         }
+         cache_block_future_clean( fut );
+      }
+   };
+   
+   fs_entry_cache_block_future_apply_all( futs, local::release_and_clean, &close_fds );
+   
+   return 0;
+}
+
+
+// flush a cache write 
+int fs_entry_flush_cache_write( struct cache_block_future* f ) {
+
+   // wait for this block to finish 
+   int rc = fs_entry_cache_block_future_wait( f );
+   
+   if( rc != 0 ) {
+      errorf("fs_entry_cache_block_future_wait rc = %d\n", rc );
+      return rc;
+   }
+   
+   // was there an IO error?
+   if( fs_entry_cache_block_future_has_error( f ) ) {
+      int aio_rc = fs_entry_cache_block_future_get_aio_error( f );
+      int write_rc = fs_entry_cache_block_future_get_write_error( f );
+      
+      errorf("Failed to flush, aio_rc = %d, write_rc = %d\n", aio_rc, write_rc );
+      
+      return -EIO;
+   }
+   
+   return 0;
+}
+
+
+// flush cache writes 
+int fs_entry_flush_cache_writes( vector<struct cache_block_future*>* futs ) {
+   
+   struct local {
+      
+      // flush a block 
+      static void flush_block( struct cache_block_future* fut, void* cls ) {
+         int* worst_rc = (int*)cls;
+         
+         int rc = fs_entry_flush_cache_write( fut );
+         
+         if( rc != 0 ) {
+            errorf("fs_entry_flush_cache_write rc = %d\n", rc);
+            
+            *worst_rc = rc;
+         }
+      }
+   };
+   
+   int worst_rc = 0;
+   
+   fs_entry_cache_block_future_apply_all( futs, local::flush_block, &worst_rc );
+   
+   return worst_rc;
+}
+
 
 // set up a file's cache directory.
 static int fs_entry_cache_file_setup( struct fs_core* core, uint64_t file_id, int64_t version, mode_t mode ) {
@@ -1211,6 +1321,14 @@ int fs_entry_cache_block_future_release_fd( struct cache_block_future* f ) {
    int fd = f->block_fd;
    f->block_fd = -1;
    return fd;
+}
+
+// extract the data from a future
+// caller must free 
+char* fs_entry_cache_block_future_release_data( struct cache_block_future* f ) {
+   char* ret = f->block_data;
+   f->block_data = NULL;
+   return ret;
 }
 
 // promote a cached block, so it doesn't get evicted

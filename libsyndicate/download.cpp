@@ -79,13 +79,14 @@ int md_downloader_init( struct md_downloader* dl, char const* name ) {
 
 // start up a downloader 
 int md_downloader_start( struct md_downloader* dl ) {
+   dl->running = true;
+   
    dl->thread = md_start_thread( md_downloader_main, dl, false );
    if( dl->thread == (pthread_t)(-1) ) {
       errorf("%s: failed to start\n", dl->name);
       return -1;
    }
    
-   dl->running = true;
    return 0;
 }
 
@@ -516,7 +517,9 @@ int md_download_sem_wait( sem_t* sem, int64_t timeout_ms ) {
 // wait for a download to finish, either in error or not 
 // return the result of waiting, NOT the result of the download 
 int md_download_context_wait( struct md_download_context* dlctx, int64_t timeout_ms ) {
+   
    int rc = md_download_sem_wait( &dlctx->sem, timeout_ms );
+   
    if( rc != 0 ) {
       errorf("md_download_sem_wait rc = %d\n", rc );
    }
@@ -532,6 +535,7 @@ int md_download_context_wait_any( struct md_download_set* dlset, int64_t timeout
    
    // wait for at least one of them to finish 
    rc = md_download_sem_wait( &dlset->sem, timeout_ms );
+   
    if( rc != 0 ) {
       errorf("md_download_sem_wait rc = %d\n", rc );
    }
@@ -670,8 +674,7 @@ int md_download_context_cancel( struct md_downloader* dl, struct md_download_con
 
 
 // release a waiting context set, given one of its now-finished entries.
-// dl must be write-locked
-int md_download_set_wakeup( struct md_downloader* dl, struct md_download_context* dlctx ) {
+int md_download_set_wakeup( struct md_download_context* dlctx ) {
    
    int rc = 0;
    
@@ -705,25 +708,20 @@ int md_downloader_run_multi( struct md_downloader* dl ) {
    // download for a bit
    curl_multi_perform( dl->curlm, &still_running );
 
-   // check back at most once a second
-   timeout.tv_sec = 1;
-   timeout.tv_usec = 0;
+   // don't wait more than 10ms
+   timeout.tv_sec = 0;
+   timeout.tv_usec = 10000;      // 10ms
 
-   rc = curl_multi_timeout( dl->curlm, &curl_timeo );
-   if( rc != 0 ) {
-      errorf("%s: curl_multi_timeout rc = %d\n", dl->name, rc);
-      rc = -ENODATA;
-      return rc;
-   }
+   curl_multi_timeout( dl->curlm, &curl_timeo );
    
-   if( curl_timeo >= 0 ) {
+   if( curl_timeo > 0 ) {
+      dbprintf("curl_timeout = %ld\n", curl_timeo );
       timeout.tv_sec = curl_timeo / 1000;
-      if( timeout.tv_sec > 1 ) {
-         timeout.tv_sec = 1;
+      if( timeout.tv_sec > 0 ) {
+         timeout.tv_sec = 0;
       }
-      else {
-         timeout.tv_usec = (curl_timeo % 1000) * 1000;
-      }
+      
+      timeout.tv_usec = (curl_timeo % 1000) * 1000;
    }
 
    // get fd set
@@ -763,11 +761,13 @@ int md_downloader_finalize_download_context( struct md_download_context* dlctx, 
    }
    
    // check error code 
-   rc = curl_easy_getinfo( dlctx->curl, CURLINFO_OS_ERRNO, &os_errno );
-      
    if( rc != 0 ) {
-      errorf("curl_easy_getinfo rc = %d\n", rc );
-      os_errno = EIO;
+      rc = curl_easy_getinfo( dlctx->curl, CURLINFO_OS_ERRNO, &os_errno );
+         
+      if( rc != 0 ) {
+         errorf("curl_easy_getinfo rc = %d\n", rc );
+         os_errno = EIO;
+      }
    }
    
    // get URL 
@@ -825,7 +825,7 @@ int md_downloader_finalize_download_contexts( struct md_downloader* dl ) {
             }
             
             // wake up the set waiting on this dlctx 
-            md_download_set_wakeup( dl, dlctx );
+            md_download_set_wakeup( dlctx );
          }
       } 
       
@@ -924,6 +924,11 @@ int md_download_context_get_effective_url( struct md_download_context* dlctx, ch
    return 0;
 }
 
+// get the cache cls (only in reference)
+void* md_download_context_get_cache_cls( struct md_download_context* dlctx ) {
+   return dlctx->cache_func_cls;
+}
+
 // did a download context work?
 bool md_download_context_succeeded( struct md_download_context* dlctx, int desired_HTTP_status ) {
    return (dlctx->curl_rc == 0 && dlctx->transfer_errno == 0 && dlctx->http_status == desired_HTTP_status); 
@@ -1020,6 +1025,7 @@ int md_download_from_caches( struct md_downloader* dl, struct md_closure* closur
    rc = md_download_context_connect_cache( dl, &dlctx, closure, base_url );
    if( rc != 0 ) {
       errorf("%s: md_download_context_connect_cache(%s) rc = %d\n", dl->name, base_url, rc );
+      md_download_context_free( &dlctx, NULL );
       return rc;
    }
    

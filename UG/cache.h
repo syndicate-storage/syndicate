@@ -176,6 +176,11 @@ struct cache_block_future* fs_entry_cache_write_block_async( struct fs_core* cor
 int fs_entry_cache_block_future_wait( struct cache_block_future* f );
 int fs_entry_cache_block_future_free( struct cache_block_future* f );
 int fs_entry_cache_block_future_release_fd( struct cache_block_future* f );
+char* fs_entry_cache_block_future_release_data( struct cache_block_future* f );
+
+// flushes
+int fs_entry_flush_cache_write( struct cache_block_future* f );
+int fs_entry_flush_cache_writes( vector<struct cache_block_future*>* futs );
 
 // synchronous block I/O
 int fs_entry_cache_is_block_readable( struct syndicate_cache* cache, uint64_t file_id, int64_t file_version, uint64_t block_id, int64_t block_version );
@@ -203,6 +208,13 @@ int fs_entry_cache_file_blocks_apply( char const* local_path, int (*block_func)(
 int fs_entry_cache_block_future_has_error( struct cache_block_future* f );
 int fs_entry_cache_block_future_get_aio_error( struct cache_block_future* f );
 int fs_entry_cache_block_future_get_write_error( struct cache_block_future* f );
+
+// memory management 
+int fs_entry_cache_block_future_free_all( vector<struct cache_block_future*>* futs, bool close_fds );
+int fs_entry_cache_block_future_clean_all( vector<struct cache_block_future*>* futs, bool close_fds );
+
+// misc
+int fs_entry_cache_block_future_apply_all( vector<struct cache_block_future*>* futs, void (*func)( struct cache_block_future*, void* ), void* func_cls );
 
 }
 

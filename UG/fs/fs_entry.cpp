@@ -178,13 +178,13 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    fs_entry_mark_read_stale( core->root );
    
    // initialize the driver
-   core->closure = CALLOC_LIST( struct md_closure, 1 );
    rc = driver_init( core, &core->closure );
    
    if( rc != 0 && rc != -ENOENT ) {
       errorf("driver_init rc = %d\n", rc );
       
-      free( core->closure );
+      if( core->closure )
+         free( core->closure );
       
       fs_entry_destroy( core->root, true );
       free( core->root );
@@ -210,6 +210,9 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
 int fs_core_destroy( struct fs_core* core ) {
 
    if( core->closure ) {
+      
+      dbprintf("%s", "shutting down driver\n");
+      
       int rc = driver_shutdown( core->closure );
       if( rc != 0 ) {
          errorf("WARN: driver_shutdown rc = %d\n", rc );

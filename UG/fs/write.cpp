@@ -133,7 +133,7 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
    }
    
    // do we have a partial tail?
-   if( ((offset + len) % core->blocking_factor) != 0 && end_block_id != start_block_id ) {
+   if( ((offset + len) % core->blocking_factor) != 0 && end_block_id > start_block_id ) {
       
       // fill in the tail
       tail->buf_ptr = buf + head->write_len + ((end_block_id - start_block_id) * core->blocking_factor);
@@ -165,10 +165,14 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
    }
    
    if( overwrite_start <= overwrite_end ) {
+      
       // will overwrite at least one block 
       wvec->overwritten = new fs_entry_whole_block_list_t();
       
-      for( uint64_t block_id = overwrite_start; block_id <= end_block_id; block_id++ ) {
+      for( uint64_t block_id = overwrite_start; block_id <= overwrite_end; block_id++ ) {
+         
+         dbprintf("Whole block: block %" PRIu64 "\n", block_id );
+         
          // whole-block overwrite
          struct fs_entry_whole_block whole_block;
          memset( &whole_block, 0, sizeof(struct fs_entry_whole_block) );
@@ -431,71 +435,6 @@ int fs_entry_cache_evict_blocks_async( struct fs_core* core, struct fs_entry* fe
    
    return 0;
 }
-
-
-// flush a cache write 
-int fs_entry_flush_cache_write( struct cache_block_future* f ) {
-
-   // wait for this block to finish 
-   int rc = fs_entry_cache_block_future_wait( f );
-   
-   if( rc != 0 ) {
-      errorf("fs_entry_cache_block_future_wait rc = %d\n", rc );
-      return rc;
-   }
-   
-   // was there an IO error?
-   if( fs_entry_cache_block_future_has_error( f ) ) {
-      int aio_rc = fs_entry_cache_block_future_get_aio_error( f );
-      int write_rc = fs_entry_cache_block_future_get_write_error( f );
-      
-      errorf("Failed to flush, aio_rc = %d, write_rc = %d\n", aio_rc, write_rc );
-      
-      return -EIO;
-   }
-   
-   return 0;
-}
-
-
-// flush cache writes 
-int fs_entry_flush_cache_writes( vector<struct cache_block_future*>* futs ) {
-   
-   for( vector<struct cache_block_future*>::iterator itr = futs->begin(); itr != futs->end(); itr++ ) {
-      
-      struct cache_block_future* f = *itr;
-      
-      int rc = fs_entry_flush_cache_write( f );
-      
-      if( rc != 0 ) {
-         errorf("fs_entry_flush_cache_write rc = %d\n", rc);
-         return rc;
-      }
-   }
-   
-   return 0;
-}
-
-
-// free cache futures 
-int fs_entry_cache_block_future_free_all( vector<struct cache_block_future*>* futs, bool close_fds ) {
-   
-   for( vector<struct cache_block_future*>::iterator itr = futs->begin(); itr != futs->end(); itr++ ) {
-
-      struct cache_block_future* f = *itr;
-      if( !close_fds ) {
-         // release the file FD from the future, so we can use it later 
-         fs_entry_cache_block_future_release_fd( f );
-      }
-      
-      fs_entry_cache_block_future_free( f );
-   }
-   
-   futs->clear();
-   
-   return 0;
-}
-
 
 // apply partial blocks to existing block data.
 // block_head and block_tail are full-sized blocks that need to be patched

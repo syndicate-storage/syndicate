@@ -29,6 +29,7 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
    // connect to the cache...
    struct driver_connect_cache_cls driver_cls;
    driver_cls.client = core->ms;
+   driver_cls.core = core;
    
    // process the manifest 
    struct driver_read_manifest_postdown_cls manifest_cls;

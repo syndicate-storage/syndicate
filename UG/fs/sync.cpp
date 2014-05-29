@@ -16,6 +16,7 @@
 
 #include "sync.h"
 #include "consistency.h"
+#include "cache.h"
 #include "write.h"
 #include "network.h"
 
@@ -132,7 +133,12 @@ int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_
       
       // remember these, so we know to replicate them later
       dirty_blocks[ block_id ] = new_binfo;
-      garbage_blocks[ block_id ] = old_binfo;
+      
+      if( rc > 0 ) {
+         // rc > 0 indicates that there is a garbage block
+         garbage_blocks[ block_id ] = old_binfo;
+         rc = 0;
+      }
       
       cache_futs->push_back( fut );
    }
@@ -346,8 +352,9 @@ int fs_entry_sync_data_revert( struct fs_core* core, struct fs_entry* fent, stru
    fs_entry_merge_garbage_blocks( core, fent, old_file_id, old_file_version, sync_ctx->garbage_blocks, &unmerged_garbage );       // TODO: deal with the case where subsequent writes garbage collect newer versions of the same block
    
    fs_entry_free_modification_map_ex( &unreplicated, false );        // keep unreplicated blocks' file descriptors open, so we can replicate them later
-   fs_entry_free_modification_map_ex( &unmerged_dirty, true );       // unmerged blocks are overwritten.  Close their file descriptors, so they can be evicted.
    fs_entry_free_modification_map_ex( &unmerged_garbage, false );    // TODO: deal with the case where subsequent writes garbage collect newer versions of the same block
+   
+   // NOTE: no need to free unmerged_dirty, since it only contains pointers to data in unreplicated (which we just freed)
    
    // clear out any instances of this sync context 
    fs_entry_sync_context_remove( fent, sync_ctx );

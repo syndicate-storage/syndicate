@@ -167,6 +167,10 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    err = fs_entry_revalidate_path( core, volume, path );
    if( err != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, err );
+      
+      if( err == -ENOENT )
+         return -ENOENT;
+      
       return -EREMOTEIO;
    }
 

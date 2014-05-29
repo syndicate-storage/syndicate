@@ -139,6 +139,7 @@ int md_download_context_get_http_status( struct md_download_context* dlctx );
 int md_download_context_get_errno( struct md_download_context* dlctx );
 int md_download_context_get_curl_rc( struct md_download_context* dlctx );
 int md_download_context_get_effective_url( struct md_download_context* dlctx, char** url );
+void* md_download_context_get_cache_cls( struct md_download_context* dlctx );
 bool md_download_context_succeeded( struct md_download_context* dlctx, int desired_HTTP_status );
 bool md_download_context_finalized( struct md_download_context* dlctx );
 

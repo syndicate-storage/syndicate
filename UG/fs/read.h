@@ -72,6 +72,9 @@ typedef set<struct fs_entry_read_block_future*> fs_entry_read_block_future_set_t
 // look-up read future from download context 
 typedef map<struct md_download_context*, struct fs_entry_read_block_future*> fs_entry_download_to_future_map_t;
 
+// function to call after finalization of a read future on download (either in error or on success)
+typedef int (*fs_entry_read_block_future_download_finalizer_func)( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_block_future* fut, void* cls );
+
 // read context
 struct fs_entry_read_context {
    
@@ -94,6 +97,7 @@ int fs_entry_read_context_run_local( struct fs_core* core, char const* fs_path, 
 bool fs_entry_read_context_has_downloading_blocks( struct fs_entry_read_context* read_ctx );
 int fs_entry_read_context_setup_downloads( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx );
 int fs_entry_read_context_run_downloads( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx );
+int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx, fs_entry_read_block_future_download_finalizer_func finalizer, void* finalizer_cls );
 
 // block futures 
 int fs_entry_read_block_future_init( struct fs_entry_read_block_future* block_fut, uint64_t gateway_id, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version,

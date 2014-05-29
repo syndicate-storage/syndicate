@@ -62,7 +62,7 @@ int main( int argc, char** argv ) {
    
    // write data, if we're supposed to 
    if( data != NULL ) {
-      dbprintf("\n\n\nfs_entry_write( %s, %s )\n\n\n", path, data );
+      dbprintf("\n\n\nfs_entry_write( %s, '%s' )\n\n\n", path, data );
       rc = fs_entry_write( state->core, fh, data, strlen(data), 0 );
       
       if( rc != (signed)strlen(data) ) {

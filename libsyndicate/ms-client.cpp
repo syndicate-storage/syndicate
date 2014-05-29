@@ -180,7 +180,7 @@ int ms_client_init_curl_handle( struct md_syndicate_conf* conf, CURL* curl, char
 
 
 // download from the caches...
-int ms_client_connect_cache( struct md_closure* closure, CURL* curl, char const* url, void* cls ) {
+static int ms_client_connect_cache_impl( struct md_closure* closure, CURL* curl, char const* url, void* cls ) {
    
    int ret = -1;
    struct md_syndicate_conf* conf = (struct md_syndicate_conf*)cls;
@@ -201,7 +201,7 @@ int ms_client_connect_cache( struct md_closure* closure, CURL* curl, char const*
 
 // default connect cache (for external consumption)
 int ms_client_volume_connect_cache( struct md_closure* closure, CURL* curl, char const* url, struct md_syndicate_conf* conf ) {
-   return ms_client_connect_cache( closure, curl, url, conf );
+   return ms_client_connect_cache_impl( closure, curl, url, conf );
 }
 
 // start internal threads (only safe to do so after we have a private key)
@@ -321,6 +321,10 @@ int ms_client_try_load_key( struct md_syndicate_conf* conf, EVP_PKEY** key, char
 // create an MS client context
 int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndicate_conf* conf ) {
 
+   if( conf == NULL ) {
+      return -EINVAL;
+   }
+   
    memset( client, 0, sizeof(struct ms_client) );
 
    client->gateway_type = gateway_type;
@@ -1149,7 +1153,7 @@ int ms_client_download_cert_bundle_manifest( struct ms_client* client, uint64_t 
    
    ms_client_begin_downloading_view( client, url, NULL );
    
-   int rc = md_download_manifest( client->conf, &client->dl, client->volume->cache_closure, client->ms_view, url, mmsg, ms_client_connect_cache, client->conf, NULL, NULL );
+   int rc = md_download_manifest( client->conf, &client->dl, client->volume->cache_closure, client->ms_view, url, mmsg, ms_client_connect_cache_impl, client->conf, NULL, NULL );
    
    int http_response = ms_client_end_downloading_view( client );
    
@@ -1301,7 +1305,7 @@ int ms_client_download_cert( struct ms_client* client, CURL* curl, char const* u
    ssize_t buf_len = 0;
    int http_status = 0;
    
-   int rc = md_download( client->conf, &client->dl, client->volume->cache_closure, curl, url, &buf, &buf_len, MS_MAX_CERT_SIZE, &http_status, ms_client_connect_cache, client->conf );
+   int rc = md_download( client->conf, &client->dl, client->volume->cache_closure, curl, url, &buf, &buf_len, MS_MAX_CERT_SIZE, &http_status, ms_client_connect_cache_impl, client->conf );
    
    if( rc != 0 ) {
       errorf("md_download_cached(%s) rc = %d\n", url, rc );

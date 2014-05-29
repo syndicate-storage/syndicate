@@ -28,6 +28,7 @@ MD_CLOSURE_PROTOTYPE_END
 
 
 // initialize the closure
+// if this fails due to there being no closure on file, a dummy closure will be used instead
 int driver_init( struct fs_core* core, struct md_closure** _ret ) {
    // get the closure text 
    char* closure_text = NULL;
@@ -122,7 +123,8 @@ int driver_connect_cache( struct md_closure* closure, CURL* curl, char const* ur
    }
    else {
       errorf("%s", "WARN: connect_cache stub\n");
-      ms_client_connect_cache( closure, curl, url, closure_cls->client->conf );
+      
+      ms_client_volume_connect_cache( closure, curl, url, closure_cls->client->conf );
       ret = 0;
    }
    
