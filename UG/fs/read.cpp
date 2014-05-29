@@ -650,7 +650,7 @@ bool fs_entry_read_context_has_downloading_blocks( struct fs_entry_read_context*
 
 // is a read future finalized?
 static bool fs_entry_is_read_block_future_finalized( struct fs_entry_read_block_future* block_fut ) {
-   return (block_fut->status == READ_FINISHED && block_fut->status == READ_ERROR);
+   return (block_fut->status == READ_FINISHED || block_fut->status == READ_ERROR);
 }
 
 // is a read future downloading?
@@ -663,6 +663,9 @@ static bool fs_entry_is_read_block_future_downloading( struct fs_entry_read_bloc
 // finalized read futures will be ignored.
 // fent must be read-locked
 int fs_entry_read_context_setup_downloads( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx ) {
+   
+   // look-aside map for whether or not a block should be downloaded 
+   set<uint64_t> download_lookaside;
    
    for( fs_entry_read_block_future_set_t::iterator itr = read_ctx->reads->begin(); itr != read_ctx->reads->end(); itr++ ) {
       
@@ -682,6 +685,9 @@ int fs_entry_read_context_setup_downloads( struct fs_core* core, struct fs_entry
             
             return -ENODATA;
          }
+         
+         // will need to insert 
+         download_lookaside.insert( block_fut->block_id );
       }
       else {
          dbprintf("block %" PRIu64": not downloading, status = %d\n", block_fut->block_id, block_fut->status );
@@ -694,6 +700,10 @@ int fs_entry_read_context_setup_downloads( struct fs_core* core, struct fs_entry
       
       // get block future 
       struct fs_entry_read_block_future* block_fut = *itr;
+      
+      // need to download?  if not, then skip
+      if( download_lookaside.count( block_fut->block_id ) == 0 )
+         continue;
       
       // track this block future 
       fs_entry_read_context_track_downloading_block( read_ctx, block_fut );
@@ -861,8 +871,8 @@ static int fs_entry_read_context_cancel_downloads( struct fs_core* core, struct 
 
 // run one or more read downloads in a read context.
 // stop downloading if we encounter an EOF condition
-// fent will be read-locked and read-unlocked across multiple download completions.
-int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx, fs_entry_read_block_future_download_finalizer_func finalizer, void* finalizer_cls ) {
+// fent will be read-locked and read-unlocked across multiple download completions, unless we indicate otherwise in the write_locked flag
+int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx, bool write_locked, fs_entry_read_block_future_download_finalizer_func finalizer, void* finalizer_cls ) {
    
    int rc = 0;
    
@@ -911,7 +921,8 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
                fs_entry_read_context_untrack_downloading_block_itr( read_ctx, curr_itr );
                
                // lock this so we can access it in processing the next download step
-               fs_entry_rlock( fent );
+               if( !write_locked )
+                  fs_entry_rlock( fent );
                
                // do internal processing of the future (finalizing it)
                rc = fs_entry_read_block_future_process_download( core, fent, block_fut );
@@ -922,7 +933,8 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
                   finalizer_rc = (*finalizer)( core, fent, block_fut, finalizer_cls );
                }
                
-               fs_entry_unlock( fent );
+               if( !write_locked )
+                  fs_entry_unlock( fent );
                
                // internal processing succeeded?
                if( rc != 0 ) {
@@ -978,7 +990,7 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
 
 // default download runner--doesn't do any finalization of its own
 int fs_entry_read_context_run_downloads( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx ) {
-   return fs_entry_read_context_run_downloads_ex( core, fent, read_ctx, NULL, NULL );
+   return fs_entry_read_context_run_downloads_ex( core, fent, read_ctx, false, NULL, NULL );
 }
 
 
@@ -1534,7 +1546,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
       while( fs_entry_read_context_has_downloading_blocks( &read_ctx ) ) {
          
          // get some data, and cache blocks as we get them 
-         rc = fs_entry_read_context_run_downloads_ex( core, fent, &read_ctx, fs_entry_read_block_future_finalizer_cache_async, &cache_futs );
+         rc = fs_entry_read_context_run_downloads_ex( core, fent, &read_ctx, false, fs_entry_read_block_future_finalizer_cache_async, &cache_futs );
          if( rc != 0 ) {
             errorf("fs_entry_read_context_run_downloads_ex( %s ) rc = %zd\n", fs_path, rc );
             fs_entry_read_run_cleanup( &read_ctx );

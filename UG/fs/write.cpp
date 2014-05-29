@@ -113,6 +113,8 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
    uint64_t start_block_id = fs_entry_block_id( core, offset );
    uint64_t end_block_id = fs_entry_block_id( core, offset + len );
    
+   off_t buf_off = 0;
+   
    // do we have a partial head?
    if( (offset % core->blocking_factor) != 0 || start_block_id == end_block_id ) {
       
@@ -120,7 +122,7 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
       head->buf_ptr = buf;
       head->block_id = start_block_id;
       head->write_offset = (offset % core->blocking_factor);
-      head->write_len = MIN( offset + len, core->blocking_factor - head->write_offset );
+      head->write_len = MIN( len, core->blocking_factor - head->write_offset );
       
       head->has_old_version = fs_entry_has_old_block( core, fent, start_block_id );
       if( head->has_old_version ) {
@@ -129,14 +131,31 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
       
       wvec->has_head = true;
       
-      dbprintf("Partial head: block %" PRIu64 " [%zu] offset %zu\n", head->block_id, head->write_len, head->write_offset );
+      // align the next blocks to the block boundary 
+      buf_off = core->blocking_factor - (offset % core->blocking_factor);
+      
+      ////////////////////////////////////////////////////////////
+      char* tmp = CALLOC_LIST( char, head->write_len + 1 );
+      memcpy( tmp, head->buf_ptr, head->write_len );
+      
+      dbprintf("Partial head: block %" PRIu64 " [%zu] offset %zu, data '%s'\n", head->block_id, head->write_len, head->write_offset, tmp );
+      
+      free( tmp );
+      ////////////////////////////////////////////////////////////
    }
    
    // do we have a partial tail?
    if( ((offset + len) % core->blocking_factor) != 0 && end_block_id > start_block_id ) {
       
-      // fill in the tail
-      tail->buf_ptr = buf + head->write_len + ((end_block_id - start_block_id) * core->blocking_factor);
+      // fill in the tail.
+      // NOTE: if we have a head, then don't count the first block 
+      off_t tail_off = 0;
+      if( wvec->has_head )
+         tail_off = buf_off + ((end_block_id - start_block_id - 1) * core->blocking_factor);
+      else 
+         tail_off = buf_off + ((end_block_id - start_block_id) * core->blocking_factor);
+      
+      tail->buf_ptr = buf + tail_off;
       tail->block_id = end_block_id;
       tail->write_len = (offset + len) % core->blocking_factor;
       
@@ -147,7 +166,14 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
       
       wvec->has_tail = true;
       
-      dbprintf("Partial tail: block %" PRIu64 " [%zu]\n", tail->block_id, tail->write_len );
+      ////////////////////////////////////////////////////////////
+      char* tmp = CALLOC_LIST( char, tail->write_len + 1 );
+      memcpy( tmp, tail->buf_ptr, tail->write_len );
+      
+      dbprintf("Partial tail: block %" PRIu64 " [%zu], data '%s'\n", tail->block_id, tail->write_len, tmp );
+      
+      free( tmp );
+      ////////////////////////////////////////////////////////////
    }
    
    // do we have overwritten blocks?
@@ -159,8 +185,8 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
       overwrite_start ++;
    }
    
-   if( wvec->has_tail ) {
-      // have a partial_tail, exclude the last affeted block 
+   if( wvec->has_tail || (offset + len) % core->blocking_factor == 0 ) {
+      // have a partial_tail, exclude the last affeted block and exclude 0-length tails 
       overwrite_end --;
    }
    
@@ -171,17 +197,23 @@ int fs_entry_split_write( struct fs_core* core, struct fs_entry* fent, char cons
       
       for( uint64_t block_id = overwrite_start; block_id <= overwrite_end; block_id++ ) {
          
-         dbprintf("Whole block: block %" PRIu64 "\n", block_id );
-         
          // whole-block overwrite
          struct fs_entry_whole_block whole_block;
          memset( &whole_block, 0, sizeof(struct fs_entry_whole_block) );
          
-         // NOTE: head->write_offset will be 0, if we don't have a partial head (as desired)
-         whole_block.buf_ptr = buf + head->write_offset + (block_id - overwrite_start) * core->blocking_factor;
+         whole_block.buf_ptr = buf + buf_off + (block_id - overwrite_start) * core->blocking_factor;
          whole_block.block_id = block_id;
          
          wvec->overwritten->push_back( whole_block );
+         
+         ////////////////////////////////////////////////////////////
+         char* tmp = CALLOC_LIST( char, core->blocking_factor + 1 );
+         memcpy( tmp, whole_block.buf_ptr, core->blocking_factor );
+         
+         dbprintf("Whole block: block %" PRIu64 ", data '%s'\n", block_id, tmp );
+            
+         free( tmp );
+         ////////////////////////////////////////////////////////////
       }
    }
    
@@ -313,10 +345,10 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, cha
 
 
 // get the partially-overwritten blocks' data, so we can put a full block.
-// fent must be at least read-locked.
+// fent must be at least read-locked, but we need to indicate if it is write-locked (since the downloader needs to know)
 // return 0 on success
 // return -ENODATA if not all data could be obtained
-int fs_entry_read_partial_blocks( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct fs_entry_read_context* read_ctx ) {
+int fs_entry_read_partial_blocks( struct fs_core* core, char const* fs_path, struct fs_entry* fent, bool write_locked, struct fs_entry_read_context* read_ctx ) {
    
    int rc = 0;
    
@@ -343,7 +375,7 @@ int fs_entry_read_partial_blocks( struct fs_core* core, char const* fs_path, str
       while( fs_entry_read_context_has_downloading_blocks( read_ctx ) ) {
          
          // get some data
-         rc = fs_entry_read_context_run_downloads( core, fent, read_ctx );
+         rc = fs_entry_read_context_run_downloads_ex( core, fent, read_ctx, write_locked, NULL, NULL );
          if( rc != 0 ) {
             errorf("fs_entry_read_context_run_downloads( %s ) rc = %d\n", fs_path, rc );
             return -ENODATA;
@@ -578,7 +610,8 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
    
    // get partially-overwritten blocks, if we need to, and patch them
    if( fs_entry_read_context_size( &read_ctx ) > 0 ) {
-      rc = fs_entry_read_partial_blocks( core, fs_path, fent, &read_ctx );
+      // NOTE: we're write-locked in this method
+      rc = fs_entry_read_partial_blocks( core, fs_path, fent, true, &read_ctx );
       if( rc != 0 ) {
          // failed to read data...can't proceed 
          errorf("fs_entry_read_partial_blocks(%s %" PRIX64 ".%" PRId64 ") rc = %d\n", fs_path, fent->file_id, fent->version, rc );
@@ -688,7 +721,7 @@ bool fs_entry_can_fast_write( struct fs_core* core, struct fs_entry* fent, off_t
    
    // block must be bufferred
    int has_block = fs_entry_has_bufferred_block( fent, start_block_id );
-   if( has_block != 0 )
+   if( has_block <= 0 )
       return false;
    
    return true;
@@ -826,7 +859,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       fs_entry_write_vec_free( &wvec );
       
       // free old block data
-      fs_entry_free_modification_map( &old_blocks );
+      // fs_entry_free_modification_map( &old_blocks );
    }
    
    // update the size

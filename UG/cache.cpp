@@ -231,7 +231,7 @@ int fs_entry_cache_block_future_free_all( vector<struct cache_block_future*>* fu
       static void release_and_free( struct cache_block_future* fut, void* cls ) {
          bool* close_fds_ptr = (bool*)cls;
          
-         if( *close_fds_ptr ) {
+         if( !(*close_fds_ptr) ) {
             // release the file FD from the future, so we can use it later 
             fs_entry_cache_block_future_release_fd( fut );
          }

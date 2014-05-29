@@ -539,7 +539,7 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
    int begin_rc = fs_entry_fsync_begin_data( core, fh, sync_ctx );
    
    if( begin_rc < 0 ) {
-      errorf("fs_entry_sync_data_begin( %s %" PRIX64 " ) rc = %d\n", fh->path, fh->fent->file_id, begin_rc );
+      errorf("fs_entry_fsync_begin_data( %s %" PRIX64 " ) rc = %d\n", fh->path, fh->fent->file_id, begin_rc );
       
       return -EIO;
    }

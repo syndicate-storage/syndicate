@@ -36,6 +36,7 @@ int fs_entry_close( struct fs_core* core, struct fs_file_handle* fh ) {
    int rc = 0;
 
    bool sync = false;
+   bool free_working_data = false;
 
    fs_entry_wlock( fh->fent );
 
@@ -49,7 +50,8 @@ int fs_entry_close( struct fs_core* core, struct fs_file_handle* fh ) {
       fh->fent->open_count--;
       
       if( fh->fent->open_count <= 0 ) {
-         fs_entry_free_working_data( fh->fent );
+         // blow the working data away when we're done 
+         free_working_data = true;
       }
 
       rc = fs_entry_try_destroy( core, fh->fent );
@@ -78,6 +80,10 @@ int fs_entry_close( struct fs_core* core, struct fs_file_handle* fh ) {
          
          fs_entry_sync_context_free( &sync_ctx );
       }
+   }
+   
+   if( free_working_data && sync ) {
+      fs_entry_free_working_data( fh->fent );
    }
 
    fs_entry_unlock( fh->fent );

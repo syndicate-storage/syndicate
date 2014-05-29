@@ -1365,6 +1365,7 @@ int fs_entry_setup_working_data( struct fs_core* core, struct fs_entry* fent ) {
    if( fent->dirty_blocks == NULL || fent->garbage_blocks == NULL || fent->bufferred_blocks == NULL )
       return -ENOMEM;
    
+   dbprintf("set up working data for %" PRIX64 "\n", fent->file_id );
    return 0;
 }
 
@@ -1390,6 +1391,8 @@ int fs_entry_free_working_data( struct fs_entry* fent ) {
    fent->garbage_blocks = NULL;
    fent->bufferred_blocks = NULL;
    
+   dbprintf("cleared working data for %" PRIX64 "\n", fent->file_id );
+   
    return 0;
 }
 
@@ -1397,6 +1400,12 @@ int fs_entry_free_working_data( struct fs_entry* fent ) {
 // This replaces versions of the same block.  It will close an existing dirty block's file descriptor, if it is open.
 // fent must be write-locked
 int fs_entry_merge_new_dirty_blocks( struct fs_entry* fent, modification_map* new_dirty_blocks ) {
+   
+   if( fent->dirty_blocks == NULL ) {
+      errorf("BUG: fent->dirty_blocks == %p\n", fent->dirty_blocks );
+      return -EINVAL;
+   }
+   
    for( modification_map::iterator itr = new_dirty_blocks->begin(); itr != new_dirty_blocks->end(); itr++ ) {
       
       uint64_t block_id = itr->first;
@@ -1424,6 +1433,11 @@ int fs_entry_merge_new_dirty_blocks( struct fs_entry* fent, modification_map* ne
 // As such, does NOT replace new versions of the same block, and does NOT put dirty blocks into a new file.
 // fent must be write-locked
 int fs_entry_merge_old_dirty_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t original_file_id, int64_t original_file_version, modification_map* old_dirty_blocks, modification_map* unmerged ) {
+   
+   if( fent->dirty_blocks == NULL ) {
+      errorf("BUG: fent->dirty_blocks == %p\n", fent->dirty_blocks );
+      return -EINVAL;
+   }
    
    uint64_t max_block = fs_entry_block_id( core, fent->size );
    
@@ -1475,6 +1489,11 @@ int fs_entry_merge_old_dirty_blocks( struct fs_core* core, struct fs_entry* fent
 // then any subsequent block written will only have been cached locally (so no need to garbage-collect it).
 // fent must be write-locked 
 int fs_entry_merge_garbage_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t original_file_id, int64_t original_file_version, modification_map* new_garbage_blocks, modification_map* unmerged ) {
+   
+   if( fent->garbage_blocks == NULL ) {
+      errorf("BUG: fent->garbage_blocks == %p\n", fent->garbage_blocks );
+      return -EINVAL;
+   }
    
    uint64_t max_block = fs_entry_block_id( core, fent->size );
    
@@ -1538,7 +1557,8 @@ int fs_entry_has_bufferred_block( struct fs_entry* fent, uint64_t block_id ) {
       }
    }
    else {
-      return -ENOENT;
+      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      return -ENODATA;
    }
 }
 
@@ -1615,7 +1635,8 @@ int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent,
       
       if( binfo->block_buf != NULL ) {
          // range check 
-         if( block_offset + write_len < 0 || block_offset + write_len >= binfo->block_len ) {
+         if( block_offset + write_len < 0 || block_offset + write_len > binfo->block_len ) {
+            dbprintf( "range error: buffer length = %zu, but offset = %jd and write_len = %zu\n", binfo->block_len, block_offset, write_len );
             return -ERANGE;
          }
          else {
@@ -1703,6 +1724,11 @@ int fs_entry_clear_bufferred_block( struct fs_entry* fent, uint64_t block_id ) {
          fs_entry_block_info_free_ex( binfo, true );
       }
    }
+   else {
+      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      return -ENODATA;
+   }
+   
    return 0;
 }
 
@@ -1722,6 +1748,10 @@ int fs_entry_extract_bufferred_blocks( struct fs_entry* fent, modification_map* 
       }
       
       fent->bufferred_blocks->clear();
+   }
+   else {
+      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      return -ENODATA;
    }
    
    return 0;
@@ -1743,6 +1773,10 @@ int fs_entry_emplace_bufferred_blocks( struct fs_entry* fent, modification_map* 
       }
       
       fent->bufferred_blocks->clear();
+   }
+   else {
+      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      return -ENODATA;
    }
    
    return 0;

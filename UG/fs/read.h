@@ -97,7 +97,7 @@ int fs_entry_read_context_run_local( struct fs_core* core, char const* fs_path, 
 bool fs_entry_read_context_has_downloading_blocks( struct fs_entry_read_context* read_ctx );
 int fs_entry_read_context_setup_downloads( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx );
 int fs_entry_read_context_run_downloads( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx );
-int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx, fs_entry_read_block_future_download_finalizer_func finalizer, void* finalizer_cls );
+int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx, bool write_locked, fs_entry_read_block_future_download_finalizer_func finalizer, void* finalizer_cls );
 
 // block futures 
 int fs_entry_read_block_future_init( struct fs_entry_read_block_future* block_fut, uint64_t gateway_id, char const* fs_path, int64_t file_version, uint64_t block_id, int64_t block_version,

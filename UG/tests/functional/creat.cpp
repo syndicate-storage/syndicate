@@ -96,6 +96,8 @@ int main( int argc, char** argv ) {
       dbprintf("\n\n\nfs_entry_close( %s ) rc = %d\n\n\n", path, rc );
    }
    
+   free( fh );
+   
    // shut down the test 
    syndicate_functional_test_shutdown( &syndicate_http );
    
