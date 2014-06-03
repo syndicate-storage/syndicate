@@ -225,9 +225,9 @@ def valid_request( start_response, status="200 OK", resp="OK" ):
 
 
 #-------------------------
-def wsgi_application( environ, start_response ):
+def wsgi_handle_request( environ, start_response ):
    '''
-   WSGI application for the replica manager 
+   handle one WSGI request
    '''
    
    global METADATA_FIELD_NAME

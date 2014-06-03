@@ -27,16 +27,13 @@ import syndicate.util.storage as syndicate_storage
 
 import socket
 import os
+import errno
 import shlex
-import setproctitle
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
 from Crypto import Random
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
-
-
-from wsgiref.simple_server import make_server 
 
 log = rg_common.get_logger()
 
@@ -158,25 +155,16 @@ def setup_syndicate( config ):
    
    return syndicate 
 
+
 #-------------------------
-def run( config, syndicate ):
+def run_devel( hostname, portnum ):
 
-   # get our cert-designated hostname
-   hostname = syndicate.hostname()
+   log.info("Starting development server on %s:%s" % (hostname, portnum))
+
+   from wsgiref.simple_server import make_server 
    
-   # get our key files
-   my_key_file = config.get("gateway_pkey", None )
-   
-   # get our configuration from the MS and start keeping it up to date 
-   rc = rg_closure.init( syndicate, my_key_file )
-   if rc < 0:
-       log.error("Failed to initialize (rc = %s)" % rc)
-       return rc
-
-   log.info("Starting server on %s:%s" % (hostname, syndicate.portnum()))
-
    # start serving
-   httpd = make_server( hostname, syndicate.portnum(), rg_server.wsgi_application )
+   httpd = make_server( hostname, portnum, rg_server.wsgi_handle_request )
    
    httpd.serve_forever()
    
@@ -211,22 +199,42 @@ def build_config( argv ):
          return None
       
    return config
-         
-      
+
+
+
 #-------------------------
-def main( config, syndicate=None ):
+def oneoff_init( argv ):
+   # one-off initializaiton 
+   
+   # load config
+   config = build_config( argv )
+   if config is None:
+      log.error("Failed to load config")
+      return (-errno.ENOENT, None, None)
+   
+   # load syndicate
+   syndicate = setup_syndicate( config )
    if syndicate is None:
-      syndicate = setup_syndicate( config )
-      if syndicate is None:
-         sys.exit(1)
+      log.error("Failed to initialize syndicate")
+      return (-errno.ENOTCONN, None, None)
       
-   return run( config, syndicate )
+   # get our key files
+   my_key_file = config.get("gateway_pkey", None )
+   
+   # get our configuration from the MS and start keeping it up to date 
+   rc = rg_closure.init( syndicate, my_key_file )
+   if rc < 0:
+      log.error("Failed to initialize (rc = %s)" % rc)
+      return (rc, None, None)
+
+   return (0, config, syndicate)
    
 
 #-------------------------    
+# for testing
 if __name__ == "__main__":
-   config = build_config( sys.argv )
-   if config is None:
+   rc, config, syndicate = oneoff_init( sys.argv )
+   if rc != 0:
       sys.exit(1)
    
-   main( config )
+   run_devel( syndicate.hostname(), syndicate.portnum() )
