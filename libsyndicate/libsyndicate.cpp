@@ -1955,7 +1955,7 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
    conf->debug_lock = false;
 
    conf->connect_timeout = 10;
-   conf->replica_connect_timeout = 10;
+   conf->replica_connect_timeout = 60;
    
    conf->portnum = -1;
    conf->transfer_timeout = 300;
