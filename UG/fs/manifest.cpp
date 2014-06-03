@@ -434,15 +434,6 @@ uint64_t file_manifest::get_block_host( struct fs_core* core, uint64_t block_id 
    }
 }
 
-
-// directly put a url set
-void file_manifest::put_url_set( block_url_set* bus ) {
-   pthread_rwlock_wrlock( &this->manifest_lock );
-   this->block_urls[ bus->start_id ] = bus;
-   pthread_rwlock_unlock( &this->manifest_lock );
-}
-
-
 // look up a block version, given a block ID
 int64_t file_manifest::get_block_version( uint64_t block ) {
    pthread_rwlock_rdlock( &this->manifest_lock );
@@ -582,29 +573,6 @@ unsigned char* file_manifest::hash_dup( uint64_t block_id ) {
 }
 
 
-// set the host of a range of blocks
-void file_manifest::set_block_hosts( uint64_t gateway_id, uint64_t start_id, uint64_t end_id ) {
-   if( end_id <= start_id )
-      return;
-   
-   pthread_rwlock_rdlock( &this->manifest_lock );
-   
-   for( uint64_t i = start_id; i < end_id; i++ ) {
-      block_map::iterator itr = this->find_block_set( i );
-      if( itr == this->block_urls.end() ) {
-         // done
-         break;
-      }
-      
-      itr->second->gateway_id = gateway_id;
-      
-      start_id = itr->second->end_id + 1;
-   }
-   
-   pthread_rwlock_unlock( &this->manifest_lock );
-   return;
-}
-
 // is a block potentially cached locally?
 // as in, are we the last known writer of this block?
 int file_manifest::is_block_local( struct fs_core* core, uint64_t block_id ) {
@@ -728,6 +696,7 @@ int file_manifest::get_range( uint64_t block_id, uint64_t* start_id, uint64_t* e
 
 
 // insert a URL into a file manifest
+// this advances the manifest's modtime
 // fent must be at least read-locked
 int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash ) {
    pthread_rwlock_wrlock( &this->manifest_lock );
@@ -896,6 +865,8 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
    // advance the mod time 
    clock_gettime( CLOCK_REALTIME, &this->lastmod );
    
+   dbprintf("put (%s) %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->name, fent->file_id, fent->version, block_id, block_version );
+   
    pthread_rwlock_unlock( &this->manifest_lock );
 
    /*
@@ -918,6 +889,7 @@ int file_manifest::put_hole( struct fs_core* core, struct fs_entry* fent, uint64
 }
 
 // truncate a manifest
+// this advances the manifest's modtime
 void file_manifest::truncate( uint64_t new_end_id ) {
    pthread_rwlock_wrlock( &this->manifest_lock );
 
@@ -940,11 +912,11 @@ void file_manifest::truncate( uint64_t new_end_id ) {
       }
    }
 
-   pthread_rwlock_unlock( &this->manifest_lock );
-
    // advance the mod time 
    clock_gettime( CLOCK_REALTIME, &this->lastmod );
    
+   pthread_rwlock_unlock( &this->manifest_lock );
+
    /*
    char* data = this->serialize_str();
    dbprintf( "Manifest is now:\n%s\n", data);

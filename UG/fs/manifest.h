@@ -148,9 +148,6 @@ public:
    // put a block hole 
    int put_hole( struct fs_core* core, struct fs_entry* fent, uint64_t block_id );
 
-   // directly put a url set
-   void put_url_set( block_url_set* bus );
-
    // truncate a manifest to a new (smaller) size.  Nothing happens if new_end_block is beyond the size of this manifest
    void truncate( uint64_t new_end_block );
 
@@ -165,9 +162,6 @@ public:
    
    // get the hashes of the blocks in a certain range 
    unsigned char** get_block_hashes( uint64_t start_id, uint64_t end_id );
-   
-   // set the host of a sequence of blocks
-   void set_block_hosts( uint64_t gateway_id, uint64_t start_id, uint64_t end_id );
 
    // is a block local?
    int is_block_local( struct fs_core* core, uint64_t block_id );

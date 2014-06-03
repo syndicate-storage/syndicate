@@ -239,6 +239,8 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    rc = fs_entry_flush_bufferred_blocks_async( core, fs_path, fent, &cache_futs );
    if( rc != 0 ) {
       errorf("fs_entry_flush_bufferred_blocks( %s %" PRIX64 " ) rc = %d\n", fs_path, fent->file_id, rc);
+      
+      memset( _sync_ctx, 0, sizeof(struct sync_context) );
       return rc;
    }
    
@@ -255,6 +257,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
       fs_entry_replace_garbage_blocks( fent, sync_ctx.garbage_blocks );
       md_entry_free( &sync_ctx.md_snapshot );
       
+      memset( _sync_ctx, 0, sizeof(struct sync_context) );
       return rc;
    }
    
@@ -288,6 +291,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
          fs_entry_replace_garbage_blocks( fent, sync_ctx.garbage_blocks );
          md_entry_free( &sync_ctx.md_snapshot );
          
+         memset( _sync_ctx, 0, sizeof(struct sync_context) );
          return rc;
       }
    }
@@ -313,6 +317,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
       fs_entry_replace_garbage_blocks( fent, sync_ctx.garbage_blocks );
       md_entry_free( &sync_ctx.md_snapshot );
       
+      memset( _sync_ctx, 0, sizeof(struct sync_context) );
       return rc;
    }
    
@@ -536,8 +541,10 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
    int rc = 0;
    
    // do we have data to flush?  if not, then done 
-   if( !fs_entry_has_dirty_blocks( fh->fent ) )
+   if( !fh->fent->dirty ) {
+      dbprintf("Not dirty: %s %" PRIX64 "\n", fh->path, fh->fent->file_id );
       return 0;
+   }
    
    // start fsync
    int begin_rc = fs_entry_fsync_begin_data( core, fh, sync_ctx );

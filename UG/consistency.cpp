@@ -210,8 +210,17 @@ int fs_entry_reload( struct fs_entry_consistency_cls* consistency_cls, struct fs
       
    fent->name = strdup( ent->name );
    
-   if( fent->manifest )
+   if( fent->manifest ) {
       fent->manifest->set_modtime( ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
+   }
+   else if( fent->ftype == FTYPE_FILE ) {
+      // create a new, uninitialized manifest for this file
+      fent->manifest = new file_manifest();
+      fent->manifest->set_modtime( ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
+      fent->manifest->mark_stale();
+      
+      dbprintf("initialize new manifest for %" PRIX64 ".%" PRId64 "\n", fent->file_id, fent->version );
+   }
    
    fs_entry_mark_read_fresh_path( consistency_cls, fent );
    dbprintf("reloaded %s up to (%" PRIu64 ".%d)\n", ent->name, ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
@@ -256,8 +265,7 @@ static struct fs_entry* fs_entry_attach_ms_file( struct fs_core* core, struct fs
    fs_entry_init_md( core, new_file, ms_record );
 
    // Make sure this is a directory we're attaching
-   if( ( new_file->ftype != FTYPE_FILE ) &&
-	  ( new_file->ftype != FTYPE_FIFO )) {
+   if( new_file->ftype != FTYPE_FILE && new_file->ftype != FTYPE_FIFO ) {
       // invalid MS data
       errorf("not a file: /%" PRIu64 "/%" PRIu64 "/%" PRIX64 " (type = %d)\n", ms_record->volume, ms_record->coordinator, ms_record->file_id, new_file->ftype );
       fs_entry_destroy( new_file, true );
@@ -575,7 +583,11 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
          continue;
       
       ms_ents[i] = &(*ms_ents_vec)[i];
-      dbprintf("listing: %" PRIX64 " %s.%" PRId64 " (mtime=%" PRId64 ".%d) (write_nonce=%" PRId64 ")\n", ms_ents[i]->file_id, ms_ents[i]->name, ms_ents[i]->version, ms_ents[i]->mtime_sec, ms_ents[i]->mtime_nsec, ms_ents[i]->write_nonce);
+      dbprintf("listing: %" PRIX64 " %s.%" PRId64 " (mtime=%" PRId64 ".%d) (manifest mtime=%" PRIu64 ".%d) (write_nonce=%" PRId64 ")\n",
+               ms_ents[i]->file_id, ms_ents[i]->name, ms_ents[i]->version,
+               ms_ents[i]->mtime_sec, ms_ents[i]->mtime_nsec,
+               ms_ents[i]->manifest_mtime_sec, ms_ents[i]->manifest_mtime_nsec,
+               ms_ents[i]->write_nonce);
    }
 
    // reload this entry
@@ -586,17 +598,20 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
       if( ms_ent == NULL )
          continue;
 
+      // found this directory?
       if( ms_ent->file_id == dent->file_id ) {
-         // check cached xattrs 
+         // check cached xattrs, and clear them if stale
          if( fs_entry_xattr_cache_stale( dent, ms_ent->xattr_nonce ) ) {
             fs_entry_clear_cached_xattrs( dent, ms_ent->xattr_nonce );
          }
          
+         // reload this directory?
          if( fs_entry_should_reload( consistency_cls->core, dent, ms_ent, &consistency_cls->query_time ) ) {
             dbprintf("reload '%s' ('%s')\n", dent->name, ms_ent->name );
             fs_entry_reload( consistency_cls, dent, ms_ent );
          }
          else {
+            // otherwise, we're good
             dbprintf("do not reload '%s', since we don't have to.\n", dent->name );
             fs_entry_mark_read_fresh_path( consistency_cls, dent );
          }
@@ -665,9 +680,10 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
          if( child == NULL )
             continue;
 
+         // found this child
          if( ms_ent->file_id == child->file_id ) {
 
-            // check cached xattrs 
+            // check cached xattrs, and clear stale ones
             if( fs_entry_xattr_cache_stale( child, ms_ent->xattr_nonce ) ) {
                fs_entry_clear_cached_xattrs( child, ms_ent->xattr_nonce );
             }
@@ -1275,6 +1291,7 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
       if( fent->manifest == NULL ) {
          fent->manifest = new file_manifest( version );
          need_refresh = true;
+         errorf("BUG: had to initialize a manifest before revalidating %s\n", fs_path);
       }
       else {
          // does the manifest need refreshing?
@@ -1296,7 +1313,7 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
    // otherwise, we need to refresh.  GoGoGo!
    struct timespec modtime;
    modtime.tv_sec = mtime_sec;
-   modtime.tv_nsec = mtime_sec;
+   modtime.tv_nsec = mtime_nsec;
    
    char* manifest_url = NULL;
    int rc = 0;
@@ -1410,8 +1427,9 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    if( fent->manifest == NULL ) {
       // no manifest on file...reload it
       fent->manifest = new file_manifest( fent->version );
-      fent->manifest->set_modtime( 0, 0 );
+      fent->manifest->set_modtime( 2, 2 );
       force_refresh = true;
+      errorf("BUG: had to initialize a manifest before revalidating %s\n", fs_path);
    }
    
    fent->manifest->get_modtime( &ts );
@@ -1506,6 +1524,7 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
       fent->manifest = new file_manifest( fent->version );
       fent->manifest->set_modtime( fent->mtime_sec, fent->mtime_nsec );
       force_refresh = true;
+      errorf("BUG: had to initialize a manifest before revalidating %s\n", fs_path);
    }
    
    fent->manifest->get_modtime( &manifest_ts );

@@ -125,6 +125,7 @@ struct fs_entry {
    uint32_t max_write_freshness;    // how long since last refresh, in ms, this fs_entry is to be considered fresh for writing
    bool read_stale;
    bool write_stale;
+   bool dirty;                      // if true, then we need to flush data on fsync()
    
    replica_snapshot* old_snapshot;      // snapshot of this fs_entry before dirtying it
 

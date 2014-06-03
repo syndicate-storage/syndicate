@@ -457,7 +457,7 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
       // this is a directory
       fs_entry_init_dir( core, fent, ent->name, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->mtime_sec, ent->mtime_nsec );
    }
-   else if ( ent->type == MD_ENTRY_FILE ){
+   else if ( ent->type == MD_ENTRY_FILE ) {
       // this is a file
       fs_entry_init_file( core, fent, ent->name, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
       fent->manifest->set_modtime( ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
