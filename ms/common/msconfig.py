@@ -50,8 +50,9 @@ OPENID_HOST_URL = ""
 OPENID_POST_USERNAME = "openid_username"
 
 if os.environ.get('SERVER_SOFTWARE','').startswith('Development'):
+   
    # running locally in a development server
-   MS_HOSTNAME = "localhost:8080"
+   MS_HOSTNAME = "localhost:%s" % str(os.environ.get("SERVER_PORT", 8080))
    MS_PROTO = "http://"
    
    OPENID_TRUST_ROOT_HOST = MS_HOSTNAME
