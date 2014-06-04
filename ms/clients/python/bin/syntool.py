@@ -77,9 +77,9 @@ def download_syndicate_public_key( config ):
    if pubkey_req.status_code != 200:
       raise Exception("Failed to get public key from %s, HTTP status %s" % (url, pubkey_req.status) )
    
-   assert hasattr(pubkey_req, "text"), "Invalid response; no text given!"
+   assert hasattr(pubkey_req, "content"), "Invalid response; no content given!"
    
-   pubkey_pem = str(pubkey_req.text)
+   pubkey_pem = str(pubkey_req.content)
    pubkey_pem = pubkey_pem.strip()
    
    # validate 
