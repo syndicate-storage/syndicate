@@ -1265,6 +1265,7 @@ class Gateway( StubObject ):
       "gateway_name":           (lambda cls, arg, lib: cls.parse_gateway_name_or_id(arg, lib)),
       "g_name_or_id":           (lambda cls, arg, lib: cls.parse_gateway_name_or_id(arg, lib)),
       "ug_caps":                (lambda cls, arg, lib: cls.parse_gateway_caps(arg, lib)),
+      "caps":                   (lambda cls, arg, lib: cls.parse_gateway_caps(arg, lib)),
       "gateway_type":           (lambda cls, arg, lib: cls.parse_gateway_type(arg, lib)),
       "gateway_public_key":     (lambda cls, arg, lib: cls.parse_gateway_public_key(arg, lib)),
       "closure":                (lambda cls, arg, lib: cls.parse_gateway_closure(arg, lib)),

@@ -1143,7 +1143,7 @@ def set_gateway_caps( g_name_or_id, caps ):
          The name or ID of the gateway to update.
       
       caps (str or int):
-         Capability bits.  Valid capability bits are:
+         Capability bits for UGs.  Valid capability bits are:
             GATEWAY_CAP_READ_METADATA
             GATEWAY_CAP_WRITE_METADATA
             GATEWAY_CAP_READ_DATA
