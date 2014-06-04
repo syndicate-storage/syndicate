@@ -171,6 +171,8 @@ int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_
 // fent must be read-locked
 int sync_context_init( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t parent_id, char const* parent_name, struct sync_context* sync_ctx ) {
    
+   dbprintf("initialize sync context at %p\n", sync_ctx );
+   
    memset( sync_ctx, 0, sizeof(struct sync_context) );
    
    sync_ctx->fent_snapshot = CALLOC_LIST( struct replica_snapshot, 1 );
@@ -190,11 +192,17 @@ int sync_context_init( struct fs_core* core, char const* fs_path, struct fs_entr
 // destroy a sync context 
 int sync_context_free_ex( struct sync_context* sync_ctx, bool close_dirty_fds ) {
    
+   dbprintf("free sync context at %p\n", sync_ctx );
+   
    md_entry_free( &sync_ctx->md_snapshot );
    
    if( sync_ctx->replica_futures ) {
+      dbprintf("free sync context %p replica futures %p\n", sync_ctx, sync_ctx->replica_futures );
       fs_entry_replica_list_free( sync_ctx->replica_futures );
       delete sync_ctx->replica_futures;
+   }
+   else {
+      errorf("WARN: sync context %p replica futures = %p\n", sync_ctx, sync_ctx->replica_futures );
    }
    
    if( sync_ctx->dirty_blocks ) {
@@ -214,6 +222,8 @@ int sync_context_free_ex( struct sync_context* sync_ctx, bool close_dirty_fds ) 
    
    sem_destroy( &sync_ctx->sem );
    
+   memset( sync_ctx, 0, sizeof(struct sync_context) );
+   
    return 0;
 }
 
@@ -222,8 +232,10 @@ int fs_entry_sync_context_free( struct sync_context* sync_ctx ) {
    return sync_context_free_ex( sync_ctx, true );
 }
 
+
 // snapshot fent, flush all in-core blocks to cache, and asynchronously replicate its data.
-// on success, return 0, and populate fent_snapshot, md_snapshot (if non-NULL), _dirty_blocks, _garbage_blocks so we can go on to garbage-collect and update metadata (or revert the flush)
+// on success, return SYNC_SUCCESS, and populate fent_snapshot, md_snapshot (if non-NULL), _dirty_blocks, _garbage_blocks so we can go on to garbage-collect and update metadata (or revert the flush)
+// return SYNC_NOTHING if there's nothing to replicate
 // fent must be write-locked
 int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t parent_id, char const* parent_name, struct sync_context* _sync_ctx ) {
    
@@ -233,6 +245,8 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    // dirty blocks and garbage blocks and cache futures and metadata
    struct sync_context sync_ctx;
    vector<struct cache_block_future*> cache_futs;
+
+   memset( &sync_ctx, 0, sizeof(struct sync_context) );
    
    // flush all bufferred blocks, asynchronously
    // (this updates fent's dirty_blocks and garbage_blocks)
@@ -255,7 +269,11 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
       // restore dirty and garbage blocks 
       fs_entry_replace_dirty_blocks( fent, sync_ctx.dirty_blocks );
       fs_entry_replace_garbage_blocks( fent, sync_ctx.garbage_blocks );
-      md_entry_free( &sync_ctx.md_snapshot );
+      
+      sync_ctx.dirty_blocks = NULL;
+      sync_ctx.garbage_blocks = NULL;
+      
+      fs_entry_sync_context_free( &sync_ctx );
       
       memset( _sync_ctx, 0, sizeof(struct sync_context) );
       return rc;
@@ -269,9 +287,8 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    if( sync_ctx.dirty_blocks->size() == 0 && sync_ctx.garbage_blocks->size() == 0 ) {
       // done!
       dbprintf("Nothing to replicate for %" PRIX64 "\n", fent->file_id );
-      memset( _sync_ctx, 0, sizeof(struct sync_context) );
       *_sync_ctx = sync_ctx;
-      return 0;
+      return SYNC_NOTHING;
    }
    
    // start replicating the manifest, if we're local
@@ -289,7 +306,11 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
          // restore dirty and garbage blocks 
          fs_entry_replace_dirty_blocks( fent, sync_ctx.dirty_blocks );
          fs_entry_replace_garbage_blocks( fent, sync_ctx.garbage_blocks );
-         md_entry_free( &sync_ctx.md_snapshot );
+         
+         sync_ctx.dirty_blocks = NULL;
+         sync_ctx.garbage_blocks = NULL;
+         
+         fs_entry_sync_context_free( &sync_ctx );
          
          memset( _sync_ctx, 0, sizeof(struct sync_context) );
          return rc;
@@ -305,6 +326,9 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
       
       // cancel manifest, if we replicated it 
       if( manifest_fut ) {
+         
+         dbprintf("garbage collect new manifest for %" PRIX64 "(%s), snapshot = %" PRIX64 ".%" PRId64 "\n", fent->file_id, fent->name, sync_ctx.fent_snapshot->file_id, sync_ctx.fent_snapshot->file_version );
+         
          rc = fs_entry_garbage_collect_manifest( core, sync_ctx.fent_snapshot );
          
          if( rc != 0 ) {
@@ -315,7 +339,11 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
       // restore dirty and garbage blocks 
       fs_entry_replace_dirty_blocks( fent, sync_ctx.dirty_blocks );
       fs_entry_replace_garbage_blocks( fent, sync_ctx.garbage_blocks );
-      md_entry_free( &sync_ctx.md_snapshot );
+      
+      sync_ctx.dirty_blocks = NULL;
+      sync_ctx.garbage_blocks = NULL;
+      
+      fs_entry_sync_context_free( &sync_ctx );
       
       memset( _sync_ctx, 0, sizeof(struct sync_context) );
       return rc;
@@ -324,21 +352,25 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    // complete future list 
    if( manifest_fut ) {
       sync_ctx.replica_futures->push_back( manifest_fut );
+      sync_ctx.manifest_fut = manifest_fut;
    }
    
    // success!
    *_sync_ctx = sync_ctx;
+   dbprintf("initialized sync context %p\n", _sync_ctx );
    
-   return 0;
+   return SYNC_SUCCESS;
 }
 
 
 // revert a data sync (i.e. on error).
 // any written blocks that have not been overwritten and have not been flushed will be restored, so a subsequent data sync can try again later.
-// TODO: garbage collection persistence
+// TODO: garbage collection persistence--record blocks that need to be garbage-collected, so if we crash, we can resume it
 // fent must be write-locked.
 int fs_entry_sync_data_revert( struct fs_core* core, struct fs_entry* fent, struct sync_context* sync_ctx ) {
 
+   dbprintf("Reverting synchronization for (%s) %" PRIX64 "\n", fent->name, fent->file_id );
+   
    // which blocks were not replicated?
    modification_map unreplicated;
    
@@ -354,10 +386,13 @@ int fs_entry_sync_data_revert( struct fs_core* core, struct fs_entry* fent, stru
    
    // merge old dirty and garbage blocks back in, since new writes will have superceded them.
    fs_entry_merge_old_dirty_blocks( core, fent, old_file_id, old_file_version, &unreplicated, &unmerged_dirty );        // don't overwrite subsequently-written data
-   fs_entry_merge_garbage_blocks( core, fent, old_file_id, old_file_version, sync_ctx->garbage_blocks, &unmerged_garbage );       // TODO: deal with the case where subsequent writes garbage collect newer versions of the same block
+   fs_entry_merge_garbage_blocks( core, fent, old_file_id, old_file_version, sync_ctx->garbage_blocks, &unmerged_garbage );
    
+   // free everything
+   // TODO: cache-evict unreplicated?
+   // TODO: garbage-collect unmerged garbage?
    fs_entry_free_modification_map_ex( &unreplicated, false );        // keep unreplicated blocks' file descriptors open, so we can replicate them later
-   fs_entry_free_modification_map_ex( &unmerged_garbage, false );    // TODO: deal with the case where subsequent writes garbage collect newer versions of the same block
+   fs_entry_free_modification_map_ex( &unmerged_garbage, false );
    
    // NOTE: no need to free unmerged_dirty, since it only contains pointers to data in unreplicated (which we just freed)
    
@@ -391,7 +426,7 @@ int fs_entry_sync_data_finish( struct fs_core* core, struct sync_context* sync_c
 
 
 // begin synchronizing data, and enqueue ourselves into the sync queue so we replicate metadata in order.
-// return 0 on success, return 1 if we need to wait to replicate metadata, and return negative on error
+// return SYNC_SUCCESS on success, return SYNC_WAIT if we need to wait to replicate metadata, return SYNC_NOTHING if there's nothing to replicate, and return negative on error
 // if we need to wait, the caller should call fs_entry_sync_context_wait prior to replicating metadata.
 // fent must be write-locked 
 int fs_entry_fsync_begin_data( struct fs_core* core, struct fs_file_handle* fh, struct sync_context* sync_ctx ) {
@@ -400,17 +435,22 @@ int fs_entry_fsync_begin_data( struct fs_core* core, struct fs_file_handle* fh, 
    // replicate blocks, and manifest as well if we're the coordinator
    rc = fs_entry_sync_data_begin( core, fh->path, fh->fent, fh->parent_id, fh->parent_name, sync_ctx );
 
-   if( rc != 0 ) {
+   if( rc < 0 ) {
       errorf("fs_entry_sync_data_begin( %s %" PRIX64 " ) rc = %d\n", fh->path, fh->fent->file_id, rc );
       
       return -EIO;
+   }
+   
+   if( rc == SYNC_NOTHING ) {
+      // there's nothing to replicate 
+      return SYNC_NOTHING;
    }
    
    bool wait = false;
    
    // are we the first sync context to go?
    // if not, we'll have to wait our turn
-   if( fs_entry_sync_context_size( fh->fent ) > 0 ) {
+   if( rc == SYNC_SUCCESS && fs_entry_sync_context_size( fh->fent ) > 0 ) {
       wait = true;
    }
    
@@ -418,9 +458,9 @@ int fs_entry_fsync_begin_data( struct fs_core* core, struct fs_file_handle* fh, 
    fs_entry_sync_context_enqueue( fh->fent, sync_ctx );
    
    if( wait )
-      return 1;
+      return SYNC_WAIT;
    else
-      return 0;
+      return SYNC_SUCCESS;
 }
 
 
@@ -429,6 +469,12 @@ int fs_entry_fsync_begin_data( struct fs_core* core, struct fs_file_handle* fh, 
 // return 0 on success 
 int fs_entry_fsync_end_data( struct fs_core* core, struct fs_file_handle* fh, struct sync_context* sync_ctx, int begin_rc ) {
 
+   if( begin_rc == SYNC_NOTHING ) {
+      // nothing to replicate, nothing to wait for 
+      dbprintf("Nothing to wait for in replicating data for %s %" PRIX64 "\n", fh->path, sync_ctx->fent_snapshot->file_id );
+      return 0;
+   }
+   
    int rc = 0;
    
    // finish replication 
@@ -441,10 +487,10 @@ int fs_entry_fsync_end_data( struct fs_core* core, struct fs_file_handle* fh, st
    }
    
    // wait our turn to replicate metadata, if we're not the first thread to replicate
-   if( begin_rc > 0 )
+   if( begin_rc == SYNC_WAIT )
       fs_entry_sync_context_wait( sync_ctx );
    
-   return 0;
+   return rc;
 }
 
 
@@ -515,19 +561,58 @@ int fs_entry_fsync_garbage_collect( struct fs_core* core, struct fs_entry* fent,
    // garbage-collect!
    fs_entry_garbage_collect_blocks( core, sync_ctx->fent_snapshot, sync_ctx->garbage_blocks );
    
-   if( metadata_rc > 0 ) {
+   if( metadata_rc >= 0 ) {
+      
+      dbprintf("garbage collect old manifest for %" PRIX64 "(%s), snapshot = %" PRIX64 ".%" PRId64 "\n", fent->file_id, fent->name, fent->old_snapshot->file_id, fent->old_snapshot->file_version );
       
       // get the old manifest too 
       fs_entry_garbage_collect_manifest( core, fent->old_snapshot );
       
-      // preserve the current snapshot, so we can garbage-collect the manifest we just replicated
+      // preserve the current snapshot, so we can garbage-collect the manifest we just replicated next time
       memcpy( fent->old_snapshot, sync_ctx->fent_snapshot, sizeof( struct replica_snapshot ) );
-      
-      // TODO: work out how to do this when we change coordinators
    }
    
    return 0;
 }
+
+
+// argument structure for truncating queued sync contexts
+struct sync_context_truncate_args {
+   struct fs_core* core;
+   struct fs_entry* fent;
+};
+
+
+// apply the effects of a truncate to a queued sync context 
+void fs_entry_sync_context_truncate( struct sync_context* sync_ctx, void* cls ) {
+   
+   struct sync_context_truncate_args* truncate_args = (struct sync_context_truncate_args*)cls;
+   
+   struct fs_core* core = truncate_args->core;
+   struct fs_entry* fent = truncate_args->fent;
+   
+   uint64_t max_block_id = fs_entry_block_id( core, fent->size );
+   
+   // blocks in this sync context have not yet been replicated, so just clear out the ones that are no longer part of the file
+   for( modification_map::iterator itr = sync_ctx->dirty_blocks->begin(); itr != sync_ctx->dirty_blocks->end(); ) {
+      
+      modification_map::iterator curr = itr;
+      itr++;
+      
+      uint64_t block_id = curr->first;
+      struct fs_entry_block_info* binfo = &curr->second;
+      
+      // drop it if we need to
+      if( block_id > max_block_id ) {
+         fs_entry_block_info_free_ex( binfo, true );    // close the cache fd, since we won't be replicating it 
+         sync_ctx->dirty_blocks->erase( curr );
+      }
+   }
+   
+   // re-snapshot this 
+   fs_entry_replica_snapshot( core, fent, 0, 0, sync_ctx->fent_snapshot );
+}
+
 
 // run an fsync, once fh and fh->fent are write-locked.
 // this will unlock fh->fent during replication, so other threads can access it.
@@ -564,9 +649,13 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
    if( rc != 0 ) {
       errorf("fs_entry_fsync_end_data( %s %" PRIX64 " ) rc = %d\n", fh->path, sync_ctx->fent_snapshot->file_id, rc );
       
+      // re-acquire
       fs_entry_wlock( fh->fent );
+      
+      // revert the sync
       fs_entry_sync_data_revert( core, fh->fent, sync_ctx );
       
+      // free memory
       sync_context_free_ex( sync_ctx, false );
       
       // let the next sync go
@@ -578,24 +667,53 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
    // re-acquire
    fs_entry_wlock( fh->fent );
    
-   // sync metadata, possibly becoming the coordinator
-   int metadata_rc = fs_entry_fsync_metadata( core, fh, sync_ctx );
+   bool replicate_metadata = true;
    
-   if( rc < 0 ) {
-      errorf("fs_entry_fsync_metadata( %s ) rc = %d\n", fh->path, rc );
+   // did we get re-versioned (i.e. due to a truncate)?
+   if( fh->fent->version != sync_ctx->fent_snapshot->file_version ) {
+      // no need to replicate metadata--the truncate pushed that for us.
+      replicate_metadata = false;
       
-      fs_entry_sync_data_revert( core, fh->fent, sync_ctx );
+      // garbage-collect everything for this sync context
+      fs_entry_fsync_garbage_collect( core, fh->fent, sync_ctx, 0 );
       
-      sync_context_free_ex( sync_ctx, false );
+      // since the truncate occurred "after" all of the pending sync requests, apply it to them
       
-      // let the next sync go
-      fs_entry_sync_context_wakeup_next( fh->fent );
+      struct sync_context_truncate_args args;
+      memset( &args, 0, sizeof(struct sync_context_truncate_args) );
+      args.core = core;
+      args.fent = fh->fent;
       
-      return -EREMOTEIO;
+      fs_entry_sync_queue_apply( fh->fent, fs_entry_sync_context_truncate, &args );
    }
    
-   // garbage-collect everything
-   fs_entry_fsync_garbage_collect( core, fh->fent, sync_ctx, metadata_rc );
+   // only replicate metadata if there was data to replicate 
+   if( begin_rc >= 0 && begin_rc != SYNC_NOTHING && replicate_metadata ) {
+      
+      // sync metadata, possibly becoming the coordinator
+      int metadata_rc = fs_entry_fsync_metadata( core, fh, sync_ctx );
+      
+      if( rc < 0 ) {
+         errorf("fs_entry_fsync_metadata( %s ) rc = %d\n", fh->path, rc );
+         
+         // revert the sync
+         fs_entry_sync_data_revert( core, fh->fent, sync_ctx );
+         
+         // free memory
+         sync_context_free_ex( sync_ctx, false );
+         
+         // let the next sync go
+         fs_entry_sync_context_wakeup_next( fh->fent );
+         
+         return -EREMOTEIO;
+      }
+      
+      // garbage-collect everything
+      fs_entry_fsync_garbage_collect( core, fh->fent, sync_ctx, metadata_rc );
+   }
+   
+   // let the next sync go
+   fs_entry_sync_context_wakeup_next( fh->fent );
    
    return 0;
 }
@@ -618,16 +736,13 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
    rc = fs_entry_fsync_locked( core, fh, &sync_ctx );
    
    if( rc != 0 ) {
-      // do we need to wake anyone up?
-      
       fs_entry_unlock( fh->fent );
       fs_file_handle_unlock( fh );
       
+      sync_context_free_ex( &sync_ctx, false );
+      
       return rc;
    }
-   
-   // next fsync request 
-   fs_entry_sync_context_wakeup_next( fh->fent );
    
    fs_entry_unlock( fh->fent );
    

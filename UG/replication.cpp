@@ -65,13 +65,13 @@ int replica_context_init( struct replica_context* rctx,
                           struct replica_snapshot* snapshot,
                           int type,
                           int op,
-                          FILE* block_data,             // non-NULL if replicating a block
-                          char* manifest_data,          // non-NULL if replicating a manifest
+                          FILE* block_data,             // non-NULL if replicating a block.  It will NOT be duplicated, so the caller should ensure it will stick around.
+                          char* manifest_data,          // non-NULL if replicating a manifest.  It will NOT be duplicated, so the caller should ensure it will stick around.
                           off_t data_len,               // number of bytes we're sending
                           unsigned char* hash,          // hash of data we're posting
                           size_t hash_len,              // length of hash
                           struct curl_httppost* form_data,
-                          bool free_on_processed
+                          bool free_on_processed        // if true, free this structure once its removed from the rg_client
                         ) {
    
    memset( rctx, 0, sizeof(struct replica_context) );
@@ -86,6 +86,7 @@ int replica_context_init( struct replica_context* rctx,
       return -EINVAL;
    }
    
+   // TODO: connection pool
    rctx->curls = new vector<CURL*>();
    rctx->type = type;
    rctx->op = op;
@@ -109,18 +110,6 @@ int replica_context_init( struct replica_context* rctx,
 
 // free a replica context
 int fs_entry_replica_context_free( struct replica_context* rctx ) {
-   if( rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ) {
-      if( rctx->file ) {
-         fclose( rctx->file );
-         rctx->file = NULL;
-      }
-   }
-   else if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-      if( rctx->data ) {
-         free( rctx->data );
-         rctx->data = NULL;
-      }
-   }
    
    if( rctx->hash ) {
       free( rctx->hash );
@@ -151,6 +140,28 @@ int fs_entry_replica_context_free( struct replica_context* rctx ) {
       rctx->form_data = NULL;
    }
    
+   if( rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ) {
+      
+      dbprintf("free %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n",
+               rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+      
+      
+      if( rctx->file ) {
+         fclose( rctx->file );
+         rctx->file = NULL;
+      }
+   }
+   else if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
+      dbprintf("free %p %s %" PRIX64 "/manifest.%" PRId64 ".%d\n",
+               rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
+      
+      
+      if( rctx->data ) {
+         free( rctx->data );
+         rctx->data = NULL;
+      }
+   }
+   
    sem_destroy( &rctx->processing_lock );
    
    memset( rctx, 0, sizeof( struct replica_context ) );
@@ -173,7 +184,7 @@ int replica_add_metadata_form( struct curl_httppost** form_data, struct curl_htt
    // build up the form to submit to the RG
    curl_formadd( form_data, last,  CURLFORM_COPYNAME, "metadata",
                                    CURLFORM_CONTENTSLENGTH, replica_info_str.size(),
-                                   CURLFORM_COPYCONTENTS, replica_info_str.c_str(),
+                                   CURLFORM_COPYCONTENTS, replica_info_str.data(),
                                    CURLFORM_CONTENTTYPE, "application/octet-stream",
                                    CURLFORM_END );
 
@@ -184,23 +195,23 @@ int replica_add_metadata_form( struct curl_httppost** form_data, struct curl_htt
 // create data form field for posting manifest data
 int replica_add_data_form( struct curl_httppost** form_data, struct curl_httppost** last, char const* data, size_t len ) {
    curl_formadd( form_data, last, CURLFORM_COPYNAME, "data",
-                                    CURLFORM_PTRCONTENTS, data,
-                                    CURLFORM_CONTENTSLENGTH, len,
-                                    CURLFORM_CONTENTTYPE, "application/octet-stream",
-                                    CURLFORM_END );
+                                  CURLFORM_PTRCONTENTS, data,
+                                  CURLFORM_CONTENTSLENGTH, len,
+                                  CURLFORM_CONTENTTYPE, "application/octet-stream",
+                                  CURLFORM_END );
    
    return 0;
 }
 
 
 // create data form field for posting block data
-int replica_add_data_form( struct curl_httppost** form_data, struct curl_httppost** last, FILE* f, off_t size ) {
+int replica_add_file_form( struct curl_httppost** form_data, struct curl_httppost** last, FILE* f, off_t size ) {
    curl_formadd( form_data, last, CURLFORM_COPYNAME, "data",
-                                    CURLFORM_FILENAME, "block",         // make this look like a file upload
-                                    CURLFORM_STREAM, f,
-                                    CURLFORM_CONTENTSLENGTH, (long)size,
-                                    CURLFORM_CONTENTTYPE, "application/octet-stream",
-                                    CURLFORM_END );
+                                  CURLFORM_FILENAME, "block",         // make this look like a file upload
+                                  CURLFORM_STREAM, f,
+                                  CURLFORM_CONTENTSLENGTH, (long)size,
+                                  CURLFORM_CONTENTTYPE, "application/octet-stream",
+                                  CURLFORM_END );
    
    return 0;
 }
@@ -245,6 +256,7 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    ssize_t in_manifest_data_len = 0;
    int rc = 0;
    
+   // generate a signed serialized manifest
    in_manifest_data_len = fs_entry_serialize_manifest( core, fent, &in_manifest_data, true );
    if( in_manifest_data_len < 0 ) {
       errorf("fs_entry_serialize_manifest(%" PRIX64 ") rc = %zd\n", fent->file_id, in_manifest_data_len);
@@ -287,6 +299,7 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
       return -EINVAL;
    }
    
+   // sign the metadata portion
    rc = md_sign< ms::ms_gateway_request_info >( core->ms->my_key, &replica_info );
    if( rc != 0 ) {
       errorf("md_sign rc = %d\n", rc );
@@ -330,9 +343,25 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
       
       curl_formfree( form_data );
       free( manifest_data );
+      free( hash );
       
       return -EINVAL;
    }
+   
+   ////////////////////////////////////////////////////////
+   
+   char* manifest_str = fent->manifest->serialize_str();
+   char* manifest_hash = sha256_printable( hash );
+   
+   dbprintf("Manifest:\n%s\n", manifest_str);
+   dbprintf("Manifest hash: %s\n", manifest_hash );
+   dbprintf("Manifest length: %zu\n", manifest_data_len );
+   
+   free( manifest_str );
+   free( manifest_hash );
+   
+   
+   ////////////////////////////////////////////////////////
    
    free( hash );
    
@@ -395,9 +424,9 @@ int replica_context_block( struct fs_core* core, struct replica_context* rctx, s
       return rc;
    }
    
-   rc = replica_add_data_form( &form_data, &last, f, sb.st_size );
+   rc = replica_add_file_form( &form_data, &last, f, sb.st_size );
    if( rc != 0 ) {
-      errorf("replica_add_data_form( %" PRIX64 " ) rc = %d\n", fent->file_id, rc );
+      errorf("replica_add_file_form( %" PRIX64 " ) rc = %d\n", fent->file_id, rc );
       
       curl_formfree( form_data );
       fclose( f );
@@ -477,7 +506,7 @@ int replica_context_garbage_manifest( struct fs_core* core, struct replica_conte
 int replica_context_garbage_block( struct fs_core* core, struct replica_context* rctx, struct replica_snapshot* snapshot ) {
    int rc = 0;
    
-   // put random bits into the hash field, for some cryptographic padding
+   // put random bits into the hash field, for some salting
    unsigned char fake_hash[256];
    memset( fake_hash, 0, 256 );
    for( unsigned int i = 0; i < (256 / sizeof(uint32_t)); i++ ) {
@@ -532,10 +561,10 @@ static void replica_insert_upload( struct rg_client* synrp, CURL* curl, struct r
    // add to running 
 
    if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-      dbprintf("%s: running %p %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, curl, rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
+      dbprintf("%s: running %p %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, rctx, rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
    }
    else {
-      dbprintf("%s: running %p %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, curl, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+      dbprintf("%s: running %p %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, rctx, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
    }
    
    (*synrp->uploads)[ curl ] = rctx;
@@ -550,10 +579,10 @@ static void replica_insert_pending_upload( struct rg_client* synrp, CURL* curl, 
    
    // add to running 
    if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-      dbprintf("%s: pending %p %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, curl, rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
+      dbprintf("%s: pending %p %" PRIX64 "/manifest.%" PRId64 ".%d\n", synrp->process_name, rctx, rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
    }
    else {
-      dbprintf("%s: pending %p %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, curl, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+      dbprintf("%s: pending %p %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", synrp->process_name, rctx, rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
    }
    
    
@@ -590,11 +619,11 @@ int replica_context_connect( struct rg_client* rp, struct replica_context* rctx 
       CURL* curl = curl_easy_init();
       
       if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-         dbprintf("%s: Connect (%p) %s %" PRIX64 "/manifest.%" PRId64 ".%d\n", rp->process_name, curl, (rctx->op == REPLICA_POST ? "POST" : "DELETE"),
+         dbprintf("%s: Connect %p %s %" PRIX64 "/manifest.%" PRId64 ".%d\n", rp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"),
                   rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
       }
       else {
-         dbprintf("%s: Connect (%p) %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", rp->process_name, curl, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+         dbprintf("%s: Connect %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", rp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
       }
       
       md_init_curl_handle( rp->conf, curl, rg_base_url, rp->conf->replica_connect_timeout );
@@ -759,12 +788,12 @@ static int replica_erase_upload_context( struct rg_client* synrp, const replica_
       if( rctx->curls->at(i) == curl ) {
          // destroy this upload, and erase it from this context's curl handles
          if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-            dbprintf("%s: curl_easy_cleanup (%p) %s %" PRIX64 "/manifest.%" PRId64 ".%d\n",
-                     synrp->process_name, curl, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
-         }
+            dbprintf("%s: curl_easy_cleanup %p's curl %p: %s %" PRIX64 "/manifest.%" PRId64 ".%d\n",
+                     synrp->process_name, rctx, curl, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
+         }  
          else {
-            dbprintf("%s: curl_easy_cleanup (%p) %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n",
-                     synrp->process_name, curl, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+            dbprintf("%s: curl_easy_cleanup %p's curl %p: %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n",
+                     synrp->process_name, rctx, curl, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
          }
          
          curl_easy_cleanup( rctx->curls->at(i) );
@@ -780,12 +809,12 @@ static int replica_erase_upload_context( struct rg_client* synrp, const replica_
    if( still_processing == 0 ) {
       
       if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-         dbprintf("%s: Unqueued %s %" PRIX64 "/manifest.%" PRId64 ".%d\n",
-                  synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
+         dbprintf("%s: Unqueued %p %s %" PRIX64 "/manifest.%" PRId64 ".%d\n",
+                  synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
       }
       else {
-         dbprintf("%s: Unqueued %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n",
-                  synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+         dbprintf("%s: Unqueued %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n",
+                  synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
       }
       
       bool free_on_processed = rctx->free_on_processed;
@@ -801,20 +830,6 @@ static int replica_erase_upload_context( struct rg_client* synrp, const replica_
    }   
    
    return rc;
-}
-
-
-// remove a running replica context
-// NOTE: running_lock must be held by the caller!
-static int replica_remove_upload_context( struct rg_client* synrp, CURL* curl ) {
-   
-   replica_upload_set::iterator itr = synrp->uploads->find( curl );
-   if( itr != synrp->uploads->end() ) {
-      
-      return replica_erase_upload_context( synrp, itr );
-   }
-   
-   return -ENOENT;
 }
 
 
@@ -841,6 +856,7 @@ static int replica_cancel_contexts( struct rg_client* synrp, struct replica_snap
    // search replicas that are about to start
    pthread_mutex_lock( &synrp->pending_lock );
    
+   // clear out any pending instances of this replica_snapshot
    for( replica_upload_set::iterator itr = synrp->pending_uploads->begin(); itr != synrp->pending_uploads->end();  ) {
       struct replica_context* rctx = itr->second;
       
@@ -930,15 +946,15 @@ int replica_process_responses( struct rg_client* synrp ) {
             
          
             if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-               dbprintf("%s: Finished %s %" PRIX64 "/manifest.%" PRId64 ".%d, rc = %d, curl rc = %d, HTTP status = %ld\n", 
-                        synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, rctx->error, msg->data.result, http_status );
+               dbprintf("%s: Finished %p %s %" PRIX64 "/manifest.%" PRId64 ".%d, rc = %d, curl rc = %d, HTTP status = %ld\n", 
+                        synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, rctx->error, msg->data.result, http_status );
             }
             else {
-               dbprintf("%s: Finished %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "], rc = %d, curl rc = %d, HTTP status = %ld\n",
-                        synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rctx->error, msg->data.result, http_status );
+               dbprintf("%s: Finished %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "], rc = %d, curl rc = %d, HTTP status = %ld\n",
+                        synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rctx->error, msg->data.result, http_status );
             }
             
-            replica_remove_upload_context( synrp, msg->easy_handle );
+            replica_erase_upload_context( synrp, itr );
          }
       }
    } while( msg != NULL );
@@ -970,15 +986,17 @@ static void replica_process_cancels( struct rg_client* synrp ) {
       pthread_mutex_lock( &synrp->cancel_lock );
       
       for( unsigned int i = 0; i < synrp->pending_cancels->size(); i++ ) {
+         
          struct replica_snapshot* snapshot = &synrp->pending_cancels->at(i);
          
          for( replica_upload_set::iterator itr = synrp->uploads->begin(); itr != synrp->uploads->end();  ) {
-            replica_upload_set::iterator may_cancel = itr;
+            replica_upload_set::iterator may_cancel_itr = itr;
+            
+            struct replica_context* rctx = may_cancel_itr->second;
             itr++;
             
-            if( replica_context_snapshot_match( may_cancel->second, snapshot ) ) {
+            if( replica_context_snapshot_match( rctx, snapshot ) ) {
                
-               struct replica_context* rctx = may_cancel->second;
                if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
                   dbprintf("%s: Cancel %s %" PRIX64 "/manifest.%" PRId64 ".%d\n",
                            synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
@@ -989,7 +1007,7 @@ static void replica_process_cancels( struct rg_client* synrp ) {
                }
                
                // remove this running upload, freeing it if the caller didn't intend to do so.
-               replica_erase_upload_context( synrp, may_cancel );
+               replica_erase_upload_context( synrp, may_cancel_itr );
             }
          }
       }
@@ -1194,11 +1212,28 @@ int replica_shutdown_replication( struct rg_client* rp, int wait_replicas ) {
       dbprintf("Wait for all replicas to finish in %s\n", rp->process_name);
       
       do {
-         dbprintf("remaining: %d\n", rp->num_uploads );
+         dbprintf("%s: remaining: %d\n", rp->process_name, rp->num_uploads );
+         
+         if( rp->num_uploads > 0 ) {
+            // log which ones are remaining 
+            pthread_mutex_lock( &rp->running_lock );
+            
+            for( replica_upload_set::iterator itr = rp->uploads->begin(); itr != rp->uploads->end(); itr++ ) {
+               
+               // extract info 
+               struct replica_context* rctx = itr->second;
+               
+               dbprintf("  replica %p\n", rctx );
+            }
+            
+            pthread_mutex_unlock( &rp->running_lock );
+         }
+         
          if( rp->num_uploads == 0 )
             break;
          
          sleep(1);
+         
       } while( rp->num_uploads != 0 );
    }
    
@@ -1338,9 +1373,12 @@ int replica_start_block_contexts( struct fs_core* core, struct rg_client* synrp,
    
    // kick off the replicas
    for( unsigned int i = 0; i < block_rctxs->size(); i++ ) {
+      
+      dbprintf("begin block %p\n", block_rctxs->at(i) );
+      
       rc = replica_begin( synrp, block_rctxs->at(i) );
       if( rc != 0 ) {
-         errorf("replica_begin(%p) rc = %d\n", block_rctxs->at(i), rc );
+         errorf("replica_begin(block %p) rc = %d\n", block_rctxs->at(i), rc );
       }
       else {
          running.push_back( block_rctxs->at(i) );
@@ -1374,7 +1412,13 @@ struct replica_context* fs_entry_replicate_block_async( struct fs_core* core, st
    }
    else {
       // begin replicating
+      dbprintf("begin block %p\n", block_rctx );
       rc = replica_begin( &core->state->replication, block_rctx );
+      if( rc != 0 ) {
+         errorf("replica_begin( block %p ) rc = %d\n", block_rctx, rc );
+         free( block_rctx );
+         block_rctx = NULL;
+      }
    }
    
    *ret = rc;
@@ -1400,7 +1444,13 @@ struct replica_context* fs_entry_replicate_manifest_async( struct fs_core* core,
    }
    else {
       // begin replicating 
+      dbprintf("begin manifest %p\n", manifest_rctx );
       rc = replica_begin( &core->state->replication, manifest_rctx );
+      if( rc != 0 ) {
+         errorf("replica_begin( manifest %p ) rc = %d\n", manifest_rctx, rc );
+         free( manifest_rctx );
+         manifest_rctx = NULL;
+      }
    }
    
    *ret = rc;
@@ -1437,6 +1487,7 @@ int fs_entry_replicate_manifest( struct fs_core* core, char const* fs_path, stru
 
 // replicate a sequence of modified blocks, asynchronously
 // in modified_blocks, we need the version, hash, hash_len, and block_fd fields for each block.
+// caller must free block_futures, even if the method returns in error
 // fent must be read-locked
 int fs_entry_replicate_blocks_async( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, replica_list_t* block_futures ) {
    replica_list_t block_rctxs;
@@ -1596,12 +1647,14 @@ int fs_entry_replica_wait_and_free( struct rg_client* synrp, replica_list_t* rct
          struct replica_context* rctx = rctxs->at(i);
          
          if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-            dbprintf("%s: wait %ld.%ld seconds for %s %" PRIX64 "/manifest.%" PRId64 ".%d rc = %d\n",
-                     synrp->process_name, (long)timeout->tv_sec, (long)timeout->tv_nsec, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, rc );
+            dbprintf("%s: wait %ld.%ld seconds for %p %s %" PRIX64 "/manifest.%" PRId64 ".%d rc = %d\n",
+                     synrp->process_name, (long)timeout->tv_sec, (long)timeout->tv_nsec,
+                     rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, rc );
          }
          else {
-            dbprintf("%s: wait %ld.%ld seconds for %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
-                     synrp->process_name, (long)timeout->tv_sec, (long)timeout->tv_nsec, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rc );
+            dbprintf("%s: wait %ld.%ld seconds for %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
+                     synrp->process_name, (long)timeout->tv_sec, (long)timeout->tv_nsec,
+                     rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rc );
          }
          
          rctxs->at(i)->deadline.tv_sec = timeout->tv_sec;
@@ -1623,12 +1676,12 @@ int fs_entry_replica_wait_and_free( struct rg_client* synrp, replica_list_t* rct
       struct replica_context* rctx = rctxs->at(i);
       int rrc = rctx->error;
       if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-         dbprintf("%s: wait and remove %s %" PRIX64 "/manifest.%" PRId64 ".%d rc = %d, rctx rc = %d\n",
-                  synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, rc, rrc );
+         dbprintf("%s: wait and remove %p %s %" PRIX64 "/manifest.%" PRId64 ".%d rc = %d, rctx rc = %d\n",
+                  synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, rc, rrc );
       }
       else {
-         dbprintf("%s: wait and remove %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "] rc = %d, rctx rc = %d\n",
-                  synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rc, rrc );
+         dbprintf("%s: wait and remove %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "] rc = %d, rctx rc = %d\n",
+                  synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rc, rrc );
       }
       
       if( rc != 0 ) {
@@ -1644,12 +1697,12 @@ int fs_entry_replica_wait_and_free( struct rg_client* synrp, replica_list_t* rct
       if( rctx->free_on_processed ) {
          // caller will not free the replica_contexts--they're internal to this module.
          if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-            dbprintf("%s: free %s %" PRIX64 "/manifest.%" PRId64 ".%d rc = %d, rctx rc = %d\n",
-                     synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, rc, rrc );
+            dbprintf("%s: free %p %s %" PRIX64 "/manifest.%" PRId64 ".%d rc = %d, rctx rc = %d\n",
+                     synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, rc, rrc );
          }
          else {
-            dbprintf("%s: free %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "] rc = %d, rctx rc = %d\n",
-                     synrp->process_name, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rc, rrc );
+            dbprintf("%s: free %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "] rc = %d, rctx rc = %d\n",
+                     synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rc, rrc );
          }
          
          fs_entry_replica_context_free( rctxs->at(i) );
@@ -1695,17 +1748,6 @@ int fs_entry_replica_list_free( replica_list_t* rctxs ) {
       if( rctxs->at(i) == NULL )
          continue;
       
-      struct replica_context* rctx = rctxs->at(i);
-      
-      if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-         dbprintf("free %s %" PRIX64 "/manifest.%" PRId64 ".%d\n",
-                  (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
-      }
-      else {
-         dbprintf("free %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n",
-                  (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
-      }
-      
       fs_entry_replica_context_free( rctxs->at(i) );
       free( rctxs->at(i) );
       
@@ -1719,8 +1761,8 @@ int fs_entry_replica_list_free( replica_list_t* rctxs ) {
 
 
 // extract failed block replica futures and put them into a modification map.
-// this includes preserving the file descriptor (not closing it).
-// free successful futures
+// this includes preserving the file descriptor (by dup-ing it and closing the old one)
+// free successful futures--both the data each future contains, as well as the future itself.  As in, this has the same semantics as fs_entry_replica_list_free for successful blocks
 int fs_entry_extract_block_info_from_failed_block_replicas( replica_list_t* rctxs, modification_map* dirty_blocks ) {
    
    for( unsigned int i = 0; i < rctxs->size(); i++ ) {
@@ -1734,6 +1776,7 @@ int fs_entry_extract_block_info_from_failed_block_replicas( replica_list_t* rctx
       // not a block replica? just free it
       if( rctx->type != REPLICA_CONTEXT_TYPE_BLOCK ) {
          fs_entry_replica_context_free( rctx );
+         free( rctx );
          (*rctxs)[i] = NULL;
          continue;
       }
@@ -1775,8 +1818,11 @@ int fs_entry_extract_block_info_from_failed_block_replicas( replica_list_t* rctx
       
       // free the context 
       fs_entry_replica_context_free( rctx );
+      free( rctx );
       (*rctxs)[i] = NULL;
    }
+   
+   rctxs->clear();
    
    return 0;
 }

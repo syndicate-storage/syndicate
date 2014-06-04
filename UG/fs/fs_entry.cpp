@@ -161,7 +161,7 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    // initialize the root, but make it searchable and mark it as stale 
    core->root = CALLOC_LIST( struct fs_entry, 1 );
 
-   int rc = fs_entry_init_dir( core, core->root, "/", 1, owner_id, 0, volume, 0755, 0, 0 );
+   int rc = fs_entry_init_dir( core, core->root, "/", 0, 1, owner_id, 0, volume, 0755, 0, 0, 0, 0 );
    if( rc != 0 ) {
       errorf("fs_entry_init_dir rc = %d\n", rc );
       
@@ -356,7 +356,10 @@ int fs_destroy( struct fs_core* core ) {
 
 
 
-static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int type, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
+static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent,
+                               int type, char const* name, uint64_t file_id, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size,
+                               int64_t mtime_sec, int32_t mtime_nsec, int64_t write_nonce, int64_t xattr_nonce ) {
+   
    struct timespec ts;
    clock_gettime( CLOCK_REALTIME, &ts );
    
@@ -367,7 +370,7 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
 
    fent->name = strdup( name );
 
-   fent->file_id = 0;
+   fent->file_id = file_id;
    fent->version = version;
    fent->owner = owner;
    fent->coordinator = coordinator;
@@ -385,6 +388,8 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
    fent->max_write_freshness = core->conf->default_write_freshness;
    fent->read_stale = false;
    fent->xattr_cache = new xattr_cache_t();
+   fent->write_nonce = write_nonce;
+   fent->xattr_nonce = xattr_nonce;
    
    fent->manifest->set_modtime( 0, 0 );
    
@@ -395,11 +400,12 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent, int 
 
 // common fs_entry initializion code
 // a version of <= 0 will cause the FS to look at the underlying data to deduce the correct version
-static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, int type, char const* name, int64_t version,
-                                 uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec) {
+static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, int type, char const* name, uint64_t file_id, int64_t version,
+                                 uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec,
+                                 int64_t write_nonce, int64_t xattr_nonce ) {
 
    memset( fent, 0, sizeof(struct fs_entry) );
-   fs_entry_init_data( core, fent, type, name, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
+   fs_entry_init_data( core, fent, type, name, file_id, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec, write_nonce, xattr_nonce );
    pthread_rwlock_init( &fent->lock, NULL );
    pthread_rwlock_init( &fent->xattr_lock, NULL );
    
@@ -407,25 +413,39 @@ static int fs_entry_init_common( struct fs_core* core, struct fs_entry* fent, in
 }
 
 // create an FS entry that is a file
-int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec ) {
-   fs_entry_init_common( core, fent, FTYPE_FILE, name, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
+int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent,
+                        char const* name, uint64_t file_id, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size,
+                        int64_t mtime_sec, int32_t mtime_nsec, int64_t write_nonce, int64_t xattr_nonce ) {
+   
+   fs_entry_init_common( core, fent, FTYPE_FILE, name, file_id, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec, write_nonce, xattr_nonce );
+   
    fent->ftype = FTYPE_FILE;
+   
    fent->sync_queue = new sync_context_list_t();
+   
    fent->old_snapshot = CALLOC_LIST( struct replica_snapshot, 1 );
+   fs_entry_replica_snapshot( core, fent, 0, 0, fent->old_snapshot );
+   
    return 0;
 }
 
 
 // create an FS entry that is a file
-int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec, bool local ) {
-   fs_entry_init_common( core, fent, FTYPE_FILE, name, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec );
+int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name,
+                        uint64_t file_id, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec,
+                        int64_t write_nonce, int64_t xattr_nonce ) {
+   
+   fs_entry_init_common( core, fent, FTYPE_FILE, name, file_id, version, owner, coordinator, volume, mode, size, mtime_sec, mtime_nsec, write_nonce, xattr_nonce );
    fent->ftype = FTYPE_FIFO;
    return 0;
 }
 
 // create an FS entry that is a directory
-int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, int64_t mtime_sec, int32_t mtime_nsec ) {
-   fs_entry_init_common( core, fent, FTYPE_DIR, name, version, owner, coordinator, volume, mode, 4096, mtime_sec, mtime_nsec );
+int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name,
+                       uint64_t file_id, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, int64_t mtime_sec, int32_t mtime_nsec,
+                       int64_t write_nonce, int64_t xattr_nonce ) {
+   
+   fs_entry_init_common( core, fent, FTYPE_DIR, name, file_id, version, owner, coordinator, volume, mode, 4096, mtime_sec, mtime_nsec, write_nonce, xattr_nonce );
    fent->ftype = FTYPE_DIR;
    fent->children = new fs_entry_set();
    return 0;
@@ -455,22 +475,18 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
    
    if( ent->type == MD_ENTRY_DIR ) {
       // this is a directory
-      fs_entry_init_dir( core, fent, ent->name, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->mtime_sec, ent->mtime_nsec );
+      fs_entry_init_dir( core, fent, ent->name, ent->file_id, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, ent->xattr_nonce );
    }
    else if ( ent->type == MD_ENTRY_FILE ) {
       // this is a file
-      fs_entry_init_file( core, fent, ent->name, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec );
+      fs_entry_init_file( core, fent, ent->name, ent->file_id, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, ent->xattr_nonce );
       fent->manifest->set_modtime( ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
    }
-   else if (S_ISFIFO(ent->mode)){
+   else if( S_ISFIFO(ent->mode) ) {
       // this is a FIFO 
-      fs_entry_init_fifo( core, fent, ent->name, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec, fent->coordinator == core->gateway );
+      fs_entry_init_fifo( core, fent, ent->name, ent->file_id, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, ent->xattr_nonce );
    }
 
-   fent->file_id = ent->file_id;
-   fent->write_nonce = ent->write_nonce;
-   fent->xattr_nonce = ent->xattr_nonce;
-   
    return 0;
 }
 
@@ -1501,6 +1517,7 @@ int fs_entry_merge_old_dirty_blocks( struct fs_core* core, struct fs_entry* fent
 // Merge garbage blocks into an existing list of garbage blocks.
 // This only adds blocks into the garbage block list; if a block has an existing garbage entry,
 // then any subsequent block written will only have been cached locally (so no need to garbage-collect it).
+// This shallow-copies data from new_garbage_blocks; new_garbage_blocks should not be freed afterwards
 // fent must be write-locked 
 int fs_entry_merge_garbage_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t original_file_id, int64_t original_file_version, modification_map* new_garbage_blocks, modification_map* unmerged ) {
    
@@ -1807,6 +1824,20 @@ size_t fs_entry_sync_context_size( struct fs_entry* fent ) {
 // fent must be write-locked
 int fs_entry_sync_context_enqueue( struct fs_entry* fent, struct sync_context* ctx ) {
    fent->sync_queue->push_back( ctx );
+   
+   return 0;
+}
+
+
+// apply a function over the sync queue 
+// fent must be write-locked 
+int fs_entry_sync_queue_apply( struct fs_entry* fent, void (*func)( struct sync_context*, void* ), void* cls ) {
+   
+   for( sync_context_list_t::iterator itr = fent->sync_queue->begin(); itr != fent->sync_queue->end(); itr++ ) {
+      
+      // apply the function to the sync context
+      (*func)( *itr, cls );
+   }
    
    return 0;
 }

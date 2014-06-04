@@ -118,11 +118,11 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    int mmode = 0;
    if (S_ISFIFO(mode)) {
        mmode = ( mode & 0777 ) | S_IFIFO;
-       err = fs_entry_init_fifo( core, child, path_basename, fs_entry_next_file_version(), user, core->gateway, vol, mmode, 0, ts.tv_sec, ts.tv_nsec, true );
+       err = fs_entry_init_fifo( core, child, path_basename, 0, fs_entry_next_file_version(), user, core->gateway, vol, mmode, 0, ts.tv_sec, ts.tv_nsec, 0, 0 );
    }
    if (S_ISREG(mode)) {
        mmode = ( mode & 0777 );
-       err = fs_entry_init_file( core, child, path_basename, fs_entry_next_file_version(), user, core->gateway, vol, mmode, 0, ts.tv_sec, ts.tv_nsec );
+       err = fs_entry_init_file( core, child, path_basename, 0, fs_entry_next_file_version(), user, core->gateway, vol, mmode, 0, ts.tv_sec, ts.tv_nsec, 0, 0 );
    }
 
    if( err == 0 ) {
@@ -140,6 +140,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
       struct md_entry data;
       fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
       
+      // create the child on the MS, obtaining its file ID
       err = ms_client_create( core->ms, &child->file_id, &data );
 
       if( err != 0 ) {
@@ -288,7 +289,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
          // can create--initialize the child
          child = CALLOC_LIST( struct fs_entry, 1 );
 
-         int rc = fs_entry_init_file( core, child, path_basename, fs_entry_next_file_version(), user, core->gateway, vol, mode, 0, ts.tv_sec, ts.tv_nsec );
+         int rc = fs_entry_init_file( core, child, path_basename, 0, fs_entry_next_file_version(), user, core->gateway, vol, mode, 0, ts.tv_sec, ts.tv_nsec, 0, 0 );
 
          if( rc != 0 ) {
             errorf("fs_entry_init_file(%s) rc = %d\n", path, rc );
@@ -477,7 +478,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
       struct md_entry data;
       fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
       
-      // create synchronously
+      // create synchronously, obtaining the child's file ID
       *err = ms_client_create( core->ms, &child->file_id, &data );
 
       if( *err != 0 ) {

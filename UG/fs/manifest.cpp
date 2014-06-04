@@ -974,7 +974,7 @@ char* file_manifest::serialize_str() {
       sts << "IDs: [" << (long)itr->second->start_id << "-" << (long)itr->second->end_id << "] versions=[";
 
       for( uint64_t i = 0; i < itr->second->end_id - itr->second->start_id - 1; i++ ) {
-         sts << itr->second->block_versions[i] << ",";
+         sts << itr->second->block_versions[i] << ", ";
       }
       
       sts << itr->second->block_versions[itr->second->end_id - itr->second->start_id - 1] << "] ";
@@ -982,7 +982,7 @@ char* file_manifest::serialize_str() {
       sts << "hashes=[";
       for( uint64_t i = 0; i < itr->second->end_id - itr->second->start_id - 1; i++ ) {
          char* printable_hash = BLOCK_HASH_TO_STRING( hash_at( itr->second->block_hashes, i ) );
-         sts << printable_hash << ",";
+         sts << printable_hash << ", ";
          free( printable_hash);
       }
       

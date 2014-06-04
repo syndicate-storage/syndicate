@@ -273,6 +273,8 @@ int fs_entry_put_write_holes( struct fs_core* core, struct fs_entry* fent, off_t
    uint64_t start_hole_id = (fent->size / core->blocking_factor) + ((fent->size % core->blocking_factor) != 0 ? 1 : 0);
    uint64_t end_hole_id = (offset / core->blocking_factor);
    
+   dbprintf("fent->size = %jd, offset = %jd, so blocks [%" PRIu64 ",%" PRIu64 ") are holes\n", fent->size, offset, start_hole_id, end_hole_id );
+   
    // put each hole
    for( uint64_t hole_id = start_hole_id; hole_id < end_hole_id; hole_id++ ) {
       fent->manifest->put_hole( core, fent, hole_id );

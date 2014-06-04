@@ -112,17 +112,15 @@ ssize_t fs_entry_serialize_manifest( struct fs_core* core, struct fs_entry* fent
       mmsg.set_signature("");
    }
    
-   string mb;
-   bool valid = mmsg.SerializeToString( &mb );
-   if( !valid ) {
-      *manifest_bits = NULL;
-      return -EINVAL;
+   size_t manifest_bits_len = 0;
+   
+   int rc = md_serialize< Serialization::ManifestMsg >( &mmsg, manifest_bits, &manifest_bits_len );
+   if( rc != 0 ) {
+      errorf("md_serialize rc = %d\n", rc );
+      return rc;
    }
-
-   *manifest_bits = CALLOC_LIST( char, mb.size() );
-   memcpy( *manifest_bits, mb.data(), mb.size() );
-
-   return (ssize_t)mb.size();
+   
+   return (ssize_t)manifest_bits_len;
 }
 
 

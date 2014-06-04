@@ -55,6 +55,7 @@ using namespace std;
 #define REPLICA_DELETE 2
 
 // snapshot of vital fs_entry fields for replication and garbage collection
+// NOTE: don't add any dynamically-allocated fields to this structure
 struct replica_snapshot {
    uint64_t file_id;
    int64_t file_version;

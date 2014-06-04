@@ -1034,7 +1034,7 @@ static int fs_entry_try_read_block_local( struct fs_core* core, char const* fs_p
    
    // EOF?
    if( block_id * core->blocking_factor >= (uint64_t)fent->size ) {
-      dbprintf("%" PRIX64 " is EOF (%" PRIu64 " >= %" PRIu64 ")\n", block_id, block_id * core->blocking_factor, (uint64_t)fent->size );
+      dbprintf("%" PRIu64 " is EOF (%" PRIu64 " >= %" PRIu64 ")\n", block_id, block_id * core->blocking_factor, (uint64_t)fent->size );
       
       block_fut->eof = true;
       

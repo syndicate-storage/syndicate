@@ -85,8 +85,6 @@ static int fs_entry_shrink_file( struct fs_core* core, char const* fs_path, stru
       fs_entry_block_info_garbage_init( &old_binfo, old_block_version, old_block_hash, BLOCK_HASH_LEN(), fent->coordinator );
       
       (*garbage_blocks)[block_id] = old_binfo;
-      
-      free( old_block_hash );
    }
    
    // cut off the records in the manifest
@@ -146,7 +144,7 @@ static int fs_entry_expand_file( struct fs_core* core, char const* fs_path, stru
    (*garbage_blocks)[ start_id ] = old_binfo;
    
    // put write holes in for the remaining blocks 
-   for( uint64_t block_id = start_id + 1; block_id != end_id; block_id++ ) {
+   for( uint64_t block_id = start_id + 1; block_id < end_id; block_id++ ) {
       fent->manifest->put_hole( core, fent, block_id );
    }
    
@@ -228,7 +226,7 @@ static int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, s
    
    int rc = 0;
    
-   if( max_block <= new_max_block ) {
+   if( new_max_block <= max_block ) {
       // file's getting smaller 
       rc = fs_entry_shrink_file( core, fs_path, fent, size, &garbage_blocks );
       
@@ -270,7 +268,11 @@ static int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, s
    fs_entry_merge_garbage_blocks( core, fent, fent->file_id, fent->version, &garbage_blocks, &unmerged_garbage );
    
    fs_entry_free_modification_map_ex( &dirty_blocks, false );   // keep file descriptors open
-   fs_entry_free_modification_map( &garbage_blocks );
+   
+   // NOTE: no need to free garbage blocks
+   //fs_entry_free_modification_map( &garbage_blocks );
+   
+   // TODO; garbage-collect now?
    fs_entry_free_modification_map( &unmerged_garbage );         // TODO: garbage-collection persistence?
    
    return 0;
@@ -344,19 +346,15 @@ int fs_entry_truncate_remote( struct fs_core* core, char const* fs_path, struct 
 
 
 // perform the truncate 
-// fent must NOT be locked
+// fent must be write-locked
 // NOTE: we must block concurrent writers
 int fs_entry_run_truncate( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size, uint64_t parent_id, char* parent_name ) {
-   
-   fs_entry_wlock( fent );
    
    // make sure we have the latest manifest 
    int rc = 0;
    int err = fs_entry_revalidate_manifest( core, fs_path, fent );
    if( err != 0 ) {
       errorf( "fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, err );
-      
-      fs_entry_unlock( fent );
       
       return err;
    }
@@ -371,8 +369,6 @@ int fs_entry_run_truncate( struct fs_core* core, char const* fs_path, struct fs_
       
       if( rc < 0 ) {
          errorf("fs_entry_truncate_remote( %s to %jd ) rc = %d\n", fs_path, size, rc );
-         
-         fs_entry_unlock( fent );
          
          return rc;
       }
@@ -390,19 +386,17 @@ int fs_entry_run_truncate( struct fs_core* core, char const* fs_path, struct fs_
       if( rc != 0 ) {
          errorf("fs_entry_truncate_local( %s to %jd ) rc = %d\n", fs_path, size, rc );
          
-         fs_entry_unlock( fent );
-      
          return rc;
       }
       
       // start synchronizing the entry's data (getting a snapshot in the process)
+      // bypass the sync queue, since we're reversioning
       struct sync_context sync_ctx;
+      memset( &sync_ctx, 0, sizeof(struct sync_context) );
       
       rc = fs_entry_sync_data_begin( core, fs_path, fent, parent_id, parent_name, &sync_ctx );
-      if( rc != 0 ) {
-         errorf("fs_entry_sync_data( %s ) rc = %d\n", fs_path, rc );
-         
-         fs_entry_unlock( fent );
+      if( rc < 0 ) {
+         errorf("fs_entry_sync_data_begin( %s ) rc = %d\n", fs_path, rc );
          
          return -EIO;
       }
@@ -414,8 +408,6 @@ int fs_entry_run_truncate( struct fs_core* core, char const* fs_path, struct fs_
          
          // revert 
          fs_entry_sync_data_revert( core, fent, &sync_ctx );
-         
-         fs_entry_unlock( fent );
          
          fs_entry_sync_context_free( &sync_ctx );
          return -EIO;
@@ -431,183 +423,15 @@ int fs_entry_run_truncate( struct fs_core* core, char const* fs_path, struct fs_
          // undo truncate
          fs_entry_sync_data_revert( core, fent, &sync_ctx );
          
-         fs_entry_unlock( fent );
-         
          fs_entry_sync_context_free( &sync_ctx );
          return rc;
       }
       
-      fs_entry_unlock( fent );
       fs_entry_sync_context_free( &sync_ctx );
    }
    
    return 0;
 }
-
-/*                                
-// truncate a file.
-// fent must be write locked.
-// NOTE: we must reversion the file on truncate, since size can't decrease on the MS for the same version of the entry!
-int fs_entry_truncate_real( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size, uint64_t user, uint64_t volume, uint64_t parent_id, char const* parent_name ) {
-
-   // make sure we have the latest manifest 
-   int rc = 0;
-   int err = fs_entry_revalidate_manifest( core, fs_path, fent );
-   if( err != 0 ) {
-      errorf( "fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, err );
-      return err;
-   }
-   
-   // which blocks need to be withdrawn?
-   uint64_t max_block = fent->size / core->blocking_factor;
-   if( fent->size % core->blocking_factor > 0 ) {
-      max_block++;      // preserve the remainder of the last block
-   }
-
-   uint64_t new_max_block = size / core->blocking_factor;
-   if( size % core->blocking_factor > 0 ) {
-      new_max_block++;
-   }
-
-   // which blocks are modified?
-   modification_map modified_blocks;
-   
-   // old block information 
-   modification_map overwritten_blocks;
-   
-   // block futures
-   list<struct cache_block_future*> futures;
-   
-   // fent snapshot before we do anything
-   struct replica_snapshot fent_snapshot;
-   fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
-
-   // are we going to lose any remote blocks?
-   bool local = FS_ENTRY_LOCAL( core, fent );
-
-   // if we're removing blocks, then we'll need to withdraw them.
-   if( size < fent->size ) {
-      rc = fs_entry_shrink_file( core, fs_path, fent, size, &modified_blocks, &overwritten_blocks, &futures );
-      if( rc == 0 ) {
-         errorf("fs_entry_shrink_file(%s) rc = %d\n", fs_path, rc );
-         err = rc;
-      }
-   }
-   else if( size > fent->size ) {
-      rc = fs_entry_expand_file( core, fs_path, fent, size, &modified_blocks, &overwritten_blocks, &futures );
-      if( rc != 0 ) {
-         errorf("fs_entry_expand_file(%s) rc = %d\n", fs_path, rc );
-         err = rc;
-      }
-   }
-   
-   // wait for all cache writes to finish
-   rc = fs_entry_finish_cache_writes( futures );
-   
-   if( rc == 0 && err == 0 && !local ) {
-      // inform the remote block owner that the data must be truncated
-      // build up a truncate write message
-      Serialization::WriteMsg *truncate_msg = new Serialization::WriteMsg();
-      fs_entry_init_write_message( truncate_msg, core, Serialization::WriteMsg::TRUNCATE );
-      fs_entry_prepare_truncate_message( truncate_msg, fs_path, fent, new_max_block );
-
-      Serialization::WriteMsg *withdraw_ack = new Serialization::WriteMsg();
-      
-      err = fs_entry_send_write_or_coordinate( core, fs_path, fent, &fent_snapshot, truncate_msg, withdraw_ack );
-      
-      if( err == 1 ) {
-         // we're now the coordinator!
-         err = 0;
-      }
-
-      if( err != 0 ) {
-         errorf( "fs_entry_post_write(%" PRIu64 "-%" PRIu64 ") rc = %d\n", new_max_block, max_block, err );
-         err = -EIO;
-      }
-      else if( withdraw_ack->type() != Serialization::WriteMsg::ACCEPTED ) {
-         if( withdraw_ack->type() == Serialization::WriteMsg::ERROR ) {
-            errorf( "remote truncate failed, error = %d (%s)\n", withdraw_ack->errorcode(), withdraw_ack->errortxt().c_str() );
-            err = withdraw_ack->errorcode();
-         }
-         else {
-            errorf( "remote truncate invalid message %d\n", withdraw_ack->type() );
-            err = -EIO;
-         }
-      }
-      else {
-         // success!
-         err = 0;
-      }
-      
-      delete withdraw_ack;
-      delete truncate_msg;
-
-      // the remote host will have reversioned the file.
-      // we need to refresh its metadata before then.
-      if( !FS_ENTRY_LOCAL( core, fent ) ) {
-         fs_entry_mark_read_stale( fent );
-      }
-   }
-
-
-   // replicate data
-   if( err == 0 ) {
-      
-      // make a file handle, but only for purposes of replication.
-      // This lets us start all replicas concurrently, and then block until they're all done.
-      struct fs_file_handle fh;
-      memset( &fh, 0, sizeof(fh) );
-      fs_entry_replica_file_handle( core, fs_path, fent, O_SYNC, &fh );
-      
-      rc = fs_entry_replicate_write( core, &fh, &modified_blocks );
-      
-      fs_entry_free_replica_file_handle( &fh );
-      
-      if( rc != 0 )
-         err = rc;
-   }
-
-   // reversion this file atomically
-   if( err == 0 && local ) {
-
-      int64_t new_version = fs_entry_next_file_version();
-
-      err = fs_entry_reversion_file( core, fs_path, fent, new_version, parent_id, parent_name );
-
-      if( err != 0 ) {
-         errorf("fs_entry_reversion_file(%s.%" PRId64 " --> %" PRId64 ") rc = %d\n", fs_path, fent->version, new_version, err );
-      }
-      else {
-         err = 0;
-      }
-   }
-   
-   // garbage collect old manifest and block on success
-   if( err == 0 ) {
-      rc = fs_entry_garbage_collect_overwritten_data( core, fent, &fent_snapshot, &overwritten_blocks );
-      
-      if( rc != 0 ) {
-         errorf("fs_entry_garbage_collect_blocks(%s) rc = %d\n", fs_path, rc );
-      }
-   }
-   
-   // recover if error
-   if( err != 0 ) {
-      rc = fs_entry_revert_write( core, fent, &fent_snapshot, size, &modified_blocks, &overwritten_blocks, true );
-      if( rc != 0 ) {
-         errorf("fs_entry_revert_write(%s) rc = %d\n", fs_path, rc );
-         rc = 0;
-      }
-   }
-   
-   fs_entry_free_modification_map( &modified_blocks );
-   fs_entry_free_modification_map( &overwritten_blocks );
-   
-   dbprintf("file size is now %" PRId64 "\n", (int64_t)fent->size );
-
-   return err;
-}
-*/
 
 
 // truncate, only if the version is correct (or ignore it if it's -1)

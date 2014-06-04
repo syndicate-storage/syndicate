@@ -20,6 +20,10 @@
 #include "replication.h"
 #include "fs_entry.h"
 
+#define SYNC_SUCCESS 0
+#define SYNC_WAIT    1
+#define SYNC_NOTHING 2
+
 // synchronization context for a file.
 // if the file is local, we:
 //   * replicate blocks and manifests
@@ -46,6 +50,7 @@ struct sync_context {
    modification_map* garbage_blocks;            // blocks that will be garbage-collected
    
    replica_list_t* replica_futures;             // blocks being replicated
+   struct replica_context* manifest_fut;        // manifest future (NULL if not used).  Points to a future in replica_futures, if set
    
    sem_t sem;   // ensures proper ordering of block/metadata replication (see below)
 };

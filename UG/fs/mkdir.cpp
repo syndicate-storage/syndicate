@@ -26,9 +26,9 @@ int fs_entry_mkdir_lowlevel( struct fs_core* core, char const* path, struct fs_e
    if( child == NULL ) {
 
       // create an fs_entry and attach it
-      child = (struct fs_entry*)calloc( sizeof(struct fs_entry), 1 );
+      child = CALLOC_LIST( struct fs_entry, 1 );
 
-      fs_entry_init_dir( core, child, path_basename, fs_entry_next_file_version(), user, 0, vol, mode, mtime_sec, mtime_nsec );
+      fs_entry_init_dir( core, child, path_basename, 0, fs_entry_next_file_version(), user, 0, vol, mode, mtime_sec, mtime_nsec, 0, 0 );
       
       // add . and ..
       fs_entry_set_insert( child->children, ".", child );
@@ -119,6 +119,7 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_
 
    else {
 
+      // find the child we just created
       struct fs_entry* child = fs_entry_set_find_name( parent->children, path_basename );
 
       fs_entry_wlock( child );
@@ -128,6 +129,7 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_
       fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
       free( parent_name );
       
+      // make the directory on the MS, filling in the file ID into the child
       err = ms_client_mkdir( core->ms, &child->file_id, &data );
       
       if( err != 0 ) {

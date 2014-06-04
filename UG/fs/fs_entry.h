@@ -75,7 +75,7 @@ struct fs_entry_block_info {
    
    // already-opened block
    int block_fd;        // if >= 0, this is an FD that refers to the block on disk 
-   char* block_buf;     // if non-NULL, this is the block itself in RAM 
+   char* block_buf;     // if non-NULL, this is the block itself in RAM (only applicable for bufferred blocks)
    size_t block_len;    // length of block_buf
 };
 
@@ -235,9 +235,18 @@ int fs_core_wlock( struct fs_core* core );
 int fs_core_unlock( struct fs_core* core );
 
 // fs_entry initialization
-int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec );
-int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, int64_t mtime_sec, int32_t mtime_nsec );
-int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent, char const* name, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec, bool local);
+int fs_entry_init_file( struct fs_core* core, struct fs_entry* fent,
+                        char const* name, uint64_t file_id, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec,
+                        int64_t write_nonce, int64_t xattr_nonce );
+
+int fs_entry_init_dir( struct fs_core* core, struct fs_entry* fent,
+                       char const* name, uint64_t file_id, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, int64_t mtime_sec, int32_t mtime_nsec,
+                       int64_t write_nonce, int64_t xattr_nonce );
+
+int fs_entry_init_fifo( struct fs_core* core, struct fs_entry* fent,
+                        char const* name, uint64_t file_id, int64_t version, uint64_t owner, uint64_t coordinator, uint64_t volume, mode_t mode, off_t size, int64_t mtime_sec, int32_t mtime_nsec,
+                        int64_t write_nonce, int64_t xattr_nonce );
+
 int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_entry* ent );
 
 int64_t fs_entry_next_file_version(void);
@@ -347,6 +356,7 @@ int fs_entry_sync_context_enqueue( struct fs_entry* fent, struct sync_context* c
 int fs_entry_sync_context_dequeue( struct fs_entry* fent, struct sync_context** ctx );
 int fs_entry_sync_context_remove( struct fs_entry* fent, struct sync_context* ctx );
 size_t fs_entry_sync_context_size( struct fs_entry* fent );
+int fs_entry_sync_queue_apply( struct fs_entry* fent, void (*func)( struct sync_context*, void* ), void* cls );
 
 // view change
 int fs_entry_view_change_callback( struct ms_client* ms, void* cls );
