@@ -416,7 +416,8 @@ template <class T> int md_serialize( T* protobuf, char** bits, size_t* bits_len 
    try {
       protobuf->SerializeToString( &msgbits );
    }
-   catch( exception e ) {
+   catch( exception& e ) {
+      errorf("SerializeToString exception: %s\n", e.what() );
       return -EINVAL;
    }
    
@@ -441,12 +442,15 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
    try {
       valid = protobuf->ParseFromString( string(bits, bits_len) );
    }
-   catch( exception e ) {
+   catch( exception& e ) {
+      errorf("ParseFromString exception: %s\n", e.what() );
       return -EINVAL;
    }
    
-   if( !valid )
+   if( !valid ) {
+      errorf("ParseFromString rc = %d\n", valid );
       return -EINVAL;
+   }
    
    return 0;
 }
