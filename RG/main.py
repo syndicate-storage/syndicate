@@ -158,7 +158,10 @@ def setup_syndicate( config ):
 
 #-------------------------
 def run_devel( hostname, portnum ):
-
+   """
+   Start the server, using the WSGI reference server (good for development)
+   """
+   
    log.info("Starting development server on %s:%s" % (hostname, portnum))
 
    from wsgiref.simple_server import make_server 
@@ -169,6 +172,19 @@ def run_devel( hostname, portnum ):
    httpd.serve_forever()
    
    return 0
+   
+
+#-------------------------
+def run_bjoern( hostname, portnum ):
+   """
+   Start the server, using the Bjoern server (https://github.com/jonashaag/bjoern)
+   """
+   
+   log.info("Starting Bjoern server on %s:%s" % (hostname, portnum))
+   
+   import bjoern
+   
+   bjoern.run( rg_server.wsgi_handle_request, hostname, portnum )
    
 
 #-------------------------

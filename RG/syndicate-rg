@@ -71,7 +71,8 @@ def spawn_rg( argv, old_exit_status ):
    
    setproctitle.setproctitle( child_proc_title( config['volume'] ) )
    
-   rc = rg_main.run_devel( syndicate.hostname(), syndicate.portnum() )
+   #rc = rg_main.run_devel( syndicate.hostname(), syndicate.portnum() )
+   rc = rg_main.run_bjoern( syndicate.hostname(), syndicate.portnum() )
    
    return rc
 

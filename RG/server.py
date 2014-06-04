@@ -69,6 +69,43 @@ def post_interpret_error( rc ):
 
 
 #-------------------------
+def validate_infile( req_info, infile ):
+   '''
+      validate the incoming data.
+      check its hash and size
+      return (HTTP status, message)
+   '''
+   
+   hf = HashFunc()
+   total_read = 0
+   buflen = 4096
+   
+   while True:
+      inbuf = infile.read( buflen )
+      hf.update( inbuf )
+      
+      total_read += len(inbuf)
+      
+      if len(inbuf) == 0:
+         break
+      
+   infile_hash = hf.hexdigest()
+   infile.seek(0)
+   
+   # check size 
+   if req_info.size != total_read:
+      log.error("Size mismatch: expected %s, got %s" % (req_info.size, total_read))
+      return (400, "Invalid Request")
+   
+   # check hash
+   if req_info.data_hash != infile_hash:
+      log.error("Hash mismatch: expected '%s', got '%s'" % (req_info.data_hash, infile_hash))
+      return (400, "Invalid request")
+
+   return (200, "OK")
+
+
+#-------------------------
 def post( metadata_field, infile ):
    '''
       Process a POST request.  Return an HTTP status code.  Read all data from infile.
@@ -100,19 +137,11 @@ def post( metadata_field, infile ):
    rc = rg_request.check_post_caps( req_info )
    if rc != 0:
       return post_interpret_error( rc )
-      
    
-   # validate data integrity
-   hf = HashFunc()
-   inbuf = infile.read()
-   hf.update( inbuf )
-   infile_hash = hf.hexdigest()
-   
-   if req_info.data_hash != infile_hash:
-      log.error("Hash mismatch (%s bytes): expected '%s', got '%s' (data:\n%s\n)" % (len(inbuf), req_info.data_hash, infile_hash, inbuf))
-      return (400, "Invalid request")
-   
-   infile.seek(0)
+   # validate the input
+   rc, msg = validate_infile( req_info, infile )
+   if rc != 200:
+      return (rc, msg)
    
    # store
    rc = 0
@@ -255,7 +284,8 @@ def wsgi_handle_request( environ, start_response ):
          return invalid_request( start_response, status="%s %s" % (rc, msg) )
       
    elif environ['REQUEST_METHOD'] == 'POST':
-      # POST request
+      # POST request.
+      # get POST'ed fields
       post_fields = FieldStorage( fp=environ['wsgi.input'], environ=environ )
       
       # validate
@@ -263,12 +293,12 @@ def wsgi_handle_request( environ, start_response ):
          if f not in post_fields.keys():
             return invalid_request( start_response )
       
-      metadata_field = post_fields['metadata'].value
-      infile = post_fields['data'].file
+      metadata_field = post_fields[METADATA_FIELD_NAME].value
+      infile = post_fields[DATA_FIELD_NAME].file
       
       # if no file was given, then make a stringIO wrapper around the given string
       if infile == None:
-         infile = StringIO( post_fields['data'].value )
+         infile = StringIO( post_fields[DATA_FIELD_NAME].value )
       
       rc, msg = post( metadata_field, infile )
       
@@ -282,10 +312,10 @@ def wsgi_handle_request( environ, start_response ):
       post_fields = FieldStorage( fp=environ['wsgi.input'], environ=environ )
       
       # validate
-      if not post_fields.has_key('metadata'):
+      if not post_fields.has_key(METADATA_FIELD_NAME):
          return invalid_request( start_response )
       
-      metadata_field = post_fields['metadata'].value
+      metadata_field = post_fields[METADATA_FIELD_NAME].value
       
       rc, msg = delete( metadata_field )
       
