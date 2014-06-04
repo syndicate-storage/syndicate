@@ -1155,6 +1155,7 @@ int md_download_manifest( struct md_syndicate_conf* conf, struct md_downloader* 
       if( processed_manifest_data != NULL && processed_manifest_data != manifest_data ) {
          // driver transformed the data
          free( manifest_data );
+         manifest_data = NULL;
       
          manifest_data = processed_manifest_data;
          manifest_data_len = processed_manifest_data_len;
@@ -1164,6 +1165,10 @@ int md_download_manifest( struct md_syndicate_conf* conf, struct md_downloader* 
    rc = md_parse< Serialization::ManifestMsg >( mmsg, manifest_data, manifest_data_len );
    if( rc != 0 ) {
       errorf("md_parse rc = %d\n", rc );
+      
+      if( manifest_data )
+         free( manifest_data );
+      
       return -ENODATA;
    }
    
