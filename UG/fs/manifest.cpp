@@ -612,6 +612,17 @@ block_map::iterator file_manifest::find_block_set( uint64_t block ) {
 }
 
 
+// find the block set with the maximal block ID 
+// need to lock first.
+block_map::iterator file_manifest::find_end_block_set() {
+   
+   block_map::iterator itr = this->block_urls.end();
+   itr--;
+   
+   return itr;
+}
+
+
 // attempt to merge two adjacent block url sets, given the block_id that identiifes the block URL set (i.e. can be found)
 // return true on success
 bool file_manifest::merge_adjacent( uint64_t block_id ) {
@@ -719,12 +730,30 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
 
       if( this->block_urls.size() > 0 ) {
          //printf("// block occurs after the end of the file.  Can we append it?\n");
-         block_map::reverse_iterator last_range_itr = this->block_urls.rbegin();
+         block_map::iterator last_range_itr = this->find_end_block_set();
          block_url_set* last_range = last_range_itr->second;
 
          bool rc = last_range->append( core->volume, gateway, fent->file_id, block_id, block_version, block_hash );
          if( !rc ) {
-            //printf("// could not append to the last block range, so we'll need to make a new one\n");
+            // printf("// could not append (%" PRIu64 ", %" PRIu64 ", %" PRIX64 ", %" PRIu64 ") to (%" PRIu64 ", %" PRIu64 ", %" PRIX64 ", [%" PRIu64 "-%" PRIu64 "]) to the last block range, so we'll need to make a new one\n",
+            //       core->volume, gateway, fent->file_id, block_id, last_range->volume_id, last_range->gateway_id, last_range->file_id, last_range->start_id, last_range->end_id );
+            
+            // put a range of write-holes, if we need to 
+            if( last_range->end_id < block_id ) {
+               
+               // blank hashes and versions...
+               uint64_t num_holes = block_id - last_range->end_id;
+               
+               int64_t* versions = CALLOC_LIST( int64_t, num_holes );
+               unsigned char* hashes = CALLOC_LIST( unsigned char, num_holes * BLOCK_HASH_LEN() );
+               
+               // add the write-holes
+               this->block_urls[ last_range->end_id ] = new block_url_set( core->volume, 0, fent->file_id, this->file_version, last_range->end_id, block_id, versions, hashes );
+               
+               free( versions );
+               free( hashes );
+            }
+            
             this->block_urls[ block_id ] = new block_url_set( core->volume, gateway, fent->file_id, this->file_version, block_id, block_id + 1, bvec, block_hash );
          }
          else {
@@ -966,10 +995,12 @@ bool file_manifest::is_block_present( uint64_t block_id ) {
 
 
 // serialize the manifest to a string
-char* file_manifest::serialize_str() {
+char* file_manifest::serialize_str_locked( bool locked ) {
    stringstream sts;
 
-   pthread_rwlock_rdlock( &this->manifest_lock );
+   if( !locked )
+      pthread_rwlock_rdlock( &this->manifest_lock );
+   
    for( block_map::iterator itr = this->block_urls.begin(); itr != this->block_urls.end(); itr++ ) {
       sts << "IDs: [" << (long)itr->second->start_id << "-" << (long)itr->second->end_id << "] versions=[";
 
@@ -995,8 +1026,17 @@ char* file_manifest::serialize_str() {
       
       sts << string("volume=") << itr->second->volume_id << " gateway=" << itr->second->gateway_id << " file_id=" << buf << " version=" << itr->second->file_version << "\n";
    }
-   pthread_rwlock_unlock( &this->manifest_lock );
+   
+   if( !locked )
+      pthread_rwlock_unlock( &this->manifest_lock );
+   
    return strdup( sts.str().c_str() );
+}
+
+
+// serialize the manifest to a string 
+char* file_manifest::serialize_str() {
+   return this->serialize_str_locked( false );
 }
 
 

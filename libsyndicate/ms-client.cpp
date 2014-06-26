@@ -1390,7 +1390,7 @@ int ms_client_find_expired_certs( struct ms_client* client, struct ms_volume* vo
 
 
 // reload a Volume's certificates
-int ms_client_reload_certs( struct ms_client* client ) {
+int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_version ) {
    
    // get the certificate manifest...
    Serialization::ManifestMsg mmsg;
@@ -1398,7 +1398,15 @@ int ms_client_reload_certs( struct ms_client* client ) {
    ms_client_view_rlock( client );
    
    uint64_t volume_id = client->volume->volume_id;
-   uint64_t volume_cert_version = client->volume->volume_cert_version;
+   uint64_t volume_cert_version = 0; 
+  
+   if( (signed)new_cert_bundle_version == -1 ) {
+      // get from loaded volume; i.e. on initialization
+      volume_cert_version = client->volume->volume_cert_version;
+   }
+   else {
+      volume_cert_version = new_cert_bundle_version;
+   }
    
    ms_client_view_unlock( client );
    
@@ -1676,7 +1684,7 @@ int ms_client_reload_volume( struct ms_client* client ) {
 
    // load new certificate information, if we have any
    if( new_cert_version > old_cert_version ) {
-      rc = ms_client_reload_certs( client );
+      rc = ms_client_reload_certs( client, new_cert_version );
       if( rc != 0 ) {
          errorf("ms_client_reload_certs rc = %d\n", rc );
 
@@ -2170,7 +2178,7 @@ static int ms_client_finish_registration( struct ms_client* client ) {
    int rc = 0;
    
    // load the certificate bundle   
-   rc = ms_client_reload_certs( client );
+   rc = ms_client_reload_certs( client, (uint64_t)(-1) );
    if( rc != 0 ) {
       errorf("ms_client_reload_certs rc = %d\n", rc );
       return -ENODATA;

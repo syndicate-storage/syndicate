@@ -73,6 +73,7 @@ def spawn_rg( argv, old_exit_status ):
    
    #rc = rg_main.run_devel( syndicate.hostname(), syndicate.portnum() )
    rc = rg_main.run_bjoern( syndicate.hostname(), syndicate.portnum() )
+   #rc = rg_main.run_meinheld( syndicate.hostname(), syndicate.portnum() )
    
    return rc
 

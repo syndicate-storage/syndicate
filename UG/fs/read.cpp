@@ -52,7 +52,7 @@ static int fs_entry_read_block_ex( struct fs_core* core, char const* fs_path, st
       errorf("fs_entry_read_context_run_local( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
               fs_path, fent->file_id, fent->version, block_id, block_version, rc );
       
-      fs_entry_read_context_free_all( &read_ctx );
+      fs_entry_read_context_free_all( core, &read_ctx );
       
       if( (rc == -EREMOTE && !download_if_not_local) )
          return -EREMOTE;
@@ -67,7 +67,7 @@ static int fs_entry_read_block_ex( struct fs_core* core, char const* fs_path, st
       if( rc != 0 ) {
          // failed...
          errorf("fs_entry_read_context_setup_downloads( %s ) rc = %d\n", fs_path, rc );
-         fs_entry_read_context_free_all( &read_ctx );
+         fs_entry_read_context_free_all( core, &read_ctx );
          
          return -ENODATA;
       }
@@ -79,7 +79,7 @@ static int fs_entry_read_block_ex( struct fs_core* core, char const* fs_path, st
          rc = fs_entry_read_context_run_downloads( core, fent, &read_ctx );
          if( rc != 0 ) {
             errorf("fs_entry_read_context_run_downloads( %s ) rc = %d\n", fs_path, rc );
-            fs_entry_read_context_free_all( &read_ctx );
+            fs_entry_read_context_free_all( core, &read_ctx );
             
             return -ENODATA;
          }
@@ -87,7 +87,7 @@ static int fs_entry_read_block_ex( struct fs_core* core, char const* fs_path, st
    }
    
    // success!
-   fs_entry_read_context_free_all( &read_ctx );
+   fs_entry_read_context_free_all( core, &read_ctx );
    return 0;
 }
 
@@ -177,8 +177,12 @@ int fs_entry_read_block_future_init( struct fs_entry_read_block_future* block_fu
    return 0;
 }
 
-// destroy a read future 
-int fs_entry_read_block_future_free( struct fs_entry_read_block_future* block_fut ) {
+// destroy a read future.
+// detach the read handle from the core downloader
+int fs_entry_read_block_future_free( struct fs_core* core, struct fs_entry_read_block_future* block_fut ) {
+   
+   md_download_context_cancel( &core->state->dl, &block_fut->dlctx );
+   
    sem_destroy( &block_fut->sem );
    
    if( block_fut->has_dlctx ) {
@@ -343,7 +347,6 @@ int fs_entry_read_context_free_ex( struct fs_entry_read_context* read_ctx, fs_en
    if( read_ctx->download_to_future ) {
       delete read_ctx->download_to_future;
       read_ctx->download_to_future = NULL;
-      
    }
    
    md_download_set_free( &read_ctx->dlset );
@@ -352,12 +355,12 @@ int fs_entry_read_context_free_ex( struct fs_entry_read_context* read_ctx, fs_en
 }
 
 // free a read context and its read futures' data.  read futures themselves are unaffected
-int fs_entry_read_context_free_all( struct fs_entry_read_context* read_ctx ) {
+int fs_entry_read_context_free_all( struct fs_core* core, struct fs_entry_read_context* read_ctx ) {
    fs_entry_read_block_future_set_t* reads = NULL;
    fs_entry_read_context_free_ex( read_ctx, &reads );
    
    for( fs_entry_read_block_future_set_t::iterator itr = reads->begin(); itr != reads->end(); itr++ ) {
-      fs_entry_read_block_future_free( *itr );
+      fs_entry_read_block_future_free( core, *itr );
    }
    
    delete reads;
@@ -365,20 +368,16 @@ int fs_entry_read_context_free_all( struct fs_entry_read_context* read_ctx ) {
 }
 
 // free a list of read futures' data, and its futures' data.  don't free the futures themselves (i.e. useful if they're on the stack)
-int fs_entry_read_block_futures_free_all( fs_entry_read_block_future_set_t* reads ) {
+static int fs_entry_read_block_futures_free_all( struct fs_core* core, fs_entry_read_block_future_set_t* reads ) {
    
    for( fs_entry_read_block_future_set_t::iterator itr = reads->begin(); itr != reads->end(); itr++ ) {
-      fs_entry_read_block_future_free( *itr );
+      
+      fs_entry_read_block_future_free( core, *itr );
       free( *itr );
    }
    
    delete reads;
    return 0;
-}
-
-// free a read context, but not its read futures
-int fs_entry_read_context_free( struct fs_entry_read_context* read_ctx ) {
-   return fs_entry_read_context_free_ex( read_ctx, NULL );
 }
 
 // have a read context track a downloading block
@@ -887,7 +886,7 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
    // beyond it are nonexistant (i.e. mark them as beyond EOF).
    
    // wait for a download to finish
-   rc = md_download_context_wait_any( &read_ctx->dlset, -1 );
+   rc = md_download_context_wait_any( &read_ctx->dlset, core->conf->transfer_timeout * 1000 );
    if( rc != 0 ) {
       errorf("md_download_context_wait_any rc = %d\n", rc );
       return rc;
@@ -1193,7 +1192,7 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
       uint64_t gateway_id = fent->manifest->get_block_host( core, block_id );
       
       off_t block_read_start = (offset % core->blocking_factor);
-      off_t block_read_end = MIN( offset + real_count, core->blocking_factor );
+      off_t block_read_end = MIN( ((offset) % core->blocking_factor) + real_count, core->blocking_factor );
       
       // if we're reading from an AG, then we don't know the size in advance.
       // Otherwise, we do, and we should not read past it.
@@ -1440,22 +1439,22 @@ static int fs_entry_update_bufferred_block_read( struct fs_core* core, struct fs
       if( has_block == -ENOENT ) {
          // this block is not cached, so do so.
          dbprintf("block %" PRIu64 " will be bufferred in RAM\n", last_block_fut->block_id );
-         fs_entry_replace_bufferred_block( core, fent, last_block_fut->block_id, last_block_fut->result, last_block_fut->result_len );
+         fs_entry_replace_bufferred_block( core, fent, last_block_fut->block_id, last_block_fut->result, last_block_fut->result_len, false );
       }
    }
    
    return 0;
-}   
+}
 
 // clean up from running a read 
-static int fs_entry_read_run_cleanup( struct fs_entry_read_context* read_ctx ) {
+static int fs_entry_read_run_cleanup( struct fs_core* core, struct fs_entry_read_context* read_ctx ) {
    
    fs_entry_read_block_future_set_t* reads = NULL;
    
    fs_entry_read_context_free_ex( read_ctx, &reads );
    
    if( reads ) {
-      fs_entry_read_block_futures_free_all( reads );
+      fs_entry_read_block_futures_free_all( core, reads );
    }
    
    return 0;
@@ -1524,7 +1523,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    if( rc != 0 && rc != -EREMOTE ) {
       // failed, for some reason besides some blocks being non-local 
       errorf("fs_entry_read_context_run_local( %s ) rc = %zd\n", fs_path, rc );
-      fs_entry_read_run_cleanup( &read_ctx );
+      fs_entry_read_run_cleanup( core, &read_ctx );
       return rc;
    }
    else if( rc == -EREMOTE ) {
@@ -1533,7 +1532,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
       if( rc != 0 ) {
          // failed...
          errorf("fs_entry_read_context_setup_downloads( %s ) rc = %zd\n", fs_path, rc );
-         fs_entry_read_run_cleanup( &read_ctx );
+         fs_entry_read_run_cleanup( core, &read_ctx );
          return rc;
       }
       
@@ -1549,7 +1548,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
          rc = fs_entry_read_context_run_downloads_ex( core, fent, &read_ctx, false, fs_entry_read_block_future_finalizer_cache_async, &cache_futs );
          if( rc != 0 ) {
             errorf("fs_entry_read_context_run_downloads_ex( %s ) rc = %zd\n", fs_path, rc );
-            fs_entry_read_run_cleanup( &read_ctx );
+            fs_entry_read_run_cleanup( core, &read_ctx );
             return rc;
          }
       }
@@ -1565,7 +1564,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    rc = fs_entry_read_block_future_combine( core, fs_path, fent, buf, real_count, offset, read_ctx.reads );
    if( rc < 0 ) {
       errorf("fs_entry_read_context_combine( %s ) rc = %zd\n", fs_path, rc );
-      fs_entry_read_run_cleanup( &read_ctx );
+      fs_entry_read_run_cleanup( core, &read_ctx );
       return rc;
    }
    
@@ -1595,7 +1594,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    fs_entry_cache_block_future_apply_all( &cache_futs, fs_entry_cleanup_cache_future, NULL );
    
    // free the context
-   fs_entry_read_run_cleanup( &read_ctx );
+   fs_entry_read_run_cleanup( core, &read_ctx );
    return rc;
 }
 
@@ -1638,7 +1637,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
    if( num_read < 0 ) {
       errorf("fs_entry_read_run( %s offset = %jd, count = %zu ) rc = %zd\n", fh->path, offset, count, num_read );
       fs_file_handle_unlock( fh );
-      return rc;
+      return num_read;
    }
    
    fs_file_handle_unlock( fh );

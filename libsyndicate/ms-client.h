@@ -281,7 +281,7 @@ int ms_client_openid_gateway_register( struct ms_client* client, char const* gat
 int ms_client_anonymous_gateway_register( struct ms_client* client, char const* volume_name, char const* volume_public_key_pem );
 int ms_client_public_key_gateway_register( struct ms_client* client, char const* gateway_name, char const* username, char const* user_privkey_pem, char const* volume_pubkey_pem, char const* key_password );
 int ms_client_load_cert( struct ms_client* client, uint64_t my_gateway_id, struct ms_gateway_cert* cert, const ms::ms_gateway_cert* ms_cert );
-int ms_client_reload_certs( struct ms_client* client );
+int ms_client_reload_certs( struct ms_client* client, uint64_t new_cert_bundle_version );
 int ms_client_reload_volume( struct ms_client* client );
 
 // peer verification

@@ -129,6 +129,7 @@ public:
 
    // serialize this manifest to a string
    char* serialize_str();
+   char* serialize_str_locked( bool locked );
    
    // compare a block hash
    int hash_cmp( uint64_t block_id, unsigned char* hash );
@@ -249,6 +250,9 @@ private:
 
    // find a block URL set
    block_map::iterator find_block_set( uint64_t block );
+   
+   // find the block URL set with the largest block 
+   block_map::iterator find_end_block_set();
 
    int64_t file_version;                  // version of the file this manifest represents
    block_map block_urls;                  // map the start block ID to the url information

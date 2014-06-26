@@ -1512,6 +1512,9 @@ int fs_entry_replicate_blocks_async( struct fs_core* core, struct fs_entry* fent
    if( rc == 0 ) {
       rc = replica_start_block_contexts( core, &core->state->replication, &block_rctxs, block_futures );
    }
+   else {
+      fs_entry_replica_list_free( &block_rctxs );
+   }
    
    return rc;
 }

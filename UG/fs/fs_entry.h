@@ -77,9 +77,11 @@ struct fs_entry_block_info {
    int block_fd;        // if >= 0, this is an FD that refers to the block on disk 
    char* block_buf;     // if non-NULL, this is the block itself in RAM (only applicable for bufferred blocks)
    size_t block_len;    // length of block_buf
+   bool dirty;          // if true, then this block must be flushed to disk
 };
 
 typedef map<uint64_t, struct fs_entry_block_info> modification_map;
+typedef map<uint64_t, int64_t> block_lookaside_map;
 typedef map<string, string> xattr_cache_t;
 
 // pre-declare these
@@ -119,6 +121,8 @@ struct fs_entry {
    modification_map* bufferred_blocks;  // set of in-core blocks that have been either read recently, or modified recently.  Modified blocks will be flushed to on-disk cache.
    modification_map* dirty_blocks;      // set of disk-cached blocks that have been modified locally, and will need to be replicated on flush() or last close()
    modification_map* garbage_blocks;    // set of blocks that have been overwritten by local modifications, and will need to be garbage-collected on flush() or last close()  
+   
+   block_lookaside_map* hosted_blocks;  // set of blocks that are known to be hosted on the RG(s).  Only garbage-collect blocks if they're in this set.
    
    struct timespec refresh_time;    // time of last refresh from the ms
    uint32_t max_read_freshness;     // how long since last refresh, in ms, this fs_entry is to be considered fresh for reading
@@ -281,6 +285,8 @@ int fs_entry_extract_garbage_blocks( struct fs_entry* fent, modification_map** g
 int fs_entry_replace_dirty_blocks( struct fs_entry* fent, modification_map* dirty_blocks );
 int fs_entry_replace_garbage_blocks( struct fs_entry* fent, modification_map* garbage_blocks );
 
+bool fs_entry_has_dirty_block( struct fs_entry* fent, uint64_t block_id );
+
 bool fs_entry_has_dirty_blocks( struct fs_entry* fent );
 
 // fs_entry locking
@@ -346,10 +352,11 @@ int fs_entry_block_info_free_ex( struct fs_entry_block_info* binfo, bool close_f
 int fs_entry_has_bufferred_block( struct fs_entry* fent, uint64_t block_id );
 int fs_entry_read_bufferred_block( struct fs_entry* fent, uint64_t block_id, char* buf, off_t block_offset, size_t read_len );
 int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char const* buf, off_t block_offset, size_t write_len );
-int fs_entry_replace_bufferred_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* buf, size_t buf_len );
+int fs_entry_replace_bufferred_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* buf, size_t buf_len, bool dirty );
 int fs_entry_clear_bufferred_block( struct fs_entry* fent, uint64_t block_id );
 int fs_entry_extract_bufferred_blocks( struct fs_entry* fent, modification_map* block_info );
 int fs_entry_emplace_bufferred_blocks( struct fs_entry* fent, modification_map* block_info );
+int fs_entry_hash_bufferred_block( struct fs_entry* fent, uint64_t block_id, unsigned char** block_hash, size_t* block_hash_len );
 
 // syncing 
 int fs_entry_sync_context_enqueue( struct fs_entry* fent, struct sync_context* ctx );

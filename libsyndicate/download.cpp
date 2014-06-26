@@ -667,6 +667,9 @@ int md_download_context_start( struct md_downloader* dl, struct md_download_cont
 
 // cancel downloading something 
 int md_download_context_cancel( struct md_downloader* dl, struct md_download_context* dlctx ) {
+   if( dlctx->cancelled || dlctx->finalized )
+      return 0;
+   
    md_downloader_insert_cancelling( dl, dlctx );
    
    return md_download_context_wait( dlctx, -1 );
@@ -708,20 +711,20 @@ int md_downloader_run_multi( struct md_downloader* dl ) {
    // download for a bit
    curl_multi_perform( dl->curlm, &still_running );
 
-   // don't wait more than 10ms
+   // don't wait more than 5ms
    timeout.tv_sec = 0;
-   timeout.tv_usec = 10000;      // 10ms
+   timeout.tv_usec = 5000;      // 5ms
 
    curl_multi_timeout( dl->curlm, &curl_timeo );
    
    if( curl_timeo > 0 ) {
-      dbprintf("curl_timeout = %ld\n", curl_timeo );
       timeout.tv_sec = curl_timeo / 1000;
       if( timeout.tv_sec > 0 ) {
          timeout.tv_sec = 0;
       }
       
-      timeout.tv_usec = (curl_timeo % 1000) * 1000;
+      // no more than 5ms
+      timeout.tv_usec = MIN( (curl_timeo % 1000) * 1000, 5000 );
    }
 
    // get fd set

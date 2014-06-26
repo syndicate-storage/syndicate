@@ -185,6 +185,19 @@ def run_bjoern( hostname, portnum ):
    import bjoern
    
    bjoern.run( rg_server.wsgi_handle_request, hostname, portnum )
+
+
+#-------------------------   
+def run_meinheld( hostname, portnum ):
+   """
+   Start the server, using the Meinheld server (https://pypi.python.org/pypi/meinheld)
+   """
+   log.info("Starting Meinheld server on %s:%s" % (hostname, portnum))
+   
+   import meinheld.server
+   
+   meinheld.server.listen( hostname, portnum )
+   meinheld.server.run( rg_server.wsgi_handle_request )
    
 
 #-------------------------

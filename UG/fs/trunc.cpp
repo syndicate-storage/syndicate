@@ -85,6 +85,8 @@ static int fs_entry_shrink_file( struct fs_core* core, char const* fs_path, stru
       fs_entry_block_info_garbage_init( &old_binfo, old_block_version, old_block_hash, BLOCK_HASH_LEN(), fent->coordinator );
       
       (*garbage_blocks)[block_id] = old_binfo;
+      
+      dbprintf("Garbage collect %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, old_block_version );
    }
    
    // cut off the records in the manifest

@@ -161,25 +161,19 @@ class VolumeAdmin(ReadOnlyAwareAdmin):
 
     formfield_overrides = { BitField: {'widget': BitFieldCheckboxSelectMultiple},}
 
-    #detailsFieldList = ['name', 'owner_id', 'description','file_quota','blocksize', 'private','archive', 'default_gateway_caps' ]
     detailsFieldList = ['name', 'owner_id', 'description','blocksize', 'private','archive', 'default_gateway_caps' ]
-    
-    #keyList = ['metadata_private_key']
 
     fieldsets = [
         (None, {'fields': detailsFieldList, 'classes':['suit-tab suit-tab-general']}),
-        #(None, {'fields': keyList, 'classes':['suit-tab suit-tab-volumeKeys']}),
     ]
 
     inlines = [VolumeAccessRightInline, VolumeSliceInline]
 
-    #user_readonly_fields = ['name','owner_id','description','blocksize','private','metadata_private_key','file_quota','default_gateway_caps']
     user_readonly_fields = ['name','owner_id','description','blocksize','private','default_gateway_caps']
     
     user_readonly_inlines = [VolumeAccessRightROInline, VolumeSliceROInline]
 
     suit_form_tabs =(('general', 'Volume Details'),
-                     #('volumeKeys', 'Access Keys'),
                      ('volumeSlices', 'Slices'),
                      ('volumeAccessRights', 'Volume Access Rights'),
     )

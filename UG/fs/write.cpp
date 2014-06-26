@@ -40,6 +40,36 @@ bool fs_entry_has_old_block( struct fs_core* core, struct fs_entry* fent, uint64
    return true;
 }
 
+
+// does a previous version of the block need to be garbage-collected?
+bool fs_entry_has_old_garbage_collectable_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id ) {
+   
+   // if there isn't an old version of this block anyway, then no
+   if( !fs_entry_has_old_block( core, fent, block_id ) )
+      return false;
+   
+   // if this block isn't waiting to be flushed, then no
+   if( !fs_entry_has_dirty_block( fent, block_id ) )
+      return false;
+   
+   return true;
+}
+
+
+// clear out all bufferred blocks affected by a write 
+// fent must be write-locked
+static int fs_entry_clear_bufferred_blocks( struct fs_entry* fent, modification_map* old_blocks ) {
+   
+   for( modification_map::iterator itr = old_blocks->begin(); itr != old_blocks->end(); itr++ ) {
+      
+      uint64_t block_id = itr->first;
+      
+      fs_entry_clear_bufferred_block( fent, block_id );
+   }
+   
+   return 0;
+}
+
 // write a block to a file (processing it first with the driver), asynchronously putting it on local storage, and updating the filesystem entry's manifest to refer to it.
 // This updates the manifest's last-mod time, but not the fs_entry's
 // return a cache_block_future for it.
@@ -290,6 +320,7 @@ int fs_entry_put_write_holes( struct fs_core* core, struct fs_entry* fent, off_t
 // return 0 or 1 (via ret)
 // if there is an old block, store it to binfo_old and return 1.  Otherwise, return 0 via ret.
 // store the new block info to binfo_new.
+// fent must be write-locked--we'll update the manifest
 struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char const* block, size_t block_len,
                                                        struct fs_entry_block_info* binfo_old, struct fs_entry_block_info* binfo_new, int* ret ) {
 
@@ -394,10 +425,13 @@ int fs_entry_read_partial_blocks( struct fs_core* core, char const* fs_path, str
 // fent must be write-locked
 // return 0 on success.
 // return negative and fail fast otherwise
+// fent must be write-locked--we'll update the manifest, and clear out bufferred blocks
 static int fs_entry_write_full_blocks_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, fs_entry_whole_block_list_t* whole_blocks,
                                              modification_map* old_blocks, modification_map* new_blocks, vector<struct cache_block_future*>* block_futs ) {
    
    int rc = 0;
+   
+   dbprintf("write %zu whole blocks\n", whole_blocks->size() );
    
    // flush each one
    for( fs_entry_whole_block_list_t::iterator itr = whole_blocks->begin(); itr != whole_blocks->end(); itr++ ) {
@@ -429,9 +463,6 @@ static int fs_entry_write_full_blocks_async( struct fs_core* core, char const* f
       
       // remember the future 
       block_futs->push_back( fut );
-      
-      // invalidate a bufferred block, if there is one
-      fs_entry_clear_bufferred_block( fent, blk->block_id );
    }
    
    return rc;
@@ -482,6 +513,8 @@ static int fs_entry_apply_partial_blocks( struct fs_core* core, struct fs_entry_
       // has this block been made whole?
       if( fs_entry_head_completes_block( core, &wvec->head ) ) {
          
+         dbprintf("partial head %" PRIu64 " is now a whole block\n", wvec->head.block_id );
+         
          // the head block is now a full block (which we allocated)
          struct fs_entry_whole_block full_head;
          
@@ -491,12 +524,41 @@ static int fs_entry_apply_partial_blocks( struct fs_core* core, struct fs_entry_
          overwritten->push_back( full_head );
       }
    }
+   else {
+      dbprintf("%s", "No partial head to read\n");
+   }
    
    if( block_tail ) {
       // write the tail 
       fs_entry_apply_partial_tail( block_tail, &wvec->tail );
    }
+   else {
+      dbprintf("%s", "No partial tail to read\n");
+   }
 
+   return 0;
+}
+
+
+// put a block version for a bufferred block, putting the new version and hash into the manifest
+// fent must be write-locked
+static int fs_entry_manifest_put_bufferred_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id ) {
+   // update manifest 
+   int64_t new_version = fs_entry_next_block_version();
+   
+   unsigned char* block_hash = NULL;
+   size_t block_hash_len = 0;
+   
+   int rc = fs_entry_hash_bufferred_block( fent, block_id, &block_hash, &block_hash_len );
+   if( rc != 0 ) {
+      errorf("fs_entry_hash_bufferred_block( %" PRIu64 " ) rc = %d\n", block_id, rc );
+      return rc;
+   }
+   
+   fs_entry_manifest_put_block( core, core->gateway, fent, block_id, new_version, block_hash );
+   
+   free( block_hash );
+   
    return 0;
 }
 
@@ -504,7 +566,7 @@ static int fs_entry_apply_partial_blocks( struct fs_core* core, struct fs_entry_
 // if opt_block_head is not NULL, it must be a full block and will serve as the partial head to be bufferred.  Otherwise, the partial head client buffer in the write vector will be used.
 // if opt_block_tail is not NULL, it must be a full block and will serve as the partial tail to be bufferred.  Otherwise, the partial tail client buffer in the write vector will be used.
 // return 0 on success
-// fent must be write-locked, in the same context as fs_entry_writev
+// fent must be write-locked, in the same context as fs_entry_writev.  we update the manifest
 static int fs_entry_buffer_partial_blocks( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct fs_entry_write_vec* wvec, char* opt_block_head, char* opt_block_tail ) {
    
    int rc = 0;
@@ -530,6 +592,14 @@ static int fs_entry_buffer_partial_blocks( struct fs_core* core, char const* fs_
          
          return rc;
       }
+      else {
+         // update manifest 
+         rc = fs_entry_manifest_put_bufferred_block( core, fent, wvec->head.block_id );
+         if( rc != 0 ) {
+            errorf("fs_entry_manifest_put_bufferred_block( %" PRIu64 " ) rc = %d\n", wvec->head.block_id, rc );
+            return rc;
+         }
+      }
    }
    
    // write the partial tail to the block buffer, if it exists 
@@ -553,6 +623,14 @@ static int fs_entry_buffer_partial_blocks( struct fs_core* core, char const* fs_
          
          return rc;
       }
+      else {
+         // update manifest
+         rc = fs_entry_manifest_put_bufferred_block( core, fent, wvec->tail.block_id );
+         if( rc != 0 ) {
+            errorf("fs_entry_manifest_put_bufferred_block( %" PRIu64 " ) rc = %d\n", wvec->tail.block_id, rc );
+            return rc;
+         }
+      }
    }
    
    return rc;
@@ -562,7 +640,8 @@ static int fs_entry_buffer_partial_blocks( struct fs_core* core, char const* fs_
 
 // write a write vector in its entirety.
 // fent must be write-locked
-// return 0 on success; negative on error
+// return 0 on success; negative on error.
+// if this method fails, the caller should call fs_entry_revert_write to restore the fent
 // NOTE: this is a "heavy" method.  Only use it if you're writing to multiple blocks, or you can't write to a bufferred block
 static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry* fent, struct fs_entry_write_vec* wvec, modification_map* old_blocks ) {
    
@@ -591,6 +670,8 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
    // if we have a partial head and an older version of the affected block, then populate block with the block-to-be-modified
    if( wvec->has_head && wvec->head.has_old_version ) {
       
+      dbprintf("Read partial head %" PRIu64 "\n", wvec->head.block_id );
+      
       uint64_t gateway_id = fent->manifest->get_block_host( core, wvec->head.block_id );
       
       block_head = fs_entry_setup_partial_read_future( core, &head_fut, gateway_id, fs_path, fent->version, wvec->head.block_id, wvec->head.block_version, fent->size );
@@ -601,6 +682,8 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
    
    // if we have a partial tail and an older version of the affected block, then populate the block with the block-to-be-modified
    if( wvec->has_tail && wvec->tail.has_old_version ) {
+      
+      dbprintf("Read partial tail %" PRIu64 "\n", wvec->tail.block_id );
       
       uint64_t gateway_id = fent->manifest->get_block_host( core, wvec->tail.block_id );
       
@@ -620,7 +703,7 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
          
          // free everything 
          // NOTE: this frees block_head and block_tail, since they were assigned to their respective read futures
-         fs_entry_read_context_free_all( &read_ctx );
+         fs_entry_read_context_free_all( core, &read_ctx );
          return rc;
       }
       
@@ -639,39 +722,42 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
    // accumulate cache write futures
    vector<struct cache_block_future*> futs;
    
-   // process and flush them to disk, if we have any 
-   rc = fs_entry_write_full_blocks_async( core, fs_path, fent, &overwritten, old_blocks, &new_blocks, &futs );
-   
-   if( rc != 0 ) {
-      errorf("fs_entry_write_full_blocks_async( %s ) rc = %d\n", fs_path, rc );
-      
-      // roll back cache write 
-      fs_entry_cache_evict_blocks_async( core, fent, &new_blocks );
-      
-      // free everything 
-      // NOTE: this frees block_head and block_tail, since they were assigned to their respective read futures
-      fs_entry_read_context_free_all( &read_ctx );
-      return rc;
-   }
+   // process and flush them to disk, if we have any.  This updates the manifest.
+   int write_rc = fs_entry_write_full_blocks_async( core, fs_path, fent, &overwritten, old_blocks, &new_blocks, &futs );
    
    // wait for each cache write to complete
-   rc = fs_entry_flush_cache_writes( &futs );
-   if( rc != 0 ) {
-      errorf("fs_entry_flush_cache_writes( %s ) rc = %d\n", fs_path, rc );
+   int wait_rc = fs_entry_flush_cache_writes( &futs );
+   
+   if( write_rc != 0 || wait_rc != 0 ) {
+      
+      if( write_rc != 0 ) {
+         errorf("fs_entry_write_full_blocks_async( %s ) rc = %d\n", fs_path, write_rc );
+         rc = write_rc;
+      }
+      
+      if( wait_rc != 0 ) {
+         errorf("fs_entry_flush_cache_writes( %s ) rc = %d\n", fs_path, wait_rc );
+         
+         if( rc == 0 )
+            rc = wait_rc;
+      }
       
       // roll back cache write 
       fs_entry_cache_evict_blocks_async( core, fent, &new_blocks );
       
       // free everything 
       // NOTE: this frees block_head and block_tail, since they were assigned to their respective read futures
-      fs_entry_read_context_free_all( &read_ctx );
+      fs_entry_read_context_free_all( core, &read_ctx );
       return rc;
    }
    
    // free all cache futures
    fs_entry_cache_block_future_free_all( &futs, false );
    
-   // write partial blocks to the block buffer
+   // clear all flushed bufferred blocks 
+   fs_entry_clear_bufferred_blocks( fent, &new_blocks );
+   
+   // write partial blocks to the block buffer, updating the manifest in the process
    rc = fs_entry_buffer_partial_blocks( core, fs_path, fent, wvec, block_head, block_tail );
    if( rc != 0 ) {
       errorf("fs_entry_buffer_partial_blocks( %s %" PRIX64 ".%" PRId64 ") rc = %d\n",
@@ -683,7 +769,7 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
       
       // free everything 
       // NOTE: this frees block_head and block_tail, since they were assigned to their respective read futures
-      fs_entry_read_context_free_all( &read_ctx );
+      fs_entry_read_context_free_all( core, &read_ctx );
       
       return rc;
    }
@@ -703,7 +789,7 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
    fs_entry_free_modification_map( &unmerged_garbage );         // TODO: log it somewhere
    
    // free everything, including block_head and block_tail
-   fs_entry_read_context_free_all( &read_ctx );
+   fs_entry_read_context_free_all( core, &read_ctx );
    
    return 0;
 }
@@ -803,6 +889,8 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    // is this a fast-path write?
    if( fs_entry_can_fast_write( core, fh->fent, offset, count ) ) {
       
+      dbprintf("fast write: %s offset %jd count %zu\n", fh->path, offset, count );
+      
       // do a fast write 
       rc = fs_entry_do_fast_write( core, fh->path, fh->fent, buf, offset, count );
       if( rc != 0 ) {
@@ -833,7 +921,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       if( rc != 0 ) {
          errorf("fs_entry_split_write(%s offset %jd size %zu) rc = %d\n", fh->path, offset, count, rc );
       
-         // roll back metadata (only size and other fields; no blocks really beyond truncating any holes)
+         // roll back metadata and manifest (only size and other fields; no blocks really beyond truncating any holes)
          fs_entry_revert_write( core, fh->fent, &fent_prewrite, new_size, NULL );
          
          fs_entry_unlock( fh->fent );
@@ -847,7 +935,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       if( rc != 0 ) {
          errorf("fs_entry_writev(%s offset %jd size %zu) rc = %d\n", fh->path, offset, count, rc );
          
-         // roll back metadata (only size and other fields; no blocks really beyond truncating any holes)
+         // roll back metadata and manifest (only size and other fields; no blocks really beyond truncating any holes)
          fs_entry_revert_write( core, fh->fent, &fent_prewrite, new_size, &old_blocks );
          
          fs_entry_unlock( fh->fent );
@@ -904,7 +992,7 @@ int fs_entry_revert_write( struct fs_core* core, struct fs_entry* fent, struct r
       fent->manifest->truncate( old_end_block );
    }
    
-   // restore old block information
+   // restore old block information to the manifest
    if( old_block_info ) {
       for( modification_map::iterator itr = old_block_info->begin(); itr != old_block_info->end(); itr++ ) {
          uint64_t block_id = itr->first;
@@ -998,21 +1086,6 @@ static int fs_entry_reversion_blocks( struct fs_core* core, struct fs_entry* fen
       
       // put the new version into the manifest
       fs_entry_manifest_put_block( core, gateway_id, fent, block_id, new_version, block_hash );
-   }
-   
-   return 0;
-}
-
-
-// clear out all bufferred blocks affected by a remote write 
-// fent must be write-locked
-static int fs_entry_clear_bufferred_blocks( struct fs_entry* fent, modification_map* old_blocks ) {
-   
-   for( modification_map::iterator itr = old_blocks->begin(); itr != old_blocks->end(); itr++ ) {
-      
-      uint64_t block_id = itr->first;
-      
-      fs_entry_clear_bufferred_block( fent, block_id );
    }
    
    return 0;

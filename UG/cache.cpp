@@ -283,7 +283,7 @@ int fs_entry_flush_cache_write( struct cache_block_future* f ) {
       int aio_rc = fs_entry_cache_block_future_get_aio_error( f );
       int write_rc = fs_entry_cache_block_future_get_write_error( f );
       
-      errorf("Failed to flush, aio_rc = %d, write_rc = %d\n", aio_rc, write_rc );
+      errorf("Failed to flush %d, aio_rc = %d, write_rc = %d\n", f->block_fd, aio_rc, write_rc );
       
       return -EIO;
    }

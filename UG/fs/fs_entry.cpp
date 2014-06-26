@@ -1338,6 +1338,19 @@ bool fs_entry_has_dirty_blocks( struct fs_entry* fent ) {
 }
 
 
+// is a particular block dirty?
+// fent must be at least read-locked 
+bool fs_entry_has_dirty_block( struct fs_entry* fent, uint64_t block_id ) {
+   if( fent->dirty_blocks == NULL )
+      return false;
+   
+   if( fent->dirty_blocks->count( block_id ) == 0 )
+      return false;
+   
+   return true;
+}
+
+
 // extract and re-initialize the dirty block set for an fs_entry.
 // the caller gains exclusive access to the dirty block set, and must free it.
 // fent must be write-locked
@@ -1610,7 +1623,7 @@ int fs_entry_read_bufferred_block( struct fs_entry* fent, uint64_t block_id, cha
          
          if( binfo->block_buf != NULL ) {
             // range check 
-            if( block_offset + read_len < 0 || block_offset + read_len >= binfo->block_len ) {
+            if( block_offset + read_len < 0 || block_offset + read_len > binfo->block_len ) {
                return -ERANGE;
             }
             else {
@@ -1636,6 +1649,7 @@ int fs_entry_read_bufferred_block( struct fs_entry* fent, uint64_t block_id, cha
 
 
 // write to a bufferred block, creating it on-the-fly if one does not exist.
+// the block will be marked as dirty.
 // return 0 on success
 // return -EEXIST if there is a buffer for a different block than the one indicated
 // return negative on error
@@ -1657,7 +1671,7 @@ int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent,
          // put the block
          (*fent->bufferred_blocks)[ block_id ] = new_binfo;
          
-         binfo = &new_binfo;
+         binfo = &((*fent->bufferred_blocks)[block_id]);
       }
       else {
          // have an entry...
@@ -1673,6 +1687,7 @@ int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent,
          else {
             // have an in-core copy of this block.  Write to it 
             memcpy( binfo->block_buf + block_offset, buf, write_len );
+            binfo->dirty = true;
             return 0;
          }
       }
@@ -1694,13 +1709,13 @@ int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent,
    }
 }
 
-// replace a bufferred block's contents
+// replace a bufferred block's contents, indicating in the process whether or not it came from a read or write (i.e. not dirty or dirty)
 // if there is no block data, then allocate it.
 // return 0 and fill in buf, buf_len on success with the block buffer
 // return -ENOENT if the block ID doesn't match the bufferred block 
 // return negative on error 
 // fent must be write-locked 
-int fs_entry_replace_bufferred_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* buf, size_t buf_len ) {
+int fs_entry_replace_bufferred_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* buf, size_t buf_len, bool dirty ) {
    if( fent->bufferred_blocks ) {
       
       modification_map::iterator itr = fent->bufferred_blocks->find( block_id );
@@ -1731,6 +1746,7 @@ int fs_entry_replace_bufferred_block( struct fs_core* core, struct fs_entry* fen
       
       // copy the data over 
       memcpy( binfo->block_buf, buf, buf_len );
+      binfo->dirty = dirty;
       
       return 0;
    }
@@ -1753,6 +1769,9 @@ int fs_entry_clear_bufferred_block( struct fs_entry* fent, uint64_t block_id ) {
       
          // clear it 
          fs_entry_block_info_free_ex( binfo, true );
+         
+         // erase it 
+         fent->bufferred_blocks->erase( itr );
       }
    }
    else {
@@ -1788,7 +1807,7 @@ int fs_entry_extract_bufferred_blocks( struct fs_entry* fent, modification_map* 
    return 0;
 }
 
-// put a collection of bufferred blocks into fent (i.e. to roll back an extraction)
+// put a collection of previously-generated bufferred blocks into fent (i.e. to roll back an extraction)
 // caller MUST NOT FREE block_info
 // fent must be write-locked 
 int fs_entry_emplace_bufferred_blocks( struct fs_entry* fent, modification_map* block_info ) {
@@ -1813,6 +1832,34 @@ int fs_entry_emplace_bufferred_blocks( struct fs_entry* fent, modification_map* 
    return 0;
 }
 
+
+// hash a bufferred block
+// caller must free block_hash
+// return 0 on success, negative on error 
+// fent must be write-locked
+int fs_entry_hash_bufferred_block( struct fs_entry* fent, uint64_t block_id, unsigned char** block_hash, size_t* block_hash_len ) {
+   if( fent->bufferred_blocks ) {
+      
+      modification_map::iterator itr = fent->bufferred_blocks->find( block_id );
+      if( itr != fent->bufferred_blocks->end() ) {
+         
+         struct fs_entry_block_info* binfo = &itr->second;
+      
+         // hash its data
+         *block_hash = BLOCK_HASH_DATA( binfo->block_buf, binfo->block_len );
+         *block_hash_len = sha256_len();
+      }
+      else {
+         return -ENOENT;
+      }
+   }
+   else {
+      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      return -ENODATA;
+   }
+   
+   return 0;
+}
 
 // how many items are queued in the sync queue?
 // fent must be at least read-locked 

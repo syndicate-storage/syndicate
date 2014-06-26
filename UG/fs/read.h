@@ -87,8 +87,7 @@ struct fs_entry_read_context {
 
 // read context 
 int fs_entry_read_context_init( struct fs_entry_read_context* read_ctx );
-int fs_entry_read_context_free( struct fs_entry_read_context* read_ctx );
-int fs_entry_read_context_free_all( struct fs_entry_read_context* read_ctx );
+int fs_entry_read_context_free_all( struct fs_core* core, struct fs_entry_read_context* read_ctx );
 
 int fs_entry_read_context_add_block_future( struct fs_entry_read_context* read_ctx, struct fs_entry_read_block_future* block_fut );
 int fs_entry_read_context_remove_block_future( struct fs_entry_read_context* read_ctx, struct fs_entry_read_block_future* block_fut );

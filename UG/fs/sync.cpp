@@ -95,8 +95,9 @@ int fs_entry_remote_write_or_coordinate( struct fs_core* core, char const* fs_pa
 }
 
 
-// flush in-core buffer blocks to cache for a particular file.
+// flush dirty in-core buffer blocks to disk cache for a particular file.
 // this will update the manifest with the new versions of the blocks, as well as advance its mtime
+// return 0 on success, negative on error
 // fent must be write-locked
 int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, vector<struct cache_block_future*>* cache_futs ) {
    
@@ -116,6 +117,10 @@ int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_
       
       uint64_t block_id = itr->first;
       struct fs_entry_block_info* binfo = &itr->second;
+      
+      // don't flush bufferred blocks that we simply read in.
+      if( !binfo->dirty )
+         continue;
       
       dbprintf("Flush bufferred block %" PRIX64 ".%" PRId64 "[%" PRIu64 "]\n", fent->file_id, fent->version, block_id );
       
@@ -251,7 +256,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    // flush all bufferred blocks, asynchronously
    // (this updates fent's dirty_blocks and garbage_blocks)
    rc = fs_entry_flush_bufferred_blocks_async( core, fs_path, fent, &cache_futs );
-   if( rc != 0 ) {
+   if( rc < 0 ) {
       errorf("fs_entry_flush_bufferred_blocks( %s %" PRIX64 " ) rc = %d\n", fs_path, fent->file_id, rc);
       
       memset( _sync_ctx, 0, sizeof(struct sync_context) );
@@ -410,7 +415,7 @@ int fs_entry_sync_data_revert( struct fs_core* core, struct fs_entry* fent, stru
 int fs_entry_sync_data_finish( struct fs_core* core, struct sync_context* sync_ctx ) {
    
    int rc = 0;
-
+   
    // wait for all blocks (and possibly the manifest) to finish replicating 
    rc = fs_entry_replica_wait_all( core, sync_ctx->replica_futures, 0 );
    
