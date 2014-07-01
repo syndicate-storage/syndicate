@@ -1350,6 +1350,18 @@ bool fs_entry_has_dirty_block( struct fs_entry* fent, uint64_t block_id ) {
    return true;
 }
 
+// initialize the set of garbage blocks from a file manifest 
+int fs_entry_setup_garbage_blocks( struct fs_entry* fent ) {
+   if( fent->manifest == NULL )
+      return -EINVAL;
+   
+   if( fent->garbage_blocks == NULL ) {
+      fent->garbage_blocks = new modification_map();
+      fent->manifest->snapshot( fent->garbage_blocks );
+   }
+   
+   return 0;
+}
 
 // extract and re-initialize the dirty block set for an fs_entry.
 // the caller gains exclusive access to the dirty block set, and must free it.
@@ -1360,12 +1372,18 @@ int fs_entry_extract_dirty_blocks( struct fs_entry* fent, modification_map** dir
    return 0;
 }
 
-// extract and re-initialize the garbage block set for an fs_entry.
+// generate a set of blocks to garbage-collect--basically, calculate the difference between fent's garbage blocks (snapshotted from
+// the manifest on fs_entry_setup_garbage_blocks() and its current manifest.
 // the caller gains exclusive access to the garbage block set, and must free it.
-// fent must be write-locked
-int fs_entry_extract_garbage_blocks( struct fs_entry* fent, modification_map** garbage_blocks ) {
-   *garbage_blocks = fent->garbage_blocks;
-   fent->garbage_blocks = new modification_map();
+// fent must be read-locked
+int fs_entry_copy_garbage_blocks( struct fs_entry* fent, modification_map** garbage_blocks ) {
+   
+   if( fent->garbage_blocks == NULL || fent->manifest == NULL || garbage_blocks == NULL )
+      return -EINVAL;   // should never happen
+   
+   *garbage_blocks = new modification_map();
+   
+   fent->manifest->copy_old_blocks( fent->garbage_blocks, *garbage_blocks );
    return 0;
 }
 
@@ -1383,18 +1401,14 @@ int fs_entry_replace_dirty_blocks( struct fs_entry* fent, modification_map* dirt
    return 0;
 }
 
-// replace garbage blocks (i.e. on replica failure)
-// this overwrites existing garbage blocks 
-// fent must be write-locked, and *should* be locked during the same interval as a previous call to extract_garbage_blocks that obtained the garbage_blocks argument.
-int fs_entry_replace_garbage_blocks( struct fs_entry* fent, modification_map* garbage_blocks ) {
+// clear out garbage blocks (i.e. on successful garbage collection)
+int fs_entry_clear_garbage_blocks( struct fs_entry* fent ) {
    if( fent->garbage_blocks ) {
-      fs_entry_free_modification_map_ex( fent->dirty_blocks, true );
+      fs_entry_free_modification_map_ex( fent->garbage_blocks, true );
       delete fent->garbage_blocks;
+      fent->garbage_blocks = NULL;
    }
-   
-   fent->garbage_blocks = garbage_blocks;
    return 0;
-   
 }
    
 
@@ -1402,11 +1416,14 @@ int fs_entry_replace_garbage_blocks( struct fs_entry* fent, modification_map* ga
 // fent must be write-locked
 int fs_entry_setup_working_data( struct fs_core* core, struct fs_entry* fent ) {
    fent->dirty_blocks = new modification_map();
-   fent->garbage_blocks = new modification_map();
    fent->bufferred_blocks = new modification_map();
    
-   if( fent->dirty_blocks == NULL || fent->garbage_blocks == NULL || fent->bufferred_blocks == NULL )
+   if( fent->dirty_blocks == NULL || fent->bufferred_blocks == NULL )
       return -ENOMEM;
+   
+   if( fent->manifest != NULL ) {
+      fs_entry_setup_garbage_blocks( fent );
+   }
    
    dbprintf("set up working data for %" PRIX64 "\n", fent->file_id );
    return 0;
@@ -1525,55 +1542,6 @@ int fs_entry_merge_old_dirty_blocks( struct fs_core* core, struct fs_entry* fent
    
    return 0;
 }
-
-
-// Merge garbage blocks into an existing list of garbage blocks.
-// This only adds blocks into the garbage block list; if a block has an existing garbage entry,
-// then any subsequent block written will only have been cached locally (so no need to garbage-collect it).
-// This shallow-copies data from new_garbage_blocks; new_garbage_blocks should not be freed afterwards
-// fent must be write-locked 
-int fs_entry_merge_garbage_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t original_file_id, int64_t original_file_version, modification_map* new_garbage_blocks, modification_map* unmerged ) {
-   
-   if( fent->garbage_blocks == NULL ) {
-      errorf("BUG: fent->garbage_blocks == %p\n", fent->garbage_blocks );
-      return -EINVAL;
-   }
-   
-   uint64_t max_block = fs_entry_block_id( core, fent->size );
-   
-   for( modification_map::iterator itr = new_garbage_blocks->begin(); itr != new_garbage_blocks->end(); itr++ ) {
-      
-      uint64_t block_id = itr->first;
-      struct fs_entry_block_info* binfo = &itr->second;
-      
-      // if this is a different file, then we shouldn't add this to be garbage-collected.  The caller should garbage-collect it
-      if( fent->file_id != original_file_id || fent->version != original_file_version ) {
-         (*unmerged)[ block_id ] = *binfo;
-         continue;
-      }
-      
-      // if the block is off the end of the file, then it shouldn't be merged (a truncate superceded this block, and we don't want to stop garbage-collection for subsequent writes or truncates that expand the file)
-      if( block_id > max_block ) {
-         (*unmerged)[ block_id ] = *binfo;
-         continue;
-      }
-      
-      // are we already going to garbage-collect this block?
-      modification_map::iterator existing_itr = fent->garbage_blocks->find( block_id );
-
-      if( existing_itr == fent->garbage_blocks->end() ) {
-         // Nope--add the entry.
-         (*fent->garbage_blocks)[ block_id ] = *binfo;
-      }
-      else {
-         // going to garbage-collect a different version of this block, so caller should handle this
-         (*unmerged)[ block_id ] = *binfo;
-      }
-   }
-   
-   return 0;
-}
-
 
 // is a block bufferred in RAM?
 // return 1 if so.

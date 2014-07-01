@@ -72,7 +72,7 @@ public:
    bool prepend( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t block_id, int64_t block_version, unsigned char* hash );
 
    // remove blocks from the end of this URL set.  return true if blocks were removed
-   bool truncate( uint64_t new_end_id );
+   bool truncate_smaller( uint64_t new_end_id );
 
    // shrink left by one
    bool shrink_left();
@@ -150,7 +150,7 @@ public:
    int put_hole( struct fs_core* core, struct fs_entry* fent, uint64_t block_id );
 
    // truncate a manifest to a new (smaller) size.  Nothing happens if new_end_block is beyond the size of this manifest
-   void truncate( uint64_t new_end_block );
+   void truncate_smaller( uint64_t new_end_block );
 
    // look up a block version, given a block ID
    int64_t get_block_version( uint64_t block );
@@ -172,6 +172,12 @@ public:
    
    // is a block present?
    bool is_block_present( uint64_t block_id );
+   
+   // snapshot the set of blocks and versions into a modification map 
+   void snapshot( modification_map* m );
+   
+   // copy now-old blocks from a snapshot 
+   void copy_old_blocks( modification_map* snapshot, modification_map* old_blocks );
 
    // mark the manifest as stale
    void mark_stale() {
@@ -196,8 +202,8 @@ public:
       return ret;
    }
    
-   // mark the manifest as initialized
-   void mark_initialized() { 
+   // initialize as an empty manifest (i.e. not from a ManifestMsg)
+   void initialize_empty() { 
       pthread_rwlock_wrlock( &this->manifest_lock );
       this->initialized = true;
       pthread_rwlock_unlock( &this->manifest_lock );

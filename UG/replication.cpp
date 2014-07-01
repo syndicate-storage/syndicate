@@ -44,7 +44,7 @@ int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_f
    return 0;
 }
 
-// revert a snapshot to a fent
+// revert a snapshot to a fent (doesn't affect whether or not the manifest was initialized)
 // fent must be write-locked
 int fs_entry_replica_snapshot_restore( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* snapshot ) {
    

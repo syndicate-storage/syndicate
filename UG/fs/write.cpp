@@ -641,7 +641,8 @@ static int fs_entry_buffer_partial_blocks( struct fs_core* core, char const* fs_
 // write a write vector in its entirety.
 // fent must be write-locked
 // return 0 on success; negative on error.
-// if this method fails, the caller should call fs_entry_revert_write to restore the fent
+// if this method fails, the caller should call fs_entry_revert_write to restore the fent.
+// old_blocks will be populated with the blocks that have been replaced; the caller must free it after calling this method
 // NOTE: this is a "heavy" method.  Only use it if you're writing to multiple blocks, or you can't write to a bufferred block
 static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry* fent, struct fs_entry_write_vec* wvec, modification_map* old_blocks ) {
    
@@ -778,15 +779,8 @@ static int fs_entry_writev( struct fs_core* core, char* fs_path, struct fs_entry
    // merge new writes into the dirty block set, freeing the old ones to be evicted
    fs_entry_merge_new_dirty_blocks( fent, &new_blocks );
    
-   // merge old blocks into the garbage collect set 
-   modification_map unmerged_garbage;
-   fs_entry_merge_garbage_blocks( core, fent, fent->file_id, fent->version, old_blocks, &unmerged_garbage );
-   
    // evict old blocks asynchronously
    fs_entry_cache_evict_blocks_async( core, fent, old_blocks );
-   
-   // free memory 
-   fs_entry_free_modification_map( &unmerged_garbage );         // TODO: log it somewhere
    
    // free everything, including block_head and block_tail
    fs_entry_read_context_free_all( core, &read_ctx );
@@ -948,8 +942,8 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
       // free the write vector
       fs_entry_write_vec_free( &wvec );
       
-      // free old block data
-      // fs_entry_free_modification_map( &old_blocks );
+      // free the old block state
+      fs_entry_free_modification_map( &old_blocks );
    }
    
    // update the size
@@ -960,18 +954,35 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
    
    // mark dirty
    fh->fent->dirty = true;
+   fh->dirty = true;
    
    // unlock
    fs_entry_unlock( fh->fent );
    
    // mark handle as dirty, so a future fsync() or close() will push data
    // TODO: preserve metadata so current replicated manifest can be garbage-collected
-   fh->dirty = true;
    fs_file_handle_unlock( fh );
    
    return count;
 }
 
+
+// revert a set of block writes
+int fs_entry_revert_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t old_end_block, modification_map* old_block_info ) {
+   for( modification_map::iterator itr = old_block_info->begin(); itr != old_block_info->end(); itr++ ) {
+      uint64_t block_id = itr->first;
+      
+      // skip blocks written beyond the end of the original manifest
+      if( block_id > old_end_block )
+         continue;
+      
+      struct fs_entry_block_info* old_binfo = &itr->second;
+      
+      fs_entry_manifest_put_block( core, old_binfo->gateway_id, fent, block_id, old_binfo->version, old_binfo->hash );
+   }
+   
+   return 0;
+}
 
 // revert a write, given the modified blocks and a pre-write snapshot.
 // fent must be write-locked, and must be locked in the same context as when the manifest was updated.
@@ -989,22 +1000,12 @@ int fs_entry_revert_write( struct fs_core* core, struct fs_entry* fent, struct r
    
    if( old_end_block < proposed_end_block ) {
       // truncate the manifest back to its original size
-      fent->manifest->truncate( old_end_block );
+      fent->manifest->truncate_smaller( old_end_block );
    }
    
    // restore old block information to the manifest
    if( old_block_info ) {
-      for( modification_map::iterator itr = old_block_info->begin(); itr != old_block_info->end(); itr++ ) {
-         uint64_t block_id = itr->first;
-         
-         // skip blocks written beyond the end of the original manifest
-         if( block_id > old_end_block )
-            continue;
-         
-         struct fs_entry_block_info* old_binfo = &itr->second;
-         
-         fs_entry_manifest_put_block( core, old_binfo->gateway_id, fent, block_id, old_binfo->version, old_binfo->hash );
-      }
+      fs_entry_revert_blocks( core, fent, old_end_block, old_block_info );
    }
    
    // restore manifest modtime

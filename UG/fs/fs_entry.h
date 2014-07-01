@@ -81,7 +81,6 @@ struct fs_entry_block_info {
 };
 
 typedef map<uint64_t, struct fs_entry_block_info> modification_map;
-typedef map<uint64_t, int64_t> block_lookaside_map;
 typedef map<string, string> xattr_cache_t;
 
 // pre-declare these
@@ -120,9 +119,7 @@ struct fs_entry {
    
    modification_map* bufferred_blocks;  // set of in-core blocks that have been either read recently, or modified recently.  Modified blocks will be flushed to on-disk cache.
    modification_map* dirty_blocks;      // set of disk-cached blocks that have been modified locally, and will need to be replicated on flush() or last close()
-   modification_map* garbage_blocks;    // set of blocks that have been overwritten by local modifications, and will need to be garbage-collected on flush() or last close()  
-   
-   block_lookaside_map* hosted_blocks;  // set of blocks that are known to be hosted on the RG(s).  Only garbage-collect blocks if they're in this set.
+   modification_map* garbage_blocks;    // set of blocks as they were when the file was opened (when open_count was 0)
    
    struct timespec refresh_time;    // time of last refresh from the ms
    uint32_t max_read_freshness;     // how long since last refresh, in ms, this fs_entry is to be considered fresh for reading
@@ -279,11 +276,11 @@ int fs_entry_list_cached_xattrs( struct fs_entry* fent, char** xattr_list, size_
 int fs_entry_cache_xattr_list( struct fs_entry* fent, xattr_cache_t* new_listing, int64_t last_known_xattr_nonce );
 
 // dirty block handling 
+int fs_entry_setup_garbage_blocks( struct fs_entry* fent );
 int fs_entry_extract_dirty_blocks( struct fs_entry* fent, modification_map** dirty_blocks );
-int fs_entry_extract_garbage_blocks( struct fs_entry* fent, modification_map** garbage_blocks );
-
+int fs_entry_copy_garbage_blocks( struct fs_entry* fent, modification_map** garbage_blocks );
+int fs_entry_clear_garbage_blocks( struct fs_entry* fent );
 int fs_entry_replace_dirty_blocks( struct fs_entry* fent, modification_map* dirty_blocks );
-int fs_entry_replace_garbage_blocks( struct fs_entry* fent, modification_map* garbage_blocks );
 
 bool fs_entry_has_dirty_block( struct fs_entry* fent, uint64_t block_id );
 
@@ -368,7 +365,7 @@ int fs_entry_sync_queue_apply( struct fs_entry* fent, void (*func)( struct sync_
 // view change
 int fs_entry_view_change_callback( struct ms_client* ms, void* cls );
 
-// state management
+// block state management
 int fs_entry_setup_working_data( struct fs_core* core, struct fs_entry* fent );
 int fs_entry_free_working_data( struct fs_entry* fent );
 
@@ -377,7 +374,6 @@ int fs_entry_free_modification_map_ex( modification_map* m, bool close_fds );
 
 int fs_entry_merge_new_dirty_blocks( struct fs_entry* fent, modification_map* new_dirty_blocks );
 int fs_entry_merge_old_dirty_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t original_file_id, int64_t original_file_version, modification_map* old_dirty_blocks, modification_map* unmerged );
-int fs_entry_merge_garbage_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t original_file_id, int64_t original_file_version, modification_map* new_garbage_blocks, modification_map* unmerged );
 
 // cython compatibility
 uint64_t fs_dir_entry_type( struct fs_dir_entry* dirent );

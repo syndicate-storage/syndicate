@@ -91,7 +91,7 @@ static int fs_entry_shrink_file( struct fs_core* core, char const* fs_path, stru
    
    // cut off the records in the manifest
    // (NOTE: updates manifest modtime)
-   fent->manifest->truncate( new_max_block );
+   fent->manifest->truncate_smaller( new_max_block );
    
    // set the new size
    fent->size = new_size;
@@ -267,15 +267,7 @@ static int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, s
    
    // merge new blocks and garbage, so we can sync it
    fs_entry_merge_new_dirty_blocks( fent, &dirty_blocks );
-   fs_entry_merge_garbage_blocks( core, fent, fent->file_id, fent->version, &garbage_blocks, &unmerged_garbage );
-   
    fs_entry_free_modification_map_ex( &dirty_blocks, false );   // keep file descriptors open
-   
-   // NOTE: no need to free garbage blocks
-   //fs_entry_free_modification_map( &garbage_blocks );
-   
-   // TODO; garbage-collect now?
-   fs_entry_free_modification_map( &unmerged_garbage );         // TODO: garbage-collection persistence?
    
    return 0;
 }

@@ -75,6 +75,7 @@ int fs_entry_read_partial_blocks( struct fs_core* core, struct fs_file_handle* f
 
 int fs_entry_put_write_holes( struct fs_core* core, struct fs_entry* fent, off_t offset );
 
+int fs_entry_revert_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t old_end_block, modification_map* old_block_info );
 int fs_entry_revert_write( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* fent_before_write, uint64_t new_size, modification_map* old_block_info );
 
 int fs_entry_cache_evict_blocks_async( struct fs_core* core, struct fs_entry* fent, modification_map* blocks );

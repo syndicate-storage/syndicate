@@ -198,7 +198,7 @@ bool block_url_set::prepend( uint64_t vid, uint64_t gid, uint64_t fid, uint64_t 
 
 
 // truncate a block set.  return true on success
-bool block_url_set::truncate( uint64_t new_end_id ) {
+bool block_url_set::truncate_smaller( uint64_t new_end_id ) {
    if( this->in_range( new_end_id ) ) {
       this->end_id = new_end_id;
       return true;
@@ -340,7 +340,6 @@ file_manifest::file_manifest( struct fs_core* core, struct fs_entry* fent, Seria
    this->file_version = fent->version;
    this->stale = true;
    file_manifest::parse_protobuf( core, fent, this, mmsg );
-   this->initialized = true;
 }
 
 
@@ -706,8 +705,8 @@ int file_manifest::get_range( uint64_t block_id, uint64_t* start_id, uint64_t* e
 }
 
 
-// insert a URL into a file manifest
-// this advances the manifest's modtime
+// insert a reference to a block into a file manifest
+// this advances the manifest's modtime, and marks it as initialized
 // fent must be at least read-locked
 int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* block_hash ) {
    pthread_rwlock_wrlock( &this->manifest_lock );
@@ -896,6 +895,9 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
    
    dbprintf("put (%s) %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->name, fent->file_id, fent->version, block_id, block_version );
    
+   // mark as initialized 
+   this->initialized = true;
+   
    pthread_rwlock_unlock( &this->manifest_lock );
 
    /*
@@ -917,16 +919,16 @@ int file_manifest::put_hole( struct fs_core* core, struct fs_entry* fent, uint64
    return rc;
 }
 
-// truncate a manifest
+// truncate a manifest to a smaller size
 // this advances the manifest's modtime
-void file_manifest::truncate( uint64_t new_end_id ) {
+void file_manifest::truncate_smaller( uint64_t new_end_id ) {
    pthread_rwlock_wrlock( &this->manifest_lock );
 
    block_map::iterator itr = this->find_block_set( new_end_id );
 
    if( itr != this->block_urls.end() ) {
       // truncate this one
-      itr->second->truncate( new_end_id );
+      itr->second->truncate_smaller( new_end_id );
 
       // remove the rest of the block URLs
       if( itr->second->size() > 0 )
@@ -992,6 +994,83 @@ bool file_manifest::is_block_present( uint64_t block_id ) {
 
    return ret;
 }
+
+
+// snapshot the manifest into a modification map 
+void file_manifest::snapshot( modification_map* m ) {
+   
+   pthread_rwlock_rdlock( &this->manifest_lock );
+   
+   for( block_map::iterator itr = this->block_urls.begin(); itr != this->block_urls.end(); itr++ ) {
+      
+      block_url_set* urlset = itr->second;
+      
+      for( uint64_t id = urlset->start_id; id < urlset->end_id; id++ ) {
+         
+         // generate a garbage block info for this block
+         struct fs_entry_block_info binfo;
+         memset( &binfo, 0, sizeof(struct fs_entry_block_info) );
+         
+         uint64_t idx = id - urlset->start_id;
+         
+         unsigned char* hash = urlset->hash_dup( id );
+         
+         fs_entry_block_info_garbage_init( &binfo, urlset->block_versions[idx], hash, BLOCK_HASH_LEN(), urlset->gateway_id );
+         
+         (*m)[ id ] = binfo;
+      }
+   }
+      
+   pthread_rwlock_unlock( &this->manifest_lock );
+}
+
+
+// calculate the difference between a manifest snapshot and the current manifest.
+// that is, calculate the set of blocks that have NOT been added to the manifest, since the snapshot was taken.
+// NOTE: old_blocks will contain deep copies of fs_entry_block_info copies from snapshot, so caller must free them
+void file_manifest::copy_old_blocks( modification_map* snapshot, modification_map* old_blocks ) {
+   
+   pthread_rwlock_rdlock( &this->manifest_lock );
+   
+   for( block_map::iterator itr = this->block_urls.begin(); itr != this->block_urls.end(); itr++ ) {
+      
+      block_url_set* urlset = itr->second;
+      
+      for( uint64_t id = urlset->start_id; id < urlset->end_id; id++ ) {
+         
+         int64_t manifest_block_version = urlset->block_versions[ id - urlset->start_id ];
+         
+         // in the snapshot?
+         modification_map::iterator mitr = snapshot->find( id );
+         if( mitr != snapshot->end() ) {
+            
+            // in the snapshot.
+            // if the version didn't change, then the block is still new 
+            int64_t snapshot_block_version = mitr->second.version;
+            if( snapshot_block_version == manifest_block_version ) {
+               continue;
+            }
+            
+            // in the snapshot, and differring versions.  Add to old_blocks
+            struct fs_entry_block_info binfo;
+            memset( &binfo, 0, sizeof(struct fs_entry_block_info) );
+         
+            struct fs_entry_block_info* old_binfo = &mitr->second;
+            
+            // NOTE: need to duplicate this
+            unsigned char* hash_copy = CALLOC_LIST( unsigned char, old_binfo->hash_len );
+            memcpy( hash_copy, old_binfo->hash, old_binfo->hash_len );
+            
+            fs_entry_block_info_garbage_init( &binfo, old_binfo->version, hash_copy, old_binfo->hash_len, old_binfo->gateway_id );
+            
+            (*old_blocks)[ id ] = binfo;
+         }
+      }
+   }
+   
+   pthread_rwlock_unlock( &this->manifest_lock );
+}
+
 
 
 // serialize the manifest to a string
@@ -1131,6 +1210,7 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
       m->file_version = mmsg->file_version();
       m->lastmod.tv_sec = mmsg->mtime_sec();
       m->lastmod.tv_nsec = mmsg->mtime_nsec();
+      m->initialized = true;
    }
 
    return rc;

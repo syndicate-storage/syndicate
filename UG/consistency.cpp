@@ -1282,8 +1282,6 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
    fent->mtime_nsec = mmsg->fent_mtime_nsec();
    fent->version = mmsg->file_version();
    
-   fent->manifest->mark_initialized();
-   
    return 0;
 }
 
