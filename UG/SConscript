@@ -27,7 +27,6 @@ common_source_files = """
    stats.cpp
    syndicate.cpp
    network.cpp
-   state.cpp
    opts.cpp
 """
 

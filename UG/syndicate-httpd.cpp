@@ -935,7 +935,7 @@ int main( int argc, char** argv ) {
    }
    
    // finish initialization
-   syndicate_finish_init();
+   syndicate_set_running();
 
    struct md_syndicate_conf* conf = syndicate_get_conf();
    

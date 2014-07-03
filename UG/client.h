@@ -22,7 +22,6 @@
 #include "libsyndicate/libsyndicate.h"
 #include "fs_entry.h"
 #include "log.h"
-#include "state.h"
 #include "opts.h"
    
 // file handle wrapper 

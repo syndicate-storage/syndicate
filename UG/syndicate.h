@@ -24,20 +24,50 @@
 #include "stats.h"
 #include "replication.h"
 #include "fs.h"
-#include "state.h"
 #include "opts.h"
+
+struct syndicate_state {
+   FILE* logfile;
+   
+   struct ms_client* ms;   // metadata service client
+   struct fs_core* core;   // core of the system
+   struct syndicate_cache cache;        // local cache
+   struct rg_client replication;            // replication context
+   struct rg_client garbage_collector;      // garbage collector context
+   struct md_downloader dl;             // downloader for this client
+
+   // mounter info (since apparently FUSE doesn't do this right)
+   int gid;
+   int uid;
+
+   // when was the filesystem started?
+   time_t mounttime;
+
+   // configuration
+   struct md_syndicate_conf conf;
+
+   // global running flag
+   int running;
+
+   // statistics
+   Stats* stats;
+};
 
 extern "C" {
    
 int syndicate_init( struct syndicate_opts* opts );
 
-void syndicate_finish_init();
+void syndicate_set_running();
+int syndicate_set_running_ex( struct syndicate_state* state, int running );
 
 struct syndicate_state* syndicate_get_state();
 struct md_syndicate_conf* syndicate_get_conf();
 
 int syndicate_destroy( int wait_replicas );
+int syndicate_destroy_ex( struct syndicate_state* state, int wait_replicas );
 
 }
+
+int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms );
 
 #endif

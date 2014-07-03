@@ -671,18 +671,18 @@ int syndicate_client_init( struct syndicate_state* state, struct syndicate_opts*
    }
    
    // initialize state
-   rc = syndicate_init_state( state, ms );
+   rc = syndicate_setup_state( state, ms );
    if( rc != 0 ) {
       errorf("syndicate_init_state rc = %d\n", rc );
       return rc;
    }
    
-   syndicate_set_running( state, 1 );
+   syndicate_set_running_ex( state, 1 );
    return 0;
 }
 
 // destroy syndicate
 int syndicate_client_shutdown( struct syndicate_state* state, int wait_replicas ) {  
-   syndicate_destroy_state( state, wait_replicas );
+   syndicate_destroy_ex( state, wait_replicas );
    return 0;
 }

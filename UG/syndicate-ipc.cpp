@@ -1482,7 +1482,7 @@ int main(int argc, char* argv[]) {
        exit(1);
 
     // finish initialization
-    syndicate_finish_init();
+    syndicate_set_running();
     
     syndicateipc_get_context()->syndicate_state_data = state;
     syndicateipc_get_context()->syndicate_http = syndicate_http;

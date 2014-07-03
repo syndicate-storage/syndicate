@@ -20,11 +20,152 @@
 struct syndicate_state *global_state = NULL;
 
 // add extra information into global syndicate conf that isn't covered by the normal initialization step
-void syndicate_add_extra_config( struct md_syndicate_conf* conf, struct syndicate_opts* opts ) {
+static void syndicate_add_extra_config( struct md_syndicate_conf* conf, struct syndicate_opts* opts ) {
    // add in extra information not covered by md_init
    conf->cache_soft_limit = opts->cache_soft_limit;
    conf->cache_hard_limit = opts->cache_hard_limit;
 }
+
+// finish initializing the state
+int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms ) {
+   
+   int rc = 0;
+   
+   state->ms = ms;
+   
+   // get the volume
+   uint64_t volume_id = ms_client_get_volume_id( state->ms );
+   uint64_t block_size = ms_client_get_volume_blocksize( state->ms );
+
+   if( volume_id == 0 ) {
+      errorf("%s", "Volume not found\n");
+      return -ENOENT;
+   }
+   
+   // make the logfile
+   state->logfile = log_init( state->conf.logfile_path );
+   if( state->logfile == NULL ) {
+      return -ENOMEM;
+   }
+   
+   // start debugging
+   fs_entry_set_config( &state->conf );
+
+   // start up stats gathering
+   state->stats = new Stats( NULL );
+   state->stats->use_conf( &state->conf );
+
+   // get root info
+   struct md_entry root;
+   memset( &root, 0, sizeof(root) );
+
+   rc = ms_client_get_volume_root( state->ms, &root );
+   if( rc != 0 ) {
+      errorf("ms_client_get_volume_root rc = %d\n", rc );
+      return -ENODATA;
+   }
+
+   // sanity check
+   if( root.volume != volume_id ) {
+      errorf("Invalid root Volume %" PRIu64 "\n", root.volume );
+      md_entry_free( &root );
+      return -EINVAL;
+   }
+
+   // initialize the filesystem core (i.e. so it can reference all of the sub-components of the UG)
+   // NOTE: cache isn't initialized yet, but it doesn't have to be.
+   struct fs_core* core = CALLOC_LIST( struct fs_core, 1 );
+   rc = fs_core_init( core, state, &state->conf, state->ms, &state->cache, root.owner, root.coordinator, root.volume, root.mode, block_size );
+   
+   md_entry_free( &root );
+   
+   if( rc != 0 ) {
+      // something went wrong...
+      errorf("fs_core_init rc = %d\n", rc );
+      return rc;
+   }
+   
+   // populate state with it (and other bits of info...)
+   
+   state->core = core;
+   state->uid = getuid();
+   state->gid = getgid();
+   
+   state->mounttime = currentTimeSeconds();
+   
+   // initialize the downloader 
+   rc = md_downloader_init( &state->dl, "UG-downloader" );
+   if( rc != 0 ) {
+      errorf("md_downloader_init rc = %d\n", rc );
+      return rc;
+   }
+   
+   // start it up 
+   rc = md_downloader_start( &state->dl );
+   if( rc != 0 ) {
+      errorf("md_downloader_start rc = %d\n", rc );
+      return rc;
+   }
+
+   // initialize and start caching
+   rc = fs_entry_cache_init( core, &state->cache, state->conf.cache_soft_limit / block_size, state->conf.cache_hard_limit / block_size );
+   if( rc != 0 ) {
+      errorf("fs_entry_cache_init rc = %d\n", rc );
+      return rc;  
+   }
+   
+   // start up replication
+   replication_init( state, volume_id );
+
+   return 0;
+}
+
+int syndicate_set_running_ex( struct syndicate_state* state, int running ) {
+   state->running = running;
+   return 0;
+}
+
+int syndicate_destroy_ex( struct syndicate_state* state, int wait_replicas ) {
+   
+   state->running = 0;
+   
+   dbprintf("%s", "stopping downloads\n");
+   md_downloader_stop( &state->dl );
+   
+   dbprintf("%s", "shutting down downloader\n");
+   md_downloader_shutdown( &state->dl );
+
+   dbprintf("%s", "stopping replication\n");
+   replication_shutdown( state, wait_replicas );
+   
+   dbprintf("%s", "core filesystem shutdown\n");
+   fs_destroy( state->core );
+   free( state->core );
+   
+   dbprintf("%s", "destroy cache\n");
+   fs_entry_cache_destroy( &state->cache );
+
+   dbprintf("%s", "destory MS client\n");
+   ms_client_destroy( state->ms );
+   free( state->ms );
+
+   if( state->stats != NULL ) {
+      string statistics_str = state->stats->dump();
+      printf("Statistics: \n%s\n", statistics_str.c_str() );
+      delete state->stats;
+      state->stats = NULL;
+   }
+
+   dbprintf("%s", "log shutdown\n");
+
+   log_shutdown( state->logfile );
+
+   dbprintf("%s", "free configuration\n");
+   md_free_conf( &state->conf );
+   
+   return 0;
+}
+
 
 // initialize
 int syndicate_init( struct syndicate_opts* opts ) {
@@ -96,7 +237,7 @@ int syndicate_init( struct syndicate_opts* opts ) {
    syndicate_add_extra_config( &state->conf, opts );
    
    // initialize state
-   int rc = syndicate_init_state( state, ms );
+   int rc = syndicate_setup_state( state, ms );
    if( rc != 0 ) {
       errorf("syndicate_init_state rc = %d\n", rc );
       return rc;
@@ -110,7 +251,7 @@ int syndicate_init( struct syndicate_opts* opts ) {
 // shutdown
 int syndicate_destroy( int wait_replicas ) {
 
-   syndicate_destroy_state( global_state, wait_replicas );
+   syndicate_destroy_ex( global_state, wait_replicas );
    
    free( global_state );
    global_state = NULL;
@@ -132,6 +273,6 @@ struct md_syndicate_conf* syndicate_get_conf() {
    return &global_state->conf;
 }
 
-void syndicate_finish_init() {
-   syndicate_set_running( global_state, 1 );
+void syndicate_set_running() {
+   syndicate_set_running_ex( global_state, 1 );
 }

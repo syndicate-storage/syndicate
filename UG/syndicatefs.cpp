@@ -830,8 +830,8 @@ int main(int argc, char** argv) {
    if( rc != 0 )
       exit(1);
    
-   // finish initialization
-   syndicate_finish_init();
+   // set as running
+   syndicate_set_running();
       
    printf("\n\nSyndicateFS starting up\n\n");
 

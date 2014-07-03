@@ -15,8 +15,8 @@
 */
 
 #include "replication.h"
-#include "state.h"
-
+#include "syndicate.h"
+#include "driver.h"
 
 int fs_entry_replica_wait_and_free( struct rg_client* synrp, replica_list_t* rctxs, struct timespec* timeout );
 
@@ -623,7 +623,8 @@ int replica_context_connect( struct rg_client* rp, struct replica_context* rctx 
                   rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec );
       }
       else {
-         dbprintf("%s: Connect %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", rp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
+         dbprintf("%s: Connect %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "]\n", rp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"),
+                  rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
       }
       
       md_init_curl_handle( rp->conf, curl, rg_base_url, rp->conf->replica_connect_timeout );
@@ -947,7 +948,8 @@ int replica_process_responses( struct rg_client* synrp ) {
          
             if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
                dbprintf("%s: Finished %p %s %" PRIX64 "/manifest.%" PRId64 ".%d, rc = %d, curl rc = %d, HTTP status = %ld\n", 
-                        synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, rctx->error, msg->data.result, http_status );
+                        synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"),
+                        rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, rctx->error, msg->data.result, http_status );
             }
             else {
                dbprintf("%s: Finished %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "], rc = %d, curl rc = %d, HTTP status = %ld\n",
