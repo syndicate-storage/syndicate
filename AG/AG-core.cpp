@@ -173,7 +173,7 @@ static void* gateway_HTTP_connect( struct md_HTTP_connection_data* md_con_data )
    struct md_gateway_request_data reqdat;
    memset( &reqdat, 0, sizeof(reqdat) );
    
-   int rc = md_HTTP_parse_url_path( md_con_data->url_path, &reqdat.volume_id, &reqdat.fs_path, &reqdat.file_version, &reqdat.block_id, &reqdat.block_version, &reqdat.manifest_timestamp );
+   int rc = md_HTTP_parse_url_path( md_con_data->url_path, &reqdat.volume_id, &reqdat.fs_path, &reqdat.file_id, &reqdat.file_version, &reqdat.block_id, &reqdat.block_version, &reqdat.manifest_timestamp );
    if( rc != 0 ) {
       errorf( "failed to parse '%s', rc = %d\n", md_con_data->url_path, rc );
       
@@ -295,6 +295,7 @@ static struct md_HTTP_response* gateway_GET_handler( struct md_HTTP_connection_d
 static int gateway_default_blockinfo( char const* url_path, struct gateway_connection_data* rpc, ms::ms_gateway_request_info* info ) {
    
    uint64_t volume_id = 0;
+   uint64_t file_id = 0;
    int64_t file_version = 0;
    uint64_t block_id = 0;
    int64_t block_version = 0;
@@ -303,7 +304,7 @@ static int gateway_default_blockinfo( char const* url_path, struct gateway_conne
    manifest_timestamp.tv_sec = 0;
    manifest_timestamp.tv_nsec = 0;
    
-   int rc = md_HTTP_parse_url_path( url_path, &volume_id, &file_path, &file_version, &block_id, &block_version, &manifest_timestamp );
+   int rc = md_HTTP_parse_url_path( url_path, &volume_id, &file_path, &file_id, &file_version, &block_id, &block_version, &manifest_timestamp );
    if( rc != 0 ) {
       errorf( "failed to parse '%s', rc = %d\n", url_path, rc );
       free( file_path );

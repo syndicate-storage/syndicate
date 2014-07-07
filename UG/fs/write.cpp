@@ -104,9 +104,10 @@ struct cache_block_future* fs_entry_flush_block_async( struct fs_core* core, cha
    // cache the new block.  Get back the future (caller will manage it).
    struct cache_block_future* f = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, fent->version, block_id, new_block_version, processed_block, processed_block_len, false, &rc );
    if( f == NULL ) {
-      errorf("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %dn", fent->file_id, fent->version, block_id, new_block_version, rc );
+      errorf("WARN: failed to cache %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], rc = %d\n", fent->file_id, fent->version, block_id, new_block_version, rc );
       *_rc = rc;
       free( block_hash );
+      free( processed_block );
       return NULL;
    }
    else {
@@ -347,6 +348,10 @@ struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, cha
    if( block_fut == NULL ) {
       errorf("ERR: fs_entry_flush_block_async(%s/%" PRId64 ", block_len=%zu) failed, rc = %d\n", fs_path, block_id, block_len, rc );
       *ret = -EIO;
+      
+      if( old_hash )
+         free( old_hash );
+      
       return NULL;
    }
    
@@ -969,6 +974,7 @@ ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char co
 
 // revert a set of block writes
 int fs_entry_revert_blocks( struct fs_core* core, struct fs_entry* fent, uint64_t old_end_block, modification_map* old_block_info ) {
+   
    for( modification_map::iterator itr = old_block_info->begin(); itr != old_block_info->end(); itr++ ) {
       uint64_t block_id = itr->first;
       
@@ -980,6 +986,9 @@ int fs_entry_revert_blocks( struct fs_core* core, struct fs_entry* fent, uint64_
       
       fs_entry_manifest_put_block( core, old_binfo->gateway_id, fent, block_id, old_binfo->version, old_binfo->hash );
    }
+   
+   // shrink the manifest back down
+   fent->manifest->truncate_smaller( old_end_block );
    
    return 0;
 }

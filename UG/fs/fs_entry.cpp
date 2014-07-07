@@ -152,8 +152,10 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    core->state = state;
    core->cache = cache;
    core->volume = volume;
-   core->gateway = conf->gateway;
+   core->gateway = conf->gateway;               // TODO: DRY this up
    core->blocking_factor = blocking_factor;
+   
+   dbprintf("Core running in gateway %" PRIu64 "\n", core->gateway );
    
    pthread_rwlock_init( &core->lock, NULL );
    pthread_rwlock_init( &core->fs_lock, NULL );
@@ -386,6 +388,8 @@ static int fs_entry_init_data( struct fs_core* core, struct fs_entry* fent,
    fent->manifest = new file_manifest( fent->version );
    fent->max_read_freshness = core->conf->default_read_freshness;
    fent->max_write_freshness = core->conf->default_write_freshness;
+   fent->ms_manifest_mtime_sec = 0;
+   fent->ms_manifest_mtime_nsec = 0;
    fent->read_stale = false;
    fent->xattr_cache = new xattr_cache_t();
    fent->write_nonce = write_nonce;
@@ -481,6 +485,9 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
       // this is a file
       fs_entry_init_file( core, fent, ent->name, ent->file_id, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, ent->xattr_nonce );
       fent->manifest->set_modtime( ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
+      
+      fent->ms_manifest_mtime_sec = ent->manifest_mtime_sec;
+      fent->ms_manifest_mtime_nsec = ent->manifest_mtime_nsec;
    }
    else if( S_ISFIFO(ent->mode) ) {
       // this is a FIFO 
@@ -1569,7 +1576,7 @@ int fs_entry_has_bufferred_block( struct fs_entry* fent, uint64_t block_id ) {
       }
    }
    else {
-      errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
+      errorf("WARN: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );
       return -ENODATA;
    }
 }
@@ -1636,7 +1643,7 @@ int fs_entry_write_bufferred_block( struct fs_core* core, struct fs_entry* fent,
          
          fs_entry_block_info_buffer_init( &new_binfo, core->blocking_factor );
          
-         // put the block
+         // put the block (shallow copy to bufferred blocks)
          (*fent->bufferred_blocks)[ block_id ] = new_binfo;
          
          binfo = &((*fent->bufferred_blocks)[block_id]);
@@ -1789,8 +1796,6 @@ int fs_entry_emplace_bufferred_blocks( struct fs_entry* fent, modification_map* 
          // NOTE: don't duplicate; copy directly
          (*fent->bufferred_blocks)[ block_id ] = *binfo;
       }
-      
-      fent->bufferred_blocks->clear();
    }
    else {
       errorf("BUG: %" PRIX64 "'s bufferred_blocks is not allocated\n", fent->file_id );

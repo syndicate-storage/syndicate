@@ -47,6 +47,11 @@ int64_t fs_entry_get_block_version( struct fs_core* core, char* fs_path, uint64_
    }
 
    if( fent->manifest == NULL ) {
+      errorf("BUG: %" PRIX64 " (%s) not initialized\n", fent->file_id, fent->name );
+      exit(1);
+   }
+   
+   if( !fent->manifest->is_initialized() ) {
       fs_entry_unlock( fent );
       return -ENODATA;
    }
@@ -69,6 +74,11 @@ uint64_t fs_entry_get_block_host( struct fs_core* core, char* fs_path, uint64_t 
    }
 
    if( fent->manifest == NULL ) {
+      errorf("BUG: %" PRIX64 " (%s) not initialized\n", fent->file_id, fent->name );
+      exit(1);
+   }
+   
+   if( !fent->manifest->is_initialized() ) {
       fs_entry_unlock( fent );
       return -ENODATA;
    }
@@ -178,6 +188,34 @@ int fs_entry_get_mod_time( struct fs_core* core, char const* fs_path, struct tim
 }
 
 
+// get the manifest mod time in its entirety
+int fs_entry_get_manifest_mod_time( struct fs_core* core, char const* fs_path, struct timespec* t ) {
+   int err = 0;
+   struct fs_entry* fent = fs_entry_resolve_path( core, fs_path, SYS_USER, 0, false, &err );
+   if( !fent || err ) {
+      if( !err )
+         err = -ENOMEM;
+
+      return err;
+   }
+   
+   if( fent->manifest == NULL ) {
+      errorf("BUG: %" PRIX64 " (%s) not initialized\n", fent->file_id, fent->name );
+      exit(1);
+   }
+   
+   if( !fent->manifest->is_initialized() ) {
+      fs_entry_unlock( fent );
+      return -ENODATA;
+   }
+
+   fent->manifest->get_modtime( t );
+   
+   fs_entry_unlock( fent );
+   return 0;
+}
+
+
 // set the mod time (at the nanosecond resolution)
 int fs_entry_set_mod_time( struct fs_core* core, char const* fs_path, struct timespec* t ) {
    int err = 0;
@@ -245,7 +283,7 @@ static int fs_entry_do_stat( struct fs_core* core, struct fs_entry* fent, struct
 
 
 // stat
-int fs_entry_stat_extended( struct fs_core* core, char const* path, struct stat* sb, bool* is_local, uint64_t user, uint64_t volume, bool revalidate ) {
+int fs_entry_stat_extended( struct fs_core* core, char const* path, struct stat* sb, bool* is_local, int64_t* version, uint64_t* coordinator_id, uint64_t user, uint64_t volume, bool revalidate ) {
 
    int rc = 0;
    
@@ -276,6 +314,14 @@ int fs_entry_stat_extended( struct fs_core* core, char const* path, struct stat*
       *is_local = FS_ENTRY_LOCAL( core, fent );
    }
    
+   if( version ) {
+      *version = fent->version;
+   }
+   
+   if( coordinator_id ) {
+      *coordinator_id = fent->coordinator;
+   }
+   
    fs_entry_unlock( fent );
 
    return 0;
@@ -283,7 +329,7 @@ int fs_entry_stat_extended( struct fs_core* core, char const* path, struct stat*
 
 // stat
 int fs_entry_stat( struct fs_core* core, char const* path, struct stat* sb, uint64_t user, uint64_t volume ) {
-   return fs_entry_stat_extended( core, path, sb, NULL, user, volume, true );
+   return fs_entry_stat_extended( core, path, sb, NULL, NULL, NULL, user, volume, true );
 }
 
 

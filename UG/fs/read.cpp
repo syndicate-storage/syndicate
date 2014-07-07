@@ -21,7 +21,7 @@
 #include "url.h"
 #include "fs_entry.h"
 #include "driver.h"
-#include "state.h"
+#include "syndicate.h"
 #include "write.h"
 
 
@@ -707,7 +707,7 @@ int fs_entry_read_context_setup_downloads( struct fs_core* core, struct fs_entry
       // track this block future 
       fs_entry_read_context_track_downloading_block( read_ctx, block_fut );
       
-      // start downlaoding it 
+      // start downloading it 
       int rc = fs_entry_read_block_future_start_next_download( core, block_fut, fent );
       if( rc != 0 ) {
          errorf("fs_entry_read_block_future_start_next_download( %s ) rc = %d\n", block_fut->fs_path, rc );
@@ -721,11 +721,12 @@ int fs_entry_read_context_setup_downloads( struct fs_core* core, struct fs_entry
 }
 
 
-// process a finished download of a block future.  Finalize it if it is done.
+// process a finished now-untracked download of a block future.  Finalize it if it is done.
 // return 0 on success
+// return EAGAIN if we re-tracked the read download
 // return negative on error.
 // fent must be read-locked
-static int fs_entry_read_block_future_process_download( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_block_future* block_fut ) {
+static int fs_entry_read_block_future_process_download( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx, struct fs_entry_read_block_future* block_fut ) {
    
    // sanity check..
    if( !block_fut->has_dlctx )
@@ -760,6 +761,9 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
                  block_fut->curr_URL, md_download_context_get_curl_rc( dlctx ), md_download_context_get_errno( dlctx ), md_download_context_get_http_status( dlctx ) );
          
          // try again 
+         // track this block future 
+         fs_entry_read_context_track_downloading_block( read_ctx, block_fut );
+      
          rc = fs_entry_read_block_future_start_next_download( core, block_fut, fent );
          
          if( rc != 0 ) {
@@ -768,7 +772,11 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
                     block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
             
             // finalize in error 
+            fs_entry_read_context_untrack_downloading_block( read_ctx, &block_fut->dlctx );
             fs_entry_read_block_future_finalize_error( block_fut, rc );
+         }
+         else {
+            rc = EAGAIN;
          }
       }
    }
@@ -779,6 +787,12 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
       
       // get the block 
       md_download_context_get_buffer( dlctx, &buf, &buflen );
+      
+      char prefix[11];
+      memset(prefix, 0, 11);
+      memcpy(prefix, buf, 10);
+      
+      dbprintf("Downloaded data for %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], prefix = '%s'\n", fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, prefix);
       
       // verify the block's integrity 
       rc = fs_entry_verify_block( core, fent, block_fut->block_id, buf, buflen );
@@ -871,7 +885,8 @@ static int fs_entry_read_context_cancel_downloads( struct fs_core* core, struct 
 // run one or more read downloads in a read context.
 // stop downloading if we encounter an EOF condition
 // fent will be read-locked and read-unlocked across multiple download completions, unless we indicate otherwise in the write_locked flag
-int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx, bool write_locked, fs_entry_read_block_future_download_finalizer_func finalizer, void* finalizer_cls ) {
+int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_context* read_ctx, bool write_locked,
+                                            fs_entry_read_block_future_download_finalizer_func finalizer, void* finalizer_cls ) {
    
    int rc = 0;
    
@@ -923,20 +938,11 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
                if( !write_locked )
                   fs_entry_rlock( fent );
                
-               // do internal processing of the future (finalizing it)
-               rc = fs_entry_read_block_future_process_download( core, fent, block_fut );
+               // do internal processing of the future (finalizing it, or re-tracking it)
+               rc = fs_entry_read_block_future_process_download( core, fent, read_ctx, block_fut );
                
-               // if we have a finalizer, run it
-               int finalizer_rc = 0;
-               if( finalizer ) {
-                  finalizer_rc = (*finalizer)( core, fent, block_fut, finalizer_cls );
-               }
-               
-               if( !write_locked )
-                  fs_entry_unlock( fent );
-               
-               // internal processing succeeded?
-               if( rc != 0 ) {
+               // internal processing failed?
+               if( rc < 0 ) {
                   // out of options here 
                   errorf("fs_entry_read_context_process_download( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
                         block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
@@ -946,11 +952,27 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
                   
                   // cancel all blocks
                   cancel_after = 0;
+                  
+                  if( !write_locked )
+                     fs_entry_unlock( fent );
+                  
                   break;
                }
                
+               // if we have a finalizer, and we're not re-trying, run it
+               int finalizer_rc = 0;
+               if( rc == 0 ) {
+                  
+                  if( finalizer ) {
+                     finalizer_rc = (*finalizer)( core, fent, block_fut, finalizer_cls );
+                  }
+               }
+               
+               if( !write_locked )
+                  fs_entry_unlock( fent );
+               
                // finalizer succeeded?
-               if( finalizer_rc != 0 ) {
+               if( rc == 0 && finalizer_rc != 0 ) {
                   // finalizer failed
                   errorf("block future finalizer %p failed, rc = %d\n", finalizer, finalizer_rc );
                   
@@ -961,13 +983,15 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
                }
                
                // did we find EOF?
-               if( block_fut->eof ) {
+               if( rc == 0 && block_fut->eof ) {
                   // cancel all blocks after this one, since they are EOF
                   do_cancel = true;
                   do_eof = true;
                   cancel_after = block_fut->block_id;
                   break;
                }
+               
+               rc = 0;
             }
             else {
                // shouldn't happen; indicates a bug
@@ -1004,7 +1028,8 @@ static int fs_entry_read_block_future_finalizer_cache_async( struct fs_core* cor
       
       // cache this!
       int rc = 0;
-      struct cache_block_future* f = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, block_fut->result, block_fut->result_len, false, &rc );
+      struct cache_block_future* f = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version,
+                                                                       block_fut->result, block_fut->result_len, false, &rc );
       if( rc != 0 || f == NULL ) {
          errorf("fs_entry_cache_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
                 block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
@@ -1254,7 +1279,7 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
       // covered this block already--adjust whole block start
       start_id++;
    
-   if( has_partial_tail || (offset + real_count) % core->blocking_factor == 0 )
+   if( end_id > 0 && (has_partial_tail || (offset + real_count) % core->blocking_factor == 0) )
       // covered this block already--adjust whole block end.  Also, skip a 0-length tail
       end_id--;
    
@@ -1334,7 +1359,11 @@ static ssize_t fs_entry_read_block_future_combine( struct fs_core* core, char co
             }
             else {
                // copy the partial head over 
-               dbprintf("block %" PRIu64 " head offset %jd length %" PRIu64 "\n", block_fut->block_id, block_fut->result_start, result_copy );
+               char prefix[11];
+               memset( prefix, 0, 11 );
+               memcpy( prefix, block_fut->result + block_fut->result_start, MIN(10, result_copy));
+               
+               dbprintf("block %" PRIu64 " head offset %jd length %" PRIu64 " prefix '%s'\n", block_fut->block_id, block_fut->result_start, result_copy, prefix );
                memcpy( buf, block_fut->result + block_fut->result_start, result_copy );
             }
          }
@@ -1350,7 +1379,11 @@ static ssize_t fs_entry_read_block_future_combine( struct fs_core* core, char co
             }
             else {
                // copy the partial tail over 
-               dbprintf("block %" PRIu64 " tail length %" PRIu64 ", aligned offset = %jd\n", block_fut->block_id, result_copy, buf_last_block_aligned_offset );
+               char prefix[11];
+               memset( prefix, 0, 11 );
+               memcpy( prefix, block_fut->result, MIN(10, result_copy));
+               
+               dbprintf("block %" PRIu64 " tail length %" PRIu64 ", aligned offset = %jd, prefix = '%s'\n", block_fut->block_id, result_copy, buf_last_block_aligned_offset, prefix );
                memcpy( buf + buf_last_block_aligned_offset, block_fut->result, result_copy );
             }
          }
@@ -1546,11 +1579,12 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
          
          // get some data, and cache blocks as we get them 
          rc = fs_entry_read_context_run_downloads_ex( core, fent, &read_ctx, false, fs_entry_read_block_future_finalizer_cache_async, &cache_futs );
-         if( rc != 0 ) {
+         if( rc < 0 ) {
             errorf("fs_entry_read_context_run_downloads_ex( %s ) rc = %zd\n", fs_path, rc );
             fs_entry_read_run_cleanup( core, &read_ctx );
             return rc;
          }
+         rc = 0;
       }
       
       END_TIMING_DATA( ts, ts2, "read remote blocks" );

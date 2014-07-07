@@ -176,42 +176,47 @@ int fs_entry_reload( struct fs_entry_consistency_cls* consistency_cls, struct fs
                
    if( fent->ftype == FTYPE_FILE ) {
       
-      if( fent->manifest != NULL ) {
-         
-         // the manifest is only stale 
-         if( !fent->manifest->is_initialized() ) {
-            fent->manifest->mark_stale();
-         }
-         else {
-            
-            // get the modtime
-            fent->manifest->get_modtime( &manifest_modtime_sec, &manifest_modtime_nsec );
-            
-            // only consider refreshing the manifest if it's not dirty 
-            if( !fent->dirty ) {
-               
-               // do we need to refresh the manifest later?
-               if( manifest_modtime_sec != ent->manifest_mtime_sec || manifest_modtime_nsec != ent->manifest_mtime_nsec || fent->write_nonce != ent->write_nonce ) {
-                  // manifest has changed remotely
-                  fent->manifest->mark_stale();
-               }
-
-               if( fent->version != fent->manifest->get_file_version() ) {
-                  // file was reversioned (i.e. truncated, deleted/recreated)
-                  fent->manifest->mark_stale();
-               }
-            }
-         }
+      if( fent->manifest == NULL ) {
+         // should never happen--this is a bug
+         errorf("BUG: manifest of %" PRIX64 " is NULL\n", fent->file_id );
+         exit(1);
+      }
+      
+      // initialized?
+      if( !fent->manifest->is_initialized() ) {
+         dbprintf("%" PRIX64 "(%s)'s manifest is not initialized\n", fent->file_id, fent->name );
+         fent->manifest->mark_stale();
       }
       else {
-         // no manifest, but this is a file.  create one and mark it for reloading later.
-         fent->manifest = new file_manifest();
-         fent->manifest->set_modtime( ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
-         fent->manifest->mark_stale();
          
-         dbprintf("initialize new manifest for %" PRIX64 ".%" PRId64 "\n", fent->file_id, fent->version );
+         // get the modtime
+         fent->manifest->get_modtime( &manifest_modtime_sec, &manifest_modtime_nsec );
+         
+         // only consider refreshing the manifest if it's not dirty 
+         if( !fent->dirty ) {
+            
+            // do we need to refresh the manifest later?
+            if( manifest_modtime_sec != ent->manifest_mtime_sec || manifest_modtime_nsec != ent->manifest_mtime_nsec || fent->write_nonce != ent->write_nonce ) {
+               dbprintf("%" PRIX64 " (%s)'s manifest is stale\n", fent->file_id, fent->name );
+               // manifest has changed remotely
+               fent->manifest->mark_stale();
+            }
+
+            if( fent->version != fent->manifest->get_file_version() ) {
+               // file was reversioned (i.e. truncated)
+               dbprintf("%" PRIX64 " (%s)'s manifest was reversioned\n", fent->file_id, fent->name );
+               fent->manifest->mark_stale();
+            }
+         }
+         else {
+            dbprintf("%" PRIX64 " (%s) is dirty; will not mark manifest as stale\n", fent->file_id, fent->name );
+         }
       }
    }
+   
+   dbprintf("reload %s (dirty = %d), version %" PRId64 " --> %" PRId64 ", manifest mtime %" PRId64 ".%d --> %" PRId64 ".%d, write nonce %" PRId64 " --> %" PRId64 ", xattr nonce %" PRId64 " --> %" PRId64 "\n",
+            ent->name, fent->dirty, fent->version, ent->version, manifest_modtime_sec, manifest_modtime_nsec, ent->manifest_mtime_sec, ent->manifest_mtime_nsec,
+            fent->write_nonce, ent->write_nonce, fent->xattr_nonce, ent->xattr_nonce );
    
    // only take the maximal size if we're dirty and we're the same version.  File size only increases within a single version.
    if( fent->dirty && fent->version == ent->version ) {
@@ -220,10 +225,6 @@ int fs_entry_reload( struct fs_entry_consistency_cls* consistency_cls, struct fs
    else {
       fent->size = ent->size;
    }
-   
-   dbprintf("reload %s (dirty = %d), version %" PRId64 " --> %" PRId64 ", manifest mtime %" PRId64 ".%d --> %" PRId64 ".%d, write nonce %" PRId64 " --> %" PRId64 ", xattr nonce %" PRId64 " --> %" PRId64 "\n",
-            ent->name, fent->dirty, fent->version, ent->version, manifest_modtime_sec, manifest_modtime_nsec, ent->manifest_mtime_sec, ent->manifest_mtime_nsec,
-            fent->write_nonce, ent->write_nonce, fent->xattr_nonce, ent->xattr_nonce );
    
    // fill in some of the details
    fent->owner = ent->owner;
@@ -237,6 +238,10 @@ int fs_entry_reload( struct fs_entry_consistency_cls* consistency_cls, struct fs
    fent->max_read_freshness = ent->max_read_freshness;
    fent->max_write_freshness = ent->max_write_freshness;
    fent->file_id = ent->file_id;
+   
+   // store these for subsequent manifest reload
+   fent->ms_manifest_mtime_sec = ent->manifest_mtime_sec;
+   fent->ms_manifest_mtime_nsec = ent->manifest_mtime_nsec;
    
    if( fent->name )
       free( fent->name );
@@ -407,17 +412,22 @@ static int fs_entry_ms_path_append( struct fs_entry* fent, void* ms_path_cls ) {
    int64_t modtime_sec = 0;
    int32_t modtime_nsec = 0;
    bool manifest_inited = false;
+   char const* mtime_type = NULL;
    
    if( fent->manifest && fent->manifest->is_initialized() ) {
       fent->manifest->get_modtime( &modtime_sec, &modtime_nsec );
       manifest_inited = true;
+      mtime_type = "manifest ";
    }
    else {
       modtime_sec = fent->mtime_sec;
       modtime_nsec = fent->mtime_nsec;
+      mtime_type = "fent ";
    }
    
-   dbprintf("in path: %s.%" PRId64 " (mtime=%" PRId64 ".%d, inited=%d) (write_nonce=%" PRId64 ") (%s)\n", fent->name, fent->version, modtime_sec, modtime_nsec, manifest_inited, fent->write_nonce, cls->fs_path);
+   dbprintf("in path: %s.%" PRId64 " (%s mtime=%" PRId64 ".%d, inited=%d) (write_nonce=%" PRId64 ") (%s)\n", fent->name, fent->version, mtime_type, modtime_sec, modtime_nsec,
+            manifest_inited, fent->write_nonce, cls->fs_path);
+   
    return 0;
 }
 
@@ -602,6 +612,8 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
    dbprintf("Reload directory %" PRIX64 " (%s) with new data\n", dent->file_id, dent->name );
    
    vector<struct md_entry>* ms_ents_vec = listing->entries;
+   
+   int rc = 0;
 
    // convert to list, so we don't have to modify the listing
    size_t ms_ents_size = ms_ents_vec->size();
@@ -656,7 +668,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
       // this listing indicates that the entry does not exist.  Remove all children.
       errorf("Directory entry %" PRIX64 " (%s) not found in listing\n", dent->file_id, dent->name );
 
-      int rc = fs_unlink_children( consistency_cls->core, dent->children, true );
+      rc = fs_unlink_children( consistency_cls->core, dent->children, true );
       if( rc != 0 ) {
          // NOTE: this should never happen in practice, but here for defensive purposes
          errorf("fs_unlink_children(%" PRIX64 " (%s)) rc = %d\n", dent->file_id, dent->name, rc );
@@ -728,7 +740,7 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
                
                dbprintf("reload %" PRIX64 " (%s)\n", child->file_id, child->name );
                fs_entry_reload( consistency_cls, child, ms_ent );
-
+               
                if( child->ftype == FTYPE_DIR )
                   child->read_stale = read_stale;
             }
@@ -761,13 +773,12 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
          fs_entry_clear_child( children, i );
       }
    }
-         
    
    // new child set, filled with the keepers
    dent->children = children_keep;
 
    // add the new entries from the MS to dent
-   int rc = fs_entry_populate_directory( consistency_cls, dent, ms_ents, ms_ents_size );
+   rc = fs_entry_populate_directory( consistency_cls, dent, ms_ents, ms_ents_size );
 
    if( rc != 0 ) {
       // error processing
@@ -1291,7 +1302,8 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
 // if successful_gateway_id != NULL, then fill it with the ID of the gateway that served the manifest (if any). Otherwise set to 0 if given but the manifest was fresh.
 // a manifest fetched from an AG will be marked as stale, since a subsequent read can fail with HTTP 204.  The caller should mark the manifest as fresh if it succeeds in reading data.
 // fent must be write-locked
-int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id, bool force_refresh ) {
+int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version,
+                                     int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id ) {
    
    if( fent->manifest != NULL && fent->manifest->is_initialized() ) {
       if( FS_ENTRY_LOCAL( core, fent ) && !core->conf->is_client ) {
@@ -1313,19 +1325,14 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
    BEGIN_TIMING_DATA( ts );
    
    bool need_refresh = false;
-   if( force_refresh ) {
-      need_refresh = true;
+   
+   if( fent->manifest == NULL ) {
+      errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
+      exit(1);
    }
-   else {  
-      if( fent->manifest == NULL ) {
-         fent->manifest = new file_manifest( version );
-         need_refresh = true;
-         errorf("BUG: had to initialize a manifest before revalidating %s\n", fs_path);
-      }
-      else {
-         // does the manifest need refreshing?
-         need_refresh = fs_entry_is_manifest_stale( fent );
-      }
+   else {
+      // does the manifest need refreshing?
+      need_refresh = fs_entry_is_manifest_stale( fent );
    }
    
    if( !need_refresh ) {
@@ -1343,6 +1350,9 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
    struct timespec modtime;
    modtime.tv_sec = mtime_sec;
    modtime.tv_nsec = mtime_nsec;
+   
+   
+   dbprintf("%" PRIX64 " (%s) manifest mtime: %" PRId64 ".%d\n", fent->file_id, fent->name, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec );
    
    char* manifest_url = NULL;
    int rc = 0;
@@ -1449,21 +1459,13 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
 // ensure the manifest is fresh
 // fent should be write-locked
 int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
-   struct timespec ts;
-   
-   bool force_refresh = false;
-   
+
    if( fent->manifest == NULL ) {
-      // no manifest on file...reload it
-      fent->manifest = new file_manifest( fent->version );
-      fent->manifest->set_modtime( 2, 2 );
-      force_refresh = true;
-      errorf("BUG: had to initialize a manifest before revalidating %s\n", fs_path);
+      errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
+      exit(1);
    }
    
-   fent->manifest->get_modtime( &ts );
-   
-   return fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->version, ts.tv_sec, ts.tv_nsec, true, NULL, force_refresh );   
+   return fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->version, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec, true, NULL );   
 }
 
 
@@ -1545,20 +1547,12 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
    // reload this manifest.  If we get this manifest from an RG, remember which one.
    uint64_t rg_id = 0;
    
-   struct timespec manifest_ts;
-   bool force_refresh = false;
-   
    if( fent->manifest == NULL ) {
-      // no manifest; force refresh
-      fent->manifest = new file_manifest( fent->version );
-      fent->manifest->set_modtime( fent->mtime_sec, fent->mtime_nsec );
-      force_refresh = true;
-      errorf("BUG: had to initialize a manifest before revalidating %s\n", fs_path);
+      errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
+      exit(1);
    }
    
-   fent->manifest->get_modtime( &manifest_ts );
-   
-   rc = fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->version, manifest_ts.tv_sec, manifest_ts.tv_nsec, true, &rg_id, force_refresh );
+   rc = fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->version, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec, true, &rg_id );
 
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, rc );

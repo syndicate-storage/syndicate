@@ -465,6 +465,7 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 #define INVALID_BLOCK_ID (uint64_t)(-1)
 #define INVALID_GATEWAY_ID INVALID_BLOCK_ID
 #define INVALID_VOLUME_ID INVALID_BLOCK_ID
+#define INVALID_FILE_ID INVALID_BLOCK_ID
 
 // gateway types for md_init
 #define SYNDICATE_UG       ms::ms_gateway_cert::USER_GATEWAY

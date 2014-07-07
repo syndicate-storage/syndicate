@@ -384,6 +384,7 @@ int fs_entry_cache_open_block( struct fs_core* core, struct syndicate_cache* cac
    fd = open( block_path, flags, 0600 );
    if( fd < 0 ) {
       fd = -errno;
+      errorf("open(%s) rc = %d\n", block_path, fd );
    }
    
    free( block_url );

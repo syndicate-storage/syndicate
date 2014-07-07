@@ -116,10 +116,12 @@ struct fs_entry {
    int64_t atime;             // access time (seconds)
    int64_t write_nonce;       // nonce generated at last write by the MS
    int64_t xattr_nonce;       // nonce generated on setxattr/removexattr by the MS
+   int64_t ms_manifest_mtime_sec;       // latest-known manifest modification time from the MS
+   int32_t ms_manifest_mtime_nsec;      // latest-known manifest modification time from the MS
    
    modification_map* bufferred_blocks;  // set of in-core blocks that have been either read recently, or modified recently.  Modified blocks will be flushed to on-disk cache.
    modification_map* dirty_blocks;      // set of disk-cached blocks that have been modified locally, and will need to be replicated on flush() or last close()
-   modification_map* garbage_blocks;    // set of blocks as they were when the file was opened (when open_count was 0)
+   modification_map* garbage_blocks;    // set of blocks as they were when the file was opened for the first time since the last synchronization (i.e. when open_count was last 0)
    
    struct timespec refresh_time;    // time of last refresh from the ms
    uint32_t max_read_freshness;     // how long since last refresh, in ms, this fs_entry is to be considered fresh for reading

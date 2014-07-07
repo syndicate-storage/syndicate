@@ -718,8 +718,6 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
       return -EINVAL;
    }
 
-   //dbprintf( "put %s.%lld/%llu.%lld\n", file_url, this->file_version, block_id, block_version);
-
    block_map::iterator itr = this->find_block_set( block_id );
    int64_t bvec[] = { block_version };
 
@@ -893,13 +891,13 @@ int file_manifest::put_block( struct fs_core* core, uint64_t gateway, struct fs_
    // advance the mod time 
    clock_gettime( CLOCK_REALTIME, &this->lastmod );
    
-   dbprintf("put (%s) %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->name, fent->file_id, fent->version, block_id, block_version );
-   
    // mark as initialized 
    this->initialized = true;
    
    pthread_rwlock_unlock( &this->manifest_lock );
-
+   
+   dbprintf("put %" PRIu64 "/%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] from %" PRIu64 "\n", core->volume, fent->file_id, fent->version, block_id, block_version, gateway );
+   
    /*
    char* data = this->serialize_str();
    dbprintf( "Manifest is now:\n%s\n", data);

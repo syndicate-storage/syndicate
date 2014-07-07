@@ -29,6 +29,7 @@ import socket
 import os
 import errno
 import shlex
+import subprocess
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
@@ -199,6 +200,14 @@ def run_meinheld( hostname, portnum ):
    meinheld.server.listen( hostname, portnum )
    meinheld.server.run( rg_server.wsgi_handle_request )
    
+#-------------------------
+def run_uwsgi( hostname, portnum ):
+   """
+   Start the server, using the uWSGI server (https://github.com/unbit/uwsgi)
+   """
+   log.info("Starting uWSGI server on %s:%s" % (hostname, portnum))
+   
+   #uwsgi_rc = subprocess.call("uwsgi --http-processes 1 --htt
 
 #-------------------------
 def build_config( argv ):

@@ -131,7 +131,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
       child->created_in_session = true;
       
       // we're creating, so this manifest is initialized (to zero blocks)
-      child->manifest->initialize_empty();
+      child->manifest->initialize_empty( child->version );
          
       // attach the file
       fs_entry_wlock( child );
@@ -309,7 +309,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
             child->created_in_session = true;
             
             // we're creating, so this manifest is initialized (to zero blocks)
-            child->manifest->initialize_empty();
+            child->manifest->initialize_empty( child->version );
             
             // insert it into the filesystem
             fs_entry_wlock( child );

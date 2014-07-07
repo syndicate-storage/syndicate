@@ -135,6 +135,7 @@ struct md_HTTP_connection_data {
 // gateway request structure
 struct md_gateway_request_data {
    uint64_t volume_id;
+   uint64_t file_id;
    char* fs_path;
    int64_t file_version;
    uint64_t block_id;
@@ -266,7 +267,7 @@ void md_create_HTTP_header( struct md_HTTP_header* header, char const* h, char c
 void md_free_HTTP_header( struct md_HTTP_header* header );
 char const* md_find_HTTP_header( struct md_HTTP_header** headers, char const* header );
 int md_HTTP_add_header( struct md_HTTP_response* resp, char const* header, char const* value );
-int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_timestamp );
+int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** _file_path, uint64_t* _file_id, int64_t* _file_version, uint64_t* _block_id, int64_t* _block_version, struct timespec* _manifest_ts );
 void md_HTTP_free_connection_data( struct md_HTTP_connection_data* con_data );
 void md_gateway_request_data_free( struct md_gateway_request_data* reqdat );
 

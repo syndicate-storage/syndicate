@@ -427,6 +427,11 @@ int md_download_context_reset( struct md_download_context* dlctx, CURL* new_curl
    dlctx->cancelled = false;
    dlctx->finalized = false;
    
+   if( dlctx->effective_url ) {
+      free( dlctx->effective_url );
+      dlctx->effective_url = NULL;
+   }
+   
    if( new_curl ) {
       dlctx->curl = new_curl;
    }

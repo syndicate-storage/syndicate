@@ -467,29 +467,29 @@ class SyndicateUser( storagetypes.Object ):
          if not user.active:
             raise Exception("Account for %s is not active.  Please activate it." % user.email )
          
-         if attrs.has_key['allow_password_auth']:
+         if attrs.has_key('allow_password_auth'):
             # this can only be disabled
             if attrs['allow_password_auth']:
                raise Exception("For security reasons, re-enabling password authentication is forbidden.  Reset the account for %s instead." % user.email)
             
-         if attrs.has_key['signing_public_key']:
+         if attrs.has_key('signing_public_key'):
             # can't unset this if password auth is disabled
             if not user.allow_password_auth and not SyndicateUser.is_signing_public_key_set( attrs['signing_public_key'] ):
                raise Exception("Cannot disable public-key authentication once password authentication is disabled.")
             
          return True
          
-      def update_txn( email, **fields ):
+      def update_txn( email, attrs ):
          user = SyndicateUser.Read(email)
          if user is None:
             raise Exception("No such user %s" % email)
          
-         verify_auth_change( email, fields )
+         verify_auth_change( user, attrs )
          
          user_key_name = SyndicateUser.make_key_name( email=email)
          storagetypes.memcache.delete( user_key_name )
 
-         for (k,v) in fields.items():
+         for (k,v) in attrs.items():
             setattr(user, k, v )
          return user.put()
       
@@ -502,7 +502,7 @@ class SyndicateUser( storagetypes.Object ):
       if len(invalid) > 0:
          raise Exception( "Unwritable fields: %s" % (', '.join( invalid )) )
       
-      return storagetypes.transaction( lambda: update_txn( email, **fields ) )
+      return storagetypes.transaction( lambda: update_txn( email, fields ) )
       
       
    @classmethod

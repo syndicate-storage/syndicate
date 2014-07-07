@@ -134,7 +134,7 @@ struct md_HTTP_response* server_HTTP_GET_handler( struct md_HTTP_connection_data
    if( reqdat.block_id != INVALID_BLOCK_ID ) {
       // serve back the block
       char* block = CALLOC_LIST( char, state->core->blocking_factor );
-
+      
       ssize_t size = fs_entry_read_block_local( state->core, reqdat.fs_path, reqdat.block_id, block, state->core->blocking_factor );
       if( size < 0 ) {
          errorf( "fs_entry_read_block(%s.%" PRId64 "/%" PRIu64 ".%" PRId64 ") rc = %zd\n", reqdat.fs_path, reqdat.file_version, reqdat.block_id, reqdat.block_version, size );

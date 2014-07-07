@@ -138,7 +138,9 @@ int driver_write_block_preup( struct fs_core* core, struct md_closure* closure, 
    int ret = 0;
    
    if( md_closure_find_callback( closure, "write_block_preup" ) != NULL ) {
-      MD_CLOSURE_CALL( ret, closure, "write_block_preup", driver_write_block_preup_func, core, closure, fs_path, fent, block_id, block_version, in_block_data, in_block_data_len, out_block_data, out_block_data_len, closure->cls );
+      MD_CLOSURE_CALL( ret, closure, "write_block_preup", driver_write_block_preup_func, core, closure,
+                       fs_path, fent, block_id, block_version, in_block_data, in_block_data_len, out_block_data, out_block_data_len,
+                       closure->cls );
    }
    else {
       errorf("%s", "WARN: write_block_preup stub\n");
@@ -184,10 +186,12 @@ ssize_t driver_read_block_postdown( struct fs_core* core, struct md_closure* clo
    ssize_t ret = 0;
    
    if( md_closure_find_callback( closure, "read_block_postdown" ) != NULL ) {
-      MD_CLOSURE_CALL( ret, closure, "read_block_postdown", driver_read_block_postdown_func, core, closure, fs_path, fent, block_id, block_version, in_block_data, in_block_data_len, out_block_data, out_block_data_len, closure->cls );
+      MD_CLOSURE_CALL( ret, closure, "read_block_postdown", driver_read_block_postdown_func, core, closure,
+                       fs_path, fent, block_id, block_version, in_block_data, in_block_data_len, out_block_data, out_block_data_len,
+                       closure->cls );
    }
    else {
-      errorf("%s", "WARN: read_block_postdown stub\n");
+      errorf("WARN: read_block_postdown stub (in buffer len = %zu, out buffer len = %zu)\n", in_block_data_len, out_block_data_len);
       
       memcpy( out_block_data, in_block_data, MIN( in_block_data_len, out_block_data_len ) );
       ret = MIN( in_block_data_len, out_block_data_len );

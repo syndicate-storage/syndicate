@@ -1370,7 +1370,7 @@ int64_t md_path_version( char const* path ) {
    return version;
 }
 
-// Get the offset into a path where the version begins.
+// Get the offset into a path where the version begins (delimited by a .)
 // Returns nonnegative on success.
 // returns negative on error.
 int md_path_version_offset( char const* path ) {

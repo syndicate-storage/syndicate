@@ -155,6 +155,7 @@ int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_
       fs_entry_merge_new_dirty_blocks( fent, &dirty_blocks );
       
       fs_entry_free_modification_map( &bufferred_blocks );
+      fs_entry_free_modification_map( &old_blocks );
    }
    else {
       // put bufferred blocks back
@@ -162,6 +163,9 @@ int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_
       
       // revert the block versions (NOTE: the old end block is simply the current end block)
       fs_entry_revert_blocks( core, fent, fs_entry_block_id( core, fent->size ), &old_blocks );
+      
+      // clear out any blocks we cached
+      fs_entry_cache_evict_blocks_async( core, fent, &dirty_blocks );
    }
    
    return rc;

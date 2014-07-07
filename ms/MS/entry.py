@@ -1862,7 +1862,7 @@ class MSEntry( storagetypes.Object ):
    def FromFuture( cls, ent_fut ):
       ent = ent_fut.base_future.get_result()
       if ent != None:
-         shards = filter( lambda x: x != None, [x.get_result() for x in ent_fut.shard_futures] )
+         shards = filter( lambda x: x is not None, [x.get_result() for x in ent_fut.shard_futures] )
          ent.populate_from_shards( shards )
          
          #logging.info("FromFuture: %s\nshards = %s" % (ent, shards))

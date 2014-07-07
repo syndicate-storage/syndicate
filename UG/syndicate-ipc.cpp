@@ -19,7 +19,6 @@
 #include "log.h"
 #include "fs.h"
 #include "replication.h"
-#include "collator.h"
 #include "syndicate.h"
 #include "server.h"
 #include "opts.h"

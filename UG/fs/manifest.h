@@ -203,9 +203,11 @@ public:
    }
    
    // initialize as an empty manifest (i.e. not from a ManifestMsg)
-   void initialize_empty() { 
+   void initialize_empty( int64_t file_version ) { 
       pthread_rwlock_wrlock( &this->manifest_lock );
       this->initialized = true;
+      this->file_version = file_version;
+      clock_gettime( CLOCK_REALTIME, &this->lastmod );
       pthread_rwlock_unlock( &this->manifest_lock );
    }
 

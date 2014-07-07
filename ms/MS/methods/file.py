@@ -91,30 +91,27 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce ):
    file_data_fut = None
    
    # do we need to consult the datastore?
-   if file_data == None:
+   if file_data is None:
       logging.info( "file %s not cached" % file_id )
-      file_data_fut = MSEntry.Read( volume, file_id, futs_only=True )
-   
-   if file_data_fut != None:
-      all_futs = []
       
-      if file_data_fut != None:
-         all_futs += MSEntry.FlattenFuture( file_data_fut )
-         
+      file_data_fut = MSEntry.Read( volume, file_id, futs_only=True )
+      all_futs = MSEntry.FlattenFuture( file_data_fut )
+      
       storagetypes.wait_futures( all_futs )
       
-      cacheable = {}
-      if file_data_fut != None:
-         file_data = MSEntry.FromFuture( file_data_fut )
-         
-         if file_data != None:
-            cacheable[ file_memcache ] = file_data
+      file_data = MSEntry.FromFuture( file_data_fut )
       
-      if len(cacheable) > 0:
+      if file_data != None:
+         
+         cacheable = {
+            file_memcache: file_data
+         }
+         
          logging.info( "cache file %s (%s)" % (file_id, file_data) )
          storagetypes.memcache.set_multi( cacheable )
-
-   if file_data != None:
+ 
+   if file_data is not None:
+      # got data...
       logging.info("%s has type %s" % (file_data.name, file_data.ftype))
       
       # do we need to actually send this?
@@ -136,9 +133,9 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce ):
    # check security
    error = -errno.EACCES
    
-   # error evaluation
-   if file_data == None:
-      error = -errno.ENOENT
+   if file_data is None:
+      # not found
+      error = -errno.ENOENT 
       
    elif file_data.ftype == MSENTRY_TYPE_DIR:
       # directory. check permissions
@@ -170,7 +167,7 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce ):
             ent_pb = reply.listing.entries.add()
             ent.protobuf( ent_pb )
          
-         #logging.info("Resolve %s: Serve back: %s" % (file_id, all_ents))
+         logging.info("Resolve %s: Serve back: %s" % (file_id, all_ents))
    
    else:
       reply.listing.ftype = 0
