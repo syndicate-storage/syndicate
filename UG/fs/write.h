@@ -66,7 +66,6 @@ struct fs_entry_write_vec {
 };
 
 ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char const* buf, size_t count, off_t offset );
-ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, int source_fd, size_t count, off_t offset );
 
 struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char const* block, size_t block_len,
                                                        struct fs_entry_block_info* binfo_old, struct fs_entry_block_info* binfo_new, int* ret );

@@ -467,6 +467,118 @@ int httpd_upload_apply_headers( struct md_HTTP_connection_data* md_con_data, uin
 }
 
 
+// read all of a given request
+ssize_t httpd_read_all( int fd, char* buf, size_t size ) {
+   size_t num_read = 0;
+   while( num_read < size ) {
+      ssize_t nr = read( fd, buf + num_read, size - num_read );
+      if( nr < 0 ) {
+         int errsv = -errno;
+         errorf("read(%d) rc = %zd\n", fd, num_read );
+         return errsv;
+      }
+      
+      if( nr == 0 ) {
+         break;
+      }
+      
+      num_read += nr;
+   }
+   
+   return (ssize_t)num_read;
+}
+
+
+// write one chunk of data from a file descriptor to a Syndicate file descriptor 
+static ssize_t httpd_write_one_block( struct fs_core* core, struct fs_file_handle* fh, int fd, char* buf, size_t size, off_t offset ) {
+   
+   ssize_t nr = 0;
+   ssize_t nw = 0;
+   
+   // get the chunk
+   nr = httpd_read_all( fd, buf, size );
+   if( nr < 0 ) {
+      errorf("httpd_read_all(%d) rc = %zd\n", fd, nr );
+      return nr;
+   }
+   if( nr == 0 ) {
+      // EOF
+      return nr;
+   }
+   
+   // put the chunk
+   nw = fs_entry_write( core, fh, buf, nr, offset );
+   if( nw < 0 ) {
+      errorf("fs_entry_write(%" PRIX64 ") rc = %zd\n", fh->file_id, nw );
+      return nw;
+   }
+   
+   if( nr != nw ) {
+      errorf("fs_entry_write(%" PRIX64 ") rc = %zd, expected %zd\n", fh->file_id, nw, nr );
+      return nw;
+   }
+   
+   return nr;
+}
+
+// write all data from a system file descriptor to a Syndicate file descriptor.
+// align writes to block boundaries for efficiency
+static int httpd_write( struct fs_core* core, struct fs_file_handle* fh, int fd, size_t size, off_t offset ) {
+   // buffer by block 
+   char* block_buf = CALLOC_LIST( char, core->blocking_factor );
+   ssize_t num_read = 0;
+   ssize_t num_written = 0;
+   off_t cur_offset = offset;
+   
+   // rewind...
+   lseek( fd, 0, SEEK_SET );
+   
+   // partial head?
+   if( offset % core->blocking_factor != 0 ) {
+      
+      size_t partial_head_size = offset % core->blocking_factor;
+      
+      ssize_t processed = httpd_write_one_block( core, fh, fd, block_buf, partial_head_size, cur_offset );
+      if( processed < 0 ) {
+         errorf("httpd_write_one_block(%" PRIX64 ") rc = %zd\n", fh->file_id, processed);
+         return processed;
+      }
+      if( processed == 0 ) {
+         // EOF
+         return num_written;
+      }
+      
+      // success!
+      cur_offset += processed;
+      num_written += processed;
+      num_read += processed;
+   }
+   
+   // write the rest 
+   while( num_read < (signed)size ) {
+      
+      memset( block_buf, 0, core->blocking_factor );
+      
+      ssize_t processed = httpd_write_one_block( core, fh, fd, block_buf, core->blocking_factor, cur_offset );
+      if( processed < 0 ) {
+         errorf("httpd_write_one_block(%" PRIX64 ") rc = %zd\n", fh->file_id, processed );
+         return processed;
+      }
+      if( processed == 0 ) {
+         // EOF 
+         return num_written;
+      }
+      
+      // success!
+      cur_offset += processed;
+      num_written += processed;
+      num_read += processed;
+   }
+   
+   return num_written;
+}
+
+
 static char const* MSG_200 = "OK\n";
 static char const* MSG_201 = "CREATED\n";
 
@@ -613,7 +725,7 @@ void httpd_upload_finish( struct md_HTTP_connection_data* md_con_data ) {
       return;
    }
    
-   ssize_t nw = fs_entry_write( state->core, fh, fd, size, start_range );
+   ssize_t nw = httpd_write( state->core, fh, fd, size, start_range );
    if( nw < 0 ) {
       // some error
       errorf( "fs_entry_write rc = %zd\n", nw );
@@ -665,7 +777,7 @@ struct md_HTTP_response* httpd_HTTP_DELETE_handler( struct md_HTTP_connection_da
 
    // file? just unlink
    if( S_ISREG( sb.st_mode ) ) {
-      rc = fs_entry_versioned_unlink( state->core, md_con_data->url_path, 0, 0, -1, state->conf.owner, state->core->volume, state->core->gateway, false );
+      rc = fs_entry_unlink( state->core, md_con_data->url_path, state->conf.owner, state->core->volume );
       if( rc < 0 ) {
          // failed
          char buf[100];
@@ -700,13 +812,6 @@ void httpd_HTTP_cleanup(struct MHD_Connection *connection, void *con_cls, enum M
    free( con_cls );
 }
 
-
-void usage( char const* name ) {
-   errorf("Usage: %s [-c CONF_FILE] [-m MS_URL] [-u USERNAME] [-p PASSWORD] [-v VOLUME] [-g GATEWAY_NAME] [-P PORTNUM] [-G GATEWAY_PKEY] [-V VOLUME_PUBKEY] [-S TLS_PKEY] [-C TLS_CERT] [-f]\n", name );
-   exit(1);
-}
-
-
 void quit_sigint( int param ) {
    g_running = 0;
    md_stop_HTTP( &g_http );
@@ -722,135 +827,11 @@ void quit_sigterm( int param ) {
    md_stop_HTTP( &g_http );
 }
 
-
-// degrade permissions and become a daemon
-int release_privileges() {
-   struct passwd* pwd;
-   int ret = 0;
-   
-   // switch to "daemon" user, if possible
-   pwd = getpwnam( "daemon" );
-   if( pwd != NULL ) {
-      setuid( pwd->pw_uid );
-      dbprintf( "became user '%s'\n", "daemon" );
-      ret = 0;
-   }
-   else {
-      dbprintf( "could not become '%s'\n", "daemon" );
-      ret = 1;
-   }
-   
-   return ret;
-}
-
-// turn into a deamon
-int daemonize( char* logfile_path, char* pidfile_path, FILE** logfile ) {
-
-   FILE* log = NULL;
-   int pid_fd = -1;
-   
-   if( logfile_path ) {
-      log = fopen( logfile_path, "a" );
-   }
-   if( pidfile_path ) {
-      pid_fd = open( pidfile_path, O_CREAT | O_EXCL | O_WRONLY, 0644 );
-      if( pid_fd < 0 ) {
-         // specified a PID file, and we couldn't make it.  someone else is running
-         int errsv = -errno;
-         errorf( "Failed to create PID file %s (error %d)\n", pidfile_path, errsv );
-         return errsv;
-      }
-   }
-   
-   pid_t pid, sid;
-
-   pid = fork();
-   if (pid < 0) {
-      int rc = -errno;
-      errorf( "Failed to fork (errno = %d)\n", -errno);
-      return rc;
-   }
-
-   if (pid > 0) {
-      exit(0);
-   }
-
-   // child process 
-   // umask(0);
-
-   sid = setsid();
-   if( sid < 0 ) {
-      int rc = -errno;
-      errorf("setsid errno = %d\n", rc );
-      return rc;
-   }
-
-   if( chdir("/") < 0 ) {
-      int rc = -errno;
-      errorf("chdir errno = %d\n", rc );
-      return rc;
-   }
-
-   close( STDIN_FILENO );
-   close( STDOUT_FILENO );
-   close( STDERR_FILENO );
-
-   if( log ) {
-      int log_fileno = fileno( log );
-
-      if( dup2( log_fileno, STDOUT_FILENO ) < 0 ) {
-         int errsv = -errno;
-         errorf( "dup2 errno = %d\n", errsv);
-         return errsv;
-      }
-      if( dup2( log_fileno, STDERR_FILENO ) < 0 ) {
-         int errsv = -errno;
-         errorf( "dup2 errno = %d\n", errsv);
-         return errsv;
-      }
-
-      if( logfile )
-         *logfile = log;
-      else
-         fclose( log );
-   }
-   else {
-      int null_fileno = open("/dev/null", O_WRONLY);
-      dup2( null_fileno, STDOUT_FILENO );
-      dup2( null_fileno, STDERR_FILENO );
-   }
-
-   if( pid_fd >= 0 ) {
-      char buf[10];
-      sprintf(buf, "%d", getpid() );
-      write( pid_fd, buf, strlen(buf) );
-      fsync( pid_fd );
-      close( pid_fd );
-   }
-   
-   struct passwd* pwd;
-   int ret = 0;
-   
-   // switch to "daemon" user, if possible
-   pwd = getpwnam( "daemon" );
-   if( pwd != NULL ) {
-      setuid( pwd->pw_uid );
-      dbprintf( "became user '%s'\n", "daemon" );
-      ret = 0;
-   }
-   else {
-      dbprintf( "could not become '%s'\n", "daemon" );
-      ret = 1;
-   }
-   
-   return ret;
-}
-
-
 struct extra_opts {
    char* logfile_path;
    char* pidfile_path;
    bool foreground;
+   int frontend_portnum;
 };
 
 static struct extra_opts g_extra_opts;
@@ -868,6 +849,10 @@ int grab_extra_opts( int c, char* arg ) {
       }
       case 'i': {
          g_extra_opts.pidfile_path = arg;
+         break;
+      }
+      case 'F': {
+         g_extra_opts.frontend_portnum = (int)strtol( arg, NULL, 10 );
          break;
       }
       default: {
@@ -889,6 +874,8 @@ Gateway-specific arguments:\n\
             Path to a logfile\n\
    -i PIDFILE_PATH\n\
             Path to a pidfile\n\
+   -F PORTNUM\n\
+            Port for the front-end HTTP daemon to listen on\n\
 \n");
 }
 
@@ -910,12 +897,18 @@ int main( int argc, char** argv ) {
    
    int rc = 0;
 
-   rc = syndicate_parse_opts( &opts, argc, argv, NULL, "fl:i:", grab_extra_opts );
+   rc = syndicate_parse_opts( &opts, argc, argv, NULL, "fl:i:F:", grab_extra_opts );
    if( rc != 0 ) {
       syndicate_common_usage( argv[0] );
       extra_usage();
       exit(1);
    }
+   
+   // extra arguments...
+   logfile = g_extra_opts.logfile_path;
+   pidfile = g_extra_opts.pidfile_path;
+   portnum = g_extra_opts.frontend_portnum;
+   foreground = g_extra_opts.foreground;
    
    // start core services
    rc = syndicate_init( &opts );
@@ -942,7 +935,13 @@ int main( int argc, char** argv ) {
    // create our HTTP server
    memset( &g_http, 0, sizeof(g_http) );
    
-   md_HTTP_init( &g_http, MD_HTTP_TYPE_STATEMACHINE | MHD_USE_DEBUG | MHD_USE_POLL, conf, state->ms );
+   int frontend_httpd_flags = MD_HTTP_TYPE_STATEMACHINE | MHD_USE_POLL;
+   
+#ifdef _DEVELOPMENT
+   frontend_httpd_flags |= MHD_USE_DEBUG;
+#endif 
+
+   md_HTTP_init( &g_http, frontend_httpd_flags, conf, state->ms );
    md_HTTP_authenticate( g_http, httpd_HTTP_authenticate );
    md_HTTP_connect( g_http, httpd_HTTP_connect );
    md_HTTP_GET( g_http, httpd_HTTP_GET_handler );
@@ -968,11 +967,19 @@ int main( int argc, char** argv ) {
 
    if( !foreground ) {
       // daemonize
-      rc = daemonize( logfile, pidfile, NULL );
+      rc = md_daemonize( logfile, pidfile, NULL );
       if( rc < 0 ) {
          errorf( "md_daemonize rc = %d\n", rc );
          fprintf(stderr, "Failed to become a daemon\n");
          exit(1);
+      }
+      else {
+         rc = md_release_privileges();
+         if( rc != 0 ) {
+            errorf("md_release_privileges rc = %d\n", rc );
+            fprintf(stderr, "Failed to drop privileges\n");
+            exit(1);
+         }
       }
    }
    else {

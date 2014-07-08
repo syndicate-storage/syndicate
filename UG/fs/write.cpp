@@ -1024,11 +1024,6 @@ int fs_entry_revert_write( struct fs_core* core, struct fs_entry* fent, struct r
 }
 
 
-ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, int source_fd, size_t count, off_t offset ) {
-   // TODO
-   return -ENOSYS;
-}
-
 // validate a remote write 
 static int fs_entry_validate_remote_write( char const* fs_path, struct fs_entry* fent, uint64_t file_id, int64_t file_version, uint64_t coordinator_id, Serialization::WriteMsg* write_msg ) {
    

@@ -75,7 +75,7 @@ class SyncVolumeSlice(SyncStep):
             
         # make sure there's a Syndicate user account for the slice owner
         try:
-            rc, user = syndicatelib.ensure_user_exists_and_has_credentials( user_email, observer_secret )
+            rc, user = syndicatelib.ensure_user_exists_and_has_credentials( user_email, observer_secret, is_admin=False, max_UGs=1100, max_RGs=1 )
             assert rc is True, "Failed to ensure user %s exists and has credentials (rc = %s,%s)" % (user_email, rc, user)
         except Exception, e:
             traceback.print_exc()

@@ -103,19 +103,11 @@ def get_config():
 
 
 #-------------------------------
-def openid_url( email ):
+def make_openid_url( email ):
     """
     Generate an OpenID identity URL from an email address.
     """
     return os.path.join( CONFIG.SYNDICATE_OPENID_TRUSTROOT, "id", email )
-
-
-#-------------------------------
-def registration_password():
-    """
-    Generate a random user registration password.
-    """
-    return "".join( random.sample("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 32) )
 
 
 #-------------------------------
@@ -163,61 +155,9 @@ def opencloud_caps_to_syndicate_caps( caps ):
         syn_caps |= (msconfig.GATEWAY_CAP_COORDINATE)
 
     return syn_caps
-    
-    
-#-------------------------------
-def create_and_activate_user( client, user_email ):
-    """
-    Create, and then activate a Syndicate user account,
-    given an OpenCloud user record.
-    
-    Return the newly-created user, if the user did not exist previously.
-    Return None if the user already exists.
-    Raise an exception on error.
-    """
-
-    user_id = user_email
-    user_openid_url = openid_url( user_id )
-    user_activate_pw = registration_password()
-    try:
-        # NOTE: allow for lots of UGs and RGs, since we're going to create at least one for each sliver
-        new_user = client.create_user( user_id, user_openid_url, user_activate_pw, is_admin=False, max_UGs=1100, max_RGs=1 )
-    except Exception, e:
-        # transport error, or the user already exists (rare, but possible)
-        logger.exception(e)
-        if not exc_user_exists( e ):
-            # not because the user didn't exist already, but due to something more serious
-            raise e
-        else:
-            return None     # user already existed
-
-    if new_user is None:
-        # the method itself failed
-        raise Exception("Creating %s failed" % user_email)
-
-    else:
-        # activate the user.
-        # first, generate a keypar 
-        logger.info("Generating %s-bit key pair for %s" % (msconfig.OBJECT_KEY_SIZE, user_id))
-        pubkey_pem, privkey_pem = api.generate_key_pair( msconfig.OBJECT_KEY_SIZE )
-        
-        # then, activate the account with the keypair
-        try:
-            activate_rc = client.register_account( user_id, user_activate_pw, signing_public_key=pubkey_pem )
-        except Exception, e:
-            # transport error, or the user diesn't exist (rare, but possible)
-            logger.exception(e)
-            raise e
-            
-        else:
-            # give back the keys to the caller
-            new_user['signing_public_key'] = pubkey_pem
-            new_user['signing_private_key'] = privkey_pem
-            return new_user     # success!
-
 
 #-------------------------------
-def ensure_user_exists( user_email ):
+def ensure_user_exists( user_email, **user_kw ):
     """
     Given an OpenCloud user, ensure that the corresponding
     Syndicate user exists.
@@ -228,21 +168,9 @@ def ensure_user_exists( user_email ):
     """
     
     client = connect_syndicate()
+    user_openid_url = make_openid_url( user_email )
     
-    try:
-        user = client.read_user( user_email )    
-    except Exception, e:
-        # transport error
-        logger.exception(e)
-        raise e
-
-    if user is None:
-        # the user does not exist....try to create it
-        user = create_and_activate_user( client, user_email )
-        return (True, user)          # user exists now 
-    
-    else:
-        return (False, user)         # user already exists
+    return provisioning.ensure_user_exists( client, user_email, user_openid_url, **user_kw )
 
 
 #-------------------------------
@@ -261,7 +189,7 @@ def ensure_user_absent( user_email ):
  
 
 #-------------------------------
-def ensure_user_exists_and_has_credentials( user_email, observer_secret ):
+def ensure_user_exists_and_has_credentials( user_email, observer_secret, **user_kw ):
     """ 
     Ensure that a Syndicate user exists.
     If we had to create the user, then save its credentials.
@@ -271,7 +199,7 @@ def ensure_user_exists_and_has_credentials( user_email, observer_secret ):
     """
     
     try:
-         created, new_user = ensure_user_exists( user_email )
+         created, new_user = ensure_user_exists( user_email, **user_kw )
     except Exception, e:
          traceback.print_exc()
          logger.error("Failed to ensure user '%s' exists" % user_email )
@@ -418,7 +346,7 @@ def ensure_volume_access_right_absent( user_email, volume_name ):
     client = connect_syndicate()
     return syndicate_provisioning.ensure_volume_access_right_absent( client, user_email, volume_name )
     
-    
+
 #-------------------------------
 def setup_volume_access( user_email, volume_name, caps, RG_port, observer_secret, RG_closure=None ):
     """
@@ -563,6 +491,7 @@ def save_syndicate_principal( user_email, observer_secret, public_key_pem, priva
     so the sliver-side Syndicate daemon syndicated.py can get them later
     (in case pushing them out fails).
     """
+    
     sealed_private_key = create_sealed_and_signed_blob( private_key_pem, observer_secret, private_key_pem )
     if sealed_private_key is None:
         return False
@@ -974,10 +903,10 @@ def ft_syndicate_access():
     fake_user.email = "fakeuser@opencloud.us"
 
     print "\nensure_user_exists(%s)\n" % fake_user.email
-    ensure_user_exists( fake_user.email )
+    ensure_user_exists( fake_user.email, is_admin=False, max_UGs=1100, max_RGs=1 )
 
     print "\nensure_user_exists(%s)\n" % fake_user.email
-    ensure_user_exists( fake_user.email )
+    ensure_user_exists( fake_user.email, is_admin=False, max_UGs=1100, max_RGs=1 )
 
     fake_volume = FakeObject()
     fake_volume.name = "fakevolume"
@@ -1022,10 +951,10 @@ def ft_syndicate_access():
     
     
     print "\nensure_user_exists_and_has_credentials(%s)\n" % fake_user.email
-    ensure_user_exists_and_has_credentials( fake_user.email, "asdf" )
+    ensure_user_exists_and_has_credentials( fake_user.email, "asdf", is_admin=False, max_UGs=1100, max_RGs=1 )
     
     print "\nensure_user_exists_and_has_credentials(%s)\n" % fake_user.email
-    ensure_user_exists_and_has_credentials( fake_user.email, "asdf" )
+    ensure_user_exists_and_has_credentials( fake_user.email, "asdf", is_admin=False, max_UGs=1100, max_RGs=1 )
 
     print "\nensure_volume_exists(%s)\n" % fake_volume.name
     ensure_volume_exists( fake_user.email, fake_volume )

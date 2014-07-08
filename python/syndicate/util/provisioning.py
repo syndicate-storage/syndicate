@@ -56,14 +56,19 @@ def make_gateway_private_key_password( gateway_name, secret ):
  
  
 #-------------------------------
-def ensure_gateway_exists( client, gateway_type, user_email, volume_name, gateway_name, host, port, key_password, closure=None ):
+def make_registration_password():
+    """
+    Generate a random user registration password.
+    """
+    return "".join( random.sample("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 32) )
+ 
+#-------------------------------
+def ensure_gateway_exists( client, gateway_type, user_email, volume_name, gateway_name, host, port, key_password, **gateway_kw ):
     """
     Ensure that a particular type of gateway with the given fields exists.
     Create one if need be.
     
     This method is idempotent.
-    
-    TODO: add the option to store the private key locally, instead of hosting the encrypted key remotely.
     
     Returns the gateway (as a dict) on succes.
     Returns None if we can't connect.
@@ -112,12 +117,14 @@ def ensure_gateway_exists( client, gateway_type, user_email, volume_name, gatewa
 
     else:
         # create the gateway 
-        kw = {}
-        if closure is not None:
-            kw['closure'] = closure
+        if 'encryption_key_password' not in gateway_kw:
+           gateway_kw['encryption_key_password'] = key_password
         
+        if 'gateway_public_key' not in gateway_kw:
+           gateway_kw['gateway_public_key'] = "MAKE_AND_HOST_GATEWAY_KEY"
+           
         try:
-            gateway = client.create_gateway( volume_name, user_email, gateway_type, gateway_name, host, port, encryption_password=key_password, gateway_public_key="MAKE_AND_HOST_GATEWAY_KEY", **kw )
+            gateway = client.create_gateway( volume_name, user_email, gateway_type, gateway_name, host, port, **gateway_kw )
         except Exception, e:
             # transport, collision, or missing Volume or user
             log.exception(e)
@@ -141,21 +148,123 @@ def ensure_gateway_absent( client, gateway_name ):
 
 
 #-------------------------------
-def ensure_UG_exists( client, user_email, volume_name, gateway_name, host, port, key_password ):
+def ensure_UG_exists( client, user_email, volume_name, gateway_name, host, port, key_password, **gateway_kw ):
     """
     Ensure that a particular UG exists.
     This method is idempotent.
     """
-    return ensure_gateway_exists( client, "UG", user_email, volume_name, gateway_name, host, port, key_password )
+    return ensure_gateway_exists( client, "UG", user_email, volume_name, gateway_name, host, port, key_password, **gateway_kw )
 
 
 #-------------------------------
-def ensure_RG_exists( client, user_email, volume_name, gateway_name, host, port, key_password, closure=None ):
+def ensure_RG_exists( client, user_email, volume_name, gateway_name, host, port, key_password, **gateway_kw ):
     """
     Ensure that a particular RG exists.
     This method is idempotent.
     """
-    return ensure_gateway_exists( client, "RG", user_email, volume_name, gateway_name, host, port, key_password, closure=closure )
+    return ensure_gateway_exists( client, "RG", user_email, volume_name, gateway_name, host, port, key_password, **gateway_kw )
+
+
+#-------------------------------
+def ensure_AG_exists( client, user_email, volume_name, gateway_name, host, port, key_password, **gateway_kw ):
+    """
+    Ensure that a particular AG exists.
+    This method is idempotent.
+    """
+    return ensure_gateway_exists( client, "AG", user_email, volume_name, gateway_name, host, port, key_password, **gateway_kw )
+
+
+#-------------------------------
+def _create_and_activate_user( client, user_email, user_openid_url, user_activate_pw, **user_kw ):
+    """
+    Create, and then activate a Syndicate user account,
+    given an OpenCloud user record.
+    
+    Return the newly-created user, if the user did not exist previously.
+    Return None if the user already exists.
+    Raise an exception on error.
+    """
+
+    try:
+        # NOTE: allow for lots of UGs and RGs, since we're going to create at least one for each sliver
+        new_user = client.create_user( user_email, user_openid_url, user_activate_pw, **user_kw )
+    except Exception, e:
+        # transport error, or the user already exists (rare, but possible)
+        logger.exception(e)
+        if not exc_user_exists( e ):
+            # not because the user didn't exist already, but due to something more serious
+            raise e
+        else:
+            return None     # user already existed
+
+    if new_user is None:
+        # the method itself failed
+        raise Exception("Creating %s failed" % user_email)
+
+    else:
+        # activate the user.
+        # first, generate a keypar 
+        logger.info("Generating %s-bit key pair for %s" % (msconfig.OBJECT_KEY_SIZE, user_email))
+        pubkey_pem, privkey_pem = api.generate_key_pair( msconfig.OBJECT_KEY_SIZE )
+        
+        # then, activate the account with the keypair
+        try:
+            activate_rc = client.register_account( user_email, user_activate_pw, signing_public_key=pubkey_pem )
+        except Exception, e:
+            # transport error, or the user diesn't exist (rare, but possible)
+            logger.exception(e)
+            raise e
+            
+        else:
+            # give back the keys to the caller
+            new_user['signing_public_key'] = pubkey_pem
+            new_user['signing_private_key'] = privkey_pem
+            return new_user     # success!
+
+
+#-------------------------------
+def ensure_user_exists( client, user_email, user_openid_url, **user_kw ):
+    """
+    Given an OpenCloud user, ensure that the corresponding
+    Syndicate user exists.
+
+    This method is idempotent 
+    
+    Return the (created, user), where created==True if the user 
+    was created and created==False if the user was read.
+    Raise an exception on error.
+    """
+    
+    try:
+        user = client.read_user( user_email )    
+    except Exception, e:
+        # transport error
+        logger.exception(e)
+        raise e
+
+    if user is None:
+        # the user does not exist....try to create it
+        user_activate_pw = make_registration_password()
+        user = _create_and_activate_user( client, user_email, user_openid_url, user_activate_pw, **user_kw )
+        return (True, user)          # user exists now 
+    
+    else:
+        return (False, user)         # user already exists
+
+
+#-------------------------------
+def ensure_user_absent( client, user_email ):
+    """
+    Ensure that a given OpenCloud user's associated Syndicate user record
+    has been deleted.
+    
+    This method is idempotent.
+
+    Returns True on success
+    Raises an exception on error
+    """
+
+    return client.delete_user( user_email )
 
 
 #-------------------------------

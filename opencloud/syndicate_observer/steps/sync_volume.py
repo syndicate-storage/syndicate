@@ -76,7 +76,7 @@ class SyncVolume(SyncStep):
 
         # volume owner must exist as a Syndicate user...
         try:
-            rc, user = syndicatelib.ensure_user_exists_and_has_credentials( user_email, observer_secret )
+            rc, user = syndicatelib.ensure_user_exists_and_has_credentials( user_email, observer_secret, is_admin=False, max_UGs=1100, max_RGs=1)
         except Exception, e:
             traceback.print_exc()
             logger.error("Failed to ensure user '%s' exists" % user_email )

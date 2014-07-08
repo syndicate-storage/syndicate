@@ -19,6 +19,7 @@
 #define _SYNDICATE_HTTPD_
 
 #include "libsyndicate/libsyndicate.h"
+#include "libsyndicate/system.h"
 #include "syndicate.h"
 #include "http-common.h"
 #include "fs_entry.h"

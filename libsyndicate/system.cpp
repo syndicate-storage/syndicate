@@ -119,7 +119,7 @@ int md_release_privileges() {
    }
    else {
       dbprintf( "could not become '%s'\n", "daemon" );
-      ret = 1;
+      ret = -1;
    }
    
    return ret;
