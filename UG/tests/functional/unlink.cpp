@@ -17,7 +17,7 @@
 #include "common.h"
 
 void usage( char* progname ) {
-   printf("Usage %s [syndicate options] /path/to/file [data_to_write]\n", progname );
+   printf("Usage %s [syndicate options] /path/to/file\n", progname );
    exit(1);
 }
 

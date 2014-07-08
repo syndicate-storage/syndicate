@@ -16,7 +16,48 @@
 
 #include "common.h"
 
+void usage( char* progname ) {
+   printf("Usage %s [syndicate options] /path/to/dir\n", progname );
+   exit(1);
+}
+
 int main( int argc, char** argv ) {
- 
+   
+   struct md_HTTP syndicate_http;
+   
+   int test_optind = -1;
+
+   // set up the test 
+   syndicate_functional_test_init( argc, argv, &test_optind, &syndicate_http );
+   
+   // arguments: creat [syndicate options] /path/to/file [data to write]
+   if( test_optind < 0 )
+      usage( argv[0] );
+   
+   if( test_optind >= argc )
+      usage( argv[0] );
+   
+   // get path 
+   char* path = argv[test_optind];
+
+   // get state 
+   struct syndicate_state* state = syndicate_get_state();
+   
+   // unlink the file
+   int rc = 0;
+   dbprintf("\n\n\nfs_entry_rmdir( %s )\n\n\n", path );
+   
+   rc = fs_entry_rmdir( state->core, path, SYS_USER, state->core->volume );
+   
+   if( rc != 0 ) {
+      errorf("\n\n\nfs_entry_rmdir( %s ) rc = %d\n\n\n", path, rc );
+      exit(1);
+   }
+   
+   dbprintf("\n\n\nfs_entry_rmdir( %s ) rc = %d\n\n\n", path, rc );
+   
+   // shut down the test 
+   syndicate_functional_test_shutdown( &syndicate_http );
+   
    return 0;
 }
