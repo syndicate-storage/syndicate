@@ -46,8 +46,8 @@ int syndicate_functional_test_init( int argc, char** argv, int* optind_out, stru
    if( rc != 0 )
       exit(1);
    
-   // finish initialization
-   syndicate_finish_init();
+   // we're now running
+   syndicate_set_running();
    
    return 0;
 }

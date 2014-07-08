@@ -49,6 +49,10 @@ int fs_entry_setxattr( struct fs_core* core, char const* path, char const *name,
 ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, size_t size, uint64_t user, uint64_t volume );
 int fs_entry_removexattr( struct fs_core* core, char const* path, char const *name, uint64_t user, uint64_t volume );
 
+// not POSIX-y
+int fs_entry_chownxattr( struct fs_core* core, char const* path, char const *name, uint64_t new_user );
+int fs_entry_chmodxattr( struct fs_core* core, char const* path, char const* name, mode_t new_mode );
+
 ssize_t fs_entry_do_getxattr( struct fs_core* core, struct fs_entry* fent, char const* name, char** value, size_t* value_len, int* _cache_status, bool unlock_before_download );
 int fs_entry_download_xattr( struct fs_core* core, uint64_t volume, uint64_t file_id, char const* name, char** value );
 int fs_entry_get_or_set_xattr( struct fs_core* core, struct fs_entry* fent, char const* name, char const* proposed_value, size_t proposed_value_len, char** value, size_t* value_len );

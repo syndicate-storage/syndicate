@@ -399,16 +399,79 @@ def file_read_auth( gateway, volume ):
 
 
 # ----------------------------------
-def file_xattr_get_and_check_msentry_readable( gateway, volume, file_id):
+def file_xattr_get_and_check_xattr_readable( gateway, volume, file_id, xattr_name, caller_is_admin=False ):
+   """
+   Verify that an extended attribute is readable to the given gateway.
+   Return (rc, xattr)
+   """
+   
+   rc = 0
+   
+   rc, xattr = MSEntryXAttr.ReadXAttr( volume.volume_id, file_id, xattr_name )
+   
+   if rc != 0:
+      return (rc, None)
+   
+   if xattr is None:
+      return (-errno.ENOENT, None)
+   
+   # get gateway owner ID
+   gateway_owner_id = GATEWAY_ID_ANON
+   if gateway is not None:
+      gateway_owner_id = gateway.owner_id
+
+   # check permissions 
+   if not MSEntryXAttr.XAttrReadable( gateway_owner_id, xattr, caller_is_admin ):
+      return (-errno.EACCES, None)
+   
+   return (0, xattr)
+
+
+# ----------------------------------
+def file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, xattr_name, caller_is_admin=False ):
+   """
+   Verify that an extended attribute is writable to the given gateway.
+   Return (rc, xattr)
+   """
+   
+   rc = 0
+   
+   rc, xattr = MSEntryXAttr.ReadXAttr( volume.volume_id, file_id, xattr_name )
+   
+   if xattr is None and rc == -errno.ENODATA:
+      # doesn't exist 
+      return (0, None)
+   
+   if rc != 0:
+      return (rc, None)
+   
+   if xattr is None:
+      return (-errno.ENOENT, None)
+   
+   # get gateway owner ID
+   gateway_owner_id = GATEWAY_ID_ANON
+   if gateway is not None:
+      gateway_owner_id = gateway.owner_id
+   
+   # check permissions 
+   if not MSEntryXAttr.XAttrWritable( gateway_owner_id, xattr, caller_is_admin ):
+      return (-errno.EACCES, None)
+   
+   return (0, xattr)
+
+
+# ----------------------------------
+def file_xattr_get_and_check_msentry_readable( gateway, volume, file_id, caller_is_admin=False ):
    """
    Verify whether or not the given gateway (which can be None) is allowed 
    to read or list an MSEntry's extended attributes.
    """
+   
    rc = 0
    
    # get the msentry
    msent = MSEntry.Read( volume, file_id )
-   if msent == None:
+   if msent is None:
       # does not exist
       rc = -errno.ENOENT
       
@@ -418,11 +481,11 @@ def file_xattr_get_and_check_msentry_readable( gateway, volume, file_id):
       if gateway is not None:
          gateway_owner_id = gateway.owner_id
          
-      if msent.owner_id != gateway_owner_id and (msent.mode & 0044) == 0:
+      if not caller_is_admin and msent.owner_id != gateway_owner_id and (msent.mode & 0044) == 0:
          # not readable.
          # don't tell the reader that this entry even exists.
          rc = -errno.ENOENT
-      
+         
    if rc != 0:
       msent = None
       
@@ -430,7 +493,7 @@ def file_xattr_get_and_check_msentry_readable( gateway, volume, file_id):
 
 
 # ----------------------------------
-def file_xattr_get_and_check_msentry_writeable( gateway, volume, file_id):
+def file_xattr_get_and_check_msentry_writeable( gateway, volume, file_id, caller_is_admin=False ):
    """
    Verify whether or not the given gateway (which can be None) is allowed 
    to update or delete an MSEntry's extended attributes.
@@ -444,7 +507,7 @@ def file_xattr_get_and_check_msentry_writeable( gateway, volume, file_id):
       # does not exist
       rc = -errno.ENOENT
       
-   elif msent.owner_id != gateway.owner_id and (msent.mode & 0022) == 0:
+   elif not caller_is_admin and msent.owner_id != gateway.owner_id and (msent.mode & 0022) == 0:
       # not writeable 
       # if not readable, then say ENOENT instead (don't reveal the existence of a metadata entry to someone who can't read it)
       if msent.owner_id != gateway.owner_id and (msent.mode & 0044) == 0:
@@ -495,7 +558,7 @@ def file_xattr_listxattr_response( volume, rc, xattr_names ):
 
 
 # ----------------------------------
-def file_xattr_getxattr( gateway, volume, file_id, xattr_name ):
+def file_xattr_getxattr( gateway, volume, file_id, xattr_name, caller_is_admin=False ):
    """
    Get the value of the file's extended attributes, subject to access controls.
    This is part of the File Metadata API.
@@ -503,20 +566,25 @@ def file_xattr_getxattr( gateway, volume, file_id, xattr_name ):
    
    logging.info("getxattr /%s/%s/%s" % (volume.volume_id, file_id, xattr_name) )
 
-   rc, msent = file_xattr_get_and_check_msentry_readable( gateway, volume, file_id )
+   rc, msent = file_xattr_get_and_check_msentry_readable( gateway, volume, file_id, caller_is_admin )
    xattr_value = None
    
    if rc == 0 and msent != None:
-      # get the xattr
-      rc, xattr_value = MSEntryXAttr.GetXAttr( volume, msent, xattr_name )
-   
+      # check xattr readable 
+      rc, xattr = file_xattr_get_and_check_xattr_readable( gateway, volume, file_id, xattr_name, caller_is_admin )
+      
+      if rc == 0:
+         # success!
+         xattr_value = xattr.xattr_value 
+         
+         
    logging.info("getxattr /%s/%s/%s rc = %d" % (volume.volume_id, file_id, xattr_name, rc) )
 
    return file_xattr_getxattr_response( volume, rc, xattr_value )
 
 
 # ----------------------------------
-def file_xattr_listxattr( gateway, volume, file_id, unused=None ):
+def file_xattr_listxattr( gateway, volume, file_id, unused=None, caller_is_admin=False ):
    """
    Get the names of a file's extended attributes, subject to access controls.
    This is part of the File Metadata API.
@@ -526,12 +594,18 @@ def file_xattr_listxattr( gateway, volume, file_id, unused=None ):
    
    logging.info("listxattr /%s/%s" % (volume.volume_id, file_id) )
 
-   rc, msent = file_xattr_get_and_check_msentry_readable( gateway, volume, file_id )
+   rc, msent = file_xattr_get_and_check_msentry_readable( gateway, volume, file_id, caller_is_admin )
    xattr_names = []
    
    if rc == 0 and msent != None:
-      # get the xattr
-      rc, xattr_names = MSEntryXAttr.ListXAttrs( volume, msent )
+      
+      # get gateway owner ID
+      gateway_owner_id = GATEWAY_ID_ANON
+      if gateway is not None:
+         gateway_owner_id = gateway.owner_id
+      
+      # get the xattr names
+      rc, xattr_names = MSEntryXAttr.ListXAttrs( volume, msent, gateway_owner_id, caller_is_admin )
    
    logging.info("listxattr /%s/%s rc = %d" % (volume.volume_id, file_id, rc) )
 
@@ -539,7 +613,7 @@ def file_xattr_listxattr( gateway, volume, file_id, unused=None ):
 
 
 # ----------------------------------
-def file_xattr_setxattr( reply, gateway, volume, update ):
+def file_xattr_setxattr( reply, gateway, volume, update, caller_is_admin=False ):
    """
    Set the value of a file's extended attributes, subject to access controls.
    The affected file and attribute are determined from the given ms_update structure.
@@ -550,32 +624,45 @@ def file_xattr_setxattr( reply, gateway, volume, update ):
    
    xattr_create = False 
    xattr_replace = False 
+   xattr_mode = 0777
    
    if update.HasField( 'xattr_create' ):
       xattr_create = update.xattr_create
    
    if update.HasField( 'xattr_replace' ):
       xattr_replace = update.xattr_replace 
+      
+   if update.HasField( 'xattr_mode' ):
+      xattr_mode = update.xattr_mode
    
    attrs = MSEntry.unprotobuf_dict( update.entry )
    
-   logging.info("setxattr /%s/%s (name=%s, parent=%s) %s = %s (create=%s, replace=%s)" % 
-                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace))
+   logging.info("setxattr /%s/%s (name=%s, parent=%s) %s = %s (create=%s, replace=%s, mode=0%o)" % 
+                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace, xattr_mode))
       
-   rc, msent = file_xattr_get_and_check_msentry_writeable( gateway, volume, attrs['file_id'] )
+   file_id = attrs['file_id']
+   rc, msent = file_xattr_get_and_check_msentry_writeable( gateway, volume, file_id, caller_is_admin )
    
    if rc == 0:
-      # allowed!
-      rc = MSEntryXAttr.SetXAttr( volume, msent, update.xattr_name, update.xattr_value, create=xattr_create, replace=xattr_replace )
+      # check xattr writable 
+      rc, _ = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
       
-   logging.info("setxattr /%s/%s (name=%s, parent=%s) %s = %s (create=%s, replace=%s) rc = %s" % 
-                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace, rc) )
+      if rc == 0:
+         gateway_owner_id = GATEWAY_ID_ANON
+         if gateway is not None:
+            gateway_owner_id = gateway.owner_id
+         
+         # set the xattr
+         rc = MSEntryXAttr.SetXAttr( volume, msent, update.xattr_name, update.xattr_value, create=xattr_create, replace=xattr_replace, mode=xattr_mode, owner=gateway_owner_id, caller_is_admin=caller_is_admin )
+      
+   logging.info("setxattr /%s/%s (name=%s, parent=%s) %s = %s (create=%s, replace=%s, mode=0%o) rc = %s" % 
+                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace, xattr_mode, rc) )
          
    return rc
 
 
 # ----------------------------------
-def file_xattr_removexattr( reply, gateway, volume, update ):
+def file_xattr_removexattr( reply, gateway, volume, update, caller_is_admin=False ):
    """
    Remove a file's extended attribute, subject to access controls.
    The affected file and attribute are determined from the given ms_update structure.
@@ -587,14 +674,105 @@ def file_xattr_removexattr( reply, gateway, volume, update ):
    logging.info("removexattr /%s/%s (name=%s, parent=%s) %s" % 
                   (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name))
       
-   rc, msent = file_xattr_get_and_check_msentry_writeable( gateway, volume, attrs['file_id'] )
+   file_id = attrs['file_id']
+   rc, msent = file_xattr_get_and_check_msentry_writeable( gateway, volume, file_id, caller_is_admin )
    
    if rc == 0:
-      # allowed!
-      rc = MSEntryXAttr.RemoveXAttr( volume, msent, update.xattr_name )
+      # check xattr writable 
+      rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
+      
+      if rc == 0:
+         # get user id
+         gateway_owner_id = GATEWAY_ID_ANON
+         if gateway is not None:
+            gateway_owner_id = gateway.owner_id
+         
+         # delete it 
+         rc = MSEntryXAttr.RemoveXAttr( volume, msent, update.xattr_name, gateway_owner_id, caller_is_admin )
    
    logging.info("removexattr /%s/%s (name=%s, parent=%s) %s rc = %s" % 
                   (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, rc) )
    
    
    return rc
+
+
+# ----------------------------------
+def file_xattr_chmodxattr( reply, gateway, volume, update, caller_is_admin=False ):
+   """
+   Set the access mode for an extended attribute.
+   """
+   
+   xattr_mode = None
+   
+   if update.HasField( 'xattr_mode' ):
+      xattr_mode = update.xattr_mode 
+   
+   if xattr_mode is None:
+      return -errno.EINVAL
+   
+   attrs = MSEntry.unprotobuf_dict( update.entry )
+   
+   logging.info("chmodxattr /%s/%s (name=%s, parent=%s) %s = %s (mode=0%o)" % 
+                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_mode))
+      
+   
+   file_id = attrs['file_id']
+   
+   # is this xattr writable?
+   rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, xattr_name, caller_is_admin )
+   
+   if rc == 0:
+      # allowed!
+      # get user id
+      gateway_owner_id = GATEWAY_ID_ANON
+      if gateway is not None:
+         gateway_owner_id = gateway.owner_id
+      
+      rc = MSEntryXAttr.ChmodXAttr( volume, msent, update.xattr_name, xattr_mode, gateway_owner_id, caller_is_admin )
+      
+   logging.info("chmodxattr /%s/%s (name=%s, parent=%s) %s = %s (mode=0%o) rc = %s" % 
+                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_mode, rc) )
+         
+   return rc
+
+
+# ----------------------------------
+def file_xattr_chownxattr( reply, gateway, volume, update, caller_is_admin=False ):
+   """
+   Set the access mode for an extended attribute.
+   """
+   
+   xattr_owner = None
+   
+   if update.HasField( 'xattr_owner' ):
+      xattr_owner = update.xattr_owner 
+   
+   if xattr_owner is None:
+      return -errno.EINVAL
+   
+   attrs = MSEntry.unprotobuf_dict( update.entry )
+   
+   logging.info("chownxattr /%s/%s (name=%s, parent=%s) %s = %s (owner=%s)" % 
+                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_owner))
+      
+   
+   file_id = attrs['file_id']
+   
+   # is this xattr writable?
+   rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, xattr_name, caller_is_admin )
+   
+   if rc == 0:
+      # allowed!
+      # get user id
+      gateway_owner_id = GATEWAY_ID_ANON
+      if gateway is not None:
+         gateway_owner_id = gateway.owner_id
+      
+      rc = MSEntryXAttr.ChownXAttr( volume, msent, update.xattr_name, xattr_owner, gateway_owner_id, caller_is_admin )
+      
+   logging.info("chownxattr /%s/%s (name=%s, parent=%s) %s = %s (owner=%s) rc = %s" % 
+                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_owner, rc) )
+         
+   return rc
+

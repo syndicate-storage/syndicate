@@ -327,6 +327,8 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
 int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char** xattr_names, size_t* xattr_names_len );
 int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, int flags );
 int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name );
+int ms_client_chownxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, uint64_t new_owner );
+int ms_client_chmodxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, mode_t new_mode );
 
 // path resolution 
 int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_t* ms_response );

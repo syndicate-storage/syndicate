@@ -112,6 +112,8 @@ struct md_update {
    char* xattr_name;      // xattr name (setxattr, removexattr)
    char* xattr_value;     // xattr value (setxattr)
    size_t xattr_value_len;
+   uint64_t xattr_owner;  // xattr owner (chownxattr)
+   mode_t xattr_mode;     // xattr mode (chmodxattr)
 };
 
 // metadata update operations

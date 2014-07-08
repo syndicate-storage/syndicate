@@ -280,8 +280,17 @@ int fs_entry_download_xattr( struct fs_core* core, uint64_t volume, uint64_t fil
    int ret = 0;
    ret = ms_client_getxattr( core->ms, volume, file_id, name, &val, &val_len );
    if( ret < 0 ) {
-      errorf("ms_client_getxattr( %s ) rc = %d\n", name, ret );
-      ret = -ENOATTR;
+      errorf("ms_client_getxattr( %" PRIX64 " %s ) rc = %d\n", file_id, name, ret );
+      
+      if( ret == -404 ) {
+         // no such file 
+         ret = -ENOENT;
+      }
+      
+      else {
+         // no such attr/no data
+         ret = -ENOATTR;
+      }
    }
    else {
       *value = val;
@@ -334,7 +343,7 @@ ssize_t fs_entry_do_getxattr( struct fs_core* core, struct fs_entry* fent, char 
    
    if( cache_status < 0 ) {
       // cache miss 
-      ret = (ssize_t)fs_entry_download_xattr( core, file_id, volume, name, &val );
+      ret = (ssize_t)fs_entry_download_xattr( core, volume, file_id, name, &val );
    }
    else {
       // cache hit
@@ -344,7 +353,7 @@ ssize_t fs_entry_do_getxattr( struct fs_core* core, struct fs_entry* fent, char 
    if( ret >= 0 ) {
       // success!
       *value = val;
-      *value_len = vallen;
+      *value_len = ret;
       *_cache_status = cache_status;
    }
    
@@ -410,7 +419,8 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
                   }
                }
                
-               memcpy( value, val, ret );
+               memcpy( value, val, vallen );
+               ret = vallen;
             }
          }
          
@@ -606,18 +616,31 @@ ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, 
    
    ssize_t rc = 0;
    
-   // get the built-in attributes, and copy them into list
-   ssize_t builtin_len = xattr_get_builtin_names( list, size );
-
-   // range check 
-   if( remote_xattr_names_len + builtin_len >= size ) {
-      free( remote_xattr_names );
-      return -ERANGE;
+   // want data, or just size? 
+   if( size > 0 ) {
+      // want data
+      // get the built-in attributes, and copy them into list
+      
+      ssize_t builtin_len = xattr_get_builtin_names( list, size );
+      
+      if( builtin_len < 0 ) {
+         free( remote_xattr_names );
+         return -ERANGE;
+      }
+      
+      if( remote_xattr_names_len + builtin_len > size ) {
+         free( remote_xattr_names );
+         return -ERANGE;
+      }
+      
+      // combine them 
+      memcpy( list + builtin_len, remote_xattr_names, remote_xattr_names_len );
+      rc = builtin_len + remote_xattr_names_len;
    }
-   
-   // combine them 
-   memcpy( list + builtin_len, remote_xattr_names, remote_xattr_names_len );
-   rc = builtin_len + remote_xattr_names_len;
+   else {
+      // query on size only 
+      rc = xattr_len_all() + remote_xattr_names_len;
+   }
    
    free( remote_xattr_names );
    
@@ -632,6 +655,14 @@ int fs_entry_removexattr( struct fs_core* core, char const* path, char const *na
       return -EPERM;
    }
    
+   // bring the metadata up to date
+   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
+   if( revalidate_rc != 0 ) {
+      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
+      return revalidate_rc;
+   }
+   
+   // resolve the fent
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, path, user, volume, true, &err );
    if( !fent || err ) {
@@ -669,4 +700,75 @@ int fs_entry_removexattr( struct fs_core* core, char const* path, char const *na
    fs_entry_unlock( fent );
 
    return ret;
+}
+
+
+// change ownership of an xattr 
+int fs_entry_chownxattr( struct fs_core* core, char const* path, char const* name, uint64_t new_user ) {
+   if( core->gateway == GATEWAY_ANON ) {
+      errorf("%s", "Changing ownership of extended attributes is forbidden for anonymous gateways\n");
+      return -EPERM;
+   }
+   
+   int err = 0;
+   struct fs_entry* fent = fs_entry_resolve_path( core, path, core->ms->owner_id, core->volume, true, &err );
+   if( !fent || err ) {
+      if( !err ) 
+         err = -ENOMEM;
+      
+      return err;
+   }
+   
+   struct md_entry ent;
+   fs_entry_to_md_entry( core, &ent, fent, 0, NULL );   // parent information not needed
+   
+   // ask the MS to change ownership of this xattr 
+   int rc = ms_client_chownxattr( core->ms, &ent, name, new_user );
+   if( rc < 0 ) {
+      errorf("ms_client_chownxattr( %s, %" PRIu64 " ) rc = %d\n", name, new_user, rc );
+   }
+   else {
+      // uncache this xattr, since we might not be able to see it anymore 
+      fs_entry_evict_cached_xattr( fent, name );
+   }
+   
+   fs_entry_unlock( fent );
+   
+   return rc;
+}
+
+// change mode of an xattr 
+int fs_entry_chmodxattr( struct fs_core* core, char const* path, char const* name, mode_t new_mode ) {
+   if( core->gateway == GATEWAY_ANON ) {
+      errorf("%s", "Changing mode of extended attributes is forbidden for anonymous gateways\n");
+      return -EPERM;
+   }
+   
+   int err = 0;
+   struct fs_entry* fent = fs_entry_resolve_path( core, path, core->ms->owner_id, core->volume, true, &err );
+   if( !fent || err ) {
+      if( !err ) {
+         err = -ENOMEM;
+      }
+      
+      return err;
+   }
+   
+   struct md_entry ent;
+   fs_entry_to_md_entry( core, &ent, fent, 0, NULL );   // parent information not needed 
+   
+   // ask the MS to change mode of this xattr 
+   int rc = ms_client_chmodxattr( core->ms, &ent, name, new_mode );
+   if( rc < 0 ) {
+      errorf("ms_client_chmodxattr( %s, 0%o ) rc = %d\n", name, new_mode, rc );
+   }
+   else {
+      // uncache this xattr if it's no longer readable to us 
+      if( (new_mode & 0022) == 0 ) {
+         fs_entry_evict_cached_xattr( fent, name );
+      }
+   }
+   
+   fs_entry_unlock( fent );
+   return rc;
 }

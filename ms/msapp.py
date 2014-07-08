@@ -36,22 +36,24 @@ try:
 except:
    pass
 
+VALID_PUNCTUATION = '!"#$%&\'\(\)\*\+,\-.:;<=>?@\[\\\]^_`\{\|\}~'         # missing '/'
+
 handlers = [
-    ('[/]+FILE[/]+(RESOLVE)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([0123456789]+)[/]+([-0123456789]+)[/]*', MSFileHandler ),   # GET: for reading/resolving file metadata.
-    ('[/]+FILE[/]+(GETXATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([a-zA-Z0-9_.]+)[/]*', MSFileHandler),                                 # GET: for getting xattrs.
-    ('[/]+FILE[/]+(LISTXATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]*', MSFileHandler ),                                        # GET: for listing xattrs.
-    ('[/]+FILE[/]+([0123456789]+)[/]*', MSFileHandler ),                          # POST: for creating, updating, deleting, renaming, changing coordinator, setting, and deleting xattrs.
+    (r'[/]+FILE[/]+(RESOLVE)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([0123456789]+)[/]+([-0123456789]+)[/]*', MSFileHandler ),   # GET: for reading/resolving file metadata.
+    (r'[/]+FILE[/]+(GETXATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([\w]+)[/]*', MSFileHandler ),  # GET: for getting xattrs.
+    (r'[/]+FILE[/]+(LISTXATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]*', MSFileHandler ),                                        # GET: for listing xattrs.
+    (r'[/]+FILE[/]+([0123456789]+)[/]*', MSFileHandler ),                          # POST: for creating, updating, deleting, renaming, changing coordinator, setting, and deleting xattrs.
                                                                                   # The specific operation is encoded in the posted data.  This handler dispatches the call to the appropriate objects.
-    ('[/]+VOLUME[/]+([^/]+)[/]*', MSVolumeRequestHandler),
-    ('[/]+REGISTER[/]*', MSPublicKeyRegisterRequestHandler),
-    ('[/]+REGISTER[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]*', MSOpenIDRegisterRequestHandler),
-    ('[/]+CERT[/]+([0123456789]+)[/]+manifest.([0123456789]+)[/]*', MSCertManifestRequestHandler),
-    ('[/]+CERT[/]+([0123456789]+)[/]+([0123456789]+)[/]+(UG|RG|AG)[/]+([0123456789]+)[/]+([0123456789]+)[/]*', MSCertRequestHandler),
-    ('[/]+USER[/]+([^/]+)[/]*', MSUserRequestHandler),
-    ('[/]+VOLUMEOWNER[/]+([^/]+)[/]*', MSVolumeOwnerRequestHandler),
-    ('[/]+API[/]+([^/]+)[/]*', MSJSONRPCHandler),
-    ('[/]+API[/]*', MSJSONRPCHandler),
-    ('[/]+PUBKEY[/]*', MSPubkeyHandler)
+    (r'[/]+VOLUME[/]+([^/]+)[/]*', MSVolumeRequestHandler),
+    (r'[/]+REGISTER[/]*', MSPublicKeyRegisterRequestHandler),
+    (r'[/]+REGISTER[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]+([^/]+)[/]*', MSOpenIDRegisterRequestHandler),
+    (r'[/]+CERT[/]+([0123456789]+)[/]+manifest.([0123456789]+)[/]*', MSCertManifestRequestHandler),
+    (r'[/]+CERT[/]+([0123456789]+)[/]+([0123456789]+)[/]+(UG|RG|AG)[/]+([0123456789]+)[/]+([0123456789]+)[/]*', MSCertRequestHandler),
+    (r'[/]+USER[/]+([^/]+)[/]*', MSUserRequestHandler),
+    (r'[/]+VOLUMEOWNER[/]+([^/]+)[/]*', MSVolumeOwnerRequestHandler),
+    (r'[/]+API[/]+([^/]+)[/]*', MSJSONRPCHandler),
+    (r'[/]+API[/]*', MSJSONRPCHandler),
+    (r'[/]+PUBKEY[/]*', MSPubkeyHandler)
 ]
 
 if have_debug:

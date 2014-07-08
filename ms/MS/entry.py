@@ -256,6 +256,11 @@ class MSEntryXAttr( storagetypes.Object ):
    
    nonce = storagetypes.Integer( default=0 )
    
+   owner = storagetypes.Integer( default=0 )     # 0 means "anyone"
+   mode = storagetypes.Integer(default=0777)
+   
+   XATTR_OWNER_ANYONE = 0
+   
    @classmethod 
    def make_key_name( cls, volume_id, file_id, name ):
       return "MSEntryXAttr: volume_id=%s,file_id=%s,name=%s" % (volume_id, file_id, name)
@@ -265,28 +270,37 @@ class MSEntryXAttr( storagetypes.Object ):
       return "MSEntryXAttr: volume_id=%s,file_id=%s" % (volume_id, file_id)
    
    @classmethod
-   def ListXAttrs( cls, volume, msent ):
+   def ListXAttrs( cls, volume, msent, requester_owner_id, caller_is_admin=False ):
       """
-      Get the names of the xattrs for this MSEntry.
+      Get the visible names of the xattrs for this MSEntry.
       """
       cached_listing_name = MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id )
-      names = storagetypes.memcache.get( cached_listing_name )
-      if names == None:
-         name_proj = cls.ListAll( {"MSEntryXAttr.file_id ==": msent.file_id, "MSEntryXAttr.volume_id ==": msent.volume_id}, projection=["xattr_name"] )
+      names_and_metadata = storagetypes.memcache.get( cached_listing_name )
+      if names_and_metadata == None:
+            
+         names_and_metadata = cls.ListAll( {"MSEntryXAttr.file_id ==": msent.file_id, "MSEntryXAttr.volume_id ==": msent.volume_id}, projection=["xattr_name", "owner", "mode"] )
          
-         names = [x.xattr_name for x in name_proj]
+         storagetypes.memcache.set( MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id ), names_and_metadata );
       
-         storagetypes.memcache.set( MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id ), names );
       
-      return 0, names
+      # return the list of attributes that we can access
+      def is_accessible( xattr ):
+         if xattr.owner != cls.XATTR_OWNER_ANYONE and xattr.owner != requester_owner_id and (xattr & 0077) == 0:
+            return None
+         else:
+            return xattr.xattr_name
+      
+      visible_names = filter( lambda x: x is not None, map( is_accessible, names_and_metadata ))
+      
+      return 0, visible_names
    
    @classmethod
-   def GetXAttr( cls, volume, msent, xattr_name ):
+   def ReadXAttr( cls, volume_id, file_id, xattr_name ):
       """
-      Get an extended attribute's value.
+      Get an extended attribute record from the datastore
       Fail with ENOATTR (ENODATA) if there is no such attribute.
       """
-      xattr_key_name = MSEntryXAttr.make_key_name( msent.volume_id, msent.file_id, xattr_name )
+      xattr_key_name = MSEntryXAttr.make_key_name( volume_id, file_id, xattr_name )
       xattr = storagetypes.memcache.get( xattr_key_name )
       rc = 0
      
@@ -299,25 +313,42 @@ class MSEntryXAttr( storagetypes.Object ):
             storagetypes.memcache.set( xattr_key_name, xattr )
             
       
-      value = None
-      
       if xattr == None:
          # not found 
-         rc = -errno.ENODATA
+         return (-errno.ENODATA, None)
          
       else:
-         value = xattr.xattr_value
+         return (0, xattr)
       
-      return (rc, value)
-   
    
    @classmethod 
-   def SetXAttr( cls, volume, msent, xattr_name, xattr_value, create=False, replace=False ):
+   def GetXAttr( cls, volume, msent, xattr_name, requester_owner_id, caller_is_admin=False ):
+      """
+      Get an extended attribute's value.
+      Fail with ENOATTR (ENODATA) if there is no such attribute
+      """
+      
+      rc, xattr = cls.ReadXAttr( volume.volume_id, msent.file_id, xattr_name )
+      if rc == 0:
+         
+         if cls.XAttrReadable( requester_owner_id, xattr, caller_is_admin ):
+            return (rc, xattr.xattr_value)
+         else:
+            return (-errno.EACCES, None)
+         
+      else:
+         return (rc, None)
+      
+   
+   @classmethod 
+   def SetXAttr( cls, volume, msent, xattr_name, xattr_value, create=False, replace=False, owner=XATTR_OWNER_ANYONE, mode=0777, caller_is_admin=False ):
       """
       Set an extended attribute for the MSEntry msent.
       If create == True, then replace only if it does NOT exist.  Otherwise fail with EEXIST.
       If replace == True, then replace only if it already exists.  Otherwise fail with ENOATTR (ENODATA)
       Setting create = replace = True fails with EINVAL.
+      
+      The caller must ensure that the msent is writable by the requester
       """
       
       if create == replace and create == True:
@@ -326,42 +357,59 @@ class MSEntryXAttr( storagetypes.Object ):
       xattr_key_name = MSEntryXAttr.make_key_name( msent.volume_id, msent.file_id, xattr_name )
       rc = 0
       
-      if create:
-         # the xattr must not exist beforehand
+      if not replace:
+         # put the attribute...
          nonce = random.randint( -2**63, 2**63 - 1 )
-         xattr = MSEntryXAttr.get_or_insert( xattr_key_name, file_id=msent.file_id, volume_id=msent.volume_id, xattr_name=xattr_nme, xattr_value = xattr_value, nonce = nonce )
+         xattr = MSEntryXAttr.get_or_insert( xattr_key_name, file_id=msent.file_id, volume_id=msent.volume_id, xattr_name=xattr_name, xattr_value=xattr_value, nonce=nonce, owner=owner, mode=mode )
          
-         if xattr.nonce != nonce:
-            # already existed
-            rc = -errno.EEXIST
+         if xattr.nonce != nonce and create:
+            # can't already exist
+            # check permissions and return the appropriate error code 
+            if not cls.XAttrWritable( owner, xattr, caller_is_admin ):
+               # don't even reveal its existence
+               rc = -errno.EACCES
+            else:
+               # already existed
+               rc = -errno.EEXIST
+                  
+         elif xattr.nonce != nonce:
+            # didn't create; got back existing xattr
+            # check permissions 
+            if not cls.XAttrWritable( owner, xattr, caller_is_admin ):
+               rc = -errno.EACCES
+               
+            else:
+               # put the new attribute over it
+               xattr = MSEntryXAttr( key=storagetypes.make_key( MSEntryXAttr, xattr_key_name ), file_id=msent.file_id, volume_id=volume.volume_id,
+                                       xattr_name=xattr_name, xattr_value=xattr_value, mode=mode, owner=owner, nonce=nonce )
+            
+               xattr.put()
+               
          
-      elif replace:
+      else:
          # only replace if it exists
          def put_if_exists():
             xattr_key = storagetypes.make_key( MSEntryXAttr, xattr_key_name )
             xattr = xattr_key.get()
             
-            put_rc = 0
+            # sanity check 
+            if xattr is None:
+               return -errno.ENODATA
             
-            if xattr != None:
-               xattr.xattr_value = xattr_value 
-               xattr.put()
-               
-            else:
-               put_rc = -errno.ENODATA              # NOTE: ENOATTR is not defined in errno
+            # check permissions 
+            if not cls.XAttrWritable( owner, xattr, caller_is_admin ):
+               return -errno.EACCES
+         
+            xattr.xattr_value = xattr_value 
+            xattr.put()
             
-            return put_rc
+            return 0
          
          try:
             rc = storagetypes.transaction( lambda: put_if_exists() )
          except Exception, e:
             log.exception(e)
             rc = -errno.EAGAIN
-
-      else:
-         # put it regardles 
-         xattr = MSEntryXAttr( key=storagetypes.make_key( MSEntryXAttr, xattr_key_name ), file_id=msent.file_id, volume_id=msent.volume_id, xattr_name=xattr_name, xattr_value = xattr_value )
-         xattr.put()
          
       if rc == 0:
          # successfully put xattr
@@ -375,6 +423,81 @@ class MSEntryXAttr( storagetypes.Object ):
          
       return rc
       
+   
+   @classmethod 
+   def XAttrIsOwner( cls, owner_id, xattr, caller_is_admin=False ):
+      return xattr.owner == cls.XATTR_OWNER_ANYONE or owner_id == xattr.owner or caller_is_admin
+   
+   @classmethod 
+   def XAttrReadable( cls, owner_id, xattr, caller_is_admin=False ):
+      return cls.XAttrIsOwner( owner_id, xattr, caller_is_admin ) or (xattr.mode & 0044) != 0
+   
+   @classmethod
+   def XAttrWritable( cls, owner_id, xattr, caller_is_admin=False ):
+      return cls.XAttrIsOwner( owner_id, xattr, caller_is_admin ) or (xattr.mode & 0022) != 0
+   
+   @classmethod 
+   def ChmodXAttr( cls, volume, msent, xattr_name, new_mode, requester_owner_id, caller_is_admin=False ):
+      """
+      Set an extended attribute's access mode, atomically.
+      Only the owner of the xattr can set the mode, unless caller_is_admin is True
+      """
+      def update_mode_txn( xattr_key_name, m ):
+         
+         xattr_key = storagetypes.make_key( MSEntryXAttr, xattr_key_name )
+         xattr = xattr_key.get()
+         
+         if xattr is None:
+            return -errno.ENOENT 
+         
+         # verify that the owner is "anyone", or that it's the owner of the msent 
+         if not cls.XAttrIsOwner( requester_owner_id, xattr, caller_is_admin ):
+            return -errno.EACCES
+         
+         xattr.mode = m 
+         
+         xattr.put()
+         
+      xattr_key_name = MSEntryXAttr.make_key_name( msent.volume_id, msent.file_id, xattr_name )
+      try:
+         rc = storagetypes.transaction( lambda: update_mode_txn( xattr_key_name, new_mode ) )
+      except Exception, e:
+         log.exception(e)
+         rc = -errno.EAGAIN
+         
+      return rc
+         
+   
+   @classmethod 
+   def ChownXAttr( cls, volume, msent, xattr_name, new_owner, requester_owner_id, caller_is_admin=False ):
+      """
+      Set an extended attribute's owner, atomically.
+      Only the owner of the xattr can change the mode, unless caller_is_admin is true.
+      """
+      def update_owner_txn( xattr_key_name, o ):
+         
+         xattr_key = storagetypes.make_key( MSEntryXAttr, xattr_key_name )
+         xattr = xattr_key.get()
+         
+         if xattr is None:
+            return -errno.ENOENT 
+         
+         # verify that the owner is "anyone", or that it's the owner of msent 
+         if not cls.XAttrIsOwner( requester_owner_id, xattr, caller_is_admin ):
+            return -errno.EACCES 
+         
+         xattr.owner = o
+         
+         xattr.put()
+         
+      xattr_key_name = MSEntryXAttr.make_key_name( msent.volume_id, msent.file_id, xattr_name )
+      try:
+         rc = storagetypes.transaction( lambda: update_owner_txn( xattr_key_name, owner ) )
+      except Exception, e:
+         log.exception(e)
+         rc = -errno.EAGAIN
+         
+      return rc
       
    @classmethod 
    def remove_and_uncache( cls, volume, msent, xattr_name ):
@@ -421,11 +544,22 @@ class MSEntryXAttr( storagetypes.Object ):
       storagetypes.memcache.delete( xattr_key_name )
       
    @classmethod 
-   def RemoveXAttr( cls, volume, msent, xattr_name ):
+   def RemoveXAttr( cls, volume, msent, xattr_name, requester_owner_id, caller_is_admin=False ):
       """
       Delete an extended attribute from the MSEntry msent.
-      Unlike removexattr(2), this does not ever fail, and runs asynchronously
       """
+      
+      rc, xattr = cls.ReadXAttr( volume.volume_id, msent.file_id, xattr_name )
+      
+      if rc != 0:
+         return rc
+      
+      if xattr is None:
+         return -errno.ENODATA
+      
+      # xattr must be writable 
+      if not cls.XAttrWritable( requester_owner_id, xattr, caller_is_admin ):
+         return -errno.EACCES
       
       storagetypes.deferred.defer( MSEntryXAttr.remove_and_uncache, volume, msent, xattr_name )
       
@@ -438,7 +572,7 @@ class MSEntryXAttr( storagetypes.Object ):
       Delete all xattrs for a given file asynchronously
       """
       
-      def __xattr_deferred_delete( cls, xattr ):
+      def __xattr_deferred_delete( xattr ):
          MSEntryXAttr.delete_and_uncache( volume_id, file_id, xattr.xattr_name )
          
       return cls.ListAll( {"MSEntryXAttr.file_id ==": file_id, "MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name'], map_func=__xattr_deferred_delete, async=async )
@@ -449,7 +583,7 @@ class MSEntryXAttr( storagetypes.Object ):
       """
       Delete all xattrs for a given volume asynchronously
       """
-      def __xattr_deferred_delete( cls, xattr ):
+      def __xattr_deferred_delete( xattr ):
          MSEntryXAttr.delete_and_uncache( volume_id, xattr.file_id, xattr.xattr_name )
       
       return cls.ListAll( {"MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name', 'file_id'], map_func=__xattr_deferred_delete, async=async )

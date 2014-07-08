@@ -427,10 +427,12 @@ class MSFileHandler(webapp2.RequestHandler):
       ms_pb2.ms_update.CREATE:          lambda gateway, update: (True, 200),
       ms_pb2.ms_update.UPDATE:          lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_WRITE_DATA ), 403),
       ms_pb2.ms_update.DELETE:          lambda gateway, update: (True, 200),
-      ms_pb2.ms_update.CHOWN:           lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_COORDINATE ), 403),
+      ms_pb2.ms_update.CHCOORD:         lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_COORDINATE ), 403),
       ms_pb2.ms_update.RENAME:          lambda gateway, update: (update.HasField("dest"), 400),
       ms_pb2.ms_update.SETXATTR:        lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_value"), 400),
       ms_pb2.ms_update.REMOVEXATTR:     lambda gateway, update: (update.HasField("xattr_name"), 400),
+      ms_pb2.ms_update.CHMODXATTR:      lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_mode"), 400),
+      ms_pb2.ms_update.CHOWNXATTR:      lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_owner"), 400)
    }
    
    # Map update values onto handlers
@@ -439,9 +441,11 @@ class MSFileHandler(webapp2.RequestHandler):
       ms_pb2.ms_update.UPDATE:          lambda reply, gateway, volume, update: file_update( reply, gateway, volume, update ),
       ms_pb2.ms_update.DELETE:          lambda reply, gateway, volume, update: file_delete( reply, gateway, volume, update ),
       ms_pb2.ms_update.RENAME:          lambda reply, gateway, volume, update: file_rename( reply, gateway, volume, update ),
-      ms_pb2.ms_update.CHOWN:           lambda reply, gateway, volume, update: file_chcoord( reply, gateway, volume, update ),
+      ms_pb2.ms_update.CHCOORD:         lambda reply, gateway, volume, update: file_chcoord( reply, gateway, volume, update ),
       ms_pb2.ms_update.SETXATTR:        lambda reply, gateway, volume, update: file_xattr_setxattr( reply, gateway, volume, update ),
       ms_pb2.ms_update.REMOVEXATTR:     lambda reply, gateway, volume, update: file_xattr_removexattr( reply, gateway, volume, update ),
+      ms_pb2.ms_update.CHMODXATTR:      lambda reply, gateway, volume, update: file_xattr_chmodxattr( reply, gateway, volume, update ),
+      ms_pb2.ms_update.CHOWNXATTR:      lambda reply, gateway, volume, update: file_xattr_chownxattr( reply, gateway, volume, update )
    }
    
    
@@ -450,10 +454,12 @@ class MSFileHandler(webapp2.RequestHandler):
       ms_pb2.ms_update.CREATE:          "X-Create-Times",
       ms_pb2.ms_update.UPDATE:          "X-Update-Times",
       ms_pb2.ms_update.DELETE:          "X-Delete-Times",
-      ms_pb2.ms_update.CHOWN:           "X-Chcoord-Times",
+      ms_pb2.ms_update.CHCOORD:         "X-Chcoord-Times",
       ms_pb2.ms_update.RENAME:          "X-Rename-Times",
       ms_pb2.ms_update.SETXATTR:        "X-Setxattr-Times",
       ms_pb2.ms_update.REMOVEXATTR:     "X-Removexattr-Times",
+      ms_pb2.ms_update.CHMODXATTR:      "X-Chmodxattr-Times",
+      ms_pb2.ms_update.CHOWNXATTR:      "X-Chownxattr-Times"
    }
    
    

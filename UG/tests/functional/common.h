@@ -23,7 +23,6 @@
 #include "libsyndicateUG/fs/fs.h"
 #include "libsyndicateUG/syndicate.h"
 #include "libsyndicateUG/server.h"
-#include "libsyndicateUG/state.h"
 
 int syndicate_functional_test_init( int argc, char** argv, int* optind_out, struct md_HTTP* syndicate_http );
 int syndicate_functional_test_shutdown( struct md_HTTP* syndicate_http );

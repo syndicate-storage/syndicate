@@ -3104,7 +3104,7 @@ int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, s
    
    // generate our update
    struct md_update up;
-   ms_client_populate_update( &up, ms::ms_update::CHOWN, 0, ent );
+   ms_client_populate_update( &up, ms::ms_update::CHCOORD, 0, ent );
    
    // reply buffer 
    ms::ms_reply reply;
@@ -3135,7 +3135,7 @@ int ms_client_rename( struct ms_client* client, struct md_entry* src, struct md_
    
    // generate our update
    struct md_update up;
-   ms_client_populate_update( &up, ms::ms_update::UPDATE, 0, src );
+   ms_client_populate_update( &up, ms::ms_update::RENAME, 0, src );
    memcpy( &up.dest, dest, sizeof(struct md_entry) );
    
    return ms_client_file_post( client, &up, NULL );
@@ -4422,7 +4422,7 @@ int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char con
 }
 
 // remove an xattr.
-// fails if the file isn't readable or writable.
+// fails if the file isn't readable or writable, or the xattr exists and it's not writable
 // succeeds even if the xattr doesn't exist (i.e. idempotent)
 int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name ) {
    // generate our update 
@@ -4434,3 +4434,30 @@ int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char 
    
    return ms_client_file_post( client, &up, NULL );
 }
+
+// change the owner of an xattr 
+// fails if we don't own the attribute
+int ms_client_chownxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, uint64_t new_owner ) {
+   // generate our update 
+   struct md_update up;
+   ms_client_populate_update( &up, ms::ms_update::CHOWNXATTR, 0, ent );
+   
+   // add the xattr information 
+   up.xattr_owner = new_owner;
+   
+   return ms_client_file_post( client, &up, NULL );
+}
+
+// change the mode of an xattr 
+// fails if we don't own the attribute, or if it's not writable by us
+int ms_client_chmodxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, mode_t new_mode ) {
+   // generate our update 
+   struct md_update up;
+   ms_client_populate_update( &up, ms::ms_update::CHMODXATTR, 0, ent );
+   
+   // add the xattr information 
+   up.xattr_mode = new_mode;
+   
+   return ms_client_file_post( client, &up, NULL );
+}
+

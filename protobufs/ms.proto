@@ -56,10 +56,12 @@ message ms_update {
       CREATE = 1;
       UPDATE = 2;
       DELETE = 3;
-      CHOWN = 4;
+      CHCOORD = 4;
       RENAME = 5;
       SETXATTR = 6;
       REMOVEXATTR = 7;
+      CHMODXATTR = 8;
+      CHOWNXATTR = 9;
    }
 
    required int32 type = 1;
@@ -67,8 +69,9 @@ message ms_update {
    optional ms_entry dest = 3;          // used by rename
    optional string xattr_name = 4;      // used by setxattr and removexattr
    optional string xattr_value = 5;     // used by setxattr
-   optional bool xattr_create = 6;      // used by setxattr 
+   optional bool xattr_create = 6;      // used by setxattr
    optional bool xattr_replace = 7;     // used by setxattr
+   optional int32 xattr_mode = 8;       // used by setxattr or chmodxattr
 }
 
 // collection of object updates
