@@ -70,7 +70,7 @@ static size_t xattr_len_all(void) {
 // get concatenated names of all xattrs (delimited by '\0')
 static ssize_t xattr_get_builtin_names( char* buf, size_t buf_len ) {
    size_t needed_len = xattr_len_all();
-   if( needed_len >= buf_len ) {
+   if( needed_len > buf_len ) {
       return -ERANGE;
    }
    
@@ -440,8 +440,8 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
    return ret;
 }
 
-// setxattr
-int fs_entry_setxattr( struct fs_core* core, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume ) {
+// setxattr, with xattr modes
+int fs_entry_setxattr_ex( struct fs_core* core, char const* path, char const *name, char const *value, size_t size, int flags, uint64_t user, uint64_t volume, mode_t mode ) {
    
    if( core->gateway == GATEWAY_ANON ) {
       errorf("%s", "Setting extended attributes is forbidden for anonymous gateways\n");
@@ -473,7 +473,7 @@ int fs_entry_setxattr( struct fs_core* core, char const* path, char const *name,
       struct md_entry ent;
       fs_entry_to_md_entry( core, &ent, fent, 0, NULL );        // parent information not needed
       
-      ret = ms_client_setxattr( core->ms, &ent, name, value, size, flags );
+      ret = ms_client_setxattr( core->ms, &ent, name, value, size, mode, flags );
       if( ret < 0 ) {
          errorf("ms_client_setxattr( %s %s ) rc = %zd\n", path, name, ret );
       }
@@ -495,11 +495,16 @@ int fs_entry_setxattr( struct fs_core* core, char const* path, char const *name,
    return ret;
 }
 
+// setxattr, with default xattr mode 
+int fs_entry_setxattr( struct fs_core* core, char const* path, char const* name, char const* value, size_t size, int flags, uint64_t user, uint64_t volume ) {
+   return fs_entry_setxattr_ex( core, path, name, value, size, flags, user, volume, 0744 );
+}
+
 
 // get an xattr, or set an xattr if not present.  There will be only one "set" winner globally, but "get" might return nothing (since the get and set do not occur as an atomic action)
 // Meant for use by UG closures.
 // fent must be at least read-locked
-int fs_entry_get_or_set_xattr( struct fs_core* core, struct fs_entry* fent, char const* name, char const* proposed_value, size_t proposed_value_len, char** value, size_t* value_len ) {
+int fs_entry_get_or_set_xattr( struct fs_core* core, struct fs_entry* fent, char const* name, char const* proposed_value, size_t proposed_value_len, char** value, size_t* value_len, mode_t mode ) {
    
    ssize_t ret = 0;
    int cache_status = 0;
@@ -518,9 +523,9 @@ int fs_entry_get_or_set_xattr( struct fs_core* core, struct fs_entry* fent, char
       struct md_entry ent;
       fs_entry_to_md_entry( core, &ent, fent, 0, NULL );        // parent information not needed
       
-      ret = ms_client_setxattr( core->ms, &ent, name, proposed_value, proposed_value_len, XATTR_CREATE );
+      ret = ms_client_setxattr( core->ms, &ent, name, proposed_value, proposed_value_len, XATTR_CREATE, mode );
       if( ret < 0 ) {
-         errorf("ms_client_setxattr( %" PRIX64 " %s ) rc = %zd\n", fent->file_id, name, ret );
+         errorf("ms_client_setxattr_ex( %" PRIX64 " %s ) rc = %zd\n", fent->file_id, name, ret );
          
          if( ret == -EEXIST ) {
             // attr already existed.  Get it
@@ -624,11 +629,13 @@ ssize_t fs_entry_listxattr( struct fs_core* core, char const* path, char *list, 
       ssize_t builtin_len = xattr_get_builtin_names( list, size );
       
       if( builtin_len < 0 ) {
+         errorf("WARN: not enough space for built-in attributes (size = %zd, need %zd)\n", size, xattr_len_all());
          free( remote_xattr_names );
          return -ERANGE;
       }
       
       if( remote_xattr_names_len + builtin_len > size ) {
+         errorf("WARN: not enough space for app-defined attributes (size = %zd, need %zd)\n", size, builtin_len + remote_xattr_names_len);
          free( remote_xattr_names );
          return -ERANGE;
       }
@@ -710,6 +717,13 @@ int fs_entry_chownxattr( struct fs_core* core, char const* path, char const* nam
       return -EPERM;
    }
    
+   // bring the metadata up to date
+   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
+   if( revalidate_rc != 0 ) {
+      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
+      return revalidate_rc;
+   }
+   
    int err = 0;
    struct fs_entry* fent = fs_entry_resolve_path( core, path, core->ms->owner_id, core->volume, true, &err );
    if( !fent || err ) {
@@ -742,6 +756,13 @@ int fs_entry_chmodxattr( struct fs_core* core, char const* path, char const* nam
    if( core->gateway == GATEWAY_ANON ) {
       errorf("%s", "Changing mode of extended attributes is forbidden for anonymous gateways\n");
       return -EPERM;
+   }
+   
+   // bring the metadata up to date
+   int revalidate_rc = fs_entry_revalidate_path( core, core->volume, path );
+   if( revalidate_rc != 0 ) {
+      errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, revalidate_rc );
+      return revalidate_rc;
    }
    
    int err = 0;

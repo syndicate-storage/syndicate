@@ -429,7 +429,7 @@ class MSFileHandler(webapp2.RequestHandler):
       ms_pb2.ms_update.DELETE:          lambda gateway, update: (True, 200),
       ms_pb2.ms_update.CHCOORD:         lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_COORDINATE ), 403),
       ms_pb2.ms_update.RENAME:          lambda gateway, update: (update.HasField("dest"), 400),
-      ms_pb2.ms_update.SETXATTR:        lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_value"), 400),
+      ms_pb2.ms_update.SETXATTR:        lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_value") and update.HasField("xattr_mode") and update.HasField("xattr_owner"), 400),
       ms_pb2.ms_update.REMOVEXATTR:     lambda gateway, update: (update.HasField("xattr_name"), 400),
       ms_pb2.ms_update.CHMODXATTR:      lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_mode"), 400),
       ms_pb2.ms_update.CHOWNXATTR:      lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_owner"), 400)
@@ -524,6 +524,7 @@ class MSFileHandler(webapp2.RequestHandler):
 
       allowed = file_update_auth( gateway, volume )
       if not allowed:
+         log.error("Failed to authenticate")
          response_user_error( self, 403 )
          return
 
@@ -547,7 +548,8 @@ class MSFileHandler(webapp2.RequestHandler):
          
          valid, failure_status = MSFileHandler.post_validators[update.type]( gateway, update )
          if not valid:
-            response_user_error( self, failure_status )
+            log.error("Failed to validate update")
+            response_user_error( self, failure_status, "Argument validation failed" )
             return 
       
       timing = {}

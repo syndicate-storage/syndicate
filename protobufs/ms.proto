@@ -71,7 +71,8 @@ message ms_update {
    optional string xattr_value = 5;     // used by setxattr
    optional bool xattr_create = 6;      // used by setxattr
    optional bool xattr_replace = 7;     // used by setxattr
-   optional int32 xattr_mode = 8;       // used by setxattr or chmodxattr
+   optional int32 xattr_mode = 8;       // used by chmodxattr, setxattr
+   optional uint64 xattr_owner = 9;     // used by chownxattr, setxattr (on create)
 }
 
 // collection of object updates

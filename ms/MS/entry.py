@@ -276,16 +276,16 @@ class MSEntryXAttr( storagetypes.Object ):
       """
       cached_listing_name = MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id )
       names_and_metadata = storagetypes.memcache.get( cached_listing_name )
-      if names_and_metadata == None:
+      if names_and_metadata is None:
             
          names_and_metadata = cls.ListAll( {"MSEntryXAttr.file_id ==": msent.file_id, "MSEntryXAttr.volume_id ==": msent.volume_id}, projection=["xattr_name", "owner", "mode"] )
          
-         storagetypes.memcache.set( MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id ), names_and_metadata );
+         storagetypes.memcache.set( cached_listing_name, names_and_metadata );
       
       
       # return the list of attributes that we can access
       def is_accessible( xattr ):
-         if xattr.owner != cls.XATTR_OWNER_ANYONE and xattr.owner != requester_owner_id and (xattr & 0077) == 0:
+         if xattr.owner != cls.XATTR_OWNER_ANYONE and xattr.owner != requester_owner_id and (xattr.mode & 0066) == 0:
             return None
          else:
             return xattr.xattr_name
@@ -367,6 +367,7 @@ class MSEntryXAttr( storagetypes.Object ):
             # check permissions and return the appropriate error code 
             if not cls.XAttrWritable( owner, xattr, caller_is_admin ):
                # don't even reveal its existence
+               log.error("XAttr %s is not writable by %s" % (xattr.name, owner))
                rc = -errno.EACCES
             else:
                # already existed
@@ -385,6 +386,10 @@ class MSEntryXAttr( storagetypes.Object ):
             
                xattr.put()
                
+         else:
+            # created; clear the cached listing for this entry
+            cached_listing_name = MSEntryXAttr.cache_listing_key_name( msent.volume_id, msent.file_id )
+            storagetypes.memcache.delete( cached_listing_name )
          
       else:
          # only replace if it exists
@@ -437,7 +442,7 @@ class MSEntryXAttr( storagetypes.Object ):
       return cls.XAttrIsOwner( owner_id, xattr, caller_is_admin ) or (xattr.mode & 0022) != 0
    
    @classmethod 
-   def ChmodXAttr( cls, volume, msent, xattr_name, new_mode, requester_owner_id, caller_is_admin=False ):
+   def ChmodXAttr( cls, volume, file_id, xattr_name, new_mode, requester_owner_id, caller_is_admin=False ):
       """
       Set an extended attribute's access mode, atomically.
       Only the owner of the xattr can set the mode, unless caller_is_admin is True
@@ -458,18 +463,27 @@ class MSEntryXAttr( storagetypes.Object ):
          
          xattr.put()
          
-      xattr_key_name = MSEntryXAttr.make_key_name( msent.volume_id, msent.file_id, xattr_name )
+         return 0
+         
+      xattr_key_name = MSEntryXAttr.make_key_name( volume.volume_id, file_id, xattr_name )
       try:
          rc = storagetypes.transaction( lambda: update_mode_txn( xattr_key_name, new_mode ) )
       except Exception, e:
          log.exception(e)
          rc = -errno.EAGAIN
          
+      if rc == 0:
+         # clear cached metadata
+         cached_listing_name = MSEntryXAttr.cache_listing_key_name( volume.volume_id, file_id )
+         cached_xattr_name = MSEntryXAttr.make_key_name( volume.volume_id, file_id, xattr_name )
+         
+         storagetypes.memcache.delete_multi( [cached_xattr_name, cached_listing_name] )
+         
       return rc
          
    
    @classmethod 
-   def ChownXAttr( cls, volume, msent, xattr_name, new_owner, requester_owner_id, caller_is_admin=False ):
+   def ChownXAttr( cls, volume, file_id, xattr_name, new_owner, requester_owner_id, caller_is_admin=False ):
       """
       Set an extended attribute's owner, atomically.
       Only the owner of the xattr can change the mode, unless caller_is_admin is true.
@@ -490,12 +504,21 @@ class MSEntryXAttr( storagetypes.Object ):
          
          xattr.put()
          
-      xattr_key_name = MSEntryXAttr.make_key_name( msent.volume_id, msent.file_id, xattr_name )
+         return 0
+         
+      xattr_key_name = MSEntryXAttr.make_key_name( volume.volume_id, file_id, xattr_name )
       try:
-         rc = storagetypes.transaction( lambda: update_owner_txn( xattr_key_name, owner ) )
+         rc = storagetypes.transaction( lambda: update_owner_txn( xattr_key_name, new_owner ) )
       except Exception, e:
          log.exception(e)
          rc = -errno.EAGAIN
+      
+      if rc == 0:
+         # clear cached metadata
+         cached_listing_name = MSEntryXAttr.cache_listing_key_name( volume.volume_id, file_id )
+         cached_xattr_name = MSEntryXAttr.make_key_name( volume.volume_id, file_id, xattr_name )
+         
+         storagetypes.memcache.delete_multi( [cached_xattr_name, cached_listing_name] )
          
       return rc
       

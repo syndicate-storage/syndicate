@@ -2918,15 +2918,37 @@ static int ms_client_serialize_update_set( update_set* updates, ms::ms_updates* 
          // set names
          ms_up->set_xattr_name( string(update->xattr_name) );
          ms_up->set_xattr_value( string(update->xattr_value, update->xattr_value_len) );
+         
+         // set requesting user 
+         ms_up->set_xattr_owner( update->xattr_owner );
+         ms_up->set_xattr_mode( update->xattr_mode );
       }
       
-      // if this is a REMOVEXATTR, then set the attr nam
+      // if this is a REMOVEXATTR, then set the attr name
       else if( update->op == ms::ms_update::REMOVEXATTR ) {
          // sanity check ...
          if( update->xattr_name == NULL )
             return -EINVAL;
          
          ms_up->set_xattr_name( string(update->xattr_name) );
+      }
+      
+      // if this is a CHOWNXATTR, then set the attr name and owner 
+      else if( update->op == ms::ms_update::CHOWNXATTR ) {
+         if( update->xattr_name == NULL )
+            return -EINVAL;
+         
+         ms_up->set_xattr_name( string(update->xattr_name) );
+         ms_up->set_xattr_owner( update->xattr_owner );
+      }
+      
+      // if this is a CHMODXATTR, then set the attr name and mode 
+      else if( update->op == ms::ms_update::CHMODXATTR ) {
+         if( update->xattr_name == NULL )
+            return -EINVAL;
+         
+         ms_up->set_xattr_name( string(update->xattr_name) );
+         ms_up->set_xattr_mode( update->xattr_mode );
       }
    }
 
@@ -4404,7 +4426,7 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
 // set a file's xattr.
 // flags is either 0, XATTR_CREATE, or XATTR_REPLACE (see setxattr(2))
 // fails with -ENOENT if the file doesn't exist or either isn't readable or writable.  Fails with -ENODATA if the semantics in flags can't be met.
-int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, int flags ) {
+int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, char const* xattr_value, size_t xattr_value_len, mode_t mode, int flags ) {
    // sanity check...can't have both XATTR_CREATE and XATTR_REPLACE
    if( (flags & (XATTR_CREATE | XATTR_REPLACE)) == (XATTR_CREATE | XATTR_REPLACE) )
       return -EINVAL;
@@ -4417,6 +4439,8 @@ int ms_client_setxattr( struct ms_client* client, struct md_entry* ent, char con
    up.xattr_name = (char*)xattr_name;
    up.xattr_value = (char*)xattr_value;
    up.xattr_value_len = xattr_value_len;
+   up.xattr_owner = client->owner_id;
+   up.xattr_mode = mode;
    
    return ms_client_file_post( client, &up, NULL );
 }
@@ -4443,6 +4467,7 @@ int ms_client_chownxattr( struct ms_client* client, struct md_entry* ent, char c
    ms_client_populate_update( &up, ms::ms_update::CHOWNXATTR, 0, ent );
    
    // add the xattr information 
+   up.xattr_name = (char*)xattr_name;
    up.xattr_owner = new_owner;
    
    return ms_client_file_post( client, &up, NULL );
@@ -4456,6 +4481,7 @@ int ms_client_chmodxattr( struct ms_client* client, struct md_entry* ent, char c
    ms_client_populate_update( &up, ms::ms_update::CHMODXATTR, 0, ent );
    
    // add the xattr information 
+   up.xattr_name = (char*)xattr_name;
    up.xattr_mode = new_mode;
    
    return ms_client_file_post( client, &up, NULL );

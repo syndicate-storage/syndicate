@@ -422,6 +422,7 @@ def file_xattr_get_and_check_xattr_readable( gateway, volume, file_id, xattr_nam
 
    # check permissions 
    if not MSEntryXAttr.XAttrReadable( gateway_owner_id, xattr, caller_is_admin ):
+      logging.error("XAttr %s not readable by %s" % (xattr_name, gateway_owner_id))
       return (-errno.EACCES, None)
    
    return (0, xattr)
@@ -455,6 +456,7 @@ def file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, xattr_nam
    
    # check permissions 
    if not MSEntryXAttr.XAttrWritable( gateway_owner_id, xattr, caller_is_admin ):
+      logging.error("XAttr %s not writable by %s" % (xattr_name, gateway_owner_id))
       return (-errno.EACCES, None)
    
    return (0, xattr)
@@ -508,6 +510,8 @@ def file_xattr_get_and_check_msentry_writeable( gateway, volume, file_id, caller
       rc = -errno.ENOENT
       
    elif not caller_is_admin and msent.owner_id != gateway.owner_id and (msent.mode & 0022) == 0:
+      logging.error("MSEntry %s not writable by %s" % (file_id, gateway.owner_id))
+      
       # not writeable 
       # if not readable, then say ENOENT instead (don't reveal the existence of a metadata entry to someone who can't read it)
       if msent.owner_id != gateway.owner_id and (msent.mode & 0044) == 0:
@@ -515,9 +519,6 @@ def file_xattr_get_and_check_msentry_writeable( gateway, volume, file_id, caller
       else:
          rc = -errno.EACCES
 
-   if rc != 0:
-      msent = None
-      
    return (rc, msent)
 
 
@@ -624,16 +625,14 @@ def file_xattr_setxattr( reply, gateway, volume, update, caller_is_admin=False )
    
    xattr_create = False 
    xattr_replace = False 
-   xattr_mode = 0777
+   xattr_mode = update.xattr_mode
+   xattr_owner = update.xattr_owner
    
    if update.HasField( 'xattr_create' ):
       xattr_create = update.xattr_create
    
    if update.HasField( 'xattr_replace' ):
       xattr_replace = update.xattr_replace 
-      
-   if update.HasField( 'xattr_mode' ):
-      xattr_mode = update.xattr_mode
    
    attrs = MSEntry.unprotobuf_dict( update.entry )
    
@@ -641,17 +640,27 @@ def file_xattr_setxattr( reply, gateway, volume, update, caller_is_admin=False )
                   (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_create, xattr_replace, xattr_mode))
       
    file_id = attrs['file_id']
-   rc, msent = file_xattr_get_and_check_msentry_writeable( gateway, volume, file_id, caller_is_admin )
+   rc = 0
+
+   # find gateway owner ID
+   gateway_owner_id = GATEWAY_ID_ANON
+   if gateway is not None:
+      gateway_owner_id = gateway.owner_id
+   
+   # if we're creating, then the requested xattr owner ID must match the gateway owner ID 
+   if xattr_create and gateway_owner_id != xattr_owner:
+      logging.error("Request to create xattr '%s' owned by %s does not match Gateway owner %s" % (update.xattr_name, xattr_owner, gateway_owner_id))
+      rc = -errno.EACCES
    
    if rc == 0:
-      # check xattr writable 
-      rc, _ = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
+      msent_rc, msent = file_xattr_get_and_check_msentry_writeable( gateway, volume, file_id, caller_is_admin )
+      xattr_rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
       
-      if rc == 0:
-         gateway_owner_id = GATEWAY_ID_ANON
-         if gateway is not None:
-            gateway_owner_id = gateway.owner_id
-         
+      # if the xattr doesn't exist and the msent isn't writable by the caller, then this is an error 
+      if (xattr is None or xattr_rc == -errno.ENOENT) and msent_rc != 0:
+         rc = msent_rc
+      
+      else:
          # set the xattr
          rc = MSEntryXAttr.SetXAttr( volume, msent, update.xattr_name, update.xattr_value, create=xattr_create, replace=xattr_replace, mode=xattr_mode, owner=gateway_owner_id, caller_is_admin=caller_is_admin )
       
@@ -720,7 +729,7 @@ def file_xattr_chmodxattr( reply, gateway, volume, update, caller_is_admin=False
    file_id = attrs['file_id']
    
    # is this xattr writable?
-   rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, xattr_name, caller_is_admin )
+   rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
    
    if rc == 0:
       # allowed!
@@ -729,7 +738,7 @@ def file_xattr_chmodxattr( reply, gateway, volume, update, caller_is_admin=False
       if gateway is not None:
          gateway_owner_id = gateway.owner_id
       
-      rc = MSEntryXAttr.ChmodXAttr( volume, msent, update.xattr_name, xattr_mode, gateway_owner_id, caller_is_admin )
+      rc = MSEntryXAttr.ChmodXAttr( volume, file_id, update.xattr_name, xattr_mode, gateway_owner_id, caller_is_admin )
       
    logging.info("chmodxattr /%s/%s (name=%s, parent=%s) %s = %s (mode=0%o) rc = %s" % 
                   (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_mode, rc) )
@@ -760,7 +769,7 @@ def file_xattr_chownxattr( reply, gateway, volume, update, caller_is_admin=False
    file_id = attrs['file_id']
    
    # is this xattr writable?
-   rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, xattr_name, caller_is_admin )
+   rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
    
    if rc == 0:
       # allowed!
@@ -769,7 +778,7 @@ def file_xattr_chownxattr( reply, gateway, volume, update, caller_is_admin=False
       if gateway is not None:
          gateway_owner_id = gateway.owner_id
       
-      rc = MSEntryXAttr.ChownXAttr( volume, msent, update.xattr_name, xattr_owner, gateway_owner_id, caller_is_admin )
+      rc = MSEntryXAttr.ChownXAttr( volume, file_id, update.xattr_name, xattr_owner, gateway_owner_id, caller_is_admin )
       
    logging.info("chownxattr /%s/%s (name=%s, parent=%s) %s = %s (owner=%s) rc = %s" % 
                   (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_owner, rc) )

@@ -42,7 +42,7 @@ int main( int argc, char** argv ) {
    char* xattr_owner_str = argv[test_optind+2];
    
    char* end = NULL;
-   uint64_t xattr_owner = strtol( xattr_owner_str, &end, 8 );
+   uint64_t xattr_owner = (uint64_t)strtoll( xattr_owner_str, &end, 10 );
    if( end == NULL )
       usage( argv[0] );
    
