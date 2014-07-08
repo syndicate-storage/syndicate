@@ -559,7 +559,13 @@ static int httpd_write( struct fs_core* core, struct fs_file_handle* fh, int fd,
       
       memset( block_buf, 0, core->blocking_factor );
       
-      ssize_t processed = httpd_write_one_block( core, fh, fd, block_buf, core->blocking_factor, cur_offset );
+      size_t write_size = core->blocking_factor;
+      if( size - num_read < core->blocking_factor ) {
+         // last block 
+         write_size = size - num_read;
+      }
+      
+      ssize_t processed = httpd_write_one_block( core, fh, fd, block_buf, write_size, cur_offset );
       if( processed < 0 ) {
          errorf("httpd_write_one_block(%" PRIX64 ") rc = %zd\n", fh->file_id, processed );
          return processed;
