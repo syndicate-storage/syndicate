@@ -12,7 +12,7 @@
 #include <netdb.h>
 #include <errno.h>
 
-#define HTTP_LOG_SERVER_HOSTNAME "vm64-125.iplantcollaborative.org"
+#define HTTP_LOG_SERVER_HOSTNAME "malloy.iplantcollaborative.org"
 #define HTTP_LOG_SERVER_PORTNUM  8090
 
 int http_connect( char const* hostname, int portnum );
