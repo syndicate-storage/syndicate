@@ -77,7 +77,7 @@ CONFIG_OPTIONS = {
    "logdir":            ("-l", 1, "Directory to contain the log files.  If not given, then write to stdout and stderr."),
    "pidfile":           ("-i", 1, "Path to the desired PID file."),
    "public_key":        ("-p", 1, "Path to the Observer public key."),
-   "observer_secret":   ("-s", 1, "Shared secret with Observer."),
+   "slice_secret":      ("-s", 1, "Shared secret with Observer for this slice."),
    "observer_url":      ("-u", 1, "URL to the Syndicate Observer"),
    "poll_timeout":      ("-t", 1, "Interval to wait between asking OpenCloud for our Volume credentials."),
    "mountpoint_dir":    ("-m", 1, "Directory to hold Volume mountpoints."),
@@ -94,11 +94,13 @@ DEFAULT_CONFIG = {
     "logdir":           "/var/log/syndicated",
     "pidfile":          "/var/run/syndicated.pid",
     "poll_timeout":     43200,          # ask twice a day; the Observer should poke us directly anyway
-    "observer_secret":  None,  
+    "slice_secret":     None,  
     "observer_url":     "https://localhost:5553",
     "mountpoint_dir":   "/tmp/syndicate-mounts",
     "port":             5553,
-    
+}
+
+"""
     # these are filled in at runtime.
     # This is the information needed to act as a principal of the volume onwer (i.e. the slice)
     "runtime": {
@@ -118,6 +120,7 @@ DEFAULT_CONFIG = {
         }
      }
 }
+"""
 
 
 #-------------------------------
@@ -138,48 +141,6 @@ def get_config():
     CONFIG_lock.release()
     
     return config
-    
-
-#-------------------------------
-def remove_volume_runtime( volume_name ):
-    global CONFIG, CONFIG_lock
-    
-    CONFIG_lock.acquire()
-    
-    if not CONFIG.has_key('runtime'):
-        CONFIG['runtime'] = {}
-    
-    # remove runtime info
-    try:
-       
-       if CONFIG['runtime'].has_key(volume_name):
-          del CONFIG['runtime'][volume_name]
-          
-    except KeyError, ke:
-       log.error("Missing Volume name!")
-    
-    CONFIG_lock.release()
-    
-    
-#-------------------------------
-def update_volume_runtime( runtime_info ): 
-    global CONFIG, CONFIG_lock
-    
-    CONFIG_lock.acquire()
-    
-    if not CONFIG.has_key('runtime'):
-        CONFIG['runtime'] = {}
-    
-    # update runtime info for this Volume 
-    try:
-       volume_name = runtime_info['volume_name']
-       CONFIG['runtime'][volume_name] = runtime_info
-         
-    except KeyError, ke:
-       log.error("Missing Volume name!")
-    
-    CONFIG_lock.release()
-
 
 #-------------------------------
 class EnsureRunningThread( threading.Thread ):
@@ -208,7 +169,7 @@ class EnsureRunningThread( threading.Thread ):
       config = get_config()
       
       # unseal the data 
-      rc, data_text = unseal_observer_data( config['observer_secret'], sealed_data )
+      rc, data_text = unseal_observer_data( config['slice_secret'], sealed_data )
       if rc != 0:
          # failed to read 
          cls.processing_lock.release()
@@ -224,8 +185,7 @@ class EnsureRunningThread( threading.Thread ):
          return -errno.EINVAL
       
       if data is not None:
-         update_volume_runtime( data )
-         rc = ensure_running()
+         rc = ensure_running( data )
          
          if rc != 0:
             errorf("ensure_running rc = %s" % rc)
@@ -458,7 +418,7 @@ def download_validate_unseal_data( config, url ):
         log.error("Failed to read JSON, rc = %s" % rc)
         return None 
     
-    rc, data_str = unseal_observer_data( config['observer_secret'], sealed_data_str )
+    rc, data_str = unseal_observer_data( config['slice_secret'], sealed_data_str )
     if rc != 0:
        log.error("Failed to unseal data, rc = %s" % rc)
        return None
@@ -794,11 +754,12 @@ def instantiate_and_run( gateway_type, gateway_name, exist_func, run_func ):
    return rc
 
 #-------------------------
-def ensure_running():
+def ensure_running( volume_info ):
    """
-   Once config['runtime'] has been populated,
-   ensure that the gateways to the volume exist,
+   Ensure that the gateways to the volume exist,
    and that they are up and running.
+   
+   volume_info is a dict of {name: dict of {attr: value}}
    """
    
    config = get_config()
@@ -808,11 +769,11 @@ def ensure_running():
       return -errno.ENODATA
    
    
-   observer_secret = config['observer_secret']
+   slice_secret = config['slice_secret']
    mountpoint_dir = config['mountpoint_dir']
    hostname = socket.gethostname()
    
-   for volume_name, volume_config in config['runtime'].items():
+   for volume_name, volume_config in volume_info.items():
       if volume_config is None:
          continue
       
@@ -823,14 +784,13 @@ def ensure_running():
          user_pkey_pem = volume_config[ OPENCLOUD_VOLUME_USER_PKEY_PEM ]
       except:
          log.error("Invalid configuration for Volume %s" % volume_name)
-         remove_volume_runtime( volume_name )
          continue
       
       UG_name = provisioning.make_gateway_name( "OpenCloud", "UG", volume_name, hostname )
       RG_name = provisioning.make_gateway_name( "OpenCloud", "RG", volume_name, "localhost" )
       
-      UG_key_password = provisioning.make_gateway_private_key_password( UG_name, observer_secret )
-      RG_key_password = provisioning.make_gateway_private_key_password( RG_name, observer_secret )
+      UG_key_password = provisioning.make_gateway_private_key_password( UG_name, slice_secret )
+      RG_key_password = provisioning.make_gateway_private_key_password( RG_name, slice_secret )
       
       UG_mountpoint_path = make_UG_mountpoint_path( mountpoint_dir, volume_name )
       
@@ -888,7 +848,7 @@ def validate_config( config ):
       log.setLevel( logging.DEBUG )
       
    # required arguments
-   required = ['observer_secret', 'observer_url', 'public_key']
+   required = ['slice_secret', 'observer_url', 'public_key']
    for req in required:
       if config.get( req, None ) == None:
          print >> sys.stderr, "Missing required argument: %s" % req
@@ -940,6 +900,8 @@ class PollThread( threading.Thread ):
          log.error("Failed to poll volume list")
          return False 
       
+      all_volume_data = {}
+      
       for volume in volumes:
          volume_data = poll_opencloud_volume_data( config, volume )
          
@@ -948,10 +910,14 @@ class PollThread( threading.Thread ):
             continue
             
          else:
-            update_volume_runtime( volume_data )
+            try:
+               all_volume_data[ volume_data['volume_name'] ] = volume_data
+            except:
+               log.error("Malformed volume data")
+               continue 
       
       # act on the data 
-      rc = ensure_running()
+      rc = ensure_running( all_volume_data )
       if rc != 0:
          log.error("ensure_running rc = %s" % rc)
          return False
