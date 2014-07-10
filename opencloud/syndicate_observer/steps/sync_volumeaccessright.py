@@ -32,7 +32,7 @@ if __name__ != "__main__":
     else:
         logger.warning("No OPENCLOUD_PYTHONPATH set; assuming your PYTHONPATH works")
 
-from syndicate.models import VolumeAccessRight
+from syndicate_service.models import VolumeAccessRight
 
 # syndicatelib will be in stes/..
 parentdir = os.path.join(os.path.dirname(__file__),"..")
@@ -57,8 +57,8 @@ class SyncVolumeAccessRight(SyncStep):
         config = syndicatelib.get_config()
         user_email = vac.owner_id.email
         volume_name = vac.volume.name
-        syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( vac.gateway_caps ) 
-            
+        syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( vac.cap_read, vac.cap_write, vac.cap_host ) 
+        
         # validate config
         try:
            RG_port = config.SYNDICATE_RG_DEFAULT_PORT

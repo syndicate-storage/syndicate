@@ -26,7 +26,7 @@ if __name__ != "__main__":
         logger.warning("No OPENCLOUD_PYTHONPATH set; assuming your PYTHONPATH works") 
         
 
-from syndicate.models import VolumeAccessRight
+from syndicate_service.models import VolumeAccessRight
 from observer.deleter import Deleter
 
 from django.forms.models import model_to_dict

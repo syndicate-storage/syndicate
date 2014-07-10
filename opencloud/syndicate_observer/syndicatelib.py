@@ -9,8 +9,8 @@ import random
 import json
 import time
 import requests
-import traceback 
-import base64 
+import traceback
+import base64
 import BaseHTTPServer
 import setproctitle
 import threading
@@ -29,22 +29,8 @@ logger.setLevel( logging.INFO )
 # get config package 
 import syndicatelib_config.config as CONFIG
 
-if hasattr( CONFIG, "SYNDICATE_PYTHONPATH" ):
-    os.environ.setdefault("SYNDICATE_PYTHONPATH", CONFIG.SYNDICATE_PYTHONPATH)
-
-# get core syndicate modules, but to do so, we'll have to look in the right place
-# (i.e. don't import the Django models package)
-inserted = False
-if os.getenv("SYNDICATE_PYTHONPATH") is not None:
-    sys.path.insert(0, os.getenv("SYNDICATE_PYTHONPATH") )
-    inserted = True
-else:
-    logger.warning("No SYNDICATE_PYTHONPATH set.  Assuming Syndicate is in your PYTHONPATH")
-
-
 # get the Syndicate modules
-import syndicate 
-syndicate = reload(syndicate)
+import syndicate
 
 import syndicate.client.bin.syntool as syntool
 import syndicate.client.common.msconfig as msconfig
@@ -60,39 +46,37 @@ from django.core.exceptions import ObjectDoesNotExist
 
 # for testing 
 class FakeObject(object):
-    def __init__(self):
-        pass
-
-# now, find the Django Syndicate models (also in a package called "syndicate")
-if inserted:
-    sys.path.pop(0)
+   def __init__(self):
+       pass
 
 if os.getenv("OPENCLOUD_PYTHONPATH") is not None:
-    sys.path.insert(0, os.getenv("OPENCLOUD_PYTHONPATH"))
+   sys.path.insert(0, os.getenv("OPENCLOUD_PYTHONPATH"))
 else:
-    logger.warning("No OPENCLOUD_PYTHONPATH set.  Assuming Syndicate models are in your PYTHONPATH")
+   logger.warning("No OPENCLOUD_PYTHONPATH set.  Assuming Syndicate models are in your PYTHONPATH")
 
 try:
    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "planetstack.settings")
 
    # get our models
-   import syndicate 
-   syndicate = reload(syndicate)
+   import syndicate_service.models as models
 
-   import syndicate.models as models
-   
    # get OpenCloud models 
    from core.models import Slice,Sliver
-   
+
 except ImportError, ie:
    logger.warning("Failed to import models; assming testing environment")
-   
+
    # create a fake "models" package that has exactly the members we need for testing.
    models = FakeObject()
    models.Volume = FakeObject()
    models.Volume.CAP_READ_DATA = 1
    models.Volume.CAP_WRITE_DATA = 2
    models.Volume.CAP_HOST_DATA = 4
+
+
+#-------------------------------
+class SyndicateObserverError( Exception ):
+    pass
 
 #-------------------------------
 def get_config():
@@ -137,21 +121,17 @@ def connect_syndicate( username=CONFIG.SYNDICATE_OPENCLOUD_USER, password=CONFIG
 
 
 #-------------------------------
-def opencloud_caps_to_syndicate_caps( caps ):
+def opencloud_caps_to_syndicate_caps( cap_read, cap_write, cap_host ):
     """
     Convert OpenCloud capability bits from the UI into Syndicate's capability bits.
     """
-    OPENCLOUD_CAP_READ = 1
-    OPENCLOUD_CAP_WRITE = 2
-    OPENCLOUD_CAP_HOST = 4
-
     syn_caps = 0
     
-    if (caps & models.Volume.CAP_READ_DATA) != 0:
+    if cap_read:
         syn_caps |= (msconfig.GATEWAY_CAP_READ_DATA | msconfig.GATEWAY_CAP_READ_METADATA)
-    if (caps & models.Volume.CAP_WRITE_DATA) != 0:
+    if cap_write:
         syn_caps |= (msconfig.GATEWAY_CAP_WRITE_DATA | msconfig.GATEWAY_CAP_WRITE_METADATA)
-    if (caps & models.Volume.CAP_HOST_DATA) != 0:
+    if cap_host:
         syn_caps |= (msconfig.GATEWAY_CAP_COORDINATE)
 
     return syn_caps
@@ -244,7 +224,7 @@ def ensure_volume_exists( user_email, opencloud_volume, user=None ):
         vol_description = opencloud_volume.description
         vol_private = opencloud_volume.private
         vol_archive = opencloud_volume.archive 
-        vol_default_gateway_caps = opencloud_caps_to_syndicate_caps( opencloud_volume.default_gateway_caps )
+        vol_default_gateway_caps = opencloud_caps_to_syndicate_caps( opencloud_volume.cap_read, opencloud_volume.cap_write, opencloud_volume.cap_host )
 
         try:
             vol_info = client.create_volume( user_email, vol_name, vol_description, vol_blocksize,
@@ -308,7 +288,7 @@ def update_volume( opencloud_volume ):
     vol_description = opencloud_volume.description
     vol_private = opencloud_volume.private
     vol_archive = opencloud_volume.archive
-    vol_default_gateway_caps = opencloud_caps_to_syndicate_caps( opencloud_volume.default_gateway_caps )
+    vol_default_gateway_caps = opencloud_caps_to_syndicate_caps( opencloud_volume.cap_read, opencloud_volume.cap_write, opencloud_volume.cap_host )
 
     try:
         rc = client.update_volume( vol_name,
@@ -348,7 +328,7 @@ def ensure_volume_access_right_absent( user_email, volume_name ):
     
 
 #-------------------------------
-def setup_volume_access( user_email, volume_name, caps, RG_port, observer_secret, RG_closure=None ):
+def setup_volume_access( user_email, volume_name, caps, RG_port, slice_secret, RG_closure=None ):
     """
     Set up the Volume to allow the slice to provision UGs in it, and to fire up RGs.
        * create the Volume Access Right for the user, so (s)he can create Gateways.
@@ -365,7 +345,7 @@ def setup_volume_access( user_email, volume_name, caps, RG_port, observer_secret
        return False
     
     RG_name = syndicate_provisioning.make_gateway_name( "OpenCloud", "RG", volume_name, "localhost" )
-    RG_key_password = syndicate_provisioning.make_gateway_private_key_password( RG_name, observer_secret )
+    RG_key_password = syndicate_provisioning.make_gateway_private_key_password( RG_name, slice_secret )
     
     try:
        rc = syndicate_provisioning.ensure_RG_exists( client, user_email, volume_name, RG_name, "localhost", RG_port, RG_key_password, closure=RG_closure )
@@ -397,7 +377,7 @@ def teardown_volume_access( user_email, volume_name ):
     
 
 #-------------------------------
-def create_sealed_and_signed_blob( private_key_pem, shared_secret, data ):
+def create_sealed_and_signed_blob( private_key_pem, secret, data ):
     """
     Create a sealed and signed message.
     """
@@ -405,9 +385,9 @@ def create_sealed_and_signed_blob( private_key_pem, shared_secret, data ):
     # seal it with the password 
     logger.info("Sealing credential data")
     
-    rc, sealed_data = c_syndicate.password_seal( data, shared_secret )
+    rc, sealed_data = c_syndicate.password_seal( data, secret )
     if rc != 0:
-       logger.error("Failed to seal data with the OpenCloud secret, rc = %s" % rc)
+       logger.error("Failed to seal data with the secret, rc = %s" % rc)
        return None
     
     msg = syndicate_crypto.sign_and_serialize_json( private_key_pem, sealed_data )
@@ -419,7 +399,7 @@ def create_sealed_and_signed_blob( private_key_pem, shared_secret, data ):
 
 
 #-------------------------------
-def verify_and_unseal_blob( public_key_pem, shared_secret, blob_data ):
+def verify_and_unseal_blob( public_key_pem, secret, blob_data ):
     """
     verify and unseal a serialized string of JSON
     """
@@ -432,7 +412,7 @@ def verify_and_unseal_blob( public_key_pem, shared_secret, blob_data ):
 
     logger.info("Unsealing credential data")
 
-    rc, data = c_syndicate.password_unseal( sealed_data, shared_secret )
+    rc, data = c_syndicate.password_unseal( sealed_data, secret )
     if rc != 0:
         logger.error("Failed to unseal blob, rc = %s" % rc )
         return None
@@ -441,7 +421,7 @@ def verify_and_unseal_blob( public_key_pem, shared_secret, blob_data ):
 
 
 #-------------------------------
-def create_volume_list_blob( private_key_pem, shared_secret, volume_list ):
+def create_volume_list_blob( private_key_pem, slice_secret, volume_list ):
     """
     Create a sealed volume list, signed with the private key.
     """
@@ -451,7 +431,7 @@ def create_volume_list_blob( private_key_pem, shared_secret, volume_list ):
     
     list_data_str = json.dumps( list_data )
     
-    msg = create_sealed_and_signed_blob( private_key_pem, shared_secret, list_data_str )
+    msg = create_sealed_and_signed_blob( private_key_pem, slice_secret, list_data_str )
     if msg is None:
        logger.error("Failed to seal volume list")
        return None 
@@ -460,9 +440,9 @@ def create_volume_list_blob( private_key_pem, shared_secret, volume_list ):
  
 
 #-------------------------------
-def create_credential_blob( private_key_pem, shared_secret, syndicate_url, volume_name, volume_owner, UG_port, user_pkey_pem ):
+def create_slice_credential_blob( private_key_pem, slice_secret, syndicate_url, volume_name, volume_owner, UG_port, user_pkey_pem ):
     """
-    Create a sealed, signed, encoded credentials blob.
+    Create a sealed, signed, encoded slice credentials blob.
     """
     
     # create and serialize the data 
@@ -476,7 +456,7 @@ def create_credential_blob( private_key_pem, shared_secret, syndicate_url, volum
     
     cred_data_str = json.dumps( cred_data )
     
-    msg = create_sealed_and_signed_blob( private_key_pem, shared_secret, cred_data_str )
+    msg = create_sealed_and_signed_blob( private_key_pem, slice_secret, cred_data_str )
     if msg is None:
        logger.error("Failed to seal volume list")
        return None 
@@ -535,19 +515,147 @@ def get_syndicate_principal_pkey( user_email, observer_secret ):
 
 
 #-------------------------------
-def generate_slice_credentials( observer_pkey_path, syndicate_url, user_email, volume_name, observer_secret, UG_port, existing_user=None ):
+def get_private_key_pem( pkey_path ):
     """
-    Generate and return the set of credentials to be sent off to the slice VMs.
-    Return None on failure
+    Get a private key from storage, PEM-encoded.
     """
     
     # get the OpenCloud private key 
-    observer_pkey = syndicate_storage.read_private_key( observer_pkey_path )
+    observer_pkey = syndicate_storage.read_private_key( pkey_path )
     if observer_pkey is None:
        logger.error("Failed to load Observer private key")
-       return None 
+       return None
     
     observer_pkey_pem = observer_pkey.exportKey()
+    
+    return observer_pkey_pem
+
+
+#-------------------------------
+def encrypt_slice_secret( observer_pkey_pem, slice_secret ):
+    """
+    Encrypt and serialize the slice secret with the Observer private key
+    """
+    
+    # get the public key
+    try:
+       observer_pubkey_pem = CryptoKey.importKey( observer_pkey_pem ).publickey().exportKey()
+    except Exception, e:
+       logger.exception(e)
+       logger.error("Failed to derive public key from private key")
+       return None 
+    
+    # encrypt the data 
+    rc, sealed_slice_secret = c_syndicate.encrypt_data( observer_pkey_pem, observer_pubkey_pem, slice_secret )
+    
+    if rc != 0:
+       logger.error("Failed to encrypt slice secret")
+       return None 
+    
+    sealed_slice_secret_b64 = base64.b64encode( sealed_slice_secret )
+    
+    return sealed_slice_secret_b64
+    
+
+#-------------------------------
+def decrypt_slice_secret( observer_pkey_pem, sealed_slice_secret_b64 ):
+    """
+    Unserialize and decrypt a slice secret
+    """
+        
+    # get the public key
+    try:
+       observer_pubkey_pem = CryptoKey.importKey( observer_pkey_pem ).publickey().exportKey()
+    except Exception, e:
+       logger.exception(e)
+       logger.error("Failed to derive public key from private key")
+       return None 
+    
+    sealed_slice_secret = base64.b64decode( sealed_slice_secret_b64 )
+    
+    # decrypt it 
+    rc, slice_secret = c_syndicate.decrypt_data( observer_pubkey_pem, observer_pkey_pem, sealed_slice_secret )
+    
+    if rc != 0:
+       return None
+    
+    return slice_secret
+ 
+
+#--------------------------------
+def get_slice_secret( observer_pkey_pem, slice_name, slice_fk=None ):
+    """
+    Get the shared secret for a slice.
+    """
+    
+    ss = None 
+    
+    # get the sealed slice secret from Django
+    try:
+       if slice_fk is not None:
+          ss = models.SliceSecret.objects.get( slice_id=slice_fk )
+       else:
+          ss = models.SliceSecret.objects.get( name=slice_name )
+    except ObjectDoesNotExist, e:
+       logger.error("Failed to load slice secret for (%s, %s)" % (slice_fk, slice_name) )
+       return None 
+
+    return ss.slice_secret 
+ 
+#-------------------------------
+def put_slice_secret( observer_pkey_pem, slice_name, slice_secret, slice_fk=None, opencloud_slice=None ):
+    """
+    Put the shared secret for a slice, encrypting it first.
+    """
+    
+    ss = None 
+    
+    if opencloud_slice is None:
+       # look up the slice 
+       try:
+          if slice_fk is None:
+             opencloud_slice = models.Slice.objects.get( name=slice_name )
+          else:
+             opencloud_slice = models.Slice.objects.get( id=slice_fk.id )
+       except Exception, e:
+          logger.exception(e)
+          logger.error("Failed to load slice (%s, %s)" % (slice_fk, slice_name) )
+          return False 
+    
+    ss = models.SliceSecret( slice_id=opencloud_slice, secret=slice_secret )
+    ss.save()
+    
+    return True
+
+
+#-------------------------------
+def get_or_create_slice_secret( observer_pkey_pem, slice_name, slice_fk=None ):
+   """
+   Get a slice secret if it already exists, or generate a slice secret if one does not.
+   """
+   
+   slice_secret = get_slice_secret( observer_pkey_pem, slice_name, slice_fk=slice_fk )
+   if slice_secret is None:
+      
+      # generate a slice secret 
+      slice_secret = "".join( random.sample("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 32) )
+      
+      # store it 
+      rc = put_slice_secret( observer_pkey_pem, slice_name, slice_secret, slice_fk=slice_fk )
+      
+      if not rc:
+         raise SyndicateObserverError("Failed to create slice secret for (%s, %s)" % (slice_fk, slice_name))
+      
+   return slice_secret
+
+
+#-------------------------------
+def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, UG_port, existing_user=None ):
+    """
+    Generate and return the set of credentials to be sent off to the slice VMs.
+    
+    Return None on failure
+    """
     
     # get the user's private key 
     logger.info("Obtaining private key for %s" % user_email)
@@ -572,7 +680,7 @@ def generate_slice_credentials( observer_pkey_path, syndicate_url, user_email, v
     # generate a credetials blob 
     logger.info("Generating credentials for %s's slice" % (user_email))
     try:
-       creds = create_credential_blob( observer_pkey_pem, observer_secret, syndicate_url, volume_name, user_email, UG_port, user_pkey_pem )
+       creds = create_slice_credential_blob( observer_pkey_pem, slice_secret, syndicate_url, volume_name, user_email, UG_port, user_pkey_pem )
        assert creds is not None, "Failed to create credentials for %s" % user_email 
     
     except:
@@ -634,7 +742,7 @@ def do_push( sliver_hosts, portnum, payload ):
     # fan-out 
     requests = []
     for sh in sliver_hosts:
-      rs = grequests.post( sh + ":" + str(portnum) ), data={"observer_message": payload} )
+      rs = grequests.post( sh + ":" + str(portnum), data={"observer_message": payload} )
       requests.append( rs )
       
     # fan-in
@@ -779,8 +887,19 @@ class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
             # nothing to do...
             return None
          else:
-            # seal and sign 
-            ret = create_volume_list_blob( private_key_pem, observer_secret, volume_names )
+            # get the slice secret
+            
+            # get the slice secret 
+            slice_secret = get_slice_secret( private_key_pem, slice_name )
+            
+            if slice_secret is None:
+               # no such slice 
+               logger.error("No slice secret for %s" % slice_name)
+               ret = None
+            
+            else:
+               # seal and sign 
+               ret = create_volume_list_blob( private_key_pem, slice_secret, volume_names )
          
          self.cached_volumes_json_lock.acquire()
          
@@ -850,7 +969,7 @@ def poll_server_spawn( old_exit_status ):
    """
    
    setproctitle.setproctitle( "syndicate-pollserver" )
-      
+   
    private_key = syndicate_storage.read_private_key( CONFIG.SYNDICATE_PRIVATE_KEY )
    if private_key is None:
       # exit code 255 will be ignored...

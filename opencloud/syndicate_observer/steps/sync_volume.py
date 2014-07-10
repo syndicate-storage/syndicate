@@ -19,7 +19,7 @@ from django.db.models import F, Q
 from planetstack.config import Config
 from observer.syncstep import SyncStep
 from core.models import Service
-from syndicate.models import Volume
+from syndicate_service.models import Volume
 
 import logging
 from logging import Logger
