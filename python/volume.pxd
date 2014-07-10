@@ -118,7 +118,7 @@ cdef extern from "fs/fs_entry.h":
    uint64_t fs_dir_entry_size( fs_dir_entry* dirent )
 
 # ------------------------------------------
-cdef extern from "state.h":
+cdef extern from "syndicate.h":
    cdef struct syndicate_state:
       pass
 
