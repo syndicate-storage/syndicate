@@ -770,6 +770,11 @@ class Volume( StubObject ):
       """
       Parse a binary closure for allowing the Volume's UGs to connect to the cache providers
       """
+      
+      if closure_dir is None:
+         # nothing to do 
+         return "{}", {}
+         
       # extract volume name and storage lib
       try:
          volume_name = lib.volume_name
@@ -1097,6 +1102,10 @@ class Gateway( StubObject ):
        * storage API
       """
       
+      if gateway_closure_path is None:
+         # no closure 
+         return "{}", {}
+      
       if cls.is_wellformed_RG_closure( gateway_closure_path ):
          return cls.parse_RG_closure( gateway_closure_path, lib )
       
@@ -1115,6 +1124,10 @@ class Gateway( StubObject ):
       Load a UG binary driver, its config, and its secrets.
       Generate a JSON string containing them all.
       """
+      
+      if gateway_closure_path is None:
+         # nothing to do 
+         return "{}", {}
       
       try:
          gateway_name = lib.gateway_name
@@ -1147,6 +1160,10 @@ class Gateway( StubObject ):
       Load an AG binary driver, as well as its config, secrets, and spec file.
       Generate a JSON string containing them all.
       """
+      
+      if gateway_closure_path is None:
+         # nothing to do 
+         return "{}", {}
       
       # get library data
       try:
@@ -1190,6 +1207,9 @@ class Gateway( StubObject ):
        * config
        * storage API
       """
+      
+      if gateway_closure_path is None:
+         return "{}", {}
       
       try:
          import syndicate.rg.closure as rg_closure

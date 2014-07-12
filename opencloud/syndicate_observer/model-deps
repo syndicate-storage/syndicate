@@ -1,4 +1,8 @@
 {
+    "SlicePrivilege": [
+        "User", 
+        "Slice"
+    ], 
     "Slice": [
         "Site", 
         "Service"

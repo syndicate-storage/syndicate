@@ -16,8 +16,8 @@ from django.core.exceptions import ValidationError, ObjectDoesNotExist
 
 class SyndicateServiceAdmin(SingletonAdmin,ReadOnlyAwareAdmin):
     model = SyndicateService
-    verbose_name = "Syndicate Service"
-    verbose_name_plural = "Syndicate Service"
+    verbose_name = "Syndicate Storage"
+    verbose_name_plural = "Syndicate Storage"
     list_display = ("name","enabled")
     fieldsets = [(None, {'fields': ['name','enabled','versionNumber', 'description',], 'classes':['suit-tab suit-tab-general']})]
     inlines = [SliceInline,ServiceAttrAsTabInline]
@@ -25,7 +25,7 @@ class SyndicateServiceAdmin(SingletonAdmin,ReadOnlyAwareAdmin):
     user_readonly_fields = ['name','enabled','versionNumber','description']
     user_readonly_inlines = [SliceROInline, ServiceAttrAsTabROInline]
 
-    suit_form_tabs =(('general', 'Syndicate Service Details'),
+    suit_form_tabs =(('general', 'Syndicate Storage Details'),
         ('slices','Slices'),
         ('serviceattrs','Additional Attributes'),
     )
@@ -82,10 +82,10 @@ class VolumeSliceFormSet( forms.models.BaseInlineFormSet ):
             slice_pk = cleaned_data['slice_id'].pk
            
             if not cleaned_data.has_key('UG_portnum'):
-                raise ValidationError("Missing client peer-to-peer cache port number")
+                raise ValidationError("Missing UG port number")
 
             if not cleaned_data.has_key('RG_portnum'):
-                raise ValidationError("Missing replication service port number")
+                raise ValidationError("Missing RG port number")
 
             rc1, old_peer_port = VolumeSliceFormSet.verify_unchanged( volume_pk, slice_pk, 'UG_portnum', cleaned_data['UG_portnum'] )
             rc2, old_replicate_port = VolumeSliceFormSet.verify_unchanged( volume_pk, slice_pk, 'RG_portnum', cleaned_data['RG_portnum'] )
@@ -98,7 +98,7 @@ class VolumeSliceFormSet( forms.models.BaseInlineFormSet ):
                 err2str = " and change %s back to %s" % (cleaned_data['RG_portnum'], old_replicate_port )
 
             if not rc1 or not rc2:
-                raise ValidationError("Port numbers cannot be changed once they are set. Please %s %s" % (err1str, err2str))
+                raise ValidationError("At this time, port numbers cannot be changed once they are set. Please %s %s" % (err1str, err2str))
             
             
 

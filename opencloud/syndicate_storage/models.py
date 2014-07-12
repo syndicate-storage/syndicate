@@ -86,11 +86,34 @@ class ObserverSecretValue( models.TextField ):
     
     __metaclass__ = models.SubfieldBase
     
-    def to_python( self, sealed_slice_secret_b64 ):
+    MAGIC_PREFIX = "$SECRET$:"
+    
+    @classmethod 
+    def is_encrypted( cls, secret_str ):
+       # all encrypted secrets start with MAGIC_PREFIX, which is NOT base64-encoded
+       return secret_str.startswith( cls.MAGIC_PREFIX )
+    
+    @classmethod 
+    def unserialize( cls, serialized_ciphertext ):
+       # strip prefix and return ciphertext 
+       return serialized_ciphertext[len(cls.MAGIC_PREFIX):]
+    
+    @classmethod 
+    def serialize( cls, ciphertext ):
+       # prepend a magic prefix so we know it's encrypted 
+       return cls.MAGIC_PREFIX + ciphertext
+    
+    def to_python( self, secret_str ):
        """
        Decrypt the value with the Observer key
        """
        
+       # is this in the clear?
+       if not ObserverSecretValue.is_encrypted( secret_str ):
+          # nothing to do
+          return secret_str
+       
+       # otherwise, decrypt it
        from syndicate_observer import syndicatelib
        
        # get observer private key
@@ -102,10 +125,19 @@ class ObserverSecretValue( models.TextField ):
        except:
           raise syndicatelib.SyndicateObserverError( "Internal Syndicate Observer error: failed to load Observer private key" )
        
+       # deserialize 
+       secret_str = ObserverSecretValue.unserialize( secret_str )
+       
        # decrypt
-       if sealed_slice_secret_b64 is not None:
-          slice_secret = syndicatelib.decrypt_slice_secret( observer_pkey_pem, sealed_slice_secret_b64 )
-          return slice_secret
+       if secret_str is not None and len(secret_str) > 0:
+          
+          slice_secret = syndicatelib.decrypt_slice_secret( observer_pkey_pem, secret_str )
+          
+          if slice_secret is not None:
+             return slice_secret 
+          
+          else:
+             raise syndicatelib.SyndicateObserverError( "Internal Syndicate Observer error: failed to decrypt slice secret value" )
        else:
           return None
        
@@ -131,14 +163,15 @@ class ObserverSecretValue( models.TextField ):
        if slice_secret is not None:
           
           # encrypt it 
-          sealed_slice_secret_b64 = syndicatelib.encrypt_slice_secret( observer_pkey_pem, slice_secret )
-          return sealed_slice_secret_b64
+          sealed_slice_secret = syndicatelib.encrypt_slice_secret( observer_pkey_pem, slice_secret )
+          
+          return ObserverSecretValue.serialize( sealed_slice_secret )
        
        else:
-          return None
+          raise syndicatelib.SyndicateObserverError( "Internal Syndicate Observer error: No slice secret generated" )
                                                     
 
-class SliceSecret(PlCoreBase):
+class SliceSecret(models.Model):        # NOTE: not a PlCoreBase
     class Meta:
        app_label = "syndicate_storage"
     
@@ -176,7 +209,7 @@ class VolumeSlice(PlCoreBase):
     UG_portnum = models.PositiveIntegerField(help_text="User Gateway port.  Any port above 1024 will work, but it must be available slice-wide.", verbose_name="UG port")
     RG_portnum = models.PositiveIntegerField(help_text="Replica Gateway port.  Any port above 1024 will work, but it must be available slice-wide.", verbose_name="RG port")
     
-    credentials_blob = models.TextField(null=True, blank=True, help_text="Encrypted slice credentials, sealed with the slice-specific secret.")
+    credentials_blob = models.TextField(null=True, blank=True, help_text="Encrypted slice credentials, sealed with the slice secret.")
  
     def __unicode__(self):  return "%s-%s" % (self.volume_id.name, self.slice_id.name)
 

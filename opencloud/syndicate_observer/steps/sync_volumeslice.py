@@ -32,7 +32,7 @@ if __name__ != "__main__":
     else:
         logger.warning("No OPENCLOUD_PYTHONPATH set; assuming your PYTHONPATH works") 
 
-from syndicate_service.models import VolumeSlice,VolumeAccessRight,Volume
+from syndicate_storage.models import VolumeSlice,VolumeAccessRight,Volume
 
 # syndicatelib will be in stes/..
 parentdir = os.path.join(os.path.dirname(__file__),"..")

@@ -50,25 +50,25 @@ import syndicate.util.provisioning as provisioning
 import syndicate.syndicate as c_syndicate
 
 #-------------------------------
-# constants 
+# system constants 
+SYNDICATE_SLICE_SECRET_NAME             = "SYNDICATE_SLICE_SECRET"
+
+#-------------------------------
+# JSON constants 
 OPENCLOUD_JSON                          = "observer_message"
 
 # message for one Volume
 OPENCLOUD_VOLUME_NAME                   = "volume_name"
 OPENCLOUD_VOLUME_OWNER_ID               = "volume_owner"
-OPENCLOUD_VOLUME_PEER_PORT              = "volume_peer_port"
-OPENCLOUD_VOLUME_USER_PKEY_PEM          = "volume_user_pkey_pem"
+OPENCLOUD_SLICE_NAME                    = "slice_name"
+OPENCLOUD_SLICE_UG_PORT                 = "slice_UG_port"
+OPENCLOUD_PRINCIPAL_PKEY_PEM            = "principal_pkey_pem"
 OPENCLOUD_SYNDICATE_URL                 = "syndicate_url"
 
 # binary names
 SYNDICATE_UG_WATCHDOG_NAME              = "syndicate-ug"
 SYNDICATE_RG_WATCHDOG_NAME              = "syndicate-rg"
 SYNDICATE_UG_BINARY_NAME                = "syndicatefs"
-
-# where can we find the watchdogs?
-SYNDICATE_UG_WATCHDOG_PATH              = "/home/jude/Desktop/research/git/syndicate/build/out/bin/UG/syndicate-ug"
-SYNDICATE_RG_WATCHDOG_PATH              = "/home/jude/Desktop/research/git/syndicate/build/out/bin/RG/syndicate-rg"
-SYNDICATE_UG_BINARY_PATH                = "/home/jude/Desktop/research/git/syndicate/build/out/bin/UG/syndicatefs"
 
 #-------------------------------
 CONFIG_OPTIONS = {
@@ -77,6 +77,7 @@ CONFIG_OPTIONS = {
    "logdir":            ("-l", 1, "Directory to contain the log files.  If not given, then write to stdout and stderr."),
    "pidfile":           ("-i", 1, "Path to the desired PID file."),
    "public_key":        ("-p", 1, "Path to the Observer public key."),
+   "slice_name":        ("-S", 1, "Name of the slice."),
    "slice_secret":      ("-s", 1, "Shared secret with Observer for this slice."),
    "observer_url":      ("-u", 1, "URL to the Syndicate Observer"),
    "poll_timeout":      ("-t", 1, "Interval to wait between asking OpenCloud for our Volume credentials."),
@@ -85,7 +86,8 @@ CONFIG_OPTIONS = {
    "debug":             ("-d", 0, "Print debugging information."),
    "run_once":          ("-1", 0, "Poll once (for testing)"),
    "RG_only":           ("-R", 0, "Only start the RG"),
-   "UG_only":           ("-U", 0, "Only start the UG"),
+   "RG_local":          ("-L", 0, "RG instance is private (local) to this host's UGs."),
+   "UG_only":           ("-U", 0, "Only start the UG")
 }
 
 DEFAULT_CONFIG = {
@@ -94,10 +96,11 @@ DEFAULT_CONFIG = {
     "logdir":           "/var/log/syndicated",
     "pidfile":          "/var/run/syndicated.pid",
     "poll_timeout":     43200,          # ask twice a day; the Observer should poke us directly anyway
-    "slice_secret":     None,  
+    "slice_secret":     None,
     "observer_url":     "https://localhost:5553",
     "mountpoint_dir":   "/tmp/syndicate-mounts",
     "port":             5553,
+    "RG_local":         True
 }
 
 """
@@ -129,6 +132,9 @@ DEFAULT_CONFIG = {
 CONFIG = None 
 CONFIG_lock = threading.Lock()
 
+# cached slice secret 
+SLICE_SECRET = None
+
 #-------------------------------
 def get_config():
     # return a duplicate of the global config
@@ -141,6 +147,32 @@ def get_config():
     CONFIG_lock.release()
     
     return config
+ 
+ 
+#------------------------------- 
+def get_cached_slice_secret( config ):
+    # get the locally-cached slice secret 
+    global SLICE_SECRET 
+    
+    return SLICE_SECRET 
+ 
+
+#------------------------------- 
+def get_slice_secret( config ):
+    # obtain the slice secret 
+    observer_url = config['observer_url']
+    
+    slice_secret = download_data( os.path.join( observer_url, config['slice_name'], SYNDICATE_SLICE_SECRET_NAME ) )
+    
+    return slice_secret
+
+
+#-------------------------------
+def cache_slice_secret( config, secret ):
+    # cache the slice secret 
+    global SLICE_SECRET 
+    
+    SLICE_SECRET = secret 
 
 #-------------------------------
 class EnsureRunningThread( threading.Thread ):
@@ -167,9 +199,16 @@ class EnsureRunningThread( threading.Thread ):
          return -errno.EAGAIN
    
       config = get_config()
+      slice_secret = get_cached_slice_secret( config )
+      
+      if slice_secret is None:
+         # no secret on file 
+         cls.processing_lock.release()
+         log.error("No slice secret")
+         return -errno.EAGAIN
       
       # unseal the data 
-      rc, data_text = unseal_observer_data( config['slice_secret'], sealed_data )
+      rc, data_text = unseal_observer_data( slice_secret, sealed_data )
       if rc != 0:
          # failed to read 
          cls.processing_lock.release()
@@ -342,8 +381,8 @@ def parse_observer_data( data_text ):
     required_fields = {
         OPENCLOUD_VOLUME_NAME: [str, unicode],
         OPENCLOUD_VOLUME_OWNER_ID: [str, unicode],
-        OPENCLOUD_VOLUME_PEER_PORT: [int],
-        OPENCLOUD_VOLUME_USER_PKEY_PEM: [str, unicode],
+        OPENCLOUD_SLICE_UG_PORT: [int],
+        OPENCLOUD_PRINCIPAL_PKEY_PEM: [str, unicode],
         OPENCLOUD_SYNDICATE_URL: [str, unicode],
     }
     
@@ -403,9 +442,11 @@ def parse_opencloud_volume_list( data_str ):
 
 
 #-------------------------------
-def download_validate_unseal_data( config, url ):
+def download_data( url ):
     """
-    Download, validate, and unseal the data, given the URL to it.
+    Download some data froma URL.
+    Return the data on success.
+    Return None on failure.
     """
     
     req = requests.get( url )
@@ -413,12 +454,34 @@ def download_validate_unseal_data( config, url ):
         log.error("GET %s status %s" % (url, req.status_code))
         return None
     
-    rc, sealed_data_str = read_observer_data_from_json( config['public_key'], req.text )
+    return req.text
+    
+
+#-------------------------------
+def download_validate_unseal_data( config, url ):
+    """
+    Download, validate, and unseal the data, given the URL to it.
+    """
+    
+    # can't proceed unless we have the slice secret already 
+    
+    slice_secret = get_cached_slice_secret( config )
+    
+    if slice_secret is None:
+        log.error("No slice secret")
+        return None
+    
+    data = download_data( url )
+    if data is None:
+        log.error("Failed to download from %s" % url)
+        return None 
+     
+    rc, sealed_data_str = read_observer_data_from_json( config['public_key'], data )
     if rc != 0:
         log.error("Failed to read JSON, rc = %s" % rc)
         return None 
     
-    rc, data_str = unseal_observer_data( config['slice_secret'], sealed_data_str )
+    rc, data_str = unseal_observer_data( slice_secret, sealed_data_str )
     if rc != 0:
        log.error("Failed to unseal data, rc = %s" % rc)
        return None
@@ -764,14 +827,19 @@ def ensure_running( volume_info ):
    
    config = get_config()
    
-   if not config.has_key('runtime'):
-      log.warning("No runtime information given!")
-      return -errno.ENODATA
+   slice_secret = get_cached_slice_secret( config )
    
+   if slice_secret is None:
+      log.error("No slice secret")
+      return -errno.EAGAIN
    
-   slice_secret = config['slice_secret']
    mountpoint_dir = config['mountpoint_dir']
-   hostname = socket.gethostname()
+   UG_hostname = socket.gethostname()
+   
+   # where do we start the RG?
+   RG_hostname = UG_hostname
+   if config['RG_local']:
+      RG_hostname = "localhost"
    
    for volume_name, volume_config in volume_info.items():
       if volume_config is None:
@@ -780,14 +848,14 @@ def ensure_running( volume_info ):
       try:
          user_email = volume_config[ OPENCLOUD_VOLUME_OWNER_ID ]
          syndicate_url = volume_config[ OPENCLOUD_SYNDICATE_URL ]
-         UG_portnum = volume_config[ OPENCLOUD_VOLUME_PEER_PORT ]
-         user_pkey_pem = volume_config[ OPENCLOUD_VOLUME_USER_PKEY_PEM ]
+         UG_portnum = volume_config[ OPENCLOUD_SLICE_UG_PORT ]
+         user_pkey_pem = volume_config[ OPENCLOUD_PRINCIPAL_PKEY_PEM ]
       except:
          log.error("Invalid configuration for Volume %s" % volume_name)
          continue
       
-      UG_name = provisioning.make_gateway_name( "OpenCloud", "UG", volume_name, hostname )
-      RG_name = provisioning.make_gateway_name( "OpenCloud", "RG", volume_name, "localhost" )
+      UG_name = provisioning.make_gateway_name( "OpenCloud", "UG", volume_name, UG_hostname )
+      RG_name = provisioning.make_gateway_name( "OpenCloud", "RG", volume_name, RG_hostname )
       
       UG_key_password = provisioning.make_gateway_private_key_password( UG_name, slice_secret )
       RG_key_password = provisioning.make_gateway_private_key_password( RG_name, slice_secret )
@@ -795,28 +863,12 @@ def ensure_running( volume_info ):
       UG_mountpoint_path = make_UG_mountpoint_path( mountpoint_dir, volume_name )
       
       if not config['UG_only']:
-         # is the RG running?
+         # is the localhost RG running?
          rc = ensure_RG_running( syndicate_url, user_email, volume_name, RG_name, RG_key_password, user_pkey_pem, check_only=True )
          if rc <= 0:
             log.error("Failed to start RG for %s, rc = %s" % (volume_name, rc))
          else:
             log.info("\n\nRG for %s running on PID %s\n\n" % (volume_name, rc))
-            
-         """
-         if rc <= 0:
-            # NOTE: in OpenCloud, the RG always runs on localhost, so the local UG can always find it.
-            # There is one logical RG, but it is instantiated once per host.
-            rc = instantiate_and_run( "RG", RG_name,
-                                    lambda: provisioning.ensure_RG_exists( client, user_email, volume_name, RG_name, "localhost", RG_portnum, RG_key_password ),
-                                    lambda: ensure_RG_running( syndicate_url, user_email, volume_name, RG_name, RG_key_password, user_pkey_pem ) )
-            
-            if rc < 0:
-               log.error("Failed to instantiate and run RG %s" % UG_name )
-               continue 
-            
-         if rc >= 0:
-            log.info("\n\nRG for %s running on PID %s\n" % (volume_name, rc))
-         """
          
       
       if not config['RG_only']:
@@ -826,8 +878,9 @@ def ensure_running( volume_info ):
          if rc <= 0:
             client = connect_syndicate( syndicate_url, user_email, user_pkey_pem )
             
+            # ensure the UG exists before running it--unlike RGs, we have to instantiate a UG for this particular node
             rc = instantiate_and_run( "UG", UG_name,
-                                    lambda: provisioning.ensure_UG_exists( client, user_email, volume_name, UG_name, hostname, UG_portnum, UG_key_password ),
+                                    lambda: provisioning.ensure_UG_exists( client, user_email, volume_name, UG_name, UG_hostname, UG_portnum, UG_key_password ),
                                     lambda: ensure_UG_running( syndicate_url, user_email, volume_name, UG_name, UG_key_password, UG_mountpoint_path, user_pkey_pem ) )
             
             if rc < 0:
@@ -839,6 +892,7 @@ def ensure_running( volume_info ):
    
    return 0
 
+
 #-------------------------
 def validate_config( config ):
    global DEFAULT_CONFIG
@@ -848,7 +902,7 @@ def validate_config( config ):
       log.setLevel( logging.DEBUG )
       
    # required arguments
-   required = ['slice_secret', 'observer_url', 'public_key']
+   required = ['observer_url', 'public_key']
    for req in required:
       if config.get( req, None ) == None:
          print >> sys.stderr, "Missing required argument: %s" % req
@@ -869,16 +923,13 @@ def validate_config( config ):
             print >> sys.stderr, "Invalid value for '%s'" % req
             return -1
        
-   #either or 
+   # either or 
    if config['UG_only'] and config['RG_only']:
       log.error("Can have UG_only or RG_only, but not both")
       return -1
    
    # fill defaults 
    for def_key, def_value in DEFAULT_CONFIG.items():
-      # skip default runtime 
-      if def_key == "runtime":
-         continue 
       
       if config.get( def_key, None ) is None:
          log.debug("Default: %s = %s" % (def_key, def_value) )
@@ -887,18 +938,38 @@ def validate_config( config ):
          
          
    return 0
-      
+
+
       
 #-------------------------
 class PollThread( threading.Thread ):
    
    @classmethod 
    def poll_data( cls, config ):
+      """
+      Poll the Observer for data.
+      Return (slice_secret, volume_data) on success
+      Return (None, None) on error 
+      """
+      
+      observer_url = config['observer_url']
+      
+      slice_secret = get_cached_slice_secret( config )
+      if slice_secret is None:
+         # obtain the secret 
+         slice_secret = get_slice_secret( config )
+         
+         if slice_secret is None:
+            log.error("Failed to get slice secret")
+            return (None, None)
+         
+         cache_slice_secret( config, slice_secret )
+      
       # get the list of volumes 
       volumes = poll_opencloud_volume_list( config )
       if volumes is None:
          log.error("Failed to poll volume list")
-         return False 
+         return (None, None) 
       
       all_volume_data = {}
       
@@ -920,9 +991,9 @@ class PollThread( threading.Thread ):
       rc = ensure_running( all_volume_data )
       if rc != 0:
          log.error("ensure_running rc = %s" % rc)
-         return False
+         return (None, None)
       else:
-         return True
+         return (slice_secret, all_volume_data)
             
          
    def run(self):
@@ -972,12 +1043,16 @@ def run_once( config ):
    rt.daemon = True
    rt.start()
    
-   PollThread.poll_data( config )
+   slice_secret, all_volume_data = PollThread.poll_data( config )
    
    if config['debug']:
       import pprint 
       pp = pprint.PrettyPrinter()
-      pp.pprint( config )
+      
+      print "Slice secret: %s" % slice_secret
+      print "Volume config:"
+      
+      pp.pprint( all_volume_data )
       
    rt.running = False
 
@@ -1012,12 +1087,26 @@ def main( config ):
 if __name__ == "__main__":
    
    argv = sys.argv
-   config = modconf.build_config( argv, "Syndicate Observer Daemon", "syndicated", CONFIG_OPTIONS, conf_validator=validate_config )
+   config = modconf.build_config( argv, "Syndicate Automount Daemon", "syndicated", CONFIG_OPTIONS, conf_validator=validate_config )
    
    if config is None:
       sys.exit(-1)
    
    CONFIG = config 
+   
+   # obtain the slice secret, if one was not given 
+   if config.has_key('slice_secret') and config['slice_secret'] is not None:
+      cache_slice_secret( config['slice_secret'] )
+   else:
+      log.info("No slice secret given; obtaining...")
+      slice_secret = get_slice_secret( config )
+      
+      if slice_secret is None:
+         log.error("Could not obtain slice secret")
+         sys.exit(1)
+      
+      else:
+         cache_slice_secret( config, slice_secret )
    
    if config['run_once']:
       run_once( config )

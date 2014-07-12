@@ -21,6 +21,7 @@
 import os
 import sys
 import errno
+import random
 import logging
 
 logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
@@ -117,8 +118,8 @@ def ensure_gateway_exists( client, gateway_type, user_email, volume_name, gatewa
 
     else:
         # create the gateway 
-        if 'encryption_key_password' not in gateway_kw:
-           gateway_kw['encryption_key_password'] = key_password
+        if 'encryption_password' not in gateway_kw:
+           gateway_kw['encryption_password'] = key_password
         
         if 'gateway_public_key' not in gateway_kw:
            gateway_kw['gateway_public_key'] = "MAKE_AND_HOST_GATEWAY_KEY"
@@ -175,6 +176,14 @@ def ensure_AG_exists( client, user_email, volume_name, gateway_name, host, port,
 
 
 #-------------------------------
+def _exc_user_exists( exc ):
+    """
+    Given an exception, is it due to the user already existing?
+    NOTE: this is a bit hacky
+    """
+    return ("User" in exc.message) and ("already exists" in exc.message)
+
+#-------------------------------
 def _create_and_activate_user( client, user_email, user_openid_url, user_activate_pw, **user_kw ):
     """
     Create, and then activate a Syndicate user account,
@@ -190,8 +199,8 @@ def _create_and_activate_user( client, user_email, user_openid_url, user_activat
         new_user = client.create_user( user_email, user_openid_url, user_activate_pw, **user_kw )
     except Exception, e:
         # transport error, or the user already exists (rare, but possible)
-        logger.exception(e)
-        if not exc_user_exists( e ):
+        log.exception(e)
+        if not _exc_user_exists( e ):
             # not because the user didn't exist already, but due to something more serious
             raise e
         else:
@@ -204,7 +213,7 @@ def _create_and_activate_user( client, user_email, user_openid_url, user_activat
     else:
         # activate the user.
         # first, generate a keypar 
-        logger.info("Generating %s-bit key pair for %s" % (msconfig.OBJECT_KEY_SIZE, user_email))
+        log.info("Generating %s-bit key pair for %s" % (msconfig.OBJECT_KEY_SIZE, user_email))
         pubkey_pem, privkey_pem = api.generate_key_pair( msconfig.OBJECT_KEY_SIZE )
         
         # then, activate the account with the keypair
@@ -212,7 +221,7 @@ def _create_and_activate_user( client, user_email, user_openid_url, user_activat
             activate_rc = client.register_account( user_email, user_activate_pw, signing_public_key=pubkey_pem )
         except Exception, e:
             # transport error, or the user diesn't exist (rare, but possible)
-            logger.exception(e)
+            log.exception(e)
             raise e
             
         else:
@@ -239,7 +248,7 @@ def ensure_user_exists( client, user_email, user_openid_url, **user_kw ):
         user = client.read_user( user_email )    
     except Exception, e:
         # transport error
-        logger.exception(e)
+        log.exception(e)
         raise e
 
     if user is None:

@@ -42,8 +42,6 @@ import syndicate.util.crypto as syndicate_crypto
 import syndicate.util.provisioning as syndicate_provisioning
 import syndicate.syndicate as c_syndicate
 
-from django.core.exceptions import ObjectDoesNotExist
-
 # for testing 
 class FakeObject(object):
    def __init__(self):
@@ -58,13 +56,15 @@ try:
    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "planetstack.settings")
 
    # get our models
-   import syndicate_service.models as models
+   import syndicate_storage.models as models
 
    # get OpenCloud models 
    from core.models import Slice,Sliver
+   
+   from django.core.exceptions import ObjectDoesNotExist
 
 except ImportError, ie:
-   logger.warning("Failed to import models; assming testing environment")
+   logger.warning("Failed to import models; some tests will not work")
 
    # create a fake "models" package that has exactly the members we need for testing.
    models = FakeObject()
@@ -92,15 +92,6 @@ def make_openid_url( email ):
     Generate an OpenID identity URL from an email address.
     """
     return os.path.join( CONFIG.SYNDICATE_OPENID_TRUSTROOT, "id", email )
-
-
-#-------------------------------
-def exc_user_exists( exc ):
-    """
-    Given an exception, is it due to the user already existing?
-    NOTE: this is a bit hacky
-    """
-    return ("User" in exc.message) and ("already exists" in exc.message)
 
 
 #-------------------------------
@@ -150,7 +141,7 @@ def ensure_user_exists( user_email, **user_kw ):
     client = connect_syndicate()
     user_openid_url = make_openid_url( user_email )
     
-    return provisioning.ensure_user_exists( client, user_email, user_openid_url, **user_kw )
+    return syndicate_provisioning.ensure_user_exists( client, user_email, user_openid_url, **user_kw )
 
 
 #-------------------------------
@@ -224,7 +215,7 @@ def ensure_volume_exists( user_email, opencloud_volume, user=None ):
         vol_description = opencloud_volume.description
         vol_private = opencloud_volume.private
         vol_archive = opencloud_volume.archive 
-        vol_default_gateway_caps = opencloud_caps_to_syndicate_caps( opencloud_volume.cap_read, opencloud_volume.cap_write, opencloud_volume.cap_host )
+        vol_default_gateway_caps = opencloud_caps_to_syndicate_caps( opencloud_volume.cap_read_data, opencloud_volume.cap_write_data, opencloud_volume.cap_host_data )
 
         try:
             vol_info = client.create_volume( user_email, vol_name, vol_description, vol_blocksize,
@@ -288,7 +279,7 @@ def update_volume( opencloud_volume ):
     vol_description = opencloud_volume.description
     vol_private = opencloud_volume.private
     vol_archive = opencloud_volume.archive
-    vol_default_gateway_caps = opencloud_caps_to_syndicate_caps( opencloud_volume.cap_read, opencloud_volume.cap_write, opencloud_volume.cap_host )
+    vol_default_gateway_caps = opencloud_caps_to_syndicate_caps( opencloud_volume.cap_read_data, opencloud_volume.cap_write_data, opencloud_volume.cap_host_data )
 
     try:
         rc = client.update_volume( vol_name,
@@ -355,6 +346,7 @@ def setup_volume_access( user_email, volume_name, caps, RG_port, slice_secret, R
     
     return True
        
+
 #-------------------------------
 def teardown_volume_access( user_email, volume_name ):
     """
@@ -440,7 +432,7 @@ def create_volume_list_blob( private_key_pem, slice_secret, volume_list ):
  
 
 #-------------------------------
-def create_slice_credential_blob( private_key_pem, slice_secret, syndicate_url, volume_name, volume_owner, UG_port, user_pkey_pem ):
+def create_slice_credential_blob( private_key_pem, slice_name, slice_secret, syndicate_url, volume_name, volume_owner, UG_port, user_pkey_pem ):
     """
     Create a sealed, signed, encoded slice credentials blob.
     """
@@ -450,8 +442,9 @@ def create_slice_credential_blob( private_key_pem, slice_secret, syndicate_url, 
        "syndicate_url":   syndicate_url,
        "volume_name":     volume_name,
        "volume_owner":    volume_owner,
-       "volume_peer_port": UG_port,
-       "volume_user_pkey_pem": user_pkey_pem,
+       "slice_name":      slice_name,
+       "slice_UG_port":   UG_port,
+       "principal_pkey_pem": user_pkey_pem,
     }
     
     cred_data_str = json.dumps( cred_data )
@@ -491,18 +484,33 @@ def delete_syndicate_principal( user_email ):
     
     return True
 
+
+#-------------------------------
+def get_syndicate_principal( user_email ):
+    """
+    Get a Syndicate principal from the database 
+    """
+    
+    try:
+        sp = models.SyndicatePrincipal.objects.get( principal_id=user_email )
+        return sp
+    except ObjectDoesNotExist:
+        logger.error("No SyndicatePrincipal record for %s" % user_email)
+        return None
+    
+
+
 #-------------------------------
 def get_syndicate_principal_pkey( user_email, observer_secret ):
     """
     Fetch and unseal the private key of a SyndicatePrincipal.
     """
-
-    try:
-        sp = models.SyndicatePrincipal.objects.get( principal_id=user_email )
-    except ObjectDoesNotExist:
-        logger.error("No SyndicatePrincipal record for %s" % user_email)
-        return None
-
+    
+    sp = get_syndicate_principal( user_email )
+    if sp is None:
+        logger.error("Failed to find private key for principal %s" % user_email )
+        return None 
+     
     public_key_pem = sp.public_key_pem
     sealed_private_key_pem = sp.sealed_private_key
 
@@ -577,6 +585,7 @@ def decrypt_slice_secret( observer_pkey_pem, sealed_slice_secret_b64 ):
     rc, slice_secret = c_syndicate.decrypt_data( observer_pubkey_pem, observer_pkey_pem, sealed_slice_secret )
     
     if rc != 0:
+       logging.error("Failed to decrypt '%s', rc = %d" % (sealed_slice_secret_b64, rc))
        return None
     
     return slice_secret
@@ -602,6 +611,7 @@ def get_slice_secret( observer_pkey_pem, slice_name, slice_fk=None ):
 
     return ss.slice_secret 
  
+
 #-------------------------------
 def put_slice_secret( observer_pkey_pem, slice_name, slice_secret, slice_fk=None, opencloud_slice=None ):
     """
@@ -623,6 +633,7 @@ def put_slice_secret( observer_pkey_pem, slice_name, slice_secret, slice_fk=None
           return False 
     
     ss = models.SliceSecret( slice_id=opencloud_slice, secret=slice_secret )
+    
     ss.save()
     
     return True
@@ -635,7 +646,7 @@ def get_or_create_slice_secret( observer_pkey_pem, slice_name, slice_fk=None ):
    """
    
    slice_secret = get_slice_secret( observer_pkey_pem, slice_name, slice_fk=slice_fk )
-   if slice_secret is None:
+   if slice_secret is None or len(slice_secret) == 0:
       
       # generate a slice secret 
       slice_secret = "".join( random.sample("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 32) )
@@ -680,7 +691,7 @@ def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, vo
     # generate a credetials blob 
     logger.info("Generating credentials for %s's slice" % (user_email))
     try:
-       creds = create_slice_credential_blob( observer_pkey_pem, slice_secret, syndicate_url, volume_name, user_email, UG_port, user_pkey_pem )
+       creds = create_slice_credential_blob( observer_pkey_pem, slice_name, slice_secret, syndicate_url, volume_name, user_email, UG_port, user_pkey_pem )
        assert creds is not None, "Failed to create credentials for %s" % user_email 
     
     except:
@@ -803,8 +814,9 @@ class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
    server allows them to do just that.
    
    Responses:
-      GET /<slicename>              -- Reply with the signed sealed list of volume names
-      GET /<slicename>/<volumename> -- Reply with the signed sealed volume access credentials
+      GET /<slicename>              -- Reply with the signed sealed list of volume names, encrypted by the slice secret
+      GET /<slicename>/<volumename> -- Reply with the signed sealed volume access credentials, encrypted by the slice secret
+      GET /<slicename>/SYNDICATE_SLICE_SECRET    -- Reply with the slice secret
    
    
    NOTE: We want to limit who can learn which volumes a sliver can access.  It's not 
@@ -822,9 +834,11 @@ class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
    
    CACHED_VOLUMES_JSON_LIFETIME = 3600          # one hour
    
+   SLICE_SECRET_NAME = "SYNDICATE_SLICE_SECRET"
+   
    def parse_request_path( self, path ):
       """
-      Parse the URL path into a slice name and (possibly) a volume name.
+      Parse the URL path into a slice name and (possibly) a volume name or SLICE_SECRET_NAME
       """
       path_parts = path.strip("/").split("/")
       
@@ -887,8 +901,6 @@ class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
             # nothing to do...
             return None
          else:
-            # get the slice secret
-            
             # get the slice secret 
             slice_secret = get_slice_secret( private_key_pem, slice_name )
             
@@ -920,6 +932,18 @@ class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
       # valid request?
       if volume_name is None and slice_name is None:
          self.send_error( 400 )
+      
+      # slice secret request?
+      elif volume_name == self.SLICE_SECRET_NAME and slice_name is not None:
+         
+         # get the slice secret 
+         ret = get_slice_secret( self.server.private_key_pem, slice_name )
+         
+         if ret is not None:
+            self.reply_data( ret )
+            return 
+         else:
+            self.send_error( 404 )
       
       # volume list request?
       elif volume_name is None and slice_name is not None:
@@ -1031,7 +1055,9 @@ def ft_syndicate_access():
     fake_volume.name = "fakevolume"
     fake_volume.description = "This is a fake volume, created for funtional testing"
     fake_volume.blocksize = 1024
-    fake_volume.default_gateway_caps = 3
+    fake_volume.cap_read_data = True 
+    fake_volume.cap_write_data = True 
+    fake_volume.cap_host_data = False
     fake_volume.archive = False
     fake_volume.private = True
     
@@ -1087,7 +1113,7 @@ def ft_syndicate_access():
     print "\nteardown_volume_access(%s, %s)\n" % (fake_user.email, fake_volume.name )
     teardown_volume_access( fake_user.email, fake_volume.name )
     
-    print "\nteardown_volume_access(%s, %s)\n" % (fake_user.email, fake_user.name )
+    print "\nteardown_volume_access(%s, %s)\n" % (fake_user.email, fake_volume.name )
     teardown_volume_access( fake_user.email, fake_volume.name )
     
     print "\nensure_volume_absent(%s)\n" % fake_volume.name

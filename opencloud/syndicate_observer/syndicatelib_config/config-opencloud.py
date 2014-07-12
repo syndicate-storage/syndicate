@@ -19,7 +19,7 @@ SYNDICATE_OPENID_TRUSTROOT="http://localhost:8081"
 # This is the observer's user account on Syndicate.  You must create it out-of-band
 # prior to using the observer, and it must be an admin user since it will
 # create other users (i.e. for slices).
-SYNDICATE_OPENCLOUD_USER="judecn@gmail.com"
+SYNDICATE_OPENCLOUD_USER="jcnelson@cs.princeton.edu"
 
 # This is the password for the observer to authenticate itself to Syndicate.
 SYNDICATE_OPENCLOUD_PASSWORD="nya"
