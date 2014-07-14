@@ -60,8 +60,8 @@ class SyncVolume(SyncStep):
         """
         Synchronize a Volume record with Syndicate.
         """
-        print "\n\nSync!"
-        print "volume = %s\n\n" % volume.name
+        
+        logger.info( "Sync Volume = %s\n\n" % volume.name )
     
         user_email = volume.owner_id.email
         config = syndicatelib.get_config()
@@ -82,10 +82,8 @@ class SyncVolume(SyncStep):
             logger.error("Failed to ensure principal '%s' exists" % user_email )
             raise e
 
-        print "\n\nuser for %s: %s\n\n" % (user_email, user)
-
         # volume must exist 
-            
+        
         # create or update the Volume
         try:
             new_volume = syndicatelib.ensure_volume_exists( user_email, volume, user=user )
@@ -93,8 +91,6 @@ class SyncVolume(SyncStep):
             traceback.print_exc()
             logger.error("Failed to ensure volume '%s' exists" % volume.name )
             raise e
-
-        print "\n\nvolume for %s: %s\n\n" % (volume.name, new_volume)
            
         # did we create the Volume?
         if new_volume is not None:

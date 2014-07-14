@@ -52,8 +52,9 @@ class SyncVolumeSlice(SyncStep):
         return VolumeSlice.objects.filter(Q(enacted__lt=F('updated')) | Q(enacted=None))
 
     def sync_record(self, vs):
-        print "Mount %s on %s's VMs" % (vs.volume_id.name, vs.slice_id.name)
-            
+        
+        logger.info("Sync VolumeSlice for (%s, %s)" % (vs.volume_id.name, vs.slice_id.name))
+        
         # extract arguments...
         user_email = vs.slice_id.creator.email
         slice_name = vs.slice_id.name
@@ -108,9 +109,9 @@ class SyncVolumeSlice(SyncStep):
             logger.error("Failed to set up Volume access for %s in %s" % (user_email, volume_name))
             raise e
             
-        # get slice credentials....
+        # generate and save slice credentials....
         try:
-            slice_cred = syndicatelib.generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, UG_port, existing_user=user )
+            slice_cred = syndicatelib.save_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, UG_port, existing_user=user )
             assert slice_cred is not None, "Failed to generate slice credential for %s in %s" % (user_email, volume_name )
                 
         except Exception, e:

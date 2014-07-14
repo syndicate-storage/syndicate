@@ -36,6 +36,10 @@ import syndicate.client.common.msconfig as msconfig
 import syndicate.syndicate as c_syndicate
 
 from Crypto.Hash import SHA256 as HashAlg
+from Crypto.PublicKey import RSA as CryptoKey
+from Crypto import Random
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
+
 
 #-------------------------------
 def make_gateway_name( namespace, gateway_type, volume_name, host ):
@@ -195,7 +199,6 @@ def _create_and_activate_user( client, user_email, user_openid_url, user_activat
     """
 
     try:
-        # NOTE: allow for lots of UGs and RGs, since we're going to create at least one for each sliver
         new_user = client.create_user( user_email, user_openid_url, user_activate_pw, **user_kw )
     except Exception, e:
         # transport error, or the user already exists (rare, but possible)
@@ -212,22 +215,39 @@ def _create_and_activate_user( client, user_email, user_openid_url, user_activat
 
     else:
         # activate the user.
-        # first, generate a keypar 
-        log.info("Generating %s-bit key pair for %s" % (msconfig.OBJECT_KEY_SIZE, user_email))
-        pubkey_pem, privkey_pem = api.generate_key_pair( msconfig.OBJECT_KEY_SIZE )
+        # first, generate a keypair, if one was not given
+        pubkey_pem = None 
+        privkey_pem = None
+        generated_keys = False
         
+        if 'signing_private_key' not in user_kw.keys():
+            log.info("Generating %s-bit key pair for %s" % (msconfig.OBJECT_KEY_SIZE, user_email))
+            pubkey_pem, privkey_pem = api.generate_key_pair( msconfig.OBJECT_KEY_SIZE )
+            generated_keys = True
+        
+        else:
+            privkey_pem = user_kw['signing_private_key']
+            
+            try:
+               pubkey_pem = CryptoKey.importKey( observer_pkey_pem ).publickey().exportKey()
+            except Exception, e:
+               logger.error("Malformed private key")
+               raise e
+               
         # then, activate the account with the keypair
         try:
             activate_rc = client.register_account( user_email, user_activate_pw, signing_public_key=pubkey_pem )
         except Exception, e:
-            # transport error, or the user diesn't exist (rare, but possible)
+            # transport error, or the user doesn't exist (rare, but possible)
             log.exception(e)
             raise e
             
         else:
             # give back the keys to the caller
-            new_user['signing_public_key'] = pubkey_pem
-            new_user['signing_private_key'] = privkey_pem
+            if generated_keys:
+               new_user['signing_public_key'] = pubkey_pem
+               new_user['signing_private_key'] = privkey_pem
+               
             return new_user     # success!
 
 
@@ -255,7 +275,20 @@ def ensure_user_exists( client, user_email, user_openid_url, **user_kw ):
         # the user does not exist....try to create it
         user_activate_pw = make_registration_password()
         user = _create_and_activate_user( client, user_email, user_openid_url, user_activate_pw, **user_kw )
-        return (True, user)          # user exists now 
+        
+        if user is None:
+           # someone raced ahead and created the user.
+           try:
+              user = client.read_user( user_email )
+              return (False, user)
+           
+           except Exception, e:
+              # some other error 
+              log.exception(e)
+              raise e
+        
+        else:
+           return (True, user)          # user exists now 
     
     else:
         return (False, user)         # user already exists

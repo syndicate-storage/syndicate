@@ -21,7 +21,7 @@ class SyndicatePrincipal(PlCoreBase):
         app_label = "syndicate_storage"
 
     # for now, this is a user email address 
-    principal_id = models.TextField()
+    principal_id = models.TextField(unique=True)
     public_key_pem = models.TextField()
     sealed_private_key = models.TextField()
 

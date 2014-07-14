@@ -63,6 +63,7 @@ try:
    from core.models import Slice,Sliver
    
    from django.core.exceptions import ObjectDoesNotExist
+   from django.db import IntegrityError
 
 except ImportError, ie:
    logger.warning("Failed to import models; some tests will not work")
@@ -182,7 +183,7 @@ def ensure_principal_exists( user_email, observer_secret, **user_kw ):
     # if we created a new user, then save its (sealed) credentials to the Django DB
     if created:
          try:
-            rc = save_principal_data( user_email, observer_secret, new_user['signing_public_key'], new_user['signing_private_key'] )
+            rc = put_principal_data( user_email, observer_secret, new_user['signing_public_key'], new_user['signing_private_key'] )
             assert rc == True, "Failed to save SyndicatePrincipal"
          except Exception, e:
             traceback.print_exc()
@@ -474,19 +475,25 @@ def create_slice_credential_blob( private_key_pem, slice_name, slice_secret, syn
 
 
 #-------------------------------
-def save_principal_data( user_email, observer_secret, public_key_pem, private_key_pem ):
+def put_principal_data( user_email, observer_secret, public_key_pem, private_key_pem ):
     """
     Seal and store the principal's private key into the database, in a SyndicatePrincipal object,
-    so the sliver-side Syndicate daemon syndicated.py can get them later
-    (in case pushing them out fails).
+    so the sliver-side Syndicate daemon syndicated.py can get them later.
+    Overwrite an existing principal if one exists.
     """
     
     sealed_private_key = create_sealed_and_signed_blob( private_key_pem, observer_secret, private_key_pem )
     if sealed_private_key is None:
         return False
 
-    sp = models.SyndicatePrincipal( sealed_private_key=sealed_private_key, public_key_pem=public_key_pem, principal_id=user_email )
-    sp.save()
+    try:
+       sp = models.SyndicatePrincipal( sealed_private_key=sealed_private_key, public_key_pem=public_key_pem, principal_id=user_email )
+       sp.save()
+    except IntegrityError, e:
+       logger.error("WARN: overwriting existing principal %s" % email)
+       sp.delete()
+       sp.save()
+    
     return True
 
 
@@ -603,7 +610,7 @@ def decrypt_slice_secret( observer_pkey_pem, sealed_slice_secret_b64 ):
     rc, slice_secret = c_syndicate.decrypt_data( observer_pubkey_pem, observer_pkey_pem, sealed_slice_secret )
     
     if rc != 0:
-       logging.error("Failed to decrypt '%s', rc = %d" % (sealed_slice_secret_b64, rc))
+       logger.error("Failed to decrypt '%s', rc = %d" % (sealed_slice_secret_b64, rc))
        return None
     
     return slice_secret
@@ -682,6 +689,7 @@ def get_or_create_slice_secret( observer_pkey_pem, slice_name, slice_fk=None ):
 def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, UG_port, existing_user=None ):
     """
     Generate and return the set of credentials to be sent off to the slice VMs.
+    exisitng_user is a Syndicate user, as a dictionary.
     
     Return None on failure
     """
@@ -718,7 +726,37 @@ def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, vo
        return None
     
     return creds
-                                      
+
+
+#-------------------------------
+def save_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, UG_port, existing_user=None ): 
+    """
+    Create and save a credentials blob to a VolumeSlice.
+    Return the creds on success.
+    Return None on failure
+    """
+    
+    creds = generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, UG_port, existing_user=existing_user )
+    ret = None
+    
+    if creds is not None:
+       # save it 
+       vs = get_volumeslice( volume_name, slice_name )
+       
+       if vs is not None:
+          vs.credentials_blob = creds
+          vs.save()
+          
+          # success!
+          ret = creds
+       else:
+          logger.error("Failed to look up VolumeSlice(%s, %s)" % (volume_name, slice_name))
+       
+    else:
+       logger.error("Failed to generate credentials for %s, %s" % (volume_name, slice_name))
+       
+    return ret
+
 
 #-------------------------------
 def get_volumeslice_volume_names( slice_name ):
@@ -1002,7 +1040,15 @@ class CredentialServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
             return
          
          else:
-            self.reply_data( vs.credentials_blob )
+            ret = vs.credentials_blob 
+            if ret is not None:
+               self.reply_data( vs.credentials_blob )
+            else:
+               # not generated???
+               print ""
+               print vs
+               print ""
+               self.send_error( 503 )
             return
          
       else:
@@ -1219,7 +1265,7 @@ def ft_syndicate_principal():
    user_email = "fakeuser@opencloud.us"
    
    print "saving principal"
-   save_principal_data( user_email, "asdf", pubkey_pem, privkey_pem )
+   put_principal_data( user_email, "asdf", pubkey_pem, privkey_pem )
    
    print "fetching principal private key"
    saved_privkey_pem = get_principal_pkey( user_email, "asdf" )

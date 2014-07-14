@@ -51,6 +51,7 @@ class SyncVolumeAccessRight(SyncStep):
         return VolumeAccessRight.objects.filter(Q(enacted__lt=F('updated')) | Q(enacted=None))
 
     def sync_record(self, vac):
+        
         syndicate_caps = "UNKNOWN"  # for exception handling
         
         # get arguments
@@ -58,6 +59,8 @@ class SyncVolumeAccessRight(SyncStep):
         user_email = vac.owner_id.email
         volume_name = vac.volume.name
         syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( vac.cap_read_data, vac.cap_write_data, vac.cap_host_data ) 
+        
+        logger.info( "Sync VolumeAccessRight for (%s, %s)" % (user_email, volume_name) )
         
         # validate config
         try:
@@ -67,8 +70,6 @@ class SyncVolumeAccessRight(SyncStep):
            traceback.print_exc()
            logger.error("syndicatelib config is missing SYNDICATE_RG_DEFAULT_PORT, SYNDICATE_OPENCLOUD_SECRET")
            raise e
-            
-        print "Sync VolumeAccessRight for (%s, %s)" % (user_email, volume_name)
             
         # ensure the user exists and has credentials
         try:

@@ -51,10 +51,12 @@ def find_by_attrs( watchdog_name, attrs ):
    procs = []
    for p in psutil.process_iter():
       
-      if len(p.cmdline) == 0:
+      cmdline = p.cmdline()
+      
+      if len(cmdline) == 0:
          continue 
       
-      parts = p.cmdline[0].split(" ")
+      parts = cmdline[0].split(" ")
       if len(parts) < 2:
          continue 
       

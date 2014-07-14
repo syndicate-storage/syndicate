@@ -49,7 +49,8 @@ CONFIG_OPTIONS = {
    "pidfile":           ("-i", 1, "Path to the desired PID file."),
    "mountpoint":        ("-m", 1, "Mountpoint to monitor."),
    "volume":            ("-v", 1, "Volume to monitor."),
-   "command":           ("-C", 1, "Command that starts the UG")
+   "UG_binary":         ("-b", 1, "Name or path to the UG binary."),
+   "UG_argv":           ("-C", 1, "Arguments to the UG binary.")
 }
 
 #-------------------------------
@@ -234,6 +235,8 @@ def spawn_ug( config, old_exit_status ):
       return 255
    
    # split up our command string...
+   command_str = config['command']
+   
    command_list = shlex.split( command_str )
    
    binary = command_list[0]
@@ -282,12 +285,12 @@ def get_UG_command( config ):
    Its either after -- in argv, or its in stdin
    """
    
-   if config.get('command', None) is not None:
-      return config['command']
+   if config.get('UG_argv', None) is not None:
+      return config['UG_binary'] + " " + config["UG_argv"]
    
    else:
-      command_str = sys.stdin.read()
-      return command_str
+      argv_str = sys.stdin.read()
+      return config['UG_binary'] + " " + argv_str
    
 
 #-------------------------------
@@ -312,6 +315,7 @@ if __name__ == "__main__":
    if command_str is None:
       sys.exit(1)
       
+   # store this to our config
    config['command'] = command_str
    
    # set our proc commandline
@@ -333,7 +337,7 @@ if __name__ == "__main__":
       pidfile_path = config.get('pidfile', None)
       
       if config.has_key('logdir'):
-         logfile_path = os.path.join( config['logdir'], "RG.log" )
+         logfile_path = os.path.join( config['logdir'], "UG.log" )
       
       daemonize.daemonize( lambda: watchdog.main( lambda old_exit_status: spawn_ug(config, old_exit_status),
                                                   stdin_cb=lambda: command_str,
