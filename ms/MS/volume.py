@@ -312,7 +312,7 @@ class Volume( storagetypes.Object ):
    ]
    
    validators = {
-      "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")) ) == 0 and not is_int(value) ),
+      "name": (lambda cls, value: len( unicode(value).translate(dict((ord(char), None) for char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-. ")) ) == 0 and not is_int(value) ),
       "metadata_public_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE )),
       "metadata_private_key": (lambda cls, value: cls.is_valid_key( value, VOLUME_RSA_KEYSIZE ))
    }

@@ -43,6 +43,7 @@ import syndicate.util.provisioning as syndicate_provisioning
 import syndicate.syndicate as c_syndicate
 
 # for testing 
+TESTING = False
 class FakeObject(object):
    def __init__(self):
        pass
@@ -72,6 +73,8 @@ except ImportError, ie:
    models.Volume.CAP_READ_DATA = 1
    models.Volume.CAP_WRITE_DATA = 2
    models.Volume.CAP_HOST_DATA = 4
+   
+   TESTING = True
 
 
 #-------------------------------
@@ -131,7 +134,8 @@ def opencloud_caps_to_syndicate_caps( cap_read, cap_write, cap_host ):
 def ensure_user_exists( user_email, **user_kw ):
     """
     Given an OpenCloud user, ensure that the corresponding
-    Syndicate user exists.
+    Syndicate user exists on the MS.  This method does NOT 
+    create any OpenCloud-specific data.
 
     Return the (created, user), where created==True if the user 
     was created and created==False if the user was read.
@@ -148,7 +152,7 @@ def ensure_user_exists( user_email, **user_kw ):
 def ensure_user_absent( user_email ):
     """
     Ensure that a given OpenCloud user's associated Syndicate user record
-    has been deleted.
+    has been deleted.  This method does NOT delete any OpenCloud-specific data.
 
     Returns True on success
     Raises an exception on error
@@ -160,10 +164,9 @@ def ensure_user_absent( user_email ):
  
 
 #-------------------------------
-def ensure_user_exists_and_has_credentials( user_email, observer_secret, **user_kw ):
+def ensure_principal_exists( user_email, observer_secret, **user_kw ):
     """ 
-    Ensure that a Syndicate user exists.
-    If we had to create the user, then save its credentials.
+    Ensure that a Syndicate user exists, as well as its OpenCloud-specific data.
     
     Return (True, (None OR user)) on success.  Returns a user if the user was created.
     Return (False, None) on error
@@ -179,7 +182,7 @@ def ensure_user_exists_and_has_credentials( user_email, observer_secret, **user_
     # if we created a new user, then save its (sealed) credentials to the Django DB
     if created:
          try:
-            rc = save_syndicate_principal( user_email, observer_secret, new_user['signing_public_key'], new_user['signing_private_key'] )
+            rc = save_principal_data( user_email, observer_secret, new_user['signing_public_key'], new_user['signing_private_key'] )
             assert rc == True, "Failed to save SyndicatePrincipal"
          except Exception, e:
             traceback.print_exc()
@@ -188,6 +191,19 @@ def ensure_user_exists_and_has_credentials( user_email, observer_secret, **user_
 
     return (True, new_user)
 
+
+
+#-------------------------------
+def ensure_principal_absent( user_email ):
+    """
+    Ensure that a Syndicate user does not exists, and remove the OpenCloud-specific data.
+    
+    Return True on success.
+    """
+    
+    ensure_user_absent( user_email )
+    delete_principal_data( user_email )
+    return True
 
 #-------------------------------
 def ensure_volume_exists( user_email, opencloud_volume, user=None ):
@@ -458,9 +474,9 @@ def create_slice_credential_blob( private_key_pem, slice_name, slice_secret, syn
 
 
 #-------------------------------
-def save_syndicate_principal( user_email, observer_secret, public_key_pem, private_key_pem ):
+def save_principal_data( user_email, observer_secret, public_key_pem, private_key_pem ):
     """
-    Seal and store the principal's private key into the database,
+    Seal and store the principal's private key into the database, in a SyndicatePrincipal object,
     so the sliver-side Syndicate daemon syndicated.py can get them later
     (in case pushing them out fails).
     """
@@ -475,20 +491,22 @@ def save_syndicate_principal( user_email, observer_secret, public_key_pem, priva
 
 
 #-------------------------------
-def delete_syndicate_principal( user_email ):
+def delete_principal_data( user_email ):
     """
-    Delete a syndicateprincipal
+    Delete an OpenCloud SyndicatePrincipal object.
     """
-    sp = models.SyndicatePrincipal.objects.get( principal_id=user_email )
-    sp.delete()
+    
+    sp = get_principal_data( user_email )
+    if sp is not None:
+      sp.delete()
     
     return True
 
 
 #-------------------------------
-def get_syndicate_principal( user_email ):
+def get_principal_data( user_email ):
     """
-    Get a Syndicate principal from the database 
+    Get a SyndicatePrincipal record from the database 
     """
     
     try:
@@ -501,12 +519,12 @@ def get_syndicate_principal( user_email ):
 
 
 #-------------------------------
-def get_syndicate_principal_pkey( user_email, observer_secret ):
+def get_principal_pkey( user_email, observer_secret ):
     """
     Fetch and unseal the private key of a SyndicatePrincipal.
     """
     
-    sp = get_syndicate_principal( user_email )
+    sp = get_principal_data( user_email )
     if sp is None:
         logger.error("Failed to find private key for principal %s" % user_email )
         return None 
@@ -604,12 +622,12 @@ def get_slice_secret( observer_pkey_pem, slice_name, slice_fk=None ):
        if slice_fk is not None:
           ss = models.SliceSecret.objects.get( slice_id=slice_fk )
        else:
-          ss = models.SliceSecret.objects.get( name=slice_name )
+          ss = models.SliceSecret.objects.get( slice_id__name=slice_name )
     except ObjectDoesNotExist, e:
        logger.error("Failed to load slice secret for (%s, %s)" % (slice_fk, slice_name) )
        return None 
 
-    return ss.slice_secret 
+    return ss.secret 
  
 
 #-------------------------------
@@ -680,7 +698,7 @@ def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, vo
     if user_pkey_pem is None:
       try:
          # get it from Django DB
-         user_pkey_pem = get_syndicate_principal_pkey( user_email, observer_secret )
+         user_pkey_pem = get_principal_pkey( user_email, observer_secret )
          assert user_pkey_pem is not None, "No private key for %s" % user_email
          
       except:
@@ -739,21 +757,27 @@ def do_push( sliver_hosts, portnum, payload ):
     """
     Push a payload to a list of slivers.
     NOTE: this has to be done in one go, since we can't import grequests
-    into the global namespace (without wrecking havoc on the poll server),
+    into the global namespace (without wrecking havoc on the credential server),
     but it has to stick around for the push to work.
     """
     
-    # make gevents runnabale from multiple threads (or Django will complain)
+    global TESTING, CONFIG
+    
     from gevent import monkey
-    #monkey.patch_all(socket=True, dns=True, time=True, select=True,thread=False, os=True, ssl=True, httplib=False, aggressive=True)
-    monkey.patch_all()
-
+    
+    if TESTING:
+       monkey.patch_all()
+    
+    else:
+       # make gevents runnabale from multiple threads (or Django will complain)
+       monkey.patch_all(socket=True, dns=True, time=True, select=True, thread=False, os=True, ssl=True, httplib=False, aggressive=True)
+    
     import grequests
     
     # fan-out 
     requests = []
     for sh in sliver_hosts:
-      rs = grequests.post( sh + ":" + str(portnum), data={"observer_message": payload} )
+      rs = grequests.post( "http://" + sh + ":" + str(portnum), data={"observer_message": payload}, timeout=getattr(CONFIG, "SYNDICATE_HTTP_PUSH_TIMEOUT", 60) )
       requests.append( rs )
       
     # fan-in
@@ -803,7 +827,7 @@ def push_credentials_to_slice( slice_name, payload ):
 
    
 #-------------------------------
-class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
+class CredentialServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
    """
    HTTP server handler that allows syndicated.py instances to poll
    for volume state.
@@ -816,12 +840,13 @@ class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
    Responses:
       GET /<slicename>              -- Reply with the signed sealed list of volume names, encrypted by the slice secret
       GET /<slicename>/<volumename> -- Reply with the signed sealed volume access credentials, encrypted by the slice secret
-      GET /<slicename>/SYNDICATE_SLICE_SECRET    -- Reply with the slice secret
+      
+      !!! TEMPORARY !!!
+      GET /<slicename>/SYNDICATE_SLICE_SECRET    -- Reply with the slice secret (TEMPORARY)
    
    
-   NOTE: We want to limit who can learn which volumes a sliver can access.  It's not 
-   feasible to give each sliver or each slice its own pre-shared authentication token,
-   so our strategy  is to seal the volume list with the Syndicate-wide observer pre-shared secret.
+   NOTE: We want to limit who can learn which Volumes a slice can access, so we'll seal its slivers'
+   credentials with the SliceSecret secret.  The slivers (which have the slice-wide secret) can then decrypt it.
    However, sealing the listing is a time-consuming process (on the order of 10s), so we only want 
    to do it when we have to.  Since *anyone* can ask for the ciphertext of the volume list,
    we will cache the list ciphertext for each slice for a long-ish amount of time, so we don't
@@ -882,24 +907,30 @@ class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
       Check the cache, evict stale data if necessary, and on miss, 
       regenerate the slice volume list.
       """
+      
+      # block the cache.
+      # NOTE: don't release the lock until we've generated credentials.
+      # Chances are, there's a thundering herd of slivers coming online.
+      # Block them all until we've generated their slice's credentials,
+      # and then serve them the cached one.
+      
       self.cached_volumes_json_lock.acquire()
       
       ret = None
       volume_list_json, cache_timeout = self.cached_volumes_json.get( slice_name, (None, None) )
       
       if (cache_timeout is not None) and cache_timeout < time.time():
-         #  expired
+         # expired
          volume_list_json = None
       
       if volume_list_json is None:
          # generate a new list and cache it.
-         # BUT, don't starve other requests!
-         self.cached_volumes_json_lock.release()
          
          volume_names = get_volumeslice_volume_names( slice_name )
          if volume_names is None:
             # nothing to do...
-            return None
+            ret = None
+         
          else:
             # get the slice secret 
             slice_secret = get_slice_secret( private_key_pem, slice_name )
@@ -913,10 +944,13 @@ class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
                # seal and sign 
                ret = create_volume_list_blob( private_key_pem, slice_secret, volume_names )
          
-         self.cached_volumes_json_lock.acquire()
-         
          # cache this 
-         self.cached_volumes_json[ slice_name ] = (ret, time.time() + self.CACHED_VOLUMES_JSON_LIFETIME )
+         if ret is not None:
+            self.cached_volumes_json[ slice_name ] = (ret, time.time() + self.CACHED_VOLUMES_JSON_LIFETIME )
+      
+      else:
+         # hit the cache
+         ret = volume_list_json
       
       self.cached_volumes_json_lock.release()
       
@@ -978,7 +1012,7 @@ class ObserverServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
    
    
 #-------------------------------
-class ObserverServer( BaseHTTPServer.HTTPServer ):
+class CredentialServer( BaseHTTPServer.HTTPServer ):
    
    def __init__(self, private_key_pem, observer_secret, server, req_handler ):
       self.private_key_pem = private_key_pem
@@ -987,36 +1021,48 @@ class ObserverServer( BaseHTTPServer.HTTPServer ):
 
 
 #-------------------------------
-def poll_server_spawn( old_exit_status ):
+def credential_server_spawn( old_exit_status ):
    """
-   Start our poll server (i.e. in a separate process, started by the watchdog)
+   Start our credential server (i.e. in a separate process, started by the watchdog)
    """
    
-   setproctitle.setproctitle( "syndicate-pollserver" )
+   setproctitle.setproctitle( "syndicate-credential-server" )
    
    private_key = syndicate_storage.read_private_key( CONFIG.SYNDICATE_PRIVATE_KEY )
    if private_key is None:
       # exit code 255 will be ignored...
       logger.error("Cannot load private key.  Exiting...")
       sys.exit(255)
-      
-   srv = ObserverServer( private_key.exportKey(), CONFIG.SYNDICATE_OPENCLOUD_SECRET, ('', CONFIG.SYNDICATE_HTTP_PORT), ObserverServerHandler)
+   
+   logger.info("Starting Syndicate Observer credential server on port %s" % CONFIG.SYNDICATE_HTTP_PORT)
+               
+   srv = CredentialServer( private_key.exportKey(), CONFIG.SYNDICATE_OPENCLOUD_SECRET, ('', CONFIG.SYNDICATE_HTTP_PORT), CredentialServerHandler)
    srv.serve_forever()
 
 
 #-------------------------------
-def ensure_poll_server_running():
+def ensure_credential_server_running( foreground=False, run_once=False ):
    """
-   Instantiate our poll server and keep it running.
+   Instantiate our credential server and keep it running.
    """
    
    # is the watchdog running?
-   pids = syndicate_watchdog.find_by_attrs( "syndicate-pollserver-watchdog", {} )
+   pids = syndicate_watchdog.find_by_attrs( "syndicate-credential-server-watchdog", {} )
    if len(pids) > 0:
       # it's running
       return True
    
-   # not running; spawn a new one 
+   if foreground:
+      # run in foreground 
+      
+      if run_once:
+         return credential_server_spawn( 0 )
+      
+      else:
+         return syndicate_watchdog.main( credential_server_spawn, respawn_exit_statuses=range(1,254) )
+      
+   
+   # not running, and not foregrounding.  fork a new one
    try:
       watchdog_pid = os.fork()
    except OSError, oe:
@@ -1025,10 +1071,14 @@ def ensure_poll_server_running():
    
    if watchdog_pid != 0:
       
-      setproctitle.setproctitle( "syndicate-pollserver-watchdog" )
+      # child--become watchdog
+      setproctitle.setproctitle( "syndicate-credential-server-watchdog" )
       
-      # child--become a daemon and run the watchdog
-      syndicate_daemon.daemonize( lambda: syndicate_watchdog.main( poll_server_spawn, respawn_exit_statuses=range(1,254) ) )
+      if run_once:
+         syndicate_daemon.daemonize( lambda: credential_server_spawn(0), logfile_path=getattr(CONFIG, "SYNDICATE_HTTP_LOGFILE", None) )
+      
+      else:
+         syndicate_daemon.daemonize( lambda: syndicate_watchdog.main( credential_server_spawn, respawn_exit_statuses=range(1,254) ), logfile_path=getattr(CONFIG, "SYNDICATE_HTTP_LOGFILE", None) )
 
 
 #-------------------------------
@@ -1095,11 +1145,11 @@ def ft_syndicate_access():
     
     
     
-    print "\nensure_user_exists_and_has_credentials(%s)\n" % fake_user.email
-    ensure_user_exists_and_has_credentials( fake_user.email, "asdf", is_admin=False, max_UGs=1100, max_RGs=1 )
+    print "\nensure_principal_exists(%s)\n" % fake_user.email
+    ensure_principal_exists( fake_user.email, "asdf", is_admin=False, max_UGs=1100, max_RGs=1 )
     
-    print "\nensure_user_exists_and_has_credentials(%s)\n" % fake_user.email
-    ensure_user_exists_and_has_credentials( fake_user.email, "asdf", is_admin=False, max_UGs=1100, max_RGs=1 )
+    print "\nensure_principal_exists(%s)\n" % fake_user.email
+    ensure_principal_exists( fake_user.email, "asdf", is_admin=False, max_UGs=1100, max_RGs=1 )
 
     print "\nensure_volume_exists(%s)\n" % fake_volume.name
     ensure_volume_exists( fake_user.email, fake_volume )
@@ -1119,8 +1169,8 @@ def ft_syndicate_access():
     print "\nensure_volume_absent(%s)\n" % fake_volume.name
     ensure_volume_absent( fake_volume.name )
 
-    print "\nensure_user_absent(%s)\n" % fake_user.email
-    ensure_user_absent( fake_user.email )
+    print "\nensure_principal_absent(%s)\n" % fake_user.email
+    ensure_principal_absent( fake_user.email )
     
 
 
@@ -1169,31 +1219,31 @@ def ft_syndicate_principal():
    user_email = "fakeuser@opencloud.us"
    
    print "saving principal"
-   save_syndicate_principal( user_email, "asdf", pubkey_pem, privkey_pem )
+   save_principal_data( user_email, "asdf", pubkey_pem, privkey_pem )
    
    print "fetching principal private key"
-   saved_privkey_pem = get_syndicate_principal_pkey( user_email, "asdf" )
+   saved_privkey_pem = get_principal_pkey( user_email, "asdf" )
    
    assert saved_privkey_pem is not None, "Could not fetch saved private key"
    assert saved_privkey_pem == privkey_pem, "Saved private key does not match actual private key"
    
    print "delete principal"
    
-   delete_syndicate_principal( user_email )
+   delete_principal_data( user_email )
    
    print "make sure its deleted..."
    
-   saved_privkey_pem = get_syndicate_principal_pkey( user_email, "asdf" )
+   saved_privkey_pem = get_principal_pkey( user_email, "asdf" )
    
    assert saved_privkey_pem is None, "Principal key not deleted"
    
 
 #-------------------------------
-def ft_pollserver():
+def ft_credential_server():
    """
-   Functional test for the pollserver
+   Functional test for the credential server
    """
-   ensure_poll_server_running()
+   ensure_credential_server_running( run_once=True, foreground=True )
 
 
 #-------------------------------

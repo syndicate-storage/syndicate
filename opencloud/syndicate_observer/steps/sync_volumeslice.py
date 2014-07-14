@@ -58,7 +58,7 @@ class SyncVolumeSlice(SyncStep):
         user_email = vs.slice_id.creator.email
         slice_name = vs.slice_id.name
         volume_name = vs.volume_id.name
-        syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( vs.cap_read, vs.cap_write, vs.cap_host )
+        syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( vs.cap_read_data, vs.cap_write_data, vs.cap_host_data )
         RG_port = vs.RG_portnum
         UG_port = vs.UG_portnum
         slice_secret = None
@@ -91,8 +91,8 @@ class SyncVolumeSlice(SyncStep):
         
         # make sure there's a Syndicate user account for the slice owner
         try:
-            rc, user = syndicatelib.ensure_user_exists_and_has_credentials( user_email, observer_secret, is_admin=False, max_UGs=1100, max_RGs=1 )
-            assert rc is True, "Failed to ensure user %s exists and has credentials (rc = %s,%s)" % (user_email, rc, user)
+            rc, user = syndicatelib.ensure_principal_exists( user_email, observer_secret, is_admin=False, max_UGs=1100, max_RGs=1 )
+            assert rc is True, "Failed to ensure principal %s exists (rc = %s,%s)" % (user_email, rc, user)
         except Exception, e:
             traceback.print_exc()
             logger.error('Failed to ensure user %s exists' % user_email)
@@ -127,7 +127,7 @@ class SyncVolumeSlice(SyncStep):
             traceback.print_exc()
             logger.error("Failed to push slice credentials to %s for volume %s" % (slice_name, volume_name))
             raise e
-
+        
         return True
 
 

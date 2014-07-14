@@ -57,7 +57,7 @@ class SyncVolumeAccessRight(SyncStep):
         config = syndicatelib.get_config()
         user_email = vac.owner_id.email
         volume_name = vac.volume.name
-        syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( vac.cap_read, vac.cap_write, vac.cap_host ) 
+        syndicate_caps = syndicatelib.opencloud_caps_to_syndicate_caps( vac.cap_read_data, vac.cap_write_data, vac.cap_host_data ) 
         
         # validate config
         try:
@@ -68,13 +68,12 @@ class SyncVolumeAccessRight(SyncStep):
            logger.error("syndicatelib config is missing SYNDICATE_RG_DEFAULT_PORT, SYNDICATE_OPENCLOUD_SECRET")
            raise e
             
-        print "Sync Volume Access Right!"
-        print "Sync for (%s, %s)" % (user_email, volume_name)
+        print "Sync VolumeAccessRight for (%s, %s)" % (user_email, volume_name)
             
         # ensure the user exists and has credentials
         try:
-            rc, user = syndicatelib.ensure_user_exists_and_has_credentials( user_email, observer_secret, is_admin=False, max_UGs=1100, max_RGs=1 )
-            assert rc is True, "Failed to ensure user %s exists and has credentials (rc = %s,%s)" % (user_email, rc, user)
+            rc, user = syndicatelib.ensure_principal_exists( user_email, observer_secret, is_admin=False, max_UGs=1100, max_RGs=1 )
+            assert rc is True, "Failed to ensure principal %s exists (rc = %s,%s)" % (user_email, rc, user)
         except Exception, e:
             traceback.print_exc()
             logger.error("Failed to ensure user '%s' exists" % user_email )

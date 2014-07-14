@@ -1002,13 +1002,14 @@ class PollThread( threading.Thread ):
       """
       self.running = True
       while self.running:
+         
+         # poll, then sleep, so we poll when we start up
          config = get_config()
+         PollThread.poll_data( config )
          
          poll_timeout = config['poll_timeout']
-         
          time.sleep( poll_timeout )
          
-         PollThread.poll_data( config )
             
             
 #-------------------------
@@ -1076,8 +1077,9 @@ def main( config ):
    log.info("Listening on %s" % config['port'])
    try:
       httpd.serve_forever()
-   except:
-      log.info("shutting down")
+   except Exception, e:
+      log.exception(e)
+      log.info("Uncaught exception, shutting down")
       rt.running = False
       th.running = False
       sys.exit(0)

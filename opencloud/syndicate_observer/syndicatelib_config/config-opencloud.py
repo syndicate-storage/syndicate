@@ -59,6 +59,12 @@ SYNDICATE_RG_CLOSURE=None
 # daemons are NAT'ed or temporarily partitioned, they will pull commands instead.
 SYNDICATE_HTTP_PORT=65321
 
+# This is the path to the logfile for the observer's HTTP server.
+SYNDICATE_HTTP_LOGFILE="/tmp/syndicate-observer.log"
+
+# This is the number of seconds to wait for pushing a slice credential before timing out.
+SYNDICATE_HTTP_PUSH_TIMEOUT=60
+
 # This is the port number the Syndicate sliver mount daemons listen on.  The observer will 
 # push commands to them on this port.
 SYNDICATE_SLIVER_PORT=65322
