@@ -65,6 +65,8 @@ class SyncVolume(SyncStep):
     
         user_email = volume.owner_id.email
         config = syndicatelib.get_config()
+        
+        volume_principal_id = syndicatelib.make_volume_principal_id( user_email, volume.name )
 
         # get the observer secret 
         try:
@@ -76,17 +78,18 @@ class SyncVolume(SyncStep):
 
         # volume owner must exist as a Syndicate user...
         try:
-            rc, user = syndicatelib.ensure_principal_exists( user_email, observer_secret, is_admin=False, max_UGs=1100, max_RGs=1)
+            rc, user = syndicatelib.ensure_principal_exists( volume_principal_id, observer_secret, is_admin=False, max_UGs=1100, max_RGs=1)
+            assert rc == True, "Failed to create or read volume principal '%s'" % volume_principal_id
         except Exception, e:
             traceback.print_exc()
-            logger.error("Failed to ensure principal '%s' exists" % user_email )
+            logger.error("Failed to ensure principal '%s' exists" % volume_principal_id )
             raise e
 
         # volume must exist 
         
         # create or update the Volume
         try:
-            new_volume = syndicatelib.ensure_volume_exists( user_email, volume, user=user )
+            new_volume = syndicatelib.ensure_volume_exists( volume_principal_id, volume, user=user )
         except Exception, e:
             traceback.print_exc()
             logger.error("Failed to ensure volume '%s' exists" % volume.name )

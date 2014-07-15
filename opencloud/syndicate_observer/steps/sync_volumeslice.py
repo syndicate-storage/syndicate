@@ -90,33 +90,35 @@ class SyncVolumeSlice(SyncStep):
            logger.error("Failed to load secret credentials")
            raise e
         
-        # make sure there's a Syndicate user account for the slice owner
+        # make sure there's a slice-controlled Syndicate user account for the slice owner
+        slice_principal_id = syndicatelib.make_slice_principal_id( user_email, slice_name )
+        
         try:
-            rc, user = syndicatelib.ensure_principal_exists( user_email, observer_secret, is_admin=False, max_UGs=1100, max_RGs=1 )
-            assert rc is True, "Failed to ensure principal %s exists (rc = %s,%s)" % (user_email, rc, user)
+            rc, user = syndicatelib.ensure_principal_exists( slice_principal_id, observer_secret, is_admin=False, max_UGs=1100, max_RGs=1 )
+            assert rc is True, "Failed to ensure principal %s exists (rc = %s,%s)" % (slice_principal_id, rc, user)
         except Exception, e:
             traceback.print_exc()
-            logger.error('Failed to ensure user %s exists' % user_email)
+            logger.error('Failed to ensure slice user %s exists' % slice_principal_id)
             raise e
             
         # grant the slice-owning user the ability to provision UGs in this Volume, and also provision for the user the (single) RG the slice will instantiate in each VM.
         try:
-            rc = syndicatelib.setup_volume_access( user_email, volume_name, syndicate_caps, RG_port, observer_secret, RG_closure=RG_closure )
-            assert rc is True, "Failed to set up Volume access for %s in %s" % (user_email, volume_name)
+            rc = syndicatelib.setup_volume_access( slice_principal_id, volume_name, syndicate_caps, RG_port, observer_secret, RG_closure=RG_closure )
+            assert rc is True, "Failed to set up Volume access for slice %s in %s" % (slice_principal_id, volume_name)
             
         except Exception, e:
             traceback.print_exc()
-            logger.error("Failed to set up Volume access for %s in %s" % (user_email, volume_name))
+            logger.error("Failed to set up Volume access for slice %s in %s" % (slice_principal_id, volume_name))
             raise e
             
         # generate and save slice credentials....
         try:
-            slice_cred = syndicatelib.save_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, UG_port, existing_user=user )
-            assert slice_cred is not None, "Failed to generate slice credential for %s in %s" % (user_email, volume_name )
+            slice_cred = syndicatelib.save_slice_credentials( observer_pkey_pem, syndicate_url, slice_principal_id, volume_name, slice_name, observer_secret, slice_secret, UG_port, existing_user=user )
+            assert slice_cred is not None, "Failed to generate slice credential for %s in %s" % (slice_principal_id, volume_name )
                 
         except Exception, e:
             traceback.print_exc()
-            logger.error("Failed to generate slice credential for %s in %s" % (user_email, volume_name))
+            logger.error("Failed to generate slice credential for %s in %s" % (slice_principal_id, volume_name))
             raise e
              
         # ... and push them all out.

@@ -14,6 +14,7 @@ import base64
 import BaseHTTPServer
 import setproctitle
 import threading
+import urllib
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
@@ -162,6 +163,28 @@ def ensure_user_absent( user_email ):
     client = connect_syndicate()
 
     return client.delete_user( user_email )
+ 
+
+#-------------------------------
+def make_volume_principal_id( user_email, volume_name ):
+    """
+    Create a principal id for a Volume owner.
+    """
+    
+    volume_name_safe = urllib.quote( volume_name )
+    
+    return "volume_%s.%s" % (volume_name_safe, user_email)
+ 
+ 
+#-------------------------------
+def make_slice_principal_id( user_email, slice_name ):
+    """
+    Create a principal id for a slice owner.
+    """
+    
+    slice_name_safe = urllib.quote( slice_name )
+    
+    return "slice_%s.%s" % (slice_name, user_email)
  
 
 #-------------------------------
@@ -490,7 +513,7 @@ def put_principal_data( user_email, observer_secret, public_key_pem, private_key
        sp = models.SyndicatePrincipal( sealed_private_key=sealed_private_key, public_key_pem=public_key_pem, principal_id=user_email )
        sp.save()
     except IntegrityError, e:
-       logger.error("WARN: overwriting existing principal %s" % email)
+       logger.error("WARN: overwriting existing principal %s" % user_email)
        sp.delete()
        sp.save()
     
