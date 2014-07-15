@@ -230,7 +230,7 @@ def create_volume( email, name, description, blocksize, **attrs ):
    # check quota for this user
    user_volume_ids = list_accessible_volumes( email, caller_user=caller_user, projection=['volume_id'] )
    if len(user_volume_ids) > user.get_volume_quota():
-      raise Exception("User '%s' has exceeded Volume quota" % email )
+      raise Exception("User '%s' has exceeded Volume quota %s" % (email, user.get_volume_quota()) )
    
    new_volume_key = Volume.Create( user, blocksize=blocksize, name=name, description=description, **attrs )
    if new_volume_key != None:
@@ -398,7 +398,7 @@ def create_gateway( volume_id, email, gateway_type, gateway_name, host, port, **
       gateway_ids = list_gateways_by_user( user.email, caller_user=user, keys_only=True )
       if len(gateway_ids) > gateway_quota:
          gateway_type_str = GATEWAY_TYPE_TO_STR[gateway_type]
-         raise Exception("User '%s' is at quota for %s Gateways" % (email, gateway_type_str))
+         raise Exception("User '%s' has exceeded quota (%s) for %s Gateways" % (email, gateway_quota, gateway_type_str))
       
    gateway_key = Gateway.Create( user, volume, gateway_type=gateway_type, name=gateway_name, host=host, port=port, **kwargs )
    gw = gateway_key.get()
@@ -465,6 +465,7 @@ def set_gateway_caps( g_name_or_id, caps ):
       storagetypes.deferred.defer( Volume.Reversion, volume.volume_id )
    
    return rc
+
 
 # ----------------------------------
 def list_gateways( attrs=None, **q_opts):
@@ -566,3 +567,4 @@ def delete_gateway( g_id ):
 # ----------------------------------
 def get_volume_root( volume ):
    return MSEntry.Read( volume, 0 )
+
