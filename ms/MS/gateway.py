@@ -640,6 +640,7 @@ class Gateway( storagetypes.Object ):
             raise Exception("No such Gateway '%s'" % caps)
          
          gateway.caps = Gateway.safe_caps( gateway.gateway_type, caps )
+         gateway.cert_version += 1
          gateway.put()
          return gateway
       
