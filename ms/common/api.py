@@ -1057,7 +1057,8 @@ def create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, 
       
       A user may be subject to a quota enforced for each type of Gateway.
    """
-   return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port, encryption_password=encryption_password, encrypted_gateway_private_key=host_gateway_key, gateway_public_key=gateway_public_key, **attrs )
+   return storage.create_gateway( volume_name_or_id, email, gateway_type, gateway_name, host, port,
+                                  encryption_password=encryption_password, encrypted_gateway_private_key=host_gateway_key, gateway_public_key=gateway_public_key, **attrs )
    
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
@@ -1099,18 +1100,17 @@ def update_gateway( g_name_or_id, **attrs ):
       port=int:
          The port number this gateway should listen on.
       
-      closure=str:
-         This is a serialized JSON structure that stores gateway-
-         specific data.  Currently, this is only meaningful for 
-         replica gateways.
-         
-         If you want to use syntool to generate a replica gateway's
-         closure from a Python module, pass the path to the
-         directory containing the module's files.
-      
       cert_expires=int:
          Date when this gateway's certificate expires, in seconds
          since the epoch.
+         
+      closure=str:
+         This is a serialized JSON structure that stores gateway-
+         specific data and storage logic.
+         
+         If you want to use syntool to generate a gateway's
+         closure from a directory, pass the path to the
+         directory containing the closure's files.
       
       session_timeout=int:
          The longest the gateway will wait to renew its certificate
@@ -1318,7 +1318,6 @@ def list_gateways_by_user_and_volume( email, volume_name_or_id, **caller_user_di
    return storage.list_gateways_by_user_and_volume( email, volume_name_or_id, **caller_user_dict )
 
 
-# ----------------------------------
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
 @DeleteAPIGuard( Gateway, target_object_name="volume_name_or_id", parse_args=Gateway.ParseArgs )        # caller must own the Volume
 def remove_user_from_volume( email, volume_name_or_id ):
@@ -1331,7 +1330,7 @@ def remove_user_from_volume( email, volume_name_or_id ):
       email (str or int):
          The email of the user to remove 
          
-      volume_name_or_id (str or int)
+      volume_name_or_id (str or int):
          The name or ID of the Volume to remove the user from.
          
    Returns:
@@ -1345,7 +1344,6 @@ def remove_user_from_volume( email, volume_name_or_id ):
    """
    
    return storage.remove_user_from_volume( email, volume_name_or_id )
-
 
 # ----------------------------------
 class API( object ):
