@@ -574,8 +574,6 @@ int fs_entry_get_or_set_xattr( struct fs_core* core, struct fs_entry* fent, char
          *value_len = (size_t)ret;
          break;
       }
-      
-      fs_entry_unlock( fent );
    }
    
    return ret;
