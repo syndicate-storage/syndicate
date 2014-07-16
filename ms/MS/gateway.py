@@ -349,19 +349,19 @@ class Gateway( storagetypes.Object ):
       return (self.caps & caps) == caps
 
 
-   def verify_ms_update( self, ms_update ):
+   def verify_message( self, msg ):
       """
-      Verify the authenticity of a received ms_update message
+      Verify the authenticity of a received message with a signature field (which should store a base64-encoded signature)
       """
-      sig = ms_update.signature
+      sig = msg.signature
       sig_bin = base64.b64decode( sig )
 
-      ms_update.signature = ""
-      ms_update_str = ms_update.SerializeToString()
+      msg.signature = ""
+      msg_str = msg.SerializeToString()
 
-      ret = self.auth_verify( self.gateway_public_key, ms_update_str, sig_bin )
+      ret = self.auth_verify( self.gateway_public_key, msg_str, sig_bin )
 
-      ms_update.signature = sig
+      msg.signature = sig
 
       return ret
    

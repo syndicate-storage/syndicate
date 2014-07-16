@@ -612,6 +612,85 @@ class MSEntryXAttr( storagetypes.Object ):
       return cls.ListAll( {"MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name', 'file_id'], map_func=__xattr_deferred_delete, async=async )
 
 
+class MSEntryGCLog( storagetypes.Object ):
+   """
+   Log of manifest metadata of an MSEntry, for use in garbage collection.
+   UGs poll these in order to garbage-collect stale manifests and blocks from the RGs for an MSEntry.
+   The MS remembers which previous manifests (and thus blocks) exist through a set of these records.
+   """
+   
+   file_id = storagetypes.String( default="None" )              # has to be a string, since this is an unsigned 64-bit int (and GAE only supports signed 64-bit int)
+   volume_id = storagetypes.Integer( default=-1 )
+   
+   version = storagetypes.Integer( default=-1, indexed=False )
+   manifest_mtime_sec = storagetypes.Integer(default=0, indexed=False)
+   manifest_mtime_nsec = storagetypes.Integer(default=0, indexed=False)
+   
+   @classmethod
+   def make_key_name( cls, volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
+      return "MSEntryGCLog: volume_id=%s,file_id=%s,version=%s,manifest_mtime_sec=%s,manifest_mtime_nsec=%s" % (volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec)
+   
+   @classmethod
+   def create_async( cls, _volume_id, _file_id, _version, _manifest_mtime_sec, _manifest_mtime_nsec ):
+      key_name = MSEntryGCLog.make_key_name( _volume_id, _file_id, _version, _manifest_mtime_sec, _manifest_mtime_nsec )
+      return MSEntryGCLog.get_or_insert_async( key_name,
+                                               volume_id=_volume_id,
+                                               file_id=_file_id,
+                                               version=_version,
+                                               manifest_mtime_sec=_manifest_mtime_sec,
+                                               manifest_mtime_nsec=_manifest_mtime_nsec )
+   
+   @classmethod 
+   def delete_async( cls, volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
+      
+      key_name = MSEntryGCLog.make_key_name( volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
+      record_key = storagetypes.make_key( MSEntryGCLog, key_name )
+      
+      storagetypes.deferred.defer( MSEntryGCLog.delete_all, [record_key] )
+      
+      return True
+   
+   
+   @classmethod 
+   def Peek( cls, volume_id, file_id ):
+      """
+      Get the head of the log for this file.
+      That is, the oldest manifest record.
+      """
+      log_head = MSEntryGCLog.ListAll( {"MSEntryGCLog.volume_id ==": volume_id, "MSEntryGCLog.file_id ==": file_id},
+                                             limit=1,
+                                             order=["MSEntryGCLog.manifest_mtime_sec", "MSEntryGCLog.manifest_mtime_nsec"] )
+      
+      return log_head
+   
+   @classmethod 
+   def Insert( cls, volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec, async=False ):
+      """
+      Add a new manifest log record.
+      """
+      rec_fut = cls.create_async( volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
+      
+      if async:
+         return rec_fut 
+      
+      else:
+         return rec_fut.get_result()
+   
+   
+   @classmethod 
+   def Remove( cls, volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
+      """
+      Remove a manifest log record.
+      """
+      return cls.delete_async( volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
+      
+   @classmethod 
+   def Remove( cls, rec ):
+      """
+      Remove a manifest log record.
+      """
+      return cls.Dequeue( rec.volume_id, rec.file_id, rec.version, rec.manifest_mtime_sec, rec.manifest_mtime_nsec )
+   
 
 class MSEntry( storagetypes.Object ):
    """
@@ -680,7 +759,9 @@ class MSEntry( storagetypes.Object ):
       "file_id",
       "name",
       "parent_id",
-      "coordinator_id"
+      "coordinator_id",
+      "manifest_mtime_sec",
+      "manifest_mtime_nsec"
    ]
 
    # methods for generating default values for attributes (sharded or not)
@@ -1243,9 +1324,14 @@ class MSEntry( storagetypes.Object ):
    
    
    @classmethod
-   def __write_msentry( cls, ent, num_shards, write_base=False, write_base_only=False, **write_attrs ):
+   def __write_msentry( cls, ent, num_shards, write_base=False, write_base_only=False, async=False, **write_attrs ):
       write_fut = MSEntry.__write_msentry_async( ent, num_shards, write_base=write_base, write_base_only=write_base_only, **write_attrs )
-      return write_fut.get_result()
+      
+      if not async:
+         return write_fut.get_result()
+      
+      else:
+         return write_fut
 
 
    @classmethod
@@ -1286,9 +1372,18 @@ class MSEntry( storagetypes.Object ):
       # does this user have permission to write?
       if not is_writable( user_owner_id, volume.owner_id, ent.owner_id, ent.mode ):
          return (-errno.EACCES, None)
-
-      ent = MSEntry.__write_msentry( ent, volume.num_shards, **write_attrs )
-
+      
+      # write the update 
+      ent_fut = MSEntry.__write_msentry( ent, volume.num_shards, async=True, **write_attrs )
+      
+      # write the manifest timestamp to the Manifest log, if this is a file 
+      if ent.ftype == MSENTRY_TYPE_FILE:
+         storagetypes.deferred.defer( MSEntryGCLog.Insert, volume_id, file_id, ent_attrs['version'], ent_attrs['manifest_mtime_sec'], ent_attrs['manifest_mtime_nsec'] )
+      
+      storagetypes.wait_futures( [ent_fut] )
+      
+      ent = ent_fut.get_result()
+      
       return (0, ent)
 
 

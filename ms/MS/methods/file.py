@@ -75,6 +75,21 @@ def file_update_complete_response( volume, reply ):
 
 
 # ----------------------------------
+def file_update_get_attrs( entry_dict, attr_list ):
+   """
+   Get a set of required attriutes.
+   Return None if at least one is missing.
+   """
+   ret = {}
+   for attr_name in attr_list:
+      if not entry_dict.has_key(attr_name):
+         return None 
+      
+      ret[attr_name] = entry_dict[attr_name]
+   
+   return ret
+
+# ----------------------------------
 def _resolve( owner_id, volume, file_id, file_version, write_nonce ):
    """
    Read file and listing of the given file_id.
@@ -718,31 +733,32 @@ def file_xattr_chmodxattr( reply, gateway, volume, update, caller_is_admin=False
       xattr_mode = update.xattr_mode 
    
    if xattr_mode is None:
-      return -errno.EINVAL
+      logging.error("chmodxattr: Missing xattr_mode field")
+      rc = -errno.EINVAL
    
-   attrs = MSEntry.unprotobuf_dict( update.entry )
-   
-   logging.info("chmodxattr /%s/%s (name=%s, parent=%s) %s = %s (mode=0%o)" % 
-                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_mode))
+   else:
+      attrs = MSEntry.unprotobuf_dict( update.entry )
       
-   
-   file_id = attrs['file_id']
-   
-   # is this xattr writable?
-   rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
-   
-   if rc == 0:
-      # allowed!
-      # get user id
-      gateway_owner_id = GATEWAY_ID_ANON
-      if gateway is not None:
-         gateway_owner_id = gateway.owner_id
-      
-      rc = MSEntryXAttr.ChmodXAttr( volume, file_id, update.xattr_name, xattr_mode, gateway_owner_id, caller_is_admin )
-      
-   logging.info("chmodxattr /%s/%s (name=%s, parent=%s) %s = %s (mode=0%o) rc = %s" % 
-                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_mode, rc) )
+      logging.info("chmodxattr /%s/%s (name=%s, parent=%s) %s = %s (mode=0%o)" % 
+                     (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_mode))
          
+      file_id = attrs['file_id']
+      
+      # is this xattr writable?
+      rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
+      
+      if rc == 0:
+         # allowed!
+         # get user id
+         gateway_owner_id = GATEWAY_ID_ANON
+         if gateway is not None:
+            gateway_owner_id = gateway.owner_id
+         
+         rc = MSEntryXAttr.ChmodXAttr( volume, file_id, update.xattr_name, xattr_mode, gateway_owner_id, caller_is_admin )
+         
+      logging.info("chmodxattr /%s/%s (name=%s, parent=%s) %s = %s (mode=0%o) rc = %s" % 
+                     (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_mode, rc) )
+            
    return rc
 
 
@@ -752,36 +768,235 @@ def file_xattr_chownxattr( reply, gateway, volume, update, caller_is_admin=False
    Set the access mode for an extended attribute.
    """
    
+   attrs = MSEntry.unprotobuf_dict( update.entry )
+   
+   logging.info("chownxattr /%s/%s (name=%s, parent=%s) %s = %s (owner=%s)" % 
+                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_owner))
+   
+   
    xattr_owner = None
    
    if update.HasField( 'xattr_owner' ):
       xattr_owner = update.xattr_owner 
    
    if xattr_owner is None:
-      return -errno.EINVAL
+      logging.error("Missing xattr_owner field")
+      rc = -errno.EINVAL
    
-   attrs = MSEntry.unprotobuf_dict( update.entry )
-   
-   logging.info("chownxattr /%s/%s (name=%s, parent=%s) %s = %s (owner=%s)" % 
-                  (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_owner))
+   else:
+      file_id = attrs['file_id']
       
-   
-   file_id = attrs['file_id']
-   
-   # is this xattr writable?
-   rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
-   
-   if rc == 0:
-      # allowed!
-      # get user id
-      gateway_owner_id = GATEWAY_ID_ANON
-      if gateway is not None:
-         gateway_owner_id = gateway.owner_id
+      # is this xattr writable?
+      rc, xattr = file_xattr_get_and_check_xattr_writable( gateway, volume, file_id, update.xattr_name, caller_is_admin )
       
-      rc = MSEntryXAttr.ChownXAttr( volume, file_id, update.xattr_name, xattr_owner, gateway_owner_id, caller_is_admin )
+      if rc == 0:
+         # allowed!
+         # get user id
+         gateway_owner_id = GATEWAY_ID_ANON
+         if gateway is not None:
+            gateway_owner_id = gateway.owner_id
+         
+         rc = MSEntryXAttr.ChownXAttr( volume, file_id, update.xattr_name, xattr_owner, gateway_owner_id, caller_is_admin )
       
    logging.info("chownxattr /%s/%s (name=%s, parent=%s) %s = %s (owner=%s) rc = %s" % 
                   (attrs['volume_id'], attrs['file_id'], attrs['name'], attrs['parent_id'], update.xattr_name, update.xattr_value, xattr_owner, rc) )
          
    return rc
 
+
+# ----------------------------------
+def file_manifest_log_check_access( gateway, msent ):
+   """
+   Verify that the gateway is allowed to manipulate the MSEntry's manifest log.
+   """
+   return msent.coordinator_id == gateway.g_id
+
+
+# ----------------------------------
+def file_manifest_log_response( volume, rc, log_record ):
+   """
+   Create a file response for the log record, if given.
+   """
+   
+   reply = file_update_init_response( volume )
+   reply.error = rc
+   
+   if rc == 0:
+      pass 
+   
+   return file_update_complete_response( volume, reply )
+
+
+# ----------------------------------
+def file_manifest_log_peek( gateway, volume, file_id, caller_is_admin=False ):
+   """
+   Get the head of the manifest log for a particular file.
+   Only serve data back if the requester is the coordinator of the file.
+   """
+   
+   file_id_str = MSEntry.unserialize_id( file_id )
+   
+   logging.info("manifest log peek /%s/%s by %s" % (volume.volume_id, file_id_str, gateway.g_id))
+   
+   rc = 0
+   log_head = None
+   
+   msent = MSEntry.Read( volume, file_id )
+   if msent is None:
+      logging.error("No entry for %s" % file_id)
+      rc = -errno.ENOENT 
+      
+   else:
+      
+      # security check
+      if not caller_is_admin and not file_manifest_log_check_access( gateway, msent ):
+         logging.error("Gateway %s is not allowed to access the manifest log of %s" % (gateway.name, file_id_str))
+         rc = -errno.EACCES
+      
+      else:
+         # get the log head 
+         log_head = MSEntryGCLog.Peek( volume.volume_id, file_id )
+         
+         if log_head is None:
+            # no more data
+            rc = -errno.ENODATA 
+   
+   logging.info("manifest log peek /%s/%s by %s rc = %s" % (volume.volume_id, file_id_str, gateway.g_id, rc))
+   
+   return file_manifest_log_response( volume, rc, log_record )
+
+
+# ----------------------------------
+def file_manifest_log_verify_deletion_receipts( volume_id, file_id, file_version, manifest_mtime_sec, manifest_mtime_nsec, receipt_list ):
+   """
+   Verify the legitimacy of the set of manifest deletion receipts.
+   There must be one for every RG in the Volume, and 
+   they must all be signed by the respective RGs.
+   """
+   
+   for receipt in receipt_list:
+      # basic sanity check 
+      if receipt.volume_id != volume_id:
+         return -errno.EINVAL 
+      
+      if receipt.file_id != file_id:
+         return -errno.EINVAL
+      
+      if receipt.version != file_version:
+         return -errno.EINVAL
+      
+      if receipt.manifest_mtime_sec != manifest_mtime_sec:
+         return -errno.EINVAL
+      
+      if receipt.manifest_mtime_nsec != manifest_mtime_nsec:
+         return -errno.EINVAL
+      
+   # get all volume RGs
+   RGs = Gateway.ListAll( {"Gateway.volume_id ==" : volume_id, "Gateway.gateway_type ==": GATEWAY_TYPE_RG} )
+   
+   # make sure all RGs are listed in the receipts.
+   # build up a ID <--> RG map in the process 
+   RG_table = {}
+   RG_present = {}
+   for RG in RGs:
+      RG_table[ RG.g_id ] = RG 
+      RG_present[ RG.g_id ] = False
+   
+   # receipts must all refer to existing RGs
+   for receipt in receipt_list:
+      if not RG_table.has_key( receipt.RG_id ):
+         # no receipt from this RG 
+         logging.error("No such RG %s" % receipt.RG_id )
+         return -errno.EAGAIN
+      
+      else:
+         RG_present[ receipt.RG_id ] = True 
+         
+         
+   # any unaccounted-for receipts?
+   for (RG_id, present) in RG_present.items():
+      if not present:
+         logging.error("Missing receipt for RG %s" % RG_id )
+         return -errno.EAGAIN
+   
+   # got receipts for all RGs
+   # make sure all RG signatures match 
+   for receipt in receipt_list:
+      RG = RG_table[ receipt.RG_id ]
+      valid = RG.verify_message( receipt )
+      
+      if not valid:
+         logging.error("Receipt for RG %s has signature mismatch" % RG.g_id )
+         return -errno.EINVAL 
+      
+   # success!
+   return 0
+      
+
+# ----------------------------------
+def file_manifest_log_remove( reply, gateway, volume, update, caller_is_admin=False ):
+   """
+   Remove a record of the manifest log for a particular file.
+   This method will check to see if the requester:
+     * is the coordinator of the file 
+     * has the signed proofs from all the Volume's RGs that they don't have the manifest anymore.
+   """
+   
+   # get receipts
+   deletion_receipts = None 
+   
+   if update.HasField("deletion_receipts"):
+      deletion_receipts = update.deletion_receipts 
+   else:
+      logging.error("manifest log remove: Missing deletion_receipts")
+      return -errno.EINVAL 
+   
+   # check entry attrs
+   attrs = MSEntry.unprotobuf_dict( update.entry )
+   
+   rc = 0
+   required_attrs =  ['file_id', 'version', 'manifest_mtime_sec', 'manifest_mtime_nsec']
+   
+   attrs = file_update_get_attrs( attrs, required_attrs )
+   
+   if attrs is None:
+      logging.error("manifest log remove: Missing one of %s" % required_attrs )
+      rc = -errno.EINVAL
+   
+   else:
+      
+      # extract attrs
+      file_id = attrs['file_id']
+      file_id_str = MSEntry.unserialize_id( file_id )
+      
+      logging.info("manifest log remove /%s/%s by %s" % (volume.volume_id, file_id_str, gateway.g_id))
+   
+      version = attrs['version']
+      manifest_mtime_sec = attrs['manifest_mtime_sec']
+      manifest_mtime_nsec = attrs['manifest_mtime_nsec']
+      
+      # get msent
+      msent = MSEntry.Read( volume, file_id )
+      if msent is None:
+         logging.error("No entry for %s" % file_id_str )
+         rc = -errno.ENOENT
+      
+      else:
+         # security check 
+         if not caller_is_admin and not file_manifest_log_check_access( gateway, msent ):
+            logging.error("Gateway %s is not allowed to access the manifest log of %s" % (gateway.name, file_id_str))
+            
+         else:
+            # do we have proof-of-absence from all the RGs?
+            rc = file_manifest_log_verify_deletion_receipts( volume.volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec, deletion_receipts )
+            
+            if rc != 0:
+               logging.error("Failed to verify deletion receipts, rc = %s" % rc)
+            
+            else:
+               # validated. Delete!
+               MSEntryGCLog.Remove( volume.volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
+   
+      logging.info("manifest log remove /%s/%s by %s rc = %s" % (volume.volume_id, file_id_str, gateway.g_id, rc))
+   
+   return rc

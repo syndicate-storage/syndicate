@@ -120,6 +120,15 @@ def check_delete_caps( req ):
    
    return 0
 
+
+#-------------------------
+def is_manifest_request( req ):
+   """
+   Is this a manifest request?
+   """
+   return req.type == RequestInfo.MANIFEST
+
+
 #-------------------------
 def verify_protobuf( gateway_id, volume_id, pb ):
    '''
@@ -147,6 +156,27 @@ def verify_protobuf( gateway_id, volume_id, pb ):
    
    return valid
    
+   
+#-------------------------
+def sign_protobuf( pb ):
+   '''
+      Sign a protobuf.  Return the base64-based signature
+   '''
+   
+   libsyndicate = get_libsyndicate()
+   
+   pb.signature = ""
+   
+   tosign = pb.SerializeToString()
+   
+   sigb64 = None
+   try:
+      sigb64 = libsyndicate.sign_message( tosign )
+   except Exception, e:
+      log.exception( e )
+      return None 
+   
+   return sigb64
 
 #-------------------------
 def parse_request_info_from_pb( req_info_str ):
@@ -278,7 +308,36 @@ def parse_request_info_from_url_path( url_path ):
       
       return replica_info
    
+#-------------------------
+def make_deletion_receipt( req ):
+   """
+   Generate a signed deletion receipt for a manifest.
+   """
    
+   if not is_manifest_request( req ):
+      return None 
+   
+   libsyndicate = rg_common.get_libsyndicate()
+   RG_id = libsyndicate.gateway_id()
+   
+   deletion_receipt = ms_proto.ms_manifest_deletion_receipt()
+   
+   deletion_receipt.RG_id = RG_id
+   deletion_receipt.volume_id = req.volume_id
+   deletion_receipt.file_id = req.file_id
+   deletion_receipt.version = req.version
+   deletion_receipt.manifest_mtime_sec = req.mtime_sec 
+   deletion_receipt.manifest_mtime_nsec = req.mtime_nsec
+   deletion_receipt.signature = ""
+   
+   sigb64 = sign_protobuf( deletion_receipt )
+   
+   deletion_receipt.signature = sigb64 
+   
+   return deletion_receipt 
+
+
+#-------------------------   
 if __name__ == "__main__":
    
    manifest_req_info = parse_request_info_from_url_path( "/SYNDICATE-DATA/1/12345.67890/manifest.12345.67890" )
