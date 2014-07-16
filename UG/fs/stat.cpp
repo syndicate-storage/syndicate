@@ -491,8 +491,41 @@ int fs_entry_access( struct fs_core* core, char const* path, int mode, uint64_t 
 
 // chown
 int fs_entry_chown( struct fs_core* core, char const* path, uint64_t user, uint64_t volume, uint64_t new_user ) {
-   // TODO: ms_client_claim
-   return -ENOSYS;
+   int err = 0;
+   uint64_t parent_id = 0;
+   char* parent_name = NULL;
+   
+   struct fs_entry* fent = fs_entry_resolve_path_and_parent_info( core, path, user, volume, true, &err, &parent_id, &parent_name );
+   if( !fent || err ) {
+      if( !err )
+         err = -ENOMEM;
+
+      return err;
+   }
+
+   // can't chown unless we own the file
+   if( fent->owner != user ) {
+      fs_entry_unlock( fent );
+      free( parent_name );
+      return -EPERM;
+   }
+
+   fent->owner = new_user;
+   
+   // post update
+   struct md_entry up;
+   fs_entry_to_md_entry( core, &up, fent, parent_id, parent_name );
+
+   int rc = ms_client_update( core->ms, &up );
+   if( rc != 0 ) {
+      errorf("ms_client_update(%s) rc = %d\n", path, rc );
+   }
+
+   md_entry_free( &up );
+   fs_entry_unlock( fent );
+   free( parent_name );
+
+   return rc;
 }
 
 
