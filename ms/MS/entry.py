@@ -72,6 +72,7 @@ class MSEntryShard(storagetypes.Object):
    size = storagetypes.Integer(default=0, indexed=False )
    write_nonce = storagetypes.Integer( default=0, indexed=False )
    xattr_nonce = storagetypes.Integer( default=0, indexed=False )
+   nonce_ts = storagetypes.Integer( default=0, indexed=False )          # for finding the latest write or xattr nonces
    
    # version of the MSEntry we're associated with
    msentry_version = storagetypes.Integer(default=0, indexed=False )
@@ -79,26 +80,10 @@ class MSEntryShard(storagetypes.Object):
    # volume ID of the MSEntry we're associated with
    msentry_volume_id = storagetypes.Integer()
    
-   @classmethod
-   def modtime_max( cls, m1, m2 ):
-      # return the later of two MSEntryShards, based on moddtime
-      if m1.mtime_sec < m2.mtime_sec:
-         return m2
-
-      elif m1.mtime_sec > m2.mtime_sec:
-         return m1
-
-      elif m1.mtime_nsec < m2.mtime_nsec:
-         return m2
-
-      elif m1.mtime_nsec > m2.mtime_nsec:
-         return m1
-
-      return m1
-
+   
    @classmethod
    def manifest_modtime_max( cls, m1, m2 ):
-      # return the later of two MSEntryShards, based on manifest_moddtime
+      # return the later of two MSEntryShards, based on manifest_modtime
       if m1.manifest_mtime_sec < m2.manifest_mtime_sec:
          return m2
 
@@ -120,6 +105,13 @@ class MSEntryShard(storagetypes.Object):
 
       return sz2
    
+   @classmethod 
+   def nonce_max( cls, n1, n2 ):
+      if n1.nonce_ts > n2.nonce_ts:
+         return n1 
+   
+      return n2 
+   
    @classmethod
    def get_latest_attr( cls, ent, shards, attr ):
       mm = MSEntryShard.get_latest_shard( ent, shards )
@@ -130,12 +122,12 @@ class MSEntryShard(storagetypes.Object):
    
    @classmethod
    def get_latest_shard( cls, ent, shards ):
-      mm = None
+      s = None
       latest_version = ent.version
       latest_shard = None
       for shard in shards:
-         if mm == None:
-            mm = shard
+         if s == None:
+            s = shard
             continue
 
          if shard == None:
@@ -144,9 +136,9 @@ class MSEntryShard(storagetypes.Object):
          if shard.msentry_version != latest_version:
             continue
          
-         mm = MSEntryShard.modtime_max( mm, shard )
+         s = MSEntryShard.nonce_max( s, shard )
       
-      return mm
+      return s
 
    @classmethod
    def get_mtime_from_shards( cls, ent, shards ):
@@ -710,16 +702,16 @@ class MSEntry( storagetypes.Object ):
    parent_id = storagetypes.String( default="-1" )                # file_id value of parent directory
    deleted = storagetypes.Boolean( default=False, indexed=False ) # whether or not this directory is considered to be deleted
    umount_id = storagetypes.String( default="None" )
+   version = storagetypes.Integer( default=0, indexed=False )
    
    # stuff that can be encrypted
    name = storagetypes.String( default="", indexed=False )
-   version = storagetypes.Integer( default=0, indexed=False )
    ctime_sec = storagetypes.Integer( default=0, indexed=False )
    ctime_nsec = storagetypes.Integer( default=0, indexed=False )
    max_read_freshness = storagetypes.Integer( default=0, indexed=False )
    max_write_freshness = storagetypes.Integer( default=0, indexed=False )
 
-   # stuff that can be encrypted and filled in from a shard
+   # stuff that can be filled in from a shard (but can't be encrypted)
    mtime_sec = storagetypes.Integer( default=-1, indexed=False )
    mtime_nsec = storagetypes.Integer( default=-1, indexed=False )
    manifest_mtime_sec = storagetypes.Integer( default=-1, indexed=False )               # NOTE: only used for files
@@ -727,6 +719,7 @@ class MSEntry( storagetypes.Object ):
    size = storagetypes.Integer( default=0, indexed=False )
    write_nonce = storagetypes.Integer( default=0, indexed=False )
    xattr_nonce = storagetypes.Integer( default=0, indexed=False )
+   nonce_ts = storagetypes.Integer( default=0, indexed=False )          # internal monotonically increasing timestamp from coordinator for nonces
 
    # attributes that must be supplied on creation
    required_attrs = [
@@ -744,7 +737,7 @@ class MSEntry( storagetypes.Object ):
       "ctime_sec",
       "ctime_nsec",
       "mode",
-      "size",
+      "size"
    ]
 
    # attributes that uniquely identify this entry
@@ -797,6 +790,7 @@ class MSEntry( storagetypes.Object ):
    write_attrs = [
       "name",
       "version",
+      "owner_id",
       "mode",
       "size",
       "mtime_sec",
@@ -820,7 +814,8 @@ class MSEntry( storagetypes.Object ):
       "msentry_version",
       "msentry_volume_id",
       "write_nonce",
-      "xattr_nonce"
+      "xattr_nonce",
+      "nonce_ts"
    ]
 
    # functions that read a sharded value from shards for an instance of this ent
@@ -831,7 +826,8 @@ class MSEntry( storagetypes.Object ):
       "mtime_nsec": (lambda ent, shards: MSEntryShard.get_mtime_from_shards( ent, shards )[1]),
       "size": (lambda ent, shards: MSEntryShard.get_size_from_shards( ent, shards )),
       "write_nonce": (lambda ent, shards: MSEntryShard.get_latest_attr( ent, shards, "write_nonce" )),
-      "xattr_nonce": (lambda ent, shards: MSEntryShard.get_latest_attr( ent, shards, "xattr_nonce" ))
+      "xattr_nonce": (lambda ent, shards: MSEntryShard.get_latest_attr( ent, shards, "xattr_nonce" )),
+      "nonce_ts": (lambda ent, shards: MSEntryShard.get_latest_attr( ent, shards, "nonce_ts" ))
    }
 
    # functions that write a sharded value, given this ent
@@ -840,7 +836,8 @@ class MSEntry( storagetypes.Object ):
       "msentry_volume_id": (lambda ent: ent.volume_id),
       "size": (lambda ent: ent.size),
       "write_nonce": (lambda ent: ent.write_nonce),
-      "xattr_nonce": (lambda ent: ent.xattr_nonce)
+      "xattr_nonce": (lambda ent: ent.xattr_nonce),
+      "nonce_ts": (lambda ent: ent.nonce_ts)
    }
    
    @classmethod 
@@ -880,7 +877,7 @@ class MSEntry( storagetypes.Object ):
       pbent.max_write_freshness = kwargs.get( 'max_write_freshness', self.max_write_freshness )
       pbent.write_nonce = kwargs.get( 'write_nonce', self.write_nonce )
       pbent.xattr_nonce = kwargs.get( 'xattr_nonce', self.xattr_nonce )
-
+      
       pbent.parent_id = MSEntry.serialize_id( kwargs.get('parent_id', '0000000000000000') )
       pbent.file_id = MSEntry.serialize_id( kwargs.get( 'file_id', self.file_id ) )
       
@@ -915,7 +912,7 @@ class MSEntry( storagetypes.Object ):
       ret.max_write_freshness = ent.max_write_freshness
       ret.write_nonce = ent.write_nonce
       ret.xattr_nonce = ent.xattr_nonce
-
+      
       if ent.HasField('parent_id'): # and ent.HasField('parent_name'):
          #ret.parent_key = storagetypes.make_key( MSEntry, MSEntry.make_key_name( ent.volume, ent.parent_id ) )
          ret.parent_id = MSEntry.unserialize_id( ent.parent_id )
@@ -996,6 +993,8 @@ class MSEntry( storagetypes.Object ):
       if shard == None:
          shard = self.shard_class( key=shard_key )
       
+      parent_attrs['nonce_ts'] = MSEntry.make_nonce_ts()
+      
       MSEntry.populate_shard_inst( self, shard, **parent_attrs )
 
       shard.put_async()
@@ -1046,9 +1045,10 @@ class MSEntry( storagetypes.Object ):
 
       return 0
 
+   
    @classmethod
    def preprocess_attrs( cls, ent_attrs ):
-      # do some preprocessing on the ent attributes...
+      # do some preprocessing on the ent attributes, autogenerating them if need be
       if ent_attrs.has_key( "mode" ):
          if (ent_attrs['mode'] & 0444) != 0:
             ent_attrs['is_readable_in_list'] = True
@@ -1056,6 +1056,7 @@ class MSEntry( storagetypes.Object ):
             ent_attrs['is_readable_in_list'] = False
          
       ent_attrs['write_nonce'] = random.randint( -2**63, 2**63 - 1 )
+      ent_attrs['nonce_ts'] = cls.make_nonce_ts()
       
    
    @classmethod
@@ -1085,6 +1086,7 @@ class MSEntry( storagetypes.Object ):
       attrs['mtime_nsec'] = now_nsec
       
       attrs['write_nonce'] = random.randint( -2**63, 2**63 - 1 )
+      attrs['nonce_ts'] = MSEntry.make_nonce_ts()
       
       key_name = MSEntry.make_key_name( ent.volume_id, ent.file_id )
       shard_key = MSEntry.get_shard_key( key_name, random.randint( 0, num_shards-1 ) )
@@ -1192,7 +1194,7 @@ class MSEntry( storagetypes.Object ):
       if not is_writable( user_owner_id, volume_id, parent_ent.owner_id, parent_ent.mode ):
          storagetypes.deferred.defer( MSEntry.delete_all, [nameholder.key] )
          return (-errno.EACCES, None)
-
+      
       # check for namespace collision
       if nameholder.file_id != child_id or nameholder.parent_id != parent_id or nameholder.volume_id != volume_id or nameholder.name != ent_attrs['name']:
          # nameholder already existed
@@ -1239,6 +1241,15 @@ class MSEntry( storagetypes.Object ):
 
       return (0, child_ent)
 
+   @classmethod 
+   def make_nonce_ts( cls ):
+      """
+      Create a nonce timestamp
+      """
+      now_sec, now_nsec = storagetypes.clock_gettime()
+      nonce_ts = now_sec * 100000 + now_nsec / 10000        # 10-microsecond units
+      return nonce_ts
+   
 
    @classmethod
    def MakeRoot( cls, user_owner_id, volume, **root_attrs ):
@@ -1257,15 +1268,16 @@ class MSEntry( storagetypes.Object ):
          "ctime_nsec" : now_nsec,
          "mtime_sec" : now_sec,
          "mtime_nsec" : now_nsec,
-         "manifest_mtime_sec": now_sec,
-         "manifest_mtime_nsec": now_nsec,
+         "manifest_mtime_sec": 0,
+         "manifest_mtime_nsec": 0,
          "owner_id" : user_owner_id,
          "coordinator_id": 0,
          "volume_id" : volume.volume_id,
          "mode" : 0775,
          "size": 4096,
          "max_read_freshness" : 5000,
-         "max_write_freshness" : 0
+         "max_write_freshness" : 0,
+         "nonce_ts": MSEntry.make_nonce_ts()
       }
 
       basic_root_attrs.update( **root_attrs )
@@ -1371,6 +1383,14 @@ class MSEntry( storagetypes.Object ):
 
       # does this user have permission to write?
       if not is_writable( user_owner_id, volume.owner_id, ent.owner_id, ent.mode ):
+         return (-errno.EACCES, None)
+      
+      # if we're going to change mode, then we must own the ent 
+      if ent_attrs['mode'] != ent.mode and user_owner_id != ent.owner_id:
+         return (-errno.EACCES, None)
+      
+      # if we're going to change owner, then we must own the ent 
+      if ent_attrs['owner_id'] != ent.owner_id and user_owner_id != ent.owner_id:
          return (-errno.EACCES, None)
       
       # write the update 
