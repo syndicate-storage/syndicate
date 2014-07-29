@@ -25,6 +25,7 @@
 #include "replication.h"
 #include "fs.h"
 #include "opts.h"
+#include "vacuumer.h"
 
 struct syndicate_state {
    FILE* logfile;
@@ -34,6 +35,7 @@ struct syndicate_state {
    struct syndicate_cache cache;        // local cache
    struct rg_client replication;            // replication context
    struct rg_client garbage_collector;      // garbage collector context
+   struct fs_vacuumer vac;              // vacuumer
    struct md_downloader dl;             // downloader for this client
 
    // mounter info (since apparently FUSE doesn't do this right)

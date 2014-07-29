@@ -237,8 +237,8 @@ bool syndicate_extract_file_info( Serialization::WriteMsg* msg, char const** fs_
          *file_version = msg->accepted().file_version();
          break;
       }
-      case Serialization::WriteMsg::PREPARE: {
-         dbprintf("%s", "Got PREPARE\n");
+      case Serialization::WriteMsg::WRITE: {
+         dbprintf("%s", "Got WRITE\n");
          if( !msg->has_metadata() || !msg->blocks().size() == 0 ) {
             return false;
          }
@@ -354,8 +354,8 @@ void syndicate_make_msg_ack( struct md_HTTP_connection_data* md_con_data, Serial
 
 
 // fill a WriteMsg with a list of blocks
-void syndicate_make_promise_msg( Serialization::WriteMsg* writeMsg ) {
-   writeMsg->set_type( Serialization::WriteMsg::PROMISE );
+void syndicate_make_accepted_msg( Serialization::WriteMsg* writeMsg ) {
+   writeMsg->set_type( Serialization::WriteMsg::ACCEPTED );
 }
 
 
@@ -504,8 +504,8 @@ void server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
    
    // handle the message
    switch( msg->type() ) {
-      case Serialization::WriteMsg::PREPARE: {
-         // got a PREPARE message; we'll need to respond with a PROMISE message
+      case Serialization::WriteMsg::WRITE: {
+         // got a WRITE message; we'll need to respond with an ACCEPTED message
          // and update the appropriate file manifest to redirect to this client for the block data.
          // Also, begin downloading the affected blocks
          
@@ -523,8 +523,8 @@ void server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
             // update this file's manifest (republishing it in the process)
             rc = fs_entry_remote_write( state->core, fs_path, file_id, file_version, coordinator_id, msg );
             if( rc == 0 ) {
-               // create a PROMISE request--ask the remote writer to hold on to the blocks so we can collate them later
-               syndicate_make_promise_msg( &ack );
+               // create an ACCEPTED request--ask the remote writer to hold on to the blocks so we can collate them later
+               syndicate_make_accepted_msg( &ack );
             }
             else {
 
@@ -594,21 +594,6 @@ void server_HTTP_POST_finish( struct md_HTTP_connection_data* md_con_data ) {
             }
          }
 
-         break;
-      }
-
-      case Serialization::WriteMsg::ACCEPTED: {
-         // received an ACCEPTED message directly.
-         // We're allowed to evict this block then,
-         // if the remote client didn't encounter any errors
-         // collating the data.
-
-         if( msg->has_errorcode() ) {
-            errorf( "ACCEPTED error %d (%s)\n", msg->errorcode(), msg->errortxt().c_str() );
-            break;
-         }
-         
-         no_ack = true;
          break;
       }
       

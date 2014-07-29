@@ -57,6 +57,13 @@ indexes:
   - name: mode
   - name: file_id
 
+- kind: MSEntryVacuumLog
+  properties:
+  - name: file_id
+  - name: volume_id
+  - name: manifest_mtime_sec
+  - name: manifest_mtime_nsec
+
 - kind: MSEntryXAttr
   properties:
   - name: file_id

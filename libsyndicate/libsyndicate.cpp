@@ -1612,6 +1612,9 @@ void md_update_free( struct md_update* update ) {
    if( update->xattr_value )
       free( update->xattr_value );
 
+   if( update->affected_blocks )
+      free( update->affected_blocks );
+   
    memset( update, 0, sizeof(struct md_update) );
 }
 

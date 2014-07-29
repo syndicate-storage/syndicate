@@ -22,6 +22,11 @@ static inline unsigned char* hash_at( unsigned char* hashes, uint64_t block_offs
    return hashes + (block_offset) * BLOCK_HASH_LEN();
 }
 
+// public interface to hash_at 
+unsigned char* fs_entry_manifest_block_hash_ref( unsigned char* hashes, uint64_t block_offset ) {
+   return hash_at( hashes, block_offset );
+}
+
 // default constructor
 block_url_set::block_url_set() {
    this->file_id = 0;
@@ -1140,7 +1145,7 @@ void file_manifest::as_protobuf( struct fs_core* core, struct fs_entry* fent, Se
    pthread_rwlock_unlock( &this->manifest_lock );
 }
 
-// reload a manifest
+// reload/generate a manifest from a manifest message
 void file_manifest::reload( struct fs_core* core, struct fs_entry* fent, Serialization::ManifestMsg* mmsg ) {
    pthread_rwlock_wrlock( &this->manifest_lock );
 

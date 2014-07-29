@@ -22,7 +22,10 @@
 #include "network.h"
 #include "replication.h"
 #include "driver.h"
+#include "vacuumer.h"
+#include "syndicate.h"
 
+static char* fs_entry_path_to_string( path_t* ms_path, struct fs_entry* fent );
 
 // is a fent stale for reads?
 bool fs_entry_is_read_stale( struct fs_entry* fent ) {
@@ -292,6 +295,7 @@ static struct fs_entry* fs_entry_attach_ms_directory( struct fs_core* core, stru
 }
 
 // given an MS file record and a directory, attach it
+// parent must be write-locked
 static struct fs_entry* fs_entry_attach_ms_file( struct fs_core* core, struct fs_entry* parent, struct md_entry* ms_record ) {
    struct fs_entry* new_file = CALLOC_LIST( struct fs_entry, 1 );
    
@@ -312,6 +316,7 @@ static struct fs_entry* fs_entry_attach_ms_file( struct fs_core* core, struct fs
       clock_gettime( CLOCK_REALTIME, &new_file->refresh_time );
       new_file->read_stale = false;
       new_file->manifest->mark_stale();
+      
       return new_file;
    }
 }
@@ -504,6 +509,23 @@ static int fs_entry_zip_path_listing( path_t* ms_path, ms_response_t* ms_respons
 }
 
 
+// ensure that a fent has been or is in the process of being vacuumed 
+// fent must be read-locked
+static int fs_entry_ensure_vacuumed( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* fent ) {
+   
+   if( FS_ENTRY_LOCAL( consistency_cls->core, fent ) && fent->ftype == FTYPE_FILE && !fs_entry_vacuumer_is_vacuuming( fent ) && !fs_entry_vacuumer_is_vacuumed( fent ) ) {
+      
+      char* fs_path = fs_entry_path_to_string( consistency_cls->path, fent );
+      
+      fs_entry_vacuumer_write_bg_fent( &consistency_cls->core->state->vac, fs_path, fent );
+      
+      free( fs_path );
+   }
+   
+   return 0;
+}
+
+
 // fent should be write-locked
 static int fs_entry_reload_file( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* fent, struct ms_listing* listing ) {
    // sanity check
@@ -561,7 +583,8 @@ static struct fs_entry* fs_entry_remove_child( fs_entry_set* children, char cons
 }
 
 
-static int fs_entry_populate_directory( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* dent, struct md_entry** ms_ents, size_t ms_ents_size ) {
+// populate a directory, and vacuum any new files that we coordinate
+static int fs_entry_populate_and_sanitize_directory( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* dent, struct md_entry** ms_ents, size_t ms_ents_size ) {
    int rc = 0;
    
    // add the new entries (they will be the non-NULL entries)
@@ -589,6 +612,16 @@ static int fs_entry_populate_directory( struct fs_entry_consistency_cls* consist
          if( child->ftype == FTYPE_DIR ) {
             // directories are always stale on load, since we don't know if they have children yet
             fs_entry_mark_read_stale( child );
+         }
+         else {
+            // file.  is it ours?
+            // try to vacuum it, if it's local 
+            if( FS_ENTRY_LOCAL( consistency_cls->core, child ) && child->ftype == FTYPE_FILE ) {
+               
+               dbprintf("ensure vacuumed: %" PRIX64 ", vacuuming = %d, vacuumed = %d\n", child->file_id, child->vacuuming, child->vacuumed );
+               
+               fs_entry_ensure_vacuumed( consistency_cls, child );
+            }
          }
       }
    }
@@ -777,15 +810,16 @@ static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consisten
    // new child set, filled with the keepers
    dent->children = children_keep;
 
-   // add the new entries from the MS to dent
-   rc = fs_entry_populate_directory( consistency_cls, dent, ms_ents, ms_ents_size );
+   // add the new entries from the MS to dent, and clean any uncleaned (unvacuumed) data
+   rc = fs_entry_populate_and_sanitize_directory( consistency_cls, dent, ms_ents, ms_ents_size );
 
    if( rc != 0 ) {
       // error processing
-      errorf("fs_entry_populate_directory(%" PRIX64 " (%s)) rc = %d\n", dent->file_id, dent->name, rc );
+      errorf("fs_entry_populate_and_sanitize_directory(%" PRIX64 " (%s)) rc = %d\n", dent->file_id, dent->name, rc );
    }
    
-   // the old children now contains all fs_entry structures not found in the listing.
+   // the children list now contains all fs_entry structures not found in the listing.
+   // since they're gone from the MS, we must have vacuumed them already, so we can just
    // delete them.
    rc = fs_unlink_children( consistency_cls->core, children, true );
    if( rc != 0 ) {
@@ -850,6 +884,61 @@ static int fs_entry_path_find_by_name( path_t* ms_path, char const* name ) {
 }
 
 
+// convert a path_t to a string, appending fent to the end if ms_path is its parent directory (otherwise ignoring it)
+// return -ENOENT if not found 
+static char* fs_entry_path_to_string( path_t* ms_path, struct fs_entry* fent ) {
+   
+   if( ms_path->size() == 0 ) {
+      errorf("No path given, size = %zu\n", ms_path->size() );
+      return NULL;
+   }
+   
+   unsigned int i = 0;
+   size_t num_chars = 0;
+   for( i = 0; i < ms_path->size(); i++ ) {
+      num_chars += strlen(ms_path->at(i).name) + 2;
+   }
+   
+   bool append_fent = false;
+   
+   // if the last entry isn't the fent, then add the fent in too 
+   if( ms_path->at( ms_path->size() - 1 ).file_id != fent->file_id ) {
+      num_chars += strlen(fent->name) + 2;
+      append_fent = true;
+   }
+   
+   // build up the path 
+   char* ret = CALLOC_LIST( char, num_chars + 1 );
+   
+   // this is root
+   strcat( ret, ms_path->at(0).name );
+   
+   // done yet?
+   if( ms_path->size() == 1 && !append_fent ) {
+      return ret;
+   }
+   else if( ms_path->size() > 1 ) {
+      strcat( ret, ms_path->at(1).name );
+   }
+   
+   // do the rest
+   for( i = 2; i < ms_path->size(); i++ ) {
+      strcat( ret, "/" );
+      strcat( ret, ms_path->at(i).name );
+   }
+   
+   // append fent?
+   if( append_fent ) {
+      strcat( ret, "/" );
+      strcat( ret, fent->name );
+   }
+   
+   return ret;
+}
+
+
+// load an ms_listing into RAM, based on whether or not there were any changes to the listing since we queried.
+// fent must be write-locked
 static int fs_entry_load_listing( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* fent, struct ms_listing* listing ) {
 
    int rc = 0;
@@ -857,7 +946,9 @@ static int fs_entry_load_listing( struct fs_entry_consistency_cls* consistency_c
    if( listing->status == MS_LISTING_NOCHANGE ) {
       // nothing to do
       dbprintf("No change: %" PRIX64 " (%s)\n", fent->file_id, fent->name );
+      
       fs_entry_mark_read_fresh( fent );
+         
       return 0;
    }
 
@@ -951,6 +1042,16 @@ static int fs_entry_reload_entry( struct fs_entry* fent, void* cls ) {
       }
       
       consistency_cls->err = rc;
+   }
+   if( rc == 0 ) {
+      
+      // if the ent is local, is a file, and needs to be vacuumed, do so.
+      if( FS_ENTRY_LOCAL( consistency_cls->core, fent ) && fent->ftype == FTYPE_FILE ) {
+         
+         dbprintf("ensure vacuumed: %" PRIX64 ", vacuuming = %d, vacuumed = %d\n", fent->file_id, fent->vacuuming, fent->vacuumed );
+         
+         fs_entry_ensure_vacuumed( consistency_cls, fent );
+      }
    }
    
    return rc;
@@ -1298,12 +1399,10 @@ int fs_entry_reload_manifest( struct fs_core* core, struct fs_entry* fent, Seria
 
 
 // ensure that the manifest is up to date.
-// if check_coordinator is true, then ask the manifest-designated gateway before asking the RGs.
 // if successful_gateway_id != NULL, then fill it with the ID of the gateway that served the manifest (if any). Otherwise set to 0 if given but the manifest was fresh.
 // a manifest fetched from an AG will be marked as stale, since a subsequent read can fail with HTTP 204.  The caller should mark the manifest as fresh if it succeeds in reading data.
 // fent must be write-locked
-int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version,
-                                     int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id ) {
+int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec, uint64_t* successful_gateway_id ) {
    
    if( fent->manifest != NULL && fent->manifest->is_initialized() ) {
       if( FS_ENTRY_LOCAL( core, fent ) && !core->conf->is_client ) {
@@ -1346,110 +1445,34 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
       return 0;
    }
 
+   
    // otherwise, we need to refresh.  GoGoGo!
-   struct timespec modtime;
-   modtime.tv_sec = mtime_sec;
-   modtime.tv_nsec = mtime_nsec;
-   
-   
-   dbprintf("%" PRIX64 " (%s) manifest mtime: %" PRId64 ".%d\n", fent->file_id, fent->name, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec );
-   
-   char* manifest_url = NULL;
    int rc = 0;
    Serialization::ManifestMsg manifest_msg;
    
-   int gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
-   
-   if( check_coordinator && !FS_ENTRY_LOCAL( core, fent ) ) {
-      // check the MS-listed coordinator first, instead of asking the RGs directly
+   rc = fs_entry_get_manifest( core, fs_path, fent, mtime_sec, mtime_nsec, &manifest_msg, successful_gateway_id );
+   if( rc != 0 ) {
+      errorf("fs_entry_get_manifest(%s.%" PRId64 ".%d) rc = %d\n", fs_path, mtime_sec, mtime_nsec, rc );
       
-      if( gateway_type < 0 ) {
-         // unknown gateway...try refreshing the Volume
-         errorf("Unknown Gateway %" PRIu64 "\n", fent->coordinator );
-         ms_client_sched_volume_reload( core->ms );
-         return -EAGAIN;
-      }
+      END_TIMING_DATA( ts, ts2, "manifest refresh (error)" );
       
-      rc = fs_entry_make_manifest_url( core, fs_path, fent->coordinator, fent->file_id, version, &modtime, &manifest_url );
-      
-      if( rc != 0 ) {
-         // failed to produce the url
-         errorf("fs_entry_make_manifest_url rc = %d\n", rc );
-         
-         if( rc == -ENOENT ) {
-            // gateway not found.  try refreshing our certs
-            ms_client_sched_volume_reload( core->ms );
-            return -EAGAIN;
-         }
-         else {
-            return -ENODATA;
-         }
-      }
-      
-      dbprintf("Reload manifest from Gateway %" PRIu64 " at %s\n", fent->coordinator, manifest_url );
-  
-      rc = fs_entry_download_manifest( core, fs_path, fent, mtime_sec, mtime_nsec, manifest_url, &manifest_msg );
-      
-      if( rc == 0 && successful_gateway_id ) {
-         // got it from the coordinator
-         *successful_gateway_id = fent->coordinator;
-      }
-   }
-   
-   if( gateway_type != SYNDICATE_AG && (!check_coordinator || rc != 0 || FS_ENTRY_LOCAL( core, fent )) ) {
-      // either we couldn't get it from the remote UG, or its local and we don't have a copy ourselves
-      
-      if( rc != 0 ) {
-         errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
-      }
-      
-      // try the RGs
-      uint64_t rg_id = 0;
-      
-      rc = fs_entry_download_manifest_replica( core, fs_path, fent, mtime_sec, mtime_nsec, &manifest_msg, &rg_id );
-      
-      if( rc != 0 ) {
-         // error
-         errorf("Failed to read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d from RGs\n", fent->volume, fent->file_id, version, mtime_sec, mtime_nsec );
-         rc = -ENODATA;
+      if( rc == -ENOENT ) {
+         // not found
+         return rc;
       }
       else {
-         // success!
-         dbprintf("Read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d from RG %" PRIu64 "\n", fent->volume, fent->file_id, version, mtime_sec, mtime_nsec, rg_id );
-         rc = 0;
-         
-         if( successful_gateway_id ) {
-            // got it from this RG
-            *successful_gateway_id = rg_id;
-         }
+         return -ENODATA;
       }
-   }
-
-   free( manifest_url );
-
-   if( rc != 0 )
-      return rc;
-
-   // is this an error code?
-   if( manifest_msg.has_errorcode() ) {
-      // remote gateway indicates error
-      errorf("manifest error %d\n", manifest_msg.errorcode() );
-      return manifest_msg.errorcode();
-   }
-   
-   // verify that the manifest matches the timestamp
-   if( manifest_msg.mtime_sec() != mtime_sec || manifest_msg.mtime_nsec() != mtime_nsec ) {
-      // invalid manifest
-      errorf("timestamp mismatch: got %" PRId64 ".%d, expected %" PRId64 ".%d\n", manifest_msg.mtime_sec(), manifest_msg.mtime_nsec(), mtime_sec, mtime_nsec );
-      return -EBADMSG;
    }
    
    // repopulate the manifest and update the relevant metadata
    fs_entry_reload_manifest( core, fent, &manifest_msg );
    
+   ///////////////////////////////
    char* dat = fent->manifest->serialize_str();
    dbprintf("Manifest:\n%s\n", dat);
    free( dat );
+   ///////////////////////////////
 
    END_TIMING_DATA( ts, ts2, "manifest refresh (stale)" );
    
@@ -1465,7 +1488,7 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
       exit(1);
    }
    
-   return fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->version, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec, true, NULL );   
+   return fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec, NULL );   
 }
 
 
@@ -1552,7 +1575,7 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
       exit(1);
    }
    
-   rc = fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->version, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec, true, &rg_id );
+   rc = fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec, &rg_id );
 
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, rc );

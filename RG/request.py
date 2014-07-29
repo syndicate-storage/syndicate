@@ -307,35 +307,6 @@ def parse_request_info_from_url_path( url_path ):
                                   kwargs={})
       
       return replica_info
-   
-#-------------------------
-def make_deletion_receipt( req ):
-   """
-   Generate a signed deletion receipt for a manifest.
-   """
-   
-   if not is_manifest_request( req ):
-      return None 
-   
-   libsyndicate = rg_common.get_libsyndicate()
-   RG_id = libsyndicate.gateway_id()
-   
-   deletion_receipt = ms_proto.ms_manifest_deletion_receipt()
-   
-   deletion_receipt.RG_id = RG_id
-   deletion_receipt.volume_id = req.volume_id
-   deletion_receipt.file_id = req.file_id
-   deletion_receipt.version = req.version
-   deletion_receipt.manifest_mtime_sec = req.mtime_sec 
-   deletion_receipt.manifest_mtime_nsec = req.mtime_nsec
-   deletion_receipt.signature = ""
-   
-   sigb64 = sign_protobuf( deletion_receipt )
-   
-   deletion_receipt.signature = sigb64 
-   
-   return deletion_receipt 
-
 
 #-------------------------   
 if __name__ == "__main__":

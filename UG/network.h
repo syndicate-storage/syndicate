@@ -21,10 +21,14 @@
 #include "serialization.pb.h"
 
 // downloading
-int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec, char const* manifest_url, Serialization::ManifestMsg* mmsg );
+int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec, char const* manifest_url, Serialization::ManifestMsg* mmsg );
 
-int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec,
+int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec,
                                         Serialization::ManifestMsg* mmsg, uint64_t* successful_RG_id );
+
+// get a manifest
+int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec,
+                           Serialization::ManifestMsg* manifest_msg, uint64_t* successful_gateway_id );
 
 // write messages
 int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core, Serialization::WriteMsg_MsgType type );

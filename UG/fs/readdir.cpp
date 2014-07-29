@@ -64,20 +64,15 @@ struct fs_dir_entry** fs_entry_readdir_lowlevel( struct fs_core* core, char cons
          if( fent != dent && fs_entry_rlock( fent ) != 0 ) {
             continue;
          }
-         else if( fent->name != NULL ) {
+         else if( fent->name != NULL && !fent->deletion_in_progress ) {    // only show entries that exist
             d_ent = CALLOC_LIST( struct fs_dir_entry, 1 );
             d_ent->ftype = fent->ftype;
             fs_entry_to_md_entry( core, &d_ent->data, fent, parent_id, parent_name );
 
-            if( fent != dent )
-               fs_entry_unlock( fent );
          }
-         else {
-
-            if( fent != dent )
-               fs_entry_unlock( fent );
-
-            continue;
+         
+         if( fent != dent ) {
+            fs_entry_unlock( fent );
          }
       }
 

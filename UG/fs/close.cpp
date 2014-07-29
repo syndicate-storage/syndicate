@@ -69,11 +69,11 @@ int fs_entry_close( struct fs_core* core, struct fs_file_handle* fh ) {
          memset( &sync_ctx, 0, sizeof(struct sync_context) );
                
          // synchronize data and metadata
-         // TODO: garbage-collect
          rc = fs_entry_fsync_locked( core, fh, &sync_ctx );
          
          if( rc != 0 ) {
             
+            fs_entry_sync_context_free( &sync_ctx );
             fs_entry_unlock( fh->fent );
             fs_file_handle_unlock( fh );
             
@@ -84,7 +84,7 @@ int fs_entry_close( struct fs_core* core, struct fs_file_handle* fh ) {
       }
    }
    
-   if( free_working_data && sync ) {
+   if( free_working_data ) {
       fs_entry_free_working_data( fh->fent );
    }
 

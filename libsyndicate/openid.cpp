@@ -403,8 +403,13 @@ int ms_client_openid_complete( CURL* curl, char const* return_to_method, char co
    }
 
    // success!
-   *response_body = bits;
-   *response_body_len = len;
+   if( response_body != NULL ) {
+      *response_body = bits;
+   }
+   
+   if( response_body_len != NULL ) {
+      *response_body_len = len;
+   }
    
    free( return_to_url_and_path );
    if( return_to_qs )
@@ -415,7 +420,6 @@ int ms_client_openid_complete( CURL* curl, char const* return_to_method, char co
 
 
 // open a session with the MS, authenticating via OpenID.
-// an optional initial request (request_buf, request_len) will be sent on the "complete" leg of the OpenID authentication.
 // an optional download buffer (response_buf, response_len) will hold the MS's initial response from the OpenID authentication (from the "complete" leg).
 int ms_client_openid_session( CURL* curl, char const* ms_openid_url, char const* username, char const* password, char** response_buf, size_t* response_len, EVP_PKEY* syndicate_public_key ) {
    

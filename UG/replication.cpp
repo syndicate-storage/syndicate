@@ -40,7 +40,6 @@ int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_f
    
    snapshot->manifest_mtime_sec = ts.tv_sec;
    snapshot->manifest_mtime_nsec = ts.tv_nsec;
-   snapshot->manifest_initialized = snapshot_fent->manifest->is_initialized();
    return 0;
 }
 
@@ -71,7 +70,9 @@ int replica_context_init( struct replica_context* rctx,
                           unsigned char* hash,          // hash of data we're posting
                           size_t hash_len,              // length of hash
                           struct curl_httppost* form_data,
-                          bool free_on_processed        // if true, free this structure once its removed from the rg_client
+                          bool free_on_processed,        // if true, free this structure once its removed from the rg_client
+                          replica_continuation_t rcont, // continuation to invoke after processing 
+                          void* rcont_cls              // argument to rcont
                         ) {
    
    memset( rctx, 0, sizeof(struct replica_context) );
@@ -93,6 +94,8 @@ int replica_context_init( struct replica_context* rctx,
    rctx->size = data_len;
    rctx->form_data = form_data;
    rctx->free_on_processed = free_on_processed;
+   rctx->replica_continuation = rcont;
+   rctx->continuation_cls = rcont_cls;
    
    if( hash ) {
       rctx->hash_len = hash_len;
@@ -249,7 +252,7 @@ int replica_populate_request( ms::ms_gateway_request_info* replica_info, int req
 
 // create a manifest replica context
 // fent must be at least read-locked
-int replica_context_manifest( struct fs_core* core, struct replica_context* rctx, char const* fs_path, struct fs_entry* fent ) {
+int replica_context_manifest( struct fs_core* core, struct replica_context* rctx, char const* fs_path, struct fs_entry* fent, replica_continuation_t rcont, void* rcont_cls ) {
    
    // get the manifest data
    char* in_manifest_data = NULL;
@@ -337,7 +340,7 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
    
    // set up the replica context
    // caller will free it.
-   rc = replica_context_init( rctx, &snapshot, REPLICA_CONTEXT_TYPE_MANIFEST, REPLICA_POST, NULL, manifest_data, manifest_data_len, hash, hash_len, form_data, false );
+   rc = replica_context_init( rctx, &snapshot, REPLICA_CONTEXT_TYPE_MANIFEST, REPLICA_POST, NULL, manifest_data, manifest_data_len, hash, hash_len, form_data, false, rcont, rcont_cls );
    if( rc != 0 ) {
       errorf("replica_context_init(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
       
@@ -371,7 +374,9 @@ int replica_context_manifest( struct fs_core* core, struct replica_context* rctx
 
 // create a block replica context
 // fent must be read-locked
-int replica_context_block( struct fs_core* core, struct replica_context* rctx, struct fs_entry* fent, uint64_t block_id, int64_t block_version, unsigned char* hash, size_t hash_len, int block_fd ) {
+int replica_context_block( struct fs_core* core, struct replica_context* rctx, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
+                           unsigned char* hash, size_t hash_len, int block_fd,
+                           replica_continuation_t rcont, void* rcont_cls ) {
    
    FILE* f = fdopen( block_fd, "r" );
    if( f == NULL ) {
@@ -436,7 +441,7 @@ int replica_context_block( struct fs_core* core, struct replica_context* rctx, s
    
    // set up the replica context.
    // caller will free it.
-   rc = replica_context_init( rctx, &snapshot, REPLICA_CONTEXT_TYPE_BLOCK, REPLICA_POST, f, NULL, sb.st_size, hash, hash_len, form_data, false );
+   rc = replica_context_init( rctx, &snapshot, REPLICA_CONTEXT_TYPE_BLOCK, REPLICA_POST, f, NULL, sb.st_size, hash, hash_len, form_data, false, rcont, rcont_cls );
    if( rc != 0 ) {
       errorf("replica_context_init(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
       
@@ -451,7 +456,7 @@ int replica_context_block( struct fs_core* core, struct replica_context* rctx, s
 
 
 // garbage-collect a manifest
-int replica_context_garbage_manifest( struct fs_core* core, struct replica_context* rctx, struct replica_snapshot* snapshot ) {
+int replica_context_garbage_manifest( struct fs_core* core, struct replica_context* rctx, struct replica_snapshot* snapshot, bool free_on_processed, replica_continuation_t rcont, void* rcont_cls ) {
    int rc = 0;
    
    // put random bits into the hash field, for some cryptographic padding
@@ -489,7 +494,7 @@ int replica_context_garbage_manifest( struct fs_core* core, struct replica_conte
    
    // set up the replica context
    // we'll free it internally.
-   rc = replica_context_init( rctx, snapshot, REPLICA_CONTEXT_TYPE_MANIFEST, REPLICA_DELETE, NULL, NULL, 0, NULL, 0, form_data, true );
+   rc = replica_context_init( rctx, snapshot, REPLICA_CONTEXT_TYPE_MANIFEST, REPLICA_DELETE, NULL, NULL, 0, NULL, 0, form_data, free_on_processed, rcont, rcont_cls );
    if( rc != 0 ) {
       errorf("replica_context_init(%" PRIX64 ") rc = %d\n", snapshot->file_id, rc );
       
@@ -503,7 +508,7 @@ int replica_context_garbage_manifest( struct fs_core* core, struct replica_conte
 
 
 // garbage-collect a block
-int replica_context_garbage_block( struct fs_core* core, struct replica_context* rctx, struct replica_snapshot* snapshot ) {
+int replica_context_garbage_block( struct fs_core* core, struct replica_context* rctx, struct replica_snapshot* snapshot, bool free_on_processed, replica_continuation_t rcont, void* rcont_cls ) {
    int rc = 0;
    
    // put random bits into the hash field, for some salting
@@ -541,7 +546,7 @@ int replica_context_garbage_block( struct fs_core* core, struct replica_context*
    
    // set up the replica context
    // we'll free it internally
-   rc = replica_context_init( rctx, snapshot, REPLICA_CONTEXT_TYPE_BLOCK, REPLICA_DELETE, NULL, NULL, 0, NULL, 0, form_data, true );
+   rc = replica_context_init( rctx, snapshot, REPLICA_CONTEXT_TYPE_BLOCK, REPLICA_DELETE, NULL, NULL, 0, NULL, 0, form_data, free_on_processed, rcont, rcont_cls );
    
    if( rc != 0 ) {
       errorf("replica_context_init(%" PRIX64 ") rc = %d\n", snapshot->file_id, rc );
@@ -769,6 +774,29 @@ int replica_multi_upload( struct rg_client* synrp ) {
 }
 
 
+// finalize and free up a replica context, and if it's for deleting a manifest, signal the gc logger
+static int replica_context_finalize_and_free( struct rg_client* synrp, struct replica_context* rctx ) {
+
+   int rc = 0;
+   int rrc = rctx->error;
+   
+   // caller will not free the replica_contexts--they're internal to this module.
+   if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
+      dbprintf("%s: finalized %p %s %" PRIX64 "/manifest.%" PRId64 ".%d rc = %d, rctx rc = %d\n",
+               synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, rc, rrc );
+   }
+   else {
+      dbprintf("%s: finalized %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "] rc = %d, rctx rc = %d\n",
+               synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rc, rrc );
+   }
+   
+   fs_entry_replica_context_free( rctx );
+   free( rctx );
+   
+   return rc;
+}
+
+
 // erase a running replica context, given an iterator to synrp->uploads
 // NOTE: running_lock must be held by the caller!
 static int replica_erase_upload_context( struct rg_client* synrp, const replica_upload_set::iterator& itr ) {
@@ -797,6 +825,7 @@ static int replica_erase_upload_context( struct rg_client* synrp, const replica_
                      synrp->process_name, rctx, curl, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version );
          }
          
+         // TODO: recycle
          curl_easy_cleanup( rctx->curls->at(i) );
          (*rctx->curls)[i] = NULL;
       }
@@ -820,13 +849,29 @@ static int replica_erase_upload_context( struct rg_client* synrp, const replica_
       
       bool free_on_processed = rctx->free_on_processed;
       
+      if( rctx->replica_continuation != NULL ) {
+         // invoke the continuation before signaling finished
+         int cont_rc = (*rctx->replica_continuation)( synrp, rctx, rctx->continuation_cls );
+         
+         if( cont_rc != 0 ) {
+            if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
+               errorf("%s: Replica continuation for %p %s %" PRIX64 "/manifest.%" PRId64 ".%d rc = %d\n",
+                      synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, cont_rc );
+            }
+            else {
+               errorf("%s: Replica continuation for %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
+                      synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, cont_rc );
+            }
+         }
+         
+         rctx->continuation_rc = cont_rc;
+      }
+      
       // signal anyone waiting for this to have finished
       sem_post( &rctx->processing_lock );
       
       if( free_on_processed ) {
-         // destroy this
-         fs_entry_replica_context_free( rctx );
-         free( rctx );
+         replica_context_finalize_and_free( synrp, rctx );
       }
    }   
    
@@ -1170,8 +1215,8 @@ int replica_wait_and_remove( struct rg_client* rp, struct replica_context* rctx,
 }
 
 
-// initalize a syndicate replication instance
-int replica_init_replication( struct rg_client* rp, char const* name, struct md_syndicate_conf* conf, struct ms_client* client, uint64_t volume_id ) {
+// initalize an RG client
+int rg_client_init( struct rg_client* rp, char const* name, struct md_syndicate_conf* conf, struct ms_client* client, uint64_t volume_id ) {
    pthread_mutex_init( &rp->running_lock, NULL );
    pthread_mutex_init( &rp->pending_lock, NULL );
    pthread_mutex_init( &rp->cancel_lock, NULL );
@@ -1203,7 +1248,7 @@ int replica_init_replication( struct rg_client* rp, char const* name, struct md_
 
 
 // shut down a syndicate replication instance
-int replica_shutdown_replication( struct rg_client* rp, int wait_replicas ) {
+int rg_client_shutdown( struct rg_client* rp, int wait_replicas ) {
    rp->accepting = false;
    
    if( wait_replicas > 0 ) {
@@ -1319,16 +1364,16 @@ int replica_shutdown_replication( struct rg_client* rp, int wait_replicas ) {
 
 
 // start up replication
-int replication_init( struct syndicate_state* state, uint64_t volume_id) {
-   int rc = replica_init_replication( &state->replication, "replication", &state->conf, state->ms, volume_id );
+int fs_entry_replication_init( struct syndicate_state* state, uint64_t volume_id) {
+   int rc = rg_client_init( &state->replication, "replication", &state->conf, state->ms, volume_id );
    if( rc != 0 ) {
-      errorf("replication: replica_init_replication rc = %d\n", rc );
+      errorf("replication: rg_client_init rc = %d\n", rc );
       return -ENOSYS;
    }
    
-   rc = replica_init_replication( &state->garbage_collector, "garbage collector", &state->conf, state->ms, volume_id );
+   rc = rg_client_init( &state->garbage_collector, "garbage collector", &state->conf, state->ms, volume_id );
    if( rc != 0 ) {
-      errorf("garbage collector: replica_init_replication rc = %d\n", rc );
+      errorf("garbage collector: rg_client_init rc = %d\n", rc );
       return -ENOSYS;
    }
    
@@ -1337,16 +1382,16 @@ int replication_init( struct syndicate_state* state, uint64_t volume_id) {
 
 
 // shut down replication
-int replication_shutdown( struct syndicate_state* state, int wait_replicas ) {
-   int rc = replica_shutdown_replication( &state->replication, wait_replicas );
+int fs_entry_replication_shutdown( struct syndicate_state* state, int wait_replicas ) {
+   int rc = rg_client_shutdown( &state->replication, wait_replicas );
    if( rc != 0 ) {
-      errorf("%s: replica_shutdown_replication rc = %d\n", state->replication.process_name, rc );
+      errorf("%s: rg_client_shutdown rc = %d\n", state->replication.process_name, rc );
       return -ENOSYS;
    }
    
-   rc = replica_shutdown_replication( &state->garbage_collector, wait_replicas );
+   rc = rg_client_shutdown( &state->garbage_collector, wait_replicas );
    if( rc != 0 ) {
-      errorf("%s: replica_shutdown_replication rc = %d\n", state->garbage_collector.process_name, rc );
+      errorf("%s: rg_client_shutdown rc = %d\n", state->garbage_collector.process_name, rc );
       return -ENOSYS;
    }
    
@@ -1388,48 +1433,23 @@ int replica_start_block_contexts( struct fs_core* core, struct rg_client* synrp,
    }
    
    if( running.size() > 0 && block_futures ) {
-      if( block_futures ) {
-         // let the caller keep track of these replica_contexts as well.
-         for( unsigned int i = 0; i < running.size(); i++ ) {
-            block_futures->push_back( running[i] );
-         }
+      // let the caller keep track of these replica_contexts as well.
+      for( unsigned int i = 0; i < running.size(); i++ ) {
+         block_futures->push_back( running[i] );
       }
    }
    
    return rc;
 }
 
-// replicate a single block, asynchronously.
-// fent must be at least read-locked.
-struct replica_context* fs_entry_replicate_block_async( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, struct fs_entry_block_info* binfo, int* ret ) {
-   
-   int rc = 0;
-   struct replica_context* block_rctx = CALLOC_LIST( struct replica_context, 1 );
-   
-   rc = replica_context_block( core, block_rctx, fent, block_id, binfo->version, binfo->hash, binfo->hash_len, binfo->block_fd );
-   if( rc != 0 ) {
-      errorf("replica_context_block rc = %d\n", rc );
-      free( block_rctx );
-      block_rctx = NULL;
-   }
-   else {
-      // begin replicating
-      dbprintf("begin block %p\n", block_rctx );
-      rc = replica_begin( &core->state->replication, block_rctx );
-      if( rc != 0 ) {
-         errorf("replica_begin( block %p ) rc = %d\n", block_rctx, rc );
-         free( block_rctx );
-         block_rctx = NULL;
-      }
-   }
-   
-   *ret = rc;
-   return block_rctx;
-}
-
 // replicate a single manifest, asynchronously.
 // fent must be at least read-locked
-struct replica_context* fs_entry_replicate_manifest_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int* ret ) {
+int fs_entry_replicate_manifest_ex( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct replica_context** ret_rctx, bool async, replica_continuation_t rcont, void* rcont_cls ) {
+   
+   if( ret_rctx == NULL && async ) {
+      // need a future if not backgrounding and not going synchronously
+      return -EINVAL;
+   }
    
    if( fent->manifest == NULL || !fent->manifest->is_initialized() ) {
       dbprintf("Manifest for %" PRIX64 " is not initialized, so not replicating\n", fent->file_id );
@@ -1438,7 +1458,7 @@ struct replica_context* fs_entry_replicate_manifest_async( struct fs_core* core,
    
    struct replica_context* manifest_rctx = CALLOC_LIST( struct replica_context, 1 );
    
-   int rc = replica_context_manifest( core, manifest_rctx, fs_path, fent );
+   int rc = replica_context_manifest( core, manifest_rctx, fs_path, fent, rcont, rcont_cls );
    if( rc != 0 ) {
       errorf("replica_context_manifest rc = %d\n", rc );
       free( manifest_rctx );
@@ -1452,47 +1472,63 @@ struct replica_context* fs_entry_replicate_manifest_async( struct fs_core* core,
          errorf("replica_begin( manifest %p ) rc = %d\n", manifest_rctx, rc );
          free( manifest_rctx );
          manifest_rctx = NULL;
+         
+         return rc;
+      }
+      
+      // if not async, then finish the job 
+      if( !async ) {
+               
+         // wait for it to finish 
+         rc = fs_entry_replica_wait( core, manifest_rctx, 0 );
+         if( rc != 0 ) {
+            errorf("fs_entry_replica_wait( %s %" PRIX64 " ) rc = %d\n", fs_path, fent->file_id, rc );
+            
+            fs_entry_replica_context_free( manifest_rctx );
+            free( manifest_rctx );
+            return rc;
+         }
+         
+         // success!
+         fs_entry_replica_context_free( manifest_rctx );
+         free( manifest_rctx );
+      }
+      else {
+         // give back future 
+         *ret_rctx = manifest_rctx;
       }
    }
    
-   *ret = rc;
-   return manifest_rctx;
+   return rc;
 }
 
 
 // replicate a manifest, synchronously
 // fent must be read-locked
 int fs_entry_replicate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
-   
-   int rc = 0;
-   struct replica_context* manifest_future = fs_entry_replicate_manifest_async( core, fs_path, fent, &rc );
-   
-   if( manifest_future == NULL || rc != 0 ) {
-      errorf("fs_entry_replicate_manifest_async( %s %" PRIX64 " ) rc = %d\n", fs_path, fent->file_id, rc );
-      return rc;
-   }
-   
-   // wait for it to finish 
-   rc = fs_entry_replica_wait( core, manifest_future, 0 );
-   if( rc != 0 ) {
-      errorf("fs_entry_replica_wait( %s %" PRIX64 " ) rc = %d\n", fs_path, fent->file_id, rc );
-      
-      fs_entry_replica_context_free( manifest_future );
-      return rc;
-   }
-   
-   // success!
-   fs_entry_replica_context_free( manifest_future );
-   
-   return rc;
+   return fs_entry_replicate_manifest_ex( core, fs_path, fent, NULL, false, NULL, NULL );
+}
+
+// replicate a manifest, asynchronously
+// fent must be read-locked 
+struct replica_context* fs_entry_replicate_manifest_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int* ret ) {
+   struct replica_context* rctx = NULL;
+   *ret = fs_entry_replicate_manifest_ex( core, fs_path, fent, &rctx, true, NULL, NULL );
+   return rctx;
 }
 
 // replicate a sequence of modified blocks, asynchronously
 // in modified_blocks, we need the version, hash, hash_len, and block_fd fields for each block.
 // caller must free block_futures, even if the method returns in error
 // fent must be read-locked
-int fs_entry_replicate_blocks_async( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, replica_list_t* block_futures ) {
+int fs_entry_replicate_blocks_ex( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, replica_list_t* block_futures, bool async, replica_continuation_t rcont, void* rcont_cls ) {
+   
+   // need futures if async
+   if( block_futures == NULL && async )
+      return -EINVAL;
+   
    replica_list_t block_rctxs;
+   uint64_t file_id = fent->file_id;
    int rc = 0;
    
    for( modification_map::iterator itr = modified_blocks->begin(); itr != modified_blocks->end(); itr++ ) {
@@ -1501,7 +1537,7 @@ int fs_entry_replicate_blocks_async( struct fs_core* core, struct fs_entry* fent
       
       struct replica_context* block_rctx = CALLOC_LIST( struct replica_context, 1 );
       
-      rc = replica_context_block( core, block_rctx, fent, block_id, block_info->version, block_info->hash, block_info->hash_len, block_info->block_fd );
+      rc = replica_context_block( core, block_rctx, fent, block_id, block_info->version, block_info->hash, block_info->hash_len, block_info->block_fd, rcont, rcont_cls );
       if( rc != 0 ) {
          errorf("replica_context_block rc = %d\n", rc );
          free( block_rctx );
@@ -1512,9 +1548,31 @@ int fs_entry_replicate_blocks_async( struct fs_core* core, struct fs_entry* fent
    }
    
    if( rc == 0 ) {
-      rc = replica_start_block_contexts( core, &core->state->replication, &block_rctxs, block_futures );
+   
+      // start running them
+      rc = replica_start_block_contexts( core, &core->state->replication, &block_rctxs, (async ? block_futures : NULL) );
+      if( rc != 0 ) {
+         errorf("replica_start_block_contexts( %" PRIX64 " ) rc = %d\n", file_id, rc );
+         fs_entry_replica_list_free( &block_rctxs );
+      }
+      
+      if( !async ) {
+         
+         // wait for them to finish 
+         rc = fs_entry_replica_wait_all( core, &block_rctxs, 0 );
+         if( rc != 0 ) {
+            errorf("fs_entry_replica_wait_all( %" PRIX64 " ) rc = %d\n", file_id, rc );
+            
+            fs_entry_replica_list_free( &block_rctxs );
+            return rc;
+         }
+         
+         // success!
+         fs_entry_replica_list_free( &block_rctxs );
+      }
    }
    else {
+      // error
       fs_entry_replica_list_free( &block_rctxs );
    }
    
@@ -1526,74 +1584,122 @@ int fs_entry_replicate_blocks_async( struct fs_core* core, struct fs_entry* fent
 // in modified_blocks, we need the version, hash, hash_len, and block_fd fields for each block.
 // fent must be read-locked 
 int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks ) {
-   
-   int rc = 0;
-   replica_list_t block_futs;
-   uint64_t file_id = fent->file_id;
-   
-   rc = fs_entry_replicate_blocks_async( core, fent, modified_blocks, &block_futs );
-   
-   if( rc != 0 ) {
-      errorf("fs_entry_replicate_blocks_async( %" PRIX64 " ) rc = %d\n", file_id, rc );
-      return rc;
-   }
-   
-   // wait for them to finish 
-   rc = fs_entry_replica_wait_all( core, &block_futs, 0 );
-   if( rc != 0 ) {
-      errorf("fs_entry_replica_wait_all( %" PRIX64 " ) rc = %d\n", file_id, rc );
-      
-      fs_entry_replica_list_free( &block_futs );
-      return rc;
-   }
-   
-   fs_entry_replica_list_free( &block_futs );
-   return rc;
+   return fs_entry_replicate_blocks_ex( core, fent, modified_blocks, NULL, false, NULL, NULL );
 }
 
-// garbage-collect a manifest replica.
-int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snapshot* snapshot ) {
-   // NOTE: don't need to do anything if the manifest wasn't initialized 
-   if( !snapshot->manifest_initialized ) {
-      dbprintf("Manifest for %" PRIX64 " was not initialized, so not garbage-collecting\n", snapshot->file_id );
-      return 0;
+// replicate a sequence of modified blocks, asynchronously.
+// in modified_blocks, we need the version, hash, hash_len, and block_fd fields for each block.
+// fent must be read-locked 
+int fs_entry_replicate_blocks_async( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, replica_list_t* replica_futures ) {
+   return fs_entry_replicate_blocks_ex( core, fent, modified_blocks, replica_futures, true, NULL, NULL );
+}
+
+// garbage-collect a manifest replica
+// if background == False, then the caller needs to provide a future
+int fs_entry_garbage_collect_manifest_ex( struct fs_core* core, struct replica_snapshot* snapshot, struct replica_context** ret_manifest_garbage_future, int flags, replica_continuation_t rcont, void* rcont_cls ) {
+   
+   bool background = (flags & REPLICATE_BACKGROUND) != 0 ? true : false;
+   bool async = (flags & REPLICATE_ASYNC) != 0 ? true : false;
+   
+   // need futures if not background and async
+   if( ret_manifest_garbage_future == NULL && async ) {
+      return -EINVAL;
    }
    
-   struct replica_context* manifest_rctx = CALLOC_LIST( struct replica_context, 1 );
+   struct replica_context* manifest_garbage_future = CALLOC_LIST( struct replica_context, 1 );
    
-   int rc = replica_context_garbage_manifest( core, manifest_rctx, snapshot );
+   int rc = replica_context_garbage_manifest( core, manifest_garbage_future, snapshot, background, rcont, rcont_cls );
    if( rc != 0 ) {
       errorf("replica_context_garbage_manifest rc = %d\n", rc );
-      free( manifest_rctx );
+      
+      free( manifest_garbage_future );
+      
       return rc;
    }
    
    // if there are any pending uploads for this same manifest, stop them
    replica_cancel_contexts( &core->state->replication, snapshot );
    
-   // proceed to replicate
-   rc = replica_begin( &core->state->garbage_collector, manifest_rctx );
+   // send the request off to the RG
+   rc = replica_begin( &core->state->garbage_collector, manifest_garbage_future );
    
    if( rc != 0 ) {
-      errorf("replica_begin(%p) rc = %d\n", manifest_rctx, rc );
+      errorf("replica_begin(%p) rc = %d\n", manifest_garbage_future, rc );
       
-      fs_entry_replica_context_free( manifest_rctx );
-      free( manifest_rctx );
+      fs_entry_replica_context_free( manifest_garbage_future );
+      
+      free( manifest_garbage_future );
+      
       return rc;
    }
    
-   // will free once processed internally
+   if( !async && !background ) {
+      // run to completion 
+      rc = fs_entry_replica_wait( core, manifest_garbage_future, 0 );
+      if( rc != 0 ) {
+         errorf("fs_entry_replica_wait(%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d) rc = %d\n",
+               snapshot->file_id, snapshot->file_version, snapshot->manifest_mtime_sec, snapshot->manifest_mtime_nsec, rc );
+         
+         fs_entry_replica_context_free( manifest_garbage_future );
+         free( manifest_garbage_future );
+         return rc;
+      }
+      
+      // success!
+      fs_entry_replica_context_free( manifest_garbage_future );
+      free( manifest_garbage_future );
+   }
+   else if( async ) {
+      // caller will wait 
+      *ret_manifest_garbage_future = manifest_garbage_future;
+   }
+   
    return rc;
 }
 
+// garbage-collect a manifest replica, in the background
+int fs_entry_garbage_collect_manifest_bg( struct fs_core* core, struct replica_snapshot* snapshot ) {
+   return fs_entry_garbage_collect_manifest_ex( core, snapshot, NULL, REPLICATE_BACKGROUND, NULL, NULL );
+}
 
-// garbage-collect blocks
-// in modified_blocks, we only need the version field for each block.
-int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* modified_blocks ) {
+// garbage-collect a manifest, synchronously 
+int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snapshot* snapshot ) {
+   return fs_entry_garbage_collect_manifest_ex( core, snapshot, NULL, REPLICATE_SYNC, NULL, NULL );
+}
+
+// garbage-collect a manifest, asynchronously 
+int fs_entry_garbage_collect_manifest_async( struct fs_core* core, struct replica_snapshot* snapshot, struct replica_context** manifest_garbage_future, bool background ) {
+   int flags = REPLICATE_ASYNC;
+   if( background )
+      flags |= REPLICATE_BACKGROUND;
+   
+   return fs_entry_garbage_collect_manifest_ex( core, snapshot, manifest_garbage_future, flags, NULL, NULL );
+}
+
+// garbage-collect blocks, asynchronously.  Put the futures into garbage_futures
+// NOTE: in the garbage_blocks argument, we only need the version field for each block (everything else can be blank)
+int fs_entry_garbage_collect_blocks_ex( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* garbage_blocks, replica_list_t* garbage_futures, int flags, replica_continuation_t rcont, void* rcont_cls ) {
+   
+   bool background = (flags & REPLICATE_BACKGROUND) != 0 ? true : false;
+   bool async = (flags & REPLICATE_ASYNC) != 0 ? true : false;
+   
+   // sanity check 
+   if( async && garbage_futures == NULL ) {
+      return -EINVAL;
+   }
+   
+   bool sync_futures = false;
+   
+   // if synchronous, then create our own garbage blocks 
+   if( garbage_futures == NULL && !background && !async ) {
+      garbage_futures = new replica_list_t();
+      sync_futures = true;
+   }
+   
    replica_list_t block_rctxs;
    int rc = 0;
    
-   for( modification_map::iterator itr = modified_blocks->begin(); itr != modified_blocks->end(); itr++ ) {
+   for( modification_map::iterator itr = garbage_blocks->begin(); itr != garbage_blocks->end(); itr++ ) {
       uint64_t block_id = itr->first;
       struct fs_entry_block_info* block_info = &itr->second;
       
@@ -1606,12 +1712,17 @@ int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapsh
       
       struct replica_context* block_rctx = CALLOC_LIST( struct replica_context, 1 );
       
-      rc = replica_context_garbage_block( core, block_rctx, &block_snapshot );
+      rc = replica_context_garbage_block( core, block_rctx, &block_snapshot, background, rcont, rcont_cls );
       if( rc != 0 ) {
          errorf("replica_context_garbage_block rc = %d\n", rc );
          free( block_rctx );
          
          fs_entry_replica_list_free( &block_rctxs );
+         
+         if( sync_futures ) {
+            delete garbage_futures;
+         }
+            
          return rc;
       }
       else {
@@ -1623,17 +1734,61 @@ int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapsh
       }
    }
    
-   rc = replica_start_block_contexts( core, &core->state->garbage_collector, &block_rctxs, NULL );
+   rc = replica_start_block_contexts( core, &core->state->garbage_collector, &block_rctxs, garbage_futures );
    
    if( rc != 0 ) {
       errorf("replica_start_block_contexts rc = %d\n", rc );
       
+      // NOTE: this also frees garbage_futures
       for( replica_list_t::iterator itr = block_rctxs.begin(); itr != block_rctxs.end(); itr++ ) {
          fs_entry_replica_context_free( *itr );
+         free( *itr );
+      }
+      
+      if( garbage_futures ) {
+         garbage_futures->clear();
+      }
+   
+      if( sync_futures ) {
+         delete garbage_futures;
+      }
+      return rc;
+   }
+   
+   if( !async && !background ) {
+      // run to completion 
+      rc = fs_entry_replica_wait_all( core, &block_rctxs, -1 );
+      fs_entry_replica_list_free( &block_rctxs );
+      
+      if( sync_futures ) {
+         delete garbage_futures;
+      }
+      
+      if( rc != 0 ) {
+         errorf("fs_entry_replica_wait_all(%" PRIX64 ") rc = %d\n", snapshot->file_id, rc );
       }
    }
    
    return rc;
+}
+
+// garbage-collect blocks in the background 
+int fs_entry_garbage_collect_blocks_bg( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* garbage_blocks ) {
+   return fs_entry_garbage_collect_blocks_ex( core, snapshot, garbage_blocks, NULL, REPLICATE_BACKGROUND, NULL, NULL );
+}
+
+// garbage-collect blocks, synchronously 
+int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* garbage_blocks ) {
+   return fs_entry_garbage_collect_blocks_ex( core, snapshot, garbage_blocks, NULL, REPLICATE_SYNC, NULL, NULL );
+}
+
+// garbage-collect blocks, asynchronously 
+int fs_entry_garbage_collect_blocks_async( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* garbage_blocks, replica_list_t* garbage_futures, bool background ) {
+   int flags = REPLICATE_ASYNC;
+   if( background )
+      flags |= REPLICATE_BACKGROUND;
+   
+   return fs_entry_garbage_collect_blocks_ex( core, snapshot, garbage_blocks, garbage_futures, flags, NULL, NULL );
 }
 
 
@@ -1700,18 +1855,8 @@ int fs_entry_replica_wait_and_free( struct rg_client* synrp, replica_list_t* rct
       }
       
       if( rctx->free_on_processed ) {
-         // caller will not free the replica_contexts--they're internal to this module.
-         if( rctx->type == REPLICA_CONTEXT_TYPE_MANIFEST ) {
-            dbprintf("%s: free %p %s %" PRIX64 "/manifest.%" PRId64 ".%d rc = %d, rctx rc = %d\n",
-                     synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.manifest_mtime_sec, rctx->snapshot.manifest_mtime_nsec, rc, rrc );
-         }
-         else {
-            dbprintf("%s: free %p %s %" PRIX64 "[%" PRIu64 ".%" PRId64 "] rc = %d, rctx rc = %d\n",
-                     synrp->process_name, rctx, (rctx->op == REPLICA_POST ? "POST" : "DELETE"), rctx->snapshot.file_id, rctx->snapshot.block_id, rctx->snapshot.block_version, rc, rrc );
-         }
-         
-         fs_entry_replica_context_free( rctxs->at(i) );
-         free( rctxs->at(i) );
+         // clean up this rctx
+         replica_context_finalize_and_free( synrp, rctx );
          
          (*rctxs)[i] = NULL;
       }
@@ -1834,8 +1979,8 @@ int fs_entry_extract_block_info_from_failed_block_replicas( replica_list_t* rctx
 
 
 // garbage collect a file's data
-// fent must be read-locked
-int fs_entry_garbage_collect_file( struct fs_core* core, struct fs_entry* fent ) {
+// fent must be read-locked, and locally-coordinated
+int fs_entry_garbage_collect_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
    if( !FS_ENTRY_LOCAL( core, fent ) )
       return -EINVAL;
    
@@ -1847,13 +1992,6 @@ int fs_entry_garbage_collect_file( struct fs_core* core, struct fs_entry* fent )
    fs_entry_replica_snapshot( core, fent, 0, 0, &fent_snapshot );
 
    int rc = 0;
-   
-   // garbage-collect manifest
-   rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
-   if( rc != 0 ) {
-      errorf( "fs_entry_garbage_collect_manifest(%s) rc = %d\n", fent->name, rc );
-      rc = 0;
-   }
    
    // garbage-collect each block
    uint64_t num_blocks = fent->manifest->get_num_blocks();
@@ -1870,12 +2008,62 @@ int fs_entry_garbage_collect_file( struct fs_core* core, struct fs_entry* fent )
       block_infos[ i ] = binfo;
    }
    
-   rc = fs_entry_garbage_collect_blocks( core, &fent_snapshot, &block_infos );
+   // proceed 
+   rc = fs_entry_garbage_collect_kickoff( core, fs_path, &fent_snapshot, &block_infos, true );
    if( rc != 0 ) {
-      errorf( "fs_entry_garbage_collect_blocks(%s) rc = %d\n", fent->name, rc );
-      rc = 0;
+      errorf( "fs_entry_garbage_collect_kickoff(%s) rc = %d\n", fent->name, rc );
+      return rc;
    }
+   
  
    return rc;
+}
+
+
+// get the error value from a replica context 
+int fs_entry_replica_context_get_error( struct replica_context* rctx ) {
+   return rctx->error;
+}
+
+// get the continuation rc from a replica context 
+int fs_entry_replica_context_get_continuation_result( struct replica_context* rctx ) {
+   return rctx->continuation_rc;
+}
+
+// get the file ID from a replica context 
+uint64_t fs_entry_replica_context_get_file_id( struct replica_context* rctx ) {
+   return rctx->snapshot.file_id;
+}
+ 
+// get the snapshot 
+struct replica_snapshot* fs_entry_replica_context_get_snapshot( struct replica_context* rctx ) {
+   return &rctx->snapshot;
+}
+
+// get the type of replica context 
+int fs_entry_replica_context_get_type( struct replica_context* rctx ) {
+   return rctx->type;
+}
+
+// get the block ID of a replica context 
+// return (uint64_t)(-1) if this isn't a block context 
+uint64_t fs_entry_replica_context_get_block_id( struct replica_context* rctx ) {
+   if( rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ) {
+      return rctx->snapshot.block_id;
+   }
+   else {
+      return (uint64_t)(-1);
+   }
+}
+
+// get the block version of a replica context 
+// return 0 if this isn't a block context 
+int64_t fs_entry_replica_context_get_block_version( struct replica_context* rctx ) {
+   if( rctx->type == REPLICA_CONTEXT_TYPE_BLOCK ) {
+      return rctx->snapshot.block_version;
+   }
+   else {
+      return 0;
+   }
 }
 

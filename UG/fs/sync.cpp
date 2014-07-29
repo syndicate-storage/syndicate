@@ -19,6 +19,8 @@
 #include "cache.h"
 #include "write.h"
 #include "network.h"
+#include "vacuumer.h"
+#include "syndicate.h"
 
 // wait for our turn to run the metadata synchronization 
 int fs_entry_sync_context_wait( struct sync_context* sync_ctx ) {
@@ -66,8 +68,8 @@ int fs_entry_remote_write_or_coordinate( struct fs_core* core, char const* fs_pa
    }
    else {
       // coordinator gave us a reply
-      if( rc >= 0 && write_ack->type() != Serialization::WriteMsg::PROMISE ) {
-         // got something back, but not a PROMISE
+      if( rc >= 0 && write_ack->type() != Serialization::WriteMsg::ACCEPTED ) {
+         // got something back, but not an ACCEPTED
          if( write_ack->type() == Serialization::WriteMsg::ERROR ) {
             if( write_ack->errorcode() == -ESTALE ) {
                // crucial file metadata changed out from under us.
@@ -547,11 +549,24 @@ int fs_entry_fsync_metadata( struct fs_core* core, struct fs_file_handle* fh, st
          }
       }
       
-      // we're the coordinator, so we have to synchronize metadata
-      rc = ms_client_update( core->ms, &sync_ctx->md_snapshot );
+      // we're the coordinator, so we have to synchronize metadata.
+      // calculate affected blocks 
+      uint64_t* affected_blocks = NULL;
+      size_t num_affected_blocks = 0;
       
+      fs_entry_list_block_ids( sync_ctx->dirty_blocks, &affected_blocks, &num_affected_blocks );
+      
+      rc = ms_client_update_write( core->ms, &sync_ctx->md_snapshot, affected_blocks, num_affected_blocks );
+      
+      // free memory 
+      if( affected_blocks != NULL ) {
+         free( affected_blocks );
+         affected_blocks = NULL;
+      }
+      
+      // check status
       if( rc != 0 ) {
-         errorf("ms_client_update( %s ) rc = %d\n", fh->path, rc );
+         errorf("ms_client_update_write( %s ) rc = %d\n", fh->path, rc );
          
          return rc;
       }
@@ -564,34 +579,272 @@ int fs_entry_fsync_metadata( struct fs_core* core, struct fs_file_handle* fh, st
 }
 
 
-// garbage-collect old data.  If gc_manifest is true, garbage collect the manifest as well
-// return 0 on success, negative on error 
-// fent must be write-locked
-int fs_entry_fsync_garbage_collect( struct fs_core* core, struct fs_entry* fent, struct sync_context* sync_ctx, bool gc_manifest ) {
+// initialize a completion map 
+static int fs_entry_fsync_completion_map_init( sync_completion_map_t* completion_map, uint64_t file_id, int64_t file_version, modification_map* old_blocks ) {
    
-   dbprintf("Garbage collect %zu blocks; garbage collect manifest = %d\n", sync_ctx->garbage_blocks->size(), gc_manifest );
+   dbprintf("will complete %zu blocks\n", old_blocks->size() );
+   
+   for( modification_map::iterator itr = old_blocks->begin(); itr != old_blocks->end(); itr++ ) {
+      
+      struct sync_gc_block_info gc_block_info;
+      
+      gc_block_info.file_id = file_id;
+      gc_block_info.file_version = file_version;
+      gc_block_info.block_id = itr->first;
+      gc_block_info.block_version = itr->second.version;
+      
+      (*completion_map)[ gc_block_info ] = SYNC_COMPLETION_MAP_STATUS_UNKNOWN;
+      
+      dbprintf("expect completed: %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", file_id, file_version, itr->first, itr->second.version );
+   }
+   
+   return 0;
+}
+
+
+// set up a garbage collection cls 
+int fs_entry_fsync_gc_cls_init( struct sync_gc_cls* gc_cls, struct fs_core* core, struct fs_vacuumer* vac, char const* fs_path, struct replica_snapshot* old_fent, modification_map* old_blocks, bool gc_manifest ) {
+   
+   memset( gc_cls, 0, sizeof(struct sync_gc_cls) );
+   
+   gc_cls->core = core;
+   gc_cls->vac = vac;
+   gc_cls->gc_manifest = gc_manifest;
+   gc_cls->fs_path = strdup(fs_path);
+   
+   // duplicate snapshot
+   memcpy( &gc_cls->old_snapshot, old_fent, sizeof( struct replica_snapshot ) );
+   
+   gc_cls->completion_map = new sync_completion_map_t();
+   
+   fs_entry_fsync_completion_map_init( gc_cls->completion_map, old_fent->file_id, old_fent->file_version, old_blocks );
+   
+   pthread_mutex_init( &gc_cls->lock, NULL );
+   
+   return 0;
+}
+
+// free a gc_cls 
+int fs_entry_fsync_gc_cls_free( struct sync_gc_cls* gc_cls ) {
+   
+   if( gc_cls->completion_map ) {
+      delete gc_cls->completion_map;
+      gc_cls->completion_map = NULL;
+   }
+   
+   if( gc_cls->fs_path ) {
+      free( gc_cls->fs_path );
+      gc_cls->fs_path = NULL;
+   }
+   
+   pthread_mutex_destroy( &gc_cls->lock );
+   
+   memset( gc_cls, 0, sizeof(struct sync_gc_cls) );
+   
+   return 0;
+}
+
+
+// continuation for garbage collection: once the manifest has been garbage collected, request the vacuumer to vacuum the old vacuum log entries 
+int fs_entry_fsync_gc_manifest_cont( struct rg_client* rg, struct replica_context* rctx, void* cls ) {
+   
+   dbprintf("continue manifest for %p\n", rctx );
+   
+   struct sync_gc_cls* gc_cls = (struct sync_gc_cls*)cls;
+   
+   pthread_mutex_lock( &gc_cls->lock );
+   
+   struct replica_snapshot* old_snapshot = &gc_cls->old_snapshot;
+   
+   int rc = 0;
+   
+   if( rctx->error != 0 ) {
+      // failed to garbage-collect the manifest
+      errorf("Failed to garbage collect manifest %" PRIX64 "/manifest.%" PRId64 ".%d, replica context rc = %d\n",
+             fs_entry_replica_context_get_file_id( rctx ), old_snapshot->manifest_mtime_sec, old_snapshot->manifest_mtime_nsec, rctx->error );
+      
+      rc = -EAGAIN;
+   }
+   else {
+      // got the manifest!  delete the vacuum log entry for it on the MS, in the background 
+      fs_entry_vacuumer_log_entry_bg( gc_cls->vac, gc_cls->fs_path, old_snapshot );
+   }
+   
+   pthread_mutex_unlock( &gc_cls->lock );
+   
+   // clean up 
+   fs_entry_fsync_gc_cls_free( gc_cls );
+   free( gc_cls );
+   
+   return rc;
+}
+
+
+// is a completion map filled?
+static bool fs_entry_is_completion_map_filled( sync_completion_map_t* completion_map ) {
+   // none of the values can be initialized to SYNC_COMPLETION_MAP_STATUS_UNKNOWN 
+   bool finished = true;
+   
+   for( sync_completion_map_t::iterator itr = completion_map->begin(); itr != completion_map->end(); itr++ ) {
+      
+      if( itr->second == SYNC_COMPLETION_MAP_STATUS_UNKNOWN ) {
+         finished = false;
+         break;
+      }
+   }
+   
+   return finished;
+}
+
+
+// convert a replica context into a sync_gc_block_info 
+static int fs_entry_replica_context_to_gc_block_info( struct sync_gc_block_info* gc_info, struct replica_context* rctx ) {
+   
+   // must be a replica context for a block 
+   int replica_type = fs_entry_replica_context_get_type( rctx );
+   if( replica_type != REPLICA_CONTEXT_TYPE_BLOCK ) {
+      return -EINVAL;
+   }
+   
+   memset( gc_info, 0, sizeof(struct sync_gc_block_info) );
+   
+   struct replica_snapshot* old_snapshot = fs_entry_replica_context_get_snapshot( rctx );
+   
+   gc_info->file_id = fs_entry_replica_context_get_file_id( rctx );
+   gc_info->file_version = old_snapshot->file_version;
+   gc_info->block_id = fs_entry_replica_context_get_block_id( rctx );
+   gc_info->block_version = fs_entry_replica_context_get_block_version( rctx );
+   
+   return 0;
+}
+
+
+// continuation for garbage collection: once the blocks have been garbage-collected, enqueue the manifest for garbage collection
+int fs_entry_fsync_gc_block_cont( struct rg_client* rg, struct replica_context* rctx, void* cls ) {
+   
+   struct sync_gc_cls* gc_cls = (struct sync_gc_cls*)cls;
+   
+   // completed this context
+   struct sync_gc_block_info gc_block_info;
+   int rc = fs_entry_replica_context_to_gc_block_info( &gc_block_info, rctx );
+   if( rc != 0 ) {
+      
+      // couldn't process
+      errorf("fs_entry_extract_gc_block_info(%p) rc = %d\n", rctx, rc );
+      return rc;
+   }
+   
+   dbprintf("continue blocks for %p (%" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "])\n", rctx, gc_block_info.file_id, gc_block_info.file_version, gc_block_info.block_id, gc_block_info.block_version );
+    
+   bool unlocked = false;
+   pthread_mutex_lock( &gc_cls->lock );
+   
+   // verify that this rctx is present in the completion map.
+   // it should be; it's a bug otherwise!
+   sync_completion_map_t::iterator itr = gc_cls->completion_map->find( gc_block_info );
+   if( itr == gc_cls->completion_map->end() ) {
+      
+      pthread_mutex_unlock( &gc_cls->lock );
+      
+      // wrong context
+      errorf("invalid replica context %p\n", rctx );
+      
+      return -EINVAL;
+   }
+   
+   // get the status
+   int rctx_rc = fs_entry_replica_context_get_error( rctx );
+   
+   (*gc_cls->completion_map)[ gc_block_info ] = rctx_rc;
+   
+   // if failed, remember, so we don't garbage-collect the manifest
+   if( rctx_rc != 0 && gc_cls->rc == 0 ) {
+      gc_cls->rc = rctx_rc;
+   }
+   
+   // if the completion map is full, and all blocks were garbage-collected, then queue the manifest 
+   bool blocks_finished = fs_entry_is_completion_map_filled( gc_cls->completion_map );
+   
+   if( blocks_finished && gc_cls->rc == 0 ) {
+      // successfully garbage-collected all blocks (this is the last block context)
+      
+      struct replica_snapshot* old_snapshot = &gc_cls->old_snapshot;
+      
+      if( gc_cls->gc_manifest ) {
+         // We should garbage-collect the manifest 
+         
+         rc = fs_entry_garbage_collect_manifest_ex( gc_cls->core, old_snapshot, NULL, REPLICATE_BACKGROUND, fs_entry_fsync_gc_manifest_cont, gc_cls );
+         
+         if( rc != 0 ) {
+            // failed to enqueue 
+            errorf("fs_entry_garbage_collect_manifest_ex( %" PRIX64 "/manifest.%" PRId64 ".%d ) rc = %d\n",
+                   fs_entry_replica_context_get_file_id( rctx ), old_snapshot->manifest_mtime_sec, old_snapshot->manifest_mtime_nsec, rc );
+            
+            gc_cls->rc = rc;
+         }
+      }
+      
+      if( !gc_cls->gc_manifest || rc != 0 ) {
+         
+         // we're done--either due to error, or because we're not supposed to go any further
+         if( rc != 0 ) {
+            errorf("Not going to garbage-collect manifest %" PRIX64 "/manifest.%" PRId64 ".%d due to error (code %d)\n",
+                   fs_entry_replica_context_get_file_id( rctx ), old_snapshot->manifest_mtime_sec, old_snapshot->manifest_mtime_nsec, rc );
+         }
+         
+         
+         pthread_mutex_unlock( &gc_cls->lock );
+         unlocked = true;
+         
+         // clean up 
+         fs_entry_fsync_gc_cls_free( gc_cls );
+         free( gc_cls );
+      }
+   }
+   
+   if( !unlocked )
+      pthread_mutex_unlock( &gc_cls->lock );
+   
+   return 0;
+}
+
+
+// kick off garbage collection in the background.
+int fs_entry_garbage_collect_kickoff( struct fs_core* core, char const* fs_path, struct replica_snapshot* old_snapshot, modification_map* garbage_blocks, bool gc_manifest ) {
+   
+   dbprintf("Garbage collect %zu blocks; garbage collect manifest = %d\n", garbage_blocks->size(), gc_manifest );
+   
+   // start blocks, and continue to the manifest.
+   // set up continuation cls
+   struct sync_gc_cls* gc_cls = CALLOC_LIST( struct sync_gc_cls, 1 );
+   
+   fs_entry_fsync_gc_cls_init( gc_cls, core, &core->state->vac, fs_path, old_snapshot, garbage_blocks, gc_manifest );
+   
+   int rc = fs_entry_garbage_collect_blocks_ex( core, old_snapshot, garbage_blocks, NULL, REPLICATE_BACKGROUND, fs_entry_fsync_gc_block_cont, gc_cls );
+   if( rc != 0 ) {
+      errorf("fs_entry_garbage_collect_blocks_ex(%" PRIX64 ") rc = %d\n", old_snapshot->file_id, rc );
+   }
+   
+   return rc;
+}
+
+
+// kick off garbage collection in the background
+// NOTE: this erases the pointer sync_ctx->garbage_blocks, and puts it into the sync_gc_cls that gets passed into block and manifest continuations
+int fs_entry_fsync_garbage_collect( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct sync_context* sync_ctx, bool was_coordinator ) {
    
    if( sync_ctx->garbage_blocks->size() == 0 ) {
       // nothing to do--the manifest won't be stale, since nothing has changed
       return 0;
    }
    
-   // at least one dirty block, and by extension, the manifest can be garbage collected if we're the coordinator
+   int rc = fs_entry_garbage_collect_kickoff( core, fs_path, fent->old_snapshot, sync_ctx->garbage_blocks, was_coordinator );
    
-   // garbage-collect!
-   fs_entry_garbage_collect_blocks( core, sync_ctx->fent_snapshot, sync_ctx->garbage_blocks );
-   
-   if( gc_manifest ) {
-      
-      dbprintf("Garbage collect old manifest for %" PRIX64 "(%s), snapshot = %" PRIX64 ".%" PRId64 "\n", fent->file_id, fent->name, fent->old_snapshot->file_id, fent->old_snapshot->file_version );
-      
-      // get the old manifest too 
-      fs_entry_garbage_collect_manifest( core, fent->old_snapshot );
+   if( rc != 0 ) {
+      errorf("fs_entry_garbage_collect_blocks_ex(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
    }
-
-   return 0;
+   return rc;
 }
-
 
 // argument structure for truncating queued sync contexts
 struct sync_context_truncate_args {
@@ -641,6 +894,7 @@ void fs_entry_sync_context_truncate( struct sync_context* sync_ctx, void* cls ) 
 int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, struct sync_context* sync_ctx ) {
 
    int rc = 0;
+   int gc_rc = 0;
    
    // do we have data to flush?  if not, then done 
    if( !fh->dirty ) {
@@ -658,7 +912,7 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
    }
    
    // will we need to garbage collect the manifest, if we succeed?
-   bool gc_manifest = FS_ENTRY_LOCAL( core, fh->fent );
+   bool was_coordinator = FS_ENTRY_LOCAL( core, fh->fent );
    
    // allow other accesses to proceed while we replicate 
    fs_entry_unlock( fh->fent );
@@ -695,7 +949,7 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
       replicate_metadata = false;
       
       // garbage-collect everything for this sync context
-      fs_entry_fsync_garbage_collect( core, fh->fent, sync_ctx, gc_manifest );
+      gc_rc = fs_entry_fsync_garbage_collect( core, fh->path, fh->fent, sync_ctx, was_coordinator );
       
       // the truncate occurred "after" all of the pending sync requests, so apply it to them (bringing them "forward" in time)
       
@@ -729,7 +983,7 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
       }
       
       // garbage-collect everything
-      fs_entry_fsync_garbage_collect( core, fh->fent, sync_ctx, gc_manifest );
+      gc_rc = fs_entry_fsync_garbage_collect( core, fh->path, fh->fent, sync_ctx, was_coordinator );
    }
    
    // let the next sync go
@@ -739,9 +993,18 @@ int fs_entry_fsync_locked( struct fs_core* core, struct fs_file_handle* fh, stru
    fs_entry_clear_garbage_blocks( fh->fent );
    fs_entry_setup_garbage_blocks( fh->fent );
    
-   memcpy( fh->fent->old_snapshot, sync_ctx->fent_snapshot, sizeof( struct replica_snapshot ) );
+   fs_entry_store_snapshot( fh->fent, sync_ctx->fent_snapshot );
    
-   return 0;
+   if( gc_rc != 0 ) {
+      errorf("fs_entry_fsync_garbage_collect(%" PRIX64 ") rc = %d\n", fh->fent->file_id, gc_rc );
+      return gc_rc;
+   }
+   else {
+      
+      // flushed!
+      fh->dirty = false;
+      return 0;
+   }
 }
 
 
@@ -762,6 +1025,9 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
    rc = fs_entry_fsync_locked( core, fh, &sync_ctx );
    
    if( rc != 0 ) {
+      
+      errorf("fs_entry_fsync_locked(%" PRIX64 ") rc = %d\n", fh->fent->file_id, rc );
+      
       fs_entry_unlock( fh->fent );
       fs_file_handle_unlock( fh );
       
@@ -771,9 +1037,6 @@ int fs_entry_fsync( struct fs_core* core, struct fs_file_handle* fh ) {
    }
    
    fs_entry_unlock( fh->fent );
-   
-   // flushed!
-   fh->dirty = false;
    
    fs_file_handle_unlock( fh );
    

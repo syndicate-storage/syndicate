@@ -86,7 +86,6 @@ int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms )
    }
    
    // populate state with it (and other bits of info...)
-   
    state->core = core;
    state->uid = getuid();
    state->gid = getgid();
@@ -115,7 +114,21 @@ int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms )
    }
    
    // start up replication
-   replication_init( state, volume_id );
+   fs_entry_replication_init( state, volume_id );
+   
+   // initialize vacuumer 
+   rc = fs_entry_vacuumer_init( &state->vac, core );
+   if( rc != 0 ) {
+      errorf("fs_entry_vacuumer_init rc = %d\n", rc );
+      return rc;
+   }
+   
+   // start vacuumer 
+   rc = fs_entry_vacuumer_start( &state->vac );
+   if( rc != 0 ) {
+      errorf("fs_entry_vacuumer_start rc = %d\n", rc );
+      return rc;
+   }
 
    return 0;
 }
@@ -129,6 +142,9 @@ int syndicate_destroy_ex( struct syndicate_state* state, int wait_replicas ) {
    
    state->running = 0;
    
+   dbprintf("%s", "stopping vacuumer\n");
+   fs_entry_vacuumer_stop( &state->vac );
+   
    dbprintf("%s", "stopping downloads\n");
    md_downloader_stop( &state->dl );
    
@@ -136,7 +152,10 @@ int syndicate_destroy_ex( struct syndicate_state* state, int wait_replicas ) {
    md_downloader_shutdown( &state->dl );
 
    dbprintf("%s", "stopping replication\n");
-   replication_shutdown( state, wait_replicas );
+   fs_entry_replication_shutdown( state, wait_replicas );
+   
+   dbprintf("%s", "shutting down vacuumer\n");
+   fs_entry_vacuumer_shutdown( &state->vac );
    
    dbprintf("%s", "core filesystem shutdown\n");
    fs_destroy( state->core );

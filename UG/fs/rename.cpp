@@ -20,6 +20,7 @@
 #include "network.h"
 #include "replication.h"
 #include "unlink.h"
+#include "vacuumer.h"
 
 // generate an md_entry for the destination that does not (yet) exist
 int fs_entry_make_dest_entry( struct fs_core* core, char const* new_path, uint64_t parent_id, struct md_entry* src, struct md_entry* dest ) {
@@ -318,10 +319,26 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
       }
       
       if( local ) {
-         // rename on the MS 
-         err = ms_client_rename( core->ms, &old_ent, &new_ent );
-         if( err != 0 ) {
-            errorf("ms_client_rename(%s --> %s) rc = %d\n", old_ent.name, new_ent.name, err );
+         
+         // if we're overwriting fent_new, we'll have to garbage-collect it first 
+         if( fent_new ) {
+            
+            // unlink fent_new's data, if we're the coordinator--it's getting overwritten
+            if( FS_ENTRY_LOCAL( core, fent_new ) ) {
+               
+               // vacuum!
+               err = fs_entry_vacuumer_file( core, new_path, fent_new );
+               if( err != 0 ) {
+                  errorf("fs_entry_vacuumer_file( %s %" PRIX64 " ) rc = %d\n", new_path, fent_new->file_id, err );
+               }
+            }
+         }
+         if( err == 0 ) {
+            // rename on the MS 
+            err = ms_client_rename( core->ms, &old_ent, &new_ent );
+            if( err != 0 ) {
+               errorf("ms_client_rename(%s --> %s) rc = %d\n", old_ent.name, new_ent.name, err );
+            }
          }
       }
    }
@@ -375,9 +392,8 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
          fs_entry_set_insert( fent_new_parent->children, fent_old->name, fent_old );
       }
       if( fent_new ) {
-         // unlink fent_new's data
-         fs_entry_garbage_collect_file( core, fent_new );
          
+         // clean up fent_new and erase it
          fs_entry_unlock( fent_new );
          err = fs_entry_detach_lowlevel( core, dest_parent, fent_new );
          
@@ -393,7 +409,6 @@ int fs_entry_versioned_rename( struct fs_core* core, char const* old_path, char 
    fs_entry_unlock( fent_old );
    if( fent_new )
       fs_entry_unlock( fent_new );
-
    
    if( err != 0 )
       free( new_path_basename );

@@ -41,6 +41,12 @@ def read_file( filename, outfile, **kw ):
          return 404 
       else:
          return 500
+   
+   except IOError, ioe:
+      if ioe.errno == errno.ENOENT:
+         return 404 
+      else:
+         return 500
       
    except Exception, e:
       context.log.exception(e)
@@ -83,6 +89,13 @@ def write_file( filename, infile, **kw ):
       else:
          return 500
    
+   except IOError, ioe:
+      if ioe.errno == errno.ENOENT:
+         return 404 
+      else:
+         return 500
+      
+   
    except Exception, e:
       context.log.exception(e)
       return 500
@@ -118,7 +131,14 @@ def delete_file( filename, **kw ):
          return 404 
       else:
          return 500
+   
+   except IOError, ioe:
+      if ioe.errno == errno.ENOENT:
+         return 404 
+      else:
+         return 500
       
+   
    except Exception, e:
       context.log.exception(e)
       return 500

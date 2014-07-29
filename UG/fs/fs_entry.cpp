@@ -62,8 +62,9 @@ struct fs_entry* fs_entry_set_find_name( fs_entry_set* set, char const* name ) {
 // find a child entry in an fs_entry set
 struct fs_entry* fs_entry_set_find_hash( fs_entry_set* set, long nh ) {
    for( unsigned int i = 0; i < set->size(); i++ ) {
-      if( set->at(i).first == nh )
+      if( set->at(i).first == nh ) {
          return set->at(i).second;
+      }
    }
    return NULL;
 }
@@ -484,10 +485,15 @@ int fs_entry_init_md( struct fs_core* core, struct fs_entry* fent, struct md_ent
    else if ( ent->type == MD_ENTRY_FILE ) {
       // this is a file
       fs_entry_init_file( core, fent, ent->name, ent->file_id, ent->version, ent->owner, ent->coordinator, ent->volume, ent->mode, ent->size, ent->mtime_sec, ent->mtime_nsec, ent->write_nonce, ent->xattr_nonce );
+      
+      // add manifest mtime
       fent->manifest->set_modtime( ent->manifest_mtime_sec, ent->manifest_mtime_nsec );
       
       fent->ms_manifest_mtime_sec = ent->manifest_mtime_sec;
       fent->ms_manifest_mtime_nsec = ent->manifest_mtime_nsec;
+      
+      // re-snapshot, now that we have more info
+      fs_entry_replica_snapshot( core, fent, 0, 0, fent->old_snapshot );
    }
    else if( S_ISFIFO(ent->mode) ) {
       // this is a FIFO 
@@ -991,12 +997,13 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
          break;
       }
       
-      if( cur_ent == NULL ) {
+      // NOTE: we can safely check deletion_in_progress, since it only gets written once (and while the parent is write-locked)
+      if( cur_ent == NULL || cur_ent->deletion_in_progress ) {
          // not found
          *err = -ENOENT;
          free( fpath );
          fs_entry_unlock( prev_ent );
-
+         
          return NULL;
       }
       else {
@@ -1237,7 +1244,7 @@ int fs_file_handle_destroy( struct fs_file_handle* fh ) {
 }
 
 // initialize an fs_entry_block_info_structure for replication
-// NOTE: the hash is NOT copied
+// NOTE: the hash is NOT copied--the fs_entry_block_info becomes the owner of the caller-allocated hash
 void fs_entry_block_info_replicate_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id, int block_fd ) {
    memset( binfo, 0, sizeof(struct fs_entry_block_info) );
    binfo->version = version;
@@ -1248,6 +1255,7 @@ void fs_entry_block_info_replicate_init( struct fs_entry_block_info* binfo, int6
 }
 
 // initialize an fs_entry_block_info structure for garbage collection 
+// NOTE: the hash is NOT copied--the fs_entry_block_info becomes the owner of the caller-allocated hash
 void fs_entry_block_info_garbage_init( struct fs_entry_block_info* binfo, int64_t version, unsigned char* hash, size_t hash_len, uint64_t gateway_id ) {
    memset( binfo, 0, sizeof(struct fs_entry_block_info) );
    binfo->version = version;
@@ -1289,6 +1297,26 @@ int fs_entry_block_info_free_ex( struct fs_entry_block_info* binfo, bool close_f
 int fs_entry_block_info_free( struct fs_entry_block_info* binfo ) {
    return fs_entry_block_info_free_ex( binfo, false );
 }
+
+
+// find all block IDs in a modification map 
+int fs_entry_list_block_ids( modification_map* m, uint64_t** block_ids, size_t* num_block_ids ) {
+   
+   size_t num_ids = m->size();
+   uint64_t* ret = CALLOC_LIST( uint64_t, num_ids );
+   
+   int i = 0;
+   for( modification_map::iterator itr = m->begin(); itr != m->end(); itr++ ) {
+      ret[ i ] = itr->first;
+      i++;
+   }
+   
+   *block_ids = ret;
+   *num_block_ids = num_ids;
+   
+   return 0;
+}
+
 
 // free a modification_map.
 int fs_entry_free_modification_map_ex( modification_map* m, bool close_fds ) {
@@ -1916,6 +1944,13 @@ int fs_entry_update_modtime( struct fs_entry* fent ) {
    }
    
    return rc;
+}
+
+
+// replace the fs_entry's replica snapshot 
+int fs_entry_store_snapshot( struct fs_entry* fent, struct replica_snapshot* new_snapshot ) {
+   memcpy( fent->old_snapshot, new_snapshot, sizeof( struct replica_snapshot ) );
+   return 0;
 }
 
 // how many children (besides . and ..) are there in this fent?

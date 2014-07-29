@@ -69,9 +69,9 @@ message ManifestMsg {
    required uint64 file_id = 4;
    required int64 file_version = 5;
    required int64 size = 6;             // if gateway_id == 0, then this is simply the number of certificates
-   required int64 mtime_sec = 7;
+   required int64 mtime_sec = 7;        // manifest modtime
    required int32 mtime_nsec = 8;
-   required int64 fent_mtime_sec = 9;
+   required int64 fent_mtime_sec = 9;   // associated fs_entry modtime
    required int32 fent_mtime_nsec = 10;
    repeated BlockURLSetMsg block_url_set = 11;
    
@@ -102,7 +102,7 @@ message RenameMsg {
    required string new_fs_path = 6;
 }
 
-// PREPARE message uses FileMetadata and BlockList
+// WRITE message uses FileMetadata and BlockList
 // PROMISE message uses nothing--it's an acknowledgement to a PREPARE message
 // ACCEPTED message uses AcceptMsg
 // TRUNCATE message uses TruncateRequest and BlockList
@@ -111,9 +111,7 @@ message RenameMsg {
 message WriteMsg {
    
    enum MsgType {
-      PREPARE = 1;
-      PROMISE = 2;
-      ACCEPT = 3;
+      WRITE = 1;
       ACCEPTED = 4;
       TRUNCATE = 5;
       DETACH = 6;

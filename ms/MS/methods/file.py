@@ -140,7 +140,7 @@ def _resolve( owner_id, volume, file_id, file_version, write_nonce ):
             else:
                all_ents = [file_data]
          
-            logging.info("listing of %s: %s" % (file_data.file_id, listing))
+            #logging.info("listing of %s: %s" % (file_data.file_id, listing))
             
          else:
             all_ents = [file_data]
@@ -252,11 +252,13 @@ def file_update( reply, gateway, volume, update ):
    """
    attrs = MSEntry.unprotobuf_dict( update.entry )
    
-   logging.info("update /%s/%s (%s)" % (attrs['volume_id'], attrs['file_id'], attrs['name'] ) )
+   affected_blocks = update.affected_blocks[:]
    
-   rc, ent = MSEntry.Update( gateway.owner_id, volume, **attrs )
+   logging.info("update /%s/%s (%s), affected blocks = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks ) )
    
-   logging.info("update /%s/%s (%s) rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], rc ) )
+   rc, ent = MSEntry.Update( gateway.owner_id, volume, affected_blocks, **attrs )
+   
+   logging.info("update /%s/%s (%s), affected blocks = %s rc = %s" % (attrs['volume_id'], attrs['file_id'], attrs['name'], affected_blocks, rc ) )
    
    # have an entry 
    if ent is not None:
@@ -805,7 +807,7 @@ def file_xattr_chownxattr( reply, gateway, volume, update, caller_is_admin=False
 
 
 # ----------------------------------
-def file_manifest_log_check_access( gateway, msent ):
+def file_vacuum_log_check_access( gateway, msent ):
    """
    Verify that the gateway is allowed to manipulate the MSEntry's manifest log.
    """
@@ -813,7 +815,7 @@ def file_manifest_log_check_access( gateway, msent ):
 
 
 # ----------------------------------
-def file_manifest_log_response( volume, rc, log_record ):
+def file_vacuum_log_response( volume, rc, log_record ):
    """
    Create a file response for the log record, if given.
    """
@@ -822,21 +824,23 @@ def file_manifest_log_response( volume, rc, log_record ):
    reply.error = rc
    
    if rc == 0:
-      pass 
+      reply.file_version = log_record.version
+      reply.manifest_mtime_sec = log_record.manifest_mtime_sec 
+      reply.manifest_mtime_nsec = log_record.manifest_mtime_nsec
+      reply.affected_blocks.extend( log_record.affected_blocks )
    
    return file_update_complete_response( volume, reply )
 
 
 # ----------------------------------
-def file_manifest_log_peek( gateway, volume, file_id, caller_is_admin=False ):
+def file_vacuum_log_peek( gateway, volume, file_id, caller_is_admin=False ):
    """
-   Get the head of the manifest log for a particular file.
+   Get the head of the vacuum log for a particular file.
    Only serve data back if the requester is the coordinator of the file.
+   Returning -ENOENT means that there is no log data available
    """
    
-   file_id_str = MSEntry.unserialize_id( file_id )
-   
-   logging.info("manifest log peek /%s/%s by %s" % (volume.volume_id, file_id_str, gateway.g_id))
+   logging.info("vacuum log peek /%s/%s by %s" % (volume.volume_id, file_id, gateway.g_id))
    
    rc = 0
    log_head = None
@@ -849,107 +853,31 @@ def file_manifest_log_peek( gateway, volume, file_id, caller_is_admin=False ):
    else:
       
       # security check
-      if not caller_is_admin and not file_manifest_log_check_access( gateway, msent ):
-         logging.error("Gateway %s is not allowed to access the manifest log of %s" % (gateway.name, file_id_str))
+      if not caller_is_admin and not file_vacuum_log_check_access( gateway, msent ):
+         logging.error("Gateway %s is not allowed to access the vacuum log of %s" % (gateway.name, file_id))
          rc = -errno.EACCES
       
       else:
          # get the log head 
-         log_head = MSEntryGCLog.Peek( volume.volume_id, file_id )
+         log_head_list = MSEntryVacuumLog.Peek( volume.volume_id, file_id )
          
-         if log_head is None:
+         if log_head_list is None or len(log_head_list) == 0:
             # no more data
-            rc = -errno.ENODATA 
+            rc = -errno.ENOENT 
+         
+         else:
+            log_head = log_head_list[0]
+            
+   logging.info("vacuum log peek /%s/%s by %s rc = %s" % (volume.volume_id, file_id, gateway.g_id, rc))
    
-   logging.info("manifest log peek /%s/%s by %s rc = %s" % (volume.volume_id, file_id_str, gateway.g_id, rc))
-   
-   return file_manifest_log_response( volume, rc, log_record )
+   return file_vacuum_log_response( volume, rc, log_head )
 
 
 # ----------------------------------
-def file_manifest_log_verify_deletion_receipts( volume_id, file_id, file_version, manifest_mtime_sec, manifest_mtime_nsec, receipt_list ):
+def file_vacuum_log_remove( reply, gateway, volume, update, caller_is_admin=False ):
    """
-   Verify the legitimacy of the set of manifest deletion receipts.
-   There must be one for every RG in the Volume, and 
-   they must all be signed by the respective RGs.
+   Remove a record of the vacuum log for a particular file.  Only a coordinator can do this.
    """
-   
-   for receipt in receipt_list:
-      # basic sanity check 
-      if receipt.volume_id != volume_id:
-         return -errno.EINVAL 
-      
-      if receipt.file_id != file_id:
-         return -errno.EINVAL
-      
-      if receipt.version != file_version:
-         return -errno.EINVAL
-      
-      if receipt.manifest_mtime_sec != manifest_mtime_sec:
-         return -errno.EINVAL
-      
-      if receipt.manifest_mtime_nsec != manifest_mtime_nsec:
-         return -errno.EINVAL
-      
-   # get all volume RGs
-   RGs = Gateway.ListAll( {"Gateway.volume_id ==" : volume_id, "Gateway.gateway_type ==": GATEWAY_TYPE_RG} )
-   
-   # make sure all RGs are listed in the receipts.
-   # build up a ID <--> RG map in the process 
-   RG_table = {}
-   RG_present = {}
-   for RG in RGs:
-      RG_table[ RG.g_id ] = RG 
-      RG_present[ RG.g_id ] = False
-   
-   # receipts must all refer to existing RGs
-   for receipt in receipt_list:
-      if not RG_table.has_key( receipt.RG_id ):
-         # no receipt from this RG 
-         logging.error("No such RG %s" % receipt.RG_id )
-         return -errno.EAGAIN
-      
-      else:
-         RG_present[ receipt.RG_id ] = True 
-         
-         
-   # any unaccounted-for receipts?
-   for (RG_id, present) in RG_present.items():
-      if not present:
-         logging.error("Missing receipt for RG %s" % RG_id )
-         return -errno.EAGAIN
-   
-   # got receipts for all RGs
-   # make sure all RG signatures match 
-   for receipt in receipt_list:
-      RG = RG_table[ receipt.RG_id ]
-      valid = RG.verify_message( receipt )
-      
-      if not valid:
-         logging.error("Receipt for RG %s has signature mismatch" % RG.g_id )
-         return -errno.EINVAL 
-      
-   # success!
-   return 0
-      
-
-# ----------------------------------
-def file_manifest_log_remove( reply, gateway, volume, update, caller_is_admin=False ):
-   """
-   Remove a record of the manifest log for a particular file.
-   This method will check to see if the requester:
-     * is the coordinator of the file 
-     * has the signed proofs from all the Volume's RGs that they don't have the manifest anymore.
-   """
-   
-   # get receipts
-   deletion_receipts = None 
-   
-   if update.HasField("deletion_receipts"):
-      deletion_receipts = update.deletion_receipts 
-   else:
-      logging.error("manifest log remove: Missing deletion_receipts")
-      return -errno.EINVAL 
    
    # check entry attrs
    attrs = MSEntry.unprotobuf_dict( update.entry )
@@ -960,16 +888,15 @@ def file_manifest_log_remove( reply, gateway, volume, update, caller_is_admin=Fa
    attrs = file_update_get_attrs( attrs, required_attrs )
    
    if attrs is None:
-      logging.error("manifest log remove: Missing one of %s" % required_attrs )
+      logging.error("vacuum log remove: Missing one of %s" % required_attrs )
       rc = -errno.EINVAL
    
    else:
       
       # extract attrs
       file_id = attrs['file_id']
-      file_id_str = MSEntry.unserialize_id( file_id )
       
-      logging.info("manifest log remove /%s/%s by %s" % (volume.volume_id, file_id_str, gateway.g_id))
+      logging.info("vacuum log remove /%s/%s by %s" % (volume.volume_id, file_id, gateway.g_id))
    
       version = attrs['version']
       manifest_mtime_sec = attrs['manifest_mtime_sec']
@@ -978,25 +905,19 @@ def file_manifest_log_remove( reply, gateway, volume, update, caller_is_admin=Fa
       # get msent
       msent = MSEntry.Read( volume, file_id )
       if msent is None:
-         logging.error("No entry for %s" % file_id_str )
+         logging.error("No entry for %s" % file_id )
          rc = -errno.ENOENT
       
       else:
          # security check 
-         if not caller_is_admin and not file_manifest_log_check_access( gateway, msent ):
-            logging.error("Gateway %s is not allowed to access the manifest log of %s" % (gateway.name, file_id_str))
+         if not caller_is_admin and not file_vacuum_log_check_access( gateway, msent ):
+            logging.error("Gateway %s is not allowed to access the vacuum log of %s" % (gateway.name, file_id))
+            rc = -errno.EACCES 
             
          else:
-            # do we have proof-of-absence from all the RGs?
-            rc = file_manifest_log_verify_deletion_receipts( volume.volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec, deletion_receipts )
-            
-            if rc != 0:
-               logging.error("Failed to verify deletion receipts, rc = %s" % rc)
-            
-            else:
-               # validated. Delete!
-               MSEntryGCLog.Remove( volume.volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
+            # Delete!
+            rc = MSEntryVacuumLog.Remove( volume.volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
    
-      logging.info("manifest log remove /%s/%s by %s rc = %s" % (volume.volume_id, file_id_str, gateway.g_id, rc))
+      logging.info("vacuum log remove /%s/%s by %s rc = %s" % (volume.volume_id, file_id, gateway.g_id, rc))
    
    return rc

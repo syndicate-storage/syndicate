@@ -1096,6 +1096,29 @@ static int fs_entry_reversion_blocks( struct fs_core* core, struct fs_entry* fen
    return 0;
 }
 
+// get the list of affected blocks from a write message 
+static int fs_entry_list_write_message_blocks( Serialization::WriteMsg* write_msg, uint64_t** affected_blocks, size_t* num_affected_blocks ) {
+   
+   size_t ret_len = write_msg->blocks_size();
+   uint64_t* ret = CALLOC_LIST( uint64_t, ret_len );
+   
+   for( int i = 0; i < write_msg->blocks_size(); i++ ) {
+      
+      // get the block 
+      const Serialization::BlockInfo& msg_binfo = write_msg->blocks(i);
+      
+      // get block ID
+      uint64_t block_id = msg_binfo.block_id();
+      
+      ret[i] = block_id;
+   }
+   
+   *affected_blocks = ret;
+   *num_affected_blocks = ret_len;
+   
+   return 0;
+}
+
 // Handle a remote write.  The given write_msg must have been verified prior to calling this method.
 // A remote write is really a batch of one or more writes sent on fsync().  So, write_msg may encode sparse byte ranges
 // Zeroth, sanity check.
@@ -1167,12 +1190,24 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       
       BEGIN_TIMING_DATA( update_ts );
       
-      err = ms_client_update( core->ms, &data );
+      // find the set of affected blocks
+      uint64_t* affected_blocks = NULL;
+      size_t num_affected_blocks = 0;
+      
+      fs_entry_list_write_message_blocks( write_msg, &affected_blocks, &num_affected_blocks );
+      
+      err = ms_client_update_write( core->ms, &data, affected_blocks, num_affected_blocks );
+      
       if( err != 0 ) {
          errorf("%ms_client_update(%s) rc = %d\n", fs_path, err );
          err = -EREMOTEIO;
       }
       
+      // free memory
+      if( affected_blocks ) {
+         free( affected_blocks );
+         affected_blocks = NULL;
+      }
       md_entry_free( &data );      
       
       END_TIMING_DATA( update_ts, ts2, "MS update" );
@@ -1183,10 +1218,9 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
          
          BEGIN_TIMING_DATA( garbage_collect_ts );
          
-         int rc = fs_entry_garbage_collect_manifest( core, &fent_snapshot );
+         int rc = fs_entry_garbage_collect_manifest_bg( core, &fent_snapshot );
          if( rc != 0 ) {
             errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
-            // TODO: record this somewhere so we can try again later
          }
          
          END_TIMING_DATA( garbage_collect_ts, ts2, "garbage collect manifest" );
@@ -1199,10 +1233,9 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
          struct replica_snapshot new_snapshot;
          fs_entry_replica_snapshot( core, fent, 0, 0, &new_snapshot );
          
-         int rc = fs_entry_garbage_collect_manifest( core, &new_snapshot );
+         int rc = fs_entry_garbage_collect_manifest_bg( core, &new_snapshot );
          if( rc != 0 ) {
             errorf("fs_entry_garbage_collect_manifest(%s) rc = %d\n", fs_path, rc );
-            // TODO: record this somewhere so we can try again later
          }
       }
    }

@@ -96,6 +96,18 @@ struct ms_path_ent {
    void* cls;
 };
 
+// vacuum entry 
+struct ms_vacuum_entry {
+   uint64_t volume_id;
+   uint64_t file_id;
+   int64_t file_version;
+   int64_t manifest_mtime_sec;
+   int32_t manifest_mtime_nsec;
+   
+   uint64_t* affected_blocks;
+   size_t num_affected_blocks;
+};
+
 typedef vector< struct ms_path_ent > path_t;
 
 typedef map< uint64_t, struct ms_listing > ms_response_t;
@@ -224,7 +236,7 @@ struct ms_client {
    uint64_t gateway_id;       // ID of the Gateway running this ms_client
    int portnum;               // port we listen on
 
-   pthread_t uploader_thread;
+   //pthread_t uploader_thread;
    bool running;        // set to true if the uploader thread is running
    bool downloading;    // set to true if we're downloading something on ms_read
    bool downloading_view;       // set to true if we're downloading something on ms_view
@@ -240,7 +252,7 @@ struct ms_client {
    bool view_thread_running;        // set to true if the view thread is running
    bool early_reload;               // check back to see if there is new Volume information
    struct ms_volume* volume;        // Volume we're bound to
-   ms_client_view_change_callback view_change_callback;       // call this function when the Volume gets reloaded
+   ms_client_view_change_callback view_change_callback;         // call this function when the Volume gets reloaded
    void* view_change_callback_cls;                              // user-supplied argument to the above callbck
    pthread_rwlock_t view_lock;
 
@@ -318,6 +330,7 @@ uint64_t ms_client_make_file_id();
 int ms_client_create( struct ms_client* client, uint64_t* file_id, struct md_entry* ent );
 int ms_client_mkdir( struct ms_client* client, uint64_t* file_id, struct md_entry* ent );
 int ms_client_delete( struct ms_client* client, struct md_entry* ent );
+int ms_client_update_write( struct ms_client* client, struct md_entry* ent, uint64_t* affected_blocks, size_t num_affected_blocks );
 int ms_client_update( struct ms_client* client, struct md_entry* ent );
 int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, struct md_entry* ent );
 int ms_client_rename( struct ms_client* client, struct md_entry* src, struct md_entry* dest );
@@ -330,16 +343,26 @@ int ms_client_removexattr( struct ms_client* client, struct md_entry* ent, char 
 int ms_client_chownxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, uint64_t new_owner );
 int ms_client_chmodxattr( struct ms_client* client, struct md_entry* ent, char const* xattr_name, mode_t new_mode );
 
+// vacuum API 
+int ms_client_vacuum_entry_init( struct ms_vacuum_entry* vreq, uint64_t volume_id, uint64_t file_id, int64_t file_version,
+                                 int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec, uint64_t* affected_blocks, size_t num_affected_blocks );
+int ms_client_vacuum_entry_set_blocks( struct ms_vacuum_entry* vreq, uint64_t* affected_blocks, size_t num_affected_blocks );
+int ms_client_vacuum_entry_free( struct ms_vacuum_entry* vreq );
+int ms_client_peek_vacuum_log( struct ms_client* client, uint64_t volume_id, uint64_t file_id, struct ms_vacuum_entry* ve );
+int ms_client_remove_vacuum_log_entry( struct ms_client* client, uint64_t volume_id, uint64_t file_id, uint64_t file_version, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec );
+
 // path resolution 
 int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_t* ms_response );
 int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, char const* name, void* cls );
 
 // asynchronous and batched API access
+/*
 int ms_client_queue_update( struct ms_client* client, struct md_entry* update, uint64_t deadline_ms, uint64_t deadline_delta_ms );
 int ms_client_clear_update( struct ms_client* client, uint64_t volume_id, uint64_t file_id );
 
 int ms_client_sync_update( struct ms_client* client, uint64_t volume_id, uint64_t file_id );
 int ms_client_sync_updates( struct ms_client* client, uint64_t freshness_ms );
+*/
 
 // get information about the volume
 uint64_t ms_client_volume_version( struct ms_client* client );

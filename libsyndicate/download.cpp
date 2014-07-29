@@ -1048,9 +1048,14 @@ int md_download_from_caches( struct md_downloader* dl, struct md_closure* closur
       
       errorf("%s: md_download_context_wait(%s) CURL rc = %d, errno = %d\n", dl->name, base_url, rc, errsv );
       
-      if( errsv == 0 )
-         errsv = -EINVAL;       // CURL was not properly set up
-         
+      if( errsv == 0 ) {
+         if( rc == CURLE_COULDNT_CONNECT ) {
+            errsv = -ECONNREFUSED;
+         }
+         else {
+            errsv = -EINVAL;       // CURL was not properly set up
+         }
+      }
       md_download_context_free( &dlctx, NULL );
       return errsv;
    }
@@ -1110,6 +1115,12 @@ static int md_HTTP_status_code_to_error_code( int status_code ) {
    
    if( status_code == GATEWAY_HTTP_EOF )
       return 0;
+   
+   if( status_code == 500 )
+      return -EREMOTEIO;
+   
+   if( status_code == 404 )
+      return -ENOENT;
    
    return status_code;
 }

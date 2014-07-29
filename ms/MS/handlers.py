@@ -413,14 +413,14 @@ class MSFileHandler(webapp2.RequestHandler):
       "GETXATTR":       lambda gateway, volume, file_id, args: file_xattr_getxattr( gateway, volume, file_id, *args ),    # args == [xattr_name]
       "LISTXATTR":      lambda gateway, volume, file_id, args: file_xattr_listxattr( gateway, volume, file_id, *args ),   # args == []
       "RESOLVE":        lambda gateway, volume, file_id, args: file_resolve( gateway, volume, file_id, *args ),           # args == [file_version_str, write_nonce_str]
-      "GCPEEK":         lambda gateway, volume, file_id, args: file_manifest_log_peek( gateway, volume, file_id, *args )  # args = []
+      "VACUUM":         lambda gateway, volume, file_id, args: file_vacuum_log_peek( gateway, volume, file_id, *args )    # args = []
    }
    
    get_benchmark_headers = {
       "GETXATTR":               "X-Getxattr-Time",
       "LISTXATTR":              "X-Listxattr-Time",
       "RESOLVE":                "X-Resolve-Time",
-      "GCPEEK":                 "X-GCPeek-Time"
+      "VACUUM":                 "X-Vacuum-Time"
    }
    
    # ensure that the posted data has all of the requisite optional fields
@@ -435,7 +435,7 @@ class MSFileHandler(webapp2.RequestHandler):
       ms_pb2.ms_update.REMOVEXATTR:     lambda gateway, update: (update.HasField("xattr_name"), 400),
       ms_pb2.ms_update.CHMODXATTR:      lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_mode"), 400),
       ms_pb2.ms_update.CHOWNXATTR:      lambda gateway, update: (update.HasField("xattr_name") and update.HasField("xattr_owner"), 400),
-      ms_pb2.ms_update.GCDELETE:        lambda gateway, update: (update.HasField("deletion_receipts"), 400)
+      ms_pb2.ms_update.VACUUM:          lambda gateway, update: (True, 200)
    }
    
    # Map update values onto handlers
@@ -449,7 +449,7 @@ class MSFileHandler(webapp2.RequestHandler):
       ms_pb2.ms_update.REMOVEXATTR:     lambda reply, gateway, volume, update: file_xattr_removexattr( reply, gateway, volume, update ),
       ms_pb2.ms_update.CHMODXATTR:      lambda reply, gateway, volume, update: file_xattr_chmodxattr( reply, gateway, volume, update ),
       ms_pb2.ms_update.CHOWNXATTR:      lambda reply, gateway, volume, update: file_xattr_chownxattr( reply, gateway, volume, update ),
-      ms_pb2.ms_update.GCDELETE:        lambda reply, gateway, volume, update: file_manifest_log_remove( reply, gateway, volume, update )
+      ms_pb2.ms_update.VACUUM:          lambda reply, gateway, volume, update: file_vacuum_log_remove( reply, gateway, volume, update )
    }
    
    
@@ -464,7 +464,7 @@ class MSFileHandler(webapp2.RequestHandler):
       ms_pb2.ms_update.REMOVEXATTR:     "X-Removexattr-Times",
       ms_pb2.ms_update.CHMODXATTR:      "X-Chmodxattr-Times",
       ms_pb2.ms_update.CHOWNXATTR:      "X-Chownxattr-Times",
-      ms_pb2.ms_update.GCDELETE:        "X-GCDelete-Times"
+      ms_pb2.ms_update.VACUUM:          "X-Vacuum-Times"
    }
    
    

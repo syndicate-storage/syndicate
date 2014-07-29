@@ -276,4 +276,6 @@ int fs_entry_manifest_put_block( struct fs_core* core, uint64_t gateway_id, stru
 
 int fs_entry_manifest_error( Serialization::ManifestMsg* mmsg, int error, char const* errormsg );
 
+unsigned char* fs_entry_manifest_block_hash_ref( unsigned char* hashes, uint64_t block_offset );
+
 #endif

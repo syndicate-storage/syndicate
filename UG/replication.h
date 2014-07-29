@@ -54,6 +54,11 @@ using namespace std;
 #define REPLICA_POST 1
 #define REPLICA_DELETE 2
 
+// _ex flags
+#define REPLICATE_SYNC 0
+#define REPLICATE_ASYNC 1
+#define REPLICATE_BACKGROUND 2
+
 // snapshot of vital fs_entry fields for replication and garbage collection
 // NOTE: don't add any dynamically-allocated fields to this structure
 struct replica_snapshot {
@@ -75,8 +80,9 @@ struct replica_snapshot {
    // for manifest replication 
    int64_t manifest_mtime_sec;
    int32_t manifest_mtime_nsec;
-   bool manifest_initialized;
 };
+
+typedef int (*replica_continuation_t)( struct rg_client* rg, struct replica_context* rctx, void* cls );
 
 // chunk of data to upload
 struct replica_context {
@@ -99,10 +105,14 @@ struct replica_context {
    struct timespec deadline;    // when we should abort this replication request
 
    int error;              // error code
+   int continuation_rc;    // continuation rc
    
    sem_t processing_lock;       // released when the context has been processed
    
-   bool free_on_processed;    // if true, destroy this structure when it is processed
+   bool free_on_processed;    // if true, destroy this structure when it is processed (i.e. it's being processed in the background)
+   
+   replica_continuation_t replica_continuation;   // if set, a function to call once this replica context has been processed
+   void* continuation_cls;                        // passed to replica_continuation
    
    struct replica_snapshot snapshot;            // fent metadata
 };
@@ -148,32 +158,60 @@ struct rg_client {
 
 struct syndicate_state;
 
-int replication_init( struct syndicate_state* state, uint64_t volume_id );
-int replication_shutdown( struct syndicate_state* state, int wait_replicas );
+int fs_entry_replication_init( struct syndicate_state* state, uint64_t volume_id );
+int fs_entry_replication_shutdown( struct syndicate_state* state, int wait_replicas );
 
-int replica_context_free( struct replica_context* rctx );
-
+// replicate manifest
 int fs_entry_replicate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent );
 struct replica_context* fs_entry_replicate_manifest_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int* ret );
 
-struct replica_context* fs_entry_replicate_block_async( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, struct fs_entry_block_info* binfo, int* ret );
+int fs_entry_replicate_manifest_ex( struct fs_core* core, char const* fs_path, struct fs_entry* fent, struct replica_context** replica_future, bool async, replica_continuation_t rcont, void* rcont_cls );
 
-int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snapshot* snapshot );
-int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* modified_blocks );
-int fs_entry_garbage_collect_file( struct fs_core* core, struct fs_entry* fent );
-
-int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_fent, uint64_t block_id, int64_t block_version, struct replica_snapshot* snapshot );
-int fs_entry_replica_snapshot_restore( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* snapshot );
-
-int fs_entry_replica_wait( struct fs_core* core, struct replica_context* rctx, uint64_t transfer_timeout_ms );
-int fs_entry_replica_wait_all( struct fs_core* core, replica_list_t* rctxs, uint64_t transfer_timeout_ms );
-
-int fs_entry_replica_context_free( struct replica_context* rctx );
-int fs_entry_replica_list_free( replica_list_t* rctxs );
-
+// replicate blocks
 int fs_entry_replicate_blocks( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks );
 int fs_entry_replicate_blocks_async( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, replica_list_t* replica_futures );
 
+int fs_entry_replicate_blocks_ex( struct fs_core* core, struct fs_entry* fent, modification_map* modified_blocks, replica_list_t* replica_futures, bool async, replica_continuation_t rcont, void* rcont_cls );
+
+// garbage-collect manifest
+int fs_entry_garbage_collect_manifest( struct fs_core* core, struct replica_snapshot* snapshot );
+int fs_entry_garbage_collect_manifest_async( struct fs_core* core, struct replica_snapshot** snapshot, struct replica_context* manifest_garbage_future, bool background );
+int fs_entry_garbage_collect_manifest_bg( struct fs_core* core, struct replica_snapshot* snapshot );
+
+int fs_entry_garbage_collect_manifest_ex( struct fs_core* core, struct replica_snapshot* snapshot, struct replica_context** manifest_garbage_future, int flags, replica_continuation_t rcont, void* rcont_cls );
+
+// garbage-collect blocks
+int fs_entry_garbage_collect_blocks_async( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* garbage_blocks, replica_list_t* garbage_futures, bool background );
+int fs_entry_garbage_collect_blocks_bg( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* garbage_blocks );
+int fs_entry_garbage_collect_blocks( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* garbage_blocks );
+
+int fs_entry_garbage_collect_blocks_ex( struct fs_core* core, struct replica_snapshot* snapshot, modification_map* garbage_blocks, replica_list_t* garbage_futures, int flags, replica_continuation_t rcont, void* rcont_cls );
+
+// garbage-collect file 
+int fs_entry_garbage_collect_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent );
+
+// metadata snapshot 
+int fs_entry_replica_snapshot( struct fs_core* core, struct fs_entry* snapshot_fent, uint64_t block_id, int64_t block_version, struct replica_snapshot* snapshot );
+int fs_entry_replica_snapshot_restore( struct fs_core* core, struct fs_entry* fent, struct replica_snapshot* snapshot );
+
+// synchronization 
+int fs_entry_replica_wait( struct fs_core* core, struct replica_context* rctx, uint64_t transfer_timeout_ms );
+int fs_entry_replica_wait_all( struct fs_core* core, replica_list_t* rctxs, uint64_t transfer_timeout_ms );
+
+// memory management 
+int fs_entry_replica_context_free( struct replica_context* rctx );
+int fs_entry_replica_list_free( replica_list_t* rctxs );
+
+// getters 
+int fs_entry_replica_context_get_error( struct replica_context* rctx );
+int fs_entry_replica_context_get_continuation_result( struct replica_context* rctx );
+uint64_t fs_entry_replica_context_get_file_id( struct replica_context* rctx );
+struct replica_snapshot* fs_entry_replica_context_get_snapshot( struct replica_context* rctx );
+int fs_entry_replica_context_get_type( struct replica_context* rctx );
+uint64_t fs_entry_replica_context_get_block_id( struct replica_context* rctx );
+int64_t fs_entry_replica_context_get_block_version( struct replica_context* rctx );
+
+// error recovery
 int fs_entry_extract_block_info_from_failed_block_replicas( replica_list_t* rctxs, modification_map* dirty_blocks );
 
 

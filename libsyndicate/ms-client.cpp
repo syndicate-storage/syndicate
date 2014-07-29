@@ -22,9 +22,9 @@ MD_CLOSURE_PROTOTYPE_END
 
 static int ms_client_view_change_callback_default( struct ms_client* client, void* cls );
 
-static void* ms_client_uploader_thread( void* arg );
+//static void* ms_client_uploader_thread( void* arg );
 static void* ms_client_view_thread( void* arg );
-static void ms_client_uploader_signal( struct ms_client* client );
+//static void ms_client_uploader_signal( struct ms_client* client );
 int ms_client_load_volume_metadata( struct ms_client* client, struct ms_volume* vol, ms::ms_volume_metadata* volume_md, char const* volume_pubkey_pem );
 static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void *userdata);
 char* ms_client_cert_url( struct ms_client* client, uint64_t volume_id, uint64_t volume_cert_version, int gateway_type, uint64_t gateway_id, uint64_t gateway_cert_version );
@@ -216,12 +216,14 @@ int ms_client_start_threads( struct ms_client* client ) {
    
    client->running = true;
    
+   /*
    client->uploader_thread = md_start_thread( ms_client_uploader_thread, client, false );
    if( client->uploader_thread < 0 ) {
       client->running = false;
       return -errno;
    }
-
+   */
+   
    client->view_thread = md_start_thread( ms_client_view_thread, client, false );
    if( client->view_thread < 0 ) {
       client->running = false;
@@ -249,14 +251,16 @@ int ms_client_stop_threads( struct ms_client* client ) {
    client->running = false;
 
    if( was_running ) {
-      ms_client_uploader_signal( client );
+      //ms_client_uploader_signal( client );
       pthread_cancel( client->view_thread );
 
+      /*
       dbprintf("%s", "wait for write uploads to finish...\n");
 
       if( client->uploader_thread != 0 )
          pthread_join( client->uploader_thread, NULL );
-
+      */
+      
       dbprintf("%s", "wait for view change thread to finish...\n");
       
       if( client->view_thread != 0 )
@@ -579,8 +583,27 @@ char* ms_client_listxattr_url( struct ms_client* client, uint64_t volume_id, uin
    
    return listxattr_path;
 }
+
+// URL to read a file's vacuum log
+char* ms_client_vacuum_url( struct ms_client* client, uint64_t volume_id, uint64_t file_id ) {
+   
+   char volume_id_str[50];
+   sprintf( volume_id_str, "%" PRIu64, volume_id );
+
+   char file_id_str[50];
+   sprintf( file_id_str, "%" PRIX64, file_id );
+
+   ms_client_rlock( client );
+   char* vacuum_path = CALLOC_LIST( char, strlen(client->url) + 1 + strlen("/FILE/VACUUM/") + 1 + strlen(volume_id_str) + 1 + strlen(file_id_str) + 1 );
+   
+   sprintf( vacuum_path, "%s/FILE/VACUUM/%s/%s", client->url, volume_id_str, file_id_str );
+   ms_client_unlock( client );
+   
+   return vacuum_path;
+}
    
 
+// URL to a Volume, by ID
 char* ms_client_volume_url( struct ms_client* client, uint64_t volume_id ) {
    char buf[50];
    sprintf(buf, "%" PRIu64, volume_id );
@@ -706,6 +729,7 @@ static void* ms_client_view_thread( void* arg ) {
       // wait for next reload
       while( now_ms < wakeup_ms ) {
          
+         // check once per second
          sleep_time.tv_sec = 1;
          sleep_time.tv_nsec = 0;
 
@@ -853,6 +877,7 @@ static size_t ms_client_header_func( void *ptr, size_t size, size_t nmemb, void 
 }
 
 
+/*
 // put the uplodaer to sleep
 static void ms_client_uploader_wait( struct ms_client* client ) {
 
@@ -870,8 +895,10 @@ static void ms_client_uploader_wait( struct ms_client* client ) {
    
    pthread_mutex_unlock( &client->uploader_lock );
 }
+*/
 
 // wake up the uploader
+/*
 static void ms_client_uploader_signal( struct ms_client* client ) {
    pthread_mutex_lock( &client->uploader_lock );
 
@@ -882,8 +909,9 @@ static void ms_client_uploader_signal( struct ms_client* client ) {
    
    pthread_mutex_unlock( &client->uploader_lock );
 }
+*/
 
-
+/*
 // uploader thread body
 static void* ms_client_uploader_thread( void* arg ) {
    block_all_signals();
@@ -952,7 +980,7 @@ static void* ms_client_uploader_thread( void* arg ) {
    client->uploader_running = false;
    return NULL;
 }
-
+*/
 
 // exponential back-off
 // TODO: use a semaphore; properly queue up threads instead of making them spin
@@ -2688,7 +2716,7 @@ static inline int ms_client_put_update( update_set* updates, deadline_queue* dea
    return rc;
 }
 
-
+/*
 // add or replace an existing update in the client context
 // return 0 on success 
 int ms_client_queue_update( struct ms_client* client, struct md_entry* update, uint64_t deadline_ms, uint64_t deadline_delta ) {
@@ -2761,8 +2789,9 @@ int ms_client_queue_update( struct ms_client* client, struct md_entry* update, u
    ms_client_unlock( client );
    return rc;
 }
+*/
 
-
+/*
 // remove an update and put it into a caller-supplied buffer.
 // client must be write-locked first
 int ms_client_remove_update( struct ms_client* client, long path_hash, struct md_update* old_update, uint64_t* deadline ) {
@@ -2795,8 +2824,9 @@ int ms_client_remove_update( struct ms_client* client, long path_hash, struct md
    }
    return rc;
 }
+*/
 
-
+/*
 // clear an existing udate
 // return 0 on success
 // return -ENOENT on failure 
@@ -2810,7 +2840,7 @@ int ms_client_clear_update( struct ms_client* client, uint64_t volume_id, uint64
    ms_client_unlock( client );
    return rc;
 }
-
+*/
 
 // post data
 static int ms_client_send( struct ms_client* client, char const* url, char const* data, size_t len, ms::ms_reply* reply, bool verify ) {
@@ -2883,12 +2913,29 @@ static int ms_client_send( struct ms_client* client, char const* url, char const
 }
 
 
+// fill serializable char* fields in an ent, if they aren't there already.  Emit warnings if they aren't 
+static int ms_client_md_entry_sanity_check( struct md_entry* ent ) {
+   if( ent->name == NULL ) {
+      errorf("WARNING: entry %" PRIX64 " name field is NULL\n", ent->file_id );
+      ent->name = strdup("");
+   }
+   
+   if( ent->parent_name == NULL ) {
+      errorf("WARNING: entry %" PRIX64 " parent_name field is NULL\n", ent->file_id );
+      ent->parent_name = strdup("");
+   }
+   
+   return 0;
+}
+
 // convert an update_set into a protobuf
 static int ms_client_serialize_update_set( update_set* updates, ms::ms_updates* ms_updates ) {
    // populate the protobuf
    for( update_set::iterator itr = updates->begin(); itr != updates->end(); itr++ ) {
 
       struct md_update* update = &itr->second;
+      
+      ms_client_md_entry_sanity_check( &update->ent );
       
       ms::ms_update* ms_up = ms_updates->add_updates();
 
@@ -2898,8 +2945,17 @@ static int ms_client_serialize_update_set( update_set* updates, ms::ms_updates* 
 
       md_entry_to_ms_entry( ms_ent, &update->ent );
       
+      // if this an UPDATE, then add the affected blocks 
+      if( update->op == ms::ms_update::UPDATE ) {
+         if( update->affected_blocks != NULL ) {
+            for( size_t i = 0; i < update->num_affected_blocks; i++ ) {
+               ms_up->add_affected_blocks( update->affected_blocks[i] );
+            }
+         }
+      }
+      
       // if this is a RENAME, then add the 'dest' argument
-      if( update->op == ms::ms_update::RENAME ) {
+      else if( update->op == ms::ms_update::RENAME ) {
          ms::ms_entry* dest_ent = ms_up->mutable_dest();
          md_entry_to_ms_entry( dest_ent, &update->dest );
       }
@@ -2992,10 +3048,14 @@ static int ms_client_sign_updates( EVP_PKEY* pkey, ms::ms_updates* ms_updates ) 
 
 
 // populate an ms_update 
+// NOTE: ths is a shallow copy of ent and affected_blocks.  The caller should NOT free them; they'll be freed internally
 static int ms_client_populate_update( struct md_update* up, int op, int flags, struct md_entry* ent ) {
    memset( up, 0, sizeof(struct md_update) );
    up->op = op;
    up->flags = flags;
+   up->affected_blocks = NULL;
+   up->num_affected_blocks = 0;
+   
    memcpy( &up->ent, ent, sizeof(struct md_entry) );
    return 0;
 }
@@ -3111,14 +3171,41 @@ int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
    return ms_client_file_post( client, &up, NULL );
 }
 
-// update a record on the MS, synchronously
-int ms_client_update( struct ms_client* client, struct md_entry* ent ) {
+// update a record on the MS, synchronously, due to a write()
+int ms_client_update_write( struct ms_client* client, struct md_entry* ent, uint64_t* in_affected_blocks, size_t num_affected_blocks ) {
    
    // generate our update
    struct md_update up;
    ms_client_populate_update( &up, ms::ms_update::UPDATE, 0, ent );
    
-   return ms_client_file_post( client, &up, NULL );
+   uint64_t* affected_blocks = NULL;
+   
+   // add affected blocks 
+   if( in_affected_blocks != NULL ) {
+      
+      affected_blocks = CALLOC_LIST( uint64_t, num_affected_blocks );
+      memcpy( affected_blocks, in_affected_blocks, num_affected_blocks * sizeof(uint64_t) );
+      
+      up.affected_blocks = affected_blocks;
+   }
+   
+   up.num_affected_blocks = num_affected_blocks;
+   
+   int rc = ms_client_file_post( client, &up, NULL );
+   
+   // clean up
+   if( affected_blocks != NULL ) {
+      free( affected_blocks );
+      up.affected_blocks = NULL;
+      up.num_affected_blocks = 0;
+   }
+   
+   return rc;
+}
+
+// update a record on the MS, synchronously, NOT due to a write()
+int ms_client_update( struct ms_client* client, struct md_entry* ent ) {
+   return ms_client_update_write( client, ent, NULL, 0 );
 }
 
 // change coordinator ownership of a file on the MS, synchronously
@@ -3223,7 +3310,7 @@ static int ms_client_send_updates( struct ms_client* client, update_set* all_upd
    return rc;
 }
 
-
+/*
 // post a pending update to the MS for a specific file, removing it from the update queue
 // return 0 on success
 // return >0 if there was a CURL error (return value is the CURL error code)
@@ -3270,8 +3357,9 @@ int ms_client_sync_update( struct ms_client* client, uint64_t volume_id, uint64_
    
    return rc;
 }
+*/
 
-
+/*
 // post all updates to the MS that are older $freshness_ms milliseconds old
 // return 0 on success.
 // returns >0 if there was a CURL error (return value is the CURL error code)
@@ -3346,7 +3434,7 @@ int ms_client_sync_updates( struct ms_client* client, uint64_t freshness_ms ) {
    
    return rc;
 }
-
+*/
 
 // parse an MS reply
 int ms_client_parse_reply( struct ms_client* client, ms::ms_reply* src, char const* buf, size_t buf_len, bool verify ) {
@@ -4259,35 +4347,37 @@ int ms_client_my_key_pem_UNSAFE( struct ms_client* client, char** buf, size_t* l
    return rc;
 }
 
-// get an xattr value.
-// fails with -ENOENT if the file doesn't exist or isn't readable.
-int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char const* xattr_name, char** xattr_value, size_t* xattr_value_len ) {
-   char* getxattr_url = ms_client_getxattr_url( client, volume_id, file_id, xattr_name );
+
+// synchronously fetch data from the MS 
+// client cannot be locked
+static int ms_client_read( struct ms_client* client, uint64_t volume_id, char const* url, ms::ms_reply* reply ) {
+   
    int rc = 0;
    ssize_t len = 0;
    char* buf = NULL;
    
-   ms_client_begin_downloading( client, getxattr_url, NULL );
+   ms_client_begin_downloading( client, url, NULL );
    
    memset( &client->read_times, 0, sizeof(client->read_times) );
    len = md_download_file( client->ms_read, &buf );
    
    int http_response = ms_client_end_downloading( client );
    
-   free( getxattr_url );
-   
    if( len <= 0 ) {
-      errorf("md_download_file rc = %zd\n", len );   
+      errorf("md_download_file rc = %zd\n", len );
+      
+      if( buf )
+         free( buf );
+      
       return (int)len;
    }
    
    if( http_response == 200 ) {
       // success!
       // parse and verify
-      ms::ms_reply reply;
-      rc = ms_client_parse_reply( client, &reply, buf, len, true );
+      rc = ms_client_parse_reply( client, reply, buf, len, true );
       if( rc != 0 ) {
-         errorf("ms_client_parse_reply(getxattr) rc = %d\n", rc );
+         errorf("ms_client_read(%s) rc = %d\n", url, rc );
          free( buf );
          return -ENODATA;
       }
@@ -4295,25 +4385,14 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
       free( buf );
       
       // check errors
-      int err = reply.error();
+      int err = reply->error();
       if( err != 0 ) {
-         errorf("MS getxattr reply error %d\n", err );
+         errorf("ms_client_read(%s) reply error %d\n", url, err );
          return err;
       }
       
-      // check for the value 
-      if( !reply.has_xattr_value() ) {
-         errorf("MS did not reply a value for %s\n", xattr_name );
-         return -ENODATA;
-      }
-      
       // extract versioning information from the reply
-      ms_client_process_header( client, volume_id, reply.volume_version(), reply.cert_version() );
-      
-      // get the xattr 
-      char* val = strdup( reply.xattr_value().c_str() );
-      *xattr_value = val;
-      *xattr_value_len = reply.xattr_value().size();
+      ms_client_process_header( client, volume_id, reply->volume_version(), reply->cert_version() );
       
       return 0;
    }
@@ -4334,55 +4413,58 @@ int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t f
    }
 }
 
+// get an xattr value.
+// fails with -ENOENT if the file doesn't exist or isn't readable.
+int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char const* xattr_name, char** xattr_value, size_t* xattr_value_len ) {
+   
+   char* getxattr_url = ms_client_getxattr_url( client, volume_id, file_id, xattr_name );
+   ms::ms_reply reply;
+   int rc = 0;
+   
+   rc = ms_client_read( client, volume_id, getxattr_url, &reply );
+   
+   free( getxattr_url );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_read(getxattr %s) rc = %d\n", xattr_name, rc );
+      return rc;
+   }
+   else {
+      
+      // check for the value 
+      if( !reply.has_xattr_value() ) {
+         errorf("MS did not reply a value for %s\n", xattr_name );
+         return -ENODATA;
+      }
+      
+      
+      // get the xattr 
+      char* val = strdup( reply.xattr_value().c_str() );
+      *xattr_value = val;
+      *xattr_value_len = reply.xattr_value().size();
+      
+      return 0;
+   }
+}
+
 // get the list of xattrs for this file.
 // fails with -ENOENT if the file doesn't exist or isn't readable
 // on success, populate xattr_names with a '\0'-separated list of xattr names (size stored to xattr_names_len).
 int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char** xattr_names, size_t* xattr_names_len ) {
+   
    char* listxattr_url = ms_client_listxattr_url( client, volume_id, file_id );
    int rc = 0;
-   ssize_t len = 0;
-   char* buf = NULL;
+   ms::ms_reply reply;
    
-   ms_client_begin_downloading( client, listxattr_url, NULL );
-   
-   memset( &client->read_times, 0, sizeof(client->read_times) );
-   len = md_download_file( client->ms_read, &buf );
-   
-   int http_response = ms_client_end_downloading( client );
+   rc = ms_client_read( client, volume_id, listxattr_url, &reply );
    
    free( listxattr_url );
    
-   if( len <= 0 ) {
-      errorf("md_download_file rc = %zd\n", len );
-      
-      if( len == 0 )
-         len = -ENODATA;
-      
-      return (int)len;
+   if( rc != 0 ) {
+      errorf("ms_client_read(listxattr %" PRIX64 ") rc = %d\n", file_id, rc );
+      return rc;
    }
-   
-   if( http_response == 200 ) {
-      // success!
-      // parse and verify
-      ms::ms_reply reply;
-      rc = ms_client_parse_reply( client, &reply, buf, len, true );
-      if( rc != 0 ) {
-         errorf("ms_client_parse_reply(listxattr) rc = %d\n", rc );
-         free( buf );
-         return -ENODATA;
-      }
-      
-      free( buf );
-      
-      // check errors
-      int err = reply.error();
-      if( err != 0 ) {
-         errorf("MS listxattr reply error %d\n", err );
-         return err;
-      }
-      
-      // extract versioning information from the reply
-      ms_client_process_header( client, volume_id, reply.volume_version(), reply.cert_version() );
+   else {
       
       // get the total size...
       size_t names_len = 0;
@@ -4405,21 +4487,6 @@ int ms_client_listxattr( struct ms_client* client, uint64_t volume_id, uint64_t 
       *xattr_names_len = names_len;
       
       return 0;
-   }
-   else {
-      // error 
-      errorf("MS HTTP status %d\n", http_response );
-      
-      if( http_response == 0 ) {
-         errorf("%s", "MS bug: HTTP response is zero!\n");
-         
-         http_response = -EIO;
-      }
-      
-      if( buf )
-         free( buf );
-      
-      return -http_response;
    }
 }
 
@@ -4487,3 +4554,124 @@ int ms_client_chmodxattr( struct ms_client* client, struct md_entry* ent, char c
    return ms_client_file_post( client, &up, NULL );
 }
 
+
+// make a vacuum entry.
+// the resulting ms_vacuum_entry structure will own the affected_blocks array (which the caller must dynamically allocate)
+int ms_client_vacuum_entry_init( struct ms_vacuum_entry* vreq, uint64_t volume_id, uint64_t file_id, int64_t file_version,
+                                 int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec, uint64_t* affected_blocks, size_t num_affected_blocks ) {
+   
+   memset( vreq, 0, sizeof(struct ms_vacuum_entry) );
+   
+   vreq->volume_id = volume_id;
+   vreq->file_id = file_id;
+   vreq->file_version = file_version;
+   vreq->manifest_mtime_sec = manifest_mtime_sec;
+   vreq->manifest_mtime_nsec = manifest_mtime_nsec;
+   vreq->affected_blocks = affected_blocks;
+   vreq->num_affected_blocks = num_affected_blocks;
+   
+   return 0;
+}
+
+// set a vacuum entry's affected blocks (i.e. if they weren't known at the time of initialization).
+// the caller must allocate affected_blocks; the ms_vacuum_entry will own the array.
+// return -EINVAL if the entry already has blocks 
+int ms_client_vacuum_entry_set_blocks( struct ms_vacuum_entry* vreq, uint64_t* affected_blocks, size_t num_affected_blocks ) {
+   
+   if( vreq->affected_blocks != NULL || vreq->num_affected_blocks != 0 ) 
+      return -EINVAL;
+ 
+   vreq->affected_blocks = affected_blocks;
+   vreq->num_affected_blocks = num_affected_blocks;
+   
+   return 0;
+}
+
+// free a vacuum entry 
+int ms_client_vacuum_entry_free( struct ms_vacuum_entry* vreq ) {
+   if( vreq->affected_blocks ) {
+      free( vreq->affected_blocks );
+   }
+   
+   memset( vreq, 0, sizeof(struct ms_vacuum_entry) );
+   return 0;
+}
+
+
+// extract the affected blocks from an ms_reply 
+static int ms_client_vacuum_entry_get_affected_blocks( ms::ms_reply* reply, uint64_t** affected_blocks, size_t* num_affected_blocks ) {
+   
+   uint64_t* ret = CALLOC_LIST( uint64_t, reply->affected_blocks_size() );
+   
+   for( int64_t i = 0; i < reply->affected_blocks_size(); i++ ) {
+      ret[i] = reply->affected_blocks(i);
+   }
+   
+   *affected_blocks = ret;
+   *num_affected_blocks = reply->affected_blocks_size();
+   
+   return 0;
+}
+
+// get the head of the vacuum log for a file 
+int ms_client_peek_vacuum_log( struct ms_client* client, uint64_t volume_id, uint64_t file_id, struct ms_vacuum_entry* ve ) {
+   
+   char* vacuum_url = ms_client_vacuum_url( client, volume_id, file_id );
+   ms::ms_reply reply;
+   int rc = 0;
+   
+   rc = ms_client_read( client, volume_id, vacuum_url, &reply );
+   
+   free( vacuum_url );
+   
+   if( rc != 0 ) {
+      errorf("ms_client_read(peek vacuum %" PRIX64 ") rc = %d\n", file_id, rc );
+      return rc;
+   }
+   else {
+      
+      // check value 
+      if( !reply.has_manifest_mtime_sec() || !reply.has_manifest_mtime_nsec() ) {
+         errorf("MS did not reply manifest timestamp for %" PRIX64 "\n", file_id );
+         return -ENODATA;
+      }
+      
+      uint64_t* affected_blocks = NULL;
+      size_t num_affected_blocks = 0;
+      
+      ms_client_vacuum_entry_get_affected_blocks( &reply, &affected_blocks, &num_affected_blocks );
+      
+      ms_client_vacuum_entry_init( ve, volume_id, file_id, reply.file_version(), reply.manifest_mtime_sec(), reply.manifest_mtime_nsec(), affected_blocks, num_affected_blocks );
+      
+      return 0;
+   }
+}
+
+// remove a vacuum log entry 
+int ms_client_remove_vacuum_log_entry( struct ms_client* client, uint64_t volume_id, uint64_t file_id, uint64_t file_version, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec ) {
+   
+   // generate our update 
+   struct md_update up;
+   
+   struct md_entry ent;
+   memset( &ent, 0, sizeof(ent) );
+   
+   // sentinel values
+   ent.name = strdup("");
+   ent.parent_name = strdup("");
+   
+   // sentinel md_entry with all of our given information
+   ent.volume = volume_id;
+   ent.file_id = file_id;
+   ent.version = file_version;
+   ent.manifest_mtime_sec = manifest_mtime_sec;
+   ent.manifest_mtime_nsec = manifest_mtime_nsec;
+   
+   ms_client_populate_update( &up, ms::ms_update::VACUUM, 0, &ent );
+   
+   int rc = ms_client_file_post( client, &up, NULL );
+   
+   md_entry_free( &ent );
+   
+   return rc;
+}

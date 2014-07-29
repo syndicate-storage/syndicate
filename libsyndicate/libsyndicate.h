@@ -114,6 +114,9 @@ struct md_update {
    size_t xattr_value_len;
    uint64_t xattr_owner;  // xattr owner (chownxattr)
    mode_t xattr_mode;     // xattr mode (chmodxattr)
+   
+   uint64_t* affected_blocks;   // blocks affected by a write 
+   size_t num_affected_blocks;  
 };
 
 // metadata update operations

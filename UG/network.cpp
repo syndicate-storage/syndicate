@@ -23,6 +23,7 @@
 #include "syndicate.h"
 
 // download and verify a manifest
+// fent must be at least read-locked
 int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
    CURL* curl = curl_easy_init();
    
@@ -114,7 +115,9 @@ int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_pat
          }
          else {
             errorf("fs_entry_download_manifest(%s) rc = %d\n", replica_url, rc );
-            rc = -ENODATA;
+            
+            if( rc != -ENOENT )
+               rc = -ENODATA;
          }
          
          free( replica_url );
@@ -128,9 +131,6 @@ int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_pat
       }
       
       free( rg_ids);
-   }
-   else {
-      rc = -ENODATA;
    }
    
    if( rc == 0 ) {
@@ -147,6 +147,116 @@ int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_pat
 }
 
 
+// get a manifest, either from the coordinator, or from an RG.  If we got it from an RG, remember which one.
+// fent must be at least read-locked
+int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec,
+                           Serialization::ManifestMsg* manifest_msg, uint64_t* successful_gateway_id ) {
+   
+   char* manifest_url = NULL;
+   int rc = 0;
+   
+   struct timespec modtime;
+   modtime.tv_sec = manifest_mtime_sec;
+   modtime.tv_nsec = manifest_mtime_nsec;
+   
+   int gateway_type = ms_client_get_gateway_type( core->ms, fent->coordinator );
+   
+   if( !FS_ENTRY_LOCAL( core, fent ) ) {
+      // check the MS-listed coordinator first, instead of asking the RGs directly
+      
+      if( gateway_type < 0 ) {
+         // unknown gateway...try refreshing the Volume
+         errorf("Unknown Gateway %" PRIu64 "\n", fent->coordinator );
+         ms_client_sched_volume_reload( core->ms );
+         return -EAGAIN;
+      }
+      
+      rc = fs_entry_make_manifest_url( core, fs_path, fent->coordinator, fent->file_id, fent->version, &modtime, &manifest_url );
+      
+      if( rc != 0 ) {
+         // failed to produce the url
+         errorf("fs_entry_make_manifest_url rc = %d\n", rc );
+         
+         if( rc == -ENOENT ) {
+            // gateway not found.  try refreshing our certs
+            ms_client_sched_volume_reload( core->ms );
+            return -EAGAIN;
+         }
+         else {
+            return -ENODATA;
+         }
+      }
+      
+      dbprintf("Download manifest from Gateway %" PRIu64 " at %s\n", fent->coordinator, manifest_url );
+  
+      rc = fs_entry_download_manifest( core, fs_path, fent, manifest_mtime_sec, manifest_mtime_nsec, manifest_url, manifest_msg );
+      
+      if( rc == 0 && successful_gateway_id ) {
+         // got it from the coordinator
+         *successful_gateway_id = fent->coordinator;
+      }
+   }
+   
+   if( gateway_type != SYNDICATE_AG && (rc != 0 || FS_ENTRY_LOCAL( core, fent )) ) {
+      // either we couldn't get it from the remote UG, or its local and we don't have a copy ourselves
+      
+      if( rc != 0 ) {
+         errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
+      }
+      
+      // try the RGs
+      uint64_t rg_id = 0;
+      
+      rc = fs_entry_download_manifest_replica( core, fs_path, fent, manifest_mtime_sec, manifest_mtime_nsec, manifest_msg, &rg_id );
+      
+      if( rc != 0 ) {
+         // error
+         errorf("Failed to read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d from RGs\n", fent->volume, fent->file_id, fent->version, manifest_mtime_sec, manifest_mtime_nsec );
+      }
+      else {
+         // success!
+         dbprintf("Read /%" PRIu64 "/%" PRIX64 ".%" PRId64 "/manifest.%" PRId64 ".%d from RG %" PRIu64 "\n", fent->volume, fent->file_id, fent->version, manifest_mtime_sec, manifest_mtime_nsec, rg_id );
+         rc = 0;
+         
+         if( successful_gateway_id ) {
+            // got it from this RG
+            *successful_gateway_id = rg_id;
+         }
+      }
+   }
+
+   free( manifest_url );
+
+   if( rc != 0 )
+      return rc;
+
+   // is this an error code?
+   if( manifest_msg->has_errorcode() ) {
+      // remote gateway indicates error
+      errorf("manifest error %d\n", manifest_msg->errorcode() );
+      return manifest_msg->errorcode();
+   }
+   
+   // verify that the manifest matches the timestamp
+   if( manifest_msg->mtime_sec() != manifest_mtime_sec || manifest_msg->mtime_nsec() != manifest_mtime_nsec ) {
+      // invalid manifest
+      errorf("timestamp mismatch: got %" PRId64 ".%d, expected %" PRId64 ".%d\n", manifest_msg->mtime_sec(), manifest_msg->mtime_nsec(), manifest_mtime_sec, manifest_mtime_nsec );
+      return -EBADMSG;
+   }
+   
+   // verify that the manifest matches the volume and file id and version 
+   if( manifest_msg->volume_id() != fent->volume || manifest_msg->file_id() != fent->file_id || manifest_msg->file_version() != fent->version ) {
+      // wrong manifest 
+      errorf("Invalid manifest: got /%" PRIu64 "/%" PRIX64 ".%" PRId64 ", expected /%" PRIu64 "/%" PRIX64 ".%" PRId64 "\n", 
+             manifest_msg->volume_id(), manifest_msg->file_id(), manifest_msg->file_version(),
+             fent->volume, fent->file_id, fent->version );
+      
+      return -EBADMSG;
+   }
+   
+   return 0;
+}
+
 
 // set up a write message
 int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core, Serialization::WriteMsg_MsgType type ) {
@@ -162,10 +272,10 @@ int fs_entry_init_write_message( Serialization::WriteMsg* writeMsg, struct fs_co
 }
 
 
-// set up a PREPARE message, with the blocks we're gonna send
+// set up a WRITE message, with the blocks we're gonna send
 int fs_entry_prepare_write_message( Serialization::WriteMsg* writeMsg, struct fs_core* core, char const* fs_path, struct replica_snapshot* fent_snapshot, int64_t write_nonce, modification_map* dirty_blocks ) {
    
-   fs_entry_init_write_message( writeMsg, core, Serialization::WriteMsg::PREPARE );
+   fs_entry_init_write_message( writeMsg, core, Serialization::WriteMsg::WRITE );
    
    Serialization::FileMetadata* file_md = writeMsg->mutable_metadata();
 
@@ -174,10 +284,6 @@ int fs_entry_prepare_write_message( Serialization::WriteMsg* writeMsg, struct fs
    file_md->set_file_id( fent_snapshot->file_id );
    file_md->set_file_version( fent_snapshot->file_version );
    file_md->set_size( fent_snapshot->size );
-   /*
-   file_md->set_mtime_sec( fent->mtime_sec );
-   file_md->set_mtime_nsec( fent->mtime_nsec );
-   */
    file_md->set_write_nonce( write_nonce );
    file_md->set_coordinator_id( fent_snapshot->coordinator_id );
    
@@ -418,7 +524,7 @@ int fs_entry_send_write_or_coordinate( struct fs_core* core, char const* fs_path
    while( !sent ) {
       int rc = fs_entry_post_write( write_ack, core, fent->coordinator, write_msg );
 
-      // process the write message acknowledgement--hopefully it's a PROMISE
+      // process the write message acknowledgement--hopefully it's an ACCEPTED
       if( rc != 0 ) {
          // failed to post
          errorf( "fs_entry_post_write(%s /%" PRIu64 "/%" PRIX64 " (%s)) to %" PRIu64 " rc = %d\n", fs_path, fent->volume, fent->file_id, fent->name, fent->coordinator, rc );

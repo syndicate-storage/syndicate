@@ -19,10 +19,11 @@
 #include "cache.h"
 #include "replication.h"
 #include "network.h"
+#include "vacuumer.h"
 
 // lowlevel unlink operation--given an fs_entry and the name of an entry
-// PARENT MUST BE LOCKED FIRST!
-// CHILD MUST NOT BE LOCKED!
+// parent must be write-locked!
+// child must NOT be locked!
 int fs_entry_detach_lowlevel( struct fs_core* core, struct fs_entry* parent, struct fs_entry* child ) {
 
    if( parent == child ) {
@@ -72,8 +73,7 @@ int fs_entry_detach_lowlevel( struct fs_core* core, struct fs_entry* parent, str
          }
       }
       
-      if( rc == 0 || rc == -ENOENT ) {
-         // ENOENT allowed--it just means there's not local data
+      if( rc == 0 ) {
          fs_entry_destroy( child, false );
          free( child );
          child = NULL;
@@ -151,7 +151,11 @@ int fs_entry_detach( struct fs_core* core, char const* path, uint64_t user, uint
 
 // unlink a file from the filesystem
 // pass -1 if the version is not known, or pass the known version to be unlinked
-int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t file_id, uint64_t coordinator_id, int64_t known_version, uint64_t owner, uint64_t volume, uint64_t gateway_id, bool check_file_id_and_coordinator_id ) {
+// return -EUCLEAN if we failed to garbage-collect, but needed to (i.e. a manifest was missing)
+// return -EREMOTEIO for failure to revalidate metadata 
+// return -ESTALE if the given information is out of date
+int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t file_id, uint64_t coordinator_id, int64_t known_version, uint64_t owner, uint64_t volume, uint64_t gateway_id, 
+                               bool check_file_id_and_coordinator_id ) {
    
    // can't modify state if anonymous
    if( core->gateway == GATEWAY_ANON ) {
@@ -162,6 +166,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    // get some info about this file first
    int rc = 0;
    int err = 0;
+   bool no_manifest = false;
    
    // consistency check
    err = fs_entry_revalidate_path( core, volume, path );
@@ -209,8 +214,17 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
       err = fs_entry_revalidate_manifest( core, path, fent );
       if( err != 0 ) {
          errorf( "fs_entry_revalidate_manifest(%s) rc = %d\n", path, err );
-         fs_entry_unlock( fent );
-         return err;
+         
+         if( err == -ENOENT ) {
+            // continue without a manifest 
+            no_manifest = true;
+            errorf("WARN: no manifest found for %s %" PRIX64 ".  Assuming data is already vacuumed.\n", path, fent->file_id );
+         }
+         else {
+            // some other problem
+            fs_entry_unlock( fent );
+            return err;
+         }
       }
    }
 
@@ -238,7 +252,7 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
 
       Serialization::WriteMsg* detach_ack = new Serialization::WriteMsg();
       
-      // send the write message, or coordinate
+      // send the write message, or become the coordinator
       rc = fs_entry_send_write_or_coordinate( core, path, fent, detach_request, detach_ack );
       
       if( rc < 0 ) {
@@ -269,39 +283,94 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    }
 
    if( local ) {
-      // we're responsible for this file; tell the metadata server we just unlinked
-      // preserve the entry information so we can issue a withdraw
-      struct md_entry ent;
-      fs_entry_to_md_entry( core, &ent, fent, parent->file_id, parent->name );
-
-      rc = ms_client_delete( core->ms, &ent );
-      md_entry_free( &ent );
+      // we're responsible for this file
+      // mark the file as deleted, so it won't show up again in any listing 
+      fent->deletion_in_progress = true;
       
-      if( rc != 0 ) {
-         errorf( "ms_client_delete(%s) rc = %d\n", path, rc );
-         rc = -EREMOTEIO;
+      // safe to unlock parent--it won't be empty (in a rmdir-able sense) until fent is fully garbage-collected, but fent won't be listed either
+      fs_entry_unlock( parent );
+      
+      // garbage-collect, then unlink on the MS.  Loop this until we succeed in unlinking on the MS (which can only happen 
+      // once all of fent's data has been garbage-collected).
+      while( true ) {
          
-         fs_entry_unlock( fent );
-         fs_entry_unlock( parent );
-         return rc;
-      }
-      else {
-         fs_entry_garbage_collect_file( core, fent );
-      }
-   }
-   
-   // detach from our FS
-   fs_entry_unlock( fent );
+         if( !no_manifest ) {
+            // if we got the latest manifest, garbage-collect all writes on the file 
+            rc = fs_entry_vacuumer_file( core, path, fent );
+            
+            if( rc != 0 ) {
+               errorf("fs_entry_vacuumer_vacuum_file( %s %" PRIX64 " ) rc = %d\n", path, fent->file_id, rc );
+               
+               // failed to garbage-collect...need to un-delete fent
+               fent->deletion_in_progress = false;
+               fs_entry_unlock( fent );
+               
+               return -EREMOTEIO;
+            }
+         }
+         
+         // tell the metadata server we just unlinked
+         // preserve the entry information so we can issue a deletion
+         struct md_entry ent;
+         fs_entry_to_md_entry( core, &ent, fent, parent->file_id, parent->name );
 
-   if( rc == 0 ) {
+         rc = ms_client_delete( core->ms, &ent );
+         md_entry_free( &ent );
+            
+         if( rc != 0 ) {
+            errorf( "ms_client_delete(%s) rc = %d\n", path, rc );
+            
+            if( rc == -EAGAIN ) {
+               if( !no_manifest ) {
+                  // try vacuuming again--some write got added in between our garbage-collection and our unlink request
+                  rc = 0;
+                  continue;
+               }
+               else {
+                  // there are un-garbage-collected writes, but we have no manifest, so we can't vacuum in order to proceed with the delete.
+                  errorf("MEMORY LEAK DETECTED: No manifest for %" PRIX64 " available; unable to vacuum!\n", fent->file_id );
+                  
+                  // failed to garbage-collect...need to un-delete fent
+                  fent->deletion_in_progress = false;
+                  fs_entry_unlock( fent );
+                  
+                  return -EUCLEAN;
+               }
+            }
+            else {
+               
+               // something more serious 
+               rc = -EREMOTEIO;
+               
+               fent->deletion_in_progress = false;
+               fs_entry_unlock( fent );
+               return rc;
+            }
+         }
+         else {
+            // success!
+            break;
+         }
+      }
+      
+      // re-lock the parent--it's guaranteed to exist, since it's not empty 
+      fs_entry_wlock( parent );
+      
+      // unlock fent--we're done with it 
+      fs_entry_unlock( fent );
+      
+      // detatch fent from parent
       rc = fs_entry_detach_lowlevel( core, parent, fent );
       if( rc != 0 ) {
-         errorf( "fs_entry_detach_lowlevel rc = %d\n", rc );
+         errorf("fs_entry_detach_lowlevel(%" PRIX64 ") rc = %d\n", fent->file_id, rc );
+         fs_entry_unlock( parent );
+         
+         return rc;
       }
+      
+      fs_entry_unlock( parent );
    }
-
-   fs_entry_unlock( parent );
-
+   
    return rc;
 }
 

@@ -187,7 +187,7 @@ def get( url_path, outfile ):
 
 
 #-------------------------
-def delete( metadata_field, outfile ):
+def delete( metadata_field ):
    '''
       Process a DELETE request.  Return an HTTP status code.
       Generate and write out a deletion receipt, if this is a manifest.
@@ -229,15 +229,6 @@ def delete( metadata_field, outfile ):
       rc = (500, "Internal server error")
    
    log.info("delete_data rc = %s" % str(rc) )
-   
-   if (rc == 200 or rc == 404) and req_info.type == rg_request.is_manifest_request( req_info ):
-      
-      # generate a signed deletion receipt, even if the data was not found 
-      deletion_receipt = rg_request.make_deletion_receipt( req_info )
-      
-      data = deletion_receipt.SerializeToString()
-      
-      outfile.write( data )
    
    return (rc, "OK")
 
@@ -323,7 +314,6 @@ def wsgi_handle_request( environ, start_response ):
    elif environ['REQUEST_METHOD'] == 'DELETE':
       # DELETE request
       post_fields = FieldStorage( fp=environ['wsgi.input'], environ=environ )
-      outfile = StringIO()
       
       # validate
       if not post_fields.has_key(METADATA_FIELD_NAME):
@@ -331,16 +321,10 @@ def wsgi_handle_request( environ, start_response ):
       
       metadata_field = post_fields[METADATA_FIELD_NAME].value
       
-      rc, msg = delete( metadata_field, outfile )
+      rc, msg = delete( metadata_field )
       
-      if rc == 200 or rc == 404:
-         # send back the deletion receipt
-         size = outfile.len
-         outfile.seek(0)
-         headers = [('Content-Type', 'application/octet-stream'), ('Content-Length', str(size))]
-         start_response( '%s %s' % (rc, msg), headers )
-         
-         return FileWrapper( outfile )
+      if rc == 200:
+         return valid_request( start_response )
       
       else:
          return invalid_request( start_response, status="%s %s" % (rc, msg), resp="error code %s\n" % str(rc))

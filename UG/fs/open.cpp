@@ -103,7 +103,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
 
    char* path_basename = md_basename( path, NULL );
 
-   // make sure it doesn't exist already
+   // make sure it doesn't exist already (or isn't in the process of being deleted, since we might have to re-create it if deleting it fails)
    if( fs_entry_set_find_name( parent->children, path_basename ) != NULL ) {
       free( path_basename );
       fs_entry_unlock( parent );
@@ -259,7 +259,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
    uint64_t parent_id = parent->file_id;
    char* parent_name = strdup( parent->name );
 
-   // resolve the child
+   // resolve the child (which may be in the process of being deleted)
    struct fs_entry* child = fs_entry_set_find_name( parent->children, path_basename );
    bool created = false;
 

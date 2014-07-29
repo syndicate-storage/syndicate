@@ -1,16 +1,21 @@
-* get everything to compile in FC12 for Nirav and for testing SyndicateMail
-* have draft of SyndicateMail ready by week's end
-* get automatic build working (investigate existing systems) for nightly 
-* get RG drivers working
-* get AG block hash working
-* get xattrs working
-* principles paper!  use example systems to describe why
+Talk with Sapan and Andy about OpenCloud story
+* Value-Added Cloud: you pony up some infrastructure (VMs, OpenStack, etc) and give us access, and we give your site-local services access to the OpenCloud servces
+-- CoBlitz, Syndicate, etc.
+* Benefits of deploying into the edge:
+-- Privacy: you have first say over the computations over your data, so the greater cloud doesn't
+-- Latency: your services and the shards of the Value-Added Cloud run locally, giving you faster, possibly more available access 
+-- Legacy: continue to support your own services as they are, but augmented with the greater cloud's services 
 
-For SyndicateMail:
-* ATC paper: need implementation and evaluation ideas!
-* per-Volume OpenID provider information (or built-in authentication)
-* clean Python Volume interface
-* clean syntool module interface
+Key value: OpenCloud offers logical composition of services
+-- "narrow waist" between local services and global services 
+-- entirely new "co-op" SaaS is possible--some parts run locally, others in the Value-Added Cloud
+-- poster child: Syndicate, CoBlitz
+
+How far is the edge?
+-- Out to PoPs and regional offices: great for ISPs who don't want to build a new Amazon, but want Amazon's value added to their services.  They can build better VoD, advertising, caching, etc.
+-- Out to University and organization peering points: great for supporting legacy services, and great for privacy whereby organization users' data and behavior is masked by local computing
+-- Out to individual users' machines: new classes of consumer services (Gmail, Facebook, Tumblr, Twitter, etc.) that preserve privacy through local computations before shipping data out to the world
+
 
 READING:
 // http://www1.icsi.berkeley.edu/~barath/papers/icn-hotnets11.pdf

@@ -31,7 +31,7 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
 int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent );
 
 // load a manifest into an fs_entry
-int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t version, int64_t mtime_sec, int32_t mtime_nsec, bool check_coordinator, uint64_t* successful_gateway_id );
+int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec, uint64_t* successful_gateway_id );
 
 // revalidate all of a path and the fent at the end
 int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t* rg_id_ret );

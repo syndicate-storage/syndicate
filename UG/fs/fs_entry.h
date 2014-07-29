@@ -142,6 +142,10 @@ struct fs_entry {
    xattr_cache_t* xattr_cache;  // cached xattrs
    
    bool created_in_session;     // if we're in client mode, then this is true of the file was created in this session
+   bool deletion_in_progress;   // if true, we're in the process of deleting a file (which is not atomic)
+   
+   bool vacuuming;              // if true, then we're currently vacuuming this file
+   bool vacuumed;               // if true, then we've already tried to vacuum this file upon discovery (false means we should try again)
 };
 
 #define IS_STREAM_FILE( fent ) ((fent).size < 0)
@@ -337,6 +341,7 @@ int fs_entry_to_md_entry( struct fs_core* core, struct md_entry* dest, struct fs
 // versioning
 int64_t fs_entry_next_version_number(void);
 int fs_entry_update_modtime( struct fs_entry* fent );
+int fs_entry_store_snapshot( struct fs_entry* fent, struct replica_snapshot* new_snapshot );
 
 // misc
 unsigned int fs_entry_num_children( struct fs_entry* fent );
@@ -368,6 +373,8 @@ int fs_entry_sync_queue_apply( struct fs_entry* fent, void (*func)( struct sync_
 int fs_entry_view_change_callback( struct ms_client* ms, void* cls );
 
 // block state management
+int fs_entry_list_block_ids( modification_map* m, uint64_t** block_ids, size_t* num_block_ids );
+
 int fs_entry_setup_working_data( struct fs_core* core, struct fs_entry* fent );
 int fs_entry_free_working_data( struct fs_entry* fent );
 

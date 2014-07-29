@@ -42,7 +42,7 @@ handlers = [
     (r'[/]+FILE[/]+(RESOLVE)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([0123456789]+)[/]+([-0123456789]+)[/]*', MSFileHandler ),   # GET: for reading/resolving file metadata.
     (r'[/]+FILE[/]+(GETXATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]+([\w]+)[/]*', MSFileHandler ),  # GET: for getting xattrs.
     (r'[/]+FILE[/]+(LISTXATTR)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]*', MSFileHandler ),                                        # GET: for listing xattrs.
-    (r'[/]+FILE[/]+(GCPEEK)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]*', MSFileHandler ),
+    (r'[/]+FILE[/]+(VACUUM)[/]+([0123456789]+)[/]+([0123456789ABCDEF]+)[/]*', MSFileHandler ),
     (r'[/]+FILE[/]+([0123456789]+)[/]*', MSFileHandler ),                         # POST: for creating, updating, deleting, renaming, changing coordinator, setting/deleting/chown-ing/chmod-ing xattrs, and garbage collection
                                                                                   # The specific operation is encoded in the posted data.  This handler dispatches the call to the appropriate objects.
     (r'[/]+VOLUME[/]+([^/]+)[/]*', MSVolumeRequestHandler),

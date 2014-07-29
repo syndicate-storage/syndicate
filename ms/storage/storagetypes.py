@@ -524,8 +524,10 @@ class Object( Model ):
             qry = qry.filter( cls._properties[attr_name] <= value )
          elif op == "IN":
             qry = qry.filter( cls._properties[attr_name].IN( value ) )
+         else:
+            raise Exception("Invalid operation '%s'" % op)
 
-      if order != None:
+      if order is not None:
          # apply ordering
          for attr_name in order:
             if "." in attr_name:
@@ -543,20 +545,22 @@ class Object( Model ):
                qry = qry.order( cls._properties[attr_name] )
          
       proj_attrs = None
-      if projection != None:
+      if projection is not None:
          proj_attrs = []
          for proj_attr in projection:
             proj_attrs.append( cls._properties[proj_attr] )
       
       qry_ret = None
       
+      print qry 
+      
       if query_only:
          # query only, no data
          qry_ret = qry
       
       else:
-         if map_func == None:
-            if pagesize != None:
+         if map_func is None:
+            if pagesize is not None:
                # paging response 
                if async:
                   qry_ret = qry.fetch_page_async( pagesize, keys_only=keys_only, limit=limit, offset=offset, start_cursor=start_cursor, projection=proj_attrs )

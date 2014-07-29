@@ -28,6 +28,7 @@ common_source_files = """
    syndicate.cpp
    network.cpp
    opts.cpp
+   vacuumer.cpp
 """
 
 # HTTP backend

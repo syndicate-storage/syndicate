@@ -604,7 +604,7 @@ class MSEntryXAttr( storagetypes.Object ):
       return cls.ListAll( {"MSEntryXAttr.volume_id ==": volume_id}, projection=['xattr_name', 'file_id'], map_func=__xattr_deferred_delete, async=async )
 
 
-class MSEntryGCLog( storagetypes.Object ):
+class MSEntryVacuumLog( storagetypes.Object ):
    """
    Log of manifest metadata of an MSEntry, for use in garbage collection.
    UGs poll these in order to garbage-collect stale manifests and blocks from the RGs for an MSEntry.
@@ -618,70 +618,105 @@ class MSEntryGCLog( storagetypes.Object ):
    manifest_mtime_sec = storagetypes.Integer(default=0, indexed=False)
    manifest_mtime_nsec = storagetypes.Integer(default=0, indexed=False)
    
-   @classmethod
-   def make_key_name( cls, volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
-      return "MSEntryGCLog: volume_id=%s,file_id=%s,version=%s,manifest_mtime_sec=%s,manifest_mtime_nsec=%s" % (volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec)
+   affected_blocks = storagetypes.Integer( repeated=True )
+   
+   nonce = storagetypes.Integer( default=0, indexed=False )
    
    @classmethod
-   def create_async( cls, _volume_id, _file_id, _version, _manifest_mtime_sec, _manifest_mtime_nsec ):
-      key_name = MSEntryGCLog.make_key_name( _volume_id, _file_id, _version, _manifest_mtime_sec, _manifest_mtime_nsec )
-      return MSEntryGCLog.get_or_insert_async( key_name,
-                                               volume_id=_volume_id,
-                                               file_id=_file_id,
-                                               version=_version,
-                                               manifest_mtime_sec=_manifest_mtime_sec,
-                                               manifest_mtime_nsec=_manifest_mtime_nsec )
+   def make_key_name( cls, volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
+      return "MSEntryVacuumLog: volume_id=%s,file_id=%s,version=%s,manifest_mtime_sec=%s,manifest_mtime_nsec=%s" % (volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec)
+   
+   @classmethod
+   def create_async( cls, _volume_id, _file_id, _version, _manifest_mtime_sec, _manifest_mtime_nsec, _affected_blocks, nonce=None ):
+      
+      if _affected_blocks is None:
+         _affected_blocks = []
+         
+      key_name = MSEntryVacuumLog.make_key_name( _volume_id, _file_id, _version, _manifest_mtime_sec, _manifest_mtime_nsec )
+      
+      if nonce is None:
+         nonce = random.randint(-2**63, 2**63 - 1)
+      
+      return MSEntryVacuumLog.get_or_insert_async( key_name,
+                                                   volume_id=_volume_id,
+                                                   file_id=_file_id,
+                                                   version=_version,
+                                                   manifest_mtime_sec=_manifest_mtime_sec,
+                                                   manifest_mtime_nsec=_manifest_mtime_nsec,
+                                                   affected_blocks=_affected_blocks,
+                                                   nonce=nonce )
    
    @classmethod 
    def delete_async( cls, volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
       
-      key_name = MSEntryGCLog.make_key_name( volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
-      record_key = storagetypes.make_key( MSEntryGCLog, key_name )
+      key_name = MSEntryVacuumLog.make_key_name( volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
+      record_key = storagetypes.make_key( MSEntryVacuumLog, key_name )
       
-      storagetypes.deferred.defer( MSEntryGCLog.delete_all, [record_key] )
+      storagetypes.deferred.defer( MSEntryVacuumLog.delete_all, [record_key] )
       
       return True
    
    
    @classmethod 
-   def Peek( cls, volume_id, file_id ):
+   def Peek( cls, volume_id, file_id, async=False ):
       """
       Get the head of the log for this file.
       That is, the oldest manifest record.
       """
-      log_head = MSEntryGCLog.ListAll( {"MSEntryGCLog.volume_id ==": volume_id, "MSEntryGCLog.file_id ==": file_id},
-                                             limit=1,
-                                             order=["MSEntryGCLog.manifest_mtime_sec", "MSEntryGCLog.manifest_mtime_nsec"] )
+      
+      log_head = MSEntryVacuumLog.ListAll( {"MSEntryVacuumLog.volume_id ==": volume_id, "MSEntryVacuumLog.file_id ==": file_id},
+                                           limit=1,
+                                           async=async )
+      
+      print "log head of /%s/%s" % (volume_id, file_id)
+      print log_head 
       
       return log_head
    
    @classmethod 
-   def Insert( cls, volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec, async=False ):
+   def Insert( cls, volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec, affected_blocks ):
       """
       Add a new manifest log record.
+      Verify that the MSEntry exists afterwards, and undo (delete) the newly-inserted record if not
       """
-      rec_fut = cls.create_async( volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
       
-      if async:
-         return rec_fut 
+      nonce = random.randint(-2**63, 2**63 - 1)
       
-      else:
-         return rec_fut.get_result()
+      rec_fut = cls.create_async( volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec, affected_blocks, nonce=nonce )
+      
+      rec = rec_fut.get_result()
+      
+      msent = MSEntry.ReadBase( volume_id, file_id )
+      
+      if msent is None or msent.deleted:
+         # undo, if we created 
+         if rec.nonce == nonce:
+            cls.delete_async( rec.volume_id, rec.file_id, rec.version, rec.manifest_mtime_sec, rec.manifest_mtime_nsec )
+            
+      return rec
    
    
    @classmethod 
    def Remove( cls, volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec ):
       """
       Remove a manifest log record.
+      Return -errno.ENOENT if it doesn't exist 
       """
-      return cls.delete_async( volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
       
-   @classmethod 
-   def Remove( cls, rec ):
-      """
-      Remove a manifest log record.
-      """
-      return cls.Dequeue( rec.volume_id, rec.file_id, rec.version, rec.manifest_mtime_sec, rec.manifest_mtime_nsec )
+      print "remove log head /%s/%s (version = %s, manifest_mtime_sec = %s, manifest_mtime_nsec = %s)" % (volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec)
+      
+      key_name = MSEntryVacuumLog.make_key_name( volume_id, file_id, version, manifest_mtime_sec, manifest_mtime_nsec )
+      log_ent_key = storagetypes.make_key( MSEntryVacuumLog, key_name )
+      
+      log_ent = log_ent_key.get()
+      
+      if log_ent is None:
+         return -errno.ENOENT 
+      
+      else:
+         
+         MSEntryVacuumLog.delete_all( [log_ent_key] )
+         return 0
    
 
 class MSEntry( storagetypes.Object ):
@@ -832,6 +867,10 @@ class MSEntry( storagetypes.Object ):
 
    # functions that write a sharded value, given this ent
    shard_writers = {
+      "manifest_mtime_sec": (lambda ent: ent.manifest_mtime_sec),
+      "manifest_mtime_nsec": (lambda ent: ent.manifest_mtime_nsec),
+      "mtime_sec": (lambda ent: ent.mtime_sec),
+      "mtime_nsec": (lambda ent: ent.mtime_nsec),
       "msentry_version": (lambda ent: ent.version),
       "msentry_volume_id": (lambda ent: ent.volume_id),
       "size": (lambda ent: ent.size),
@@ -1024,7 +1063,7 @@ class MSEntry( storagetypes.Object ):
    @storagetypes.concurrent
    def __read_msentry( cls, volume_id, file_id, num_shards, **ctx_opts ):
       ent, shards = yield MSEntry.__read_msentry_base( volume_id, file_id, **ctx_opts ), MSEntry.__read_msentry_shards( volume_id, file_id, num_shards, **ctx_opts )
-      if ent != None:
+      if ent is not None:
          ent.populate_from_shards( shards )
 
       storagetypes.concurrent_return( ent )
@@ -1298,10 +1337,10 @@ class MSEntry( storagetypes.Object ):
 
    @classmethod
    @storagetypes.concurrent
-   def __write_msentry_async( cls, ent, num_shards, write_base=False, write_base_only=False, **write_attrs ):
+   def __write_msentry_async( cls, ent, num_shards, write_base=False, **write_attrs ):
       """
       Update and then put an entry if it is changed.  Always put a shard.
-      If write_base==True, always write the base entry and a shard.
+      If write_base==True, always write the base entry and a shard, even if the base is not affected.
       """
       
       # do some preprocessing on the ent attributes...
@@ -1318,11 +1357,10 @@ class MSEntry( storagetypes.Object ):
             break
          
       
-      # make a new shard with the mtime, write_nonce, and size
-      if not write_base_only:
-         ent.populate_shard( num_shards, volume_id=ent.volume_id, file_id=ent.file_id, **write_attrs )
+      # make a new shard
+      ent.populate_shard( num_shards, volume_id=ent.volume_id, file_id=ent.file_id, **write_attrs )
 
-      if write_base and not write_base_only:
+      if write_base:
          yield storagetypes.put_multi_async( [ent, ent.write_shard] )
       else:
          yield ent.put_shard_async()
@@ -1336,8 +1374,8 @@ class MSEntry( storagetypes.Object ):
    
    
    @classmethod
-   def __write_msentry( cls, ent, num_shards, write_base=False, write_base_only=False, async=False, **write_attrs ):
-      write_fut = MSEntry.__write_msentry_async( ent, num_shards, write_base=write_base, write_base_only=write_base_only, **write_attrs )
+   def __write_msentry( cls, ent, num_shards, write_base=False, async=False, **write_attrs ):
+      write_fut = MSEntry.__write_msentry_async( ent, num_shards, write_base=write_base, **write_attrs )
       
       if not async:
          return write_fut.get_result()
@@ -1347,7 +1385,7 @@ class MSEntry( storagetypes.Object ):
 
 
    @classmethod
-   def Update( cls, user_owner_id, volume, **ent_attrs ):
+   def Update( cls, user_owner_id, volume, affected_blocks, **ent_attrs ):
 
       rc = MSEntry.check_call_attrs( ent_attrs )
       if rc != 0:
@@ -1378,7 +1416,7 @@ class MSEntry( storagetypes.Object ):
          ent_fut = MSEntry.__read_msentry( volume_id, file_id, volume.num_shards, use_memcache=False )
          ent = ent_fut.get_result()
 
-      if ent == None:
+      if ent == None or ent.deleted:
          return (-errno.ENOENT, None)
 
       # does this user have permission to write?
@@ -1398,11 +1436,22 @@ class MSEntry( storagetypes.Object ):
       
       # write the manifest timestamp to the Manifest log, if this is a file 
       if ent.ftype == MSENTRY_TYPE_FILE:
-         storagetypes.deferred.defer( MSEntryGCLog.Insert, volume_id, file_id, ent_attrs['version'], ent_attrs['manifest_mtime_sec'], ent_attrs['manifest_mtime_nsec'] )
+         
+         print volume_id
+         print file_id 
+         print ent_attrs['version']
+         print ent_attrs['manifest_mtime_sec']
+         print ent_attrs['manifest_mtime_nsec']
+         print affected_blocks 
+         print dir(affected_blocks)
+         
+         storagetypes.deferred.defer( MSEntryVacuumLog.Insert, volume_id, file_id, ent_attrs['version'], ent_attrs['manifest_mtime_sec'], ent_attrs['manifest_mtime_nsec'], affected_blocks )
       
       storagetypes.wait_futures( [ent_fut] )
       
       ent = ent_fut.get_result()
+      
+      print "updated entry: %s" % ent
       
       return (0, ent)
 
@@ -1441,7 +1490,7 @@ class MSEntry( storagetypes.Object ):
          ent_fut = MSEntry.__read_msentry_base( volume_id, file_id, use_memcache=False )
          ent = ent_fut.get_result()
 
-         if ent == None:
+         if ent == None or ent.deleted:
             return (-errno.ENOENT, None)
 
          # does this user have permission to write?
@@ -1700,6 +1749,9 @@ class MSEntry( storagetypes.Object ):
       ent.deleted = True
       yield ent.put_async()
       
+      # clear from cache
+      storagetypes.memcache.delete( ent_cache_key_name )
+      
       # make sure that ent, if it is a directory, was actually empty
       if ent.ftype == MSENTRY_TYPE_DIR:
          storagetypes.memcache.set( ent_cache_key_name, ent )
@@ -1712,16 +1764,31 @@ class MSEntry( storagetypes.Object ):
             # attempt to get this (since queries are eventually consistent, but gets on an entity group are strongly consistent)
             child_ent = yield child[0].get_async()
 
-            if child_ent != None:
+            if child_ent is not None:
                
                yield MSEntry.__delete_undo_async( ent )
 
                # uncache
                storagetypes.memcache.delete( ent_cache_key_name )
+               
+               # not empty
                storagetypes.concurrent_return( -errno.ENOTEMPTY )
                
-      # clear from cache
-      storagetypes.memcache.delete( ent_cache_key_name )
+      # otherwise, ent is a file.  Make sure there are no outstanding writes that need to be vacuumed 
+      else:
+         # log check---there must be no outstanding writes 
+         vacuum_log_head_list = yield MSEntryVacuumLog.Peek( ent.volume_id, ent.file_id, async=True )
+         
+         if vacuum_log_head_list is not None and len(vacuum_log_head_list) != 0:
+            
+            # outstanding unvacuumed writes...must undo 
+            yield MSEntry.__delete_undo_async( ent )
+            
+            # uncache 
+            storagetypes.memcache.delete( ent_cache_key_name )
+            
+            # not permitted 
+            storagetypes.concurrent_return( -errno.EAGAIN )
       
       # safe to delete
       storagetypes.concurrent_return( 0 )
@@ -1826,7 +1893,7 @@ class MSEntry( storagetypes.Object ):
       if parent_ent == None:
          parent_ent_fut = MSEntry.__read_msentry( volume_id, parent_id, volume.num_shards, use_memcache=False )
          futs.append( parent_ent_fut )
-
+      
       # wait for the datastore to get back to us...
       if len(futs) != 0:
          storagetypes.wait_futures( futs )
@@ -1851,7 +1918,7 @@ class MSEntry( storagetypes.Object ):
       # sanity check
       if parent_ent.ftype != MSENTRY_TYPE_DIR:
          return -errno.ENOTDIR
-
+      
       do_delete = False
       ret = 0
       ent_key_name = MSEntry.make_key_name( volume_id, file_id )
@@ -1913,7 +1980,7 @@ class MSEntry( storagetypes.Object ):
    def __read_msentry_key_mapper( cls, volume_id, file_id, num_shards ):
       msentry, shards = yield MSEntry.__read_msentry_base( volume_id, file_id ), MSEntry.__read_msentry_shards( volume_id, file_id, num_shards )
       
-      if msentry == None:
+      if msentry is None:
          storagetypes.concurrent_return( (None, None) )
       
       msentry.populate_from_shards( shards )
@@ -1934,20 +2001,18 @@ class MSEntry( storagetypes.Object ):
       listing_cache_key = MSEntry.cache_listing_key_name( volume_id, file_id )
       
       client = storagetypes.memcache.Client()
-      cas = False
       
-      cas = True
       file_ids = None
       
       if not no_check_memcache:
          file_ids = storagetypes.memcache.get( listing_cache_key )
       
-      if file_ids == None:
+      if file_ids is None:
          # generate ent keys
          # put the query into disjunctive normal form...
          qry_ents = MSEntry.query()
 
-         if owner_id != None:
+         if owner_id is not None:
             # owner given
             qry_ents = qry_ents.filter( storagetypes.opOR( storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.owner_id == owner_id, MSEntry.mode >= 0400 ),
                                                            storagetypes.opAND( MSEntry.volume_id == volume_id, MSEntry.parent_id == file_id, MSEntry.is_readable_in_list == True) ) )
@@ -1973,6 +2038,7 @@ class MSEntry( storagetypes.Object ):
       ents = []
       
       if not no_check_memcache:
+         # check the cache for files
          cache_lookup = [None] * len(file_ids)
          for i in xrange(0,len(file_ids)):
             cache_key = MSEntry.cache_key_name( volume_id, file_ids[i] )
@@ -1980,31 +2046,38 @@ class MSEntry( storagetypes.Object ):
          
          ents_dict = storagetypes.memcache.get_multi( cache_lookup )
          
-         # what's missing?
+         # what's missing from the cache?
          missing = []
          for i in xrange(0,len(file_ids)):
             ent = ents_dict.get( cache_lookup[i] )
             if ent == None:
+               #logging.info("memcache Miss: %s" % file_ids[i])
                missing.append( file_ids[i] )
             else:
+               #logging.info("memcache HIT: %s, data = %s" % (file_ids[i], ent))
                ents.append( ent )
          
       
       if len(missing) > 0:
          # fetch the rest from the datastore
-         logging.info("Missing: %s" % missing)
          
          ent_tuples = [MSEntry.__read_msentry_key_mapper( volume_id, fid, volume.num_shards ) for fid in missing]
          
-         ent_futs = filter( lambda x: x != None, ent_tuples )
+         ent_futs = filter( lambda x: x is not None, ent_tuples )
          
          # wait for them all
          storagetypes.wait_futures( ent_futs )
          
-         ent_results = filter( lambda x: x[0] != None and x[1] != None, [f.get_result() if f != None else None for f in ent_tuples] )
+         ent_results = filter( lambda x: x[0] is not None and x[1] is not None, [f.get_result() if f is not None else None for f in ent_tuples] )
          
          if not no_check_memcache:
             # cache them, converting from [(string, MSEntry)] to {string: MSEntry}
+            
+            """
+            for (_, ent) in ent_results:
+               logging.info("memcache put: %s, data = %s" % (ent.file_id, ent))
+            """
+            
             storagetypes.memcache.set_multi( dict( ent_results ) )
          
          # combine MSEntry results
@@ -2036,8 +2109,8 @@ class MSEntry( storagetypes.Object ):
       if not isinstance( file_id, types.StringType ):
          file_id = MSEntry.unserialize_id( file_id )
          
-      ent_key_name = MSEntry.make_key_name( volume.volume_id, file_id)
-      ent_cache_key_name = MSEntry.cache_key_name( volume.volume_id, file_id )
+      ent_key_name = MSEntry.make_key_name( volume_id, file_id)
+      ent_cache_key_name = MSEntry.cache_key_name( volume_id, file_id )
 
       ent_key = storagetypes.make_key( MSEntry, ent_key_name )
       
@@ -2048,8 +2121,7 @@ class MSEntry( storagetypes.Object ):
          else:
             ent = ent_key.get()
             
-            if ent:
-               storagetypes.memcache.set( ent_cache_key_name, ent )
+            # NOTE: don't cache, since it's only the base
 
       return ent
       
@@ -2079,15 +2151,26 @@ class MSEntry( storagetypes.Object ):
          # check cache?
          if not no_check_memcache:
             ent = storagetypes.memcache.get( ent_cache_key_name )
+            
+            """
+            if ent is not None:
+               log.info("memcache HIT: %s, data = %s" % (ent.file_id, ent))
+            """
 
       # get the values from the datastore, if they weren't cached 
       futs = {}
       all_futs = []
 
-      if ent == None or futs_only:
-         futs["base"] = ent_key.get_async()
-         all_futs.append( futs["base"] )
+      if ent is None or futs_only:
+         
+         # only get base if we have to
+         if ent is not None:
+            futs["base"] = storagetypes.FutureWrapper( ent )
+         else:
+            futs["base"] = ent_key.get_async()
+            all_futs.append( futs["base"] )
 
+         # get shards
          futs["shard"] = [None] * len(shard_keys)
       
          for i in xrange(0, len(shard_keys)):
@@ -2105,15 +2188,16 @@ class MSEntry( storagetypes.Object ):
       if len(all_futs) > 0:
          storagetypes.wait_futures( all_futs )
 
-         if futs.get("base", None) != None:
+         if futs.get("base", None) is not None:
             ent = futs["base"].get_result()
 
-         if ent != None and futs.get("shard", None) != None:
-            shards = filter( lambda x: x != None, [x.get_result() for x in futs["shard"]] )
+         if ent is not None and futs.get("shard", None) is not None:
+            shards = filter( lambda x: x is not None, [x.get_result() for x in futs["shard"]] )
             ent.populate_from_shards( shards )
 
       # cache result
       if not no_check_memcache:
+         #log.info("memcache put: %s, data = %s" % (ent.file_id, ent))
          storagetypes.memcache.set( ent_cache_key_name, ent )
 
       return ent

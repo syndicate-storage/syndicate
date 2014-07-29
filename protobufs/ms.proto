@@ -49,18 +49,6 @@ message ms_entry {
    optional string parent_name = 21;
 }
 
-
-// an RG's proof of deletion for a manifest 
-message ms_manifest_deletion_receipt {
-   required uint64 RG_id = 1;
-   required uint64 volume_id = 2;
-   required uint64 file_id = 3;
-   required int64 version = 4;
-   required int64 manifest_mtime_sec = 5;
-   required int32 manifest_mtime_nsec = 6;
-   required string signature = 7;       // base64-encoded signature
-}
-
 // object update
 message ms_update {
    enum UpdateType {
@@ -73,7 +61,7 @@ message ms_update {
       REMOVEXATTR = 7;
       CHMODXATTR = 8;
       CHOWNXATTR = 9;
-      GCDELETE = 10;
+      VACUUM = 10;
    }
 
    required int32 type = 1;
@@ -85,7 +73,8 @@ message ms_update {
    optional bool xattr_replace = 7;     // used by setxattr
    optional int32 xattr_mode = 8;       // used by chmodxattr, setxattr
    optional uint64 xattr_owner = 9;     // used by chownxattr, setxattr (on create)
-   repeated ms_manifest_deletion_receipt deletion_receipts = 10;     // used by GCDELETE
+   
+   repeated uint64 affected_blocks = 10;      // blocks affected by the write (on UPDATE)
 }
 
 // collection of object updates
@@ -119,6 +108,11 @@ message ms_reply {
    optional string xattr_name = 7;              // setxattr() only
    optional string xattr_value = 8;             // getxattr() only 
    repeated string xattr_names = 9;             // listxattrs() only
+   
+   optional int64 file_version = 10;            // GCPEEK only
+   optional int64 manifest_mtime_sec = 11;          
+   optional int32 manifest_mtime_nsec = 12;
+   repeated uint64 affected_blocks = 13;
 }
 
 // key/value arguments for replica drivers
