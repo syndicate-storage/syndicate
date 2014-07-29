@@ -18,23 +18,23 @@
 #include "cache.h"
 
 // general purpose handlers...
-int xattr_set_undefined( struct fs_core* core, struct fs_entry* fent, char const* buf, size_t buf_len, int flags ) {
+int xattr_set_undefined( struct fs_core* core, struct fs_entry* fent, char const* name, char const* buf, size_t buf_len, int flags ) {
    return -ENOTSUP;
 }
 
-int xattr_del_undefined( struct fs_core* core, struct fs_entry* fent ) {
+int xattr_del_undefined( struct fs_core* core, struct fs_entry* fent, char const* name ) {
    return -ENOTSUP;
 }
 
 
 // prototype special xattr handlers...
-static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len );
-static ssize_t xattr_get_coordinator( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len );
-static ssize_t xattr_get_read_ttl( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len );
-static ssize_t xattr_get_write_ttl( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len );
+static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len );
+static ssize_t xattr_get_coordinator( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len );
+static ssize_t xattr_get_read_ttl( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len );
+static ssize_t xattr_get_write_ttl( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len );
 
-static int xattr_set_read_ttl( struct fs_core* core, struct fs_entry* fent, char const* buf, size_t buf_len, int flags );
-static int xattr_set_write_ttl( struct fs_core* core, struct fs_entry* fent, char const* buf, size_t buf_len, int flags );
+static int xattr_set_read_ttl( struct fs_core* core, struct fs_entry* fent, char const* name, char const* buf, size_t buf_len, int flags );
+static int xattr_set_write_ttl( struct fs_core* core, struct fs_entry* fent, char const* name, char const* buf, size_t buf_len, int flags );
 
 static struct syndicate_xattr_handler xattr_handlers[] = {
    {SYNDICATE_XATTR_COORDINATOR,        xattr_get_coordinator,          xattr_set_undefined,    xattr_del_undefined},      // TODO: set coordinator by gateway name?
@@ -92,7 +92,7 @@ static ssize_t xattr_get_builtin_names( char* buf, size_t buf_len ) {
 // get cached block vector, but as a string.
 // string[i] == '1' if block i is cached.
 // string[i] == '0' if block i is NOT cached.
-static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len) {
+static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len) {
    
    struct local {
       static int xattr_stat_block( char const* block_path, void* cls ) {
@@ -152,7 +152,7 @@ static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* f
 
 
 // get the name of a coordinator of a file 
-static ssize_t xattr_get_coordinator( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len ) {
+static ssize_t xattr_get_coordinator( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len ) {
    char* gateway_name = NULL;
    int rc = ms_client_get_gateway_name( core->ms, SYNDICATE_UG, fent->coordinator, &gateway_name );
    
@@ -186,7 +186,7 @@ static ssize_t xattr_get_coordinator( struct fs_core* core, struct fs_entry* fen
 }
 
 // get the read ttl 
-static ssize_t xattr_get_read_ttl( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len ) {
+static ssize_t xattr_get_read_ttl( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len ) {
    uint32_t read_ttl = fent->max_read_freshness;
    
    // how many bytes needed?
@@ -211,7 +211,7 @@ static ssize_t xattr_get_read_ttl( struct fs_core* core, struct fs_entry* fent, 
 
 
 // get the write ttl 
-static ssize_t xattr_get_write_ttl( struct fs_core* core, struct fs_entry* fent, char* buf, size_t buf_len ) {
+static ssize_t xattr_get_write_ttl( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len ) {
    uint32_t write_ttl = fent->max_write_freshness;
    
    // how many bytes needed?
@@ -236,7 +236,7 @@ static ssize_t xattr_get_write_ttl( struct fs_core* core, struct fs_entry* fent,
 
 
 // set the read ttl 
-static int xattr_set_read_ttl( struct fs_core* core, struct fs_entry* fent, char const* buf, size_t buf_len, int flags ) {
+static int xattr_set_read_ttl( struct fs_core* core, struct fs_entry* fent, char const* name, char const* buf, size_t buf_len, int flags ) {
    // this attribute always exists...
    if( (flags & XATTR_CREATE) )
       return -EEXIST;
@@ -255,7 +255,7 @@ static int xattr_set_read_ttl( struct fs_core* core, struct fs_entry* fent, char
 
 
 // set the write ttl 
-static int xattr_set_write_ttl( struct fs_core* core, struct fs_entry* fent, char const* buf, size_t buf_len, int flags ) {
+static int xattr_set_write_ttl( struct fs_core* core, struct fs_entry* fent, char const* name, char const* buf, size_t buf_len, int flags ) {
    // this attribute always exists...
    if( (flags & XATTR_CREATE) )
       return -EEXIST;
@@ -271,7 +271,6 @@ static int xattr_set_write_ttl( struct fs_core* core, struct fs_entry* fent, cha
    fent->max_write_freshness = write_ttl;
    return 0;
 }
-
 
 // download an extended attribute
 int fs_entry_download_xattr( struct fs_core* core, uint64_t volume, uint64_t file_id, char const* name, char** value ) {
@@ -433,7 +432,7 @@ ssize_t fs_entry_getxattr( struct fs_core* core, char const* path, char const *n
    }
    else {
       // built-in handler
-      ret = (*xattr_handler->get)( core, fent, value, size );
+      ret = (*xattr_handler->get)( core, fent, name, value, size );
       fs_entry_unlock( fent );
    }
    
@@ -487,7 +486,7 @@ int fs_entry_setxattr_ex( struct fs_core* core, char const* path, char const *na
    }
    else {
       // built-in handler
-      ret = (*xattr_handler->set)( core, fent, value, size, flags );
+      ret = (*xattr_handler->set)( core, fent, name, value, size, flags );
    }
    
    fs_entry_unlock( fent );
@@ -559,11 +558,11 @@ int fs_entry_get_or_set_xattr( struct fs_core* core, struct fs_entry* fent, char
    else {
       // built-in handler.
       while( true ) {
-         ssize_t required_size = (*xattr_handler->get)( core, fent, NULL, 0 );
+         ssize_t required_size = (*xattr_handler->get)( core, fent, name, NULL, 0 );
          
          char* buf = CALLOC_LIST( char, required_size + 1 );
          
-         ret = (*xattr_handler->get)( core, fent, buf, required_size );
+         ret = (*xattr_handler->get)( core, fent, name, buf, required_size );
          if( ret == -ERANGE ) {
             // try again 
             free( buf );
@@ -694,7 +693,7 @@ int fs_entry_removexattr( struct fs_core* core, char const* path, char const *na
       md_entry_free( &ent );
    }
    else {
-      ret = (*xattr_handler->del)( core, fent );
+      ret = (*xattr_handler->del)( core, fent, name );
    }
    
    if( ret == 0 ) {

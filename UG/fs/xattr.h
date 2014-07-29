@@ -32,12 +32,25 @@
 #define SYNDICATE_XATTR_READ_TTL          "user.syndicate_read_ttl"
 #define SYNDICATE_XATTR_WRITE_TTL         "user.syndicate_write_ttl"
 
-typedef ssize_t (*xattr_get_handler)( struct fs_core*, struct fs_entry*, char*, size_t );
-typedef int (*xattr_set_handler)( struct fs_core*, struct fs_entry*, char const*, size_t, int );
-typedef int (*xattr_delete_handler)( struct fs_core*, struct fs_entry* );
+#define SYNDICATE_XATTR_NAMESPACE_RG            "user.syndicate_RG."
+#define SYNDICATE_XATTR_NAMESPACE_RG_SECRET     "user.syndicate_RG_secret."
+
+#define SYNDICATE_XATTR_NAMESPACE_UG            "user.syndicate_UG."
+#define SYNDICATE_XATTR_NAMESPACE_UG_SECRET     "user.syndicate_UG_secret."
+
+typedef ssize_t (*xattr_get_handler)( struct fs_core*, struct fs_entry*, char const*, char*, size_t );
+typedef int (*xattr_set_handler)( struct fs_core*, struct fs_entry*, char const*, char const*, size_t, int );
+typedef int (*xattr_delete_handler)( struct fs_core*, struct fs_entry*, char const* );
 
 struct syndicate_xattr_handler {
    char const* name;
+   xattr_get_handler get;
+   xattr_set_handler set;
+   xattr_delete_handler del;
+};
+
+struct syndicate_xattr_namespace_handler {
+   char const* prefix;
    xattr_get_handler get;
    xattr_set_handler set;
    xattr_delete_handler del;

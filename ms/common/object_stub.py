@@ -1041,7 +1041,8 @@ class Gateway( StubObject ):
       Does a given path refer to a UG binary closure?
       """
       driver_path = os.path.join( gateway_closure_path, "libdriver.so" )
-      return is_valid_binary_driver( driver_path, ["connect_cache", "write_block_preup", "write_manifest_preup", "read_block_postdown", "read_manifest_postdown", "chcoord_begin", "chcoord_end"] )
+      return is_valid_binary_driver( driver_path, ["connect_cache", "write_block_preup", "write_manifest_preup", "read_block_postdown",
+                                                   "read_manifest_postdown", "chcoord_begin", "chcoord_end", "get_driver_name", "garbage_collect"] )
    
    
    @classmethod 

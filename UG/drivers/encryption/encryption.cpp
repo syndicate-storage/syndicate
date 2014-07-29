@@ -25,6 +25,10 @@ int closure_shutdown( void* cls ) {
    return 0;
 }
 
+char get_driver_name(void) {
+   return strdup( DRIVER_NAME );
+}
+
 // get the file's secret key, or generate a new one and store it
 static int get_or_create_encryption_key_and_iv( struct fs_core* core, struct fs_entry* fent, unsigned char** ret_key, size_t* ret_key_len, unsigned char** ret_iv, size_t* ret_iv_len, bool fail_if_absent ) {
    

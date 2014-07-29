@@ -21,6 +21,7 @@
 #include "network.h"
 #include "vacuumer.h"
 #include "syndicate.h"
+#include "driver.h"
 
 // wait for our turn to run the metadata synchronization 
 int fs_entry_sync_context_wait( struct sync_context* sync_ctx ) {
@@ -771,8 +772,8 @@ int fs_entry_fsync_gc_block_cont( struct rg_client* rg, struct replica_context* 
       struct replica_snapshot* old_snapshot = &gc_cls->old_snapshot;
       
       if( gc_cls->gc_manifest ) {
-         // We should garbage-collect the manifest 
          
+         // We should garbage-collect the manifest 
          rc = fs_entry_garbage_collect_manifest_ex( gc_cls->core, old_snapshot, NULL, REPLICATE_BACKGROUND, fs_entry_fsync_gc_manifest_cont, gc_cls );
          
          if( rc != 0 ) {
@@ -809,20 +810,59 @@ int fs_entry_fsync_gc_block_cont( struct rg_client* rg, struct replica_context* 
 }
 
 
-// kick off garbage collection in the background.
-int fs_entry_garbage_collect_kickoff( struct fs_core* core, char const* fs_path, struct replica_snapshot* old_snapshot, modification_map* garbage_blocks, bool gc_manifest ) {
+// top-level garbage collection method for a write.
+// kicks off garbage collection in the background.
+// asks the driver whether or not to proceed with the blocks.
+// fent must be read-locked.
+// NOTE: the replica_snapshot doesn't have to be from fent.  fent is only needed for the driver.
+int fs_entry_garbage_collect_kickoff( struct fs_core* core, char const* fs_path, struct replica_snapshot* gc_snapshot, modification_map* garbage_blocks, bool gc_manifest ) {
    
    dbprintf("Garbage collect %zu blocks; garbage collect manifest = %d\n", garbage_blocks->size(), gc_manifest );
    
+   // tell the driver that we're going to garbage-collect the blocks 
+   uint64_t* garbage_block_ids = CALLOC_LIST( uint64_t, garbage_blocks->size() );
+   int64_t* garbage_block_versions = CALLOC_LIST( int64_t, garbage_blocks->size() );
+   
+   int i = 0;
+   
+   for( modification_map::iterator itr = garbage_blocks->begin(); itr != garbage_blocks->end(); itr++ ) {
+      
+      uint64_t block_id = itr->first;
+      int64_t block_version = itr->second.version;
+      
+      garbage_block_ids[i] = block_id;
+      garbage_block_versions[i] = block_version;
+      
+      i++;
+   }
+      
+   // tell the driver 
+   int rc = driver_garbage_collect( core, core->closure, fs_path, gc_snapshot, garbage_block_ids, garbage_block_versions, garbage_blocks->size() );
+   
+   free( garbage_block_ids );
+   free( garbage_block_versions );
+   
+   if( rc == DRIVER_NOT_GARBAGE ) {
+      // this data will be handled by the driver
+      dbprintf("Driver indicates that write for %s %" PRIX64 " at %" PRId64 ".%d is not garbage\n", fs_path, gc_snapshot->file_id, gc_snapshot->manifest_mtime_sec, gc_snapshot->manifest_mtime_nsec );
+      return 0;
+   }
+   else if( rc < 0 ) {
+      // error 
+      errorf("driver_garbage_collect(%s %" PRIX64 " at %" PRId64 ".%d rc = %d\n", fs_path, gc_snapshot->file_id, gc_snapshot->manifest_mtime_sec, gc_snapshot->manifest_mtime_nsec, rc );
+      return rc;
+   }
+   
+   // good to go!
    // start blocks, and continue to the manifest.
    // set up continuation cls
    struct sync_gc_cls* gc_cls = CALLOC_LIST( struct sync_gc_cls, 1 );
    
-   fs_entry_fsync_gc_cls_init( gc_cls, core, &core->state->vac, fs_path, old_snapshot, garbage_blocks, gc_manifest );
+   fs_entry_fsync_gc_cls_init( gc_cls, core, &core->state->vac, fs_path, gc_snapshot, garbage_blocks, gc_manifest );
    
-   int rc = fs_entry_garbage_collect_blocks_ex( core, old_snapshot, garbage_blocks, NULL, REPLICATE_BACKGROUND, fs_entry_fsync_gc_block_cont, gc_cls );
+   rc = fs_entry_garbage_collect_blocks_ex( core, gc_snapshot, garbage_blocks, NULL, REPLICATE_BACKGROUND, fs_entry_fsync_gc_block_cont, gc_cls );
    if( rc != 0 ) {
-      errorf("fs_entry_garbage_collect_blocks_ex(%" PRIX64 ") rc = %d\n", old_snapshot->file_id, rc );
+      errorf("fs_entry_garbage_collect_blocks_ex(%" PRIX64 ") rc = %d\n", gc_snapshot->file_id, rc );
    }
    
    return rc;

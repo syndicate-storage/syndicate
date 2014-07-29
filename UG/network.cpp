@@ -24,7 +24,7 @@
 
 // download and verify a manifest
 // fent must be at least read-locked
-int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
+int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec, char const* manifest_url, Serialization::ManifestMsg* mmsg ) {
    CURL* curl = curl_easy_init();
    
    // connect to the cache...
@@ -37,8 +37,8 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
    manifest_cls.core = core;
    manifest_cls.fs_path = fs_path;
    manifest_cls.fent = fent;
-   manifest_cls.mtime_sec = mtime_sec;
-   manifest_cls.mtime_nsec = mtime_nsec;
+   manifest_cls.manifest_mtime_sec = manifest_mtime_sec;
+   manifest_cls.manifest_mtime_nsec = manifest_mtime_nsec;
    
    int rc = md_download_manifest( core->conf, &core->state->dl, core->closure, curl, manifest_url, mmsg, driver_connect_cache, &driver_cls, driver_read_manifest_postdown, &manifest_cls );
    if( rc != 0 ) {
@@ -86,7 +86,7 @@ int fs_entry_download_manifest( struct fs_core* core, char const* fs_path, struc
 
 // download a manifest from an RG.
 // fent must be at least read-locked
-int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec,
+int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec,
                                         Serialization::ManifestMsg* mmsg, uint64_t* successful_RG_id ) {
    
    uint64_t* rg_ids = ms_client_RG_ids( core->ms );
@@ -102,12 +102,12 @@ int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_pat
          rc = 0;
          
          struct timespec ts;
-         ts.tv_sec = mtime_sec;
-         ts.tv_nsec = mtime_nsec;
+         ts.tv_sec = manifest_mtime_sec;
+         ts.tv_nsec = manifest_mtime_nsec;
          
          char* replica_url = fs_entry_RG_manifest_url( core, rg_ids[i], fent->file_id, fent->version, &ts );
          
-         rc = fs_entry_download_manifest( core, fs_path, fent, mtime_sec, mtime_nsec, replica_url, mmsg );
+         rc = fs_entry_download_manifest( core, fs_path, fent, manifest_mtime_sec, manifest_mtime_nsec, replica_url, mmsg );
 
          if( rc == 0 ) {
             free( replica_url );

@@ -23,7 +23,10 @@ MD_CLOSURE_PROTOTYPE_BEGIN( UG_CLOSURE_PROTOTYPE )
    MD_CLOSURE_CALLBACK( "read_block_postdown" ),
    MD_CLOSURE_CALLBACK( "read_manifest_postdown" ),
    MD_CLOSURE_CALLBACK( "chcoord_begin" ),
-   MD_CLOSURE_CALLBACK( "chcoord_end" )
+   MD_CLOSURE_CALLBACK( "chcoord_end" ),
+   MD_CLOSURE_CALLBACK( "get_driver_name" ),
+   MD_CLOSURE_CALLBACK( "garbage_collect_manifest" ),
+   MD_CLOSURE_CALLBACK( "garbage_collect_block" )
 MD_CLOSURE_PROTOTYPE_END
 
 
@@ -154,14 +157,14 @@ int driver_write_block_preup( struct fs_core* core, struct md_closure* closure, 
    return ret;
 }
 
-int driver_write_manifest_preup( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t mtime_sec, int32_t mtime_nsec,
+int driver_write_manifest_preup( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec,
                                  char const* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len ) {
  
    int ret = 0;
    
    if( md_closure_find_callback( closure, "write_manifest_preup" ) != NULL ) {
       
-      MD_CLOSURE_CALL( ret, closure, "write_manifest_preup", driver_write_manifest_preup_func, core, closure, fs_path, fent, mtime_sec, mtime_nsec,
+      MD_CLOSURE_CALL( ret, closure, "write_manifest_preup", driver_write_manifest_preup_func, core, closure, fs_path, fent, manifest_mtime_sec, manifest_mtime_nsec,
                                                                                                in_manifest_data, in_manifest_data_len, out_manifest_data, out_manifest_data_len, closure->cls );
    }
    else {
@@ -209,7 +212,7 @@ int driver_read_manifest_postdown( struct md_closure* closure, char const* in_ma
    struct driver_read_manifest_postdown_cls* cls = (struct driver_read_manifest_postdown_cls*)user_cls;
    
    if( md_closure_find_callback( closure, "read_manifest_postdown" ) != NULL ) {
-      MD_CLOSURE_CALL( ret, closure, "read_manifest_postdown", driver_read_manifest_postdown_func, cls->core, closure, cls->fs_path, cls->fent, cls->mtime_sec, cls->mtime_nsec,
+      MD_CLOSURE_CALL( ret, closure, "read_manifest_postdown", driver_read_manifest_postdown_func, cls->core, closure, cls->fs_path, cls->fent, cls->manifest_mtime_sec, cls->manifest_mtime_nsec,
                        in_manifest_data, in_manifest_data_len, out_manifest_data, out_manifest_data_len, closure->cls );
    }
    else {
@@ -251,6 +254,40 @@ int driver_chcoord_end( struct fs_core* core, struct md_closure* closure, char c
    else {
       errorf("%s", "WARN: chcoord_end stub\n");
    }
+   return ret;
+}
+
+// tell the driver that we're garbage-collecting a write.  This is called *before* we actually garbage-collect anything.
+// this method should return DRIVER_NOT_GARBAGE if the block is not to be garbage-collected.  The driver logic is responsible for garbage-collecting if so;
+// otherwise a memory leak may occur.
+// if the closure returns negative, then the garbage collection ends with an error in the UG.
+int driver_garbage_collect( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct replica_snapshot* fent_snapshot, uint64_t* block_ids, int64_t* block_versions, size_t num_blocks ) {
+   
+   int ret = 0;
+   
+   if( md_closure_find_callback( closure, "garbage_collect" ) != NULL ) {
+      MD_CLOSURE_CALL( ret, closure, "garbage_collect", driver_garbage_collect_func, core, closure, fs_path, fent_snapshot, block_ids, block_versions, num_blocks );
+   }
+   else {
+      errorf("%s", "WARN: garbage_collect stub\n");
+   }
+   
+   return ret;
+}
+
+
+// get the driver name 
+char* driver_get_name( struct fs_core* core, struct md_closure* closure ) {
+   
+   char* ret = NULL;
+   
+   if( md_closure_find_callback( closure, "get_driver_name" ) != NULL ) {
+      MD_CLOSURE_CALL( ret, closure, "get_driver_name", driver_get_name_func );
+   }
+   else {
+      errorf("%s", "WARN: get_driver_name stub\n");
+   }
+   
    return ret;
 }
 

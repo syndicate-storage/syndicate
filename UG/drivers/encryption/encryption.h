@@ -29,6 +29,7 @@
 
 #define XATTR_ENCRYPT "encryption_key_and_iv"
 #define ENTROPY_BYTES 64        // entropy to pad to the block before encrypting it
+#define DRIVER_NAME "encryption"
 
 // closure methods 
 extern "C" {
@@ -52,6 +53,8 @@ int read_manifest_postdown( struct fs_core* core, struct md_closure* closure, ch
 
 int chcoord_begin( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t new_coordinator_id, void* cls );
 int chcoord_end( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t new_coodinator_id, int chcoord_status, void* cls );
+
+char* get_driver_name(void);
    
 }
 

@@ -338,7 +338,6 @@ static int fs_entry_vacuumer_vacuum_data_bg( struct fs_core* core, char const* f
       return -EINVAL;
    }
    
-   
    // erase it, using the garbage collecter thread 
    rc = fs_entry_garbage_collect_kickoff( core, fs_path, &fent_gc_snapshot, &garbage, true );
    
