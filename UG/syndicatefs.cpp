@@ -806,7 +806,7 @@ int main(int argc, char** argv) {
    char* mountpoint = realpath( syn_opts.mountpoint, NULL );
    if( mountpoint == NULL ) {
       int errsv = errno;
-      fprintf(stderr, "realpath(%s) rc = %d\n", syn_opts.mountpoint, -errsv );
+      fprintf(stderr, "syndicatefs: realpath(%s) rc = %d\n", syn_opts.mountpoint, -errsv );
       exit(1);
    }
    

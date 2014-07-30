@@ -36,7 +36,7 @@ import syndicate.util.config as modconf
 
 log = logging.getLogger()
 
-UG_NAME = "syndicatefs"
+UG_BINARY = "syndicatefs"
 
 UG_PID = 0
 UG_MOUNTPOINT = None 
@@ -55,10 +55,10 @@ CONFIG_OPTIONS = {
 
 #-------------------------------
 def death_handler( signum, frame ):
-   global UG_PID, UG_MOUNTPOINT
+   global UG_PID, UG_MOUNTPOINT, UG_BINARY
    
    if UG_PID > 0:
-      stop_ug( UG_PID, UG_MOUNTPOINT )
+      stop_ug( UG_PID, UG_MOUNTPOINT, UG_BINARY )
       watchdog.stop_child( UG_PID )
    
    sys.exit(0)
@@ -96,7 +96,7 @@ def fuse_umount( mountpoint ):
       return -errno.EAGAIN
 
 #-------------------------------
-def check_mounted( mountpoint, ug_name=UG_NAME ):
+def check_mounted( mountpoint, binary_name ):
    """
    Verify that nothing is mounted at mountpoint.
    NOTE: Linux-specific; uses /proc/mounts
@@ -122,7 +122,7 @@ def check_mounted( mountpoint, ug_name=UG_NAME ):
             log.warning("Ill-formatted mount line: '%s'" % mounted_filesystem)
             continue 
          
-         if fs_file == mountpoint and (ug_name is not None and fs_spec == ug_name):
+         if fs_file == mountpoint and (binary_name is not None and fs_spec == binary_name):
             # mounted here...
             return True
       
@@ -145,17 +145,17 @@ def check_fuse_dev():
 
 
 #-------------------------------
-def stop_ug( child_pid, mountpath ):
+def stop_ug( child_pid, mountpath, binary_name ):
    """
    Unmount a UG.  If it still mounted after kill_timeout seconds, 
    then kill it and then unmount it.
    """
    umount_rc = 0
    
-   if check_mounted( mountpath ):
+   if check_mounted( mountpath, binary_name ):
       umount_rc = fuse_umount( mountpath )
    
-   if umount_rc != 0 and check_mounted( mountpath ):
+   if umount_rc != 0 and check_mounted( mountpath, binary_name ):
       # kill and then unmount 
       
       log.info("Stopping UG at %s" % mountpath )
@@ -167,7 +167,7 @@ def stop_ug( child_pid, mountpath ):
          log.exception(oe)
          return -oe.errno
       
-      still_running = check_mounted( mountpath )
+      still_running = check_mounted( mountpath, binary_name )
       
       for i in xrange(0,3):
          # check to see if it dies
@@ -185,7 +185,7 @@ def stop_ug( child_pid, mountpath ):
          if not still_running:
             break
          else:
-            still_running = check_mounted( mountpath )
+            still_running = check_mounted( mountpath, binary_name )
       
       
       if still_running:
@@ -218,11 +218,11 @@ def spawn_ug( config, old_exit_status ):
    """
    
    # immediately switch to a different process name 
-   pt = child_proc_title( config['volume'], config['mountpoint'] )
+   pt = child_proc_title( config['UG_binary'], config['volume'], config['mountpoint'] )
    setproctitle.setproctitle( pt )
    
    # ensure nothing is mounted on our mountpoint
-   if check_mounted( config['mountpoint'] ):
+   if check_mounted( config['mountpoint'], config['UG_binary'] ):
       umount_rc = fuse_umount( config['mountpoint'] )
       
       if umount_rc != 0:
@@ -298,8 +298,8 @@ def supervisor_proc_title( volume, mountpoint ):
    return watchdog.attr_proc_title( "syndicate-ug", {"volume": volume, "mountpoint": mountpoint} )
 
 #-------------------------------
-def child_proc_title( volume, mountpoint ):
-   return watchdog.attr_proc_title( "syndicatefs", {"volume": volume, "mountpoint": mountpoint} )
+def child_proc_title( binary_name, volume, mountpoint ):
+   return watchdog.attr_proc_title( binary_name, {"volume": volume, "mountpoint": mountpoint} )
 
 #-------------------------------
 if __name__ == "__main__":
@@ -309,6 +309,9 @@ if __name__ == "__main__":
    
    if config is None:
       sys.exit(1)
+      
+   if 'UG_binary' not in config.keys():
+      config['UG_binary'] = UG_BINARY
       
    # get the UG command 
    command_str = get_UG_command( config )
@@ -324,6 +327,7 @@ if __name__ == "__main__":
    
    # set up globals 
    UG_MOUNTPOINT = config['mountpoint']
+   UG_BINARY = config['UG_binary']
    
    # set signal handlers
    for sig in [signal.SIGTERM, signal.SIGFPE, signal.SIGQUIT, signal.SIGABRT, signal.SIGINT]:

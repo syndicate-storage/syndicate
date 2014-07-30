@@ -63,6 +63,20 @@ ssize_t syndicate_read_stdin( char* stdin_buf ) {
       nr += r;
    }
    
+   // remove trailing newlines 
+   for( int i = nr; i >= 0; i-- ) {
+      if( stdin_buf[i] == '\0' ) {
+         continue;
+      }
+      
+      if( stdin_buf[i] == '\r' || stdin_buf[i] == '\n' ) {
+         stdin_buf[i] = '\0';
+         continue;
+      }
+      
+      break;
+   }
+   
    return nr;
 }
 
