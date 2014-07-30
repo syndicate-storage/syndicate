@@ -20,6 +20,7 @@
 #include "replication.h"
 #include "network.h"
 #include "vacuumer.h"
+#include "driver.h"
 
 // lowlevel unlink operation--given an fs_entry and the name of an entry
 // parent must be write-locked!
@@ -227,7 +228,8 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
          }
       }
    }
-
+   
+   // look up the parent
    char* path_dirname = md_dirname( path, NULL );
    
    struct fs_entry* parent = fs_entry_resolve_path( core, path_dirname, owner, volume, true, &err );
@@ -238,6 +240,16 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
       fs_entry_unlock( fent );
 
       return err;
+   }
+   
+   // tell the driver we're deleting 
+   int driver_rc = driver_delete_file( core, core->closure, path, fent );
+   if( driver_rc != 0 ) {
+      errorf("driver_delete_file(%s %" PRIX64 ") rc = %d\n", path, fent->file_id, driver_rc );
+      
+      fs_entry_unlock( fent );
+      fs_entry_unlock( parent );
+      return driver_rc;
    }
    
    rc = 0;

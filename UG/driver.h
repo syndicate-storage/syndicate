@@ -34,6 +34,8 @@ typedef int (*driver_read_manifest_postdown_func)( struct fs_core*, struct md_cl
 typedef int (*driver_chcoord_begin_func)( struct fs_core*, struct md_closure*, char const*, struct fs_entry*, int64_t, void* );
 typedef int (*driver_chcoord_end_func)( struct fs_core*, struct md_closure*, char const*, struct fs_entry*, int64_t, int, void* );
 typedef int (*driver_garbage_collect_func)( struct fs_core*, struct md_closure*, char const*, struct replica_snapshot*, uint64_t*, int64_t*, size_t );
+typedef int (*driver_create_file_func)( struct fs_core*, struct md_closure*, char const*, struct fs_entry* );
+typedef int (*driver_delete_file_func)( struct fs_core*, struct md_closure*, char const*, struct fs_entry* );
 typedef char* (*driver_get_name_func)( void );
 
 // for connecting to the cache providers
@@ -65,12 +67,18 @@ int driver_connect_cache( struct md_closure* closure, CURL* curl, char const* ur
 
 int driver_read_manifest_postdown( struct md_closure* closure, char const* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len, void* user_cls );
 
+// called by creat(), mknod(), or open() with O_CREAT
+int driver_create_file( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent );
+
+// called by unlink()
+int driver_delete_file( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent );
+
 // called by read(), write(), and trunc()
-int driver_write_block_preup( struct fs_core*, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
+int driver_write_block_preup( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
                               char const* in_block_data, size_t in_block_data_len, char** out_block_data, size_t* out_block_data_len );
-int driver_write_manifest_preup( struct fs_core*, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec,
+int driver_write_manifest_preup( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec,
                                  char const* in_manifest_data, size_t in_manifest_data_len, char** out_manifest_data, size_t* out_manifest_data_len );
-ssize_t driver_read_block_postdown( struct fs_core*, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
+ssize_t driver_read_block_postdown( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent, uint64_t block_id, int64_t block_version,
                                     char const* in_block_data, size_t in_block_data_len, char* out_block_data, size_t out_block_data_len );
 
 // called by chcoord()

@@ -26,4 +26,8 @@ int fs_entry_versioned_truncate(struct fs_core* core, const char* path, uint64_t
 
 int fs_entry_ftruncate( struct fs_core* core, struct fs_file_handle* fh, off_t size, uint64_t user, uint64_t volume );
 
+int fs_entry_truncate_remote( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size );
+
+int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size, uint64_t parent_id, char const* parent_name );
+
 #endif

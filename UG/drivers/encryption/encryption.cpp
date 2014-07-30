@@ -25,7 +25,7 @@ int closure_shutdown( void* cls ) {
    return 0;
 }
 
-char get_driver_name(void) {
+char* get_driver_name(void) {
    return strdup( DRIVER_NAME );
 }
 
@@ -75,7 +75,7 @@ static int get_or_create_encryption_key_and_iv( struct fs_core* core, struct fs_
          char* actual_key_and_iv_b64 = NULL;
          size_t actual_key_and_iv_b64_len = 0;
          
-         rc = fs_entry_get_or_set_xattr( core, fent, XATTR_ENCRYPT, new_key_and_iv_b64, new_key_and_iv_b64_len, &actual_key_and_iv_b64, &actual_key_and_iv_b64_len );
+         rc = fs_entry_get_or_set_xattr( core, fent, XATTR_ENCRYPT, new_key_and_iv_b64, new_key_and_iv_b64_len, &actual_key_and_iv_b64, &actual_key_and_iv_b64_len, 0770 );
          free( new_key_and_iv_b64 );
          
          if( rc != 0 ) {
@@ -256,7 +256,7 @@ static int unseal_data( struct fs_core* core, struct fs_entry* fent, char* in_da
 
 // connect to cache 
 int connect_cache( struct fs_core* core, struct md_closure* closure, CURL* curl, char const* url, void* cls ) {
-   return ms_client_volume_connect_cache( closure, curl, url, core->conf );
+   return ms_client_volume_connect_cache( core->ms, curl, url );
 }
 
 // encrypt a block with the file's secret key

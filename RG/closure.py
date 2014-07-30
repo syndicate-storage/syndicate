@@ -26,7 +26,6 @@ import json
 import base64
 import threading
 import errno
-import pickle
 import imp
 import resource
 import traceback
@@ -171,7 +170,7 @@ def decrypt_secrets( sender_pubkey_pem, receiver_privkey_pem, encrypted_secrets_
    
    # parse secrets
    try:
-      secrets = pickle.loads(secrets_str)
+      secrets = json.loads(secrets_str)
    except Exception, e:
       log.exception( e )
       raise Exception("Failed to parse secrets")
@@ -229,7 +228,7 @@ def load_closure( python_text_b64, config_text_b64, encrypted_secrets_b64, sende
          return None
       
       try:
-         config_dict = pickle.loads( config_dict_str )
+         config_dict = json.loads( config_dict_str )
       except Exception, e:
          log.exception( e )
          return None
@@ -246,6 +245,7 @@ def load_closure( python_text_b64, config_text_b64, encrypted_secrets_b64, sende
    
       try:
          secrets_dict = decrypt_secrets( sender_pubkey_pem, gateway_privkey_pem, encrypted_secrets )
+         assert type(secrets_dict) == dict, "Secrets is not a dictionary"
       except Exception, e:
          log.exception( e )
          return None
@@ -790,9 +790,9 @@ def delete_file( filename, **kw ):
    return 200
 """
 
-secrets_str = pickle.dumps( {"xyzzy": "abbab"} )
+secrets_str = json.dumps( {"xyzzy": "abbab"} )
 
-config_str = pickle.dumps( {"foo": "bar", "STORAGE_DIR": "/tmp/"} )
+config_str = json.dumps( {"foo": "bar", "STORAGE_DIR": "/tmp/"} )
       
 if __name__ == "__main__":
    import syndicate.rg.request as rg_request

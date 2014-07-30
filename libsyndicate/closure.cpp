@@ -52,16 +52,30 @@ static void md_closure_callback_table_free( struct md_closure_callback_entry* ca
 // load a string as a JSON object 
 static int md_parse_json_object( struct json_object** jobj_ret, char const* obj_json, size_t obj_json_len ) {
    
+   char* tmp = CALLOC_LIST( char, obj_json_len + 1 );
+   
+   for( size_t i = 0; i < obj_json_len; i++ ) {
+      tmp[i] = obj_json[i];
+   }
+   tmp[ obj_json_len ] = 0;
+   
    // obj_json should be a valid json string that contains a single dictionary.
    struct json_tokener* tok = json_tokener_new();
-   struct json_object* jobj = json_tokener_parse_ex( tok, obj_json, obj_json_len );
+   // struct json_object* jobj = json_tokener_parse_ex( tok, obj_json, obj_json_len );
+   struct json_object* jobj = json_tokener_parse_ex( tok, tmp, obj_json_len );
+   
    json_tokener_free( tok );
    
    if( jobj == NULL ) {
-      errorf("%s", "Failed to parse JSON object\n" );
+      
+      errorf("Failed to parse JSON object %p '%s'\n", obj_json, tmp );
+      
+      free( tmp );
       
       return -EINVAL;
    }
+   
+   free( tmp );
    
    // should be an object
    enum json_type jtype = json_object_get_type( jobj );
@@ -174,7 +188,7 @@ static int md_decrypt_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway_pkey,
       errorf("md_parse_json_object rc = %d\n", rc );
    }
    
-   return 0;
+   return rc;
 }
 
 // parse the secrets 
@@ -321,7 +335,7 @@ int md_parse_closure( struct ms_client* client,
    }
    
    // requested driver?
-   if( rc == 0 && driver_bin && driver_bin_len ) {
+   if( rc == 0 && driver_bin != NULL && driver_bin_len != NULL ) {
       rc = md_parse_json_b64_string( toplevel_obj, "driver", driver_bin, driver_bin_len );
    
       // not an error if not present...
@@ -330,7 +344,7 @@ int md_parse_closure( struct ms_client* client,
    }
    
    // requested spec?
-   if( rc == 0 && spec_bin && spec_bin_len ) {
+   if( rc == 0 && spec_bin != NULL && spec_bin_len != NULL ) {
       rc = md_parse_json_b64_string( toplevel_obj, "spec", spec_bin, spec_bin_len );
       
       // not an error if not present..

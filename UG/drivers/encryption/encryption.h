@@ -25,7 +25,7 @@
 #define _UG_CLOSURE_ENCRYPTION_
 
 #include "libsyndicate/closure.h"
-#include "libsyndicateUG/fs.h"
+#include "libsyndicateUG/fs/fs.h"
 
 #define XATTR_ENCRYPT "encryption_key_and_iv"
 #define ENTROPY_BYTES 64        // entropy to pad to the block before encrypting it

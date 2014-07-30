@@ -21,6 +21,7 @@
 #include "unlink.h"
 #include "url.h"
 #include "cache.h"
+#include "driver.h"
 
 // create a file handle from an fs_entry
 struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_entry* ent, char const* opened_path, uint64_t parent_id, char const* parent_name ) {
@@ -132,27 +133,49 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
       
       // we're creating, so this manifest is initialized (to zero blocks)
       child->manifest->initialize_empty( child->version );
-         
-      // attach the file
-      fs_entry_wlock( child );
-      fs_entry_attach_lowlevel( core, parent, child );
-
-      struct md_entry data;
-      fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
       
-      // create the child on the MS, obtaining its file ID
-      err = ms_client_create( core->ms, &child->file_id, &data );
-
+      fs_entry_wlock( child );
+      
+      // call the driver 
+      err = driver_create_file( core, core->closure, path, child );
+         
       if( err != 0 ) {
-         errorf( "ms_client_create(%s) rc = %d\n", path, err );
-         err = -EREMOTEIO;
-
+         // undo 
+         errorf("driver_create_file(%s) rc = %d\n", path, err );
+         
          child->open_count = 0;
+         
          fs_entry_unlock( child );
-         fs_entry_detach_lowlevel( core, parent, child );
+         fs_entry_destroy( child, false );
+         free( child );
       }
       
-      md_entry_free( &data );
+      else {
+         
+         // attach the file
+         fs_entry_attach_lowlevel( core, parent, child );
+
+         struct md_entry data;
+         fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
+         
+         // create the child on the MS, obtaining its file ID
+         err = ms_client_create( core->ms, &child->file_id, &data );
+
+         md_entry_free( &data );
+         
+         if( err != 0 ) {
+            errorf( "ms_client_create(%s) rc = %d\n", path, err );
+            err = -EREMOTEIO;
+
+            child->open_count = 0;
+            fs_entry_unlock( child );
+            fs_entry_detach_lowlevel( core, parent, child );
+            free( child );
+         }
+         else {
+            fs_entry_unlock( child );
+         }
+      }
    }
    
    fs_entry_unlock( parent );
@@ -311,6 +334,23 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
             // we're creating, so this manifest is initialized (to zero blocks)
             child->manifest->initialize_empty( child->version );
             
+            // run the driver 
+            int driver_rc = driver_create_file( core, core->closure, path, child );
+            if( driver_rc != 0 ) {
+               errorf("driver_create_file(%s) rc = %d\n", path, driver_rc );
+               
+               fs_entry_unlock( parent );
+               free( path_basename );
+               free( path );
+               free( parent_name );
+               
+               fs_entry_destroy( child, false );
+               free( child );
+               
+               *err = driver_rc;
+               return NULL;
+            }
+            
             // insert it into the filesystem
             fs_entry_wlock( child );
             
@@ -403,72 +443,42 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
          
          return NULL;
       }
-   }
-
-   // do we need to truncate?
-   if( (flags & O_TRUNC) && !created ) {
-      child->size = 0;
       
-      if( FS_ENTRY_LOCAL( core, child ) ) {
-         fs_entry_cache_evict_file( core, core->cache, child->file_id, child->version );
-      }
-      else {
-         // send a truncate request to the owner
-         Serialization::WriteMsg *truncate_msg = new Serialization::WriteMsg();
-         fs_entry_init_write_message( truncate_msg, core, Serialization::WriteMsg::TRUNCATE );
-         fs_entry_prepare_truncate_message( truncate_msg, path, child, 0 );
-         
-         Serialization::WriteMsg *withdraw_ack = new Serialization::WriteMsg();
-
-         *err = fs_entry_post_write( withdraw_ack, core, child->coordinator, truncate_msg );
-         if( *err < 0 ) {
-            errorf( "fs_entry_post_write(%s) rc = %d\n", path, *err );
-
-            if( !created )
-               fs_entry_unlock( child );
-
-            free( path_basename );
-            free( path );
-            free( parent_name );
-            
-            *err = -EREMOTEIO;
-            return NULL;
-         }
-
-         else if( withdraw_ack->type() != Serialization::WriteMsg::ACCEPTED ) {
-            if( withdraw_ack->type() == Serialization::WriteMsg::ERROR ) {
-               errorf( "remote truncate failed, error = %d (%s)\n", withdraw_ack->errorcode(), withdraw_ack->errortxt().c_str() );
-               *err = withdraw_ack->errorcode();
-            }
-            else {
-               errorf( "remote truncate invalid message %d\n", withdraw_ack->type() );
-               *err = -EREMOTEIO;
-            }
-         }
-
-         if( *err < 0 ) {
-            
-            if( !created )
-               fs_entry_unlock( child );
-
-            free( path_basename );
-            free( path );
-            free( parent_name );
-            
-            *err = -EREMOTEIO;
-            return NULL;
-         }
-      }
-   }
-
-
-   if( !created ) {
-      // merely opened.
+      // finish opening the child
       child->open_count++;
       
       if( child->open_count == 1 ) {
          // opened for the first time, so allocate working data
          fs_entry_setup_working_data( core, child );
+      }
+      
+      // truncate, if needed
+      if( flags & O_TRUNC ) {
+         
+         char const* method = NULL;
+         
+         if( FS_ENTRY_LOCAL( core, child ) ) {
+            
+            method = "fs_entry_truncate_local";
+            *err = fs_entry_truncate_local( core, path, child, 0, parent_id, parent_name );
+         }
+         else {
+            
+            method = "fs_entry_truncate_remote";
+            *err = fs_entry_truncate_remote( core, path, child, 0 );
+            
+         }
+         
+         if( *err < 0 ) {
+            errorf("%s(%s) rc = %d\n", method, path, *err );
+            
+            fs_entry_unlock( child );
+            free( path_basename );
+            free( path );
+            free( parent_name );
+            
+            return NULL;
+         }
       }
    }
 

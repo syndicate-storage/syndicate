@@ -104,7 +104,8 @@ static int fs_entry_shrink_file( struct fs_core* core, char const* fs_path, stru
 // expand a file to a new size (e.g. if we write to it beyond the end of the file).
 // add the block info for the block at the end of the file to garbage_blocks and dirty blocks, since it will need to be written and garbage-collected
 // fent must be write-locked
-static int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t new_size, modification_map* dirty_blocks, modification_map* garbage_blocks, struct cache_block_future** last_block_fut ) {
+static int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t new_size,
+                                 modification_map* dirty_blocks, modification_map* garbage_blocks, struct cache_block_future** last_block_fut ) {
 
    int rc = 0;
    
@@ -204,10 +205,57 @@ static int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, s
 }
 
 
-// truncate a local file's data, updating its manifest and size and remembering the now-dirty and garbage blocks
+// synchronize file state after local truncate.
+static int fs_entry_truncate_local_sync( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t parent_id, char const* parent_name ) {
+
+   // start synchronizing the entry's data (getting a snapshot in the process)
+   // bypass the sync queue, since we're reversioning
+   struct sync_context sync_ctx;
+   memset( &sync_ctx, 0, sizeof(struct sync_context) );
+   
+   int rc = fs_entry_sync_data_begin( core, fs_path, fent, parent_id, parent_name, &sync_ctx );
+   if( rc < 0 ) {
+      errorf("fs_entry_sync_data_begin( %s ) rc = %d\n", fs_path, rc );
+      
+      return -EIO;
+   }
+   
+   // wait for synchronization to finish 
+   rc = fs_entry_sync_data_finish( core, &sync_ctx );
+   if( rc != 0 ) {
+      errorf("fs_entry_sync_data_finish( %s ) rc = %d\n", fs_path, rc );
+      
+      // revert 
+      fs_entry_sync_data_revert( core, fent, &sync_ctx );
+      
+      fs_entry_sync_context_free( &sync_ctx );
+      return -EIO;
+   }
+   
+   // replicate data; do the reversion 
+   int64_t new_version = fs_entry_next_file_version();
+   rc = fs_entry_reversion_file( core, fs_path, fent, new_version, parent_id, parent_name );
+   
+   if( rc != 0 ) {
+      errorf("fs_entry_reversion_file( %s %" PRId64 " --> %" PRId64 " ) rc = %d\n", fs_path, fent->version, new_version, rc );
+      
+      // undo truncate
+      fs_entry_sync_data_revert( core, fent, &sync_ctx );
+      
+      fs_entry_sync_context_free( &sync_ctx );
+      return rc;
+   }
+   
+   fs_entry_sync_context_free( &sync_ctx );
+   
+   return 0;
+}
+      
+
+// truncate a local file's data, updating its manifest and size and remembering the now-dirty and garbage blocks, as well as synchronizing data with the MS and RGs
 // fent must be write-locked
 // NOTE: we reversion on truncate
-static int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size ) {
+int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size, uint64_t parent_id, char const* parent_name ) {
 
    // last block in the file now
    uint64_t max_block = fs_entry_block_id( core, fent->size );
@@ -268,6 +316,14 @@ static int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, s
    // merge new blocks and garbage, so we can sync it
    fs_entry_merge_new_dirty_blocks( fent, &dirty_blocks );
    fs_entry_free_modification_map_ex( &dirty_blocks, false );   // keep file descriptors open
+   
+   // flush changes, immediately
+   rc = fs_entry_truncate_local_sync( core, fs_path, fent, parent_id, parent_name );
+   if( rc != 0 ) {
+      
+      errorf("fs_entry_truncate_local_sync( %s %" PRIX64 " ) rc = %d\n", fs_path, fent->file_id, rc );
+      return rc;
+   }
    
    return 0;
 }
@@ -375,53 +431,13 @@ int fs_entry_run_truncate( struct fs_core* core, char const* fs_path, struct fs_
    
    // if this entry is local, then truncate it
    if( local ) {
-      rc = fs_entry_truncate_local( core, fs_path, fent, size );
+      rc = fs_entry_truncate_local( core, fs_path, fent, size, parent_id, parent_name );
       
       if( rc != 0 ) {
          errorf("fs_entry_truncate_local( %s to %jd ) rc = %d\n", fs_path, size, rc );
          
          return rc;
       }
-      
-      // start synchronizing the entry's data (getting a snapshot in the process)
-      // bypass the sync queue, since we're reversioning
-      struct sync_context sync_ctx;
-      memset( &sync_ctx, 0, sizeof(struct sync_context) );
-      
-      rc = fs_entry_sync_data_begin( core, fs_path, fent, parent_id, parent_name, &sync_ctx );
-      if( rc < 0 ) {
-         errorf("fs_entry_sync_data_begin( %s ) rc = %d\n", fs_path, rc );
-         
-         return -EIO;
-      }
-      
-      // wait for synchronization to finish 
-      rc = fs_entry_sync_data_finish( core, &sync_ctx );
-      if( rc != 0 ) {
-         errorf("fs_entry_sync_data_finish( %s ) rc = %d\n", fs_path, rc );
-         
-         // revert 
-         fs_entry_sync_data_revert( core, fent, &sync_ctx );
-         
-         fs_entry_sync_context_free( &sync_ctx );
-         return -EIO;
-      }
-      
-      // replicate data; do the reversion 
-      int64_t new_version = fs_entry_next_file_version();
-      rc = fs_entry_reversion_file( core, fs_path, fent, new_version, parent_id, parent_name );
-      
-      if( rc != 0 ) {
-         errorf("fs_entry_reversion_file( %s %" PRId64 " --> %" PRId64 " ) rc = %d\n", fs_path, fent->version, new_version, rc );
-         
-         // undo truncate
-         fs_entry_sync_data_revert( core, fent, &sync_ctx );
-         
-         fs_entry_sync_context_free( &sync_ctx );
-         return rc;
-      }
-      
-      fs_entry_sync_context_free( &sync_ctx );
    }
    
    return 0;

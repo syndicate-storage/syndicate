@@ -54,6 +54,7 @@ int md_read_urandom( char* buf, size_t len );
 int md_load_pubkey( EVP_PKEY** key, char const* pubkey_str );
 int md_load_privkey( EVP_PKEY** key, char const* privkey_str );
 int md_load_public_and_private_keys( EVP_PKEY** _pubkey, EVP_PKEY** _privkey, char const* privkey_str );
+int md_public_key_from_private_key( EVP_PKEY** ret_pubkey, EVP_PKEY* privkey );
 int md_generate_key( EVP_PKEY** key );
 long md_dump_pubkey( EVP_PKEY* pkey, char** buf );
 int md_sign_message( EVP_PKEY* pkey, char const* data, size_t len, char** sigb64, size_t* sigb64len );

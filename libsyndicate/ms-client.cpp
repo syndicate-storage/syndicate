@@ -200,8 +200,15 @@ static int ms_client_connect_cache_impl( struct md_closure* closure, CURL* curl,
 }
 
 // default connect cache (for external consumption)
-int ms_client_volume_connect_cache( struct md_closure* closure, CURL* curl, char const* url, struct md_syndicate_conf* conf ) {
-   return ms_client_connect_cache_impl( closure, curl, url, conf );
+int ms_client_volume_connect_cache( struct ms_client* client, CURL* curl, char const* url ) {
+   
+   ms_client_view_rlock( client );
+   
+   int rc = ms_client_connect_cache_impl( client->volume->cache_closure, curl, url, client->conf );
+   
+   ms_client_view_unlock( client );
+   
+   return rc;
 }
 
 // start internal threads (only safe to do so after we have a private key)
@@ -381,6 +388,14 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    if( rc != 0 ) {
       errorf("ms_client_try_load_key rc = %d\n", rc );
       return rc;
+   }
+   if( client->my_key != NULL ) {
+      // if we loaded the private key, derive the public key from it
+      rc = md_public_key_from_private_key( &client->my_pubkey, client->my_key );
+      if( rc != 0 || client->my_pubkey == NULL ) {
+         errorf("md_public_key_from_private_key( %p ) rc = %d\n", client->my_key, rc );
+         return rc;
+      }
    }
    
    // NOTE: ms_client_try_load_key will mlock a private key 

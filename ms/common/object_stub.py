@@ -29,12 +29,6 @@ import random
 import json
 import ctypes
 
-try:
-   import pickle
-except:
-   # only needed by clients...
-   pass
-
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
 from Crypto import Random
@@ -192,7 +186,7 @@ def encrypt_secrets_dict( obj_type, obj_name, secrets_dict, serializer, c_syndic
       storagelib = storage
    
    if serializer is None:
-      serializer = pickle.dumps
+      serializer = json.dumps
       
    # pad the secrets first
    secrets_dict[ SECRETS_PAD_KEY ] = base64.b64encode( ''.join(chr(random.randint(0,255)) for i in xrange(0,256)) )
@@ -232,7 +226,7 @@ def encrypt_secrets_dict( obj_type, obj_name, secrets_dict, serializer, c_syndic
       log.exception( e )
       raise Exception("Failed to encrypt secrets")
    
-   if rc != 0 or encrypted_secrets_str == None:
+   if rc != 0 or encrypted_secrets_str is None:
       raise Exception("Failed to encrypt secrets, rc = %d" % rc)
    
    return encrypted_secrets_str
@@ -246,7 +240,7 @@ def load_closure_config( closure_path, storagelib, serializer=None ):
    """
    
    if serializer is None:
-      serializer = pickle.dumps
+      serializer = json.dumps
       
    closure_module = import_closure( closure_path )
    
@@ -280,7 +274,7 @@ def load_closure_secrets( closure_path, obj_type, obj_name, config, storagelib, 
    """
    
    if serializer is None:
-      serializer = pickle.dumps
+      serializer = json.dumps
       
    try:
       import syndicate.syndicate as c_syndicate
@@ -308,7 +302,7 @@ def load_config_and_secrets( closure_path, obj_type, obj_name, config, storageli
    """
    Load a closure's config and secrets.  Literall wraps load_closure_config and load_closure_secrets.
    """
-   config_str = load_closure_config( closure_path, storagelib, serializer )
+   config_str = load_closure_config( closure_path, storagelib, serializer=serializer )
    secrets_str = load_closure_secrets( closure_path, obj_type, obj_name, config, storagelib, serializer=serializer, privkey_pem=privkey_pem )
    return (config_str, secrets_str)
 
@@ -1236,7 +1230,7 @@ class Gateway( StubObject ):
          pass
       
       # get config and secrets data
-      config_dict_str, secrets_dict_str = load_config_and_secrets( gateway_closure_path, "gateway", gateway_name, config, storagelib, privkey_pem=privkey_pem )
+      config_dict_str, secrets_dict_str = load_config_and_secrets( gateway_closure_path, "gateway", gateway_name, config, storagelib, serializer=json.dumps, privkey_pem=privkey_pem )
       
       # get the replica.py and driver.py files, if they exist 
       replica_py_path = os.path.join( gateway_closure_path, "replica.py" )

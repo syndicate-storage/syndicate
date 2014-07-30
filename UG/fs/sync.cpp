@@ -766,34 +766,47 @@ int fs_entry_fsync_gc_block_cont( struct rg_client* rg, struct replica_context* 
    // if the completion map is full, and all blocks were garbage-collected, then queue the manifest 
    bool blocks_finished = fs_entry_is_completion_map_filled( gc_cls->completion_map );
    
-   if( blocks_finished && gc_cls->rc == 0 ) {
-      // successfully garbage-collected all blocks (this is the last block context)
+   if( blocks_finished ) {
       
-      struct replica_snapshot* old_snapshot = &gc_cls->old_snapshot;
-      
-      if( gc_cls->gc_manifest ) {
+      if( gc_cls->rc == 0 ) {
+         // successfully garbage-collected all blocks (this is the last block context)
          
-         // We should garbage-collect the manifest 
-         rc = fs_entry_garbage_collect_manifest_ex( gc_cls->core, old_snapshot, NULL, REPLICATE_BACKGROUND, fs_entry_fsync_gc_manifest_cont, gc_cls );
+         struct replica_snapshot* old_snapshot = &gc_cls->old_snapshot;
          
-         if( rc != 0 ) {
-            // failed to enqueue 
-            errorf("fs_entry_garbage_collect_manifest_ex( %" PRIX64 "/manifest.%" PRId64 ".%d ) rc = %d\n",
-                   fs_entry_replica_context_get_file_id( rctx ), old_snapshot->manifest_mtime_sec, old_snapshot->manifest_mtime_nsec, rc );
+         if( gc_cls->gc_manifest ) {
             
-            gc_cls->rc = rc;
+            // We should garbage-collect the manifest 
+            rc = fs_entry_garbage_collect_manifest_ex( gc_cls->core, old_snapshot, NULL, REPLICATE_BACKGROUND, fs_entry_fsync_gc_manifest_cont, gc_cls );
+            
+            if( rc != 0 ) {
+               // failed to enqueue; we're done
+               errorf("fs_entry_garbage_collect_manifest_ex( %" PRIX64 "/manifest.%" PRId64 ".%d ) rc = %d\n",
+                     fs_entry_replica_context_get_file_id( rctx ), old_snapshot->manifest_mtime_sec, old_snapshot->manifest_mtime_nsec, rc );
+               
+               gc_cls->rc = rc;
+            }
+         }
+         
+         if( !gc_cls->gc_manifest || rc != 0 ) {
+            
+            // we're done--either due to error, or because we're not supposed to go any further
+            if( rc != 0 ) {
+               errorf("Not going to garbage-collect manifest %" PRIX64 "/manifest.%" PRId64 ".%d due to error (code %d)\n",
+                     fs_entry_replica_context_get_file_id( rctx ), old_snapshot->manifest_mtime_sec, old_snapshot->manifest_mtime_nsec, rc );
+            }
+            
+            pthread_mutex_unlock( &gc_cls->lock );
+            unlocked = true;
+            
+            // clean up 
+            fs_entry_fsync_gc_cls_free( gc_cls );
+            free( gc_cls );
          }
       }
-      
-      if( !gc_cls->gc_manifest || rc != 0 ) {
+      else {
+         errorf("Garbage collection for %" PRIX64 " failed, rc = %d\n", fs_entry_replica_context_get_file_id( rctx ), gc_cls->rc );
          
-         // we're done--either due to error, or because we're not supposed to go any further
-         if( rc != 0 ) {
-            errorf("Not going to garbage-collect manifest %" PRIX64 "/manifest.%" PRId64 ".%d due to error (code %d)\n",
-                   fs_entry_replica_context_get_file_id( rctx ), old_snapshot->manifest_mtime_sec, old_snapshot->manifest_mtime_nsec, rc );
-         }
-         
-         
+         // unsuccessful.  we're done
          pthread_mutex_unlock( &gc_cls->lock );
          unlocked = true;
          

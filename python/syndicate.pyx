@@ -19,7 +19,6 @@ cimport libc.stdlib as stdlib
 
 import types
 import errno
-import pickle
 
 syndicate_inited = False
 syndicate_ref = None
@@ -92,13 +91,8 @@ cpdef encrypt_closure_secrets( sender_privkey_str, gateway_pubkey_str, closure_s
    '''
       Encrypt a string with a gateway's public key.
    '''
-   
-   try:
-      closure_secrets_serialized = pickle.dumps( closure_secrets )
-   except Exception, e:
-      return (-errno.EINVAL, None)
 
-   return encrypt_data( sender_privkey_str, gateway_pubkey_str, closure_secrets_serialized )
+   return encrypt_data( sender_privkey_str, gateway_pubkey_str, closure_secrets )
 
 
 # ------------------------------------------
@@ -107,19 +101,8 @@ cpdef decrypt_closure_secrets( sender_pubkey_str, gateway_privkey_str, closure_s
       Decrypt a string with a gateway's public key.
    '''
    
-   rc, py_serialized_secrets = decrypt_data( sender_pubkey_str, gateway_privkey_str, closure_secrets )
-
-   if rc != 0:
-      return (rc, None)
-
-   else:      
-      # try to deserialize
-      try:
-         secrets_dict = pickle.loads( py_serialized_secrets )
-         return (0, secrets_dict)
-      except Exception, e:
-         return (-errno.ENODATA, None)
-
+   return decrypt_data( sender_pubkey_str, gateway_privkey_str, closure_secrets )
+      
 
 # ------------------------------------------
 cpdef openid_rpc( ms_openid_url, username, password, rpc_type, request_buf ):

@@ -25,8 +25,9 @@ MD_CLOSURE_PROTOTYPE_BEGIN( UG_CLOSURE_PROTOTYPE )
    MD_CLOSURE_CALLBACK( "chcoord_begin" ),
    MD_CLOSURE_CALLBACK( "chcoord_end" ),
    MD_CLOSURE_CALLBACK( "get_driver_name" ),
-   MD_CLOSURE_CALLBACK( "garbage_collect_manifest" ),
-   MD_CLOSURE_CALLBACK( "garbage_collect_block" )
+   MD_CLOSURE_CALLBACK( "garbage_collect" ),
+   MD_CLOSURE_CALLBACK( "create_file" ),
+   MD_CLOSURE_CALLBACK( "delete_file" )
 MD_CLOSURE_PROTOTYPE_END
 
 
@@ -127,7 +128,7 @@ int driver_connect_cache( struct md_closure* closure, CURL* curl, char const* ur
    else {
       errorf("%s", "WARN: connect_cache stub\n");
       
-      ms_client_volume_connect_cache( closure, curl, url, closure_cls->client->conf );
+      ms_client_volume_connect_cache( closure_cls->core->ms, curl, url );
       ret = 0;
    }
    
@@ -291,3 +292,34 @@ char* driver_get_name( struct fs_core* core, struct md_closure* closure ) {
    return ret;
 }
 
+
+// create a file 
+int driver_create_file( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent ) {
+   
+   int ret = 0;
+   
+   if( md_closure_find_callback( closure, "create_file" ) != NULL ) {
+      MD_CLOSURE_CALL( ret, closure, "create_file", driver_create_file_func, core, closure, fs_path, fent );
+   }
+   else {
+      errorf("%s", "WARN: create_file stub\n");
+   }
+   
+   return ret;
+}
+
+// delete a file 
+int driver_delete_file( struct fs_core* core, struct md_closure* closure, char const* fs_path, struct fs_entry* fent ) {
+   
+   int ret = 0;
+   
+   
+   if( md_closure_find_callback( closure, "delete_file" ) != NULL ) {
+      MD_CLOSURE_CALL( ret, closure, "delete_file", driver_delete_file_func, core, closure, fs_path, fent );
+   }
+   else {
+      errorf("%s", "WARN: delete_file stub\n");
+   }
+   
+   return ret;
+}

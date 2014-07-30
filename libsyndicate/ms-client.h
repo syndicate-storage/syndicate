@@ -404,8 +404,7 @@ void ms_client_free_listing( struct ms_listing* listing );
 
 // closure
 extern struct md_closure_callback_entry MS_CLIENT_CACHE_CLOSURE_PROTOTYPE[];
-int ms_client_connect_cache( struct md_closure* closure, CURL* curl, char const* url, struct md_syndicate_conf* conf );
-int ms_client_volume_connect_cache( struct md_closure* closure, CURL* curl, char const* url, struct md_syndicate_conf* conf );
+int ms_client_volume_connect_cache( struct ms_client* client, CURL* curl, char const* url );
 
 }
 

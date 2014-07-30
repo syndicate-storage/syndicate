@@ -49,6 +49,7 @@ LINK_FLAGS = ""
 
 # parse options
 devel = False
+valgrind_fixes = True
 old_boost = False
 firewall = False
 extra_args = {}
@@ -66,6 +67,11 @@ for key, value in ARGLIST:
          CPPFLAGS += " -D_DEVELOPMENT"
          devel = True
 
+   # disable valgrind fix-ups flag 
+   elif key == "no-valgrind-fixes":
+      if value == "true":
+         valgrind_fixes = False
+
    # firewall flag - set true if this system works behind firewall
    elif key == "firewall":
       if value == "true":
@@ -79,6 +85,10 @@ for key, value in ARGLIST:
 
    else:
       extra_args[key] = value
+
+# modify CPPFLAGS to disable features 
+if not valgrind_fixes:
+   CPPFLAGS += " -D_NO_VALGRIND_FIXES"
 
 # deduce the host linux distro
 def deduce_distro():
