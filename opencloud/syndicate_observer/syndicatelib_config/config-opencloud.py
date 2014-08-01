@@ -40,19 +40,17 @@ SYNDICATE_PRIVATE_KEY="/opt/planetstack/syndicate_observer/syndicatelib_config/p
 
 # This is the master secret used to generate secrets to seal sensitive information sent to the 
 # Syndicate sliver mount daemons.  It is also used to seal sensitive information
-# stored to the Django database.  
-# TODO: think of a way to not have to store this on disk.  Maybe we feed into the
-# observer when it starts up?
-SYNDICATE_OPENCLOUD_SECRET="e4988309a5005edb8ea185f16f607938c0fb7657e4d7609853bcb7c4884d1c92"
+# stored to the Django database.
+SYNDICATE_OPENCLOUD_SECRET="/opt/planetstack/syndicate_observer/syndicatelib_config/observer_secret.txt"
 
 # This is the default port number on which a Syndicate Replica Gateway
 # will be provisioned.  It's a well-known port, and can be the same across
 # slivers, since in OpenCloud, an RG instance only listens to localhost.
-SYNDICATE_RG_DEFAULT_PORT=38800
+SYNDICATE_RG_DEFAULT_PORT=37002
 
 # This is the absolute path to the RG's storage driver (which will be automatically
 # pushed to slivers by Syndicate).  See https://github.com/jcnelson/syndicate/wiki/Replica-Gateways
-SYNDICATE_RG_CLOSURE=None
+SYNDICATE_RG_CLOSURE="/root/syndicate/build/out/python/syndicate/rg/drivers/disk"
 
 # This is the port number the observer listens on for GETs from the Syndicate sliver mount 
 # daemons.  Normally, the oserver pushes (encrypted) commands to the daemons, but if the 
@@ -67,7 +65,7 @@ SYNDICATE_HTTP_PUSH_TIMEOUT=60
 
 # This is the port number the Syndicate sliver mount daemons listen on.  The observer will 
 # push commands to them on this port.
-SYNDICATE_SLIVER_PORT=65322
+SYNDICATE_SLIVER_PORT=37000
 
 # If true, print verbose debug messages.
 DEBUG=True

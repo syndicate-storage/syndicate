@@ -15,6 +15,7 @@ import BaseHTTPServer
 import setproctitle
 import threading
 import urllib
+import binascii
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
@@ -90,6 +91,44 @@ def get_config():
     """
     return CONFIG
 
+
+#-------------------------------
+def get_syndicate_observer_secret( secret_path ):
+    """
+    Load the syndicate observer secret from the config 
+    """
+    try:
+       fd = open(secret_path, "r")
+       secret_str = fd.read().strip()
+       fd.close()
+    except IOError, eio:
+       logger.error("Failed to load %s, errno = %d" % ( secret_path, eio.errno ) )
+       return None 
+    except OSError, eos:
+       logger.error("Failed to load %s, errno = %d" % ( secret_path, eos.errno ) )
+       return None 
+    
+    # unserialize from hex string to binary string
+    try:
+       secret_bin = binascii.unhexlify( secret_str )
+    except Exception, e:
+       logger.exception(e)
+       logger.error("Invalid secret")
+       return None 
+    
+    return secret_bin
+
+
+#-------------------------------
+def generate_symmetric_secret():
+    """
+    Generate a secret suitable for symmetric_seal and symmetric_unseal 
+    """
+    
+    # 256 bits == 32 bytes == 64 hex characters
+    secret_hexstr = "".join( map( lambda x: random.sample("0123456789abcdef", 1)[0], [0] * 64 ) )
+    secret_bin = binascii.a2b_hex( secret_hexstr )
+    return secret_bin 
 
 #-------------------------------
 def make_openid_url( email ):
@@ -409,7 +448,7 @@ def teardown_volume_access( user_email, volume_name ):
     
 
 #-------------------------------
-def create_sealed_and_signed_blob( private_key_pem, secret, data ):
+def create_sealed_and_signed_blob( private_key_pem, key, data ):
     """
     Create a sealed and signed message.
     """
@@ -417,9 +456,10 @@ def create_sealed_and_signed_blob( private_key_pem, secret, data ):
     # seal it with the password 
     logger.info("Sealing credential data")
     
-    rc, sealed_data = c_syndicate.password_seal( data, secret )
+    #rc, sealed_data = c_syndicate.password_seal( data, key )
+    rc, sealed_data = c_syndicate.symmetric_seal( data, key )
     if rc != 0:
-       logger.error("Failed to seal data with the secret, rc = %s" % rc)
+       logger.error("Failed to seal data with the key, rc = %s" % rc)
        return None
     
     msg = syndicate_crypto.sign_and_serialize_json( private_key_pem, sealed_data )
@@ -444,7 +484,8 @@ def verify_and_unseal_blob( public_key_pem, secret, blob_data ):
 
     logger.info("Unsealing credential data")
 
-    rc, data = c_syndicate.password_unseal( sealed_data, secret )
+    #rc, data = c_syndicate.password_unseal( sealed_data, secret )
+    rc, data = c_syndicate.symmetric_unseal( sealed_data, secret )
     if rc != 0:
         logger.error("Failed to unseal blob, rc = %s" % rc )
         return None
@@ -697,7 +738,8 @@ def get_or_create_slice_secret( observer_pkey_pem, slice_name, slice_fk=None ):
    if slice_secret is None or len(slice_secret) == 0:
       
       # generate a slice secret 
-      slice_secret = "".join( random.sample("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 32) )
+      # slice_secret = "".join( random.sample("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 32) )
+      slice_secret = generate_symmetric_secret()
       
       # store it 
       rc = put_slice_secret( observer_pkey_pem, slice_name, slice_secret, slice_fk=slice_fk )
@@ -1105,7 +1147,7 @@ def credential_server_spawn( old_exit_status ):
    
    logger.info("Starting Syndicate Observer credential server on port %s" % CONFIG.SYNDICATE_HTTP_PORT)
                
-   srv = CredentialServer( private_key.exportKey(), CONFIG.SYNDICATE_OPENCLOUD_SECRET, ('', CONFIG.SYNDICATE_HTTP_PORT), CredentialServerHandler)
+   srv = CredentialServer( private_key.exportKey(), get_syndicate_observer_secret( CONFIG.SYNDICATE_OPENCLOUD_SECRET ), ('', CONFIG.SYNDICATE_HTTP_PORT), CredentialServerHandler)
    srv.serve_forever()
 
 
@@ -1320,14 +1362,20 @@ def ft_seal_and_unseal():
     """
     Functional test for sealing/unsealing data
     """
+    c_syndicate.crypto_init()
+    
     print "generating key pair"
     pubkey_pem, privkey_pem = api.generate_key_pair( 4096 )
     
-    sealed_buf = create_sealed_and_signed_blob( privkey_pem, "foo", "hello world")
+    key = generate_symmetric_secret()
+    
+    sealed_buf = create_sealed_and_signed_blob( privkey_pem, key, "hello world")
     print "sealed data is:\n\n%s\n\n" % sealed_buf
 
-    buf = verify_and_unseal_blob( pubkey_pem, "foo", sealed_buf )
+    buf = verify_and_unseal_blob( pubkey_pem, key, sealed_buf )
     print "unsealed data is: \n\n%s\n\n" % buf
+    
+    c_syndicate.crypto_shutdown()
     
 
 # run functional tests

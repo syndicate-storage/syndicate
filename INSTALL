@@ -30,7 +30,8 @@ yum install \
    python-requests \
    redhat-lsb-core \
    python-setproctitle \
-   python-psutil
+   python-psutil \
+   valgrind-devel
 
 Required versions of the above software:
    limicrohttpd-devel >= 0.9
@@ -66,7 +67,8 @@ aptitude install \
    libjson0 \
    lsb-core \
    python-setproctitle \
-   python-psutil
+   python-psutil \
+   valgrind
 
 Required versions of the above software:
    libmicrohttpd-dev >= 0.9

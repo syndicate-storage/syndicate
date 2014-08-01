@@ -102,29 +102,6 @@ DEFAULT_CONFIG = {
     "RG_public":        False
 }
 
-"""
-    # these are filled in at runtime.
-    # This is the information needed to act as a principal of the volume onwer (i.e. the slice)
-    "runtime": {
-        "testvolume": {
-            "volume_name":          "testvolume",
-            "volume_owner":         "judecn@gmail.com",
-            "volume_peer_port":      32780,
-            "volume_replicate_port": 32781,
-            "syndicate_url":        "http://localhost:8080",
-        },
-        "testvolume2": {
-            "volume_name":          "testvolume2",
-            "volume_owner":         "padmin@vicci.org",
-            "volume_peer_port":      32880,
-            "volume_replicate_port": 32881,
-            "syndicate_url":        "http://localhost:8080",
-        }
-     }
-}
-"""
-
-
 #-------------------------------
 
 # global config structure 
@@ -358,7 +335,8 @@ def unseal_observer_data( shared_secret, sealed_data ):
     
     # decrypt the data, using the shared secret 
     log.info("Unsealing credentials...")
-    rc, data = c_syndicate.password_unseal( sealed_data, shared_secret )
+    #rc, data = c_syndicate.password_unseal( sealed_data, shared_secret )
+    rc, data = c_syndicate.symmetric_unseal( sealed_data, shared_secret )
     if rc != 0:
         logger.error("Failed to decrypt data")
         return (-errno.EINVAL, None)

@@ -144,7 +144,7 @@ static int encrypt_chunk( unsigned char const* key, size_t key_len, unsigned cha
    memcpy( entropied_chunk + ENTROPY_BYTES, chunk, chunk_len );
    
    // seal it 
-   rc = md_encrypt_symmetric( key, key_len, iv, iv_len, chunk, chunk_len, ciphertext, ciphertext_len );
+   rc = md_encrypt_symmetric_ex( key, key_len, iv, iv_len, chunk, chunk_len, ciphertext, ciphertext_len );
    if( rc != 0 ) {
       errorf("md_encrypt_symmetric rc = %d\n", rc );
       return -ENODATA;
@@ -161,7 +161,7 @@ static int decrypt_chunk( unsigned char const* key, size_t key_len, unsigned cha
    int rc = 0;
    
    // unseal 
-   rc = md_decrypt_symmetric( key, key_len, iv, iv_len, ciphertext, ciphertext_len, &_chunk, &_chunk_len );
+   rc = md_decrypt_symmetric_ex( key, key_len, iv, iv_len, ciphertext, ciphertext_len, &_chunk, &_chunk_len );
    if( rc != 0 ) {
       errorf("md_decrypt_symmetric rc = %d\n", rc );
       return rc;

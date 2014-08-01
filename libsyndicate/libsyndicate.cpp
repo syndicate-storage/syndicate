@@ -124,7 +124,7 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
          size_t unencrypted_key_len = 0;
          
          // NOTE: unencrypted_key will be mlock'ed
-         rc = md_password_unseal( enc_gateway_key, enc_gateway_key_len, key_password, strlen(key_password), &unencrypted_key, &unencrypted_key_len );
+         rc = md_password_unseal_mlocked( enc_gateway_key, enc_gateway_key_len, key_password, strlen(key_password), &unencrypted_key, &unencrypted_key_len );
          
          // NOTE: gateway_key_mlock_buf is the same as enc_gateway_key 
          mlock_free( &gateway_key_mlock_buf );

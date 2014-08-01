@@ -1962,7 +1962,7 @@ static int ms_client_unseal_and_load_keys( struct ms_client* client, ms::ms_regi
          
          dbprintf("%s\n", "Unsealing gateway private key...");
          
-         decode_rc = md_password_unseal( encrypted_gateway_private_key, encrypted_gateway_private_key_len, key_password, strlen(key_password), &gateway_private_key_str, &gateway_private_key_str_len );
+         decode_rc = md_password_unseal_mlocked( encrypted_gateway_private_key, encrypted_gateway_private_key_len, key_password, strlen(key_password), &gateway_private_key_str, &gateway_private_key_str_len );
          if( decode_rc != 0 ) {
             errorf("Failed to unseal gateway private key, rc = %d\n", decode_rc );
             rc = -ENOTCONN;
@@ -4341,10 +4341,7 @@ int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint
 }
 
 // get my private key as a PEM-encoded string
-// THIS IS UNSAFE: the allocated buffer will not be locked in memory
-// USE AT YOUR OWN PERIL
-// (used in Python, which doesn't support mlock)
-int ms_client_my_key_pem_UNSAFE( struct ms_client* client, char** buf, size_t* len ) {
+int ms_client_my_key_pem( struct ms_client* client, char** buf, size_t* len ) {
    ms_client_rlock( client );
    
    int rc = 0;

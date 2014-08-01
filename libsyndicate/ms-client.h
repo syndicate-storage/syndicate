@@ -393,7 +393,7 @@ int ms_client_get_gateway_user( struct ms_client* client, uint64_t gateway_type,
 int ms_client_get_gateway_volume( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t* volume_id );
 int ms_client_get_gateway_name( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, char** gateway_name );
 int ms_client_check_gateway_caps( struct ms_client* client, uint64_t gateway_type, uint64_t gateway_id, uint64_t caps );
-int ms_client_my_key_pem_UNSAFE( struct ms_client* client, char** buf, size_t* len );
+int ms_client_my_key_pem( struct ms_client* client, char** buf, size_t* len );
 int ms_client_get_closure_text( struct ms_client* client, char** closure_text, uint64_t* closure_len );
 
 // memory management

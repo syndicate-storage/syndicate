@@ -556,7 +556,7 @@ long md_dump_pubkey( EVP_PKEY* pkey, char** buf ) {
 int md_encrypt( EVP_PKEY* sender_pkey, EVP_PKEY* receiver_pubkey, char const* in_data, size_t in_data_len, char** out_data, size_t* out_data_len ) {
    
    // use AES256 in CBC mode
-   const EVP_CIPHER* cipher = EVP_aes_256_cbc();
+   const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
    size_t block_size = EVP_CIPHER_block_size( cipher );
    
    // initialization vector
@@ -742,7 +742,7 @@ int md_decrypt( EVP_PKEY* sender_pubkey, EVP_PKEY* receiver_pkey, char const* in
    int32_t signature_len = 0;
    
    // use AES256 in CBC mode
-   const EVP_CIPHER* cipher = EVP_aes_256_cbc();
+   const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
    int32_t expected_iv_len = EVP_CIPHER_iv_length( cipher );
    
    // data must have these four values
@@ -970,7 +970,7 @@ int md_password_seal( char const* data, size_t data_len, char const* password, s
 
 // unseal something with a password.
 // the returned buffer will be mlock'ed
-int md_password_unseal( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
+int md_password_unseal_mlocked( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
    // implementation: use scrypt
    size_t outbuf_len = encrypted_data_len;
    
@@ -997,10 +997,8 @@ int md_password_unseal( char const* encrypted_data, size_t encrypted_data_len, c
 
 
 // unseal something with a password.
-// UNSAFE: the returned buffer will NOT be locked in RAM
-// THE SECRET INFORMATION CAN BE SWAPPED TO DISK AND READ LATER.
-// USE AT YOUR OWN PERIL (i.e. if you can't get to mlock() directly, and are absolutely sure swapping is not a risk).
-int md_password_unseal_UNSAFE( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
+// the resulting buffer will NOT be mlock'ed
+int md_password_unseal( char const* encrypted_data, size_t encrypted_data_len, char const* password, size_t password_len, char** output, size_t* output_len ) {
    int rc = md_password_unseal( encrypted_data, encrypted_data_len, password, password_len, output, output_len );
    if( rc == 0 ) {
       rc = munlock( output, *output_len );
@@ -1013,15 +1011,20 @@ int md_password_unseal_UNSAFE( char const* encrypted_data, size_t encrypted_data
    return rc;
 }
 
+// how big is the ciphertext buffer for md_encrypt_symmetric_ex?
+size_t md_encrypt_symmetric_ex_ciphertext_len( size_t data_len ) {
+   const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
+   return data_len + EVP_CIPHER_block_size( cipher );
+}
 
-// encrypt data using a symmetric key 
-int md_encrypt_symmetric( unsigned char const* key, size_t key_len, unsigned char const* iv, size_t iv_len, char* data, size_t data_len, char** ciphertext, size_t* ciphertext_len ) {
+// encrypt data using a symmetric key and an IV
+int md_encrypt_symmetric_ex( unsigned char const* key, size_t key_len, unsigned char const* iv, size_t iv_len, char* data, size_t data_len, char** ciphertext, size_t* ciphertext_len ) {
    
    if( key_len != 32 )
       // not 256-bit key 
       return -EINVAL;
    
-   const EVP_CIPHER* cipher = EVP_aes_256_cbc();
+   const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
    int rc = 0;
    
    /*
@@ -1044,8 +1047,18 @@ int md_encrypt_symmetric( unsigned char const* key, size_t key_len, unsigned cha
    }
    
    // allocate ciphertext 
-   unsigned char* c_buf = CALLOC_LIST( unsigned char, data_len + EVP_CIPHER_block_size( cipher ) );
+   unsigned char* c_buf = NULL;
    int c_buf_len = 0;
+   
+   if( *ciphertext != NULL ) {
+      c_buf = (unsigned char*)(*ciphertext);
+   }
+   else {
+      c_buf = CALLOC_LIST( unsigned char, md_encrypt_symmetric_ex_ciphertext_len( data_len ) );
+   }
+   
+   if( c_buf == NULL )
+      return -ENOMEM;
    
    rc = EVP_EncryptUpdate( &e_ctx, c_buf, &c_buf_len, (unsigned char*)data, data_len );
    if( rc == 0 ) {
@@ -1073,20 +1086,30 @@ int md_encrypt_symmetric( unsigned char const* key, size_t key_len, unsigned cha
    
    EVP_CIPHER_CTX_cleanup( &e_ctx );
    
-   *ciphertext = (char*)c_buf;
+   if( (unsigned char*)(*ciphertext) != c_buf ) {
+      // was allocated
+      *ciphertext = (char*)c_buf;
+   }
+   
    *ciphertext_len = c_buf_len;
    
    return 0;
 }
 
 
-// decrypt data using a symmetric key 
-int md_decrypt_symmetric( unsigned char const* key, size_t key_len, unsigned char const* iv, size_t iv_len, char* ciphertext_data, size_t ciphertext_len, char** data, size_t* data_len ) {
+// how big is the ciphertext buffer for md_encrypt_symmetric_ex?
+size_t md_decrypt_symmetric_ex_ciphertext_len( size_t ciphertext_len ) {
+   const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
+   return ciphertext_len + EVP_CIPHER_block_size( cipher );
+}
+
+// decrypt data using a symmetric key and an IV
+int md_decrypt_symmetric_ex( unsigned char const* key, size_t key_len, unsigned char const* iv, size_t iv_len, char* ciphertext_data, size_t ciphertext_len, char** data, size_t* data_len ) {
    if( key_len != 32 )
       // not a 256-bit key 
       return -EINVAL;
    
-   const EVP_CIPHER* cipher = EVP_aes_256_cbc();
+   const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
    int rc = 0;
    
    
@@ -1109,9 +1132,19 @@ int md_decrypt_symmetric( unsigned char const* key, size_t key_len, unsigned cha
       return -1;
    }
    
-   // allocate plaintext 
-   unsigned char* p_buf = CALLOC_LIST( unsigned char, ciphertext_len + EVP_CIPHER_block_size( cipher ) );
+   // allocate plaintext, if needed
+   unsigned char* p_buf = NULL;
    int p_buf_len = 0;
+   
+   if( *data != NULL ) {
+      p_buf = (unsigned char*)(*data);
+   }
+   else {
+      p_buf = CALLOC_LIST( unsigned char, md_decrypt_symmetric_ex_ciphertext_len( ciphertext_len ) );
+   }
+   
+   if( p_buf == NULL )
+      return -ENOMEM;
    
    rc = EVP_DecryptUpdate( &d_ctx, p_buf, &p_buf_len, (unsigned char*)ciphertext_data, ciphertext_len );
    if( rc == 0 ) {
@@ -1139,8 +1172,104 @@ int md_decrypt_symmetric( unsigned char const* key, size_t key_len, unsigned cha
    
    EVP_CIPHER_CTX_cleanup( &d_ctx );
    
-   *data = (char*)p_buf;
+   if( (unsigned char*)(*data) != p_buf ) {
+      *data = (char*)p_buf;
+   }
+   
    *data_len = p_buf_len;
    
+   return 0;
+}
+
+
+// how big should the ciphertext buffer be for md_encrypt_symmetric?
+size_t md_encrypt_symmetric_ciphertext_len( size_t data_len ) {
+   const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
+   return data_len + EVP_CIPHER_iv_length( cipher ) + EVP_CIPHER_block_size( cipher );
+}
+
+// encrypt data using a symmetric key.  Generate an IV and keep it with the ciphertext
+int md_encrypt_symmetric( unsigned char const* key, size_t key_len, char* data, size_t data_len, char** ret_ciphertext, size_t* ret_ciphertext_len ) {
+   
+   if( key_len != 32 )
+      // not a 256-bit key 
+      return -EINVAL;
+   
+   
+   // initialization vector
+   const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
+   size_t iv_len = EVP_CIPHER_iv_length( cipher );
+   unsigned char* iv = (unsigned char*)alloca( iv_len );
+   
+   if( iv == NULL ) {
+      return -ENOMEM;
+   }
+   
+   // fill the iv with random data
+   int rc = md_read_urandom( (char*)iv, iv_len );
+   if( rc != 0 ) {
+      errorf("md_read_urandom rc = %d\n", rc);
+      return rc;
+   }
+   
+   char* ciphertext_buffer = CALLOC_LIST( char, md_encrypt_symmetric_ciphertext_len( data_len ) );
+   size_t ciphertext_buffer_len = 0;
+   
+   // where's the ciphertext going to go?
+   char* ciphertext = ciphertext_buffer + iv_len;
+   size_t ciphertext_len = 0;
+   
+   rc = md_encrypt_symmetric_ex( key, key_len, iv, iv_len, data, data_len, &ciphertext, &ciphertext_len );
+   
+   if( rc != 0 ) {
+      errorf("md_encrypt_symmetric_ex rc = %d\n", rc );
+      return rc;
+   }
+   
+   // store the IV and calculate the ciphertext buffer's total length
+   memcpy( ciphertext_buffer, iv, iv_len );
+   ciphertext_buffer_len = iv_len + ciphertext_len;
+   
+   *ret_ciphertext = ciphertext_buffer;
+   *ret_ciphertext_len = ciphertext_buffer_len;
+   
+   return 0;
+}
+
+// how big should the plaintext bufer be for md_decrypt_symmetric?
+size_t md_decrypt_symmetric_plaintext_len( size_t ciphertext_buffer_len ) {
+   const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
+   return ciphertext_buffer_len - EVP_CIPHER_iv_length( cipher ) + EVP_CIPHER_block_size( cipher );
+}
+
+// unseal data with a symmetric key.  the ciphertext buffer will have had to have been generated by md_encrypt_symmetric
+int md_decrypt_symmetric( unsigned char const* key, size_t key_len, char* ciphertext_buffer, size_t ciphertext_buffer_len, char** data, size_t* data_len ) {
+   
+   if( key_len != 32 )
+      // not a 256-bit key 
+      return -EINVAL;
+   
+   // extract the initialization vector 
+   const EVP_CIPHER* cipher = MD_DEFAULT_CIPHER();
+   size_t iv_len = EVP_CIPHER_iv_length( cipher );
+   unsigned char* iv = (unsigned char*)ciphertext_buffer;
+   
+   // sanity check 
+   if( ciphertext_buffer_len <= iv_len )
+      // can't possibly be long enough
+      return -EINVAL;
+   
+   // the actual ciphertext is at...
+   char* ciphertext_data = ciphertext_buffer + iv_len;
+   size_t ciphertext_data_len = ciphertext_buffer_len - iv_len;
+   
+   int rc = md_decrypt_symmetric_ex( key, key_len, iv, iv_len, ciphertext_data, ciphertext_data_len, data, data_len );
+   
+   if( rc != 0 ) {
+      errorf("md_decrypt_symmetric_ex rc = %d\n", rc );
+      return rc;
+   }
+   
+   // success!
    return 0;
 }
