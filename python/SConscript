@@ -41,5 +41,7 @@ source_files.extend( Glob("volume.p*") )
 source_files.extend( Glob("syndicate/*.py") )
 source_files.extend( Glob("setup.py") )
 source_files.extend( Glob("syndicate/util/*.py") )
+source_files.extend( Glob("syndicate/observer/*.py") )
+source_files.extend( Glob("syndicate/observer/storage/*.py") )
 
 Return("build_target install_target source_files")

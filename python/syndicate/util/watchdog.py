@@ -123,7 +123,7 @@ def spawn( child_method, stdin_method, old_exit_status ):
    if child_pid > 0:
       # we're the parent 
       
-      if stdin_buf is not None:
+      if parent_w != -1 and child_stdin != -1:
          # send stdin 
          os.close( child_stdin )
          
@@ -138,7 +138,7 @@ def spawn( child_method, stdin_method, old_exit_status ):
    else:
       # we're the child...
       
-      if stdin_buf is not None:
+      if parent_w != -1 and child_stdin != -1:
          os.close( parent_w )
          
          sys.stdout.flush()
@@ -146,6 +146,7 @@ def spawn( child_method, stdin_method, old_exit_status ):
          
          # redirect stdin 
          os.dup2( child_stdin, sys.stdin.fileno() )
+         os.close( child_stdin )
          
       rc = child_method( old_exit_status )
       sys.exit(rc)

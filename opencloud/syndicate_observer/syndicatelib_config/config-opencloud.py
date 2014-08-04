@@ -67,5 +67,14 @@ SYNDICATE_HTTP_PUSH_TIMEOUT=60
 # push commands to them on this port.
 SYNDICATE_SLIVER_PORT=37000
 
+# This is the maximum number of UGs a principal can have 
+UG_QUOTA=1100
+
+# This is the maximum number of RGs a principal can have 
+RG_QUOTA=10
+
+# This is the storage backend to use.  This can be "opencloud" or "disk"
+STORAGE_BACKEND="opencloud"
+
 # If true, print verbose debug messages.
 DEBUG=True

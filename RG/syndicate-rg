@@ -59,14 +59,13 @@ def watchdog_need_respawn( exit_status ):
    return watchdog.check_exit_status( exit_status, respawn_exit_statuses=RESPAWN_EXIT_STATUES )
       
 #-------------------------------
-def spawn_rg( argv, old_exit_status ):
+def spawn_rg( config, old_exit_status ):
    """
    Spawn an RG.
    """
-   
-   rc, config, syndicate = rg_main.oneoff_init( argv )
+   rc, syndicate = rg_main.init_from_config( config )
    if rc != 0:
-      log.error("one-off init rc = %s", rc)
+      log.error("init_from_config rc = %s", rc)
       return rc
    
    setproctitle.setproctitle( child_proc_title( config['volume'] ) )
@@ -91,7 +90,7 @@ def child_proc_title( volume ):
 #-------------------------------
 if __name__ == "__main__":
    
-   argv = sys.argv 
+   argv = sys.argv[:]
    
    # read configuation early, so we can set up log and pid files
    config = rg_main.build_config( argv )
@@ -107,18 +106,26 @@ if __name__ == "__main__":
    # run in foreground?
    foreground = config['foreground']
    
+   logfile_path = None 
+   pidfile_path = config.get('pidfile', None)
+   
+   if config.has_key('logdir'):
+      logfile_path = os.path.join( config['logdir'], "RG.log" )
+   
    if not foreground:
       # become a daemon
-      logfile_path = None 
-      pidfile_path = config.get('pidfile', None)
-      
-      if config.has_key('logdir'):
-         logfile_path = os.path.join( config['logdir'], "RG.log" )
-      
-      daemonize.daemonize( lambda: watchdog.main( lambda old_exit_status: spawn_rg(argv, old_exit_status), pid_cb=watchdog_PID, exit_cb=watchdog_need_respawn, respawn_exit_statuses=RESPAWN_EXIT_STATUES ), 
-                           logfile_path=logfile_path, pidfile_path=pidfile_path )
+      daemonize.daemonize( lambda: watchdog.main( lambda old_exit_status: spawn_rg(config, old_exit_status),
+                                                  pid_cb=watchdog_PID,
+                                                  exit_cb=watchdog_need_respawn,
+                                                  respawn_exit_statuses=RESPAWN_EXIT_STATUES ), 
+                           logfile_path=logfile_path,
+                           pidfile_path=pidfile_path )
    
    else:
       # run in the foreground
-      watchdog.main( lambda old_exit_status: spawn_rg(argv, old_exit_status), pid_cb=watchdog_PID, exit_cb=watchdog_need_respawn, respawn_exit_statuses=RESPAWN_EXIT_STATUES )
+      watchdog.main( lambda old_exit_status: spawn_rg(config, old_exit_status),
+                     pid_cb=watchdog_PID,
+                     exit_cb=watchdog_need_respawn,
+                     respawn_exit_statuses=RESPAWN_EXIT_STATUES )
+      
       

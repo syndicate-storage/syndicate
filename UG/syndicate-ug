@@ -27,6 +27,7 @@ import subprocess
 import setproctitle
 import logging
 import shlex 
+import atexit
 
 logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 
@@ -39,6 +40,7 @@ log = logging.getLogger()
 UG_BINARY = "syndicatefs"
 
 UG_PID = 0
+UG_LOG_FD = 0
 UG_MOUNTPOINT = None 
 
 #-------------------------------
@@ -50,7 +52,7 @@ CONFIG_OPTIONS = {
    "mountpoint":        ("-m", 1, "Mountpoint to monitor."),
    "volume":            ("-v", 1, "Volume to monitor."),
    "UG_binary":         ("-b", 1, "Name or path to the UG binary."),
-   "UG_argv":           ("-C", 1, "Arguments to the UG binary.")
+   "UG_argv":           ("-C", 1, "Arguments to the UG binary (excluding the binary's name).")
 }
 
 #-------------------------------
@@ -240,7 +242,7 @@ def spawn_ug( config, old_exit_status ):
    command_list = shlex.split( command_str )
    
    binary = command_list[0]
-   argv = [binary, '-R', '-v', config['volume'], config['mountpoint']]
+   argv = [binary, '-d2', '-R', '-v', config['volume'], config['mountpoint']]
    
    # exec the binary 
    try:
@@ -262,7 +264,7 @@ def validate_config( config ):
       
    # make mountpoint an absolute path 
    config['mountpoint'] = os.path.abspath( config['mountpoint'] )
-      
+   
    if 'logdir' in config.keys():
       if not os.path.exists( config['logdir'] ):
          try:
@@ -290,6 +292,11 @@ def get_UG_command( config ):
    
    else:
       argv_str = sys.stdin.read()
+      
+      # get rid of the binary's name
+      command_list = argv_str.split(" ")
+      argv_str = " ".join( command_list[1:] )
+      
       return config['UG_binary'] + " " + argv_str
    
 
@@ -300,6 +307,47 @@ def supervisor_proc_title( volume, mountpoint ):
 #-------------------------------
 def child_proc_title( binary_name, volume, mountpoint ):
    return watchdog.attr_proc_title( binary_name, {"volume": volume, "mountpoint": mountpoint} )
+
+
+#-------------------------------
+def shutdown_logging():
+   """
+   Close the global log fd
+   """
+   
+   global UG_LOG_FD
+   
+   if UG_LOG_FD != 0:
+      os.fsync( UG_LOG_FD )
+      os.close( UG_LOG_FD )
+      UG_LOG_FD = 0
+
+
+#-------------------------------
+def setup_logging( logfile_path ):
+   """
+   redirect stdout and stderr to the file at logfile_path 
+   """
+   
+   global UG_LOG_FD
+   
+   try:
+      f = open( logfile_path, "w" )
+      fd = f.fileno()
+      
+      sys.stdout.flush()
+      sys.stderr.flush()
+      
+      os.dup2( fd, sys.stdout.fileno() )
+      os.dup2( fd, sys.stderr.fileno() )
+      
+   except:
+      return False
+   
+   UG_LOG_FD = fd
+   
+   atexit.register( shutdown_logging )
+   
 
 #-------------------------------
 if __name__ == "__main__":
@@ -335,14 +383,14 @@ if __name__ == "__main__":
    
    foreground = config['foreground']
    
+   logfile_path = None 
+   pidfile_path = config.get('pidfile', None)
+   
+   if config.has_key('logdir'):
+      logfile_path = os.path.join( config['logdir'], "UG.log" )
+   
    if not foreground:
       # become a daemon
-      logfile_path = None 
-      pidfile_path = config.get('pidfile', None)
-      
-      if config.has_key('logdir'):
-         logfile_path = os.path.join( config['logdir'], "UG.log" )
-      
       daemonize.daemonize( lambda: watchdog.main( lambda old_exit_status: spawn_ug(config, old_exit_status),
                                                   stdin_cb=lambda: command_str,
                                                   pid_cb=watchdog_PID,
@@ -351,6 +399,10 @@ if __name__ == "__main__":
                            logfile_path=logfile_path, pidfile_path=pidfile_path )
    
    else:
+      # if logfile path is given, then direct output to that instead of stdout 
+      if logfile_path is not None:
+         setup_logging( logfile_path )
+      
       # run in the foreground
       watchdog.main( lambda old_exit_status: spawn_ug(config, old_exit_status),
                      pid_cb=watchdog_PID,

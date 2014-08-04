@@ -18,4 +18,9 @@ SYNDICATE_HTTP_PORT=65321
 SYNDICATE_RG_CLOSURE="/home/jude/Desktop/research/git/syndicate/build/out/python/syndicate/rg/drivers/disk"
 SYNDICATE_RG_DEFAULT_PORT=38800
 
+UG_QUOTA=10
+RG_QUOTA=10
+
+STORAGE_BACKEND="disk"
+
 DEBUG=True

@@ -1,0 +1,166 @@
+#!/usr/bin/python 
+
+"""
+   Copyright 2014 The Trustees of Princeton University
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
+
+
+import os
+import sys 
+import json
+import time
+import traceback
+import base64
+import binascii
+from collections import namedtuple
+
+from Crypto.Hash import SHA256 as HashAlg
+from Crypto.PublicKey import RSA as CryptoKey
+from Crypto import Random
+from Crypto.Signature import PKCS1_PSS as CryptoSigner
+
+import logging
+from logging import Logger
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+logger = logging.getLogger()
+logger.setLevel( logging.INFO )
+
+import syndicate.util.storage as syndicate_storage_api 
+
+import syndicate.observer.core as observer_core
+import syndicate.observer.cred as observer_cred
+import syndicate.syndicate as c_syndicate
+
+CONFIG = observer_core.get_config()
+observer_storage = observer_core.get_observer_storage()
+
+TESTING = False 
+
+#-------------------------------
+def do_push( sliver_hosts, portnum, payload ):
+    """
+    Push a payload to a list of slivers.
+    NOTE: this has to be done in one go, since we can't import grequests
+    into the global namespace (without wrecking havoc on the credential server),
+    but it has to stick around for the push to work.
+    """
+    
+    global TESTING, CONFIG
+    
+    from gevent import monkey
+    
+    if TESTING:
+       monkey.patch_all()
+    
+    else:
+       # make gevents runnabale from multiple threads (or Django will complain)
+       monkey.patch_all(socket=True, dns=True, time=True, select=True, thread=False, os=True, ssl=True, httplib=False, aggressive=True)
+    
+    import grequests
+    
+    # fan-out 
+    requests = []
+    for sh in sliver_hosts:
+      rs = grequests.post( "http://" + sh + ":" + str(portnum), data={observer_cred.OPENCLOUD_JSON: payload}, timeout=getattr(CONFIG, "SYNDICATE_HTTP_PUSH_TIMEOUT", 60) )
+      requests.append( rs )
+      
+    # fan-in
+    responses = grequests.map( requests )
+    
+    assert len(responses) == len(requests), "grequests error: len(responses) != len(requests)"
+    
+    for i in xrange(0,len(requests)):
+       resp = responses[i]
+       req = requests[i]
+       
+       if resp is None:
+          logger.error("Failed to connect to %s" % (req.url))
+          continue 
+       
+       # verify they all worked 
+       if resp.status_code != 200:
+          logger.error("Failed to POST to %s, status code = %s" % (resp.url, resp.status_code))
+          continue
+          
+    return True
+
+   
+#-------------------------------
+def push_credentials_to_slice( slice_name, payload ):
+   """
+   Push a credentials payload to the VMs in a slice.
+   """
+   hostnames = observer_storage.get_slice_hostnames( slice_name )
+   return do_push( hostnames, CONFIG.SYNDICATE_SLIVER_PORT, payload )
+
+
+
+#-------------------------------
+def ft_do_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, UG_port, principal_pkey_path, hostname, automount_daemon_port ):
+    """
+    Push credentials to a single host.
+    """
+    
+    c_syndicate.crypto_init()
+    
+    observer_key = syndicate_storage_api.read_private_key( CONFIG.SYNDICATE_PRIVATE_KEY )
+    user_key = syndicate_storage_api.read_private_key( principal_pkey_path )
+    
+    observer_key_pem = observer_key.exportKey()
+    user_pkey_pem = user_key.exportKey()
+    
+    if observer_key_pem is None:
+       raise Exception("Failed to read observer private key from %s" % observer_key_pem )
+    
+    if user_pkey_pem is None:
+       raise Exception("Failed to read user private key from %s" % principal_pkey_path )
+    
+    # convert to binary
+    slice_secret = binascii.unhexlify( slice_secret )
+    
+    cred = observer_cred.create_slice_credential_blob( observer_key_pem, slice_name, slice_secret, syndicate_url, volume_name, volume_owner, UG_port, user_pkey_pem )
+    
+    if cred is None:
+       raise Exception("Failed to generate slice credential")
+    
+    rc = do_push( [hostname], automount_daemon_port, cred )
+    
+    c_syndicate.crypto_shutdown()
+    
+    return rc
+ 
+
+# run functional tests
+if __name__ == "__main__":
+    argv = sys.argv[:]
+    
+    if len(argv) < 2:
+      print "Usage: %s testname [args]" % argv[0]
+    
+    TESTING = True 
+    
+    # call a method starting with ft_, and then pass the rest of argv as its arguments
+    testname = argv[1]
+    ft_testname = "ft_%s" % testname
+    
+    test_call = "%s(%s)" % (ft_testname, ",".join(argv[2:]))
+   
+    print "calling %s" % test_call
+   
+    rc = eval( test_call )
+   
+    print "result = %s" % rc
+    
+    

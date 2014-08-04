@@ -207,6 +207,7 @@ def run_uwsgi( hostname, portnum ):
    """
    log.info("Starting uWSGI server on %s:%s" % (hostname, portnum))
    
+   # TODO
    #uwsgi_rc = subprocess.call("uwsgi --http-processes 1 --htt
 
 #-------------------------
@@ -225,9 +226,9 @@ def build_config( argv ):
    if config.get("stdin", None) is not None and config["stdin"]:
       
       arg_string = sys.stdin.read()
-      argv = shlex.split( arg_string )
+      stdin_argv = shlex.split( arg_string )
       
-      config = modconf.build_config( argv, gateway_desc, gateway_name, CONFIG_OPTIONS, conf_validator=validate_args )
+      config = modconf.build_config( stdin_argv, gateway_desc, gateway_name, CONFIG_OPTIONS, conf_validator=validate_args )
       if config is None:
          log.error("Failed to read config from stdin")
          return None
@@ -239,16 +240,8 @@ def build_config( argv ):
    return config
 
 
-
 #-------------------------
-def oneoff_init( argv ):
-   # one-off initializaiton 
-   
-   # load config
-   config = build_config( argv )
-   if config is None:
-      log.error("Failed to load config")
-      return (-errno.ENOENT, None, None)
+def init_from_config( config ):
    
    # load syndicate
    syndicate = setup_syndicate( config )
@@ -265,8 +258,27 @@ def oneoff_init( argv ):
       log.error("Failed to initialize (rc = %s)" % rc)
       return (rc, None, None)
 
-   return (0, config, syndicate)
+   return (rc, syndicate)
+
+
+#-------------------------
+def oneoff_init( argv ):
+   # one-off initializaiton 
    
+   # load config
+   config = build_config( argv )
+   if config is None:
+      log.error("Failed to load config")
+      return (-errno.ENOENT, None, None)
+   
+   rc, syndicate = init_from_config( config )
+   
+   if rc < 0:
+      log.error("Failed to initilaize from config, rc = %s" % rc)
+      return (rc, None, None)
+   
+   return rc, config, syndicate 
+
 
 #-------------------------    
 # for testing

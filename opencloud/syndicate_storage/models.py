@@ -114,14 +114,15 @@ class ObserverSecretValue( models.TextField ):
           return secret_str
        
        # otherwise, decrypt it
-       from syndicate_observer import syndicatelib
+       import syndicate.observer.core as syndicatelib
+       import syndicate.observer.storage.common as observer_storage_common
        
        # get observer private key
        config = syndicatelib.get_config()
        
        try:
           observer_pkey_path = config.SYNDICATE_PRIVATE_KEY
-          observer_pkey_pem = syndicatelib.get_private_key_pem( observer_pkey_path )
+          observer_pkey_pem = syndicatelib.get_observer_private_key_pem( observer_pkey_path )
        except:
           raise syndicatelib.SyndicateObserverError( "Internal Syndicate Observer error: failed to load Observer private key" )
        
@@ -131,7 +132,7 @@ class ObserverSecretValue( models.TextField ):
        # decrypt
        if secret_str is not None and len(secret_str) > 0:
           
-          slice_secret = syndicatelib.decrypt_slice_secret( observer_pkey_pem, secret_str )
+          slice_secret = observer_storage_common.decrypt_slice_secret( observer_pkey_pem, secret_str )
           
           if slice_secret is not None:
              return slice_secret 
@@ -147,14 +148,15 @@ class ObserverSecretValue( models.TextField ):
        Encrypt the value with the Observer key
        """
        
-       from syndicate_observer import syndicatelib 
+       import syndicate.observer.core as syndicatelib
+       import syndicate.observer.storage.common as observer_storage_common
        
        # get observer private key
        config = syndicatelib.get_config()
        
        try:
           observer_pkey_path = config.SYNDICATE_PRIVATE_KEY
-          observer_pkey_pem = syndicatelib.get_private_key_pem( observer_pkey_path )
+          observer_pkey_pem = syndicatelib.get_observer_private_key_pem( observer_pkey_path )
        except:
           raise syndicatelib.SyndicateObserverError( "Internal Syndicate Observer error: failed to load Observer private key" )
        
@@ -163,7 +165,7 @@ class ObserverSecretValue( models.TextField ):
        if slice_secret is not None:
           
           # encrypt it 
-          sealed_slice_secret = syndicatelib.encrypt_slice_secret( observer_pkey_pem, slice_secret )
+          sealed_slice_secret = observer_storage_common.encrypt_slice_secret( observer_pkey_pem, slice_secret )
           
           return ObserverSecretValue.serialize( sealed_slice_secret )
        
@@ -236,14 +238,14 @@ class VolumeSlice(PlCoreBase):
        Make sure a SliceSecret exists for this slice
        """
        
-       from syndicate_observer import syndicatelib
+       import syndicate.observer.core as syndicatelib
        
        # get observer private key
        config = syndicatelib.get_config()
        
        try:
           observer_pkey_path = config.SYNDICATE_PRIVATE_KEY
-          observer_pkey_pem = syndicatelib.get_private_key_pem( observer_pkey_path )
+          observer_pkey_pem = syndicatelib.get_observer_private_key_pem( observer_pkey_path )
        except:
           raise syndicatelib.SyndicateObserverError( "Internal Syndicate Observer error: failed to load Observer private key" )
        
