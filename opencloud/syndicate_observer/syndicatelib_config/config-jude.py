@@ -10,17 +10,19 @@ SYNDICATE_OPENCLOUD_PASSWORD="nya"
 
 SYNDICATE_PYTHONPATH="/home/jude/Desktop/research/git/syndicate/build/out/python"
 
-SYNDICATE_PRIVATE_KEY="/home/jude/Desktop/research/git/syndicate/opencloud/syndicate_observer/syndicatelib_config/pollserver.pem"
-SYNDICATE_OPENCLOUD_SECRET="/home/jude/Desktop/research/git/syndicate/opencloud/syndicate_observer/syndicatelib_config/observer_secret.txt"
+SYNDICATE_OBSERVER_PRIVATE_KEY="/home/jude/Desktop/research/git/syndicate/opencloud/syndicate_observer/syndicatelib_config/pollserver.pem"
+SYNDICATE_OBSERVER_SECRET="/home/jude/Desktop/research/git/syndicate/opencloud/syndicate_observer/syndicatelib_config/observer_secret.txt"
 
-SYNDICATE_HTTP_PORT=65321
+SYNDICATE_OBSERVER_HTTP_PORT=65321
 
 SYNDICATE_RG_CLOSURE="/home/jude/Desktop/research/git/syndicate/build/out/python/syndicate/rg/drivers/disk"
 SYNDICATE_RG_DEFAULT_PORT=38800
 
-UG_QUOTA=10
-RG_QUOTA=10
+SYNDICATE_UG_QUOTA=10
+SYNDICATE_RG_QUOTA=10
 
-STORAGE_BACKEND="disk"
+SYNDICATE_OBSERVER_STORAGE_BACKEND="disk"
+
+SYNDICATE_GATEWAY_NAME_PREFIX="OpenCloud"
 
 DEBUG=True

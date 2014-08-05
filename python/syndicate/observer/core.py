@@ -62,16 +62,16 @@ class SyndicateObserverError( Exception ):
 #-------------------------------
 # determine which storage backend to use 
 try:
-   foo = CONFIG.STORAGE_BACKEND
+   foo = CONFIG.SYNDICATE_OBSERVER_STORAGE_BACKEND
 except:
-   raise SyndicateObserverError( "Missing STORAGE_BACKEND from config" )
+   raise SyndicateObserverError( "Missing SYNDICATE_OBSERVER_STORAGE_BACKEND from config" )
 
-if CONFIG.STORAGE_BACKEND == "opencloud":
+if CONFIG.SYNDICATE_OBSERVER_STORAGE_BACKEND == "opencloud":
    import syndicate.observer.storage.opencloud as observer_storage
-elif CONFIG.STORAGE_BACKEND == "disk":
+elif CONFIG.SYNDICATE_OBSERVER_STORAGE_BACKEND == "disk":
    import syndicate.observer.storage.disk as observer_storage 
 else:
-   raise SyndicateObserverError( "Unknown storage backend '%s'" % CONFIG.STORAGE_BACKEND )
+   raise SyndicateObserverError( "Unknown storage backend '%s'" % CONFIG.SYNDICATE_OBSERVER_STORAGE_BACKEND )
    
    
 #-------------------------------
@@ -405,36 +405,27 @@ def ensure_volume_access_right_absent( principal_id, volume_name ):
     
 
 #-------------------------------
-def setup_volume_access( principal_id, volume_name, caps, RG_port, slice_secret, RG_closure=None ):
+def setup_global_RG( principal_id, volume_name, gateway_name_prefix, slice_secret, RG_port, RG_closure ):
     """
-    Set up the Volume to allow the slice to provision UGs in it, and to fire up RGs.
-       * create the Volume Access Right for the user, so (s)he can create Gateways.
-       * provision a single Replica Gateway, serving on localhost.
+    Create an RG that will run on each host.
     """
+    
     client = connect_syndicate()
-    
-    try:
-       rc = ensure_volume_access_right_exists( principal_id, volume_name, caps )
-       assert rc is True, "Failed to create access right for %s in %s" % (principal_id, volume_name)
-       
-    except Exception, e:
-       logger.exception(e)
-       return False
-    
-    RG_name = syndicate_provisioning.make_gateway_name( "OpenCloud", "RG", volume_name, "localhost" )
+   
+    RG_name = syndicate_provisioning.make_gateway_name( gateway_name_prefix, "RG", volume_name, "localhost" )
     RG_key_password = syndicate_provisioning.make_gateway_private_key_password( RG_name, slice_secret )
-    
+
     try:
        rc = syndicate_provisioning.ensure_RG_exists( client, principal_id, volume_name, RG_name, "localhost", RG_port, RG_key_password, closure=RG_closure )
     except Exception, e:
        logger.exception(e)
-       return False
+       return False 
     
     return True
-       
+    
 
 #-------------------------------
-def teardown_volume_access( principal_id, volume_name ):
+def revoke_volume_access( principal_id, volume_name ):
     """
     Revoke access to a Volume for a User.
       * remove the user's Volume Access Right
@@ -515,7 +506,11 @@ def get_or_create_slice_secret( observer_pkey_pem, slice_name, slice_fk=None ):
 
 
 #-------------------------------
-def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, UG_port, existing_user=None ):
+def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, 
+                                instantiate_UG=False, run_UG=False, UG_port=0, UG_closure=None,
+                                instantiate_RG=False, run_RG=False, RG_port=0, RG_closure=None,
+                                instantiate_AG=False, run_AG=False, AG_port=0, AG_closure=None,
+                                existing_user=None ):
     """
     Generate and return the set of credentials to be sent off to the slice VMs.
     exisitng_user is a Syndicate user, as a dictionary.
@@ -546,7 +541,12 @@ def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, vo
     # generate a credetials blob 
     logger.info("Generating credentials for %s's slice" % (user_email))
     try:
-       creds = observer_cred.create_slice_credential_blob( observer_pkey_pem, slice_name, slice_secret, syndicate_url, volume_name, user_email, UG_port, user_pkey_pem )
+       creds = observer_cred.create_slice_credential_blob( observer_pkey_pem, slice_name, slice_secret, syndicate_url, volume_name, user_email, UG_port, user_pkey_pem,
+                                                           instantiate_UG=instantiate_UG, run_UG=run_UG, UG_port=UG_port, UG_closure=UG_closure,
+                                                           instantiate_RG=instantiate_RG, run_RG=run_RG, RG_port=RG_port, RG_closure=RG_closure,
+                                                           instantiate_AG=instantiate_AG, run_AG=run_AG, AG_port=AG_port, AG_closure=AG_closure,
+                                                           existing_user=existing_user )
+       
        assert creds is not None, "Failed to create credentials for %s" % user_email 
     
     except:
@@ -558,14 +558,23 @@ def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, vo
 
 
 #-------------------------------
-def save_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, UG_port, existing_user=None ): 
+def save_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, 
+                            instantiate_UG=False, run_UG=False, UG_port=0, UG_closure=None,
+                            instantiate_RG=False, run_RG=False, RG_port=0, RG_closure=None, 
+                            instantiate_AG=False, run_AG=False, AG_port=0, AG_closure=None,
+                            existing_user=None ): 
     """
     Create and save a credentials blob to a VolumeSlice.
+    It will contain directives to be sent to the automount daemons to provision and instantiate gateways.
     Return the creds on success.
     Return None on failure
     """
     
-    creds = generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, UG_port, existing_user=existing_user )
+    creds = generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret,
+                                        instantiate_UG=instantiate_UG, run_UG=run_UG, UG_port=UG_port, UG_closure=UG_closure,
+                                        instantiate_RG=instantiate_RG, run_RG=run_RG, RG_port=RG_port, RG_closure=RG_closure,
+                                        instantiate_AG=instantiate_AG, run_AG=run_AG, AG_port=AG_port, AG_closure=AG_closure,
+                                        existing_user=existing_user )
     ret = None
     
     if creds is not None:
@@ -657,17 +666,17 @@ def ft_syndicate_access():
     print "\nensure_volume_exists(%s)\n" % fake_volume.name
     ensure_volume_exists( fake_user.email, fake_volume )
 
-    print "\nsetup_volume_access(%s, %s)\n" % (fake_user.email, fake_volume.name)
-    setup_volume_access( fake_user.email, fake_volume.name, 31, 38800, "abcdef" )
+    print "\nensure_volume_access_right_exists(%s, %s)\n" % (fake_user.email, fake_volume.name)
+    ensure_volume_access_right_exists( fake_user.email, fake_volume.name, 31 )
     
-    print "\nsetup_volume_access(%s, %s)\n" % (fake_user.email, fake_volume.name)
-    setup_volume_access( fake_user.email, fake_volume.name, 31, 38800, "abcdef" )
+    print "\nensure_volume_access_right_exists(%s, %s)\n" % (fake_user.email, fake_volume.name)
+    ensure_volume_access_right_exists( fake_user.email, fake_volume.name, 31 )
     
-    print "\nteardown_volume_access(%s, %s)\n" % (fake_user.email, fake_volume.name )
-    teardown_volume_access( fake_user.email, fake_volume.name )
+    print "\nrevoke_volume_access(%s, %s)\n" % (fake_user.email, fake_volume.name )
+    revoke_volume_access( fake_user.email, fake_volume.name )
     
-    print "\nteardown_volume_access(%s, %s)\n" % (fake_user.email, fake_volume.name )
-    teardown_volume_access( fake_user.email, fake_volume.name )
+    print "\nrevoke_volume_access(%s, %s)\n" % (fake_user.email, fake_volume.name )
+    revoke_volume_access( fake_user.email, fake_volume.name )
     
     print "\nensure_volume_absent(%s)\n" % fake_volume.name
     ensure_volume_absent( fake_volume.name )

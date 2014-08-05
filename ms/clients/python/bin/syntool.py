@@ -214,7 +214,7 @@ def api_call_verifier( config, pubkey, method_name, data, syndicate_data, rpc_re
 
 
 # -------------------
-def make_rpc_client( config, username, password, user_private_key=None, syndicate_public_key=None, no_verify_result=False ):
+def make_rpc_client( config, username=None, password=None, user_private_key=None, syndicate_public_key=None, no_verify_result=False ):
    ms_url = conf.make_ms_url( config['syndicate_host'], config['syndicate_port'], config['no_tls'] )
    
    if not ms_url.lower().startswith("https://"):
@@ -224,7 +224,11 @@ def make_rpc_client( config, username, password, user_private_key=None, syndicat
    verifier = None
    
    if user_private_key is not None:
+      log.info("Using public-key authentication")
       signer = lambda method_name, data: api_call_signer( user_private_key, method_name, data )
+      
+      # use public-key authentication 
+      ms_url += "/pubkey"
 
    if syndicate_public_key is not None and not no_verify_result:
       verifier = lambda method_name, args, kw, data, syndicate_data, rpc_result: api_call_verifier( config, syndicate_public_key, method_name, data, syndicate_data, rpc_result )
@@ -680,7 +684,8 @@ def client_call( CONFIG, method_name, *args, **kw ):
             
    
    # create the RPC client
-   client = make_rpc_client( CONFIG, username=CONFIG['user_id'], password=CONFIG.get('password',None), user_private_key=CONFIG.get('user_pkey',None), syndicate_public_key=syndicate_public_key, no_verify_result=no_verify_result )
+   client = make_rpc_client( CONFIG, username=CONFIG['user_id'], password=CONFIG.get('password',None), user_private_key=CONFIG.get('user_pkey',None),
+                             syndicate_public_key=syndicate_public_key, no_verify_result=no_verify_result )
    
    # call the method
    ret = call_method( CONFIG, client, method_name, args, kw ) 

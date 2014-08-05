@@ -106,16 +106,19 @@ def push_credentials_to_slice( slice_name, payload ):
    return do_push( hostnames, CONFIG.SYNDICATE_SLIVER_PORT, payload )
 
 
-
-#-------------------------------
-def ft_do_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, UG_port, principal_pkey_path, hostname, automount_daemon_port ):
+def ft_do_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, principal_pkey_path, hostname, automount_daemon_port,
+                instantiate_UG=None, run_UG=None, UG_port=0, UG_closure=None,
+                instantiate_RG=None, run_RG=None, RG_port=0, RG_closure=None,
+                instantiate_AG=None, run_AG=None, AG_port=0, AG_closure=None,
+                gateway_name_prefix="" ):
+   
     """
     Push credentials to a single host.
     """
     
     c_syndicate.crypto_init()
     
-    observer_key = syndicate_storage_api.read_private_key( CONFIG.SYNDICATE_PRIVATE_KEY )
+    observer_key = syndicate_storage_api.read_private_key( CONFIG.SYNDICATE_OBSERVER_PRIVATE_KEY )
     user_key = syndicate_storage_api.read_private_key( principal_pkey_path )
     
     observer_key_pem = observer_key.exportKey()
@@ -130,7 +133,11 @@ def ft_do_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secr
     # convert to binary
     slice_secret = binascii.unhexlify( slice_secret )
     
-    cred = observer_cred.create_slice_credential_blob( observer_key_pem, slice_name, slice_secret, syndicate_url, volume_name, volume_owner, UG_port, user_pkey_pem )
+    cred = observer_cred.create_slice_credential_blob( observer_key_pem, slice_name, slice_secret, syndicate_url, volume_name, volume_owner, user_pkey_pem,
+                                                       instantiate_UG=instantiate_UG, run_UG=run_UG, UG_port=UG_port, UG_closure=UG_closure,
+                                                       instantiate_RG=instantiate_RG, run_RG=run_RG, RG_port=RG_port, RG_closure=RG_closure,
+                                                       instantiate_AG=instantiate_AG, run_AG=run_AG, AG_port=AG_port, AG_closure=AG_closure,
+                                                       gateway_name_prefix=gateway_name_prefix )
     
     if cred is None:
        raise Exception("Failed to generate slice credential")
@@ -139,8 +146,55 @@ def ft_do_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secr
     
     c_syndicate.crypto_shutdown()
     
-    return rc
+                
+
+#-------------------------------
+def ft_do_nothing_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, principal_pkey_path, hostname, automount_daemon_port ):
+    """
+    Push credentials to a single host.
+    """
+    
+    return ft_do_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, principal_pkey_path, hostname, automount_daemon_port, gateway_name_prefix="OpenCloud" )
+
+
+#-------------------------------
+def ft_do_create_UG_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, principal_pkey_path, hostname, automount_daemon_port, UG_port ):
+    """
+    Push credentials to a single host.
+    """
+    
+    return ft_do_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, principal_pkey_path, hostname, automount_daemon_port, gateway_name_prefix="OpenCloud",
+                       instantiate_UG=True, run_UG=True, UG_port=UG_port, UG_closure=None )
+
+
+#-------------------------------
+def ft_do_start_UG_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, principal_pkey_path, hostname, automount_daemon_port ):
+    """
+    Push credentials to a single host.
+    """
+    
+    return ft_do_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, principal_pkey_path, hostname, automount_daemon_port, gateway_name_prefix="OpenCloud",
+                       instantiate_UG=None, run_UG=True, UG_port=0, UG_closure=None )
+
+
+#-------------------------------
+def ft_do_stop_UG_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, principal_pkey_path, hostname, automount_daemon_port ):
+    """
+    Push credentials to a single host.
+    """
+    
+    return ft_do_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, principal_pkey_path, hostname, automount_daemon_port, gateway_name_prefix="OpenCloud",
+                       instantiate_UG=None, run_UG=False, UG_port=0, UG_closure=None )
  
+#-------------------------------
+def ft_do_delete_UG_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, principal_pkey_path, hostname, automount_daemon_port ):
+    """
+    Push credentials to a single host.
+    """
+    
+    return ft_do_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, principal_pkey_path, hostname, automount_daemon_port, gateway_name_prefix="OpenCloud",
+                       instantiate_UG=False, run_UG=False, UG_port=0, UG_closure=None )
+
 
 # run functional tests
 if __name__ == "__main__":

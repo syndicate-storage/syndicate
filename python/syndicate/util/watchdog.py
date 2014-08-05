@@ -43,6 +43,33 @@ def attr_proc_title( binary, attrs ):
 
 
 #-------------------------------
+def parse_proc_attrs( proc_cmdline ):
+   """
+   Given a process command-line, find out its attrs.
+   """
+   attrs = {}
+   
+   # format: <binary> <attr:k=v>...
+   parts = proc_cmdline.split(" ")
+   
+   attr_list = parts[1:]
+   
+   for attr_kv in attr_list:
+      
+      if is_attr_str( attr_kv ):
+         
+         kv = attr_kv[len("atttr:")]
+         kv_parts = kv.split("=")
+         
+         key = kv_parts[0]
+         value = "=".join(kv_parts[1:])
+         
+         attrs[key] = value
+         
+   return attrs
+         
+
+#-------------------------------
 def find_by_attrs( watchdog_name, attrs ):
    """
    Find a running watchdog by a given attribute set
@@ -76,9 +103,9 @@ def find_by_attrs( watchdog_name, attrs ):
                # parse this: attr:<name>=<value>
                kv = attr_kv[len("attr:"):]
                
-               parts = kv.split("=")
-               key = parts[0]
-               value = "=".join(parts[1:])
+               kv_parts = kv.split("=")
+               key = kv_parts[0]
+               value = "=".join(kv_parts[1:])
                
                if attrs.has_key(key) and attrs[key] == value:
                   matching_attrs.append( key )

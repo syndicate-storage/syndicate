@@ -65,12 +65,12 @@ def sync_volume_record( volume ):
 
    # get the observer secret 
    try:
-      max_UGs = CONFIG.UG_QUOTA 
-      max_RGs = CONFIG.RG_QUOTA
-      observer_secret = config.SYNDICATE_OPENCLOUD_SECRET
+      max_UGs = CONFIG.SYNDICATE_UG_QUOTA 
+      max_RGs = CONFIG.SYNDICATE_RG_QUOTA
+      observer_secret = config.SYNDICATE_OBSERVER_SECRET
    except Exception, e:
       traceback.print_exc()
-      logger.error("config is missing SYNDICATE_OPENCLOUD_SECRET, UG_QUOTA, RG_QUOTA")
+      logger.error("config is missing SYNDICATE_OBSERVER_SECRET, SYNDICATE_UG_QUOTA, SYNDICATE_RG_QUOTA")
       raise e
    
    # volume owner must exist as a Syndicate user...
@@ -126,11 +126,10 @@ def sync_volumeaccessright_record( vac ):
    
    # validate config
    try:
-      RG_port = config.SYNDICATE_RG_DEFAULT_PORT
-      observer_secret = config.SYNDICATE_OPENCLOUD_SECRET
+      observer_secret = config.SYNDICATE_OBSERVER_SECRET
    except Exception, e:
       traceback.print_exc()
-      logger.error("syndicatelib config is missing SYNDICATE_RG_DEFAULT_PORT, SYNDICATE_OPENCLOUD_SECRET")
+      logger.error("syndicatelib config is missing SYNDICATE_RG_DEFAULT_PORT, SYNDICATE_OBSERVER_SECRET")
       raise e
       
    # ensure the user exists and has credentials
@@ -142,12 +141,16 @@ def sync_volumeaccessright_record( vac ):
       logger.error("Failed to ensure user '%s' exists" % principal_id )
       raise e
 
-   # make the access right for the user to create their own UGs, and provision an RG for this user that will listen on localhost.
-   # the user will have to supply their own RG closure.
+   # grant the slice-owning user the ability to provision UGs in this Volume
    try:
-      rc = observer_core.setup_volume_access( principal_id, volume_name, syndicate_caps, RG_port, observer_secret )
-      assert rc is True, "Failed to setup volume access for %s in %s" % (principal_id, volume_name)
-
+      rc = observer_core.ensure_volume_access_right_exists( slice_principal_id, volume_name, syndicate_caps )
+      assert rc is True, "Failed to set up Volume access right for slice %s in %s" % (slice_principal_id, volume_name)
+      
+   except Exception, e:
+      traceback.print_exc()
+      logger.error("Failed to set up Volume access right for slice %s in %s" % (slice_principal_id, volume_name))
+      raise e
+   
    except Exception, e:
       traceback.print_exc()
       logger.error("Faoed to ensure user %s can access Volume %s with rights %s" % (principal_id, volume_name, syndicate_caps))
@@ -172,17 +175,18 @@ def sync_volumeslice_record( vs ):
    RG_port = vs.RG_portnum
    UG_port = vs.UG_portnum
    slice_secret = None
+   gateway_name_prefix = None
    
    config = get_config()
    try:
-      observer_secret = config.SYNDICATE_OPENCLOUD_SECRET
+      observer_secret = config.SYNDICATE_OBSERVER_SECRET
       RG_closure = config.SYNDICATE_RG_CLOSURE
-      observer_pkey_path = config.SYNDICATE_PRIVATE_KEY
+      observer_pkey_path = config.SYNDICATE_OBSERVER_PRIVATE_KEY
       syndicate_url = config.SYNDICATE_SMI_URL
-      
+      gateway_name_prefix = config.SYNDICATE_GATEWAY_NAME_PREFIX
    except Exception, e:
       traceback.print_exc()
-      logger.error("syndicatelib config is missing one or more of the following: SYNDICATE_OPENCLOUD_SECRET, SYNDICATE_RG_CLOSURE, SYNDICATE_PRIVATE_KEY, SYNDICATE_SMI_URL")
+      logger.error("syndicatelib config is missing one or more of the following: SYNDICATE_OBSERVER_SECRET, SYNDICATE_RG_CLOSURE, SYNDICATE_OBSERVER_PRIVATE_KEY, SYNDICATE_SMI_URL")
       raise e
       
    # get secrets...
@@ -210,19 +214,31 @@ def sync_volumeslice_record( vs ):
       logger.error('Failed to ensure slice user %s exists' % slice_principal_id)
       raise e
       
-   # grant the slice-owning user the ability to provision UGs in this Volume, and also provision for the user the (single) RG the slice will instantiate in each VM.
+   # grant the slice-owning user the ability to provision UGs in this Volume
    try:
-      rc = observer_core.setup_volume_access( slice_principal_id, volume_name, syndicate_caps, RG_port, observer_secret, RG_closure=RG_closure )
-      assert rc is True, "Failed to set up Volume access for slice %s in %s" % (slice_principal_id, volume_name)
+      rc = observer_core.ensure_volume_access_right_exists( slice_principal_id, volume_name, syndicate_caps )
+      assert rc is True, "Failed to set up Volume access right for slice %s in %s" % (slice_principal_id, volume_name)
       
    except Exception, e:
       traceback.print_exc()
-      logger.error("Failed to set up Volume access for slice %s in %s" % (slice_principal_id, volume_name))
+      logger.error("Failed to set up Volume access right for slice %s in %s" % (slice_principal_id, volume_name))
       raise e
       
+   # provision for the user the (single) RG the slice will instantiate in each VM.
+   try:
+      rc = observer_core.setup_global_RG( slice_principal_id, volume_name, gateway_name_prefix, slice_secret, RG_port, RG_closure )
+   except Exception, e:
+      logger.exception(e)
+      return False
+
    # generate and save slice credentials....
    try:
-      slice_cred = observer_core.save_slice_credentials( observer_pkey_pem, syndicate_url, slice_principal_id, volume_name, slice_name, observer_secret, slice_secret, UG_port, existing_user=user )
+      slice_cred = observer_core.save_slice_credentials( observer_pkey_pem, syndicate_url, slice_principal_id, volume_name, slice_name, observer_secret, slice_secret,
+                                                         instantiate_UG=True,  run_UG=True,  UG_port=UG_port, UG_closure=None,
+                                                         instantiate_RG=None,  run_RG=True,  RG_port=RG_port, RG_closure=None,
+                                                         instantiate_AG=None,  run_AG=None,  AG_port=0,       AG_closure=None,
+                                                         existing_user=user )
+      
       assert slice_cred is not None, "Failed to generate slice credential for %s in %s" % (slice_principal_id, volume_name )
             
    except Exception, e:

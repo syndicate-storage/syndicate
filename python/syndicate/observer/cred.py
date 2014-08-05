@@ -27,6 +27,8 @@ import base64
 import BaseHTTPServer
 import urllib
 import binascii
+import errno
+import types
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
@@ -51,7 +53,24 @@ OPENCLOUD_JSON                          = "observer_message"
 OPENCLOUD_VOLUME_NAME                   = "volume_name"
 OPENCLOUD_VOLUME_OWNER_ID               = "volume_owner"
 OPENCLOUD_SLICE_NAME                    = "slice_name"
+
+OPENCLOUD_SLICE_INSTANTIATE_UG          = "slice_instantiate_UG"
+OPENCLOUD_SLICE_RUN_UG                  = "slice_run_UG"
 OPENCLOUD_SLICE_UG_PORT                 = "slice_UG_port"
+OPENCLOUD_SLICE_UG_CLOSURE              = "slice_UG_closure"
+
+OPENCLOUD_SLICE_INSTANTIATE_RG          = "slice_instantiate_RG"
+OPENCLOUD_SLICE_RUN_RG                  = "slice_run_RG"
+OPENCLOUD_SLICE_RG_PORT                 = "slice_RG_port"
+OPENCLOUD_SLICE_RG_CLOSURE              = "slice_RG_closure"
+
+OPENCLOUD_SLICE_INSTANTIATE_AG          = "slice_instantiate_AG"
+OPENCLOUD_SLICE_RUN_AG                  = "slice_run_AG"
+OPENCLOUD_SLICE_AG_PORT                 = "slice_AG_port"
+OPENCLOUD_SLICE_AG_CLOSURE              = "slice_AG_closure"
+
+OPENCLOUD_SLICE_GATEWAY_NAME_PREFIX     = "gateway_name_prefix"
+
 OPENCLOUD_PRINCIPAL_PKEY_PEM            = "principal_pkey_pem"
 OPENCLOUD_SYNDICATE_URL                 = "syndicate_url"
 
@@ -120,9 +139,14 @@ def create_volume_list_blob( private_key_pem, slice_secret, volume_list ):
  
 
 #-------------------------------
-def create_slice_credential_blob( private_key_pem, slice_name, slice_secret, syndicate_url, volume_name, volume_owner, slice_UG_port, principal_pkey_pem ):
+def create_slice_credential_blob( private_key_pem, slice_name, slice_secret, syndicate_url, volume_name, volume_owner, principal_pkey_pem,
+                                  instantiate_UG=None, run_UG=None, UG_port=0, UG_closure=None,
+                                  instantiate_RG=None, run_RG=None, RG_port=0, RG_closure=None,
+                                  instantiate_AG=None, run_AG=None, AG_port=0, AG_closure=None,
+                                  gateway_name_prefix="" ):
     """
     Create a sealed, signed, encoded slice credentials blob.
+    There is one per (volume, slice) pairing
     """
     
     # create and serialize the data 
@@ -131,8 +155,24 @@ def create_slice_credential_blob( private_key_pem, slice_name, slice_secret, syn
        OPENCLOUD_VOLUME_NAME:     volume_name,
        OPENCLOUD_VOLUME_OWNER_ID: volume_owner,
        OPENCLOUD_SLICE_NAME:      slice_name,
-       OPENCLOUD_SLICE_UG_PORT:   slice_UG_port,
        OPENCLOUD_PRINCIPAL_PKEY_PEM: principal_pkey_pem,
+       
+       OPENCLOUD_SLICE_INSTANTIATE_AG:  instantiate_AG,
+       OPENCLOUD_SLICE_RUN_AG:          run_AG,
+       OPENCLOUD_SLICE_AG_PORT:         AG_port,
+       OPENCLOUD_SLICE_AG_CLOSURE:      AG_closure,
+       
+       OPENCLOUD_SLICE_INSTANTIATE_RG:  instantiate_RG,
+       OPENCLOUD_SLICE_RUN_RG:          run_RG,
+       OPENCLOUD_SLICE_RG_PORT:         RG_port,
+       OPENCLOUD_SLICE_RG_CLOSURE:      RG_closure,
+       
+       OPENCLOUD_SLICE_INSTANTIATE_UG:  instantiate_UG,
+       OPENCLOUD_SLICE_RUN_UG:          run_UG,
+       OPENCLOUD_SLICE_UG_PORT:         UG_port,
+       OPENCLOUD_SLICE_UG_CLOSURE:      UG_closure,
+       
+       OPENCLOUD_SLICE_GATEWAY_NAME_PREFIX:     gateway_name_prefix
     }
     
     cred_data_str = json.dumps( cred_data )
@@ -153,11 +193,11 @@ def find_missing_and_invalid_fields( required_fields, json_data ):
     
     missing = []
     invalid = []
-    for req, types in required_fields.items():
+    for req, reqtypes in required_fields.items():
         if req not in json_data.keys():
             missing.append( req )
         
-        if type(json_data[req]) not in types:
+        if type(json_data[req]) not in reqtypes:
             invalid.append( req )
             
     return missing, invalid
@@ -167,7 +207,7 @@ def find_missing_and_invalid_fields( required_fields, json_data ):
 def parse_observer_data( data_text ):
     """
     Parse a string of JSON data from the Syndicate OpenCloud Observer.  It should be a JSON structure 
-    with some particular fields.
+    with some particular fields that identify the state of the gateways in a particular volume.
     Return (0, dict) on success
     Return (nonzero, None) on error.
     """
@@ -176,9 +216,24 @@ def parse_observer_data( data_text ):
     required_fields = {
         OPENCLOUD_VOLUME_NAME: [str, unicode],
         OPENCLOUD_VOLUME_OWNER_ID: [str, unicode],
-        OPENCLOUD_SLICE_UG_PORT: [int],
         OPENCLOUD_PRINCIPAL_PKEY_PEM: [str, unicode],
         OPENCLOUD_SYNDICATE_URL: [str, unicode],
+        OPENCLOUD_SLICE_GATEWAY_NAME_PREFIX: [str, unicode],
+        
+        OPENCLOUD_SLICE_INSTANTIATE_AG:  [bool, types.NoneType],
+        OPENCLOUD_SLICE_RUN_AG:          [bool, types.NoneType],
+        OPENCLOUD_SLICE_AG_PORT:         [int],
+        OPENCLOUD_SLICE_AG_CLOSURE:      [str, unicode, types.NoneType],
+        
+        OPENCLOUD_SLICE_INSTANTIATE_RG:  [bool, types.NoneType],
+        OPENCLOUD_SLICE_RUN_RG:          [bool, types.NoneType],
+        OPENCLOUD_SLICE_RG_PORT:         [int],
+        OPENCLOUD_SLICE_RG_CLOSURE:      [str, unicode, types.NoneType],
+        
+        OPENCLOUD_SLICE_INSTANTIATE_UG:  [bool, types.NoneType],
+        OPENCLOUD_SLICE_RUN_UG:          [bool, types.NoneType],
+        OPENCLOUD_SLICE_UG_PORT:         [int],
+        OPENCLOUD_SLICE_UG_CLOSURE:      [str, unicode, types.NoneType],
     }
     
     # parse the data text
@@ -201,7 +256,7 @@ def parse_observer_data( data_text ):
         return (-errno.EINVAL, None)
     
     # force string 
-    for req_field, types in required_fields.items():
+    for req_field, req_types in required_fields.items():
        if type(data[req_field]) in [str, unicode]:
           logger.debug("convert %s to str" % req_field)
           data[req_field] = str(data[req_field])

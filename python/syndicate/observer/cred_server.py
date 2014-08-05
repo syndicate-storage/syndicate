@@ -257,15 +257,15 @@ def credential_server_spawn( old_exit_status ):
    
    setproctitle.setproctitle( "syndicate-credential-server" )
    
-   private_key = syndicate_storage_api.read_private_key( CONFIG.SYNDICATE_PRIVATE_KEY )
+   private_key = syndicate_storage_api.read_private_key( CONFIG.SYNDICATE_OBSERVER_PRIVATE_KEY )
    if private_key is None:
       # exit code 255 will be ignored...
       logger.error("Cannot load private key.  Exiting...")
       sys.exit(255)
    
-   logger.info("Starting Syndicate Observer credential server on port %s" % CONFIG.SYNDICATE_HTTP_PORT)
+   logger.info("Starting Syndicate Observer credential server on port %s" % CONFIG.SYNDICATE_OBSERVER_HTTP_PORT)
                
-   srv = CredentialServer( private_key.exportKey(), observer_core.get_syndicate_observer_secret( CONFIG.SYNDICATE_OPENCLOUD_SECRET ), ('', CONFIG.SYNDICATE_HTTP_PORT), CredentialServerHandler)
+   srv = CredentialServer( private_key.exportKey(), observer_core.get_syndicate_observer_secret( CONFIG.SYNDICATE_OBSERVER_SECRET ), ('', CONFIG.SYNDICATE_OBSERVER_HTTP_PORT), CredentialServerHandler)
    srv.serve_forever()
 
 

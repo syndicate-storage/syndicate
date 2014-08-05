@@ -49,16 +49,13 @@ import syndicate.util.crypto as crypto
 import syndicate.util.provisioning as provisioning
 
 import syndicate.observer.cred as observer_cred
+import syndicate.observer.startstop as observer_startstop
 
 import syndicate.syndicate as c_syndicate
 
 #-------------------------------
 # system constants 
 SYNDICATE_SLICE_SECRET_NAME             = "SYNDICATE_SLICE_SECRET"
-
-# binary names
-SYNDICATE_UG_WATCHDOG_NAME              = "syndicate-ug"
-SYNDICATE_RG_WATCHDOG_NAME              = "syndicate-rg"
 
 #-------------------------------
 CONFIG_OPTIONS = {
@@ -142,7 +139,7 @@ def cache_slice_secret( config, secret ):
 #-------------------------------
 class EnsureRunningThread( threading.Thread ):
    """
-   Process OpenCloud data and act on it, either 
+   Process observer data and act on it, either 
    synchronously or asynchronously
    """
    
@@ -189,16 +186,12 @@ class EnsureRunningThread( threading.Thread ):
          return -errno.EINVAL
       
       if data is not None:
-         try:
-            volume_data = { data[observer_cred.OPENCLOUD_VOLUME_NAME]: data }
-         except:
-            log.error("Malformed volume data")
          
-         else:
-            rc = ensure_running( volume_data )
-         
-            if rc != 0:
-               log.error("ensure_running rc = %s" % rc)
+         # start all gateways for this volume
+         rc = observer_startstop.start_stop_volume( config, data, slice_secret )
+      
+         if rc != 0:
+            log.error("ensure_running rc = %s" % rc)
       
       cls.processing_lock.release()
       return rc
@@ -263,7 +256,7 @@ class ObserverPushHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
         self.response_success( "OK" )
         self.wfile.flush()
         
-        # data came from OpenCloud
+        # data came from the observer
         # asynchronously process it
         proc_thread = EnsureRunningThread( sealed_data )
         proc_thread.start()
@@ -311,8 +304,6 @@ def read_observer_data_from_json( public_key_path, json_text ):
 def unseal_observer_data( shared_secret, sealed_data ):
     
     # decrypt the data, using the shared secret 
-    log.info("Unsealing credentials...")
-    #rc, data = c_syndicate.password_unseal( sealed_data, shared_secret )
     rc, data = c_syndicate.symmetric_unseal( sealed_data, shared_secret )
     if rc != 0:
         log.error("Failed to decrypt data")
@@ -429,356 +420,6 @@ def connect_syndicate( syndicate_url, principal_id, user_pkey_pem ):
     return client
 
 
-#-------------------------------
-def make_UG_mountpoint_path( mountpoint_dir, volume_name ):
-    """
-    Generate the path to a mountpoint.
-    """
-    vol_dirname = volume_name.replace("/", ".")
-    vol_mountpoint = os.path.join( mountpoint_dir, vol_dirname )
-    return vol_mountpoint
-
-
-#-------------------------------
-def ensure_UG_mountpoint_exists( mountpoint ):
-   """
-   Make a mountpoint (i.e. a directory)
-   """
-   rc = 0
-   try:
-      os.makedirs( mountpoint )
-   except OSError, oe:
-      if oe.errno != errno.EEXIST:
-         return -oe.errno
-      else:
-         return 0
-   except Exception, e:
-      log.exception(e)
-      return -errno.EPERM
-
-
-#-------------------------------
-def make_UG_argv( program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint ):
-   # NOTE: run in foreground; watchdog handles the rest
-   return "%s -d2 -f -m %s -u %s -v %s -g %s -K %s -P '%s' %s" % (program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint )
-
-
-#-------------------------------
-def make_RG_argv( program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem ):
-   # NOTE: run in foreground; watchdog handles the rest
-   return "%s -d2 -f -m %s -u %s -v %s -g %s -K %s -P '%s'" % (program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem)
-
-
-#-------------------------------
-def start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint ):
-   # generate the command, and pipe it over
-   # NOTE: do NOT execute the command directly! it contains sensitive information on argv,
-   # which should NOT become visible to other users via /proc
-   
-   command_str = make_UG_argv( SYNDICATE_UG_WATCHDOG_NAME, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint )
-   
-   # start the watchdog
-   pid = watchdog.run( SYNDICATE_UG_WATCHDOG_NAME, [SYNDICATE_UG_WATCHDOG_NAME, '-v', volume_name, '-m', mountpoint], command_str )
-   
-   if pid < 0:
-      log.error("Failed to make UG watchdog %s, rc = %s" % (SYNDICATE_UG_WATCHDOG_NAME, pid))
-   
-   return pid
-   
-
-#-------------------------------
-def stop_UG( volume_name, mountpoint ):
-   # stop a UG, given its mountpoint.
-   # this method is idempotent
-   mounted_UGs = watchdog.find_by_attrs( SYNDICATE_UG_WATCHDOG_NAME, {"volume": volume_name, "mountpoint": mountpoint} )
-   if len(mounted_UGs) > 0:
-      for proc in mounted_UGs:
-         # tell the watchdog to die, so it shuts down the UG
-         try:
-            os.kill( proc.pid, signal.SIGTERM )
-         except OSError, oe:
-            if oe.errno != errno.ESRCH:
-               # NOT due to the process dying after we checked for it
-               log.exception(oe)
-               return -1
-         
-         except Exception, e:
-            log.exception(e)
-            return -1
-         
-   
-   return 0
-
-
-#-------------------------------
-def start_RG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem ):
-   # generate the command, and pipe it over
-   # NOTE: do NOT execute the command directly! it contains sensitive information on argv,
-   # which should NOT become visible to other users via /proc
-   
-   command_str = make_RG_argv( SYNDICATE_RG_WATCHDOG_NAME, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem )
-   
-   # start the watchdog
-   pid = watchdog.run( SYNDICATE_RG_WATCHDOG_NAME, [SYNDICATE_RG_WATCHDOG_NAME, '-R', '-v', volume_name], command_str )
-   
-   if pid < 0:
-      log.error("Failed to make RG watchdog %s, rc = %s" % (SYNDICATE_RG_WATCHDOG_NAME, pid))
-   
-   return pid
-   
-
-#-------------------------------
-def stop_gateway_watchdog( pid ):
-   # stop a watchdog, given a PID.
-   # return 0 on success, -1 on error
-   
-   # tell the watchdog to die, so it shuts down the UG
-   try:
-      os.kill( pid, signal.SIGTERM )
-   except OSError, oe:
-      if oe.errno != errno.ESRCH:
-         # NOT due to the process dying after we checked for it
-         log.exception(oe)
-         return -1
-   
-   except Exception, e:
-      log.exception(e)
-      return -1
-   
-   return 0
-
-
-#-------------------------------
-def stop_UG( volume_name, mountpoint ):
-   # stop a UG, given its mountpoint and volume name
-   # this method is idempotent
-   mounted_UGs = watchdog.find_by_attrs( SYNDICATE_UG_WATCHDOG_NAME, {"volume": volume_name, "mountpoint": mountpoint} )
-   if len(mounted_UGs) > 0:
-      for proc in mounted_UGs:
-         rc = stop_gateway_watchdog( proc.pid )
-         if rc != 0:
-            return rc
-   
-   return 0
-
-
-#-------------------------------
-def stop_RG( volume_name ):
-   # stop an RG
-   running_RGs = watchdog.find_by_attrs( SYNDICATE_RG_WATCHDOG_NAME, {"volume": volume_name} )
-   if len(running_RGs) > 0:
-      for proc in running_RGs:
-         rc = stop_gateway_watchdog( proc.pid )
-         if rc != 0:
-            return rc
-         
-   return 0
-
-         
-#-------------------------------
-def ensure_UG_running( syndicate_url, principal_id, volume_name, gateway_name, key_password, mountpoint, user_pkey_pem, check_only=False ):
-    """
-    Ensure that a User Gateway is running on a particular mountpoint.
-    Return 0 on success
-    Return negative on error.
-    """
-    
-    # make sure a mountpoint exists
-    rc = ensure_UG_mountpoint_exists( mountpoint )
-    if rc != 0:
-       log.error("Failed to ensure mountpoint %s exists" % mountpoint)
-       return rc
-    
-    # is there a UG running at this mountpoint?
-    mounted_UGs = watchdog.find_by_attrs( SYNDICATE_UG_WATCHDOG_NAME, {"volume": volume_name, "mountpoint": mountpoint} )
-    if len(mounted_UGs) == 1:
-       # we're good!
-       logging.info("UG for %s at %s already running; PID = %s" % (volume_name, mountpoint, mounted_UGs[0].pid))
-       return mounted_UGs[0].pid
-    
-    elif len(mounted_UGs) > 1:
-       # too many!  probably in the middle of starting up 
-       logging.error("Multiple UGs running for %s on %s...?" % (volume_name, mountpoint))
-       return -errno.EAGAN
-    
-    else: 
-       logging.error("No UG running for %s on %s" % (volume_name, mountpoint))
-       if not check_only:
-          pid = start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint )
-          if pid < 0:
-             log.error("Failed to start UG in %s at %s, rc = %s" % (volume_name, mountpoint, pid))
-          
-          return pid
-       
-       else:
-          return 0
-
-
-#-------------------------------
-def ensure_UG_stopped( volume_name, mountpoint ):
-    """
-    Ensure a UG is no longer running.
-    """
-    rc = stop_UG( volume_name, mountpoint )
-    if rc != 0:
-       log.error("Failed to stop UG in %s at %s, rc = %s" % (volume_name, mountpoint, rc))
-    
-    return rc
-
-
-#-------------------------------
-def ensure_RG_running( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, check_only=False ):
-    """
-    Ensure an RG is running.  Return the PID on success.
-    """
-    
-    # is there an RG running for this volume?
-    running_RGs = watchdog.find_by_attrs( SYNDICATE_RG_WATCHDOG_NAME, {"volume": volume_name} )
-    if len(running_RGs) == 1:
-       # we're good!
-       logging.info("RG for %s already running; PID = %s" % (volume_name, running_RGs[0].pid))
-       return running_RGs[0].pid
-    
-    elif len(running_RGs) > 1:
-       # too many! probably in the middle of starting up 
-       logging.error("Multiple RGs running for %s...?" % (volume_name))
-       return -errno.EAGAIN
-    
-    else:
-       logging.error("No RG running for %s" % (volume_name))
-       if not check_only:
-          pid = start_RG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem )
-          if pid < 0:
-             log.error("Failed to start RG in %s, rc = %s" % (volume_name, pid))
-             
-          return pid
-                       
-       else:
-          # not running
-          return -errno.ENOENT
-       
-
-#-------------------------------
-def ensure_RG_stopped( volume_name ):
-    """
-    Ensure that the RG is stopped.
-    """
-    rc = stop_RG( volume_name )
-    if rc != 0:
-       log.error("Failed to stop RG in %s, rc = %s" % (volume_name, rc))
-
-    return rc
-
-
-#-------------------------
-def instantiate_and_run( gateway_type, gateway_name, exist_func, run_func ):
-   """
-   Instantiate and start a gateway, idempotently.
-   """
-   
-   rc = 0
-   
-   try:
-      # ensure the gateway exists
-      rc = exist_func()
-   except Exception, e:
-      rc = None
-      log.exception(e)
-      
-   if rc is None:
-      log.error("Failed to create %s %s on the MS, rc = %s" % (gateway_type, gateway_name, rc))
-      return -errno.EPERM
-   
-   # ensure the gateway is running
-   try:
-      rc = run_func()
-   except Exception, e:
-      rc = -errno.EAGAIN 
-      log.exception(e)
-      
-   if rc < 0:
-      log.error("Failed to ensure that %s %s is running, rc = %s" % (gateway_type, gateway_name, rc) )
-      return rc
-   
-   return rc
-
-#-------------------------
-def ensure_running( volume_info ):
-   """
-   Ensure that the gateways to the volume exist,
-   and that they are up and running.
-   
-   volume_info is a dict of {name: dict of {attr: value}}
-   """
-   
-   config = get_config()
-   
-   slice_secret = get_cached_slice_secret( config )
-   
-   if slice_secret is None:
-      log.error("No slice secret")
-      return -errno.EAGAIN
-   
-   mountpoint_dir = config['mountpoint_dir']
-   UG_hostname = socket.gethostname()
-   
-   # where do we start the RG?
-   RG_hostname = UG_hostname
-   if not config['RG_public']:
-      RG_hostname = "localhost"
-   
-   for volume_name, volume_config in volume_info.items():
-      if volume_config is None:
-         continue
-      
-      try:
-         principal_id = volume_config[ observer_cred.OPENCLOUD_VOLUME_OWNER_ID ]
-         syndicate_url = volume_config[ observer_cred.OPENCLOUD_SYNDICATE_URL ]
-         UG_portnum = volume_config[ observer_cred.OPENCLOUD_SLICE_UG_PORT ]
-         principal_pkey_pem = volume_config[ observer_cred.OPENCLOUD_PRINCIPAL_PKEY_PEM ]
-      except:
-         log.error("Invalid configuration for Volume %s" % volume_name)
-         continue
-      
-      UG_name = provisioning.make_gateway_name( "OpenCloud", "UG", volume_name, UG_hostname )
-      RG_name = provisioning.make_gateway_name( "OpenCloud", "RG", volume_name, RG_hostname )
-      
-      UG_key_password = provisioning.make_gateway_private_key_password( UG_name, slice_secret )
-      RG_key_password = provisioning.make_gateway_private_key_password( RG_name, slice_secret )
-      
-      UG_mountpoint_path = make_UG_mountpoint_path( mountpoint_dir, volume_name )
-      
-      # bring up RG first (if we need to)
-      if not config['UG_only']:
-         # is the localhost RG running?
-         rc = ensure_RG_running( syndicate_url, principal_id, volume_name, RG_name, RG_key_password, principal_pkey_pem )
-         if rc < 0:
-            log.error("Failed to start RG for %s, rc = %s" % (volume_name, rc))
-            continue
-      
-      # then, bring up the UG (if we need to)
-      if not config['RG_only']:
-         # is the UG running?
-         rc = ensure_UG_running( syndicate_url, principal_id, volume_name, UG_name, UG_key_password, UG_mountpoint_path, principal_pkey_pem )
-         
-         if rc < 0:
-            client = connect_syndicate( syndicate_url, principal_id, principal_pkey_pem )
-            
-            # ensure the UG exists before running it--unlike RGs, we have to instantiate a UG for this particular node
-            rc = instantiate_and_run( "UG", UG_name,
-                                      lambda: provisioning.ensure_UG_exists( client, principal_id, volume_name, UG_name, UG_hostname, UG_portnum, UG_key_password ),
-                                      lambda: ensure_UG_running( syndicate_url, principal_id, volume_name, UG_name, UG_key_password, UG_mountpoint_path, principal_pkey_pem ) )
-            
-            if rc < 0:
-               log.error("Failed to instantiate and run UG %s" % UG_name )
-               continue
-         
-         if rc >= 0:
-            log.info("\n\nUG for %s (mounted at %s) running on PID %s\n" % (volume_name, UG_mountpoint_path, rc))
-   
-   return 0
-
-
 #-------------------------
 def validate_config( config ):
    global DEFAULT_CONFIG
@@ -862,26 +503,24 @@ class PollThread( threading.Thread ):
          log.error("Failed to poll volume list")
          return (None, None) 
       
-      all_volume_data = {}
+      all_volume_data = []
+      ignored_volumes = []
       
       for volume in volumes:
          volume_data = poll_opencloud_volume_data( config, slice_name, volume )
          
          if volume_data is None:
             log.error("Failed to poll data for volume %s" % volume)
+            ignored_volumes.append( volume )
             continue
             
          else:
-            try:
-               all_volume_data[ volume_data[observer_cred.OPENCLOUD_VOLUME_NAME] ] = volume_data
-            except:
-               log.error("Malformed volume data")
-               continue 
+            all_volume_data.append( volume_data )
       
-      # act on the data 
-      rc = ensure_running( all_volume_data )
+      # act on the data--start all gateways for all volumes that are active, but stop the ones that aren't
+      rc = observer_startstop.start_stop_all_volumes( config, all_volume_data, slice_secret, ignore=ignored_volumes )
       if rc != 0:
-         log.error("ensure_running rc = %s" % rc)
+         log.error("start_stop_all_volumes rc = %s" % rc)
          return (None, None)
       else:
          return (slice_secret, all_volume_data)
@@ -889,7 +528,7 @@ class PollThread( threading.Thread ):
          
    def run(self):
       """
-      Continuously poll the OpenCloud observer for runtime data.
+      Continuously poll the observer for runtime data.
       """
       self.running = True
       while self.running:
