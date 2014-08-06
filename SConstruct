@@ -374,6 +374,16 @@ env.Alias("RG", [rg_server])
 common.install_targets( env, "RG-install", bin_install_dir, rg_server )
 
 # ----------------------------------------
+# Automount daemon build
+
+automount_out = "build/out/bin/automount"
+automount_daemon = SConscript( "automount/SConscript", variant_dir=automount_out )
+
+env.Alias("syndicated", [automount_daemon])
+
+common.install_targets( env, "syndicated-install", bin_install_dir, automount_daemon )
+
+# ----------------------------------------
 # Python build 
 
 syndicate_python_out = "build/out/python"
