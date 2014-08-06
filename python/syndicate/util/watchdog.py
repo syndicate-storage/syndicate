@@ -123,7 +123,7 @@ def find_by_attrs( watchdog_name, attrs ):
 
 
 #-------------------------------
-def spawn( child_method, stdin_method, old_exit_status ):
+def spawn( child_method, stdin_method, old_exit_status, parent_signals=None ):
    # get stdin 
    stdin_buf = None
    child_stdin = -1
@@ -164,6 +164,10 @@ def spawn( child_method, stdin_method, old_exit_status ):
    
    else:
       # we're the child...
+      # set default signal handlers--don't mess with the parent's
+      if parent_signals is not None:
+         for sig in parent_signals:
+            signal.signal( sig, signal.SIG_DFL )
       
       if parent_w != -1 and child_stdin != -1:
          os.close( parent_w )
@@ -232,6 +236,7 @@ def stop_child( child_pid ):
       
       # did it exit?
       if os.WIFEXITED(exit_status) or os.WIFSIGNALED(exit_status):
+         log.info("Child %s exited with status %s" % (child_pid, exit_status))
          break
       
       # if not, try again
@@ -290,13 +295,13 @@ def run( binary, argv, stdin_buf ):
    
 
 #-------------------------------
-def main( spawn_method, pid_cb=None, stdin_cb=None, exit_cb=None, respawn_exit_statuses=None, respawn_signals=None, flap_threshold=600, flap_reset=3600 ):
+def main( spawn_method, pid_cb=None, stdin_cb=None, exit_cb=None, respawn_exit_statuses=None, respawn_signals=None, parent_signals=None, flap_threshold=600, flap_reset=3600 ):
    
    # fork, become a watchdog, and run the main server
    last_spawn = time.time()
    flap_delay = 1
    
-   child_pid = spawn( spawn_method, stdin_cb, 0 )
+   child_pid = spawn( spawn_method, stdin_cb, 0, parent_signals=parent_signals )
    
    if child_pid < 0:
       # spawn failed 
@@ -339,7 +344,7 @@ def main( spawn_method, pid_cb=None, stdin_cb=None, exit_cb=None, respawn_exit_s
          if flap_threshold > 0:
             flap_delay = flap_wait( last_spawn, flap_delay, flap_threshold, flap_reset )
                
-         child_pid = spawn( spawn_method, stdin_cb, exit_status )
+         child_pid = spawn( spawn_method, stdin_cb, exit_status, parent_signals=parent_signals )
                
          if child_pid < 0:
             # spawn failed 

@@ -62,13 +62,12 @@ SYNDICATE_AG_WATCHDOG_NAME              = "syndicate-ag"
 #-------------------------------
 def make_UG_argv( program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint ):
    # NOTE: run in foreground; watchdog handles the rest
-   return "%s -d2 -f -m %s -u %s -v %s -g %s -K %s -P '%s' %s" % (program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint )
+   return "%s -f -d2 -m %s -u %s -v %s -g %s -K %s -P '%s' %s" % (program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint )
 
 
 #-------------------------------
 def make_RG_argv( program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem ):
-   # NOTE: run in foreground; watchdog handles the rest
-   return "%s -d2 -f -m %s -u %s -v %s -g %s -K %s -P '%s'" % (program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem)
+   return "%s -d2 -m %s -u %s -v %s -g %s -K %s -P '%s'" % (program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem)
 
 
 #-------------------------------

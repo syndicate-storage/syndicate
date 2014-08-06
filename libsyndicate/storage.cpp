@@ -84,6 +84,8 @@ int md_load_secret_as_string( struct mlock_buf* buf, char const* path ) {
 int md_init_local_storage( struct md_syndicate_conf* c ) {
    
    char cwd[PATH_MAX + 1];
+   memset(cwd, PATH_MAX + 1, 0);
+   
    int rc = 0;
    
    if( c->storage_root == NULL ) {
@@ -97,9 +99,11 @@ int md_init_local_storage( struct md_syndicate_conf* c ) {
    #endif
       
       sprintf(cwd, "/tmp/syndicate-%d", my_pid );
+      
+      c->storage_root = strdup(cwd);
    }
    else {
-      if( strlen(c->storage_root) >= PATH_MAX - 20 ) {
+      if( strlen(c->storage_root) >= PATH_MAX - 20 ) {          // - 20 for any schema prefixes we'll apply; shouldn't be a problem otherwise
          errorf("Directory '%s' too long\n", c->storage_root );
          return -EINVAL;
       }

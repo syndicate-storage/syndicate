@@ -55,7 +55,7 @@ def daemonize( main_method, logfile_path=None, pidfile_path=None ):
       output_fd = sys.stdout 
       error_fd = sys.stderr
    
-   context = daemon.DaemonContext( umask=0o002, prevent_core=True, signal_map=signal_map, stdout=output_fd, stderr=error_fd )
+   context = daemon.DaemonContext( umask=0o002, prevent_core=True, signal_map=signal_map, stdout=output_fd, stderr=error_fd, working_directory="/", detach_process=True )
    
    # don't close these if they're open...
    files_preserve = []

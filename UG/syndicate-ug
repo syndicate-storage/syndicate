@@ -377,8 +377,10 @@ if __name__ == "__main__":
    UG_MOUNTPOINT = config['mountpoint']
    UG_BINARY = config['UG_binary']
    
+   my_signals = [signal.SIGTERM, signal.SIGFPE, signal.SIGQUIT, signal.SIGABRT, signal.SIGINT]
+   
    # set signal handlers
-   for sig in [signal.SIGTERM, signal.SIGFPE, signal.SIGQUIT, signal.SIGABRT, signal.SIGINT]:
+   for sig in my_signals:
       signal.signal( sig, death_handler )
    
    foreground = config['foreground']
@@ -391,10 +393,13 @@ if __name__ == "__main__":
    
    if not foreground:
       # become a daemon
+      log.info("Starting as a daemon")
+      
       daemonize.daemonize( lambda: watchdog.main( lambda old_exit_status: spawn_ug(config, old_exit_status),
                                                   stdin_cb=lambda: command_str,
                                                   pid_cb=watchdog_PID,
                                                   exit_cb=watchdog_need_respawn,
+                                                  parent_signals=my_signals,
                                                   respawn_exit_statuses=range(1,255) ),
                            logfile_path=logfile_path, pidfile_path=pidfile_path )
    
@@ -403,11 +408,14 @@ if __name__ == "__main__":
       if logfile_path is not None:
          setup_logging( logfile_path )
       
+      log.info("Running in the foreground")
+      
       # run in the foreground
       watchdog.main( lambda old_exit_status: spawn_ug(config, old_exit_status),
                      pid_cb=watchdog_PID,
                      stdin_cb=lambda: command_str,
                      exit_cb=watchdog_need_respawn,
+                     parent_signals=my_signals,
                      respawn_exit_statuses=range(1,255) )
       
       
