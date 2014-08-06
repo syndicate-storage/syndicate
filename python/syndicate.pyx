@@ -347,7 +347,8 @@ cdef class Syndicate:
                        tls_cert_path=None,
                        storage_root=None,
                        debug_level=0,
-                       syndicate_pubkey_path=None):
+                       syndicate_pubkey_path=None,
+                       hostname=None):
 
       '''
          Initialize libsyndicate.
@@ -375,6 +376,7 @@ cdef class Syndicate:
          char *c_tls_cert_path = NULL
          char* c_storage_root = NULL
          char* c_syndicate_pubkey_path = NULL
+         char* c_hostname = NULL
 
       if gateway_name is not None:
          c_gateway_name = gateway_name
@@ -419,8 +421,15 @@ cdef class Syndicate:
       if syndicate_pubkey_path is not None:
          c_syndicate_pubkey_path = syndicate_pubkey_path
 
+      if hostname is not None:
+         c_hostname = hostname
+      
       # initialize configuration first
       md_default_conf( &self.conf_inst, gateway_type )
+
+      # set the hostname, if needed
+      if hostname is not None:
+         md_set_hostname( &self.conf_inst, c_hostname )
 
       # initialize debugging
       md_debug( &self.conf_inst, debug_level )
@@ -463,7 +472,8 @@ cdef class Syndicate:
                            tls_cert_path=None,
                            storage_root=None,
                            debug_level=0,
-                           syndicate_pubkey_path=None):
+                           syndicate_pubkey_path=None,
+                           hostname=None):
       
       '''
          Get the current Syndicate instance,
@@ -489,7 +499,8 @@ cdef class Syndicate:
                                     tls_cert_path=tls_cert_path,
                                     storage_root=storage_root,
                                     debug_level=debug_level,
-                                    syndicate_pubkey_path=syndicate_pubkey_path)
+                                    syndicate_pubkey_path=syndicate_pubkey_path,
+                                    hostname=hostname)
          
       return syndicate_ref
    

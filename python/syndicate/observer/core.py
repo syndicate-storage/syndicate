@@ -327,13 +327,17 @@ def ensure_volume_exists( principal_id, opencloud_volume, user=None ):
         if user is None:
            try:
                user = client.read_user( volume['owner_id'] )
+               
            except Exception, e:
                # transport error, or user doesn't exist (either is unacceptable)
                logger.exception(e)
                raise e
 
-        if user is None or user['email'] != principal_id:
-            raise Exception("Volume '%s' already exists, but is NOT owned by '%s'" % (opencloud_volume.name, principal_id) )
+        if user is None or not user.has_key('email') or user['email'] != principal_id:
+            if not user.has_key('email'):
+               raise Exception("Invalid user returned: %s" % user)
+            else:
+               raise Exception("Volume '%s' already exists, but is NOT owned by '%s'" % (opencloud_volume.name, principal_id) )
 
         # we're good!
         return None
@@ -405,18 +409,18 @@ def ensure_volume_access_right_absent( principal_id, volume_name ):
     
 
 #-------------------------------
-def setup_global_RG( principal_id, volume_name, gateway_name_prefix, slice_secret, RG_port, RG_closure ):
+def setup_global_RG( principal_id, volume_name, gateway_name_prefix, slice_secret, RG_port, RG_closure, global_hostname="localhost" ):
     """
-    Create an RG that will run on each host.
+    Create/read an RG that will run on each host, on a particular global hostname.
     """
     
     client = connect_syndicate()
    
-    RG_name = syndicate_provisioning.make_gateway_name( gateway_name_prefix, "RG", volume_name, "localhost" )
+    RG_name = syndicate_provisioning.make_gateway_name( gateway_name_prefix, "RG", volume_name, global_hostname )
     RG_key_password = syndicate_provisioning.make_gateway_private_key_password( RG_name, slice_secret )
 
     try:
-       rc = syndicate_provisioning.ensure_RG_exists( client, principal_id, volume_name, RG_name, "localhost", RG_port, RG_key_password, closure=RG_closure )
+       rc = syndicate_provisioning.ensure_RG_exists( client, principal_id, volume_name, RG_name, global_hostname, RG_port, RG_key_password, closure=RG_closure )
     except Exception, e:
        logger.exception(e)
        return False 
@@ -508,9 +512,9 @@ def get_or_create_slice_secret( observer_pkey_pem, slice_name, slice_fk=None ):
 #-------------------------------
 def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, 
                                 instantiate_UG=False, run_UG=False, UG_port=0, UG_closure=None,
-                                instantiate_RG=False, run_RG=False, RG_port=0, RG_closure=None,
-                                instantiate_AG=False, run_AG=False, AG_port=0, AG_closure=None,
-                                existing_user=None ):
+                                instantiate_RG=False, run_RG=False, RG_port=0, RG_closure=None, RG_global_hostname=None,
+                                instantiate_AG=False, run_AG=False, AG_port=0, AG_closure=None, AG_global_hostname=None,
+                                gateway_name_prefix="", existing_user=None, user_pkey_pem=None ):
     """
     Generate and return the set of credentials to be sent off to the slice VMs.
     exisitng_user is a Syndicate user, as a dictionary.
@@ -522,14 +526,13 @@ def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, vo
     logger.info("Obtaining private key for %s" % user_email)
     
     # it might be in the existing_user...
-    user_pkey_pem = None
     if existing_user is not None:
        user_pkey_pem = existing_user.get('signing_private_key', None)
        
     # no luck?
     if user_pkey_pem is None:
       try:
-         # get it from Django DB
+         # get it from storage
          user_pkey_pem = get_principal_pkey( user_email, observer_secret )
          assert user_pkey_pem is not None, "No private key for %s" % user_email
          
@@ -541,11 +544,11 @@ def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, vo
     # generate a credetials blob 
     logger.info("Generating credentials for %s's slice" % (user_email))
     try:
-       creds = observer_cred.create_slice_credential_blob( observer_pkey_pem, slice_name, slice_secret, syndicate_url, volume_name, user_email, UG_port, user_pkey_pem,
+       creds = observer_cred.create_slice_credential_blob( observer_pkey_pem, slice_name, slice_secret, syndicate_url, volume_name, user_email, user_pkey_pem,
                                                            instantiate_UG=instantiate_UG, run_UG=run_UG, UG_port=UG_port, UG_closure=UG_closure,
-                                                           instantiate_RG=instantiate_RG, run_RG=run_RG, RG_port=RG_port, RG_closure=RG_closure,
-                                                           instantiate_AG=instantiate_AG, run_AG=run_AG, AG_port=AG_port, AG_closure=AG_closure,
-                                                           existing_user=existing_user )
+                                                           instantiate_RG=instantiate_RG, run_RG=run_RG, RG_port=RG_port, RG_closure=RG_closure, RG_global_hostname=RG_global_hostname,
+                                                           instantiate_AG=instantiate_AG, run_AG=run_AG, AG_port=AG_port, AG_closure=AG_closure, AG_global_hostname=AG_global_hostname,
+                                                           gateway_name_prefix=gateway_name_prefix )
        
        assert creds is not None, "Failed to create credentials for %s" % user_email 
     
@@ -560,9 +563,9 @@ def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, vo
 #-------------------------------
 def save_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume_name, slice_name, observer_secret, slice_secret, 
                             instantiate_UG=False, run_UG=False, UG_port=0, UG_closure=None,
-                            instantiate_RG=False, run_RG=False, RG_port=0, RG_closure=None, 
-                            instantiate_AG=False, run_AG=False, AG_port=0, AG_closure=None,
-                            existing_user=None ): 
+                            instantiate_RG=False, run_RG=False, RG_port=0, RG_closure=None, RG_global_hostname=None,
+                            instantiate_AG=False, run_AG=False, AG_port=0, AG_closure=None, AG_global_hostname=None,
+                            gateway_name_prefix="", existing_user=None, user_pkey_pem=None ): 
     """
     Create and save a credentials blob to a VolumeSlice.
     It will contain directives to be sent to the automount daemons to provision and instantiate gateways.
@@ -574,7 +577,7 @@ def save_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume
                                         instantiate_UG=instantiate_UG, run_UG=run_UG, UG_port=UG_port, UG_closure=UG_closure,
                                         instantiate_RG=instantiate_RG, run_RG=run_RG, RG_port=RG_port, RG_closure=RG_closure,
                                         instantiate_AG=instantiate_AG, run_AG=run_AG, AG_port=AG_port, AG_closure=AG_closure,
-                                        existing_user=existing_user )
+                                        gateway_name_prefix=gateway_name_prefix, existing_user=existing_user, user_pkey_pem=user_pkey_pem )
     ret = None
     
     if creds is not None:

@@ -63,11 +63,13 @@ OPENCLOUD_SLICE_INSTANTIATE_RG          = "slice_instantiate_RG"
 OPENCLOUD_SLICE_RUN_RG                  = "slice_run_RG"
 OPENCLOUD_SLICE_RG_PORT                 = "slice_RG_port"
 OPENCLOUD_SLICE_RG_CLOSURE              = "slice_RG_closure"
+OPENCLOUD_SLICE_RG_GLOBAL_HOSTNAME      = "slice_RG_global_hostname"
 
 OPENCLOUD_SLICE_INSTANTIATE_AG          = "slice_instantiate_AG"
 OPENCLOUD_SLICE_RUN_AG                  = "slice_run_AG"
 OPENCLOUD_SLICE_AG_PORT                 = "slice_AG_port"
 OPENCLOUD_SLICE_AG_CLOSURE              = "slice_AG_closure"
+OPENCLOUD_SLICE_AG_GLOBAL_HOSTNAME      = "slice_AG_global_hostname"
 
 OPENCLOUD_SLICE_GATEWAY_NAME_PREFIX     = "gateway_name_prefix"
 
@@ -109,8 +111,7 @@ def verify_and_unseal_blob( public_key_pem, secret, blob_data ):
         return None
 
     logger.info("Unsealing credential data")
-
-    #rc, data = c_syndicate.password_unseal( sealed_data, secret )
+    
     rc, data = c_syndicate.symmetric_unseal( sealed_data, secret )
     if rc != 0:
         logger.error("Failed to unseal blob, rc = %s" % rc )
@@ -139,10 +140,10 @@ def create_volume_list_blob( private_key_pem, slice_secret, volume_list ):
  
 
 #-------------------------------
-def create_slice_credential_blob( private_key_pem, slice_name, slice_secret, syndicate_url, volume_name, volume_owner, principal_pkey_pem,
+def create_slice_credential_blob( private_key_pem, slice_name, slice_secret, syndicate_url, volume_name, principal_id, principal_pkey_pem,
                                   instantiate_UG=None, run_UG=None, UG_port=0, UG_closure=None,
-                                  instantiate_RG=None, run_RG=None, RG_port=0, RG_closure=None,
-                                  instantiate_AG=None, run_AG=None, AG_port=0, AG_closure=None,
+                                  instantiate_RG=None, run_RG=None, RG_port=0, RG_closure=None, RG_global_hostname=None,
+                                  instantiate_AG=None, run_AG=None, AG_port=0, AG_closure=None, AG_global_hostname=None,
                                   gateway_name_prefix="" ):
     """
     Create a sealed, signed, encoded slice credentials blob.
@@ -153,7 +154,7 @@ def create_slice_credential_blob( private_key_pem, slice_name, slice_secret, syn
     cred_data = {
        OPENCLOUD_SYNDICATE_URL:   syndicate_url,
        OPENCLOUD_VOLUME_NAME:     volume_name,
-       OPENCLOUD_VOLUME_OWNER_ID: volume_owner,
+       OPENCLOUD_VOLUME_OWNER_ID: principal_id,
        OPENCLOUD_SLICE_NAME:      slice_name,
        OPENCLOUD_PRINCIPAL_PKEY_PEM: principal_pkey_pem,
        
@@ -161,11 +162,13 @@ def create_slice_credential_blob( private_key_pem, slice_name, slice_secret, syn
        OPENCLOUD_SLICE_RUN_AG:          run_AG,
        OPENCLOUD_SLICE_AG_PORT:         AG_port,
        OPENCLOUD_SLICE_AG_CLOSURE:      AG_closure,
+       OPENCLOUD_SLICE_AG_GLOBAL_HOSTNAME:  AG_global_hostname,
        
        OPENCLOUD_SLICE_INSTANTIATE_RG:  instantiate_RG,
        OPENCLOUD_SLICE_RUN_RG:          run_RG,
        OPENCLOUD_SLICE_RG_PORT:         RG_port,
        OPENCLOUD_SLICE_RG_CLOSURE:      RG_closure,
+       OPENCLOUD_SLICE_RG_GLOBAL_HOSTNAME:  RG_global_hostname,
        
        OPENCLOUD_SLICE_INSTANTIATE_UG:  instantiate_UG,
        OPENCLOUD_SLICE_RUN_UG:          run_UG,
@@ -224,11 +227,13 @@ def parse_observer_data( data_text ):
         OPENCLOUD_SLICE_RUN_AG:          [bool, types.NoneType],
         OPENCLOUD_SLICE_AG_PORT:         [int],
         OPENCLOUD_SLICE_AG_CLOSURE:      [str, unicode, types.NoneType],
+        OPENCLOUD_SLICE_AG_GLOBAL_HOSTNAME:     [str, unicode, types.NoneType],
         
         OPENCLOUD_SLICE_INSTANTIATE_RG:  [bool, types.NoneType],
         OPENCLOUD_SLICE_RUN_RG:          [bool, types.NoneType],
         OPENCLOUD_SLICE_RG_PORT:         [int],
         OPENCLOUD_SLICE_RG_CLOSURE:      [str, unicode, types.NoneType],
+        OPENCLOUD_SLICE_RG_GLOBAL_HOSTNAME:     [str, unicode, types.NoneType],
         
         OPENCLOUD_SLICE_INSTANTIATE_UG:  [bool, types.NoneType],
         OPENCLOUD_SLICE_RUN_UG:          [bool, types.NoneType],

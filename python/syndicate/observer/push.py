@@ -108,8 +108,8 @@ def push_credentials_to_slice( slice_name, payload ):
 
 def ft_do_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secret, principal_pkey_path, hostname, automount_daemon_port,
                 instantiate_UG=None, run_UG=None, UG_port=0, UG_closure=None,
-                instantiate_RG=None, run_RG=None, RG_port=0, RG_closure=None,
-                instantiate_AG=None, run_AG=None, AG_port=0, AG_closure=None,
+                instantiate_RG=None, run_RG=None, RG_port=0, RG_closure=None, RG_global_hostname=None,
+                instantiate_AG=None, run_AG=None, AG_port=0, AG_closure=None, AG_global_hostname=None,
                 gateway_name_prefix="" ):
    
     """
@@ -135,8 +135,8 @@ def ft_do_push( syndicate_url, volume_name, volume_owner, slice_name, slice_secr
     
     cred = observer_cred.create_slice_credential_blob( observer_key_pem, slice_name, slice_secret, syndicate_url, volume_name, volume_owner, user_pkey_pem,
                                                        instantiate_UG=instantiate_UG, run_UG=run_UG, UG_port=UG_port, UG_closure=UG_closure,
-                                                       instantiate_RG=instantiate_RG, run_RG=run_RG, RG_port=RG_port, RG_closure=RG_closure,
-                                                       instantiate_AG=instantiate_AG, run_AG=run_AG, AG_port=AG_port, AG_closure=AG_closure,
+                                                       instantiate_RG=instantiate_RG, run_RG=run_RG, RG_port=RG_port, RG_closure=RG_closure, RG_global_hostname=RG_global_hostname,
+                                                       instantiate_AG=instantiate_AG, run_AG=run_AG, AG_port=AG_port, AG_closure=AG_closure, AG_global_hostname=AG_global_hostname,
                                                        gateway_name_prefix=gateway_name_prefix )
     
     if cred is None:

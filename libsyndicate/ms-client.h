@@ -63,7 +63,7 @@ typedef map<uint64_t, long> deadline_queue;
 #define MS_LISTING_NOCHANGE     ms::ms_listing::NOT_MODIFIED    // entry/listing not modified
 #define MS_LISTING_NONE         ms::ms_listing::NONE            // entry doesn't exist
 
-#define MS_NUM_CERT_BUNDLES 4
+#define MS_NUM_CERT_BUNDLES     ms::ms_gateway_cert::NUM_CERT_TYPES
 
 // use STRONG crypto.
 // Use ephemeral Diffie-Helman for symmetric key (with in RSA, DSA, or ECC for key exchange)

@@ -20,6 +20,15 @@
 
 static int _signals = 1;
 
+// set the hostname 
+int md_set_hostname( struct md_syndicate_conf* conf, char const* hostname ) {
+   if( conf->hostname ) {
+      free( conf->hostname );
+   }
+   conf->hostname = strdup(hostname);
+   return 0;
+}
+
 // initialize server information
 static int md_init_server_info( struct md_syndicate_conf* c ) {
    
@@ -90,16 +99,20 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
    mode_t um = get_umask();
    c->usermask = um;
    
-   rc = md_init_local_storage( c );
-   if( rc != 0 ) {
-      errorf("md_init_local_storage(%s) rc = %d\n", c->storage_root, rc );
-      return rc;
+   if( c->need_storage ) {
+      rc = md_init_local_storage( c );
+      if( rc != 0 ) {
+         errorf("md_init_local_storage(%s) rc = %d\n", c->storage_root, rc );
+         return rc;
+      }
    }
    
-   rc = md_init_server_info( c );
-   if( rc != 0 ) {
-      errorf("md_init_server_info() rc = %d\n", rc );
-      return rc;
+   if( c->need_networking ) {
+      rc = md_init_server_info( c );
+      if( rc != 0 ) {
+         errorf("md_init_server_info() rc = %d\n", rc );
+         return rc;
+      }
    }
    
    // load gateway public/private key
@@ -466,16 +479,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->logfile_path = strdup( values[0] );
       }
       
-      else if( strcmp( key, CDN_PREFIX_KEY ) == 0 ) {
-         // cdn prefix
-         conf->cdn_prefix = strdup( values[0] );
-      }
-
-      else if( strcmp( key, PROXY_URL_KEY ) == 0 ) {
-         // proxy URL
-         conf->proxy_url = strdup( values[0] );
-      }
-      
       else if( strcmp( key, GATHER_STATS_KEY ) == 0 ) {
          // gather statistics?
          long val = 0;
@@ -490,13 +493,13 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->num_http_threads = (unsigned int)strtol( values[0], NULL, 10 );
       }
       
-      else if( strcmp( key, DATA_ROOT_KEY ) == 0 ) {
-         // data root
-         conf->data_root = strdup( values[0] );
-         if( conf->data_root[ strlen(conf->data_root)-1 ] != '/' ) {
-            char* tmp = md_prepend( conf->data_root, "/", NULL );
-            free( conf->data_root );
-            conf->data_root = tmp;
+      else if( strcmp( key, STORAGE_ROOT_KEY ) == 0 ) {
+         // storage root
+         conf->storage_root = strdup( values[0] );
+         if( conf->storage_root[ strlen(conf->storage_root)-1 ] != '/' ) {
+            char* tmp = md_prepend( conf->storage_root, "/", NULL );
+            free( conf->storage_root );
+            conf->storage_root = tmp;
          }
       }
 
@@ -557,6 +560,7 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
       else if( strcmp( key, LOCAL_STORAGE_DRIVERS_KEY ) == 0 ) {
          conf->local_sd_dir = strdup( values[0] );
       }
+      
       else if( strcmp( key, HTTPD_PORTNUM_KEY ) == 0 ) {
          conf->httpd_portnum = strtol( values[0], NULL, 10 );
       }
@@ -603,8 +607,6 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->logfile_path,
       (void*)conf->content_url,
       (void*)conf->data_root,
-      (void*)conf->cdn_prefix,
-      (void*)conf->proxy_url,
       (void*)conf->ms_username,
       (void*)conf->ms_password,
       (void*)conf->server_cert,
@@ -615,6 +617,7 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->volume_name,
       (void*)conf->volume_pubkey,
       (void*)conf->syndicate_pubkey,
+      (void*)conf->local_sd_dir,
       (void*)conf
    };
    
@@ -647,7 +650,9 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
    
    // free the rest
    for( int i = 0; to_free[i] != conf; i++ ) {
-      free( to_free[i] );
+      if( to_free[i] != NULL ) {
+         free( to_free[i] );
+      }
    }
    
    memset( conf, 0, sizeof(struct md_syndicate_conf) );
@@ -904,7 +909,7 @@ void md_sanitize_path( char* path ) {
    }
 }
 
-
+/*
 // given a URL, is it hosted locally?
 bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url ) {
    char* url_host = md_url_hostname( url );
@@ -925,6 +930,7 @@ bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url ) {
    free( url_host );
    return ret;
 }
+*/
 
 // start a thread
 pthread_t md_start_thread( void* (*thread_func)(void*), void* arg, bool detach ) {
@@ -1213,7 +1219,7 @@ char* md_flatten_path( char const* path ) {
    return ret;
 }
 
-
+/*
 // convert the URL into the CDN-ified form
 char* md_cdn_url( char const* cdn_prefix, char const* url ) {
    // fix the URL so it is prefixed by the hostname and CDN, instead of being file://path or http://hostname/path
@@ -1226,6 +1232,7 @@ char* md_cdn_url( char const* cdn_prefix, char const* url ) {
    free( host_path );
    return update_url;
 }
+*/
 
 
 // split a url into the url+path and query string
@@ -1336,9 +1343,7 @@ uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t*
    return ret;
 }
 
-
-
-
+/*
 // Read the path version from a given path.
 // The path version is the number attached to the end of the path by a period.
 // returns a nonnegative number on success.
@@ -1369,6 +1374,7 @@ int64_t md_path_version( char const* path ) {
 
    return version;
 }
+*/
 
 // Get the offset into a path where the version begins (delimited by a .)
 // Returns nonnegative on success.
@@ -1401,6 +1407,7 @@ int md_path_version_offset( char const* path ) {
    return i;  
 }
 
+/*
 // given two paths, determine if one is the versioned form of the other
 bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path ) {
    // if this isn't a versioned path, then no
@@ -1416,8 +1423,7 @@ bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path 
    
    return true;
 }
-
-
+*/
 
 // clear the version of a path
 char* md_clear_version( char* path ) {
@@ -1971,6 +1977,24 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
    conf->view_reload_freq = 3600;  // once an hour at minimum
    
    conf->gateway_type = gateway_type;
+   
+   if( gateway_type == SYNDICATE_UG ) {
+      // need both storage and networking 
+      conf->need_storage = true;
+      conf->need_networking = true;
+   }
+   else if( gateway_type == SYNDICATE_RG ) {
+      // don't need either storage or networking--we expect a hostname to be given to us
+      conf->need_storage = false;
+      conf->need_networking = false;
+      
+      md_set_hostname( conf, "localhost" );
+   }
+   else if( gateway_type == SYNDICATE_AG ) {
+      // don't need storage, but do need networkig 
+      conf->need_storage = false;
+      conf->need_networking = true;
+   }
 
    return 0;
 }
@@ -1984,16 +2008,6 @@ int md_check_conf( struct md_syndicate_conf* conf ) {
 
    // universal configuration warnings and errors
    int rc = 0;
-   if( conf->logfile_path == NULL ) {
-      rc = -EINVAL;
-      fprintf(stderr, err_fmt, LOGFILE_PATH_KEY );
-   }
-   if( conf->cdn_prefix == NULL ) {
-      fprintf(stderr, warn_fmt, CDN_PREFIX_KEY );
-   }
-   if( conf->proxy_url == NULL ) {
-      fprintf(stderr, warn_fmt, PROXY_URL_KEY );
-   }
    if( conf->metadata_url == NULL ) {
       rc = -EINVAL;
       fprintf(stderr, err_fmt, METADATA_URL_KEY );
@@ -2013,9 +2027,13 @@ int md_check_conf( struct md_syndicate_conf* conf ) {
    
    if( conf->gateway_type == SYNDICATE_UG ) {
       // UG-specific warnings and errors
-      if( conf->data_root == NULL ) {
+      if( conf->storage_root == NULL ) {
          rc = -EINVAL;
-         fprintf(stderr, err_fmt, DATA_ROOT_KEY );
+         fprintf(stderr, err_fmt, STORAGE_ROOT_KEY );
+      }
+      if( conf->logfile_path == NULL ) {
+         rc = -EINVAL;
+         fprintf(stderr, err_fmt, LOGFILE_PATH_KEY );
       }
    }
 

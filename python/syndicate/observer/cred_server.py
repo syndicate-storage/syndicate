@@ -24,6 +24,7 @@ import base64
 import BaseHTTPServer
 import setproctitle
 import threading
+import binascii
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
@@ -316,19 +317,170 @@ def ensure_credential_server_running( foreground=False, run_once=False ):
 #-------------------------------
   
 #-------------------------------
-def ft_credential_server():
+def ft_credential_server_1( syndicate_url, principal_id, principal_pkey_path ):
    """
-   Functional test for the credential server
+   Functional test for the credential server.
+   Use a set of fake volume data.
    """
+   
+   import syndicate.observer.sync as observer_sync 
+   import syndicate.observer.core as observer_core 
+   import syndicate.syndicate as c_syndicate
+   
+   from collections import namedtuple
+   
+   c_syndicate.crypto_init()
+   
+   observer_pkey_pem = syndicate_storage_api.read_private_key( CONFIG.SYNDICATE_OBSERVER_PRIVATE_KEY ).exportKey()
+   user_pkey_pem = syndicate_storage_api.read_private_key( principal_pkey_path ).exportKey()
+   
+   slice_secret = binascii.unhexlify( "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" )
+   
+   ft_volumes = ["ft_volume_1", "ft_volume_2", "ft_volume_3"]
+   
+   RG_ports = {
+      "ft_volume_1": 32781,
+      "ft_volume_2": 32783,
+      "ft_volume_3": 32785
+   }
+   
+   UG_ports = {
+      "ft_volume_1": 32780,
+      "ft_volume_2": 32782,
+      "ft_volume_3": 32784
+   }
+   
+   OpenCloudVolume = namedtuple("OpenCloudVolume", ["name", "blocksize", "description", "private", "archive", "cap_read_data", "cap_write_data", "cap_host_data"])
+   
+   # set up some volumes 
+   for vol_name in ft_volumes:
+      opencloud_volume = OpenCloudVolume( name = vol_name,
+                                          blocksize = 1024,
+                                          description = "Functional test volume",
+                                          private = True,
+                                          archive = False,
+                                          cap_read_data = True,
+                                          cap_write_data = True,
+                                          cap_host_data = True )
+      
+      observer_core.ensure_volume_exists( CONFIG.SYNDICATE_OPENCLOUD_USER, opencloud_volume )
+      
+   # set up some RGs for the volumes 
+   for vol_name in ft_volumes:
+      g = observer_core.setup_global_RG( CONFIG.SYNDICATE_OPENCLOUD_USER, vol_name, CONFIG.SYNDICATE_GATEWAY_NAME_PREFIX, slice_secret, RG_ports[vol_name], CONFIG.SYNDICATE_RG_CLOSURE, global_hostname="localhost" )
+      assert g == True, "Failed to ensure global RG for volume %s exists" % vol_name
+   
+   ft_volumeslice = {
+      "ft_volume_1": observer_sync.VolumeSlice( volume_id=1,
+                                                slice_id=1,
+                                                cap_read_data=True,
+                                                cap_write_data=True,
+                                                cap_host_data=True,
+                                                UG_portnum=UG_ports["ft_volume_1"],
+                                                RG_portnum=RG_ports["ft_volume_1"],
+                                                credentials_blob=observer_core.generate_slice_credentials(observer_pkey_pem,
+                                                                                                          syndicate_url,
+                                                                                                          principal_id,
+                                                                                                          "ft_volume_1",
+                                                                                                          "ft_slice_1",
+                                                                                                          None,
+                                                                                                          slice_secret,
+                                                                                                          user_pkey_pem=user_pkey_pem,
+                                                                                                          instantiate_UG=True, run_UG=True, UG_port=UG_ports["ft_volume_1"], UG_closure=None,
+                                                                                                          instantiate_RG=None, run_RG=True, RG_port=RG_ports["ft_volume_1"], RG_closure=None, RG_global_hostname="localhost",
+                                                                                                          instantiate_AG=None, run_AG=None, AG_port=0,     AG_closure=None,
+                                                                                                          gateway_name_prefix="OpenCloud")
+                                                ),
+                                                
+      "ft_volume_2": observer_sync.VolumeSlice( volume_id=2,
+                                                slice_id=1,
+                                                cap_read_data=True,
+                                                cap_write_data=True,
+                                                cap_host_data=True,
+                                                UG_portnum=UG_ports["ft_volume_2"],
+                                                RG_portnum=RG_ports["ft_volume_2"],
+                                                credentials_blob=observer_core.generate_slice_credentials(observer_pkey_pem,
+                                                                                                          syndicate_url,
+                                                                                                          principal_id,
+                                                                                                          "ft_volume_2",
+                                                                                                          "ft_slice_1",
+                                                                                                          None,
+                                                                                                          slice_secret,
+                                                                                                          user_pkey_pem=user_pkey_pem,
+                                                                                                          instantiate_UG=True, run_UG=True, UG_port=UG_ports["ft_volume_2"], UG_closure=None,
+                                                                                                          instantiate_RG=None, run_RG=True, RG_port=RG_ports["ft_volume_2"], RG_closure=None, RG_global_hostname="localhost",
+                                                                                                          instantiate_AG=None, run_AG=None, AG_port=0,     AG_closure=None,
+                                                                                                          gateway_name_prefix="OpenCloud")
+                                                ),
+
+      "ft_volume_3": observer_sync.VolumeSlice( volume_id=3,
+                                                slice_id=1,
+                                                cap_read_data=True,
+                                                cap_write_data=False,
+                                                cap_host_data=False,
+                                                UG_portnum=UG_ports["ft_volume_3"],
+                                                RG_portnum=RG_ports["ft_volume_3"],
+                                                credentials_blob=observer_core.generate_slice_credentials(observer_pkey_pem,
+                                                                                                          syndicate_url,
+                                                                                                          principal_id,
+                                                                                                          "ft_volume_3",
+                                                                                                          "ft_slice_1",
+                                                                                                          None,
+                                                                                                          slice_secret,
+                                                                                                          user_pkey_pem=user_pkey_pem,
+                                                                                                          instantiate_UG=True, run_UG=True, UG_port=UG_ports["ft_volume_3"], UG_closure=None,
+                                                                                                          instantiate_RG=None, run_RG=True, RG_port=RG_ports["ft_volume_3"], RG_closure=None, RG_global_hostname="localhost",
+                                                                                                          instantiate_AG=None, run_AG=None, AG_port=0,     AG_closure=None,
+                                                                                                          gateway_name_prefix="OpenCloud")
+                                                )
+   }
+   
+   
+   # re-programm observer_storage with test methods 
+   def ft_get_slice_secret( private_key_pem, slice_name ):
+      logger.info("get slice secret for %s" % slice_name )
+      return slice_secret
+   
+   def ft_get_volumeslice_volume_names( slice_name ):
+      logger.info("get volume names for %s" % slice_name )
+      return ["ft_volume_1", "ft_volume_2", "ft_volume_3"]
+   
+   def ft_get_volumeslice( volume_name, slice_name ):
+      logger.info("get volumeslice for (%s, %s)" % (volume_name, slice_name))
+      return ft_volumeslice.get( volume_name, None )
+      
+   observer_storage.get_slice_secret = ft_get_slice_secret
+   observer_storage.get_volumeslice_volume_names = ft_get_volumeslice_volume_names
+   observer_storage.get_volumeslice = ft_get_volumeslice
+   
    ensure_credential_server_running( run_once=True, foreground=True )
+   
+   c_syndicate.crypto_shutdown()
    
 
 #-------------------------------   
 if __name__ == "__main__":
+   
+   if "-t" in sys.argv:
+      # doing a test 
+      t_index = sys.argv.index("-t")
+      
+      ft_testname = "ft_%s" % sys.argv[t_index+1]
+    
+      test_call = "%s(%s)" % (ft_testname, ",".join(sys.argv[t_index+2:]))
+      
+      print "calling %s" % test_call
+      
+      rc = eval( test_call )
+      
+      print "result = %s" % rc
+      
+      sys.exit(0)
+      
+      
    CONFIG_OPTIONS = {
       "run_once":          ("-1", 0, "Run the server once.  Do not spawn a watchdog."),
-      "foreground":        ("-f", 0, "Run the foreground.  Do not daemonize."),
-      "tests":             ("-t", 0, "Run functional tests and exit.")
+      "foreground":        ("-f", 0, "Run the foreground.  Do not daemonize.")
    }
    
    config = modconf.build_config( sys.argv, "Syndicate Credential Server", "credserver", CONFIG_OPTIONS )
@@ -336,10 +488,6 @@ if __name__ == "__main__":
    if config is None:
       log.error("Failed to load config")
       sys.exit(1)
-   
-   if config['tests']:
-      ft_credential_server()
-      sys.exit(0)
    
    else:
       ensure_credential_server_running( foreground=config['foreground'], run_once=config['run_once'] )

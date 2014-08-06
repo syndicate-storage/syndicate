@@ -110,7 +110,7 @@ if __name__ == "__main__":
    pidfile_path = config.get('pidfile', None)
    
    if config.has_key('logdir'):
-      logfile_path = os.path.join( config['logdir'], "RG.log" )
+      logfile_path = os.path.join( config['logdir'], "syndicate-rg.log" )
    
    if not foreground:
       # become a daemon

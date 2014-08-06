@@ -153,6 +153,8 @@ message ms_gateway_cert {
       USER_GATEWAY = 1;
       REPLICA_GATEWAY = 2;
       ACQUISITION_GATEWAY = 3;
+      
+      NUM_CERT_TYPES = 4;
    }
    
    enum Capabilities {

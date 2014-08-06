@@ -41,6 +41,7 @@ log = rg_common.get_logger()
 CONFIG_OPTIONS = {
    "gateway":           ("-g", 1, "The name of this RG"),
    "volume":            ("-v", 1, "The Volume this RG runs in"),
+   "hostname":          ("-H", 1, "The hostname this RG should serve on (defaults to 'localhost')"),
    "config":            ("-c", 1, "Path to the Syndicate configuration file for this RG"),
    "username":          ("-u", 1, "Syndicate username of the owner of this RG"),
    "password":          ("-p", 1, "If authenticating via OpenID, the Syndicate user's OpenID password"),
@@ -129,6 +130,7 @@ def setup_syndicate( config ):
    syndicate_pubkey = config.get('syndicate_pubkey', None)
    config_file = config.get('config_file', None)
    debug_level = config.get("debug_level", 0)
+   hostname = config.get("hostname", "localhost" )
    
    if user_pkey_pem is None and user_pkey is not None:
       user_pkey = syndicate_storage.read_key( user_pkey )
@@ -152,7 +154,8 @@ def setup_syndicate( config ):
                                          tls_pkey_path=tls_pkey,
                                          tls_cert_path=tls_cert,
                                          debug_level=debug_level,
-                                         syndicate_pubkey_path=syndicate_pubkey )
+                                         syndicate_pubkey_path=syndicate_pubkey,
+                                         hostname=hostname )
    
    return syndicate 
 

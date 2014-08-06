@@ -202,13 +202,13 @@ def create_user( email, openid_url, activate_password, activate_password_hash=No
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
 @ReadAPIGuard( SyndicateUser, parse_args=SyndicateUser.ParseArgs )
-def read_user( email ):
+def read_user( email_or_user_id ):
    """
    Read a user.
    
    Positional arguments:
-      email (str):
-         The email address of the desired user.
+      email_or_user_id (str or int):
+         The email address or numerical owner ID of the desired user.
    
    Returns:
       A SyndicateUser object on success, or an exception 
@@ -219,7 +219,7 @@ def read_user( email ):
       The administrator can read any user account.
       A user can only read itself.
    """
-   return storage.read_user( email )
+   return storage.read_user( email_or_user_id )
 
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )

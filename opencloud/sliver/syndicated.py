@@ -46,7 +46,6 @@ import syndicate.util.daemonize as daemon
 import syndicate.util.config as modconf
 import syndicate.util.storage as storage
 import syndicate.util.crypto as crypto
-import syndicate.util.provisioning as provisioning
 
 import syndicate.observer.cred as observer_cred
 import syndicate.observer.startstop as observer_startstop
@@ -518,7 +517,7 @@ class PollThread( threading.Thread ):
             all_volume_data.append( volume_data )
       
       # act on the data--start all gateways for all volumes that are active, but stop the ones that aren't
-      rc = observer_startstop.start_stop_all_volumes( config, all_volume_data, slice_secret, ignore=ignored_volumes )
+      rc = observer_startstop.start_stop_all_volumes( config, all_volume_data, slice_secret, ignored=ignored_volumes )
       if rc != 0:
          log.error("start_stop_all_volumes rc = %s" % rc)
          return (None, None)

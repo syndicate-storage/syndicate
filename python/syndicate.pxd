@@ -70,7 +70,7 @@ cdef extern from "libsyndicate.h":
    int md_default_conf( md_syndicate_conf* conf, int gateway_type )
 
    int md_free_conf( md_syndicate_conf* conf )
-
+   
    int md_init(md_syndicate_conf* conf,
                ms_client* client,
                char* ms_url,
@@ -90,6 +90,11 @@ cdef extern from "libsyndicate.h":
 
    int md_shutdown()
    
+   # ------------------------------------------
+   # networking 
+
+   int md_set_hostname( md_syndicate_conf* conf, const char* hostname )
+
    # ------------------------------------------
    # crypto
    

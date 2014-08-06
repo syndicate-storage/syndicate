@@ -86,8 +86,8 @@ def create_user( email, openid_url, **fields ):
    return user_key.get()
 
 # ----------------------------------
-def read_user( email ):
-   return SyndicateUser.Read( email )
+def read_user( email_or_user_id ):
+   return SyndicateUser.Read( email_or_user_id )
 
 # ----------------------------------
 def update_user( email, **fields ):

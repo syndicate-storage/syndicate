@@ -237,6 +237,7 @@ def sync_volumeslice_record( vs ):
                                                          instantiate_UG=True,  run_UG=True,  UG_port=UG_port, UG_closure=None,
                                                          instantiate_RG=None,  run_RG=True,  RG_port=RG_port, RG_closure=None,
                                                          instantiate_AG=None,  run_AG=None,  AG_port=0,       AG_closure=None,
+                                                         gateway_name_prefix=gateway_name_prefix,
                                                          existing_user=user )
       
       assert slice_cred is not None, "Failed to generate slice credential for %s in %s" % (slice_principal_id, volume_name )

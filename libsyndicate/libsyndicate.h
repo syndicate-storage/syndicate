@@ -157,8 +157,9 @@ struct md_syndicate_conf {
    int64_t default_write_freshness;                   // default number of milliseconds a file can age before needing refresh for writes
    char* logfile_path;                                // path to the logfile
    bool gather_stats;                                 // gather statistics or not?
-   char* content_url;                                 // what is the URL under which published files can be accessed?
-   char* storage_root;                                // toplevel directory that stores local syndicate state
+   char* content_url;                                 // what is the URL under which local data can be accessed publicly?
+   char* storage_root;                                // toplevel directory that stores local syndicate state (blocks, manifests, logs, etc)
+   char* local_sd_dir;                                // directory containing local storage drivers
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
    char* volume_name;                                 // name of the volume we're connected to
    char* volume_pubkey_path;                          // path on disk to find Volume metadata public key
@@ -170,7 +171,6 @@ struct md_syndicate_conf {
    char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
    char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
    uint64_t ag_block_size;                            // block size for an AG
-   char* local_sd_dir;                                // location on disk where RG storage drivers can be found.
    
    // debug
    int debug_lock;                                    // print verbose information on locks
@@ -182,8 +182,6 @@ struct md_syndicate_conf {
    int transfer_timeout;                              // how long a transfer is allowed to take (in seconds)
    bool verify_peer;                                  // whether or not to verify the gateway server's SSL certificate with peers
    char* gateway_key_path;                            // path to PEM-encoded user-given public/private key for this gateway
-   char* cdn_prefix;                                  // CDN prefix
-   char* proxy_url;                                   // URL to a proxy to use (instead of a CDN)
    int replica_connect_timeout;                       // number of seconds to wait to connect to an RG
    
    // MS-related fields
@@ -211,7 +209,9 @@ struct md_syndicate_conf {
    size_t user_pkey_len;
 
    // set at runtime
-   char* data_root;                                   // root of the path where we store local file blocks
+   bool need_storage;                                 // set to true if we need to automatically setup local storage
+   bool need_networking;                              // set to true if we need to auto-discover networking settings (like our hostname)
+   char* data_root;                                   // root of the path where we store local file blocks (a subdirectory of storage_root)
    mode_t usermask;                                   // umask of the user running this program
    char* hostname;                                    // what's our hostname?
    
@@ -233,18 +233,12 @@ struct md_syndicate_conf {
 #define DEFAULT_WRITE_FRESHNESS_KEY "DEFAULT_WRITE_FRESHNESS"
 #define METADATA_URL_KEY            "METADATA_URL"
 #define LOGFILE_PATH_KEY            "LOGFILE"
-#define CDN_PREFIX_KEY              "CDN_PREFIX"
-#define PROXY_URL_KEY               "PROXY_URL"
 #define GATHER_STATS_KEY            "GATHER_STATISTICS"
 #define MS_USERNAME_KEY             "USERNAME"
 #define MS_PASSWORD_KEY             "PASSWORD"
-#define DATA_ROOT_KEY               "DATA_ROOT"
+#define STORAGE_ROOT_KEY            "STORAGE_ROOT"
 
 #define CONNECT_TIMEOUT_KEY         "CONNECT_TIMEOUT"
-
-#define REPLICA_URL_KEY             "REPLICA_URL"
-#define BLOCKING_FACTOR_KEY         "BLOCKSIZE"
-#define REPLICATION_FACTOR_KEY      "REPLICATION_FACTOR"
 #define TRANSFER_TIMEOUT_KEY        "TRANSFER_TIMEOUT"
 #define NUM_HTTP_THREADS_KEY        "HTTP_THREADPOOL_SIZE"
 
@@ -258,13 +252,9 @@ struct md_syndicate_conf {
 #define VOLUME_NAME_KEY             "VOLUME_NAME"
 #define GATEWAY_NAME_KEY            "GATEWAY_NAME"
 
-#define LOCAL_STORAGE_DRIVERS_KEY   "LOCAL_STORAGE_DRIVERS"
-
 #define AG_BLOCK_SIZE_KEY           "AG_BLOCK_SIZE"
 
-
-// gateway config
-#define REPLICA_OVERWRITE_KEY       "REPLICA_OVERWRITE"
+#define LOCAL_STORAGE_DRIVERS_KEY   "LOCAL_STORAGE_DRIVERS"
 
 // misc
 #define VERIFY_PEER_KEY             "SSL_VERIFY_PEER"
@@ -319,9 +309,9 @@ struct md_entry* md_entry_dup( struct md_entry* src );
 void md_entry_dup2( struct md_entry* src, struct md_entry* ret );
 void md_entry_free( struct md_entry* ent );
 
-// publishing
-bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path );
-int64_t md_path_version( char const* path );
+// serialization
+// bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path );
+// int64_t md_path_version( char const* path );
 int md_path_version_offset( char const* path );
 ssize_t md_metadata_update_text( struct md_syndicate_conf* conf, char **buf, struct md_update** updates );
 ssize_t md_metadata_update_text2( struct md_syndicate_conf* conf, char **buf, vector<struct md_update>* updates );
@@ -341,7 +331,7 @@ char* md_prepend( char const* prefix, char const* str, char* output );
 long md_hash( char const* path );
 int md_path_split( char const* path, vector<char*>* result );
 void md_sanitize_path( char* path );
-bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url );
+// bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url );
 
 // serialization
 int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent );
@@ -363,7 +353,7 @@ char* md_url_strip_path( char const* url );
 int md_portnum_from_url( char const* url );
 char* md_strip_protocol( char const* url );
 char* md_flatten_path( char const* path );
-char* md_cdn_url( char const* cdn_prefix, char const* url );
+// char* md_cdn_url( char const* cdn_prefix, char const* url );
 int md_split_url_qs( char const* url, char** url_and_path, char** qs );
 
 // header parsing
@@ -371,6 +361,8 @@ off_t md_header_value_offset( char* header_buf, size_t header_len, char const* h
 uint64_t md_parse_header_uint64( char* hdr, off_t offset, size_t size );
 uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t* ret_len );
 
+// networking 
+int md_set_hostname( struct md_syndicate_conf* conf, char const* hostname );
 
 // top-level initialization
 int md_init( struct md_syndicate_conf* conf,

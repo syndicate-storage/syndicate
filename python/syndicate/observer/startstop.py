@@ -79,6 +79,8 @@ def start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_passwo
    
    command_str = make_UG_argv( SYNDICATE_UG_WATCHDOG_NAME, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint )
    
+   log.info("Starting UG (%s)" % SYNDICATE_UG_WATCHDOG_NAME )
+   
    # start the watchdog
    pid = watchdog.run( SYNDICATE_UG_WATCHDOG_NAME, [SYNDICATE_UG_WATCHDOG_NAME, '-v', volume_name, '-m', mountpoint], command_str )
    
@@ -95,6 +97,8 @@ def start_RG( syndicate_url, principal_id, volume_name, gateway_name, key_passwo
    # which should NOT become visible to other users via /proc
    
    command_str = make_RG_argv( SYNDICATE_RG_WATCHDOG_NAME, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem )
+   
+   log.info("Starting RG (%s)" % SYNDICATE_RG_WATCHDOG_NAME )
    
    # start the watchdog
    pid = watchdog.run( SYNDICATE_RG_WATCHDOG_NAME, [SYNDICATE_RG_WATCHDOG_NAME, '-R', '-v', volume_name], command_str )
@@ -288,6 +292,7 @@ def ensure_UG_mountpoint_exists( mountpoint ):
    rc = 0
    try:
       os.makedirs( mountpoint )
+      return 0
    except OSError, oe:
       if oe.errno != errno.EEXIST:
          return -oe.errno
@@ -356,7 +361,7 @@ def list_running_gateways_by_volume():
       
 
 #-------------------------
-def gateway_directives_from_volume_info( volume_info, hostname, slice_secret ):
+def gateway_directives_from_volume_info( volume_info, local_hostname, slice_secret ):
    """
    Extract gateway directives from an observer's description of the volume for this host.
    """
@@ -371,31 +376,42 @@ def gateway_directives_from_volume_info( volume_info, hostname, slice_secret ):
    volume_name = volume_info[ observer_cred.OPENCLOUD_VOLUME_NAME ]
    gateway_name_prefix = volume_info[ observer_cred.OPENCLOUD_SLICE_GATEWAY_NAME_PREFIX ]
    
+   RG_hostname = local_hostname
+   AG_hostname = local_hostname 
+   
    # get what we need...
    try:
+      
+      # global hostnames (i.e. multiple instantiations of the same gateway) override local hostnames.
+      if volume_info[ observer_cred.OPENCLOUD_SLICE_AG_GLOBAL_HOSTNAME ] is not None:
+         AG_hostname = volume_info[ observer_cred.OPENCLOUD_SLICE_AG_GLOBAL_HOSTNAME ]
+      
+      if volume_info[ observer_cred.OPENCLOUD_SLICE_RG_GLOBAL_HOSTNAME ] is not None:
+         RG_hostname = volume_info[ observer_cred.OPENCLOUD_SLICE_RG_GLOBAL_HOSTNAME ]
       
       gateway_directives["UG"]["instantiate"]   = volume_info[ observer_cred.OPENCLOUD_SLICE_INSTANTIATE_UG ]
       gateway_directives["UG"]["run"]           = volume_info[ observer_cred.OPENCLOUD_SLICE_RUN_UG ]
       gateway_directives["UG"]["port"]          = volume_info[ observer_cred.OPENCLOUD_SLICE_UG_PORT ]
       gateway_directives["UG"]["closure"]       = volume_info[ observer_cred.OPENCLOUD_SLICE_UG_CLOSURE ]
-      gateway_directives["UG"]["name"]          = provisioning.make_gateway_name( gateway_name_prefix, "UG", volume_name, hostname )
+      gateway_directives["UG"]["name"]          = provisioning.make_gateway_name( gateway_name_prefix, "UG", volume_name, local_hostname )
       gateway_directives["UG"]["key_password"]  = provisioning.make_gateway_private_key_password( gateway_directives["UG"]["name"], slice_secret )
       
       gateway_directives["RG"]["instantiate"]   = volume_info[ observer_cred.OPENCLOUD_SLICE_INSTANTIATE_RG ]
       gateway_directives["RG"]["run"]           = volume_info[ observer_cred.OPENCLOUD_SLICE_RUN_RG ]
       gateway_directives["RG"]["port"]          = volume_info[ observer_cred.OPENCLOUD_SLICE_RG_PORT ]
       gateway_directives["RG"]["closure"]       = volume_info[ observer_cred.OPENCLOUD_SLICE_RG_CLOSURE ]
-      gateway_directives["RG"]["name"]          = provisioning.make_gateway_name( gateway_name_prefix, "RG", volume_name, hostname )
+      gateway_directives["RG"]["name"]          = provisioning.make_gateway_name( gateway_name_prefix, "RG", volume_name, RG_hostname )
       gateway_directives["RG"]["key_password"]  = provisioning.make_gateway_private_key_password( gateway_directives["RG"]["name"], slice_secret )
       
       gateway_directives["AG"]["instantiate"]   = volume_info[ observer_cred.OPENCLOUD_SLICE_INSTANTIATE_AG ]
       gateway_directives["AG"]["run"]           = volume_info[ observer_cred.OPENCLOUD_SLICE_RUN_AG ]
       gateway_directives["AG"]["port"]          = volume_info[ observer_cred.OPENCLOUD_SLICE_AG_PORT ]
       gateway_directives["AG"]["closure"]       = volume_info[ observer_cred.OPENCLOUD_SLICE_AG_CLOSURE ]
-      gateway_directives["AG"]["name"]          = provisioning.make_gateway_name( gateway_name_prefix, "AG", volume_name, hostname )
+      gateway_directives["AG"]["name"]          = provisioning.make_gateway_name( gateway_name_prefix, "AG", volume_name, AG_hostname )
       gateway_directives["AG"]["key_password"]  = provisioning.make_gateway_private_key_password( gateway_directives["AG"]["name"], slice_secret )
       
-   except:
+   except Exception, e:
+      log.exception(e)
       log.error("Invalid configuration for Volume %s" % volume_name)
       return None 
    
@@ -456,22 +472,21 @@ def start_stop_volume( config, volume_info, slice_secret, client=None ):
    """
    
    volume_name = volume_info[ observer_cred.OPENCLOUD_VOLUME_NAME ]
+
+   # get what we need...
+   try:
+      syndicate_url             = volume_info[ observer_cred.OPENCLOUD_SYNDICATE_URL ]
+      principal_id              = volume_info[ observer_cred.OPENCLOUD_VOLUME_OWNER_ID ]
+      principal_pkey_pem        = volume_info[ observer_cred.OPENCLOUD_PRINCIPAL_PKEY_PEM ]
+      
+   except:
+      log.error("Invalid configuration for Volume %s" % volume_name)
+      return -errno.EINVAL
+   
    
    if client is None:
-      
-      # get what we need...
-      try:
-         syndicate_url             = volume_info[ observer_cred.OPENCLOUD_SYNDICATE_URL ]
-         principal_id              = volume_info[ observer_cred.OPENCLOUD_VOLUME_OWNER_ID ]
-         principal_pkey_pem        = volume_info[ observer_cred.OPENCLOUD_PRINCIPAL_PKEY_PEM ]
-         
-      except:
-         log.error("Invalid configuration for Volume %s" % volume_name)
-         return -errno.EINVAL
-      
       # connect to syndicate 
       client = syntool.Client( principal_id, syndicate_url, user_pkey_pem=principal_pkey_pem, debug=config['debug'] )
-      
    
    mountpoint_dir = config['mountpoint_dir']
    UG_mountpoint_path = make_UG_mountpoint_path( mountpoint_dir, volume_name )
@@ -545,6 +560,9 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
    
    # inner function for ensuring a UG is running 
    def _runchange_UG( should_run ):
+      
+      log.info("Switch UG for %s to run status '%s'" % (volume_name, should_run))
+      
       if should_run == True:
          rc = ensure_UG_running( syndicate_url,
                                  principal_id,
@@ -569,8 +587,11 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
       
    # inner function for ensuring an RG is running 
    def _runchange_RG( should_run ):
+      
+      log.info("Switch RG for %s to run status '%s'" % (volume_name, should_run))
+      
       if should_run == True:
-         rc = ensure_UG_running( syndicate_url,
+         rc = ensure_RG_running( syndicate_url,
                                  principal_id,
                                  volume_name,
                                  gateway_directives["RG"]["name"],
@@ -592,6 +613,9 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
    
    # inner function for ensuring an RG is running 
    def _runchange_AG( should_run ):
+      
+      log.info("Switch RG for %s to run status '%s'" % (volume_name, should_run))
+      
       if should_run == True:
          rc = ensure_AG_running( syndicate_url,
                                  principal_id,
@@ -646,7 +670,6 @@ def start_stop_all_volumes( config, volume_info_list, slice_secret, ignored=[] )
    for volume_info in volume_info_list:
          
       volume_name = volume_info[ observer_cred.OPENCLOUD_VOLUME_NAME ]
-      hostname = socket.gethostname()
       
       # get what we need...
       try:
