@@ -1,7 +1,14 @@
 #!/bin/bash
 
-ROOT=$HOME/syndicate/libsyndicateUG-root
-NAME="libsyndicateUG"
+if ! [ $1 ]; then
+   echo "Usage: $0 PACKAGE_ROOT"
+   exit 1
+fi
+
+# ROOT=$HOME/syndicate/libsyndicateUG-root
+ROOT=$1
+
+NAME="libsyndicate-ug"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
 DEPS="libssl1.0.0 libcurl3-gnutls libprotobuf7 libsyndicate" 

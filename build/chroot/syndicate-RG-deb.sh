@@ -1,7 +1,13 @@
 #!/bin/bash
 
-ROOT=$HOME/syndicate/syndicate-RG-root
-NAME="syndicate-RG"
+if ! [ $1 ]; then
+   echo "Usage: $0 PACKAGE_ROOT"
+   exit 1
+fi
+
+# ROOT=$HOME/syndicate/syndicate-RG-root
+ROOT=$1
+NAME="syndicate-rg"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
 DEPS="python-syndicate" 

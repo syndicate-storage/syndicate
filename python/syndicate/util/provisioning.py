@@ -23,6 +23,7 @@ import sys
 import errno
 import random
 import logging
+import binascii
 
 logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 log = logging.getLogger()
@@ -56,7 +57,8 @@ def make_gateway_private_key_password( gateway_name, secret ):
     NOTE: its only as secure as the secret; the rest can be guessed by the adversary 
     """
     h = HashAlg.SHA256Hash()
-    h.update( "%s-%s" % (gateway_name, secret))
+    secret_hex = binascii.hexlify( secret )
+    h.update( "%s-%s" % (gateway_name, secret_hex))
     return h.hexdigest()
  
  

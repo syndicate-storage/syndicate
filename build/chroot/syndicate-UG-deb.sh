@@ -1,7 +1,13 @@
 #!/bin/bash
 
-ROOT=$HOME/syndicate/syndicate-UG-root
-NAME="syndicate-UG"
+if ! [ $1 ]; then
+   echo "Usage: $0 PACKAGE_ROOT"
+   exit 1
+fi
+
+# ROOT=$HOME/syndicate/syndicate-UG-root
+ROOT=$1
+NAME="syndicate-ug"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
 DEPS="libssl1.0.0 libcurl3-gnutls libprotobuf7 libsyndicate fuse libboost-system1.48.0 libboost-thread1.48.0 python-syndicate" 

@@ -1,7 +1,13 @@
 #!/bin/bash
 
-ROOT=$HOME/syndicate/syndicate-MS-clients-root
-NAME="syndicate-MS-clients"
+if ! [ $1 ]; then
+   echo "Usage: $0 PACKAGE_ROOT"
+   exit 1
+fi
+
+# ROOT=$HOME/syndicate/syndicate-MS-clients-root
+ROOT=$1
+NAME="syndicate-ms-clients"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
 DEPS="python-syndicate" 

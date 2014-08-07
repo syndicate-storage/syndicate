@@ -1,7 +1,13 @@
 #!/bin/bash
 
-ROOT=$HOME/syndicate/syndicate-AG-root
-NAME="syndicate-AG"
+if ! [ $1 ]; then
+   echo "Usage: $0 PACKAGE_ROOT"
+   exit 1
+fi
+
+# ROOT=$HOME/syndicate/syndicate-AG-root
+ROOT=$1
+NAME="syndicate-ag"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
 DEPS="libssl1.0.0 libcurl3-gnutls libprotobuf7 libsyndicate thrift0.8-syndicate" 

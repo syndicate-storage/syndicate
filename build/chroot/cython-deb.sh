@@ -1,6 +1,6 @@
 #!/bin/bash
 
-ROOT=$HOME/syndicate/python-syndicate-root
+ROOT=$HOME/cython/cython-root
 NAME="cython0.19"
 VERSION="0.19.2"
 
