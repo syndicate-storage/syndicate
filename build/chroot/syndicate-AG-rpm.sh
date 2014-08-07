@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ROOT=$HOME/syndicate/syndicate-AG-root
-NAME="syndicate-AG"
+NAME="syndicate-ag"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
 DEPS="openssl curl protobuf libsyndicate thrift0.8-syndicate" 

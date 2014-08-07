@@ -1,10 +1,16 @@
 #!/bin/bash
 
-ROOT=$HOME/syndicate/python-syndicate-root
+if ! [ $1 ]; then
+   echo "Usage: $0 PACKAGE_ROOT"
+   exit 1
+fi
+
+# ROOT=$HOME/syndicate/python-syndicate-root
+ROOT=$1
 NAME="python-syndicate"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
-DEPS="libssl1.0.0 libcurl3-gnutls libprotobuf7 libsyndicate libsyndicateUG python-protobuf python-crypto python-scrypt" 
+DEPS="libssl1.0.0 libcurl3-gnutls libprotobuf7 libsyndicate libsyndicate-ug python-protobuf python-crypto python-scrypt python-setproctitle python-requests python-psutil python-daemon" 
 
 DEPARGS=""
 for pkg in $DEPS; do

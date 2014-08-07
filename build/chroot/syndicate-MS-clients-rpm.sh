@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ROOT=$HOME/syndicate/syndicate-MS-clients-root
-NAME="syndicate-MS-clients"
+NAME="syndicate-ms-clients"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
 DEPS="python-syndicate" 

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ROOT=$HOME/syndicate/libsyndicateUG-root
-NAME="libsyndicateUG"
+NAME="libsyndicate-ug"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
 DEPS="openssl curl protobuf libsyndicate fuse fuse-libs boost-system boost-thread" 

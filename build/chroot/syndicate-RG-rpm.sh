@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ROOT=$HOME/syndicate/syndicate-RG-root
-NAME="syndicate-RG"
+NAME="syndicate-rg"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
 DEPS="python-syndicate" 
