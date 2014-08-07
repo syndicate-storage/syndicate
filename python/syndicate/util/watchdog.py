@@ -70,6 +70,22 @@ def parse_proc_attrs( proc_cmdline ):
          
 
 #-------------------------------
+def get_proc_cmdline( p ):
+   # depending on which version of psutil we're using, this is either a list
+   # or a callable that evaluates to a list.
+   cmdline = None 
+   
+   try:
+      cmdline = p.cmdline()
+   except:
+      cmdline = p.cmdline
+   
+   assert type(cmdline) == list, "Unable to iterate over process command-lines"
+   
+   return cmdline
+   
+
+#-------------------------------
 def find_by_attrs( watchdog_name, attrs ):
    """
    Find a running watchdog by a given attribute set
@@ -78,7 +94,7 @@ def find_by_attrs( watchdog_name, attrs ):
    procs = []
    for p in psutil.process_iter():
       
-      cmdline = p.cmdline()
+      cmdline = get_proc_cmdline( p )
       
       if len(cmdline) == 0:
          continue 

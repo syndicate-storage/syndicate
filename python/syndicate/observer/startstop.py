@@ -330,7 +330,7 @@ def list_running_gateways_by_volume():
       # from these, find out which volumes
       for running_watchdog_proc in running_watchdog_procs:
          
-         cmdline = running_watchdog_proc.cmdline()[0]
+         cmdline = watchdog.get_proc_cmdline( running_watchdog_proc )[0]
          
          watchdog_attrs = watchdog.parse_proc_attrs( cmdline )
          
