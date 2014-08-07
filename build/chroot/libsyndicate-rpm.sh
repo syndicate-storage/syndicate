@@ -1,6 +1,11 @@
 #!/bin/bash
 
-ROOT=$HOME/syndicate/libsyndicate-root
+if ! [ $1 ]; then
+   echo "Usage: $0 PACKAGE_ROOT"
+   exit 1
+fi
+
+ROOT=$1
 NAME="libsyndicate"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
