@@ -57,7 +57,7 @@ def sync_volume_record( volume ):
    logger.info( "Sync Volume = %s\n\n" % volume.name )
    
    principal_id = volume.owner_id.email
-   config = get_config()
+   config = observer_core.get_config()
    
    max_UGs = None 
    max_RGs = None
@@ -67,7 +67,7 @@ def sync_volume_record( volume ):
    try:
       max_UGs = CONFIG.SYNDICATE_UG_QUOTA 
       max_RGs = CONFIG.SYNDICATE_RG_QUOTA
-      observer_secret = config.SYNDICATE_OBSERVER_SECRET
+      observer_secret = observer_core.get_syndicate_observer_secret( config.SYNDICATE_OBSERVER_SECRET )
    except Exception, e:
       traceback.print_exc()
       logger.error("config is missing SYNDICATE_OBSERVER_SECRET, SYNDICATE_UG_QUOTA, SYNDICATE_RG_QUOTA")
@@ -117,7 +117,7 @@ def sync_volumeaccessright_record( vac ):
    syndicate_caps = "UNKNOWN"  # for exception handling
    
    # get arguments
-   config = get_config()
+   config = observer_core.get_config()
    principal_id = vac.owner_id.email
    volume_name = vac.volume.name
    syndicate_caps = observer_core.opencloud_caps_to_syndicate_caps( vac.cap_read_data, vac.cap_write_data, vac.cap_host_data ) 
@@ -126,7 +126,7 @@ def sync_volumeaccessright_record( vac ):
    
    # validate config
    try:
-      observer_secret = config.SYNDICATE_OBSERVER_SECRET
+      observer_secret = observer_core.get_syndicate_observer_secret( config.SYNDICATE_OBSERVER_SECRET )
    except Exception, e:
       traceback.print_exc()
       logger.error("syndicatelib config is missing SYNDICATE_RG_DEFAULT_PORT, SYNDICATE_OBSERVER_SECRET")
@@ -143,12 +143,12 @@ def sync_volumeaccessright_record( vac ):
 
    # grant the slice-owning user the ability to provision UGs in this Volume
    try:
-      rc = observer_core.ensure_volume_access_right_exists( slice_principal_id, volume_name, syndicate_caps )
-      assert rc is True, "Failed to set up Volume access right for slice %s in %s" % (slice_principal_id, volume_name)
+      rc = observer_core.ensure_volume_access_right_exists( principal_id, volume_name, syndicate_caps )
+      assert rc is True, "Failed to set up Volume access right for slice %s in %s" % (principal_id, volume_name)
       
    except Exception, e:
       traceback.print_exc()
-      logger.error("Failed to set up Volume access right for slice %s in %s" % (slice_principal_id, volume_name))
+      logger.error("Failed to set up Volume access right for slice %s in %s" % (principal_id, volume_name))
       raise e
    
    except Exception, e:
@@ -177,9 +177,9 @@ def sync_volumeslice_record( vs ):
    slice_secret = None
    gateway_name_prefix = None
    
-   config = get_config()
+   config = observer_core.get_config()
    try:
-      observer_secret = config.SYNDICATE_OBSERVER_SECRET
+      observer_secret = observer_core.get_syndicate_observer_secret( config.SYNDICATE_OBSERVER_SECRET )
       RG_closure = config.SYNDICATE_RG_CLOSURE
       observer_pkey_path = config.SYNDICATE_OBSERVER_PRIVATE_KEY
       syndicate_url = config.SYNDICATE_SMI_URL

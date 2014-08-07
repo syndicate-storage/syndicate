@@ -121,7 +121,7 @@ class ObserverSecretValue( models.TextField ):
        config = syndicatelib.get_config()
        
        try:
-          observer_pkey_path = config.SYNDICATE_PRIVATE_KEY
+          observer_pkey_path = config.SYNDICATE_OBSERVER_PRIVATE_KEY
           observer_pkey_pem = syndicatelib.get_observer_private_key_pem( observer_pkey_path )
        except:
           raise syndicatelib.SyndicateObserverError( "Internal Syndicate Observer error: failed to load Observer private key" )
@@ -155,7 +155,7 @@ class ObserverSecretValue( models.TextField ):
        config = syndicatelib.get_config()
        
        try:
-          observer_pkey_path = config.SYNDICATE_PRIVATE_KEY
+          observer_pkey_path = config.SYNDICATE_OBSERVER_PRIVATE_KEY
           observer_pkey_pem = syndicatelib.get_observer_private_key_pem( observer_pkey_path )
        except:
           raise syndicatelib.SyndicateObserverError( "Internal Syndicate Observer error: failed to load Observer private key" )
@@ -244,7 +244,7 @@ class VolumeSlice(PlCoreBase):
        config = syndicatelib.get_config()
        
        try:
-          observer_pkey_path = config.SYNDICATE_PRIVATE_KEY
+          observer_pkey_path = config.SYNDICATE_OBSERVER_PRIVATE_KEY
           observer_pkey_pem = syndicatelib.get_observer_private_key_pem( observer_pkey_path )
        except:
           raise syndicatelib.SyndicateObserverError( "Internal Syndicate Observer error: failed to load Observer private key" )

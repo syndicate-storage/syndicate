@@ -78,12 +78,18 @@ OPENCLOUD_SYNDICATE_URL                 = "syndicate_url"
 
 OPENCLOUD_VOLUME_LIST                   = "volumes"
 
+CRYPTO_INITED = False
 
 #-------------------------------
 def create_sealed_and_signed_blob( private_key_pem, key, data ):
     """
     Create a sealed and signed message.
     """
+    global CRYPTO_INITED
+
+    if not CRYPTO_INITED:
+       c_syndicate.crypto_init()
+       CRYPTO_INITED = True
     
     rc, sealed_data = c_syndicate.symmetric_seal( data, key )
     if rc != 0:
@@ -104,6 +110,12 @@ def verify_and_unseal_blob( public_key_pem, secret, blob_data ):
     verify and unseal a serialized string of JSON
     """
 
+    global CRYPTO_INITED
+
+    if not CRYPTO_INITED:
+       c_syndicate.crypto_init()
+       CRYPTO_INITED = True 
+    
     # verify it 
     rc, sealed_data = syndicate_crypto.verify_and_parse_json( public_key_pem, blob_data )
     if rc != 0:
