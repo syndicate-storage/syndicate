@@ -136,16 +136,26 @@ def make_openid_url( email ):
 
 
 #-------------------------------
-def connect_syndicate( username=CONFIG.SYNDICATE_OPENCLOUD_USER, password=CONFIG.SYNDICATE_OPENCLOUD_PASSWORD ):
+def connect_syndicate( username=CONFIG.SYNDICATE_OPENCLOUD_USER, password=CONFIG.SYNDICATE_OPENCLOUD_PASSWORD, user_pkey_path=CONFIG.SYNDICATE_OPENCLOUD_PKEY ):
     """
     Connect to the OpenCloud Syndicate SMI, using the OpenCloud user credentials.
     """
     debug = True 
     if hasattr(CONFIG, "DEBUG"):
        debug = CONFIG.DEBUG
+    
+    user_pkey_pem = None
+    
+    if user_pkey_path is not None:
+       user_pkey = syndicate_storage_api.read_private_key( user_pkey_path )
+       if user_pkey is None:
+          raise Exception("Failed to load private key from %s" % user_pkey_path )
+       else:
+          user_pkey_pem = user_pkey.exportKey()
        
     client = syntool.Client( username, CONFIG.SYNDICATE_SMI_URL,
                              password=password,
+                             user_pkey_pem=user_pkey_pem,
                              debug=debug )
 
     return client

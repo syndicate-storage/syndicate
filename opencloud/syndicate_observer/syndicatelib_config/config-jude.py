@@ -6,7 +6,8 @@ SYNDICATE_SMI_URL="http://localhost:8080"
 SYNDICATE_OPENID_TRUSTROOT="http://localhost:8081"
 
 SYNDICATE_OPENCLOUD_USER="jcnelson@cs.princeton.edu"
-SYNDICATE_OPENCLOUD_PASSWORD="nya"
+SYNDICATE_OPENCLOUD_PASSWORD=None
+SYNDICATE_OPENCLOUD_PKEY="/home/jude/Desktop/research/git/syndicate/ms/tests/user_test_key.pem"
 
 SYNDICATE_PYTHONPATH="/home/jude/Desktop/research/git/syndicate/build/out/python"
 
