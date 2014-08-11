@@ -67,7 +67,12 @@ def parse_proc_attrs( proc_cmdline ):
          attrs[key] = value
          
    return attrs
-         
+
+
+
+#-------------------------------
+def get_proc_pid( p ):
+   return p.pid
 
 #-------------------------------
 def get_proc_cmdline( p ):

@@ -73,7 +73,10 @@ def do_push( sliver_hosts, portnum, payload ):
     # fan-out 
     requests = []
     for sh in sliver_hosts:
-      rs = grequests.post( "http://" + sh + ":" + str(portnum), data={observer_cred.OPENCLOUD_JSON: payload}, timeout=getattr(CONFIG, "SYNDICATE_HTTP_PUSH_TIMEOUT", 60) )
+      data = {observer_cred.OPENCLOUD_JSON: payload, observer_cred.OPENCLOUD_SLIVER_HOSTNAME: sh}
+      
+      # TODO: https, using the sliver's public key, since we're pushing over the hostname
+      rs = grequests.post( "http://" + sh + ":" + str(portnum), data=data, timeout=getattr(CONFIG, "SYNDICATE_HTTP_PUSH_TIMEOUT", 60) )
       requests.append( rs )
       
     # fan-in
