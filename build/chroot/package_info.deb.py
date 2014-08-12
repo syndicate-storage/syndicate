@@ -59,5 +59,12 @@ PACKAGE_INFO = [
                 install_target  = "syndicated-install",
                 install_dir     = "%s/syndicated-root/usr" % BASE_DIR,
                 package_root    = "%s/syndicated-root" % BASE_DIR,
-                package_script  = "%s/syndicated-deb.sh" % BASE_DIR )
+                package_script  = "%s/syndicated-deb.sh" % BASE_DIR ),
+
+   PackageInfo( name            = "python-syndicate",
+                build_target    = "python-syndicate",
+                install_target  = "python-syndicate-install",
+                install_dir     = "%s/python-syndicate-root/usr" % BASE_DIR,
+                package_root    = "%s/python-syndicate-root/" % BASE_DIR,
+                package_script  = "%s/python-syndicate-deb.sh" % BASE_DIR )
 ]
