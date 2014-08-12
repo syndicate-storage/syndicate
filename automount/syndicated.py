@@ -146,6 +146,7 @@ def cache_slice_secret( config, secret ):
     
     SLICE_SECRET = secret 
 
+
 #-------------------------------
 class EnsureRunningThread( threading.Thread ):
    """
@@ -292,6 +293,7 @@ def load_public_key( key_path ):
       return None
    
    return key
+
 
 #-------------------------------
 def read_observer_data_from_json( public_key_path, json_text ):
@@ -671,6 +673,9 @@ def main( config ):
 
 #-------------------------    
 def load_config_file( paths ):
+   """
+   Load the config file from the first path given on the command-line.
+   """
    if paths is None:
       return None 
    
@@ -686,7 +691,9 @@ def load_config_file( paths ):
 
 #-------------------------    
 def get_pids_of_daemons_for_dir( mountpoint_dir ):
-   
+   """
+   Get the PIDs of all automount daemons running on a mountpoint.
+   """
    procs = watchdog.find_by_attrs( "syndicate-automount-daemon", {"mounts": mountpoint_dir} )
    
    ret = [ watchdog.get_proc_pid(p) for p in procs ]
@@ -696,6 +703,11 @@ def get_pids_of_daemons_for_dir( mountpoint_dir ):
 
 #-------------------------    
 def ensure_running( config ):
+   """
+   Verify that there is an automount daemon servicing a mountpoint.
+   If there isn't, start one.
+   If we're configured to run in the foreground, this method never returns.
+   """
    
    mountpoint_dir = config['mountpoint_dir']
    
@@ -726,6 +738,10 @@ def ensure_running( config ):
 
 #-------------------------    
 def signal_all( procs, signum ):
+   """
+   Send signum to all of a list of processes.
+   Return the ones where we couldn't deliver the signal.
+   """
    
    failed = []
    
@@ -747,6 +763,9 @@ def signal_all( procs, signum ):
 
 #-------------------------    
 def ensure_stopped( config ):
+   """
+   Stop all syndicated instances for this mountpoint.
+   """
    
    mountpoint_dir = config['mountpoint_dir']
    
@@ -771,7 +790,7 @@ def ensure_stopped( config ):
             return False 
          
    return True
-      
+
 
 #-------------------------    
 if __name__ == "__main__":

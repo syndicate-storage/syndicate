@@ -20,9 +20,13 @@ import os
 Import('env')
 env = env.Clone()
 
-# get a list of all files
-automount_files = Glob("syndicated.py")
+# get a list of opencloud-specific files 
+target_config = env.Command( "etc/syndicated/syndicated.conf", "syndicated.conf", Move("$TARGET", "$SOURCE") )
+target_initscript = env.Command( "etc/init.d/syndicated", "initscript", Move("$TARGET", "$SOURCE") )
+target_credserver_pubkey = env.Command( "etc/syndicated/cred-server.pub", "cred-server.pub", Move("$TARGET", "$SOURCE") )
 
-env.AlwaysBuild( automount_files )
+targets = [target_config, target_initscript, target_credserver_pubkey]
 
-Return( 'automount_files' )
+env.AlwaysBuild( targets )
+
+Return( 'targets' )
