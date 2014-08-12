@@ -10,13 +10,12 @@ if ! [ $2 ]; then
    exit 1
 fi
 
-# ROOT=$HOME/syndicate/syndicated-root
 ROOT=$1
 NAME="syndicated"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
 
-POST_INSTALL_SCRIPT=$2/post-inst.sh
-PRE_REMOVE_SCRIPT=$2/pre-rm.sh
+POST_INSTALL_SCRIPT=$2/pkg/post-inst.sh
+PRE_REMOVE_SCRIPT=$2/pkg/pre-rm.sh
 
 DEPS="python-syndicate" 
 

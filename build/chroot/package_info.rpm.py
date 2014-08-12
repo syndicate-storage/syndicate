@@ -4,7 +4,7 @@ import sys
 import os
 from collections import namedtuple
 
-PackageInfo = namedtuple( "PackageInfo", ["name", "build_target", "install_target", "install_dir", "package_root", "package_script"] )
+PackageInfo = namedtuple( "PackageInfo", ["name", "build_target", "install_target", "install_dir", "package_root", "package_script", "package_scripts_root"] )
 
 BASE_DIR = "/root/syndicate"
 BUILD_ROOT = "/root/syndicate/syndicate"
@@ -66,5 +66,14 @@ PACKAGE_INFO = [
                 install_dir     = "%s/syndicated-root/usr" % BASE_DIR,
                 package_root    = "%s/syndicated-root" % BASE_DIR,
                 package_script  = "%s/syndicated-rpm.sh" % BASE_DIR,
-                package_scripts_root = "%s/syndicated-pkg/pkg/opencloud/syndicated" % BASE_DIR )
+                package_scripts_root = "%s/syndicated-pkg/pkg/opencloud/syndicated" % BASE_DIR ),
+
+   PackageInfo( name            = "python-syndicate",
+                build_target    = "python-syndicate",
+                install_target  = "python-syndicate-install",
+                install_dir     = "%s/python-syndicate-root/usr" % BASE_DIR,
+                package_root    = "%s/python-syndicate-root/" % BASE_DIR,
+                package_script  = "%s/python-syndicate-rpm.sh" % BASE_DIR,
+                package_scripts_root = "" )
+
 ]

@@ -386,19 +386,19 @@ env.Alias("syndicated", [automount_daemon])
 common.install_targets( env, "syndicated-install", bin_install_dir, automount_daemon )
 
 # ----------------------------------------
-# OpenCloud-specific automount daemon 
+# OpenCloud-specific automount daemon config 
 
 opencloud_out = "build/out/opencloud"
 opencloud_automount_etc_files = SConscript( "automount/opencloud/SConscript", variant_dir=opencloud_out )
 
-env.Alias("syndicated-opencloud", [automount_daemon, opencloud_automount_etc_files] )
+env.Alias("syndicated-opencloud-etc", [automount_daemon, opencloud_automount_etc_files] )
 
 common.install_tree( env, "syndicated-opencloud-install-etc", etc_install_dir, opencloud_automount_etc_files, opencloud_out + "/etc" )
 
 # ----------------------------------------
 # OpenCloud-specific installation scripts 
 
-opencloud_pkg_out = "build/out/pkg/opencloud/automount"
+opencloud_pkg_out = "build/out/pkg/opencloud/syndicated"
 opencloud_automount_pkgscripts = SConscript( "automount/opencloud/pkg/SConscript", variant_dir=opencloud_pkg_out )
 
 env.Alias("syndicated-opencloud-pkg", opencloud_automount_pkgscripts )

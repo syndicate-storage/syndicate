@@ -1,3 +1,3 @@
 #!/bin/sh
 
-/etc/init.d/syndicated stop
+test -x /etc/init.d/syndicated && /etc/init.d/syndicated stop
