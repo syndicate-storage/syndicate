@@ -48,6 +48,7 @@ import syndicate.syndicate as c_syndicate
 #-------------------------------
 # JSON constants 
 OPENCLOUD_JSON                          = "observer_message"
+OPENCLOUD_SLIVER_HOSTNAME               = "sliver_hostname"
 
 # message for one Volume
 OPENCLOUD_VOLUME_NAME                   = "volume_name"

@@ -53,7 +53,7 @@ def load_config( config_str, opts, config_header, config_options ):
          # force singleton...
          if isinstance(ret[arg_opt], list) and len(ret[arg_opt]) == 1 and config_options[arg_opt][1] == 1:
             ret[arg_opt] = ret[arg_opt][0]
-            
+         
          ret["_in_argv"].append( arg_opt )
       
       elif config != None and config.has_option( config_header, arg_opt):
@@ -77,24 +77,46 @@ def build_parser( progname, description, config_options ):
             # no short option (no option in general) means accumulate
             parser.add_argument( config_option, metavar=config_option, type=str, nargs=nargs, help=config_help)
       else:
-         # no argument, but mark its existence
-         parser.add_argument( "--" + config_option, short_option, action="store_true", help=config_help)
+         if nargs >= 1:
+            parser.add_argument( config_option, metavar=config_option, type=str, nargs=nargs, help=config_help)
+         
+         else:
+            # no argument, but mark its existence
+            parser.add_argument( "--" + config_option, short_option, action="store_true", help=config_help)
    
    return parser
 
 
 #-------------------------
-def build_config( argv, description, config_header, config_options, conf_validator=None ):
+def build_config( argv, description, config_header, config_options, conf_validator=None, opt_handlers={}, config_opt=None, allow_none=False ):
    
    parser = build_parser( argv[0], description, config_options )
    opts = parser.parse_args( argv[1:] )
-   config = load_config( None, opts, config_header, config_options )
+   
+   for opt, opt_cb in opt_handlers.items():
+      if config_options.has_key( opt ) and hasattr( opts, opt ):
+         # generate this option argument
+         result = opt_cb( getattr(opts, opt) )
+         setattr( opts, opt, result )
+      
+   config_text = None 
+   if config_opt is not None and hasattr(opts, config_opt):
+      config_text = getattr(opts, config_opt)
+      
+   config = load_config( config_text, opts, config_header, config_options )
    
    if config == None:
       print >> sys.stderr, "Failed to load configuration"
       parser.print_help()
       return None
 
+   if not allow_none:
+      # remove any instances of None from config 
+      ks = config.keys()
+      for k in ks:
+         if config[k] is None:
+            del config[k]
+      
    if conf_validator is not None:
       rc = conf_validator( config )
       if rc != 0:

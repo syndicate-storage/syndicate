@@ -1,10 +1,19 @@
 #!/usr/bin/python
 
 """
-Daemon that sits on a sliver, which:
-* learns the Volumes it attached to from OpenCloud
-* creates/destroyes Gateways to said Volumes
-* keeps the Gateways mounted and running
+   Copyright 2013 The Trustees of Princeton University
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
 """
 
 import os
@@ -25,6 +34,7 @@ import shlex
 import time
 import copy
 import binascii
+import setproctitle
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
@@ -34,7 +44,7 @@ from Crypto.Signature import PKCS1_PSS as CryptoSigner
 import logging
 logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 log = logging.getLogger()
-log.setLevel( logging.INFO )
+log.setLevel( logging.ERROR )
 
 import syndicate
 import syndicate.client.bin.syntool as syntool
@@ -73,7 +83,8 @@ CONFIG_OPTIONS = {
    "run_once":          ("-1", 0, "Poll once and exit, printing the polled data and taking no further action."),
    "RG_only":           ("-R", 0, "Only start the RG"),
    "UG_only":           ("-U", 0, "Only start the UG"),
-   "RG_public":         ("-G", 0, "Make the local RG instance publicly available (no effect if --UG_only is given)")
+   "RG_public":         ("-G", 0, "Make the local RG instance publicly available (no effect if --UG_only is given)"),
+   "command":           (None, '*', "Control-plane requests.  'pids' will print the list of process IDs running at the given mountpoint.")
 }
 
 DEFAULT_CONFIG = {
@@ -134,6 +145,7 @@ def cache_slice_secret( config, secret ):
     global SLICE_SECRET 
     
     SLICE_SECRET = secret 
+
 
 #-------------------------------
 class EnsureRunningThread( threading.Thread ):
@@ -282,6 +294,7 @@ def load_public_key( key_path ):
    
    return key
 
+
 #-------------------------------
 def read_observer_data_from_json( public_key_path, json_text ):
     """
@@ -325,7 +338,11 @@ def download_data( url ):
         log.error("GET %s status %s" % (url, req.status_code))
         return None
     
-    return req.text
+    # NOTE: some older versions of request use .content instead of .text
+    try:
+       return req.text
+    except:
+       return req.content
     
 
 #-------------------------------
@@ -426,11 +443,13 @@ def validate_config( config ):
    # debugging info?
    if config['debug']:
       log.setLevel( logging.DEBUG )
-      
+   else:
+      log.setLevel( logging.ERROR )
+   
    # required arguments
-   required = ['observer_url', 'public_key']
+   required = ['observer_url', 'public_key', 'slice_name', 'mountpoint_dir']
    for req in required:
-      if config.get( req, None ) == None:
+      if config.get( req, None ) is None:
          print >> sys.stderr, "Missing required argument: %s" % req
          return -1
    
@@ -464,9 +483,46 @@ def validate_config( config ):
          
    
    # convert slice secret to binary, if given 
-   if config.has_key('slice_secret'):
-      config['slice_secret'] = binascii.unhexlify( config['slice_secret'] )
+   if config.has_key('slice_secret') and config['slice_secret'] is not None:
+      
+      try:
+         config['slice_secret'] = binascii.unhexlify( config['slice_secret'] )
+      except:
+         log.error("Invalid slice secret")
+         return -1
    
+   # if not foreground, verify that log directory and pidfile exist and are searchable and writable 
+   if not config.has_key('foreground') or not config['foreground']:
+      
+      # need these arguments 
+      for required in ['logdir']:
+         if config.get( required, None ) is None:
+            print >> sys.stderr, "Missing required argument: %s" % required
+            return -1
+      
+      pidfile_path = config.get("pidfile", None)
+      pidfile_dir_path = None 
+      
+      if pidfile_path is not None:
+         pidfile_dir_path = os.path.dirname( pidfile_path.rstrip("/") )
+      
+      logdir_path = config["logdir"]
+      mountpoint_dir = config["mountpoint_dir"]
+      
+      for dirpath in [logdir_path, pidfile_dir_path]:
+         
+         if dirpath is None:
+            continue 
+         
+         if not os.path.exists( dirpath ):
+            raise Exception("No such file or directory: %s" % dirpath )
+         
+         if not os.path.isdir( dirpath ):
+            raise Exception("Not a directory: %s" % dirpath )
+         
+         if not os.access( dirpath, os.W_OK | os.X_OK ):
+            raise Exception("Directory not writable/searchable: %s" % dirpath )
+      
    return 0
 
 
@@ -616,15 +672,191 @@ def main( config ):
 
 
 #-------------------------    
+def load_config_file( paths ):
+   """
+   Load the config file from the first path given on the command-line.
+   """
+   if paths is None:
+      return None 
+   
+   path = paths[0]
+   log.info( "Loading config from %s" % path )
+   config_txt = storage.read_file( path )
+   
+   if config_txt is None:
+      raise Exception("Failed to read config from %s" % path)
+   
+   return config_txt
+
+
+#-------------------------    
+def get_pids_of_daemons_for_dir( mountpoint_dir ):
+   """
+   Get the PIDs of all automount daemons running on a mountpoint.
+   """
+   procs = watchdog.find_by_attrs( "syndicate-automount-daemon", {"mounts": mountpoint_dir} )
+   
+   ret = [ watchdog.get_proc_pid(p) for p in procs ]
+   
+   return ret
+
+
+#-------------------------    
+def ensure_running( config ):
+   """
+   Verify that there is an automount daemon servicing a mountpoint.
+   If there isn't, start one.
+   If we're configured to run in the foreground, this method never returns.
+   """
+   
+   mountpoint_dir = config['mountpoint_dir']
+   
+   # is the daemon running?
+   procs = watchdog.find_by_attrs( "syndicate-automount-daemon", {"mounts": mountpoint_dir} )
+   if len(procs) > 0:
+      # it's running
+      print "Syndicate automount daemon already running for %s (PID(s): %s)" % (mountpoint_dir, ",".join( [str(watchdog.get_proc_pid(p)) for p in procs] ))
+      return True
+   
+   if config.get("foreground", None):
+      main( config )
+      
+   else:
+      logfile_path = None 
+      pidfile_path = config.get("pidfile", None)
+      
+      if config.has_key("logdir"):
+         logfile_path = os.path.join( config['logdir'], "syndicated.log" )
+      
+      title = watchdog.attr_proc_title( "syndicate-automount-daemon", {"mounts" : mountpoint_dir} )
+      setproctitle.setproctitle( title )
+      
+      daemon.daemonize( lambda: main(config), logfile_path=logfile_path, pidfile_path=pidfile_path )
+      
+      return True
+
+
+#-------------------------    
+def signal_all( procs, signum ):
+   """
+   Send signum to all of a list of processes.
+   Return the ones where we couldn't deliver the signal.
+   """
+   
+   failed = []
+   
+   for proc in procs:
+      pid = watchdog.get_proc_pid( proc )
+      
+      log.info("Send signal %s to %s" % (signum, pid))
+      try:
+         os.kill( pid, signum )
+      except OSError, oe:
+         log.exception(oe)
+         log.error("Failed to send signal %s to %s, errno = %s" % (signum, pid, oe.errno))
+         
+         failed.append( proc )
+
+   return failed
+   
+
+
+#-------------------------    
+def ensure_stopped( config ):
+   """
+   Stop all syndicated instances for this mountpoint.
+   """
+   
+   mountpoint_dir = config['mountpoint_dir']
+   
+   # is the daemon running?
+   procs = watchdog.find_by_attrs( "syndicate-automount-daemon", {"mounts": mountpoint_dir} )
+   
+   if len(procs) > 0:
+      
+      failed = signal_all( procs, signal.SIGTERM )
+      
+      # wait for signals to be delivered
+      time.sleep(1.0)
+      
+      procs = watchdog.find_by_attrs( "syndicate-automount-daemon", {"mounts": mountpoint_dir} )
+      
+      if len(procs) > 0 or len(failed) > 0:
+         
+         failed = signal_all( procs, signal.SIGKILL )
+         if len(failed) > 0:
+            log.error("Failed to stop automount daemons %s" % (",".join( [str(watchdog.get_proc_pid( p )) for p in procs] )))
+            
+            return False 
+         
+   return True
+
+
+#-------------------------    
 if __name__ == "__main__":
    
    argv = sys.argv
-   config = modconf.build_config( argv, "Syndicate Automount Daemon", "syndicated", CONFIG_OPTIONS, conf_validator=validate_config )
+   
+   log.setLevel( logging.ERROR )
+   
+   # early enable debug logging 
+   if "-d" in sys.argv or "--debug" in sys.argv:
+      import syndicate.client.common.log as Log
+      client_log = Log.get_logger()
+      
+      log.setLevel( logging.DEBUG )
+      client_log.setLevel( "DEBUG" )
+   
+   opt_handlers = {
+      "config": lambda arg: load_config_file( arg )
+   }
+   
+   config = modconf.build_config( argv, "Syndicate Automount Daemon", "syndicated", CONFIG_OPTIONS, conf_validator=validate_config, opt_handlers=opt_handlers, config_opt="config" )
    
    if config is None:
       sys.exit(-1)
    
+   # sanitize paths 
+   for path_opt in ['logdir', 'mountpoint_dir']:
+      if config.has_key(path_opt):
+         config[path_opt] = config[path_opt].rstrip("/\\")        # directories do NOT end in / or \ 
+   
    CONFIG = config 
+   
+   # process any control-plane commands
+   if config.has_key('command') and config['command'] != None and len(config['command']) > 0:
+      command = config['command'][0]
+      
+      # did we just want to get the pids?
+      if command == 'pids':
+         pids = get_pids_of_daemons_for_dir( config['mountpoint_dir'] )
+         for p in pids:
+            print p
+         
+         sys.exit(0)
+      
+      elif command == 'stop':
+         rc = ensure_stopped( config )
+         
+         if not rc:
+            sys.exit(1)
+         
+         else:
+            sys.exit(0)
+      
+      elif command == 'status':
+         # get status of daemon on this mountpoint. Exit 0 if running, exit 1 if not
+         pids = get_pids_of_daemons_for_dir( config['mountpoint_dir'] )
+         
+         if len(pids) > 0:
+            sys.exit(0)
+         
+         else:
+            sys.exit(1)
+         
+      else:
+         log.error("Unrecognized command '%s'" % command)
+         sys.exit(1)
    
    # obtain the slice secret, if one was not given 
    if config.has_key('slice_secret') and config['slice_secret'] is not None:
@@ -643,17 +875,6 @@ if __name__ == "__main__":
    if config['run_once']:
       run_once( config )
       sys.exit(0)
-      
-   if config.get("foreground", None):
-      main( config )
-      
-   else:
-      logfile_path = None 
-      pidfile_path = config.get("pidfile", None)
-      
-      if config.has_key("logdir"):
-         logfile_path = os.path.join( config['logdir'], "syndicated.log" )
-      
-      daemon.daemonize( lambda: main(config), logfile_path=logfile_path, pidfile_path=pidfile_path )
-        
+   
+   ensure_running( config )     
 

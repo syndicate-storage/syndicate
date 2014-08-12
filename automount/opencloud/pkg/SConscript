@@ -20,9 +20,12 @@ import os
 Import('env')
 env = env.Clone()
 
-# get a list of all files
-automount_files = Glob("syndicated.py")
+# get a list of opencloud-specific files 
+target_post_inst = env.Command( "pkg/opencloud/syndicated/post-inst.sh", "post-inst.sh", Move("$TARGET", "$SOURCE") )
+target_pre_rm = env.Command( "pkg/opencloud/syndicated/pre-rm.sh", "pre-rm.sh", Move("$TARGET", "$SOURCE") )
 
-env.AlwaysBuild( automount_files )
+targets = [target_post_inst, target_pre_rm]
 
-Return( 'automount_files' )
+env.AlwaysBuild( targets )
+
+Return( 'targets' )

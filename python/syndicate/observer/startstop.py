@@ -375,11 +375,11 @@ def gateway_directives_from_volume_info( volume_info, local_hostname, slice_secr
    volume_name = volume_info[ observer_cred.OPENCLOUD_VOLUME_NAME ]
    gateway_name_prefix = volume_info[ observer_cred.OPENCLOUD_SLICE_GATEWAY_NAME_PREFIX ]
    
-   RG_hostname = local_hostname
-   AG_hostname = local_hostname 
-   
    # get what we need...
    try:
+         
+      RG_hostname = local_hostname
+      AG_hostname = local_hostname 
       
       # global hostnames (i.e. multiple instantiations of the same gateway) override local hostnames.
       if volume_info[ observer_cred.OPENCLOUD_SLICE_AG_GLOBAL_HOSTNAME ] is not None:

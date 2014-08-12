@@ -21,6 +21,7 @@ import logging
 
 logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 global_log = logging.getLogger()
+global_log.setLevel( logging.ERROR )
 
 #-------------------------
 def get_logger():

@@ -1,7 +1,12 @@
 #!/bin/bash
 
 if ! [ $1 ]; then
-   echo "Usage: $0 PACKAGE_ROOT"
+   echo "Usage: $0 PACKAGE_ROOT PACKAGE_SCRIPTS_DIR"
+   exit 1
+fi
+
+if ! [ $2 ]; then
+   echo "Usage: $0 PACKAGE_ROOT PACKAGE_SCRIPTS_DIR"
    exit 1
 fi
 
@@ -9,6 +14,9 @@ fi
 ROOT=$1
 NAME="syndicated"
 VERSION="0.$(date +%Y\%m\%d\%H\%M\%S)"
+
+POST_INSTALL_SCRIPT=$2/post-inst.sh
+PRE_REMOVE_SCRIPT=$2/pre-rm.sh
 
 DEPS="python-syndicate" 
 
@@ -21,5 +29,5 @@ source /usr/local/rvm/scripts/rvm
 
 rm -f $NAME-0*.deb
 
-fpm --force -s dir -t deb -a noarch -v $VERSION -n $NAME $DEPARGS -C $ROOT --license "Apache 2.0" --vendor "Princeton University" --description "Syndicate auto-mount daemon." $(ls $ROOT)
+fpm --force -s dir -t deb -a noarch -v $VERSION -n $NAME $DEPARGS -C $ROOT --license "Apache 2.0" --vendor "Princeton University" --maintainer "Jude Nelson <jcnelson@cs.princeton.edu>" --url "https://github.com/jcnelson/syndicate" --description "Syndicate automount daemon." --after-install $POST_INSTALL_SCRIPT --before-remove $PRE_REMOVE_SCRIPT  $(ls $ROOT)
 

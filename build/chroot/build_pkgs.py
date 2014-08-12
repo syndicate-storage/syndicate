@@ -45,8 +45,8 @@ def install_target( target_name, dest_dir ):
    
    return rc
 
-def package_target( package_script, package_root ):
-   command = "%s %s" % (package_script, package_root)
+def package_target( package_script, package_root, package_scripts_root ):
+   command = "%s %s %s" % (package_script, package_root, package_scripts_root)
 
    rc = do_cmd( command )
    if rc != 0:
@@ -77,6 +77,7 @@ if __name__ == "__main__":
       installdir = package.install_dir
       package_script = package.package_script
       package_root = package.package_root
+      package_scripts_root = package.package_scripts_root
 
       msg = "Build package: %s" % name
       
@@ -89,6 +90,6 @@ if __name__ == "__main__":
       do_build_step( name, "install", lambda: install_target( install, installdir ) )
 
       os.chdir( PACKAGE_ROOT )
-      do_build_step( name, "package", lambda: package_target( package_script, package_root ) )
+      do_build_step( name, "package", lambda: package_target( package_script, package_root, package_scripts_root ) )
 
    print "Build complete"

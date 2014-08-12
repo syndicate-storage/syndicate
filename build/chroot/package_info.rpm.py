@@ -17,7 +17,7 @@ PACKAGE_INFO = [
 		install_target  = "libsyndicate-install",
 		install_dir     = "%s/libsyndicate-root/usr" % BASE_DIR,
                 package_root    = "%s/libsyndicate-root" % BASE_DIR,
-		package_script  = "%s/libsyndicate-deb.sh" % BASE_DIR,
+		package_script  = "%s/libsyndicate-rpm.sh" % BASE_DIR,
                 package_scripts_root = "" ),
 
    PackageInfo( name            = "libsyndicate-ug",
@@ -25,7 +25,7 @@ PACKAGE_INFO = [
                 install_target  = "libsyndicateUG-install",
                 install_dir     = "%s/libsyndicateUG-root/usr" % BASE_DIR,
                 package_root    = "%s/libsyndicateUG-root" % BASE_DIR,
-                package_script  = "%s/libsyndicateUG-deb.sh" % BASE_DIR,
+                package_script  = "%s/libsyndicateUG-rpm.sh" % BASE_DIR,
                 package_scripts_root = "" ),
 
    PackageInfo( name            = "syndicate-ug",
@@ -33,7 +33,7 @@ PACKAGE_INFO = [
                 install_target  = "UG-install",
                 install_dir     = "%s/syndicate-UG-root/usr" % BASE_DIR,
                 package_root    = "%s/syndicate-UG-root" % BASE_DIR,
-                package_script  = "%s/syndicate-UG-deb.sh" % BASE_DIR,
+                package_script  = "%s/syndicate-UG-rpm.sh" % BASE_DIR,
                 package_scripts_root = "" ),
 
    PackageInfo( name            = "syndicate-ag",
@@ -41,7 +41,7 @@ PACKAGE_INFO = [
                 install_target  = "AG-install",
                 install_dir     = "%s/syndicate-AG-root/usr" % BASE_DIR,
                 package_root    = "%s/syndicate-AG-root" % BASE_DIR,
-                package_script  = "%s/syndicate-AG-deb.sh" % BASE_DIR,
+                package_script  = "%s/syndicate-AG-rpm.sh" % BASE_DIR,
                 package_scripts_root = "" ),
 
    PackageInfo( name            = "syndicate-rg",
@@ -49,7 +49,7 @@ PACKAGE_INFO = [
                 install_target  = "RG-install",
                 install_dir     = "%s/syndicate-RG-root/usr" % BASE_DIR,
                 package_root    = "%s/syndicate-RG-root" % BASE_DIR,
-                package_script  = "%s/syndicate-RG-deb.sh" % BASE_DIR,
+                package_script  = "%s/syndicate-RG-rpm.sh" % BASE_DIR,
                 package_scripts_root = "" ),
 
    PackageInfo( name            = "ms-clients",
@@ -57,7 +57,7 @@ PACKAGE_INFO = [
                 install_target  = "MS-clients-install",
                 install_dir     = "%s/syndicate-MS-clients-root/usr" % BASE_DIR,
                 package_root    = "%s/syndicate-MS-clients-root" % BASE_DIR,
-                package_script  = "%s/syndicate-MS-clients-deb.sh" % BASE_DIR,
+                package_script  = "%s/syndicate-MS-clients-rpm.sh" % BASE_DIR,
                 package_scripts_root = "" ),
 
    PackageInfo( name            = "syndicated",
@@ -65,14 +65,6 @@ PACKAGE_INFO = [
                 install_target  = "syndicated-install",
                 install_dir     = "%s/syndicated-root/usr" % BASE_DIR,
                 package_root    = "%s/syndicated-root" % BASE_DIR,
-                package_script  = "%s/syndicated-deb.sh" % BASE_DIR,
-                package_scripts_root = "%s/syndicated-pkg/pkg/opencloud/syndicated" % BASE_DIR ),
-
-   PackageInfo( name            = "python-syndicate",
-                build_target    = "python-syndicate",
-                install_target  = "python-syndicate-install",
-                install_dir     = "%s/python-syndicate-root/usr" % BASE_DIR,
-                package_root    = "%s/python-syndicate-root/" % BASE_DIR,
-                package_script  = "%s/python-syndicate-deb.sh" % BASE_DIR,
-                package_scripts_root = "" )
+                package_script  = "%s/syndicated-rpm.sh" % BASE_DIR,
+                package_scripts_root = "%s/syndicated-pkg/pkg/opencloud/syndicated" % BASE_DIR )
 ]

@@ -248,7 +248,13 @@ def get_slice_hostnames( slice_name ):
 
    return hostnames
 
-    
+
+#-------------------------------
+def get_sliver_hostname( slice_name, instance_name ):
+   """
+   Query the Django DB and get the hostname of a sliver.
+   """
+   
 
 #-------------------------------
 # Begin functional tests.
