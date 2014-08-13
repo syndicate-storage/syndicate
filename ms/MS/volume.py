@@ -334,7 +334,6 @@ class Volume( storagetypes.Object ):
    read_attrs_api_required = [
       "blocksize",
       "active",
-      "volume_id",
       "version",
       "cert_version",
       "private",
@@ -349,6 +348,7 @@ class Volume( storagetypes.Object ):
       "name",
       "description",
       "owner_id",
+      "volume_id",
       "metadata_public_key",
    ] + read_attrs_api_required
    

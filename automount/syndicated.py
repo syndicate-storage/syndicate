@@ -66,6 +66,10 @@ import syndicate.syndicate as c_syndicate
 # system constants 
 SYNDICATE_SLICE_SECRET_NAME             = "SYNDICATE_SLICE_SECRET"
 
+# run gateways as "daemon"
+GATEWAY_UID_NAME                        = "daemon"
+GATEWAY_GID_NAME                        = "daemon"
+
 #-------------------------------
 CONFIG_OPTIONS = {
    "config":            ("-c", 1, "Path to the daemon configuration file"),
@@ -200,7 +204,7 @@ class EnsureRunningThread( threading.Thread ):
       if data is not None:
          
          # start all gateways for this volume
-         rc = observer_startstop.start_stop_volume( config, data, slice_secret, hostname=config['hostname'] )
+         rc = observer_startstop.start_stop_volume( config, data, slice_secret, hostname=config['hostname'], gateway_uid_name=GATEWAY_UID_NAME, gateway_gid_name=GATEWAY_GID_NAME )
       
          if rc != 0:
             log.error("ensure_running rc = %s" % rc)
@@ -585,7 +589,7 @@ class PollThread( threading.Thread ):
             all_volume_data.append( volume_data )
       
       # act on the data--start all gateways for all volumes that are active, but stop the ones that aren't
-      rc = observer_startstop.start_stop_all_volumes( config, all_volume_data, slice_secret, ignored=ignored_volumes, hostname=config['hostname'] )
+      rc = observer_startstop.start_stop_all_volumes( config, all_volume_data, slice_secret, ignored=ignored_volumes, hostname=config['hostname'], gateway_uid_name=GATEWAY_UID_NAME, gateway_gid_name=GATEWAY_GID_NAME )
       if rc != 0:
          log.error("start_stop_all_volumes rc = %s" % rc)
          return (None, None)

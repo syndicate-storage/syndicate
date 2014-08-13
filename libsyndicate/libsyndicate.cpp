@@ -54,7 +54,7 @@ static int md_init_server_info( struct md_syndicate_conf* c ) {
       rc = getaddrinfo( hostname, NULL, &hints, &result );
       if( rc != 0 ) {
          // could not get addr info
-         errorf("getaddrinfo: %s\n", gai_strerror( rc ) );
+         errorf("getaddrinfo(%s): %s\n", hostname, gai_strerror( rc ) );
          return -abs(rc);
       }
       
@@ -105,14 +105,18 @@ static int md_runtime_init( struct md_syndicate_conf* c, char const* key_passwor
          errorf("md_init_local_storage(%s) rc = %d\n", c->storage_root, rc );
          return rc;
       }
+      
+      dbprintf("Store local data at %s\n", c->storage_root );
    }
    
-   if( c->need_networking ) {
+   if( c->need_networking && c->hostname == NULL ) {
       rc = md_init_server_info( c );
       if( rc != 0 ) {
          errorf("md_init_server_info() rc = %d\n", rc );
          return rc;
       }
+      
+      dbprintf("Serve data as %s\n", c->hostname );
    }
    
    // load gateway public/private key
@@ -1979,7 +1983,7 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
    conf->gateway_type = gateway_type;
    
    if( gateway_type == SYNDICATE_UG ) {
-      // need both storage and networking 
+      // need both storage and networking to be set up
       conf->need_storage = true;
       conf->need_networking = true;
    }

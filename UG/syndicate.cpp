@@ -192,10 +192,10 @@ int syndicate_init( struct syndicate_opts* opts ) {
    struct syndicate_state* state = CALLOC_LIST( struct syndicate_state, 1 );
    struct ms_client* ms = CALLOC_LIST( struct ms_client, 1 );
    
-   // load config file
+   // load config
    md_default_conf( &state->conf, SYNDICATE_UG );
    
-   // read the config file
+   // read the config file, if given
    if( opts->config_file != NULL ) {
       int rc = md_read_conf( opts->config_file, &state->conf );
       if( rc != 0 ) {
@@ -205,6 +205,11 @@ int syndicate_init( struct syndicate_opts* opts ) {
    
    // set debug level
    md_debug( &state->conf, opts->debug_level );
+   
+   // set hostname, if given 
+   if( opts->hostname != NULL ) {
+      md_set_hostname( &state->conf, opts->hostname );
+   }
    
    // initialize library
    if( !opts->anonymous ) {

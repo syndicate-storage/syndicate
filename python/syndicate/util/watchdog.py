@@ -20,6 +20,8 @@
 
 import sys
 import os
+import grp
+import pwd
 import signal
 import errno 
 import time
@@ -144,7 +146,39 @@ def find_by_attrs( watchdog_name, attrs ):
 
 
 #-------------------------------
-def spawn( child_method, stdin_method, old_exit_status, parent_signals=None ):
+def release_privileges( uid_name, gid_name ):
+   
+   if os.getuid() != 0:
+      # not root, so nothing to do
+      return 0
+   
+   # get desired uid/gid 
+   try:
+      running_pwd = pwd.getpwnam( uid_name )
+      running_uid = running_pwd.pw_uid 
+   except KeyError:
+      log.error("No such user '%s'" % uid_name)
+      return -errno.EINVAL
+   
+   try:
+      running_grp = grp.getgrnam( gid_name )
+      running_gid = running_grp.gr_gid
+   except KeyError:
+      log.error("No such group '%s'" % gid_name)
+      return -errno.EINVAL 
+   
+   # unset groups 
+   os.setgroups( [] )
+   
+   # set new uid/gid 
+   os.setgid( running_gid )
+   os.setuid( running_uid )
+   
+   return 0 
+
+
+#-------------------------------
+def spawn( child_method, stdin_method, old_exit_status, parent_signals=None, uid_name=None, gid_name=None ):
    # get stdin 
    stdin_buf = None
    child_stdin = -1
@@ -199,7 +233,11 @@ def spawn( child_method, stdin_method, old_exit_status, parent_signals=None ):
          # redirect stdin 
          os.dup2( child_stdin, sys.stdin.fileno() )
          os.close( child_stdin )
-         
+      
+      # drop privileges, if we have to
+      if uid_name is not None and gid_name is not None:
+         release_privileges( uid_name, gid_name )
+      
       rc = child_method( old_exit_status )
       sys.exit(rc)
    
@@ -292,7 +330,7 @@ def flap_wait( last_spawn, flap_delay, flap_threshold, flap_reset ):
       
 
 #-------------------------------
-def run( binary, argv, stdin_buf ):
+def run( binary, argv, stdin_buf, uid_name=None, gid_name=None ):
    """
    Fork a child and feed it a stdin.
    Return its pid on success
@@ -310,19 +348,21 @@ def run( binary, argv, stdin_buf ):
       
    stdin_method = lambda: stdin_buf
    
-   return spawn( do_exec, stdin_method, 0 )
-      
-      
+   return spawn( do_exec, stdin_method, 0, uid_name=uid_name, gid_name=gid_name )
    
 
 #-------------------------------
-def main( spawn_method, pid_cb=None, stdin_cb=None, exit_cb=None, respawn_exit_statuses=None, respawn_signals=None, parent_signals=None, flap_threshold=600, flap_reset=3600 ):
+def main( spawn_method, pid_cb=None, stdin_cb=None, exit_cb=None, respawn_exit_statuses=None, respawn_signals=None, parent_signals=None, flap_threshold=600, flap_reset=3600, uid_name=None, gid_name=None ):
    
    # fork, become a watchdog, and run the main server
    last_spawn = time.time()
    flap_delay = 1
    
-   child_pid = spawn( spawn_method, stdin_cb, 0, parent_signals=parent_signals )
+   # but first, drop privileges if we need to 
+   if uid_name is not None and gid_name is not None:
+      release_privileges( uid_name, gid_name )
+   
+   child_pid = spawn( spawn_method, stdin_cb, 0, parent_signals=parent_signals, uid_name=uid_name, gid_name=gid_name )
    
    if child_pid < 0:
       # spawn failed 

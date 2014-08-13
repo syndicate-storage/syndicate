@@ -40,6 +40,7 @@ struct syndicate_opts {
    char* volume_pubkey_path;
    char* gateway_pkey_path;
    char* syndicate_pubkey_path;
+   char* hostname;
    
    struct mlock_buf password;
    struct mlock_buf user_pkey_pem;

@@ -114,6 +114,16 @@ def ensure_gateway_exists( client, gateway_type, user_email, volume_name, gatewa
         if user is None or volume is None:
             raise Exception("Orphaned gateway with the same name as us (%s)" % gateway_name)
 
+        # sanity checks 
+        for attr in ["gateway_type", "owner_id", "volume_id"]:
+           assert attr in gateway.keys(), "Gateway: No %s returned" % attr 
+        
+        for attr in ["owner_id", "email"]:
+           assert attr in user.keys(), "User: No %s returned" % attr 
+        
+        for attr in ["volume_id", "name"]:
+           assert attr in volume.keys(), "Volume: No %s returned" % attr 
+        
         # does this gateway match the user and volume it claims to belong to?
         # NOTE: this doesn't check the closure!
         if msconfig.GATEWAY_TYPE_TO_STR[ gateway["gateway_type"] ] != gateway_type or gateway['owner_id'] != user['owner_id'] or gateway['volume_id'] != volume['volume_id']:

@@ -180,6 +180,7 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
       {"user-pkey-pem",   required_argument,   0, 'P'},
       {"debug-level",     required_argument,   0, 'd'},
       {"anonymous",       no_argument,         0, 'a'},
+      {"hostname",        required_argument,   0, 'H'},
       {0, 0, 0, 0}
    };
 
@@ -189,7 +190,7 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
    int opt_index = 0;
    int c = 0;
    
-   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:T:C:K:l:L:r:RU:d:a";
+   char const* default_optstr = "c:v:u:p:P:m:Fg:V:G:S:T:C:K:l:L:r:RU:d:a:H:";
    
    int num_default_options = 0;         // needed for freeing special arguments
    char* optstr = NULL;
@@ -388,6 +389,10 @@ int syndicate_parse_opts_impl( struct syndicate_opts* opts, int argc, char** arg
             opts->anonymous = true;
             break;
          }
+         case 'H': {
+            opts->hostname = strdup( optarg );
+            break;
+         }
          default: {
             rc = -1;
             if( special_opt_handler ) {
@@ -511,6 +516,8 @@ Optional arguments:\n\
             Soft limit on the size of the local cache (bytes).\n\
    -L, --cache-hard-limit LIMIT\n\
             Hard limit on the size of the local cache (bytes).\n\
+   -H, --hostname HOSTNAME\n\
+            Hostname to run under (default: look up via DNS).\n\
    -R, --read-stdin\n\
             If set, read all command-line options from stdin.\n\
    -d, --debug-level DEBUG_LEVEL\n\
