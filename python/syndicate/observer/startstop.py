@@ -60,31 +60,39 @@ SYNDICATE_RG_WATCHDOG_NAME              = "syndicate-rg"
 SYNDICATE_AG_WATCHDOG_NAME              = "syndicate-ag"
 
 #-------------------------------
-def make_UG_argv( program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, hostname=None ):
+def make_UG_argv( program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, hostname=None, debug=False ):
    # NOTE: run in foreground; watchdog handles the rest
    hostname_str = ""
    if hostname is not None:
       hostname_str = "-H %s" % hostname 
       
-   return "%s -f -d2 -m %s -u %s -v %s -g %s -K %s -P '%s' %s %s" % (program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, hostname_str, mountpoint )
+   debug_str = ""
+   if debug:
+      debug_str = "-d2"
+      
+   return "%s -f %s -m %s -u %s -v %s -g %s -K %s -P '%s' %s %s" % (program, debug_str, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, hostname_str, mountpoint )
 
 
 #-------------------------------
-def make_RG_argv( program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, hostname=None ):
+def make_RG_argv( program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, hostname=None, debug=False ):
    hostname_str = ""
    if hostname is not None:
       hostname_str = "-H %s" % hostname 
       
-   return "%s -d2 -m %s -u %s -v %s -g %s -K %s -P '%s' %s" % (program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, hostname_str)
+   debug_str = ""
+   if debug:
+      debug_str = "-d2"
+      
+   return "%s %s -m %s -u %s -v %s -g %s -K %s -P '%s' %s" % (program, debug_str, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, hostname_str)
 
 
 #-------------------------------
-def start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, uid_name=None, gid_name=None, hostname=None ):
+def start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, uid_name=None, gid_name=None, hostname=None, debug=False ):
    # generate the command, and pipe it over
    # NOTE: do NOT execute the command directly! it contains sensitive information on argv,
    # which should NOT become visible to other users via /proc
    
-   command_str = make_UG_argv( SYNDICATE_UG_WATCHDOG_NAME, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, hostname=hostname )
+   command_str = make_UG_argv( SYNDICATE_UG_WATCHDOG_NAME, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, hostname=hostname, debug=debug )
    
    log.info("Starting UG (%s)" % SYNDICATE_UG_WATCHDOG_NAME )
    
@@ -98,12 +106,12 @@ def start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_passwo
    
 
 #-------------------------------
-def start_RG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, uid_name=None, gid_name=None, hostname=None ):
+def start_RG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, uid_name=None, gid_name=None, hostname=None, debug=False ):
    # generate the command, and pipe it over
    # NOTE: do NOT execute the command directly! it contains sensitive information on argv,
    # which should NOT become visible to other users via /proc
    
-   command_str = make_RG_argv( SYNDICATE_RG_WATCHDOG_NAME, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, hostname=hostname )
+   command_str = make_RG_argv( SYNDICATE_RG_WATCHDOG_NAME, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, hostname=hostname, debug=debug )
    
    log.info("Starting RG (%s)" % SYNDICATE_RG_WATCHDOG_NAME )
    
@@ -171,7 +179,7 @@ def stop_RG( volume_name ):
 
          
 #-------------------------------
-def ensure_UG_running( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint=None, check_only=False, uid_name=None, gid_name=None, hostname=None ):
+def ensure_UG_running( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint=None, check_only=False, uid_name=None, gid_name=None, hostname=None, debug=False ):
     """
     Ensure that a User Gateway is running on a particular mountpoint.
     Return 0 on success
@@ -203,7 +211,7 @@ def ensure_UG_running( syndicate_url, principal_id, volume_name, gateway_name, k
     else: 
        logging.error("No UG running for %s on %s" % (volume_name, mountpoint))
        if not check_only:
-          pid = start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, uid_name=uid_name, gid_name=gid_name, hostname=hostname )
+          pid = start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, uid_name=uid_name, gid_name=gid_name, hostname=hostname, debug=debug )
           if pid < 0:
              log.error("Failed to start UG in %s at %s, rc = %s" % (volume_name, mountpoint, pid))
           
@@ -226,7 +234,7 @@ def ensure_UG_stopped( volume_name, mountpoint=None ):
 
 
 #-------------------------------
-def ensure_RG_running( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, check_only=False, uid_name=None, gid_name=None, hostname=None ):
+def ensure_RG_running( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, check_only=False, uid_name=None, gid_name=None, hostname=None, debug=False ):
     """
     Ensure an RG is running.  Return the PID on success.
     """
@@ -246,7 +254,7 @@ def ensure_RG_running( syndicate_url, principal_id, volume_name, gateway_name, k
     else:
        logging.error("No RG running for %s" % (volume_name))
        if not check_only:
-          pid = start_RG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, uid_name=uid_name, gid_name=gid_name, hostname=hostname )
+          pid = start_RG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, uid_name=uid_name, gid_name=gid_name, hostname=hostname, debug=debug )
           if pid < 0:
              log.error("Failed to start RG in %s, rc = %s" % (volume_name, pid))
              
@@ -270,7 +278,7 @@ def ensure_RG_stopped( volume_name ):
 
 
 #-------------------------------
-def ensure_AG_running( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, check_only=False, uid_name=None, gid_name=None ):
+def ensure_AG_running( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, check_only=False, uid_name=None, gid_name=None, hostname=None, debug=False ):
    # TODO 
    pass 
 
@@ -472,7 +480,7 @@ def apply_instantion_and_runchange( gateway_directives, inst_funcs, runchange_fu
 
 
 #-------------------------
-def start_stop_volume( config, volume_info, slice_secret, client=None, hostname=None, gateway_uid_name=None, gateway_gid_name=None ):
+def start_stop_volume( config, volume_info, slice_secret, client=None, hostname=None, gateway_uid_name=None, gateway_gid_name=None, debug=False ):
    """
    Ensure that the instantiation and run status of the gateways for a volume match what the observer thinks it is.
    This method is idempotent.
@@ -506,7 +514,7 @@ def start_stop_volume( config, volume_info, slice_secret, client=None, hostname=
    # build up the set of directives
    gateway_directives = gateway_directives_from_volume_info( volume_info, hostname, slice_secret )
    
-   rc = apply_gateway_directives( client, syndicate_url, principal_id, principal_pkey_pem, volume_name, gateway_directives, hostname, UG_mountpoint_path, gateway_uid_name=gateway_uid_name, gateway_gid_name=gateway_gid_name )
+   rc = apply_gateway_directives( client, syndicate_url, principal_id, principal_pkey_pem, volume_name, gateway_directives, hostname, UG_mountpoint_path, gateway_uid_name=gateway_uid_name, gateway_gid_name=gateway_gid_name, debug=debug )
    
    if rc != 0:
       log.error("Failed to apply gateway directives to synchronize %s, rc = %s" % (volume_name, rc))
@@ -515,7 +523,7 @@ def start_stop_volume( config, volume_info, slice_secret, client=None, hostname=
 
    
 #-------------------------
-def apply_gateway_directives( client, syndicate_url, principal_id, principal_pkey_pem, volume_name, gateway_directives, hostname, UG_mountpoint_path, gateway_uid_name=None, gateway_gid_name=None ):
+def apply_gateway_directives( client, syndicate_url, principal_id, principal_pkey_pem, volume_name, gateway_directives, hostname, UG_mountpoint_path, gateway_uid_name=None, gateway_gid_name=None, debug=False ):
    """
    Apply the set of gateway directives.
    """
@@ -583,7 +591,8 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
                                  check_only=False,
                                  uid_name=gateway_uid_name,
                                  gid_name=gateway_gid_name,
-                                 hostname=hostname )
+                                 hostname=hostname,
+                                 debug=debug )
          
          if rc < 0:
             return rc
@@ -612,7 +621,8 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
                                  check_only=False,
                                  uid_name=gateway_uid_name,
                                  gid_name=gateway_gid_name,
-                                 hostname=hostname )
+                                 hostname=hostname,
+                                 debug=debug )
          
          if rc < 0:
             return rc
@@ -640,7 +650,8 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
                                  principal_pkey_pem,
                                  check_only=False,
                                  uid_name=gateway_uid_name,
-                                 gid_name=gateway_gid_name )
+                                 gid_name=gateway_gid_name,
+                                 debug=debug )
          
          if rc < 0:
             return rc
@@ -669,7 +680,7 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
 
 
 #-------------------------
-def start_stop_all_volumes( config, volume_info_list, slice_secret, hostname=None, ignored=[], gateway_uid_name=None, gateway_gid_name=None ):
+def start_stop_all_volumes( config, volume_info_list, slice_secret, hostname=None, ignored=[], gateway_uid_name=None, gateway_gid_name=None, debug=False ):
    """
    Synchronize the states of all volumes on this host, stopping any volumes that are no longer attached.
    """
@@ -703,7 +714,7 @@ def start_stop_all_volumes( config, volume_info_list, slice_secret, hostname=Non
 
       log.info("Sync volume %s" % volume_name )
       
-      rc = start_stop_volume( config, volume_info, slice_secret, client=client, hostname=hostname, gateway_uid_name=gateway_uid_name, gateway_gid_name=gateway_gid_name )
+      rc = start_stop_volume( config, volume_info, slice_secret, client=client, hostname=hostname, gateway_uid_name=gateway_uid_name, gateway_gid_name=gateway_gid_name, debug=debug )
       
       if rc == 0:
          log.info("Successfully sync'ed %s" % volume_name )
