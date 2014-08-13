@@ -524,7 +524,7 @@ def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, vo
                                 instantiate_UG=False, run_UG=False, UG_port=0, UG_closure=None,
                                 instantiate_RG=False, run_RG=False, RG_port=0, RG_closure=None, RG_global_hostname=None,
                                 instantiate_AG=False, run_AG=False, AG_port=0, AG_closure=None, AG_global_hostname=None,
-                                gateway_name_prefix="", sliver_hostname=None, existing_user=None, user_pkey_pem=None ):
+                                gateway_name_prefix="", existing_user=None, user_pkey_pem=None ):
     """
     Generate and return the set of credentials to be sent off to the slice VMs.
     exisitng_user is a Syndicate user, as a dictionary.
@@ -558,7 +558,7 @@ def generate_slice_credentials( observer_pkey_pem, syndicate_url, user_email, vo
                                                            instantiate_UG=instantiate_UG, run_UG=run_UG, UG_port=UG_port, UG_closure=UG_closure,
                                                            instantiate_RG=instantiate_RG, run_RG=run_RG, RG_port=RG_port, RG_closure=RG_closure, RG_global_hostname=RG_global_hostname,
                                                            instantiate_AG=instantiate_AG, run_AG=run_AG, AG_port=AG_port, AG_closure=AG_closure, AG_global_hostname=AG_global_hostname,
-                                                           gateway_name_prefix=gateway_name_prefix, sliver_hostname=sliver_hostname )
+                                                           gateway_name_prefix=gateway_name_prefix )
        
        assert creds is not None, "Failed to create credentials for %s" % user_email 
     
@@ -575,7 +575,7 @@ def save_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume
                             instantiate_UG=False, run_UG=False, UG_port=0, UG_closure=None,
                             instantiate_RG=False, run_RG=False, RG_port=0, RG_closure=None, RG_global_hostname=None,
                             instantiate_AG=False, run_AG=False, AG_port=0, AG_closure=None, AG_global_hostname=None,
-                            gateway_name_prefix="", sliver_hostname=None, existing_user=None, user_pkey_pem=None ): 
+                            gateway_name_prefix="", existing_user=None, user_pkey_pem=None ): 
     """
     Create and save a credentials blob to a VolumeSlice.
     It will contain directives to be sent to the automount daemons to provision and instantiate gateways.
@@ -587,7 +587,7 @@ def save_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume
                                         instantiate_UG=instantiate_UG, run_UG=run_UG, UG_port=UG_port, UG_closure=UG_closure,
                                         instantiate_RG=instantiate_RG, run_RG=run_RG, RG_port=RG_port, RG_closure=RG_closure,
                                         instantiate_AG=instantiate_AG, run_AG=run_AG, AG_port=AG_port, AG_closure=AG_closure,
-                                        gateway_name_prefix=gateway_name_prefix, sliver_hostname=sliver_hostname, existing_user=existing_user, user_pkey_pem=user_pkey_pem )
+                                        gateway_name_prefix=gateway_name_prefix, existing_user=existing_user, user_pkey_pem=user_pkey_pem )
     ret = None
     
     if creds is not None:

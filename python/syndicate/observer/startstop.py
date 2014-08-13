@@ -464,7 +464,7 @@ def apply_instantion_and_runchange( gateway_directives, inst_funcs, runchange_fu
 
 
 #-------------------------
-def start_stop_volume( config, volume_info, slice_secret, client=None ):
+def start_stop_volume( config, volume_info, slice_secret, client=None, hostname=None ):
    """
    Ensure that the instantiation and run status of the gateways for a volume match what the observer thinks it is.
    This method is idempotent.
@@ -491,7 +491,9 @@ def start_stop_volume( config, volume_info, slice_secret, client=None ):
    UG_mountpoint_path = make_UG_mountpoint_path( mountpoint_dir, volume_name )
    
    volume_name = volume_info[ observer_cred.OPENCLOUD_VOLUME_NAME ]
-   hostname = socket.gethostname()
+   
+   if hostname is None:
+      hostname = socket.gethostname()
    
    # build up the set of directives
    gateway_directives = gateway_directives_from_volume_info( volume_info, hostname, slice_secret )
@@ -651,7 +653,7 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
 
 
 #-------------------------
-def start_stop_all_volumes( config, volume_info_list, slice_secret, ignored=[] ):
+def start_stop_all_volumes( config, volume_info_list, slice_secret, hostname=None, ignored=[] ):
    """
    Synchronize the states of all volumes on this host, stopping any volumes that are no longer attached.
    """
@@ -685,7 +687,7 @@ def start_stop_all_volumes( config, volume_info_list, slice_secret, ignored=[] )
 
       log.info("Sync volume %s" % volume_name )
       
-      rc = start_stop_volume( config, volume_info, slice_secret, client=client )
+      rc = start_stop_volume( config, volume_info, slice_secret, client=client, hostname=hostname )
       
       if rc == 0:
          log.info("Successfully sync'ed %s" % volume_name )

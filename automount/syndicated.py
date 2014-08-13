@@ -42,7 +42,7 @@ from Crypto import Random
 from Crypto.Signature import PKCS1_PSS as CryptoSigner
 
 import logging
-logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+logging.basicConfig( format='[%(asctime)s] [%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 log = logging.getLogger()
 log.setLevel( logging.ERROR )
 
@@ -84,6 +84,7 @@ CONFIG_OPTIONS = {
    "RG_only":           ("-R", 0, "Only start the RG"),
    "UG_only":           ("-U", 0, "Only start the UG"),
    "RG_public":         ("-G", 0, "Make the local RG instance publicly available (no effect if --UG_only is given)"),
+   "hostname":          ("-H", 1, "Hostname to provision and run gateways under.  Defaults to the contents of /etc/hostname."),
    "command":           (None, '*', "Control-plane requests.  'pids' will print the list of process IDs running at the given mountpoint.")
 }
 
@@ -199,7 +200,7 @@ class EnsureRunningThread( threading.Thread ):
       if data is not None:
          
          # start all gateways for this volume
-         rc = observer_startstop.start_stop_volume( config, data, slice_secret )
+         rc = observer_startstop.start_stop_volume( config, data, slice_secret, hostname=config['hostname'] )
       
          if rc != 0:
             log.error("ensure_running rc = %s" % rc)
@@ -447,7 +448,12 @@ def validate_config( config ):
       log.setLevel( logging.ERROR )
    
    # required arguments
-   required = ['observer_url', 'public_key', 'slice_name', 'mountpoint_dir']
+   required = ['observer_url', 'public_key', 'mountpoint_dir']
+   
+   # if we're not running a contorl-plane command, we need the slice name 
+   if not config.has_key('command') or config['command'] is None or len(config['command']) == 0:
+      required.append('slice_name')
+   
    for req in required:
       if config.get( req, None ) is None:
          print >> sys.stderr, "Missing required argument: %s" % req
@@ -491,6 +497,9 @@ def validate_config( config ):
          log.error("Invalid slice secret")
          return -1
    
+   # verify that these directories exist, are directories, adn are writable and searchable 
+   check_directories = [ config["mountpoint_dir"] ]
+   
    # if not foreground, verify that log directory and pidfile exist and are searchable and writable 
    if not config.has_key('foreground') or not config['foreground']:
       
@@ -507,21 +516,24 @@ def validate_config( config ):
          pidfile_dir_path = os.path.dirname( pidfile_path.rstrip("/") )
       
       logdir_path = config["logdir"]
-      mountpoint_dir = config["mountpoint_dir"]
       
-      for dirpath in [logdir_path, pidfile_dir_path]:
-         
-         if dirpath is None:
-            continue 
-         
-         if not os.path.exists( dirpath ):
-            raise Exception("No such file or directory: %s" % dirpath )
-         
-         if not os.path.isdir( dirpath ):
-            raise Exception("Not a directory: %s" % dirpath )
-         
-         if not os.access( dirpath, os.W_OK | os.X_OK ):
-            raise Exception("Directory not writable/searchable: %s" % dirpath )
+      check_directories.append( logdir_path )
+      check_directories.append( pidfile_dir_path )
+   
+   # check these directories
+   for dirpath in check_directories:
+      
+      if dirpath is None:
+         continue 
+      
+      if not os.path.exists( dirpath ):
+         raise Exception("No such file or directory: %s" % dirpath )
+      
+      if not os.path.isdir( dirpath ):
+         raise Exception("Not a directory: %s" % dirpath )
+      
+      if not os.access( dirpath, os.W_OK | os.X_OK ):
+         raise Exception("Directory not writable/searchable: %s" % dirpath )
       
    return 0
 
@@ -573,7 +585,7 @@ class PollThread( threading.Thread ):
             all_volume_data.append( volume_data )
       
       # act on the data--start all gateways for all volumes that are active, but stop the ones that aren't
-      rc = observer_startstop.start_stop_all_volumes( config, all_volume_data, slice_secret, ignored=ignored_volumes )
+      rc = observer_startstop.start_stop_all_volumes( config, all_volume_data, slice_secret, ignored=ignored_volumes, hostname=config['hostname'] )
       if rc != 0:
          log.error("start_stop_all_volumes rc = %s" % rc)
          return (None, None)
@@ -821,10 +833,14 @@ if __name__ == "__main__":
       if config.has_key(path_opt):
          config[path_opt] = config[path_opt].rstrip("/\\")        # directories do NOT end in / or \ 
    
+   # sanitize hostname 
+   if not config.has_key("hostname") or config['hostname'] is None or len(config['hostname']) == 0:
+      config['hostname'] = socket.gethostname()
+   
    CONFIG = config 
    
    # process any control-plane commands
-   if config.has_key('command') and config['command'] != None and len(config['command']) > 0:
+   if config.has_key('command') and config['command'] is not None and len(config['command']) > 0:
       command = config['command'][0]
       
       # did we just want to get the pids?

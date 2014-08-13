@@ -1,6 +1,6 @@
-#!/bin/sh
+#!/bin/bash
 
-#   Copyright 2013 The Trustees of Princeton University
+#   Copyright 2014 The Trustees of Princeton University
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
 #   you may not use this file except in compliance with the License.
@@ -23,14 +23,55 @@ SYNDICATED=/usr/bin/syndicated.py
 CONFIG=/etc/syndicated/syndicated.conf 
 #CONFIG=./opencloud/syndicated.conf
 
-SLICENAME="test2"
+get_hostname_and_slicename() {
+   # $1 will become the slicename 
+   # $2 will become the hostname
+   # TODO: more robust solution than this
+   
+   tmpdir=$(mktemp -d /tmp/syndicated-opencloud-XXXXXX)
+   pushd "$tmpdir"
+    
+   curl --connect-timeout 60 http://169.254.169.254/2009-04-04/user-data > user-data.yaml 2>curl.out
+   curl_error=$?
+   
+   if [ $curl_error -ne 0 ]; then
+      echo "Failed to get user info, curl error $curl_error"
+      popd
+      rm -rf "$tmpdir"
+      return 1
+   fi 
+   
+   # extract hostname and slice name 
+   opencloud_slicename=$(awk '$1 == "slicename:" { print $2 }' user-data.yaml | sed 's/"//g')
+   opencloud_hostname=$(awk '$1 == "hostname:" { print $2 }' user-data.yaml | sed 's/"//g')
+
+   popd
+   rm -rf "$tmpdir" 
+   
+   eval "$1=$opencloud_hostname"
+   eval "$2=$opencloud_slicename"
+   
+   return 0
+}
+   
 
 start() {
-   $SYNDICATED -c $CONFIG -S $SLICENAME
+   
+   syndicated_hostname=""
+   syndicated_slicename=""
+   
+   get_hostname_and_slicename syndicated_hostname syndicated_slicename 
+   reload_error=$?
+   
+   if [ $reload_error -ne 0 ]; then 
+      return 1
+   fi 
+  
+   $SYNDICATED -c $CONFIG -S $syndicated_slicename -H $syndicated_hostname
 }
 
 stop() {
-   $SYNDICATED -c $CONFIG -S $SLICENAME stop
+   $SYNDICATED -c $CONFIG stop
 }
 
 restart() {
@@ -39,7 +80,7 @@ restart() {
 }
 
 status() {
-   $SYNDICATED -c $CONFIG -S $SLICENAME status
+   $SYNDICATED -c $CONFIG status
 }
 
 case "$1" in
