@@ -60,23 +60,31 @@ SYNDICATE_RG_WATCHDOG_NAME              = "syndicate-rg"
 SYNDICATE_AG_WATCHDOG_NAME              = "syndicate-ag"
 
 #-------------------------------
-def make_UG_argv( program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint ):
+def make_UG_argv( program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, hostname=None ):
    # NOTE: run in foreground; watchdog handles the rest
-   return "%s -f -d2 -m %s -u %s -v %s -g %s -K %s -P '%s' %s" % (program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint )
+   hostname_str = ""
+   if hostname is not None:
+      hostname_str = "-H %s" % hostname 
+      
+   return "%s -f -d2 -m %s -u %s -v %s -g %s -K %s -P '%s' %s %s" % (program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, hostname_str, mountpoint )
 
 
 #-------------------------------
-def make_RG_argv( program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem ):
-   return "%s -d2 -m %s -u %s -v %s -g %s -K %s -P '%s'" % (program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem)
+def make_RG_argv( program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, hostname=None ):
+   hostname_str = ""
+   if hostname is not None:
+      hostname_str = "-H %s" % hostname 
+      
+   return "%s -d2 -m %s -u %s -v %s -g %s -K %s -P '%s' %s" % (program, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, hostname_str)
 
 
 #-------------------------------
-def start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, uid_name=None, gid_name=None ):
+def start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, uid_name=None, gid_name=None, hostname=None ):
    # generate the command, and pipe it over
    # NOTE: do NOT execute the command directly! it contains sensitive information on argv,
    # which should NOT become visible to other users via /proc
    
-   command_str = make_UG_argv( SYNDICATE_UG_WATCHDOG_NAME, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint )
+   command_str = make_UG_argv( SYNDICATE_UG_WATCHDOG_NAME, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, hostname=hostname )
    
    log.info("Starting UG (%s)" % SYNDICATE_UG_WATCHDOG_NAME )
    
@@ -90,12 +98,12 @@ def start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_passwo
    
 
 #-------------------------------
-def start_RG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, uid_name=None, gid_name=None ):
+def start_RG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, uid_name=None, gid_name=None, hostname=None ):
    # generate the command, and pipe it over
    # NOTE: do NOT execute the command directly! it contains sensitive information on argv,
    # which should NOT become visible to other users via /proc
    
-   command_str = make_RG_argv( SYNDICATE_RG_WATCHDOG_NAME, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem )
+   command_str = make_RG_argv( SYNDICATE_RG_WATCHDOG_NAME, syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, hostname=hostname )
    
    log.info("Starting RG (%s)" % SYNDICATE_RG_WATCHDOG_NAME )
    
@@ -163,7 +171,7 @@ def stop_RG( volume_name ):
 
          
 #-------------------------------
-def ensure_UG_running( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint=None, check_only=False, uid_name=None, gid_name=None ):
+def ensure_UG_running( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint=None, check_only=False, uid_name=None, gid_name=None, hostname=None ):
     """
     Ensure that a User Gateway is running on a particular mountpoint.
     Return 0 on success
@@ -195,7 +203,7 @@ def ensure_UG_running( syndicate_url, principal_id, volume_name, gateway_name, k
     else: 
        logging.error("No UG running for %s on %s" % (volume_name, mountpoint))
        if not check_only:
-          pid = start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, uid_name=uid_name, gid_name=gid_name )
+          pid = start_UG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, mountpoint, uid_name=uid_name, gid_name=gid_name, hostname=hostname )
           if pid < 0:
              log.error("Failed to start UG in %s at %s, rc = %s" % (volume_name, mountpoint, pid))
           
@@ -218,7 +226,7 @@ def ensure_UG_stopped( volume_name, mountpoint=None ):
 
 
 #-------------------------------
-def ensure_RG_running( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, check_only=False, uid_name=None, gid_name=None ):
+def ensure_RG_running( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, check_only=False, uid_name=None, gid_name=None, hostname=None ):
     """
     Ensure an RG is running.  Return the PID on success.
     """
@@ -238,7 +246,7 @@ def ensure_RG_running( syndicate_url, principal_id, volume_name, gateway_name, k
     else:
        logging.error("No RG running for %s" % (volume_name))
        if not check_only:
-          pid = start_RG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, uid_name=uid_name, gid_name=gid_name )
+          pid = start_RG( syndicate_url, principal_id, volume_name, gateway_name, key_password, user_pkey_pem, uid_name=uid_name, gid_name=gid_name, hostname=hostname )
           if pid < 0:
              log.error("Failed to start RG in %s, rc = %s" % (volume_name, pid))
              
@@ -574,7 +582,8 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
                                  mountpoint=UG_mountpoint_path,
                                  check_only=False,
                                  uid_name=gateway_uid_name,
-                                 gid_name=gateway_gid_name )
+                                 gid_name=gateway_gid_name,
+                                 hostname=hostname )
          
          if rc < 0:
             return rc
@@ -602,7 +611,8 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
                                  principal_pkey_pem,
                                  check_only=False,
                                  uid_name=gateway_uid_name,
-                                 gid_name=gateway_gid_name )
+                                 gid_name=gateway_gid_name,
+                                 hostname=hostname )
          
          if rc < 0:
             return rc

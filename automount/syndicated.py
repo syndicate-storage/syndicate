@@ -66,9 +66,9 @@ import syndicate.syndicate as c_syndicate
 # system constants 
 SYNDICATE_SLICE_SECRET_NAME             = "SYNDICATE_SLICE_SECRET"
 
-# run gateways as "daemon"
+# run gateways as "daemon", but have them run in the "fuse" group so they can access /dev/fuse and /etc/fuse.conf
 GATEWAY_UID_NAME                        = "daemon"
-GATEWAY_GID_NAME                        = "daemon"
+GATEWAY_GID_NAME                        = "fuse"
 
 #-------------------------------
 CONFIG_OPTIONS = {
