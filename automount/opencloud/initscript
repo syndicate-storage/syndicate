@@ -48,6 +48,16 @@ get_hostname_and_slicename() {
    popd
    rm -rf "$tmpdir" 
    
+   if ! [ $opencloud_slicename ]; then
+      echo "Failed to determine OpenCloud slice name"
+      return 1
+   fi
+   
+   if ! [ $opencloud_hostname ]; then
+      echo "Failed to determine OpenCloud hostname"
+      return 1
+   fi 
+   
    eval "$1=$opencloud_hostname"
    eval "$2=$opencloud_slicename"
    
