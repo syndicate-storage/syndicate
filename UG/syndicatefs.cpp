@@ -795,6 +795,9 @@ int main(int argc, char** argv) {
    // TODO: investigate kernel_cache, direct_io, atomic_o_truncate, big_writes, splice_*, auto_cache
    fuse_opt_add_arg( &g_fargs, "-odirect_io" );
    
+   // allow other users 
+   fuse_opt_add_arg( &g_fargs, "-oallow_other" );
+   
    // we need a mountpoint, and possibly other options
    if( syn_opts.mountpoint == NULL ) {
       syndicate_common_usage( argv[0] );

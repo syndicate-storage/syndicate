@@ -69,6 +69,7 @@ def make_registration_password():
     """
     return "".join( random.sample("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 32) )
  
+ 
 #-------------------------------
 def ensure_gateway_exists( client, gateway_type, user_email, volume_name, gateway_name, host, port, key_password, **gateway_kw ):
     """

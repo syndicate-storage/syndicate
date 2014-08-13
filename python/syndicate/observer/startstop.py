@@ -298,7 +298,7 @@ def ensure_UG_mountpoint_exists( mountpoint ):
    """
    rc = 0
    try:
-      os.makedirs( mountpoint )
+      os.makedirs( mountpoint, mode=0777 )
       return 0
    except OSError, oe:
       if oe.errno != errno.EEXIST:
