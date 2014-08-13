@@ -24,8 +24,9 @@ env = env.Clone()
 target_config = env.Command( "etc/syndicated/syndicated.conf", "syndicated.conf", Move("$TARGET", "$SOURCE") )
 target_initscript = env.Command( "etc/init.d/syndicated", "initscript", Move("$TARGET", "$SOURCE") )
 target_credserver_pubkey = env.Command( "etc/syndicated/cred-server.pub", "cred-server.pub", Move("$TARGET", "$SOURCE") )
+target_cron_update = env.Command( "etc/cron.daily/syndicate-update.sh", "syndicate-update.sh", Move("$TARGET", "$SOURCE") )
 
-targets = [target_config, target_initscript, target_credserver_pubkey]
+targets = [target_config, target_initscript, target_credserver_pubkey, target_cron_update]
 
 env.AlwaysBuild( targets )
 

@@ -16,10 +16,16 @@ PACKAGE_ROOT = package_info.PACKAGE_ROOT
 
 ORDER = getattr( package_info, "ORDER", None )
 
-def do_cmd( command ):
+def do_cmd( command, shell=False ):
    print command 
-   cmd_parts = shlex.split( command )
-   rc = subprocess.call( cmd_parts )
+
+   if not shell:
+      cmd_parts = shlex.split( command )
+      rc = subprocess.call( cmd_parts, shell=shell )
+
+   else:
+      rc = subprocess.call( command, shell=shell )
+   
    return rc
 
 def build_target( target_name ):
@@ -32,12 +38,14 @@ def build_target( target_name ):
    return rc
 
 
-def install_target( target_name, dest_dir ):
-   command = "rm -rf %s/*" % dest_dir
+def install_target( target_name, dest_dir, remove_old=True ):
 
-   rc = do_cmd( command )
-   if rc != 0:
-      raise Exception( "Command failed: %s" % command )
+   if remove_old:
+      command = "rm -rf %s/*" % dest_dir
+
+      rc = do_cmd( command, shell=True )
+      if rc != 0:
+         raise Exception( "Command failed: %s" % command )
 
    command = "scons %s DESTDIR=%s %s" % (BUILD_FLAGS, dest_dir, target_name)
 
@@ -74,7 +82,10 @@ if __name__ == "__main__":
    if ORDER is None:
       # build all 
       ORDER = [p.name for p in PACKAGE_INFO]
-   
+  
+   if len(sys.argv) > 1:
+      ORDER = sys.argv[1:]
+    
    for package_name in ORDER:
       # find the package
       package = None
@@ -107,17 +118,28 @@ if __name__ == "__main__":
       print msg
       print "-" * len(msg)
 
+      remove_old = True
+
       os.chdir( BUILD_ROOT )
-      do_build_step( name, "build", lambda: build_target( build ) )
-      do_build_step( name, "install", lambda: install_target( install, installdir ) )
+      
+      if build is not None:
+         do_build_step( name, "build", lambda: build_target( build ) )
+
+      if install is not None:
+         do_build_step( name, "install", lambda: install_target( install, installdir, remove_old=remove_old ) )
+         remove_old = False
 
       if config_target is not None and config_install_dir is not None:
-         do_build_step( name, "config-install", lambda: install_target( config_target, config_install_dir ) )
+         do_build_step( name, "config-install", lambda: install_target( config_target, config_install_dir, remove_old=remove_old ) )
+         remove_old = False
 
       if package_scripts_target is not None:
-         do_build_step( name, "package-scripts", lambda: install_target( package_scripts_target, package_scripts_root ) )
+         do_build_step( name, "package-scripts", lambda: install_target( package_scripts_target, package_scripts_root, remove_old=remove_old ) )
+         remove_old = False 
 
       os.chdir( PACKAGE_ROOT )
-      do_build_step( name, "package", lambda: package_target( package_script, package_root, package_scripts_root ) )
+
+      if package_script is not None:
+         do_build_step( name, "package", lambda: package_target( package_script, package_root, package_scripts_root ) )
 
    print "Build complete"

@@ -21,5 +21,5 @@ source /usr/local/rvm/scripts/rvm
 
 rm -f $NAME-0*.deb
 
-fpm --force -s dir -t deb -a $(uname -p) -v $VERSION -n $NAME $DEPARGS -C $ROOT --license "Apache 2.0" --vendor "Princeton University" --description "Syndicate Acquisition Gateway daemon and drivers." $(ls $ROOT)
+fpm --force -s dir -t deb -a $(uname -p) -v $VERSION -n $NAME $DEPARGS -C $ROOT --license "Apache 2.0" --vendor "Princeton University" --maintainer "Jude Nelson <jcnelson@cs.princeton.edu>" --url "https://github.com/jcnelson/syndicate" --description "Syndicate Acquisition Gateway daemon and drivers." $(ls $ROOT)
 

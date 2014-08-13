@@ -9,13 +9,10 @@ class PackageInfo( object ):
       for (k, v) in kw.items():
          setattr(self, k, v)
 
-# PackageInfo = namedtuple( "PackageInfo", ["name", "build_target", "install_target", "install_dir", "config_target", "config_install_dir", "package_root", "package_script", "package_scripts_target", "package_scripts_root"] )
-
 BASE_DIR = "/root/syndicate"
 BUILD_ROOT = "/root/syndicate/syndicate"
 PACKAGE_ROOT = "/root/syndicate"
 BUILD_FLAGS = "devel=true"
-# ORDER = ["syndicated"]
 
 PACKAGE_INFO = [
    PackageInfo( name            = "libsyndicate",
@@ -63,18 +60,25 @@ PACKAGE_INFO = [
    PackageInfo( name            = "syndicated",
                 build_target    = "syndicated",
                 install_target  = "syndicated-install",
-                install_dir     = "%s/syndicated-root/usr" % BASE_DIR,
+                install_dir     = "%s/syndicated-opencloud-root/usr" % BASE_DIR,
                 config_target   = "syndicated-opencloud-install-etc",
-                config_install_dir = "%s/syndicated-root" % BASE_DIR,
-                package_root    = "%s/syndicated-root" % BASE_DIR,
-                package_script  = "%s/syndicated-deb.sh" % BASE_DIR,
+                config_install_dir = "%s/syndicated-opencloud-root" % BASE_DIR,
+                package_root    = "%s/syndicated-opencloud-root" % BASE_DIR,
+                package_script  = "%s/syndicated-opencloud-deb.sh" % BASE_DIR,
                 package_scripts_target = "syndicated-opencloud-install-pkg",
-                package_scripts_root = "%s/syndicated-pkg/" % BASE_DIR ),
+                package_scripts_root = "%s/syndicated-opencloud-pkg/" % BASE_DIR ),
 
    PackageInfo( name            = "python-syndicate",
                 build_target    = "python-syndicate",
                 install_target  = "python-syndicate-install",
                 install_dir     = "%s/python-syndicate-root/usr" % BASE_DIR,
                 package_root    = "%s/python-syndicate-root/" % BASE_DIR,
-                package_script  = "%s/python-syndicate-deb.sh" % BASE_DIR )
+                package_script  = "%s/python-syndicate-deb.sh" % BASE_DIR ),
+
+   PackageInfo( name            = "syndicate-opencloud", 
+                build_target    = None, 
+                install_target  = None,
+                install_dir     = None,
+                package_root    = "%s/syndicate-opencloud-root" % BASE_DIR,
+                package_script  = "%s/syndicate-opencloud-deb.sh" % BASE_DIR )
 ]

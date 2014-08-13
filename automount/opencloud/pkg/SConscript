@@ -21,10 +21,11 @@ Import('env')
 env = env.Clone()
 
 # get a list of opencloud-specific files 
+target_pre_inst = env.Command( "pkg/pre-inst.sh", "pre-inst.sh", Move("$TARGET", "$SOURCE") )
 target_post_inst = env.Command( "pkg/post-inst.sh", "post-inst.sh", Move("$TARGET", "$SOURCE") )
 target_pre_rm = env.Command( "pkg/pre-rm.sh", "pre-rm.sh", Move("$TARGET", "$SOURCE") )
 
-targets = [target_post_inst, target_pre_rm]
+targets = [target_post_inst, target_pre_rm, target_pre_inst]
 
 env.AlwaysBuild( targets )
 
