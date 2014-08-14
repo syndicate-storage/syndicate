@@ -410,6 +410,7 @@ def gateway_directives_from_volume_info( volume_info, local_hostname, slice_secr
       gateway_directives["UG"]["closure"]       = volume_info[ observer_cred.OPENCLOUD_SLICE_UG_CLOSURE ]
       gateway_directives["UG"]["name"]          = provisioning.make_gateway_name( gateway_name_prefix, "UG", volume_name, local_hostname )
       gateway_directives["UG"]["key_password"]  = provisioning.make_gateway_private_key_password( gateway_directives["UG"]["name"], slice_secret )
+      gateway_directives["UG"]["hostname"]      = local_hostname
       
       gateway_directives["RG"]["instantiate"]   = volume_info[ observer_cred.OPENCLOUD_SLICE_INSTANTIATE_RG ]
       gateway_directives["RG"]["run"]           = volume_info[ observer_cred.OPENCLOUD_SLICE_RUN_RG ]
@@ -417,6 +418,7 @@ def gateway_directives_from_volume_info( volume_info, local_hostname, slice_secr
       gateway_directives["RG"]["closure"]       = volume_info[ observer_cred.OPENCLOUD_SLICE_RG_CLOSURE ]
       gateway_directives["RG"]["name"]          = provisioning.make_gateway_name( gateway_name_prefix, "RG", volume_name, RG_hostname )
       gateway_directives["RG"]["key_password"]  = provisioning.make_gateway_private_key_password( gateway_directives["RG"]["name"], slice_secret )
+      gateway_directives["RG"]["hostname"]      = RG_hostname
       
       gateway_directives["AG"]["instantiate"]   = volume_info[ observer_cred.OPENCLOUD_SLICE_INSTANTIATE_AG ]
       gateway_directives["AG"]["run"]           = volume_info[ observer_cred.OPENCLOUD_SLICE_RUN_AG ]
@@ -424,6 +426,7 @@ def gateway_directives_from_volume_info( volume_info, local_hostname, slice_secr
       gateway_directives["AG"]["closure"]       = volume_info[ observer_cred.OPENCLOUD_SLICE_AG_CLOSURE ]
       gateway_directives["AG"]["name"]          = provisioning.make_gateway_name( gateway_name_prefix, "AG", volume_name, AG_hostname )
       gateway_directives["AG"]["key_password"]  = provisioning.make_gateway_private_key_password( gateway_directives["AG"]["name"], slice_secret )
+      gateway_directives["AG"]["hostname"]      = AG_hostname
       
    except Exception, e:
       log.exception(e)
@@ -514,7 +517,8 @@ def start_stop_volume( config, volume_info, slice_secret, client=None, hostname=
    # build up the set of directives
    gateway_directives = gateway_directives_from_volume_info( volume_info, hostname, slice_secret )
    
-   rc = apply_gateway_directives( client, syndicate_url, principal_id, principal_pkey_pem, volume_name, gateway_directives, hostname, UG_mountpoint_path, gateway_uid_name=gateway_uid_name, gateway_gid_name=gateway_gid_name, debug=debug )
+   rc = apply_gateway_directives( client, syndicate_url, principal_id, principal_pkey_pem, volume_name, gateway_directives, UG_mountpoint_path,
+                                  gateway_uid_name=gateway_uid_name, gateway_gid_name=gateway_gid_name, debug=debug )
    
    if rc != 0:
       log.error("Failed to apply gateway directives to synchronize %s, rc = %s" % (volume_name, rc))
@@ -523,7 +527,8 @@ def start_stop_volume( config, volume_info, slice_secret, client=None, hostname=
 
    
 #-------------------------
-def apply_gateway_directives( client, syndicate_url, principal_id, principal_pkey_pem, volume_name, gateway_directives, hostname, UG_mountpoint_path, gateway_uid_name=None, gateway_gid_name=None, debug=False ):
+def apply_gateway_directives( client, syndicate_url, principal_id, principal_pkey_pem, volume_name, gateway_directives, UG_mountpoint_path,
+                              gateway_uid_name=None, gateway_gid_name=None, debug=False ):
    """
    Apply the set of gateway directives.
    """
@@ -547,7 +552,7 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
                                                          principal_id,
                                                          volume_name,
                                                          gateway_directives[gateway_type]["name"],
-                                                         hostname,
+                                                         gateway_directives[gateway_type]["hostname"],
                                                          gateway_directives[gateway_type]["port"],
                                                          gateway_directives[gateway_type]["key_password"] )
          
@@ -591,7 +596,7 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
                                  check_only=False,
                                  uid_name=gateway_uid_name,
                                  gid_name=gateway_gid_name,
-                                 hostname=hostname,
+                                 hostname=gateway_directives['UG']['hostname'],
                                  debug=debug )
          
          if rc < 0:
@@ -621,7 +626,7 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
                                  check_only=False,
                                  uid_name=gateway_uid_name,
                                  gid_name=gateway_gid_name,
-                                 hostname=hostname,
+                                 hostname=gateway_directives['RG']['hostname'],
                                  debug=debug )
          
          if rc < 0:
@@ -651,6 +656,7 @@ def apply_gateway_directives( client, syndicate_url, principal_id, principal_pke
                                  check_only=False,
                                  uid_name=gateway_uid_name,
                                  gid_name=gateway_gid_name,
+                                 hostname=gateway_directives['AG']['hostname'],
                                  debug=debug )
          
          if rc < 0:
