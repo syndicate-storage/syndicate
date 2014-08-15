@@ -164,7 +164,7 @@ int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md
    // initialize the root, but make it searchable and mark it as stale 
    core->root = CALLOC_LIST( struct fs_entry, 1 );
 
-   int rc = fs_entry_init_dir( core, core->root, "/", 0, 1, owner_id, 0, volume, 0755, 0, 0, 0, 0 );
+   int rc = fs_entry_init_dir( core, core->root, "/", 0, 1, owner_id, 0, volume, mode, 0, 0, 0, 0 );
    if( rc != 0 ) {
       errorf("fs_entry_init_dir rc = %d\n", rc );
       
@@ -975,7 +975,10 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
 
       // do we have permission to search this directory?
       if( cur_ent->ftype == FTYPE_DIR && !IS_DIR_READABLE( cur_ent->mode, cur_ent->owner, cur_ent->volume, user, vol ) ) {
-
+         
+         errorf("User %" PRIu64 " of volume %" PRIu64 " cannot read directory %" PRIX64 " owned by %" PRIu64 " in volume %" PRIu64 "\n",
+                user, vol, cur_ent->file_id, cur_ent->owner, cur_ent->volume );
+         
          // the appropriate read flag is not set
          *err = -EACCES;
          free( fpath );
@@ -1053,6 +1056,10 @@ struct fs_entry* fs_entry_resolve_path_cls( struct fs_core* core, char const* pa
       
       // check readability
       if( !IS_READABLE( cur_ent->mode, cur_ent->owner, cur_ent->volume, user, vol ) ) {
+         
+         errorf("User %" PRIu64 " of volume %" PRIu64 " cannot read file %" PRIX64 " owned by %" PRIu64 " in volume %" PRIu64 "\n",
+                user, vol, cur_ent->file_id, cur_ent->owner, cur_ent->volume );
+         
          *err = -EACCES;
          fs_entry_unlock( cur_ent );
          return NULL;

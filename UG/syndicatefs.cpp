@@ -208,12 +208,9 @@ int syndicatefs_chmod(const char *path, mode_t mode) {
    SYNDICATEFS_DATA->stats->enter( STAT_CHMOD );
    
    int rc = fs_entry_chmod( SYNDICATEFS_DATA->core, path, conf->owner, SYNDICATEFS_DATA->core->volume, mode );
-   if( rc == 0 ) {
-      // TODO: update the modtime and metadata of this file
-   }
    
    SYNDICATEFS_DATA->stats->leave( STAT_CHMOD, rc );
-   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_chmod rc = %d\n");
+   logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_chmod rc = %d\n", rc);
    return rc;
 }
 
