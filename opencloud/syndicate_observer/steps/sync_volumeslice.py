@@ -34,7 +34,7 @@ if __name__ != "__main__":
 
 from syndicate_storage.models import VolumeSlice,VolumeAccessRight,Volume
 
-import syndicate.observer.sync as syndicatelib
+import syndicate.observer.sync as syndicate_observer_sync
 
 
 class SyncVolumeSlice(SyncStep):
@@ -47,15 +47,24 @@ class SyncVolumeSlice(SyncStep):
     def fetch_pending(self):
         return VolumeSlice.objects.filter(Q(enacted__lt=F('updated')) | Q(enacted=None))
 
-    def sync_record(self, vs):
-        return syndicatelib.sync_volumeslice_record(vs)
+    def fetch_deleted(self):
+        return VolumeSlice.deleted_objects.filter(Q(enacted__lt=F("updated")) | Q(enacted=None)).filter( Q(deleted=True) )
 
+    def sync_record(self, vs):
+        return syndicate_observer_sync.sync_volumeslice_record(vs)
+
+    def delete_record(self, vs):
+        return syndicate_observer_sync.delete_volumeslice_record(vs)
 
 if __name__ == "__main__":
     sv = SyncVolumeSlice()
 
     # first, set all VolumeSlice to not-enacted so we can test 
     for v in VolumeSlice.objects.all():
+       v.enacted = None
+       v.save()
+
+    for v in VolumeSlice.deleted_objects.all():
        v.enacted = None
        v.save()
 
@@ -72,3 +81,11 @@ if __name__ == "__main__":
 
         sv.sync_record( rec )
 
+    delrecs = sv.fetch_deleted()
+
+    for rec in delrecs:
+       if rec.slice_id.creator is None:
+           print "Ingoring slice %s, since it has no creator" % (rec.slice_id)
+           continue
+
+       sv.delete_record( rec )

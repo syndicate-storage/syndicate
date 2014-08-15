@@ -35,7 +35,7 @@ if __name__ != "__main__":
         logger.warning("No OPENCLOUD_PYTHONPATH set; assuming your PYTHONPATH works")
 
 
-import syndicate.observer.sync as syndicatelib 
+import syndicate.observer.sync as syndicate_observer_sync 
 
 
 class SyncVolume(SyncStep):
@@ -53,12 +53,23 @@ class SyncVolume(SyncStep):
             traceback.print_exc()
             return None
 
+    def fetch_deleted(self):
+        try:
+            ret = Volume.deleted_objects.filter(Q(enacted__lt=F('updated')) | Q(enacted=None))
+            return ret
+        except Exception, e:
+            traceback.print_exc()
+            return None
+
+
     def sync_record(self, volume):
         """
         Synchronize a Volume record with Syndicate.
         """
-        return syndicatelib.sync_volume_record( volume )
+        return syndicate_observer_sync.sync_volume_record( volume )
         
+    def delete_record(self, volume):
+        return syndicate_observer_sync.delete_volume_record( volume )
         
 if __name__ == "__main__":
     sv = SyncVolume()
@@ -80,3 +91,9 @@ if __name__ == "__main__":
         if not rc:
           print "\n\nFailed to sync %s\n\n" % (rec.name)
 
+    
+    delrecs = sv.fetch_deleted()
+
+    for rec in delrecs:
+       sv.delete_record( rec )
+    

@@ -68,9 +68,9 @@ class VolumeAccessRight(PlCoreBase):
     class Meta:
         app_label = "syndicate_storage"
 
-    owner_id = models.ForeignKey(User, verbose_name='user')
+    owner_id = models.ForeignKey(User, verbose_name='user')     # ensure this VolumeAccessRight deleted when the user gets deleted
     
-    volume = models.ForeignKey(Volume)
+    volume = models.ForeignKey(Volume)  # ensure this VolumeAccessRight gets deleted when the volume gets deleted
 
     cap_read_data = models.BooleanField(default=True, help_text="VM can read Volume data")
     cap_write_data = models.BooleanField(default=True, help_text="VM can write Volume data")
@@ -177,7 +177,7 @@ class SliceSecret(models.Model):        # NOTE: not a PlCoreBase
     class Meta:
        app_label = "syndicate_storage"
     
-    slice_id = models.ForeignKey(Slice)
+    slice_id = models.ForeignKey(Slice)         # only to ensure that this will get deleted along with the slice
     secret = ObserverSecretValue(blank=True, help_text="Shared secret between OpenCloud and this slice's Syndicate daemons.")
     
     def __unicode__(self):  return self.slice_id.name
