@@ -535,7 +535,7 @@ def _remove_user_from_volume_helper( owner_id, volume_id ):
       gw_key.delete()
       return None
       
-   Gateway.ListAll( {"Gateway.owner_id ==": owner_id, "Gateway.volume_id ==": volume_id}, map_func=_remove_gateway )
+   Gateway.ListAll( {"Gateway.owner_id ==": owner_id, "Gateway.volume_id ==": volume_id}, map_func=_remove_gateway, keys_only=True )
    
 
 # ----------------------------------
@@ -556,6 +556,7 @@ def remove_user_from_volume( email, volume_name_or_id ):
    assert rc is True, "Failed to remove access request for %s in %s" % (email, volume.name)
    
    storagetypes.deferred.defer( _remove_user_from_volume_helper, user.owner_id, volume.volume_id )
+      
    return True
 
 # ----------------------------------

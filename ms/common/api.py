@@ -1319,7 +1319,7 @@ def list_gateways_by_user_and_volume( email, volume_name_or_id, **caller_user_di
 
 
 @Authenticate( auth_methods=[AUTH_METHOD_PASSWORD, AUTH_METHOD_PUBKEY] )
-@DeleteAPIGuard( Gateway, target_object_name="volume_name_or_id", parse_args=Gateway.ParseArgs )        # caller must own the Volume
+@DeleteAPIGuard( Volume, target_object_name="volume_name_or_id", parse_args=Volume.ParseArgs )        # caller must own the Volume
 def remove_user_from_volume( email, volume_name_or_id ):
    """
    Remove a user from a volume.  This removes the user's volume
