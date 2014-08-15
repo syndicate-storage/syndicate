@@ -250,13 +250,6 @@ def get_slice_hostnames( slice_name ):
 
 
 #-------------------------------
-def get_sliver_hostname( slice_name, instance_name ):
-   """
-   Query the Django DB and get the hostname of a sliver.
-   """
-   
-
-#-------------------------------
 # Begin functional tests.
 # Any method starting with ft_ is a functional test.
 #-------------------------------

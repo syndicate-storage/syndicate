@@ -361,7 +361,7 @@ def ensure_volume_absent( volume_name ):
     """
 
     client = connect_syndicate()
-
+    
     # this is idempotent, and returns True even if the Volume doesn't exist
     return client.delete_volume( volume_name )
     
@@ -443,7 +443,7 @@ def revoke_volume_access( principal_id, volume_name ):
     """
     Revoke access to a Volume for a User.
       * remove the user's Volume Access Right
-      * remove the use'rs gateways
+      * remove the user's gateways
     """
     client = connect_syndicate()
     
@@ -605,6 +605,22 @@ def save_slice_credentials( observer_pkey_pem, syndicate_url, user_email, volume
        
     return ret
 
+
+#-------------------------------
+def revoke_slice_credentials( volume_name, slice_name ):
+   """
+   Remove the binding between a volume and a slice.
+   """
+   
+   return observer_storage.delete_volumeslice( volume_name, slice_name )
+
+
+#-------------------------------
+def get_volume_slice_names( volume_name ):
+   """
+   Get the list of the names of slice on which the given volume is mounted.
+   """
+   return observer_storage.get_volumeslice_slice_names( volume_name )
 
 #-------------------------------
 # Begin functional tests.
