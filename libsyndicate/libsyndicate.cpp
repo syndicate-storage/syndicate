@@ -913,29 +913,6 @@ void md_sanitize_path( char* path ) {
    }
 }
 
-/*
-// given a URL, is it hosted locally?
-bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url ) {
-   char* url_host = md_url_hostname( url );
-   int url_port = md_portnum_from_url( url );
-
-   char* local_host = md_url_hostname( conf->content_url );
-   int local_port = conf->portnum;
-
-   bool ret = false;
-
-   if( strcmp( local_host, url_host ) == 0 ) {
-      if( (local_port <= 0 && url_port <= 0) || local_port == url_port ) {
-         ret = true;
-      }
-   }
-
-   free( local_host );
-   free( url_host );
-   return ret;
-}
-*/
-
 // start a thread
 pthread_t md_start_thread( void* (*thread_func)(void*), void* arg, bool detach ) {
 
@@ -1223,21 +1200,6 @@ char* md_flatten_path( char const* path ) {
    return ret;
 }
 
-/*
-// convert the URL into the CDN-ified form
-char* md_cdn_url( char const* cdn_prefix, char const* url ) {
-   // fix the URL so it is prefixed by the hostname and CDN, instead of being file://path or http://hostname/path
-   char* host_path = md_strip_protocol( url );
-   if( cdn_prefix == NULL || strlen(cdn_prefix) == 0 ) {
-      // no prefix given
-      cdn_prefix = (char*)"http://";
-   }
-   char* update_url = md_fullpath( cdn_prefix, host_path, NULL );
-   free( host_path );
-   return update_url;
-}
-*/
-
 
 // split a url into the url+path and query string
 int md_split_url_qs( char const* url, char** url_and_path, char** qs ) {
@@ -1347,39 +1309,6 @@ uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t*
    return ret;
 }
 
-/*
-// Read the path version from a given path.
-// The path version is the number attached to the end of the path by a period.
-// returns a nonnegative number on success.
-// returns negative on error.
-int64_t md_path_version( char const* path ) {
-   // find the last .
-   int i;
-   bool valid = true;
-   for( i = strlen(path)-1; i >= 0; i-- ) {
-      if( path[i] == '.' )
-         break;
-      
-      if( path[i] < '0' || path[i] > '9' ) {
-         valid = false;
-         break;
-      }
-   }
-   if( i <= 0 )
-      return (int64_t)(-1);     // no version can be found
-   
-   if( !valid )
-      return (int64_t)(-2);     // no version in the name
-   
-   char *end;
-   int64_t version = strtoll( path + i + 1, &end, 10 );
-   if( version == 0 && *end != '\0' )
-      return (int64_t)(-3);     // could not parse the version
-
-   return version;
-}
-*/
-
 // Get the offset into a path where the version begins (delimited by a .)
 // Returns nonnegative on success.
 // returns negative on error.
@@ -1410,24 +1339,6 @@ int md_path_version_offset( char const* path ) {
    
    return i;  
 }
-
-/*
-// given two paths, determine if one is the versioned form of the other
-bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path ) {
-   // if this isn't a versioned path, then no
-   int version_offset = md_path_version_offset( versioned_path );
-   if( version_offset <= 0 )
-      return false;
-   
-   if( strlen(vanilla_path) > (unsigned)version_offset )
-      return false;
-   
-   if( strncmp( vanilla_path, versioned_path, version_offset ) != 0 )
-      return false;
-   
-   return true;
-}
-*/
 
 // clear the version of a path
 char* md_clear_version( char* path ) {

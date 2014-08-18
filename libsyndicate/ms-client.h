@@ -355,14 +355,6 @@ int ms_client_remove_vacuum_log_entry( struct ms_client* client, uint64_t volume
 int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_t* ms_response );
 int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, char const* name, void* cls );
 
-// asynchronous and batched API access
-/*
-int ms_client_queue_update( struct ms_client* client, struct md_entry* update, uint64_t deadline_ms, uint64_t deadline_delta_ms );
-int ms_client_clear_update( struct ms_client* client, uint64_t volume_id, uint64_t file_id );
-
-int ms_client_sync_update( struct ms_client* client, uint64_t volume_id, uint64_t file_id );
-int ms_client_sync_updates( struct ms_client* client, uint64_t freshness_ms );
-*/
 
 // get information about the volume
 uint64_t ms_client_volume_version( struct ms_client* client );

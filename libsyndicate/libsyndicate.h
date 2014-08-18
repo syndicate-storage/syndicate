@@ -310,8 +310,6 @@ void md_entry_dup2( struct md_entry* src, struct md_entry* ret );
 void md_entry_free( struct md_entry* ent );
 
 // serialization
-// bool md_is_versioned_form( char const* vanilla_path, char const* versioned_path );
-// int64_t md_path_version( char const* path );
 int md_path_version_offset( char const* path );
 ssize_t md_metadata_update_text( struct md_syndicate_conf* conf, char **buf, struct md_update** updates );
 ssize_t md_metadata_update_text2( struct md_syndicate_conf* conf, char **buf, vector<struct md_update>* updates );
@@ -331,7 +329,6 @@ char* md_prepend( char const* prefix, char const* str, char* output );
 long md_hash( char const* path );
 int md_path_split( char const* path, vector<char*>* result );
 void md_sanitize_path( char* path );
-// bool md_is_locally_hosted( struct md_syndicate_conf* conf, char const* url );
 
 // serialization
 int md_entry_to_ms_entry( ms::ms_entry* msent, struct md_entry* ent );
@@ -353,7 +350,22 @@ char* md_url_strip_path( char const* url );
 int md_portnum_from_url( char const* url );
 char* md_strip_protocol( char const* url );
 char* md_flatten_path( char const* path );
-// char* md_cdn_url( char const* cdn_prefix, char const* url );
+/*
+// convert the URL into the CDN-ified form
+char* md_cdn_url( char const* cdn_prefix, char const* url ) {
+   // fix the URL so it is prefixed by the hostname and CDN, instead of being file://path or http://hostname/path
+   char* host_path = md_strip_protocol( url );
+   if( cdn_prefix == NULL || strlen(cdn_prefix) == 0 ) {
+      // no prefix given
+      cdn_prefix = (char*)"http://";
+   }
+   char* update_url = md_fullpath( cdn_prefix, host_path, NULL );
+   free( host_path );
+   return update_url;
+}
+*/
+
+
 int md_split_url_qs( char const* url, char** url_and_path, char** qs );
 
 // header parsing
