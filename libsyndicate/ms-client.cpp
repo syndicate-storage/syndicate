@@ -2420,6 +2420,18 @@ static int ms_client_send_public_key_register_request( struct ms_client* client,
       return -EINVAL;
    }
    
+   // zero-terminate the buffer, since older versions of libcurl will try to strlen() it and read past the end
+   char* tmp_registration_buf = (char*)realloc( serialized_registration_buf, serialized_registration_buf_len + 1 );
+   if( tmp_registration_buf == NULL ) {
+      curl_easy_cleanup( curl );
+      free( serialized_registration_buf );
+      
+      return -ENOMEM;
+   }
+   
+   tmp_registration_buf[ serialized_registration_buf_len ] = 0;
+   serialized_registration_buf = tmp_registration_buf;
+   
    // POST the request 
    struct curl_httppost *post = NULL, *last = NULL;
    long http_response = 0;

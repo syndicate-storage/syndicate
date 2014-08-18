@@ -294,6 +294,9 @@ int md_downloader_end_all_cancelling( struct md_downloader* dl ) {
          
          struct md_download_context* dlctx = *itr;
          
+         if( dlctx == NULL )
+            continue;
+         
          curl_multi_remove_handle( dl->curlm, dlctx->curl );
          
          dl->downloading->erase( dlctx->curl );
@@ -816,18 +819,36 @@ int md_downloader_finalize_download_contexts( struct md_downloader* dl ) {
          break;
 
       if( msg->msg == CURLMSG_DONE ) {
-         // a tranfer finished.  Find out which one
+         // a transfer finished.  Find out which one
          md_downloading_map_t::iterator itr = dl->downloading->find( msg->easy_handle );
          if( itr != dl->downloading->end() ) {
             // found!
             struct md_download_context* dlctx = itr->second;
             
+            // get this now, before removing it from the curlm handle
+            int result = msg->data.result;
+            
             // remove from the downloader 
             dl->downloading->erase( itr );
-            curl_multi_remove_handle( dl->curlm, dlctx->curl );
+            
+            if( dlctx == NULL ) {
+               errorf("WARN: no download context for curl handle %p\n", msg->easy_handle);
+               
+               curl_multi_remove_handle( dl->curlm, msg->easy_handle );
+               continue;
+            }
+            
+            if( dlctx->curl == NULL ) {
+               errorf("BUG: curl handle of download context %p is NULL\n", dlctx );
+               
+               curl_multi_remove_handle( dl->curlm, msg->easy_handle );
+            }
+            else {
+               curl_multi_remove_handle( dl->curlm, dlctx->curl );
+            }
             
             // finalize the download context
-            rc = md_downloader_finalize_download_context( dlctx, msg->data.result );
+            rc = md_downloader_finalize_download_context( dlctx, result );
             if( rc != 0 ) {
                errorf("%s: md_downloader_finalize_download_context rc = %d\n", dl->name, rc );
             }
