@@ -181,11 +181,15 @@ int fs_entry_read_block_future_init( struct fs_entry_read_block_future* block_fu
 // detach the read handle from the core downloader
 int fs_entry_read_block_future_free( struct fs_core* core, struct fs_entry_read_block_future* block_fut ) {
    
-   md_download_context_cancel( &core->state->dl, &block_fut->dlctx );
-   
    sem_destroy( &block_fut->sem );
    
    if( block_fut->has_dlctx ) {
+      
+      // cancel it if it's still running
+      if( !md_download_context_finalized( &block_fut->dlctx ) ) {
+         md_download_context_cancel( &core->state->dl, &block_fut->dlctx );
+      }
+      
       CURL* conn = NULL;
       
       // get back the cls 
