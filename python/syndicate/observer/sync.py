@@ -276,7 +276,7 @@ def sync_volumeslice_record( vs ):
    try:
       slice_cred = observer_core.save_slice_credentials( observer_pkey_pem, syndicate_url, slice_principal_id, volume_name, slice_name, observer_secret, slice_secret,
                                                          instantiate_UG=True,  run_UG=True,  UG_port=UG_port, UG_closure=None,
-                                                         instantiate_RG=None,  run_RG=True,  RG_port=RG_port, RG_closure=None,
+                                                         instantiate_RG=None,  run_RG=True,  RG_port=RG_port, RG_closure=None, RG_global_hostname="localhost",
                                                          instantiate_AG=None,  run_AG=None,  AG_port=0,       AG_closure=None,
                                                          gateway_name_prefix=gateway_name_prefix,
                                                          existing_user=user )

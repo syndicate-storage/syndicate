@@ -79,7 +79,7 @@ class CredentialServerHandler( BaseHTTPServer.BaseHTTPRequestHandler ):
    cached_volumes_json = {}             # map slice_name --> (volume name, timeout)
    cached_volumes_json_lock = threading.Lock()
    
-   CACHED_VOLUMES_JSON_LIFETIME = 3600          # one hour
+   CACHED_VOLUMES_JSON_LIFETIME = 300          # 5 minutes
    
    SLICE_SECRET_NAME = "SYNDICATE_SLICE_SECRET"
    

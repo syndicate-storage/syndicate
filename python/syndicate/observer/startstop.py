@@ -191,7 +191,7 @@ def ensure_UG_running( syndicate_url, principal_id, volume_name, gateway_name, k
        return -errno.EINVAL
     
     # make sure a mountpoint exists
-    rc = ensure_UG_mountpoint_exists( mountpoint )
+    rc = ensure_UG_mountpoint_exists( mountpoint, uid_name=uid_name, gid_name=gid_name )
     if rc != 0:
        log.error("Failed to ensure mountpoint %s exists" % mountpoint)
        return rc
@@ -230,6 +230,9 @@ def ensure_UG_stopped( volume_name, mountpoint=None ):
     if rc != 0:
        log.error("Failed to stop UG in %s at %s, rc = %s" % (volume_name, mountpoint, rc))
     
+    if mountpoint is not None:
+      ensure_UG_mountpoint_absent( mountpoint )
+      
     return rc
 
 
@@ -300,13 +303,17 @@ def make_UG_mountpoint_path( mountpoint_dir, volume_name ):
 
 
 #-------------------------------
-def ensure_UG_mountpoint_exists( mountpoint ):
+def ensure_UG_mountpoint_exists( mountpoint, uid_name=None, gid_name=None ):
    """
    Make a mountpoint (i.e. a directory)
    """
    rc = 0
    try:
       os.makedirs( mountpoint, mode=0777 )
+      
+      if uid_name is not None and gid_name is not None:
+         os.system("chown %s.%s %s" % (uid_name, gid_name, mountpoint))
+         
       return 0
    except OSError, oe:
       if oe.errno != errno.EEXIST:
@@ -317,6 +324,22 @@ def ensure_UG_mountpoint_exists( mountpoint ):
       log.exception(e)
       return -errno.EPERM
 
+#-------------------------
+def ensure_UG_mountpoint_absent( mountpoint ):
+   """
+   Ensure that a mountpoint no longer exists 
+   """
+   try:
+      os.rmdir( mountpoint )
+   except OSError, oe:
+      if oe.errno != errno.ENOENT:
+         log.error("Failed to remove unused mountpoint %s, errno = %s" % (mountpoint, oe.errno))
+   
+   except IOError, ie:
+      if ie.errno != errno.ENOENT:
+         log.error("Failed to remove unused mountpoint %s, errno = %s" % (mountpoint, ie.errno))
+         
+   
 
 #-------------------------
 def list_running_gateways_by_volume():
