@@ -62,6 +62,8 @@ struct md_download_context {
    bool cancelled;      // if true, this was cancelled
    char* effective_url; // stores final URL that resolved to data
    
+   bool pending;        // if true, then this download context is in the process of being started
+   bool cancelling;     // if true, then this download context is in the process of being cancelled
    bool finalized;      // if true, then this download has finished
    
    struct md_download_set* dlset;       // parent group containing this context
@@ -74,7 +76,7 @@ typedef md_pending_set_t::iterator md_download_set_iterator;
 // download set 
 struct md_download_set {
    
-   md_pending_set_t* waiting;           // download context for which we are waiting
+   md_pending_set_t* waiting;           // pointers to download contexts for which we are waiting
    
    sem_t sem;                           // block on this until at least one of waiting has been finalized
 };

@@ -192,7 +192,10 @@ int fs_entry_read_block_future_free( struct fs_core* core, struct fs_entry_read_
       struct driver_connect_cache_cls* cache_cls = (struct driver_connect_cache_cls*) md_download_context_get_cache_cls( &block_fut->dlctx );
       
       // TODO: recycle connection
-      md_download_context_free( &block_fut->dlctx, &conn );
+      int rc = md_download_context_free( &block_fut->dlctx, &conn );
+      if( rc == -EAGAIN ) {
+         errorf("BUG: tried to free context %p, which is still in use!\n", (void*)&block_fut->dlctx );
+      }
       curl_easy_cleanup( conn );
       
       free( cache_cls );
@@ -798,7 +801,7 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
       rc = fs_entry_verify_block( core, fent, block_fut->block_id, buf, buflen );
       if( rc != 0 ) {
          errorf("fs_entry_verify_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
-                  block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
+                 block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
          
          // finalize error 
          fs_entry_read_block_future_finalize_error( block_fut, rc );
@@ -855,6 +858,9 @@ static int fs_entry_read_context_cancel_downloads( struct fs_core* core, struct 
             
             // get the download context 
             struct md_download_context* dlctx = &block_fut->dlctx;
+            
+            dbprintf("Cancel download of %s at [%" PRIu64 ".%" PRId64 "]\n",
+                      block_fut->fs_path, block_fut->block_id, block_fut->block_version );
             
             // cancel it 
             md_download_context_cancel( &core->state->dl, dlctx );
@@ -985,6 +991,9 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
                // did we find EOF?
                if( rc == 0 && block_fut->eof ) {
                   // cancel all blocks after this one, since they are EOF
+                  errorf("EOF on %s at [%" PRIu64 ".%" PRId64 "]\n",
+                          block_fut->fs_path, block_fut->block_id, block_fut->block_version );
+                  
                   do_cancel = true;
                   do_eof = true;
                   cancel_after = block_fut->block_id;

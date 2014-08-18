@@ -1815,7 +1815,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    }
    
    if( strcmp(ms_volume_name, conf->volume_name) != 0 ) {
-      errorf("ERR: This UG is not registered to Volume '%s'\n", conf->volume_name );
+      errorf("ERR: This gateway is not registered to Volume '%s'\n", conf->volume_name );
       free( ms_volume_name );
       return -EINVAL;
    }

@@ -17,7 +17,7 @@
 #include "libsyndicate/download.h"
 
 static void* md_downloader_main( void* arg );
-
+int md_downloader_finalize_download_context( struct md_download_context* dlctx, int curl_rc );
 
 // locks around the downloading contexts 
 int md_downloader_downloading_rlock( struct md_downloader* dl ) {
@@ -210,34 +210,28 @@ int md_downloader_insert_pending( struct md_downloader* dl, struct md_download_c
       return -EPERM;
    }
    
+   if( dlctx->finalized ) {
+      md_downloader_pending_unlock( dl );
+      return -EINVAL;
+   }
+   
+   if( dlctx->pending || dlctx->cancelling ) {
+      md_downloader_pending_unlock( dl );
+      return -EINVAL;
+   }
+   
+   dlctx->pending = true;
    dl->pending->insert( dlctx );
    
    md_downloader_pending_unlock( dl );
    
    dl->has_pending = true;
    
-   return 0;
-}
-
-
-// insert a set of pending contexts 
-int md_downloader_insert_pending_set( struct md_downloader* dl, md_pending_set_t* ps ) {
-   
-   md_downloader_pending_wlock( dl );
-   
-   if( !dl->running ) {
-      md_downloader_pending_unlock( dl );
-      return -EPERM;
-   }
-   
-   dl->pending->insert( ps->begin(), ps->end() );
-   
-   md_downloader_pending_unlock( dl );
-   
-   dl->has_pending = true;
+   dbprintf("Start context %p\n", dlctx );
    
    return 0;
 }
+
 
 // insert a cancelling context 
 int md_downloader_insert_cancelling( struct md_downloader* dl, struct md_download_context* dlctx ) {
@@ -248,11 +242,25 @@ int md_downloader_insert_cancelling( struct md_downloader* dl, struct md_downloa
       return -EPERM;
    }
    
+   if( dlctx->finalized ) {
+      md_downloader_cancelling_unlock( dl );
+      return -EINVAL;
+   }
+   
+   if( dlctx->pending || dlctx->cancelling ) {
+      md_downloader_cancelling_unlock( dl );
+      return -EINVAL;
+   }
+   
+   dlctx->cancelling = true;
+   
    dl->cancelling->insert( dlctx );
    
    md_downloader_cancelling_unlock( dl );
    
    dl->has_cancelling = true;
+   
+   dbprintf("Cancel context %p\n", dlctx );
    
    return 0;
 }
@@ -269,6 +277,7 @@ int md_downloader_start_all_pending( struct md_downloader* dl ) {
          struct md_download_context* dlctx = *itr;
          
          curl_multi_add_handle( dl->curlm, dlctx->curl );
+         dlctx->pending = false;
          
          (*dl->downloading)[ dlctx->curl ] = dlctx;
       }
@@ -301,9 +310,12 @@ int md_downloader_end_all_cancelling( struct md_downloader* dl ) {
          
          dl->downloading->erase( dlctx->curl );
          
-         // alert the caller that this was cancelled
+         // update state
+         dlctx->cancelling = false;
          dlctx->cancelled = true;
-         sem_post( &dlctx->sem );
+         
+         // finalize, with -EAGAIN
+         md_downloader_finalize_download_context( dlctx, -EAGAIN );
       }
       
       dl->cancelling->clear();
@@ -429,6 +441,8 @@ int md_download_context_reset( struct md_download_context* dlctx, CURL* new_curl
    dlctx->transfer_errno = 0;
    dlctx->cancelled = false;
    dlctx->finalized = false;
+   dlctx->pending = false;
+   dlctx->cancelling = false;
    
    if( dlctx->effective_url ) {
       free( dlctx->effective_url );
@@ -443,7 +457,16 @@ int md_download_context_reset( struct md_download_context* dlctx, CURL* new_curl
 }
 
 // free a download context
+// this will return -EAGAIN if the download context is queued to be inserted or cancelled.
+// if this download context was finalized, then it's guaranteed to be freed
 int md_download_context_free( struct md_download_context* dlctx, CURL** curl ) {
+   // safe to free?
+   if( dlctx->pending || dlctx->cancelling ) {
+      return -EAGAIN;
+   }
+   
+   dbprintf("Free context %p\n", dlctx );
+   
    if( dlctx->brb.rb ) {
       response_buffer_free( dlctx->brb.rb );
       delete dlctx->brb.rb;
