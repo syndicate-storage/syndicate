@@ -221,16 +221,106 @@ def ensure_UG_running( syndicate_url, principal_id, volume_name, gateway_name, k
           return 0
 
 
+#-------------------------
+def check_UG_mounted( mountpoint, fstype=None ):
+   """
+   See if a UG is mounted, by walking /proc/mounts
+   """
+   
+   fd = None
+   mounts = None
+   
+   try:
+      fd = open("/proc/mounts", "r")
+      mounts = fd.read()
+      fd.close()
+   except IOError, ie:
+      logging.error("Failed to read /proc/mounts, errno = %s" % ie.errno )
+      return -ie.errno
+   except OSError, oe:
+      logging.error("Failed to read /proc/mounts, errno = %s" % oe.errno )
+      return -oe.errno 
+   finally:
+      if fd is not None:
+         fd.close()
+         fd = None
+   
+   mount_lines = mounts.strip().split("\n")
+   for mount in mount_lines:
+      # format: FS MOUNTPOINT ...
+      mount_parts = mount.split()
+      mount_fstype = mount_parts[2]
+      mount_dir = mount_parts[1]
+      
+      if mount_dir.rstrip("/") == mountpoint.rstrip("/"):
+         # something's mounted here...
+         if fstype is not None:
+            if fstype == mount_fstype:
+               return True
+            else:
+               # something else is mounted here 
+               return False 
+            
+         else:
+            # we don't care about the fstype 
+            return True 
+         
+   # nothing mounted here 
+   return False
+         
+
+#-------------------------
+def ensure_UG_not_mounted( mountpoint, UG_fstype=None ):
+   """
+   Ensure that a directory does not have a UG running on it.
+   Return 0 on success, negative otherwise
+   """
+   if not os.path.exists( mountpoint ):
+      return True
+   
+   mounted = check_UG_mounted( mountpoint, fstype=UG_fstype )
+   
+   if mounted:
+      # try unmounting 
+      rc = subprocess.call(["/bin/fusermount", "-u", mountpoint], stderr=None )
+      
+      if rc != 0:
+         # fusermount failed...
+         logging.error("Failed to unmount %s, fusermount exit status %s" % (mountpoint, rc))
+         return -errno.EPERM 
+      
+      else:
+         # verify unmounted 
+         mounted = check_UG_mounted( mountpoint, fstype=UG_fstype )
+         
+         if not mounted:
+            # failed to unmount
+            logging.error("Failed to unmount %s")
+            return -errno.EAGAIN 
+   
+   return 0
+
+
 #-------------------------------
-def ensure_UG_stopped( volume_name, mountpoint=None ):
+def ensure_UG_stopped( volume_name, mountpoint=None, UG_fstype=None ):
     """
     Ensure a UG is no longer running.
     """
-    rc = stop_UG( volume_name, mountpoint=None )
+    
+    # stop the process
+    rc = stop_UG( volume_name, mountpoint=mountpoint )
     if rc != 0:
        log.error("Failed to stop UG in %s at %s, rc = %s" % (volume_name, mountpoint, rc))
     
     if mountpoint is not None:
+      
+      # ensure it's not mounted
+      rc = ensure_UG_not_mounted( mountpoint, UG_fstype=UG_fstype )
+      if rc != 0:
+         logging.error("Failed to ensure UG is not mounted on %s, rc = %s" % (mountpoint, rc))
+         return rc
+      
+      # remove the directory
       ensure_UG_mountpoint_absent( mountpoint )
       
     return rc
@@ -322,7 +412,7 @@ def ensure_UG_mountpoint_exists( mountpoint, uid_name=None, gid_name=None ):
          return 0
    except Exception, e:
       log.exception(e)
-      return -errno.EPERM
+      return -errno.EPERM   
 
 #-------------------------
 def ensure_UG_mountpoint_absent( mountpoint ):
