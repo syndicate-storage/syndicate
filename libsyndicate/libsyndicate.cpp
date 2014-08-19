@@ -577,14 +577,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->ag_driver = strdup(values[0]);
       }
       
-      else if( strcmp( key, AG_BLOCK_SIZE_KEY ) == 0 ) {
-         long val = 0;
-         int rc = md_conf_parse_long( values[0], &val, buf, line_cnt );
-         if( rc == 0 ) {
-            conf->ag_block_size = val;
-         }
-      }
-
       else {
          errorf( "WARN: unrecognized key '%s'\n", key );
       }
@@ -1875,8 +1867,6 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
 #endif
    
    conf->num_http_threads = 1;
-   
-   conf->ag_block_size = 0;
    
    conf->debug_lock = false;
 
