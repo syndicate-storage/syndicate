@@ -833,16 +833,16 @@ void quit_sigterm( int param ) {
    md_stop_HTTP( &g_http );
 }
 
-struct extra_opts {
+struct syndicate_httpd_extra_opts {
    char* logfile_path;
    char* pidfile_path;
    bool foreground;
    int frontend_portnum;
 };
 
-static struct extra_opts g_extra_opts;
+static struct syndicate_httpd_extra_opts g_extra_opts;
 
-int grab_extra_opts( int c, char* arg ) {
+int syndicate_httpd_handle_opt( int c, char* arg ) {
    int rc = 0;
    switch( c ) {
       case 'f': {
@@ -870,17 +870,26 @@ int grab_extra_opts( int c, char* arg ) {
    return rc;
 }
 
+// combined option parser 
+int syndicate_httpd_handle_all_opts( int opt_c, char* opt_s ) {
+   // try to handle internal opt 
+   int rc = UG_handle_opt( opt_c, opt_s );
+   if( rc != 0 ) {
+      // try to handle it as a daemon-specific opt 
+      rc = syndicate_httpd_handle_opt( opt_c, opt_s );
+   }
+   return rc;
+}
 
-void extra_usage(void) {
+
+void syndicate_httpd_usage(void) {
    fprintf(stderr, "\
-Gateway-specific arguments:\n\
-   -f\n\
-            Run in the foreground\n\
-   -L LOGFILE_PATH\n\
-            Path to a logfile\n\
+syndicate-httpd options:\n\
+   -A ACCESS_LOGFILE_PATH\n\
+            Path to a file to log all accesses.\n\
    -i PIDFILE_PATH\n\
-            Path to a pidfile\n\
-   -F PORTNUM\n\
+            Path to a pidfile.\n\
+   -Q PORTNUM\n\
             Port for the front-end HTTP daemon to listen on\n\
 \n");
 }
@@ -897,18 +906,24 @@ int main( int argc, char** argv ) {
 
    struct md_HTTP syndicate_http;
    
-   struct syndicate_opts opts;
-   syndicate_default_opts( &opts );
+   struct md_opts opts;
+   memset( &opts, 0, sizeof(struct md_opts) );
    memset( &g_extra_opts, 0, sizeof(g_extra_opts) );
+   UG_opts_init();
    
    int rc = 0;
 
-   rc = syndicate_parse_opts( &opts, argc, argv, NULL, "fl:i:F:", grab_extra_opts );
+   rc = md_parse_opts( &opts, argc, argv, NULL, UG_SHORTOPTS "A:i:Q:", syndicate_httpd_handle_all_opts );
    if( rc != 0 ) {
-      syndicate_common_usage( argv[0] );
-      extra_usage();
+      md_common_usage( argv[0] );
+      UG_usage();
+      syndicate_httpd_usage();
       exit(1);
    }
+   
+   // extract UG opts 
+   struct UG_opts ug_opts;
+   UG_opts_get( &ug_opts );
    
    // extra arguments...
    logfile = g_extra_opts.logfile_path;
@@ -917,7 +932,7 @@ int main( int argc, char** argv ) {
    foreground = g_extra_opts.foreground;
    
    // start core services
-   rc = syndicate_init( &opts );
+   rc = syndicate_init( &opts, &ug_opts );
    if( rc != 0 ) {
       fprintf(stderr, "Failed to initialize Syndicate\n");
       exit(1);
@@ -947,7 +962,7 @@ int main( int argc, char** argv ) {
    frontend_httpd_flags |= MHD_USE_DEBUG;
 #endif 
 
-   md_HTTP_init( &g_http, frontend_httpd_flags, conf, state->ms );
+   md_HTTP_init( &g_http, frontend_httpd_flags );
    md_HTTP_authenticate( g_http, httpd_HTTP_authenticate );
    md_HTTP_connect( g_http, httpd_HTTP_connect );
    md_HTTP_GET( g_http, httpd_HTTP_GET_handler );
@@ -959,7 +974,7 @@ int main( int argc, char** argv ) {
    md_HTTP_PUT_finish( g_http, httpd_upload_finish );
    md_HTTP_close( g_http, httpd_HTTP_cleanup );
 
-   rc = md_start_HTTP( &g_http, portnum );
+   rc = md_start_HTTP( &g_http, portnum, &state->conf );
    if( rc < 0 ) {
       errorf( "md_HTTP_start on %d rc = %d\n", portnum, rc );
       exit(1);
@@ -998,7 +1013,7 @@ int main( int argc, char** argv ) {
    server_shutdown( &syndicate_http );
 
    int wait_replicas = 0;
-   if( opts.flush_replicas )
+   if( ug_opts.flush_replicas )
       wait_replicas = -1;
       
    syndicate_destroy( wait_replicas );

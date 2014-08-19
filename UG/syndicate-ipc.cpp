@@ -1424,7 +1424,7 @@ int grab_extra_args( int c, char* arg ) {
          break;
       }
       default: {
-         rc = -1;
+         rc = UG_handle_opt( c, arg );
       }
    }
    return rc;
@@ -1456,19 +1456,25 @@ int main(int argc, char* argv[]) {
     // skip
 #endif
     
-    struct syndicate_opts opts;
-    syndicate_default_opts( &opts );
+    struct md_opts opts;
+    memset( &opts, 0, sizeof(struct md_opts) );
+    UG_opts_init();
     
-    rc = syndicate_parse_opts( &opts, argc, argv, NULL, "O:", grab_extra_args );
+    rc = md_parse_opts( &opts, argc, argv, NULL, "O:", grab_extra_args );
     if( rc != 0 ) {
-       syndicate_common_usage( argv[0] );
+       md_common_usage( argv[0] );
+       UG_usage();
+       extra_usage();
        exit(1);
     }
+    
+    struct UG_opts ug_opts;
+    UG_opts_get( &ug_opts );
 
     struct md_HTTP syndicate_http;
 
     // start core services
-    rc = syndicate_init( &opts );
+    rc = syndicate_init( &opts, &ug_opts );
     if (rc != 0)
         exit(1);
     
@@ -1502,7 +1508,7 @@ int main(int argc, char* argv[]) {
     server_shutdown( &syndicate_http );
 
     int wait_replicas = -1;
-    if( !opts.flush_replicas )
+    if( !ug_opts.flush_replicas )
        wait_replicas = 0;
     
     syndicate_destroy( wait_replicas );
