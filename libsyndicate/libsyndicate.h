@@ -170,7 +170,6 @@ struct md_syndicate_conf {
    unsigned int num_http_threads;                     // how many HTTP threads to create
    char* server_key_path;                             // path to PEM-encoded TLS public/private key for this gateway server
    char* server_cert_path;                            // path to PEM-encoded TLS certificate for this gateway server
-   uint64_t ag_block_size;                            // block size for an AG
    
    // debug
    int debug_lock;                                    // print verbose information on locks
@@ -251,8 +250,6 @@ struct md_syndicate_conf {
 #define SYNDICATE_PUBKEY_KEY        "SYNDICATE_PUBKEY"
 #define VOLUME_NAME_KEY             "VOLUME_NAME"
 #define GATEWAY_NAME_KEY            "GATEWAY_NAME"
-
-#define AG_BLOCK_SIZE_KEY           "AG_BLOCK_SIZE"
 
 #define LOCAL_STORAGE_DRIVERS_KEY   "LOCAL_STORAGE_DRIVERS"
 
@@ -350,21 +347,6 @@ char* md_url_strip_path( char const* url );
 int md_portnum_from_url( char const* url );
 char* md_strip_protocol( char const* url );
 char* md_flatten_path( char const* path );
-/*
-// convert the URL into the CDN-ified form
-char* md_cdn_url( char const* cdn_prefix, char const* url ) {
-   // fix the URL so it is prefixed by the hostname and CDN, instead of being file://path or http://hostname/path
-   char* host_path = md_strip_protocol( url );
-   if( cdn_prefix == NULL || strlen(cdn_prefix) == 0 ) {
-      // no prefix given
-      cdn_prefix = (char*)"http://";
-   }
-   char* update_url = md_fullpath( cdn_prefix, host_path, NULL );
-   free( host_path );
-   return update_url;
-}
-*/
-
 
 int md_split_url_qs( char const* url, char** url_and_path, char** qs );
 
