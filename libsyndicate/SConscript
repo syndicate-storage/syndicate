@@ -18,9 +18,10 @@ BASE_FILES = """
    download.cpp
    libsyndicate.cpp
    ms-client.cpp
+   openid.cpp
+   opts.cpp
    util.cpp
    storage.cpp
-   openid.cpp
 """
 
 SCRYPT_FILES = Glob("scrypt/*.cpp")
