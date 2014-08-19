@@ -61,7 +61,6 @@ static int md_parse_json_object( struct json_object** jobj_ret, char const* obj_
    
    // obj_json should be a valid json string that contains a single dictionary.
    struct json_tokener* tok = json_tokener_new();
-   // struct json_object* jobj = json_tokener_parse_ex( tok, obj_json, obj_json_len );
    struct json_object* jobj = json_tokener_parse_ex( tok, tmp, obj_json_len );
    
    json_tokener_free( tok );
@@ -173,6 +172,7 @@ static int md_decrypt_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway_pkey,
    size_t obj_json_len = 0;
    
    rc = md_decrypt( gateway_pubkey, gateway_pkey, obj_ctext, obj_ctext_len, &obj_json, &obj_json_len );
+   
    free( obj_ctext );
    
    if( rc != 0 ) {
@@ -214,7 +214,7 @@ static int md_parse_closure_secrets( EVP_PKEY* gateway_pubkey, EVP_PKEY* gateway
       
       // get the value 
       char const* encrypted_value = json_object_get_string( val );
-      size_t encrypted_value_len = strlen(encrypted_value);     // json_object_get_string_len( val );
+      size_t encrypted_value_len = strlen(encrypted_value);
       
       // put it into the config 
       string key_s( key );
