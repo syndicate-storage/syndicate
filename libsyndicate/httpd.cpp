@@ -395,7 +395,6 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
          
       
       // build up con_data from what we know
-      con_data->conf = http_ctx->conf;
       con_data->http = http_ctx;
       con_data->url_path = md_flatten_path( url );
       con_data->version = strdup(version);
@@ -407,7 +406,6 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       con_data->cls = NULL;
       con_data->status = 200;
       con_data->pp = pp;
-      con_data->ms = http_ctx->ms;
 
       char const* content_length_str = MHD_lookup_connection_value( connection, MHD_HEADER_KIND, MHD_HTTP_HEADER_CONTENT_LENGTH );
       if( content_length_str != NULL )
@@ -622,19 +620,15 @@ void md_HTTP_cleanup( void *cls, struct MHD_Connection *connection, void **con_c
 }
 
 // set fields in an HTTP structure
-int md_HTTP_init( struct md_HTTP* http, int server_type, struct md_syndicate_conf* conf, struct ms_client* client ) {
+int md_HTTP_init( struct md_HTTP* http, int server_type ) {
    memset( http, 0, sizeof(struct md_HTTP) );
-   http->conf = conf;
    http->server_type = server_type;
-   http->ms = client;
    return 0;
 }
 
 
 // start the HTTP thread
-int md_start_HTTP( struct md_HTTP* http, int portnum ) {
-   
-   struct md_syndicate_conf* conf = http->conf;
+int md_start_HTTP( struct md_HTTP* http, int portnum, struct md_syndicate_conf* conf ) {
    
    pthread_rwlock_init( &http->lock, NULL );
    
