@@ -20,9 +20,11 @@
 #define _SYNDICATE_CLIENT_H_
 
 #include "libsyndicate/libsyndicate.h"
+#include "libsyndicate/opts.h"
+
 #include "fs_entry.h"
 #include "log.h"
-#include "opts.h"
+#include "syndicate.h"
    
 // file handle wrapper 
 typedef struct _syndicate_handle {
@@ -70,7 +72,7 @@ int syndicate_getxattr(struct syndicate_state* state, const char *path, const ch
 int syndicate_listxattr(struct syndicate_state* state, const char *path, char *list, size_t size);
 int syndicate_removexattr(struct syndicate_state* state, const char *path, const char *name);
 
-int syndicate_client_init( struct syndicate_state* state, struct syndicate_opts* opts );
+int syndicate_client_init( struct syndicate_state* state, struct md_opts* opts );
 
 int syndicate_client_shutdown( struct syndicate_state* state, int wait_replicas );
 

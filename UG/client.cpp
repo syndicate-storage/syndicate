@@ -637,7 +637,7 @@ int syndicate_fgetattr(struct syndicate_state* state, struct stat *statbuf, synd
 }
 
 // initialize syndicate
-int syndicate_client_init( struct syndicate_state* state, struct syndicate_opts* opts ) {
+int syndicate_client_init( struct syndicate_state* state, struct md_opts* opts ) {
    
    struct ms_client* ms = CALLOC_LIST( struct ms_client, 1 );
    

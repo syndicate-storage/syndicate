@@ -18,13 +18,96 @@
 
 
 struct syndicate_state *global_state = NULL;
+static struct UG_opts _internal_opts;           // accumulate options and feed them into the global state
+
+int UG_opts_init(void) {
+   memset( &_internal_opts, 0, sizeof(struct UG_opts) );
+   
+   _internal_opts.cache_soft_limit = CACHE_DEFAULT_SOFT_LIMIT;
+   _internal_opts.cache_hard_limit = CACHE_DEFAULT_HARD_LIMIT;
+   _internal_opts.flush_replicas = true;
+   
+   return 0;
+}
+
+int UG_opts_get( struct UG_opts* opts ) {
+   memcpy( opts, &_internal_opts, sizeof(struct UG_opts));
+   return 0;
+}
+
+void UG_usage(void) {
+   fprintf(stderr, "\n\
+UG-specific options:\
+   -l, --cache-soft-limit LIMIT\n\
+            Soft limit on the size of the local cache (bytes).\n\
+   -L, --cache-hard-limit LIMIT\n\
+            Hard limit on the size of the local cache (bytes).\n\
+   -F, --no-flush-replicas\n\
+            On shutdown, do NOT wait for pending replication\n\
+            requests to finish.\n\
+   -a, --anonymous\n\
+            Sign in anonymously.  You will have read-only\n\
+            permissions.  If you use this option, you do not\n\
+            need -U, -P, -g, -u, or -p.\n\
+\n" );
+}
 
 // add extra information into global syndicate conf that isn't covered by the normal initialization step
-static void syndicate_add_extra_config( struct md_syndicate_conf* conf, struct syndicate_opts* opts ) {
+static void syndicate_add_extra_config( struct md_syndicate_conf* conf, struct UG_opts* opts ) {
    // add in extra information not covered by md_init
    conf->cache_soft_limit = opts->cache_soft_limit;
    conf->cache_hard_limit = opts->cache_hard_limit;
 }
+
+
+// get a UG-specific option
+int UG_handle_opt( int opt_c, char* opt_s ) {
+   int rc = 0;
+   dbprintf("UG opt: -%c\n", opt_c);
+   
+   switch( opt_c ) {
+      case 'l': {
+         long lim = 0;
+         rc = md_opts_parse_long( opt_c, opt_s, &lim );
+         if( rc == 0 ) {
+            _internal_opts.cache_soft_limit = (size_t)lim;
+         }
+         else {
+            errorf("Failed to parse -l, rc = %d\n", rc );
+            rc = -1;
+         }
+         break;
+      }
+      case 'L': {
+         long lim = 0;
+         rc = md_opts_parse_long( opt_c, opt_s, &lim );
+         if( rc == 0 ) {
+            _internal_opts.cache_hard_limit = (size_t)lim;
+         }
+         else {
+            errorf("Failed to parse -L, rc = %d\n", rc );
+            rc = -1;
+         }
+         break;
+      }
+      case 'F': {
+         _internal_opts.flush_replicas = true;
+         break;
+      }
+      case 'a': {
+         _internal_opts.anonymous = true;
+         break;
+      }
+      
+      default: {
+         rc = -1;
+         break;
+      }
+   }
+   
+   return rc;
+}
+
 
 // finish initializing the state
 int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms ) {
@@ -186,8 +269,8 @@ int syndicate_destroy_ex( struct syndicate_state* state, int wait_replicas ) {
 }
 
 
-// initialize
-int syndicate_init( struct syndicate_opts* opts ) {
+// initialize from already-parsed options
+int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
 
    struct syndicate_state* state = CALLOC_LIST( struct syndicate_state, 1 );
    struct ms_client* ms = CALLOC_LIST( struct ms_client, 1 );
@@ -212,7 +295,7 @@ int syndicate_init( struct syndicate_opts* opts ) {
    }
    
    // initialize library
-   if( !opts->anonymous ) {
+   if( !ug_opts->anonymous ) {
       dbprintf("%s", "Not anonymous; initializing as peer\n");
       
       int rc = md_init( &state->conf, ms, opts->ms_url, opts->volume_name, opts->gateway_name, opts->username, (char const*)opts->password.ptr, (char const*)opts->user_pkey_pem.ptr,
@@ -258,7 +341,7 @@ int syndicate_init( struct syndicate_opts* opts ) {
       }
    }
    
-   syndicate_add_extra_config( &state->conf, opts );
+   syndicate_add_extra_config( &state->conf, ug_opts );
    
    // initialize state
    int rc = syndicate_setup_state( state, ms );
