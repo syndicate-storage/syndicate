@@ -101,7 +101,7 @@ cdef class Volume:
          char* c_gateway_pkey_decryption_password = NULL
          char* c_storage_root = NULL
          char* c_syndicate_pubkey_pem = NULL
-         syndicate_opts opts
+         md_opts opts
          
       if gateway_name != None:
          c_gateway_name = gateway_name
@@ -156,9 +156,6 @@ cdef class Volume:
       # NOTE: not mlock'ed!
       opts.password.ptr = c_password
       opts.password.len = len(password)
-      
-      if wait_replicas < 0:
-         opts.flush_replicas = 1
       
       rc = syndicate_client_init( &self.state_inst, &opts )
 
