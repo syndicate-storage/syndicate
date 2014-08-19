@@ -18,6 +18,7 @@
  */
  
 #include "libsyndicate/util.h"
+#include "libsyndicate/libsyndicate.h"
 
 int _DEBUG = 1;
 
@@ -299,12 +300,155 @@ char* load_file( char const* path, size_t* size ) {
    return ret;
 }
 
+// remove all files and directories within a directory, recursively.
+// return errno if we fail partway through.
+int md_clear_dir( char const* dirname ) {
+   
+   if(dirname == NULL) {
+      return -EINVAL;
+   }
+   
+   DIR *dirp = opendir(dirname);
+   if (dirp == NULL) {
+      int errsv = -errno;
+      errorf("Failed to open %s, errno = %d\n", dirname, errsv);
+      return errsv;
+   }
+   
+   int rc = 0;
+   ssize_t len = offsetof(struct dirent, d_name) + pathconf(dirname, _PC_NAME_MAX) + 1;
+   
+   struct dirent *dentry_dp = NULL;
+   struct dirent *dentry = CALLOC_LIST( struct dirent, len );
+   
+   while(true) {
+      
+      rc = readdir_r(dirp, dentry, &dentry_dp);
+      if( rc != 0 ) {
+         errorf("readdir_r(%s) rc = %d\n", dirname, rc );
+         break;
+      }
+      
+      if( dentry_dp == NULL ) {
+         // no more entries
+         break;
+      }
+      
+      // walk this directory.
+      
+      if(strncmp(dentry->d_name, ".", strlen(".")) == 0 || strncmp(dentry->d_name, "..", strlen("..")) == 0 ) {
+         // ignore . and ..
+         continue;
+      }
+
+      // path to this dir entry 
+      char* path = md_fullpath( dirname, dentry->d_name, NULL );
+      rc = 0;
+      
+      // if this is a dir, then recurse
+      if(dentry->d_type == DT_DIR) {
+         md_clear_dir( path );
+         
+         // blow away this dir 
+         rc = rmdir(path);
+         if( rc != 0 ) {
+            rc = -errno;
+            errorf("rmdir(%s) errno = %d\n", path, rc );
+         }
+      }
+      else {
+         // just unlink files 
+         rc = unlink(path);
+         if( rc != 0 ) {
+            rc = -errno;
+            errorf("unlink(%s) errno = %d\n", path, rc );
+         }
+      }
+   
+      free(path);
+      path = NULL;
+      
+      // if we encountered an error, then abort 
+      if( rc != 0 ) {
+         break;
+      }
+   }
+   
+   // clean up
+   closedir( dirp );
+   free( dentry );
+   
+   return rc;
+}
+
+// create an AF_UNIX local socket 
+// if bind_on is true, then this binds and listens on the socket
+// otherwise, it connects
+int md_unix_socket( char const* path, bool server ) {
+   
+   struct sockaddr_un addr;
+   int fd = 0;
+   int rc = 0;
+   
+   memset(&addr, 0, sizeof(struct sockaddr_un));
+   
+   // sanity check 
+   if( strlen(path) >= sizeof(addr.sun_path) - 1 ) {
+      errorf("%s is too long\n", path );
+      return -EINVAL;
+   }
+   
+   // create the socket 
+   fd = socket( AF_UNIX, SOCK_STREAM, 0 );
+   if( fd < 0 ) {
+      fd = -errno;
+      errorf("socket(%s) rc = %d\n", path, fd );
+      return fd;
+   }
+   
+   // set up the sockaddr
+   addr.sun_family = AF_UNIX;
+   strncpy(addr.sun_path, path, strlen(path) );
+
+   // server?
+   if( server ) {
+      // bind on it 
+      rc = bind( fd, (struct sockaddr*)&addr, sizeof(struct sockaddr_un) );
+      if( rc < 0 ) {
+         rc = -errno;
+         errorf("bind(%s) rc = %d\n", path, rc );
+         close( fd );
+         return rc;
+      }
+      
+      // listen on it
+      rc = listen( fd, 100 );
+      if( rc < 0 ) {
+         errorf("listen(%s) rc = %d\n", path, rc );
+         close( fd );
+         return rc;
+      }
+   }
+   else {
+      // client 
+      rc = connect( fd, (struct sockaddr*)&addr, sizeof(struct sockaddr_un) );
+      if( rc < 0 ) {
+         rc = -errno;
+         errorf("connect(%s) rc = %d\n", path, rc );
+         close( fd );
+         return rc;
+      }
+   }
+   
+   return fd;
+}
+
 //////// courtesy of http://www.geekhideout.com/urlcode.shtml  //////////
 
 
 /* Returns a url-encoded version of str */
 /* IMPORTANT: be sure to free() the returned string after use */
-char *url_encode(char const *str, size_t len) {
+char *md_url_encode(char const *str, size_t len) {
   char *pstr = (char*)str;
   char *buf = (char*)calloc(len * 3 + 1, 1);
   char *pbuf = buf;
@@ -330,7 +474,7 @@ char *url_encode(char const *str, size_t len) {
 
 /* Returns a url-decoded version of str */
 /* IMPORTANT: be sure to free() the returned string after use */
-char *url_decode(char const *str, size_t* len) {
+char *md_url_decode(char const *str, size_t* len) {
   char *pstr = (char*)str, *buf = (char*)calloc(strlen(str) + 1, 1), *pbuf = buf;
   size_t l = 0;
   while (*pstr) {
@@ -419,22 +563,6 @@ int Base64Encode(char const* message, size_t msglen, char** buffer) { //Encodes 
 }
 
 //////////////////////////////////////////////////////////////////////////
-
-// does a string match a pattern?
-int reg_match(const char *string, char const *pattern) {
-   int status;
-   regex_t re;
-
-   if( regcomp(&re, pattern, REG_EXTENDED|REG_NOSUB) != 0) {
-      return 0;
-   }
-   status = regexec(&re, string, (size_t)0, NULL, 0);
-   regfree(&re);
-   if (status != 0) {
-      return 0;
-   }
-   return 1;
-}
 
 // pseudo random number generator
 static uint32_t Q[4096], c=362436; /* choose random initial c<809430660 and */

@@ -37,6 +37,7 @@
 #include <stdarg.h>
 #include <sys/time.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <semaphore.h>
 #include <signal.h>
 #include <openssl/sha.h>
@@ -94,6 +95,8 @@ extern int _ERROR_MESSAGES;
 #define COPY_LIST(dst, src, duper) do { for( unsigned int __i = 0; (src)[__i] != NULL; ++ __i ) { (dst)[__i] = duper((src)[__i]); } } while(0)
 #define DUP_LIST(type, dst, src, duper) do { unsigned int sz = 0; SIZE_LIST( &sz, src ); dst = CALLOC_LIST( type, sz + 1 ); COPY_LIST( dst, src, duper ); } while(0)
 
+#define strdup_or_null( str )  (str) != NULL ? strdup(str) : NULL
+
 // for testing
 #define BEGIN_TIMING_DATA(ts) clock_gettime( CLOCK_MONOTONIC, &ts )
 #define END_TIMING_DATA(ts, ts2, key) clock_gettime( CLOCK_MONOTONIC, &ts2 ); printf("DATA %s %lf\n", key, ((double)(ts2.tv_nsec - ts.tv_nsec) + (double)(1e9 * (ts2.tv_sec - ts.tv_sec))) / 1e9 )
@@ -144,6 +147,8 @@ int get_error_level();
 char* dir_path( const char* path );
 char* fullpath( char* root, const char* path );
 mode_t get_umask();
+int md_clear_dir( char const* dirname );
+int md_unix_socket( char const* path, bool server );
 
 // time functions
 int64_t currentTimeSeconds();
@@ -169,9 +174,8 @@ int sha256_cmp( unsigned char const* sha256_1, unsigned char const* sha256_2 );
 char* load_file( char const* path, size_t* size );
 
 // parser functions
-char* url_encode( char const* str, size_t len );
-char* url_decode( char const* str, size_t* len );
-int reg_match(const char *string, char const *pattern);
+char* md_url_encode( char const* str, size_t len );
+char* md_url_decode( char const* str, size_t* len );
 int timespec_cmp( struct timespec* t1, struct timespec* t2 );
 int Base64Decode(const char* b64message, size_t len, char** buffer, size_t* buffer_len);
 int Base64Encode(const char* message, size_t len, char** buffer);
