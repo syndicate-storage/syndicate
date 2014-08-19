@@ -1988,6 +1988,14 @@ int32_t fs_dir_entry_mtime_nsec( struct fs_dir_entry* dirent ) {
    return dirent->data.mtime_nsec;
 }
 
+int64_t fs_dir_entry_manifest_mtime_sec( struct fs_dir_entry* dirent ) {
+   return dirent->data.manifest_mtime_sec;
+}
+
+int32_t fs_dir_entry_manifest_mtime_nsec( struct fs_dir_entry* dirent ) {
+   return dirent->data.manifest_mtime_nsec;
+}
+
 int64_t fs_dir_entry_ctime_sec( struct fs_dir_entry* dirent ) {
    return dirent->data.ctime_sec;
 }

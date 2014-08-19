@@ -390,6 +390,8 @@ char* fs_dir_entry_name( struct fs_dir_entry* dirent );
 uint64_t fs_dir_entry_file_id( struct fs_dir_entry* dirent );
 int64_t fs_dir_entry_mtime_sec( struct fs_dir_entry* dirent );
 int32_t fs_dir_entry_mtime_nsec( struct fs_dir_entry* dirent );
+int64_t fs_dir_entry_manifest_mtime_sec( struct fs_dir_entry* dirent );
+int32_t fs_dir_entry_manifest_mtime_nsec( struct fs_dir_entry* dirent );
 int64_t fs_dir_entry_ctime_sec( struct fs_dir_entry* dirent );
 int32_t fs_dir_entry_ctime_nsec( struct fs_dir_entry* dirent );
 int64_t fs_dir_entry_write_nonce( struct fs_dir_entry* dirent );
