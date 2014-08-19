@@ -127,7 +127,7 @@ size_t ms_client_dummy_write( char *ptr, size_t size, size_t nmemb, void *userda
 int ms_client_openid_begin( CURL* curl, char const* username, char const* begin_url, ms::ms_openid_provider_reply* oid_reply, EVP_PKEY* syndicate_public_key ) {
 
    // url-encode the username
-   char* username_encoded = url_encode( username, strlen(username) );
+   char* username_encoded = md_url_encode( username, strlen(username) );
    
    // post arguments the MS expects
    char* post = CALLOC_LIST( char, strlen(MS_OPENID_USERNAME_FIELD) + 1 + strlen(username_encoded) + 1 );
@@ -288,8 +288,8 @@ int ms_client_openid_auth( CURL* curl, char const* username, char const* passwor
    char const* password_field = oid_reply->password_field().c_str();
    char const* auth_handler = oid_reply->auth_handler().c_str();
 
-   char* username_urlencoded = url_encode( username, strlen(username) );
-   char* password_urlencoded = url_encode( password, strlen(password) );
+   char* username_urlencoded = md_url_encode( username, strlen(username) );
+   char* password_urlencoded = md_url_encode( password, strlen(password) );
    post = CALLOC_LIST( char, strlen(username_field) + 1 + strlen(username_urlencoded) + 1 +
                              strlen(password_field) + 1 + strlen(password_urlencoded) + 1 +
                              strlen(extra_args) + 1);
