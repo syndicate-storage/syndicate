@@ -57,7 +57,7 @@ cdef extern from "sys/stat.h":
 
 
 # ------------------------------------------
-cdef extern from "libsyndicate.h":
+cdef extern from "libsyndicate/libsyndicate.h":
 
    cdef struct md_entry:
       int type            # // file or directory?
@@ -67,7 +67,10 @@ cdef extern from "libsyndicate.h":
       int32_t ctime_nsec  # // creation time (nanoseconds)
       int64_t mtime_sec   # // last-modified time (seconds)
       int32_t mtime_nsec  # // last-modified time (nanoseconds)
+      int64_t manifest_mtime_sec    # // manifest last-mod time (actual last-write time, regardless of utime) (seconds)
+      int32_t manifest_mtime_nsec   # // manifest last-mod time (actual last-write time, regardless of utime) (nanoseconds)
       int64_t write_nonce # // last-write nonce 
+      int64_t xattr_nonce # // xattr write nonce
       int64_t version     # // file version
       int32_t max_read_freshness      # // how long is this entry fresh until it needs revalidation?
       int32_t max_write_freshness     # // how long can we delay publishing this entry?
@@ -104,6 +107,8 @@ cdef extern from "fs/fs_entry.h":
    uint64_t fs_dir_entry_file_id( fs_dir_entry* dirent )
    int64_t fs_dir_entry_mtime_sec( fs_dir_entry* dirent )
    int32_t fs_dir_entry_mtime_nsec( fs_dir_entry* dirent )
+   int64_t fs_dir_entry_manifest_mtime_sec( fs_dir_entry* dirent )
+   int32_t fs_dir_entry_manifest_mtime_nsec( fs_dir_entry* dirent )
    int64_t fs_dir_entry_ctime_sec( fs_dir_entry* dirent )
    int32_t fs_dir_entry_ctime_nsec( fs_dir_entry* dirent )
    int64_t fs_dir_entry_write_nonce( fs_dir_entry* dirent )
@@ -123,8 +128,8 @@ cdef extern from "syndicate.h":
       pass
 
 # ------------------------------------------   
-cdef extern from "opts.h":
-   cdef struct syndicate_opts:
+cdef extern from "libsyndicate/opts.h":
+   cdef struct md_opts:
       char* config_file
       char* username
       mlock_buf password
@@ -153,7 +158,7 @@ cdef extern from "client.h":
    ctypedef syndicate_handle_t_TAG syndicate_handle_t
    ctypedef fs_dir_entry** syndicate_dir_listing_t
 
-   int syndicate_client_init( syndicate_state* state, syndicate_opts* opts )
+   int syndicate_client_init( syndicate_state* state, md_opts* opts )
 
    int syndicate_client_shutdown( syndicate_state* state, int wait_replicas )
 

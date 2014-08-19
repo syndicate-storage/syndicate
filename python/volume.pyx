@@ -41,7 +41,7 @@ cdef class SyndicateFileHandle:
       return self.handle_ptr
 
 # ------------------------------------------
-SyndicateEntry = collections.namedtuple( "SyndicateEntry", ["type", "name", "file_id", "ctime", "mtime", "write_nonce", "xattr_nonce", "version",
+SyndicateEntry = collections.namedtuple( "SyndicateEntry", ["type", "name", "file_id", "ctime", "mtime", "manifest_mtime", "write_nonce", "xattr_nonce", "version",
                                                              "max_read_freshness", "max_write_freshness", "owner", "coordinator", "volume", "mode", "size"] )
 
 SyndicateStat = collections.namedtuple( "SyndicateStat", ["st_mode", "st_ino", "st_dev", "st_nlink", "st_uid", "st_gid", "st_size", "st_atime", "st_mtime", "st_ctime"] )
@@ -359,6 +359,7 @@ cdef class Volume:
                                     file_id = fs_dir_entry_file_id( c_dirs[i] ),
                                     ctime = (fs_dir_entry_ctime_sec( c_dirs[i] ), fs_dir_entry_ctime_nsec( c_dirs[i] )),
                                     mtime = (fs_dir_entry_mtime_sec( c_dirs[i] ), fs_dir_entry_mtime_nsec( c_dirs[i] )),
+                                    manifest_mtime = (fs_dir_entry_manifest_mtime_sec( c_dirs[i] ), fs_dir_entry_manifest_mtime_nsec( c_dirs[i] )),
                                     write_nonce = fs_dir_entry_write_nonce( c_dirs[i] ),
                                     xattr_nonce = fs_dir_entry_xattr_nonce( c_dirs[i] ),
                                     version = fs_dir_entry_version( c_dirs[i] ),
