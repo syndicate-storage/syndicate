@@ -28,6 +28,7 @@ char const MD_HTTP_413_MSG[128] = "Requested entry too big\n";
 char const MD_HTTP_422_MSG[128] = "Unprocessable entry\n";
 char const MD_HTTP_500_MSG[128] = "Internal Server Error\n";
 char const MD_HTTP_501_MSG[128] = "Not implemented\n";
+char const MD_HTTP_502_MSG[128] = "Bad gateway\n";
 char const MD_HTTP_504_MSG[128] = "Remote Server Timeout\n";
 
 char const MD_HTTP_DEFAULT_MSG[128] = "RESPONSE\n";
