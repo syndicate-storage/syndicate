@@ -950,8 +950,6 @@ int main( int argc, char** argv ) {
    
    // finish initialization
    syndicate_set_running();
-
-   struct md_syndicate_conf* conf = syndicate_get_conf();
    
    // create our HTTP server
    memset( &g_http, 0, sizeof(g_http) );
