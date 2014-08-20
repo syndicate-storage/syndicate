@@ -191,14 +191,14 @@ int md_parse_opts_impl( struct md_opts* opts, int argc, char** argv, int* out_op
       bool has_dups = false;
       
       // sanity check--verify no duplicates 
-      for( int i = 0; i < strlen(special_opts); i++ ) {
+      for( unsigned int i = 0; i < strlen(special_opts); i++ ) {
          
          if( special_opts[i] == ':' ) {
             continue; 
          }
          
          if( index( default_optstr, special_opts[i] ) != NULL ) {
-            errorf("Duplicate option '%c'\n", special_opts[i] );
+            errorf("BUG: Duplicate option '%c'\n", special_opts[i] );
             has_dups = true;
          }
       }
