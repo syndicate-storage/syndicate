@@ -172,7 +172,6 @@ struct ms_gateway_cert {
    uint64_t caps;               // gateway capabilities
    uint64_t expires;            // when this certificate expires
    uint64_t version;            // version of this certificate (increases monotonically)
-   uint64_t blocksize;          // used only by the AG--how big of a block will it deliver, irrespective of Volume
 };
 
 typedef map<uint64_t, struct ms_gateway_cert*> ms_cert_bundle;
@@ -377,7 +376,6 @@ char* ms_client_get_hostname( struct ms_client* client );
 int ms_client_get_portnum( struct ms_client* client );
 uint64_t* ms_client_RG_ids( struct ms_client* client );
 bool ms_client_is_AG( struct ms_client* client, uint64_t ag_id );
-uint64_t ms_client_get_AG_blocksize( struct ms_client* client, uint64_t gateway_id );
 char* ms_client_get_UG_content_url( struct ms_client* client, uint64_t gateway_id );
 char* ms_client_get_AG_content_url( struct ms_client* client, uint64_t gateway_id );
 char* ms_client_get_RG_content_url( struct ms_client* client, uint64_t gateway_id );

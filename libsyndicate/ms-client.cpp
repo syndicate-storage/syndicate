@@ -1664,7 +1664,6 @@ int ms_client_load_cert( struct ms_client* client, uint64_t my_gateway_id, struc
    cert->name = strdup( ms_cert->name().c_str() );
    cert->hostname = strdup( ms_cert->host().c_str() );
    cert->portnum = ms_cert->port();
-   cert->blocksize = ms_cert->blocksize();
    cert->version = ms_cert->version();
    cert->caps = ms_cert->caps();
    cert->volume_id = ms_cert->volume_id();
@@ -1705,8 +1704,8 @@ int ms_client_load_cert( struct ms_client* client, uint64_t my_gateway_id, struc
       char gateway_type_str[5];
       ms_client_gateway_type_str( cert->gateway_type, gateway_type_str );
       
-      dbprintf("Loaded cert (user_id=%" PRIu64 ", gateway_type=%s, gateway_id=%" PRIu64 ", gateway_name=%s, hostname=%s, portnum=%d, blocksize=%" PRIu64 ", version=%" PRIu64 ", caps=%" PRIX64 ")\n",
-               cert->user_id, gateway_type_str, cert->gateway_id, cert->name, cert->hostname, cert->portnum, cert->blocksize, cert->version, cert->caps );
+      dbprintf("Loaded cert (user_id=%" PRIu64 ", gateway_type=%s, gateway_id=%" PRIu64 ", gateway_name=%s, hostname=%s, portnum=%d, version=%" PRIu64 ", caps=%" PRIX64 ")\n",
+               cert->user_id, gateway_type_str, cert->gateway_id, cert->name, cert->hostname, cert->portnum, cert->version, cert->caps );
    }
    
    return rc;
@@ -3638,6 +3637,7 @@ bool ms_client_is_AG( struct ms_client* client, uint64_t ag_id ) {
    return ret;
 }
 
+/*
 // get an AG's block size
 uint64_t ms_client_get_AG_blocksize( struct ms_client* client, uint64_t ag_id ) {
    ms_client_view_rlock( client );
@@ -3657,6 +3657,7 @@ uint64_t ms_client_get_AG_blocksize( struct ms_client* client, uint64_t ag_id ) 
 
    return ret;
 }
+*/
 
 char* ms_client_get_AG_content_url( struct ms_client* client, uint64_t ag_id ) {
    ms_client_view_rlock( client );

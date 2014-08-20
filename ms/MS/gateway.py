@@ -124,9 +124,6 @@ class Gateway( storagetypes.Object ):
    
    closure = storagetypes.Text()                # gateway-specific configuration
    
-   gateway_blocksize = storagetypes.Integer( default=0 )        # (AG only) advertized blocksize
-   
-   
    # for RPC
    key_type = "gateway"
    
@@ -151,7 +148,6 @@ class Gateway( storagetypes.Object ):
       "session_expires",
       "cert_version",
       "cert_expires",
-      "gateway_blocksize",
       "caps",
       "encrypted_gateway_private_key"
    ]
@@ -180,7 +176,6 @@ class Gateway( storagetypes.Object ):
       "session_expires": (lambda cls, attrs: -1),
       "cert_version": (lambda cls, attrs: 1),
       "cert_expires": (lambda cls, attrs: -1),
-      "gateway_blocksize": (lambda cls, attrs: 61440 if attrs.get('gateway_type') == GATEWAY_TYPE_AG else 0),
       "caps": (lambda cls, attrs: 0),
       "encrypted_gateway_private_key": (lambda cls, attrs: None)
    }
@@ -326,7 +321,6 @@ class Gateway( storagetypes.Object ):
       cert_pb.caps = self.caps
       cert_pb.cert_expires = self.cert_expires
       cert_pb.volume_id = self.volume_id
-      cert_pb.blocksize = self.gateway_blocksize
       
       if self.closure == None or not need_closure:
          cert_pb.closure_text = ""

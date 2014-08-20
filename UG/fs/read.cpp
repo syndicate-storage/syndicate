@@ -121,14 +121,59 @@ ssize_t fs_entry_read_block_local( struct fs_core* core, char const* fs_path, ui
    }
 }
 
-// verify the integrity of a block, given the fent (and its manifest).
+
+// parse and verify an AG block 
+// fent must be at least read-locked
+static int fs_entry_parse_verify_AG_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* serialized_msg, size_t serialized_msg_len, char** block_bits, size_t* block_len ) {
+   
+   // don't bother with !AGs
+   bool is_AG = ms_client_is_AG( core->ms, fent->coordinator );
+   if( !is_AG ) {
+      return -EINVAL;
+   }
+   
+   int rc = 0;
+   
+   // load the block 
+   Serialization::AG_Block ag_block;
+   rc = md_parse< Serialization::AG_Block >( &ag_block, serialized_msg, serialized_msg_len );
+   if( rc != 0 ) {
+      errorf("Failed to de-serialize AG block %" PRIX64 ".%" PRId64 "[%" PRIu64 "], rc = %d\n", fent->file_id, fent->version, block_id, rc );
+      return rc;
+   }
+   
+   // verify the block 
+   rc = ms_client_verify_gateway_message< Serialization::AG_Block >( core->ms, core->volume, SYNDICATE_AG, fent->coordinator, &ag_block );
+   if( rc != 0 ) {
+      errorf("Failed to verify the signature of AG block %" PRIX64 ".%" PRId64 "[%" PRIu64 "], rc = %d\n", fent->file_id, fent->version, block_id, rc );
+      return rc;
+   }
+   
+   // sanity check 
+   if( ag_block.data().size() > core->blocking_factor ) {
+      errorf("AG served block of size %zu, but the volume block size is %zu\n", ag_block.data().size(), core->blocking_factor );
+      return -EBADMSG;
+   }
+   
+   // extract the contents! 
+   char* ret = CALLOC_LIST( char, ag_block.data().size() );
+   memcpy( ret, ag_block.data().data(), ag_block.data().size() );
+   
+   *block_bits = ret;
+   *block_len = ag_block.data().size();
+   
+   return 0;
+}
+
+// verify the integrity of a UG/RG-originated block, given the fent (and its manifest).
 // fent must be at least read-locked
 static int fs_entry_verify_block( struct fs_core* core, struct fs_entry* fent, uint64_t block_id, char* block_bits, size_t block_len ) {
-   // TODO: get hash from AG, somehow.  But for now, ignore
-   bool is_AG = ms_client_is_AG( core->ms, fent->coordinator );
-   if( is_AG )
-      return 0;
    
+   // don't bother with AGs
+   bool is_AG = ms_client_is_AG( core->ms, fent->coordinator );
+   if( is_AG ) {
+      return -EINVAL;
+   }
    
    unsigned char* block_hash = BLOCK_HASH_DATA( block_bits, block_len );
    
@@ -801,22 +846,53 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
       
       dbprintf("Downloaded data for %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "], prefix = '%s'\n", fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, prefix);
       
+      rc = 0;
+      
       // verify the block's integrity 
-      rc = fs_entry_verify_block( core, fent, block_fut->block_id, buf, buflen );
-      if( rc != 0 ) {
-         errorf("fs_entry_verify_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
-                 block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
+      if( !block_fut->is_AG ) {
          
-         // finalize error 
-         fs_entry_read_block_future_finalize_error( block_fut, rc );
+         // verify from fent's manifest
+         rc = fs_entry_verify_block( core, fent, block_fut->block_id, buf, buflen );
+         if( rc != 0 ) {
+            
+            errorf("fs_entry_verify_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+                  block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
+            
+            // finalize error 
+            fs_entry_read_block_future_finalize_error( block_fut, rc );
+         }
+      }
+      else {
+         
+         char* actual_buf = NULL;
+         size_t actual_buf_len = 0;
+         
+         // parse and verify the block bits, since the AG serves Serialization::AG_Block structures 
+         rc = fs_entry_parse_verify_AG_block( core, fent, block_fut->block_id, buf, buflen, &actual_buf, &actual_buf_len );
+         if( rc != 0 ) {
+         
+            errorf("fs_entry_parse_verify_AG_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+                   block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
+            
+            // finalize error 
+            fs_entry_read_block_future_finalize_error( block_fut, rc );
+         }
+         else {
+            
+            // use the actual bits, not the serialized message 
+            free( buf );
+            buf = actual_buf;
+            buflen = actual_buf_len;
+         }
       }
       
       // block is valid
-      else {
+      if( rc == 0 ) {
             
          // process the block through the driver 
          ssize_t processed_len = driver_read_block_postdown( core, core->closure, block_fut->fs_path, fent, block_fut->block_id, block_fut->block_version, buf, buflen, block_fut->result, block_fut->result_len );
          if( processed_len < 0 ) {
+            
             errorf("driver_read_block_postdown( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
                   block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
             

@@ -179,9 +179,7 @@ message ms_gateway_cert {
    required string closure_text = 11;     // serialized closure information
    required uint64 volume_id = 12;         // which Volume we're bound to
    
-   optional uint64 blocksize = 13;        // (AG only) desired block size
-   
-   required string signature = 14;        // base64-encoded Volume signature of this cert
+   required string signature = 13;        // base64-encoded Volume signature of this cert
 }
 
 

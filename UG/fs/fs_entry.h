@@ -163,8 +163,7 @@ struct fs_file_handle {
    char* parent_name;         // name of parent directory
    uint64_t parent_id;        // ID of parent directory
 
-   bool is_AG;                // whether or not this file is hosted by an AG
-   uint64_t AG_blocksize;     // blocksize of this AG
+   bool is_AG;                // whether or not this file is hosted by an AG (since it affects how we deal with unknown sizes and EOF)
    
    uint64_t block_id;         // ID of the block we're currently reading
    
