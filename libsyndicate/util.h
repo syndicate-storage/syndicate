@@ -149,6 +149,7 @@ char* fullpath( char* root, const char* path );
 mode_t get_umask();
 int md_clear_dir( char const* dirname );
 int md_unix_socket( char const* path, bool server );
+int md_write_to_tmpfile( char const* tmpfile_fmt, char const* buf, size_t buflen, char** tmpfile_path );
 
 // time functions
 int64_t currentTimeSeconds();
@@ -177,7 +178,7 @@ char* load_file( char const* path, size_t* size );
 char* md_url_encode( char const* str, size_t len );
 char* md_url_decode( char const* str, size_t* len );
 int timespec_cmp( struct timespec* t1, struct timespec* t2 );
-int Base64Decode(const char* b64message, size_t len, char** buffer, size_t* buffer_len);
+int Base64Decode(const char* b64message, size_t b64len, char** buffer, size_t* buffer_len);
 int Base64Encode(const char* message, size_t len, char** buffer);
 
 // random number generator
@@ -186,7 +187,7 @@ uint32_t CMWC4096(void);
 // library initialization
 int util_init(void);
 
-// safe allocators 
+// mlock'ed memory allocators 
 int mlock_calloc( struct mlock_buf* buf, size_t len );
 int mlock_free( struct mlock_buf* buf );
 int mlock_dup( struct mlock_buf* dest, char const* src, size_t src_len );

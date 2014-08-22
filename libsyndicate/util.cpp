@@ -443,6 +443,54 @@ int md_unix_socket( char const* path, bool server ) {
    return fd;
 }
 
+
+// dump data to a temporary file.
+// on success, allocate and return the path to the temporary file and return 0
+// on failure, return negative and remove the temporary file that was created
+int md_write_to_tmpfile( char const* tmpfile_fmt, char const* buf, size_t buflen, char** tmpfile_path ) {
+   
+   char* so_path = strdup( tmpfile_fmt );
+   int rc = 0;
+   
+   int fd = mkstemp( so_path );
+   if( fd < 0 ) {
+      rc = -errno;
+      errorf("mkstemp(%s) rc = %d\n", so_path, rc );
+      free( so_path );
+      return rc;
+   }
+   
+   // write it out
+   off_t nw = 0;
+   off_t w_off = 0;
+   
+   while( nw < (signed)buflen ) {
+      ssize_t w = write( fd, buf + w_off, buflen - w_off );
+      if( w < 0 ) {
+         int errsv = -errno;
+         errorf("write(%d) rc = %d\n", fd, errsv);
+         nw = errsv;
+         break;
+      }
+      
+      nw += w;
+   }
+   
+   close( fd );
+   
+   if( nw < 0 ) {
+      // failure 
+      unlink( so_path );
+      free( so_path );
+      rc = nw;
+   }
+   else {
+      *tmpfile_path = so_path;
+   }
+   
+   return rc;
+}
+
 //////// courtesy of http://www.geekhideout.com/urlcode.shtml  //////////
 
 
