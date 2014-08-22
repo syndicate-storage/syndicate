@@ -60,7 +60,7 @@ typedef int (*md_closure_shutdown_func)( void* );
 
 // driver loading and processing
 int md_write_driver( struct md_syndicate_conf* conf, char** _so_path_ret, char const* driver_text, size_t driver_text_len );
-int md_load_driver( struct md_closure* closure, char* so_path, struct md_closure_callback_entry* closure_symtable );
+int md_load_driver( struct md_closure* closure, char const* so_path, struct md_closure_callback_entry* closure_symtable );
 
 // locking...
 int md_closure_rlock( struct md_closure* closure );

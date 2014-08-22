@@ -443,50 +443,21 @@ int md_closure_init( struct ms_client* client, struct md_closure* closure, struc
 // write the MS-supplied closure to a temporary file
 // return the path to it on success
 int md_write_driver( struct md_syndicate_conf* conf, char** _so_path_ret, char const* driver_text, size_t driver_text_len ) {
+   
    char* so_path = md_fullpath( conf->data_root, MD_CLOSURE_TMPFILE_NAME, NULL );
-   int rc = 0;
    
-   int fd = mkstemp( so_path );
-   if( fd < 0 ) {
-      int rc = -errno;
-      errorf("mkstemp(%s) rc = %d\n", so_path, rc );
-      free( so_path );
-      return rc;
+   int rc = md_write_to_tmpfile( so_path, driver_text, driver_text_len, _so_path_ret );
+   
+   if( rc != 0 ) {
+      errorf("md_write_to_tmpfile(%s) rc = %d\n", so_path, rc );
    }
    
-   // write it out
-   off_t nw = 0;
-   off_t w_off = 0;
-   
-   while( nw < (signed)driver_text_len ) {
-      ssize_t w = write( fd, driver_text + w_off, driver_text_len - w_off );
-      if( w < 0 ) {
-         int errsv = -errno;
-         errorf("write(%d) rc = %d\n", fd, errsv);
-         nw = errsv;
-         break;
-      }
-      
-      nw += w;
-   }
-   
-   close( fd );
-   
-   if( nw < 0 ) {
-      // failure 
-      unlink( so_path );
-      free( so_path );
-      rc = nw;
-   }
-   else {
-      *_so_path_ret = so_path;
-   }
-   
+   free( so_path );
    return rc;
 }
 
 // read and link MS-supplied closure from the temporary file we created
-int md_load_driver( struct md_closure* closure, char* so_path, struct md_closure_callback_entry* closure_symtable ) {
+int md_load_driver( struct md_closure* closure, char const* so_path, struct md_closure_callback_entry* closure_symtable ) {
    closure->so_handle = dlopen( so_path, RTLD_LAZY );
    if ( closure->so_handle == NULL ) {
       errorf( "dlopen error = %s\n", dlerror() );
