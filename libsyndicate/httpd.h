@@ -186,6 +186,7 @@ extern char const MD_HTTP_422_MSG[128];
 extern char const MD_HTTP_500_MSG[128];
 extern char const MD_HTTP_501_MSG[128];
 extern char const MD_HTTP_502_MSG[128];
+extern char const MD_HTTP_503_MSG[128];
 extern char const MD_HTTP_504_MSG[128];
 
 extern char const MD_HTTP_DEFAULT_MSG[128];

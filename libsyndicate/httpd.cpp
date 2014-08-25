@@ -29,6 +29,7 @@ char const MD_HTTP_422_MSG[128] = "Unprocessable entry\n";
 char const MD_HTTP_500_MSG[128] = "Internal Server Error\n";
 char const MD_HTTP_501_MSG[128] = "Not implemented\n";
 char const MD_HTTP_502_MSG[128] = "Bad gateway\n";
+char const MD_HTTP_503_MSG[128] = "Service unavailable\n";
 char const MD_HTTP_504_MSG[128] = "Remote Server Timeout\n";
 
 char const MD_HTTP_DEFAULT_MSG[128] = "RESPONSE\n";
@@ -231,8 +232,8 @@ int md_response_buffer_upload_iterator(void *coninfo_cls, enum MHD_ValueKind kin
    return MHD_YES;
 }
 
-// convert a sockaddr to a string containing the hostname:port
-static int md_sockaddr_to_string( struct sockaddr* addr, char** buf ) {
+// convert a sockaddr to a string containing the hostname and port number
+static int md_sockaddr_to_hostname_and_port( struct sockaddr* addr, char** buf ) {
    socklen_t addr_len = 0;
    switch( addr->sa_family ) {
       case AF_INET:
@@ -254,7 +255,7 @@ static int md_sockaddr_to_string( struct sockaddr* addr, char** buf ) {
    // prefix with :
    portbuf[0] = ':';
    
-   // write hostname to buf,and portnum to portbuf + 1 (i.e. preserve the colon)
+   // write hostname to buf, and portnum to portbuf + 1 (i.e. preserve the colon)
    int rc = getnameinfo( addr, addr_len, *buf, HOST_NAME_MAX + 1, portbuf + 1, 10, NI_NUMERICSERV );
    if( rc != 0 ) {
       errorf("getnameinfo rc = %d (%s)\n", rc, gai_strerror(rc) );
@@ -382,14 +383,14 @@ static int md_HTTP_connection_handler( void* cls, struct MHD_Connection* connect
       struct sockaddr* client_addr = con_info->client_addr;
       char* remote_host = NULL;
       
-      int rc = md_sockaddr_to_string( client_addr, &remote_host );
+      int rc = md_sockaddr_to_hostname_and_port( client_addr, &remote_host );
       if( rc != 0 ) {
          
          struct md_HTTP_response* resp = CALLOC_LIST(struct md_HTTP_response, 1);
          md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
          free( con_data );
          
-         errorf("md_sockaddr_to_string rc = %d\n", rc );
+         errorf("md_sockaddr_to_hostname_and_port rc = %d\n", rc );
          
          return md_HTTP_send_response( connection, resp );
       }
