@@ -65,7 +65,7 @@ int driver_init( struct fs_core* core, struct md_closure** _ret ) {
       }
    }
    
-   rc = md_closure_init( core->ms, closure, UG_CLOSURE_PROTOTYPE, closure_text, closure_text_len, true );
+   rc = md_closure_init( core->ms, closure, UG_CLOSURE_PROTOTYPE, closure_text, closure_text_len, true, true );
    
    free( closure_text );
    
