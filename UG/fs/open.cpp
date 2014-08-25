@@ -365,7 +365,7 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
          }
       }
    }
-   else if( child == NULL ) {
+   else if( child == NULL || child->deletion_in_progress ) {
       // not found
       fs_entry_unlock( parent );
       free( path_basename );
