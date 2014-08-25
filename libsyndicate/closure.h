@@ -53,6 +53,7 @@ struct md_closure {
    struct md_closure_callback_entry* callbacks;
    
    bool gateway_specific;       // if true, then this closure is specific to a Gateway (and can have secrets)
+   bool ignore_stubs;           // if true, then we will reload a closure even if it doesn't have some methods we need
 };
 
 typedef int (*md_closure_init_func)( struct md_closure*, void** );
@@ -68,7 +69,8 @@ int md_closure_wlock( struct md_closure* closure );
 int md_closure_unlock( struct md_closure* closure );
 
 // initialization, reload, and shutdown 
-int md_closure_init( struct ms_client* client, struct md_closure* closure, struct md_closure_callback_entry* prototype, char const* closure_text, size_t closure_text_len, bool gateway_specific );
+int md_closure_init( struct ms_client* client, struct md_closure* closure, struct md_closure_callback_entry* prototype, char const* closure_text, size_t closure_text_len, bool gateway_specific, bool ignore_stubs );
+int md_closure_init_bin( struct md_syndicate_conf* conf, struct md_closure* closure, char const* so_path, struct md_closure_callback_entry* driver_prototype, bool ignore_stubs );
 int md_closure_reload( struct ms_client* client, struct md_closure* closure, char const* closure_text, size_t closure_text_len );
 int md_closure_shutdown( struct md_closure* closure );
 
