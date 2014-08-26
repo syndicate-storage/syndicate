@@ -45,7 +45,7 @@ char* data_root = NULL;
 pthread_t timeout_pulse_gen_tid;
 
 // generate a manifest for an existing file, putting it into the gateway context
-extern "C" int generate_manifest( struct gateway_context* ag_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
+extern "C" int generate_manifest( struct gateway_context* ag_ctx, struct AG_disk_polling_context* ctx, struct md_entry* ent ) {
    errorf("%s", "INFO: generate_manifest\n"); 
    
    // populate and sign a manifest
@@ -83,7 +83,7 @@ extern "C" int generate_manifest( struct gateway_context* ag_ctx, struct gateway
 extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* user_cls ) {
    errorf("%s", "INFO: get_dataset\n"); 
    ssize_t ret = 0;
-   struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
+   struct AG_disk_polling_context* ctx = (struct AG_disk_polling_context*)user_cls;
    
    if (ctx == NULL || dat->size == 0) {
       dbprintf("ctx = %p, dat->size = %zu\n", ctx, dat->size );
@@ -143,7 +143,7 @@ extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
 
    errorf("%s", "INFO: connect_dataset\n");  
    struct stat stat_buff;
-   struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
+   struct AG_disk_polling_context* ctx = CALLOC_LIST( struct AG_disk_polling_context, 1 );
 
    // is there metadata for this file?
    cout << "connect_dataset : " << ag_ctx->reqdat.fs_path << endl;
@@ -258,7 +258,7 @@ extern "C" void* connect_dataset( struct gateway_context* ag_ctx ) {
 extern "C" void cleanup_dataset( void* cls ) {
    
    dbprintf("%s", "INFO: cleanup_dataset\n"); 
-   struct gateway_ctx* ctx = (struct gateway_ctx*)cls;
+   struct AG_disk_polling_context* ctx = (struct AG_disk_polling_context*)cls;
    if (ctx) {
       close( ctx->fd );
       if( ctx->data )
