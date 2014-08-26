@@ -101,5 +101,7 @@ static void* handle_timeout_event_generator_thread(void* param) {
     printf("timeout thread woke up\n");
     memset(&g_current_timeout_event, 0, sizeof(struct timeout_event));
     (*event_backup.handler)(0, &event_backup);
+
+    pthread_exit(NULL);
 }
 #endif
