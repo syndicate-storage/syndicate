@@ -29,6 +29,7 @@ int xattr_del_undefined( struct fs_core* core, struct fs_entry* fent, char const
 
 // prototype special xattr handlers...
 static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len );
+static ssize_t xattr_get_cached_file_path( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len );
 static ssize_t xattr_get_coordinator( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len );
 static ssize_t xattr_get_read_ttl( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len );
 static ssize_t xattr_get_write_ttl( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len );
@@ -39,6 +40,7 @@ static int xattr_set_write_ttl( struct fs_core* core, struct fs_entry* fent, cha
 static struct syndicate_xattr_handler xattr_handlers[] = {
    {SYNDICATE_XATTR_COORDINATOR,        xattr_get_coordinator,          xattr_set_undefined,    xattr_del_undefined},      // TODO: set coordinator by gateway name?
    {SYNDICATE_XATTR_CACHED_BLOCKS,      xattr_get_cached_blocks,        xattr_set_undefined,    xattr_del_undefined},
+   {SYNDICATE_XATTR_CACHED_FILE_PATH,   xattr_get_cached_file_path,     xattr_set_undefined,    xattr_del_undefined},
    {SYNDICATE_XATTR_READ_TTL,           xattr_get_read_ttl,             xattr_set_read_ttl,     xattr_del_undefined},
    {SYNDICATE_XATTR_WRITE_TTL,          xattr_get_write_ttl,            xattr_set_write_ttl,    xattr_del_undefined},
    {NULL,                               NULL,                           NULL,                   NULL}
@@ -148,6 +150,31 @@ static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* f
       rc = num_blocks;
    
    return rc;
+}
+
+
+// get cached file path
+static ssize_t xattr_get_cached_file_path( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len) {
+   char* cached_file_url = fs_entry_local_file_url( core, fent->file_id, fent->version );
+   char* cached_file_path = GET_PATH( cached_file_url );
+   ssize_t len = strlen(cached_file_path);
+   if( buf_len == 0 || buf == NULL ) {
+      // size query
+      return len + 1;         // NULL-terminated
+   }
+
+   if( (size_t)len >= buf_len ) {
+      // not enough space 
+      return -ERANGE;
+   }
+   
+   // enough space...
+   if( buf_len > 0 ) {
+      strcpy( buf, cached_file_path );
+   }
+   free( cached_file_url );
+   
+   return len + 1;
 }
 
 
