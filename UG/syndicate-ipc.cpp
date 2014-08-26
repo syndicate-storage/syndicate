@@ -835,7 +835,18 @@ class protocol {
  */
 
 public:
-    void process_getStat(const char *message, char **data_out, int *data_out_size) {
+    protocol() {
+        preallocated_buffer_ = new char[PREALLOCATED_OUT_BUFFER_LENGTH];
+    }
+
+    ~protocol() {
+        if(preallocated_buffer_ != NULL) {
+            delete preallocated_buffer_;
+            preallocated_buffer_ = NULL;
+        }
+    }
+
+    void process_getStat(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - stat\n");
         char *bytes_ptr;
         char path[MAX_PATH_SIZE];
@@ -853,7 +864,15 @@ public:
             toWriteSize += 4 + SIZE_IPCSTAT;
         }
 
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
+
         char *outBuffer = *data_out;
         char *bufferNext;
 
@@ -866,7 +885,7 @@ public:
         *data_out_size = toWriteSize;
     }
 
-    void process_delete(const char *message, char **data_out, int *data_out_size) {
+    void process_delete(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - delete\n");
         char* bytes_ptr;
         char path[MAX_PATH_SIZE];
@@ -876,7 +895,14 @@ public:
         int returncode = syndicatefs_unlink(path);
 
         int toWriteSize = 16;
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char* outBuffer = *data_out;
         char* bufferNext;
 
@@ -885,7 +911,7 @@ public:
         *data_out_size = toWriteSize;
     }
 
-    void process_removeDir(const char *message, char **data_out, int *data_out_size) {
+    void process_removeDir(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - remove directory\n");
         char* bytes_ptr;
         char path[MAX_PATH_SIZE];
@@ -895,7 +921,14 @@ public:
         int returncode = syndicatefs_rmdir(path);
 
         int toWriteSize = 16;
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char* outBuffer = *data_out;
         char* bufferNext;
 
@@ -904,7 +937,7 @@ public:
         *data_out_size = toWriteSize;
     }
 
-    void process_rename(const char *message, char **data_out, int *data_out_size) {
+    void process_rename(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - rename\n");
         char* bytes_ptr1 = (char*)message;
         char* bytes_ptr2;
@@ -918,7 +951,14 @@ public:
         int returncode = syndicatefs_rename(path1, path2);
 
         int toWriteSize = 16;
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char* outBuffer = *data_out;
         char* bufferNext;
 
@@ -927,7 +967,7 @@ public:
         *data_out_size = toWriteSize;
     }
 
-    void process_makeDir(const char *message, char **data_out, int *data_out_size) {
+    void process_makeDir(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - make directory\n");
         char* bytes_ptr;
         char path[MAX_PATH_SIZE];
@@ -938,7 +978,14 @@ public:
         int returncode = syndicatefs_mkdir(path, mode);
 
         int toWriteSize = 16;
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char* outBuffer = *data_out;
         char* bufferNext;
 
@@ -947,7 +994,7 @@ public:
         *data_out_size = toWriteSize;
     }
 
-    void process_readDir(const char *message, char **data_out, int *data_out_size) {
+    void process_readDir(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - read directory\n");
         char* bytes_ptr;
         char path[MAX_PATH_SIZE];
@@ -976,7 +1023,14 @@ public:
         totalMessageSize += 4 * numOfEntries;
 
         int toWriteSize = 16 + totalMessageSize;
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char* outBuffer = *data_out;
         char* bufferNext;
 
@@ -993,7 +1047,7 @@ public:
         *data_out_size = toWriteSize;
     }
 
-    void process_getFileHandle(const char *message, char **data_out, int *data_out_size) {
+    void process_getFileHandle(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - get file handle\n");
         char* bytes_ptr;
         char path[MAX_PATH_SIZE];
@@ -1010,7 +1064,14 @@ public:
             toWriteSize += 4 + SIZE_IPCFILEINFO;
         }
 
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char* outBuffer = *data_out;
         char* bufferNext;
 
@@ -1023,7 +1084,7 @@ public:
         *data_out_size = toWriteSize;
     }
 
-    void process_createNewFile(const char *message, char **data_out, int *data_out_size) {
+    void process_createNewFile(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - create new file\n");
         char* bytes_ptr;
         char path[MAX_PATH_SIZE];
@@ -1050,7 +1111,15 @@ public:
         if (returncode == 0) {
             toWriteSize += 4 + SIZE_IPCSTAT;
         }
-        *data_out = new char[toWriteSize];
+
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char* outBuffer = *data_out;
         char* bufferNext;
 
@@ -1063,7 +1132,7 @@ public:
         *data_out_size = toWriteSize;
     }
 
-    void process_readFileData(const char *message, char **data_out, int *data_out_size) {
+    void process_readFileData(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - read file data\n");
         char* bytes_ptr1 = (char*)message;
         char* bytes_ptr2;
@@ -1091,7 +1160,14 @@ public:
             toWriteSize += 4 + (int) returncode;
         }
 
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char* outBuffer = *data_out;
         char* bufferNext;
 
@@ -1106,7 +1182,7 @@ public:
         *data_out_size = toWriteSize;
     }
 
-    void process_writeFileData(const char *message, char **data_out, int *data_out_size) {
+    void process_writeFileData(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - write file data\n");
         char* bytes_ptr1 = (char*)message;
         char* bytes_ptr2;
@@ -1127,7 +1203,14 @@ public:
         int returncode = syndicatefs_write(rawData, rawDataSize, fileoffset, &fi);
 
         int toWriteSize = 16;
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char* outBuffer = *data_out;
         char* bufferNext;
 
@@ -1136,7 +1219,7 @@ public:
         *data_out_size = toWriteSize;
     }
 
-    void process_flush(const char *message, char **data_out, int *data_out_size) {
+    void process_flush(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - flush file data\n");
         char* bytes_ptr;
         IPCFileInfo fi;
@@ -1146,7 +1229,14 @@ public:
         int returncode = syndicatefs_flush(&fi);
 
         int toWriteSize = 16;
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char* outBuffer = *data_out;
         char* bufferNext;
 
@@ -1155,7 +1245,7 @@ public:
         *data_out_size = toWriteSize;
     }
 
-    void process_closeFileHandle(const char *message, char **data_out, int *data_out_size) {
+    void process_closeFileHandle(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - close file handle\n");
         char* bytes_ptr;
         IPCFileInfo fi;
@@ -1165,7 +1255,14 @@ public:
         int returncode = syndicatefs_release(&fi);
 
         int toWriteSize = 16;
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char* outBuffer = *data_out;
         char* bufferNext;
 
@@ -1174,7 +1271,7 @@ public:
         *data_out_size = toWriteSize;
     }
     
-    void process_truncateFile(const char *message, char **data_out, int *data_out_size) {
+    void process_truncateFile(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - truncate file\n");
         char* bytes_ptr1 = (char*)message;
         char* bytes_ptr2;
@@ -1189,7 +1286,14 @@ public:
         int returncode = syndicatefs_ftruncate(fileoffset, &fi);
 
         int toWriteSize = 16;
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char* outBuffer = *data_out;
         char* bufferNext;
 
@@ -1198,7 +1302,7 @@ public:
         *data_out_size = toWriteSize;
     }
     
-    void process_getXAttr(const char *message, char **data_out, int *data_out_size) {
+    void process_getXAttr(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - getxattr\n");
         char* bytes_ptr1 = (char*)message;
         char* bytes_ptr2;
@@ -1233,7 +1337,14 @@ public:
             toWriteSize += 4 + attrLen;
         }
 
-        *data_out = new char[toWriteSize];
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char *outBuffer = *data_out;
         char *bufferNext;
 
@@ -1254,7 +1365,7 @@ public:
         *data_out_size = toWriteSize;
     }
     
-    void process_listXAttr(const char *message, char **data_out, int *data_out_size) {
+    void process_listXAttr(const char *message, char **data_out, int *data_out_size, bool *free_data_out) {
         dbprintf("%s", "process - listxattr\n");
         char* bytes_ptr1 = (char*)message;
         char* bytes_ptr2;
@@ -1295,7 +1406,15 @@ public:
         totalMessageSize += 4 * numOfEntries;
 
         int toWriteSize = 16 + totalMessageSize;
-        *data_out = new char[toWriteSize];
+
+        if(toWriteSize < PREALLOCATED_OUT_BUFFER_LENGTH) {
+            // use preallocated buffer
+            *data_out = preallocated_buffer_;
+            *free_data_out = false;
+        } else {
+            *data_out = new char[toWriteSize];
+            *free_data_out = true;
+        }
         char *outBuffer = *data_out;
         char *bufferNext;
 
@@ -1307,14 +1426,19 @@ public:
         }
         
         entryVector.clear();
-
         if(list != NULL) {
             delete list;
         }
 
         *data_out_size = toWriteSize;
     }
-    
+
+private:
+    enum {
+        PREALLOCATED_OUT_BUFFER_LENGTH = 10*1024*1024, // 10MB
+    };
+    char* preallocated_buffer_;
+
 private:
     int writeHeader(const char* buffer, int opcode, int returncode, int totalMsgSize, int totalNumOfMsg, char** bufferNext) {
         char* bytes_ptr = (char*)buffer;
@@ -1513,16 +1637,38 @@ public:
     : socket_(io_service) {
     }
 
+    ~session() {
+        if(protocol_ != NULL) {
+            delete protocol_;
+            protocol_ = NULL;
+        }
+
+        if (message_ != NULL) {
+            delete message_;
+            message_ = NULL;
+        }
+
+        if(data_out_free_) {
+            if (data_out_ != NULL) {
+                delete data_out_;
+                data_out_ = NULL;
+            }
+        }
+    }
+
     tcp::socket& socket() {
         return socket_;
     }
 
     void start() {
+        protocol_ = new protocol();
         stage_ = STAGE_READ_HEADER;
         header_offset_ = 0;
         message_ = NULL;
         message_offset_ = 0;
         data_out_ = NULL;
+        data_out_free_ = false;
+        memset(message_preallocated_buffer_, 0, PREALLOCATED_MESSAGE_BUFFER_LENGTH);
 
         socket_.async_read_some(boost::asio::buffer(data_in_, MAX_IN_BUFFER_LENGTH),
                 boost::bind(&session::handle_read, this,
@@ -1552,8 +1698,11 @@ public:
                         //dbprintf("hdr msg_size : %d\n", total_msg_size_);
                         num_messages_ = readIntFromNetworkBytes(header_ + 8);
                         //dbprintf("hdr num_messages : %d\n", num_messages_);
-                        // allocate data
-                        message_ = new char[total_msg_size_];
+                        // allocate message if message size exceeds preallocated buffer size
+                        if(total_msg_size_ > PREALLOCATED_MESSAGE_BUFFER_LENGTH) {
+                            // allocate dynamic
+                            message_ = new char[total_msg_size_];
+                        }
                         message_offset_ = 0;
                     } else {
                         // chunked header
@@ -1566,23 +1715,46 @@ public:
                 } else if (stage_ == STAGE_READ_DATA) {
                     if (bytes_remain >= total_msg_size_ - message_offset_) {
                         int readSize = total_msg_size_ - message_offset_;
-                        memcpy(message_ + message_offset_, bytes_ptr, readSize);
+                        if(total_msg_size_ > PREALLOCATED_MESSAGE_BUFFER_LENGTH) {
+                            memcpy(message_ + message_offset_, bytes_ptr, readSize);
+                        } else {
+                            memcpy(message_preallocated_buffer_ + message_offset_, bytes_ptr, readSize);
+                        }
                         message_offset_ += readSize;
                         bytes_ptr += readSize;
                         bytes_remain -= readSize;
+
+                        if(bytes_remain > 0) {
+                            dbprintf("%s", "cut-off noises!\n");
+                            bytes_remain = 0;
+                        }
+
                         // call processor
-                        handle_protocol();
+                        if(total_msg_size_ > PREALLOCATED_MESSAGE_BUFFER_LENGTH) {
+                            handle_protocol(message_);
+                        }
+                        else {
+                            handle_protocol(message_preallocated_buffer_);
+                        }
                         // move stage
                         stage_ = STAGE_READ_HEADER;
                         header_offset_ = 0;
-                        if (message_ != NULL) {
-                            delete message_;
-                            message_ = NULL;
+                        if(total_msg_size_ > PREALLOCATED_MESSAGE_BUFFER_LENGTH) {
+                            if (message_ != NULL) {
+                                delete message_;
+                                message_ = NULL;
+                            }
+                        } else {
+                            memset(message_preallocated_buffer_, 0, PREALLOCATED_MESSAGE_BUFFER_LENGTH);
                         }
                     } else {
                         // chunked data
                         int readSize = bytes_remain;
-                        memcpy(message_ + message_offset_, bytes_ptr, readSize);
+                        if(total_msg_size_ > PREALLOCATED_MESSAGE_BUFFER_LENGTH) {
+                            memcpy(message_ + message_offset_, bytes_ptr, readSize);
+                        } else {
+                            memcpy(message_preallocated_buffer_ + message_offset_, bytes_ptr, readSize);
+                        }
                         message_offset_ += readSize;
                         bytes_ptr += readSize;
                         bytes_remain -= readSize;
@@ -1597,77 +1769,106 @@ public:
                     boost::asio::placeholders::bytes_transferred));
         } else {
             errorf("%s", "error\n");
+            if (message_ != NULL) {
+                delete message_;
+                message_ = NULL;
+            }
+
+            if(data_out_free_) {
+                if (data_out_ != NULL) {
+                    delete data_out_;
+                    data_out_ = NULL;
+                }
+            }
             delete this;
         }
     }
 
     void handle_write(const boost::system::error_code& error) {
         if (!error) {
-            if (data_out_ != NULL) {
-                delete data_out_;
-                data_out_ = NULL;
+            if (message_ != NULL) {
+                delete message_;
+                message_ = NULL;
+            }
+
+            if(data_out_free_) {
+                if (data_out_ != NULL) {
+                    delete data_out_;
+                    data_out_ = NULL;
+                }
             }
         } else {
             errorf("%s", "error\n");
+
+            if (message_ != NULL) {
+                delete message_;
+                message_ = NULL;
+            }
+
+            if(data_out_free_) {
+                if (data_out_ != NULL) {
+                    delete data_out_;
+                    data_out_ = NULL;
+                }
+            }
             delete this;
         }
     }
 
 private:
-    void handle_protocol() {
-        dbprintf("%s", "read done!\n");
+    void handle_protocol(const char* message) {
+        //dbprintf("%s", "read done!\n");
         dbprintf("op-code : %d\n", op_code_);
-        dbprintf("total message size : %d\n", total_msg_size_);
-        dbprintf("number of messages : %d\n", num_messages_);
+        //dbprintf("total message size : %d\n", total_msg_size_);
+        //dbprintf("number of messages : %d\n", num_messages_);
 
-        protocol protocolHandler;
         int data_out_size = 0;
 
         switch (op_code_) {
             case OP_GET_STAT:
-                protocolHandler.process_getStat(message_, &data_out_, &data_out_size);
+                protocol_->process_getStat(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_DELETE:
-                protocolHandler.process_delete(message_, &data_out_, &data_out_size);
+                protocol_->process_delete(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_REMOVE_DIRECTORY:
-                protocolHandler.process_removeDir(message_, &data_out_, &data_out_size);
+                protocol_->process_removeDir(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_RENAME:
-                protocolHandler.process_rename(message_, &data_out_, &data_out_size);
+                protocol_->process_rename(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_MKDIR:
-                protocolHandler.process_makeDir(message_, &data_out_, &data_out_size);
+                protocol_->process_makeDir(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_READ_DIRECTORY:
-                protocolHandler.process_readDir(message_, &data_out_, &data_out_size);
+                protocol_->process_readDir(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_GET_FILE_HANDLE:
-                protocolHandler.process_getFileHandle(message_, &data_out_, &data_out_size);
+                protocol_->process_getFileHandle(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_CREATE_NEW_FILE:
-                protocolHandler.process_createNewFile(message_, &data_out_, &data_out_size);
+                protocol_->process_createNewFile(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_READ_FILEDATA:
-                protocolHandler.process_readFileData(message_, &data_out_, &data_out_size);
+                protocol_->process_readFileData(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_WRITE_FILE_DATA:
-                protocolHandler.process_writeFileData(message_, &data_out_, &data_out_size);
+                protocol_->process_writeFileData(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_FLUSH:
-                protocolHandler.process_flush(message_, &data_out_, &data_out_size);
+                protocol_->process_flush(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_CLOSE_FILE_HANDLE:
-                protocolHandler.process_closeFileHandle(message_, &data_out_, &data_out_size);
+                protocol_->process_closeFileHandle(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_TRUNCATE_FILE:
-                protocolHandler.process_truncateFile(message_, &data_out_, &data_out_size);
+                protocol_->process_truncateFile(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_GET_EXTENDED_ATTR:
-                protocolHandler.process_getXAttr(message_, &data_out_, &data_out_size);
+                protocol_->process_getXAttr(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
             case OP_LIST_EXTENDED_ATTR:
-                protocolHandler.process_listXAttr(message_, &data_out_, &data_out_size);
+                protocol_->process_listXAttr(message, &data_out_, &data_out_size, &data_out_free_);
                 break;
         }
 
@@ -1676,17 +1877,20 @@ private:
                 boost::asio::buffer(data_out_, data_out_size),
                 boost::bind(&session::handle_write, this,
                 boost::asio::placeholders::error));
+        } else {
+            errorf("%s", "protocol handler returned 0 output\n");
         }
     }
 
 private:
     tcp::socket socket_;
-
+    protocol* protocol_;
     enum {
         MAX_IN_BUFFER_LENGTH = 4096,
     };
     char data_in_[MAX_IN_BUFFER_LENGTH];
     char* data_out_;
+    bool data_out_free_;
 
     int op_code_;
     int total_msg_size_;
@@ -1700,6 +1904,10 @@ private:
     int header_offset_;
 
     char* message_;
+    enum {
+        PREALLOCATED_MESSAGE_BUFFER_LENGTH = 4096,
+    };
+    char message_preallocated_buffer_[PREALLOCATED_MESSAGE_BUFFER_LENGTH];
     int message_offset_;
 
     enum {
@@ -1770,64 +1978,62 @@ Gateway-specific arguments:\n\
 // Program execution starts here!
 int main(int argc, char** argv) {
 
-   curl_global_init(CURL_GLOBAL_ALL);
-   GOOGLE_PROTOBUF_VERIFY_VERSION;
+    curl_global_init(CURL_GLOBAL_ALL);
+    GOOGLE_PROTOBUF_VERIFY_VERSION;
 
     int rc = 0;
 
-   // prevent root from mounting this, since we don't really do much
-   // in the way of checking access.
+    // prevent root from mounting this, since we don't really do much
+    // in the way of checking access.
 #ifndef _FIREWALL
-   if( getuid() == 0 || geteuid() == 0 ) {
+    if( getuid() == 0 || geteuid() == 0 ) {
         perror("Running SyndicateIPC as root opens unnacceptable security holes\n");
-      return 1;
-   }
+       return 1;
+    }
 #else
-   // skip
+    // skip
 #endif
+    
+    struct syndicate_opts syn_opts;
+    syndicate_default_opts( &syn_opts );
    
-   struct syndicate_opts syn_opts;
-   syndicate_default_opts( &syn_opts );
-   
-   // get options
-   rc = syndicate_parse_opts( &syn_opts, argc, argv, NULL, "O:", grab_ipc_opts );
-   if( rc != 0 ) {
-      syndicate_common_usage( argv[0] );
-      exit(1);
-   }
+    // get options
+    rc = syndicate_parse_opts( &syn_opts, argc, argv, NULL, "O:", grab_ipc_opts );
+    if( rc != 0 ) {
+        syndicate_common_usage( argv[0] );
+        exit(1);
+    }
 
-   struct md_HTTP syndicate_http;
-   
-   // start core services
-   rc = syndicate_init( &syn_opts );
-   if( rc != 0 ) {
-      fprintf(stderr, "Syndicate failed to initialize\n");
-      exit(1);
-   }
-   
-   struct syndicate_state* state = syndicate_get_state();
+    struct md_HTTP syndicate_http;
 
-   // start back-end HTTP server
-   rc = server_init( state, &syndicate_http );
-   if( rc != 0 )
-      exit(1);
-   
-   // finish initialization
-   syndicate_set_running();
-      
-   syndicateipc_get_context()->syndicate_state_data = state;
-   syndicateipc_get_context()->syndicate_http = syndicate_http;
+    // start core services
+    rc = syndicate_init( &syn_opts );
+    if (rc != 0) {
+        fprintf(stderr, "Syndicate failed to initialize\n");
+        exit(1);
+    }
 
-   printf("\n\nSyndicateIPC starting up\n\n");
+    struct syndicate_state* state = syndicate_get_state();
+ 
+    // start back-end HTTP server
+    rc = server_init( state, &syndicate_http );
+    if( rc != 0 )
+       exit(1);
 
-   // GO GO GO!!!
-   try {
-      boost::asio::io_service io_service;
-      server s(io_service, ipcportnum);
+    // finish initialization
+    syndicate_set_running();
+    
+    syndicateipc_get_context()->syndicate_state_data = state;
+    syndicateipc_get_context()->syndicate_http = syndicate_http;
 
-      io_service.run();
+    printf("\n\nSyndicateIPC starting up\n\n");
+
+    try {
+        boost::asio::io_service io_service;
+        server s(io_service, ipcportnum);
+        io_service.run();
    } catch (std::exception& e) {
-      std::cerr << "Exception: " << e.what() << "\n";
+       std::cerr << "Exception: " << e.what() << "\n";
    }
 
    printf( "\n\nSyndicateIPC shutting down\n\n");
@@ -1836,7 +2042,7 @@ int main(int argc, char** argv) {
 
    int wait_replicas = -1;
    if( !syn_opts.flush_replicas ) {
-      wait_replicas = 0;
+       wait_replicas = 0;
    }
    
    syndicate_destroy( wait_replicas );
