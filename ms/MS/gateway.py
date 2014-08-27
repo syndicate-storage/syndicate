@@ -197,8 +197,8 @@ class Gateway( storagetypes.Object ):
       get hardwired capabilities.
       '''
       if gateway_type == GATEWAY_TYPE_AG:
-         # caps are always write metadata
-         return GATEWAY_CAP_WRITE_METADATA
+         # caps are always read and write metadata
+         return (GATEWAY_CAP_READ_METADATA | GATEWAY_CAP_WRITE_METADATA)
       
       elif gateway_type == GATEWAY_TYPE_RG:
          # caps are always 0
