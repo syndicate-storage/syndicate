@@ -433,6 +433,7 @@ int md_closure_init_bin( struct md_syndicate_conf* conf, struct md_closure* clos
    closure->ignore_stubs = ignore_stubs;
    closure->callbacks = md_closure_callback_table_from_prototype( driver_prototype );
    closure->so_path = strdup(so_path);
+   closure->on_disk = true;
    
    // initialize the driver
    int rc = md_closure_driver_reload( conf, closure, NULL, 0 );
@@ -518,7 +519,8 @@ int md_closure_unlock( struct md_closure* closure ) {
 
 // reload the given closure's driver.  Shut it down, get the new code and state, and start it back up again.
 // If we fail to load or initialize the new closure, then keep the old one around.
-// if NULL is passed for driver_text_len, this method reloads from the closure's so_path member
+// if NULL is passed for driver_text, this method reloads from the closure's so_path member.
+// if driver_text is not NULL, then this method reloads the closure from the text AND sets closure->on_disk to false, meaning that the stored data will be unlinked on shutdown.
 // closure must be write-locked!
 int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure* closure, char const* driver_text, size_t driver_text_len ) {
    int rc = 0;
@@ -534,6 +536,7 @@ int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure*
    char* new_so_path = NULL;
    
    if( driver_text != NULL ) {
+      
       // store to disk    
       rc = md_write_driver( conf, &new_so_path, driver_text, driver_text_len );
       if( rc != 0 && rc != -ENOENT ) {
@@ -621,6 +624,12 @@ int md_closure_driver_reload( struct md_syndicate_conf* conf, struct md_closure*
                
                if( stored_to_disk ) {
                   unlink( closure->so_path );
+                  
+                  if( closure->on_disk ) {
+                     errorf("WARN: Replaced %s with caller-supplied code\n", closure->so_path );
+                  }
+                  
+                  closure->on_disk = false;
                }
                free( closure->so_path );
             }
@@ -742,7 +751,11 @@ int md_closure_shutdown( struct md_closure* closure ) {
    }
    
    if( closure->so_path ) {
-      unlink( closure->so_path );
+      
+      if( !closure->on_disk ) {
+         unlink( closure->so_path );
+      }
+      
       free( closure->so_path );
       closure->so_path = NULL;
    }

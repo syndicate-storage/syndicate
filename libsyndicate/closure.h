@@ -54,6 +54,7 @@ struct md_closure {
    
    bool gateway_specific;       // if true, then this closure is specific to a Gateway (and can have secrets)
    bool ignore_stubs;           // if true, then we will reload a closure even if it doesn't have some methods we need
+   bool on_disk;                // if true, then this closure was loaded from an already-existing file on disk.  Don't unlink it.
 };
 
 typedef int (*md_closure_init_func)( struct md_closure*, void** );
