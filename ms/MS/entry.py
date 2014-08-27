@@ -1385,14 +1385,14 @@ class MSEntry( storagetypes.Object ):
 
 
    @classmethod
-   def Update( cls, user_owner_id, volume, affected_blocks, **ent_attrs ):
+   def Update( cls, user_owner_id, volume, log_affected_blocks, affected_blocks, **ent_attrs ):
 
       rc = MSEntry.check_call_attrs( ent_attrs )
       if rc != 0:
          return (rc, None)
       
       # Update an MSEntry.
-      # A file will be updated by at most one UG, so we don't need a transaction.
+      # A file will be updated by at most one UG or AG, so we don't need a transaction.
       # A directory can be updated by anyone, but the update conflict resolution is last-write-wins.
 
       write_attrs = {}
@@ -1401,11 +1401,16 @@ class MSEntry( storagetypes.Object ):
       volume_id = volume.volume_id
       file_id = ent_attrs['file_id']
       ent_name = ent_attrs['name']
-
+      
       not_writable = MSEntry.validate_write( write_attrs.keys() )
       for nw in not_writable:
          del write_attrs[nw]
       
+      # NOTE: root cannot be renamed 
+      if file_id == "0000000000000000" and ent_name != '/':
+         log.error("Tried to rename root to %s" % ent_name)
+         return (-errno.EINVAL, None)
+
       # get the ent
       # try from cache first
       cache_ent_key = MSEntry.cache_key_name( volume_id, file_id )
@@ -1434,24 +1439,14 @@ class MSEntry( storagetypes.Object ):
       # write the update 
       ent_fut = MSEntry.__write_msentry( ent, volume.num_shards, async=True, **write_attrs )
       
-      # write the manifest timestamp to the Manifest log, if this is a file 
-      if ent.ftype == MSENTRY_TYPE_FILE:
-         
-         print volume_id
-         print file_id 
-         print ent_attrs['version']
-         print ent_attrs['manifest_mtime_sec']
-         print ent_attrs['manifest_mtime_nsec']
-         print affected_blocks 
-         print dir(affected_blocks)
+      # write the manifest timestamp to the Manifest log, if this is a file and this write came from a UG
+      if ent.ftype == MSENTRY_TYPE_FILE and log_affected_blocks:
          
          storagetypes.deferred.defer( MSEntryVacuumLog.Insert, volume_id, file_id, ent_attrs['version'], ent_attrs['manifest_mtime_sec'], ent_attrs['manifest_mtime_nsec'], affected_blocks )
       
       storagetypes.wait_futures( [ent_fut] )
       
       ent = ent_fut.get_result()
-      
-      print "updated entry: %s" % ent
       
       return (0, ent)
 
