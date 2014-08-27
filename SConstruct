@@ -226,6 +226,7 @@ libsyndicate_driver_install = os.path.join( lib_install_dir, "syndicate-drivers/
 libsyndicate, libsyndicate_nacl, libsyndicate_header_paths, libsyndicate_scrypt_header_paths, libsyndicate_source_paths = SConscript( "libsyndicate/SConscript", variant_dir=libsyndicate_out )
 libsyndicate_drivers = SConscript( "libsyndicate/drivers/SConscript", variant_dir=libsyndicate_driver_out )
 
+# all libsyndicate targets depends on protobufs
 libsyndicate_protobuf_deps = [protobufs, protobuf_cc_files]
 for libsyndicate_target in [libsyndicate, libsyndicate_nacl, libsyndicate_header_paths, libsyndicate_source_paths]:
    if libsyndicate_target is not None:
@@ -245,7 +246,7 @@ if libsyndicate_nacl is not None:
    env.Alias( 'libsyndicate-nacl-install', [libsyndicate_install_nacl] )
 
 # main targets...
-env.Alias( 'libsyndicate', [libsyndicate, libsyndicate_drivers] )
+env.Alias( 'libsyndicate', [libsyndicate] )
 env.Alias( 'libsyndicate-install', [libsyndicate_install_library, libsyndicate_install_headers, libsyndicate_install_scrypt_headers] )
 
 env.Alias( 'libsyndicate-drivers', [libsyndicate_drivers] )
