@@ -427,7 +427,8 @@ class MSFileHandler(webapp2.RequestHandler):
    # return (boolean validation check, failure status)
    post_validators = {
       ms_pb2.ms_update.CREATE:          lambda gateway, update: (True, 200),
-      ms_pb2.ms_update.UPDATE:          lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_WRITE_DATA ), 403),
+      ms_pb2.ms_update.UPDATE:          lambda gateway, update: ((gateway.gateway_type == GATEWAY_TYPE_UG and gateway.check_caps( GATEWAY_CAP_WRITE_DATA )) or 
+                                                                 (gateway.gateway_type == GATEWAY_TYPE_AG and gateway.check_caps( GATEWAY_CAP_WRITE_METADATA)), 403),
       ms_pb2.ms_update.DELETE:          lambda gateway, update: (True, 200),
       ms_pb2.ms_update.CHCOORD:         lambda gateway, update: (gateway.check_caps( GATEWAY_CAP_COORDINATE ), 403),
       ms_pb2.ms_update.RENAME:          lambda gateway, update: (update.HasField("dest"), 400),
