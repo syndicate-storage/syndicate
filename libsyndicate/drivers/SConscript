@@ -22,6 +22,7 @@ driver_dirs = Glob("*")
 
 # source search paths
 CPPPATH = """
+   #build/out/lib/
    #build/out/lib/libsyndicate
    #
    #build/out/protobufs/
@@ -35,6 +36,8 @@ LIBS = """
 # library search paths
 LIBPATH = """
    #build/out/lib/libsyndicate/
+   #
+   #build/out/protobufs/
 """
 
 # add additional CPPFLAGS here
