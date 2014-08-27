@@ -1896,8 +1896,8 @@ int md_default_conf( struct md_syndicate_conf* conf, int gateway_type ) {
       md_set_hostname( conf, "localhost" );
    }
    else if( gateway_type == SYNDICATE_AG ) {
-      // don't need storage, but do need networkig 
-      conf->need_storage = false;
+      // need both storage and networking to be set up
+      conf->need_storage = true;
       conf->need_networking = true;
    }
 
