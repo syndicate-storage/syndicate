@@ -183,6 +183,8 @@ int Base64Encode(const char* message, size_t len, char** buffer);
 
 // random number generator
 uint32_t CMWC4096(void);
+uint32_t md_random32(void);
+uint64_t md_random64(void);
 
 // library initialization
 int util_init(void);

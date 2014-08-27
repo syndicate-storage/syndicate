@@ -386,6 +386,10 @@ int md_clear_dir( char const* dirname ) {
 // otherwise, it connects
 int md_unix_socket( char const* path, bool server ) {
    
+   if( path == NULL ) {
+      return -EINVAL;
+   }
+   
    struct sockaddr_un addr;
    int fd = 0;
    int rc = 0;
@@ -641,6 +645,17 @@ uint32_t CMWC4096(void) {
    
    pthread_mutex_unlock( &CMWC4096_lock );
    return ret;
+}
+
+uint32_t md_random32(void) {
+   return CMWC4096();
+}
+
+uint64_t md_random64(void) {
+   uint64_t upper = md_random32();
+   uint64_t lower = md_random32();
+   
+   return (upper << 32) | lower;
 }
 
 
