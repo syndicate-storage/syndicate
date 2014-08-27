@@ -243,13 +243,11 @@ struct ms_client {
    bool uploading;      // set to true if we're uploading something on ms_write
    bool more_work;      // set to true if more work arrives while we're working
    bool uploader_running;  // set to true if the uploader is running
-   pthread_mutex_t uploader_lock;     // wake up the uploader thread when there is work to do
-   pthread_cond_t uploader_cv;
+   sem_t uploader_sem;  // uploader thread waits on this until signaled to reload 
    
    // gateway view-change structures (represents a consistent view of the Volume control state)
    pthread_t view_thread;
    bool view_thread_running;        // set to true if the view thread is running
-   bool early_reload;               // check back to see if there is new Volume information
    struct ms_volume* volume;        // Volume we're bound to
    ms_client_view_change_callback view_change_callback;         // call this function when the Volume gets reloaded
    void* view_change_callback_cls;                              // user-supplied argument to the above callbck
@@ -435,7 +433,8 @@ template< class T > int ms_client_verify_gateway_message( struct ms_client* clie
       
       dbprintf("WARN: No cached certificate for Gateway %" PRIu64 "\n", gateway_id );
       
-      client->early_reload = true;
+      // try reloading
+      sem_post( &client->uploader_sem );
       ms_client_view_unlock( client );
       return -EAGAIN;
    }

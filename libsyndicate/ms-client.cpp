@@ -223,6 +223,8 @@ int ms_client_start_threads( struct ms_client* client ) {
    
    client->running = true;
    
+   client->view_thread_running = true;
+
    client->view_thread = md_start_thread( ms_client_view_thread, client, false );
    if( client->view_thread < 0 ) {
       client->running = false;
@@ -249,8 +251,10 @@ int ms_client_stop_threads( struct ms_client* client ) {
    
    client->running = false;
 
+   client->view_thread_running = false;
+   
    if( was_running ) {
-      //ms_client_uploader_signal( client );
+      
       pthread_cancel( client->view_thread );
       
       dbprintf("%s", "wait for view change thread to finish...\n");
@@ -363,10 +367,9 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    client->conf = conf;
    client->deadlines = new deadline_queue();
 
-   // uploader thread
-   pthread_mutex_init( &client->uploader_lock, NULL );
-   pthread_cond_init( &client->uploader_cv, NULL );
-
+   // uploader thread 
+   sem_init( &client->uploader_sem, 0, 0 );
+   
    int rc = 0;
 
    rc = ms_client_try_load_key( conf, &client->my_key, &client->my_key_pem, conf->gateway_key, false );
@@ -421,9 +424,6 @@ int ms_client_destroy( struct ms_client* client ) {
    
    client->inited = false;
 
-   pthread_mutex_destroy( &client->uploader_lock );
-   pthread_cond_destroy( &client->uploader_cv );
-
    // clean up CURL
    curl_easy_cleanup( client->ms_read );
    curl_easy_cleanup( client->ms_write );
@@ -437,6 +437,8 @@ int ms_client_destroy( struct ms_client* client ) {
    
    pthread_rwlock_unlock( &client->view_lock );
    pthread_rwlock_destroy( &client->view_lock );
+   
+   sem_destroy( &client->uploader_sem );
    
    // clean up our state
    if( client->userpass )
@@ -697,22 +699,15 @@ char* ms_client_syndicate_pubkey_url( struct ms_client* client ) {
 }
 
 static int ms_client_view_change_callback_default( struct ms_client* client, void* cls ) {
-   dbprintf("%s", "Volume has changed!\n");
+   dbprintf("%s", "WARN: stub Volume view change callback\n");
    return 0;
 }
 
 // view thread body, for synchronizing Volume metadata
-// TODO: use a semaphore
 static void* ms_client_view_thread( void* arg ) {
    struct ms_client* client = (struct ms_client*)arg;
    
-   // how often do we reload?
-   uint64_t view_reload_freq = client->conf->view_reload_freq;
-   struct timespec sleep_time;
-
-   struct timespec remaining;
-
-   client->view_thread_running = true;
+   int rc = 0;
 
    // since we don't hold any resources between downloads, simply cancel immediately
    pthread_setcanceltype( PTHREAD_CANCEL_ASYNCHRONOUS, NULL );
@@ -721,91 +716,68 @@ static void* ms_client_view_thread( void* arg ) {
 
    while( client->running ) {
 
-      uint64_t now_ms = currentTimeMillis();
-      uint64_t wakeup_ms = now_ms + view_reload_freq * 1000;
+      struct timespec now;
+      clock_gettime( CLOCK_REALTIME, &now );
       
-      bool do_early_reload = false;
+      struct timespec reload_deadline;
+      reload_deadline.tv_sec = now.tv_sec + (client->conf->view_reload_freq);
+      reload_deadline.tv_nsec = 0;
       
-      // wait for next reload
-      while( now_ms < wakeup_ms ) {
+      // if somehow we wait 0 seconds, then set to 1 second 
+      if( reload_deadline.tv_sec == now.tv_sec ) {
+         errorf("%s", "WARN: waiting for manditory 1 second between volume reload checks\n");
+         reload_deadline.tv_sec ++;
+      }
+      
+      dbprintf("Reload Volume in at most %ld seconds (at %ld)\n", reload_deadline.tv_sec - now.tv_sec, reload_deadline.tv_sec );
+      
+      // wait to be signaled to reload 
+      while( reload_deadline.tv_sec > now.tv_sec ) {
          
-         // check once per second
-         sleep_time.tv_sec = 1;
-         sleep_time.tv_nsec = 0;
-
-         int rc = nanosleep( &sleep_time, &remaining );
-         int errsv = errno;
+         clock_gettime( CLOCK_REALTIME, &now );
          
-         now_ms = currentTimeMillis();
+         rc = sem_timedwait( &client->uploader_sem, &reload_deadline );
          
-         if( rc < 0 ) {
-            if( errsv == EINTR ) {
-               errorf("errsv = %d\n", errsv);
+         if( rc != 0 ) {
+            rc = -errno;
+            
+            if( rc == -EINTR ) {
+               continue;
             }
             else {
-               errorf("nanosleep errno = %d\n", errsv );
-               client->view_thread_running = false;
+               errorf("sem_timedwait errno = %d\n", rc);
                return NULL;
             }
          }
-
-         // hint to reload now?
-         ms_client_view_rlock( client );
-         
-         do_early_reload = (client->volume != NULL && client->early_reload);
-         
-         ms_client_view_unlock( client );
-
-         if( do_early_reload ) {
-            break;
-         }
-         
-         if( !client->running ) {
-            break;
-         }
-      }
-
-      if( !client->running ) {
-         break;
       }
       
-      if( do_early_reload ) {
+      pthread_setcancelstate( PTHREAD_CANCEL_DISABLE, NULL );
+      
+      // reload Volume metadata
+      dbprintf("%s", "Begin reload Volume metadata\n" );
 
-         // reload Volume metadata
-         pthread_setcancelstate( PTHREAD_CANCEL_DISABLE, NULL );
+      rc = ms_client_reload_volume( client );
+
+      dbprintf("End reload Volume metadata, rc = %d\n", rc);
+      
+      if( rc == 0 ) {
+         ms_client_rlock( client );
          
-         dbprintf("%s", "Begin reload Volume metadata\n" );
-
-         int rc = ms_client_reload_volume( client );
-
-         dbprintf("End reload Volume metadata, rc = %d\n", rc);
-         
-         if( rc == 0 ) {
-            ms_client_rlock( client );
-            
-            if( client->view_change_callback != NULL ) {
-               rc = (*client->view_change_callback)( client, client->view_change_callback_cls );
-               if( rc != 0 ) {
-                  errorf("WARN: view change callback rc = %d\n", rc );
-               }
+         if( client->view_change_callback != NULL ) {
+            rc = (*client->view_change_callback)( client, client->view_change_callback_cls );
+            if( rc != 0 ) {
+               errorf("WARN: view change callback rc = %d\n", rc );
             }
-            
-            ms_client_unlock( client );
          }
-
-         ms_client_view_wlock( client );
          
-         client->early_reload = false;
-         
-         ms_client_view_unlock( client );
-         
-         pthread_setcancelstate( PTHREAD_CANCEL_ENABLE, NULL );
+         ms_client_unlock( client );
       }
+      
+      pthread_setcancelstate( PTHREAD_CANCEL_ENABLE, NULL );
    }
 
    dbprintf("%s", "View thread shutting down\n");
    
-   client->view_thread_running = false;
    return NULL;
 }
 
@@ -1635,7 +1607,7 @@ int ms_client_verify_gateway_message( struct ms_client* client, uint64_t volume_
       
       dbprintf("WARN: No cached certificate for Gateway %" PRIu64 "\n", gateway_id );
       
-      client->early_reload = true;
+      sem_post( &client->uploader_sem );
       ms_client_view_unlock( client );
       return -EAGAIN;
    }
@@ -1796,7 +1768,7 @@ int ms_client_load_volume_metadata( struct ms_client* client, struct ms_volume* 
          method = "md_closure_init";
          
          vol->cache_closure = CALLOC_LIST( struct md_closure, 1 );
-         rc = md_closure_init( client, vol->cache_closure, MS_CLIENT_CACHE_CLOSURE_PROTOTYPE, volume_md->cache_closure_text().data(), volume_md->cache_closure_text().size(), false );
+         rc = md_closure_init( client, vol->cache_closure, MS_CLIENT_CACHE_CLOSURE_PROTOTYPE, volume_md->cache_closure_text().data(), volume_md->cache_closure_text().size(), false, false );
       }
       else {
          method = "md_closure_init";
@@ -3439,6 +3411,16 @@ int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_
          break;
       }
       
+      // sanity check: listing[0], if given, must match the ith path element's file ID 
+      if( listing.entries != NULL && listing.entries->size() != 0 ) {
+         if( listing.entries->at(0).file_id != path->at(i).file_id ) {
+            errorf("Invalid MS listing: requested listing of %" PRIX64 ", got listing of %" PRIX64 "\n", path->at(i).file_id, listing.entries->at(0).file_id );
+            rc = -EBADMSG;
+            ms_client_free_response( ms_response );
+            break;
+         }
+      }
+      
       // save
       (*ms_response)[ path->at(i).file_id ] = listing;
       di++;
@@ -3775,7 +3757,7 @@ int ms_client_check_gateway_caps( struct ms_client* client, uint64_t gateway_typ
    ms_cert_bundle::iterator itr = cert_bundles[ gateway_type ]->find( gateway_id );
    if( itr == cert_bundles[ client->gateway_type ]->end() ) {
       // not found--need to reload certs?
-      client->early_reload = true;      // writing this is okay, since regardless of thread scheduling the view thread will read it eventually
+      sem_post( &client->uploader_sem );
       ms_client_view_unlock( client );
       
       return -EAGAIN;
@@ -3804,7 +3786,7 @@ int ms_client_get_gateway_user( struct ms_client* client, uint64_t gateway_type,
    ms_cert_bundle::iterator itr = cert_bundles[ gateway_type ]->find( gateway_id );
    if( itr == cert_bundles[ client->gateway_type ]->end() ) {
       // not found--need to reload certs?
-      client->early_reload = true;      // writing this is okay, since regardless of thread scheduling the view thread will read it eventually
+      sem_post( &client->uploader_sem );
       ms_client_view_unlock( client );
       
       return -EAGAIN;
@@ -3833,7 +3815,7 @@ int ms_client_get_gateway_volume( struct ms_client* client, uint64_t gateway_typ
    ms_cert_bundle::iterator itr = cert_bundles[ gateway_type ]->find( gateway_id );
    if( itr == cert_bundles[ client->gateway_type ]->end() ) {
       // not found--need to reload certs?
-      client->early_reload = true;      // writing this is okay, since regardless of thread scheduling the view thread will read it eventually
+      sem_post( &client->uploader_sem );
       ms_client_view_unlock( client );
       
       return -EAGAIN;
@@ -3925,7 +3907,7 @@ int ms_client_sched_volume_reload( struct ms_client* client ) {
    
    ms_client_view_wlock( client );
 
-   client->early_reload = true;
+   sem_post( &client->uploader_sem );
    
    ms_client_view_unlock( client );
    return rc;
@@ -3938,14 +3920,17 @@ int ms_client_process_header( struct ms_client* client, uint64_t volume_id, uint
    
    ms_client_view_rlock( client );
    
-   if( client->volume->volume_id != volume_id )
+   if( client->volume->volume_id != volume_id ) {
       return -EINVAL;
+   }
    
-   if( client->volume->volume_version < volume_version )
-      client->early_reload = true;
+   if( client->volume->volume_version < volume_version ) {
+      sem_post( &client->uploader_sem );
+   }
    
-   if( client->volume->volume_cert_version < cert_version )
-      client->early_reload = true;
+   if( client->volume->volume_cert_version < cert_version ) {
+      sem_post( &client->uploader_sem );
+   }
    
    ms_client_view_unlock( client );
    return rc;
