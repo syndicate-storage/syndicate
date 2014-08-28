@@ -55,6 +55,7 @@ static int md_init_server_info( struct md_syndicate_conf* c ) {
       if( rc != 0 ) {
          // could not get addr info
          errorf("getaddrinfo(%s): %s\n", hostname, gai_strerror( rc ) );
+         freeaddrinfo( result );
          return -abs(rc);
       }
       
@@ -63,12 +64,15 @@ static int md_init_server_info( struct md_syndicate_conf* c ) {
       rc = getnameinfo( result->ai_addr, result->ai_addrlen, hn, HOST_NAME_MAX, NULL, 0, NI_NAMEREQD );
       if( rc != 0 ) {
          errorf("getnameinfo: %s\n", gai_strerror( rc ) );
+         freeaddrinfo( result );
          return -abs(rc);
       }
       
       dbprintf("canonical hostname is %s\n", hn);
 
       c->hostname = strdup(hn);
+      
+      freeaddrinfo( result );
    #else
       c->hostname = strdup("localhost");
    #endif
@@ -614,6 +618,8 @@ int md_free_conf( struct md_syndicate_conf* conf ) {
       (void*)conf->volume_pubkey,
       (void*)conf->syndicate_pubkey,
       (void*)conf->local_sd_dir,
+      (void*)conf->hostname,
+      (void*)conf->storage_root,
       (void*)conf
    };
    
