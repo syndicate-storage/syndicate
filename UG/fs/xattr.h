@@ -29,6 +29,7 @@
 
 #define SYNDICATE_XATTR_COORDINATOR       "user.syndicate_coordinator"
 #define SYNDICATE_XATTR_CACHED_BLOCKS     "user.syndicate_cached_blocks"
+#define SYNDICATE_XATTR_CACHED_FILE_PATH  "user.syndicate_cached_file_path"
 #define SYNDICATE_XATTR_READ_TTL          "user.syndicate_read_ttl"
 #define SYNDICATE_XATTR_WRITE_TTL         "user.syndicate_write_ttl"
 
