@@ -129,8 +129,8 @@ int fs_entry_mkdir( struct fs_core* core, char const* path, mode_t mode, uint64_
       fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
       free( parent_name );
       
-      // make the directory on the MS, filling in the file ID into the child
-      err = ms_client_mkdir( core->ms, &child->file_id, &data );
+      // make the directory on the MS, filling in the file ID and write nonce into the child
+      err = ms_client_mkdir( core->ms, &child->file_id, &child->write_nonce, &data );
       
       if( err != 0 ) {
          errorf("ms_client_create(%s) rc = %d\n", path, err );

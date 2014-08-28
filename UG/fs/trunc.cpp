@@ -188,7 +188,7 @@ static int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, s
    fs_entry_to_md_entry( core, &ent, fent, parent_id, parent_name );
 
    // synchronously update
-   rc = ms_client_update( core->ms, &ent );
+   rc = ms_client_update( core->ms, &fent->write_nonce, &ent );
 
    md_entry_free( &ent );
 

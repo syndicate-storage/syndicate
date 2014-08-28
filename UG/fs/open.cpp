@@ -157,8 +157,8 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
          struct md_entry data;
          fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
          
-         // create the child on the MS, obtaining its file ID
-         err = ms_client_create( core->ms, &child->file_id, &data );
+         // create the child on the MS, obtaining its file ID and write nonce
+         err = ms_client_create( core->ms, &child->file_id, &child->write_nonce, &data );
 
          md_entry_free( &data );
          
@@ -487,8 +487,8 @@ struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, u
       struct md_entry data;
       fs_entry_to_md_entry( core, &data, child, parent_id, parent_name );
       
-      // create synchronously, obtaining the child's file ID
-      *err = ms_client_create( core->ms, &child->file_id, &data );
+      // create synchronously, obtaining the child's file ID and write_nonce
+      *err = ms_client_create( core->ms, &child->file_id, &child->write_nonce, &data );
 
       if( *err != 0 ) {
          errorf("ms_client_create(%s) rc = %d\n", _path, *err );

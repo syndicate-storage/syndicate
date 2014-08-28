@@ -324,13 +324,13 @@ int ms_client_view_unlock2( struct ms_client* client, char const* from_str, int 
 
 // file metadata API
 uint64_t ms_client_make_file_id();
-int ms_client_create( struct ms_client* client, uint64_t* file_id, struct md_entry* ent );
-int ms_client_mkdir( struct ms_client* client, uint64_t* file_id, struct md_entry* ent );
+int ms_client_create( struct ms_client* client, uint64_t* file_id, int64_t* write_nonce, struct md_entry* ent );
+int ms_client_mkdir( struct ms_client* client, uint64_t* file_id, int64_t* write_nonce, struct md_entry* ent );
 int ms_client_delete( struct ms_client* client, struct md_entry* ent );
-int ms_client_update_write( struct ms_client* client, struct md_entry* ent, uint64_t* affected_blocks, size_t num_affected_blocks );
-int ms_client_update( struct ms_client* client, struct md_entry* ent );
-int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, struct md_entry* ent );
-int ms_client_rename( struct ms_client* client, struct md_entry* src, struct md_entry* dest );
+int ms_client_update_write( struct ms_client* client, int64_t* write_nonce, struct md_entry* ent, uint64_t* affected_blocks, size_t num_affected_blocks );
+int ms_client_update( struct ms_client* client, int64_t* write_nonce, struct md_entry* ent );
+int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, int64_t* write_nonce, struct md_entry* ent );
+int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_entry* src, struct md_entry* dest );
 
 // xattr API
 int ms_client_getxattr( struct ms_client* client, uint64_t volume_id, uint64_t file_id, char const* xattr_name, char** xattr_value, size_t* xattr_value_len );

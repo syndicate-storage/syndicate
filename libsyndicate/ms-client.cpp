@@ -2808,7 +2808,7 @@ uint64_t ms_client_make_file_id() {
 
 
 // create a file record on the MS, synchronously
-int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, struct md_entry* ent ) {
+int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, int64_t* write_nonce_ret, struct md_entry* ent ) {
    ent->type = MD_ENTRY_FILE;
    
    uint64_t file_id = ms_client_make_file_id();
@@ -2827,10 +2827,13 @@ int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, struct md
    int rc = ms_client_file_post( client, &up, &reply );
    
    if( rc == 0 ) {
-      // did we get back a file_id?
+      // did we get back a file_id and write_nonce?
       if( reply.listing().entries_size() > 0 ) {
+         
          *file_id_ret = reply.listing().entries(0).file_id();
-         dbprintf("output file_id: %" PRIX64 "\n", *file_id_ret );
+         *write_nonce_ret = reply.listing().entries(0).write_nonce();
+         
+         dbprintf("output file_id: %" PRIX64 " write_nonce: %" PRId64 "\n", *file_id_ret, *write_nonce_ret );
       }
       else {
          rc = -ENODATA;
@@ -2844,7 +2847,7 @@ int ms_client_create( struct ms_client* client, uint64_t* file_id_ret, struct md
 
 
 // make a directory on the MS, synchronously
-int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, struct md_entry* ent ) {   
+int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, int64_t* write_nonce_ret, struct md_entry* ent ) {   
    ent->type = MD_ENTRY_DIR;
    
    uint64_t file_id = ms_client_make_file_id();
@@ -2867,10 +2870,13 @@ int ms_client_mkdir( struct ms_client* client, uint64_t* file_id_ret, struct md_
    int rc = ms_client_file_post( client, &up, &reply );
    
    if( rc == 0 ) {
-      // did we get back a file_id?
+      // did we get back a file_id and write_nonce?
       if( reply.listing().entries_size() > 0 ) {
+         
          *file_id_ret = reply.listing().entries(0).file_id();
-         dbprintf("output file_id: %" PRIX64 "\n", *file_id_ret );
+         *write_nonce_ret = reply.listing().entries(0).write_nonce();
+         
+         dbprintf("output file_id: %" PRIX64 " write_nonce: %" PRId64 "\n", *file_id_ret, *write_nonce_ret );
       }
       else {
          rc = -ENODATA;
@@ -2893,7 +2899,7 @@ int ms_client_delete( struct ms_client* client, struct md_entry* ent ) {
 }
 
 // update a record on the MS, synchronously, due to a write()
-int ms_client_update_write( struct ms_client* client, struct md_entry* ent, uint64_t* in_affected_blocks, size_t num_affected_blocks ) {
+int ms_client_update_write( struct ms_client* client, int64_t* write_nonce_ret, struct md_entry* ent, uint64_t* in_affected_blocks, size_t num_affected_blocks ) {
    
    // generate our update
    struct md_update up;
@@ -2912,7 +2918,22 @@ int ms_client_update_write( struct ms_client* client, struct md_entry* ent, uint
    
    up.num_affected_blocks = num_affected_blocks;
    
-   int rc = ms_client_file_post( client, &up, NULL );
+   ms::ms_reply reply;
+   
+   int rc = ms_client_file_post( client, &up, &reply );
+   
+   if( rc == 0 ) {
+      // did we get back a write_nonce?
+      if( reply.listing().entries_size() > 0 ) {
+         
+         *write_nonce_ret = reply.listing().entries(0).write_nonce();
+         
+         dbprintf("updated write_nonce: %" PRId64 "\n", *write_nonce_ret );
+      }
+      else {
+         rc = -ENODATA;
+      }
+   }
    
    // clean up
    if( affected_blocks != NULL ) {
@@ -2925,12 +2946,12 @@ int ms_client_update_write( struct ms_client* client, struct md_entry* ent, uint
 }
 
 // update a record on the MS, synchronously, NOT due to a write()
-int ms_client_update( struct ms_client* client, struct md_entry* ent ) {
-   return ms_client_update_write( client, ent, NULL, 0 );
+int ms_client_update( struct ms_client* client, int64_t* write_nonce_ret, struct md_entry* ent ) {
+   return ms_client_update_write( client, write_nonce_ret, ent, NULL, 0 );
 }
 
 // change coordinator ownership of a file on the MS, synchronously
-int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, struct md_entry* ent ) {
+int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, int64_t* write_nonce, struct md_entry* ent ) {
    
    // generate our update
    struct md_update up;
@@ -2944,8 +2965,11 @@ int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, s
    if( rc == 0 ) {
       // got back a coordinator?
       if( reply.listing().entries_size() > 0 ) {
+         
          *new_coordinator = reply.listing().entries(0).coordinator();
-         dbprintf("New coordinator of %" PRIX64 " is %" PRIu64 "\n", ent->file_id, *new_coordinator );
+         *write_nonce = reply.listing().entries(0).write_nonce();
+         
+         dbprintf("New coordinator of %" PRIX64 " is %" PRIu64 ", write_nonce = %" PRId64 "\n", ent->file_id, *new_coordinator, *write_nonce );
       }
       else {
          rc = -ENODATA;
@@ -2956,7 +2980,7 @@ int ms_client_coordinate( struct ms_client* client, uint64_t* new_coordinator, s
 }
 
 // rename from src to dest 
-int ms_client_rename( struct ms_client* client, struct md_entry* src, struct md_entry* dest ) {
+int ms_client_rename( struct ms_client* client, int64_t* write_nonce, struct md_entry* src, struct md_entry* dest ) {
    if( src->volume != dest->volume )
       return -EXDEV;
    
@@ -2967,8 +2991,25 @@ int ms_client_rename( struct ms_client* client, struct md_entry* src, struct md_
    struct md_update up;
    ms_client_populate_update( &up, ms::ms_update::RENAME, 0, src );
    memcpy( &up.dest, dest, sizeof(struct md_entry) );
+
+   ms::ms_reply reply;
    
-   return ms_client_file_post( client, &up, NULL );
+   int rc = ms_client_file_post( client, &up, &reply );
+   
+   if( rc == 0 ) {
+      // got back a write nonce??
+      if( reply.listing().entries_size() > 0 ) {
+         
+         *write_nonce = reply.listing().entries(0).write_nonce();
+         
+         dbprintf("New write_nonce of %" PRIx64 " is %" PRId64 "\n", src->file_id, *write_nonce );
+      }
+      else {
+         rc = -ENODATA;
+      }
+   }
+   
+   return rc;
 }
 
 // send a batch of updates.

@@ -1521,7 +1521,7 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
    
    // try to become the coordinator
    uint64_t current_coordinator = 0;
-   rc = ms_client_coordinate( core->ms, &current_coordinator, &ent );
+   rc = ms_client_coordinate( core->ms, &current_coordinator, &fent->write_nonce, &ent );
    
    if( rc != 0 ) {
       // failed to contact the MS

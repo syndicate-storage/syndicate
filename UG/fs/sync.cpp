@@ -557,7 +557,7 @@ int fs_entry_fsync_metadata( struct fs_core* core, struct fs_file_handle* fh, st
       
       fs_entry_list_block_ids( sync_ctx->dirty_blocks, &affected_blocks, &num_affected_blocks );
       
-      rc = ms_client_update_write( core->ms, &sync_ctx->md_snapshot, affected_blocks, num_affected_blocks );
+      rc = ms_client_update_write( core->ms, &fh->fent->write_nonce, &sync_ctx->md_snapshot, affected_blocks, num_affected_blocks );
       
       // free memory 
       if( affected_blocks != NULL ) {

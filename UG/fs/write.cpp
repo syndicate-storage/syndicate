@@ -1196,7 +1196,7 @@ int fs_entry_remote_write( struct fs_core* core, char const* fs_path, uint64_t f
       
       fs_entry_list_write_message_blocks( write_msg, &affected_blocks, &num_affected_blocks );
       
-      err = ms_client_update_write( core->ms, &data, affected_blocks, num_affected_blocks );
+      err = ms_client_update_write( core->ms, &fent->write_nonce, &data, affected_blocks, num_affected_blocks );
       
       if( err != 0 ) {
          errorf("%ms_client_update(%s) rc = %d\n", fs_path, err );
