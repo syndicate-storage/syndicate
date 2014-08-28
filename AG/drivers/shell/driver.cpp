@@ -277,7 +277,6 @@ extern "C" void* connect_dataset( struct gateway_context* dataset_ctx ) {
 	   ctx->fd = -1;
 	   ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
 	   ctx->file_path = file_path;
-	   ctx->id = mi->id;
 	   ctx->mi = mi;
 	   
            // will serve a block of data 
@@ -579,15 +578,23 @@ void reversion(void *cls) {
     ms_client_update(mc, ment);
 }
 
+// reconfigure handler
 void* reconf_handler(void *cls) {
     cout<<"calling publish_dataset"<<endl;
     publish_dataset (NULL, NULL, NULL );
     return NULL;
 }
 
+// termination handler; clean up the cache and exit
 void* term_handler(void *cls) {
-    clean_dir((char*)cache_path);
-    exit(0);
+   
+   char* cache_path = (char*)cls;
+   
+   dbprintf("Cleaning up %s\n", cache_path);
+   
+   md_clear_dir( cache_path );
+   
+   exit(0);
 }
 
 void driver_special_inval_handler(string file_path) {

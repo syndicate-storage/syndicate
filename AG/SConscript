@@ -17,10 +17,13 @@
 # add additional source files here
 source_files = """
    AG.cpp
-   AG-core.cpp
-   AG-util.cpp
-   map-parser.cpp
-   reversion-daemon.cpp 
+   core.cpp
+   driver.cpp
+   events.cpp
+   http.cpp
+   map-info.cpp
+   map-parser-xml.cpp
+   reversioner.cpp 
 """
 
 # add source file search paths here

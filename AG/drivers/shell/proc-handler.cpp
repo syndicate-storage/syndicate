@@ -29,49 +29,49 @@ int INOTIFY_FD = -1;
 pthread_mutex_t pid_map_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void invalidate_entry(void* cls) {
-    proc_table_entry *entry = (proc_table_entry*)cls;
-    if (entry == NULL)
-	return;
-    //Acquire write lock on pte
-    //pthread_mutex_lock(&entry->pte_lock);
-    wrlock_pte(entry);
-    if (!(entry->is_read_complete)) {
-	if (kill(entry->proc_id, 9) < 0)
-	    perror("kill(9)");
-    }
-    if (unlink(entry->block_file) < 0)
-	perror("unlink(block_file)");
-    entry->valid = false;
-    clean_invalid_proc_entry(entry);
-    //pthread_mutex_unlock(&entry->pte_lock);
-    unlock_pte(entry);
+   proc_table_entry *entry = (proc_table_entry*)cls;
+   if (entry == NULL)
+      return;
+   //Acquire write lock on pte
+   //pthread_mutex_lock(&entry->pte_lock);
+   wrlock_pte(entry);
+   if (!(entry->is_read_complete)) {
+      if (kill(entry->proc_id, 9) < 0)
+         perror("kill(9)");
+   }
+   if (unlink(entry->block_file) < 0)
+      perror("unlink(block_file)");
+   entry->valid = false;
+   clean_invalid_proc_entry(entry);
+   //pthread_mutex_unlock(&entry->pte_lock);
+   unlock_pte(entry);
 }
 
 void clean_invalid_proc_entry(proc_table_entry *pte) {
-    if (pte) {
-	if (pte->block_file) {
-	    free(pte->block_file);
-            pte->block_file = NULL;
-        }
-	pte->block_file_wd = -1;
-	pte->is_read_complete = false;
-	pte->proc_id = -1;
-	pte->written_so_far = 0;
-	//pte->block_byte_offset = 0;
-    }
+   if (pte) {
+      if (pte->block_file) {
+         free(pte->block_file);
+         pte->block_file = NULL;
+      }
+      pte->block_file_wd = -1;
+      pte->is_read_complete = false;
+      pte->proc_id = -1;
+      pte->written_so_far = 0;
+      //pte->block_byte_offset = 0;
+   }
 }
 
 void delete_proc_entry(proc_table_entry *pte) {
-    if (pte) {
-	if (pte->block_file)
-	    free(pte->block_file);
-	//pthread_mutex_destroy(&pte->pte_lock);
-	pthread_rwlock_destroy(&pte->pte_lock);
-        
-        memset(pte, 0, sizeof(proc_table_entry) );
-	free (pte);
-	pte = NULL;
-    }
+   if (pte) {
+      if (pte->block_file)
+         free(pte->block_file);
+      //pthread_mutex_destroy(&pte->pte_lock);
+      pthread_rwlock_destroy(&pte->pte_lock);
+      
+      memset(pte, 0, sizeof(proc_table_entry) );
+      free (pte);
+      pte = NULL;
+   }
 }
 
 void sigchld_handler(int signum) {
@@ -115,25 +115,25 @@ void unlock_pte(proc_table_entry *pte) {
 }
 
 void update_death(pid_t pid) {
-    map<pid_t, proc_table_entry*>::iterator it;
+   map<pid_t, proc_table_entry*>::iterator it;
+   
+   lock_pid_map();
+   
+   it = pid_map.find(pid);
+   proc_table_entry *pte = NULL;
+   if (it != pid_map.end()) {
+      dbprintf("finalize %d\n", pid);
+      pte = it->second;
+      //Lock pid_map lock
+      //Acquire pte lock
+      wrlock_pte(pte);
+      pte->is_read_complete = true;
+      set<proc_table_entry*, proc_table_entry_comp>::iterator sit;
+      pid_map.erase(it);
+      unlock_pte(pte);
+   }
     
-    lock_pid_map();
-    
-    it = pid_map.find(pid);
-    proc_table_entry *pte = NULL;
-    if (it != pid_map.end()) {
-        dbprintf("finalize %d\n", pid);
-	pte = it->second;
-	//Lock pid_map lock
-	//Acquire pte lock
-	wrlock_pte(pte);
-	pte->is_read_complete = true;
-	set<proc_table_entry*, proc_table_entry_comp>::iterator sit;
-	pid_map.erase(it);
-	unlock_pte(pte);
-    }
-    
-    unlock_pid_map();
+   unlock_pid_map();
 }
 
 
@@ -157,109 +157,109 @@ void* inotify_event_receiver(void *cls) {
     fd_set read_fds;
     int max_fd = INOTIFY_FD;
     while(true) {
-	FD_ZERO(&read_fds);
-	FD_SET(INOTIFY_FD, &read_fds);
-        
-	if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) < 0 ) {
-	    if (errno == EINTR)
-		continue;
-	    else { 
-		perror("select");
-		exit(-1);
-	    }
-	}
-	
-	if (FD_ISSET(INOTIFY_FD, &read_fds)) {
-	    //There are file that have changed since the last update.
-	    char ievents[INOTIFY_READ_BUFFER_LEN];
-            memset( ievents, 0, INOTIFY_READ_BUFFER_LEN );
-	    //cout<<"inotify events available"<<endl;
-	    ssize_t read_size = read(INOTIFY_FD, ievents, INOTIFY_READ_BUFFER_LEN);
-	    if (read_size <= 0) {
-		if (read_size < 0)
-		    perror("inotify read");
-		continue;
-	    }
-	    ssize_t byte_count = 0;
-	    while (byte_count < read_size) {
-		struct inotify_event *ievent = (struct inotify_event*)(&ievents[byte_count]);
-                
-		proc_table_entry pte_by_wd;
-                memset( &pte_by_wd, 0, sizeof(pte_by_wd) );
-		pte_by_wd.block_file_wd = ievent->wd;
-                
-		if (ievent->mask & IN_IGNORED) {
-		    byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
-		    continue;
-		}
-		if ((ievent->mask & (IN_MODIFY | IN_CLOSE_WRITE)) == 0) {
-		    byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
-		    continue;
-		}
-		
-		
-		lock_pid_map();
-                
-		set<proc_table_entry*, bool(*)(proc_table_entry*, proc_table_entry*)>::iterator itr = running_proc_set.find(&pte_by_wd);
-		if (itr != running_proc_set.end()) {
-		    //File found in set, update block info...
-		    struct stat stat_buff;
-		    proc_table_entry *pte = *itr;
-                    
-                    wrlock_pte(pte);
-                    
-		    if (stat(pte->block_file, &stat_buff) < 0 || !(pte->valid)) {
-                        int errsv = -errno;
-                        
-                        if( pte->valid )
-                           errorf("stat(%s) errno %d\n", pte->block_file, errsv);
-                        
-			if (inotify_rm_watch(INOTIFY_FD, ievent->wd) < 0) {
-                            int errsv = -errno;
-			    errorf("inotify_rm_watch errno %d\n", errsv);
-                        }
-                        
-			running_proc_set.erase(itr);
-			clean_invalid_proc_entry(pte);
-		    }
-		    else {
-                        // otherwise, update written size
-                        pte->written_so_far = stat_buff.st_size;
-                        dbprintf("%s (PID %d) has %zd bytes\n", pte->block_file, pte->proc_id, pte->written_so_far);
-                        
-                        // if this PTE is dead, then remove it
-                        if( pte->is_read_complete ) {
-                           running_proc_set.erase(itr);
-                        }
-                    }
-		    unlock_pte(pte);
-		}
-		else {
-		    //File not found in set, remove watch
-		    if (inotify_rm_watch(INOTIFY_FD, ievent->wd) < 0) {
-                        int errsv = -errno;
-			errorf("inotify_rm_watch errno %d\n", errsv);
-                    }
-		}
-	
-	
-               unlock_pid_map();
+      FD_ZERO(&read_fds);
+      FD_SET(INOTIFY_FD, &read_fds);
+      
+      if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) < 0 ) {
+         if (errno == EINTR)
+               continue;
+         else { 
+               perror("select");
+               exit(-1);
+         }
+      }
+      
+      if (FD_ISSET(INOTIFY_FD, &read_fds)) {
+         //There are file that have changed since the last update.
+         char ievents[INOTIFY_READ_BUFFER_LEN];
+         memset( ievents, 0, INOTIFY_READ_BUFFER_LEN );
+         //cout<<"inotify events available"<<endl;
+         ssize_t read_size = read(INOTIFY_FD, ievents, INOTIFY_READ_BUFFER_LEN);
+         if (read_size <= 0) {
+               if (read_size < 0)
+                  perror("inotify read");
+               continue;
+         }
+         ssize_t byte_count = 0;
+         while (byte_count < read_size) {
+               struct inotify_event *ievent = (struct inotify_event*)(&ievents[byte_count]);
                
-               //Update the byte_count before leave
-               byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
-	    }
+               proc_table_entry pte_by_wd;
+               memset( &pte_by_wd, 0, sizeof(pte_by_wd) );
+               pte_by_wd.block_file_wd = ievent->wd;
+               
+               if (ievent->mask & IN_IGNORED) {
+                  byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
+                  continue;
+               }
+               if ((ievent->mask & (IN_MODIFY | IN_CLOSE_WRITE)) == 0) {
+                  byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
+                  continue;
+               }
+               
+               
+               lock_pid_map();
+               
+               set<proc_table_entry*, bool(*)(proc_table_entry*, proc_table_entry*)>::iterator itr = running_proc_set.find(&pte_by_wd);
+               if (itr != running_proc_set.end()) {
+                  //File found in set, update block info...
+                  struct stat stat_buff;
+                  proc_table_entry *pte = *itr;
+                  
+                  wrlock_pte(pte);
+                  
+                  if (stat(pte->block_file, &stat_buff) < 0 || !(pte->valid)) {
+                     int errsv = -errno;
+                     
+                     if( pte->valid )
+                        errorf("stat(%s) errno %d\n", pte->block_file, errsv);
+                     
+                     if (inotify_rm_watch(INOTIFY_FD, ievent->wd) < 0) {
+                           int errsv = -errno;
+                           errorf("inotify_rm_watch errno %d\n", errsv);
+                     }
+                     
+                     running_proc_set.erase(itr);
+                     clean_invalid_proc_entry(pte);
+                  }
+                  else {
+                     // otherwise, update written size
+                     pte->written_so_far = stat_buff.st_size;
+                     dbprintf("%s (PID %d) has %zd bytes\n", pte->block_file, pte->proc_id, pte->written_so_far);
+                     
+                     // if this PTE is dead, then remove it
+                     if( pte->is_read_complete ) {
+                        running_proc_set.erase(itr);
+                     }
+                  }
+                  unlock_pte(pte);
+               }
+               else {
+                  //File not found in set, remove watch
+                  if (inotify_rm_watch(INOTIFY_FD, ievent->wd) < 0) {
+                     int errsv = -errno;
+                     errorf("inotify_rm_watch errno %d\n", errsv);
+                  }
+               }
+      
+      
+            unlock_pid_map();
+            
+            //Update the byte_count before leave
+            byte_count += INOTIFY_EVENT_SIZE + ievent->len; 
+         }
 
-	}
-    }
-    return NULL;
+      }
+   }
+   return NULL;
 }
 
 bool ProcHandler::is_proc_alive(pid_t pid)
 {
-    if (kill(pid, 0) == 0)
-	return true;
-    else 
-	return false;
+   if (kill(pid, 0) == 0)
+      return true;
+   else 
+      return false;
 }
 
 ProcHandler::ProcHandler()
@@ -294,8 +294,8 @@ ProcHandler&  ProcHandler::get_handle(char *cache_dir_str)
 
 // NOTE: pte must be write-locked
 int ProcHandler::execute_command(const char* proc_name, char *argv[], 
-				char *envp[], struct shell_ctx *ctx, 
-				proc_table_entry *pte)
+                                 char *envp[], struct shell_ctx *ctx, 
+                                 proc_table_entry *pte)
 {
    if (argv)
       argv[0] = (char*)proc_name;
@@ -525,92 +525,92 @@ int ProcHandler::read_command_results(struct shell_ctx *ctx, char *buffer, ssize
         else 
            return rc;
     }
-    else {
-        // process is already running.  See if we have data to give back
-	
-	//check whether this pte is valid
-	if (!pte_valid) {
-            // start over completely
-	    return -ENOTCONN;
-	}
-	
-        // NOTE: pte is read-locked
-        
-	if (pte->written_so_far > ctx->block_id * ctx->blocking_factor + ctx->data_offset) {
-            // have more data
-	    off_t current_read_offset = ctx->block_id * ctx->blocking_factor + ctx->data_offset;
-            
-	    if (ctx->fd < 0) {
-		int fd = open(pte->block_file, O_RDONLY);
-		if (fd < 0) {
-                    int errsv = -errno;
-                    errorf("open(%s) errno %d\n", pte->block_file, errsv);
-		    unlock_pte(pte);
-		    return -EIO;
-		}
-		ctx->fd = fd;
-	    }
-	    
-	    if (lseek(ctx->fd, current_read_offset, SEEK_SET) < 0) {
-		int errsv = -errno;
-                errorf("lseek errno %d\n", errsv);
-		unlock_pte(pte);
-		return -EIO;
-	    }
-	    // read ALL the data
-	    ssize_t num_read = 0;
-            
-            struct stat sb;
-            int rc = fstat( ctx->fd, &sb );
-            if( rc < 0 ) {
-               rc = -errno;
-               errorf("fstat(%s) errno = %d\n", pte->block_file, rc);
-            }
-            else {
-               dbprintf("%s has %zu bytes; we'll read at offset %zd\n", pte->block_file, sb.st_size, current_read_offset );
-            }
-            
-            while( num_read < read_size ) {
-               ssize_t nr = read(ctx->fd, buffer + num_read, read_size - num_read);
-               if (nr < 0) {
+   else {
+      // process is already running.  See if we have data to give back
+      
+      //check whether this pte is valid
+      if (!pte_valid) {
+         // start over completely
+         return -ENOTCONN;
+      }
+      
+      // NOTE: pte is read-locked
+      
+      if (pte->written_so_far > ctx->block_id * ctx->blocking_factor + ctx->data_offset) {
+         // have more data
+         off_t current_read_offset = ctx->block_id * ctx->blocking_factor + ctx->data_offset;
+         
+         if (ctx->fd < 0) {
+               int fd = open(pte->block_file, O_RDONLY);
+               if (fd < 0) {
                   int errsv = -errno;
-                  errorf("read errno %d\n", errsv);
+                  errorf("open(%s) errno %d\n", pte->block_file, errsv);
                   unlock_pte(pte);
                   return -EIO;
                }
-               if( nr == 0 ) {
-                  // EOF
-                  break;
-               }
-               num_read += nr;
-            }
-            
-            dbprintf("read %zd bytes\n", num_read );
-            
-            ctx->data_offset += num_read;
-            unlock_pte(pte);
-            return num_read;
-	}
-	else { 
-           // are we waiting for more data, or are we EOF?
-           // if waiting, the EAGAIN.
-           if( !pte->is_read_complete ) {
+               ctx->fd = fd;
+         }
+         
+         if (lseek(ctx->fd, current_read_offset, SEEK_SET) < 0) {
+               int errsv = -errno;
+               errorf("lseek errno %d\n", errsv);
                unlock_pte(pte);
-               return -EAGAIN;
-           }
-           else {
-              // on the last block?  if so, then pad
-              if( pte->written_so_far > ctx->block_id * ctx->blocking_factor && pte->written_so_far <= (ctx->block_id + 1) * ctx->blocking_factor ) {
-                  memset( buffer, 0, read_size );
-                  return read_size;
-              }
-              else {
-                  // no data
-                 return -ENOENT;
-              }
-           }
-	}
-    }
+               return -EIO;
+         }
+         // read ALL the data
+         ssize_t num_read = 0;
+         
+         struct stat sb;
+         int rc = fstat( ctx->fd, &sb );
+         if( rc < 0 ) {
+            rc = -errno;
+            errorf("fstat(%s) errno = %d\n", pte->block_file, rc);
+         }
+         else {
+            dbprintf("%s has %zu bytes; we'll read at offset %zd\n", pte->block_file, sb.st_size, current_read_offset );
+         }
+         
+         while( num_read < read_size ) {
+            ssize_t nr = read(ctx->fd, buffer + num_read, read_size - num_read);
+            if (nr < 0) {
+               int errsv = -errno;
+               errorf("read errno %d\n", errsv);
+               unlock_pte(pte);
+               return -EIO;
+            }
+            if( nr == 0 ) {
+               // EOF
+               break;
+            }
+            num_read += nr;
+         }
+         
+         dbprintf("read %zd bytes\n", num_read );
+         
+         ctx->data_offset += num_read;
+         unlock_pte(pte);
+         return num_read;
+      }
+      else { 
+         // are we waiting for more data, or are we EOF?
+         // if waiting, the EAGAIN.
+         if( !pte->is_read_complete ) {
+            unlock_pte(pte);
+            return -EAGAIN;
+         }
+         else {
+            // on the last block?  if so, then pad
+            if( pte->written_so_far > ctx->block_id * ctx->blocking_factor && pte->written_so_far <= (ctx->block_id + 1) * ctx->blocking_factor ) {
+               memset( buffer, 0, read_size );
+               return read_size;
+            }
+            else {
+               // no data
+               return -ENOENT;
+            }
+         }
+      }
+   }
 }
 
 ssize_t ProcHandler::encode_results()
@@ -628,24 +628,24 @@ proc_table_entry* ProcHandler::alloc_proc_table_entry()
 
 char* ProcHandler::get_random_string()
 {
-    const uint nr_chars = MAX_FILE_NAME_LEN;
-    char* rand_str = CALLOC_LIST( char, nr_chars + 1 );
-    struct timespec ts;
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0) {
-	free(rand_str);
-	return NULL;
-    }
-    srand(ts.tv_sec + ts.tv_nsec);
-    uint count = 0;
-    while (count < nr_chars) {
-	int r = ( rand()%74 ) + 48;
-	if ( (r >= 58 && r <= 64) || 
-		(r >= 91 && r <= 96) )
-	    continue;
-	rand_str[count] = (char)r;
-	count++;
-    }
-    return rand_str;
+   const uint nr_chars = MAX_FILE_NAME_LEN;
+   char* rand_str = CALLOC_LIST( char, nr_chars + 1 );
+   struct timespec ts;
+   if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0) {
+      free(rand_str);
+      return NULL;
+   }
+   srand(ts.tv_sec + ts.tv_nsec);
+   uint count = 0;
+   while (count < nr_chars) {
+      int r = ( rand()%74 ) + 48;
+      if ( (r >= 58 && r <= 64) || 
+               (r >= 91 && r <= 96) )
+         continue;
+      rand_str[count] = (char)r;
+      count++;
+   }
+   return rand_str;
 }
 
 pthread_t ProcHandler::get_thread_id() 
@@ -655,76 +655,76 @@ pthread_t ProcHandler::get_thread_id()
 
 block_status ProcHandler::get_block_status(struct shell_ctx *ctx) 
 {
-    block_status blk_stat;
-    blk_stat.in_progress = false;
-    blk_stat.no_file = false;
-    blk_stat.block_available = false;
-    blk_stat.need_padding = false;
+   block_status blk_stat;
+   blk_stat.in_progress = false;
+   blk_stat.no_file = false;
+   blk_stat.block_available = false;
+   blk_stat.need_padding = false;
 
-    proc_table_entry* pte = NULL;
-    
-    lock_pid_map();
-    
-    bool pte_exists = false;
-    bool pte_valid = false;
-    bool pte_is_read_complete = false;
-    
-    proc_table_t::iterator itr = proc_table.find( string(ctx->file_path) );
-    if( itr != proc_table.end() ) {
-       pte = itr->second;
-       
-       pte_exists = true;
-       pte_valid = pte->valid;
-       pte_is_read_complete = pte->is_read_complete;
-       
-       if( pte_valid ) {
-          rdlock_pte( pte );
-       }
-    }
-    
-    unlock_pid_map();
-    
-    if (!pte_exists && ctx->file_path == NULL) {
-	blk_stat.no_file = true;
-    }
-    else if (!pte_exists && ctx->file_path != NULL) {
-	blk_stat.in_progress = true;
-    }
-    else {
-	if (!pte_valid || !pte_is_read_complete ) {
-           // still generating data 
-           dbprintf("valid = %d, is_read_complete = %d\n", pte_valid, pte_is_read_complete );
-	   blk_stat.in_progress = true;
-	}
-	
-	if( pte_valid ) {
-            // NOTE: pte will be read-locked
-            
-            blk_stat.written_so_far = pte->written_so_far;
-           
-            // do we have some data?
-            if( ctx->block_id * ctx->blocking_factor < pte->written_so_far ) {
-               // do we have a complete block?
-               if( (ctx->block_id + 1) * ctx->blocking_factor <= pte->written_so_far ) {
-                  // whole block
+   proc_table_entry* pte = NULL;
+   
+   lock_pid_map();
+   
+   bool pte_exists = false;
+   bool pte_valid = false;
+   bool pte_is_read_complete = false;
+   
+   proc_table_t::iterator itr = proc_table.find( string(ctx->file_path) );
+   if( itr != proc_table.end() ) {
+      pte = itr->second;
+      
+      pte_exists = true;
+      pte_valid = pte->valid;
+      pte_is_read_complete = pte->is_read_complete;
+      
+      if( pte_valid ) {
+         rdlock_pte( pte );
+      }
+   }
+   
+   unlock_pid_map();
+
+   if (!pte_exists && ctx->file_path == NULL) {
+      blk_stat.no_file = true;
+   }
+   else if (!pte_exists && ctx->file_path != NULL) {
+      blk_stat.in_progress = true;
+   }
+   else {
+      if (!pte_valid || !pte_is_read_complete ) {
+         // still generating data 
+         dbprintf("valid = %d, is_read_complete = %d\n", pte_valid, pte_is_read_complete );
+         blk_stat.in_progress = true;
+      }
+      
+      if( pte_valid ) {
+         // NOTE: pte will be read-locked
+         
+         blk_stat.written_so_far = pte->written_so_far;
+         
+         // do we have some data?
+         if( ctx->block_id * ctx->blocking_factor < pte->written_so_far ) {
+            // do we have a complete block?
+            if( (ctx->block_id + 1) * ctx->blocking_factor <= pte->written_so_far ) {
+               // whole block
+               blk_stat.block_available = true;
+            }
+            else {
+               // incomplete block.  If the process is done, then pad the last block 
+               if( pte->is_read_complete ) {
+                  blk_stat.need_padding = true;
                   blk_stat.block_available = true;
                }
-               else {
-                  // incomplete block.  If the process is done, then pad the last block 
-                  if( pte->is_read_complete ) {
-                     blk_stat.need_padding = true;
-                     blk_stat.block_available = true;
-                  }
-                  
-                  // otherwise, we're still generating data, but shouldn't serve it yet (since we'll need to encrypt each block)
-               }
+               
+               // otherwise, we're still generating data, but shouldn't serve it yet (since we'll need to encrypt each block)
             }
-            
-            unlock_pte( pte );
-        }
-        // otherwise, no data to serve
-    }
-    return blk_stat;
+         }
+         
+         unlock_pte( pte );
+      }
+      // otherwise, no data to serve
+   }
+   return blk_stat;
 }
 
 void ProcHandler::remove_proc_table_entry(string file_path) {

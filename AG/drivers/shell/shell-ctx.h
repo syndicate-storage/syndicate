@@ -27,8 +27,7 @@ struct shell_ctx {
     char const* file_path;
     // file descriptor
     int fd;
-    // file id
-    uint id;
+    
     // data buffer (manifest or remote block data)
     char* data;
     ssize_t data_len;

@@ -14,392 +14,268 @@
    limitations under the License.
 */
 
-#include <driver.h>
+#include "driver.h"
 
-// server config 
-extern struct md_syndicate_conf *global_conf;
- 
-// set of files we're exposing
-content_map DATA;
+#define DRIVER_QUERY_TYPE "disk"
 
-// Metadata service client of the AG
-ms_client *mc = NULL;
-
-// Location of local files we're exposing 
-char *datapath = NULL;
-
-// Length of datapath varaiable
-size_t  datapath_len = 0;
-
-// publish_func exit code
-int pfunc_exit_code = 0;
-
-// Is false if the driver is not initialized
-bool initialized = false;
-
-// Disk driver's data_root
-char* data_root = NULL;
-
-// generate a manifest for an existing file, putting it into the gateway context
-extern "C" int gateway_generate_manifest( struct gateway_context* replica_ctx, struct gateway_ctx* ctx, struct md_entry* ent ) {
-   errorf("%s", "INFO: gateway_generate_manifest\n"); 
-   // populate a manifest
-   Serialization::ManifestMsg* mmsg = new Serialization::ManifestMsg();
-   mmsg->set_size( ent->size );
-   mmsg->set_file_version( 1 );
-   mmsg->set_mtime_sec( ent->mtime_sec );
-   mmsg->set_mtime_nsec( 0 );
+// translate the requested path into an absolute path on disk, using our driver config 
+static char* get_request_abspath( char const* request_path ) {
    
-   uint64_t num_blocks = ent->size / ctx->blocking_factor;
-   if( ent->size % ctx->blocking_factor != 0 )
-      num_blocks++;
-
-   Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
-   bbmsg->set_start_id( 0 );
-   bbmsg->set_end_id( num_blocks );
-
-   for( uint64_t i = 0; i < num_blocks; i++ ) {
-      bbmsg->add_block_versions( 0 );
+   // where's our dataset root directory?
+   char* dataset_root = AG_driver_get_config_var( AG_CONFIG_DISK_DATASET_ROOT );
+   if( dataset_root == NULL ) {
+      errorf("Configuration error: No config value for '%s'\n", AG_CONFIG_DISK_DATASET_ROOT );
+      return NULL;
    }
    
-   // sign the message
-   int rc = gateway_sign_manifest( mc->my_key, mmsg );
+   // path to the file 
+   char* dataset_path = md_fullpath( dataset_root, request_path, NULL );
+   free( dataset_root );
+   
+   return dataset_path;
+}
+
+// translate an -errno into an HTTP status 
+// return 0 if supported 
+// return -1 if there wasn't a suitable HTTP status
+static int errno_to_HTTP_status( struct AG_connection_context* ag_ctx, int err ) {
+
+   // not found? give a 404 
+   if( err == -ENOENT ) {
+      AG_driver_set_HTTP_status( ag_ctx, 404 );
+      return 0;
+   }
+   // can't access? give a 403 
+   else if( err == -EACCES ) {
+      AG_driver_set_HTTP_status( ag_ctx, 403 );
+      return 0;
+   }
+   // out of memory?
+   else if( err == -ENOMEM ) {
+      AG_driver_set_HTTP_status( ag_ctx, 503 );
+      return 0;
+   }
+   // bad FD?
+   else if( err == -EBADF ) {
+      AG_driver_set_HTTP_status( ag_ctx, 500 );
+      return 0;
+   }
+   
+   return -1;
+}
+
+// initialize the driver 
+int driver_init( void** driver_state ) {
+   dbprintf("%s driver init\n", DRIVER_QUERY_TYPE );
+   return 0;
+}
+
+// shut down the driver 
+int driver_shutdown( void* driver_state ) {
+   dbprintf("%s driver shutdown\n", DRIVER_QUERY_TYPE );
+   return 0;
+}
+
+// set up an incoming connection.
+// try to open the file.
+int connect_dataset( struct AG_connection_context* ag_ctx, void** driver_connection_state ) {
+   dbprintf("%s connect dataset\n", DRIVER_QUERY_TYPE );
+   
+   // what file was requested?
+   char* requested_path = AG_driver_get_request_path( ag_ctx );
+   
+   // get the absolute path 
+   char* dataset_path = get_request_abspath( requested_path );
+   
+   if( dataset_path == NULL ) {
+      errorf("Could not translate %s to absolute path\n", requested_path );
+      free( requested_path );
+      return -EINVAL;
+   }
+   
+   free( requested_path );
+   
+   // open the file 
+   int fd = open( dataset_path, O_RDONLY );
+   if( fd < 0 ) {
+      fd = -errno;
+      errorf("Failed to open %s, errno = %d\n", dataset_path, fd );
+      
+      free( dataset_path );
+      return fd;
+   }
+   
+   free( dataset_path );
+   
+   // got it!
+   // set up a connection context 
+   struct AG_disk_context* disk_ctx = CALLOC_LIST( struct AG_disk_context, 1 );
+   
+   disk_ctx->fd = fd;
+   
+   *driver_connection_state = disk_ctx;
+   
+   return 0;
+}
+
+// set up an incoming connection to read a block 
+int connect_dataset_block( struct AG_connection_context* ag_ctx, void** driver_connection_state ) {
+   dbprintf("%s connect dataset block\n", DRIVER_QUERY_TYPE );
+   
+   return connect_dataset( ag_ctx, driver_connection_state );
+}
+
+// set up an incoming connection to read a manifest
+int connect_dataset_manifest( struct AG_connection_context* ag_ctx, void** driver_connection_state ) {
+   dbprintf("%s connect dataset manifest\n", DRIVER_QUERY_TYPE );
+   
+   return connect_dataset( ag_ctx, driver_connection_state );
+}
+
+// clean-up a handled connection
+int close_dataset( void* driver_connection_state ) {
+   dbprintf("%s close dataset block\n", DRIVER_QUERY_TYPE );
+   
+   struct AG_disk_context* disk_ctx = (struct AG_disk_context*)driver_connection_state;
+   
+   close( disk_ctx->fd );
+   free( disk_ctx );
+   
+   return 0;
+}
+
+// clean-up a handled connection for a manifest
+int close_dataset_manifest( void* driver_connection_state ) {
+   dbprintf("%s close dataset manifest\n", DRIVER_QUERY_TYPE );
+   return close_dataset( driver_connection_state );
+}
+
+// clean up a handled connection for a block 
+int close_dataset_block( void* driver_connection_state ) {
+   dbprintf("%s close dataset manifest\n", DRIVER_QUERY_TYPE );
+   return close_dataset( driver_connection_state );
+}
+
+// get information for creating and sending a manifest 
+int get_dataset_manifest_info( struct AG_connection_context* ag_ctx, struct AG_driver_publish_info* pub_info, void* driver_connection_state ) {
+   
+   dbprintf("%s get dataset manifest info\n", DRIVER_QUERY_TYPE );
+            
+   // stat the file, and fill in the pub_info 
+   struct stat sb;
+   int rc = 0;
+   struct AG_disk_context* disk_ctx = (struct AG_disk_context*)driver_connection_state;
+   
+   rc = fstat( disk_ctx->fd, &sb );
    if( rc != 0 ) {
-      errorf("gateway_sign_manifest rc = %d\n", rc );
-      delete mmsg;
+      rc = -errno;
+      errorf("fstat rc = %d\n", rc );
+      
+      errno_to_HTTP_status( ag_ctx, rc );
+      
       return rc;
    }
    
-   // serialize
-   string mmsg_str;
-   bool src = mmsg->SerializeToString( &mmsg_str );
-   if( !src ) {
-      // failed
-      errorf( "%s", "failed to serialize" );
-      delete mmsg;
+   pub_info->size = sb.st_size;
+   pub_info->mtime_sec = sb.st_mtim.tv_sec;
+   pub_info->mtime_nsec = sb.st_mtim.tv_nsec;
+   
+   return 0;
+}
+
+// get information for creating and sending a block.
+// return the number of bytes read
+ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_id, char* block_buf, size_t buf_len, void* driver_connection_state ) {
+   
+   dbprintf("%s get dataset block\n", DRIVER_QUERY_TYPE );
+   
+   struct AG_disk_context* disk_ctx = (struct AG_disk_context*)driver_connection_state;
+   
+   // seek to the appropriate offset 
+   uint64_t block_size = AG_driver_get_block_size();
+   off_t block_offset = block_size * block_id;
+   
+   int rc = lseek( disk_ctx->fd, block_offset, SEEK_SET );
+   if( rc != 0 ) {
+      rc = -errno;
+      errorf("lseek errno = %d\n", rc );
+      
+      errno_to_HTTP_status( ag_ctx, rc );
+      
+      return rc;
+   }
+   
+   // read in the buffer 
+   ssize_t num_read = 0;
+   while( (unsigned)num_read < buf_len ) {
+      
+      ssize_t nr = read( disk_ctx->fd, block_buf + num_read, buf_len - num_read );
+      
+      if( nr < 0 ) {
+         // error
+         nr = -errno;
+         
+         // ignore interrupts 
+         if( nr == -EINTR ) {
+            continue;
+         }
+         
+         errorf("read errno = %zd\n", nr);
+         errno_to_HTTP_status( ag_ctx, nr );
+         
+         return nr;
+      }
+      if( nr == 0 ) {
+         // EOF 
+         break;
+      }
+      
+      num_read += nr;
+   }
+   
+   return num_read;
+}
+
+// get information for publishing a particular file to the MS 
+int publish_dataset( char const* relative_path, struct AG_map_info* ag_dataset_info, struct AG_driver_publish_info* pub_info, void* driver_state ) {
+   
+   // get the absolute path 
+   char* dataset_path = get_request_abspath( relative_path );
+   if( dataset_path == NULL ) {
+      errorf("%s", "Could not translate request to absolute path\n" );
       return -EINVAL;
    }
-
-   ctx->data_len = mmsg_str.size();
-   ctx->data = CALLOC_LIST( char, mmsg_str.size() );
-   replica_ctx->last_mod = ent->mtime_sec;
-   memcpy( ctx->data, mmsg_str.data(), mmsg_str.size() );
-
-   delete mmsg;
+   
+   struct stat sb;
+   int rc = 0;
+   
+   // stat the path 
+   rc = stat( dataset_path, &sb );
+   if( rc != 0 ) {
+      rc = -errno;
+      errorf("stat(%s) errno = %d\n", dataset_path, rc);
+      free( dataset_path );
+      return rc;
+   }
+   
+   free( dataset_path );
+   
+   // fill in the publish info
+   pub_info->size = sb.st_size;
+   pub_info->mtime_sec = sb.st_mtime;
+   pub_info->mtime_nsec = 0;
    
    return 0;
 }
 
-
-// read dataset or manifest 
-extern "C" ssize_t get_dataset( struct gateway_context* dat, char* buf, size_t len, void* user_cls ) {
-   errorf("%s", "INFO: get_dataset\n"); 
-   ssize_t ret = 0;
-   struct gateway_ctx* ctx = (struct gateway_ctx*)user_cls;
-
-   if (ctx == NULL && dat->size == 0)
-       return 0;
-   else
-       return -EINVAL;
-
-   if( ctx->request_type == GATEWAY_REQUEST_TYPE_LOCAL_FILE ) {
-      // read from disk
-      ssize_t nr = 0;
-      size_t num_read = 0;
-      while( num_read < len ) {
-         nr = read( ctx->fd, buf + num_read, len - num_read );
-         if( nr == 0 ) {
-            // EOF
-            break;
-         }
-         if( nr < 0 ) {
-            // error
-            int errsv = -errno;
-            errorf( "read(%d) errno = %d\n", ctx->fd, errsv );
-            ret = errsv;
-         }
-         num_read += nr;
-      }
-
-      if( ret == 0 )
-         ret = num_read;
-   }
-   else if( ctx->request_type == GATEWAY_REQUEST_TYPE_MANIFEST ) {
-      // read from RAM
-      memcpy( buf, ctx->data + ctx->data_offset, MIN( len, ctx->data_len - ctx->data_offset ) );
-      ctx->data_offset += len;
-      ret = (ssize_t)len;
-   }
-   else {
-      // invalid structure
-      ret = -EINVAL;
-   }
-   
-   return ret;
-}
-
-
-// get metadata for a dataset
-extern "C" int metadata_dataset( struct gateway_context* dat, ms::ms_gateway_request_info* info, void* usercls ) {
-   errorf("%s","INFO: metadata_dataset\n"); 
-   
-   content_map::iterator itr = DATA.find( string( dat->reqdat.fs_path ) );
-   if( itr == DATA.end() ) {
-      // not here
-      return -ENOENT;
-   }
-   
-   // give back the file_id and last-mod, since that's all the disk has for now.
-   // TODO: give back the block hash, maybe? 
-   
-   struct md_entry* ent = itr->second;
-   
-   info->set_file_id( ent->file_id );
-   info->set_file_mtime_sec( ent->mtime_sec );
-   info->set_file_mtime_nsec( ent->mtime_nsec );
-   
+// handle a driver-specfic event.
+// there are none for this driver.
+int handle_event( char* event_payload, size_t event_payload_len, void* driver_state ) {
    return 0;
 }
 
-
-// interpret an inbound GET request
-extern "C" void* connect_dataset( struct gateway_context* replica_ctx ) {
-
-   errorf("%s", "INFO: connect_dataset\n");  
-   struct stat stat_buff;
-   struct gateway_ctx* ctx = CALLOC_LIST( struct gateway_ctx, 1 );
-
-   // is there metadata for this file?
-   string fs_path( replica_ctx->reqdat.fs_path );
-   content_map::iterator itr = DATA.find( fs_path );
-   if( itr == DATA.end() ) {
-      // no entry; nothing to do
-       replica_ctx->err = -404;
-       replica_ctx->http_status = 404;
-       return NULL;
-   }
-
-   struct md_entry* ent = DATA[ fs_path ];
-
-   // is this a request for a manifest?
-   if( replica_ctx->reqdat.manifest_timestamp.tv_sec > 0 ) {
-      // request for a manifest
-      int rc = gateway_generate_manifest( replica_ctx, ctx, ent );
-      if( rc != 0 ) {
-         // failed
-         errorf( "gateway_generate_manifest rc = %d\n", rc );
-
-         // meaningful error code
-         if( rc == -ENOENT )
-            replica_ctx->err = -404;
-         else if( rc == -EACCES )
-            replica_ctx->err = -403;
-         else
-            replica_ctx->err = -500;
-
-         free( ctx );
-
-         return NULL;
-      }
-
-      ctx->request_type = GATEWAY_REQUEST_TYPE_MANIFEST;
-      ctx->data_offset = 0;
-      ctx->block_id = 0;
-      ctx->num_read = 0;
-      replica_ctx->size = ctx->data_len;
-   }
-   else {
-      if ( !datapath) {
-         errorf( "Driver datapath = %s\n", datapath );
-         return NULL;
-      }
-      int rc = 0;
-      
-      // request for local file
-      char* fp = md_fullpath( datapath, fs_path.c_str(), NULL );
-      ctx->fd = open( fp, O_RDONLY );
-      if( ctx->fd < 0 ) {
-         rc = -errno;
-         errorf( "open(%s) errno = %d\n", fp, rc );
-         free( fp );
-         free( ctx );
-	 replica_ctx->err = -404;
-	 replica_ctx->http_status = 404;
-         return NULL;
-      }
-      else {
-	 // Set blocking factor for this volume from replica_ctx
-	 ctx->blocking_factor = global_conf->ag_block_size;
-	  if ((rc = stat(fp, &stat_buff)) < 0) {
-	      errorf( "stat errno = %d\n", rc );
-	      perror("stat");
-	      free( fp );
-	      free( ctx );
-	      replica_ctx->err = -404;
-	      replica_ctx->http_status = 404;
-	      return NULL;
-	 }
-         free( fp );
-	 if ((size_t)stat_buff.st_size < ctx->blocking_factor * replica_ctx->reqdat.block_id) {
-	     free( ctx );
-	     replica_ctx->size = 0;
-	     return NULL;
-	 }
-	 else if ((stat_buff.st_size - (ctx->blocking_factor * replica_ctx->reqdat.block_id))
-		 <= (size_t)ctx->blocking_factor) {
-	     replica_ctx->size = stat_buff.st_size - (ctx->blocking_factor * replica_ctx->reqdat.block_id);
-	 }
-	 else {
-	     replica_ctx->size = ctx->blocking_factor;
-	 }
-         // set up for reading
-         off_t offset = ctx->blocking_factor * replica_ctx->reqdat.block_id;
-         rc = lseek( ctx->fd, offset, SEEK_SET );
-	 if( rc < 0 ) {
-            rc = -errno;
-            errorf( "lseek errno = %d\n", rc );
-            free( ctx );
-	    replica_ctx->err = -404;
-	    replica_ctx->http_status = 404;
-            return NULL;
-         }
-      }
-      ctx->num_read = 0;
-      ctx->block_id = replica_ctx->reqdat.block_id;
-      ctx->request_type = GATEWAY_REQUEST_TYPE_LOCAL_FILE;
-   }
-
-   return ctx;
-}
-
-
-// clean up a transfer 
-extern "C" void cleanup_dataset( void* cls ) {
-   
-   errorf("%s", "INFO: cleanup_dataset\n"); 
-   struct gateway_ctx* ctx = (struct gateway_ctx*)cls;
-   if (ctx) {
-      close( ctx->fd );
-      if( ctx->data )
-        free( ctx->data );
-
-      ctx->data = NULL;
-   
-      free( ctx );
-   }
-}
-
-extern "C" int publish_dataset (struct gateway_context*, ms_client *client, 
-	char* dataset ) {
-    if (!initialized)
-	init();
-    
-    dbprintf("publish %s\n", dataset );
-    int flags = FTW_PHYS;
-    mc = client;
-    datapath = dataset;
-    datapath_len = strlen(datapath); 
-    if ( datapath[datapath_len - 1] == '/')
-	   datapath_len--;	
-    if (nftw(dataset, publish_to_volumes, 20, flags) == -1) {
-	return pfunc_exit_code;
-    }
-    return 0;
-}
-
-
-static int publish_to_volumes(const char *fpath, const struct stat *sb,
-	int tflag, struct FTW *ftwbuf) {
-   
-   uint64_t volume_id = ms_client_get_volume_id(mc);
-   publish(fpath, sb, tflag, ftwbuf, volume_id);
-   
-    return 0;
-}
-
-static int publish(const char *fpath, const struct stat *sb,
-	int tflag, struct FTW *ftwbuf, uint64_t volume_id)
-{
-    int i = 0;
-    struct md_entry* ment = new struct md_entry;
-    memset( ment, 0, sizeof(struct md_entry) );
-    
-    size_t len = strlen(fpath);
-    if ( len < datapath_len ) { 
-	pfunc_exit_code = -EINVAL;
-	return -EINVAL;
-    }
-    if ( len == datapath_len ) {
-	pfunc_exit_code = 0;
-	return 0;
-    }
-    
-    //Set volume path
-    size_t path_len = ( len - datapath_len ) + 1; 
-    char* path = (char*)malloc( path_len );
-    memset( path, 0, path_len );
-    strncpy( path, fpath + datapath_len, path_len );
-
-    char* parent_name_tmp = md_dirname( path, NULL );
-    ment->parent_name = md_basename( parent_name_tmp, NULL );
-    free( parent_name_tmp );
-    
-    ment->name = md_basename( path, NULL );
-    
-    ment->ctime_sec = sb->st_ctime;
-    ment->ctime_nsec = 0;
-    ment->mtime_sec = sb->st_mtime;
-    ment->mtime_nsec = 0;
-    ment->mode = sb->st_mode;
-    ment->version = 1;
-    ment->max_read_freshness = 360000;
-    ment->max_write_freshness = 1;
-    ment->volume = volume_id;
-    ment->size = sb->st_size;
-    switch (tflag) {
-	case FTW_D:
-	    ment->type = MD_ENTRY_DIR;
-	    if ( (i = ms_client_mkdir(mc, &ment->file_id, ment)) < 0 ) {
-		cout<<"ms client mkdir "<<i<<endl;
-	    }
-	    break;
-	case FTW_F:
-	    ment->type = MD_ENTRY_FILE;
-	    if ( (i = ms_client_create(mc, &ment->file_id, ment)) < 0 ) {
-		cout<<"ms client create "<<i<<endl;
-	    }
-	    break;
-	case FTW_SL:
-	    break;
-	case FTW_DP:
-	    break;
-	case FTW_DNR:
-	    break;
-	default:
-	    break;
-    }
-    DATA[path] = ment;
-    //delete ment;
-    pfunc_exit_code = 0;
-    return 0;  
-}
-
-extern "C" int controller(pid_t pid, int ctrl_flag) {
-    return controller_signal_handler(pid, ctrl_flag);
-}
-
-void init() {
-    if (!initialized)
-	initialized = true;
-    else
-	return;
-    add_driver_event_handler(DRIVER_TERMINATE, term_handler, NULL);
-    driver_event_start();
-}
-
-
-void* term_handler(void *cls) {
-    //Nothing to do here.
-    exit(0);
+// what kind of query type does this driver support?
+char* get_query_type(void) {
+   return strdup(DRIVER_QUERY_TYPE);
 }
 
