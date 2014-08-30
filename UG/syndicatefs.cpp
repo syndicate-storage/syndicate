@@ -180,7 +180,6 @@ int syndicatefs_rename(const char *path, const char *newpath) {
    
    SYNDICATEFS_DATA->stats->enter( STAT_RENAME );
 
-   //int rc = fs_entry_versioned_rename( SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume, -1 );
    int rc = fs_entry_rename( SYNDICATEFS_DATA->core, path, newpath, conf->owner, SYNDICATEFS_DATA->core->volume );
 
    logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_rename( %s, %s ) rc = %d\n", pthread_self(), path, newpath, rc );
@@ -216,13 +215,13 @@ int syndicatefs_chmod(const char *path, mode_t mode) {
 
 
 /** Change the owner and group of a file (chown) */
-int syndicatefs_chown(const char *path, uid_t uid, gid_t gid) {
+int syndicatefs_chown(const char *path, uid_t user_id, gid_t volume_id) {
+   // can't be done here--Syndicate uses 64-bit user_ids and volume_ids
    return -ENOSYS;
 }
 
 
 /** Change the size of a file (truncate) */
-/* only works on local files */
 int syndicatefs_truncate(const char *path, off_t newsize) {
    struct md_syndicate_conf* conf = &SYNDICATEFS_DATA->conf;
    logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_truncate( %s, %ld )\n", pthread_self(), path, newsize );
@@ -245,9 +244,6 @@ int syndicatefs_utime(const char *path, struct utimbuf *ubuf) {
    SYNDICATEFS_DATA->stats->enter( STAT_UTIME );
    
    int rc = fs_entry_utime( SYNDICATEFS_DATA->core, path, ubuf, conf->owner, SYNDICATEFS_DATA->core->volume );
-   if( rc == 0 ) {
-      // TODO: update the modtime of this file
-   }
    
    logmsg( SYNDICATEFS_DATA->logfile, "%16lx: syndicatefs_utime rc = %d\n", pthread_self(), rc);
    SYNDICATEFS_DATA->stats->leave( STAT_UTIME, rc );
