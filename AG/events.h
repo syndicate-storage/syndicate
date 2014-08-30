@@ -43,6 +43,22 @@ using namespace std;
 
 typedef int (*AG_event_handler)( char*, void* );
 
+typedef map<int, set<sighandler_t> > AG_signal_map_t;
+typedef map<int, struct sigaction> AG_old_signal_map_t;
+
+// multiplex signal handling
+struct AG_signal_listener {
+   
+   // signal handlers 
+   AG_signal_map_t* signal_map;
+   int signal_pipe[2];
+   
+   pthread_t signal_thread;
+   bool signal_running;
+   
+   AG_old_signal_map_t* old_signal_map;
+};
+
 struct AG_event_listener {
    
    // event handlers
@@ -54,19 +70,29 @@ struct AG_event_listener {
    char* sock_path;
    
    // threading
-   pthread_t thread;
-   bool running;
+   pthread_t event_thread;
+   bool event_running;
 };
 
 // event handlers
 int AG_add_event_handler(struct AG_event_listener* events, int event, AG_event_handler handler, void *args);
 int AG_remove_event_handler(struct AG_event_listener* events, int event);
 
+// signal handlers 
+int AG_add_signal_handler( int signum, sighandler_t sighandler );
+int AG_remove_signal_handler( int signum, sighandler_t sighandler );
+
 // event listener wrangling 
 int AG_event_listener_init( struct AG_event_listener* event_listener, struct AG_opts* ag_opts );
 int AG_event_listener_start( struct AG_event_listener* event_listener );
 int AG_event_listener_stop( struct AG_event_listener* event_listener );
 int AG_event_listener_free( struct AG_event_listener* event_listener );
+
+// signal handler wrangling 
+int AG_signal_listener_init();
+int AG_signal_listener_start();
+int AG_signal_listener_stop();
+int AG_signal_listener_free();
 
 // send an event
 int AG_send_event( char const* sock_path, int event_type, char* event_buf, size_t event_buf_len );

@@ -16,6 +16,9 @@
 #include "core.h"
 #include "events.h"
 
+// global signal handler 
+struct AG_signal_listener g_sigs;
+
 int AG_handle_event( struct AG_event_listener* event_listener, int event_type, char* payload );
 
 // add an event handler to a dispatch table 
@@ -64,6 +67,113 @@ int AG_remove_event_handler(struct AG_event_listener* events, int event) {
    }
    
    return rc;
+}
+
+
+// add a signal handler
+int AG_add_signal_handler( int signum, sighandler_t sighandler ) {
+   
+   if( g_sigs.signal_running ) {
+      return -EINPROGRESS;
+   }
+   
+   if( (*g_sigs.signal_map)[ signum ].find( sighandler ) != (*g_sigs.signal_map)[ signum ].end() ) {
+      return -EPERM;
+   }
+   
+   (*g_sigs.signal_map)[ signum ].insert( sighandler );
+   
+   return 0;
+}
+
+// remove a signal handler 
+int AG_remove_signal_handler( int signum, sighandler_t sighandler ) {
+   
+   if( g_sigs.signal_running ) {
+      return -EINPROGRESS;
+   }
+   
+   if( (*g_sigs.signal_map)[ signum ].find( sighandler ) == (*g_sigs.signal_map)[ signum ].end() ) {
+      return -EPERM;
+   }
+   
+   (*g_sigs.signal_map)[ signum ].erase( sighandler );
+   
+   return 0;
+}
+
+
+// our actual signal handler, which gets multiplexed 
+void AG_sighandler( int signum ) {
+   ssize_t rc = write( g_sigs.signal_pipe[1], &signum, sizeof(int) );
+   if( rc != 0 ) {
+      rc = -errno;
+      errorf("write(signalpipe) errno = %zd\n", rc);
+   }
+}
+
+
+// signal multiplexer 
+void* AG_signal_listener_main_loop( void* arg ) {
+   
+   while( g_sigs.signal_running ) {
+      
+      // next signal 
+      int next_signal = 0;
+      
+      // read uninterrupted
+      ssize_t num_read = 0;
+      ssize_t rc = 0;
+      bool die = false;
+      
+      while( (unsigned)num_read < sizeof(int) ) {
+         
+         rc = read( g_sigs.signal_pipe[0], (char*)(&next_signal) + num_read, sizeof(int) - num_read );
+         
+         if( rc < 0 ) {
+            rc = -errno;
+            
+            if( rc == -EINTR && !g_sigs.signal_running ) {
+               // asked to die 
+               die = true;
+               break;
+            }
+            errorf("read(signalpipe) errno = %zd\n", rc);
+            break;
+         }
+         if( rc == 0 ) {
+            break;
+         }
+         
+         num_read += rc;
+      }
+      
+      // asked to die?
+      if( die || !g_sigs.signal_running ) {
+         break;
+      }
+      
+      // handle this signal 
+      AG_signal_map_t::iterator sigset_itr = g_sigs.signal_map->find( next_signal );
+      if( sigset_itr == g_sigs.signal_map->end() ) {
+         // no handler 
+         continue;
+      }
+      
+      // call all handlers 
+      const set<sighandler_t>& sighandlers = sigset_itr->second;
+      
+      for( set<sighandler_t>::iterator itr = sighandlers.begin(); itr != sighandlers.end(); itr++ ) {
+         
+         sighandler_t handler = *itr;
+         
+         (*handler)( next_signal );
+      }
+   }
+   
+   dbprintf("%s", "AG Signal handler thread exit\n");
+   
+   return NULL;
 }
 
 
@@ -201,7 +311,7 @@ void* AG_event_listener_event_loop(void * arg) {
 int AG_event_listener_init( struct AG_event_listener* event_listener, struct AG_opts* ag_opts ) {
    
    memset( event_listener, 0, sizeof(struct AG_event_listener) );
-   event_listener->running = false;
+   event_listener->event_running = false;
    
    int rc = 0;
    int fd = 0;
@@ -247,14 +357,14 @@ int AG_event_listener_init( struct AG_event_listener* event_listener, struct AG_
 // start the event handler 
 int AG_event_listener_start( struct AG_event_listener* event_listener ) {
    
-   event_listener->running = true;
+   event_listener->event_running = true;
    
    // start listening on it 
-   event_listener->thread = md_start_thread( AG_event_listener_event_loop, event_listener, false );
+   event_listener->event_thread = md_start_thread( AG_event_listener_event_loop, event_listener, false );
    
-   if( (int)event_listener->thread < 0 ) {
-      errorf("md_start_thread rc = %d\n", (int)event_listener->thread );
-      return (int)event_listener->thread;
+   if( (int)event_listener->event_thread < 0 ) {
+      errorf("md_start_thread rc = %d\n", (int)event_listener->event_thread );
+      return (int)event_listener->event_thread;
    }
    
    return 0;
@@ -264,16 +374,16 @@ int AG_event_listener_start( struct AG_event_listener* event_listener ) {
 int AG_event_listener_stop( struct AG_event_listener* event_listener ) {
    
    // already stopped?
-   if( !event_listener->running ) 
+   if( !event_listener->event_running ) 
       return -EINVAL;
    
-   event_listener->running = false;
+   event_listener->event_running = false;
    
    dbprintf("%s", "Stopping AG event listener\n");
    
    // cancel and join the thread 
-   pthread_cancel( event_listener->thread );
-   pthread_join( event_listener->thread, NULL );
+   pthread_cancel( event_listener->event_thread );
+   pthread_join( event_listener->event_thread, NULL );
    
    return 0;
 }
@@ -282,7 +392,7 @@ int AG_event_listener_stop( struct AG_event_listener* event_listener ) {
 // clean up the event handler 
 int AG_event_listener_free( struct AG_event_listener* event_listener ) {
    
-   if( event_listener->running ) {
+   if( event_listener->event_running ) {
       // need to stop first 
       return -EINVAL;
    }
@@ -304,6 +414,122 @@ int AG_event_listener_free( struct AG_event_listener* event_listener ) {
       free( event_listener->sock_path );
       event_listener->sock_path = NULL;
    }
+   
+   return 0;
+}
+
+// set up signal handling 
+int AG_signal_listener_init() {
+   
+   memset( &g_sigs, 0, sizeof(g_sigs) );
+   
+   int rc = pipe( g_sigs.signal_pipe );
+   if( rc != 0 ) {
+      rc = -errno;
+      errorf("pipe(signalpipe) errno = %d\n", rc );
+      return rc;
+   }
+   
+   g_sigs.signal_map = new AG_signal_map_t();
+   g_sigs.old_signal_map = new AG_old_signal_map_t();
+   g_sigs.signal_running = false;
+   return 0;
+}
+
+
+// start signal handling 
+int AG_signal_listener_start() { 
+
+   dbprintf("%s", "Starting AG signal handling thread\n");
+   
+   // register all signals 
+   for( AG_signal_map_t::iterator itr = g_sigs.signal_map->begin(); itr != g_sigs.signal_map->end(); itr++ ) {
+      
+      struct sigaction AG_signal, old_signal;
+      memset( &AG_signal, 0, sizeof(struct sigaction) );
+      
+      AG_signal.sa_handler = AG_sighandler;
+      
+      int rc = sigaction( itr->first, &AG_signal, &old_signal );
+      if( rc != 0 ) {
+         
+         rc = -errno;
+         if( (itr->first == SIGKILL || itr->first == SIGSTOP) && rc == -EINVAL ) {
+            errorf("WARN: you cannot catch SIGKILL (%d) or SIGSTOP (%d).  Ignoring this signal handler.\n", SIGKILL, SIGSTOP);
+            continue;
+         }
+         else {
+            errorf("sigaction(%d) errno = %d\n", itr->first, rc );
+            return rc;
+         }
+      }
+      
+      // save this so we can restore it later
+      (*g_sigs.old_signal_map)[ itr->first ] = old_signal;
+   }
+   
+   // start the thread 
+   g_sigs.signal_running = true;
+   
+   g_sigs.signal_thread = md_start_thread( AG_signal_listener_main_loop, NULL, false );
+   if( (int)(g_sigs.signal_thread) < 0 ) {
+      
+      int rc = (int)(g_sigs.signal_thread);
+      errorf("md_start_thread( AG_signal_listener_main_loop ) rc = %d\n", rc );
+      
+      g_sigs.signal_running = false;
+      return rc;
+   }
+   
+   return 0;
+}
+
+
+// stop signal handling 
+int AG_signal_listener_stop() { 
+   
+   dbprintf("%s", "Stopping AG signal handling thread\n");
+   
+   g_sigs.signal_running = false;
+   
+   pthread_cancel( g_sigs.signal_thread );
+   pthread_join( g_sigs.signal_thread, NULL );
+   
+   int rc = 0;
+   
+   // revert all signal handlers 
+   for( AG_old_signal_map_t::iterator itr = g_sigs.old_signal_map->begin(); itr != g_sigs.old_signal_map->end(); itr++ ) {
+      
+      rc = sigaction( itr->first, &itr->second, NULL );
+      if( rc != 0 ) {
+         
+         rc = -errno;
+         errorf("ERR: sigaction(%d) errno = %d\n", itr->first, rc );
+      }
+   }
+   
+   return rc;
+}
+
+
+// free the signal handler logic 
+int AG_signal_listener_free() {
+   
+   if( g_sigs.signal_running ) {
+      return -EINVAL;
+   }
+   
+   if( g_sigs.signal_map ) {
+      delete g_sigs.signal_map;
+   }
+   if( g_sigs.old_signal_map ) {
+      delete g_sigs.old_signal_map;
+   }
+   
+   close( g_sigs.signal_pipe[0] );
+   close( g_sigs.signal_pipe[1] );
+   
+   memset( &g_sigs, 0, sizeof(struct AG_signal_listener) );
    
    return 0;
 }
