@@ -34,24 +34,23 @@ struct AG_state;
 
 // pair a map_info to its path, so we can reversion it later
 struct AG_path_map_info {
+   
    struct AG_map_info mi;
    char* path;
+   
+   struct AG_driver_publish_info* pubinfo;        // optionally sent on reversion
 };
 
-// comparator for AG_map_info, by refresh deadline first, and then using the path hash to break ties
+// comparator for AG_path_map_info
 typedef struct {
    bool operator()(const struct AG_path_map_info& lmi, const struct AG_path_map_info& rmi) {
-      if( lmi.mi.refresh_deadline != rmi.mi.refresh_deadline ) {
-         return lmi.mi.refresh_deadline < rmi.mi.refresh_deadline;
-      }
-      else {
-         return lmi.mi.path_hash < rmi.mi.path_hash;
-      }
+      // compare on path 
+      return strcmp(lmi.path, rmi.path) < 0;
    }
 } AG_map_info_deadline_comp;
 
 // set of AG_path_map_info structures to track, ordered by deadline
-typedef set<struct AG_path_map_info, AG_map_info_deadline_comp> AG_deadline_map_info_set_t;
+typedef set<struct AG_path_map_info, AG_map_info_deadline_comp> AG_path_map_info_set_t;
 
 struct AG_reversioner {
 
@@ -61,14 +60,16 @@ struct AG_reversioner {
    
    // set of items to track
    pthread_mutex_t set_lock;
-   AG_deadline_map_info_set_t* map_set;
+   AG_path_map_info_set_t* map_set;
    
    // reference to state
    struct AG_state* state;
-
+   
+   // semaphore that indicates that there is data available
+   sem_t sem;
 };
 
-int AG_path_map_info_init( struct AG_path_map_info* pinfo, char const* path, const struct AG_fs_map_info* mi );
+int AG_path_map_info_init( struct AG_path_map_info* pinfo, char const* path, const struct AG_fs_map_info* mi, const struct AG_driver_publish_info* pubinfo );
 int AG_path_map_info_dup( struct AG_path_map_info* new_pinfo, const struct AG_path_map_info* old_pinfo );
 int AG_path_map_info_free( struct AG_path_map_info* pinfo );
 
@@ -79,10 +80,9 @@ int AG_reversioner_stop( struct AG_reversioner* reversioner );
 int AG_reversioner_free( struct AG_reversioner* reversioner );
 
 // map info 
-int AG_reversioner_add_map_info( struct AG_reversioner* reversioner, char const* path, struct AG_map_info* mi);
-int AG_reversioner_remove_map_info( struct AG_reversioner* reversioner, struct AG_path_map_info* mi);
-int AG_reversioner_reload_map_infos( struct AG_reversioner* reversioner, AG_fs_map_t* map_infos );
-int AG_reversioner_invalidate_map_info( struct AG_reversioner* reversioner, int64_t* next_deadline );
+int AG_reversioner_add_map_info( struct AG_reversioner* reversioner, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo );
+int AG_reversioner_add_map_infos( struct AG_reversioner* reversioner, AG_fs_map_t* map_infos );
+int AG_reversioner_reversion_map_infos( struct AG_reversioner* reversioner );
 
 #endif //_AG_REVERSIONER_H_
 
