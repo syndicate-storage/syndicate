@@ -365,7 +365,7 @@ int AG_reload( struct AG_state* state ) {
    state->ag_fs = fs_clone;
    
    // clear out reversioner entries and load the new ones
-   rc = AG_reversioner_reload_map_infos( state->reversioner, state->ag_fs->fs );
+   rc = AG_reversioner_add_map_infos( state->reversioner, state->ag_fs->fs );
    
    AG_fs_unlock( fs_clone );
    
@@ -752,13 +752,18 @@ int AG_start( struct AG_state* state ) {
    dbprintf("%s", "Starting with the following FS map:\n");
    AG_dump_fs_map( state->ag_fs->fs );
    
-   rc = AG_reversioner_reload_map_infos( state->reversioner, state->ag_fs->fs );
+   rc = 0;
+   
+   if( state->ag_opts.reversion_on_startup ) {
+      dbprintf("%s", "Queuing all datasets for reversion\n");
+      rc = AG_reversioner_add_map_infos( state->reversioner, state->ag_fs->fs );
+   }
    
    AG_fs_unlock( state->ag_fs );
    AG_state_fs_unlock( state );
    
    if( rc != 0 ) {
-      errorf("AG_reversioner_reload_map_infos rc = %d\n", rc );
+      errorf("AG_reversioner_add_map_infos rc = %d\n", rc );
       return rc;
    }
    
@@ -864,6 +869,10 @@ AG-specific options:\n\
             Path to an on-disk hierarchy spec file to be used to populate\n\
             this AG's volume.  If not supplied, the MS-served hierarchy spec\n\
             file will be used instead (the default).\n\
+   -r\n\
+            On start-up, queue all datasets for reversion.  This updates the\n\
+            consistency information for each dataset on the MS, and invokes\n\
+            each dataset driver's reversion method.\n\
 \n" );
 }
 
@@ -954,6 +963,12 @@ int AG_handle_opt( int opt_c, char* opt_s ) {
          
          break;
       }
+      case 'r': {
+         
+         g_AG_opts.reversion_on_startup = true;
+         break;
+      }
+      
       default: {
          errorf("Unrecognized option '%c'\n", opt_c );
          rc = -1;
@@ -992,7 +1007,7 @@ int AG_main( int argc, char** argv ) {
    memset( &opts, 0, sizeof(struct md_opts));
    
    // get options
-   rc = md_parse_opts( &opts, argc, argv, NULL, "e:l:D:s:", AG_handle_opt );
+   rc = md_parse_opts( &opts, argc, argv, NULL, "e:l:D:s:r", AG_handle_opt );
    if( rc != 0 ) {
       md_common_usage( argv[0] );
       AG_usage();
@@ -1031,11 +1046,27 @@ int AG_main( int argc, char** argv ) {
    // load default AG options, if we're missing some
    AG_opts_add_defaults( conf, &ag_opts );
    
+   // initialize AG signal handling 
+   rc = AG_signal_listener_init();
+   
+   if( rc != 0 ) {
+      errorf("AG_signal_listener_init rc = %d\n", rc );
+      exit(1);
+   }
+   
    // initialize AG state 
    rc = AG_state_init( state, &opts, &ag_opts, conf, ms );
    
    if( rc != 0 ) {
       errorf("AG_state_init rc = %d\n", rc );
+      exit(1);
+   }
+   
+   // start signal handlers 
+   rc = AG_signal_listener_start();
+   
+   if( rc != 0 ) {
+      errorf("AG_signal_listener_start rc = %d\n", rc );
       exit(1);
    }
    
@@ -1073,11 +1104,23 @@ int AG_main( int argc, char** argv ) {
       errorf("WARN: AG_stop rc = %d\n", rc );
    }
    
+   // stop signal handlers and restore old ones 
+   rc = AG_signal_listener_stop();
+   if( rc != 0 ) {
+      errorf("WARN: AG_signal_listener_stop rc = %d\n", rc );
+   }
+   
    // shut down AG
    rc = AG_state_free( state );
    
    if( rc != 0 ) {
       errorf("WARN: AG_state_free rc = %d\n", rc );
+   }
+   
+   // shut down signal handlers 
+   rc = AG_signal_listener_free();
+   if( rc != 0 ) {
+      errorf("WARN: AG_signal_listener_free rc = %d\n", rc );
    }
    
    // shutdown libsyndicate

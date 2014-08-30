@@ -36,9 +36,8 @@ struct AG_map_info {
    struct AG_driver* driver;            // driver that handles queries on this entry (references an already-loaded driver somewhere)
    mode_t file_perm;                    // permission bits that this entry will have when published
    uint64_t reval_sec;                  // how often to refresh 
-   uint64_t refresh_deadline;           // when the next deadline to refresh is 
-   uint64_t path_hash;                  // hash of the path.  Used to break ties in comparison.
    int32_t type;                        // file or directory
+   char* query_string;                  // specfile-given query string
    
    // cached runtime fields; needed for manipulating the volume
    bool cache_valid;            // if true, then this data is fresh
@@ -48,6 +47,7 @@ struct AG_map_info {
    
    // generated at runtime 
    int64_t block_version;       // version all blocks will have.  Regenerated on publish/reversion.
+   uint64_t refresh_deadline;           // when the next deadline to refresh is 
 };
 
 // static set of map info 
@@ -63,8 +63,9 @@ int AG_fs_init( struct AG_fs* ag_fs, struct ms_client* client, AG_fs_map_t* fs_m
 int AG_fs_free( struct AG_fs* ag_fs );
 
 // memory management 
-void AG_map_info_init( struct AG_map_info* dest, int type, char const* path, mode_t file_perm, uint64_t reval_sec, struct AG_driver* driver );
+void AG_map_info_init( struct AG_map_info* dest, int type, char const* query_string, mode_t file_perm, uint64_t reval_sec, struct AG_driver* driver );
 void AG_map_info_dup( struct AG_map_info* dest, const struct AG_map_info* source );
+void AG_map_info_free( struct AG_map_info* mi );
 int AG_fs_map_dup( AG_fs_map_t* dest, AG_fs_map_t* src );
 void AG_fs_map_free(AG_fs_map_t *mi_map);
 
@@ -74,7 +75,7 @@ int AG_fs_wlock( struct AG_fs* ag_fs );
 int AG_fs_unlock( struct AG_fs* ag_fs );
 int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool force_reload );
 bool AG_has_valid_cached_metadata( char const* path, struct AG_map_info* mi );
-int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, uint64_t file_id, int64_t file_version, int64_t block_version, int64_t write_nonce );
+int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, uint64_t file_id, int64_t file_version, int64_t block_version, int64_t write_nonce, int64_t reval_sec, struct AG_map_info* updated_mi );
 int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src );
 
 // validation 
@@ -87,10 +88,12 @@ int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merg
 
 // hierarchy management 
 struct AG_map_info* AG_fs_lookup_path( struct AG_fs* ag_fs, char const* path );
-// int AG_find_cached_infos( AG_fs_map_t* fs_map, AG_fs_map_t* cached );
+
 int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi );
 int AG_fs_publish_map( struct AG_fs* ag_fs, AG_fs_map_t* to_publish, bool continue_if_exists );
-int AG_fs_reversion( struct AG_fs* ag_fs, char const* path );
+
+int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_publish_info* pubinfo );
+
 int AG_fs_delete( struct AG_fs* ag_fs, char const* path );
 int AG_fs_delete_map( struct AG_fs* ag_fs, AG_fs_map_t* to_delete, bool continue_on_failure );
 

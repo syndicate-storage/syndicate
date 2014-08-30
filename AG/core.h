@@ -41,6 +41,7 @@ struct AG_opts {
    char* logfile_path;
    char* driver_dir;
    char* spec_file_path;
+   bool reversion_on_startup;
 };
 
 // AG core state

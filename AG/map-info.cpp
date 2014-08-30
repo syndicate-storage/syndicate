@@ -21,10 +21,16 @@
 
 static int AG_path_prefixes( char const* path, char*** ret_prefixes );
 
-void AG_map_info_init( struct AG_map_info* dest, int type, char const* path, mode_t file_perm, uint64_t reval_sec, struct AG_driver* driver ) {
+void AG_map_info_init( struct AG_map_info* dest, int type, char const* query_string, mode_t file_perm, uint64_t reval_sec, struct AG_driver* driver ) {
+   
+   memset( dest, 0, sizeof(struct AG_map_info) );
    
    dest->type = type;
-   dest->path_hash = md_hash( path );
+   
+   if( query_string != NULL ) {
+      dest->query_string = strdup(query_string);
+   }
+   
    dest->file_perm = file_perm;
    dest->reval_sec = reval_sec;
    
@@ -35,12 +41,19 @@ void AG_map_info_init( struct AG_map_info* dest, int type, char const* path, mod
    dest->driver = driver;
 }
 
+void AG_map_info_free( struct AG_map_info* mi ) {
+   if( mi->query_string ) {
+      free( mi->query_string );
+      mi->query_string = NULL;
+   }
+}
 
 // free an AG_fs_map_t
 void AG_fs_map_free( AG_fs_map_t* fs_map ) {
    
    for( AG_fs_map_t::iterator itr = fs_map->begin(); itr != fs_map->end(); itr++ ) {
       
+      AG_map_info_free( itr->second );
       free( itr->second );
    }
    
@@ -210,7 +223,8 @@ int AG_fs_insert_root_info( struct ms_client* client, AG_fs_map_t* fs_map, struc
       (*fs_map)[ string("/") ] = root_info;
    }
    
-   AG_map_info_init( root_info, MD_ENTRY_DIR, "/", volume_root.mode, volume_root.max_read_freshness, root_driver );
+   AG_map_info_init( root_info, MD_ENTRY_DIR, NULL, volume_root.mode, volume_root.max_read_freshness, root_driver );
+   
    AG_copy_metadata_to_map_info( root_info, &volume_root );
    root_info->cache_valid = true;
    
@@ -261,7 +275,7 @@ int AG_fs_free( struct AG_fs* ag_fs ) {
 
 // duplicate a map info
 void AG_map_info_dup( struct AG_map_info* dest, const struct AG_map_info* src ) {
-   memcpy( dest, src, sizeof(struct AG_map_info) );
+   AG_map_info_init( dest, src->type, src->query_string, src->file_perm, src->reval_sec, src->driver );
 }
 
 
@@ -597,7 +611,7 @@ int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src ) {
       struct AG_map_info* info = itr->second;
       
       if( info->cache_valid ) {
-         AG_fs_make_coherent( dest, path_string.c_str(), info->file_id, info->file_version, info->block_version, info->write_nonce );
+         AG_fs_make_coherent( dest, path_string.c_str(), info->file_id, info->file_version, info->block_version, info->write_nonce, info->refresh_deadline, NULL );
       }
    }
    
@@ -764,7 +778,7 @@ static int AG_accumulate_data_from_md_entry( AG_fs_map_t* new_data, char const* 
       AG_map_info_dup( new_info, mi );
    }
    else {
-      AG_map_info_init( new_info, ent->type, path, ent->mode, ent->max_read_freshness, NULL );
+      AG_map_info_init( new_info, ent->type, NULL, ent->mode, ent->max_read_freshness, NULL );
    }
    
    // got it!
@@ -1091,7 +1105,7 @@ struct AG_map_info* AG_fs_lookup_path( struct AG_fs* ag_fs, char const* path ) {
 
 
 // set an AG_map_info's cached metadata in-place, making it coherent
-int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, uint64_t file_id, int64_t file_version, int64_t block_version, int64_t write_nonce ) {
+int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, uint64_t file_id, int64_t file_version, int64_t block_version, int64_t write_nonce, int64_t refresh_deadline, struct AG_map_info* updated_mi ) {
    
    AG_fs_wlock( ag_fs );
    
@@ -1111,6 +1125,11 @@ int AG_fs_make_coherent( struct AG_fs* ag_fs, char const* path, uint64_t file_id
    mi->block_version = block_version;
    mi->write_nonce = write_nonce;
    mi->cache_valid = true;
+   mi->refresh_deadline = refresh_deadline;
+   
+   if( updated_mi != NULL ) {
+      AG_map_info_dup( updated_mi, mi );
+   }
    
    AG_fs_unlock( ag_fs );
    
@@ -1140,6 +1159,14 @@ int AG_fs_remove( struct AG_fs* ag_fs, char const* path ) {
    return 0;
 }
 
+
+static int64_t AG_map_info_make_deadline( int64_t reval_sec ) {
+   
+   struct timespec ts;
+   clock_gettime( CLOCK_MONOTONIC, &ts );
+   
+   return reval_sec + ts.tv_sec;
+}
 
 // publish a (path, map_info) via the driver
 // this creates the file/directory, and will fail if it already exists.
@@ -1188,6 +1215,8 @@ int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi
    entry.parent_name = md_basename( parent_path, NULL );
    
    free( parent_path );
+   
+   AG_map_info_free( parent_info );
    free( parent_info );
    
    uint64_t new_file_id = 0;
@@ -1214,7 +1243,7 @@ int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi
    }
    
    // cache the new metadata
-   AG_fs_make_coherent( ag_fs, path, new_file_id, mi->file_version, mi->block_version, write_nonce );
+   AG_fs_make_coherent( ag_fs, path, new_file_id, mi->file_version, mi->block_version, write_nonce, AG_map_info_make_deadline( mi->reval_sec ), NULL );
    
    md_entry_free( &entry );
    return rc;
@@ -1281,9 +1310,10 @@ int AG_fs_publish_map( struct AG_fs* ag_fs, AG_fs_map_t* to_publish, bool contin
    return 0;
 }
 
+
 // reversion a (path, map_info) via the driver.  Only works for files.
-// this updates the version field of the file, and will fail if it doesn't exist 
-int AG_fs_reversion( struct AG_fs* ag_fs, char const* path ) {
+// this updates the version field of the file, and will fail if it doesn't exist.
+int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_publish_info* pubinfo ) {
    
    dbprintf("Reversion %s in %p\n", path, ag_fs );
    
@@ -1311,8 +1341,14 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path ) {
    struct AG_map_info* parent_mi = AG_fs_lookup_path( ag_fs, parent_path );
    free( parent_path );
    
+   // get entry's revalidation time for reversioning
+   int64_t mi_reval_sec = mi->reval_sec;
+   
    // populate the entry 
    rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_mi, true );
+   
+   AG_map_info_free( mi );
+   AG_map_info_free( parent_mi );
    
    free( mi );
    free( parent_mi );
@@ -1322,6 +1358,11 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path ) {
       
       md_entry_free( &entry );
       return rc;
+   }
+   
+   if( pubinfo ) {
+      // fold in pubinfo too 
+      AG_populate_md_entry_from_publish_info( &entry, pubinfo );
    }
    
    // generate a new file and block version, randomly 
@@ -1339,17 +1380,27 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path ) {
       return rc;
    }
    
+   struct AG_map_info reversioned_mi;
+   
    // update authoritative copy to keep it coherent
-   rc = AG_fs_make_coherent( ag_fs, path, entry.file_id, entry.version, block_version, write_nonce );
-   if( rc != 0 ) {
-      errorf("AG_fs_reversion_local(%s) rc = %d\n", path, rc );
-   }
+   AG_fs_make_coherent( ag_fs, path, entry.file_id, entry.version, block_version, write_nonce, AG_map_info_make_deadline( mi_reval_sec ), &reversioned_mi );
    
    md_entry_free( &entry );
+   
+   rc = AG_driver_reversion( mi->driver, path, &reversioned_mi );
+   if( rc != 0 ) {
+      errorf("WARN: AG_driver_reversion(%s) rc = %d\n", path, rc );
+   }
+   
+   AG_map_info_free( &reversioned_mi );
+   
    return rc;
 }
 
+
 // delete a (path, map_info) via the driver
+// if delete_cont is not NULL, then call delete_cont after the entry gets deleted.
+// NOTE: the return code from delete_cont will NOT be reported--the caller must handle errors internally
 int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
    
    dbprintf("Delete %s in %p\n", path, ag_fs );
@@ -1381,11 +1432,14 @@ int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
    // populate the entry 
    rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_mi, false );
    
-   free( mi );
+   AG_map_info_free( parent_mi );
    free( parent_mi );
    
    if( rc != 0 ) {
       errorf("AG_populate_md_entry(%s) rc = %d\n", path, rc );
+      
+      AG_map_info_free( mi );
+      free( mi );
       return rc;
    }
    
@@ -1395,6 +1449,9 @@ int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
    if( rc != 0 ) {
       errorf("ms_client_delete(%s) rc = %d\n", path, rc );
       
+      AG_map_info_free( mi );
+      free( mi );
+      
       md_entry_free( &entry );
       return rc;
    }
@@ -1403,9 +1460,19 @@ int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
    rc = AG_fs_remove( ag_fs, path );
    if( rc != 0 ) {
       errorf("AG_fs_remove(%s) rc = %d\n", path, rc );
+      
+      AG_map_info_free( mi );
+      free( mi );
+      
+      md_entry_free( &entry );
+      return rc;
    }
    
    md_entry_free( &entry );
+   
+   AG_map_info_free( mi );
+   free( mi );
+   
    return rc;
 }
 
@@ -1625,8 +1692,8 @@ int AG_dump_fs_map( AG_fs_map_t* fs_map ) {
          query_type = AG_driver_get_query_type( mi->driver );
       }
       
-      dbprintf("%s:  addr=%p file_id=%" PRIX64 " version=%" PRId64 " write_nonce=%" PRId64 " perm=%o driver=%s reval=%" PRIu64 " valid=%d\n",
-               path, mi, mi->file_id, mi->file_version, mi->write_nonce, mi->file_perm, query_type, mi->reval_sec, mi->cache_valid );
+      dbprintf("%s:  addr=%p perm=%o reval=%" PRIu64 " driver=%s query_string=%s cache_valid=%d; cache { file_id=%" PRIX64 " version=%" PRId64 " write_nonce=%" PRId64 " }\n",
+               path, mi, mi->file_perm, mi->reval_sec, query_type, mi->query_string, mi->cache_valid, mi->file_id, mi->file_version, mi->write_nonce );
       
       if( query_type != NULL ) {
          free( query_type );

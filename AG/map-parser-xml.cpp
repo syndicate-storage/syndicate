@@ -583,7 +583,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
                struct AG_map_info* mi = CALLOC_LIST( struct AG_map_info, 1 );
                
                // populate the map info 
-               AG_map_info_init( mi, this->file_path_type, this->file_path, this->file_perm, this->reval_secs, driver );
+               AG_map_info_init( mi, this->file_path_type, this->query_type, this->file_perm, this->reval_secs, driver );
                
                // deadline for refreshing
                struct timespec now;
