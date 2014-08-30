@@ -165,6 +165,9 @@ struct md_syndicate_conf {
    char* volume_pubkey_path;                          // path on disk to find Volume metadata public key
    size_t cache_soft_limit;                           // soft limit on the size of the cache (in bytes)
    size_t cache_hard_limit;                           // hard limit on the size of the cache (in bytes)
+   int max_read_retry;                                // maximum number of times to retry a read before considering it failed 
+   int max_write_retry;                               // maximum number of times to retry a write before considering it failed
+   int retry_delay_ms;                                // number of milliseconds to wait between retries
    
    // RG/AG servers
    unsigned int num_http_threads;                     // how many HTTP threads to create
