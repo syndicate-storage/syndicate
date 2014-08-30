@@ -43,8 +43,8 @@ extern "C" {
 int driver_init( void** driver_state );
 int driver_shutdown( void* driver_state );
 
-int connect_dataset_block( struct AG_connection_context* ag_ctx, void** driver_connection_state );
-int connect_dataset_manifest( struct AG_connection_context* ag_ctx, void** driver_connection_state );
+int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state );
+int connect_dataset_manifest( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state );
 
 int close_dataset_block( void* driver_connection_state );
 int close_dataset_manifest( void* driver_connection_state );

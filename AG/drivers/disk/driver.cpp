@@ -78,7 +78,8 @@ int driver_shutdown( void* driver_state ) {
 
 // set up an incoming connection.
 // try to open the file.
-int connect_dataset( struct AG_connection_context* ag_ctx, void** driver_connection_state ) {
+int connect_dataset( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
+   
    dbprintf("%s connect dataset\n", DRIVER_QUERY_TYPE );
    
    // what file was requested?
@@ -119,17 +120,17 @@ int connect_dataset( struct AG_connection_context* ag_ctx, void** driver_connect
 }
 
 // set up an incoming connection to read a block 
-int connect_dataset_block( struct AG_connection_context* ag_ctx, void** driver_connection_state ) {
+int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
    dbprintf("%s connect dataset block\n", DRIVER_QUERY_TYPE );
    
-   return connect_dataset( ag_ctx, driver_connection_state );
+   return connect_dataset( ag_ctx, driver_state, driver_connection_state );
 }
 
 // set up an incoming connection to read a manifest
-int connect_dataset_manifest( struct AG_connection_context* ag_ctx, void** driver_connection_state ) {
+int connect_dataset_manifest( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
    dbprintf("%s connect dataset manifest\n", DRIVER_QUERY_TYPE );
    
-   return connect_dataset( ag_ctx, driver_connection_state );
+   return connect_dataset( ag_ctx, driver_state, driver_connection_state );
 }
 
 // clean-up a handled connection
