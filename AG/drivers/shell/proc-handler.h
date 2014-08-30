@@ -1,5 +1,5 @@
 /*
-   Copyright 2013 The Trustees of Princeton University
+   Copyright 2014 The Trustees of Princeton University
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -27,8 +27,6 @@
 #include <errno.h>
 #include <pthread.h>
 #include <time.h>
-#include <sys/inotify.h>
-#include <sys/select.h>
 #include <sys/time.h>
 #include <signal.h>
 #include <sys/wait.h>
@@ -39,91 +37,53 @@
 #include <vector>
 #include <set>
 
-#include <shell-ctx.h>
-#include <map-parser.h>
-
-#include <AG-core.h>
-
-#define MAX_FILE_NAME_LEN	    32
-#define INOTIFY_EVENT_SIZE	    sizeof(struct inotify_event)
-#define INOTIFY_READ_BUFFER_LEN	    ((INOTIFY_EVENT_SIZE + \
-	    MAX_FILE_NAME_LEN) * 1024)
-#define MAX_BACK_OFF_TIME	    64
+#include "libsyndicate/libsyndicate.h"
 
 using namespace std;
 
-struct _proc_table_entry {
-    char    *block_file;
-    int	    block_file_wd;
-    bool    is_read_complete;
-    pid_t   proc_id;
-    off_t   written_so_far;
-    bool    valid;
-    pthread_rwlock_t pte_lock;
+// structure representing a running process
+struct proc_table_entry {
+   char*       request_path;           // path in the AG that this process is running for
+   char*       stdout_path;            // path to this process's stdout on disk
+   pid_t       pid;                    // shell process to wait on 
+   bool        valid;                  // whether or not this structure is ready for usage
+   
+   pthread_rwlock_t pte_lock;          // lock governing access to this structure
 }; 
 
-struct _block_status { 
-    bool    in_progress;
+// structure representing a block being served back from a running process
+struct proc_block_status { 
+    bool    in_progress;                
     bool    block_available;
     bool    no_file;
     bool    need_padding;
     off_t   written_so_far;
 };
 
-typedef struct _proc_table_entry    proc_table_entry;
-typedef struct _block_status	    block_status;
 
-struct proc_table_entry_comp {
-    bool operator()(proc_table_entry *lproc, proc_table_entry *rproc) {
-	return (lproc->block_file_wd < rproc->block_file_wd);
-    }
-};
+// map PIDs to running processes
+typedef map<pid_t, struct proc_table_entry*> proc_table_t;
 
-void invalidate_entry(void* entry);
-void* inotify_event_receiver(void *cls);
-void update_death(pid_t pid);
-void sigchld_handler(int signum); 
-int  set_sigchld_handler(struct sigaction *action);
-void clean_invalid_proc_entry(proc_table_entry *pte);
-void delete_proc_entry(proc_table_entry *pte);
-void lock_pid_map();
-void unlock_pid_map();
-void wrlock_pte(proc_table_entry *pte);
-void rdlock_pte(proc_table_entry *pte);
-void unlock_pte(proc_table_entry *pte);
-int init_event_receiver(void);
-    
-typedef map<string, proc_table_entry*> proc_table_t;
+// map request paths to names of cached data
+typedef map<string, string> cache_table_t;
 
-class ProcHandler 
-{
-    private:
-	char* cache_dir_path;
-	char* get_random_string();
-	pthread_t   inotify_event_thread;
-	//Mutex lock to synchronize operations on proc_tbale
-	pthread_mutex_t proc_table_lock;
+void proc_sigchld_handler(int signum);
 
-	ProcHandler();
-	ProcHandler(char* cache_dir_str);
-	ProcHandler(ProcHandler const&);
-	void lock_proc_table() {pthread_mutex_lock(&proc_table_lock);}
-	void unlock_proc_table() {pthread_mutex_unlock(&proc_table_lock);}
+int shell_driver_state_init( struct shell_driver_state* state );
+int shell_driver_state_start( struct shell_driver_state* state );
+int shell_driver_state_stop( struct shell_driver_state* state );
+int shell_driver_state_free( struct shell_driver_state* state );
 
-    public:
-	static  ProcHandler&  get_handle(char* cache_dir_str);
-        int start_command_idempotent( struct shell_ctx *ctx );
-	int read_command_results(struct shell_ctx *ctx, char *buffer, ssize_t read_size); 
-	int  execute_command(const char* proc_name, char *argv[], char *evp[], 
-			     struct shell_ctx *ctx,  proc_table_entry *pte); 
-	ssize_t	encode_results();
-	static proc_table_entry* alloc_proc_table_entry();
-	static bool is_proc_alive(pid_t);
-	block_status get_block_status(struct shell_ctx *ctx);
-	pthread_t get_thread_id();
-        void remove_proc_table_entry(string file_path);
-};
+int proc_ensure_has_data( struct shell_driver_state* state, struct proc_connection_context* ctx );
+bool proc_is_generating_data( struct shell_driver_state* state, char const* request_path );
+bool proc_finished_generating_data( struct shell_driver_state* state, char const* request_path );
+int proc_stat_data( struct shell_driver_state* state, char const* request_path, struct stat* sb );
+int proc_read_block_data( struct shell_driver_state* state, char const* request_path, uint64_t block_id, char* buf, ssize_t read_size );
 
+int proc_evict_cache( struct shell_driver_state* state, char const* request_path );
+
+struct shell_driver_state* shell_driver_get_state();
+void shell_driver_set_state( struct shell_driver_state* state );
 
 #endif //_EXEC_HANDLER_H_
 
