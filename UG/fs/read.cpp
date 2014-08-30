@@ -692,6 +692,38 @@ static int fs_entry_read_block_future_start_next_download( struct fs_core* core,
    return rc;
 }
 
+
+// restart a block download, so it can be tried again.
+// fent must be read-locked
+static int fs_entry_read_block_future_try_again( struct fs_core* core, struct fs_entry_read_block_future* block_fut, struct fs_entry* fent ) {
+   
+   // what state are we in?
+   if( block_fut->status == READ_PRIMARY ) {
+      
+      // roll back one state...
+      block_fut->status = READ_DOWNLOAD_NOT_STARTED;
+      
+      // ...and advance to it again 
+      return fs_entry_read_block_future_start_next_download( core, block_fut, fent );
+   }
+   else if( block_fut->status == READ_REPLICA ) {
+      
+      // roll back one state...
+      block_fut->curr_RG --;
+      
+      if( block_fut->curr_RG == 0 ) {
+         block_fut->status = READ_PRIMARY;
+      }
+      
+      // ...and advance to it again 
+      return fs_entry_read_block_future_start_next_download( core, block_fut, fent );
+   }
+   else {
+      // can't be tried again 
+      return -EINVAL;
+   }
+}
+
 // does a read context have any downloads pending?
 bool fs_entry_read_context_has_downloading_blocks( struct fs_entry_read_context* read_ctx ) {
    
@@ -807,20 +839,48 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
       
          return 0;
       }
+      // do we need to try again?
       else {
-         // some other error--e.g. the gateway is offline, or the connection took too long
-         errorf("download of %s failed, CURL rc = %d, transfer errno = %d, HTTP status = %d\n",
-                 block_fut->curr_URL, md_download_context_get_curl_rc( dlctx ), md_download_context_get_errno( dlctx ), md_download_context_get_http_status( dlctx ) );
          
-         // try again 
-         // track this block future 
-         fs_entry_read_context_track_downloading_block( read_ctx, block_fut );
-      
-         rc = fs_entry_read_block_future_start_next_download( core, block_fut, fent );
+         char const* method = NULL;
+         
+         // try the same gateway again?
+         if( md_download_context_succeeded( dlctx, 503 ) && block_fut->retry_count < core->conf->max_read_retry ) {
+         
+            // try again 
+            block_fut->retry_count++;
+            
+            // wait for a bit between retries
+            struct timespec wait_ts;
+            wait_ts.tv_sec = core->conf->retry_delay_ms / 1000;
+            wait_ts.tv_nsec = (core->conf->retry_delay_ms % 1000) * 1000000;
+            
+            // NOTE: don't care if interrupted
+            nanosleep( &wait_ts, NULL );
+            
+            // re-track this block future 
+            fs_entry_read_context_track_downloading_block( read_ctx, block_fut );
+         
+            method = "fs_entry_read_block_future_try_again";
+            rc = fs_entry_read_block_future_try_again( core, block_fut, fent );
+         }
+         else {
+            // some other error--e.g. the gateway is offline, or the connection took too long
+            errorf("download of %s failed, CURL rc = %d, transfer errno = %d, HTTP status = %d\n",
+                  block_fut->curr_URL, md_download_context_get_curl_rc( dlctx ), md_download_context_get_errno( dlctx ), md_download_context_get_http_status( dlctx ) );
+            
+            // try a different gateway 
+            // re-track this block future 
+            fs_entry_read_context_track_downloading_block( read_ctx, block_fut );
+         
+            method = "fs_entry_read_block_future_start_next_download";
+            rc = fs_entry_read_block_future_start_next_download( core, block_fut, fent );
+         }
          
          if( rc != 0 ) {
+            
             // out of options here 
-            errorf("fs_entry_read_block_future_prepare_next_download( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n",
+            errorf("%s( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", method,
                     block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
             
             // finalize in error 

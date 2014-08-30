@@ -57,6 +57,8 @@ struct fs_entry_read_block_future {
    bool result_is_partial_tail; // true if the result is a partial block at the end of the reads
    bool result_allocd;          // if true, then result was dyanmically allocated (instead of pointing to an offset in a client's read buffer).
    
+   int retry_count;             // how many times the download has been retried?
+   
    int err;                     // set to nonzero on error
    bool eof;                    // set if the block couldn't be found (indicates EOF; only relevant for an AG)
    bool size_unknown;           // set to true if we don't know the size of the file in advance (only possible for an AG)
