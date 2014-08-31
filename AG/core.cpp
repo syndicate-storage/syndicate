@@ -16,6 +16,7 @@
 
 
 #include "core.h"
+#include "cache.h"
 #include "http.h"
 #include "driver.h"
 #include "events.h"
@@ -507,6 +508,25 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
    pthread_rwlock_init( &state->state_lock, NULL );
    pthread_rwlock_init( &state->config_lock, NULL );
    
+   // make the instance nonce
+   char* tmp = CALLOC_LIST( char, 16 );
+   rc = md_read_urandom( tmp, 16 );
+   if( rc != 0 ) {
+      errorf("md_read_urandom rc = %d\n", rc );
+      free( tmp );
+      return rc;
+   }
+   
+   rc = Base64Encode( tmp, 16, &state->inst_nonce );
+   free( tmp );
+   
+   if( rc != 0 ) {
+      errorf("Base64Encode rc = %d\n", rc );
+      return rc;
+   }
+   
+   dbprintf("Initializing AG instance %s\n", state->inst_nonce );
+   
    // initialize drivers 
    state->drivers = new AG_driver_map_t();
    
@@ -583,6 +603,17 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
       return rc;
    }
    
+   // set up block cache 
+   state->cache = CALLOC_LIST( struct md_syndicate_cache, 1 );
+   
+   uint64_t block_size = ms_client_get_volume_blocksize( client );
+   rc = md_cache_init( state->cache, conf, ag_opts->cache_soft_limit / block_size, ag_opts->cache_hard_limit / block_size );
+   
+   if( rc != 0 ) {
+      errorf("md_cache_init rc = %d\n", rc );
+      return rc;
+   }
+                       
    // state can be referenced 
    state->referenceable = true;
    
@@ -596,87 +627,9 @@ int AG_state_init( struct AG_state* state, struct md_opts* opts, struct AG_opts*
    // set up reload callback 
    ms_client_set_view_change_callback( state->ms, AG_view_change_callback, state );
    
+                       
    return 0;
 }
-
-
-// free state 
-int AG_state_free( struct AG_state* state ) {
-   
-   if( state->running || state->specfile_reload_thread_running ) {
-      // need to stop first 
-      return -EINVAL;
-   }
-   
-   // state can no longer be referenced 
-   state->referenceable = false;
-   
-   // wait for all other threads to release state 
-   pthread_rwlock_wrlock( &state->state_lock );
-   
-   if( state->http ) {
-      md_free_HTTP( state->http );
-      free( state->http );
-      state->http = NULL;
-   }
-   
-   if( state->event_listener ) {
-      AG_event_listener_free( state->event_listener );
-      free( state->event_listener );
-      state->event_listener = NULL;
-   }
-   
-   if( state->reversioner ) {
-      AG_reversioner_free( state->reversioner );
-      free( state->reversioner );
-      state->reversioner = NULL;
-   }
-   
-   if( state->drivers ) {
-      AG_shutdown_drivers( state->drivers );
-      delete state->drivers;
-      state->drivers = NULL;
-   }
-   
-   if( state->ag_fs ) {
-      AG_fs_free( state->ag_fs );
-      free( state->ag_fs );
-   }
-   
-   if( state->config ) {
-      delete state->config;
-      state->config = NULL;
-   }
-   
-   sem_destroy( &state->specfile_reload_sem );
-   sem_destroy( &state->running_sem );
-   
-   // opts to free 
-   char* opts_to_free[] = {
-      state->ag_opts.sock_path,
-      state->ag_opts.logfile_path,
-      state->ag_opts.driver_dir,
-      state->ag_opts.spec_file_path,
-      NULL
-   };
-   
-   for( int i = 0; opts_to_free[i] != NULL; i++ ) {
-      if( opts_to_free[i] != NULL ) {
-         free( opts_to_free[i] );
-      }
-   }
-   
-   pthread_rwlock_unlock( &state->state_lock );
-   
-   pthread_rwlock_destroy( &state->fs_lock );
-   pthread_rwlock_destroy( &state->config_lock );
-   pthread_rwlock_destroy( &state->state_lock );
-   
-   memset( &state->ag_opts, 0, sizeof(struct AG_opts) );
-   memset( state, 0, sizeof(struct AG_state) );
-   return 0;
-}
-
 
 // start the AG 
 int AG_start( struct AG_state* state ) {
@@ -689,6 +642,16 @@ int AG_start( struct AG_state* state ) {
    rc = AG_event_listener_start( state->event_listener );
    if( rc != 0 ) {
       errorf("AG_event_listener_start rc = %d\n", rc );
+      
+      return rc;
+   }
+   
+   // start up the block cache 
+   dbprintf("%s", "Starting block cache\n");
+   
+   rc = md_cache_start( state->cache );
+   if( rc != 0) {
+      errorf("md_cache_start rc = %d\n", rc );
       
       return rc;
    }
@@ -727,14 +690,14 @@ int AG_start( struct AG_state* state ) {
    // and the one we loaded from the spec file is
    // the "new" mapping.  Evolve the old into the new on the MS.
    rc = AG_resync( &on_MS_fs, state->ag_fs );
+   
+   AG_fs_free( &on_MS_fs );
+   
    if( rc != 0 ) {
       errorf("ERR: AG_resync rc = %d\n", rc );
       
-      AG_fs_free( &on_MS_fs );
       return rc;
    }
-   
-   AG_fs_free( &on_MS_fs );
    
    // start HTTP 
    dbprintf("%s", "Starting HTTP server\n" );
@@ -817,10 +780,106 @@ int AG_stop( struct AG_state* state ) {
    dbprintf("%s", "Shutting down reversioner\n");
    AG_reversioner_stop( state->reversioner );
    
+   dbprintf("%s", "Shutting down block cache\n");
+   md_cache_stop( state->cache );
+   
    state->running = false;
    
    return 0;
 }
+
+
+// free state 
+int AG_state_free( struct AG_state* state ) {
+   
+   if( state->running || state->specfile_reload_thread_running ) {
+      // need to stop first 
+      return -EINVAL;
+   }
+   
+   dbprintf("Freeing AG instance %s\n", state->inst_nonce );
+   
+   // state can no longer be referenced 
+   state->referenceable = false;
+   
+   // wait for all other threads to release state 
+   pthread_rwlock_wrlock( &state->state_lock );
+   
+   if( state->http != NULL ) {
+      md_free_HTTP( state->http );
+      free( state->http );
+      state->http = NULL;
+   }
+   
+   if( state->event_listener != NULL ) {
+      AG_event_listener_free( state->event_listener );
+      free( state->event_listener );
+      state->event_listener = NULL;
+   }
+   
+   if( state->reversioner != NULL ) {
+      AG_reversioner_free( state->reversioner );
+      free( state->reversioner );
+      state->reversioner = NULL;
+   }
+   
+   if( state->drivers != NULL ) {
+      AG_shutdown_drivers( state->drivers );
+      delete state->drivers;
+      state->drivers = NULL;
+   }
+   
+   if( state->ag_fs != NULL ) {
+      AG_fs_free( state->ag_fs );
+      free( state->ag_fs );
+      state->ag_fs = NULL;
+   }
+   
+   if( state->config != NULL ) {
+      delete state->config;
+      state->config = NULL;
+   }
+   
+   if( state->cache != NULL ) {
+      md_cache_destroy( state->cache );
+      free( state->cache );
+      state->cache = NULL;
+   }
+   
+   sem_destroy( &state->specfile_reload_sem );
+   sem_destroy( &state->running_sem );
+   
+   // opts to free 
+   char* opts_to_free[] = {
+      state->ag_opts.sock_path,
+      state->ag_opts.logfile_path,
+      state->ag_opts.driver_dir,
+      state->ag_opts.spec_file_path,
+      NULL
+   };
+   
+   for( int i = 0; opts_to_free[i] != NULL; i++ ) {
+      if( opts_to_free[i] != NULL ) {
+         free( opts_to_free[i] );
+      }
+   }
+   
+   if( state->inst_nonce ) {
+      free( state->inst_nonce );
+      state->inst_nonce = NULL;
+   }
+   
+   pthread_rwlock_unlock( &state->state_lock );
+   
+   pthread_rwlock_destroy( &state->fs_lock );
+   pthread_rwlock_destroy( &state->config_lock );
+   pthread_rwlock_destroy( &state->state_lock );
+   
+   memset( &state->ag_opts, 0, sizeof(struct AG_opts) );
+   memset( state, 0, sizeof(struct AG_state) );
+   return 0;
+}
+
 
 // dump config to stdout 
 void AG_dump_config( AG_config_t* config ) {
@@ -853,6 +912,7 @@ char* AG_get_config_var( struct AG_state* state, char const* varname ) {
    return ret;
 }
 
+
 // AG-specific usage
 static void AG_usage(void) {
    fprintf(stderr, "\n\
@@ -860,7 +920,7 @@ AG-specific options:\n\
    -e PATH\n\
             (Required) Path to a UNIX domain socket\n\
             over which to send/receive events.\n\
-   -l PATH\n\
+   -i PATH\n\
             Path to which to log runtime information, if not running\n\
             in the foreground.\n\
    -D DIR\n\
@@ -873,7 +933,11 @@ AG-specific options:\n\
             On start-up, queue all datasets for reversion.  This updates the\n\
             consistency information for each dataset on the MS, and invokes\n\
             each dataset driver's reversion method.\n\
-\n" );
+   -l NUM\n\
+            Soft size limit (in bytes) of the block cache.  Default is %ld\n\
+   -L NUM\n\
+            Hard size limit (in bytes) of the block cache.  Default is %ld\n\
+\n", AG_CACHE_DEFAULT_SOFT_LIMIT, AG_CACHE_DEFAULT_HARD_LIMIT );
 }
 
 // clear global AG opts buffer
@@ -899,6 +963,14 @@ int AG_opts_add_defaults( struct md_syndicate_conf* conf, struct AG_opts* ag_opt
    
    if( ag_opts->driver_dir == NULL ) {
       ag_opts->driver_dir = getcwd( NULL, 0 );     // look locally by default
+   }
+   
+   if( ag_opts->cache_soft_limit == 0 ) {
+      ag_opts->cache_soft_limit = AG_CACHE_DEFAULT_SOFT_LIMIT;
+   }
+   
+   if( ag_opts->cache_hard_limit == 0 ) {
+      ag_opts->cache_hard_limit = AG_CACHE_DEFAULT_HARD_LIMIT;
    }
    
    return 0;
@@ -933,7 +1005,7 @@ int AG_handle_opt( int opt_c, char* opt_s ) {
          
          break;
       }
-      case 'l': {
+      case 'i': {
          
          if( g_AG_opts.logfile_path != NULL ) {
             free( g_AG_opts.logfile_path );
@@ -963,12 +1035,41 @@ int AG_handle_opt( int opt_c, char* opt_s ) {
          
          break;
       }
-      case 'r': {
+      case 'n': {
          
          g_AG_opts.reversion_on_startup = true;
          break;
       }
-      
+      case 'l': {
+         
+         long lim = 0;
+         rc = md_opts_parse_long( opt_c, opt_s, &lim );
+         if( rc == 0 ) {
+            
+            g_AG_opts.cache_soft_limit = (size_t)lim;
+         }
+         else {
+            
+            errorf("Failed to parse -l, rc = %d\n", rc );
+            rc = -1;
+         }
+         break;
+      }
+      case 'L': {
+         
+         long lim = 0;
+         rc = md_opts_parse_long( opt_c, opt_s, &lim );
+         if( rc == 0 ) {
+            
+            g_AG_opts.cache_hard_limit = (size_t)lim;
+         }
+         else {
+            
+            errorf("Failed to parse -L, rc = %d\n", rc );
+            rc = -1;
+         }
+         break;
+      }
       default: {
          errorf("Unrecognized option '%c'\n", opt_c );
          rc = -1;
@@ -1007,7 +1108,7 @@ int AG_main( int argc, char** argv ) {
    memset( &opts, 0, sizeof(struct md_opts));
    
    // get options
-   rc = md_parse_opts( &opts, argc, argv, NULL, "e:l:D:s:r", AG_handle_opt );
+   rc = md_parse_opts( &opts, argc, argv, NULL, "e:l:D:s:n", AG_handle_opt );
    if( rc != 0 ) {
       md_common_usage( argv[0] );
       AG_usage();

@@ -23,6 +23,7 @@
 #include "libsyndicate/system.h"
 #include "libsyndicate/storage.h"
 #include "libsyndicate/opts.h"
+#include "libsyndicate/cache.h"
 
 #include "AG.h"
 
@@ -41,6 +42,8 @@ struct AG_opts {
    char* logfile_path;
    char* driver_dir;
    char* spec_file_path;
+   size_t cache_soft_limit;
+   size_t cache_hard_limit;
    bool reversion_on_startup;
 };
 
@@ -50,6 +53,8 @@ struct AG_state {
    
    struct ms_client* ms;
    struct md_HTTP* http;
+   struct md_syndicate_cache* cache;
+   
    struct AG_event_listener* event_listener;
    struct AG_reversioner* reversioner;
    struct AG_fs* ag_fs;
@@ -74,6 +79,8 @@ struct AG_state {
    
    // main thread waits on this semaphore to exit 
    sem_t running_sem;
+   
+   char* inst_nonce;    // string of random data that uniquely (w.h.p) identifies this instantiation.  Used by the caching subsystem to give driver chunks unique names
 };
 
 

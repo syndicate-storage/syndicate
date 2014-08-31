@@ -105,10 +105,11 @@ int AG_remove_signal_handler( int signum, sighandler_t sighandler ) {
 
 // our actual signal handler, which gets multiplexed 
 void AG_sighandler( int signum ) {
-   ssize_t rc = write( g_sigs.signal_pipe[1], &signum, sizeof(int) );
-   if( rc != 0 ) {
+   
+   ssize_t rc = md_write_uninterrupted( g_sigs.signal_pipe[1], (char*)(&signum), sizeof(int) );
+   if( rc < 0 ) {
       rc = -errno;
-      errorf("write(signalpipe) errno = %zd\n", rc);
+      errorf("md_write_uninterrupted(signalpipe) errno = %zd\n", rc);
    }
 }
 
@@ -122,34 +123,15 @@ void* AG_signal_listener_main_loop( void* arg ) {
       int next_signal = 0;
       
       // read uninterrupted
-      ssize_t num_read = 0;
-      ssize_t rc = 0;
-      bool die = false;
-      
-      while( (unsigned)num_read < sizeof(int) ) {
+      ssize_t rc = md_read_uninterrupted( g_sigs.signal_pipe[0], (char*)(&next_signal), sizeof(int) );
+      if( rc < 0 ) {
          
-         rc = read( g_sigs.signal_pipe[0], (char*)(&next_signal) + num_read, sizeof(int) - num_read );
-         
-         if( rc < 0 ) {
-            rc = -errno;
-            
-            if( rc == -EINTR && !g_sigs.signal_running ) {
-               // asked to die 
-               die = true;
-               break;
-            }
-            errorf("read(signalpipe) errno = %zd\n", rc);
-            break;
-         }
-         if( rc == 0 ) {
-            break;
-         }
-         
-         num_read += rc;
+         errorf("md_read_uninterrupted(signalpipe) errno = %zd\n", rc);
+         break;
       }
       
       // asked to die?
-      if( die || !g_sigs.signal_running ) {
+      if( !g_sigs.signal_running ) {
          break;
       }
       
@@ -180,19 +162,11 @@ void* AG_signal_listener_main_loop( void* arg ) {
 // read all of a length of data from a file descriptor 
 static int AG_read_buf_from_fd( int fd, char* buf, size_t buf_len ) {
    
-   ssize_t num_read = 0;
-   
-   // read the event type
-   while( (unsigned)num_read < buf_len ) {
-      ssize_t nr = recv( fd, buf + num_read, buf_len - num_read, MSG_NOSIGNAL );
-   
-      if( nr < 0 ) {
-         nr = -errno;
-         errorf("read(%d) errno = %zd\n", fd, nr );
-         return (int)nr;
-      }
+   ssize_t num_read = md_recv_uninterrupted( fd, buf, buf_len, MSG_NOSIGNAL );
+   if( num_read < 0 ) {
       
-      num_read += nr;
+      errorf("md_recv_uninterrupted rc = %zd\n", num_read );
+      return num_read;
    }
    
    return 0;
@@ -201,21 +175,13 @@ static int AG_read_buf_from_fd( int fd, char* buf, size_t buf_len ) {
 // send all of a length of data to a file descriptor 
 static int AG_write_buf_to_fd( int fd, char* buf, size_t buf_len ) {
    
-   // send the message 
-   ssize_t num_sent = 0;
-   while( (unsigned)num_sent < buf_len ) {
+   ssize_t num_sent = md_send_uninterrupted( fd, buf, buf_len, MSG_NOSIGNAL );
+   if( num_sent < 0 ) {
       
-      ssize_t ns = send( fd, buf + num_sent, buf_len - num_sent, MSG_NOSIGNAL );
-      if( ns < 0 ) {
-         
-         ns = -errno;
-         errorf("send(%d) rc = %zd\n", fd, ns );
-         return (int)ns;
-      }
-      
-      num_sent += ns;
+      errorf("md_send_uninterrupted rc = %zd\n", num_sent );
+      return num_sent;
    }
-   
+    
    return 0;
 }
 

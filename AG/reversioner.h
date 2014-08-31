@@ -69,8 +69,8 @@ struct AG_reversioner {
    sem_t sem;
 };
 
-int AG_path_map_info_init( struct AG_path_map_info* pinfo, char const* path, const struct AG_fs_map_info* mi, const struct AG_driver_publish_info* pubinfo );
-int AG_path_map_info_dup( struct AG_path_map_info* new_pinfo, const struct AG_path_map_info* old_pinfo );
+int AG_path_map_info_init( struct AG_path_map_info* pinfo, char const* path, struct AG_fs_map_info* mi, struct AG_driver_publish_info* pubinfo );
+int AG_path_map_info_dup( struct AG_path_map_info* new_pinfo, struct AG_path_map_info* old_pinfo );
 int AG_path_map_info_free( struct AG_path_map_info* pinfo );
 
 // init/start/stop/free

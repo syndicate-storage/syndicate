@@ -18,6 +18,7 @@
 #include "driver.h"
 #include "map-info.h"
 #include "core.h"
+#include "cache.h"
 
 static int AG_path_prefixes( char const* path, char*** ret_prefixes );
 
@@ -60,6 +61,48 @@ void AG_fs_map_free( AG_fs_map_t* fs_map ) {
    fs_map->clear();
 }
 
+// merge info from a fresh AG_map_info into an existing AG_map_info, respecting which field(s) are read-only 
+void AG_map_info_make_coherent( struct AG_map_info* dest, struct AG_map_info* src ) {
+   
+   if( !dest->cache_valid && src->cache_valid ) {
+      dest->file_id = src->file_id;
+      dest->file_version = src->file_version;
+      dest->block_version = src->block_version;
+      dest->write_nonce = src->write_nonce;
+      dest->cache_valid = src->cache_valid;
+      dest->refresh_deadline = src->refresh_deadline;
+   }
+   
+   if( dest->query_string == NULL && src->query_string != NULL ) {
+      dest->query_string = strdup_or_null( src->query_string );
+   }
+   
+   if( dest->driver == NULL && src->query_string != NULL ) {
+      dest->driver = src->driver;
+   }
+   
+   if( dest->type != MD_ENTRY_DIR && dest->type != MD_ENTRY_FILE ) {
+      dest->type = src->type;
+   }
+}
+
+
+// dump a mpa_info to stdout 
+void AG_dump_map_info( char const* path, struct AG_map_info* mi ) {
+
+   char* query_type = NULL;
+   
+   if( mi->driver != NULL ) {
+      query_type = AG_driver_get_query_type( mi->driver );
+   }
+   
+   dbprintf("%s:  addr=%p perm=%o reval=%" PRIu64 " driver=%s query_string=%s cache_valid=%d; cache { file_id=%" PRIX64 " version=%" PRId64 " write_nonce=%" PRId64 " }\n",
+            path, mi, mi->file_perm, mi->reval_sec, query_type, mi->query_string, mi->cache_valid, mi->file_id, mi->file_version, mi->write_nonce );
+   
+   if( query_type != NULL ) {
+      free( query_type );
+   }
+}
 
 // read-lock the fs structure within an AG_fs
 int AG_fs_rlock( struct AG_fs* ag_fs ) {
@@ -274,8 +317,12 @@ int AG_fs_free( struct AG_fs* ag_fs ) {
 }
 
 // duplicate a map info
-void AG_map_info_dup( struct AG_map_info* dest, const struct AG_map_info* src ) {
+void AG_map_info_dup( struct AG_map_info* dest, struct AG_map_info* src ) {
    AG_map_info_init( dest, src->type, src->query_string, src->file_perm, src->reval_sec, src->driver );
+   
+   if( src->cache_valid ) {
+      AG_map_info_make_coherent( dest, src );
+   }
 }
 
 
@@ -369,7 +416,58 @@ int AG_validate_map_info( AG_fs_map_t* fs ) {
 }
 
 
-// populate an md_entry from cached data in a map_info 
+// given a path and coherent map_info, get its pubinfo.
+// check the cache first, and use the driver to get the pubinfo on cache miss.  cache the result.
+// return 0 on success
+// return -ESTALE if the map_info is not coherent
+// return -ENODATA if there is no driver loaded for it
+int AG_get_pub_info( struct AG_state* state, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pub_info ) {
+
+   if( !mi->cache_valid ) {
+      return -ESTALE;
+   }
+   
+   int rc = 0;
+
+   // see if we have a cached pubinfo 
+   rc = AG_cache_get_stat( state, path, mi->file_version, pub_info );
+   
+   if( rc == 0 ) {
+      // cache hit 
+      AG_cache_promote_stat( state, path, mi->file_version );
+   }
+   else {
+      
+      // get details from the driver, if we have one
+      // (we might not, if we're deleting something that we discovered on the MS)
+      if( mi->driver != NULL ) {
+         
+         // cache miss 
+         rc = AG_driver_stat( mi->driver, path, mi, pub_info );
+         if( rc != 0 ) {
+            errorf("AG_driver_stat(%s) rc = %d\n", path, rc );
+            return rc;
+         }
+         
+         rc = AG_cache_put_stat_async( state, path, mi->file_version, pub_info );
+         if( rc != 0 ) {
+            
+            // mask error, since this isn't required for correctness
+            errorf("WARN: AG_cache_put_stat_async(%s) rc = %d\n", path, rc );
+            rc = 0;
+         }
+      }
+      else {
+         // cache miss and no driver
+         return -ENODATA;
+      }
+   }
+   
+   return rc;
+}
+
+
+// populate an md_entry from cached data in a map_info.  map_info must be coherent.
 static void AG_populate_md_entry_from_cached_map_info( struct md_entry* entry, struct AG_map_info* mi, uint64_t volume_id, uint64_t owner_id, uint64_t gateway_id, char const* path_basename ) {
    
    // fill in basics from our map info 
@@ -394,7 +492,7 @@ static void AG_populate_md_entry_from_publish_info( struct md_entry* entry, stru
    entry->mtime_nsec = pub_info->mtime_nsec;
 }
 
-// fill in basic fields for an md_entry, getting information from the driver and the map_info
+// fill in basic fields for an md_entry, getting information from the driver and the map_info.  map_info must be coherent.
 // if driver_required is true, then a driver is needed for the map_info (otherwise, this method will tolerate its absence and skip filling the md_entry with driver-supplied information)
 // this is useful for deleting entries, where driver-supplied information is not necessary.
 static int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, char const* path, struct AG_map_info* mi, struct AG_map_info* parent_mi, bool driver_required ) {
@@ -415,21 +513,22 @@ static int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, c
    struct AG_driver_publish_info pub_info;
    memset( &pub_info, 0, sizeof(pub_info) );
    
-   // get details from the driver, if we have one
-   // (we might not, if we're deleting something that we discovered on the MS)
-   if( mi->driver != NULL ) {
-      rc = AG_driver_publish( mi->driver, path, mi, &pub_info );
-      if( rc != 0 ) {
-         errorf("AG_driver_publish(%s) rc = %d\n", path, rc );
-         
-         md_entry_free( entry );
-         free( path_basename );
-         return rc;
-      }
-      
-      // fill the entry with the driver-given data 
-      AG_populate_md_entry_from_publish_info( entry, &pub_info );
+   struct AG_state* state = AG_get_state();
+   if( state == NULL ) {
+      return -ENOTCONN;
    }
+   
+   rc = AG_get_pub_info( state, path, mi, &pub_info );
+   
+   AG_release_state( state );
+   
+   if( rc != 0 ) {
+      errorf("AG_get_pub_info( %s ) rc = %d\n", path, rc );
+      return rc;
+   }
+   
+   // fill the entry with the driver-given data 
+   AG_populate_md_entry_from_publish_info( entry, &pub_info );
    
    // fill in the entry with our cached data 
    AG_populate_md_entry_from_cached_map_info( entry, mi, volume_id, ms->owner_id, ms->gateway_id, path_basename );
@@ -560,9 +659,9 @@ int AG_fs_map_clone_path( AG_fs_map_t* fs_map, char const* path, AG_fs_map_t* pa
 }
 
 
-// merge a tree into an AG_fs_map, overwriting duplicates.  Only merge new data on request (if merge_new is true).
+// merge a tree into an AG_fs_map.  Only merge new data on request (if merge_new is true).
 // if merge_new is false, not_merged must not be NULL.  not_merged will contain pointers to all entries in path data that were not merged
-// NOTE: this consumes data from path_data, so don't free path_data if this method succeeds!
+// NOTE: this consumes data from path_data.  Don't free it after calling this method.
 int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merge_new, AG_fs_map_t* not_merged ) {
    
    if( !merge_new && not_merged == NULL ) {
@@ -579,22 +678,31 @@ int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merg
       // find existing
       AG_fs_map_t::iterator itr2 = fs_map->find( path_string );
       if( itr2 != fs_map->end() ) {
-         // free this first 
+         
+         // exists
          old_info = itr2->second;
+         
+         // make it coherent 
+         AG_map_info_make_coherent( old_info, info );
+         
+         // consumed!
+         itr->second = NULL;
+         AG_map_info_free( info );
+         free( info );
       }
-      else if( !merge_new ) {
-         // don't add new ones 
-         (*not_merged)[ path_string ] = info;
-         continue;
-      }
-      
-      (*fs_map)[ path_string ] = info;
-      
-      // done with this
-      if( old_info != NULL ) {
-         free( old_info );
+      else {
+         if( !merge_new ) {
+            // don't add new ones 
+            (*not_merged)[ path_string ] = info;
+         }
+         else {
+            // do add new ones
+            (*fs_map)[ path_string ] = info;
+         }
       }
    }
+   
+   path_data->clear();
    
    return 0;
 }
@@ -785,12 +893,14 @@ static int AG_accumulate_data_from_md_entry( AG_fs_map_t* new_data, char const* 
    AG_copy_metadata_to_map_info( new_info, ent );
    new_info->cache_valid = true;
    
+   // merge into new_data, freeing an old entry if need be
    AG_fs_map_t::iterator itr = new_data->find( string(path) );
    if( itr != new_data->end() ) {
       
       struct AG_map_info* old_mi = itr->second;
-      itr->second = NULL;
+      new_data->erase( itr );
       
+      AG_map_info_free( old_mi );
       free( old_mi );
    }
    
@@ -1021,6 +1131,7 @@ static int AG_get_path_metadata( struct ms_client* client, char const* path, AG_
 
 // ensure that a path-worth of metadata is cached and valid.
 // if force_reload is true, then re-download all the metadata regardless.
+// on success, all map_infos along the path will be coherent
 // NOTE: only entries represented by the path will be modified.  Newly-discovered child entires, for example, will NOT be added to the fs
 // AG_fs must not be locked
 int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool force_reload ) {
@@ -1066,14 +1177,13 @@ int AG_fs_refresh_path_metadata( struct AG_fs* ag_fs, char const* path, bool for
    rc = AG_fs_map_merge_tree( ag_fs->fs, &new_path_info, false, &not_merged );
    AG_fs_unlock( ag_fs );
    
+   AG_fs_map_free( &not_merged );
+   
    if( rc != 0 ) {
       errorf("AG_fs_map_merge_tree(%s) rc = %d\n", path, rc );
       
-      AG_fs_map_free( &new_path_info );
       return rc;
    }
-   
-   AG_fs_map_free( &not_merged );
    
    return rc;
 }
@@ -1387,6 +1497,15 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    
    md_entry_free( &entry );
    
+   // evict cached blocks for this file 
+   struct AG_state* state = AG_get_state();
+   if( state != NULL ) {
+      AG_cache_evict_file( state, path, entry.version );
+      
+      AG_release_state( state );
+   }
+   
+   // inform the driver that we reversioned
    rc = AG_driver_reversion( mi->driver, path, &reversioned_mi );
    if( rc != 0 ) {
       errorf("WARN: AG_driver_reversion(%s) rc = %d\n", path, rc );
@@ -1466,6 +1585,14 @@ int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
       
       md_entry_free( &entry );
       return rc;
+   }
+   
+   // evict cached blocks for this file 
+   struct AG_state* state = AG_get_state();
+   if( state != NULL ) {
+      AG_cache_evict_file( state, path, entry.version );
+      
+      AG_release_state( state );
    }
    
    md_entry_free( &entry );
@@ -1627,6 +1754,7 @@ int AG_download_existing_fs_map( struct ms_client* ms, AG_fs_map_t** ret_existin
       
       // merge discovered data back in 
       rc = AG_fs_map_merge_tree( existing_fs, &new_info, true, NULL );
+      
       if( rc != 0 ) {
          errorf("AG_fs_map_merge_tree(%s) rc = %d\n", dir_path, rc );
          break;
@@ -1685,19 +1813,8 @@ int AG_dump_fs_map( AG_fs_map_t* fs_map ) {
       
       char const* path = paths[i].c_str();
       struct AG_map_info* mi = (*fs_map)[ paths[i] ];
-      
-      char* query_type = NULL;
-      
-      if( mi->driver != NULL ) {
-         query_type = AG_driver_get_query_type( mi->driver );
-      }
-      
-      dbprintf("%s:  addr=%p perm=%o reval=%" PRIu64 " driver=%s query_string=%s cache_valid=%d; cache { file_id=%" PRIX64 " version=%" PRId64 " write_nonce=%" PRId64 " }\n",
-               path, mi, mi->file_perm, mi->reval_sec, query_type, mi->query_string, mi->cache_valid, mi->file_id, mi->file_version, mi->write_nonce );
-      
-      if( query_type != NULL ) {
-         free( query_type );
-      }
+   
+      AG_dump_map_info( path, mi );
    }
    
    dbprintf("End FS map %p\n", fs_map );

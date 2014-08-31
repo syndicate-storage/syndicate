@@ -20,7 +20,7 @@
 #include "driver.h"
 
 // allocate and set up a path map info 
-int AG_path_map_info_init( struct AG_path_map_info* pinfo, char const* path, const struct AG_map_info* mi, const struct AG_driver_publish_info* pubinfo ) {
+int AG_path_map_info_init( struct AG_path_map_info* pinfo, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo ) {
    
    memset( pinfo, 0, sizeof(struct AG_path_map_info) );
    
@@ -36,7 +36,7 @@ int AG_path_map_info_init( struct AG_path_map_info* pinfo, char const* path, con
 }
 
 // duplicate a path map info
-int AG_path_map_info_dup( struct AG_path_map_info* new_pinfo, const struct AG_path_map_info* old_pinfo ) {
+int AG_path_map_info_dup( struct AG_path_map_info* new_pinfo, struct AG_path_map_info* old_pinfo ) {
    
    struct AG_map_info mi_dup;
    AG_map_info_dup( &mi_dup, &old_pinfo->mi );

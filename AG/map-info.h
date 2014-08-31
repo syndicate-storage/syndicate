@@ -25,8 +25,8 @@
 using namespace std;
 
 // prototypes
-struct AG_state;
 struct AG_driver;
+struct AG_driver_publish_info;
 
 // descriptor of an AG's published entry
 // NOTE: none of the members here should be dynamically allocated
@@ -64,7 +64,7 @@ int AG_fs_free( struct AG_fs* ag_fs );
 
 // memory management 
 void AG_map_info_init( struct AG_map_info* dest, int type, char const* query_string, mode_t file_perm, uint64_t reval_sec, struct AG_driver* driver );
-void AG_map_info_dup( struct AG_map_info* dest, const struct AG_map_info* source );
+void AG_map_info_dup( struct AG_map_info* dest, struct AG_map_info* source );
 void AG_map_info_free( struct AG_map_info* mi );
 int AG_fs_map_dup( AG_fs_map_t* dest, AG_fs_map_t* src );
 void AG_fs_map_free(AG_fs_map_t *mi_map);
@@ -99,6 +99,7 @@ int AG_fs_delete_map( struct AG_fs* ag_fs, AG_fs_map_t* to_delete, bool continue
 
 // misc 
 int AG_download_existing_fs_map( struct ms_client* ms, AG_fs_map_t** ret_existing_fs, bool fail_fast );
+int AG_get_pub_info( struct AG_state* state, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo );
 int AG_dump_fs_map( AG_fs_map_t* fs_map );
 
 #endif
