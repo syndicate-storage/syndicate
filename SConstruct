@@ -312,13 +312,6 @@ ag_driver_disk_polling_install = env.Install( lib_install_dir, libAGdiskpollingd
 env.Alias( 'AG-disk-polling-driver', libAGdiskpollingdriver )
 env.Alias( 'AG-disk-polling-driver-install', [ag_driver_disk_polling_install] )
 
-# AG SQL driver
-libAGSQLdriver_out = "build/out/lib/AG/drivers/sql"
-libAGSQLdriver = SConscript( "AG/drivers/sql/SConscript", variant_dir=libAGSQLdriver_out )
-ag_driver_sql_install = env.Install( lib_install_dir, libAGSQLdriver )
-env.Alias( 'AG-sql-driver', libAGSQLdriver )
-env.Alias( 'AG-sql-driver-install', [ag_driver_sql_install] )
-
 # AG Shell driver
 libAGshelldriver_out = "build/out/lib/AG/drivers/shell"
 libAGshelldriver = SConscript( "AG/drivers/shell/SConscript", variant_dir=libAGshelldriver_out )
@@ -326,13 +319,15 @@ ag_driver_shell_install = env.Install( lib_install_dir, libAGshelldriver )
 env.Alias( 'AG-shell-driver', libAGshelldriver )
 env.Alias( 'AG-shell-driver-install', [ag_driver_shell_install] )
 
-# All drivers
-ag_drivers = [libAGSQLdriver, libAGshelldriver, libAGdiskdriver, libAGdiskpollingdriver]
+# AG curl driver 
+libAGcurldriver_out = "build/out/lib/AG/drivers/curl"
+libAGcurldriver = SConscript( "AG/drivers/curl/SConscript", variant_dir=libAGcurldriver_out )
+ag_driver_curl_install = env.Install( lib_install_dir, libAGcurldriver )
+env.Alias( 'AG-curl-driver', libAGcurldriver )
+env.Alias( 'AG-curl-driver-install', [ag_driver_curl_install] )
 
-# AG Watchdog daemon
-watchdog_daemon_out = "build/out/bin/AG/watchdog"
-watchdog_daemon = SConscript( "AG/watchdog-daemon/SConscript", variant_dir=watchdog_daemon_out )
-env.Alias( "AG-watchdog", watchdog_daemon )
+# All drivers
+ag_drivers = [libAGcurldriver, libAGshelldriver, libAGdiskdriver, libAGdiskpollingdriver]
 
 # installation
 common.install_targets( env, 'AG-install', bin_install_dir, ags )
