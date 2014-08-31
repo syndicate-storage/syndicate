@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<Map>
+  <Config>
+   </Config>
+   <Pair reval="10s 5m">
+      <File perm="440">/google_homepage</File>
+      <Query type="disk">http://www.google.com</Query>
+   </Pair>
+   <Pair reval="10s 5m">
+      <File perm="444">/jude_homepage</File>
+      <Query type="disk">http://www.cs.princeton.edu/~jcnelson/index.html</Query>
+   </Pair>
+   <Pair reval="1d">
+      <Dir perm="444">/</Dir>
+      <Query type="disk">/</Query>
+   </Pair>
+</Map>
+
