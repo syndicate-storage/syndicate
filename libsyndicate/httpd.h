@@ -176,6 +176,7 @@ struct md_HTTP {
 
 extern char const MD_HTTP_NOMSG[128];
 extern char const MD_HTTP_200_MSG[128];
+extern char const MD_HTTP_302_MSG[128];
 extern char const MD_HTTP_400_MSG[128];
 extern char const MD_HTTP_401_MSG[128];
 extern char const MD_HTTP_403_MSG[128];

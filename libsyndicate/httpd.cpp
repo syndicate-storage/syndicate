@@ -19,6 +19,7 @@
 
 char const MD_HTTP_NOMSG[128] = "\n";
 char const MD_HTTP_200_MSG[128] = "OK\n";
+char const MD_HTTP_302_MSG[128] = "Redirect\n";
 char const MD_HTTP_400_MSG[128] = "Bad Request\n";
 char const MD_HTTP_401_MSG[128] = "Invalid authorization credentials\n";
 char const MD_HTTP_403_MSG[128] = "Credentials required\n";
@@ -782,7 +783,6 @@ static int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_
    uint64_t file_id = INVALID_FILE_ID;
    int64_t file_version = -1;
    
-   dbprintf("ptr = '%s'\n", ptr );
    int num_read = sscanf( ptr, ".%" PRIX64 ".%" PRId64, &file_id, &file_version );
    if( num_read != 2 )
       return -EINVAL;
