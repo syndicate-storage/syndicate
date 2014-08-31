@@ -300,6 +300,108 @@ char* load_file( char const* path, size_t* size ) {
    return ret;
 }
 
+// read, but mask EINTR 
+ssize_t md_read_uninterrupted( int fd, char* buf, size_t len ) {
+   
+   ssize_t num_read = 0;
+   while( (unsigned)num_read < len ) {
+      ssize_t nr = read( fd, buf + num_read, len - num_read );
+      if( nr < 0 ) {
+         
+         int errsv = -errno;
+         if( errsv == -EINTR ) {
+            continue;
+         }
+         
+         return errsv;
+      }
+      if( nr == 0 ) {
+         break;
+      }
+      
+      num_read += nr;
+   }
+   
+   return num_read;
+}
+
+
+// recv, but mask EINTR 
+ssize_t md_recv_uninterrupted( int fd, char* buf, size_t len, int flags ) {
+   
+   ssize_t num_read = 0;
+   while( (unsigned)num_read < len ) {
+      ssize_t nr = recv( fd, buf + num_read, len - num_read, flags );
+      if( nr < 0 ) {
+         
+         int errsv = -errno;
+         if( errsv == -EINTR ) {
+            continue;
+         }
+         
+         return errsv;
+      }
+      if( nr == 0 ) {
+         break;
+      }
+      
+      num_read += nr;
+   }
+   
+   return num_read;
+}
+
+// write, but mask EINTR
+ssize_t md_write_uninterrupted( int fd, char const* buf, size_t len ) {
+   
+   ssize_t num_written = 0;
+   while( (unsigned)num_written < len ) {
+      ssize_t nw = write( fd, buf + num_written, len - num_written );
+      if( nw < 0 ) {
+         
+         int errsv = -errno;
+         if( errsv == -EINTR ) {
+            continue;
+         }
+         
+         return errsv;
+      }
+      if( nw == 0 ) {
+         break;
+      }
+      
+      num_written += nw;
+   }
+   
+   return num_written;
+}
+
+
+// send, but mask EINTR
+ssize_t md_send_uninterrupted( int fd, char const* buf, size_t len, int flags ) {
+   
+   ssize_t num_written = 0;
+   while( (unsigned)num_written < len ) {
+      ssize_t nw = send( fd, buf + num_written, len - num_written, flags );
+      if( nw < 0 ) {
+         
+         int errsv = -errno;
+         if( errsv == -EINTR ) {
+            continue;
+         }
+         
+         return errsv;
+      }
+      if( nw == 0 ) {
+         break;
+      }
+      
+      num_written += nw;
+   }
+   
+   return num_written;
+}
+
 // remove all files and directories within a directory, recursively.
 // return errno if we fail partway through.
 int md_clear_dir( char const* dirname ) {
@@ -454,39 +556,25 @@ int md_unix_socket( char const* path, bool server ) {
 int md_write_to_tmpfile( char const* tmpfile_fmt, char const* buf, size_t buflen, char** tmpfile_path ) {
    
    char* so_path = strdup( tmpfile_fmt );
-   int rc = 0;
+   ssize_t rc = 0;
    
    int fd = mkstemp( so_path );
    if( fd < 0 ) {
       rc = -errno;
-      errorf("mkstemp(%s) rc = %d\n", so_path, rc );
+      errorf("mkstemp(%s) rc = %zd\n", so_path, rc );
       free( so_path );
       return rc;
    }
    
    // write it out
-   off_t nw = 0;
-   off_t w_off = 0;
-   
-   while( nw < (signed)buflen ) {
-      ssize_t w = write( fd, buf + w_off, buflen - w_off );
-      if( w < 0 ) {
-         int errsv = -errno;
-         errorf("write(%d) rc = %d\n", fd, errsv);
-         nw = errsv;
-         break;
-      }
-      
-      nw += w;
-   }
+   rc = md_write_uninterrupted( fd, buf, buflen );
    
    close( fd );
    
-   if( nw < 0 ) {
+   if( rc < 0 ) {
       // failure 
       unlink( so_path );
       free( so_path );
-      rc = nw;
    }
    else {
       *tmpfile_path = so_path;
@@ -677,32 +765,6 @@ int util_init(void) {
    
    close( rfd );
    return 0;
-}
-
-void block_all_signals() {
-    sigset_t sigs;
-    sigfillset(&sigs);
-    pthread_sigmask(SIG_SETMASK, &sigs, NULL);
-}
-
-// does NOT work in NaCl
-int install_signal_handler(int signo, struct sigaction *act, sighandler_t handler) {
-    int rc = 0;
-#ifndef _SYNDICATE_NACL_
-    sigset_t sigs;
-    sigemptyset(&sigs);
-    sigaddset(&sigs, signo);
-    act->sa_handler = handler;
-    rc = sigaction(signo, act, NULL);
-    if (rc < 0)
-	return rc;
-    rc = pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
-#endif
-    return rc;
-}
-
-int uninstall_signal_handler(int signo) {
-    return 0;
 }
 
 
