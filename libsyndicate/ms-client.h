@@ -235,7 +235,6 @@ struct ms_client {
    uint64_t gateway_id;       // ID of the Gateway running this ms_client
    int portnum;               // port we listen on
 
-   //pthread_t uploader_thread;
    bool running;        // set to true if the uploader thread is running
    bool downloading;    // set to true if we're downloading something on ms_read
    bool downloading_view;       // set to true if we're downloading something on ms_view
