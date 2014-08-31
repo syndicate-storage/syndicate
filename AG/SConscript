@@ -1,5 +1,5 @@
 """
-   Copyright 2013 The Trustees of Princeton University
+   Copyright 2014 The Trustees of Princeton University
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 # add additional source files here
 source_files = """
    AG.cpp
+   cache.cpp
    core.cpp
    driver.cpp
    events.cpp
