@@ -13,6 +13,7 @@ Import('extra_args')
 Import("make_nacl_env")
 
 BASE_FILES = """
+   cache.cpp
    crypt.cpp
    closure.cpp
    download.cpp
@@ -20,8 +21,9 @@ BASE_FILES = """
    ms-client.cpp
    openid.cpp
    opts.cpp
-   util.cpp
    storage.cpp
+   url.cpp
+   util.cpp
 """
 
 SCRYPT_FILES = Glob("scrypt/*.cpp")
