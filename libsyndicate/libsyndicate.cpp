@@ -577,10 +577,6 @@ int md_read_conf( char const* conf_path, struct md_syndicate_conf* conf ) {
          conf->transfer_timeout = strtol( values[0], NULL, 10 );
       }
 
-      else if( strcmp( key, AG_GATEWAY_DRIVER_KEY ) == 0 ) {
-         conf->ag_driver = strdup(values[0]);
-      }
-      
       else {
          errorf( "WARN: unrecognized key '%s'\n", key );
       }
@@ -1736,6 +1732,7 @@ int md_init_finish( struct md_syndicate_conf* conf, struct ms_client* client, ch
    ms_client_wlock( client );
    conf->owner = client->owner_id;
    conf->gateway = client->gateway_id;
+   conf->volume = ms_client_get_volume_id( client );
    ms_client_unlock( client );
    
    // create a public url, now that we know the port number

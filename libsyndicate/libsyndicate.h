@@ -163,8 +163,6 @@ struct md_syndicate_conf {
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
    char* volume_name;                                 // name of the volume we're connected to
    char* volume_pubkey_path;                          // path on disk to find Volume metadata public key
-   size_t cache_soft_limit;                           // soft limit on the size of the cache (in bytes)
-   size_t cache_hard_limit;                           // hard limit on the size of the cache (in bytes)
    int max_read_retry;                                // maximum number of times to retry a read before considering it failed 
    int max_write_retry;                               // maximum number of times to retry a write before considering it failed
    int retry_delay_ms;                                // number of milliseconds to wait between retries
@@ -191,9 +189,10 @@ struct md_syndicate_conf {
    char* ms_username;                                 // MS username for this SyndicateUser
    char* ms_password;                                 // MS password for this SyndicateUser
    uint64_t owner;                                    // what is our user ID in Syndicate?  Files created in this UG will assume this UID as their owner
-   uint64_t gateway;                                  // what is the gateway ID in Syndicate?
-   uint64_t view_reload_freq;                         // how often do we check for new Volume/UG/RG metadata?
-   char* syndicate_pubkey_path;                       // location on disk where the syndicate public key can be found.
+   uint64_t gateway;                                  // what is our gateway ID?
+   uint64_t volume;                                   // what is our volume ID?
+   uint64_t view_reload_freq;                         // how often do we check for new metadata from the MS?
+   char* syndicate_pubkey_path;                       // location on disk where the MS's public key can be found.
 
    // security fields (loaded at runtime).
    // private keys are all mlock'ed
@@ -218,7 +217,6 @@ struct md_syndicate_conf {
    char* hostname;                                    // what's our hostname?
    
    // misc
-   char* ag_driver;                                   // AG gatway driver that encompasses gateway callbacks
    int gateway_type;                                  // type of gateway 
    bool is_client;                                    // if true for a UG, always fetch data from RGs
 };
