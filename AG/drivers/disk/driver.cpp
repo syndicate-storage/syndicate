@@ -188,7 +188,7 @@ int get_dataset_manifest_info( struct AG_connection_context* ag_ctx, struct AG_d
 // return the number of bytes read
 ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_id, char* block_buf, size_t buf_len, void* driver_connection_state ) {
    
-   dbprintf("%s get dataset block\n", DRIVER_QUERY_TYPE );
+   dbprintf("%s get dataset block %" PRIu64 "\n", DRIVER_QUERY_TYPE, block_id );
    
    struct AG_disk_context* disk_ctx = (struct AG_disk_context*)driver_connection_state;
    
@@ -207,41 +207,21 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
    }
    
    // read in the buffer 
-   ssize_t num_read = 0;
-   while( (unsigned)num_read < buf_len ) {
+   ssize_t num_read = md_read_uninterrupted( disk_ctx->fd, block_buf, buf_len );
+   if( num_read < 0 ) {
       
-      ssize_t nr = read( disk_ctx->fd, block_buf + num_read, buf_len - num_read );
-      
-      if( nr < 0 ) {
-         // error
-         nr = -errno;
-         
-         // ignore interrupts 
-         if( nr == -EINTR ) {
-            continue;
-         }
-         
-         errorf("read errno = %zd\n", nr);
-         errno_to_HTTP_status( ag_ctx, nr );
-         
-         return nr;
-      }
-      if( nr == 0 ) {
-         // EOF 
-         break;
-      }
-      
-      num_read += nr;
+      errorf("md_read_uninterrupted rc = %zd\n", num_read );
+      errno_to_HTTP_status( ag_ctx, num_read );
    }
    
    return num_read;
 }
 
 // get information for publishing a particular file to the MS 
-int publish_dataset( char const* relative_path, struct AG_map_info* ag_dataset_info, struct AG_driver_publish_info* pub_info, void* driver_state ) {
+int stat_dataset( char const* path, struct AG_map_info* ag_dataset_info, struct AG_driver_publish_info* pub_info, void* driver_state ) {
    
    // get the absolute path 
-   char* dataset_path = get_request_abspath( relative_path );
+   char* dataset_path = get_request_abspath( path );
    if( dataset_path == NULL ) {
       errorf("%s", "Could not translate request to absolute path\n" );
       return -EINVAL;

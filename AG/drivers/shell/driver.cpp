@@ -237,7 +237,7 @@ int close_dataset_manifest( void* driver_conn_state ) {
 }
 
 // fill in dataset publishing information 
-int publish_dataset( char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo, void* driver_state ) {
+int stat_dataset( char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo, void* driver_state ) {
    
    struct shell_driver_state* state = (struct shell_driver_state*)driver_state;
    

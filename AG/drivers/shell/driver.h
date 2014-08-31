@@ -14,8 +14,8 @@
    limitations under the License.
 */
 
-#ifndef _SHELL_DRIVER_H_
-#define _SHELL_DRIVER_H_
+#ifndef _AG_SHELL_DRIVER_H_
+#define _AG_SHELL_DRIVER_H_
 
 #include <map>
 #include <string>
@@ -71,12 +71,12 @@ int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_st
 int connect_dataset_manifest( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_conn_state );
 int close_dataset_block( void* driver_conn_state );
 int close_dataset_manifest( void* driver_conn_state );
-int publish_dataset( char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo, void* driver_state );
+int stat_dataset( char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo, void* driver_state );
 int reversion_dataset( char const* path, struct AG_map_info* mi, void* driver_state );
 int handle_event( char* event_buf, size_t event_len, void* driver_state );
 char* get_query_type(void);
 
 }
 
-#endif //_SHELL_DRIVER_H_
+#endif //_AG_SHELL_DRIVER_H_
 

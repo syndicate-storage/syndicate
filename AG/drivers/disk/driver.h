@@ -14,8 +14,8 @@
    limitations under the License.
 */
 
-#ifndef _DISK_DRIVER_H_
-#define _DISK_DRIVER_H_
+#ifndef _AG_DISK_DRIVER_H_
+#define _AG_DISK_DRIVER_H_
 
 #include <map>
 #include <string>
@@ -52,7 +52,7 @@ int close_dataset_manifest( void* driver_connection_state );
 int get_dataset_manifest_info( struct AG_connection_context* ag_ctx, struct AG_driver_publish_info* pub_info, void* driver_connection_state );
 ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_id, char* block_buf, size_t buf_len, void* driver_connection_state );
 
-int publish_dataset( char const* relative_path, struct AG_map_info* ag_dataset_info, struct AG_driver_publish_info* pub_info, void* driver_state );
+int stat_dataset( char const* path, struct AG_map_info* ag_dataset_info, struct AG_driver_publish_info* pub_info, void* driver_state );
 
 int handle_event( char* event_payload, size_t event_payload_len, void* driver_state );
 
@@ -60,5 +60,5 @@ char* get_query_type(void);
 
 }
 
-#endif //_DISK_DRIVER_H_
+#endif //_AG_DISK_DRIVER_H_
 
