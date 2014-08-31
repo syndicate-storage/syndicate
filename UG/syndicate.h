@@ -48,6 +48,7 @@ struct syndicate_state {
    struct rg_client garbage_collector;      // garbage collector context
    struct fs_vacuumer vac;              // vacuumer
    struct md_downloader dl;             // downloader for this client
+   struct UG_opts ug_opts;              // UG-specific command-line options
 
    // mounter info (since apparently FUSE doesn't do this right)
    int gid;

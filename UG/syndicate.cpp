@@ -52,13 +52,6 @@ UG-specific options:\
 \n" );
 }
 
-// add extra information into global syndicate conf that isn't covered by the normal initialization step
-static void syndicate_add_extra_config( struct md_syndicate_conf* conf, struct UG_opts* opts ) {
-   // add in extra information not covered by md_init
-   conf->cache_soft_limit = opts->cache_soft_limit;
-   conf->cache_hard_limit = opts->cache_hard_limit;
-}
-
 
 // get a UG-specific option
 int UG_handle_opt( int opt_c, char* opt_s ) {
@@ -190,7 +183,7 @@ int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms )
    }
 
    // initialize and start caching
-   rc = fs_entry_cache_init( core, &state->cache, state->conf.cache_soft_limit / block_size, state->conf.cache_hard_limit / block_size );
+   rc = fs_entry_cache_init( core, &state->cache, state->ug_opts.cache_soft_limit / block_size, state->ug_opts.cache_hard_limit / block_size );
    if( rc != 0 ) {
       errorf("fs_entry_cache_init rc = %d\n", rc );
       return rc;  
@@ -341,7 +334,8 @@ int syndicate_init( struct md_opts* opts, struct UG_opts* ug_opts ) {
       }
    }
    
-   syndicate_add_extra_config( &state->conf, ug_opts );
+   // copy over options 
+   memcpy( &state->ug_opts, ug_opts, sizeof(struct UG_opts) );
    
    // initialize state
    int rc = syndicate_setup_state( state, ms );
