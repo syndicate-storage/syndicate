@@ -211,7 +211,7 @@ int AG_cache_get_stat( struct AG_state* state, char const* path, int64_t file_ve
    
    close( fd );
    
-   dbprintf("CACHE HIT %s.%" PRId64 ": { size = %zu, mtime_sec = %" PRId64 ", mtime_nsec = %" PRId32 "\n", stat_path, file_version, pubinfo->size, pubinfo->mtime_sec, pubinfo->mtime_nsec );
+   dbprintf("CACHE HIT %s.%" PRId64 ": { size = %zu, mtime_sec = %" PRId64 ", mtime_nsec = %" PRId32 " }\n", stat_path, file_version, pubinfo->size, pubinfo->mtime_sec, pubinfo->mtime_nsec );
    
    free( stat_path );
    return 0;
