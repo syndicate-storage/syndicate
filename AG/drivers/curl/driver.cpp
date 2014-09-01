@@ -31,12 +31,14 @@ int driver_shutdown( void* driver_state ) {
    
    struct curl_driver_state* state = (struct curl_driver_state*)driver_state;
    
-   if( state->cache_root != NULL ) {
-      free( state->cache_root );
-      state->cache_root = NULL;
+   if( state != NULL ) {
+      if( state->cache_root != NULL ) {
+         free( state->cache_root );
+         state->cache_root = NULL;
+      }
+      
+      free( state );
    }
-   
-   free( state );
    
    return 0;
 }
@@ -239,7 +241,7 @@ static int curl_download_block( CURL* curl, char const* url, uint64_t block_id, 
 
 
 // get the publish information for a dataset 
-int curl_get_pubinfo( struct curl_driver_state* state, char const* request_path, char const* url, int64_t file_version, struct AG_driver_publish_info* pubinfo ) {
+int curl_get_pubinfo( struct curl_driver_state* state, char const* request_path, char const* url, struct AG_driver_publish_info* pubinfo ) {
    
    // maybe we've cached it?
    char* info_path = md_fullpath( request_path, "curl-info", NULL );
@@ -265,6 +267,8 @@ int curl_get_pubinfo( struct curl_driver_state* state, char const* request_path,
          AG_driver_cache_evict_chunk( info_path );
          
          rc = 0;
+         free( pubinfo_buf );
+         pubinfo_buf = NULL;
       }
    }
    
@@ -274,13 +278,19 @@ int curl_get_pubinfo( struct curl_driver_state* state, char const* request_path,
    // not cached
    rc = curl_stat_file( curl, url, pubinfo );
    if( rc != 0 ) {
-      errorf("ERR: curl_stat_file(%s.%" PRId64 ", %s) rc = %d\n", info_path, file_version, url, rc );
+      errorf("ERR: curl_stat_file(%s, %s) rc = %d\n", info_path, url, rc );
    }
    else {
       // success! cache it 
-      AG_driver_cache_put_chunk_async( info_path, (char*)pubinfo, sizeof(struct AG_driver_publish_info) );
+      
+      char* cache_chunk = CALLOC_LIST( char, sizeof(struct AG_driver_publish_info) );
+      memcpy( cache_chunk, &pubinfo, sizeof(struct AG_driver_publish_info) );
+      
+      AG_driver_cache_put_chunk_async( info_path, cache_chunk, sizeof(struct AG_driver_publish_info) );
+      
+      dbprintf("Got pubinfo for %s: { size = %jd, mtime_sec = %" PRId64 ", mtime_nsec = %" PRId32 " }\n", request_path, pubinfo->size, pubinfo->mtime_sec, pubinfo->mtime_nsec );
    }
-
+   
    curl_easy_cleanup( curl );
    
    free( info_path );
@@ -323,7 +333,10 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
          // update the cache
          char* info_path = md_fullpath( curl_ctx->request_path, "curl-info", NULL );
          
-         AG_driver_cache_put_chunk_async( info_path, (char*)&pubinfo, sizeof(struct AG_driver_publish_info) );
+         char* cache_chunk = CALLOC_LIST( char, sizeof(struct AG_driver_publish_info) );
+         memcpy( cache_chunk, &pubinfo, sizeof(struct AG_driver_publish_info) );
+      
+         AG_driver_cache_put_chunk_async( info_path, cache_chunk, sizeof(struct AG_driver_publish_info) );
          
          free( info_path );
       }
@@ -345,7 +358,6 @@ int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driv
    
    struct curl_driver_state* state = (struct curl_driver_state*)driver_state;
    
-   int64_t file_version = AG_driver_map_info_get_file_version( map_info );
    char* url = AG_driver_map_info_get_query_string( map_info );
    
    if( url == NULL ) {
@@ -353,7 +365,7 @@ int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driv
       return -ENODATA;
    }
    
-   int rc = curl_get_pubinfo( state, path, url, file_version, pub_info );
+   int rc = curl_get_pubinfo( state, path, url, pub_info );
    
    if( rc != 0 ) {
       errorf("curl_get_pubinfo(%s, %s) rc = %d\n", path, url, rc );
@@ -361,7 +373,7 @@ int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driv
    
    free( url );
    
-   return 0;
+   return rc;
 }
 
 
