@@ -1344,13 +1344,13 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
    bool is_AG = ms_client_is_AG( core->ms, fent->coordinator );
    
    // does the read start within the file?
-   if( start_id > last_block_id ) {
+   if( start_id > last_block_id && !is_AG ) {
       // we're EOF 
       return 0;
    }
    
    // does the read go past the end of the file?
-   if( end_id > last_block_id ) {
+   if( end_id > last_block_id && !is_AG ) {
       // don't read past the last block
       end_id = last_block_id;
    }
@@ -1364,6 +1364,10 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
       uint64_t block_id = start_id;
       int64_t block_version = fent->manifest->get_block_version( block_id );
       uint64_t gateway_id = fent->manifest->get_block_host( core, block_id );
+      
+      if( gateway_id == 0 && is_AG ) {
+         gateway_id = fent->coordinator;
+      }
       
       off_t block_read_start = (offset % core->blocking_factor);
       off_t block_read_end = MIN( ((offset) % core->blocking_factor) + real_count, core->blocking_factor );
@@ -1399,6 +1403,10 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
       uint64_t block_id = end_id;
       int64_t block_version = fent->manifest->get_block_version( block_id );
       uint64_t gateway_id = fent->manifest->get_block_host( core, block_id );
+      
+      if( gateway_id == 0 ) {
+         gateway_id = fent->coordinator;
+      }
       
       off_t block_read_end = ((offset + real_count) % core->blocking_factor);
       
@@ -1680,7 +1688,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    file_size = fent->size;
    
    // are we EOF already?
-   if( offset > fent->size ) {
+   if( offset > fent->size && fent->size > 0 ) {
       // EOF 
       fs_entry_unlock( fent );
       return 0;

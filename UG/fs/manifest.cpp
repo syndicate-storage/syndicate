@@ -1169,9 +1169,16 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
 
    int rc = 0;
 
+   bool is_AG = ms_client_is_AG( core->ms, fent->coordinator );
+   
    // validate
    if( mmsg->volume_id() != core->volume ) {
       errorf("Invalid Manifest: manifest belongs to Volume %" PRIu64 ", but this Gateway is attached to %" PRIu64 "\n", mmsg->volume_id(), core->volume );
+      return -EINVAL;
+   }
+   
+   if( mmsg->size() < 0 && !is_AG ) {
+      errorf("Invalid Manifest: coorinator is not an AG, but size is %" PRId64 "\n", mmsg->size() );
       return -EINVAL;
    }
    
@@ -1179,34 +1186,39 @@ int file_manifest::parse_protobuf( struct fs_core* core, struct fs_entry* fent, 
       Serialization::BlockURLSetMsg busmsg = mmsg->block_url_set( i );
 
       // make sure version and hash lengths match up
-      if( busmsg.block_versions_size() != busmsg.block_hashes_size() ) {
+      if( !is_AG && busmsg.block_versions_size() != busmsg.block_hashes_size() ) {
          errorf("Manifest message len(block_versions) == %u differs from len(block_hashes) == %u\n", busmsg.block_versions_size(), busmsg.block_hashes_size() );
          return -EINVAL;
       }
       
-      int64_t* block_versions = CALLOC_LIST( int64_t, busmsg.end_id() - busmsg.start_id() );
-      unsigned char* block_hashes = CALLOC_LIST( unsigned char, (busmsg.end_id() - busmsg.start_id()) * BLOCK_HASH_LEN() );
+      if( mmsg->size() >= 0 ) {
+         int64_t* block_versions = CALLOC_LIST( int64_t, busmsg.end_id() - busmsg.start_id() );
+         unsigned char* block_hashes = CALLOC_LIST( unsigned char, (busmsg.end_id() - busmsg.start_id()) * BLOCK_HASH_LEN() );
 
-      for( int j = 0; j < busmsg.block_versions_size(); j++ ) {
-         
-         // validate length
-         if( busmsg.block_hashes(j).size() != BLOCK_HASH_LEN() ) {
-            errorf("Block URL set hash length for block %" PRIu64 " is %zu, which differs from expected %zu\n", (uint64_t)(busmsg.start_id() + j), busmsg.block_hashes(j).size(), BLOCK_HASH_LEN() );
-            free( block_versions );
-            free( block_hashes );
-            return -EINVAL;
+         for( int j = 0; j < busmsg.block_versions_size(); j++ ) {
+            
+            // get block hashes, if we're not an AG
+            if( !is_AG ) {
+               if( busmsg.block_hashes(j).size() != BLOCK_HASH_LEN() ) {
+                  errorf("Block URL set hash length for block %" PRIu64 " is %zu, which differs from expected %zu\n", (uint64_t)(busmsg.start_id() + j), busmsg.block_hashes(j).size(), BLOCK_HASH_LEN() );
+                  free( block_versions );
+                  free( block_hashes );
+                  return -EINVAL;
+               }
+               
+               memcpy( hash_at( block_hashes, j ), busmsg.block_hashes(j).data(), BLOCK_HASH_LEN() );
+            }
+            
+            block_versions[j] = busmsg.block_versions(j);
          }
-         
-         block_versions[j] = busmsg.block_versions(j);
-         memcpy( hash_at( block_hashes, j ), busmsg.block_hashes(j).data(), BLOCK_HASH_LEN() );
+
+         uint64_t gateway_id = busmsg.gateway_id();
+
+         m->block_urls[ busmsg.start_id() ] = new block_url_set( core->volume, gateway_id, fent->file_id, mmsg->file_version(), busmsg.start_id(), busmsg.end_id(), block_versions, block_hashes );
+
+         free( block_versions );
+         free( block_hashes );
       }
-
-      uint64_t gateway_id = busmsg.gateway_id();
-
-      m->block_urls[ busmsg.start_id() ] = new block_url_set( core->volume, gateway_id, fent->file_id, mmsg->file_version(), busmsg.start_id(), busmsg.end_id(), block_versions, block_hashes );
-
-      free( block_versions );
-      free( block_hashes );
    }
 
    if( rc == 0 ) {
