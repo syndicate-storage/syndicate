@@ -38,26 +38,31 @@ static void AG_connection_data_free( struct AG_connection_data* con_data ) {
    }
    
    // free memory
-   if( con_data->rb ) {
+   if( con_data->rb != NULL ) {
       response_buffer_free( con_data->rb );
       delete con_data->rb;
       con_data->rb = NULL;
    }
 
-   if( con_data->ctx.args ) {
+   if( con_data->ctx.args != NULL ) {
       free( con_data->ctx.args );
       con_data->ctx.args = NULL;
    }
    
-   if( con_data->mi ) {
+   if( con_data->mi != NULL ) {
       AG_map_info_free( con_data->mi );
       free( con_data->mi );
       con_data->mi = NULL;
    }
    
-   if( con_data->ctx.query_string ) {
+   if( con_data->ctx.query_string != NULL ) {
       free( con_data->ctx.query_string );
       con_data->ctx.query_string = NULL;
+   }
+   
+   if( con_data->pubinfo != NULL ) {
+      free( con_data->pubinfo );
+      con_data->pubinfo = NULL;
    }
    
    md_gateway_request_data_free( &con_data->ctx.reqdat );
@@ -347,9 +352,11 @@ static AG_map_info* AG_HTTP_make_fresh_map_info( struct AG_state* state, struct 
    
    if( (unsigned)now.tv_sec > mi->refresh_deadline ) {
       
+      dbprintf("Reversion deadline for %s has passed (deadline was %" PRIu64 ").  Reversioning and telling the client to try again.\n", reqdat->fs_path, mi->refresh_deadline );
+      
       // entry is stale--queue a refresh and tell the client to try again 
-      int http_status = 503;
-      char const* http_msg = MD_HTTP_503_MSG;
+      int http_status = MD_HTTP_TRYAGAIN;
+      char const* http_msg = MD_HTTP_TRYAGAIN_MSG;
       
       rc = AG_reversioner_add_map_info( state->reversioner, reqdat->fs_path, NULL );
       if( rc != 0 && rc != -EEXIST ) {
@@ -484,6 +491,14 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    }
    
    memcpy( &con_data->ctx.reqdat, &reqdat, sizeof(reqdat) );    // NOTE: free con_data instead of reqdat from now on
+   
+   // manifest request?
+   if( request_type == AG_REQUEST_MANIFEST ) {
+      
+      con_data->pubinfo = CALLOC_LIST( struct AG_driver_publish_info, 1 );
+      memcpy( con_data->pubinfo, &pubinfo, sizeof( struct AG_driver_publish_info ) );
+   }
+   
    con_data->ctx.hostname = md_con_data->remote_host;           // WARNING: not a copy; don't free this!
    con_data->ctx.method = md_con_data->method;
    con_data->ctx.size = ms_client_get_volume_blocksize( state->ms );
@@ -640,24 +655,18 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
    // manifest request 
    Serialization::ManifestMsg mmsg;
    
-   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
    int rc = 0;
-   struct AG_driver_publish_info pub_info;
+   struct md_HTTP_response* resp = CALLOC_LIST( struct md_HTTP_response, 1 );
    
-   // ask the driver for data
-   rc = AG_driver_stat( rpc->ctx.driver, rpc->ctx.reqdat.fs_path, rpc->mi, &pub_info );
-   
-   if( rc != 0 ) {
-      // error 
-      errorf("AG_driver_get_manifest( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRIu64 ".%" PRId64 " ) rc = %d\n",
-             rpc->ctx.reqdat.fs_path, rpc->ctx.reqdat.file_id, rpc->ctx.reqdat.file_version, rpc->ctx.reqdat.manifest_timestamp.tv_sec, rpc->ctx.reqdat.manifest_timestamp.tv_nsec, rc );
+   if( rpc->pubinfo == NULL ) {
+      errorf("BUG: %p is a manifest request, but no pubinfo given!\n", rpc );
       
-      md_create_HTTP_response_ram_static( resp, "text/plain", AG_get_driver_HTTP_status( &rpc->ctx, 502 ), AG_HTTP_DRIVER_ERROR, strlen(AG_HTTP_DRIVER_ERROR) + 1 );
+      md_create_HTTP_response_ram_static( resp, "text/plain", 500, MD_HTTP_500_MSG, strlen(MD_HTTP_500_MSG) + 1 );
       return resp;
    }
    
    // populate the manifest
-   rc = AG_populate_manifest( &mmsg, rpc->ctx.reqdat.fs_path, rpc->mi, &pub_info );
+   rc = AG_populate_manifest( &mmsg, rpc->ctx.reqdat.fs_path, rpc->mi, rpc->pubinfo );
    if( rc != 0 ) {
       
       errorf("AG_populate_manifest( %s %" PRIX64 ".%" PRId64 "/manifest.%" PRIu64 ".%" PRId64 " ) rc = %d\n",

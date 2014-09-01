@@ -29,6 +29,7 @@
 // prototypes 
 struct AG_driver;
 struct AG_map_info;
+struct AG_driver_publish_info;
 
 // connection context to an AG
 struct AG_connection_context {
@@ -58,6 +59,8 @@ struct AG_connection_data {
    
    struct AG_connection_context ctx;      // AG connection context
    void* user_cls;                        // driver-supplied
+   
+   struct AG_driver_publish_info* pubinfo;       // if this is a manifest request, this is filled in with the results of stat_dataset()
 };
 
 int AG_http_init( struct md_HTTP* http, struct md_syndicate_conf* conf );
