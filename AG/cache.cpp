@@ -133,6 +133,8 @@ int AG_cache_evict_block( struct AG_state* state, char const* path, int64_t file
       errorf("md_cache_evict_block(%s.%" PRId64 ".%" PRIu64 ".%" PRId64 ") rc = %d\n", path, file_version, block_id, block_version, rc );
    }
    
+   dbprintf("CACHE EVICT %s.%" PRId64 ".%" PRIu64 ".%" PRId64 " rc = %d\n", path, file_version, block_id, block_version, rc );
+   
    return rc;
 }
 
@@ -282,6 +284,7 @@ int AG_cache_evict_stat( struct AG_state* state, char const* path, int64_t file_
       errorf("md_cache_evict_block(%s.%" PRId64 ") rc = %d\n", stat_path, file_version, rc );
    }
    
+   dbprintf("CACHE EVICT %s.%" PRId64 " rc = %d\n", stat_path, file_version, rc );
    free( stat_path );
    
    return rc;
