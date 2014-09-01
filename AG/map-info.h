@@ -58,8 +58,11 @@ struct AG_fs {
    struct ms_client* ms;
 };
 
+// comparator for equality between map_info 
+typedef bool (*AG_map_info_equality_func_t)( struct AG_map_info* mi1, struct AG_map_info* mi2 );
+
 // init/shutdown
-int AG_fs_init( struct AG_fs* ag_fs, struct ms_client* client, AG_fs_map_t* fs_map, struct AG_driver* root_driver );
+int AG_fs_init( struct AG_fs* ag_fs, AG_fs_map_t* fs_map, struct ms_client* ms );
 int AG_fs_free( struct AG_fs* ag_fs );
 
 // memory management 
@@ -82,7 +85,7 @@ int AG_fs_copy_cached_data( struct AG_fs* dest, struct AG_fs* src );
 int AG_validate_map_info( AG_fs_map_t* fs );
 
 // tree operations
-int AG_fs_map_diff( AG_fs_map_t* old_fs, AG_fs_map_t* new_fs, AG_fs_map_t* in_old, AG_fs_map_t* in_new );
+int AG_fs_map_transforms( AG_fs_map_t* old_fs, AG_fs_map_t* new_fs, AG_fs_map_t* to_publish, AG_fs_map_t* to_update, AG_fs_map_t* to_delete, AG_map_info_equality_func_t mi_equ );
 int AG_fs_map_clone_path( AG_fs_map_t* fs_map, char const* path, AG_fs_map_t* path_data );
 int AG_fs_map_merge_tree( AG_fs_map_t* fs_map, AG_fs_map_t* path_data, bool merge_new, AG_fs_map_t* not_merged );
 
@@ -93,6 +96,7 @@ int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi
 int AG_fs_publish_map( struct AG_fs* ag_fs, AG_fs_map_t* to_publish, bool continue_if_exists );
 
 int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_publish_info* pubinfo );
+int AG_fs_reversion_map( struct AG_fs* ag_fs, AG_fs_map_t* to_reversion, bool continue_on_failure );
 
 int AG_fs_delete( struct AG_fs* ag_fs, char const* path );
 int AG_fs_delete_map( struct AG_fs* ag_fs, AG_fs_map_t* to_delete, bool continue_on_failure );
@@ -101,5 +105,6 @@ int AG_fs_delete_map( struct AG_fs* ag_fs, AG_fs_map_t* to_delete, bool continue
 int AG_download_existing_fs_map( struct ms_client* ms, AG_fs_map_t** ret_existing_fs, bool fail_fast );
 int AG_get_pub_info( struct AG_state* state, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo );
 int AG_dump_fs_map( AG_fs_map_t* fs_map );
+int AG_map_info_get_root( struct ms_client* client, struct AG_map_info* root );
 
 #endif

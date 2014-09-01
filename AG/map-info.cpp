@@ -152,39 +152,58 @@ int AG_fs_map_dup( AG_fs_map_t* dest, AG_fs_map_t* src ) {
    return 0;
 }
 
-
-// find the differences between two AG fs maps.
-// in_old and in_new will be deep copies of map_infos in old_fs and new_fs
-// map_infos are compared 
-int AG_fs_map_diff( AG_fs_map_t* old_fs, AG_fs_map_t* new_fs, AG_fs_map_t* in_old, AG_fs_map_t* in_new ) {
+// given two fs_maps--old_fs and new_fs--find out the set of operations needed to transform old into new.
+// that is, which elements must be deleted, updated, and published (to_delete, to_update, and to_publish, respectively).
+// to_delete will contain pointers to map_infos in old_fs
+// to_publish and to_update will contain pointers to map_infos in new_fs.
+// to be put into to_update, the elements mapped to the same path in old_fs and new_fs must FAIL the equality test mi_equ.
+// to_publish, to_update, and to_delete should be empty when this method is called.
+// NOTE: to_publish, to_update, and to_delete SHOULD NOT BE FREED.
+int AG_fs_map_transforms( AG_fs_map_t* old_fs, AG_fs_map_t* new_fs, AG_fs_map_t* to_publish, AG_fs_map_t* to_update, AG_fs_map_t* to_delete, AG_map_info_equality_func_t mi_equ ) {
    
-   AG_fs_map_t minter;
-   AG_fs_map_t::iterator itr;
+   set<string> intersection;
    
-   AG_fs_map_t in_old_ref;
-   AG_fs_map_t in_new_ref;
+   for( AG_fs_map_t::iterator itr = old_fs->begin(); itr != old_fs->end(); itr++ ) {
+      
+      const string& old_path = itr->first;
+      struct AG_map_info* old_mi = itr->second;
+      
+      // is this entry in new_fs?
+      AG_fs_map_t::iterator new_itr = new_fs->find( old_path );
+      if( new_itr == new_fs->end() ) {
+         
+         // this old entry is not in the new fs.  We should delete it.
+         (*to_delete)[ old_path ] = old_mi;
+      }
+      else {
+         
+         // this old entry is also in the new fs.
+         // is there any difference between the two that warrants an update?
+         if( !(*mi_equ)( old_mi, new_itr->second ) ) {
+            (*to_update)[ old_path ] = new_itr->second;
+         }
+         
+         // track intersection between old_fs and new_fs
+         intersection.insert( old_path );
+      }
+   }
    
-   // find old_fs ^ new_fs
-   set_intersection( new_fs->begin(), new_fs->end(),
-                     old_fs->begin(), old_fs->end(),
-                     inserter( minter, minter.begin() ),
-                     new_fs->value_comp() );
-   
-   // find old_fs - new_fs
-   set_difference( old_fs->begin(), old_fs->end(),
-                   minter.begin(), minter.end(),
-                   inserter( in_old_ref, in_old_ref.begin() ),
-                   old_fs->value_comp() );
-   
-   // find new_fs - old_fs 
-   set_difference( new_fs->begin(), new_fs->end(),
-                   minter.begin(), minter.end(),
-                   inserter( in_new_ref, in_new_ref.begin() ),
-                   new_fs->value_comp() );
-   
-   // duplicate
-   AG_fs_map_dup( in_old, &in_old_ref );
-   AG_fs_map_dup( in_new, &in_new_ref );
+   // find the entries in new_fs that are not in old_fs 
+   for( AG_fs_map_t::iterator itr = new_fs->begin(); itr != new_fs->end(); itr++ ) {
+      
+      const string& new_path = itr->first;
+      struct AG_map_info* new_mi = itr->second;
+      
+      // is this entry in old_fs?
+      if( intersection.count( new_path ) > 0 ) {
+         // already accounted for 
+         continue;
+      }
+      else {
+         // should publish this, since it's not in old_fs
+         (*to_publish)[ new_path ] = new_mi;
+      }
+   }
    
    return 0;
 }
@@ -235,8 +254,8 @@ static int AG_invalidate_path_metadata( AG_fs_map_t* fs_map, char const* path ) 
 }
 
 
-// insert the root map info 
-int AG_fs_insert_root_info( struct ms_client* client, AG_fs_map_t* fs_map, struct AG_driver* root_driver ) {
+// extract root information from the ms client 
+int AG_map_info_get_root( struct ms_client* client, struct AG_map_info* root ) {
    
    int rc = 0;
    
@@ -250,49 +269,24 @@ int AG_fs_insert_root_info( struct ms_client* client, AG_fs_map_t* fs_map, struc
       return rc; 
    }
    
-   struct AG_map_info* root_info = NULL;
+   AG_map_info_init( root, MD_ENTRY_DIR, NULL, volume_root.mode, volume_root.max_read_freshness / 1000, NULL );
+   AG_copy_metadata_to_map_info( root, &volume_root );
    
-   // if there was a root info already, replace it 
-   AG_fs_map_t::iterator itr = fs_map->find( string("/") );
-   if( itr != fs_map->end() ) {
-      
-      // use existing one
-      root_info = itr->second;
-   }
-   else {
-      
-      // make a new one
-      root_info = CALLOC_LIST( struct AG_map_info, 1 );
-      (*fs_map)[ string("/") ] = root_info;
-   }
-   
-   AG_map_info_init( root_info, MD_ENTRY_DIR, NULL, volume_root.mode, volume_root.max_read_freshness, root_driver );
-   
-   AG_copy_metadata_to_map_info( root_info, &volume_root );
-   root_info->cache_valid = true;
+   root->cache_valid = true;
    
    md_entry_free( &volume_root );
-   
    return 0;
 }
-   
-  
+
 
 // initialize an AG_fs.
 // NOTE: the AG_fs takes ownership of the fs_map
-int AG_fs_init( struct AG_fs* ag_fs, struct ms_client* client, AG_fs_map_t* fs_map, struct AG_driver* root_driver ) {
-   
-   // there has to be a root 
-   int rc = AG_fs_insert_root_info( client, fs_map, root_driver );
-   if( rc != 0 ) {
-      errorf("AG_fs_insert_root_info rc = %d\n", rc );
-      return rc;
-   }
+int AG_fs_init( struct AG_fs* ag_fs, AG_fs_map_t* fs_map, struct ms_client* ms ) {
    
    // initialize the fs 
    pthread_rwlock_init( &ag_fs->fs_lock, NULL );
    ag_fs->fs = fs_map;
-   ag_fs->ms = client;
+   ag_fs->ms = ms;
    
    return 0;
 }
@@ -418,37 +412,40 @@ int AG_validate_map_info( AG_fs_map_t* fs ) {
 
 // given a path and coherent map_info, get its pubinfo.
 // check the cache first, and use the driver to get the pubinfo on cache miss.  cache the result.
+// if mi is not coherent, then this method will skip the cache and poll the pubinfo from the driver.  The result will NOT be cached, since the mi isn't coherent
 // return 0 on success
-// return -ESTALE if the map_info is not coherent
-// return -ENODATA if there is no driver loaded for it
+// return -ENODATA if there is no driver loaded for the map info, and we couldn't find any cached data
 int AG_get_pub_info( struct AG_state* state, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pub_info ) {
 
-   if( !mi->cache_valid ) {
-      return -ESTALE;
-   }
-   
    int rc = 0;
-
-   // see if we have a cached pubinfo 
-   rc = AG_cache_get_stat( state, path, mi->file_version, pub_info );
    
-   if( rc == 0 ) {
-      // cache hit 
-      AG_cache_promote_stat( state, path, mi->file_version );
-   }
-   else {
+   if( mi->cache_valid ) {
       
-      // get details from the driver, if we have one
-      // (we might not, if we're deleting something that we discovered on the MS)
-      if( mi->driver != NULL ) {
+      // see if we have a cached pubinfo 
+      rc = AG_cache_get_stat( state, path, mi->file_version, pub_info );
+      
+      if( rc == 0 ) {
+         // cache hit 
+         AG_cache_promote_stat( state, path, mi->file_version );
          
-         // cache miss 
-         rc = AG_driver_stat( mi->driver, path, mi, pub_info );
-         if( rc != 0 ) {
-            errorf("AG_driver_stat(%s) rc = %d\n", path, rc );
-            return rc;
-         }
+         return rc;
+      }
+   }
+
+   // get details from the driver, if we have one
+   // (we might not, if we're deleting something that we discovered on the MS)
+   if( mi->driver != NULL ) {
+      
+      // cache miss. ask the drivers
+      rc = AG_driver_stat( mi->driver, path, mi, pub_info );
+      if( rc != 0 ) {
+         errorf("AG_driver_stat(%s) rc = %d\n", path, rc );
+         return rc;
+      }
+      
+      if( mi->cache_valid ) {
          
+         // have coherent information, so we can cache this
          rc = AG_cache_put_stat_async( state, path, mi->file_version, pub_info );
          if( rc != 0 ) {
             
@@ -457,30 +454,34 @@ int AG_get_pub_info( struct AG_state* state, char const* path, struct AG_map_inf
             rc = 0;
          }
       }
-      else {
-         // cache miss and no driver
-         return -ENODATA;
-      }
+   }
+   else {
+      // cache miss and no driver
+      return -ENODATA;
    }
    
    return rc;
 }
 
 
-// populate an md_entry from cached data in a map_info.  map_info must be coherent.
-static void AG_populate_md_entry_from_cached_map_info( struct md_entry* entry, struct AG_map_info* mi, uint64_t volume_id, uint64_t owner_id, uint64_t gateway_id, char const* path_basename ) {
+// populate an md_entry from data in a map_info.
+// if mi is coherent, then fill in its cached metadata
+static void AG_populate_md_entry_from_map_info( struct md_entry* entry, struct AG_map_info* mi, uint64_t volume_id, uint64_t owner_id, uint64_t gateway_id, char const* path_basename ) {
    
    // fill in basics from our map info 
    entry->type = mi->type;
-   entry->file_id = mi->file_id;
    entry->name = strdup( path_basename );
-   entry->version = mi->file_version;
    entry->mode = mi->file_perm;
-   entry->write_nonce = mi->write_nonce;
    entry->owner = owner_id;
    entry->coordinator = gateway_id;
    entry->volume = volume_id;
    entry->max_read_freshness = mi->reval_sec * 1000;
+   
+   if( mi->cache_valid ) {
+      entry->file_id = mi->file_id;
+      entry->version = mi->file_version;
+      entry->write_nonce = mi->write_nonce;
+   }
 }
 
 
@@ -490,54 +491,71 @@ static void AG_populate_md_entry_from_publish_info( struct md_entry* entry, stru
    entry->size = pub_info->size;
    entry->mtime_sec = pub_info->mtime_sec;
    entry->mtime_nsec = pub_info->mtime_nsec;
+   entry->manifest_mtime_sec = pub_info->mtime_sec;
+   entry->manifest_mtime_nsec = pub_info->mtime_nsec;
 }
 
 // fill in basic fields for an md_entry, getting information from the driver and the map_info.  map_info must be coherent.
 // if driver_required is true, then a driver is needed for the map_info (otherwise, this method will tolerate its absence and skip filling the md_entry with driver-supplied information)
+// if opt_pubinfo is not NULL, it will be used in lieu of querying the driver or cache for the same information.  This implies driver_required == False
 // this is useful for deleting entries, where driver-supplied information is not necessary.
-static int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, char const* path, struct AG_map_info* mi, struct AG_map_info* parent_mi, bool driver_required ) {
+static int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, char const* path, struct AG_map_info* mi, struct AG_map_info* parent_mi, struct AG_driver_publish_info* opt_pubinfo, bool driver_required ) {
+   
+   if( !mi->cache_valid ) {
+      return -ESTALE;
+   }
    
    int rc = 0;
    
    // sanity check 
-   if( driver_required && mi->driver == NULL ) {
+   if( driver_required && mi->driver == NULL && opt_pubinfo == NULL ) {
       errorf("No driver loaded for %s\n", path );
       return -EINVAL;
    }
    
    memset( entry, 0, sizeof(struct md_entry) );
    
-   char* path_basename = md_basename( path, NULL );
    uint64_t volume_id = ms_client_get_volume_id( ms );
    
    struct AG_driver_publish_info pub_info;
    memset( &pub_info, 0, sizeof(pub_info) );
    
-   struct AG_state* state = AG_get_state();
-   if( state == NULL ) {
-      return -ENOTCONN;
+   if( opt_pubinfo != NULL ) {
+      // use caller-given pubinfo
+      memcpy( &pub_info, opt_pubinfo, sizeof(struct AG_driver_publish_info) );
+   }
+   else {
+      
+      // use cached or driver-given pubinfo
+      struct AG_state* state = AG_get_state();
+      if( state == NULL ) {
+         return -ENOTCONN;
+      }
+      
+      rc = AG_get_pub_info( state, path, mi, &pub_info );
+   
+      AG_release_state( state );
+      
+      if( rc != -ENODATA || (rc == -ENODATA && driver_required) ) {
+         errorf("AG_get_pub_info( %s ) rc = %d\n", path, rc );
+         return rc;
+      }
+      else {
+         rc = 0;
+      }
    }
    
-   rc = AG_get_pub_info( state, path, mi, &pub_info );
-   
-   AG_release_state( state );
-   
-   if( rc != 0 ) {
-      errorf("AG_get_pub_info( %s ) rc = %d\n", path, rc );
-      return rc;
-   }
+   char* path_basename = md_basename( path, NULL );
    
    // fill the entry with the driver-given data 
    AG_populate_md_entry_from_publish_info( entry, &pub_info );
    
    // fill in the entry with our cached data 
-   AG_populate_md_entry_from_cached_map_info( entry, mi, volume_id, ms->owner_id, ms->gateway_id, path_basename );
+   AG_populate_md_entry_from_map_info( entry, mi, volume_id, ms->owner_id, ms->gateway_id, path_basename );
    
    free( path_basename );
    
    // don't publish these anyway 
-   entry->manifest_mtime_sec = 0;
-   entry->manifest_mtime_nsec = 0;
    entry->xattr_nonce = 0;
    entry->error = 0;
    
@@ -886,7 +904,7 @@ static int AG_accumulate_data_from_md_entry( AG_fs_map_t* new_data, char const* 
       AG_map_info_dup( new_info, mi );
    }
    else {
-      AG_map_info_init( new_info, ent->type, NULL, ent->mode, ent->max_read_freshness, NULL );
+      AG_map_info_init( new_info, ent->type, NULL, ent->mode, ent->max_read_freshness / 1000, NULL );
    }
    
    // got it!
@@ -1288,6 +1306,14 @@ int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi
    struct md_entry entry;
    memset( &entry, 0, sizeof(struct md_entry) );
    
+   AG_fs_rlock( ag_fs );
+   
+   uint64_t volume_id = ms_client_get_volume_id( ag_fs->ms );
+   uint64_t owner_id = ag_fs->ms->owner_id;
+   uint64_t gateway_id = ag_fs->ms->gateway_id;
+   
+   AG_fs_unlock( ag_fs );
+   
    int rc = 0;
    
    // make sure we have the necessary metadata for the parent, since we'll need the parent's file ID
@@ -1303,31 +1329,58 @@ int AG_fs_publish( struct AG_fs* ag_fs, char const* path, struct AG_map_info* mi
    struct AG_map_info* parent_info = AG_fs_lookup_path( ag_fs, parent_path );
    if( parent_info == NULL ) {
       errorf("No such entry '%s'\n", parent_path );
+      free( parent_path );
       return -ENOENT;
    }
+   
+   uint64_t parent_id = parent_info->file_id;
+   
+   AG_map_info_free( parent_info );
+   free( parent_info );
    
    // set versioning information in this copy
    mi->file_version = md_random64();
    mi->block_version = md_random64();
    
-   // populate the entry 
-   rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_info, true );
-   if( rc != 0 ) {
-      errorf("AG_populate_md_entry(%s) rc = %d\n", path, rc );
-      free( parent_info );
+   // get pubinfo from the driver
+   struct AG_driver_publish_info pub_info;
+   memset( &pub_info, 0, sizeof(struct AG_driver_publish_info) );
+   
+   struct AG_state* state = AG_get_state();
+   if( state == NULL ) {
       free( parent_path );
-      md_entry_free( &entry );
+      
+      return -ENOTCONN;
+   }
+   
+   // we're not coherent.  ensure we get the driver-given data 
+   mi->cache_valid = false;
+   
+   rc = AG_get_pub_info( state, path, mi, &pub_info );
+
+   AG_release_state( state );
+   
+   if( rc != 0 ) {
+      free( parent_path );
+      
+      errorf("AG_get_pub_info( %s ) rc = %d\n", path, rc );
       return rc;
    }
    
+   char* mi_name = md_basename( path, NULL );
+   
+   // fill in the entry with our mi data 
+   AG_populate_md_entry_from_map_info( &entry, mi, volume_id, owner_id, gateway_id, mi_name );
+   
+   // fill the entry with the driver-given data 
+   AG_populate_md_entry_from_publish_info( &entry, &pub_info );
+   
    // need parent name and ID to create
-   entry.parent_id = parent_info->file_id;
+   entry.parent_id = parent_id;
    entry.parent_name = md_basename( parent_path, NULL );
    
+   free( mi_name );
    free( parent_path );
-   
-   AG_map_info_free( parent_info );
-   free( parent_info );
    
    uint64_t new_file_id = 0;
    int64_t write_nonce = 0;
@@ -1455,10 +1508,13 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    int64_t mi_reval_sec = mi->reval_sec;
    
    // populate the entry 
-   rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_mi, true );
+   rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_mi, pubinfo, true );
    
    AG_map_info_free( mi );
    AG_map_info_free( parent_mi );
+   
+   // remember the driver 
+   struct AG_driver* mi_driver = mi->driver;
    
    free( mi );
    free( parent_mi );
@@ -1468,11 +1524,6 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
       
       md_entry_free( &entry );
       return rc;
-   }
-   
-   if( pubinfo ) {
-      // fold in pubinfo too 
-      AG_populate_md_entry_from_publish_info( &entry, pubinfo );
    }
    
    // generate a new file and block version, randomly 
@@ -1506,7 +1557,7 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    }
    
    // inform the driver that we reversioned
-   rc = AG_driver_reversion( mi->driver, path, &reversioned_mi );
+   rc = AG_driver_reversion( mi_driver, path, &reversioned_mi );
    if( rc != 0 ) {
       errorf("WARN: AG_driver_reversion(%s) rc = %d\n", path, rc );
    }
@@ -1514,6 +1565,50 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    AG_map_info_free( &reversioned_mi );
    
    return rc;
+}
+
+
+// reversion a whole map of map_infos
+// if continue_on_failure is true, then continue to reversion subsequent entries even if reversioning one fails.
+// reversion in order of parents to children, so permissions get applied in the right order
+int AG_fs_reversion_map( struct AG_fs* ag_fs, AG_fs_map_t* to_reversion, bool continue_on_failure ) {
+   
+   int rc = 0;
+   
+   // order paths by length, starting with the shortest.
+   vector<string> paths;
+   
+   for( AG_fs_map_t::iterator itr = to_reversion->begin(); itr != to_reversion->end(); itr++ ) {
+      
+      paths.push_back( itr->first );
+   }
+   
+   // comparator by string length, longest > shortest
+   struct local_string_length_comparator {
+      
+      static bool comp( const string& s1, const string& s2 ) {
+         return (s1.size() < s2.size());
+      }
+   };
+   
+   // sort them by increasing length 
+   sort( paths.begin(), paths.end(), local_string_length_comparator::comp );
+   
+   for( unsigned int i = 0; i < paths.size(); i++ ) {
+      
+      char const* path = paths[i].c_str();
+      
+      rc = AG_fs_reversion( ag_fs, path, NULL );
+      if( rc != 0 ) {
+         
+         errorf("AG_fs_reversion(%s) rc = %d\n", path, rc );
+         if( !continue_on_failure ) {
+            return rc;
+         }
+      }
+   }
+   
+   return 0;
 }
 
 
@@ -1549,7 +1644,7 @@ int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
    free( parent_path );
    
    // populate the entry 
-   rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_mi, false );
+   rc = AG_populate_md_entry( ag_fs->ms, &entry, path, mi, parent_mi, NULL, false );
    
    AG_map_info_free( parent_mi );
    free( parent_mi );
@@ -1559,6 +1654,8 @@ int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
       
       AG_map_info_free( mi );
       free( mi );
+      
+      md_entry_free( &entry );
       return rc;
    }
    
@@ -1672,16 +1769,21 @@ int AG_download_existing_fs_map( struct ms_client* ms, AG_fs_map_t** ret_existin
    int rc = 0;
    vector<string> frontier;
    
-   AG_fs_map_t* existing_fs = new AG_fs_map_t();
+   struct AG_map_info* root = CALLOC_LIST( struct AG_map_info, 1 );
    
-   rc = AG_fs_insert_root_info( ms, existing_fs, NULL );
+   rc = AG_map_info_get_root( ms, root );
    if( rc != 0 ) {
-      errorf("AG_fs_insert_root_info rc = %d\n", rc );
+      errorf("AG_map_info_get_root rc = %d\n", rc );
       
-      delete existing_fs;
+      free( root );
+      
       dbprintf("End downloading (failure, rc = %d)\n", rc);
       return rc;
    }
+   
+   AG_fs_map_t* existing_fs = new AG_fs_map_t();
+   
+   (*existing_fs)[ string("/") ] = root;
    
    // find the root and invalidate it 
    rc = AG_invalidate_path_metadata( existing_fs, "/" );
