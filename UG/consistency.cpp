@@ -1550,7 +1550,8 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
 }
 
 
-// revalidate a path and the manifest at the end of the path
+// revalidate a path and the manifest at the end of the path.
+// if anywhere along the process we are told to try again (i.e. by the MS, the remote gateway, etc,), do so up to conf->max_read_retry times.
 // fent should NOT be locked
 int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t* rg_id_ret ) {
    
@@ -1559,6 +1560,8 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
    int rc = 0;
    
    BEGIN_TIMING_DATA( ts );
+   
+   int num_read_retries = 0;
    
    while( true ) {
       
@@ -1588,7 +1591,23 @@ int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, str
       else if( rc == -EAGAIN ) {
          // try again 
          fs_entry_unlock( fent );
-         dbprintf("Try reloading %s again\n", fs_path );
+         
+         // should we try again?
+         num_read_retries++;
+         if( num_read_retries >= core->conf->max_read_retry ) {
+            errorf("Maximum download retries exceeded for manifest of %s\n", fs_path );
+            return -ENODATA;
+         }
+         else {
+            errorf("WARN: failed to download manifest of %s; trying again in at most %d milliseconds.\n", fs_path, core->conf->retry_delay_ms);
+            
+            struct timespec ts;
+            ts.tv_sec = core->conf->retry_delay_ms / 1000;
+            ts.tv_nsec = (core->conf->retry_delay_ms % 1000) * 1000000;
+            
+            // NOTE: don't care if interrupted
+            nanosleep( &ts, NULL );
+         }
          continue;
       }
       else {
