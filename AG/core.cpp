@@ -940,7 +940,7 @@ AG-specific options:\n\
             Path to an on-disk hierarchy spec file to be used to populate\n\
             this AG's volume.  If not supplied, the MS-served hierarchy spec\n\
             file will be used instead (the default).\n\
-   -r\n\
+   -n\n\
             On start-up, queue all datasets for reversion.  This updates the\n\
             consistency information for each dataset on the MS, and invokes\n\
             each dataset driver's reversion method.\n\
