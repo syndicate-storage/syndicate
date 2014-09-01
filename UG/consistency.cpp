@@ -1456,8 +1456,8 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
       
       END_TIMING_DATA( ts, ts2, "manifest refresh (error)" );
       
-      if( rc == -ENOENT ) {
-         // not found
+      if( rc == -ENOENT || rc == -EAGAIN ) {
+         // not found or try again
          return rc;
       }
       else {
@@ -1555,32 +1555,47 @@ int fs_entry_coordinate( struct fs_core* core, char const* fs_path, struct fs_en
 int fs_entry_revalidate_metadata( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t* rg_id_ret ) {
    
    struct timespec ts, ts2;
-
+   uint64_t rg_id = 0;
+   int rc = 0;
+   
    BEGIN_TIMING_DATA( ts );
    
-   // reload this path
-   int rc = fs_entry_revalidate_path( core, core->volume, fs_path );
-   if( rc != 0 ) {
-      errorf("fs_entry_revalidate(%s) rc = %d\n", fs_path, rc );
-      return rc;
-   }
-   
-   fs_entry_wlock( fent );
-   
-   // reload this manifest.  If we get this manifest from an RG, remember which one.
-   uint64_t rg_id = 0;
-   
-   if( fent->manifest == NULL ) {
-      errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
-      exit(1);
-   }
-   
-   rc = fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec, &rg_id );
+   while( true ) {
+      
+      // reload this path
+      rc = fs_entry_revalidate_path( core, core->volume, fs_path );
+      if( rc != 0 ) {
+         errorf("fs_entry_revalidate(%s) rc = %d\n", fs_path, rc );
+         return rc;
+      }
+      
+      fs_entry_wlock( fent );
+      
+      // reload this manifest.  If we get this manifest from an RG, remember which one.
+      
+      if( fent->manifest == NULL ) {
+         errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
+         exit(1);
+      }
+      
+      rc = fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec, &rg_id );
 
-   if( rc != 0 ) {
-      errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, rc );
-      fs_entry_unlock( fent );
-      return rc;
+      if( rc == 0 ) {
+         // got it!
+         break;
+      }
+      
+      else if( rc == -EAGAIN ) {
+         // try again 
+         fs_entry_unlock( fent );
+         dbprintf("Try reloading %s again\n", fs_path );
+         continue;
+      }
+      else {
+         errorf("fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, rc );
+         fs_entry_unlock( fent );
+         return rc;
+      }
    }
 
    if( rg_id_ret != NULL ) {

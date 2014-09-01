@@ -251,7 +251,15 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
              manifest_msg->volume_id(), manifest_msg->file_id(), manifest_msg->file_version(),
              fent->volume, fent->file_id, fent->version );
       
-      return -EBADMSG;
+      // if it's a version mismatch, we're probably stale 
+      if( manifest_msg->volume_id() == fent->volume && manifest_msg->file_id() == fent->file_id ) {
+         fent->manifest->mark_stale();
+         fent->read_stale = false;
+         return -EAGAIN;
+      }
+      else {
+         return -EBADMSG;
+      }
    }
    
    return 0;
