@@ -148,7 +148,7 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
    off_t block_offset = block_size * block_id;
    
    int rc = lseek( disk_ctx->fd, block_offset, SEEK_SET );
-   if( rc != 0 ) {
+   if( rc < 0 ) {
       rc = -errno;
       errorf("lseek errno = %d\n", rc );
       
@@ -169,7 +169,9 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
 }
 
 // get information for publishing a particular file to the MS 
-int stat_dataset( char const* path, struct AG_map_info* ag_dataset_info, struct AG_driver_publish_info* pub_info, void* driver_state ) {
+int stat_dataset( char const* path, struct AG_map_info* map_info, struct AG_driver_publish_info* pub_info, void* driver_state ) {
+   
+   dbprintf("%s stat dataset\n", DRIVER_QUERY_TYPE );
    
    // get the absolute path 
    char* dataset_path = get_request_abspath( path );
