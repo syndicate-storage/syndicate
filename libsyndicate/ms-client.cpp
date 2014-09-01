@@ -744,6 +744,9 @@ static void* ms_client_view_thread( void* arg ) {
             if( rc == -EINTR ) {
                continue;
             }
+            else if( rc == -ETIMEDOUT ) {
+               break;
+            }
             else {
                errorf("sem_timedwait errno = %d\n", rc);
                return NULL;
@@ -3660,27 +3663,6 @@ bool ms_client_is_AG( struct ms_client* client, uint64_t ag_id ) {
    return ret;
 }
 
-/*
-// get an AG's block size
-uint64_t ms_client_get_AG_blocksize( struct ms_client* client, uint64_t ag_id ) {
-   ms_client_view_rlock( client );
-
-   uint64_t ret = 0;
-   
-   ms_cert_bundle::iterator itr = client->volume->AG_certs->find( ag_id );
-   if( itr != client->volume->AG_certs->end() ) {
-      ret = itr->second->blocksize;
-   }
-   
-   ms_client_view_unlock( client );
-
-   if( ret == 0 ) {
-      errorf("No such AG %" PRIu64 "\n", ag_id );
-   }
-
-   return ret;
-}
-*/
 
 char* ms_client_get_AG_content_url( struct ms_client* client, uint64_t ag_id ) {
    ms_client_view_rlock( client );
