@@ -577,6 +577,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
             if( driver == NULL ) {
                // can't load this 
                errorf("ERR: No driver loaded for %s (query type '%s')\n", this->file_path, this->query_type );
+               throw SAXException("Missing required driver");
             }
             
             else {
