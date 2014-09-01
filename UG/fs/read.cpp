@@ -845,10 +845,14 @@ static int fs_entry_read_block_future_process_download( struct fs_core* core, st
          char const* method = NULL;
          
          // try the same gateway again?
-         if( md_download_context_succeeded( dlctx, 503 ) && block_fut->retry_count < core->conf->max_read_retry ) {
+         if( md_download_context_succeeded( dlctx, MD_HTTP_TRYAGAIN ) && block_fut->retry_count < core->conf->max_read_retry ) {
          
             // try again 
             block_fut->retry_count++;
+            
+            dbprintf("Download of %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] failed with HTTP status %d.  Trying again in at most %d milliseconds.\n",
+                     block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, MD_HTTP_TRYAGAIN, core->conf->retry_delay_ms );
+            
             
             // wait for a bit between retries
             struct timespec wait_ts;
