@@ -1231,7 +1231,7 @@ static int fs_entry_try_read_block_local( struct fs_core* core, char const* fs_p
    rc = fs_entry_has_bufferred_block( fent, block_id );
    if( rc > 0 ) {
       // have a bufferred block.  Read the appropriate part of it 
-      rc = fs_entry_read_bufferred_block( fent, block_id, block_fut->result, block_fut->result_start, block_fut->result_end - block_fut->result_start );
+      rc = fs_entry_read_bufferred_block( fent, block_id, block_fut->result + block_fut->result_start, block_fut->result_start, block_fut->result_end - block_fut->result_start );
       if( rc != 0 ) {
          errorf("fs_entry_read_bufferred_block( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] ) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, block_version, rc );
          
@@ -1241,7 +1241,6 @@ static int fs_entry_try_read_block_local( struct fs_core* core, char const* fs_p
       else {
          // got it!
          dbprintf("bufferred block HIT on %" PRIu64 "\n", block_id );
-         
          fs_entry_read_block_future_finalize( block_fut );
          return block_fut->result_len;
       }
@@ -1374,7 +1373,7 @@ static int fs_entry_split_read( struct fs_core* core, char const* fs_path, struc
       
       // if we're reading from an AG, then we don't know the size in advance.
       // Otherwise, we do, and we should not read past it.
-      if( !is_AG && last_block_id == start_id ) {
+      if( fent->size >= 0 && last_block_id == start_id ) {
          
          // only read up to the end of the file (even if the reader asked for more).
          block_read_end = MIN( (unsigned)block_read_end, fent->size % core->blocking_factor );
@@ -1581,7 +1580,7 @@ static ssize_t fs_entry_read_block_future_combine( struct fs_core* core, char co
 // find the latest block downloaded.
 // if fail_if_eof is true, then this fails if *any* block was EOF'ed.
 // if fail_if_error is true, then this fails if *any* block encountered an error.
-static struct fs_entry_read_block_future* fs_entry_find_latest_block( fs_entry_read_block_future_set_t* reads, bool fail_if_eof, bool fail_if_error ) {
+static struct fs_entry_read_block_future* fs_entry_find_last_finalized_block( fs_entry_read_block_future_set_t* reads, bool fail_if_eof, bool fail_if_error ) {
    
    // Find the last block read
    struct fs_entry_read_block_future* last_block_fut = NULL;
@@ -1591,6 +1590,10 @@ static struct fs_entry_read_block_future* fs_entry_find_latest_block( fs_entry_r
       
       // get the block future 
       struct fs_entry_read_block_future* block_fut = *itr;
+      
+      if( block_fut->status != READ_FINISHED ) {
+         continue;
+      }
       
       // EOF?
       if( block_fut->eof && fail_if_eof ) {
@@ -1620,15 +1623,13 @@ static struct fs_entry_read_block_future* fs_entry_find_latest_block( fs_entry_r
 static int fs_entry_update_bufferred_block_read( struct fs_core* core, struct fs_entry* fent, fs_entry_read_block_future_set_t* reads ) {
    
    // Find the last block read, and if there wasn't an EOF or error, cache it in RAM.
-   struct fs_entry_read_block_future* last_block_fut = fs_entry_find_latest_block( reads, true, true );
+   struct fs_entry_read_block_future* last_block_fut = fs_entry_find_last_finalized_block( reads, true, true );
    
    if( last_block_fut != NULL ) {
       // we expect that a client reader will read blocks sequentially, for the most part.
       // so, cache the last read block to RAM so we can hit it on the next read.
       int has_block = fs_entry_has_bufferred_block( fent, last_block_fut->block_id );
       if( has_block == -ENOENT ) {
-         // this block is not cached, so do so.
-         dbprintf("block %" PRIu64 " will be bufferred in RAM\n", last_block_fut->block_id );
          fs_entry_replace_bufferred_block( core, fent, last_block_fut->block_id, last_block_fut->result, last_block_fut->result_len, false );
       }
    }
@@ -1688,7 +1689,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    file_size = fent->size;
    
    // are we EOF already?
-   if( offset > fent->size && fent->size > 0 ) {
+   if( offset > fent->size && fent->size >= 0 ) {
       // EOF 
       fs_entry_unlock( fent );
       return 0;
@@ -1696,8 +1697,15 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    
    // how many bytes are we actually going to combine into the read buffer?
    size_t real_count = count;
-   if( (signed)(count + offset) >= file_size )
+   if( (signed)(count + offset) >= file_size && file_size >= 0 ) {
       real_count = file_size - offset;
+   }
+   
+   if( real_count == 0 ) {
+      // not actually going to read 
+      fs_entry_unlock( fent );
+      return 0;
+   }
    
    // cache block futures 
    vector<struct cache_block_future*> cache_futs;
@@ -1801,7 +1809,7 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
       fs_file_handle_unlock( fh );
       return -EBADF;
    }
-
+   
    // refresh metadata
    int rc = fs_entry_revalidate_metadata( core, fh->path, fh->fent, NULL );
    if( rc != 0 ) {

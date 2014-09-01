@@ -49,12 +49,12 @@ struct fs_entry_read_block_future {
    
    bool is_AG;                  // if true, we're downloading from an AG (so don't try the RGs)
    
-   char* result;                // pointer to the buffer to hold block data (NULL at first; filled in when ready)
-   off_t result_len;            // length of the above buffer
+   char* result;                // pointer to the buffer to hold block data (NULL at first; filled in when ready).  *ALWAYS* aligned on a block boundry
+   off_t result_len;            // length of the above buffer (*AWLAYS* the volume block size)
    off_t result_start;          // offset in result where the logical read on this block begins
    off_t result_end;            // offset in result where the logical read on this block ends
-   bool result_is_partial_head; // true if the result is a partial block at the start of the read
-   bool result_is_partial_tail; // true if the result is a partial block at the end of the reads
+   bool result_is_partial_head; // true if we will read part of result at the start of the read request buffer
+   bool result_is_partial_tail; // true if we will read part of result at the end of the read request buffer
    bool result_allocd;          // if true, then result was dyanmically allocated (instead of pointing to an offset in a client's read buffer).
    
    int retry_count;             // how many times the download has been retried?

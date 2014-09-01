@@ -1617,7 +1617,7 @@ int fs_entry_has_bufferred_block( struct fs_entry* fent, uint64_t block_id ) {
 }
 
 
-// read part of a bufferred block 
+// read part of a bufferred block, starting at block_offset
 // return 0 on success
 // return -ENOENT if there is no block.
 // return negative on error
