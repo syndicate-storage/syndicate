@@ -65,12 +65,9 @@ extern "C" {
 // AG driver interface
 int driver_init( void** driver_state );
 int driver_shutdown( void* driver_state );
-int get_dataset_manifest_info( struct AG_connection_context* ag_ctx, struct AG_driver_publish_info* pubinfo, void* driver_conn_state );
 ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_id, char* block_buf, size_t size, void* driver_conn_state );
 int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_conn_state );
-int connect_dataset_manifest( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_conn_state );
 int close_dataset_block( void* driver_conn_state );
-int close_dataset_manifest( void* driver_conn_state );
 int stat_dataset( char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo, void* driver_state );
 int reversion_dataset( char const* path, struct AG_map_info* mi, void* driver_state );
 int handle_event( char* event_buf, size_t event_len, void* driver_state );

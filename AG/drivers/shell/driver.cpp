@@ -81,55 +81,6 @@ int driver_shutdown( void* driver_state ) {
 }
 
 
-// get manifest information 
-int get_dataset_manifest_info( struct AG_connection_context* ag_ctx, struct AG_driver_publish_info* pubinfo, void* driver_conn_state ) {
-   
-   struct proc_connection_context* pctx = (struct proc_connection_context*)driver_conn_state;
-   struct shell_driver_state* state = pctx->state;
-   
-   char* request_path = pctx->request_path;
-   int rc = 0;
-   
-   // do we have information?
-   if( proc_is_generating_data( state, request_path ) || proc_finished_generating_data( state, request_path ) ) {
-      
-      // we can give back manifest information for at least partial results
-      struct stat sb;
-      rc = proc_stat_data( state, request_path, &sb );
-      if( rc != 0 ) {
-         
-         errorf("proc_stat_data(%s) rc = %d\n", request_path, rc );
-      }
-      else {
-         
-         // fill in what we know 
-         pubinfo->size = sb.st_size;
-         pubinfo->mtime_sec = sb.st_mtime;
-         pubinfo->mtime_nsec = 0;
-      }
-   }
-   else {
-      
-      // make sure we're generating it 
-      rc = proc_ensure_has_data( state, pctx );
-      if( rc != 0 ) {
-         errorf("proc_ensure_has_data(%s) rc = %d\n", request_path, rc );
-      }
-      else {
-         struct timespec ts;
-         clock_gettime( CLOCK_REALTIME, &ts );
-         
-         // we don't know the size or last-mod time, so for now the size is infinite, and was last-modified now.
-         pubinfo->size = -1;
-         pubinfo->mtime_sec = ts.tv_sec;
-         pubinfo->mtime_nsec = ts.tv_nsec;
-      }
-   }
-   
-   return rc;
-}
-
-
 // read a block 
 ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_id, char* block_buf, size_t size, void* driver_conn_state ) {
    
@@ -160,8 +111,11 @@ ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_
 }
 
 
-// set up a driver connection context
-static int connect_dataset( struct AG_connection_context* ag_ctx, struct shell_driver_state* state, struct proc_connection_context* pctx ) {
+// set up a connection to get a block 
+int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_conn_state ) {
+   
+   struct shell_driver_state* state = (struct shell_driver_state*)driver_state;
+   struct proc_connection_context* pctx = CALLOC_LIST( struct proc_connection_context, 1 );
    
    // fill in the connection context
    pctx->state = state;
@@ -169,72 +123,32 @@ static int connect_dataset( struct AG_connection_context* ag_ctx, struct shell_d
    pctx->request_path = AG_driver_get_request_path( ag_ctx );
    pctx->shell_cmd = AG_driver_get_query_string( ag_ctx );
    
-   return 0;
-}
-
-
-// set up a connection to get a block 
-int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_conn_state ) {
-   
-   struct shell_driver_state* state = (struct shell_driver_state*)driver_state;
-   struct proc_connection_context* pctx = CALLOC_LIST( struct proc_connection_context, 1 );
-   
-   int rc = connect_dataset( ag_ctx, state, pctx );
-   if( rc != 0 ) {
-      
-      free( pctx );
-      return rc;
-   }
-   
-   *driver_conn_state = pctx;
-   return 0;
-}
-
-
-// set up a connection to get a manifest 
-int connect_dataset_manifest( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_conn_state ) {
-   
-   struct shell_driver_state* state = (struct shell_driver_state*)driver_state;
-   struct proc_connection_context* pctx = CALLOC_LIST( struct proc_connection_context, 1 );
-   
-   int rc = connect_dataset( ag_ctx, state, pctx );
-   if( rc != 0 ) {
-      
-      free( pctx );
-      return rc;
-   }
-   
    *driver_conn_state = pctx;
    return 0;
 }
 
 // clean up a connection 
-int close_dataset( struct proc_connection_context* pctx ) {
+int close_dataset_block( void* driver_conn_state) {
    
-   if( pctx->request_path ) {
-      free( pctx->request_path );
-      pctx->request_path = NULL;
+   struct proc_connection_context* pctx = (struct proc_connection_context*)driver_conn_state;
+   
+   if( pctx != NULL ) {
+      if( pctx->request_path != NULL ) {
+         free( pctx->request_path );
+         pctx->request_path = NULL;
+      }
+      
+      if( pctx->shell_cmd != NULL ) {
+         free( pctx->shell_cmd );
+         pctx->shell_cmd = NULL;
+      }
+      
+      free( pctx );
    }
-   
-   if( pctx->shell_cmd ) {
-      free( pctx->shell_cmd );
-      pctx->shell_cmd = NULL;
-   }
-   
-   free( pctx );
    
    return 0;
 }
 
-// clean up a block connection 
-int close_dataset_block( void* driver_conn_state ) {
-   return close_dataset( (struct proc_connection_context*)driver_conn_state );
-}
-
-// clean up a manifest connection 
-int close_dataset_manifest( void* driver_conn_state ) {
-   return close_dataset( (struct proc_connection_context*)driver_conn_state );
-}
 
 // fill in dataset publishing information 
 int stat_dataset( char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo, void* driver_state ) {
@@ -243,7 +157,7 @@ int stat_dataset( char const* path, struct AG_map_info* mi, struct AG_driver_pub
    
    ssize_t rc = 0;
    
-   // we can give back manifest information for at least partial results
+   // we can give back publish information for at least partial results
    struct stat sb;
    rc = proc_stat_data( state, path, &sb );
    if( rc != 0 ) {

@@ -78,23 +78,23 @@ int driver_shutdown( void* driver_state ) {
 
 // set up an incoming connection.
 // try to open the file.
-int connect_dataset( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
+int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
    
    dbprintf("%s connect dataset\n", DRIVER_QUERY_TYPE );
    
    // what file was requested?
-   char* requested_path = AG_driver_get_request_path( ag_ctx );
+   char* disk_path = AG_driver_get_query_string( ag_ctx );
    
    // get the absolute path 
-   char* dataset_path = get_request_abspath( requested_path );
+   char* dataset_path = get_request_abspath( disk_path );
    
    if( dataset_path == NULL ) {
-      errorf("Could not translate %s to absolute path\n", requested_path );
-      free( requested_path );
+      errorf("Could not translate %s to absolute path\n", disk_path );
+      free( disk_path );
       return -EINVAL;
    }
    
-   free( requested_path );
+   free( disk_path );
    
    // open the file 
    int fd = open( dataset_path, O_RDONLY );
@@ -119,67 +119,18 @@ int connect_dataset( struct AG_connection_context* ag_ctx, void* driver_state, v
    return 0;
 }
 
-// set up an incoming connection to read a block 
-int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
-   dbprintf("%s connect dataset block\n", DRIVER_QUERY_TYPE );
-   
-   return connect_dataset( ag_ctx, driver_state, driver_connection_state );
-}
-
-// set up an incoming connection to read a manifest
-int connect_dataset_manifest( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
-   dbprintf("%s connect dataset manifest\n", DRIVER_QUERY_TYPE );
-   
-   return connect_dataset( ag_ctx, driver_state, driver_connection_state );
-}
-
-// clean-up a handled connection
-int close_dataset( void* driver_connection_state ) {
-   dbprintf("%s close dataset block\n", DRIVER_QUERY_TYPE );
-   
-   struct AG_disk_context* disk_ctx = (struct AG_disk_context*)driver_connection_state;
-   
-   close( disk_ctx->fd );
-   free( disk_ctx );
-   
-   return 0;
-}
-
-// clean-up a handled connection for a manifest
-int close_dataset_manifest( void* driver_connection_state ) {
-   dbprintf("%s close dataset manifest\n", DRIVER_QUERY_TYPE );
-   return close_dataset( driver_connection_state );
-}
-
 // clean up a handled connection for a block 
 int close_dataset_block( void* driver_connection_state ) {
-   dbprintf("%s close dataset manifest\n", DRIVER_QUERY_TYPE );
-   return close_dataset( driver_connection_state );
-}
-
-// get information for creating and sending a manifest 
-int get_dataset_manifest_info( struct AG_connection_context* ag_ctx, struct AG_driver_publish_info* pub_info, void* driver_connection_state ) {
    
-   dbprintf("%s get dataset manifest info\n", DRIVER_QUERY_TYPE );
-            
-   // stat the file, and fill in the pub_info 
-   struct stat sb;
-   int rc = 0;
+   dbprintf("%s close dataset block\n", DRIVER_QUERY_TYPE );
+   
+   
    struct AG_disk_context* disk_ctx = (struct AG_disk_context*)driver_connection_state;
    
-   rc = fstat( disk_ctx->fd, &sb );
-   if( rc != 0 ) {
-      rc = -errno;
-      errorf("fstat rc = %d\n", rc );
-      
-      errno_to_HTTP_status( ag_ctx, rc );
-      
-      return rc;
+   if( disk_ctx != NULL ) {
+      close( disk_ctx->fd );
+      free( disk_ctx );
    }
-   
-   pub_info->size = sb.st_size;
-   pub_info->mtime_sec = sb.st_mtim.tv_sec;
-   pub_info->mtime_nsec = sb.st_mtim.tv_nsec;
    
    return 0;
 }

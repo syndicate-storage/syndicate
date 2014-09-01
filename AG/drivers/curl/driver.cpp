@@ -42,7 +42,7 @@ int driver_shutdown( void* driver_state ) {
 }
 
 // connect
-static int connect_dataset( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
+int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
    
    struct curl_driver_state* state = (struct curl_driver_state*)driver_state;
    
@@ -60,45 +60,27 @@ static int connect_dataset( struct AG_connection_context* ag_ctx, void* driver_s
    return 0;
 }
 
-// connect to get a block.
-int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
-   return connect_dataset( ag_ctx, driver_state, driver_connection_state );
-}
-
-// connect to get a manifest 
-int connect_dataset_manifest( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state ) {
-   return connect_dataset( ag_ctx, driver_state, driver_connection_state );
-}
-
-
 // free a connection context 
-static int close_dataset( void* driver_connection_state ) {
+int close_dataset_block( void* driver_connection_state ) {
    
    struct curl_connection_context* curl_ctx = (struct curl_connection_context*)driver_connection_state;
    
-   if( curl_ctx->request_path != NULL ) {
-      free( curl_ctx->request_path );
-      curl_ctx->request_path = NULL;
+   if( curl_ctx != NULL ) {
+      if( curl_ctx->request_path != NULL ) {
+         free( curl_ctx->request_path );
+         curl_ctx->request_path = NULL;
+      }
+
+      if( curl_ctx->url != NULL ) {
+         free( curl_ctx->url );
+         curl_ctx->url = NULL;
+      }
+
+      free( curl_ctx );
    }
-   
-   if( curl_ctx->url != NULL ) {
-      free( curl_ctx->url );
-      curl_ctx->url = NULL;
-   }
-   
-   free( curl_ctx );
    return 0;
 }
 
-// free a connection to a block 
-int close_dataset_block( void* driver_connection_state ) {
-   return close_dataset( driver_connection_state );
-}
-
-// free a connection to a manifest 
-int close_dataset_manifest( void* driver_connection_state ) {
-   return close_dataset( driver_connection_state );
-}
 
 // dummy header function; seems to be needed to stat files 
 static size_t curl_null_header( void* ptr, size_t size, size_t nmemb, void* data ) {
@@ -302,28 +284,6 @@ int curl_get_pubinfo( struct curl_driver_state* state, char const* request_path,
    curl_easy_cleanup( curl );
    
    free( info_path );
-   
-   return rc;
-}
-
-// get manifest information for a file.
-// if we have cached the size and mtime, serve that back.
-// otherwise, do a HEAD on the file, cache the results, and serve them back
-int get_dataset_manifest_info( struct AG_connection_context* ag_ctx, struct AG_driver_publish_info* pub_info, void* driver_connection_state ) {
-   
-   struct curl_connection_context* curl_ctx = (struct curl_connection_context*)driver_connection_state;
-   struct curl_driver_state* state = curl_ctx->state;
-   
-   int64_t file_version = AG_driver_get_request_file_version( ag_ctx );
-   char* request_path = AG_driver_get_request_path( ag_ctx );
-   
-   int rc = curl_get_pubinfo( state, request_path, curl_ctx->url, file_version, pub_info );
-   
-   if( rc != 0 ) {
-      errorf("curl_get_pubinfo(%s, %s) rc = %d\n", request_path, curl_ctx->url, rc );
-   }
-   
-   free( request_path );
    
    return rc;
 }

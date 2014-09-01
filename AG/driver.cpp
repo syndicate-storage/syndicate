@@ -24,12 +24,9 @@
 
 MD_CLOSURE_PROTOTYPE_BEGIN( AG_CLOSURE_PROTOTYPE )
    MD_CLOSURE_CALLBACK( "get_dataset_block" ),
-   MD_CLOSURE_CALLBACK( "get_dataset_manifest_info" ),
    MD_CLOSURE_CALLBACK( "connect_dataset_block" ),
-   MD_CLOSURE_CALLBACK( "connect_dataset_manifest" ),
    MD_CLOSURE_CALLBACK( "close_dataset_block" ),
-   MD_CLOSURE_CALLBACK( "close_dataset_manifest" ),
-   MD_CLOSURE_CALLBACK( "stat_dataaset" ),
+   MD_CLOSURE_CALLBACK( "stat_dataset" ),
    MD_CLOSURE_CALLBACK( "reversion_dataset" ),
    MD_CLOSURE_CALLBACK( "driver_init" ),
    MD_CLOSURE_CALLBACK( "driver_shutdown" ),
@@ -319,26 +316,6 @@ int AG_driver_connect_block( struct AG_driver* driver, struct AG_connection_cont
    return ret;
 }
 
-// set up connection state for a manifest
-int AG_driver_connect_manifest( struct AG_driver* driver, struct AG_connection_context* ctx ) {
-   
-   int ret = 0;
-   void* connection_state = NULL;
-   
-   if( md_closure_find_callback( driver->closure, "connect_dataset_manifest" ) != NULL ) {
-      MD_CLOSURE_CALL( ret, driver->closure, "connect_dataset_manifest", AG_connect_manifest_callback_t, ctx, driver->driver_state, &connection_state );
-   }
-   else {
-      errorf("%s", "WARN: connect_dataset_manifest stub\n");
-   }
-   
-   if( ret == 0 ) {
-      ctx->driver_connection_state = connection_state;
-   }
-   
-   return ret;
-}
-
 // get a block 
 ssize_t AG_driver_get_block( struct AG_driver* driver, struct AG_connection_context* ctx, uint64_t block_id, char* block_buf, size_t block_buf_len ) {
    
@@ -349,21 +326,6 @@ ssize_t AG_driver_get_block( struct AG_driver* driver, struct AG_connection_cont
    }
    else {
       errorf("%s", "WARN: get_dataset_block stub\n");
-   }
-   
-   return ret;
-}
-
-// get a manifest's data
-int AG_driver_get_manifest( struct AG_driver* driver, struct AG_connection_context* ctx, struct AG_driver_publish_info* pub_info ) {
-   
-   int ret = 0;
-   
-   if( md_closure_find_callback( driver->closure, "get_dataset_manifest_info" ) != NULL ) {
-      MD_CLOSURE_CALL( ret, driver->closure, "get_dataset_manifest_info", AG_get_manifest_callback_t, ctx, pub_info, ctx->driver_connection_state );
-   }
-   else {
-      errorf("%s", "WARN: get_dataset_manifest stub\n");
    }
    
    return ret;
@@ -383,23 +345,6 @@ int AG_driver_cleanup_block( struct AG_driver* driver, struct AG_connection_cont
    
    return ret;
 }
-
-
-// clean up connection state for a manifest 
-int AG_driver_cleanup_manifest( struct AG_driver* driver, struct AG_connection_context* ctx ) {
-   
-   int ret = 0;
-   
-   if( md_closure_find_callback( driver->closure, "close_dataset_manifest" ) != NULL ) {
-      MD_CLOSURE_CALL( ret, driver->closure, "close_dataset_manifest", AG_cleanup_manifest_callback_t, ctx->driver_connection_state );
-   }
-   else {
-      errorf("%s", "WARN: close_dataset_manifest stub\n");
-   }
-   
-   return ret;
-}
-
 
 // stat a dataset
 int AG_driver_stat( struct AG_driver* driver, char const* path, struct AG_map_info* map_info, struct AG_driver_publish_info* pub_info ) {

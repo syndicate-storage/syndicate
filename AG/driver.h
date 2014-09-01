@@ -28,12 +28,9 @@ struct AG_connection_context;
 // types of callbacks
 typedef int (*AG_driver_init_callback_t)( void** );
 typedef int (*AG_driver_shutdown_callback_t)( void* );
-typedef int (*AG_get_manifest_callback_t)( struct AG_connection_context*, struct AG_driver_publish_info*, void* );
 typedef ssize_t (*AG_get_block_callback_t)( struct AG_connection_context*, uint64_t, char*, size_t, void* );
 typedef int (*AG_connect_block_callback_t)( struct AG_connection_context*, void*, void** );
-typedef int (*AG_connect_manifest_callback_t)( struct AG_connection_context*, void*, void** );
 typedef int (*AG_cleanup_block_callback_t)( void* );
-typedef int (*AG_cleanup_manifest_callback_t)( void* );
 typedef int (*AG_stat_dataset_callback_t)( char const*, struct AG_map_info*, struct AG_driver_publish_info*, void* );
 typedef int (*AG_reversion_callback_t)( char const*, struct AG_map_info*, void* );
 typedef int (*AG_driver_event_callback_t)( char*, size_t, void* );
@@ -49,12 +46,9 @@ struct AG_driver {
    
    AG_driver_init_callback_t            driver_init_callback;
    AG_driver_shutdown_callback_t        driver_shutdown_callback;
-   AG_get_manifest_callback_t           get_manifest_callback;
    AG_get_block_callback_t              get_block_callback;
    AG_connect_block_callback_t          connect_block_callback;
-   AG_connect_manifest_callback_t       connect_manifest_callback;
    AG_cleanup_block_callback_t          cleanup_block_callback;
-   AG_cleanup_manifest_callback_t       clenaup_manifst_callback;
    AG_stat_dataset_callback_t           stat_callback;
    AG_reversion_callback_t              reversion_callback;
    AG_query_type_callback_t             query_type_callback;
@@ -79,11 +73,8 @@ int AG_shutdown_drivers( AG_driver_map_t* driver_map );
 int AG_driver_init( struct AG_driver* driver );
 int AG_driver_shutdown( struct AG_driver* driver );
 int AG_driver_connect_block( struct AG_driver* driver, struct AG_connection_context* ctx );
-int AG_driver_connect_manifest( struct AG_driver* driver, struct AG_connection_context* ctx );
 ssize_t AG_driver_get_block( struct AG_driver* driver, struct AG_connection_context* ctx, uint64_t block_id, char* block_buf, size_t block_buf_len );
-int AG_driver_get_manifest( struct AG_driver* driver, struct AG_connection_context* ctx, struct AG_driver_publish_info* pub_info );
 int AG_driver_cleanup_block( struct AG_driver* driver, struct AG_connection_context* ctx );
-int AG_driver_cleanup_manifest( struct AG_driver* driver, struct AG_connection_context* ctx );
 int AG_driver_stat( struct AG_driver* driver, char const* path, struct AG_map_info* info, struct AG_driver_publish_info* pub_info );
 int AG_driver_reversion( struct AG_driver* driver, char const* path, struct AG_map_info* info );
 char* AG_driver_get_query_type( struct AG_driver* driver );

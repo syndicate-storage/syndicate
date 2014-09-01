@@ -44,12 +44,9 @@ int driver_init( void** driver_state );
 int driver_shutdown( void* driver_state );
 
 int connect_dataset_block( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state );
-int connect_dataset_manifest( struct AG_connection_context* ag_ctx, void* driver_state, void** driver_connection_state );
 
 int close_dataset_block( void* driver_connection_state );
-int close_dataset_manifest( void* driver_connection_state );
 
-int get_dataset_manifest_info( struct AG_connection_context* ag_ctx, struct AG_driver_publish_info* pub_info, void* driver_connection_state );
 ssize_t get_dataset_block( struct AG_connection_context* ag_ctx, uint64_t block_id, char* block_buf, size_t buf_len, void* driver_connection_state );
 
 int stat_dataset( char const* path, struct AG_map_info* ag_dataset_info, struct AG_driver_publish_info* pub_info, void* driver_state );
