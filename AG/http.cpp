@@ -247,7 +247,7 @@ static int AG_HTTP_not_found( struct md_HTTP_connection_data* md_con_data ) {
 
 // try again later 
 static int AG_HTTP_try_again( struct md_HTTP_connection_data* md_con_data ) {
-   return AG_HTTP_error( md_con_data, 503, MD_HTTP_503_MSG );
+   return AG_HTTP_error( md_con_data, MD_HTTP_TRYAGAIN, MD_HTTP_TRYAGAIN_MSG );
 }
 
 // driver error 
