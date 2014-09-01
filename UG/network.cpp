@@ -148,6 +148,7 @@ int fs_entry_download_manifest_replica( struct fs_core* core, char const* fs_pat
 
 
 // get a manifest, either from the coordinator, or from an RG.  If we got it from an RG, remember which one.
+// if we're getting a manifest from an AG, don't try getting it from the RGs (they won't have it)
 // fent must be at least read-locked
 int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent, int64_t manifest_mtime_sec, int32_t manifest_mtime_nsec,
                            Serialization::ManifestMsg* manifest_msg, uint64_t* successful_gateway_id ) {
@@ -195,14 +196,13 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
          // got it from the coordinator
          *successful_gateway_id = fent->coordinator;
       }
+      else if( rc != 0 ) {
+         errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
+      }
    }
    
    if( gateway_type != SYNDICATE_AG && (rc != 0 || FS_ENTRY_LOCAL( core, fent )) ) {
       // either we couldn't get it from the remote UG, or its local and we don't have a copy ourselves
-      
-      if( rc != 0 ) {
-         errorf("fs_entry_download_manifest(%s) rc = %d\n", manifest_url, rc );
-      }
       
       // try the RGs
       uint64_t rg_id = 0;
@@ -227,9 +227,10 @@ int fs_entry_get_manifest( struct fs_core* core, char const* fs_path, struct fs_
 
    free( manifest_url );
 
-   if( rc != 0 )
+   if( rc != 0 ) {
       return rc;
-
+   }
+   
    // is this an error code?
    if( manifest_msg->has_errorcode() ) {
       // remote gateway indicates error
