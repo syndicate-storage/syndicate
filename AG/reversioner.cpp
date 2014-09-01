@@ -20,11 +20,10 @@
 #include "driver.h"
 
 // allocate and set up a path map info 
-int AG_path_map_info_init( struct AG_path_map_info* pinfo, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo ) {
+int AG_path_map_info_init( struct AG_path_map_info* pinfo, char const* path, struct AG_driver_publish_info* pubinfo ) {
    
    memset( pinfo, 0, sizeof(struct AG_path_map_info) );
    
-   AG_map_info_dup( &pinfo->mi, mi );
    pinfo->path = strdup(path);
    
    if( pubinfo != NULL ) {
@@ -38,10 +37,7 @@ int AG_path_map_info_init( struct AG_path_map_info* pinfo, char const* path, str
 // duplicate a path map info
 int AG_path_map_info_dup( struct AG_path_map_info* new_pinfo, struct AG_path_map_info* old_pinfo ) {
    
-   struct AG_map_info mi_dup;
-   AG_map_info_dup( &mi_dup, &old_pinfo->mi );
-   
-   AG_path_map_info_init( new_pinfo, old_pinfo->path, &mi_dup, old_pinfo->pubinfo );
+   AG_path_map_info_init( new_pinfo, old_pinfo->path, old_pinfo->pubinfo );
    return 0;
 }
 
@@ -56,7 +52,6 @@ int AG_path_map_info_free( struct AG_path_map_info* pinfo ) {
       pinfo->pubinfo = NULL;
    }
    
-   AG_map_info_free( &pinfo->mi );
    return 0;
 }
 
@@ -152,10 +147,10 @@ int AG_reversioner_stop( struct AG_reversioner* reversioner ) {
 
 // add a map info to a reversioner
 // return EEXIST if it's already present.
-int AG_reversioner_add_map_info( struct AG_reversioner* reversioner, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo ) {
+int AG_reversioner_add_map_info( struct AG_reversioner* reversioner, char const* path, struct AG_driver_publish_info* pubinfo ) {
    
     struct AG_path_map_info pinfo;
-    AG_path_map_info_init( &pinfo, path, mi, pubinfo );
+    AG_path_map_info_init( &pinfo, path, pubinfo );
     
     pthread_mutex_lock(&reversioner->set_lock);
    
@@ -196,10 +191,9 @@ int AG_reversioner_add_map_infos( struct AG_reversioner* reversioner, AG_fs_map_
    for( AG_fs_map_t::iterator itr = map_infos->begin(); itr != map_infos->end(); itr++ ) {
       
       char const* path = itr->first.c_str();
-      struct AG_map_info* mi = itr->second;
       
       struct AG_path_map_info pinfo;
-      AG_path_map_info_init( &pinfo, path, mi, NULL );
+      AG_path_map_info_init( &pinfo, path, NULL );
       
       reversioner->map_set->insert( pinfo );
    }
@@ -238,7 +232,7 @@ int AG_reversioner_reversion_map_infos( struct AG_reversioner* reversioner ) {
       
       struct AG_path_map_info pmi = *itr;
       
-      dbprintf("Reversion %s\n", pmi.path );
+      dbprintf("Reversion %s, pubinfo = %p\n", pmi.path, pmi.pubinfo );
       
       // reversion
       AG_state_fs_rlock( reversioner->state );

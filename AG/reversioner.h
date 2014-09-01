@@ -35,7 +35,6 @@ struct AG_state;
 // pair a map_info to its path, so we can reversion it later
 struct AG_path_map_info {
    
-   struct AG_map_info mi;
    char* path;
    
    struct AG_driver_publish_info* pubinfo;        // optionally sent on reversion
@@ -69,7 +68,7 @@ struct AG_reversioner {
    sem_t sem;
 };
 
-int AG_path_map_info_init( struct AG_path_map_info* pinfo, char const* path, struct AG_fs_map_info* mi, struct AG_driver_publish_info* pubinfo );
+int AG_path_map_info_init( struct AG_path_map_info* pinfo, char const* path, struct AG_driver_publish_info* pubinfo );
 int AG_path_map_info_dup( struct AG_path_map_info* new_pinfo, struct AG_path_map_info* old_pinfo );
 int AG_path_map_info_free( struct AG_path_map_info* pinfo );
 
@@ -80,7 +79,7 @@ int AG_reversioner_stop( struct AG_reversioner* reversioner );
 int AG_reversioner_free( struct AG_reversioner* reversioner );
 
 // map info 
-int AG_reversioner_add_map_info( struct AG_reversioner* reversioner, char const* path, struct AG_map_info* mi, struct AG_driver_publish_info* pubinfo );
+int AG_reversioner_add_map_info( struct AG_reversioner* reversioner, char const* path, struct AG_driver_publish_info* pubinfo );
 int AG_reversioner_add_map_infos( struct AG_reversioner* reversioner, AG_fs_map_t* map_infos );
 int AG_reversioner_reversion_map_infos( struct AG_reversioner* reversioner );
 

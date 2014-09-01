@@ -351,7 +351,7 @@ static AG_map_info* AG_HTTP_make_fresh_map_info( struct AG_state* state, struct 
       int http_status = 503;
       char const* http_msg = MD_HTTP_503_MSG;
       
-      rc = AG_reversioner_add_map_info( state->reversioner, reqdat->fs_path, mi, NULL );
+      rc = AG_reversioner_add_map_info( state->reversioner, reqdat->fs_path, NULL );
       if( rc != 0 && rc != -EEXIST ) {
          errorf("AG_reversioner_add_map_info( %s ) rc = %d\n", reqdat->fs_path, rc );
          

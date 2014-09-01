@@ -29,7 +29,6 @@ struct AG_driver;
 struct AG_driver_publish_info;
 
 // descriptor of an AG's published entry
-// NOTE: none of the members here should be dynamically allocated
 struct AG_map_info {
    
    // the following are extracted from the spec file

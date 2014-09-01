@@ -482,21 +482,8 @@ int AG_driver_request_reversion( char const* path, struct AG_driver_publish_info
       return -ENOTCONN;
    }
    
-   // find the map info
-   AG_state_fs_rlock( state );
-   
-   struct AG_map_info* mi = AG_fs_lookup_path( state->ag_fs, path );
-   
-   AG_state_fs_unlock( state );
-   
-   if( mi == NULL ) {
-      errorf("No such dataset '%s'\n", path );
-      AG_release_state( state );
-      return -ENOENT;
-   }
-   
    // enqueue it into the reversioner
-   int rc = AG_reversioner_add_map_info( state->reversioner, path, mi, pubinfo );
+   int rc = AG_reversioner_add_map_info( state->reversioner, path, pubinfo );
    if( rc != 0 ) {
       errorf("AG_reversioner_add_map_info(%s) rc = %d\n", path, rc );
    }

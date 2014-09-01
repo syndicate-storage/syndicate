@@ -509,7 +509,7 @@ static int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, c
    
    // sanity check 
    if( driver_required && mi->driver == NULL && opt_pubinfo == NULL ) {
-      errorf("No driver loaded for %s\n", path );
+      errorf("No data available for %s\n", path );
       return -EINVAL;
    }
    
@@ -536,7 +536,7 @@ static int AG_populate_md_entry( struct ms_client* ms, struct md_entry* entry, c
    
       AG_release_state( state );
       
-      if( rc != -ENODATA || (rc == -ENODATA && driver_required) ) {
+      if( rc != 0 && (rc != -ENODATA || (rc == -ENODATA && driver_required) ) ) {
          errorf("AG_get_pub_info( %s ) rc = %d\n", path, rc );
          return rc;
       }
@@ -1474,8 +1474,9 @@ int AG_fs_publish_map( struct AG_fs* ag_fs, AG_fs_map_t* to_publish, bool contin
 }
 
 
-// reversion a (path, map_info) via the driver.  Only works for files.
+// reversion a (path, map_info) via the driver.
 // this updates the version field of the file, and will fail if it doesn't exist.
+// optionally use the caller-given pubinfo, or generate new pubinfo from the driver.
 int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_publish_info* pubinfo ) {
    
    dbprintf("Reversion %s in %p\n", path, ag_fs );
@@ -1498,6 +1499,9 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
       errorf("No such entry at '%s'\n", path );
       return -ENOENT;
    }
+   
+   // old file version 
+   int64_t file_version = mi->file_version;
    
    // look up the parent map_info 
    char* parent_path = md_dirname( path, NULL );
@@ -1551,7 +1555,7 @@ int AG_fs_reversion( struct AG_fs* ag_fs, char const* path, struct AG_driver_pub
    // evict cached blocks for this file 
    struct AG_state* state = AG_get_state();
    if( state != NULL ) {
-      AG_cache_evict_file( state, path, entry.version );
+      AG_cache_evict_file( state, path, file_version );
       
       AG_release_state( state );
    }
@@ -1638,6 +1642,9 @@ int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
       return -ENOENT;
    }
    
+   // old file version 
+   int64_t file_version = mi->file_version;
+   
    // look up the parent map_info 
    char* parent_path = md_dirname( path, NULL );
    struct AG_map_info* parent_mi = AG_fs_lookup_path( ag_fs, parent_path );
@@ -1687,7 +1694,7 @@ int AG_fs_delete( struct AG_fs* ag_fs, char const* path ) {
    // evict cached blocks for this file 
    struct AG_state* state = AG_get_state();
    if( state != NULL ) {
-      AG_cache_evict_file( state, path, entry.version );
+      AG_cache_evict_file( state, path, file_version );
       
       AG_release_state( state );
    }
