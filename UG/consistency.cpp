@@ -1306,7 +1306,6 @@ int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const*
    
    // normalize the path first
    int rc = 0;
-   //char* path = md_normalize_url( _path, &rc );
    char* path = md_flatten_path( _path );
 
    if( rc != 0 ) {
