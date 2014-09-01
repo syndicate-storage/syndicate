@@ -105,9 +105,10 @@ int AG_driver_set_signal_handler( int signum, sighandler_t sighandler );
 int AG_driver_request_reversion( char const* path, struct AG_driver_publish_info* pub_info );
 
 // cache API
-// NOTE: the AG already caches driver-given blocks internally.
-// This API is to allow the driver to cache additional data.
-// In all four methods, "name" must be globally unique, and different from any name in the filesystem
+// NOTE: the AG already caches driver-given blocks and status information internally.
+// This API is to allow the driver to cache additional, driver-secific data.
+// In all four methods, "name" must be globally unique, and different from any name in the filesystem.
+// NOTE: in AG_driver_cache_put_chunk_async, chunk must be dynamically allocated.  The cache will take ownership of the memory.
 int AG_driver_cache_get_chunk( char const* name, char** chunk, size_t* chunk_len );
 int AG_driver_cache_promote_chunk( char const* name );
 int AG_driver_cache_put_chunk_async( char const* name, char* chunk, size_t chunk_len );

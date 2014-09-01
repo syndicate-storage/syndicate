@@ -125,6 +125,10 @@ int AG_driver_shutdown( struct AG_driver* driver ) {
    
    int ret = 0;
    
+   if( driver == NULL ) {
+      return -EINVAL;
+   }
+   
    if( md_closure_find_callback( driver->closure, "driver_shutdown" ) != NULL ) {
       MD_CLOSURE_CALL( ret, driver->closure, "driver_shutdown", AG_driver_shutdown_callback_t, driver->driver_state );
    }
@@ -299,6 +303,10 @@ int AG_shutdown_drivers( AG_driver_map_t* driver_map ) {
 // set up connection state for a block
 int AG_driver_connect_block( struct AG_driver* driver, struct AG_connection_context* ctx ) {
    
+   if( driver == NULL ) {
+      return -EINVAL;
+   }
+   
    int ret = 0;
    void* connection_state = NULL;
    
@@ -319,6 +327,10 @@ int AG_driver_connect_block( struct AG_driver* driver, struct AG_connection_cont
 // get a block 
 ssize_t AG_driver_get_block( struct AG_driver* driver, struct AG_connection_context* ctx, uint64_t block_id, char* block_buf, size_t block_buf_len ) {
    
+   if( driver == NULL ) {
+      return -EINVAL;
+   }
+   
    ssize_t ret = 0;
    
    if( md_closure_find_callback( driver->closure, "get_dataset_block" ) != NULL ) {
@@ -334,6 +346,10 @@ ssize_t AG_driver_get_block( struct AG_driver* driver, struct AG_connection_cont
 // clean up connection state for a block 
 int AG_driver_cleanup_block( struct AG_driver* driver, struct AG_connection_context* ctx ) {
    
+   if( driver == NULL ) {
+      return -EINVAL;
+   }
+   
    int ret = 0;
    
    if( md_closure_find_callback( driver->closure, "close_dataset_block" ) != NULL ) {
@@ -348,6 +364,10 @@ int AG_driver_cleanup_block( struct AG_driver* driver, struct AG_connection_cont
 
 // stat a dataset
 int AG_driver_stat( struct AG_driver* driver, char const* path, struct AG_map_info* map_info, struct AG_driver_publish_info* pub_info ) {
+   
+   if( driver == NULL ) {
+      return -EINVAL;
+   }
    
    int ret = 0;
    
@@ -365,6 +385,10 @@ int AG_driver_stat( struct AG_driver* driver, char const* path, struct AG_map_in
 // indicate that we've reversioned a dataset
 int AG_driver_reversion( struct AG_driver* driver, char const* path, struct AG_map_info* map_info ) {
    
+   if( driver == NULL ) {
+      return -EINVAL;
+   }
+   
    int ret = 0;
    
    if( md_closure_find_callback( driver->closure, "reversion_dataset" ) != NULL ) {
@@ -379,6 +403,10 @@ int AG_driver_reversion( struct AG_driver* driver, char const* path, struct AG_m
 
 // get the type of query this driver supports 
 char* AG_driver_get_query_type( struct AG_driver* driver ) {
+   
+   if( driver == NULL ) {
+      return NULL;
+   }
    
    char* ret = NULL;
    
@@ -395,6 +423,10 @@ char* AG_driver_get_query_type( struct AG_driver* driver ) {
 
 // handle a driver-specific event 
 int AG_driver_handle_event( struct AG_driver* driver, char* event_payload, size_t event_payload_len ) {
+   
+   if( driver == NULL ) {
+      return -EINVAL;
+   }
    
    int ret = 0;
    
