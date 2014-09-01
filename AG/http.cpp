@@ -33,10 +33,7 @@ static void AG_connection_data_free( struct AG_connection_data* con_data ) {
    struct AG_driver* driver = con_data->ctx.driver;
    
    // driver connection cleanup
-   if( con_data->ctx.request_type == AG_REQUEST_MANIFEST ) {
-      AG_driver_cleanup_manifest( driver, &con_data->ctx );
-   }
-   else {
+   if( con_data->ctx.request_type == AG_REQUEST_BLOCK ) {
       AG_driver_cleanup_block( driver, &con_data->ctx );
    }
    
@@ -116,10 +113,14 @@ int AG_populate_manifest( Serialization::ManifestMsg* mmsg, char const* path, st
    mmsg->set_mtime_nsec( pub_info->mtime_nsec );
    
    // calculate blockinfo
-   uint64_t num_blocks = pub_info->size / block_size;
+   uint64_t num_blocks = 0;
    
-   if( pub_info->size % block_size != 0 ) {
-      num_blocks++;
+   if( pub_info->size >= 0 ) {
+      num_blocks = pub_info->size / block_size;
+      
+      if( pub_info->size % block_size != 0 ) {
+         num_blocks++;
+      }
    }
    
    Serialization::BlockURLSetMsg *bbmsg = mmsg->add_block_url_set();
@@ -494,13 +495,7 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    
    // connection context is set up.
    // set up the driver state.
-   char const* driver_method = NULL;
-   if( con_data->ctx.request_type == AG_REQUEST_MANIFEST ) {
-      driver_method = "AG_driver_connect_manifest";
-      rc = AG_driver_connect_manifest( con_data->ctx.driver, &con_data->ctx );
-   }
-   else {
-      driver_method = "AG_driver_connect_block";
+   if( con_data->ctx.request_type == AG_REQUEST_BLOCK ) {
       rc = AG_driver_connect_block( con_data->ctx.driver, &con_data->ctx );
    }
    
@@ -508,13 +503,15 @@ static void* AG_HTTP_connect( struct md_HTTP_connection_data* md_con_data ) {
    
    if( rc != 0 ) {
       
-      errorf("%s(%s) rc = %d\n", driver_method, md_con_data->url_path, rc );
+      errorf("AG_driver_connect_block(%s) rc = %d\n", md_con_data->url_path, rc );
       
       AG_HTTP_driver_error( md_con_data, AG_get_driver_HTTP_status( &con_data->ctx, 502 ) );
       
       AG_connection_data_free( con_data );
       free( con_data );
       con_data = NULL;
+      
+      return NULL;
    }
    
    else {
@@ -597,6 +594,7 @@ static struct md_HTTP_response* AG_GET_block_handler( struct AG_state* state, st
    Serialization::AG_Block ag_block;
    
    ag_block.set_data( block_buf, block_size );
+   ag_block.set_size( block_size );
    
    if( free_block_buf ) {
       free( block_buf );
@@ -647,7 +645,7 @@ static struct md_HTTP_response* AG_GET_manifest_handler( struct AG_state* state,
    struct AG_driver_publish_info pub_info;
    
    // ask the driver for data
-   rc = AG_driver_get_manifest( rpc->ctx.driver, &rpc->ctx, &pub_info );
+   rc = AG_driver_stat( rpc->ctx.driver, rpc->ctx.reqdat.fs_path, rpc->mi, &pub_info );
    
    if( rc != 0 ) {
       // error 
