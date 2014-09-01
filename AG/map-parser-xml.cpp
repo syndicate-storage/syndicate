@@ -559,6 +559,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
       rc = this->pair_check_missing_fields( qname );
       if( rc < 0 ) {
          errorf("ERR: could not process '%s'\n", qname_str);
+         throw SAXException("Missing required tag attributes");
       }
       
       else {
@@ -583,7 +584,7 @@ void AG_XMLMapParserHandler::endElement( const   XMLCh *const    uri,
                struct AG_map_info* mi = CALLOC_LIST( struct AG_map_info, 1 );
                
                // populate the map info 
-               AG_map_info_init( mi, this->file_path_type, this->query_type, this->file_perm, this->reval_secs, driver );
+               AG_map_info_init( mi, this->file_path_type, this->query_string, this->file_perm, this->reval_secs, driver );
                
                // deadline for refreshing
                struct timespec now;
