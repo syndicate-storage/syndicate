@@ -529,11 +529,13 @@ static int fs_entry_ensure_vacuumed( struct fs_entry_consistency_cls* consistenc
 // fent should be write-locked
 static int fs_entry_reload_file( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* fent, struct ms_listing* listing ) {
    // sanity check
-   if( fent->ftype != FTYPE_FILE )
+   if( fent->ftype != FTYPE_FILE ) {
       return -EINVAL;
-
-   if( listing->type != ms::ms_entry::MS_ENTRY_TYPE_FILE )
+   }
+   
+   if( listing->type != ms::ms_entry::MS_ENTRY_TYPE_FILE ) {
       return -EINVAL;
+   }
 
    if( listing->entries->size() != 1 ) {
       errorf("Got back %zu listings\n", listing->entries->size() );
@@ -565,9 +567,10 @@ static int fs_entry_reload_file( struct fs_entry_consistency_cls* consistency_cl
 
 
 static int fs_entry_clear_child( fs_entry_set* children, unsigned int i ) {
-   if( i >= children->size() )
+   if( i >= children->size() ) {
       return -EINVAL;
-
+   }
+   
    children->at(i).first = 0;
    children->at(i).second = NULL;
    return 0;
@@ -636,11 +639,13 @@ static int fs_entry_populate_and_sanitize_directory( struct fs_entry_consistency
 // dent must be WRITE-LOCKED
 static int fs_entry_reload_directory( struct fs_entry_consistency_cls* consistency_cls, struct fs_entry* dent, struct ms_listing* listing ) {
    // sanity check
-   if( dent->ftype != FTYPE_DIR )
+   if( dent->ftype != FTYPE_DIR ) {
       return -EINVAL;
+   }
 
-   if( listing->type != ms::ms_entry::MS_ENTRY_TYPE_DIR )
+   if( listing->type != ms::ms_entry::MS_ENTRY_TYPE_DIR ) {
       return -EINVAL;
+   }
    
    dbprintf("Reload directory %" PRIX64 " (%s) with new data\n", dent->file_id, dent->name );
    
@@ -1289,10 +1294,15 @@ static int fs_entry_reload_remote_path_entries( struct fs_entry_consistency_cls*
    return rc;
 }
 
+// revalidate a path's metadata.
+// walk down an absolute path and check to see if the directories leading to the requested entries are fresh.
+// for each stale entry, re-download metadata and merge it into their respective inodes.
+// for each entry not found locally, try to download metadata and attach it to the metadata hierarchy.
 int fs_entry_revalidate_path( struct fs_core* core, uint64_t volume, char const* _path ) {
    // must be absolute
-   if( _path[0] != '/' )
+   if( _path[0] != '/' ) {
       return -EINVAL;
+   }
    
    // normalize the path first
    int rc = 0;
@@ -1479,9 +1489,9 @@ int fs_entry_revalidate_manifest_ex( struct fs_core* core, char const* fs_path, 
    return 0;
 }
 
-// ensure the manifest is fresh
+// ensure the manifest is fresh (but fail-fast if we can't contact the remote gateway)
 // fent should be write-locked
-int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
+int fs_entry_revalidate_manifest_once( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
 
    if( fent->manifest == NULL ) {
       errorf("BUG: %" PRIX64 " (%s)'s manifest is not initialized\n", fent->file_id, fent->name);
@@ -1489,6 +1499,38 @@ int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, str
    }
    
    return fs_entry_revalidate_manifest_ex( core, fs_path, fent, fent->ms_manifest_mtime_sec, fent->ms_manifest_mtime_nsec, NULL );   
+}
+
+
+// try to fetch a manifest up to core->conf->max_read_retry times 
+// fent must be write-locked 
+int fs_entry_revalidate_manifest( struct fs_core* core, char const* fs_path, struct fs_entry* fent ) {
+   
+   int err = 0;
+   int num_manifest_requests = 0;
+   
+   do {
+      
+      err = fs_entry_revalidate_manifest( core, fs_path, fent );
+      
+      if( err != -EAGAIN ) {
+         break;
+      }
+      
+      // try again 
+      num_manifest_requests++;
+      
+      dbprintf("fs_entry_revalidate_manifest(%s) rc = %d, attempt %d\n", fs_path, err, num_manifest_requests );
+      
+      struct timespec ts;
+      ts.tv_sec = core->conf->retry_delay_ms / 1000;
+      ts.tv_nsec = (core->conf->retry_delay_ms % 1000) * 1000000;
+      
+      nanosleep( &ts, NULL );
+      
+   } while( num_manifest_requests < core->conf->max_read_retry );  
+   
+   return err;
 }
 
 

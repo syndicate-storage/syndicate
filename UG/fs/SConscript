@@ -27,7 +27,6 @@ source_files = """
    opendir.cpp
    read.cpp
    readdir.cpp
-   recover.cpp
    rename.cpp
    rmdir.cpp
    stat.cpp

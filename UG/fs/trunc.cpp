@@ -401,8 +401,11 @@ int fs_entry_truncate_remote( struct fs_core* core, char const* fs_path, struct 
 int fs_entry_run_truncate( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t size, uint64_t parent_id, char* parent_name ) {
    
    // make sure we have the latest manifest 
+   // try to get it repeatedly, if need be 
    int rc = 0;
-   int err = fs_entry_revalidate_manifest( core, fs_path, fent );
+   int err = 0;
+   
+   err = fs_entry_revalidate_manifest( core, fs_path, fent );
    if( err != 0 ) {
       errorf( "fs_entry_revalidate_manifest(%s) rc = %d\n", fs_path, err );
       

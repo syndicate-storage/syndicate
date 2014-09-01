@@ -45,7 +45,7 @@ int fs_dir_handle_open( struct fs_dir_handle* dirh )  {
 
 
 
-// open a directory
+// open a directory, but fail-fast if we can't get path metadata
 struct fs_dir_handle* fs_entry_opendir( struct fs_core* core, char const* _path, uint64_t user, uint64_t vol, int* err ) {
 
    // ensure path ends in /
@@ -57,7 +57,6 @@ struct fs_dir_handle* fs_entry_opendir( struct fs_core* core, char const* _path,
    int rc = fs_entry_revalidate_path( core, vol, path );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
-      *err = -EREMOTEIO;
       return NULL;
    }
 
@@ -92,3 +91,6 @@ struct fs_dir_handle* fs_entry_opendir( struct fs_core* core, char const* _path,
    
    return dirh;
 }
+
+
+

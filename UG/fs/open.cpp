@@ -57,12 +57,11 @@ int fs_file_handle_open( struct fs_file_handle* fh, int flags, mode_t mode ) {
    return 0;
 }
 
-// create an entry (equivalent to open with O_CREAT|O_WRONLY|O_TRUNC
+// create an entry, re-trying on -EAGAIN from fs_entry_create_once
 struct fs_file_handle* fs_entry_create( struct fs_core* core, char const* path, uint64_t user, uint64_t vol, mode_t mode, int* err ) {
    dbprintf( "create %s\n", path );
    return fs_entry_open( core, path, user, vol, O_CREAT|O_WRONLY|O_TRUNC, mode, err );
 }
-
 
 // make a node (regular files only at this time)
 int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t dev, uint64_t user, uint64_t vol ) {
@@ -76,7 +75,7 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    if( rc != 0 && rc != -ENOENT ) {
       // consistency cannot be guaranteed
       errorf("fs_entry_revalidate_path(%s) rc = %d\n", path, rc );
-      return -EREMOTEIO;
+      return rc;
    }
    
    int err = 0;
@@ -185,8 +184,13 @@ int fs_entry_mknod( struct fs_core* core, char const* path, mode_t mode, dev_t d
    return err;
 }
 
-
-// mark an fs_entry as having been opened, and/or create a file
+// Try to open a file, but fail-fast on error.  It behaves as close to POSIX-open as possible, with the following differences:
+// * return -EREMOTEIO if the UG could not contact the MS, or if it could not obtain a fresh manifest.
+// * return -EUCLEAN if the UG was unable to merge metadata from the MS into its metadata hierarchy (usually indicates a bug)
+// * return a driver-specific, non-zero error code given by the driver's create_file() method
+// Side-effects:
+// * re-downloads and updates metadata for all entries along the path that are stale.
+// * re-downloads the manifest for the i-node if it is stale.
 struct fs_file_handle* fs_entry_open( struct fs_core* core, char const* _path, uint64_t user, uint64_t vol, int flags, mode_t mode, int* err ) {
 
    // first things first: check open mode vs whether or not we're a client and/or have read-only caps 

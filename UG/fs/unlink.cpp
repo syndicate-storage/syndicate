@@ -212,7 +212,10 @@ int fs_entry_versioned_unlink( struct fs_core* core, char const* path, uint64_t 
    // make sure the manifest is fresh, so we delete every block
    // only need to worry about this if file has > 0 size
    if( fent->size > 0 ) {
+      
+      // try to get it
       err = fs_entry_revalidate_manifest( core, path, fent );
+            
       if( err != 0 ) {
          errorf( "fs_entry_revalidate_manifest(%s) rc = %d\n", path, err );
          

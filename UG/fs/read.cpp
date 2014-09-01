@@ -554,7 +554,7 @@ static int fs_entry_read_block_future_start_primary_download( struct fs_core* co
       return rc;
    }
    
-   if( block_fut->curr_URL ) {
+   if( block_fut->curr_URL != NULL ) {
       free( block_fut->curr_URL );
    }
    
@@ -617,7 +617,7 @@ static int fs_entry_read_block_future_start_next_replica_download( struct fs_cor
          return rc;
       }
       
-      if( block_fut->curr_URL ) {
+      if( block_fut->curr_URL != NULL ) {
          free( block_fut->curr_URL );
       }
       
@@ -1085,8 +1085,9 @@ int fs_entry_read_context_run_downloads_ex( struct fs_core* core, struct fs_entr
                fs_entry_read_context_untrack_downloading_block_itr( read_ctx, curr_itr );
                
                // lock this so we can access it in processing the next download step
-               if( !write_locked )
+               if( !write_locked ) {
                   fs_entry_rlock( fent );
+               }
                
                // do internal processing of the future (finalizing it, or re-tracking it)
                rc = fs_entry_read_block_future_process_download( core, fent, read_ctx, block_fut );
@@ -1814,12 +1815,12 @@ ssize_t fs_entry_read( struct fs_core* core, struct fs_file_handle* fh, char* bu
       return -EBADF;
    }
    
-   // refresh metadata
+   // refresh path metadata and manifest
    int rc = fs_entry_revalidate_metadata( core, fh->path, fh->fent, NULL );
    if( rc != 0 ) {
       errorf("fs_entry_revalidate_metadata(%s) rc = %d\n", fh->path, rc );
       fs_file_handle_unlock( fh );
-      return -EREMOTEIO;
+      return rc;
    }
    
    fs_entry_rlock( fh->fent );
