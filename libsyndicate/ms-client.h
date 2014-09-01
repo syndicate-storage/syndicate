@@ -56,7 +56,6 @@
 using namespace std;
 
 typedef map<long, struct md_update> update_set;
-typedef map<uint64_t, long> deadline_queue;
 
 // status responses from the MS on a locally cached metadata record
 #define MS_LISTING_NEW          ms::ms_listing::NEW             // new entry
@@ -76,13 +75,6 @@ struct ms_listing {
    int status;       
    int type;         // file or directory?
    vector<struct md_entry>* entries;
-};
-
-// Download information
-struct ms_download_context {
-   CURL* curl;
-   char* url;
-   response_buffer_t* rb;
 };
 
 // path entry metadata for getting metadata listings

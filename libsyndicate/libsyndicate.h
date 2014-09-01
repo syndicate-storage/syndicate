@@ -163,8 +163,10 @@ struct md_syndicate_conf {
    int httpd_portnum;                                 // port number for the httpd interface (syndicate-httpd only)
    char* volume_name;                                 // name of the volume we're connected to
    char* volume_pubkey_path;                          // path on disk to find Volume metadata public key
-   int max_read_retry;                                // maximum number of times to retry a read before considering it failed 
-   int max_write_retry;                               // maximum number of times to retry a write before considering it failed
+   int max_read_retry;                                // maximum number of times to retry a read (i.e. fetching a block or manifest) before considering it failed 
+   int max_write_retry;                               // maximum number of times to retry a write (i.e. replicating a block or manifest) before considering it failed
+   int max_metadata_read_retry;                       // maximum number of times to retry a metadata read before considering it failed 
+   int max_metadata_write_retry;                      // maximum number of times to retry a metadata write before considering it failed
    int retry_delay_ms;                                // number of milliseconds to wait between retries
    
    // RG/AG servers

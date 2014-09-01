@@ -3159,42 +3159,6 @@ void ms_client_free_response( ms_response_t* ms_response ) {
 }
 
 
-// initialize a download context
-int ms_client_init_download( struct ms_client* client, struct ms_download_context* download, uint64_t volume_id, uint64_t file_id, int64_t file_version, int64_t write_nonce ) {
-   download->url = ms_client_file_read_url( client, volume_id, file_id, file_version, write_nonce );
-   download->curl = curl_easy_init();
-   download->rb = new response_buffer_t();
-
-   md_init_curl_handle( client->conf, download->curl, download->url, client->conf->connect_timeout );
-   
-   curl_easy_setopt( download->curl, CURLOPT_USERPWD, client->userpass );
-   curl_easy_setopt( download->curl, CURLOPT_WRITEFUNCTION, md_get_callback_response_buffer );
-   curl_easy_setopt( download->curl, CURLOPT_WRITEDATA, download->rb );
-
-   return 0;
-}
-
-
-// free a download context
-void ms_client_free_download( struct ms_download_context* download ) {
-   if( download->url ) {
-      free( download->url );
-      download->url = NULL;
-   }
-   
-   if( download->rb ) {
-      response_buffer_free( download->rb );
-      delete download->rb;
-      download->rb = NULL;
-   }
-
-   if( download->curl ) {
-      curl_easy_cleanup( download->curl );
-      download->curl = NULL;
-   }
-}
-
-
 // build a path ent
 int ms_client_make_path_ent( struct ms_path_ent* path_ent, uint64_t volume_id, uint64_t file_id, int64_t version, int64_t write_nonce, char const* name, void* cls ) {
    // build up the ms_path as we traverse our cached path
@@ -3228,148 +3192,274 @@ void ms_client_free_path( path_t* path, void (*free_cls)(void*) ) {
    }
 }
 
-// download many things at once
-int ms_client_perform_multi_download( struct ms_client* client, struct ms_download_context* downloads, unsigned int num_downloads ) {
-   int still_running = 0;
-   CURLMsg* msg = NULL;
-   int msgs_left = 0;
+
+// free all downloads 
+static int ms_client_free_path_downloads( struct ms_client* client, struct md_download_context* path_downloads, unsigned int num_downloads ) {
+   
+   for( unsigned int i = 0; i < num_downloads; i++ ) {
+      
+      if( !md_download_context_finalized( &path_downloads[i] ) ) {
+         // wait for it...
+         md_download_context_wait( &path_downloads[i], -1 );
+      }      
+
+      CURL* old_handle = NULL;
+      md_download_context_free( &path_downloads[i], &old_handle );
+      
+      if( old_handle != NULL ) {
+         curl_easy_cleanup( old_handle );
+      }
+      memset( &path_downloads[i], 0, sizeof(struct md_download_context) );
+   }
+   
+   return 0;
+}
+
+
+// cancel all running downloads
+static int ms_client_cancel_path_downloads( struct ms_client* client, struct md_download_context* path_downloads, unsigned int num_downloads ) {
+   
+   // cancel all downloads
+   for( unsigned int i = 0; i < num_downloads; i++ ) {
+      
+      if( !md_download_context_finalized( &path_downloads[i] ) ) {
+         // cancel this 
+         md_download_context_cancel( &client->dl, &path_downloads[i] );
+      }
+   }
+   
+   return 0;
+}
+
+
+// set up a path download 
+static int ms_client_set_up_path_downloads( struct ms_client* client, path_t* path, struct md_download_context** ret_path_downloads ) {
+   
+   unsigned int num_downloads = path->size();
+   
+   // fetch all downloads concurrently 
+   struct md_download_context* path_downloads = CALLOC_LIST( struct md_download_context, num_downloads );
+   
    int rc = 0;
-
-   CURLM* curl_multi = curl_multi_init();
    
-   // populate the curl handle
+   // set up downloads
    for( unsigned int i = 0; i < num_downloads; i++ ) {
-      curl_multi_add_handle( curl_multi, downloads[i].curl );
-   }
-
-   // start the action
-   curl_multi_perform( curl_multi, &still_running );
-   
-   do {
-      struct timeval timeout;
-
-      fd_set fdread;
-      fd_set fdwrite;
-      fd_set fdexcep;
       
-      FD_ZERO( &fdread );
-      FD_ZERO( &fdwrite );
-      FD_ZERO( &fdexcep );
-
-      int maxfd = -1;
-
-      long curl_timeo = -1;
-
-      // check back at most once a second
-      timeout.tv_sec = 1;
-      timeout.tv_usec = 0;
-
-      rc = curl_multi_timeout( curl_multi, &curl_timeo );
+      // TODO: use a connection pool for the MS
+      struct ms_path_ent* path_ent = &path->at(i);
+      
+      CURL* curl_handle = curl_easy_init();
+      
+      // NOTE: no cache driver for the MS, so we'll do this manually 
+      char* url = ms_client_file_read_url( client, path_ent->volume_id, path_ent->file_id, path_ent->version, path_ent->write_nonce );
+      
+      md_init_curl_handle( client->conf, curl_handle, url, client->conf->connect_timeout );
+      curl_easy_setopt( curl_handle, CURLOPT_USERPWD, client->userpass );
+      curl_easy_setopt( curl_handle, CURLOPT_URL, url );
+      
+      free( url );
+      
+      rc = md_download_context_init( &path_downloads[i], curl_handle, NULL, NULL, -1 );
       if( rc != 0 ) {
-         errorf("curl_multi_timeout rc = %d\n", rc);
-         rc = -ENODATA;
          break;
       }
-      
-      if( curl_timeo >= 0 ) {
-         timeout.tv_sec = curl_timeo / 1000;
-         if( timeout.tv_sec > 1 ) {
-            timeout.tv_sec = 1;
-         }
-         else {
-            timeout.tv_usec = (curl_timeo % 1000) * 1000;
-         }
-      }
-
-      // get fd set
-      rc = curl_multi_fdset( curl_multi, &fdread, &fdwrite, &fdexcep, &maxfd );
-      if( rc != 0 ) {
-         errorf("curl_multi_fdset rc = %d\n", rc );
-         rc = -ENODATA;
-         break;
-      }
-
-      rc = select( maxfd + 1, &fdread, &fdwrite, &fdexcep, &timeout );
-      if( rc < 0 ) {
-         rc = -errno;
-         errorf("select errno = %d\n", rc );
-         rc = -ENODATA;
-         break;
-      }
-      
-      rc = 0;
-
-      curl_multi_perform( curl_multi, &still_running );
-      
-   } while( still_running > 0 );
-   
-   if( rc == 0 ) {
-      // how did the transfers go?
-      do {
-         msg = curl_multi_info_read( curl_multi, &msgs_left );
-
-         if( msg == NULL )
-            break;
-
-         if( msg->msg == CURLMSG_DONE ) {
-            // status of this handle...
-            bool found = false;
-            unsigned int i = 0;
-            
-            for( i = 0; i < num_downloads; i++ ) {
-               if( msg->easy_handle == downloads[i].curl ) {
-                  found = true;
-                  break;
-               }
-            }
-
-            if( found ) {
-               // check status
-               if( msg->data.result != 0 ) {
-                  // curl error
-                  errorf("Download %s rc = %d\n", downloads[i].url, msg->data.result);
-                  rc = -ENODATA;
-               }
-               
-               // check HTTP code
-               long http_status = 0;
-               int crc = curl_easy_getinfo( downloads[i].curl, CURLINFO_RESPONSE_CODE, &http_status );
-               if( crc != 0 ) {
-                  errorf("curl_easy_getinfo rc = %d\n", rc );
-                  rc = -ENODATA;
-               }
-               
-               if( http_status != 200 ) {
-                  errorf("MS HTTP response code %ld for %s\n", http_status, downloads[i].url );
-                  if( http_status == 404 ) {
-                     rc = -ENOENT;
-                  }
-                  else if( http_status == 403 ) {
-                     rc = -EACCES;
-                  }
-                  else {
-                     rc = -EREMOTEIO;
-                     
-                  }
-               }
-               else {
-                  dbprintf("MS HTTP download %s succeeded!\n", downloads[i].url );
-               }
-            }
-         }
-      } while( msg != NULL );
    }
    
-   // clean up
-   for( unsigned int i = 0; i < num_downloads; i++ ) {
-      curl_multi_remove_handle( curl_multi, downloads[i].curl );
+   if( rc != 0 ) {
+      // something failed 
+      ms_client_free_path_downloads( client, path_downloads, num_downloads );
+      free( path_downloads );
    }
-
-   curl_multi_cleanup( curl_multi );
-
+   else {
+      *ret_path_downloads = path_downloads;
+   }
+   
    return rc;
 }
 
+
+// run a set of downloads
+// retry ones that time out, up to conf->max_metadata_read_retry times.
+static int ms_client_run_path_downloads( struct ms_client* client, struct md_download_context* path_downloads, unsigned int num_downloads ) {
+   
+   int rc = 0;
+   int num_running_downloads = num_downloads;
+   
+   // associate an attempt counter with each download, to handle timeouts
+   map< struct md_download_context*, int > attempts;
+   
+   for( unsigned int i = 0; i < num_downloads; i++ ) {
+      attempts[ &path_downloads[i] ] = 0;
+   }
+   
+   
+   // set up a download set to track these downloads 
+   struct md_download_set path_download_set;
+   
+   md_download_set_init( &path_download_set );
+   
+   // add all downloads to the download set 
+   for( unsigned int i = 0; i < num_downloads; i++ ) {
+         
+      rc = md_download_set_add( &path_download_set, &path_downloads[i] );
+      if( rc != 0 ) {
+         errorf("md_download_set_add rc = %d\n", rc );
+         
+         md_download_set_free( &path_download_set );
+         return rc;
+      }
+   }
+   
+   while( num_running_downloads > 0 ) {
+   
+      // wait for a download to complete 
+      rc = md_download_context_wait_any( &path_download_set, -1 );
+      
+      if( rc != 0 ) {
+         errorf("md_download_context_wait_any rc = %d\n", rc);
+         break;
+      }
+      
+      // re-tally this
+      num_running_downloads = 0;
+      
+      vector<struct md_download_context*> succeeded;
+      
+      // find the one(s) that finished...
+      for( md_download_set_iterator itr = md_download_set_begin( &path_download_set ); itr != md_download_set_end( &path_download_set ); itr++ ) {
+         
+         struct md_download_context* dlctx = md_download_set_iterator_get_context( itr );
+         
+         if( dlctx == NULL ) {
+            continue;
+         }
+         if( !md_download_context_finalized( dlctx ) ) {
+            num_running_downloads++;
+            continue;
+         }
+
+         // process this finalized dlctx
+         char* final_url = NULL;
+         int http_status = md_download_context_get_http_status( dlctx );
+         int os_err = md_download_context_get_errno( dlctx );
+         int curl_rc = md_download_context_get_curl_rc( dlctx );
+         md_download_context_get_effective_url( dlctx, &final_url );
+         
+         // serious MS error?
+         if( http_status >= 500 ) {
+            errorf("Path download %s HTTP status %d\n", final_url, http_status );
+            
+            rc = -EREMOTEIO;
+            
+            free( final_url );
+            break;
+         }
+         
+         // timed out?
+         else if( curl_rc == CURLE_OPERATION_TIMEDOUT || os_err == -ETIMEDOUT ) {
+            
+            errorf("Path download %s timed out (curl_rc = %d, errno = %d, attempt %d)\n", final_url, curl_rc, os_err, attempts[dlctx] + 1);
+            
+            attempts[dlctx] ++;
+            
+            // try again?
+            if( attempts[dlctx] < client->conf->max_metadata_read_retry ) {
+               
+               md_download_context_reset( dlctx, NULL );
+               
+               rc = md_download_context_start( &client->dl, dlctx, NULL, NULL );
+               if( rc != 0 ) {
+                  // shouldn't happen, but just in case 
+                  errorf("md_download_context_start(%p) rc = %d\n", dlctx, rc );
+                  
+                  free( final_url );
+                  break;
+               }
+            }
+            else {
+               // download failed, and we tried as many times as we could
+               rc = -ENODATA;
+               free( final_url );
+               break;
+            }
+         }
+         
+         // some other error?
+         else if( http_status != 200 || curl_rc != 0 || os_err != 0 ) {
+            
+            errorf("Path download %s failed, HTTP status = %d, cURL rc = %d, errno = %d\n", final_url, http_status, curl_rc, os_err );
+            
+            if( os_err != 0 ) {
+               rc = os_err;
+            }
+            else {
+               rc = -EREMOTEIO;
+            }
+            
+            free( final_url );
+            break;
+         }
+         
+         // succeeded!
+         free( final_url );
+         succeeded.push_back( dlctx );
+      }
+      
+      // clear the ones that succeeded 
+      for( unsigned int i = 0; i < succeeded.size(); i++ ) {
+         
+         md_download_set_clear( &path_download_set, succeeded[i] );
+      }
+   }
+   
+   md_download_set_free( &path_download_set );
+   
+   // all downloads finished 
+   return rc;
+}
+
+
+// run the path downloads in the download set, retrying any that fail due to timeouts
+// on success, put the finalized download contexts into ret_path_downloads
+static int ms_client_download_path_listing( struct ms_client* client, path_t* path, struct md_download_context** ret_path_downloads ) {
+   
+   int rc = 0;
+   unsigned int num_downloads = path->size();
+   
+   // initialize a download set to track these downloads
+   struct md_download_context* path_downloads = NULL;
+   
+   rc = ms_client_set_up_path_downloads( client, path, &path_downloads );
+   if( rc != 0 ) {
+      errorf("ms_client_set_up_path_downloads rc = %d\n", rc );
+      return rc;
+   }
+   
+   // start downloads on the MS downloader
+   for( unsigned int i = 0; i < num_downloads; i++ ) {
+      
+      rc = md_download_context_start( &client->dl, &path_downloads[i], NULL, NULL );
+      if( rc != 0 ) {
+         // shouldn't happen, but just in case 
+         errorf("md_download_context_start(%p (%" PRIX64 ")) rc = %d\n", &path_downloads[i], path->at(i).file_id, rc );
+         break;
+      }
+   }
+   
+   // process all downloads 
+   rc = ms_client_run_path_downloads( client, path_downloads, num_downloads );
+   
+   if( rc != 0 ) {
+      // cancel everything 
+      ms_client_cancel_path_downloads( client, path_downloads, num_downloads );
+      ms_client_free_path_downloads( client, path_downloads, num_downloads );
+      free( path_downloads );
+   }
+   else {
+      *ret_path_downloads = path_downloads;
+   }
+   return rc;
+}
 
 // get a set of metadata entries.
 // on succes, populate ms_response with ms_listing structures for each path entry that needed to be downloaded, as indicated by the stale flag.
@@ -3382,30 +3472,17 @@ int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_
       return 0;
    }
    
-   // fetch concurrently--set up downloads
-   struct ms_download_context* path_downloads = CALLOC_LIST( struct ms_download_context, num_downloads );
-   
-   for( unsigned int i = 0; i < num_downloads; i++ ) {
-      struct ms_path_ent* path_ent = &path->at(i);
-      ms_client_init_download( client, &path_downloads[i], path_ent->volume_id, path_ent->file_id, path_ent->version, path_ent->write_nonce );
-   }
-
+   struct md_download_context* path_downloads = NULL;
    struct timespec ts, ts2;
    
    BEGIN_TIMING_DATA( ts );
    
-   int rc = ms_client_perform_multi_download( client, path_downloads, num_downloads );
-
+   int rc = ms_client_download_path_listing( client, path, &path_downloads );
+   
    END_TIMING_DATA( ts, ts2, "MS recv" );
    
    if( rc != 0 ) {
       errorf("ms_client_perform_multi_download rc = %d\n", rc );
-
-      // free memory
-      for( unsigned int i = 0; i < num_downloads; i++ ) {
-         ms_client_free_download( &path_downloads[i] );
-      }
-      free( path_downloads );
       
       return rc;
    }
@@ -3414,14 +3491,23 @@ int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_
    unsigned int di = 0;
    for( unsigned int i = 0; i < path->size(); i++ ) {
       
-      char* buf = response_buffer_to_string( path_downloads[di].rb );
-      size_t buf_len = response_buffer_size( path_downloads[di].rb );
+      // get the buffer 
+      char* buf = NULL;
+      off_t buf_len = 0;
+      
+      rc = md_download_context_get_buffer( &path_downloads[i], &buf, &buf_len );
+      if( rc != 0 ) {
+         
+         errorf("md_download_context_get_buffer rc = %d\n", rc );
+         rc = -EIO;
+         break;
+      }
       
       // parse and verify
       ms::ms_reply reply;
       rc = ms_client_parse_reply( client, &reply, buf, buf_len, true );
       if( rc != 0 ) {
-         errorf("ms_client_parse_reply(%s) rc = %d\n", path_downloads[di].url, rc );
+         errorf("ms_client_parse_reply rc = %d\n", rc );
          rc = -EIO;
          ms_client_free_response( ms_response );
          free( buf );
@@ -3449,7 +3535,7 @@ int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_
       free( buf );
       
       if( rc != 0 ) {
-         errorf("ms_client_parse_listing(%s) rc = %d\n", path_downloads[di].url, rc );
+         errorf("ms_client_parse_listing rc = %d\n", rc );
          rc = -EIO;
          ms_client_free_response( ms_response );
          break;
@@ -3470,10 +3556,7 @@ int ms_client_get_listings( struct ms_client* client, path_t* path, ms_response_
       di++;
    }
 
-   // free memory
-   for( unsigned int i = 0; i < num_downloads; i++ ) {
-      ms_client_free_download( &path_downloads[i] );
-   }
+   ms_client_free_path_downloads( client, path_downloads, num_downloads );
    free( path_downloads );
 
    return rc;

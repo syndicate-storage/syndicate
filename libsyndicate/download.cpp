@@ -615,6 +615,7 @@ int md_download_set_add( struct md_download_set* dlset, struct md_download_conte
 
 
 // remove a download context from a download set by iterator
+// don't do this in e.g. a for() loop where you're iterating over download contexts
 int md_download_set_clear_itr( struct md_download_set* dlset, const md_download_set_iterator& itr ) {
    
    struct md_download_context* dlctx = *itr;
@@ -625,7 +626,7 @@ int md_download_set_clear_itr( struct md_download_set* dlset, const md_download_
 }
 
 // remove a download context from a download set by value
-// don't do this in e.g. a for() loop where you're iterating over download sets
+// don't do this in e.g. a for() loop where you're iterating over download contexts
 int md_download_set_clear( struct md_download_set* dlset, struct md_download_context* dlctx ) {
    
    dlset->waiting->erase( dlctx );
@@ -664,7 +665,7 @@ static int md_download_context_connect_cache( struct md_downloader* dl, struct m
    int rc = 0;
    
    // connect to the cache 
-   if( dlctx->cache_func ) {
+   if( dlctx->cache_func != NULL ) {
       // no closure?
       if( cache_closure == NULL ) {
          return -EINVAL;
