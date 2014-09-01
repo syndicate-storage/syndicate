@@ -466,8 +466,7 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 #define VALID_GATEWAY_TYPE( type ) ((type) == SYNDICATE_UG || (type) == SYNDICATE_RG || (type) == SYNDICATE_AG)
 
 // gateway HTTP error codes (used by the AG and UG)
-#define GATEWAY_HTTP_TRYAGAIN 204
-#define GATEWAY_HTTP_EOF 210
+#define MD_HTTP_TRYAGAIN    503
 
 #define GATEWAY_CAP_READ_DATA  1
 #define GATEWAY_CAP_WRITE_DATA  2
@@ -479,8 +478,6 @@ template <class T> int md_parse( T* protobuf, char const* bits, size_t bits_len 
 
 
 // limits
-#define SYNDICATE_MAX_WRITE_MESSEGE_LEN  4096
-#define SYNDICATE_MAX_MANIFEST_LEN              1000000         // 1MB
-#define URL_MAX         3000           // maximum length of a URL
+#define SYNDICATE_MAX_MANIFEST_LEN              100000000         // 100MB
 
 #endif

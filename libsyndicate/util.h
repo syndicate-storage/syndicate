@@ -161,6 +161,8 @@ int64_t currentTimeMicros();
 double timespec_to_double( struct timespec* ts );
 double now_ns(void);
 
+int md_sleep_uninterrupted( struct timespec* ts );
+
 // sha256 functions
 size_t sha256_len(void);
 unsigned char* sha256_hash( char const* input );

@@ -1154,17 +1154,17 @@ int md_download( struct md_syndicate_conf* conf, struct md_downloader* dl, struc
 // translate an HTTP status code into the approprate error code.
 // return the code if no error could be determined.
 static int md_HTTP_status_code_to_error_code( int status_code ) {
-   if( status_code == GATEWAY_HTTP_TRYAGAIN )
+   if( status_code == MD_HTTP_TRYAGAIN ) {
       return -EAGAIN;
+   }
    
-   if( status_code == GATEWAY_HTTP_EOF )
-      return 0;
-   
-   if( status_code == 500 )
+   if( status_code == 500 ) {
       return -EREMOTEIO;
+   }
    
-   if( status_code == 404 )
+   if( status_code == 404 ) {
       return -ENOENT;
+   }
    
    return status_code;
 }
@@ -1196,10 +1196,12 @@ int md_download_manifest( struct md_syndicate_conf* conf, struct md_downloader* 
          free( manifest_data );
       
       int err = md_HTTP_status_code_to_error_code( status_code );
-      if( err == 0 || err == status_code )
+      if( err == 0 || err == status_code ) {
          return -EREMOTEIO;
-      else
+      }
+      else {
          return err;
+      }
    }
    
    // process the manifest...

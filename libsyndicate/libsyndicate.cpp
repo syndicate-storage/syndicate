@@ -1334,8 +1334,9 @@ int md_path_version_offset( char const* path ) {
    
    char *end;
    long version = strtol( path + i + 1, &end, 10 );
-   if( version == 0 && *end != '\0' )
+   if( version == 0 && *end != '\0' ) {
       return -3;     // could not parse the version
+   }
    
    return i;  
 }

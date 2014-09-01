@@ -780,6 +780,44 @@ double now_ns(void) {
    return timespec_to_double( &ts );
 }
 
+// sleep for the given timespec amount of time, transparently handing EINTR
+int md_sleep_uninterrupted( struct timespec* ts ) {
+   
+   struct timespec now;
+   int rc = 0;
+   
+   rc = clock_gettime( CLOCK_MONOTONIC, &now );
+   
+   if( rc != 0 ) {
+      rc = -errno;
+      return rc;
+   }
+   
+   struct timespec deadline;
+   deadline.tv_sec = now.tv_sec + ts->tv_sec;
+   deadline.tv_nsec = now.tv_nsec + ts->tv_nsec;
+   
+   while( true ) {
+      
+      rc = clock_nanosleep( CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL );
+      if( rc != 0 ) {
+         
+         rc = -errno;
+         if( rc == -EINTR ) {
+            continue;
+         }
+         else {
+            return rc;
+         }
+      }
+      else {
+         break;
+      }
+   }
+   
+   return 0;
+}
+
 // alloc and then mlock 
 int mlock_calloc( struct mlock_buf* buf, size_t len ) {
    memset( buf, 0, sizeof( struct mlock_buf ) );
