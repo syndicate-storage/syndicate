@@ -716,10 +716,12 @@ int md_HTTP_unlock( struct md_HTTP* http ) {
 static int md_parse_uint64( char* id_str, char const* fmt, uint64_t* out ) {
    uint64_t ret = 0;
    int rc = sscanf( id_str, fmt, &ret );
-   if( rc == 0 )
+   if( rc == 0 ) {
       return -EINVAL;
-   else
+   }
+   else {
       *out = ret;
+   }
    
    return 0;
 }
@@ -729,11 +731,13 @@ static int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* ma
    long tv_nsec = -1;
    
    int num_read = sscanf( _manifest_str, "manifest.%ld.%ld", &tv_sec, &tv_nsec );
-   if( num_read != 2 )
+   if( num_read != 2 ) {
       return -EINVAL;
-
-   if( tv_sec < 0 || tv_nsec < 0 )
+   }
+   
+   if( tv_sec < 0 || tv_nsec < 0 ) {
       return -EINVAL;
+   }
    
    manifest_timestamp->tv_sec = tv_sec;
    manifest_timestamp->tv_nsec = tv_nsec;
@@ -744,15 +748,13 @@ static int md_parse_manifest_timestamp( char* _manifest_str, struct timespec* ma
 
 static int md_parse_block_id_and_version( char* _block_id_version_str, uint64_t* _block_id, int64_t* _block_version ) {
    uint64_t block_id = INVALID_BLOCK_ID;
-   int64_t block_version = -1;
-
+   int64_t block_version = 0;
+   
    int num_read = sscanf( _block_id_version_str, "%" PRIu64 ".%" PRId64, &block_id, &block_version );
-   if( num_read != 2 )
+   if( num_read != 2 ) {
       return -EINVAL;
-
-   if( block_version < 0 )
-      return -EINVAL;
-
+   }
+   
    *_block_id = block_id;
    *_block_version = block_version;
 
@@ -777,15 +779,17 @@ static int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_
    }
    ptr++;
    
-   if( ptr == _name_id_and_version_str && num_periods < 2 )
+   if( ptr == _name_id_and_version_str && num_periods < 2 ) {
       return -EINVAL;
+   }
    
    uint64_t file_id = INVALID_FILE_ID;
    int64_t file_version = -1;
    
    int num_read = sscanf( ptr, ".%" PRIX64 ".%" PRId64, &file_id, &file_version );
-   if( num_read != 2 )
+   if( num_read != 2 ) {
       return -EINVAL;
+   }
    
    *_file_id = file_id;
    *_file_version = file_version;
@@ -796,8 +800,9 @@ static int md_parse_file_id_and_version( char* _name_id_and_version_str, uint64_
 // clear the file ID from a string in the format of file_path.file_id 
 static int md_clear_file_id( char* name_and_id ) {
    char* file_id_ptr = rindex( name_and_id, '.' );
-   if( file_id_ptr == NULL )
+   if( file_id_ptr == NULL ) {
       return -EINVAL;
+   }
    
    *file_id_ptr = '\0';
    return 0;
@@ -949,6 +954,13 @@ int md_HTTP_parse_url_path( char const* _url_path, uint64_t* _volume_id, char** 
    *_block_version = block_version;
    _manifest_ts->tv_sec = manifest_timestamp.tv_sec;
    _manifest_ts->tv_nsec = manifest_timestamp.tv_nsec;
+   
+   if( manifest_timestamp.tv_sec > 0 || manifest_timestamp.tv_nsec > 0 ) {
+      dbprintf("Path is /%" PRIu64 "/%s.%" PRIX64 ".%" PRId64 "/manifest.%ld.%ld\n", volume_id, file_path, file_id, file_version, manifest_timestamp.tv_sec, manifest_timestamp.tv_nsec );
+   }
+   else {
+      dbprintf("Path is /%" PRIu64 "/%s.%" PRIX64 ".%" PRId64 "/%" PRIu64 ".%" PRId64 "\n", volume_id, file_path, file_id, file_version, block_id, block_version );
+   }
 
    free( parts );
 

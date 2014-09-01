@@ -1309,9 +1309,15 @@ uint64_t* md_parse_header_uint64v( char* hdr, off_t offset, size_t size, size_t*
 int md_path_version_offset( char const* path ) {
    int i;
    bool valid = true;
+   bool sign = false;
    for( i = strlen(path)-1; i >= 0; i-- ) {
-      if( path[i] == '.' )
+      if( path[i] == '.' ) {
          break;
+      }
+      if( path[i] == '-' && !sign ) {
+         sign = true;
+         continue;
+      }
       if( path[i] < '0' || path[i] > '9' ) {
          valid = false;
          break;
