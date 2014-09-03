@@ -22,6 +22,8 @@ import sys
 import logging
 import argparse
 import logging
+import threading
+import time
 
 logging.basicConfig( format='[%(asctime)s] [%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
 log = logging.getLogger()
@@ -32,54 +34,235 @@ import collections
 AG_file_data = collections.namedtuple("AG_file_data", ["path", "reval_sec", "driver", "perm", "query_string"] )
 AG_dir_data = collections.namedtuple("AG_dir_data", ["path", "reval_sec", "driver", "perm"] )
 
+MAX_RETRIES = 3
+
 # you might have to pip install this one...
 import ftputil
 
-# walk an FTP directory, and do something with each directory 
-# callback signature: ( abs_path, is_directory )
-# callback must return true for a directory to be added to the dir queue to walk
-def ftp_walk( ftphost, cwd, callback ):
+# do this in its own thread 
+class ftp_crawl_thread( threading.Thread ):
    
-   dir_queue = []
-   dir_queue.append( cwd )
-   
-   # process root
-   rc = callback( cwd, True )
-   if not rc:
-      return rc
-   
-   total_processed = 1
-   
-   while len(dir_queue) > 0:
+   def __init__(self, threadno, ftphost ):
+      super( ftp_crawl_thread, self ).__init__()
+      self.ftphost = ftphost 
+      self.threadno = threadno
+      self.producer_sem = threading.Semaphore(0)
       
-      cur_dir = dir_queue[0]
-      dir_queue.pop(0)
+      self.running = True
+      self.result_files = None
+      self.result_dirs = None
+      self.working = False
+      self.cur_dir = None
       
-      log.info( "listdir %s" % cur_dir )
+   @classmethod
+   def crawl( cls, threadno, ftphost, cur_dir ):
       
-      try:
-         # list the current dir
-         names = ftphost.listdir( cur_dir )
-      except Exception, e:
-         log.exception(e)
-         return False
+      log.info( "thread %s: listdir %s" % (threadno, cur_dir ) )
       
+      names = None
+      for i in xrange(0, MAX_RETRIES):
+         try:
+            names = ftphost.listdir( cur_dir )
+            break
+         except Exception, e:
+            log.exception(e)
+            log.error("thread %s: Trying to crawl %s again" % (threadno, cur_dir) )
+            pass
+
+
+      if names is None:
+         return (None, None)
+      
+      # harvest the work 
+      files = []
       dirs = []
       
       for name in names:
          
          abs_path = os.path.join( cur_dir, name )
-         is_directory = ftphost.path.isdir( abs_path )
          
-         rc = callback( abs_path, is_directory )
+         is_directory = False
          
-         if rc and is_directory:
-            dirs.append( abs_path )
+         for i in xrange(0, MAX_RETRIES):
+            try:
+               is_directory = ftphost.path.isdir( abs_path )
+               break
+            except Exception, e:
+               log.exception(e)
+               log.error("thread %s: Trying to isdir %s again" % (threadno, abs_path))
+               pass
+         
+         if is_directory:
+            dirs.append( name )
+
+         else:
+            files.append( name )
+            
+      # done!
+      return (files, dirs)
+   
+   def run(self):
       
-      total_processed += len(names)
-      log.info("%s: %s entries processed (total: %s)" % (cur_dir, len(names), total_processed))
+      while self.running:
+         
+         # wait for work
+         self.producer_sem.acquire()
+         
+         if not self.running:
+            return
       
-      dir_queue += dirs 
+         work = self.cur_dir 
+         
+         self.result_files, self.result_dirs = ftp_crawl_thread.crawl( self.threadno, self.ftphost, work )
+         
+         self.working = False
+         
+         log.info("thread %s: expored %s" % (self.threadno, self.cur_dir ))
+   
+   
+   def stop_working(self):
+      self.running = False 
+      self.producer_sem.release()
+      
+   def is_working(self):
+      return self.working
+      
+   def get_files(self):
+      return self.result_files 
+   
+   def get_dirs( self ):
+      return self.result_dirs
+
+   def get_cur_dir( self ):
+      return self.cur_dir 
+   
+   def next_dir( self, cur_dir ):
+      if self.is_working():
+         raise Exception("thread %s: Thread is still working on %s" % (self.threadno, self.cur_dir))
+      
+      self.cur_dir = cur_dir
+      self.working = True
+      self.producer_sem.release()
+
+
+# walk an FTP directory, and do something with each directory 
+# callback signature: ( abs_path, is_directory )
+# callback must return true for a directory to be added to the dir queue to walk
+def ftp_walk( ftphost_pool, cwd, callback ):
+   
+   dir_queue = []
+   
+   log.info("Starting %s threads for crawling" % len(ftphost_pool) )
+   
+   total_processed = 1
+   
+   running = []
+   
+   i = 0
+   
+   for ftphost in ftphost_pool:
+      ct = ftp_crawl_thread( i, ftphost )
+      ct.start()
+      
+      running.append( ct )
+      
+      i += 1
+   
+   running[0].next_dir( cwd )
+   
+   num_running = lambda: len( filter( lambda th: th.is_working(), running ) )
+
+   while True:
+      
+      time.sleep(1)
+      
+      working_list = [th.is_working() for th in running]
+      print working_list 
+      
+      added_work = False 
+      thread_working = False
+      
+      log.info("Gather thread results")
+      
+      # find the finished thread(s) and given them more work
+      for i in xrange(0, len(running)):
+
+         if not running[i].is_working():
+            
+            # did the thread do work?
+            files = running[i].get_files()
+            dirs = running[i].get_dirs()
+            
+            processed_here = 0
+            explore = []
+            
+            if files is not None and dirs is not None:
+               
+               log.info("Gather thread %s's results (%s items gathered)", i, len(files) + len(dirs))
+               
+               # process files
+               for name in files:
+                  abs_path = os.path.join( running[i].get_cur_dir(), name )
+                  
+                  rc = callback( abs_path, False )
+                  
+               processed_here += len(files)
+               
+               
+               # process dirs
+               for dir_name in dirs:
+                  abs_path = os.path.join( running[i].get_cur_dir(), dir_name )
+                  
+                  rc = callback( abs_path, True )
+                  
+                  if rc:
+                     explore.append( abs_path )
+            
+               processed_here += len(dirs)
+               
+            if processed_here > 0:
+               total_processed += processed_here
+               log.info("%s: %s entries processed (total: %s)" % (running[i].get_cur_dir(), processed_here, total_processed))
+               
+            if len(explore) > 0:
+               dir_queue += explore 
+   
+      
+      log.info("Assign thread work")
+      
+      for i in xrange(0, len(running)):
+         
+         if not running[i].is_working():
+            # queue up more work
+            if len(dir_queue) > 0:
+               next_dir = dir_queue[0]
+               dir_queue.pop(0)
+               
+               log.info("Thread %s: explore %s" % (i, next_dir))
+               
+               running[i].next_dir( next_dir )
+               added_work = True
+            
+            else:
+               log.info("Thread %s is not working, but no directories queued", i)
+
+         else:
+            log.info("Thread %s is working" % i)
+            thread_working = True
+               
+      log.info("Directories left to explore: %s" % len(dir_queue))
+      
+      if not added_work and not thread_working:
+         break
+      
+   log.info("Finished exploring %s, shutting down..." % cwd)
+   
+   # stop all threads 
+   for ct in running:
+      ct.stop_working()
+      
+   for ct in running:
+      ct.join()
       
    return True
 
@@ -271,6 +454,7 @@ if __name__ == "__main__":
    parser.add_argument( '-u', "--username", dest="username", default="anonymous", help="FTP username.")
    parser.add_argument( '-p', "--password", dest="password", default="", help="FTP password.")
    parser.add_argument( '-d', "--debug", dest="debug", action='store_true', help="If set, print debugging information.")
+   parser.add_argument( '-t', "--threads", dest="num_threads", default="4", help="Number of threads (default: 4)" )
    parser.add_argument( "hostname", nargs=1, help="Name of the host to be crawled.")
 
    args = parser.parse_args()
@@ -330,12 +514,25 @@ if __name__ == "__main__":
    url_prefix = "ftp://" + args.hostname[0] + args.root_dir
    log.info("crawl %s" % url_prefix )
    
-   ftphost = ftputil.FTPHost( args.hostname[0], args.username, args.password )
+   ftphost_pool = []
    
-   # big cache 
-   ftphost.stat_cache.resize( 50000 )
+   try:
+      num_threads = int(args.num_threads)
+   except:
+      log.error("Invalid argument for number of threads")
+      parser.print_help()
+      sys.exit(1)
    
-   ret = ftp_walk( ftphost, args.root_dir, lambda path, is_dir: build_hierarchy( path, is_dir, whitelist, blacklist, args.reval_sec, file_perm, dir_perm, url_prefix, hierarchy ) )
+   for i in xrange(0, num_threads):
+      ftphost = ftputil.FTPHost( args.hostname[0], args.username, args.password )
+      
+      # big cache 
+      ftphost.stat_cache.resize( 50000 )
+      ftphost.keep_alive()
+      ftphost_pool.append( ftphost )
+   
+   
+   ret = ftp_walk( ftphost_pool, args.root_dir, lambda path, is_dir: build_hierarchy( path, is_dir, whitelist, blacklist, args.reval_sec, file_perm, dir_perm, url_prefix, hierarchy ) )
    
    if not ret:
       print >> sys.stderr, "Failed to load hierarchy from %s" % url_prefix
