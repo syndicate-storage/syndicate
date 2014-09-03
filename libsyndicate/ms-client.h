@@ -214,10 +214,6 @@ struct ms_client {
    // benchmarking
    struct ms_client_timing read_times;
    struct ms_client_timing write_times;
-   
-   // asynchronous/batch RPCs to carry out
-   update_set* updates;
-   deadline_queue* deadlines;
 
    char* url;                 // MS URL
    char* userpass;            // HTTP username:password string.  Username is the gateway ID; password is the session password

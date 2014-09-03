@@ -363,9 +363,7 @@ int ms_client_init( struct ms_client* client, int gateway_type, struct md_syndic
    pthread_rwlock_init( &client->lock, NULL );
    pthread_rwlock_init( &client->view_lock, NULL );
 
-   client->updates = new update_set();
    client->conf = conf;
-   client->deadlines = new deadline_queue();
 
    // uploader thread 
    sem_init( &client->uploader_sem, 0, 0 );
@@ -443,20 +441,6 @@ int ms_client_destroy( struct ms_client* client ) {
    // clean up our state
    if( client->userpass )
       free( client->userpass );
-
-   if( client->updates ) {
-      for( update_set::iterator itr = client->updates->begin(); itr != client->updates->end(); itr++ ) {
-         md_update_free( &itr->second );
-         memset( &itr->second, 0, sizeof(struct md_update) );
-      }
-      client->updates->clear();
-      delete client->updates;
-   }
-
-   if( client->deadlines ) {
-      client->deadlines->clear();
-      delete client->deadlines;
-   }
 
    if( client->url )
       free( client->url );
