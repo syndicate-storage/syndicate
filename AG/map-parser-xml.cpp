@@ -754,7 +754,7 @@ int AG_parse_spec( struct AG_state* state, char const* spec_file_text, size_t sp
       errorf("FATAL: %s\n", message);
       
       XMLString::release(&message);
-      return 1;
+      return -EINVAL;
    }
    SAX2XMLReader* parser = XMLReaderFactory::createXMLReader();
    
@@ -781,7 +781,7 @@ int AG_parse_spec( struct AG_state* state, char const* spec_file_text, size_t sp
          
       delete parser;
       delete mph;
-      return -1;
+      return -EINVAL;
    }
    catch (const SAXParseException& toCatch) {
       char* message = XMLString::transcode(toCatch.getMessage());
@@ -792,17 +792,33 @@ int AG_parse_spec( struct AG_state* state, char const* spec_file_text, size_t sp
          
       delete parser;
       delete mph;
-      return -1;
+      return -EINVAL;
    }
    catch (...) {
-      return -1;
+      
+      delete parser;
+      delete mph;
+      return -EINVAL;
+   }
+   
+   AG_fs_map_t* m = mph->extract_map();
+   if( m->size() == 0 ) {
+      // invalid--we didn't parse anything
+      errorf("ERR: empty spec file text (size = %zu)\n", spec_file_text_len );
+      
+      delete m;
+      
+      delete parser;
+      delete mph;
+      return -EINVAL;
    }
    
    // extract the map and config 
-   *new_map = mph->extract_map();
+   *new_map = m;
    *new_config = mph->extract_config();
    
    delete parser;
    delete mph;
+   
    return 0;
 }

@@ -57,6 +57,7 @@
 #include <math.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>        // for gettid()
+#include <zlib.h>
 
 #define WHERESTR "%05d:%05d: [%16s:%04u] %s: "
 #define WHEREARG (int)getpid(), (int)gettid(), __FILE__, __LINE__, __func__
@@ -162,6 +163,10 @@ double timespec_to_double( struct timespec* ts );
 double now_ns(void);
 
 int md_sleep_uninterrupted( struct timespec* ts );
+
+// (de)compression, with libz
+int md_deflate( char* in, size_t in_len, char** out, size_t* out_len );
+int md_inflate( char* in, size_t in_len, char** out, size_t* out_len );
 
 // sha256 functions
 size_t sha256_len(void);

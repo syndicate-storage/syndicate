@@ -333,7 +333,7 @@ static int md_parse_closure( struct ms_client* client,
       }
    }
    
-   // requested driver?
+   // requested driver (or specfile)?
    if( rc == 0 && driver_bin != NULL && driver_bin_len != NULL ) {
       rc = md_parse_json_b64_string( toplevel_obj, "driver", driver_bin, driver_bin_len );
    
@@ -363,8 +363,8 @@ static int md_parse_closure( struct ms_client* client,
    return rc;
 }
 
-// initialize a gateway's closure.
-// if gateway_specific is true, then this closure is specific to a gateway, and it can contain secrets encrypted with the gateway's public key.
+// initialize a UG or RG closure.
+// if gateway_specific is true, then this closure is specific to a gateway, and we should try to obtain the closure's secrets using the gateway's public key.
 // otherwise, it's volume-wide, and no secrets will be processed.
 int md_closure_init( struct ms_client* client, struct md_closure* closure, struct md_closure_callback_entry* driver_prototype, char const* closure_text, size_t closure_text_len, bool gateway_specific, bool ignore_stubs ) {
    memset( closure, 0, sizeof(struct md_closure) );
@@ -372,8 +372,9 @@ int md_closure_init( struct ms_client* client, struct md_closure* closure, struc
    md_closure_conf_t* closure_conf = new md_closure_conf_t();
    md_closure_secrets_t* closure_secrets = NULL;
    
-   if( gateway_specific )
+   if( gateway_specific ) {
       closure_secrets = new md_closure_secrets_t();
+   }
    
    char* driver_bin = NULL;
    size_t driver_bin_len = 0;
@@ -416,6 +417,28 @@ int md_closure_init( struct ms_client* client, struct md_closure* closure, struc
    }
    
    free( driver_bin );
+   
+   return rc;
+}
+
+
+// parse an AG's specfile, given its json-encoded form.
+int md_closure_load_AG_specfile( struct ms_client* client, char* specfile_json, size_t specfile_json_len, char** specfile_text, size_t* specfile_text_len ) {
+   
+   struct json_object* toplevel_obj = NULL;
+   
+   int rc = md_parse_json_object( &toplevel_obj, specfile_json, specfile_json_len );
+   if( rc != 0 ) {
+      errorf("md_parse_json_object rc = %d\n", rc );
+      return -EINVAL;
+   }
+   
+   rc = md_parse_json_b64_string( toplevel_obj, "spec", specfile_text, specfile_text_len );
+   if( rc != 0 ) {
+      errorf("md_parse_json_b64_string rc = %d\n", rc );
+   }
+   
+   json_object_put( toplevel_obj );
    
    return rc;
 }
@@ -674,8 +697,9 @@ int md_closure_reload( struct ms_client* client, struct md_closure* closure, cha
    md_closure_conf_t* closure_conf = new md_closure_conf_t();
    md_closure_secrets_t* closure_secrets = NULL;
    
-   if( closure->gateway_specific )
+   if( closure->gateway_specific ) {
       closure_secrets = new md_closure_secrets_t();
+   }
    
    char* driver_bin = NULL;
    size_t driver_bin_len = 0;

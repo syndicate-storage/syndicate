@@ -818,6 +818,105 @@ int md_sleep_uninterrupted( struct timespec* ts ) {
    return 0;
 }
 
+
+// translate zlib error codes 
+static int md_zlib_err( int zerr ) {
+   if( zerr == Z_MEM_ERROR ) {
+      return -ENOMEM;
+   }
+   else if( zerr == Z_BUF_ERROR ) {
+      return -ENOMEM;
+   }
+   else if( zerr == Z_DATA_ERROR ) {
+      return -EINVAL;
+   }
+   return -EPERM;
+}
+
+// compress a string, returning the compressed string.
+int md_deflate( char* in, size_t in_len, char** out, size_t* out_len ) {
+   
+   uint32_t out_buf_len = compressBound( in_len );
+   char* out_buf = CALLOC_LIST( char, out_buf_len );
+   
+   if( out_buf == NULL ) {
+      return -ENOMEM;
+   }
+   
+   uLongf out_buf_len_ul = out_buf_len;
+   
+   int rc = compress2( (unsigned char*)out_buf, &out_buf_len_ul, (unsigned char*)in, in_len, 9 );
+   if( rc != Z_OK ) {
+      errorf("compress2 rc = %d\n", rc );
+      
+      free( out_buf );
+      return md_zlib_err( rc );
+   }
+   
+   *out = (char*)out_buf;
+   *out_len = out_buf_len_ul;
+   
+   dbprintf("compressed %zu bytes down to %zu bytes\n", in_len, *out_len );
+   
+   return 0;
+}
+
+// decompress a string, returning the normal string 
+int md_inflate( char* in, size_t in_len, char** out, size_t* out_len ) {
+   
+   if( *out_len == 0 ) {
+      // guess a minimum size of 1MB
+      *out_len = 1024000;
+   }
+   
+   uLongf out_buf_len = *out_len;
+   char* out_buf = CALLOC_LIST( char, out_buf_len );;
+   
+   if( out_buf == NULL ) {
+      return -ENOMEM;
+   }
+   
+   while( true ) {
+      
+      // try this size
+      int rc = uncompress( (unsigned char*)out_buf, &out_buf_len, (unsigned char*)in, in_len );
+      
+      // not enough space?
+      if( rc == Z_MEM_ERROR ) {
+         
+         // double it and try again 
+         out_buf_len *= 2;
+         
+         char* tmp = (char*)realloc( out_buf, out_buf_len );
+         
+         if( tmp == NULL ) {
+            free( out_buf );
+            return -ENOMEM;
+         }
+         else {
+            out_buf = tmp;
+         }
+         
+         continue;
+      }
+      else if( rc != Z_OK ) {
+         errorf("uncompress rc = %d\n", rc );
+         
+         free( out_buf );
+         return md_zlib_err( rc );
+      }
+      
+      // success!
+      *out = out_buf;
+      *out_len = out_buf_len;
+      break;
+   }
+   
+   dbprintf("decompressed %zu bytes up to %zu bytes\n", in_len, *out_len );
+   
+   return 0;
+}
+
 // alloc and then mlock 
 int mlock_calloc( struct mlock_buf* buf, size_t len ) {
    memset( buf, 0, sizeof( struct mlock_buf ) );

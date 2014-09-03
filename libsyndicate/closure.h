@@ -75,6 +75,9 @@ int md_closure_init_bin( struct md_syndicate_conf* conf, struct md_closure* clos
 int md_closure_reload( struct ms_client* client, struct md_closure* closure, char const* closure_text, size_t closure_text_len );
 int md_closure_shutdown( struct md_closure* closure );
 
+// AG-specific 
+int md_closure_load_AG_specfile( struct ms_client* client, char* specfile_json_str, size_t specfile_json_str_len, char** specfile_text, size_t* specfile_text_len );
+
 // closure config API 
 int md_closure_get_config( struct md_closure* closure, char const* key, char** value, size_t* len );
 int md_closure_get_secret( struct md_closure* closure, char const* key, char** value, size_t* len );

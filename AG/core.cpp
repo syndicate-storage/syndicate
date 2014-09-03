@@ -110,36 +110,51 @@ int AG_get_spec_file_text( struct ms_client* client, char** out_specfile_text, s
    
    // this will be embedded in the AG's driver text as a base64-encoded string.
    int rc = 0;
+   char* specfile_text_json = NULL;
+   size_t specfile_text_json_len = 0;
+   
    char* specfile_text = NULL;
    size_t specfile_text_len = 0;
    
-   char* specfile_text_b64 = NULL;
-   size_t specfile_text_b64_len = 0;
-   
-   rc = ms_client_get_closure_text( client, &specfile_text_b64, &specfile_text_b64_len );
+   // get the json
+   rc = ms_client_get_closure_text( client, &specfile_text_json, &specfile_text_json_len );
    if( rc != 0 ) {
       errorf("ms_client_get_closure_text rc = %d\n", rc );
       return rc;
    }
    
-   // unserialize 
-   rc = Base64Decode( specfile_text_b64, specfile_text_b64_len, &specfile_text, &specfile_text_len );
+   // extract from json 
+   rc = md_closure_load_AG_specfile( client, specfile_text_json, specfile_text_json_len, &specfile_text, &specfile_text_len );
+   free( specfile_text_json );
+   
    if( rc != 0 ) {
-      errorf("Base64Decode rc = %d\n", rc);
+      errorf("md_closure_load_AG_specfile rc = %d\n", rc );
       
-      free( specfile_text_b64 );
       return rc;
    }
    
-   free( specfile_text_b64 );
+   // it came from the MS, so it's definitely compressed 
+   char* decompressed_text = NULL;
+   size_t decompressed_text_len = 0;
    
-   *out_specfile_text = specfile_text;
-   *out_specfile_text_len = specfile_text_len;
+   int zrc = md_inflate( specfile_text, specfile_text_len, &decompressed_text, &decompressed_text_len );
+   
+   free( specfile_text );
+   
+   if( zrc != 0 ) {
+      errorf("md_inflate(%zu bytes) rc = %d\n", specfile_text_len, zrc );
+      
+      return zrc;
+   }
+   
+   *out_specfile_text = decompressed_text;
+   *out_specfile_text_len = decompressed_text_len;
    
    return rc;
 }
 
 // get the specfile text, either from the MS certificate, or from an opt-defined location on disk.
+// this does NOT try to decompress it
 int AG_load_spec_file_text( struct AG_state* state, char** specfile_text, size_t* specfile_text_len ) {
    
    int rc = 0;
@@ -147,11 +162,19 @@ int AG_load_spec_file_text( struct AG_state* state, char** specfile_text, size_t
    if( state->ag_opts.spec_file_path != NULL ) {
       
       // read from disk
-      *specfile_text = load_file( state->ag_opts.spec_file_path, specfile_text_len );
+      size_t txt_len = 0;
+      char* txt = load_file( state->ag_opts.spec_file_path, &txt_len );
       
-      if( *specfile_text == NULL ) {
+      if( txt == NULL ) {
          errorf("Failed to load spec file text from %s\n", state->ag_opts.spec_file_path );
          rc = -ENODATA;
+      }
+      else {
+         dbprintf("Loaded %zu-byte specfile from %s\n", *specfile_text_len, state->ag_opts.spec_file_path );
+         
+         *specfile_text = txt;
+         *specfile_text_len = txt_len;
+         return 0;
       }
    }
    else {
@@ -161,12 +184,14 @@ int AG_load_spec_file_text( struct AG_state* state, char** specfile_text, size_t
       if( rc != 0 ) {
          errorf("AG_get_spec_file_text rc = %d\n", rc );
       }
+      else {
+         dbprintf("Loaded %zu-byte specfile from the MS\n", *specfile_text_len );
+      }
    }
    
    if( rc != 0 ) {
       // can't reload--didn't get the text
       errorf("Failed to get spec file text, rc = %d\n", rc );
-      return rc;
    }
    
    return rc;
@@ -190,18 +215,15 @@ int AG_reload_specfile( struct AG_state* state, AG_fs_map_t** new_fs, AG_config_
       return rc;
    }
    
-   // parse the text 
+   // try to parse the text 
    rc = AG_parse_spec( state, new_specfile_text, new_specfile_text_len, new_fs, new_config );
    if( rc != 0 ) {
       errorf("AG_parse_spec rc = %d\n", rc );
-      
-      free( new_specfile_text );
-      return rc;
    }
    
    free( new_specfile_text );
    
-   return 0;
+   return rc;
 }
 
 

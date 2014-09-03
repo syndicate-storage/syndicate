@@ -28,6 +28,7 @@ import base64
 import random
 import json
 import ctypes
+import zlib
 
 from Crypto.Hash import SHA256 as HashAlg
 from Crypto.PublicKey import RSA as CryptoKey
@@ -1040,15 +1041,6 @@ class Gateway( StubObject ):
    
    
    @classmethod 
-   def has_valid_AG_driver( cls, gateway_closure_path ):
-      """
-      Does a given path refer to an AG binary closure?
-      """
-      driver_path = os.path.join( gateway_closure_path, "libdriver.so" )
-      return is_valid_binary_driver( driver_path, ["get_dataset", "cleanup_dataset", "publish_dataset", "connect_dataset", "controller"] )
-   
-   
-   @classmethod 
    def is_wellformed_RG_closure( cls, gateway_closure_path ):
       """
       Does the given directory look like a well-formed RG closure?
@@ -1074,12 +1066,12 @@ class Gateway( StubObject ):
    @classmethod 
    def is_wellformed_AG_closure( cls, gateway_closure_path ):
       """
-      Does the given directory look like a well-formed AG closure?
+      Is the given path an XML file?
       """
-      if not cls.is_valid_AG_closure_dir( gateway_closure_path ):
+      if not os.path.isfile( gateway_closure_path ):
          return False
       
-      if not cls.has_valid_AG_driver( gateway_closure_path ):
+      if not gateway_closure_path.lower().endswith(".xml"):
          return False 
       
       return True
@@ -1152,8 +1144,7 @@ class Gateway( StubObject ):
    @classmethod 
    def parse_AG_closure( cls, gateway_closure_path, lib=None ):
       """
-      Load an AG binary driver, as well as its config, secrets, and spec file.
-      Generate a JSON string containing them all.
+      Load an AG spec file.  Compress it and serialize it and sign it.
       """
       
       if gateway_closure_path is None:
@@ -1176,15 +1167,21 @@ class Gateway( StubObject ):
       except:
          pass
       
-      driver_components = load_binary_closure_essentials( gateway_closure_path, "gateway", gateway_name, config, storagelib, privkey_pem=privkey_pem )
+      driver_components = {}
       
       # load the spec file 
-      spec_file_path = os.path.join( gateway_closure_path, "spec.xml" )
-      spec_file_str = storagelib.read_file( spec_file_path )
+      spec_file_str = storagelib.read_file( gateway_closure_path )
       if spec_file_str is None:
-         raise Exception("Failed to load spec file from %s" % spec_file_path )
+         raise Exception("Failed to load spec file from %s" % spec_file_str )
       
-      driver_components["spec"] = spec_file_str
+      # compress it 
+      try:
+         compressed_specfile_str = zlib.compress( spec_file_str, 9 )
+      except Exception, e:
+         log.error("Failed to compress %s" % gateway_closure_path );
+         raise e
+      
+      driver_components["spec"] = compressed_specfile_str
       
       # build the JSON
       json_str = make_closure_json( driver_components )

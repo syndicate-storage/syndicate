@@ -64,6 +64,7 @@ BASE_LIBS = """
    rt
    m
    dl
+   z
    %s
 """ % json_lib
 
