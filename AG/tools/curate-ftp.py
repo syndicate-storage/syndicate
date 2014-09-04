@@ -67,6 +67,7 @@ class ftp_crawl_thread( threading.Thread ):
          except Exception, e:
             log.exception(e)
             log.error("thread %s: Trying to crawl %s again" % (threadno, cur_dir) )
+            time.sleep(1)
             pass
 
 
@@ -90,6 +91,7 @@ class ftp_crawl_thread( threading.Thread ):
             except Exception, e:
                log.exception(e)
                log.error("thread %s: Trying to isdir %s again" % (threadno, abs_path))
+               time.sleep(1)
                pass
          
          if is_directory:
