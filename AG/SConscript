@@ -24,7 +24,7 @@ source_files = """
    http.cpp
    map-info.cpp
    map-parser-xml.cpp
-   reversioner.cpp 
+   reversioner.cpp
 """
 
 # add source file search paths here
@@ -76,5 +76,6 @@ env.Append(CPPDEFINES = CPPDEFINES)
 env.Append(LINKFLAGS = ['-Wl,--export-dynamic'])
 	
 AG = env.Program("AG", source=Split(source_files) )
+AG_watchdog = Glob("syndicate-ag")
 
-Return( 'AG' )
+Return( 'AG AG_watchdog' )
