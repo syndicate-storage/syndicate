@@ -128,10 +128,14 @@ class ftp_crawl_thread( threading.Thread ):
       return self.working
       
    def get_files(self):
-      return self.result_files 
+      ret = self.result_files
+      self.result_files = None
+      return ret
    
    def get_dirs( self ):
-      return self.result_dirs
+      ret = self.result_dirs
+      self.result_dirs = None
+      return ret
 
    def get_cur_dir( self ):
       return self.cur_dir 
@@ -177,7 +181,6 @@ def ftp_walk( ftphost_pool, cwd, callback ):
       time.sleep(1)
       
       working_list = [th.is_working() for th in running]
-      print working_list 
       
       added_work = False 
       thread_working = False
@@ -400,6 +403,8 @@ def build_hierarchy( abs_path, is_directory, whitelist, blacklist, reval_sec, fi
 
 # generate XML output 
 def generate_specfile( hierarchy_dict, ftp_hostname ):
+   
+   log.info("Generating specfile")
    
    import lxml
    import lxml.etree as etree
