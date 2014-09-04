@@ -1,0 +1,278 @@
+#!/usr/bin/env python 
+
+"""
+   Copyright 2014 The Trustees of Princeton University
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
+
+# AG watchdog
+
+import sys
+import os
+import signal
+import errno 
+import time
+import subprocess
+import setproctitle
+import logging
+import shlex 
+import atexit
+
+logging.basicConfig( format='[%(levelname)s] [%(module)s:%(lineno)d] %(message)s' )
+
+import syndicate.util.daemonize as daemonize
+import syndicate.util.watchdog as watchdog
+import syndicate.util.config as modconf
+
+log = logging.getLogger()
+
+AG_BINARY = "AG"
+AG_DEFAULT_DRIVERS = "/usr/local/lib/AG/"
+AG_PID = 0
+AG_LOG_FD = 0
+
+#-------------------------------
+CONFIG_OPTIONS = {
+   "config":            ("-c", 1, "Path to the daemon configuration file"),
+   "foreground":        ("-f", 0, "Run in the foreground"),
+   "logdir":            ("-l", 1, "Directory to contain the log files.  If not given, then write to stdout and stderr."),
+   "pidfile":           ("-i", 1, "Path to the desired PID file."),
+   "volume":            ("-v", 1, "Volume to monitor."),
+   "debug":             ("-d", 0, "Debugging output."),
+   "drivers":           ("-D", 1, "Path to the AG's storage drivers.  Default is %s" % AG_DEFAULT_DRIVERS),
+   "AG_binary":         ("-b", 1, "Name or path to the AG binary."),
+   "AG_argv":           ("-C", 1, "Arguments to the AG binary (excluding the binary's name).")
+}
+
+#-------------------------------
+def death_handler( signum, frame ):
+   global AG_PID
+   
+   if AG_PID > 0:
+      watchdog.stop_child( AG_PID )
+   
+   sys.exit(0)
+
+#-------------------------------
+def watchdog_PID( pid ):
+   global AG_PID
+   AG_PID = pid
+   return 0
+
+#-------------------------------
+def watchdog_need_respawn( exit_status ):
+   global AG_PID
+   
+   AG_PID = 0
+   
+   return watchdog.check_exit_status( exit_status, respawn_exit_statuses=range(1,255) )
+
+#-------------------------------
+def spawn_ag( config, old_exit_status ):
+   """
+   Spawn an AG.
+   """
+   
+   # immediately switch to a different process name 
+   pt = child_proc_title( config['volume'] )
+   setproctitle.setproctitle( pt )
+   
+   required_args = ['-R', '-v', config['volume']]
+   
+   if config['debug']:
+      required_args = ['-d2'] + required_args
+      
+   # split up our command string...
+   command_str = config['command']
+   
+   command_list = shlex.split( command_str )
+   
+   binary = command_list[0]
+   argv = [binary] + required_args
+   
+   # exec the binary 
+   try:
+      os.execvp( binary, argv )
+   except OSError, oe:
+      log.error("Failed to exec %s, rc = %s" % (binary, oe.errno))
+      return 255
+      
+   
+
+#-------------------------------
+def validate_config( config ):
+   required = ['volume']
+   for req in required:
+      if req not in config.keys():
+         log.error("missing required configuration value: %s" % req)
+         return -1
+      
+   # check logdir
+   if 'logdir' in config.keys():
+      if not os.path.exists( config['logdir'] ):
+         try:
+            os.makedirs( config['logdir'] )
+         except OSError, oe:
+            log.exception(oe)
+            return -1
+         
+      elif not os.isdir( config['logdir'] ):
+         log.error("Not a directory: %s" % config['logdir'] )
+         return -1
+      
+   return 0
+
+
+#-------------------------------
+def get_AG_command( config ):
+   """
+   Get the AG command to run.
+   Its either after -- in argv, or its in stdin
+   """
+   
+   if config.get('AG_argv', None) is not None:
+      cmd = config['AG_binary'] + " " + config["AG_argv"]
+      if config.get("drivers") is not None:
+         cmd += " -D %s" % config.get("drivers")
+         
+      return cmd 
+   
+   else:
+      argv_str = sys.stdin.read()
+      
+      # get rid of the binary's name
+      command_list = argv_str.split(" ")
+      argv_str = " ".join( command_list[1:] )
+      
+      return config['AG_binary'] + " " + argv_str
+   
+
+#-------------------------------
+def supervisor_proc_title( volume ):
+   return watchdog.attr_proc_title( "syndicate-ag", {"volume": volume} )
+
+#-------------------------------
+def child_proc_title( volume ):
+   return watchdog.attr_proc_title( "syndicate-ag-worker", {"volume": volume} )
+
+
+#-------------------------------
+def shutdown_logging():
+   """
+   Close the global log fd
+   """
+   
+   global AG_LOG_FD
+   
+   if AG_LOG_FD != 0:
+      os.fsync( AG_LOG_FD )
+      os.close( AG_LOG_FD )
+      AG_LOG_FD = 0
+
+
+#-------------------------------
+def setup_logging( logfile_path ):
+   """
+   redirect stdout and stderr to the file at logfile_path 
+   """
+   
+   global AG_LOG_FD
+   
+   try:
+      f = open( logfile_path, "w" )
+      fd = f.fileno()
+      
+      sys.stdout.flush()
+      sys.stderr.flush()
+      
+      os.dup2( fd, sys.stdout.fileno() )
+      os.dup2( fd, sys.stderr.fileno() )
+      
+   except:
+      return False
+   
+   AG_LOG_FD = fd
+   
+   atexit.register( shutdown_logging )
+   
+
+#-------------------------------
+if __name__ == "__main__":
+   
+   argv = sys.argv 
+   config = modconf.build_config( argv, "Syndicate AG Watchdog", "AG", CONFIG_OPTIONS, conf_validator=validate_config )
+   
+   if config is None:
+      sys.exit(1)
+      
+   if 'AG_binary' not in config.keys():
+      config['AG_binary'] = AG_BINARY
+      
+   # get the AG command 
+   command_str = get_AG_command( config )
+   if command_str is None:
+      sys.exit(1)
+      
+   # store this to our config
+   config['command'] = command_str
+   
+   # set our proc commandline
+   pt = supervisor_proc_title( config['volume'] )
+   setproctitle.setproctitle( pt )
+   
+   # set up globals 
+   AG_BINARY = config['AG_binary']
+   
+   my_signals = [signal.SIGTERM, signal.SIGFPE, signal.SIGQUIT, signal.SIGABRT, signal.SIGINT]
+   
+   # set signal handlers
+   for sig in my_signals:
+      signal.signal( sig, death_handler )
+   
+   foreground = config['foreground']
+   
+   logfile_path = None 
+   pidfile_path = config.get('pidfile', None)
+   
+   if config.has_key('logdir'):
+      logfile_path = os.path.join( config['logdir'], "syndicate-ag.log" )
+   
+   if not foreground:
+      # become a daemon
+      log.info("Starting as a daemon")
+      
+      daemonize.daemonize( lambda: watchdog.main( lambda old_exit_status: spawn_ag(config, old_exit_status),
+                                                  stdin_cb=lambda: command_str,
+                                                  pid_cb=watchdog_PID,
+                                                  exit_cb=watchdog_need_respawn,
+                                                  parent_signals=my_signals,
+                                                  respawn_exit_statuses=range(1,255) ),
+                           logfile_path=logfile_path, pidfile_path=pidfile_path )
+   
+   else:
+      # if logfile path is given, then direct output to that instead of stdout 
+      if logfile_path is not None:
+         setup_logging( logfile_path )
+      
+      log.info("Running in the foreground")
+      
+      # run in the foreground
+      watchdog.main( lambda old_exit_status: spawn_ag(config, old_exit_status),
+                     pid_cb=watchdog_PID,
+                     stdin_cb=lambda: command_str,
+                     exit_cb=watchdog_need_respawn,
+                     parent_signals=my_signals,
+                     respawn_exit_statuses=range(1,255) )
+      
+      
