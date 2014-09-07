@@ -14,8 +14,9 @@
    limitations under the License.
 */
 
+#include "consistency.h"
 #include "xattr.h"
-#include "cache.h"
+#include "url.h"
 
 // general purpose handlers...
 int xattr_set_undefined( struct fs_core* core, struct fs_entry* fent, char const* name, char const* buf, size_t buf_len, int flags ) {
@@ -142,29 +143,46 @@ static ssize_t xattr_get_cached_blocks( struct fs_core* core, struct fs_entry* f
       buf[buf_len - 1] = '\0';
    }
    
-   ssize_t rc = fs_entry_cache_file_blocks_apply( cached_file_path, local::xattr_stat_block, buf );
+   ssize_t rc = md_cache_file_blocks_apply( cached_file_path, local::xattr_stat_block, buf );
    
    free( cached_file_url );
    
-   if( rc == 0 )
+   if( rc == 0 ) {
+      
       rc = num_blocks;
-   
+   }
+   else if( rc == -ENOENT ) {
+      
+      // no cached data--all 0's
+      dbprintf("No data cached for %" PRIX64 ".%" PRId64 "\n", fent->file_id, fent->version );
+      memset( buf, '0', buf_len );
+      buf[buf_len - 1] = '\0';
+      
+      rc = num_blocks;
+   }
    return rc;
 }
 
 
 // get cached file path
 static ssize_t xattr_get_cached_file_path( struct fs_core* core, struct fs_entry* fent, char const* name, char* buf, size_t buf_len) {
+   
    char* cached_file_url = fs_entry_local_file_url( core, fent->file_id, fent->version );
    char* cached_file_path = GET_PATH( cached_file_url );
+   
    ssize_t len = strlen(cached_file_path);
+   
    if( buf_len == 0 || buf == NULL ) {
+      
       // size query
+      free( cached_file_url );
       return len + 1;         // NULL-terminated
    }
 
    if( (size_t)len >= buf_len ) {
+      
       // not enough space 
+      free( cached_file_url );
       return -ERANGE;
    }
    

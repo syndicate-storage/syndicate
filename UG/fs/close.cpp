@@ -16,7 +16,6 @@
 
 #include "close.h"
 #include "consistency.h"
-#include "cache.h"
 #include "replication.h"
 #include "network.h"
 #include "sync.h"

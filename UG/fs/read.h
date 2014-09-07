@@ -17,6 +17,7 @@
 #ifndef _READ_H_
 #define _READ_H_
 
+#include "libsyndicate/cache.h"
 #include "fs_entry.h"
 #include "consistency.h"
 

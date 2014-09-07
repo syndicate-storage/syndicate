@@ -19,7 +19,6 @@ import os
 
 # source files common to all UGs
 common_source_files = """
-   cache.cpp 
    consistency.cpp
    driver.cpp
    log.cpp

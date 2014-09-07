@@ -16,7 +16,6 @@
 
 #include "sync.h"
 #include "consistency.h"
-#include "cache.h"
 #include "write.h"
 #include "network.h"
 #include "vacuumer.h"
@@ -102,7 +101,7 @@ int fs_entry_remote_write_or_coordinate( struct fs_core* core, char const* fs_pa
 // this will update the manifest with the new versions of the blocks, as well as advance its mtime
 // return 0 on success, negative on error
 // fent must be write-locked
-int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, vector<struct cache_block_future*>* cache_futs ) {
+int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, vector<struct md_cache_block_future*>* cache_futs ) {
    
    modification_map bufferred_blocks;
    modification_map dirty_blocks;
@@ -133,7 +132,7 @@ int fs_entry_flush_bufferred_blocks_async( struct fs_core* core, char const* fs_
       memset( &new_binfo, 0, sizeof(new_binfo) );
       
       // flush it, updating the manifest
-      struct cache_block_future* fut = fs_entry_write_block_async( core, fs_path, fent, block_id, binfo->block_buf, binfo->block_len, &old_binfo, &new_binfo, &rc );
+      struct md_cache_block_future* fut = fs_entry_write_block_async( core, fs_path, fent, block_id, binfo->block_buf, binfo->block_len, &old_binfo, &new_binfo, &rc );
       if( rc < 0 || fut == NULL ) {
          errorf("fs_entry_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 "]) rc = %d\n", fs_path, fent->file_id, fent->version, block_id, rc );
          break;
@@ -252,7 +251,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    
    // dirty blocks and garbage blocks and cache futures and metadata
    struct sync_context sync_ctx;
-   vector<struct cache_block_future*> cache_futs;
+   vector<struct md_cache_block_future*> cache_futs;
 
    memset( &sync_ctx, 0, sizeof(struct sync_context) );
    
@@ -270,9 +269,9 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    sync_context_init( core, fs_path, fent, parent_id, parent_name, &sync_ctx );
    
    // wait for all cache writes to finish
-   rc = fs_entry_flush_cache_writes( &cache_futs );
+   rc = md_cache_flush_writes( &cache_futs );
    if( rc != 0 ) {
-      errorf("fs_entry_flush_cache_writes( %s %" PRIX64 " ) rc = %d\n", fs_path, file_id, rc );
+      errorf("md_cache_flush_writes( %s %" PRIX64 " ) rc = %d\n", fs_path, file_id, rc );
       
       // restore dirty blocks 
       fs_entry_replace_dirty_blocks( fent, sync_ctx.dirty_blocks );
@@ -294,7 +293,7 @@ int fs_entry_sync_data_begin( struct fs_core* core, char const* fs_path, struct 
    
    // free cache block futures
    // (preserving their file descriptors)
-   fs_entry_cache_block_future_free_all( &cache_futs, false );
+   md_cache_block_future_free_all( &cache_futs, false );
    
    // anything to replicate?  If not, return early.
    if( sync_ctx.dirty_blocks->size() == 0 && sync_ctx.garbage_blocks->size() == 0 ) {

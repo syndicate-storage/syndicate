@@ -21,13 +21,16 @@
 
 #include "libsyndicate/libsyndicate.h"
 #include "libsyndicate/opts.h"
-#include "cache.h"
+#include "libsyndicate/cache.h"
 #include "stats.h"
 #include "replication.h"
 #include "fs.h"
 #include "vacuumer.h"
 
 #define UG_SHORTOPTS "al:L:F"
+
+#define UG_CACHE_DEFAULT_SOFT_LIMIT        50000000        // 50 MB
+#define UG_CACHE_DEFAULT_HARD_LIMIT       100000000        // 100 MB
 
 // UG-specific command-line options 
 struct UG_opts {
@@ -43,7 +46,7 @@ struct syndicate_state {
    
    struct ms_client* ms;   // metadata service client
    struct fs_core* core;   // core of the system
-   struct syndicate_cache cache;        // local cache
+   struct md_syndicate_cache cache;        // local cache
    struct rg_client replication;            // replication context
    struct rg_client garbage_collector;      // garbage collector context
    struct fs_vacuumer vac;              // vacuumer

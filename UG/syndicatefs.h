@@ -24,7 +24,6 @@
 #include "log.h"
 #include "fs.h"
 #include "replication.h"
-#include "cache.h"
 #include "syndicate.h"
 #include "server.h"
 #include "opts.h"

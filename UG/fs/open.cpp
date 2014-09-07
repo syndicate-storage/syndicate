@@ -20,8 +20,8 @@
 #include "network.h"
 #include "unlink.h"
 #include "url.h"
-#include "cache.h"
 #include "driver.h"
+#include "trunc.h"
 
 // create a file handle from an fs_entry
 struct fs_file_handle* fs_file_handle_create( struct fs_core* core, struct fs_entry* ent, char const* opened_path, uint64_t parent_id, char const* parent_name ) {

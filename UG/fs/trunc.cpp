@@ -23,7 +23,6 @@
 #include "read.h"
 #include "write.h"
 #include "replication.h"
-#include "cache.h"
 #include "sync.h"
 
 
@@ -105,7 +104,7 @@ static int fs_entry_shrink_file( struct fs_core* core, char const* fs_path, stru
 // add the block info for the block at the end of the file to garbage_blocks and dirty blocks, since it will need to be written and garbage-collected
 // fent must be write-locked
 static int fs_entry_expand_file( struct fs_core* core, char const* fs_path, struct fs_entry* fent, off_t new_size,
-                                 modification_map* dirty_blocks, modification_map* garbage_blocks, struct cache_block_future** last_block_fut ) {
+                                 modification_map* dirty_blocks, modification_map* garbage_blocks, struct md_cache_block_future** last_block_fut ) {
 
    int rc = 0;
    
@@ -132,7 +131,7 @@ static int fs_entry_expand_file( struct fs_core* core, char const* fs_path, stru
    memset( &old_binfo, 0, sizeof(struct fs_entry_block_info) );
    memset( &new_binfo, 0, sizeof(struct fs_entry_block_info) );
    
-   struct cache_block_future* cache_fut = fs_entry_write_block_async( core, fs_path, fent, start_id, truncated_block, truncated_block_len, &old_binfo, &new_binfo, &rc );
+   struct md_cache_block_future* cache_fut = fs_entry_write_block_async( core, fs_path, fent, start_id, truncated_block, truncated_block_len, &old_binfo, &new_binfo, &rc );
    
    // did it work?  If not, bail
    if( rc != 0 || cache_fut == NULL ) {
@@ -170,10 +169,10 @@ static int fs_entry_reversion_file( struct fs_core* core, char const* fs_path, s
    }
    
    // reversion the data locally.  ENOENT here is fine, since it means that the data wasn't cached
-   int rc = fs_entry_cache_reversion_file( core, core->cache, fent->file_id, fent->version, new_version );
+   int rc = md_cache_reversion_file( core->cache, fent->file_id, fent->version, new_version );
    if( rc != 0 ) {
       if( rc != -ENOENT ) {
-         errorf("fs_entry_cache_reversion_file(%s (%" PRIX64 ".%" PRId64 " --> %" PRId64 ")) rc = %d\n", fs_path, fent->file_id, fent->version, new_version, rc );
+         errorf("md_cache_reversion_file(%s (%" PRIX64 ".%" PRId64 " --> %" PRId64 ")) rc = %d\n", fs_path, fent->file_id, fent->version, new_version, rc );
          return rc;
       }
    }
@@ -288,7 +287,7 @@ int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, struct f
    }
    else {
       // file's getting bigger.  we'll put one block 
-      struct cache_block_future* cache_fut = NULL;
+      struct md_cache_block_future* cache_fut = NULL;
       rc = fs_entry_expand_file( core, fs_path, fent, size, &dirty_blocks, &garbage_blocks, &cache_fut );
       
       if( rc != 0 ) {
@@ -304,11 +303,11 @@ int fs_entry_truncate_local( struct fs_core* core, char const* fs_path, struct f
       }
       
       // flush the write
-      rc = fs_entry_flush_cache_write( cache_fut );
+      rc = md_cache_flush_write( cache_fut );
       if( rc != 0 ) {
-         errorf( "fs_entry_flush_cache_write( %s %" PRIu64 " ) rc = %d\n", fs_path, max_block, rc );
+         errorf( "md_cache_flush_write( %s %" PRIu64 " ) rc = %d\n", fs_path, max_block, rc );
          
-         fs_entry_cache_block_future_free( cache_fut );
+         md_cache_block_future_free( cache_fut );
          return -EIO;
       }
    }

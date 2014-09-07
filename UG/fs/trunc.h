@@ -17,6 +17,7 @@
 #ifndef _TRUNC_H_
 #define _TRUNC_H_
 
+#include "libsyndicate/cache.h"
 #include "fs_entry.h"
 
 int fs_entry_truncate( struct fs_core* core, char const* path, off_t size, uint64_t user, uint64_t volume );

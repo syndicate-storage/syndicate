@@ -23,8 +23,8 @@ static struct UG_opts _internal_opts;           // accumulate options and feed t
 int UG_opts_init(void) {
    memset( &_internal_opts, 0, sizeof(struct UG_opts) );
    
-   _internal_opts.cache_soft_limit = CACHE_DEFAULT_SOFT_LIMIT;
-   _internal_opts.cache_hard_limit = CACHE_DEFAULT_HARD_LIMIT;
+   _internal_opts.cache_soft_limit = UG_CACHE_DEFAULT_SOFT_LIMIT;
+   _internal_opts.cache_hard_limit = UG_CACHE_DEFAULT_HARD_LIMIT;
    _internal_opts.flush_replicas = true;
    
    return 0;
@@ -183,10 +183,16 @@ int syndicate_setup_state( struct syndicate_state* state, struct ms_client* ms )
    }
 
    // initialize and start caching
-   rc = fs_entry_cache_init( core, &state->cache, state->ug_opts.cache_soft_limit / block_size, state->ug_opts.cache_hard_limit / block_size );
+   rc = md_cache_init( &state->cache, &state->conf, state->ug_opts.cache_soft_limit / block_size, state->ug_opts.cache_hard_limit / block_size );
    if( rc != 0 ) {
-      errorf("fs_entry_cache_init rc = %d\n", rc );
+      errorf("md_cache_init rc = %d\n", rc );
       return rc;  
+   }
+   
+   rc = md_cache_start( &state->cache );
+   if( rc != 0 ) {
+      errorf("md_cache_start rc = %d\n", rc );
+      return rc;
    }
    
    // start up replication
@@ -220,14 +226,8 @@ int syndicate_destroy_ex( struct syndicate_state* state, int wait_replicas ) {
    
    dbprintf("%s", "stopping vacuumer\n");
    fs_entry_vacuumer_stop( &state->vac );
-   
-   dbprintf("%s", "stopping downloads\n");
-   md_downloader_stop( &state->dl );
-   
-   dbprintf("%s", "shutting down downloader\n");
-   md_downloader_shutdown( &state->dl );
 
-   dbprintf("%s", "stopping replication\n");
+   dbprintf("%s", "shutting down replication\n");
    fs_entry_replication_shutdown( state, wait_replicas );
    
    dbprintf("%s", "shutting down vacuumer\n");
@@ -237,10 +237,19 @@ int syndicate_destroy_ex( struct syndicate_state* state, int wait_replicas ) {
    fs_destroy( state->core );
    free( state->core );
    
-   dbprintf("%s", "destroy cache\n");
-   fs_entry_cache_destroy( &state->cache );
+   dbprintf("%s", "stopping downloader\n");
+   md_downloader_stop( &state->dl );
+   
+   dbprintf("%s", "shutting down downloader\n");
+   md_downloader_shutdown( &state->dl );
 
-   dbprintf("%s", "destory MS client\n");
+   dbprintf("%s", "stopping cache\n");
+   md_cache_stop( &state->cache );
+   
+   dbprintf("%s", "shutting down cache\n");
+   md_cache_destroy( &state->cache );
+
+   dbprintf("%s", "shutting down MS client\n");
    ms_client_destroy( state->ms );
    free( state->ms );
 

@@ -17,6 +17,7 @@
 #ifndef _WRITE_H_
 #define _WRITE_H_
 
+#include "libsyndicate/cache.h"
 #include "fs_entry.h"
 #include "consistency.h"
 #include "network.h"
@@ -67,8 +68,8 @@ struct fs_entry_write_vec {
 
 ssize_t fs_entry_write( struct fs_core* core, struct fs_file_handle* fh, char const* buf, size_t count, off_t offset );
 
-struct cache_block_future* fs_entry_write_block_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char const* block, size_t block_len,
-                                                       struct fs_entry_block_info* binfo_old, struct fs_entry_block_info* binfo_new, int* ret );
+struct md_cache_block_future* fs_entry_write_block_async( struct fs_core* core, char const* fs_path, struct fs_entry* fent, uint64_t block_id, char const* block, size_t block_len,
+                                                          struct fs_entry_block_info* binfo_old, struct fs_entry_block_info* binfo_new, int* ret );
 
 int fs_entry_read_partial_blocks( struct fs_core* core, struct fs_file_handle* fh, char const* fs_path, struct fs_entry* fent, struct fs_entry_read_context* read_ctx );
 

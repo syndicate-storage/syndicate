@@ -18,7 +18,6 @@
 #include "manifest.h"
 #include "url.h"
 #include "ms-client.h"
-#include "cache.h"
 #include "consistency.h"
 #include "replication.h"
 #include "driver.h"
@@ -140,7 +139,7 @@ uint64_t fs_entry_block_id( size_t blocksize, off_t offset ) {
 }
 
 // set up the core of the FS
-int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md_syndicate_conf* conf, struct ms_client* client, struct syndicate_cache* cache,
+int fs_core_init( struct fs_core* core, struct syndicate_state* state, struct md_syndicate_conf* conf, struct ms_client* client, struct md_syndicate_cache* cache,
                   uint64_t owner_id, uint64_t gateway_id, uint64_t volume, mode_t mode, uint64_t blocking_factor ) {
    
    if( core == NULL ) {
@@ -295,7 +294,7 @@ int fs_unlink_children( struct fs_core* core, fs_entry_set* dir_children, bool r
       if( old_type == FTYPE_FILE || old_type == FTYPE_FIFO ) {
          if( fent->open_count == 0 ) {
             if( FS_ENTRY_LOCAL( core, fent ) && remove_data ) {
-               fs_entry_cache_evict_file( core, core->cache, fent->file_id, fent->version );
+               md_cache_evict_file( core->cache, fent->file_id, fent->version );
             }
             
             fs_entry_destroy( fent, false );
@@ -567,13 +566,13 @@ int fs_entry_try_destroy( struct fs_core* core, struct fs_entry* fent ) {
       
       if( fent->ftype == FTYPE_FILE ) {
          // file is unlinked and no one is manipulating it--safe to destroy
-         rc = fs_entry_cache_evict_file( core, core->cache, fent->file_id, fent->version );
+         rc = md_cache_evict_file( core->cache, fent->file_id, fent->version );
          if( rc == -ENOENT ) {
             // not a problem
             rc = 0;
          }
          else {
-            errorf("WARN: fs_entry_cache_evict_file(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
+            errorf("WARN: md_cache_evict_file(%" PRIX64 " (%s)) rc = %d\n", fent->file_id, fent->name, rc );
             rc = 0;
          }
       }

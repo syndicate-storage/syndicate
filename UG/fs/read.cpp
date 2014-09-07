@@ -14,7 +14,6 @@
    limitations under the License.
 */
 
-#include "cache.h"
 #include "read.h"
 #include "manifest.h"
 #include "network.h"
@@ -232,7 +231,15 @@ int fs_entry_read_block_future_free( struct fs_core* core, struct fs_entry_read_
       
       // cancel it if it's still running
       if( !md_download_context_finalized( &block_fut->dlctx ) ) {
-         md_download_context_cancel( &core->state->dl, &block_fut->dlctx );
+         
+         int rc = md_download_context_cancel( &core->state->dl, &block_fut->dlctx );
+         if( rc != 0 ) {
+            if( rc == -EINPROGRESS ) {
+               // already getting cancelled.  wait for it 
+               dbprintf("Waiting for download context %p to cancel\n", &block_fut->dlctx );
+               md_download_context_wait( &block_fut->dlctx, -1 );
+            }
+         }
       }
       
       CURL* conn = NULL;
@@ -332,32 +339,32 @@ static int fs_entry_try_cache_block_read( struct fs_core* core, char const* fs_p
    int rc = 0;
    
    // lookaside: if this block is being written, then we can't read it 
-   rc = fs_entry_cache_is_block_readable( core->cache, fent->file_id, fent->version, block_id, block_version );
+   rc = md_cache_is_block_readable( core->cache, fent->file_id, fent->version, block_id, block_version );
    if( rc == -EAGAIN ) {
       // not available in the cache 
       return -ENOENT;
    }
    
    // stored in local cache?
-   int block_fd = fs_entry_cache_open_block( core, core->cache, fent->file_id, fent->version, block_id, block_version, O_RDONLY );
+   int block_fd = md_cache_open_block( core->cache, fent->file_id, fent->version, block_id, block_version, O_RDONLY );
    
    if( block_fd < 0 ) {
       if( block_fd != -ENOENT ) {
-         errorf("WARN: fs_entry_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, block_fd );
+         errorf("WARN: md_cache_open_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, block_fd );
       }
       else {
          rc = -ENOENT;
       }
    }
    else {
-      read_len = fs_entry_cache_read_block( block_fd, &block_buf );
+      read_len = md_cache_read_block( block_fd, &block_buf );
       if( read_len < 0 ) {
-         errorf("fs_entry_cache_read_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, (int)read_len );
+         errorf("md_cache_read_block( %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] (%s) ) rc = %d\n", fent->file_id, fent->version, block_id, block_version, fs_path, (int)read_len );
          rc = read_len;
       }
       else {
          // success! promote!
-         fs_entry_cache_promote_block( core, core->cache, fent->file_id, fent->version, block_id, block_version );
+         md_cache_promote_block( core->cache, fent->file_id, fent->version, block_id, block_version );
          
          dbprintf("Cache HIT on %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "]\n", fent->file_id, fent->version, block_id, block_version );
       }
@@ -1007,7 +1014,13 @@ static int fs_entry_read_context_cancel_downloads( struct fs_core* core, struct 
                       block_fut->fs_path, block_fut->block_id, block_fut->block_version );
             
             // cancel it 
-            md_download_context_cancel( &core->state->dl, dlctx );
+            int rc = md_download_context_cancel( &core->state->dl, dlctx );
+            if( rc != 0 ) {
+               if( rc == -EINPROGRESS ) {
+                  dbprintf("Waiting for download %p to get cancelled\n", dlctx );
+                  md_download_context_wait( dlctx, -1 );
+               }
+            }
             
             // untrack the block
             fs_entry_read_context_untrack_downloading_block( read_ctx, dlctx );
@@ -1175,17 +1188,17 @@ int fs_entry_read_context_run_downloads( struct fs_core* core, struct fs_entry* 
 static int fs_entry_read_block_future_finalizer_cache_async( struct fs_core* core, struct fs_entry* fent, struct fs_entry_read_block_future* block_fut, void* cls ) {
    
    // argument: pointer to a vector of cache futures 
-   vector<struct cache_block_future*>* cache_futs = (vector<struct cache_block_future*>*) cls;
+   vector<struct md_cache_block_future*>* cache_futs = (vector<struct md_cache_block_future*>*) cls;
    
    // cache if we succeeded in getting something cacheable
    if( block_fut->err == 0 && !block_fut->eof ) {
       
       // cache this!
       int rc = 0;
-      struct cache_block_future* f = fs_entry_cache_write_block_async( core, core->cache, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version,
-                                                                       block_fut->result, block_fut->result_len, false, &rc );
+      struct md_cache_block_future* f = md_cache_write_block_async( core->cache, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version,
+                                                                    block_fut->result, block_fut->result_len, false, &rc );
       if( rc != 0 || f == NULL ) {
-         errorf("fs_entry_cache_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
+         errorf("md_cache_write_block_async( %s %" PRIX64 ".%" PRId64 "[%" PRIu64 ".%" PRId64 "] rc = %d\n",
                 block_fut->fs_path, fent->file_id, block_fut->file_version, block_fut->block_id, block_fut->block_version, rc );
       }
       else {
@@ -1659,13 +1672,13 @@ static int fs_entry_read_run_cleanup( struct fs_core* core, struct fs_entry_read
 
 // clean up cache futures.
 // don't free the cache future's internal buffer (since it's just a pointer to a block future's internal buffer), but free everything else 
-static void fs_entry_cleanup_cache_future( struct cache_block_future* f, void* cls ) {
+static void fs_entry_cleanup_cache_future( struct md_cache_block_future* f, void* cls ) {
    
    // remove the buffer from the future 
-   fs_entry_cache_block_future_release_data( f );
+   md_cache_block_future_release_data( f );
    
    // clean up everything else 
-   fs_entry_cache_block_future_free( f );
+   md_cache_block_future_free( f );
 }
 
 // service a read request.
@@ -1713,7 +1726,7 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    }
    
    // cache block futures 
-   vector<struct cache_block_future*> cache_futs;
+   vector<struct md_cache_block_future*> cache_futs;
    
    // set up a read context for this request 
    fs_entry_setup_read_context( core, fs_path, fent, buf, real_count, offset, &read_ctx );
@@ -1789,13 +1802,13 @@ static ssize_t fs_entry_read_run( struct fs_core* core, char const* fs_path, str
    fs_entry_unlock( fent );
 
    // finish caching all downloaded blocks to disk
-   int cache_rc = fs_entry_flush_cache_writes( &cache_futs );
+   int cache_rc = md_cache_flush_writes( &cache_futs );
    if( cache_rc != 0 ) {
-      errorf("fs_entry_flush_cache_writes( %s ) rc = %d\n", fs_path, cache_rc );
+      errorf("md_cache_flush_writes( %s ) rc = %d\n", fs_path, cache_rc );
    }
    
    // clean up cache futures, releasing their internal buffers (since they point to block future buffers)
-   fs_entry_cache_block_future_apply_all( &cache_futs, fs_entry_cleanup_cache_future, NULL );
+   md_cache_block_future_apply_all( &cache_futs, fs_entry_cleanup_cache_future, NULL );
    
    // free the context
    fs_entry_read_run_cleanup( core, &read_ctx );
