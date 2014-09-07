@@ -352,7 +352,7 @@ static AG_map_info* AG_HTTP_make_fresh_map_info( struct AG_state* state, struct 
    
    if( (unsigned)now.tv_sec > mi->refresh_deadline ) {
       
-      dbprintf("Reversion deadline for %s has passed (deadline was %" PRIu64 ").  Reversioning and telling the client to try again.\n", reqdat->fs_path, mi->refresh_deadline );
+      dbprintf("Reversion deadline for %s has passed (by %" PRIu64 " seconds).  Reversioning and telling the client to try again.\n", reqdat->fs_path, now.tv_sec - mi->refresh_deadline );
       
       // entry is stale--queue a refresh and tell the client to try again 
       int http_status = MD_HTTP_TRYAGAIN;
